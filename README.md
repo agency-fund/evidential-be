@@ -9,5 +9,6 @@ The following is a proposal of the main components of this service:
 3. API endpoints that provide a list of fields and their values (/filters, /metrics, /strata)
 4. API endpoints that provide a power analysis check and stratified random assignment of treatment
 5. A treatment assignment service that stores treatment assignments and provides an API endpoint to provide treatment status by ID
+6. Save experiment (inclusive of Audience) specifications 
 
 
