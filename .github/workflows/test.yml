@@ -41,6 +41,10 @@ jobs:
           restore-keys: |
             uv-${{ runner.os }}-${{ hashFiles('requirements.linux_x86_64.txt', 'requirements.macos_arm.txt') }}
             uv-${{ runner.os }}
+      - if: startsWith(matrix.os, 'macos-')
+        uses: Homebrew/actions/setup-homebrew@master
+      - if: startsWith(matrix.os, 'macos-')
+        run: brew install postgresql
       - run: |
           uv pip install \
             --no-deps \
