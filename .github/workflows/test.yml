@@ -1,0 +1,58 @@
+name: tests
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  DEBIAN_FRONTEND: noninteractive
+  FORCE_COLOR: "1"
+  PYTHONUNBUFFERED: "1"
+  UV_SYSTEM_PYTHON: 1
+
+jobs:
+  unittests:
+    env:
+      UV_CACHE_DIR: /tmp/.uv-cache
+    timeout-minutes: 15
+    name: Python on ${{ startsWith(matrix.os, 'macos-') && 'macOS' || 'Linux' }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ ubuntu-22.04, macos-14 ]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version-file: "pyproject.toml"
+      - run: curl -LsSf https://astral.sh/uv/0.2.37/install.sh | sh
+      - name: UV Cache
+        uses: actions/cache@v4
+        with:
+          path: /tmp/.uv-cache
+          key: uv-${{ runner.os }}-${{ hashFiles('requirements.linux_x86_64.txt', 'requirements.macos_arm.txt') }}
+          restore-keys: |
+            uv-${{ runner.os }}-${{ hashFiles('requirements.linux_x86_64.txt', 'requirements.macos_arm.txt') }}
+            uv-${{ runner.os }}
+      - run: |
+          uv pip install \
+            --no-deps \
+            --require-hashes \
+            --only-binary :all: \
+            --no-binary psycopg2 \
+            -r requirements.${{ startsWith(matrix.os, 'macos-') && 'macos_arm' || 'linux_x86_64' }}.txt
+          uv pip install pytest
+        env:
+          UV_SYSTEM_PYTHON: 1
+      - name: pytest
+        run: |
+          pytest
+      - name: Minimize UV Cache contents
+        run: uv cache prune --ci
