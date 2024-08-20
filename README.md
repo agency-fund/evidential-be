@@ -12,3 +12,46 @@ The following is a proposal of the main components of this service:
 6. Save experiment (inclusive of Audience) specifications 
 
 
+## Helpful Commands
+
+### Run Locally
+
+This will expose the service at http://127.0.0.1:8000/docs with auto-reload features:
+
+```shell
+fastapi dev app/main.py
+```
+
+### Run via Docker
+
+```shell
+docker build -t xngin .
+docker run xngin:latest
+```
+
+### I want to add a Python dependency.
+
+1. Add the dependency to [pyproject.toml](pyproject.toml).
+2. Regenerate the requirements file:
+    ```shell
+    uv pip compile --generate-hashes pyproject.toml -o requirements.linux_x86_64.txt
+    ```
+3. Rebuild your local docker container (see above).
+4. Install it into your environment:
+    ```shell
+    uv pip install --no-deps --require-hashes --only-binary :all: --no-binary psycopg2 -r requirements.linux_x86_64.txt
+    ```
+
+### psycopg2 module does not install correctly.
+
+You might see this error:
+
+> Error: pg_config executable not found.
+> 
+> pg_config is required to build psycopg2 from source.
+
+The fix will depend on your specific environment, but these will be helpful:
+
+1. If on Linux, try: `sudo apt install -y libpq-dev` and then re-install dependencies.
+2. See https://www.psycopg.org/docs/install.html.
+3. See https://www.psycopg.org/docs/faq.html.

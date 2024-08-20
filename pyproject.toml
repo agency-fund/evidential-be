@@ -3,11 +3,14 @@ name = "xngin"
 version = "0.0.1"
 dependencies = [
     "fastapi[standard]>=0.112.0,<0.113.0",
-    "pydantic>=2.7.0,<3.0.0",
-    "uvicorn[standard]>=0.30.6",
-    "pandas",
+    "httpx",  # TODO: replace all uses of requests with httpx
     "numpy",
+    "pandas",
+    "psycopg2",
+    "pydantic>=2.7.0,<3.0.0",
+    "pymongo",
+    "requests",
     "scipy",
-    "pymongo"
+    "uvicorn[standard]>=0.30.6",
 ]
 requires-python = ">=3.12"
