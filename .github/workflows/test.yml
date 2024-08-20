@@ -42,7 +42,9 @@ jobs:
             uv-${{ runner.os }}-${{ hashFiles('requirements.linux_x86_64.txt', 'requirements.macos_arm.txt') }}
             uv-${{ runner.os }}
       - if: startsWith(matrix.os, 'macos-')
-        run: brew install postgresql
+        run: |
+          # Install postgres so that the Python psycopg2 module can build from source.
+          brew install postgresql@14
       - run: |
           uv pip install \
             --no-deps \
