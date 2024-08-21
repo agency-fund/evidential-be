@@ -14,12 +14,19 @@ The following is a proposal of the main components of this service:
 
 ## Helpful Commands
 
+## Prerequisite
+
+The commands below require you to have [uv](https://docs.astral.sh/uv/) installed:
+
+```shell
+curl -LsSf https://astral.sh/uv/0.3.0/install.sh | sh
+```
 ### Run Locally
 
 This will expose the service at http://127.0.0.1:8000/docs with auto-reload features:
 
 ```shell
-fastapi dev app/main.py
+uv run fastapi dev app/main.py
 ```
 
 ### Run via Docker
@@ -32,14 +39,14 @@ docker run xngin:latest
 ### I want to add a Python dependency.
 
 1. Add the dependency to [pyproject.toml](pyproject.toml).
-2. Regenerate the requirements file:
+2. Update the lockfile:
     ```shell
-    uv pip compile --generate-hashes pyproject.toml -o requirements.linux_x86_64.txt
+    uv lock
     ```
 3. Rebuild your local docker container (see above).
 4. Install it into your environment:
     ```shell
-    uv pip install --no-deps --require-hashes --only-binary :all: --no-binary psycopg2 -r requirements.linux_x86_64.txt
+    uv sync
     ```
 
 ### psycopg2 module does not install correctly.
