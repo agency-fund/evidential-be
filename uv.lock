@@ -144,12 +144,10 @@ wheels = [
 [package.optional-dependencies]
 standard = [
     { name = "email-validator", marker = "sys_platform == 'darwin' or sys_platform == 'linux'" },
-    { name = "fastapi-cli", marker = "sys_platform == 'darwin' or sys_platform == 'linux'" },
     { name = "fastapi-cli", extra = ["standard"], marker = "sys_platform == 'darwin' or sys_platform == 'linux'" },
     { name = "httpx", marker = "sys_platform == 'darwin' or sys_platform == 'linux'" },
     { name = "jinja2", marker = "sys_platform == 'darwin' or sys_platform == 'linux'" },
     { name = "python-multipart", marker = "sys_platform == 'darwin' or sys_platform == 'linux'" },
-    { name = "uvicorn", marker = "sys_platform == 'darwin' or sys_platform == 'linux'" },
     { name = "uvicorn", extra = ["standard"], marker = "sys_platform == 'darwin' or sys_platform == 'linux'" },
 ]
 
@@ -168,7 +166,6 @@ wheels = [
 
 [package.optional-dependencies]
 standard = [
-    { name = "uvicorn", marker = "sys_platform == 'darwin' or sys_platform == 'linux'" },
     { name = "uvicorn", extra = ["standard"], marker = "sys_platform == 'darwin' or sys_platform == 'linux'" },
 ]
 
@@ -893,12 +890,12 @@ dev = [
 
 [package.metadata]
 requires-dist = [
-    { name = "fastapi", extras = ["standard"], specifier = "<0.113.0,>=0.112.0" },
+    { name = "fastapi", extras = ["standard"], specifier = ">=0.112.0,<0.113.0" },
     { name = "httpx" },
     { name = "numpy" },
     { name = "pandas" },
     { name = "psycopg2" },
-    { name = "pydantic", specifier = "<3.0.0,>=2.7.0" },
+    { name = "pydantic", specifier = ">=2.7.0,<3.0.0" },
     { name = "pymongo" },
     { name = "requests" },
     { name = "scipy" },

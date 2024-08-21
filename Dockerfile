@@ -1,7 +1,7 @@
 # Defines a production runtime environment for the service. This is not for development uses.
 FROM python:3.12
 ENV PYTHONUNBUFFERED=1
-COPY --from=ghcr.io/astral-sh/uv:0.3.0 /uv /bin/uv
+COPY --from=ghcr.io/astral-sh/uv:0.3.1 /uv /bin/uv
 WORKDIR /code
 COPY pyproject.toml /code/
 COPY uv.lock /code/
