@@ -14,7 +14,7 @@ env:
   DEBIAN_FRONTEND: noninteractive
   FORCE_COLOR: "1"
   PYTHONUNBUFFERED: "1"
-  UV_SYSTEM_PYTHON: 1
+  UV_SYSTEM_PYTHON: "1"
 
 jobs:
   unittests:
@@ -32,31 +32,25 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version-file: "pyproject.toml"
-      - run: curl -LsSf https://astral.sh/uv/0.2.37/install.sh | sh
+      - run: curl -LsSf https://astral.sh/uv/0.3.0/install.sh | sh
       - name: UV Cache
         uses: actions/cache@v4
         with:
           path: /tmp/.uv-cache
-          key: uv-${{ runner.os }}-${{ hashFiles('requirements.linux_x86_64.txt', 'requirements.macos_arm.txt') }}
+          key: uv-${{ runner.os }}-${{ hashFiles('pyproject.toml', 'uv.lock') }}
           restore-keys: |
-            uv-${{ runner.os }}-${{ hashFiles('requirements.linux_x86_64.txt', 'requirements.macos_arm.txt') }}
+            uv-${{ runner.os }}-${{ hashFiles('pyproject.toml', 'uv.lock') }}
             uv-${{ runner.os }}
       - if: startsWith(matrix.os, 'macos-')
         run: |
           # Install postgres so that the Python psycopg2 module can build from source.
           brew install postgresql@14
-      - run: |
-          uv pip install \
-            --no-deps \
-            --require-hashes \
-            --only-binary :all: \
-            --no-binary psycopg2 \
-            -r requirements.${{ startsWith(matrix.os, 'macos-') && 'macos_arm' || 'linux_x86_64' }}.txt
-          uv pip install pytest
+      - run: uv sync --locked
         env:
           UV_SYSTEM_PYTHON: 1
       - name: pytest
         run: |
+          . .venv/bin/activate
           pytest
       - name: Minimize UV Cache contents
         run: uv cache prune --ci

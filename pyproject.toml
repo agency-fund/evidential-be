@@ -14,3 +14,12 @@ dependencies = [
     "uvicorn[standard]>=0.30.6",
 ]
 requires-python = ">=3.12"
+
+[tool.uv]
+dev-dependencies = [
+    "pytest>=8.3.2",
+]
+environments = [
+    "sys_platform == 'darwin'",
+    "sys_platform == 'linux'",
+]
