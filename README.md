@@ -5,12 +5,13 @@ Python version of [RL Experiments Engine](https://github.com/agency-fund/rl-expe
 The following is a proposal of the main components of this service:
 
 1. A ODBC/DBI-based interfae module to connect to underlying data sources (one table per unit of analysis)
-2. A configuration module that draws from the table(s) specified in (1) into a Google Sheet that can be annotated with filters, metrics and strata
+2. A configuration module that draws from the table(s) specified in (1) into a Google Sheet that can be annotated with
+   filters, metrics and strata
 3. API endpoints that provide a list of fields and their values (/filters, /metrics, /strata)
 4. API endpoints that provide a power analysis check and stratified random assignment of treatment
-5. A treatment assignment service that stores treatment assignments and provides an API endpoint to provide treatment status by ID
-6. Save experiment (inclusive of Audience) specifications 
-
+5. A treatment assignment service that stores treatment assignments and provides an API endpoint to provide treatment
+   status by ID
+6. Save experiment (inclusive of Audience) specifications
 
 ## Helpful Commands
 
@@ -21,12 +22,19 @@ The commands below require you to have [uv](https://docs.astral.sh/uv/) installe
 ```shell
 curl -LsSf https://astral.sh/uv/0.3.0/install.sh | sh
 ```
+
 ### Run Locally
 
 This will expose the service at http://127.0.0.1:8000/docs with auto-reload features:
 
 ```shell
 uv run fastapi dev app/main.py
+```
+
+### Running Tests
+
+```shell
+uv run pytest
 ```
 
 ### Run via Docker
@@ -54,7 +62,7 @@ docker run xngin:latest
 You might see this error:
 
 > Error: pg_config executable not found.
-> 
+>
 > pg_config is required to build psycopg2 from source.
 
 The fix will depend on your specific environment, but these will be helpful:
