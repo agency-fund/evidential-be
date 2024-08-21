@@ -17,10 +17,16 @@ app = FastAPI()
 
 # Global variables
 type_map = {
-    "groups": {"trs": "trs_groups", "olap": "olap_groups", "id": "groups_id",
-               "created": "groups_created_at", "org_id": "organization_id"},
+    "groups": {
+        "trs": "trs_groups",
+        "olap": "olap_groups",
+        "id": "groups_id",
+        "created": "groups_created_at",
+        "org_id": "organization_id",
+    },
     # ... (other type mappings)
 }
+
 
 # Helper functions
 def classify_data_type(filter_name: str, data_type: str) -> str:
@@ -28,8 +34,14 @@ def classify_data_type(filter_name: str, data_type: str) -> str:
     data_type = data_type.lower()
 
     discrete_types = ["boolean", "character varying"]
-    numeric_types = ["date", "integer", "double precision", "numeric",
-                     "timestamp without time zone", "bigint"]
+    numeric_types = [
+        "date",
+        "integer",
+        "double precision",
+        "numeric",
+        "timestamp without time zone",
+        "bigint",
+    ]
 
     if data_type in discrete_types or filter_name.endswith("_id"):
         return "discrete"
@@ -37,6 +49,7 @@ def classify_data_type(filter_name: str, data_type: str) -> str:
         return "numeric"
     else:
         return "unknown"
+
 
 def get_relations(data_class: str) -> List[str]:
     if data_class == "discrete":
@@ -46,6 +59,7 @@ def get_relations(data_class: str) -> List[str]:
     else:
         raise ValueError(f"Unsupported data class: {data_class}")
 
+
 # Database connection functions
 def get_dwh_con():
     return psycopg2.connect(
@@ -54,13 +68,15 @@ def get_dwh_con():
         host="instance.redshift.amazonaws.com",
         password=open("redshift_prod_pw.txt").read().strip(),
         dbname="customer_dwh_prod",
-        sslmode="require"
+        sslmode="require",
     )
+
 
 # API Models
 class AudienceSpec(BaseModel):
     type: str
     filters: List[Dict[str, Any]]
+
 
 class DesignSpec(BaseModel):
     experiment_id: str
@@ -75,50 +91,69 @@ class DesignSpec(BaseModel):
     fstat_thresh: float
     metrics: List[Dict[str, Any]]
 
+
 # API Endpoints
 @app.get("/strata")
 def get_strata(type: str = "groups", refresh: bool = False):
     # Implement get_strata logic
     pass
 
+
 @app.get("/filters")
 def get_filters(type: str = "groups", refresh: bool = False):
     # Implement get_filters logic
     pass
+
 
 @app.get("/metrics")
 def get_metrics(type: str = "groups", refresh: bool = False):
     # Implement get_metrics logic
     pass
 
+
 @app.post("/power")
 def check_power(design_spec: DesignSpec, audience_spec: AudienceSpec):
     # Implement power calculation logic
     pass
 
+
 @app.post("/assign")
-def assign_treatment(design_spec: DesignSpec, audience_spec: AudienceSpec, chosen_n: int = 1000):
+def assign_treatment(
+    design_spec: DesignSpec, audience_spec: AudienceSpec, chosen_n: int = 1000
+):
     # Implement treatment assignment logic
     pass
 
+
 @app.post("/commit")
-def commit_experiment(design_spec: DesignSpec, audience_spec: AudienceSpec, experiment_assignment: Dict[str, Any], user_id: str = "testuser"):
+def commit_experiment(
+    design_spec: DesignSpec,
+    audience_spec: AudienceSpec,
+    experiment_assignment: Dict[str, Any],
+    user_id: str = "testuser",
+):
     # Implement experiment commit logic
     pass
 
+
 # Main experiment assignment function
-def experiment_assignment(design_spec: DesignSpec, audience_spec: AudienceSpec, chosen_n: int):
+def experiment_assignment(
+    design_spec: DesignSpec, audience_spec: AudienceSpec, chosen_n: int
+):
     # Implement experiment assignment logic
     pass
+
 
 # Helper functions for database operations
 def get_dwh_participants(audience_spec: AudienceSpec, chosen_n: int):
     # Implement logic to get participants from the data warehouse
     pass
 
+
 def get_metric_meta(metrics: List[str], audience_spec: AudienceSpec):
     # Implement logic to get metric metadata
     pass
+
 
 # MongoDB interaction function
 def experiments_reg_request(endpoint: str, json_data: Dict[str, Any] = None):
@@ -127,10 +162,13 @@ def experiments_reg_request(endpoint: str, json_data: Dict[str, Any] = None):
 
     headers = {
         "accept": "application/json",
-        "Authorization": f"Bearer {open(f'{api_host}.token').read().strip()}"
+        "Authorization": f"Bearer {open(f'{api_host}.token').read().strip()}",
     }
 
-    if endpoint.startswith("get-file-name-by-experiment-id") or endpoint == "get-all-experiments":
+    if (
+        endpoint.startswith("get-file-name-by-experiment-id")
+        or endpoint == "get-all-experiments"
+    ):
         response = requests.get(url, headers=headers)
     else:
         if endpoint.startswith("update"):
@@ -143,6 +181,8 @@ def experiments_reg_request(endpoint: str, json_data: Dict[str, Any] = None):
 
     return response.json()
 
+
 if __name__ == "__main__":
     import uvicorn
+
     uvicorn.run(app, host="0.0.0.0", port=8000)

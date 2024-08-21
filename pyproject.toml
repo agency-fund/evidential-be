@@ -17,8 +17,9 @@ requires-python = ">=3.12"
 
 [tool.uv]
 dev-dependencies = [
+    "pre-commit>=3.8.0,<3.9.0",
     "pytest>=8.3.2,<9.0.0",
-    "ruff>=0.6.1,<7.0.0"
+    "ruff>=0.6.1,<7.0.0",
 ]
 environments = [
     "sys_platform == 'darwin'",
