@@ -1,14 +1,10 @@
 name: pre-commit
 
 on:
-  pull_request:
   push:
-
-env:
-  FORCE_COLOR: "1"
-  PIP_DISABLE_PIP_VERSION_CHECK: "1"
-  PIP_PROGRESS_BAR: "off"
-  PYTHONUNBUFFERED: "1"
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
 
 permissions:
   contents: read
@@ -16,6 +12,12 @@ permissions:
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
+
+env:
+  FORCE_COLOR: "1"
+  PIP_DISABLE_PIP_VERSION_CHECK: "1"
+  PIP_PROGRESS_BAR: "off"
+  PYTHONUNBUFFERED: "1"
 
 jobs:
   pre-commit:
