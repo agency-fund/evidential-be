@@ -16,7 +16,7 @@ from datetime import datetime, timedelta
 app = FastAPI()
 
 # Global variables
-type_map = {
+TYPE_MAP = {
     "groups": {
         "trs": "trs_groups",
         "olap": "olap_groups",
@@ -24,7 +24,48 @@ type_map = {
         "created": "groups_created_at",
         "org_id": "organization_id",
     },
-    # ... (other type mappings)
+    "organizations": {
+        "trs_trs": "organizations",
+        "olap": "olap_organizations",
+        "id": "organization_id",
+        "created": "org_created_at",
+        "org_id": "organization_id",
+    },
+    "phones": {
+        "trs": "trs_phones",
+        "olap": "olap_phone",
+        "id": "guardian_id",
+        "created": "guardians_created_at",
+        "org_id": None,
+    },
+    "schools": {
+        "trs": "trs_schools",
+        "olap": "olap_school",
+        "id": "school_id",
+        "created": "schools_created_at",
+        "org_id": "organizations_id",
+    },
+    "moderators": {
+        "trs": "trs_moderators",
+        "olap": None,
+        "id": "moderator_id",
+        "created": "mod_created_at",
+        "org_id": "organization_id",
+    },
+    "kids": {
+        "trs": "trs_kids",
+        "olap": None,
+        "id": "kids",
+        "created": None,
+        "org_id": None,
+    },
+    "guardians": {
+        "trs": "trs_guardians",
+        "olap": None,
+        "id": "guardian_id",
+        "created": "guardians_created_at",
+        "org_id": None,
+    },
 }
 
 
