@@ -51,6 +51,12 @@ jobs:
       - run: uv sync --locked
         env:
           UV_SYSTEM_PYTHON: 1
+      - name: write secrets
+        run: |
+          mkdir -p ~/.config/gspread && echo "${GCLOUD_SERVICE_ACCOUNT_CREDENTIALS}" > ~/.config/gspread/service_account.json
+          sha256sum ~/.config/gspread/service_account.json
+        env:
+          GCLOUD_SERVICE_ACCOUNT_CREDENTIALS: ${{ secrets.GOOGLE_APPLICATION_CREDENTIALS_CONTENT }}
       - name: pytest
         run: |
           . .venv/bin/activate
