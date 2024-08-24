@@ -1,5 +1,5 @@
 {
-  "trusted_ips": [""],
+  "trusted_ips": [],
   "customer": {
     "dwh": {
       "user": "agency",
