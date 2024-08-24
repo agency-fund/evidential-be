@@ -1,4 +1,5 @@
 import enum
+from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, HTTPException, Depends
 from pydantic import BaseModel
@@ -10,7 +11,14 @@ from app.settings import get_settings_for_server, XnginSettings
 from fastapi import Request
 from app.utils import safe_for_headers
 
-app = FastAPI()
+
+@asynccontextmanager
+async def lifespan(_app: FastAPI):
+    get_settings_for_server()
+    yield
+
+
+app = FastAPI(lifespan=lifespan)
 
 
 def settings_dependency():
