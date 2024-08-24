@@ -29,6 +29,8 @@ class PostgresDsn(BaseModel):
 
 class RocketLearningSettings(BaseModel):
     dwh: PostgresDsn
+    api_host: str
+    api_token: SecretStr
 
 
 class XnginSettings(BaseSettings):

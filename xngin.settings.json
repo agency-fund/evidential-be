@@ -1,6 +1,7 @@
 {
   "trusted_ips": [],
   "customer": {
+    "api_host": "api.example.com",
     "dwh": {
       "user": "agency",
       "port": 5439,

@@ -8,6 +8,7 @@ import requests
 from datetime import datetime
 from app.settings import get_settings_for_server, XnginSettings
 from fastapi import Request, Response
+from app.utils import safe_for_headers
 
 app = FastAPI()
 
@@ -198,7 +199,7 @@ def debug_settings(
     if request.client.host in settings.trusted_ips:
         return {"settings": settings}
     response.status_code = 400
-    return request.client.host
+    return settings
 
 
 @app.post("/commit")
@@ -232,13 +233,15 @@ def get_metric_meta(metrics: List[str], audience_spec: AudienceSpec):
 
 
 # MongoDB interaction function
-def experiments_reg_request(endpoint: str, json_data: Dict[str, Any] = None):
-    api_host = "api.example.com"
-    url = f"https://{api_host}/dev/api/v1/experiment-commit/{endpoint}"
+def experiments_reg_request(
+    settings: XnginSettings, endpoint: str, json_data: Dict[str, Any] = None
+):
+    url = f"https://{settings.api_host}/dev/api/v1/experiment-commit/{endpoint}"
 
+    api_token = safe_for_headers(settings.customer.api_token.get_secret_value())
     headers = {
         "accept": "application/json",
-        "Authorization": f"Bearer {open(f'{api_host}.token').read().strip()}",
+        "Authorization": f"Bearer {api_token}",
     }
 
     if (

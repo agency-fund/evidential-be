@@ -1,6 +1,8 @@
 {
   "trusted_ips": ["testclient"],
   "customer": {
+    "api_host": "api_host",
+    "api_token": "api_token",
     "dwh": {
       "user": "user",
       "port": 5439,
