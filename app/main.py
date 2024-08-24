@@ -31,7 +31,7 @@ TYPE_MAP = {
         "org_id": "organization_id",
     },
     "organizations": {
-        "trs_trs": "organizations",
+        "trs": "organizations",
         "olap": "olap_organizations",
         "id": "organization_id",
         "created": "org_created_at",
