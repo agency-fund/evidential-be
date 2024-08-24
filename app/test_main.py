@@ -1,7 +1,7 @@
 from fastapi.testclient import TestClient
 from pydantic import TypeAdapter
 
-from .main import app, settings_dependency
+from .main import app, settings_dependency, classify_data_type, DataTypeClass
 from .settings import SettingsForTesting
 
 
@@ -30,3 +30,9 @@ def test_settings_api():
 def test_root_get_api():
     response = client.get("/")
     assert response.status_code == 404
+
+
+def test_classify_data_type():
+    assert classify_data_type("foo_id", "date") == DataTypeClass.DISCRETE
+    assert classify_data_type("test", "boolean") == DataTypeClass.DISCRETE
+    assert classify_data_type("foo", "date") == DataTypeClass.NUMERIC

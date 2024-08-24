@@ -2,7 +2,7 @@ import enum
 
 from fastapi import FastAPI, HTTPException, Depends
 from pydantic import BaseModel
-from typing import List, Dict, Any, Annotated
+from typing import List, Dict, Any, Annotated, Optional
 import psycopg2
 import requests
 from datetime import datetime
@@ -21,57 +21,58 @@ def settings_dependency():
     return get_settings_for_server()
 
 
-# Global variables
-TYPE_MAP = {
-    "groups": {
-        "trs": "trs_groups",
-        "olap": "olap_groups",
-        "id": "groups_id",
-        "created": "groups_created_at",
-        "org_id": "organization_id",
-    },
-    "organizations": {
-        "trs": "organizations",
-        "olap": "olap_organizations",
-        "id": "organization_id",
-        "created": "org_created_at",
-        "org_id": "organization_id",
-    },
-    "phones": {
-        "trs": "trs_phones",
-        "olap": "olap_phone",
-        "id": "guardian_id",
-        "created": "guardians_created_at",
-        "org_id": None,
-    },
-    "schools": {
-        "trs": "trs_schools",
-        "olap": "olap_school",
-        "id": "school_id",
-        "created": "schools_created_at",
-        "org_id": "organizations_id",
-    },
-    "moderators": {
-        "trs": "trs_moderators",
-        "olap": None,
-        "id": "moderator_id",
-        "created": "mod_created_at",
-        "org_id": "organization_id",
-    },
-    "kids": {
-        "trs": "trs_kids",
-        "olap": None,
-        "id": "kids",
-        "created": None,
-        "org_id": None,
-    },
-    "guardians": {
-        "trs": "trs_guardians",
-        "olap": None,
-        "id": "guardian_id",
-        "created": "guardians_created_at",
-        "org_id": None,
-    },
+class DwhFieldConfig(BaseModel):
+    created: Optional[str] = None
+    id: str
+    olap: Optional[str] = None
+    org_id: Optional[str] = None
+    trs: str
+
+
+# TODO: This appears to be customer-specific; move to config?
+DWH_FIELD_MAP = {
+    "groups": DwhFieldConfig(
+        created="groups_created_at",
+        id="groups_id",
+        olap="olap_groups",
+        org_id="organization_id",
+        trs="trs_groups",
+    ),
+    "organizations": DwhFieldConfig(
+        created="org_created_at",
+        id="organization_id",
+        olap="olap_organizations",
+        org_id="organization_id",
+        trs="organizations",
+    ),
+    "phones": DwhFieldConfig(
+        created="guardians_created_at",
+        id="guardian_id",
+        olap="olap_phone",
+        trs="trs_phones",
+    ),
+    "schools": DwhFieldConfig(
+        created="schools_created_at",
+        id="school_id",
+        olap="olap_school",
+        org_id="organizations_id",
+        trs="trs_schools",
+    ),
+    "moderators": DwhFieldConfig(
+        created="mod_created_at",
+        id="moderator_id",
+        org_id="organization_id",
+        trs="trs_moderators",
+    ),
+    "kids": DwhFieldConfig(
+        id="kids",
+        trs="trs_kids",
+    ),
+    "guardians": DwhFieldConfig(
+        created="guardians_created_at",
+        id="guardian_id",
+        trs="trs_guardians",
+    ),
 }
 
 
