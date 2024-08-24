@@ -1,0 +1,12 @@
+{
+  "trusted_ips": [""],
+  "customer": {
+    "dwh": {
+      "user": "agency",
+      "port": 5439,
+      "host": "instance.redshift.amazonaws.com",
+      "dbname": "customer_dwh_prod",
+      "sslmode": "require"
+    }
+  }
+}

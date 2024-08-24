@@ -1,0 +1,13 @@
+{
+  "trusted_ips": ["testclient"],
+  "customer": {
+    "dwh": {
+      "user": "user",
+      "port": 5439,
+      "host": "redshift-testing.redshift.amazonaws.com",
+      "password": "password",
+      "dbname": "dbname",
+      "sslmode": "require"
+    }
+  }
+}

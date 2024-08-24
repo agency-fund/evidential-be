@@ -13,6 +13,25 @@ The following is a proposal of the main components of this service:
    status by ID
 6. Save experiment (inclusive of Audience) specifications
 
+## Settings
+
+The settings schema is defined in app/settings.py. Values are read at startup from environment variables and the
+xngin.settings.json file.
+
+xngin.settings.json can be committed to version control but secret values should not be. You can provide secrets via
+environment variables or files:
+
+* Environment variables:
+   ```shell
+   CUSTOMER__DWH__PASSWORD=$(cat redshift_prod_pw.txt) uv run fastapi dev
+   ```
+* Files:
+   ```shell
+   $ cat secrets/customer
+   {"customer": {"dwh": {"password": "xxx"}}}
+   $ uv run fastapi dev
+   ```
+
 ## Helpful Commands
 
 ## Prerequisite
@@ -28,7 +47,7 @@ curl -LsSf https://astral.sh/uv/0.3.1/install.sh | sh
 This will expose the service at http://127.0.0.1:8000/docs with auto-reload features:
 
 ```shell
-uv run fastapi dev app/main.py
+uv run fastapi dev
 ```
 
 ### Running Tests

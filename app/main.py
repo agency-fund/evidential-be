@@ -1,20 +1,24 @@
-# ruff: noqa: F401
 import enum
 
-import pandas as pd
-import numpy as np
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Depends
 from pydantic import BaseModel
-from typing import List, Dict, Any
-import uuid
-from scipy import stats
+from typing import List, Dict, Any, Annotated
 import psycopg2
-from pymongo import MongoClient
 import requests
-import json
-from datetime import datetime, timedelta
+from datetime import datetime
+from app.settings import get_settings_for_server, XnginSettings
+from fastapi import Request, Response
 
 app = FastAPI()
+
+
+def settings_dependency():
+    """Provides the settings for the server.
+
+    This may be overridden by tests using the FastAPI dependency override features.
+    """
+    return get_settings_for_server()
+
 
 # Global variables
 TYPE_MAP = {
@@ -128,15 +132,8 @@ def get_relations(data_class: DataTypeClass):
 
 
 # Database connection functions
-def get_dwh_con():
-    return psycopg2.connect(
-        user="agency",
-        port=5439,
-        host="instance.redshift.amazonaws.com",
-        password=open("redshift_prod_pw.txt").read().strip(),
-        dbname="customer_dwh_prod",
-        sslmode="require",
-    )
+def get_dwh_con(settings: XnginSettings):
+    return psycopg2.connect(**settings.customer.dwh.model_dump())
 
 
 # API Models
@@ -190,6 +187,18 @@ def assign_treatment(
 ):
     # Implement treatment assignment logic
     pass
+
+
+@app.get("/_settings")
+def debug_settings(
+    request: Request,
+    response: Response,
+    settings: Annotated[XnginSettings, Depends(settings_dependency)],
+):
+    if request.client.host in settings.trusted_ips:
+        return {"settings": settings}
+    response.status_code = 400
+    return request.client.host
 
 
 @app.post("/commit")
