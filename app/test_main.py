@@ -1,7 +1,8 @@
 from fastapi.testclient import TestClient
 from pydantic import TypeAdapter
 
-from .main import app, settings_dependency, classify_data_type, DataTypeClass
+from .main import app, classify_data_type, DataTypeClass
+from .dependencies import settings_dependency
 from .settings import SettingsForTesting
 
 

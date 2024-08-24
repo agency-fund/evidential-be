@@ -4,9 +4,10 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI, HTTPException, Depends
 from pydantic import BaseModel
 from typing import List, Dict, Any, Annotated, Optional
-import psycopg2
 import requests
 from datetime import datetime
+
+from app.dependencies import settings_dependency, dwh_dependency, Dwh
 from app.settings import get_settings_for_server, XnginSettings
 from fastapi import Request
 from app.utils import safe_for_headers
@@ -19,14 +20,6 @@ async def lifespan(_app: FastAPI):
 
 
 app = FastAPI(lifespan=lifespan)
-
-
-def settings_dependency():
-    """Provides the settings for the server.
-
-    This may be overridden by tests using the FastAPI dependency override features.
-    """
-    return get_settings_for_server()
 
 
 class DwhFieldConfig(BaseModel):
@@ -141,11 +134,6 @@ def get_relations(data_class: DataTypeClass):
             raise ValueError(f"Unsupported data class: {data_class}")
 
 
-# Database connection functions
-def get_dwh_con(settings: XnginSettings):
-    return psycopg2.connect(**settings.customer.dwh.model_dump())
-
-
 # API Models
 class AudienceSpec(BaseModel):
     type: str
@@ -168,32 +156,51 @@ class DesignSpec(BaseModel):
 
 # API Endpoints
 @app.get("/strata")
-def get_strata(type: str = "groups", refresh: bool = False):
+def get_strata(
+    dwh: Annotated[Dwh, Depends(dwh_dependency)],
+    type: str = "groups",
+    refresh: bool = False,
+):
     # Implement get_strata logic
     pass
 
 
 @app.get("/filters")
-def get_filters(type: str = "groups", refresh: bool = False):
+def get_filters(
+    dwh: Annotated[Dwh, Depends(dwh_dependency)],
+    type: str = "groups",
+    refresh: bool = False,
+):
     # Implement get_filters logic
     pass
 
 
 @app.get("/metrics")
-def get_metrics(type: str = "groups", refresh: bool = False):
+def get_metrics(
+    dwh: Annotated[Dwh, Depends(dwh_dependency)],
+    type: str = "groups",
+    refresh: bool = False,
+):
     # Implement get_metrics logic
     pass
 
 
 @app.post("/power")
-def check_power(design_spec: DesignSpec, audience_spec: AudienceSpec):
+def check_power(
+    dwh: Annotated[Dwh, Depends(dwh_dependency)],
+    design_spec: DesignSpec,
+    audience_spec: AudienceSpec,
+):
     # Implement power calculation logic
     pass
 
 
 @app.post("/assign")
 def assign_treatment(
-    design_spec: DesignSpec, audience_spec: AudienceSpec, chosen_n: int = 1000
+    dwh: Annotated[Dwh, Depends(dwh_dependency)],
+    design_spec: DesignSpec,
+    audience_spec: AudienceSpec,
+    chosen_n: int = 1000,
 ):
     # Implement treatment assignment logic
     pass
@@ -211,6 +218,7 @@ def debug_settings(
 
 @app.post("/commit")
 def commit_experiment(
+    dwh: Annotated[Dwh, Depends(dwh_dependency)],
     design_spec: DesignSpec,
     audience_spec: AudienceSpec,
     experiment_assignment: Dict[str, Any],
