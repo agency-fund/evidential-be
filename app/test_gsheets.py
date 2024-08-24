@@ -1,7 +1,7 @@
 import unittest
 from pathlib import Path
 
-from gsheets import read_sheet
+from .gsheets import read_sheet
 
 
 class ReadSheetTest(unittest.TestCase):
