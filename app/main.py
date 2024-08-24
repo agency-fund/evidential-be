@@ -1,4 +1,5 @@
 # ruff: noqa: F401
+import enum
 
 import pandas as pd
 import numpy as np
@@ -69,36 +70,61 @@ TYPE_MAP = {
 }
 
 
+class DataType(enum.StrEnum):
+    BOOLEAN = "boolean"
+    CHARACTER_VARYING = "character varying"
+    DATE = "date"
+    INTEGER = "integer"
+    DOUBLE_PRECISION = "double precision"
+    NUMERIC = "numeric"
+    TIMESTAMP_WITHOUT_TIMEZONE = "timestamp without time zone"
+    BIGINT = "bigint"
+
+
+class DataTypeClass(enum.StrEnum):
+    DISCRETE = "discrete"
+    NUMERIC = "numeric"
+    UNKNOWN = "unknown"
+
+
+DISCRETE_TYPES = [DataType.BOOLEAN, DataType.CHARACTER_VARYING]
+NUMERIC_TYPES = [
+    DataType.DATE,
+    DataType.INTEGER,
+    DataType.DOUBLE_PRECISION,
+    DataType.NUMERIC,
+    DataType.TIMESTAMP_WITHOUT_TIMEZONE,
+    DataType.BIGINT,
+]
+
+
+class Relation(enum.StrEnum):
+    INCLUDES = "includes"
+    EXCLUDES = "excludes"
+    BETWEEN = "between"
+
+
 # Helper functions
-def classify_data_type(filter_name: str, data_type: str) -> str:
+def classify_data_type(filter_name: str, data_type: str):
     filter_name = filter_name.lower()
     data_type = data_type.lower()
 
-    discrete_types = ["boolean", "character varying"]
-    numeric_types = [
-        "date",
-        "integer",
-        "double precision",
-        "numeric",
-        "timestamp without time zone",
-        "bigint",
-    ]
-
-    if data_type in discrete_types or filter_name.endswith("_id"):
-        return "discrete"
-    elif data_type in numeric_types:
-        return "numeric"
+    if data_type in DISCRETE_TYPES or filter_name.endswith("_id"):
+        return DataTypeClass.DISCRETE
+    elif data_type in NUMERIC_TYPES:
+        return DataTypeClass.NUMERIC
     else:
-        return "unknown"
+        return DataTypeClass.UNKNOWN
 
 
-def get_relations(data_class: str) -> List[str]:
-    if data_class == "discrete":
-        return ["includes", "excludes"]
-    elif data_class == "numeric":
-        return ["between"]
-    else:
-        raise ValueError(f"Unsupported data class: {data_class}")
+def get_relations(data_class: DataTypeClass):
+    match data_class:
+        case DataTypeClass.DISCRETE:
+            return [Relation.INCLUDES, Relation.EXCLUDES]
+        case DataTypeClass.NUMERIC:
+            return [Relation.BETWEEN]
+        case _:
+            raise ValueError(f"Unsupported data class: {data_class}")
 
 
 # Database connection functions
