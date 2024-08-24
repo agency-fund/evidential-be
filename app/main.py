@@ -200,7 +200,7 @@ def debug_settings(
     if request.client.host in settings.trusted_ips:
         return {"settings": settings}
     response.status_code = 400
-    return settings
+    return {"error": "not allowed"}
 
 
 @app.post("/commit")
