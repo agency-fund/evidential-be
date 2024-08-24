@@ -7,7 +7,7 @@ import psycopg2
 import requests
 from datetime import datetime
 from app.settings import get_settings_for_server, XnginSettings
-from fastapi import Request, Response
+from fastapi import Request
 from app.utils import safe_for_headers
 
 app = FastAPI()
@@ -194,13 +194,11 @@ def assign_treatment(
 @app.get("/_settings")
 def debug_settings(
     request: Request,
-    response: Response,
     settings: Annotated[XnginSettings, Depends(settings_dependency)],
 ):
     if request.client.host in settings.trusted_ips:
         return {"settings": settings}
-    response.status_code = 400
-    return {"error": "not allowed"}
+    raise HTTPException(403)
 
 
 @app.post("/commit")
