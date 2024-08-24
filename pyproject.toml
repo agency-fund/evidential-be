@@ -16,6 +16,11 @@ dependencies = [
 ]
 requires-python = ">=3.12"
 
+[tool.setuptools.packages.find]
+where = ["app"]
+include = ["*"]
+namespaces = false
+
 [tool.uv]
 dev-dependencies = [
     "pre-commit>=3.8.0,<3.9.0",
