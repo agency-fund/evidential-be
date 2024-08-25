@@ -221,7 +221,7 @@ def get_metrics(
     summary="Check power given an experiment and audience specification.",
     response_model=UnimplementedResponse,
 )
-def check_pfasower(
+def check_power(
     dwh: Annotated[Dwh, Depends(dwh_dependency)],
     design_spec: DesignSpec,
     audience_spec: AudienceSpec,
