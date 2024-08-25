@@ -1,6 +1,7 @@
 from typing import Annotated
 
 import psycopg2
+from fastapi import Depends
 
 from app.settings import get_settings_for_server, XnginSettings
 
@@ -15,7 +16,10 @@ def settings_dependency():
     return get_settings_for_server()
 
 
-def dwh_dependency(settings: Annotated[XnginSettings, settings_dependency]):
+def dwh_dependency(settings: Annotated[XnginSettings, Depends(settings_dependency)]):
     """Placeholder for the dependency on the data warehouse connection."""
-    with psycopg2.connect(**settings.customer.dwh.model_dump()) as conn:
+    with psycopg2.connect(
+        connect_timeout=settings.db_connect_timeout_secs,
+        **settings.customer.dwh.model_dump(),
+    ) as conn:
         yield conn

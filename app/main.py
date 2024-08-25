@@ -1,9 +1,9 @@
 import enum
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI, HTTPException, Depends
+from fastapi import FastAPI, HTTPException, Depends, Query
 from pydantic import BaseModel
-from typing import List, Dict, Any, Annotated, Optional
+from typing import List, Dict, Any, Annotated, Optional, Literal
 import requests
 from datetime import datetime
 
@@ -76,6 +76,8 @@ DWH_FIELD_MAP = {
     ),
 }
 
+type UnitType = Literal[tuple(sorted(DWH_FIELD_MAP.keys()))]
+
 
 class DataType(enum.StrEnum):
     BOOLEAN = "boolean"
@@ -136,11 +138,15 @@ def get_relations(data_class: DataTypeClass):
 
 # API Models
 class AudienceSpec(BaseModel):
+    """Audience specification."""
+
     type: str
     filters: List[Dict[str, Any]]
 
 
 class DesignSpec(BaseModel):
+    """Design specification."""
+
     experiment_id: str
     experiment_name: str
     description: str
@@ -154,48 +160,81 @@ class DesignSpec(BaseModel):
     metrics: List[Dict[str, Any]]
 
 
+class UnimplementedResponse(BaseModel):
+    todo: Literal["TODO"]
+
+
 # API Endpoints
-@app.get("/strata")
+@app.get(
+    "/strata",
+    summary="Get possible strata covariates.",
+    response_model=UnimplementedResponse,
+)
 def get_strata(
-    dwh: Annotated[Dwh, Depends(dwh_dependency)],
-    type: str = "groups",
-    refresh: bool = False,
+    type: UnitType = Query(
+        default="groups", description="Type of unit to derive strata from."
+    ),
+    refresh: bool = Query(default=False, description="Refresh the cache."),
+    dwh: Annotated[Dwh, Depends(dwh_dependency)] = None,
 ):
+    """
+    Get possible strata covariates for a given unit type.
+    """
     # Implement get_strata logic
-    pass
+    return UnimplementedResponse()
 
 
-@app.get("/filters")
+@app.get(
+    "/filters",
+    summary="Get possible filters covariates for a given unit type.",
+    response_model=UnimplementedResponse,
+)
 def get_filters(
     dwh: Annotated[Dwh, Depends(dwh_dependency)],
-    type: str = "groups",
-    refresh: bool = False,
+    type: UnitType = Query(
+        default="groups", description="Type of unit to derive strata from."
+    ),
+    refresh: bool = Query(default=False, description="Refresh the cache."),
 ):
     # Implement get_filters logic
-    pass
+    return UnimplementedResponse()
 
 
-@app.get("/metrics")
+@app.get(
+    "/metrics",
+    summary="Get possible metric covariates for a given unit type.",
+    response_model=UnimplementedResponse,
+)
 def get_metrics(
     dwh: Annotated[Dwh, Depends(dwh_dependency)],
-    type: str = "groups",
-    refresh: bool = False,
+    type: UnitType = Query(
+        default="groups", description="Type of unit to derive strata from."
+    ),
+    refresh: bool = Query(default=False, description="Refresh the cache."),
 ):
     # Implement get_metrics logic
-    pass
+    return UnimplementedResponse()
 
 
-@app.post("/power")
-def check_power(
+@app.post(
+    "/power",
+    summary="Check power given an experiment and audience specification.",
+    response_model=UnimplementedResponse,
+)
+def check_pfasower(
     dwh: Annotated[Dwh, Depends(dwh_dependency)],
     design_spec: DesignSpec,
     audience_spec: AudienceSpec,
 ):
     # Implement power calculation logic
-    pass
+    return UnimplementedResponse()
 
 
-@app.post("/assign")
+@app.post(
+    "/assign",
+    summary="Assign treatment given experiment and audience specification.",
+    response_model=UnimplementedResponse,
+)
 def assign_treatment(
     dwh: Annotated[Dwh, Depends(dwh_dependency)],
     design_spec: DesignSpec,
@@ -203,20 +242,14 @@ def assign_treatment(
     chosen_n: int = 1000,
 ):
     # Implement treatment assignment logic
-    pass
+    return UnimplementedResponse()
 
 
-@app.get("/_settings")
-def debug_settings(
-    request: Request,
-    settings: Annotated[XnginSettings, Depends(settings_dependency)],
-):
-    if request.client.host in settings.trusted_ips:
-        return {"settings": settings}
-    raise HTTPException(403)
-
-
-@app.post("/commit")
+@app.post(
+    "/commit",
+    summary="Commit an experiment to the database.",
+    response_model=UnimplementedResponse,
+)
 def commit_experiment(
     dwh: Annotated[Dwh, Depends(dwh_dependency)],
     design_spec: DesignSpec,
@@ -225,7 +258,17 @@ def commit_experiment(
     user_id: str = "testuser",
 ):
     # Implement experiment commit logic
-    pass
+    return UnimplementedResponse()
+
+
+@app.get("/_settings", include_in_schema=False)
+def debug_settings(
+    request: Request,
+    settings: Annotated[XnginSettings, Depends(settings_dependency)],
+):
+    if request.client.host in settings.trusted_ips:
+        return {"settings": settings}
+    raise HTTPException(403)
 
 
 # Main experiment assignment function

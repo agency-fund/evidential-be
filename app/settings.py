@@ -53,6 +53,7 @@ class RocketLearningSettings(BaseModel):
 class XnginSettings(BaseModel):
     customer: RocketLearningSettings
     trusted_ips: List[str] = list()
+    db_connect_timeout_secs: int = 3
 
 
 class SettingsForTesting(XnginSettings):
