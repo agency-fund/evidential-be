@@ -164,6 +164,17 @@ class UnimplementedResponse(BaseModel):
     todo: Literal["TODO"]
 
 
+async def common_parameters(
+    type: Annotated[
+        UnitType,
+        Query(description="Type of unit to derive strata from."),
+    ] = "groups",
+    refresh: Annotated[bool, Query(description="Refresh the cache.")] = False,
+):
+    """Defines parameters common to the GET methods."""
+    return {"type": type, "refresh": refresh}
+
+
 # API Endpoints
 @app.get(
     "/strata",
@@ -171,11 +182,7 @@ class UnimplementedResponse(BaseModel):
     response_model=UnimplementedResponse,
 )
 def get_strata(
-    type: Annotated[
-        UnitType,
-        Query(description="Type of unit to derive strata from."),
-    ] = "groups",
-    refresh: Annotated[bool, Query(description="Refresh the cache.")] = False,
+    commons: Annotated[dict, Depends(common_parameters)],
     dwh: Annotated[Dwh, Depends(dwh_dependency)] = None,
 ):
     """
@@ -192,11 +199,7 @@ def get_strata(
 )
 def get_filters(
     dwh: Annotated[Dwh, Depends(dwh_dependency)],
-    type: Annotated[
-        UnitType,
-        Query(description="Type of unit to derive strata from."),
-    ] = "groups",
-    refresh: Annotated[bool, Query(description="Refresh the cache.")] = False,
+    commons: Annotated[dict, Depends(common_parameters)],
 ):
     # Implement get_filters logic
     return UnimplementedResponse()
@@ -209,11 +212,7 @@ def get_filters(
 )
 def get_metrics(
     dwh: Annotated[Dwh, Depends(dwh_dependency)],
-    type: Annotated[
-        UnitType,
-        Query(description="Type of unit to derive strata from."),
-    ] = "groups",
-    refresh: Annotated[bool, Query(description="Refresh the cache.")] = False,
+    commons: Annotated[dict, Depends(common_parameters)],
 ):
     # Implement get_metrics logic
     return UnimplementedResponse()
