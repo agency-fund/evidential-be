@@ -35,7 +35,7 @@ def get_settings_for_server():
 
 class PostgresDsn(BaseModel):
     user: str
-    port: PositiveInt
+    port: PositiveInt = 5432
     host: str
     password: SecretStr
     dbname: str
