@@ -171,10 +171,11 @@ class UnimplementedResponse(BaseModel):
     response_model=UnimplementedResponse,
 )
 def get_strata(
-    type: UnitType = Query(
-        default="groups", description="Type of unit to derive strata from."
-    ),
-    refresh: bool = Query(default=False, description="Refresh the cache."),
+    type: Annotated[
+        UnitType,
+        Query(description="Type of unit to derive strata from."),
+    ] = "groups",
+    refresh: Annotated[bool, Query(description="Refresh the cache.")] = False,
     dwh: Annotated[Dwh, Depends(dwh_dependency)] = None,
 ):
     """
@@ -191,10 +192,11 @@ def get_strata(
 )
 def get_filters(
     dwh: Annotated[Dwh, Depends(dwh_dependency)],
-    type: UnitType = Query(
-        default="groups", description="Type of unit to derive strata from."
-    ),
-    refresh: bool = Query(default=False, description="Refresh the cache."),
+    type: Annotated[
+        UnitType,
+        Query(description="Type of unit to derive strata from."),
+    ] = "groups",
+    refresh: Annotated[bool, Query(description="Refresh the cache.")] = False,
 ):
     # Implement get_filters logic
     return UnimplementedResponse()
@@ -207,10 +209,11 @@ def get_filters(
 )
 def get_metrics(
     dwh: Annotated[Dwh, Depends(dwh_dependency)],
-    type: UnitType = Query(
-        default="groups", description="Type of unit to derive strata from."
-    ),
-    refresh: bool = Query(default=False, description="Refresh the cache."),
+    type: Annotated[
+        UnitType,
+        Query(description="Type of unit to derive strata from."),
+    ] = "groups",
+    refresh: Annotated[bool, Query(description="Refresh the cache.")] = False,
 ):
     # Implement get_metrics logic
     return UnimplementedResponse()
