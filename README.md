@@ -39,7 +39,7 @@ environment variables or files:
 The commands below require you to have [uv](https://docs.astral.sh/uv/) installed:
 
 ```shell
-curl -LsSf https://astral.sh/uv/0.3.1/install.sh | sh
+curl -LsSf https://astral.sh/uv/0.3.5/install.sh | sh
 ```
 
 ### Run Locally
