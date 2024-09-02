@@ -1089,7 +1089,7 @@ requires-dist = [
     { name = "scipy" },
     { name = "sqlalchemy", specifier = "==2.0.32" },
     { name = "uvicorn", extras = ["standard"], specifier = ">=0.30.6" },
-    { name = "zstandard" },
+    { name = "zstandard", specifier = ">=0.23.0" },
 ]
 
 [package.metadata.requires-dev]
