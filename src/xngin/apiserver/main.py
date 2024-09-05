@@ -89,6 +89,20 @@ class DataType(enum.StrEnum):
     TIMESTAMP_WITHOUT_TIMEZONE = "timestamp without time zone"
     BIGINT = "bigint"
 
+    @classmethod
+    def match(cls, value):
+        """Attempt to infer the appropriate DataType for a type."""
+        if value in DataType:
+            return DataType[value]
+        # Respect Python builtin types.
+        if value is str:
+            return DataType.CHARACTER_VARYING
+        if value is int:
+            return DataType.INTEGER
+        if value is float:
+            return DataType.DOUBLE_PRECISION
+        raise ValueError(f"Unmatched type: {value}")
+
 
 class DataTypeClass(enum.StrEnum):
     DISCRETE = "discrete"
