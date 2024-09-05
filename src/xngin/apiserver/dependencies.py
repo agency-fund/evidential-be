@@ -3,7 +3,7 @@ from typing import Annotated
 import psycopg2
 from fastapi import Depends
 
-from app.settings import get_settings_for_server, XnginSettings
+from xngin.apiserver.settings import get_settings_for_server, XnginSettings
 
 type Dwh = psycopg2.extensions.connection
 

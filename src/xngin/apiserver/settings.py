@@ -5,7 +5,7 @@ from typing import Literal, List
 
 from pydantic import BaseModel, PositiveInt, SecretStr
 
-from app.utils import merge_dicts
+from xngin.apiserver.utils import merge_dicts
 
 DEFAULT_SECRETS_DIRECTORY = "secrets"
 DEFAULT_SETTINGS_FILE = "xngin.settings.json"

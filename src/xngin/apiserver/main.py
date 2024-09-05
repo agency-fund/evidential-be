@@ -7,10 +7,10 @@ from typing import List, Dict, Any, Annotated, Optional, Literal
 import requests
 from datetime import datetime
 
-from app.dependencies import settings_dependency, dwh_dependency, Dwh
-from app.settings import get_settings_for_server, XnginSettings
+from xngin.apiserver.dependencies import settings_dependency, dwh_dependency, Dwh
+from xngin.apiserver.settings import get_settings_for_server, XnginSettings
 from fastapi import Request
-from app.utils import safe_for_headers
+from xngin.apiserver.utils import safe_for_headers
 
 
 @asynccontextmanager
@@ -321,7 +321,11 @@ def experiments_reg_request(
     return response.json()
 
 
-if __name__ == "__main__":
+def main():
     import uvicorn
 
     uvicorn.run(app, host="0.0.0.0", port=8000)
+
+
+if __name__ == "__main__":
+    main()

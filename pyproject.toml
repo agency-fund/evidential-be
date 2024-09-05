@@ -13,15 +13,19 @@ dependencies = [
     "requests",
     "scipy",
     "sqlalchemy==2.0.32",
+    "typer>=0.12.5,<0.13.0",
     "uvicorn[standard]>=0.30.6",
     "zstandard>=0.23.0",
 ]
 requires-python = ">=3.12"
 
-[tool.setuptools.packages.find]
-where = ["app"]
-include = ["*"]
-namespaces = false
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project.scripts]
+xngin-apiserver = "xngin.apiserver.main:main"
+xngin-cli = "xngin.cli.main:main"
 
 [tool.ruff]
 preview = true

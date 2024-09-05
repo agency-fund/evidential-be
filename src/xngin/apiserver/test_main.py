@@ -1,13 +1,15 @@
+from pathlib import Path
+
 from fastapi.testclient import TestClient
 from pydantic import TypeAdapter
 
-from .main import app, classify_data_type, DataTypeClass
-from .dependencies import settings_dependency
-from .settings import SettingsForTesting
+from xngin.apiserver.main import app, classify_data_type, DataTypeClass
+from xngin.apiserver.dependencies import settings_dependency
+from xngin.apiserver.settings import SettingsForTesting, XnginSettings
 
 
-def get_settings_for_test():
-    with open("xngin.testing.settings.json") as f:
+def get_settings_for_test() -> XnginSettings:
+    with open(Path(__file__).parent / "testdata/xngin.testing.settings.json") as f:
         return TypeAdapter(SettingsForTesting).validate_json(f.read())
 
 
@@ -20,12 +22,15 @@ client = TestClient(app)
 def test_get_settings_for_test():
     settings = get_settings_for_test()
     assert settings.customer.dwh.user == "user"
+    assert settings.trusted_ips == ["testclient"]
 
 
-def test_settings_api():
+def test_settings_can_be_overridden_by_tests():
     response = client.get("/_settings")
     assert response.status_code == 200, response.content
-    assert response.json()["settings"]["customer"]["dwh"]["user"] == "user"
+    settings = response.json()["settings"]
+    assert settings["customer"]["dwh"]["user"] == "user"
+    assert settings["trusted_ips"] == ["testclient"]
 
 
 def test_root_get_api():

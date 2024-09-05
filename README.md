@@ -29,7 +29,7 @@ environment variables or files:
    ```shell
    $ cat secrets/customer
    {"customer": {"dwh": {"password": "xxx"}}}
-   $ uv run fastapi dev
+   $ uv run fastapi dev src/xngin/apiserver/main.py
    ```
 
 ## Helpful Commands
@@ -39,7 +39,7 @@ environment variables or files:
 The commands below require you to have [uv](https://docs.astral.sh/uv/) installed:
 
 ```shell
-curl -LsSf https://astral.sh/uv/0.3.5/install.sh | sh
+curl -LsSf https://astral.sh/uv/0.4.5/install.sh | sh
 ```
 
 ### Run Locally
@@ -47,7 +47,7 @@ curl -LsSf https://astral.sh/uv/0.3.5/install.sh | sh
 This will expose the service at http://127.0.0.1:8000/docs with auto-reload features:
 
 ```shell
-uv run fastapi dev
+uv run fastapi dev src/xngin/apiserver/main.py
 ```
 
 ### Running Tests
