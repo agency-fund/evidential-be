@@ -3,7 +3,8 @@ from pathlib import Path
 from fastapi.testclient import TestClient
 from pydantic import TypeAdapter
 
-from xngin.apiserver.main import app, classify_data_type, DataTypeClass
+from xngin.apiserver.main import app, classify_data_type
+from xngin.apiserver.api_types import DataTypeClass
 from xngin.apiserver.dependencies import settings_dependency
 from xngin.apiserver.settings import SettingsForTesting, XnginSettings
 

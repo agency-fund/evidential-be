@@ -1,12 +1,18 @@
-import enum
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, HTTPException, Depends, Query
 from pydantic import BaseModel
 from typing import List, Dict, Any, Annotated, Optional, Literal
 import requests
-from datetime import datetime
 
+from xngin.apiserver.api_types import (
+    DataType,
+    DataTypeClass,
+    Relation,
+    AudienceSpec,
+    DesignSpec,
+    UnimplementedResponse,
+)
 from xngin.apiserver.dependencies import settings_dependency, dwh_dependency, Dwh
 from xngin.apiserver.settings import get_settings_for_server, XnginSettings
 from fastapi import Request
@@ -78,38 +84,6 @@ DWH_FIELD_MAP = {
 
 type UnitType = Literal[tuple(sorted(DWH_FIELD_MAP.keys()))]
 
-
-class DataType(enum.StrEnum):
-    BOOLEAN = "boolean"
-    CHARACTER_VARYING = "character varying"
-    DATE = "date"
-    INTEGER = "integer"
-    DOUBLE_PRECISION = "double precision"
-    NUMERIC = "numeric"
-    TIMESTAMP_WITHOUT_TIMEZONE = "timestamp without time zone"
-    BIGINT = "bigint"
-
-    @classmethod
-    def match(cls, value):
-        """Attempt to infer the appropriate DataType for a type."""
-        if value in DataType:
-            return DataType[value]
-        # Respect Python builtin types.
-        if value is str:
-            return DataType.CHARACTER_VARYING
-        if value is int:
-            return DataType.INTEGER
-        if value is float:
-            return DataType.DOUBLE_PRECISION
-        raise ValueError(f"Unmatched type: {value}")
-
-
-class DataTypeClass(enum.StrEnum):
-    DISCRETE = "discrete"
-    NUMERIC = "numeric"
-    UNKNOWN = "unknown"
-
-
 DISCRETE_TYPES = [DataType.BOOLEAN, DataType.CHARACTER_VARYING]
 NUMERIC_TYPES = [
     DataType.DATE,
@@ -119,12 +93,6 @@ NUMERIC_TYPES = [
     DataType.TIMESTAMP_WITHOUT_TIMEZONE,
     DataType.BIGINT,
 ]
-
-
-class Relation(enum.StrEnum):
-    INCLUDES = "includes"
-    EXCLUDES = "excludes"
-    BETWEEN = "between"
 
 
 # Helper functions
@@ -148,34 +116,6 @@ def get_relations(data_class: DataTypeClass):
             return [Relation.BETWEEN]
         case _:
             raise ValueError(f"Unsupported data class: {data_class}")
-
-
-# API Models
-class AudienceSpec(BaseModel):
-    """Audience specification."""
-
-    type: str
-    filters: List[Dict[str, Any]]
-
-
-class DesignSpec(BaseModel):
-    """Design specification."""
-
-    experiment_id: str
-    experiment_name: str
-    description: str
-    arms: List[Dict[str, str]]
-    start_date: datetime
-    end_date: datetime
-    strata_cols: List[str]
-    power: float
-    alpha: float
-    fstat_thresh: float
-    metrics: List[Dict[str, Any]]
-
-
-class UnimplementedResponse(BaseModel):
-    todo: Literal["TODO"]
 
 
 async def common_parameters(

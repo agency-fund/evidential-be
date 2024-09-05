@@ -9,7 +9,7 @@ import sqlalchemy
 import typer
 from rich.console import Console
 
-from xngin.apiserver.main import DataType
+from xngin.apiserver.api_types import DataType
 from xngin.lib.config_sheet import (
     InvalidSheetException,
     fetch_and_parse_sheet,
