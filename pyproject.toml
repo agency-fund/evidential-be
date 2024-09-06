@@ -37,7 +37,11 @@ select = [
     "E7",
     "E9",
     "F",
-    "FAST"
+    "FAST",
+    "RUF"
+]
+ignore = [
+    "RUF029"
 ]
 
 [tool.uv]

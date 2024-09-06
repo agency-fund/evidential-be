@@ -7,6 +7,7 @@ from typing import List
 import gspread
 import sqlalchemy
 import typer
+from gspread import GSpreadException
 from rich.console import Console
 
 from xngin.apiserver.api_types import DataType
@@ -52,7 +53,7 @@ def bootstrap_spreadsheet(
     dsn: str,
     table: str,
     gsheet_name: str | None = None,
-    share_email: List[str] = list(),
+    share_email: List[str] | None = None,
 ):
     """Generates a Google Spreadsheet from a SQLAlchemy DSN and a table name.
 
@@ -95,10 +96,11 @@ def bootstrap_spreadsheet(
             },
         ]
         worksheet.batch_format(formats)
-        for email in share_email:
-            # TODO: if running as a service account, also transfer ownership to one fo the email addresses.
-            sheet.share(email, perm_type="user", role="writer")
-            print(f"# Sheet shared with {email}")
+        if share_email:
+            for email in share_email:
+                # TODO: if running as a service account, also transfer ownership to one fo the email addresses.
+                sheet.share(email, perm_type="user", role="writer")
+                print(f"# Sheet shared with {email}")
         print(sheet.url)
     else:
         writer = csv.writer(sys.stdout)
@@ -118,9 +120,17 @@ def parse_config_spreadsheet(
                 f.write(as_json)
         else:
             print(as_json)
+    except GSpreadException as gse:
+        err_console.print(gse)
+        raise typer.Exit(1) from gse
+    except PermissionError as pe:
+        if isinstance(pe.__cause__, gspread.exceptions.APIError):
+            err_console.print("You do not have permission to open this spreadsheet.")
+            raise typer.Exit(1) from pe
+        raise
     except InvalidSheetException as ise:
-        err_console.print(f"Error(s):\n{str(ise)}")
-        raise typer.Exit(1)
+        err_console.print(f"Error(s):\n{ise}")
+        raise typer.Exit(1) from ise
 
 
 if __name__ == "__main__":

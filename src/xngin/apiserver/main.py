@@ -248,7 +248,7 @@ def get_metric_meta(metrics: List[str], audience_spec: AudienceSpec):
 
 # MongoDB interaction function
 def experiments_reg_request(
-    settings: XnginSettings, endpoint: str, json_data: Dict[str, Any] = None
+    settings: XnginSettings, endpoint: str, json_data: Dict[str, Any] | None = None
 ):
     url = f"https://{settings.api_host}/dev/api/v1/experiment-commit/{endpoint}"
 
