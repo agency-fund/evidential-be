@@ -10,7 +10,7 @@ import typer
 from rich.console import Console
 
 from xngin.apiserver.api_types import DataType
-from xngin.lib.config_sheet import (
+from xngin.sheets.config_sheet import (
     InvalidSheetException,
     fetch_and_parse_sheet,
     RowConfig,
@@ -35,9 +35,9 @@ def infer_config_from_schema(dsn: str, table: str):
         collected.append(
             RowConfig(
                 table=table,
-                column=column.name,
+                column_name=column.name,
                 data_type=DataType.match(column.type.python_type),
-                group="",
+                column_group="",
                 description="",
                 is_strata=False,
                 is_filter=False,
