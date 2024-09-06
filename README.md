@@ -89,3 +89,11 @@ The fix will depend on your specific environment, but these will be helpful:
 1. If on Linux, try: `sudo apt install -y libpq-dev` and then re-install dependencies.
 2. See https://www.psycopg.org/docs/install.html.
 3. See https://www.psycopg.org/docs/faq.html.
+
+## Sample configuration spreadsheets
+
+Simplified RL config:
+https://docs.google.com/spreadsheets/d/redacted/edit?gid=1616931447#gid=1616931447
+
+Config sheet corresponding to dwh.csv:
+https://docs.google.com/spreadsheets/d/redacted/edit?gid=0#gid=0
