@@ -1,13 +1,72 @@
 {
   "trusted_ips": [],
-  "customer": {
-    "api_host": "api.example.com",
-    "dwh": {
-      "user": "agency",
-      "port": 5439,
-      "host": "instance.redshift.amazonaws.com",
-      "dbname": "customer_dwh_prod",
-      "sslmode": "require"
+  "client_configs": [
+    {
+      "id": "cust",
+      "config": {
+        "type": "customer",
+        "api_host": "api.example.com",
+        "api_token": "=secret:CUSTOMER_API_TOKEN",
+        "dwh": {
+          "user": "agency",
+          "port": 5439,
+          "password": "=secret:CUSTOMER_DWH_PASSWORD",
+          "host": "instance.redshift.amazonaws.com",
+          "dbname": "customer_dwh_prod",
+          "sslmode": "require"
+        },
+        "field_map": {
+          "groups": {
+            "created": "groups_created_at",
+            "id": "groups_id",
+            "olap": "olap_groups",
+            "org_id": "organization_id",
+            "trs": "trs_groups"
+          },
+          "guardians": {
+            "created": "guardians_created_at",
+            "id": "guardian_id",
+            "olap": null,
+            "org_id": null,
+            "trs": "trs_guardians"
+          },
+          "kids": {
+            "created": null,
+            "id": "kids",
+            "olap": null,
+            "org_id": null,
+            "trs": "trs_kids"
+          },
+          "moderators": {
+            "created": "mod_created_at",
+            "id": "moderator_id",
+            "olap": null,
+            "org_id": "organization_id",
+            "trs": "trs_moderators"
+          },
+          "organizations": {
+            "created": "org_created_at",
+            "id": "organization_id",
+            "olap": "olap_organizations",
+            "org_id": "organization_id",
+            "trs": "organizations"
+          },
+          "phones": {
+            "created": "guardians_created_at",
+            "id": "guardian_id",
+            "olap": "olap_phone",
+            "org_id": null,
+            "trs": "trs_phones"
+          },
+          "schools": {
+            "created": "schools_created_at",
+            "id": "school_id",
+            "olap": "olap_school",
+            "org_id": "organizations_id",
+            "trs": "trs_schools"
+          }
+        }
+      }
     }
-  }
+  ]
 }

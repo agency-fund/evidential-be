@@ -1,8 +1,7 @@
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, HTTPException, Depends, Query
-from pydantic import BaseModel
-from typing import List, Dict, Any, Annotated, Optional, Literal
+from typing import List, Dict, Any, Annotated
 import requests
 
 from xngin.apiserver.api_types import (
@@ -12,9 +11,14 @@ from xngin.apiserver.api_types import (
     AudienceSpec,
     DesignSpec,
     UnimplementedResponse,
+    GetStrataResponseElement,
 )
-from xngin.apiserver.dependencies import settings_dependency, dwh_dependency, Dwh
-from xngin.apiserver.settings import get_settings_for_server, XnginSettings
+from xngin.apiserver.dependencies import settings_dependency, config_dependency, Dwh
+from xngin.apiserver.settings import (
+    get_settings_for_server,
+    XnginSettings,
+    ClientConfig,
+)
 from fastapi import Request
 from xngin.apiserver.utils import safe_for_headers
 
@@ -26,63 +30,6 @@ async def lifespan(_app: FastAPI):
 
 
 app = FastAPI(lifespan=lifespan)
-
-
-class DwhFieldConfig(BaseModel):
-    created: Optional[str] = None
-    id: str
-    olap: Optional[str] = None
-    org_id: Optional[str] = None
-    trs: str
-
-
-# TODO: This appears to be customer-specific; move to config?
-DWH_FIELD_MAP = {
-    "groups": DwhFieldConfig(
-        created="groups_created_at",
-        id="groups_id",
-        olap="olap_groups",
-        org_id="organization_id",
-        trs="trs_groups",
-    ),
-    "organizations": DwhFieldConfig(
-        created="org_created_at",
-        id="organization_id",
-        olap="olap_organizations",
-        org_id="organization_id",
-        trs="organizations",
-    ),
-    "phones": DwhFieldConfig(
-        created="guardians_created_at",
-        id="guardian_id",
-        olap="olap_phone",
-        trs="trs_phones",
-    ),
-    "schools": DwhFieldConfig(
-        created="schools_created_at",
-        id="school_id",
-        olap="olap_school",
-        org_id="organizations_id",
-        trs="trs_schools",
-    ),
-    "moderators": DwhFieldConfig(
-        created="mod_created_at",
-        id="moderator_id",
-        org_id="organization_id",
-        trs="trs_moderators",
-    ),
-    "kids": DwhFieldConfig(
-        id="kids",
-        trs="trs_kids",
-    ),
-    "guardians": DwhFieldConfig(
-        created="guardians_created_at",
-        id="guardian_id",
-        trs="trs_guardians",
-    ),
-}
-
-type UnitType = Literal[tuple(sorted(DWH_FIELD_MAP.keys()))]
 
 DISCRETE_TYPES = [DataType.BOOLEAN, DataType.CHARACTER_VARYING]
 NUMERIC_TYPES = [
@@ -118,32 +65,47 @@ def get_relations(data_class: DataTypeClass):
             raise ValueError(f"Unsupported data class: {data_class}")
 
 
-async def common_parameters(
-    type: Annotated[
-        UnitType,
-        Query(description="Type of unit to derive strata from."),
-    ] = "groups",
-    refresh: Annotated[bool, Query(description="Refresh the cache.")] = False,
-):
-    """Defines parameters common to the GET methods."""
-    return {"type": type, "refresh": refresh}
+class CommonQueryParams:
+    """Describes query parameters common to the /strata, /filters, and /metrics APIs."""
+
+    def __init__(
+        self,
+        group: Annotated[str, Query(description="Column group to derive strata from.")],
+        refresh: Annotated[bool, Query(description="Refresh the cache.")] = False,
+    ):
+        self.group = group
+        self.refresh = refresh
 
 
 # API Endpoints
 @app.get(
     "/strata",
     summary="Get possible strata covariates.",
-    response_model=UnimplementedResponse,
 )
 def get_strata(
-    commons: Annotated[dict, Depends(common_parameters)],
-    dwh: Annotated[Dwh, Depends(dwh_dependency)] = None,
+    commons: Annotated[CommonQueryParams, Depends()],
+    config: Annotated[ClientConfig | None, Depends(config_dependency)] = None,
 ):
     """
     Get possible strata covariates for a given unit type.
     """
-    # Implement get_strata logic
-    return UnimplementedResponse()
+    return [
+        GetStrataResponseElement(**r)
+        for r in get_strata_impl(commons.group, commons.refresh)
+    ]
+
+
+def rl_get_col_names(type):
+    if type == "groups":
+        return ["final_groups"]
+    else:
+        return [f"trs_{type}", f"olap_{type}"]
+
+
+def get_strata_impl(type: str, refresh: bool):
+    # TODO
+    return []
+    # table_names = rl_get_col_names(type)
 
 
 @app.get(
@@ -152,8 +114,8 @@ def get_strata(
     response_model=UnimplementedResponse,
 )
 def get_filters(
-    dwh: Annotated[Dwh, Depends(dwh_dependency)],
-    commons: Annotated[dict, Depends(common_parameters)],
+    dwh: Annotated[Dwh, Depends(config_dependency)],
+    commons: Annotated[CommonQueryParams, Depends()],
 ):
     # Implement get_filters logic
     return UnimplementedResponse()
@@ -165,8 +127,8 @@ def get_filters(
     response_model=UnimplementedResponse,
 )
 def get_metrics(
-    dwh: Annotated[Dwh, Depends(dwh_dependency)],
-    commons: Annotated[dict, Depends(common_parameters)],
+    dwh: Annotated[Dwh, Depends(config_dependency)],
+    commons: Annotated[CommonQueryParams, Depends()],
 ):
     # Implement get_metrics logic
     return UnimplementedResponse()
@@ -178,7 +140,7 @@ def get_metrics(
     response_model=UnimplementedResponse,
 )
 def check_power(
-    dwh: Annotated[Dwh, Depends(dwh_dependency)],
+    dwh: Annotated[Dwh, Depends(config_dependency)],
     design_spec: DesignSpec,
     audience_spec: AudienceSpec,
 ):
@@ -192,7 +154,7 @@ def check_power(
     response_model=UnimplementedResponse,
 )
 def assign_treatment(
-    dwh: Annotated[Dwh, Depends(dwh_dependency)],
+    dwh: Annotated[Dwh, Depends(config_dependency)],
     design_spec: DesignSpec,
     audience_spec: AudienceSpec,
     chosen_n: int = 1000,
@@ -207,7 +169,7 @@ def assign_treatment(
     response_model=UnimplementedResponse,
 )
 def commit_experiment(
-    dwh: Annotated[Dwh, Depends(dwh_dependency)],
+    dwh: Annotated[Dwh, Depends(config_dependency)],
     design_spec: DesignSpec,
     audience_spec: AudienceSpec,
     experiment_assignment: Dict[str, Any],
@@ -221,10 +183,18 @@ def commit_experiment(
 def debug_settings(
     request: Request,
     settings: Annotated[XnginSettings, Depends(settings_dependency)],
+    config: Annotated[ClientConfig | None, Depends(config_dependency)] = None,
 ):
-    if request.client.host in settings.trusted_ips:
-        return {"settings": settings}
-    raise HTTPException(403)
+    """Endpoint for testing purposes. Returns the current server configuration and optionally the config ID."""
+    # Secrets will not be returned because they are stored as SecretStrs, but nonetheless this method
+    # should only be invoked from trusted IP addresses.
+    if request.client.host not in settings.trusted_ips:
+        raise HTTPException(403)
+
+    config_id = None
+    if config:
+        config_id = config.id
+    return {"settings": settings, "config_id": config_id}
 
 
 # Main experiment assignment function
@@ -252,7 +222,9 @@ def experiments_reg_request(
 ):
     url = f"https://{settings.api_host}/dev/api/v1/experiment-commit/{endpoint}"
 
-    api_token = safe_for_headers(settings.customer.api_token.get_secret_value())
+    api_token = safe_for_headers(
+        settings.get_client_config("customer").config.api_token.get_secret_value()
+    )
     headers = {
         "accept": "application/json",
         "Authorization": f"Bearer {api_token}",

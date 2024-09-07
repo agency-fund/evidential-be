@@ -67,3 +67,11 @@ class DesignSpec(BaseModel):
 
 class UnimplementedResponse(BaseModel):
     todo: Literal["TODO"]
+
+
+class GetStrataResponseElement(BaseModel):
+    table_name: str
+    column_name: str
+    data_type: DataType
+    strata_group: str  # TODO: rename to column_group?
+    id: str

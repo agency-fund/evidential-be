@@ -1,11 +1,11 @@
 import json
 import os
 from functools import lru_cache
-from typing import Literal, List
+from typing import Literal, List, Union, Optional
 
-from pydantic import BaseModel, PositiveInt, SecretStr
+import sqlalchemy
+from pydantic import BaseModel, PositiveInt, SecretStr, Field
 
-from xngin.apiserver.utils import merge_dicts
 
 DEFAULT_SECRETS_DIRECTORY = "secrets"
 DEFAULT_SETTINGS_FILE = "xngin.settings.json"
@@ -16,20 +16,6 @@ def get_settings_for_server():
     """Constructs an XnginSettings for use by the API server."""
     with open(os.environ.get("XNGIN_SETTINGS", DEFAULT_SETTINGS_FILE)) as f:
         settings_raw = json.load(f)
-
-    # Also load supplemental values from the secrets/ directory.
-    for root, _, files in os.walk(
-        os.environ.get("XNGIN_SECRETS", DEFAULT_SECRETS_DIRECTORY)
-    ):
-        for key in files:
-            if key not in XnginSettings.model_fields:
-                continue
-            with open(os.path.join(root, key), "r") as f:
-                value = json.load(f)
-            if isinstance(settings_raw.get(key), dict):
-                settings_raw[key] = merge_dicts(settings_raw.get(key), value)
-            else:
-                settings_raw[key] = value
     return XnginSettings.model_validate(settings_raw)
 
 
@@ -44,16 +30,61 @@ class PostgresDsn(BaseModel):
     ]
 
 
-class RocketLearningSettings(BaseModel):
+class RocketDwhField(BaseModel):
+    created: Optional[str] = None
+    id: str
+    olap: Optional[str] = None
+    org_id: Optional[str] = None
+    trs: str
+
+
+class RocketLearningConfig(BaseModel):
+    type: Literal["customer"]
     dwh: PostgresDsn
     api_host: str
     api_token: SecretStr
+    field_map: dict[str, RocketDwhField]
+
+    def to_sqlalchemy_url(self):
+        return sqlalchemy.URL.create(
+            drivername="postgresql+psycopg2",
+            username=self.dwh.user,
+            password=self.dwh.password.get_secret_value(),
+            host=self.dwh.host,
+            port=self.dwh.port,
+            database=self.dwh.dbname,
+            query={"sslmode": self.dwh.sslmode},
+        )
+
+
+class SqliteLocalConfig(BaseModel):
+    type: Literal["sqlite_local"]
+    sqlite_filename: str
+
+    def to_sqlalchemy_url(self):
+        return sqlalchemy.URL.create(
+            drivername="sqlite", database=self.sqlite_filename, query={"mode": "ro"}
+        )
+
+
+class ClientConfig(BaseModel):
+    id: str
+    config: Union[RocketLearningConfig, SqliteLocalConfig] = Field(
+        ..., discriminator="type"
+    )
 
 
 class XnginSettings(BaseModel):
-    customer: RocketLearningSettings
     trusted_ips: List[str] = list()
     db_connect_timeout_secs: int = 3
+    client_configs: List[ClientConfig]
+
+    def get_client_config(self, config_id):
+        """Finds the config for a specific ID if it exists, or returns None."""
+        for config in self.client_configs:
+            if config.id == config_id:
+                return config
+        return None
 
 
 class SettingsForTesting(XnginSettings):

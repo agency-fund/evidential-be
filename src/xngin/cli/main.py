@@ -37,7 +37,7 @@ def infer_config_from_schema(dsn: str, table: str):
             RowConfig(
                 table=table,
                 column_name=column.name,
-                data_type=DataType.match(column.type.python_type),
+                data_type=DataType.match(column.config.python_type),
                 column_group="",
                 description="",
                 is_strata=False,
