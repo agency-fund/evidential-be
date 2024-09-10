@@ -7,6 +7,7 @@ dependencies = [
     "httpx",
     "numpy",
     "pandas",
+    "parsy>=2.1",
     "psycopg2",
     "pydantic>=2.7.0,<3.0.0",
     "pymongo",
@@ -26,6 +27,10 @@ build-backend = "hatchling.build"
 [project.scripts]
 xngin-apiserver = "xngin.apiserver.main:main"
 xngin-cli = "xngin.cli.main:app"
+
+[tool.pytest.ini_options]
+log_cli = 0  # set to 1 for live logs
+log_cli_level = "warn"
 
 [tool.ruff]
 preview = true

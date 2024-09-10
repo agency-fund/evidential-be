@@ -5,17 +5,17 @@ import sys
 from typing import List
 
 import gspread
-import sqlalchemy
 import typer
 from gspread import GSpreadException
 from rich.console import Console
 
 from xngin.apiserver.api_types import DataType
+from xngin.apiserver.settings import get_sqlalchemy_table, SqlalchemyAndTable, SheetRef
 from xngin.sheets.config_sheet import (
     InvalidSheetException,
     fetch_and_parse_sheet,
     RowConfig,
-    SheetConfig,
+    create_sheetconfig_from_table,
 )
 
 err_console = Console(stderr=True)
@@ -28,24 +28,8 @@ def infer_config_from_schema(dsn: str, table: str):
     :param dsn The SQLAlchemy-compatible DSN.
     :param table The name of the table to inspect.
     """
-    engine = sqlalchemy.create_engine(dsn)
-    metadata = sqlalchemy.MetaData()
-    dwh = sqlalchemy.Table(table, metadata, autoload_with=engine)
-    collected = []
-    for column in dwh.columns.values():
-        collected.append(
-            RowConfig(
-                table=table,
-                column_name=column.name,
-                data_type=DataType.match(column.config.python_type),
-                column_group="",
-                description="",
-                is_strata=False,
-                is_filter=False,
-                is_metric=False,
-            )
-        )
-    return SheetConfig(rows=collected)
+    dwh = get_sqlalchemy_table(SqlalchemyAndTable(sqlalchemy_url=dsn, table_name=table))
+    return create_sheetconfig_from_table(dwh)
 
 
 @app.command()
@@ -113,7 +97,7 @@ def parse_config_spreadsheet(
 ):
     """Parses a Google Spreadsheet and displays it on the console or writes it to a file."""
     try:
-        parsed = fetch_and_parse_sheet(url, worksheet)
+        parsed = fetch_and_parse_sheet(SheetRef(url=url, worksheet=worksheet))
         as_json = parsed.model_dump_json(indent=2)
         if write:
             with open(write, "w") as f:

@@ -1,10 +1,15 @@
+import csv
 from collections import Counter
-from typing import List
+from typing import List, Union
 
+import sqlalchemy
 from pydantic import BaseModel, ValidationError, field_validator, model_validator
 
+from xngin.apiserver.settings import SheetRef
 from xngin.sheets.gsheets import read_sheet
 from xngin.apiserver.api_types import DataType
+
+GOOGLE_SHEET_PREFIX = "https://docs.google.com/spreadsheets/"
 
 
 class InvalidSheetDetails(BaseModel):
@@ -107,12 +112,43 @@ class SheetConfig(BaseModel):
         return self
 
 
-def fetch_and_parse_sheet(url, worksheet):
+def parse_csv(filename: str) -> List[dict[str, Union[int, float, str]]]:
+    with open(filename, "r") as csvfile:
+        reader = csv.DictReader(csvfile)
+
+        for row in reader:
+            parsed_row = {}
+            for key, value in row.items():
+                try:
+                    # Try to convert to int first
+                    parsed_row[key] = int(value)
+                except ValueError:
+                    try:
+                        # If not int, try float
+                        parsed_row[key] = float(value)
+                    except ValueError:
+                        # If not float, keep as string
+                        parsed_row[key] = value
+
+            yield parsed_row
+
+
+def read_sheet_from_file(path):
+    """Reads a spreadsheet from a CSV file."""
+    return list(parse_csv(path))
+
+
+def fetch_and_parse_sheet(ref: SheetRef):
     """Fetches a Google Spreadsheet and parses it into a SheetConfig.
 
     :raise InvalidSheetException if there are any problems with the sheet.
     """
-    sheet = read_sheet(url, worksheet).get_all_records()
+    if ref.url.startswith(GOOGLE_SHEET_PREFIX):
+        sheet = read_sheet(ref.url, ref.worksheet).get_all_records()
+    elif ref.url.startswith("file://"):
+        sheet = read_sheet_from_file(ref.url[len("file://") :])
+    else:
+        raise ValueError("Path to configuration spreadsheet is not usable.")
     num_rows = len(sheet)
     if num_rows == 0:
         raise InvalidSheetException([
@@ -142,3 +178,23 @@ def fetch_and_parse_sheet(url, worksheet):
     if errors:
         raise InvalidSheetException(errors)
     return parsed
+
+
+def create_sheetconfig_from_table(table: sqlalchemy.Table):
+    collected = []
+    for column in table.columns.values():
+        type_hint = column.type
+        collected.append(
+            RowConfig(
+                table=table.name,
+                column_name=column.name,
+                # data_type=DataType.match(column.config.python_type),
+                data_type=DataType.match(type_hint),
+                column_group="",
+                description="",
+                is_strata=False,
+                is_filter=False,
+                is_metric=False,
+            )
+        )
+    return SheetConfig(rows=collected)

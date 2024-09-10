@@ -1,7 +1,7 @@
 import enum
 from datetime import datetime
 from typing import List, Dict, Any, Literal
-
+import sqlalchemy.sql.sqltypes
 from pydantic import BaseModel
 
 
@@ -26,6 +26,12 @@ class DataType(enum.StrEnum):
         if value is int:
             return DataType.INTEGER
         if value is float:
+            return DataType.DOUBLE_PRECISION
+        if isinstance(value, sqlalchemy.sql.sqltypes.String):
+            return DataType.CHARACTER_VARYING
+        if isinstance(value, sqlalchemy.sql.sqltypes.Integer):
+            return DataType.INTEGER
+        if isinstance(value, sqlalchemy.sql.sqltypes.Float):
             return DataType.DOUBLE_PRECISION
         raise ValueError(f"Unmatched type: {value}")
 
@@ -71,7 +77,9 @@ class UnimplementedResponse(BaseModel):
 
 class GetStrataResponseElement(BaseModel):
     table_name: str
-    column_name: str
     data_type: DataType
-    strata_group: str  # TODO: rename to column_group?
-    id: str
+    column_name: str
+    description: str
+    strata_group: str
+    strata_default: bool
+    id: str  # same as column_name

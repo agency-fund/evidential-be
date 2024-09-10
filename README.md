@@ -86,3 +86,10 @@ https://docs.google.com/spreadsheets/d/redacted/edit?gid=1616931447#gid=16169314
 
 Config sheet corresponding to dwh.csv:
 https://docs.google.com/spreadsheets/d/redacted/edit?gid=0#gid=0
+
+
+## TODO
+
+- Cache spreadsheet fetch
+- Tests shouldn't fetch spreadsheet
+- Generate the testing database during tests

@@ -55,8 +55,3 @@ def test_classify_data_type():
     assert classify_data_type("foo_id", "date") == DataTypeClass.DISCRETE
     assert classify_data_type("test", "boolean") == DataTypeClass.DISCRETE
     assert classify_data_type("foo", "date") == DataTypeClass.NUMERIC
-
-
-def test_strata():
-    response = client.get("/strata?group=guardians", headers={"Config-ID": "testing"})
-    assert response.status_code == 200, response.content

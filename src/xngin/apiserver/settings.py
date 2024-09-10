@@ -6,7 +6,6 @@ from typing import Literal, List, Union, Optional
 import sqlalchemy
 from pydantic import BaseModel, PositiveInt, SecretStr, Field
 
-
 DEFAULT_SECRETS_DIRECTORY = "secrets"
 DEFAULT_SETTINGS_FILE = "xngin.settings.json"
 
@@ -38,32 +37,59 @@ class RocketDwhField(BaseModel):
     trs: str
 
 
+class SqlalchemyAndTable(BaseModel):
+    sqlalchemy_url: str
+    table_name: str
+
+
+class SheetRef(BaseModel):
+    url: str
+    worksheet: str
+
+
 class RocketLearningConfig(BaseModel):
     type: Literal["customer"]
+    table_name: str
+    sheet: SheetRef
     dwh: PostgresDsn
     api_host: str
     api_token: SecretStr
     field_map: dict[str, RocketDwhField]
 
-    def to_sqlalchemy_url(self):
-        return sqlalchemy.URL.create(
-            drivername="postgresql+psycopg2",
-            username=self.dwh.user,
-            password=self.dwh.password.get_secret_value(),
-            host=self.dwh.host,
-            port=self.dwh.port,
-            database=self.dwh.dbname,
-            query={"sslmode": self.dwh.sslmode},
+    def to_sqlalchemy_url_and_table(self) -> SqlalchemyAndTable:
+        return SqlalchemyAndTable(
+            sqlalchemy_url=str(
+                sqlalchemy.URL.create(
+                    drivername="postgresql+psycopg2",
+                    username=self.dwh.user,
+                    password=self.dwh.password.get_secret_value(),
+                    host=self.dwh.host,
+                    port=self.dwh.port,
+                    database=self.dwh.dbname,
+                    query={"sslmode": self.dwh.sslmode},
+                )
+            ),
+            table_name=self.table_name,
         )
 
 
 class SqliteLocalConfig(BaseModel):
     type: Literal["sqlite_local"]
+    table_name: str
+    sheet: SheetRef
     sqlite_filename: str
 
-    def to_sqlalchemy_url(self):
-        return sqlalchemy.URL.create(
-            drivername="sqlite", database=self.sqlite_filename, query={"mode": "ro"}
+    def to_sqlalchemy_url_and_table(self) -> SqlalchemyAndTable:
+        """Returns a tuple of SQLAlchemy URL and a table name."""
+        return SqlalchemyAndTable(
+            sqlalchemy_url=str(
+                sqlalchemy.URL.create(
+                    drivername="sqlite",
+                    database=self.sqlite_filename,
+                    query={"mode": "ro"},
+                )
+            ),
+            table_name=self.table_name,
         )
 
 
@@ -89,3 +115,10 @@ class XnginSettings(BaseModel):
 
 class SettingsForTesting(XnginSettings):
     pass
+
+
+def get_sqlalchemy_table(sqlat: SqlalchemyAndTable):
+    """Connects to a SQLAlchemy DSN and creates a sqlalchemy.Table for introspection."""
+    engine = sqlalchemy.create_engine(sqlat.sqlalchemy_url)
+    metadata = sqlalchemy.MetaData()
+    return sqlalchemy.Table(sqlat.table_name, metadata, autoload_with=engine)

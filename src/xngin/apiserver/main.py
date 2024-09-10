@@ -3,6 +3,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI, HTTPException, Depends, Query
 from typing import List, Dict, Any, Annotated
 import requests
+from sqlalchemy.exc import NoSuchTableError
 
 from xngin.apiserver.api_types import (
     DataType,
@@ -18,9 +19,14 @@ from xngin.apiserver.settings import (
     get_settings_for_server,
     XnginSettings,
     ClientConfig,
+    get_sqlalchemy_table,
 )
 from fastapi import Request
 from xngin.apiserver.utils import safe_for_headers
+from xngin.sheets.config_sheet import (
+    fetch_and_parse_sheet,
+    create_sheetconfig_from_table,
+)
 
 
 @asynccontextmanager
@@ -84,15 +90,52 @@ class CommonQueryParams:
 )
 def get_strata(
     commons: Annotated[CommonQueryParams, Depends()],
-    config: Annotated[ClientConfig | None, Depends(config_dependency)] = None,
+    client: Annotated[ClientConfig | None, Depends(config_dependency)] = None,
 ):
     """
     Get possible strata covariates for a given unit type.
+
+    This reimplements dwh.R get_strata().
     """
-    return [
-        GetStrataResponseElement(**r)
-        for r in get_strata_impl(commons.group, commons.refresh)
-    ]
+    config = client.config
+
+    # TODO: determine if the RL behavior should be ported
+    if commons.group != config.table_name:
+        raise HTTPException(400, "group parameter must match configured table name.")
+
+    # TODO: Cache this
+    try:
+        table = get_sqlalchemy_table(config.to_sqlalchemy_url_and_table())
+    except NoSuchTableError as nste:
+        raise HTTPException(
+            status_code=500,
+            detail=f"The configured table '{config.table_name}' does not exist.",
+        ) from nste
+    db_schema = {c.column_name: c for c in create_sheetconfig_from_table(table).rows}
+
+    # TODO: Cache this
+    fetched = fetch_and_parse_sheet(config.sheet)
+    config_schema = {
+        c.column_name: c
+        for c in fetched.rows
+        if c.table == config.table_name and c.is_strata
+    }
+    return sorted(
+        [
+            GetStrataResponseElement(
+                table_name=config.table_name,
+                data_type=db_schema.get(col_name).data_type,
+                column_name=col_name,
+                description=db_schema.get(col_name).description,
+                strata_group=config_col.column_group,
+                strata_default=False,  # TODO
+                id=col_name,
+            )
+            for col_name, config_col in config_schema.items()
+            if db_schema.get(col_name)
+        ],
+        key=lambda item: item.id,
+    )
 
 
 def rl_get_col_names(type):
