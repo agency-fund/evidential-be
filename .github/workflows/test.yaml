@@ -64,5 +64,7 @@ jobs:
           uv run xngin-cli --help
           uv run xngin-cli bootstrap-testing-dwh --force
           uv run xngin-cli export-json-schemas
+      - name: build docker image
+        run: docker build .
       - name: Minimize UV Cache contents
         run: uv cache prune --ci
