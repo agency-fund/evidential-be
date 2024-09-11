@@ -1,6 +1,7 @@
 """Command line tool for various xngin-related operations."""
 
 import csv
+import json
 import logging
 import sys
 from pathlib import Path
@@ -12,13 +13,19 @@ from gspread import GSpreadException
 from rich.console import Console
 
 from xngin.apiserver.api_types import DataType
-from xngin.apiserver.settings import get_sqlalchemy_table, SqlalchemyAndTable, SheetRef
+from xngin.apiserver.settings import (
+    get_sqlalchemy_table,
+    SqlalchemyAndTable,
+    SheetRef,
+    XnginSettings,
+)
 from xngin.apiserver.testing import testing_dwh
 from xngin.sheets.config_sheet import (
     InvalidSheetException,
     fetch_and_parse_sheet,
     RowConfig,
     create_sheetconfig_from_table,
+    SheetConfig,
 )
 
 err_console = Console(stderr=True)
@@ -132,6 +139,18 @@ def parse_config_spreadsheet(
     except InvalidSheetException as ise:
         err_console.print(f"Error(s):\n{ise}")
         raise typer.Exit(1) from ise
+
+
+@app.command()
+def export_json_schemas(output: Path = ".schemas"):
+    """Generates JSON schemas for Xngin settings files."""
+    if not output.exists():
+        output.mkdir()
+    for model in (XnginSettings, SheetConfig):
+        filename = output / (model.__name__ + ".schema.json")
+        with open(filename, "w") as outf:
+            outf.write(json.dumps(model.model_json_schema(), indent=2, sort_keys=True))
+            print(f"Write {filename}.")
 
 
 if __name__ == "__main__":

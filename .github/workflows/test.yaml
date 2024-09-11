@@ -63,5 +63,6 @@ jobs:
         run: |
           uv run xngin-cli --help
           uv run xngin-cli bootstrap-testing-dwh --force
+          uv run xngin-cli export-json-schemas
       - name: Minimize UV Cache contents
         run: uv cache prune --ci
