@@ -4,28 +4,12 @@ from pathlib import Path
 
 import pytest
 from fastapi.testclient import TestClient
-from pydantic import TypeAdapter, ValidationError
 
+from xngin.apiserver import conftest
 from xngin.apiserver.main import app
-from xngin.apiserver.dependencies import settings_dependency
-from xngin.apiserver.settings import SettingsForTesting, XnginSettings
 from xngin.apiserver.testing.hurl import Hurl
 
-
-def get_settings_for_test() -> XnginSettings:
-    filename = Path(__file__).parent / "testdata/xngin.testing.settings.json"
-    with open(filename) as f:
-        try:
-            contents = f.read()
-            return TypeAdapter(SettingsForTesting).validate_json(contents)
-        except ValidationError as pyve:
-            print(f"Failed to parse {filename}. Contents:\n{contents}")
-            raise pyve
-
-
-# https://fastapi.tiangolo.com/advanced/testing-dependencies/#use-the-appdependency_overrides-attribute
-app.dependency_overrides[settings_dependency] = get_settings_for_test
-
+conftest.setup(app)
 client = TestClient(app)
 
 STATIC_TESTS = tuple(glob.glob(str(Path(__file__).parent / "testdata/*.hurl")))

@@ -1,23 +1,59 @@
-"""conftest defines some testing fixtures that will be run automatically before tests in this module are run."""
+"""conftest configures FastAPI dependency injection for testing and also does some setup before tests in this module are run."""
 
 import os
-import sqlite3
 from pathlib import Path
 import logging
-import pandas as pd
 import pytest
+import sqlalchemy
+from pydantic import TypeAdapter, ValidationError
+from sqlalchemy import StaticPool
+from sqlalchemy.orm import sessionmaker
+
+from xngin.apiserver import database
+from xngin.apiserver.dependencies import settings_dependency, db_session
+from xngin.apiserver.settings import XnginSettings, SettingsForTesting
+from xngin.apiserver.testing import testing_dwh
 
 logger = logging.getLogger(__name__)
 
 
-def import_csv_to_sqlite(source_csv, destination, table_name="sample_group"):
-    """Imports a CSV file to a SQLite database."""
-    print(f"Importing {source_csv} to {destination}")
-    df = pd.read_csv(source_csv)
-    with sqlite3.connect(destination) as conn:
-        df.to_sql(table_name, conn, if_exists="replace", index=False)
-        conn.commit()
-    conn.close()
+def get_settings_for_test() -> XnginSettings:
+    filename = Path(__file__).parent / "testdata/xngin.testing.settings.json"
+    with open(filename) as f:
+        try:
+            contents = f.read()
+            return TypeAdapter(SettingsForTesting).validate_json(contents)
+        except ValidationError as pyve:
+            print(f"Failed to parse {filename}. Contents:\n{contents}")
+            raise pyve
+
+
+def setup(app):
+    """Configures FastAPI dependencies for testing."""
+
+    db_engine = sqlalchemy.create_engine(
+        "sqlite://",
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
+    )
+    testing_session_local = sessionmaker(
+        autocommit=False, autoflush=False, bind=db_engine
+    )
+    # Hack: Cause any direct access to production code from code to fail during tests.
+    database.SessionLocal = None
+    # Create all the ORM tables.
+    database.Base.metadata.create_all(bind=db_engine)
+
+    def get_db_for_test():
+        db = testing_session_local()
+        try:
+            yield db
+        finally:
+            db.close()
+
+    # https://fastapi.tiangolo.com/advanced/testing-dependencies/#use-the-appdependency_overrides-attribute
+    app.dependency_overrides[db_session] = get_db_for_test
+    app.dependency_overrides[settings_dependency] = get_settings_for_test
 
 
 @pytest.fixture(scope="module", autouse=True)
@@ -37,6 +73,4 @@ def ensure_dwh_sqlite_database_exists(ensure_correct_working_directory):
     db = Path(__file__).parent / "testdata/testing_dwh.sqlite"
     if db.exists():
         return
-    src = Path(__file__).parent / "testdata/testing_dwh.csv.zst"
-    logger.warning(f"Creating temporary SQLite database {db} from {src}.")
-    import_csv_to_sqlite(src, db)
+    testing_dwh.create_dwh_sqlite_database()

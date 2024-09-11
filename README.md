@@ -21,6 +21,26 @@ xngin.settings.json file. Unit tests use the xngin.testing.settings.json file.
 xngin.settings.json can be committed to version control but secret values should not be. They should be referred to with
 `=secret:NAME` syntax. Resolving these values is not yet implemented.
 
+For local development, use the testing settings file:
+
+```shell
+export XNGIN_SETTINGS=src/xngin/apiserver/testdata/xngin.testing.settings.json
+```
+
+Each request should have an HTTP request header `Config-ID` set to the `id` value of a configuration entry in the
+settings file. For testing and local dev, use `testing`.
+
+Example 1:
+
+```shell
+$ curl -X 'GET' \
+  'http://localhost:8000/strata?group=sample_group&refresh=false' \
+  -H 'accept: application/json' \
+  -H 'config-id: testing'
+```
+
+Example 2: See [apitest.strata.hurl](src/xngin/apiserver/testdata/apitest.strata.hurl) for a complete example.
+
 ## Helpful Commands
 
 ## Prerequisite
@@ -36,6 +56,7 @@ curl -LsSf https://astral.sh/uv/0.4.5/install.sh | sh
 This will expose the service at http://127.0.0.1:8000/docs with auto-reload features:
 
 ```shell
+export XNGIN_SETTINGS=src/xngin/apiserver/testdata/xngin.testing.settings.json
 uv run fastapi dev src/xngin/apiserver/main.py
 ```
 
@@ -87,9 +108,6 @@ https://docs.google.com/spreadsheets/d/redacted/edit?gid=1616931447#gid=16169314
 Config sheet corresponding to dwh.csv:
 https://docs.google.com/spreadsheets/d/redacted/edit?gid=0#gid=0
 
-
 ## TODO
 
 - Cache spreadsheet fetch
-- Tests shouldn't fetch spreadsheet
-- Generate the testing database during tests

@@ -57,7 +57,13 @@ jobs:
           openssl sha256 ~/.config/gspread/service_account.json
         env:
           GCLOUD_SERVICE_ACCOUNT_CREDENTIALS: ${{ secrets.GOOGLE_APPLICATION_CREDENTIALS_CONTENT }}
-      - name: pytest
+      - name: pytest unit tests
         run: uv run pytest
+      - name: pytest integration tests
+        run: uv run pytest -m integration
+      - name: xngin-cli smoke tests
+        run: |
+          xngin-cli --help
+          xngin-cli bootstrap-testing-dwh --force
       - name: Minimize UV Cache contents
         run: uv cache prune --ci

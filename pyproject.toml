@@ -31,6 +31,8 @@ xngin-cli = "xngin.cli.main:app"
 [tool.pytest.ini_options]
 log_cli = 0  # set to 1 for live logs
 log_cli_level = "warn"
+markers = "integration: integration tests that rely on remote resources"
+addopts = "-m 'not integration'"
 
 [tool.ruff]
 preview = true

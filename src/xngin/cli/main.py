@@ -1,7 +1,9 @@
 """Command line tool for various xngin-related operations."""
 
 import csv
+import logging
 import sys
+from pathlib import Path
 from typing import List
 
 import gspread
@@ -11,6 +13,7 @@ from rich.console import Console
 
 from xngin.apiserver.api_types import DataType
 from xngin.apiserver.settings import get_sqlalchemy_table, SqlalchemyAndTable, SheetRef
+from xngin.apiserver.testing import testing_dwh
 from xngin.sheets.config_sheet import (
     InvalidSheetException,
     fetch_and_parse_sheet,
@@ -21,6 +24,10 @@ from xngin.sheets.config_sheet import (
 err_console = Console(stderr=True)
 app = typer.Typer(help=__doc__)
 
+logging.basicConfig(
+    level="INFO", format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+)
+
 
 def infer_config_from_schema(dsn: str, table: str):
     """Infers a configuration from a SQLAlchemy schema.
@@ -30,6 +37,16 @@ def infer_config_from_schema(dsn: str, table: str):
     """
     dwh = get_sqlalchemy_table(SqlalchemyAndTable(sqlalchemy_url=dsn, table_name=table))
     return create_sheetconfig_from_table(dwh)
+
+
+@app.command()
+def bootstrap_testing_dwh(
+    src: Path = testing_dwh.TESTING_DWH_RAW_DATA,
+    dest: Path = testing_dwh.TESTING_DWH_SQLITE_PATH,
+    force: bool = False,
+):
+    """Bootstraps the local testing data warehouse."""
+    testing_dwh.create_dwh_sqlite_database(src, dest, force=force)
 
 
 @app.command()

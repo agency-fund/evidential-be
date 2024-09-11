@@ -1,11 +1,11 @@
 from typing import Annotated
 
-import psycopg2
 from fastapi import Depends, Header
+from sqlalchemy.orm import Session
 
+from xngin.apiserver.database import SessionLocal
+from xngin.apiserver.gsheet_cache import GSheetCache
 from xngin.apiserver.settings import get_settings_for_server, XnginSettings
-
-type Dwh = psycopg2.extensions.connection
 
 
 def settings_dependency():
@@ -24,3 +24,16 @@ def config_dependency(
     if not config_id:
         return None
     return settings.get_client_config(config_id)
+
+
+def db_session() -> Session:
+    """Returns a database connection."""
+    db = SessionLocal()
+    try:
+        yield db
+    finally:
+        db.close()
+
+
+def gsheet_cache(session: Annotated[Session, Depends(db_session)]):
+    return GSheetCache(session)

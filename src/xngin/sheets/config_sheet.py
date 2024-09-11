@@ -6,7 +6,7 @@ import sqlalchemy
 from pydantic import BaseModel, ValidationError, field_validator, model_validator
 
 from xngin.apiserver.settings import SheetRef
-from xngin.sheets.gsheets import read_sheet
+from xngin.sheets.gsheets import read_sheet_from_gsheet
 from xngin.apiserver.api_types import DataType
 
 GOOGLE_SHEET_PREFIX = "https://docs.google.com/spreadsheets/"
@@ -144,7 +144,7 @@ def fetch_and_parse_sheet(ref: SheetRef):
     :raise InvalidSheetException if there are any problems with the sheet.
     """
     if ref.url.startswith(GOOGLE_SHEET_PREFIX):
-        sheet = read_sheet(ref.url, ref.worksheet).get_all_records()
+        sheet = read_sheet_from_gsheet(ref.url, ref.worksheet)
     elif ref.url.startswith("file://"):
         sheet = read_sheet_from_file(ref.url[len("file://") :])
     else:

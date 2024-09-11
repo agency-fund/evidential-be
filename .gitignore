@@ -164,3 +164,7 @@ cython_debug/
 
 # local secrets
 secrets
+
+# local cache
+xngin.sqlite
+testing.sqlite

@@ -5,6 +5,7 @@ from typing import List, Dict, Any, Annotated
 import requests
 from sqlalchemy.exc import NoSuchTableError
 
+from xngin.apiserver import database
 from xngin.apiserver.api_types import (
     DataType,
     DataTypeClass,
@@ -14,7 +15,12 @@ from xngin.apiserver.api_types import (
     UnimplementedResponse,
     GetStrataResponseElement,
 )
-from xngin.apiserver.dependencies import settings_dependency, config_dependency, Dwh
+from xngin.apiserver.dependencies import (
+    settings_dependency,
+    config_dependency,
+    gsheet_cache,
+)
+from xngin.apiserver.gsheet_cache import GSheetCache
 from xngin.apiserver.settings import (
     get_settings_for_server,
     XnginSettings,
@@ -32,6 +38,7 @@ from xngin.sheets.config_sheet import (
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
     get_settings_for_server()
+    database.setup()
     yield
 
 
@@ -90,6 +97,7 @@ class CommonQueryParams:
 )
 def get_strata(
     commons: Annotated[CommonQueryParams, Depends()],
+    gsheet_cache: Annotated[GSheetCache, Depends(gsheet_cache)],
     client: Annotated[ClientConfig | None, Depends(config_dependency)] = None,
 ):
     """
@@ -97,6 +105,10 @@ def get_strata(
 
     This reimplements dwh.R get_strata().
     """
+    if not client:
+        raise HTTPException(
+            404, "Configuration for the requested client was not found."
+        )
     config = client.config
 
     # TODO: determine if the RL behavior should be ported
@@ -114,7 +126,11 @@ def get_strata(
     db_schema = {c.column_name: c for c in create_sheetconfig_from_table(table).rows}
 
     # TODO: Cache this
-    fetched = fetch_and_parse_sheet(config.sheet)
+    fetched = gsheet_cache.get(
+        config.sheet,
+        lambda: fetch_and_parse_sheet(config.sheet),
+        refresh=commons.refresh,
+    )
     config_schema = {
         c.column_name: c
         for c in fetched.rows
@@ -157,8 +173,8 @@ def get_strata_impl(type: str, refresh: bool):
     response_model=UnimplementedResponse,
 )
 def get_filters(
-    dwh: Annotated[Dwh, Depends(config_dependency)],
     commons: Annotated[CommonQueryParams, Depends()],
+    client: Annotated[ClientConfig | None, Depends(config_dependency)] = None,
 ):
     # Implement get_filters logic
     return UnimplementedResponse()
@@ -170,8 +186,8 @@ def get_filters(
     response_model=UnimplementedResponse,
 )
 def get_metrics(
-    dwh: Annotated[Dwh, Depends(config_dependency)],
     commons: Annotated[CommonQueryParams, Depends()],
+    client: Annotated[ClientConfig | None, Depends(config_dependency)] = None,
 ):
     # Implement get_metrics logic
     return UnimplementedResponse()
@@ -183,9 +199,9 @@ def get_metrics(
     response_model=UnimplementedResponse,
 )
 def check_power(
-    dwh: Annotated[Dwh, Depends(config_dependency)],
     design_spec: DesignSpec,
     audience_spec: AudienceSpec,
+    client: Annotated[ClientConfig | None, Depends(config_dependency)] = None,
 ):
     # Implement power calculation logic
     return UnimplementedResponse()
@@ -197,9 +213,9 @@ def check_power(
     response_model=UnimplementedResponse,
 )
 def assign_treatment(
-    dwh: Annotated[Dwh, Depends(config_dependency)],
     design_spec: DesignSpec,
     audience_spec: AudienceSpec,
+    client: Annotated[ClientConfig | None, Depends(config_dependency)] = None,
     chosen_n: int = 1000,
 ):
     # Implement treatment assignment logic
@@ -212,11 +228,11 @@ def assign_treatment(
     response_model=UnimplementedResponse,
 )
 def commit_experiment(
-    dwh: Annotated[Dwh, Depends(config_dependency)],
     design_spec: DesignSpec,
     audience_spec: AudienceSpec,
     experiment_assignment: Dict[str, Any],
     user_id: str = "testuser",
+    client: Annotated[ClientConfig | None, Depends(config_dependency)] = None,
 ):
     # Implement experiment commit logic
     return UnimplementedResponse()
@@ -291,6 +307,8 @@ def experiments_reg_request(
 
 
 def main():
+    database.setup()
+
     import uvicorn
 
     uvicorn.run(app, host="0.0.0.0", port=8000)
