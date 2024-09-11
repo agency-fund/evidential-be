@@ -150,7 +150,7 @@ def export_json_schemas(output: Path = ".schemas"):
         filename = output / (model.__name__ + ".schema.json")
         with open(filename, "w") as outf:
             outf.write(json.dumps(model.model_json_schema(), indent=2, sort_keys=True))
-            print(f"Write {filename}.")
+            print(f"Wrote {filename}.")
 
 
 if __name__ == "__main__":
