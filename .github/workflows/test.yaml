@@ -49,8 +49,6 @@ jobs:
           # Install postgres so that the Python psycopg2 module can build from source.
           brew install postgresql@14
       - run: uv sync --locked
-        env:
-          UV_SYSTEM_PYTHON: 1
       - name: write secrets
         run: |
           mkdir -p ~/.config/gspread && echo "${GCLOUD_SERVICE_ACCOUNT_CREDENTIALS}" > ~/.config/gspread/service_account.json
@@ -63,7 +61,7 @@ jobs:
         run: uv run pytest -m integration
       - name: xngin-cli smoke tests
         run: |
-          xngin-cli --help
-          xngin-cli bootstrap-testing-dwh --force
+          uv run xngin-cli --help
+          uv run xngin-cli bootstrap-testing-dwh --force
       - name: Minimize UV Cache contents
         run: uv cache prune --ci
