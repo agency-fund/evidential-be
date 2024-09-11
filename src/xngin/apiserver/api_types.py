@@ -17,10 +17,12 @@ class DataType(enum.StrEnum):
 
     @classmethod
     def match(cls, value):
-        """Attempt to infer the appropriate DataType for a type."""
+        """Attempt to infer the appropriate DataType for a value.
+
+        Value may be a Python type or a SQLAlchemy type.
+        """
         if value in DataType:
             return DataType[value]
-        # Respect Python builtin types.
         if value is str:
             return DataType.CHARACTER_VARYING
         if value is int:
@@ -33,7 +35,9 @@ class DataType(enum.StrEnum):
             return DataType.INTEGER
         if isinstance(value, sqlalchemy.sql.sqltypes.Float):
             return DataType.DOUBLE_PRECISION
-        raise ValueError(f"Unmatched type: {value}")
+        if isinstance(value, sqlalchemy.sql.sqltypes.Boolean):
+            return DataType.BOOLEAN
+        raise ValueError(f"Unmatched type: {value}.")
 
 
 class DataTypeClass(enum.StrEnum):
