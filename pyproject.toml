@@ -36,6 +36,7 @@ addopts = "-m 'not integration'"
 
 [tool.ruff]
 preview = true
+exclude = ["*.ipynb"]
 
 [tool.ruff.lint]
 select = [
