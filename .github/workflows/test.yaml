@@ -48,6 +48,8 @@ jobs:
         run: |
           # Install postgres so that the Python psycopg2 module can build from source.
           brew install postgresql@14
+          # Docker isn't included in OSX base images
+          brew install docker colima
       - run: uv sync --locked
       - name: write secrets
         run: |
