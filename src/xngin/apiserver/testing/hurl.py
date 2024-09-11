@@ -29,7 +29,7 @@ class Hurl(BaseModel):
     body: str | None = None
 
     @staticmethod
-    def from_script(script):
+    def from_script(script: str):
         """Constructs a Hurl from a string."""
 
         @generate
