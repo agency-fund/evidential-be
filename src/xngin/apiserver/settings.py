@@ -119,10 +119,11 @@ class SettingsForTesting(XnginSettings):
 
 def get_sqlalchemy_table(sqlat: SqlalchemyAndTable):
     """Connects to a SQLAlchemy DSN and creates a sqlalchemy.Table for introspection."""
+    connect_args = {}
     if sqlat.sqlalchemy_url.startswith("postgres"):
-        connect_args = {"connect_timeout": 5}
-    else:
-        connect_args = {"timeout": 5}
+        connect_args["connect_timeout"] = 5
+    elif sqlat.sqlalchemy_url.startswith("sqlite"):
+        connect_args["timeout"] = 5
     engine = sqlalchemy.create_engine(sqlat.sqlalchemy_url, connect_args=connect_args)
     metadata = sqlalchemy.MetaData()
     return sqlalchemy.Table(sqlat.table_name, metadata, autoload_with=engine)
