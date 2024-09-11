@@ -48,12 +48,6 @@ jobs:
         run: |
           # Install postgres so that the Python psycopg2 module can build from source.
           brew install postgresql@14
-
-          # Docker isn't included in OSX base images
-          brew install docker colima docker-buildx
-          mkdir -p ~/.docker/cli-plugins
-          ln -sfn $HOMEBREW_PREFIX/opt/docker-buildx/bin/docker-buildx ~/.docker/cli-plugins/docker-buildx
-          colima start
       - run: uv sync --locked
       - name: write secrets
         run: |
@@ -71,6 +65,7 @@ jobs:
           uv run xngin-cli bootstrap-testing-dwh --force
           uv run xngin-cli export-json-schemas
       - name: build docker image
+        if: startsWith(matrix.os, 'ubuntu-')
         run: docker build .
       - name: Minimize UV Cache contents
         run: uv cache prune --ci
