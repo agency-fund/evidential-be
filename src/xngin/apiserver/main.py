@@ -115,7 +115,6 @@ def get_strata(
     if commons.group != config.table_name:
         raise HTTPException(400, "group parameter must match configured table name.")
 
-    # TODO: Cache this
     try:
         table = get_sqlalchemy_table(config.to_sqlalchemy_url_and_table())
     except NoSuchTableError as nste:
@@ -125,7 +124,6 @@ def get_strata(
         ) from nste
     db_schema = {c.column_name: c for c in create_sheetconfig_from_table(table).rows}
 
-    # TODO: Cache this
     fetched = gsheet_cache.get(
         config.sheet,
         lambda: fetch_and_parse_sheet(config.sheet),

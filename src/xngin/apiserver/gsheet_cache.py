@@ -8,6 +8,8 @@ from xngin.sheets.config_sheet import SheetConfig
 
 
 class GSheetCache:
+    """Implements a simple read-through cache for Google Sheets data backed by a SQLite database."""
+
     def __init__(self, session: Session):
         self.session = session
 
