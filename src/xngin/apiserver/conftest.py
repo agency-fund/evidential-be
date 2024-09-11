@@ -69,8 +69,5 @@ def ensure_correct_working_directory():
 
 @pytest.fixture(scope="module", autouse=True)
 def ensure_dwh_sqlite_database_exists(ensure_correct_working_directory):
-    """Create testing_dwh.sqlite, if it doesn't already exist."""
-    db = Path(__file__).parent / "testdata/testing_dwh.sqlite"
-    if db.exists():
-        return
+    """Create testing_dwh.db, if it doesn't already exist."""
     testing_dwh.create_dwh_sqlite_database()

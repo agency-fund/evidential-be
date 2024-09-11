@@ -84,7 +84,7 @@
           "url": "file://src/xngin/apiserver/testdata/testing_sheet.csv",
           "worksheet": "Sheet1"
         },
-        "sqlite_filename": "src/xngin/apiserver/testdata/testing_dwh.sqlite"
+        "sqlite_filename": "src/xngin/apiserver/testdata/testing_dwh.db"
       }
     }
   ]

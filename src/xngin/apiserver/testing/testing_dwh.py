@@ -8,7 +8,7 @@ import logging
 
 logger = logging.getLogger(__name__)
 
-TESTING_DWH_SQLITE_PATH = Path(__file__).parent.parent / "testdata/testing_dwh.sqlite"
+TESTING_DWH_SQLITE_PATH = Path(__file__).parent.parent / "testdata/testing_dwh.db"
 TESTING_DWH_RAW_DATA = Path(__file__).parent.parent / "testdata/testing_dwh.csv.zst"
 
 
