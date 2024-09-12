@@ -1,7 +1,7 @@
 import json
 import os
 from functools import lru_cache
-from typing import Literal, List, Union, Optional
+from typing import Literal, List, Union
 
 import sqlalchemy
 from pydantic import BaseModel, PositiveInt, SecretStr, Field
@@ -30,14 +30,6 @@ class PostgresDsn(BaseModel):
     ]
 
 
-class RocketDwhField(BaseModel):
-    created: Optional[str] = None
-    id: str
-    olap: Optional[str] = None
-    org_id: Optional[str] = None
-    trs: str
-
-
 class SqlalchemyAndTable(BaseModel):
     sqlalchemy_url: str
     table_name: str
@@ -55,7 +47,6 @@ class RocketLearningConfig(BaseModel):
     dwh: PostgresDsn
     api_host: str
     api_token: SecretStr
-    field_map: dict[str, RocketDwhField]
 
     def to_sqlalchemy_url_and_table(self) -> SqlalchemyAndTable:
         return SqlalchemyAndTable(

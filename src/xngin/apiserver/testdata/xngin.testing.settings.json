@@ -21,59 +21,8 @@
           "password": "password",
           "dbname": "dbname",
           "sslmode": "require"
-        },
-        "field_map": {
-          "groups": {
-            "created": "groups_created_at",
-            "id": "groups_id",
-            "olap": "olap_groups",
-            "org_id": "organization_id",
-            "trs": "trs_groups"
-          },
-          "guardians": {
-            "created": "guardians_created_at",
-            "id": "guardian_id",
-            "olap": null,
-            "org_id": null,
-            "trs": "trs_guardians"
-          },
-          "kids": {
-            "created": null,
-            "id": "kids",
-            "olap": null,
-            "org_id": null,
-            "trs": "trs_kids"
-          },
-          "moderators": {
-            "created": "mod_created_at",
-            "id": "moderator_id",
-            "olap": null,
-            "org_id": "organization_id",
-            "trs": "trs_moderators"
-          },
-          "organizations": {
-            "created": "org_created_at",
-            "id": "organization_id",
-            "olap": "olap_organizations",
-            "org_id": "organization_id",
-            "trs": "organizations"
-          },
-          "phones": {
-            "created": "guardians_created_at",
-            "id": "guardian_id",
-            "olap": "olap_phone",
-            "org_id": null,
-            "trs": "trs_phones"
-          },
-          "schools": {
-            "created": "schools_created_at",
-            "id": "school_id",
-            "olap": "olap_school",
-            "org_id": "organizations_id",
-            "trs": "trs_schools"
-          }
         }
-      }
+        }
     },
     {
       "id": "testing",
