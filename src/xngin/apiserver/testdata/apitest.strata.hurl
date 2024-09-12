@@ -8,63 +8,49 @@ HTTP 200
     "data_type": "double precision",
     "column_name": "baseline_income",
     "description": "",
-    "strata_group": "",
-    "strata_default": false,
-    "id": "baseline_income"
+    "strata_group": ""
   },
   {
     "table_name": "sample_group",
     "data_type": "double precision",
     "column_name": "current_income",
     "description": "",
-    "strata_group": "",
-    "strata_default": false,
-    "id": "current_income"
+    "strata_group": ""
   },
   {
     "table_name": "sample_group",
     "data_type": "integer",
     "column_name": "is_engaged",
     "description": "",
-    "strata_group": "",
-    "strata_default": false,
-    "id": "is_engaged"
+    "strata_group": ""
   },
   {
     "table_name": "sample_group",
     "data_type": "integer",
     "column_name": "is_onboarded",
     "description": "",
-    "strata_group": "",
-    "strata_default": false,
-    "id": "is_onboarded"
+    "strata_group": ""
   },
   {
     "table_name": "sample_group",
     "data_type": "integer",
     "column_name": "is_recruited",
     "description": "",
-    "strata_group": "",
-    "strata_default": false,
-    "id": "is_recruited"
+    "strata_group": ""
   },
   {
     "table_name": "sample_group",
     "data_type": "integer",
     "column_name": "is_registered",
     "description": "",
-    "strata_group": "",
-    "strata_default": false,
-    "id": "is_registered"
+    "strata_group": ""
   },
   {
     "table_name": "sample_group",
     "data_type": "integer",
     "column_name": "is_retained",
     "description": "",
-    "strata_group": "",
-    "strata_default": false,
-    "id": "is_retained"
+    "strata_group": ""
   }
 ]
 ```

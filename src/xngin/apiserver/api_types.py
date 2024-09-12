@@ -85,5 +85,3 @@ class GetStrataResponseElement(BaseModel):
     column_name: str
     description: str
     strata_group: str
-    strata_default: bool
-    id: str  # same as column_name

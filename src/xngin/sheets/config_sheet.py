@@ -47,11 +47,12 @@ class InvalidSheetException(Exception):
 
 
 class RowConfig(BaseModel):
-    table: str
+    table: str  # TODO: remove .table from RowConfig.
     column_name: str
     data_type: DataType
     column_group: str
     description: str
+    is_unique_id: bool
     is_strata: bool
     is_filter: bool
     is_metric: bool
@@ -74,7 +75,9 @@ class RowConfig(BaseModel):
     def to_data_type(cls, value) -> DataType:
         return DataType(value.lower())
 
-    @field_validator("is_strata", "is_filter", "is_metric", mode="before")
+    @field_validator(
+        "is_unique_id", "is_strata", "is_filter", "is_metric", mode="before"
+    )
     @classmethod
     def to_boolean(cls, value):
         truthy = {"true", "t", "yes", "y", "1"}
@@ -96,7 +99,20 @@ class SheetConfig(BaseModel):
     }
 
     @model_validator(mode="after")
+    def check_one_unique_id(self) -> "SheetConfig":
+        uniques = [r.column_name for r in self.rows if r.is_unique_id]
+        if len(uniques) == 0:
+            raise ValueError("There are no columns marked as unique ID.")
+        if len(uniques) > 1:
+            raise ValueError(
+                f"There are {len(uniques)} columns marked as the unique ID, but there should "
+                f"only be one: {", ".join(sorted(uniques))}"
+            )
+        return self
+
+    @model_validator(mode="after")
     def check_unique_columns(self) -> "SheetConfig":
+        # TODO: remove .table from RowConfig.
         counted = Counter([".".join((row.table, row.column_name)) for row in self.rows])
         duplicates = [item for item, count in counted.items() if count > 1]
         if duplicates:
@@ -182,19 +198,33 @@ def fetch_and_parse_sheet(ref: SheetRef):
 
 def create_sheetconfig_from_table(table: sqlalchemy.Table):
     collected = []
+    # find the primary key
+    pk_col = next((c.name for c in table.columns.values() if c.primary_key), None)
+    # if the database doesn't have one, assume the existence of an "id" column.
+    if not pk_col:
+        pk_col = "id"
     for column in table.columns.values():
         type_hint = column.type
         collected.append(
             RowConfig(
                 table=table.name,
                 column_name=column.name,
-                # data_type=DataType.match(column.config.python_type),
                 data_type=DataType.match(type_hint),
                 column_group="",
                 description="",
+                is_unique_id=column.name == pk_col,
                 is_strata=False,
                 is_filter=False,
                 is_metric=False,
             )
         )
-    return SheetConfig(rows=collected)
+    # Sort order is: unique ID first, then string fields, then the rest by name.
+    rows = sorted(
+        collected,
+        key=lambda r: (
+            not r.is_unique_id,
+            r.data_type != DataType.CHARACTER_VARYING,
+            r.column_name,
+        ),
+    )
+    return SheetConfig(rows=rows)

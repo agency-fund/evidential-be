@@ -26,6 +26,7 @@ from xngin.apiserver.settings import (
     XnginSettings,
     ClientConfig,
     get_sqlalchemy_table,
+    CannotFindTheTableException,
 )
 from fastapi import Request
 from xngin.apiserver.utils import safe_for_headers
@@ -122,7 +123,12 @@ def get_strata(
             status_code=500,
             detail=f"The configured table '{config.table_name}' does not exist.",
         ) from nste
-    db_schema = {c.column_name: c for c in create_sheetconfig_from_table(table).rows}
+    try:
+        db_schema = {
+            c.column_name: c for c in create_sheetconfig_from_table(table).rows
+        }
+    except CannotFindTheTableException as cfte:
+        raise HTTPException(status_code=500, detail=cfte.message) from cfte
 
     fetched = gsheet_cache.get(
         config.sheet,
@@ -142,13 +148,11 @@ def get_strata(
                 column_name=col_name,
                 description=db_schema.get(col_name).description,
                 strata_group=config_col.column_group,
-                strata_default=False,  # TODO
-                id=col_name,
             )
             for col_name, config_col in config_schema.items()
             if db_schema.get(col_name)
         ],
-        key=lambda item: item.id,
+        key=lambda item: item.column_name,
     )
 
 

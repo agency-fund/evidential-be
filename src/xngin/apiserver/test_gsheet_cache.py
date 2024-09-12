@@ -31,6 +31,7 @@ def mock_sheet_config():
                 data_type=DataType.BOOLEAN,
                 column_group="g",
                 description="d",
+                is_unique_id=True,
                 is_strata=False,
                 is_filter=False,
                 is_metric=True,

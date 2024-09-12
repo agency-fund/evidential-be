@@ -5,6 +5,7 @@ from typing import Literal, List, Union, Optional
 
 import sqlalchemy
 from pydantic import BaseModel, PositiveInt, SecretStr, Field
+from sqlalchemy.exc import NoSuchTableError
 
 DEFAULT_SECRETS_DIRECTORY = "secrets"
 DEFAULT_SETTINGS_FILE = "xngin.settings.json"
@@ -117,6 +118,19 @@ class SettingsForTesting(XnginSettings):
     pass
 
 
+class CannotFindTheTableException(Exception):
+    def __init__(self, table_name, existing_tables):
+        self.table_name = table_name
+        self.alternatives = existing_tables
+        if existing_tables:
+            self.message = f"The {table_name} table does not exist. Known tables: {", ".join(sorted(existing_tables))}"
+        else:
+            self.message = "The specified database does not contain any tables. Check the DSN and try again."
+
+    def __str__(self):
+        return self.message
+
+
 def get_sqlalchemy_table(sqlat: SqlalchemyAndTable):
     """Connects to a SQLAlchemy DSN and creates a sqlalchemy.Table for introspection."""
     connect_args = {}
@@ -126,4 +140,9 @@ def get_sqlalchemy_table(sqlat: SqlalchemyAndTable):
         connect_args["timeout"] = 5
     engine = sqlalchemy.create_engine(sqlat.sqlalchemy_url, connect_args=connect_args)
     metadata = sqlalchemy.MetaData()
-    return sqlalchemy.Table(sqlat.table_name, metadata, autoload_with=engine)
+    try:
+        return sqlalchemy.Table(sqlat.table_name, metadata, autoload_with=engine)
+    except NoSuchTableError as nste:
+        metadata.reflect(engine)
+        existing_tables = metadata.tables.keys()
+        raise CannotFindTheTableException(sqlat.table_name, existing_tables) from nste

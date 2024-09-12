@@ -18,6 +18,7 @@ from xngin.apiserver.settings import (
     SqlalchemyAndTable,
     SheetRef,
     XnginSettings,
+    CannotFindTheTableException,
 )
 from xngin.apiserver.testing import testing_dwh
 from xngin.sheets.config_sheet import (
@@ -42,7 +43,13 @@ def infer_config_from_schema(dsn: str, table: str):
     :param dsn The SQLAlchemy-compatible DSN.
     :param table The name of the table to inspect.
     """
-    dwh = get_sqlalchemy_table(SqlalchemyAndTable(sqlalchemy_url=dsn, table_name=table))
+    try:
+        dwh = get_sqlalchemy_table(
+            SqlalchemyAndTable(sqlalchemy_url=dsn, table_name=table)
+        )
+    except CannotFindTheTableException as cfte:
+        err_console.print(cfte.message)
+        raise typer.Exit(1) from cfte
     return create_sheetconfig_from_table(dwh)
 
 
@@ -59,7 +66,7 @@ def bootstrap_testing_dwh(
 @app.command()
 def bootstrap_spreadsheet(
     dsn: str,
-    table: str,
+    table_name: str,
     gsheet_name: str | None = None,
     share_email: List[str] | None = None,
 ):
@@ -70,7 +77,7 @@ def bootstrap_spreadsheet(
 
     If --gsheet-name is not provided, the config spreadsheet will be written to the terminal in CSV format.
     """
-    config = infer_config_from_schema(dsn, table)
+    config = infer_config_from_schema(dsn, table_name)
 
     # Exclude the `extra` field.
     column_names = [c for c in RowConfig.model_fields if c != "extra"]
@@ -89,8 +96,14 @@ def bootstrap_spreadsheet(
 
     if gsheet_name:
         gc = gspread.service_account()
+        # TODO: if the sheet exists already, add a new worksheet instead of erroring.
         sheet = gc.create(gsheet_name)
-        worksheet = sheet.worksheet("Sheet1")
+        # The "Sheet1" worksheet is created automatically. We don't want to use that, so hold on to its ID for later
+        # so that we can delete it.
+        sheets_to_delete = [s.id for s in sheet.worksheets()]
+        worksheet = sheet.add_worksheet(
+            table_name, rows=len(rows), cols=len(column_names)
+        )
         worksheet.append_rows(rows)
         # Bold the first row.
         formats = [
@@ -104,6 +117,8 @@ def bootstrap_spreadsheet(
             },
         ]
         worksheet.batch_format(formats)
+        for sheet_id in sheets_to_delete:
+            sheet.del_worksheet_by_id(sheet_id)
         if share_email:
             for email in share_email:
                 # TODO: if running as a service account, also transfer ownership to one fo the email addresses.
