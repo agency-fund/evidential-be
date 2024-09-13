@@ -5,7 +5,8 @@ from sqlalchemy import create_engine, Column, String
 from sqlalchemy.orm import declarative_base
 from sqlalchemy.orm import sessionmaker
 
-DEFAULT_DB = Path(__file__).parent.parent / "xngin.db"
+# TODO: replace with something that looks upwards until it finds pyproject.toml.
+DEFAULT_DB = Path(__file__).parent.parent.parent.parent / "xngin.db"
 SQLALCHEMY_DATABASE_URL = os.environ.get("XNGIN_DB", f"sqlite:///{DEFAULT_DB}")
 
 engine = create_engine(

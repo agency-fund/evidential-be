@@ -25,7 +25,7 @@ def sheet_cache(mock_session):
 def mock_sheet_config():
     return ConfigWorksheet(
         table_name="t",
-        rows=[
+        columns=[
             ColumnDescriptor(
                 column_name="c",
                 data_type=DataType.BOOLEAN,

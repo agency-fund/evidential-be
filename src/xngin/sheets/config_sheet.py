@@ -93,7 +93,7 @@ class ConfigWorksheet(BaseModel):
     """SheetConfig represents a single worksheet."""
 
     table_name: str
-    rows: List[ColumnDescriptor]
+    columns: List[ColumnDescriptor]
 
     model_config = {
         "strict": True,
@@ -102,7 +102,7 @@ class ConfigWorksheet(BaseModel):
 
     @model_validator(mode="after")
     def check_one_unique_id(self) -> "ConfigWorksheet":
-        uniques = [r.column_name for r in self.rows if r.is_unique_id]
+        uniques = [r.column_name for r in self.columns if r.is_unique_id]
         if len(uniques) == 0:
             raise ValueError("There are no columns marked as unique ID.")
         if len(uniques) > 1:
@@ -114,7 +114,7 @@ class ConfigWorksheet(BaseModel):
 
     @model_validator(mode="after")
     def check_unique_columns(self) -> "ConfigWorksheet":
-        counted = Counter([".".join(row.column_name) for row in self.rows])
+        counted = Counter([".".join(row.column_name) for row in self.columns])
         duplicates = [item for item, count in counted.items() if count > 1]
         if duplicates:
             raise ValueError(
@@ -124,8 +124,8 @@ class ConfigWorksheet(BaseModel):
 
     @model_validator(mode="after")
     def check_non_empty_rows(self) -> "ConfigWorksheet":
-        if len(self.rows) == 0:
-            raise ValueError("SheetConfig must contain at least one RowConfig.")
+        if len(self.columns) == 0:
+            raise ValueError(f"{__class__} must contain at least one ColumnDescriptor.")
         return self
 
 
@@ -189,7 +189,7 @@ def fetch_and_parse_sheet(ref: SheetRef):
                 InvalidSheetDetails.from_pydantic_error(row=row_index + 1, pve=pve)
             )
     try:
-        parsed = ConfigWorksheet(table_name=ref.worksheet, rows=collector)
+        parsed = ConfigWorksheet(table_name=ref.worksheet, columns=collector)
     except ValidationError as pve:
         errors.append(InvalidSheetDetails.from_pydantic_error(row=None, pve=pve))
     if errors:
@@ -227,4 +227,4 @@ def create_sheetconfig_from_table(table: sqlalchemy.Table):
             r.column_name,
         ),
     )
-    return ConfigWorksheet(table_name=table.name, rows=rows)
+    return ConfigWorksheet(table_name=table.name, columns=rows)

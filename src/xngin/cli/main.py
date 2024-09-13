@@ -98,7 +98,10 @@ def bootstrap_spreadsheet(
         ),
     ] = None,
 ):
-    """Generates a Google Spreadsheet from a SQLAlchemy DSN and a table name."""
+    """Generates a Google Spreadsheet from a SQLAlchemy DSN and a table name.
+
+    Use this to get a customer started on configuring an experiment.
+    """
     config = infer_config_from_schema(dsn, table_name)
 
     # Exclude the `extra` field.
@@ -114,7 +117,7 @@ def bootstrap_spreadsheet(
             return str(v)
         return v
 
-    for row in config.rows:
+    for row in config.columns:
         # Exclude the `extra` field.
         rows.append([
             convert(n) for n in row.model_dump().values() if not isinstance(n, dict)
@@ -159,17 +162,27 @@ def bootstrap_spreadsheet(
 
 @app.command()
 def parse_config_spreadsheet(
-    url: str, worksheet: str = "Sheet1", write: str | None = None
+    url: Annotated[
+        str,
+        typer.Argument(
+            ..., help="URL to the Google Sheet, or file://-style path to a CSV."
+        ),
+    ],
+    worksheet: Annotated[
+        str,
+        typer.Argument(
+            ...,
+            help="The worksheet to parse. If parsing CSV, specify the name of the table the CSV was generated from.",
+        ),
+    ],
 ):
-    """Parses a Google Spreadsheet and displays it on the console or writes it to a file."""
+    """Parses a Google Spreadsheet and displays the parsed configuration on the console.
+
+    This is primarily useful for confirming that the spreadsheet passes validations.
+    """
     try:
         parsed = fetch_and_parse_sheet(SheetRef(url=url, worksheet=worksheet))
-        as_json = parsed.model_dump_json(indent=2)
-        if write:
-            with open(write, "w") as f:
-                f.write(as_json)
-        else:
-            print(as_json)
+        print(parsed.model_dump_json(indent=2))
     except GSpreadException as gse:
         err_console.print(gse)
         raise typer.Exit(1) from gse
