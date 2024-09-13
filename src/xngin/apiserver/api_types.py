@@ -80,7 +80,6 @@ class UnimplementedResponse(BaseModel):
 
 
 class GetStrataResponseElement(BaseModel):
-    table_name: str
     data_type: DataType
     column_name: str
     description: str

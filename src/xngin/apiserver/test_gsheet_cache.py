@@ -8,7 +8,7 @@ from xngin.apiserver.api_types import DataType
 from xngin.apiserver.database import Cache
 from xngin.apiserver.gsheet_cache import GSheetCache
 from xngin.apiserver.settings import SheetRef
-from xngin.sheets.config_sheet import SheetConfig, RowConfig
+from xngin.sheets.config_sheet import ConfigWorksheet, ColumnDescriptor
 
 
 @pytest.fixture
@@ -23,10 +23,10 @@ def sheet_cache(mock_session):
 
 @pytest.fixture
 def mock_sheet_config():
-    return SheetConfig(
+    return ConfigWorksheet(
+        table_name="t",
         rows=[
-            RowConfig(
-                table="t",
+            ColumnDescriptor(
                 column_name="c",
                 data_type=DataType.BOOLEAN,
                 column_group="g",
@@ -36,7 +36,7 @@ def mock_sheet_config():
                 is_filter=False,
                 is_metric=True,
             )
-        ]
+        ],
     )
 
 
@@ -53,7 +53,7 @@ def test_get_cached_entry(sheet_cache, mock_session, mock_sheet_config):
 
     result = sheet_cache.get(key, fetcher)
 
-    assert isinstance(result, SheetConfig)
+    assert isinstance(result, ConfigWorksheet)
     assert result.model_dump() == mock_sheet_config.model_dump()
     mock_session.get.assert_called_once_with(Cache, cache_key)
     fetcher.assert_not_called()
@@ -70,7 +70,7 @@ def test_get_new_entry(sheet_cache, mock_session, mock_sheet_config):
 
     result = sheet_cache.get(key, fetcher)
 
-    assert isinstance(result, SheetConfig)
+    assert isinstance(result, ConfigWorksheet)
     assert result.model_dump() == mock_sheet_config.model_dump()
     mock_session.get.assert_called_once_with(Cache, cache_key)
     fetcher.assert_called_once()
@@ -85,7 +85,7 @@ def test_get_refresh(sheet_cache, mock_session, mock_sheet_config):
 
     result = sheet_cache.get(key, fetcher, refresh=True)
 
-    assert isinstance(result, SheetConfig)
+    assert isinstance(result, ConfigWorksheet)
     assert result.model_dump() == mock_sheet_config.model_dump()
     mock_session.get.assert_not_called()
     fetcher.assert_called_once()

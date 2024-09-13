@@ -135,15 +135,10 @@ def get_strata(
         lambda: fetch_and_parse_sheet(config.sheet),
         refresh=commons.refresh,
     )
-    config_schema = {
-        c.column_name: c
-        for c in fetched.rows
-        if c.table == config.table_name and c.is_strata
-    }
+    config_schema = {c.column_name: c for c in fetched.rows if c.is_strata}
     return sorted(
         [
             GetStrataResponseElement(
-                table_name=config.table_name,
                 data_type=db_schema.get(col_name).data_type,
                 column_name=col_name,
                 description=db_schema.get(col_name).description,

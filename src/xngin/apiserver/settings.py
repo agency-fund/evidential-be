@@ -37,6 +37,7 @@ class SqlalchemyAndTable(BaseModel):
 
 class SheetRef(BaseModel):
     url: str
+    # worksheet is the name of the worksheet. This is usually the name of the database warehouse table.
     worksheet: str
 
 

@@ -5,7 +5,7 @@ import json
 import logging
 import sys
 from pathlib import Path
-from typing import List
+from typing import Annotated, Tuple
 
 import gspread
 import typer
@@ -24,9 +24,9 @@ from xngin.apiserver.testing import testing_dwh
 from xngin.sheets.config_sheet import (
     InvalidSheetException,
     fetch_and_parse_sheet,
-    RowConfig,
+    ColumnDescriptor,
     create_sheetconfig_from_table,
-    SheetConfig,
+    ConfigWorksheet,
 )
 
 err_console = Console(stderr=True)
@@ -65,25 +65,51 @@ def bootstrap_testing_dwh(
 
 @app.command()
 def bootstrap_spreadsheet(
-    dsn: str,
-    table_name: str,
-    gsheet_name: str | None = None,
-    share_email: List[str] | None = None,
+    dsn: Annotated[
+        str, typer.Argument(..., help="The SQLALchemy DSN of a data warehouse.")
+    ],
+    table_name: Annotated[
+        str,
+        typer.Argument(
+            ...,
+            help="The name of the table to pull field metadata from. If creating a Google Sheet, this will also be "
+            "used as the worksheet name, unless overrideen by --worksheet-name.",
+        ),
+    ],
+    create_gsheet: Annotated[
+        bool,
+        typer.Option(
+            ...,
+            help="Create a Google Sheet version of the configuration spreadsheet from `table_name`.",
+        ),
+    ] = False,
+    worksheet_name: Annotated[
+        str | None,
+        typer.Option(
+            ...,
+            help="When creating the Google Sheet, use the specified value rather than the table name "
+            "as the worksheet name.",
+        ),
+    ] = None,
+    share_email: Annotated[
+        Tuple[str] | None,
+        typer.Option(
+            help="Share the newly created Google Sheet with one or more email addresses.",
+        ),
+    ] = None,
 ):
-    """Generates a Google Spreadsheet from a SQLAlchemy DSN and a table name.
-
-    If --gsheet-name is provided, it will be used as the name of a Google Spreadsheet and the URL of the sheet will be
-    printed on stdout. Pass one or more email addresses with --share-email to share the spreadsheet with others.
-
-    If --gsheet-name is not provided, the config spreadsheet will be written to the terminal in CSV format.
-    """
+    """Generates a Google Spreadsheet from a SQLAlchemy DSN and a table name."""
     config = infer_config_from_schema(dsn, table_name)
 
     # Exclude the `extra` field.
-    column_names = [c for c in RowConfig.model_fields if c != "extra"]
+    column_names = [c for c in ColumnDescriptor.model_fields if c != "extra"]
     rows = [column_names]
 
     def convert(v):
+        if isinstance(v, bool):
+            if v:
+                return "true"
+            return ""
         if isinstance(v, DataType):
             return str(v)
         return v
@@ -94,40 +120,41 @@ def bootstrap_spreadsheet(
             convert(n) for n in row.model_dump().values() if not isinstance(n, dict)
         ])
 
-    if gsheet_name:
-        gc = gspread.service_account()
-        # TODO: if the sheet exists already, add a new worksheet instead of erroring.
-        sheet = gc.create(gsheet_name)
-        # The "Sheet1" worksheet is created automatically. We don't want to use that, so hold on to its ID for later
-        # so that we can delete it.
-        sheets_to_delete = [s.id for s in sheet.worksheets()]
-        worksheet = sheet.add_worksheet(
-            table_name, rows=len(rows), cols=len(column_names)
-        )
-        worksheet.append_rows(rows)
-        # Bold the first row.
-        formats = [
-            {
-                "range": "1:1",
-                "format": {
-                    "textFormat": {
-                        "bold": True,
-                    },
-                },
-            },
-        ]
-        worksheet.batch_format(formats)
-        for sheet_id in sheets_to_delete:
-            sheet.del_worksheet_by_id(sheet_id)
-        if share_email:
-            for email in share_email:
-                # TODO: if running as a service account, also transfer ownership to one fo the email addresses.
-                sheet.share(email, perm_type="user", role="writer")
-                print(f"# Sheet shared with {email}")
-        print(sheet.url)
-    else:
+    if not create_gsheet:
         writer = csv.writer(sys.stdout)
         writer.writerows(rows)
+        return
+
+    gc = gspread.service_account()
+    # TODO: if the sheet exists already, add a new worksheet instead of erroring.
+    if worksheet_name is None:
+        worksheet_name = table_name
+    sheet = gc.create(worksheet_name)
+    # The "Sheet1" worksheet is created automatically. We don't want to use that, so hold on to its ID for later
+    # so that we can delete it.
+    sheets_to_delete = [s.id for s in sheet.worksheets()]
+    worksheet = sheet.add_worksheet(table_name, rows=len(rows), cols=len(column_names))
+    worksheet.append_rows(rows)
+    # Bold the first row.
+    formats = [
+        {
+            "range": "1:1",
+            "format": {
+                "textFormat": {
+                    "bold": True,
+                },
+            },
+        },
+    ]
+    worksheet.batch_format(formats)
+    for sheet_id in sheets_to_delete:
+        sheet.del_worksheet_by_id(sheet_id)
+    if share_email:
+        for email in share_email:
+            # TODO: if running as a service account, also transfer ownership to one fo the email addresses.
+            sheet.share(email, perm_type="user", role="writer")
+            print(f"# Sheet shared with {email}")
+    print(sheet.url)
 
 
 @app.command()
@@ -161,7 +188,7 @@ def export_json_schemas(output: Path = ".schemas"):
     """Generates JSON schemas for Xngin settings files."""
     if not output.exists():
         output.mkdir()
-    for model in (XnginSettings, SheetConfig):
+    for model in (XnginSettings, ConfigWorksheet):
         filename = output / (model.__name__ + ".schema.json")
         with open(filename, "w") as outf:
             outf.write(json.dumps(model.model_json_schema(), indent=2, sort_keys=True))

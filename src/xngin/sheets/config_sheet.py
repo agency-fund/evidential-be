@@ -46,8 +46,7 @@ class InvalidSheetException(Exception):
         return "\n".join((err.model_dump_json() for err in self.errors))
 
 
-class RowConfig(BaseModel):
-    table: str  # TODO: remove .table from RowConfig.
+class ColumnDescriptor(BaseModel):
     column_name: str
     data_type: DataType
     column_group: str
@@ -90,8 +89,11 @@ class RowConfig(BaseModel):
         raise ValueError(f"Value '{value}' cannot be converted to a boolean.")
 
 
-class SheetConfig(BaseModel):
-    rows: List[RowConfig]
+class ConfigWorksheet(BaseModel):
+    """SheetConfig represents a single worksheet."""
+
+    table_name: str
+    rows: List[ColumnDescriptor]
 
     model_config = {
         "strict": True,
@@ -99,7 +101,7 @@ class SheetConfig(BaseModel):
     }
 
     @model_validator(mode="after")
-    def check_one_unique_id(self) -> "SheetConfig":
+    def check_one_unique_id(self) -> "ConfigWorksheet":
         uniques = [r.column_name for r in self.rows if r.is_unique_id]
         if len(uniques) == 0:
             raise ValueError("There are no columns marked as unique ID.")
@@ -111,9 +113,8 @@ class SheetConfig(BaseModel):
         return self
 
     @model_validator(mode="after")
-    def check_unique_columns(self) -> "SheetConfig":
-        # TODO: remove .table from RowConfig.
-        counted = Counter([".".join((row.table, row.column_name)) for row in self.rows])
+    def check_unique_columns(self) -> "ConfigWorksheet":
+        counted = Counter([".".join(row.column_name) for row in self.rows])
         duplicates = [item for item, count in counted.items() if count > 1]
         if duplicates:
             raise ValueError(
@@ -122,7 +123,7 @@ class SheetConfig(BaseModel):
         return self
 
     @model_validator(mode="after")
-    def check_non_empty_rows(self) -> "SheetConfig":
+    def check_non_empty_rows(self) -> "ConfigWorksheet":
         if len(self.rows) == 0:
             raise ValueError("SheetConfig must contain at least one RowConfig.")
         return self
@@ -175,20 +176,20 @@ def fetch_and_parse_sheet(ref: SheetRef):
             )
         ])
     column_names = sheet[0].keys()
-    required_column_names = RowConfig.model_fields.keys() - {"extra"}
+    required_column_names = ColumnDescriptor.model_fields.keys() - {"extra"}
     extra_column_names = column_names - required_column_names
     errors = []
     collector = []
     for row_index, values in enumerate(sheet):
         values["extra"] = {col: str(values.pop(col)) for col in extra_column_names}
         try:
-            collector.append(RowConfig(**values))
+            collector.append(ColumnDescriptor(**values))
         except ValidationError as pve:
             errors.append(
                 InvalidSheetDetails.from_pydantic_error(row=row_index + 1, pve=pve)
             )
     try:
-        parsed = SheetConfig(rows=collector)
+        parsed = ConfigWorksheet(table_name=ref.worksheet, rows=collector)
     except ValidationError as pve:
         errors.append(InvalidSheetDetails.from_pydantic_error(row=None, pve=pve))
     if errors:
@@ -206,8 +207,7 @@ def create_sheetconfig_from_table(table: sqlalchemy.Table):
     for column in table.columns.values():
         type_hint = column.type
         collected.append(
-            RowConfig(
-                table=table.name,
+            ColumnDescriptor(
                 column_name=column.name,
                 data_type=DataType.match(type_hint),
                 column_group="",
@@ -227,4 +227,4 @@ def create_sheetconfig_from_table(table: sqlalchemy.Table):
             r.column_name,
         ),
     )
-    return SheetConfig(rows=rows)
+    return ConfigWorksheet(table_name=table.name, rows=rows)

@@ -4,7 +4,7 @@ from sqlalchemy.orm import Session
 
 from xngin.apiserver.database import Cache
 from xngin.apiserver.settings import SheetRef
-from xngin.sheets.config_sheet import SheetConfig
+from xngin.sheets.config_sheet import ConfigWorksheet
 
 
 class GSheetCache:
@@ -16,7 +16,7 @@ class GSheetCache:
     def get(
         self,
         key: SheetRef,
-        fetcher: Callable[[], SheetConfig],
+        fetcher: Callable[[], ConfigWorksheet],
         refresh=False,
     ):
         cache_key = f"{key.url}!{key.worksheet}"
@@ -28,4 +28,4 @@ class GSheetCache:
             entry = Cache(key=cache_key, value=result.model_dump_json())
             self.session.add(entry)
             self.session.commit()
-        return SheetConfig.model_validate_json(entry.value)
+        return ConfigWorksheet.model_validate_json(entry.value)
