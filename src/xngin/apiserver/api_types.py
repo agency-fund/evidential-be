@@ -2,7 +2,7 @@ import enum
 from datetime import datetime
 from typing import List, Dict, Any, Literal
 import sqlalchemy.sql.sqltypes
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 
 class DataType(enum.StrEnum):
@@ -39,11 +39,38 @@ class DataType(enum.StrEnum):
             return DataType.BOOLEAN
         raise ValueError(f"Unmatched type: {value}.")
 
+    def filter_class(self, column_name):
+        """Classifies a DataType into a filter class."""
+        match self:
+            case DataType.BOOLEAN | DataType.CHARACTER_VARYING:
+                return DataTypeClass.DISCRETE
+            case (
+                DataType.DATE
+                | DataType.INTEGER
+                | DataType.DOUBLE_PRECISION
+                | DataType.NUMERIC
+                | DataType.TIMESTAMP_WITHOUT_TIMEZONE
+                | DataType.BIGINT
+            ):
+                return DataTypeClass.NUMERIC
+            case _ if column_name.endswith("_id"):
+                return DataTypeClass.DISCRETE
+            case _:
+                return DataTypeClass.UNKNOWN
+
 
 class DataTypeClass(enum.StrEnum):
     DISCRETE = "discrete"
     NUMERIC = "numeric"
     UNKNOWN = "unknown"
+
+    def valid_relations(self):
+        match self:
+            case DataTypeClass.DISCRETE:
+                return [Relation.INCLUDES, Relation.EXCLUDES]
+            case DataTypeClass.NUMERIC:
+                return [Relation.BETWEEN]
+        raise ValueError(f"{self} has no valid defined relations..")
 
 
 class Relation(enum.StrEnum):
@@ -84,3 +111,11 @@ class GetStrataResponseElement(BaseModel):
     column_name: str
     description: str
     strata_group: str
+
+
+class GetFiltersResponseElement(BaseModel):
+    data_type: DataType
+    description: str
+    distinct_values: List[str]
+    filter_name: str
+    relations: List[Relation] = Field(..., min_length=1)

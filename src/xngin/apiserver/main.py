@@ -14,6 +14,7 @@ from xngin.apiserver.api_types import (
     DesignSpec,
     UnimplementedResponse,
     GetStrataResponseElement,
+    GetFiltersResponseElement,
 )
 from xngin.apiserver.dependencies import (
     settings_dependency,
@@ -106,36 +107,15 @@ def get_strata(
 
     This reimplements dwh.R get_strata().
     """
-    if not client:
-        raise HTTPException(
-            404, "Configuration for the requested client was not found."
-        )
-    config = client.config
+    config = must_have_config(client)
 
-    # TODO: determine if the RL behavior should be ported
     if commons.group != config.table_name:
         raise HTTPException(400, "group parameter must match configured table name.")
 
-    try:
-        table = get_sqlalchemy_table(config.to_sqlalchemy_url_and_table())
-    except NoSuchTableError as nste:
-        raise HTTPException(
-            status_code=500,
-            detail=f"The configured table '{config.table_name}' does not exist.",
-        ) from nste
-    try:
-        db_schema = {
-            c.column_name: c for c in create_sheetconfig_from_table(table).columns
-        }
-    except CannotFindTheTableException as cfte:
-        raise HTTPException(status_code=500, detail=cfte.message) from cfte
+    db_schema = fetch_db_schema(config)
+    config_sheet = fetch_config_sheet(commons, config, gsheet_cache)
+    config_schema = {c.column_name: c for c in config_sheet.columns if c.is_strata}
 
-    fetched = gsheet_cache.get(
-        config.sheet,
-        lambda: fetch_and_parse_sheet(config.sheet),
-        refresh=commons.refresh,
-    )
-    config_schema = {c.column_name: c for c in fetched.columns if c.is_strata}
     return sorted(
         [
             GetStrataResponseElement(
@@ -154,14 +134,70 @@ def get_strata(
 @app.get(
     "/filters",
     summary="Get possible filters covariates for a given unit type.",
-    response_model=UnimplementedResponse,
 )
 def get_filters(
     commons: Annotated[CommonQueryParams, Depends()],
+    gsheet_cache: Annotated[GSheetCache, Depends(gsheet_cache)],
     client: Annotated[ClientConfig | None, Depends(config_dependency)] = None,
 ):
-    # Implement get_filters logic
-    return UnimplementedResponse()
+    config = must_have_config(client)
+    if commons.group != config.table_name:
+        raise HTTPException(400, "group parameter must match configured table name.")
+    db_schema = fetch_db_schema(config)
+    config_sheet = fetch_config_sheet(commons, config, gsheet_cache)
+    config_schema = {c.column_name: c for c in config_sheet.columns if c.is_filter}
+
+    return sorted(
+        [
+            GetFiltersResponseElement(
+                filter_name=col_name,
+                data_type=db_schema.get(col_name).data_type,
+                relations=db_schema.get(col_name)
+                .data_type.filter_class(col_name)
+                .valid_relations(),
+                description=db_schema.get(col_name).description,
+                distinct_values=[],
+            )  # TODO: implement distinct_values
+            for col_name, config_col in config_schema.items()
+            if db_schema.get(col_name)
+        ],
+        key=lambda item: item.filter_name,
+    )
+
+
+def must_have_config(client: ClientConfig | None):
+    if not client:
+        raise HTTPException(
+            404, "Configuration for the requested client was not found."
+        )
+    config = client.config
+    return config
+
+
+def fetch_config_sheet(commons: CommonQueryParams, config, gsheet_cache: GSheetCache):
+    fetched = gsheet_cache.get(
+        config.sheet,
+        lambda: fetch_and_parse_sheet(config.sheet),
+        refresh=commons.refresh,
+    )
+    return fetched
+
+
+def fetch_db_schema(config):
+    try:
+        table = get_sqlalchemy_table(config.to_sqlalchemy_url_and_table())
+    except NoSuchTableError as nste:
+        raise HTTPException(
+            status_code=500,
+            detail=f"The configured table '{config.table_name}' does not exist.",
+        ) from nste
+    try:
+        db_schema = {
+            c.column_name: c for c in create_sheetconfig_from_table(table).columns
+        }
+    except CannotFindTheTableException as cfte:
+        raise HTTPException(status_code=500, detail=cfte.message) from cfte
+    return db_schema
 
 
 @app.get(

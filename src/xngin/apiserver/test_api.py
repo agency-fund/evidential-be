@@ -1,5 +1,6 @@
 import glob
 import json
+import tempfile
 from pathlib import Path
 
 import pytest
@@ -23,5 +24,12 @@ def test_api(script):
     response = client.request(
         hurl.method, hurl.url, headers=hurl.headers, content=hurl.body
     )
-    assert response.status_code == hurl.expected_status, response.content
-    assert response.json() == json.loads(hurl.expected_response)
+    temporary = tempfile.NamedTemporaryFile(delete=False)
+    with temporary as tmpf:
+        tmpf.write(response.content)
+    assert (
+        response.status_code == hurl.expected_status
+    ), f"HTTP response body: {temporary.name}\nResponse:\n{response.content}"
+    assert response.json() == json.loads(
+        hurl.expected_response
+    ), f"HTTP response body: {temporary.name}\nResponse:\n{response.content}"
