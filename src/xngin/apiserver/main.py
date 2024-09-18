@@ -151,19 +151,6 @@ def get_strata(
     )
 
 
-def rl_get_col_names(type):
-    if type == "groups":
-        return ["final_groups"]
-    else:
-        return [f"trs_{type}", f"olap_{type}"]
-
-
-def get_strata_impl(type: str, refresh: bool):
-    # TODO
-    return []
-    # table_names = rl_get_col_names(type)
-
-
 @app.get(
     "/filters",
     summary="Get possible filters covariates for a given unit type.",
