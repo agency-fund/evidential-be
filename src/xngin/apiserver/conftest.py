@@ -38,7 +38,8 @@ def setup(app):
     """
     if not TESTING_DWH_SQLITE_PATH.exists():
         # Hack: simulate the invocation of the fixtures.
-        ensure_dwh_sqlite_database_exists(ensure_correct_working_directory())
+        raise_unless_running_from_top_directory()
+        testing_dwh.create_dwh_sqlite_database()
 
     db_engine = sqlalchemy.create_engine(
         f"sqlite:///{TESTING_DWH_SQLITE_PATH}",
@@ -71,12 +72,16 @@ def ensure_correct_working_directory():
 
     This is important because the tests generate some temporary data on disk and we want the paths to be right.
     """
-    pypt = Path(os.getcwd()) / "pyproject.toml"
-    if not pypt.exists():
-        raise Exception("Tests must be run from the root of the repository.")
+    raise_unless_running_from_top_directory()
 
 
 @pytest.fixture(scope="module", autouse=True)
 def ensure_dwh_sqlite_database_exists(ensure_correct_working_directory):
     """Create testing_dwh.db, if it doesn't already exist."""
     testing_dwh.create_dwh_sqlite_database()
+
+
+def raise_unless_running_from_top_directory():
+    pypt = Path(os.getcwd()) / "pyproject.toml"
+    if not pypt.exists():
+        raise Exception("Tests must be run from the root of the repository.")
