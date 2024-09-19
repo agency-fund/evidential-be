@@ -36,6 +36,9 @@ def setup(app):
     this should be replaced with something that efficiently substitutes the underlying sqlite file with a fresh one
     for every test run.
     """
+    if not TESTING_DWH_SQLITE_PATH.exists():
+        # Hack: simulate the invocation of the fixtures.
+        ensure_dwh_sqlite_database_exists(ensure_correct_working_directory())
 
     db_engine = sqlalchemy.create_engine(
         f"sqlite:///{TESTING_DWH_SQLITE_PATH}",
