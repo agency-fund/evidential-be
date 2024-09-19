@@ -6,6 +6,7 @@ import sqlalchemy
 from fastapi import FastAPI, HTTPException, Depends, Query
 from fastapi import Request
 from sqlalchemy import distinct
+from starlette.responses import JSONResponse
 
 from xngin.apiserver import database
 from xngin.apiserver.api_types import (
@@ -44,6 +45,14 @@ async def lifespan(_app: FastAPI):
 
 
 app = FastAPI(lifespan=lifespan)
+
+
+# TODO: unify exception handling
+@app.exception_handler(CannotFindTheTableException)
+async def settings_exception_handler(
+    _request: Request, exc: CannotFindTheTableException
+):
+    return JSONResponse(status_code=500, content={"message": exc.message})
 
 
 class CommonQueryParams:

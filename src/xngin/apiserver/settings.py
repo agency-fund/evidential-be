@@ -128,13 +128,17 @@ class CannotFindTheTableException(Exception):
         if existing_tables:
             self.message = f"The {table_name} table does not exist. Known tables: {", ".join(sorted(existing_tables))}"
         else:
-            self.message = "The specified database does not contain any tables. Check the DSN and try again."
+            self.message = f"The {table_name} table does not exist; the database does not contain any tables."
 
     def __str__(self):
         return self.message
 
 
-def get_sqlalchemy_table_from_engine(engine, table_name: str):
+def get_sqlalchemy_table_from_engine(engine: sqlalchemy.engine.Engine, table_name: str):
+    """Constructs a Table via reflection.
+
+    Raises CannotFindTheTableException containing helpful error message if the table doesn't exist.
+    """
     metadata = sqlalchemy.MetaData()
     try:
         return sqlalchemy.Table(table_name, metadata, autoload_with=engine)
@@ -150,5 +154,4 @@ def sqlite_connect(sqlalchemy_url):
         connect_args["connect_timeout"] = 5
     elif sqlalchemy_url.startswith("sqlite"):
         connect_args["timeout"] = 5
-    engine = sqlalchemy.create_engine(sqlalchemy_url, connect_args=connect_args)
-    return engine
+    return sqlalchemy.create_engine(sqlalchemy_url, connect_args=connect_args)
