@@ -62,7 +62,10 @@ jobs:
       - name: pytest unit tests
         run: uv run pytest
       - name: pytest integration tests
-        run: retry -t 3 -d 30 -- uv run pytest -m integration
+        if: startsWith(matrix.os, 'ubuntu-')
+        run: |
+          sudo apt-get install -y --no-install-recommends -y retry
+          retry -t 3 -d 30 -- uv run pytest -m integration
       - name: xngin-cli smoke tests
         run: |
           uv run xngin-cli --help
