@@ -13,6 +13,7 @@ from xngin.apiserver import database
 from xngin.apiserver.dependencies import settings_dependency, db_session
 from xngin.apiserver.settings import XnginSettings, SettingsForTesting
 from xngin.apiserver.testing import testing_dwh
+from xngin.apiserver.testing.testing_dwh import TESTING_DWH_SQLITE_PATH
 
 logger = logging.getLogger(__name__)
 
@@ -29,10 +30,15 @@ def get_settings_for_test() -> XnginSettings:
 
 
 def setup(app):
-    """Configures FastAPI dependencies for testing."""
+    """Configures FastAPI dependencies for testing.
+
+    Note: This configuration will cease to be useful when we start testing APIs that mutate the data. When we get there,
+    this should be replaced with something that efficiently substitutes the underlying sqlite file with a fresh one
+    for every test run.
+    """
 
     db_engine = sqlalchemy.create_engine(
-        "sqlite://",
+        f"sqlite:///{TESTING_DWH_SQLITE_PATH}",
         connect_args={"check_same_thread": False},
         poolclass=StaticPool,
     )

@@ -16,6 +16,15 @@ client = TestClient(app)
 STATIC_TESTS = tuple(glob.glob(str(Path(__file__).parent / "testdata/*.hurl")))
 
 
+def trunc(s, n=4096):
+    """Truncates a string at a length that is usable in unit tests."""
+    if isinstance(s, bytes):
+        s = str(s)
+    if len(s) > n:
+        s = s[:n] + "..."
+    return s
+
+
 @pytest.mark.parametrize("script", STATIC_TESTS)
 def test_api(script):
     with open(script, "r") as f:
@@ -29,7 +38,7 @@ def test_api(script):
         tmpf.write(response.content)
     assert (
         response.status_code == hurl.expected_status
-    ), f"HTTP response body: {temporary.name}\nResponse:\n{response.content}"
+    ), f"HTTP response body: {temporary.name}\nResponse:\n{trunc(response.content)}"
     assert response.json() == json.loads(
         hurl.expected_response
-    ), f"HTTP response body: {temporary.name}\nResponse:\n{response.content}"
+    ), f"HTTP response body: {temporary.name}\nResponse:\n{trunc(response.content)}"

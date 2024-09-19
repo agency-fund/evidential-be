@@ -42,6 +42,9 @@ class DataType(enum.StrEnum):
     def filter_class(self, column_name):
         """Classifies a DataType into a filter class."""
         match self:
+            # TODO: is this customer specific?
+            case _ if column_name.endswith("_id"):
+                return DataTypeClass.DISCRETE
             case DataType.BOOLEAN | DataType.CHARACTER_VARYING:
                 return DataTypeClass.DISCRETE
             case (
@@ -53,8 +56,6 @@ class DataType(enum.StrEnum):
                 | DataType.BIGINT
             ):
                 return DataTypeClass.NUMERIC
-            case _ if column_name.endswith("_id"):
-                return DataTypeClass.DISCRETE
             case _:
                 return DataTypeClass.UNKNOWN
 
@@ -116,6 +117,9 @@ class GetStrataResponseElement(BaseModel):
 class GetFiltersResponseElement(BaseModel):
     data_type: DataType
     description: str
-    distinct_values: List[str]
-    filter_name: str
+    distinct_values: List[str] = Field(
+        ...,
+        description="For discrete types, contains list of specific values. For numeric types, contains a (min, max) tuple.",
+    )
+    filter_name: str = Field(..., description="Name of the column.")
     relations: List[Relation] = Field(..., min_length=1)

@@ -1,8 +1,12 @@
 from contextlib import asynccontextmanager
-
-from fastapi import FastAPI, HTTPException, Depends, Query
 from typing import List, Dict, Any, Annotated
+
 import requests
+import sqlalchemy
+from fastapi import FastAPI, HTTPException, Depends, Query
+from fastapi import Request
+from requests import Session
+from sqlalchemy import distinct
 from sqlalchemy.exc import NoSuchTableError
 
 from xngin.apiserver import database
@@ -20,6 +24,7 @@ from xngin.apiserver.dependencies import (
     settings_dependency,
     config_dependency,
     gsheet_cache,
+    db_session,
 )
 from xngin.apiserver.gsheet_cache import GSheetCache
 from xngin.apiserver.settings import (
@@ -29,7 +34,6 @@ from xngin.apiserver.settings import (
     get_sqlalchemy_table,
     CannotFindTheTableException,
 )
-from fastapi import Request
 from xngin.apiserver.utils import safe_for_headers
 from xngin.sheets.config_sheet import (
     fetch_and_parse_sheet,
@@ -112,7 +116,7 @@ def get_strata(
     if commons.group != config.table_name:
         raise HTTPException(400, "group parameter must match configured table name.")
 
-    db_schema = fetch_db_schema(config)
+    db_schema = get_table_schema_for_api(config)
     config_sheet = fetch_config_sheet(commons, config, gsheet_cache)
     config_schema = {c.column_name: c for c in config_sheet.columns if c.is_strata}
 
@@ -138,14 +142,38 @@ def get_strata(
 def get_filters(
     commons: Annotated[CommonQueryParams, Depends()],
     gsheet_cache: Annotated[GSheetCache, Depends(gsheet_cache)],
+    dbsession: Annotated[Session, Depends(db_session)],
     client: Annotated[ClientConfig | None, Depends(config_dependency)] = None,
 ):
     config = must_have_config(client)
     if commons.group != config.table_name:
         raise HTTPException(400, "group parameter must match configured table name.")
-    db_schema = fetch_db_schema(config)
+    db_schema = get_table_schema_for_api(config)
     config_sheet = fetch_config_sheet(commons, config, gsheet_cache)
     config_schema = {c.column_name: c for c in config_sheet.columns if c.is_filter}
+
+    sqt = get_sqlalchemy_table_for_api(config)
+
+    # TODO: implement caching, respecting commons.refresh
+    def values_for_col(col_name):
+        """The name of the column containing values to sample."""
+        column = sqt.columns[col_name]
+        filter_class = db_schema.get(col_name).data_type.filter_class(col_name)
+        match filter_class:
+            case DataTypeClass.DISCRETE:
+                stmt = (
+                    sqlalchemy.select(distinct(column))
+                    .where(column.is_not(None))
+                    .order_by(column)
+                )
+                return dbsession.execute(stmt).scalars()
+            case DataTypeClass.NUMERIC:
+                stmt = sqlalchemy.select(
+                    sqlalchemy.func.min(column), sqlalchemy.func.max(column)
+                ).where(column.is_not(None))
+                return dbsession.execute(stmt).first()
+            case _:
+                raise HTTPException(500, f"Unsupported filter class {filter_class}")
 
     return sorted(
         [
@@ -156,7 +184,7 @@ def get_filters(
                 .data_type.filter_class(col_name)
                 .valid_relations(),
                 description=db_schema.get(col_name).description,
-                distinct_values=[],
+                distinct_values=[str(v) for v in values_for_col(col_name)],
             )  # TODO: implement distinct_values
             for col_name, config_col in config_schema.items()
             if db_schema.get(col_name)
@@ -183,14 +211,12 @@ def fetch_config_sheet(commons: CommonQueryParams, config, gsheet_cache: GSheetC
     return fetched
 
 
-def fetch_db_schema(config):
-    try:
-        table = get_sqlalchemy_table(config.to_sqlalchemy_url_and_table())
-    except NoSuchTableError as nste:
-        raise HTTPException(
-            status_code=500,
-            detail=f"The configured table '{config.table_name}' does not exist.",
-        ) from nste
+def get_table_schema_for_api(config):
+    """Fetches a map of column name to SQLAlchemy column metadata.
+
+    Raises 500 if the table does not exist.
+    """
+    table = get_sqlalchemy_table_for_api(config)
     try:
         db_schema = {
             c.column_name: c for c in create_sheetconfig_from_table(table).columns
@@ -198,6 +224,21 @@ def fetch_db_schema(config):
     except CannotFindTheTableException as cfte:
         raise HTTPException(status_code=500, detail=cfte.message) from cfte
     return db_schema
+
+
+def get_sqlalchemy_table_for_api(config):
+    """Returns a sqlalchemy.Table corresponding to the config data warehouse.
+
+    Raises 500 if the table does not exist.
+    """
+    try:
+        table = get_sqlalchemy_table(config.to_sqlalchemy_url_and_table())
+    except NoSuchTableError as nste:
+        raise HTTPException(
+            status_code=500,
+            detail=f"The configured table '{config.table_name}' does not exist.",
+        ) from nste
+    return table
 
 
 @app.get(
