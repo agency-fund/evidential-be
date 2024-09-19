@@ -1,10 +1,13 @@
-"""Utilities for the creation of the local testing_dwh database."""
+"""Utilities for the creation of the local testing database.
 
+This corresponds to the "testing" config specified in xngin.testing.settings.json.
+"""
+
+import logging
 import sqlite3
 from pathlib import Path
 
 import pandas as pd
-import logging
 
 logger = logging.getLogger(__name__)
 

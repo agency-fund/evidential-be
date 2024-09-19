@@ -5,15 +5,11 @@ import requests
 import sqlalchemy
 from fastapi import FastAPI, HTTPException, Depends, Query
 from fastapi import Request
-from requests import Session
 from sqlalchemy import distinct
-from sqlalchemy.exc import NoSuchTableError
 
 from xngin.apiserver import database
 from xngin.apiserver.api_types import (
-    DataType,
     DataTypeClass,
-    Relation,
     AudienceSpec,
     DesignSpec,
     UnimplementedResponse,
@@ -24,15 +20,14 @@ from xngin.apiserver.dependencies import (
     settings_dependency,
     config_dependency,
     gsheet_cache,
-    db_session,
 )
 from xngin.apiserver.gsheet_cache import GSheetCache
 from xngin.apiserver.settings import (
     get_settings_for_server,
     XnginSettings,
     ClientConfig,
-    get_sqlalchemy_table,
     CannotFindTheTableException,
+    get_sqlalchemy_table_from_engine,
 )
 from xngin.apiserver.utils import safe_for_headers
 from xngin.sheets.config_sheet import (
@@ -49,39 +44,6 @@ async def lifespan(_app: FastAPI):
 
 
 app = FastAPI(lifespan=lifespan)
-
-DISCRETE_TYPES = [DataType.BOOLEAN, DataType.CHARACTER_VARYING]
-NUMERIC_TYPES = [
-    DataType.DATE,
-    DataType.INTEGER,
-    DataType.DOUBLE_PRECISION,
-    DataType.NUMERIC,
-    DataType.TIMESTAMP_WITHOUT_TIMEZONE,
-    DataType.BIGINT,
-]
-
-
-# Helper functions
-def classify_data_type(filter_name: str, data_type: str):
-    filter_name = filter_name.lower()
-    data_type = data_type.lower()
-
-    if data_type in DISCRETE_TYPES or filter_name.endswith("_id"):
-        return DataTypeClass.DISCRETE
-    elif data_type in NUMERIC_TYPES:
-        return DataTypeClass.NUMERIC
-    else:
-        return DataTypeClass.UNKNOWN
-
-
-def get_relations(data_class: DataTypeClass):
-    match data_class:
-        case DataTypeClass.DISCRETE:
-            return [Relation.INCLUDES, Relation.EXCLUDES]
-        case DataTypeClass.NUMERIC:
-            return [Relation.BETWEEN]
-        case _:
-            raise ValueError(f"Unsupported data class: {data_class}")
 
 
 class CommonQueryParams:
@@ -111,14 +73,15 @@ def get_strata(
 
     This reimplements dwh.R get_strata().
     """
-    config = must_have_config(client)
-
+    config = require_config(client)
     if commons.group != config.table_name:
         raise HTTPException(400, "group parameter must match configured table name.")
 
-    db_schema = get_table_schema_for_api(config)
-    config_sheet = fetch_config_sheet(commons, config, gsheet_cache)
-    config_schema = {c.column_name: c for c in config_sheet.columns if c.is_strata}
+    with config.dbsession() as session:
+        sqt = get_sqlalchemy_table_from_engine(session.get_bind(), config.table_name)
+        db_schema = generate_column_descriptors(sqt)
+        config_sheet = fetch_worksheet(commons, config, gsheet_cache)
+        config_schema = {c.column_name: c for c in config_sheet.columns if c.is_strata}
 
     return sorted(
         [
@@ -142,103 +105,55 @@ def get_strata(
 def get_filters(
     commons: Annotated[CommonQueryParams, Depends()],
     gsheet_cache: Annotated[GSheetCache, Depends(gsheet_cache)],
-    dbsession: Annotated[Session, Depends(db_session)],
     client: Annotated[ClientConfig | None, Depends(config_dependency)] = None,
 ):
-    config = must_have_config(client)
+    config = require_config(client)
     if commons.group != config.table_name:
         raise HTTPException(400, "group parameter must match configured table name.")
-    db_schema = get_table_schema_for_api(config)
-    config_sheet = fetch_config_sheet(commons, config, gsheet_cache)
-    config_schema = {c.column_name: c for c in config_sheet.columns if c.is_filter}
 
-    sqt = get_sqlalchemy_table_for_api(config)
+    with config.dbsession() as session:
+        sqt = get_sqlalchemy_table_from_engine(session.get_bind(), config.table_name)
+        db_schema = generate_column_descriptors(sqt)
+        config_sheet = fetch_worksheet(commons, config, gsheet_cache)
+        config_schema = {c.column_name: c for c in config_sheet.columns if c.is_filter}
 
-    # TODO: implement caching, respecting commons.refresh
-    def values_for_col(col_name):
-        """The name of the column containing values to sample."""
-        column = sqt.columns[col_name]
-        filter_class = db_schema.get(col_name).data_type.filter_class(col_name)
-        match filter_class:
-            case DataTypeClass.DISCRETE:
-                stmt = (
-                    sqlalchemy.select(distinct(column))
-                    .where(column.is_not(None))
-                    .order_by(column)
-                )
-                return dbsession.execute(stmt).scalars()
-            case DataTypeClass.NUMERIC:
-                stmt = sqlalchemy.select(
-                    sqlalchemy.func.min(column), sqlalchemy.func.max(column)
-                ).where(column.is_not(None))
-                return dbsession.execute(stmt).first()
-            case _:
-                raise HTTPException(500, f"Unsupported filter class {filter_class}")
+        # TODO: implement caching, respecting commons.refresh
+        def values_for_col(col_name):
+            """The name of the column containing values to sample."""
+            column = sqt.columns[col_name]
+            filter_class = db_schema.get(col_name).data_type.filter_class(col_name)
+            match filter_class:
+                case DataTypeClass.DISCRETE:
+                    stmt = (
+                        sqlalchemy.select(distinct(column))
+                        .where(column.is_not(None))
+                        .order_by(column)
+                    )
+                    return session.execute(stmt).scalars()
+                case DataTypeClass.NUMERIC:
+                    stmt = sqlalchemy.select(
+                        sqlalchemy.func.min(column), sqlalchemy.func.max(column)
+                    ).where(column.is_not(None))
+                    return session.execute(stmt).first()
+                case _:
+                    raise HTTPException(500, f"Unsupported filter class {filter_class}")
 
-    return sorted(
-        [
-            GetFiltersResponseElement(
-                filter_name=col_name,
-                data_type=db_schema.get(col_name).data_type,
-                relations=db_schema.get(col_name)
-                .data_type.filter_class(col_name)
-                .valid_relations(),
-                description=db_schema.get(col_name).description,
-                distinct_values=[str(v) for v in values_for_col(col_name)],
-            )  # TODO: implement distinct_values
-            for col_name, config_col in config_schema.items()
-            if db_schema.get(col_name)
-        ],
-        key=lambda item: item.filter_name,
-    )
-
-
-def must_have_config(client: ClientConfig | None):
-    if not client:
-        raise HTTPException(
-            404, "Configuration for the requested client was not found."
+        return sorted(
+            [
+                GetFiltersResponseElement(
+                    filter_name=col_name,
+                    data_type=db_schema.get(col_name).data_type,
+                    relations=db_schema.get(col_name)
+                    .data_type.filter_class(col_name)
+                    .valid_relations(),
+                    description=db_schema.get(col_name).description,
+                    distinct_values=[str(v) for v in values_for_col(col_name)],
+                )  # TODO: implement distinct_values
+                for col_name, config_col in config_schema.items()
+                if db_schema.get(col_name)
+            ],
+            key=lambda item: item.filter_name,
         )
-    config = client.config
-    return config
-
-
-def fetch_config_sheet(commons: CommonQueryParams, config, gsheet_cache: GSheetCache):
-    fetched = gsheet_cache.get(
-        config.sheet,
-        lambda: fetch_and_parse_sheet(config.sheet),
-        refresh=commons.refresh,
-    )
-    return fetched
-
-
-def get_table_schema_for_api(config):
-    """Fetches a map of column name to SQLAlchemy column metadata.
-
-    Raises 500 if the table does not exist.
-    """
-    table = get_sqlalchemy_table_for_api(config)
-    try:
-        db_schema = {
-            c.column_name: c for c in create_sheetconfig_from_table(table).columns
-        }
-    except CannotFindTheTableException as cfte:
-        raise HTTPException(status_code=500, detail=cfte.message) from cfte
-    return db_schema
-
-
-def get_sqlalchemy_table_for_api(config):
-    """Returns a sqlalchemy.Table corresponding to the config data warehouse.
-
-    Raises 500 if the table does not exist.
-    """
-    try:
-        table = get_sqlalchemy_table(config.to_sqlalchemy_url_and_table())
-    except NoSuchTableError as nste:
-        raise HTTPException(
-            status_code=500,
-            detail=f"The configured table '{config.table_name}' does not exist.",
-        ) from nste
-    return table
 
 
 @app.get(
@@ -365,6 +280,35 @@ def experiments_reg_request(
         raise HTTPException(status_code=response.status_code, detail="Request failed")
 
     return response.json()
+
+
+def require_config(client: ClientConfig | None):
+    """Raises an exception unless we have a usable ClientConfig available."""
+    if not client:
+        raise HTTPException(
+            404, "Configuration for the requested client was not found."
+        )
+    return client.config
+
+
+def fetch_worksheet(commons: CommonQueryParams, config, gsheet_cache: GSheetCache):
+    """Fetches a worksheet from the cache, reading it from the source if refresh or if the cache doesn't have it."""
+    return gsheet_cache.get(
+        config.sheet,
+        lambda: fetch_and_parse_sheet(config.sheet),
+        refresh=commons.refresh,
+    )
+
+
+def generate_column_descriptors(table: sqlalchemy.Table):
+    """Fetches a map of column name to SheetConfig column metadata.
+
+    Raises 500 if the table does not exist.
+    """
+    try:
+        return {c.column_name: c for c in create_sheetconfig_from_table(table).columns}
+    except CannotFindTheTableException as cfte:
+        raise HTTPException(status_code=500, detail=cfte.message) from cfte
 
 
 def main():

@@ -26,8 +26,8 @@ def config_dependency(
     return settings.get_client_config(config_id)
 
 
-def db_session() -> Session:
-    """Returns a database connection."""
+def xngin_db_session() -> Session:
+    """Returns a database connection to the xngin sqlite database (not customer data warehouse)."""
     db = SessionLocal()
     try:
         yield db
@@ -35,5 +35,5 @@ def db_session() -> Session:
         db.close()
 
 
-def gsheet_cache(session: Annotated[Session, Depends(db_session)]):
-    return GSheetCache(session)
+def gsheet_cache(xngin_db: Annotated[Session, Depends(xngin_db_session)]):
+    return GSheetCache(xngin_db)
