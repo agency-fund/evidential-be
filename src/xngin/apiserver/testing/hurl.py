@@ -44,7 +44,7 @@ class Hurl(BaseModel):
                 .optional()
             )
             json_block = string("```json\n") >> regex(r".+") << string("\n```\n")
-            status_code_p = regex(r"HTTP (\d+)\n", group=1)
+            status_code_p = regex(r"HTTP (\d+)\n+", group=1)
             json_block_eof = regex(r"```json\n(.+)\n```", flags=re.DOTALL, group=1)
             payloads = yield (
                 alt(
