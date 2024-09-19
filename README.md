@@ -33,7 +33,7 @@ settings file. For testing and local dev, use `testing`.
 Example 1:
 
 ```shell
-$ curl -X 'GET' \
+curl -X 'GET' \
   'http://localhost:8000/strata?group=sample_group&refresh=false' \
   -H 'accept: application/json' \
   -H 'config-id: testing'
