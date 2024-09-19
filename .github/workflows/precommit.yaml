@@ -1,0 +1,31 @@
+name: pre-commit
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  FORCE_COLOR: "1"
+  PIP_DISABLE_PIP_VERSION_CHECK: "1"
+  PIP_PROGRESS_BAR: "off"
+  PYTHONUNBUFFERED: "1"
+
+jobs:
+  pre-commit:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version-file: "pyproject.toml"
+      - uses: pre-commit/action@v3.0.1

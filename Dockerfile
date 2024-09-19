@@ -1,17 +1,15 @@
-# 
-FROM python:3.9
-
-# 
+# Defines a production runtime environment for the service. This is not for development uses.
+FROM python:3.12
+ENV PYTHONUNBUFFERED=1
+ENV UV_COMPILE_BYTECODE=1
+ENV UV_PYTHON_DOWNLOADS=0
+ENV UV_LINK_MODE=copy
+COPY --from=ghcr.io/astral-sh/uv:0.4.5 /uv /bin/uv
 WORKDIR /code
-
-# 
-COPY ./requirements.txt /code/requirements.txt
-
-# 
-RUN pip install --no-cache-dir --upgrade -r /code/requirements.txt
-
-# 
-COPY ./app /code/app
-
-# 
-CMD ["fastapi", "run", "app/main.py", "--port", "80"]
+COPY pyproject.toml /code/
+COPY uv.lock /code/
+COPY xngin.settings.json .
+RUN --mount=type=cache,target=/root/.cache/uv /bin/uv sync --frozen --no-install-project
+COPY ./src /code/src
+RUN --mount=type=cache,target=/root/.cache/uv /bin/uv sync --frozen
+CMD ["uv", "run", "fastapi", "run", "src/xngin/apiserver/main.py", "--port", "80"]

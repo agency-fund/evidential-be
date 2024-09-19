@@ -1,0 +1,16 @@
+table,column_name,data_type,description,is_unique_id,column_group,is_filter,is_metric,is_strata,Extra Ad-Hoc Field
+sample_group,gender,numeric,"Gender (0=M, 1=F, 2=O)",,TODO,TRUE,,TRUE,adhoc1
+sample_group,ethnicity,numeric,The ethnicity,,TODO,TRUE,,TRUE,adhoc2
+sample_group,first_name,character varying,The first name,,,,,,adhoc3
+sample_group,last_name,character varying,The last name,,TODO,,,,
+sample_group,id,integer,Unique identifier,TRUE,,,,,
+sample_group,income,double precision,Income,,,,,,
+sample_group,potential_0,double precision,Potential 0,,,,,,
+sample_group,potential_1,double precision,Potential 1,,,,,,
+sample_group,is_recruited,boolean,Recruited?,,,TRUE,TRUE,TRUE,
+sample_group,is_registered,boolean,Registered?,,,TRUE,TRUE,TRUE,
+sample_group,is_onboarded,boolean,Onboarded?,,,TRUE,TRUE,TRUE,
+sample_group,is_engaged,boolean,Engaged?,,,TRUE,TRUE,TRUE,
+sample_group,is_retained,boolean,Retained?,,,TRUE,TRUE,TRUE,
+sample_group,baseline_income,double precision,Baseline Income,,,TRUE,,TRUE,
+sample_group,current_income,double precision,Current Income,,,TRUE,TRUE,TRUE,

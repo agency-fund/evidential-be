@@ -1,0 +1,16 @@
+**/*.egg-info
+**/*.md
+**/*.sqlite
+**/__pycache__
+**/testdata
+*.iml
+*.ipynb
+.env*
+.git
+.github
+.pytest_cache
+.ruff_cache
+.schemas
+.venv
+dist
+secrets/

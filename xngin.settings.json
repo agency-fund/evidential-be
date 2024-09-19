@@ -1,0 +1,26 @@
+{
+  "trusted_ips": [],
+  "client_configs": [
+    {
+      "id": "customer",
+      "config": {
+        "type": "customer",
+        "table_name": "transforms",
+        "sheet": {
+          "url": "https://docs.google.com/spreadsheets/d/redacted/edit",
+          "worksheet": "Sheet1"
+        },
+        "api_host": "api.example.com",
+        "api_token": "=secret:CUSTOMER_API_TOKEN",
+        "dwh": {
+          "user": "agency",
+          "port": 5439,
+          "password": "=secret:CUSTOMER_DWH_PASSWORD",
+          "host": "instance.redshift.amazonaws.com",
+          "dbname": "customer_dwh_prod",
+          "sslmode": "require"
+        }
+      }
+    }
+  ]
+}

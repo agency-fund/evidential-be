@@ -1,0 +1,40 @@
+{
+  "trusted_ips": [
+    "testclient"
+  ],
+  "client_configs": [
+    {
+      "id": "customer-test",
+      "config": {
+        "type": "customer",
+        "sheet": {
+          "url": "https://docs.google.com/spreadsheets/d/redacted/edit",
+          "worksheet": "Sheet1"
+        },
+        "table_name": "transforms",
+        "api_host": "api_host",
+        "api_token": "api_token",
+        "dwh": {
+          "user": "user",
+          "port": 5439,
+          "host": "__example__.redshift.amazonaws.com",
+          "password": "password",
+          "dbname": "dbname",
+          "sslmode": "require"
+        }
+        }
+    },
+    {
+      "id": "testing",
+      "config": {
+        "type": "sqlite_local",
+        "table_name": "sample_group",
+        "sheet": {
+          "url": "file://src/xngin/apiserver/testdata/testing_sheet.csv",
+          "worksheet": "Sheet1"
+        },
+        "sqlite_filename": "src/xngin/apiserver/testdata/testing_dwh.db"
+      }
+    }
+  ]
+}

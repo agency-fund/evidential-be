@@ -1,0 +1,83 @@
+name: tests
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  DEBIAN_FRONTEND: noninteractive
+  FORCE_COLOR: "1"
+  PYTHONUNBUFFERED: "1"
+  UV_SYSTEM_PYTHON: "1"
+
+jobs:
+  unittests:
+    env:
+      UV_CACHE_DIR: /tmp/.uv-cache
+    timeout-minutes: 15
+    name: Python on ${{ startsWith(matrix.os, 'macos-') && 'macOS' || 'Linux' }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ ubuntu-22.04, macos-14 ]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version-file: "pyproject.toml"
+      - run: curl -LsSf https://astral.sh/uv/0.4.5/install.sh | sh
+      - name: UV Cache
+        uses: actions/cache@v4
+        with:
+          path: /tmp/.uv-cache
+          key: uv-${{ runner.os }}-${{ hashFiles('pyproject.toml', 'uv.lock') }}
+          restore-keys: |
+            uv-${{ runner.os }}-${{ hashFiles('pyproject.toml', 'uv.lock') }}
+            uv-${{ runner.os }}
+      - if: startsWith(matrix.os, 'macos-')
+        run: |
+          # Install postgres so that the Python psycopg2 module can build from source.
+          brew install postgresql@14
+      - name: Install dependencies
+        run: |
+          which uv
+          uv --version
+          uv sync --locked
+      - name: write secrets
+        run: |
+          mkdir -p ~/.config/gspread && echo "${GCLOUD_SERVICE_ACCOUNT_CREDENTIALS}" > ~/.config/gspread/service_account.json
+          openssl sha256 ~/.config/gspread/service_account.json
+        env:
+          GCLOUD_SERVICE_ACCOUNT_CREDENTIALS: ${{ secrets.GOOGLE_APPLICATION_CREDENTIALS_CONTENT }}
+      - name: pytest unit tests
+        run: uv run pytest
+      - name: pytest integration tests
+        if: startsWith(matrix.os, 'ubuntu-')
+        run: |
+          sudo apt-get install -y --no-install-recommends -y retry
+          retry -t 3 -d 30 -- uv run pytest -m integration
+      - name: xngin-cli smoke tests
+        run: |
+          uv run xngin-cli --help
+          uv run xngin-cli export-json-schemas
+
+          # import/export lifecycle
+          uv run xngin-cli bootstrap-testing-dwh --force
+          uv run xngin-cli bootstrap-spreadsheet sqlite:///./src/xngin/apiserver/testdata/testing_dwh.db sample_group > config.csv
+          uv run xngin-cli parse-config-spreadsheet file://./config.csv sample_group
+
+      - name: build docker image
+        if: startsWith(matrix.os, 'ubuntu-')
+        run: docker build .
+      - name: Minimize UV Cache contents
+        run: uv cache prune --ci
