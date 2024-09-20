@@ -43,7 +43,7 @@ class DataType(enum.StrEnum):
         """Classifies a DataType into a filter class."""
         match self:
             # TODO: is this customer specific?
-            case _ if column_name.endswith("_id"):
+            case _ if column_name.lower().endswith("_id"):
                 return DataTypeClass.DISCRETE
             case DataType.BOOLEAN | DataType.CHARACTER_VARYING:
                 return DataTypeClass.DISCRETE

@@ -10,10 +10,9 @@ from sqlalchemy import StaticPool
 from sqlalchemy.orm import sessionmaker
 
 from xngin.apiserver import database
-from xngin.apiserver.dependencies import settings_dependency, db_session
+from xngin.apiserver.dependencies import settings_dependency, xngin_db_session
 from xngin.apiserver.settings import XnginSettings, SettingsForTesting
 from xngin.apiserver.testing import testing_dwh
-from xngin.apiserver.testing.testing_dwh import TESTING_DWH_SQLITE_PATH
 
 logger = logging.getLogger(__name__)
 
@@ -30,19 +29,10 @@ def get_settings_for_test() -> XnginSettings:
 
 
 def setup(app):
-    """Configures FastAPI dependencies for testing.
-
-    Note: This configuration will cease to be useful when we start testing APIs that mutate the data. When we get there,
-    this should be replaced with something that efficiently substitutes the underlying sqlite file with a fresh one
-    for every test run.
-    """
-    if not TESTING_DWH_SQLITE_PATH.exists():
-        # Hack: simulate the invocation of the fixtures.
-        raise_unless_running_from_top_directory()
-        testing_dwh.create_dwh_sqlite_database()
-
+    """Configures FastAPI dependencies for testing."""
+    # We use an in-memory ephemeral database for the xngindb during tests.
     db_engine = sqlalchemy.create_engine(
-        f"sqlite:///{TESTING_DWH_SQLITE_PATH}",
+        "sqlite://",
         connect_args={"check_same_thread": False},
         poolclass=StaticPool,
     )
@@ -62,7 +52,7 @@ def setup(app):
             db.close()
 
     # https://fastapi.tiangolo.com/advanced/testing-dependencies/#use-the-appdependency_overrides-attribute
-    app.dependency_overrides[db_session] = get_db_for_test
+    app.dependency_overrides[xngin_db_session] = get_db_for_test
     app.dependency_overrides[settings_dependency] = get_settings_for_test
 
 
@@ -82,6 +72,7 @@ def ensure_dwh_sqlite_database_exists(ensure_correct_working_directory):
 
 
 def raise_unless_running_from_top_directory():
+    """Raises an exception unless the current working directory is the root of the project."""
     pypt = Path(os.getcwd()) / "pyproject.toml"
     if not pypt.exists():
         raise Exception("Tests must be run from the root of the repository.")

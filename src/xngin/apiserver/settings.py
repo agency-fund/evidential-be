@@ -6,6 +6,7 @@ from typing import Literal, List, Union
 import sqlalchemy
 from pydantic import BaseModel, PositiveInt, SecretStr, Field
 from sqlalchemy.exc import NoSuchTableError
+from sqlalchemy.orm import Session
 
 DEFAULT_SECRETS_DIRECTORY = "secrets"
 DEFAULT_SETTINGS_FILE = "xngin.settings.json"
@@ -85,6 +86,16 @@ class SqliteLocalConfig(BaseModel):
             table_name=self.table_name,
         )
 
+    def dbsession(self):
+        """Returns a Session to be used to send queries to the customer database.
+
+        Use this in a `with` block to ensure correct transaction handling. If you need the
+        sqlalchemy Engine, call .get_bind().
+        """
+        return Session(
+            sqlite_connect(self.to_sqlalchemy_url_and_table().sqlalchemy_url)
+        )
+
 
 class ClientConfig(BaseModel):
     id: str
@@ -117,24 +128,30 @@ class CannotFindTheTableException(Exception):
         if existing_tables:
             self.message = f"The {table_name} table does not exist. Known tables: {", ".join(sorted(existing_tables))}"
         else:
-            self.message = "The specified database does not contain any tables. Check the DSN and try again."
+            self.message = f"The {table_name} table does not exist; the database does not contain any tables."
 
     def __str__(self):
         return self.message
 
 
-def get_sqlalchemy_table(sqlat: SqlalchemyAndTable):
-    """Connects to a SQLAlchemy DSN and creates a sqlalchemy.Table for introspection."""
-    connect_args = {}
-    if sqlat.sqlalchemy_url.startswith("postgres"):
-        connect_args["connect_timeout"] = 5
-    elif sqlat.sqlalchemy_url.startswith("sqlite"):
-        connect_args["timeout"] = 5
-    engine = sqlalchemy.create_engine(sqlat.sqlalchemy_url, connect_args=connect_args)
+def get_sqlalchemy_table_from_engine(engine: sqlalchemy.engine.Engine, table_name: str):
+    """Constructs a Table via reflection.
+
+    Raises CannotFindTheTableException containing helpful error message if the table doesn't exist.
+    """
     metadata = sqlalchemy.MetaData()
     try:
-        return sqlalchemy.Table(sqlat.table_name, metadata, autoload_with=engine)
+        return sqlalchemy.Table(table_name, metadata, autoload_with=engine)
     except NoSuchTableError as nste:
         metadata.reflect(engine)
         existing_tables = metadata.tables.keys()
-        raise CannotFindTheTableException(sqlat.table_name, existing_tables) from nste
+        raise CannotFindTheTableException(table_name, existing_tables) from nste
+
+
+def sqlite_connect(sqlalchemy_url):
+    connect_args = {}
+    if sqlalchemy_url.startswith("postgres"):
+        connect_args["connect_timeout"] = 5
+    elif sqlalchemy_url.startswith("sqlite"):
+        connect_args["timeout"] = 5
+    return sqlalchemy.create_engine(sqlalchemy_url, connect_args=connect_args)

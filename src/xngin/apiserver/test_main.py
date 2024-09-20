@@ -1,8 +1,7 @@
 from fastapi.testclient import TestClient
 
 from xngin.apiserver import conftest
-from xngin.apiserver.api_types import DataTypeClass
-from xngin.apiserver.main import app, classify_data_type
+from xngin.apiserver.main import app
 from xngin.apiserver.settings import XnginSettings
 
 conftest.setup(app)
@@ -32,9 +31,3 @@ def test_config_injection():
 def test_root_get_api():
     response = client.get("/")
     assert response.status_code == 404
-
-
-def test_classify_data_type():
-    assert classify_data_type("foo_id", "date") == DataTypeClass.DISCRETE
-    assert classify_data_type("test", "boolean") == DataTypeClass.DISCRETE
-    assert classify_data_type("foo", "date") == DataTypeClass.NUMERIC
