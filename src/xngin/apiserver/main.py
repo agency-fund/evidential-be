@@ -60,7 +60,9 @@ class CommonQueryParams:
 
     def __init__(
         self,
-        unit_type: Annotated[str, Query(description="Unit of analysis for experiment.")],
+        unit_type: Annotated[
+            str, Query(description="Unit of analysis for experiment.")
+        ],
         refresh: Annotated[bool, Query(description="Refresh the cache.")] = False,
     ):
         self.unit_type = unit_type 
@@ -84,7 +86,9 @@ def get_strata(
     """
     config = require_config(client)
     if commons.unit_type != config.table_name:
-        raise HTTPException(400, "unit_type parameter must match configured table name.")
+        raise HTTPException(
+            400, "unit_type parameter must match configured table name."
+        )
 
     with config.dbsession() as session:
         sqt = get_sqlalchemy_table_from_engine(session.get_bind(), config.table_name)
@@ -119,7 +123,9 @@ def get_filters(
 ):
     config = require_config(client)
     if commons.unit_type != config.table_name:
-        raise HTTPException(400, "unit_type parameter must match configured table name.")
+        raise HTTPException(
+            400, "unit_type parameter must match configured table name."
+        )
 
     with config.dbsession() as session:
         sqt = get_sqlalchemy_table_from_engine(session.get_bind(), config.table_name)
