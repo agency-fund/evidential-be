@@ -28,7 +28,7 @@
       "id": "testing",
       "config": {
         "type": "sqlite_local",
-        "table_name": "sample_group",
+        "table_name": "test_unit_type",
         "sheet": {
           "url": "file://src/xngin/apiserver/testdata/testing_sheet.csv",
           "worksheet": "Sheet1"

@@ -73,8 +73,8 @@ jobs:
 
           # import/export lifecycle
           uv run xngin-cli bootstrap-testing-dwh --force
-          uv run xngin-cli bootstrap-spreadsheet sqlite:///./src/xngin/apiserver/testdata/testing_dwh.db sample_group > config.csv
-          uv run xngin-cli parse-config-spreadsheet file://./config.csv sample_group
+          uv run xngin-cli bootstrap-spreadsheet sqlite:///./src/xngin/apiserver/testdata/testing_dwh.db test_unit_type > config.csv
+          uv run xngin-cli parse-config-spreadsheet file://./config.csv test_unit_type
 
       - name: build docker image
         if: startsWith(matrix.os, 'ubuntu-')

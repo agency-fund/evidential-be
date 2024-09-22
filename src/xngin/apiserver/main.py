@@ -60,10 +60,10 @@ class CommonQueryParams:
 
     def __init__(
         self,
-        group: Annotated[str, Query(description="Column group to derive strata from.")],
+        unit_type: Annotated[str, Query(description="Unit of analysis for experiment.")],
         refresh: Annotated[bool, Query(description="Refresh the cache.")] = False,
     ):
-        self.group = group
+        self.unit_type = unit_type 
         self.refresh = refresh
 
 
@@ -83,8 +83,8 @@ def get_strata(
     This reimplements dwh.R get_strata().
     """
     config = require_config(client)
-    if commons.group != config.table_name:
-        raise HTTPException(400, "group parameter must match configured table name.")
+    if commons.unit_type != config.table_name:
+        raise HTTPException(400, "unit_type parameter must match configured table name.")
 
     with config.dbsession() as session:
         sqt = get_sqlalchemy_table_from_engine(session.get_bind(), config.table_name)
@@ -98,6 +98,7 @@ def get_strata(
                 data_type=db_schema.get(col_name).data_type,
                 column_name=col_name,
                 description=db_schema.get(col_name).description,
+                # TODO: work on naming for strata_group/column_group
                 strata_group=config_col.column_group,
             )
             for col_name, config_col in config_schema.items()
@@ -117,8 +118,8 @@ def get_filters(
     client: Annotated[ClientConfig | None, Depends(config_dependency)] = None,
 ):
     config = require_config(client)
-    if commons.group != config.table_name:
-        raise HTTPException(400, "group parameter must match configured table name.")
+    if commons.unit_type != config.table_name:
+        raise HTTPException(400, "unit_type parameter must match configured table name.")
 
     with config.dbsession() as session:
         sqt = get_sqlalchemy_table_from_engine(session.get_bind(), config.table_name)
