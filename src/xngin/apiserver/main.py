@@ -145,24 +145,52 @@ def get_filters(
                     )
                     return session.execute(stmt).scalars()
                 case DataTypeClass.NUMERIC:
-                    stmt = sqlalchemy.select(
-                        sqlalchemy.func.min(column), sqlalchemy.func.max(column)
-                    ).where(column.is_not(None))
-                    return session.execute(stmt).first()
+                    return session.execute(
+                        sqlalchemy.select(
+                            sqlalchemy.func.min(column), sqlalchemy.func.max(column)
+                        ).where(column.is_not(None))
+                    ).first()
                 case _:
                     raise HTTPException(500, f"Unsupported filter class {filter_class}")
 
+        def mapper(col_name, config_col):
+            schema_info = db_schema.get(col_name)
+            filter_class = schema_info.data_type.filter_class(col_name)
+
+            column = sqt.columns[col_name]
+            distinct_values = None
+            min, max = None, None
+            if filter_class == DataTypeClass.DISCRETE:
+                distinct_values = [
+                    str(v)
+                    for v in session.execute(
+                        sqlalchemy.select(distinct(column))
+                        .where(column.is_not(None))
+                        .order_by(column)
+                    ).scalars()
+                ]
+            elif filter_class == DataTypeClass.NUMERIC:
+                min, max = session.execute(
+                    sqlalchemy.select(
+                        sqlalchemy.func.min(column), sqlalchemy.func.max(column)
+                    ).where(column.is_not(None))
+                ).first()
+            else:
+                raise Exception("nope")
+
+            return GetFiltersResponseElement(
+                filter_name=col_name,
+                data_type=schema_info.data_type,
+                relations=filter_class.valid_relations(),
+                description=db_schema.get(col_name).description,
+                distinct_values=distinct_values,
+                min=min,
+                max=max,
+            )
+
         return sorted(
             [
-                GetFiltersResponseElement(
-                    filter_name=col_name,
-                    data_type=db_schema.get(col_name).data_type,
-                    relations=db_schema.get(col_name)
-                    .data_type.filter_class(col_name)
-                    .valid_relations(),
-                    description=db_schema.get(col_name).description,
-                    distinct_values=[str(v) for v in values_for_col(col_name)],
-                )  # TODO: implement distinct_values
+                mapper(col_name, config_col)
                 for col_name, config_col in config_schema.items()
                 if db_schema.get(col_name)
             ],

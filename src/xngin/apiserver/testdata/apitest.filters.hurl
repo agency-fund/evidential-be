@@ -7,10 +7,9 @@ HTTP 200
   {
     "data_type": "double precision",
     "description": "",
-    "distinct_values": [
-      "9778.910653027706",
-      "120621.36985115612"
-    ],
+    "distinct_values": null,
+    "min": 9778.910653027706,
+    "max": 120621.36985115612,
     "filter_name": "baseline_income",
     "relations": [
       "between"
@@ -19,10 +18,9 @@ HTTP 200
   {
     "data_type": "double precision",
     "description": "",
-    "distinct_values": [
-      "8466.284540241537",
-      "96941.0"
-    ],
+    "distinct_values": null,
+    "min": 8466.284540241537,
+    "max": 96941,
     "filter_name": "current_income",
     "relations": [
       "between"
@@ -39,6 +37,8 @@ HTTP 200
       "Indian",
       "White"
     ],
+    "min": null,
+    "max": null,
     "filter_name": "ethnicity",
     "relations": [
       "includes",
@@ -52,6 +52,8 @@ HTTP 200
       "Female",
       "Male"
     ],
+    "min": null,
+    "max": null,
     "filter_name": "gender",
     "relations": [
       "includes",
@@ -61,10 +63,9 @@ HTTP 200
   {
     "data_type": "integer",
     "description": "",
-    "distinct_values": [
-      "0",
-      "1"
-    ],
+    "distinct_values": null,
+    "min": 0,
+    "max": 1,
     "filter_name": "is_engaged",
     "relations": [
       "between"
@@ -73,10 +74,9 @@ HTTP 200
   {
     "data_type": "integer",
     "description": "",
-    "distinct_values": [
-      "0",
-      "1"
-    ],
+    "distinct_values": null,
+    "min": 0,
+    "max": 1,
     "filter_name": "is_onboarded",
     "relations": [
       "between"
@@ -85,10 +85,9 @@ HTTP 200
   {
     "data_type": "integer",
     "description": "",
-    "distinct_values": [
-      "1",
-      "1"
-    ],
+    "distinct_values": null,
+    "min": 1,
+    "max": 1,
     "filter_name": "is_recruited",
     "relations": [
       "between"
@@ -97,10 +96,9 @@ HTTP 200
   {
     "data_type": "integer",
     "description": "",
-    "distinct_values": [
-      "0",
-      "1"
-    ],
+    "distinct_values": null,
+    "min": 0,
+    "max": 1,
     "filter_name": "is_registered",
     "relations": [
       "between"
@@ -109,15 +107,13 @@ HTTP 200
   {
     "data_type": "integer",
     "description": "",
-    "distinct_values": [
-      "0",
-      "1"
-    ],
+    "distinct_values": null,
+    "min": 0,
+    "max": 1,
     "filter_name": "is_retained",
     "relations": [
       "between"
     ]
   }
 ]
-
 ```
