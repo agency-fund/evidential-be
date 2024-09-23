@@ -69,8 +69,7 @@ class CommonQueryParams:
 
 # API Endpoints
 @app.get(
-    "/strata",
-    summary="Get possible strata covariates.",
+    "/strata", summary="Get possible strata covariates.", tags=["Experiment Design"]
 )
 def get_strata(
     commons: Annotated[CommonQueryParams, Depends()],
@@ -110,6 +109,7 @@ def get_strata(
 @app.get(
     "/filters",
     summary="Get possible filters covariates for a given unit type.",
+    tags=["Experiment Design"],
 )
 def get_filters(
     commons: Annotated[CommonQueryParams, Depends()],
@@ -169,6 +169,7 @@ def get_filters(
     "/metrics",
     summary="Get possible metric covariates for a given unit type.",
     response_model=UnimplementedResponse,
+    tags=["Experiment Design"],
 )
 def get_metrics(
     commons: Annotated[CommonQueryParams, Depends()],
@@ -182,6 +183,7 @@ def get_metrics(
     "/power",
     summary="Check power given an experiment and audience specification.",
     response_model=UnimplementedResponse,
+    tags=["Experiment Design"],
 )
 def check_power(
     design_spec: DesignSpec,
@@ -196,8 +198,25 @@ def check_power(
     "/assign",
     summary="Assign treatment given experiment and audience specification.",
     response_model=UnimplementedResponse,
+    tags=["Manage Experiments"],
 )
 def assign_treatment(
+    design_spec: DesignSpec,
+    audience_spec: AudienceSpec,
+    client: Annotated[ClientConfig | None, Depends(config_dependency)] = None,
+    chosen_n: int = 1000,
+):
+    # Implement treatment assignment logic
+    return UnimplementedResponse()
+
+
+@app.post(
+    "/assignment-file",
+    summary="TODO",
+    response_model=UnimplementedResponse,
+    tags=["Manage Experiments"],
+)
+def assignment_file(
     design_spec: DesignSpec,
     audience_spec: AudienceSpec,
     client: Annotated[ClientConfig | None, Depends(config_dependency)] = None,
@@ -211,8 +230,26 @@ def assign_treatment(
     "/commit",
     summary="Commit an experiment to the database.",
     response_model=UnimplementedResponse,
+    tags=["Manage Experiments"],
 )
 def commit_experiment(
+    design_spec: DesignSpec,
+    audience_spec: AudienceSpec,
+    experiment_assignment: Dict[str, Any],
+    user_id: str = "testuser",
+    client: Annotated[ClientConfig | None, Depends(config_dependency)] = None,
+):
+    # Implement experiment commit logic
+    return UnimplementedResponse()
+
+
+@app.post(
+    "/update-commit",
+    summary="TODO",
+    response_model=UnimplementedResponse,
+    tags=["Manage Experiments"],
+)
+def update_experiment(
     design_spec: DesignSpec,
     audience_spec: AudienceSpec,
     experiment_assignment: Dict[str, Any],
