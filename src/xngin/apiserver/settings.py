@@ -53,6 +53,8 @@ class Unit(BaseModel):
 
 
 class UnitsMixin(BaseModel):
+    """UnitsMixin can be added to a config type to add standardized unit definitions."""
+
     units: List[Unit]
 
     def find_unit(self, unit_type: str):
@@ -147,6 +149,8 @@ class SettingsForTesting(XnginSettings):
 
 
 class CannotFindTableException(Exception):
+    """Raised when we cannot find a table in the database."""
+
     def __init__(self, table_name, existing_tables):
         self.table_name = table_name
         self.alternatives = existing_tables
@@ -160,6 +164,8 @@ class CannotFindTableException(Exception):
 
 
 class CannotFindUnitException(Exception):
+    """Raised when we cannot find a unit in the configuration."""
+
     def __init__(self, unit_name):
         self.unit_name = unit_name
         self.message = (

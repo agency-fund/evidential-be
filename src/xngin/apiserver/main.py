@@ -29,6 +29,7 @@ from xngin.apiserver.settings import (
     ClientConfig,
     CannotFindTableException,
     get_sqlalchemy_table_from_engine,
+    CannotFindUnitException,
 )
 from xngin.apiserver.utils import safe_for_headers
 from xngin.sheets.config_sheet import (
@@ -49,8 +50,17 @@ app = FastAPI(lifespan=lifespan)
 
 # TODO: unify exception handling
 @app.exception_handler(CannotFindTableException)
-async def settings_exception_handler(_request: Request, exc: CannotFindTableException):
-    return JSONResponse(status_code=500, content={"message": exc.message})
+async def exception_handler_cannotfindthetableexception(
+    _request: Request, exc: CannotFindTableException
+):
+    return JSONResponse(status_code=404, content={"message": exc.message})
+
+
+@app.exception_handler(CannotFindUnitException)
+async def exception_handler_cannotfindtheunitexception(
+    _request: Request, exc: CannotFindUnitException
+):
+    return JSONResponse(status_code=404, content={"message": exc.message})
 
 
 class CommonQueryParams:
