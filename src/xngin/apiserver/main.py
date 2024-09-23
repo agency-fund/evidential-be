@@ -27,7 +27,7 @@ from xngin.apiserver.settings import (
     get_settings_for_server,
     XnginSettings,
     ClientConfig,
-    CannotFindTheTableException,
+    CannotFindTableException,
     get_sqlalchemy_table_from_engine,
 )
 from xngin.apiserver.utils import safe_for_headers
@@ -48,10 +48,8 @@ app = FastAPI(lifespan=lifespan)
 
 
 # TODO: unify exception handling
-@app.exception_handler(CannotFindTheTableException)
-async def settings_exception_handler(
-    _request: Request, exc: CannotFindTheTableException
-):
+@app.exception_handler(CannotFindTableException)
+async def settings_exception_handler(_request: Request, exc: CannotFindTableException):
     return JSONResponse(status_code=500, content={"message": exc.message})
 
 
@@ -65,7 +63,7 @@ class CommonQueryParams:
         ],
         refresh: Annotated[bool, Query(description="Refresh the cache.")] = False,
     ):
-        self.unit_type = unit_type 
+        self.unit_type = unit_type
         self.refresh = refresh
 
 
@@ -84,13 +82,8 @@ def get_strata(
     This reimplements dwh.R get_strata().
     """
     config = require_config(client)
-    if commons.unit_type != config.table_name:
-        raise HTTPException(
-            400, "unit_type parameter must match configured table name."
-        )
-
-    with config.dbsession() as session:
-        sqt = get_sqlalchemy_table_from_engine(session.get_bind(), config.table_name)
+    with config.dbsession(commons.unit_type) as session:
+        sqt = get_sqlalchemy_table_from_engine(session.get_bind(), commons.unit_type)
         db_schema = generate_column_descriptors(sqt)
         config_sheet = fetch_worksheet(commons, config, gsheet_cache)
         config_schema = {c.column_name: c for c in config_sheet.columns if c.is_strata}
@@ -122,13 +115,8 @@ def get_filters(
     client: Annotated[ClientConfig | None, Depends(config_dependency)] = None,
 ):
     config = require_config(client)
-    if commons.unit_type != config.table_name:
-        raise HTTPException(
-            400, "unit_type parameter must match configured table name."
-        )
-
-    with config.dbsession() as session:
-        sqt = get_sqlalchemy_table_from_engine(session.get_bind(), config.table_name)
+    with config.dbsession(commons.unit_type) as session:
+        sqt = get_sqlalchemy_table_from_engine(session.get_bind(), commons.unit_type)
         db_schema = generate_column_descriptors(sqt)
         config_sheet = fetch_worksheet(commons, config, gsheet_cache)
         config_schema = {c.column_name: c for c in config_sheet.columns if c.is_filter}
@@ -346,9 +334,10 @@ def require_config(client: ClientConfig | None):
 
 def fetch_worksheet(commons: CommonQueryParams, config, gsheet_cache: GSheetCache):
     """Fetches a worksheet from the cache, reading it from the source if refresh or if the cache doesn't have it."""
+    sheet = config.find_unit(commons.unit_type).sheet
     return gsheet_cache.get(
-        config.sheet,
-        lambda: fetch_and_parse_sheet(config.sheet),
+        sheet,
+        lambda: fetch_and_parse_sheet(sheet),
         refresh=commons.refresh,
     )
 
@@ -360,7 +349,7 @@ def generate_column_descriptors(table: sqlalchemy.Table):
     """
     try:
         return {c.column_name: c for c in create_sheetconfig_from_table(table).columns}
-    except CannotFindTheTableException as cfte:
+    except CannotFindTableException as cfte:
         raise HTTPException(status_code=500, detail=cfte.message) from cfte
 
 

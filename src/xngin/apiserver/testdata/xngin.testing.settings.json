@@ -7,11 +7,16 @@
       "id": "customer-test",
       "config": {
         "type": "customer",
-        "sheet": {
-          "url": "https://docs.google.com/spreadsheets/d/redacted/edit",
-          "worksheet": "Sheet1"
-        },
-        "table_name": "transforms",
+        "units": [
+          {
+            "id": "test_unit_type",
+            "sheet": {
+              "url": "https://docs.google.com/spreadsheets/d/redacted/edit",
+              "worksheet": "Sheet1"
+            },
+            "table_name": "transforms"
+          }
+        ],
         "api_host": "api_host",
         "api_token": "api_token",
         "dwh": {
@@ -22,17 +27,21 @@
           "dbname": "dbname",
           "sslmode": "require"
         }
-        }
+      }
     },
     {
       "id": "testing",
       "config": {
         "type": "sqlite_local",
-        "table_name": "test_unit_type",
-        "sheet": {
-          "url": "file://src/xngin/apiserver/testdata/testing_sheet.csv",
-          "worksheet": "Sheet1"
-        },
+        "units": [
+          {
+            "table_name": "test_unit_type",
+            "sheet": {
+              "url": "file://src/xngin/apiserver/testdata/testing_sheet.csv",
+              "worksheet": "Sheet1"
+            }
+          }
+        ],
         "sqlite_filename": "src/xngin/apiserver/testdata/testing_dwh.db"
       }
     }

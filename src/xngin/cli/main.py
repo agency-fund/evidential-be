@@ -20,7 +20,7 @@ from xngin.apiserver.settings import (
     SqlalchemyAndTable,
     SheetRef,
     XnginSettings,
-    CannotFindTheTableException,
+    CannotFindTableException,
 )
 from xngin.apiserver.testing import testing_dwh
 from xngin.sheets.config_sheet import (
@@ -49,7 +49,7 @@ def infer_config_from_schema(dsn: str, table: str):
         dwh = get_sqlalchemy_table(
             SqlalchemyAndTable(sqlalchemy_url=dsn, table_name=table)
         )
-    except CannotFindTheTableException as cfte:
+    except CannotFindTableException as cfte:
         err_console.print(cfte.message)
         raise typer.Exit(1) from cfte
     return create_sheetconfig_from_table(dwh)
@@ -64,7 +64,7 @@ def get_sqlalchemy_table(sqlat: SqlalchemyAndTable):
     except NoSuchTableError as nste:
         metadata.reflect(engine)
         existing_tables = metadata.tables.keys()
-        raise CannotFindTheTableException(sqlat.table_name, existing_tables) from nste
+        raise CannotFindTableException(sqlat.table_name, existing_tables) from nste
 
 
 @app.command()
@@ -80,14 +80,14 @@ def bootstrap_testing_dwh(
 @app.command()
 def bootstrap_spreadsheet(
     dsn: Annotated[
-        str, typer.Argument(..., help="The SQLALchemy DSN of a data warehouse.")
+        str, typer.Argument(..., help="The SQLAlchemy DSN of a data warehouse.")
     ],
     table_name: Annotated[
         str,
         typer.Argument(
             ...,
             help="The name of the table to pull field metadata from. If creating a Google Sheet, this will also be "
-            "used as the worksheet name, unless overrideen by --worksheet-name.",
+            "used as the worksheet name, unless overridden by --worksheet-name.",
         ),
     ],
     create_gsheet: Annotated[
