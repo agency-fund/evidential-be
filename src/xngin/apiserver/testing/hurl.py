@@ -28,6 +28,20 @@ class Hurl(BaseModel):
     expected_response: str | None = None
     body: str | None = None
 
+    def to_script(self):
+        """Generates a Hurl script from this Hurl instance."""
+        return "\n".join([
+            line
+            for line in [
+                f"{self.method} {self.url}",
+                *[f"{k}: {v}" for k, v in sorted(self.headers.items())],
+                f"```json\n{self.body}\n```" if self.body else None,
+                f"HTTP {self.expected_status}",
+                f"```json\n{self.expected_response}\n```",
+            ]
+            if line is not None
+        ])
+
     @staticmethod
     def from_script(script: str):
         """Constructs a Hurl from a string."""
