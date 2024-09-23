@@ -30,7 +30,7 @@ def test_hurl():
         expected_status=200,
         body="payload",
     )
-    assert Hurl.from_script("""GET http://localhost:8000/strata?group=sample_group
+    assert Hurl.from_script("""GET http://localhost:8000/strata?unit_type=test_unit_type
 ```json
 requestbody
 ```
@@ -42,13 +42,13 @@ HTTP 200
 
 """) == Hurl(
         method="GET",
-        url="http://localhost:8000/strata?group=sample_group",
+        url="http://localhost:8000/strata?unit_type=test_unit_type",
         headers={},
         expected_status=200,
         expected_response='[\n  { "k": "v" }',
         body="requestbody",
     )
-    assert Hurl.from_script("""GET http://localhost:8000/strata?group=sample_group
+    assert Hurl.from_script("""GET http://localhost:8000/strata?unit_type=test_unit_type
 Config-ID: testing
 ```json
 requestbody
@@ -61,7 +61,7 @@ HTTP 200
 
 """) == Hurl(
         method="GET",
-        url="http://localhost:8000/strata?group=sample_group",
+        url="http://localhost:8000/strata?unit_type=test_unit_type",
         headers={"Config-ID": "testing"},
         expected_status=200,
         expected_response='[\n  { "k": "v" }',

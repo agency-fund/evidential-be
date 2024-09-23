@@ -1,4 +1,4 @@
-GET http://localhost:8000/filters?group=sample_group
+GET http://localhost:8000/filters?unit_type=test_unit_type
 Config-ID: testing
 HTTP 200
 

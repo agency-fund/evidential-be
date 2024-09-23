@@ -15,7 +15,7 @@ TESTING_DWH_SQLITE_PATH = Path(__file__).parent.parent / "testdata/testing_dwh.d
 TESTING_DWH_RAW_DATA = Path(__file__).parent.parent / "testdata/testing_dwh.csv.zst"
 
 
-def import_csv_to_sqlite(source_csv, destination, table_name="sample_group"):
+def import_csv_to_sqlite(source_csv, destination, table_name="test_unit_type"):
     """Imports a CSV file to a SQLite database."""
     logger.info(f"Importing {source_csv} to {destination}")
     df = pd.read_csv(source_csv)
