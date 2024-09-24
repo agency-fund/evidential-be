@@ -80,7 +80,7 @@ def get_strata(
     commons: Annotated[CommonQueryParams, Depends()],
     gsheet_cache: Annotated[GSheetCache, Depends(gsheet_cache)],
     client: Annotated[ClientConfig | None, Depends(config_dependency)] = None,
-):
+) -> list[GetStrataResponseElement]:
     """
     Get possible strata covariates for a given unit type.
 
@@ -123,7 +123,7 @@ def get_filters(
     commons: Annotated[CommonQueryParams, Depends()],
     gsheet_cache: Annotated[GSheetCache, Depends(gsheet_cache)],
     client: Annotated[ClientConfig | None, Depends(config_dependency)] = None,
-):
+) -> list[GetFiltersResponseElement]:
     config = require_config(client)
     if commons.unit_type != config.table_name:
         raise HTTPException(
