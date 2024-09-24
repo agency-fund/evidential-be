@@ -29,31 +29,31 @@ HTTP 200
   },
   {
     "column_name": "is_engaged",
-    "data_type": "boolean",
+    "data_type": "integer",
     "description": "Engaged?",
     "strata_group": ""
   },
   {
     "column_name": "is_onboarded",
-    "data_type": "boolean",
+    "data_type": "integer",
     "description": "Onboarded?",
     "strata_group": ""
   },
   {
     "column_name": "is_recruited",
-    "data_type": "boolean",
+    "data_type": "integer",
     "description": "Recruited?",
     "strata_group": ""
   },
   {
     "column_name": "is_registered",
-    "data_type": "boolean",
+    "data_type": "integer",
     "description": "Registered?",
     "strata_group": ""
   },
   {
     "column_name": "is_retained",
-    "data_type": "boolean",
+    "data_type": "integer",
     "description": "Retained?",
     "strata_group": ""
   }

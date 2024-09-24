@@ -103,7 +103,7 @@ def get_strata(
     return sorted(
         [
             GetStrataResponseElement(
-                data_type=col_descriptor.data_type,
+                data_type=db_schema.get(col_name).data_type,
                 column_name=col_name,
                 description=col_descriptor.description,
                 # TODO: work on naming for strata_group/column_group
