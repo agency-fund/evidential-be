@@ -16,6 +16,7 @@ from xngin.apiserver.api_types import (
     UnimplementedResponse,
     GetStrataResponseElement,
     GetFiltersResponseElement,
+    GetMetricsResponseElement,
 )
 from xngin.apiserver.dependencies import (
     settings_dependency,
@@ -197,15 +198,34 @@ def get_filters(
 @app.get(
     "/metrics",
     summary="Get possible metric covariates for a given unit type.",
-    response_model=UnimplementedResponse,
     tags=["Experiment Design"],
 )
 def get_metrics(
     commons: Annotated[CommonQueryParams, Depends()],
+    gsheet_cache: Annotated[GSheetCache, Depends(gsheet_cache)],
     client: Annotated[ClientConfig | None, Depends(config_dependency)] = None,
 ):
-    # Implement get_metrics logic
-    return UnimplementedResponse()
+    config = require_config(client)
+    with config.dbsession(commons.unit_type) as session:
+        sa_table = get_sqlalchemy_table_from_engine(
+            session.get_bind(), commons.unit_type
+        )
+        db_schema = generate_column_descriptors(sa_table)
+        config_sheet = fetch_worksheet(commons, config, gsheet_cache)
+        metric_cols = {c.column_name: c for c in config_sheet.columns if c.is_metric}
+
+    return sorted(
+        [
+            GetMetricsResponseElement(
+                data_type=db_schema.get(col_name).data_type,
+                column_name=col_name,
+                description=col_descriptor.description,
+            )
+            for col_name, col_descriptor in metric_cols.items()
+            if db_schema.get(col_name)
+        ],
+        key=lambda item: item.column_name,
+    )
 
 
 @app.post(
