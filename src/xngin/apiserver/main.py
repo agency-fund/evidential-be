@@ -137,7 +137,8 @@ def get_filters(
 
         # TODO: implement caching, respecting commons.refresh
         def mapper(col_name, column_descriptor):
-            filter_class = column_descriptor.data_type.filter_class(col_name)
+            db_col = db_schema.get(col_name)
+            filter_class = db_col.data_type.filter_class(col_name)
 
             # Collect metadata on the values in the database.
             sa_col = sa_table.columns[col_name]
@@ -163,7 +164,7 @@ def get_filters(
 
             return GetFiltersResponseElement(
                 filter_name=col_name,
-                data_type=column_descriptor.data_type,
+                data_type=db_col.data_type,
                 relations=filter_class.valid_relations(),
                 description=column_descriptor.description,
                 distinct_values=distinct_values,

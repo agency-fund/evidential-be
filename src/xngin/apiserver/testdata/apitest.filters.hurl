@@ -60,77 +60,58 @@ HTTP 200
     ]
   },
   {
-    "data_type": "boolean",
+    "data_type": "integer",
     "description": "Engaged?",
-    "distinct_values": [
-      "0",
-      "1"
-    ],
+    "distinct_values": null,
     "filter_name": "is_engaged",
-    "max": null,
-    "min": null,
+    "max": 1.0,
+    "min": 0.0,
     "relations": [
-      "includes",
-      "excludes"
+      "between"
     ]
   },
   {
-    "data_type": "boolean",
+    "data_type": "integer",
     "description": "Onboarded?",
-    "distinct_values": [
-      "0",
-      "1"
-    ],
+    "distinct_values": null,
     "filter_name": "is_onboarded",
-    "max": null,
-    "min": null,
+    "max": 1.0,
+    "min": 0.0,
     "relations": [
-      "includes",
-      "excludes"
+      "between"
     ]
   },
   {
-    "data_type": "boolean",
+    "data_type": "integer",
     "description": "Recruited?",
-    "distinct_values": [
-      "1"
-    ],
+    "distinct_values": null,
     "filter_name": "is_recruited",
-    "max": null,
-    "min": null,
+    "max": 1.0,
+    "min": 1.0,
     "relations": [
-      "includes",
-      "excludes"
+      "between"
     ]
   },
   {
-    "data_type": "boolean",
+    "data_type": "integer",
     "description": "Registered?",
-    "distinct_values": [
-      "0",
-      "1"
-    ],
+    "distinct_values": null,
     "filter_name": "is_registered",
-    "max": null,
-    "min": null,
+    "max": 1.0,
+    "min": 0.0,
     "relations": [
-      "includes",
-      "excludes"
+      "between"
     ]
   },
   {
-    "data_type": "boolean",
+    "data_type": "integer",
     "description": "Retained?",
-    "distinct_values": [
-      "0",
-      "1"
-    ],
+    "distinct_values": null,
     "filter_name": "is_retained",
-    "max": null,
-    "min": null,
+    "max": 1.0,
+    "min": 0.0,
     "relations": [
-      "includes",
-      "excludes"
+      "between"
     ]
   }
 ]
