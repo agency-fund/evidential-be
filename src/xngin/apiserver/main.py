@@ -65,7 +65,7 @@ class CommonQueryParams:
         ],
         refresh: Annotated[bool, Query(description="Refresh the cache.")] = False,
     ):
-        self.unit_type = unit_type 
+        self.unit_type = unit_type
         self.refresh = refresh
 
 
