@@ -204,7 +204,7 @@ def get_metrics(
     commons: Annotated[CommonQueryParams, Depends()],
     gsheets: Annotated[GSheetCache, Depends(gsheet_cache)],
     client: Annotated[ClientConfig | None, Depends(config_dependency)] = None,
-):
+) -> list[GetMetricsResponseElement]:
     config = require_config(client)
     with config.dbsession(commons.unit_type) as session:
         sa_table = get_sqlalchemy_table_from_engine(
