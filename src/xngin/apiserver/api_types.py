@@ -119,7 +119,7 @@ class GetFiltersResponseElement(BaseModel):
     description: str
     distinct_values: List[str] | None = Field(
         ...,
-        description="For discrete types, contains list of specific values. For numeric types, contains a (min, max) tuple.",
+        description="If the type of the column is non-numeric, contains sorted list of unique values.",
     )
     min: float | int | None = Field(
         ...,
