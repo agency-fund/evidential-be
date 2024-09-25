@@ -133,9 +133,18 @@ class GetStrataResponseElement(BaseModel):
 class GetFiltersResponseElement(BaseModel):
     data_type: DataType
     description: str
-    distinct_values: List[str] = Field(
+    distinct_values: List[str] | None = Field(
         ...,
-        description="For discrete types, contains list of specific values. For numeric types, contains a (min, max) tuple.",
+        description="If the type of the column is non-numeric, contains sorted list of unique values.",
     )
+    min: float | int | None = Field(
+        ...,
+        description="If the type of the column is numeric, this will contain the minimum observed value.",
+    )
+    max: float | int | None = Field(
+        ...,
+        description="If the type of the column is numeric, this will contain the maximum observed value.",
+    )
+    # TODO: Can we rename this to column_name for consistency with GetStrataResponseElement?
     filter_name: str = Field(..., description="Name of the column.")
     relations: List[Relation] = Field(..., min_length=1)

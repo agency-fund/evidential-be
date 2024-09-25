@@ -4,57 +4,57 @@ HTTP 200
 ```json
 [
   {
-    "data_type": "double precision",
     "column_name": "baseline_income",
-    "description": "",
-    "strata_group": ""
-  },
-  {
     "data_type": "double precision",
+    "description": "Baseline Income",
+    "strata_group": ""
+  },
+  {
     "column_name": "current_income",
-    "description": "",
+    "data_type": "double precision",
+    "description": "Current Income",
     "strata_group": ""
   },
   {
-    "data_type": "character varying",
     "column_name": "ethnicity",
-    "description": "",
-    "strata_group": "TODO"
-  },
-  {
     "data_type": "character varying",
-    "column_name": "gender",
-    "description": "",
+    "description": "The ethnicity",
     "strata_group": "TODO"
   },
   {
-    "data_type": "integer",
+    "column_name": "gender",
+    "data_type": "character varying",
+    "description": "Gender",
+    "strata_group": "TODO"
+  },
+  {
     "column_name": "is_engaged",
-    "description": "",
+    "data_type": "integer",
+    "description": "Engaged?",
     "strata_group": ""
   },
   {
-    "data_type": "integer",
     "column_name": "is_onboarded",
-    "description": "",
+    "data_type": "integer",
+    "description": "Onboarded?",
     "strata_group": ""
   },
   {
-    "data_type": "integer",
     "column_name": "is_recruited",
-    "description": "",
+    "data_type": "integer",
+    "description": "Recruited?",
     "strata_group": ""
   },
   {
-    "data_type": "integer",
     "column_name": "is_registered",
-    "description": "",
+    "data_type": "integer",
+    "description": "Registered?",
     "strata_group": ""
   },
   {
-    "data_type": "integer",
     "column_name": "is_retained",
-    "description": "",
+    "data_type": "integer",
+    "description": "Retained?",
     "strata_group": ""
   }
 ]

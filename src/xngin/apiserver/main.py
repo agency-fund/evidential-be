@@ -96,21 +96,23 @@ def get_strata(
     """
     config = require_config(client)
     with config.dbsession(commons.unit_type) as session:
-        sqt = get_sqlalchemy_table_from_engine(session.get_bind(), commons.unit_type)
-        db_schema = generate_column_descriptors(sqt)
+        sa_table = get_sqlalchemy_table_from_engine(
+            session.get_bind(), commons.unit_type
+        )
+        db_schema = generate_column_descriptors(sa_table)
         config_sheet = fetch_worksheet(commons, config, gsheet_cache)
-        config_schema = {c.column_name: c for c in config_sheet.columns if c.is_strata}
+        strata_cols = {c.column_name: c for c in config_sheet.columns if c.is_strata}
 
     return sorted(
         [
             GetStrataResponseElement(
                 data_type=db_schema.get(col_name).data_type,
                 column_name=col_name,
-                description=db_schema.get(col_name).description,
+                description=col_descriptor.description,
                 # TODO: work on naming for strata_group/column_group
-                strata_group=config_col.column_group,
+                strata_group=col_descriptor.column_group,
             )
-            for col_name, config_col in config_schema.items()
+            for col_name, col_descriptor in strata_cols.items()
             if db_schema.get(col_name)
         ],
         key=lambda item: item.column_name,
@@ -129,44 +131,54 @@ def get_filters(
 ) -> list[GetFiltersResponseElement]:
     config = require_config(client)
     with config.dbsession(commons.unit_type) as session:
-        sqt = get_sqlalchemy_table_from_engine(session.get_bind(), commons.unit_type)
-        db_schema = generate_column_descriptors(sqt)
+        sa_table = get_sqlalchemy_table_from_engine(
+            session.get_bind(), commons.unit_type
+        )
+        db_schema = generate_column_descriptors(sa_table)
         config_sheet = fetch_worksheet(commons, config, gsheet_cache)
-        config_schema = {c.column_name: c for c in config_sheet.columns if c.is_filter}
+        filter_cols = {c.column_name: c for c in config_sheet.columns if c.is_filter}
 
         # TODO: implement caching, respecting commons.refresh
-        def values_for_col(col_name):
-            """The name of the column containing values to sample."""
-            column = sqt.columns[col_name]
-            filter_class = db_schema.get(col_name).data_type.filter_class(col_name)
+        def mapper(col_name, column_descriptor):
+            db_col = db_schema.get(col_name)
+            filter_class = db_col.data_type.filter_class(col_name)
+
+            # Collect metadata on the values in the database.
+            sa_col = sa_table.columns[col_name]
+            distinct_values, min_, max_ = None, None, None
             match filter_class:
                 case DataTypeClass.DISCRETE:
-                    stmt = (
-                        sqlalchemy.select(distinct(column))
-                        .where(column.is_not(None))
-                        .order_by(column)
-                    )
-                    return session.execute(stmt).scalars()
+                    distinct_values = [
+                        str(v)
+                        for v in session.execute(
+                            sqlalchemy.select(distinct(sa_col))
+                            .where(sa_col.is_not(None))
+                            .order_by(sa_col)
+                        ).scalars()
+                    ]
                 case DataTypeClass.NUMERIC:
-                    stmt = sqlalchemy.select(
-                        sqlalchemy.func.min(column), sqlalchemy.func.max(column)
-                    ).where(column.is_not(None))
-                    return session.execute(stmt).first()
+                    min_, max_ = session.execute(
+                        sqlalchemy.select(
+                            sqlalchemy.func.min(sa_col), sqlalchemy.func.max(sa_col)
+                        ).where(sa_col.is_not(None))
+                    ).first()
                 case _:
-                    raise HTTPException(500, f"Unsupported filter class {filter_class}")
+                    raise RuntimeError("unexpected filter class")
+
+            return GetFiltersResponseElement(
+                filter_name=col_name,
+                data_type=db_col.data_type,
+                relations=filter_class.valid_relations(),
+                description=column_descriptor.description,
+                distinct_values=distinct_values,
+                min=min_,
+                max=max_,
+            )
 
         return sorted(
             [
-                GetFiltersResponseElement(
-                    filter_name=col_name,
-                    data_type=db_schema.get(col_name).data_type,
-                    relations=db_schema.get(col_name)
-                    .data_type.filter_class(col_name)
-                    .valid_relations(),
-                    description=db_schema.get(col_name).description,
-                    distinct_values=[str(v) for v in values_for_col(col_name)],
-                )  # TODO: implement distinct_values
-                for col_name, config_col in config_schema.items()
+                mapper(col_name, col_descriptor)
+                for col_name, col_descriptor in filter_cols.items()
                 if db_schema.get(col_name)
             ],
             key=lambda item: item.filter_name,
