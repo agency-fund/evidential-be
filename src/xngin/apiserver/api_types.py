@@ -1,6 +1,6 @@
 import enum
 from datetime import datetime
-from typing import List, Dict, Any, Literal
+from typing import List, Literal
 import sqlalchemy.sql.sqltypes
 from pydantic import BaseModel, Field
 
@@ -80,11 +80,27 @@ class Relation(enum.StrEnum):
     BETWEEN = "between"
 
 
+class AudienceSpecFilter(BaseModel):
+    filter_name: str
+    relation: Relation
+    value: list[str] | list[int] | list[float]
+
+
 class AudienceSpec(BaseModel):
     """Audience specification."""
 
     type: str
-    filters: List[Dict[str, Any]]
+    filters: List[AudienceSpecFilter]
+
+
+class DesignSpecArm(BaseModel):
+    arm_name: str
+    arm_id: str
+
+
+class DesignSpecMetric(BaseModel):
+    metric_name: str
+    metric_pct_change: float
 
 
 class DesignSpec(BaseModel):
@@ -93,14 +109,14 @@ class DesignSpec(BaseModel):
     experiment_id: str
     experiment_name: str
     description: str
-    arms: List[Dict[str, str]]
+    arms: List[DesignSpecArm]
     start_date: datetime
     end_date: datetime
     strata_cols: List[str]
     power: float
     alpha: float
     fstat_thresh: float
-    metrics: List[Dict[str, Any]]
+    metrics: List[DesignSpecMetric]
 
 
 class UnimplementedResponse(BaseModel):
