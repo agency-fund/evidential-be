@@ -42,15 +42,43 @@ class SheetRef(BaseModel):
     worksheet: str
 
 
-class RocketLearningConfig(BaseModel):
-    type: Literal["customer"]
+class Unit(BaseModel):
+    """Units are a logical representation of a table in the data warehouse.
+
+    Units are defined by a table_name and a configuration worksheet.
+    """
+
     table_name: str
     sheet: SheetRef
+
+
+class UnitsMixin(BaseModel):
+    """UnitsMixin can be added to a config type to add standardized unit definitions."""
+
+    units: List[Unit]
+
+    def find_unit(self, unit_type: str):
+        found = next(
+            (u for u in self.units if u.table_name.lower() == unit_type.lower()), None
+        )
+        if found is None:
+            raise CannotFindUnitException(unit_type)
+        return found
+
+
+class RocketLearningConfig(UnitsMixin, BaseModel):
+    """
+
+    TODO: implement dbsession(self, unit_type)
+    """
+
+    type: Literal["customer"]
     dwh: PostgresDsn
     api_host: str
     api_token: SecretStr
 
-    def to_sqlalchemy_url_and_table(self) -> SqlalchemyAndTable:
+    def to_sqlalchemy_url_and_table(self, unit_type: str) -> SqlalchemyAndTable:
+        unit = self.find_unit(unit_type)
         return SqlalchemyAndTable(
             sqlalchemy_url=str(
                 sqlalchemy.URL.create(
@@ -63,18 +91,17 @@ class RocketLearningConfig(BaseModel):
                     query={"sslmode": self.dwh.sslmode},
                 )
             ),
-            table_name=self.table_name,
+            table_name=unit.table_name,
         )
 
 
-class SqliteLocalConfig(BaseModel):
+class SqliteLocalConfig(UnitsMixin, BaseModel):
     type: Literal["sqlite_local"]
-    table_name: str
-    sheet: SheetRef
     sqlite_filename: str
 
-    def to_sqlalchemy_url_and_table(self) -> SqlalchemyAndTable:
+    def to_sqlalchemy_url_and_table(self, unit_type: str) -> SqlalchemyAndTable:
         """Returns a tuple of SQLAlchemy URL and a table name."""
+        unit = self.find_unit(unit_type)
         return SqlalchemyAndTable(
             sqlalchemy_url=str(
                 sqlalchemy.URL.create(
@@ -83,17 +110,17 @@ class SqliteLocalConfig(BaseModel):
                     query={"mode": "ro"},
                 )
             ),
-            table_name=self.table_name,
+            table_name=unit.table_name,
         )
 
-    def dbsession(self):
+    def dbsession(self, unit_type: str):
         """Returns a Session to be used to send queries to the customer database.
 
         Use this in a `with` block to ensure correct transaction handling. If you need the
         sqlalchemy Engine, call .get_bind().
         """
         return Session(
-            sqlite_connect(self.to_sqlalchemy_url_and_table().sqlalchemy_url)
+            sqlite_connect(self.to_sqlalchemy_url_and_table(unit_type).sqlalchemy_url)
         )
 
 
@@ -121,14 +148,29 @@ class SettingsForTesting(XnginSettings):
     pass
 
 
-class CannotFindTheTableException(Exception):
+class CannotFindTableException(Exception):
+    """Raised when we cannot find a table in the database."""
+
     def __init__(self, table_name, existing_tables):
         self.table_name = table_name
         self.alternatives = existing_tables
         if existing_tables:
-            self.message = f"The {table_name} table does not exist. Known tables: {", ".join(sorted(existing_tables))}"
+            self.message = f"The table '{table_name}' does not exist. Known tables: {", ".join(sorted(existing_tables))}"
         else:
-            self.message = f"The {table_name} table does not exist; the database does not contain any tables."
+            self.message = f"The table '{table_name}' does not exist; the database does not contain any tables."
+
+    def __str__(self):
+        return self.message
+
+
+class CannotFindUnitException(Exception):
+    """Raised when we cannot find a unit in the configuration."""
+
+    def __init__(self, unit_name):
+        self.unit_name = unit_name
+        self.message = (
+            f"The unit {unit_name} does not exist. Check the configuration files."
+        )
 
     def __str__(self):
         return self.message
@@ -145,7 +187,7 @@ def get_sqlalchemy_table_from_engine(engine: sqlalchemy.engine.Engine, table_nam
     except NoSuchTableError as nste:
         metadata.reflect(engine)
         existing_tables = metadata.tables.keys()
-        raise CannotFindTheTableException(table_name, existing_tables) from nste
+        raise CannotFindTableException(table_name, existing_tables) from nste
 
 
 def sqlite_connect(sqlalchemy_url):
