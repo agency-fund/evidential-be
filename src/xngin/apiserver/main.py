@@ -36,6 +36,15 @@ from xngin.sheets.config_sheet import (
     fetch_and_parse_sheet,
     create_sheetconfig_from_table,
 )
+import warnings
+
+# Workaround for: https://github.com/fastapi/fastapi/discussions/10537
+warnings.filterwarnings(
+    "ignore",
+    message="`example`",
+    category=DeprecationWarning,
+    module="xngin.apiserver.main",
+)
 
 
 @asynccontextmanager
