@@ -18,7 +18,7 @@ def settings_dependency():
 
 def config_dependency(
     settings: Annotated[XnginSettings, Depends(settings_dependency)],
-    config_id: Annotated[str | None, Header()] = None,
+    config_id: Annotated[str | None, Header(example="testing")] = None,
 ):
     """Returns the configuration for the current request, as determined by the Config-ID HTTP request header."""
     if not config_id:

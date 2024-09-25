@@ -69,7 +69,10 @@ class CommonQueryParams:
     def __init__(
         self,
         unit_type: Annotated[
-            str, Query(description="Unit of analysis for experiment.")
+            str,
+            Query(
+                description="Unit of analysis for experiment.", example="test_unit_type"
+            ),
         ],
         refresh: Annotated[bool, Query(description="Refresh the cache.")] = False,
     ):
@@ -85,7 +88,7 @@ def get_strata(
     commons: Annotated[CommonQueryParams, Depends()],
     gsheet_cache: Annotated[GSheetCache, Depends(gsheet_cache)],
     client: Annotated[ClientConfig | None, Depends(config_dependency)] = None,
-):
+) -> list[GetStrataResponseElement]:
     """
     Get possible strata covariates for a given unit type.
 
@@ -123,7 +126,7 @@ def get_filters(
     commons: Annotated[CommonQueryParams, Depends()],
     gsheet_cache: Annotated[GSheetCache, Depends(gsheet_cache)],
     client: Annotated[ClientConfig | None, Depends(config_dependency)] = None,
-):
+) -> list[GetFiltersResponseElement]:
     config = require_config(client)
     with config.dbsession(commons.unit_type) as session:
         sqt = get_sqlalchemy_table_from_engine(session.get_bind(), commons.unit_type)
