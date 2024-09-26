@@ -7,6 +7,16 @@ from xngin.apiserver.database import SessionLocal
 from xngin.apiserver.gsheet_cache import GSheetCache
 from xngin.apiserver.settings import get_settings_for_server, XnginSettings
 
+import warnings
+
+# Workaround for: https://github.com/fastapi/fastapi/discussions/10537
+warnings.filterwarnings(
+    "ignore",
+    message="`example`",
+    category=DeprecationWarning,
+    module="xngin.apiserver.dependencies",
+)
+
 
 def settings_dependency():
     """Provides the settings for the server.
