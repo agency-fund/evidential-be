@@ -67,3 +67,35 @@ def test_api(script, update_api_tests_flag):
             logger.info(f"Updating API test {script}.")
             shutil.copy(temporary.name, script)
         raise
+
+
+def test_commit_endpoint(mocker):
+    # Set up the mock response - first load our test data.
+    data_file = str(Path(__file__).parent / "testdata/nonbulk/apitest.commit.hurl")
+    with open(data_file, "r", encoding="utf-8") as f:
+        contents = f.read()
+    hurl = Hurl.from_script(contents)
+    # Mock the POST using pytest-mock
+    mock_response = mocker.Mock()
+    mock_response.status_code = hurl.expected_status
+    expected_response_json = json.loads(hurl.expected_response)
+    mock_response.json.return_value = expected_response_json
+    # Mock the httpx.AsyncClient.post method
+    mock_post = mocker.patch("httpx.AsyncClient.post", return_value=mock_response)
+
+    response = client.request(
+        hurl.method, hurl.url, headers=hurl.headers, content=hurl.body
+    )
+
+    # Assert that httpx.AsyncClient.post was called with the correct arguments
+    mock_post.assert_called_once()
+    args, kwargs = mock_post.call_args
+    # TODO: Replace with actual URL based on settings
+    assert args[0] == "https://api.example.com/submit"
+    assert "experiment_commit_datetime" in kwargs['json']
+    assert "experiment_commit_id" in kwargs['json']
+    assert kwargs['json']['creator_user_id'] == "commituser"
+
+    # Assert that the response from our API is correct
+    assert response.status_code == 200
+    assert response.json() == expected_response_json

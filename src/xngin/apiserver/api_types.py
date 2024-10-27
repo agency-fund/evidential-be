@@ -118,6 +118,12 @@ class DesignSpec(BaseModel):
     fstat_thresh: float
     metrics: List[DesignSpecMetric]
 
+    class Config:
+        """Let pydantic convert dates to strings when serializing in model_dump_json()/model_dump(mode='json')"""
+        json_encoders = {
+            datetime: lambda v: v.isoformat()
+        }
+
 
 class UnimplementedResponse(BaseModel):
     todo: Literal["TODO"]

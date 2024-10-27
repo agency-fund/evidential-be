@@ -1,6 +1,11 @@
 from contextlib import asynccontextmanager
+import datetime
 from typing import List, Dict, Any, Annotated
+import logging
+import json
+import uuid
 
+import httpx
 import requests
 import sqlalchemy
 from fastapi import FastAPI, HTTPException, Depends, Query
@@ -55,6 +60,7 @@ async def lifespan(_app: FastAPI):
 
 
 app = FastAPI(lifespan=lifespan)
+logger = logging.getLogger(__name__)
 
 
 # TODO: unify exception handling
@@ -258,18 +264,39 @@ def assignment_file(
 @app.post(
     "/commit",
     summary="Commit an experiment to the database.",
-    response_model=UnimplementedResponse,
+    response_model=Any,  # Any since we're forwarding the webhook response
     tags=["Manage Experiments"],
 )
-def commit_experiment(
+async def commit_experiment(
     design_spec: DesignSpec,
     audience_spec: AudienceSpec,
     experiment_assignment: Dict[str, Any],
     user_id: str = "testuser",
     client: Annotated[ClientConfig | None, Depends(config_dependency)] = None,
 ):
-    # Implement experiment commit logic
-    return UnimplementedResponse()
+    # TODO: integrate client configuration of webhook
+    # Expect user webhook to take a POST payload:
+    async with httpx.AsyncClient() as client:
+        headers = {"Authorization": "Bearer token"}
+        data = {
+            "experiment_commit_datetime": datetime.datetime.now().isoformat(),
+            "experiment_commit_id": str(uuid.uuid4()),
+            "creator_user_id": user_id,
+            "experiment_assignment": experiment_assignment,
+            "design_spec": design_spec.model_dump_json(),
+            "audience_spec": audience_spec.model_dump_json()
+        }
+        try:
+            response = await client.post("https://api.example.com/submit", headers=headers, json=data)
+            response.raise_for_status()
+        except httpx.HTTPStatusError as e:
+            logger.error("ERROR response %s requesting webhook: %s", e.response.status_code, e.request.url)
+            raise HTTPException(status_code=e.response.status_code, detail="webhook request failed") from e
+        except httpx.RequestError as e:
+            logger.error("ERROR requesting webhook: %s (%s)", e.request.url, str(e))
+            raise HTTPException(status_code=500, detail="server error") from e
+
+    return response.json()
 
 
 @app.post(
