@@ -1,7 +1,7 @@
 from contextlib import asynccontextmanager
 from typing import List, Dict, Any, Annotated
 
-import requests
+import httpx
 import sqlalchemy
 from fastapi import FastAPI, HTTPException, Depends, Query
 from fastapi import Request
@@ -344,12 +344,12 @@ def experiments_reg_request(
         endpoint.startswith("get-file-name-by-experiment-id")
         or endpoint == "get-all-experiments"
     ):
-        response = requests.get(url, headers=headers)
+        response = httpx.get(url, headers=headers)
     else:
         if endpoint.startswith("update"):
-            response = requests.put(url, headers=headers, json=json_data)
+            response = httpx.put(url, headers=headers, json=json_data)
         else:
-            response = requests.post(url, headers=headers, json=json_data)
+            response = httpx.post(url, headers=headers, json=json_data)
 
     if response.status_code != 200:
         raise HTTPException(status_code=response.status_code, detail="Request failed")
