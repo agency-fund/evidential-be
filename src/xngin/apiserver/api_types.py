@@ -148,3 +148,9 @@ class GetFiltersResponseElement(BaseModel):
     # TODO: Can we rename this to column_name for consistency with GetStrataResponseElement?
     filter_name: str = Field(..., description="Name of the column.")
     relations: List[Relation] = Field(..., min_length=1)
+
+
+class GetMetricsResponseElement(BaseModel):
+    data_type: DataType
+    column_name: str
+    table_name: str
