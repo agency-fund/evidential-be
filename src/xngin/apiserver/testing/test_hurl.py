@@ -67,3 +67,26 @@ HTTP 200
         expected_response='[\n  { "k": "v" }',
         body="requestbody",
     )
+    # Test case for multi-line JSON payload and response
+    assert Hurl.from_script("""GET /foo/bar
+```json
+{
+  "payload": "value",
+  "multiline": true
+}
+```
+HTTP 200
+```json
+{
+  "response": "data",
+  "success": true
+}
+```
+""") == Hurl(
+        method="GET",
+        url="/foo/bar",
+        headers={},
+        expected_status=200,
+        expected_response='{\n  "response": "data",\n  "success": true\n}',
+        body='{\n  "payload": "value",\n  "multiline": true\n}',
+    )
