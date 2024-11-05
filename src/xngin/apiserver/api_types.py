@@ -153,4 +153,4 @@ class GetFiltersResponseElement(BaseModel):
 class GetMetricsResponseElement(BaseModel):
     data_type: DataType
     column_name: str
-    table_name: str
+    description: str
