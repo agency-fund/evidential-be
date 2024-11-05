@@ -1,5 +1,7 @@
 import re
 
+from typing import Self
+
 from parsy import regex, string, seq, alt, generate, whitespace
 from pydantic import BaseModel
 
@@ -43,7 +45,7 @@ class Hurl(BaseModel):
         ])
 
     @staticmethod
-    def from_script(script: str):
+    def from_script(script: str) -> Self:
         """Constructs a Hurl from a string."""
 
         @generate
@@ -57,7 +59,7 @@ class Hurl(BaseModel):
                 .map(dict)
                 .optional()
             )
-            json_block = string("```json\n") >> regex(r".+") << string("\n```\n")
+            json_block = regex(r"```json\n(.+?)\n```\n+", flags=re.DOTALL, group=1)
             status_code_p = regex(r"HTTP (\d+)\n+", group=1)
             json_block_eof = regex(r"```json\n(.+)\n```", flags=re.DOTALL, group=1)
             payloads = yield (
