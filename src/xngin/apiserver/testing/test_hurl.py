@@ -1,5 +1,6 @@
 from xngin.apiserver.testing.hurl import Hurl
 
+
 def test_hurl():
     assert Hurl.from_script(
         """GET /foo/bar\nH1: v1\nHTTP 200\n```json\ncontents\n```"""

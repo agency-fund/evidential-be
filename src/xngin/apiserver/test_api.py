@@ -92,9 +92,9 @@ def test_commit_endpoint(mocker):
     args, kwargs = mock_post.call_args
     # TODO: Replace with actual URL based on settings
     assert args[0] == "https://api.example.com/submit"
-    assert "experiment_commit_datetime" in kwargs['json']
-    assert "experiment_commit_id" in kwargs['json']
-    assert kwargs['json']['creator_user_id'] == "commituser"
+    assert "experiment_commit_datetime" in kwargs["json"]
+    assert "experiment_commit_id" in kwargs["json"]
+    assert kwargs["json"]["creator_user_id"] == "commituser"
 
     # Assert that the response from our API is correct
     assert response.status_code == 200

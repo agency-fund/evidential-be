@@ -1,6 +1,6 @@
 import enum
 from datetime import datetime
-from typing import List, Literal
+from typing import ClassVar, List, Literal
 import sqlalchemy.sql.sqltypes
 from pydantic import BaseModel, Field
 
@@ -120,9 +120,8 @@ class DesignSpec(BaseModel):
 
     class Config:
         """Let pydantic convert dates to strings when serializing in model_dump_json()/model_dump(mode='json')"""
-        json_encoders = {
-            datetime: lambda v: v.isoformat()
-        }
+
+        json_encoders: ClassVar[dict] = {datetime: lambda v: v.isoformat()}
 
 
 class UnimplementedResponse(BaseModel):

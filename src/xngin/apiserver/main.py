@@ -2,7 +2,6 @@ from contextlib import asynccontextmanager
 import datetime
 from typing import List, Dict, Any, Annotated
 import logging
-import json
 import uuid
 
 import httpx
@@ -284,14 +283,22 @@ async def commit_experiment(
             "creator_user_id": user_id,
             "experiment_assignment": experiment_assignment,
             "design_spec": design_spec.model_dump_json(),
-            "audience_spec": audience_spec.model_dump_json()
+            "audience_spec": audience_spec.model_dump_json(),
         }
         try:
-            response = await client.post("https://api.example.com/submit", headers=headers, json=data)
+            response = await client.post(
+                "https://api.example.com/submit", headers=headers, json=data
+            )
             response.raise_for_status()
         except httpx.HTTPStatusError as e:
-            logger.error("ERROR response %s requesting webhook: %s", e.response.status_code, e.request.url)
-            raise HTTPException(status_code=e.response.status_code, detail="webhook request failed") from e
+            logger.error(
+                "ERROR response %s requesting webhook: %s",
+                e.response.status_code,
+                e.request.url,
+            )
+            raise HTTPException(
+                status_code=e.response.status_code, detail="webhook request failed"
+            ) from e
         except httpx.RequestError as e:
             logger.error("ERROR requesting webhook: %s (%s)", e.request.url, str(e))
             raise HTTPException(status_code=500, detail="server error") from e
