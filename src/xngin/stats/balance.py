@@ -1,0 +1,77 @@
+import pandas as pd
+import numpy as np
+import statsmodels.formula.api as smf
+from typing import Dict, Any, List
+from dataclasses import dataclass
+
+@dataclass
+class BalanceResult:
+    """Results from balance check."""
+    f_statistic: float
+    f_pvalue: float
+    model_summary: str
+    is_balanced: bool
+    
+def check_balance(
+    data: pd.DataFrame,
+    treatment_col: str = 'treat',
+    exclude_cols: List[str] = None,
+    alpha: float = 0.05
+) -> BalanceResult:
+    """
+    Perform balance check on treatment assignment.
+    
+    Args:
+        data: DataFrame containing treatment assignments and covariates
+        treatment_col: Name of treatment assignment column
+        exclude_cols: List of columns to exclude from balance check
+        alpha: Significance level for balance test
+    
+    Returns:
+        BalanceResult object containing test results
+    """
+    # Create copy of data for analysis
+    df_analysis = data.copy()
+    
+    if exclude_cols is None:
+        exclude_cols = []
+    
+    # Handle missing values in numeric columns by converting to quartiles
+    cols_with_missing = df_analysis.columns[df_analysis.isnull().any()].tolist()
+    
+    for col in cols_with_missing:
+        if pd.api.types.is_numeric_dtype(df_analysis[col]):
+            df_analysis[f'{col}_quartile'] = pd.qcut(
+                df_analysis[col], 
+                q=4, 
+                duplicates='drop'
+            )
+            df_analysis[f'{col}_quartile'] = (
+                df_analysis[f'{col}_quartile']
+                .cat.add_categories(['Missing'])
+            )
+            df_analysis[f'{col}_quartile'].fillna('Missing', inplace=True)
+            df_analysis = pd.get_dummies(
+                df_analysis, 
+                columns=[f'{col}_quartile'], 
+                prefix=[col],
+                dummy_na=False
+            )
+            df_analysis.drop(columns=[col], inplace=True)
+    
+    # Create formula excluding specified columns
+    covariates = [
+        col for col in df_analysis.columns 
+        if col != treatment_col and col not in exclude_cols
+    ]
+    formula = f"{treatment_col} ~ " + " + ".join(covariates)
+    
+    # Fit regression model
+    model = smf.ols(formula=formula, data=df_analysis).fit()
+    
+    return BalanceResult(
+        f_statistic=model.fvalue,
+        f_pvalue=model.f_pvalue,
+        model_summary=model.summary().as_text(),
+        is_balanced=model.f_pvalue > alpha
+    ) 

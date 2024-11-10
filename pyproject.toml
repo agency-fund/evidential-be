@@ -13,6 +13,8 @@ dependencies = [
     "psycopg2>=2.9.10,<3",
     "pydantic>=2.7.0,<3.0.0",
     "sqlalchemy==2.0.32",
+    "statsmodels>=0.14.1",
+    "stochatreat>=0.0.20",
     "typer>=0.12.5,<0.13.0",
     "uvicorn[standard]>=0.32.0",
     "zstandard>=0.23.0",
@@ -32,6 +34,7 @@ log_cli = 0  # set to 1 for live logs
 log_cli_level = "warn"
 markers = "integration: integration tests that rely on remote resources"
 addopts = "-m 'not integration'"
+testpaths = ["src/xngin/stats/tests"]
 
 [tool.ruff]
 preview = true
