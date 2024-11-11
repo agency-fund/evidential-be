@@ -47,10 +47,12 @@ select = [
     "RET",
     "RUF",
     "SIM",
+    "TRY",
     "UP"
 ]
 ignore = [
-    "RUF029"
+    "RUF029",
+    "TRY003"
 ]
 
 [tool.uv]
