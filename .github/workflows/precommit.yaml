@@ -29,4 +29,10 @@ jobs:
         with:
           version: "0.5.1"
           enable-cache: true
-      - uses: pre-commit/action@v3.0.1
+      - run: echo PYTHON_DIR=$(uv python dir) | tee -a $GITHUB_ENV
+      - name: Configure cache for pre-commit
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pre-commit
+          key: pre-commit-3|${{ env.PYTHON_DIR }}|${{ hashFiles('.pre-commit-config.yaml') }}|${{ hashFiles('pyproject.toml') }}
+      - run: uv run pre-commit run --show-diff-on-failure --color=always --all-files
