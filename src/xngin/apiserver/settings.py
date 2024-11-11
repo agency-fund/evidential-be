@@ -66,7 +66,61 @@ class UnitsMixin(BaseModel):
         return found
 
 
-class RocketLearningConfig(UnitsMixin, BaseModel):
+class Url(BaseModel):
+    """Represents a url and HTTP method to use with it."""
+
+    method: str
+    url: str
+    # headers: dict[str, str]
+
+
+class WebhookActions(BaseModel):
+    """The set of supported actions that trigger a user callback."""
+
+    commit: Url | None
+    assignment_file: Url | None
+    update_timestamps: Url | None
+    update_description: Url | None
+
+
+class WebhookCommonHeaders(BaseModel):
+    """Enumerates supported headers to attach to all webhook requests."""
+
+    authorization: str | None
+
+
+class WebhookConfig(BaseModel):
+    """Top-level configuration object for user-defined webhooks."""
+
+    actions: WebhookActions
+    common_headers: WebhookCommonHeaders
+
+
+class WebhookMixin(BaseModel):
+    """Add this to a config type to support using webhooks to persist changes.
+
+    Example:
+    "webhook_config": {
+      "actions": {
+        "commit": {
+          "method": "POST",
+          "url": "http://localhost:4001/dev/api/v1/experiment-commit/save-experiment-commit"
+        },
+        "assignment_file": {
+          "method": "POST",
+          "url": "http://localhost:4001/dev/api/v1/experiment-commit/get-file-name-by-experiment-id/{experimentId}?qs={experimentCode}",
+        }
+      },
+      "common_headers": {
+        "authorization": "abc"
+      }
+    }
+    """
+
+    webhook_config: WebhookConfig
+
+
+class RocketLearningConfig(UnitsMixin, WebhookMixin, BaseModel):
     """
 
     TODO: implement dbsession(self, unit_type)
