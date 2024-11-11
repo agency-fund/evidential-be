@@ -190,11 +190,13 @@ def fetch_and_parse_sheet(ref: SheetRef):
             )
     try:
         parsed = ConfigWorksheet(table_name=ref.worksheet, columns=collector)
+        # Parsing succeeded, but also raise if there were /any/ errors from above.
+        if errors:
+            raise InvalidSheetException(errors)
+        return parsed
     except ValidationError as pve:
         errors.append(InvalidSheetDetails.from_pydantic_error(row=None, pve=pve))
-    if errors:
-        raise InvalidSheetException(errors)
-    return parsed
+    raise InvalidSheetException(errors)
 
 
 def create_sheetconfig_from_table(table: sqlalchemy.Table):
