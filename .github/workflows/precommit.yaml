@@ -25,7 +25,14 @@ jobs:
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: astral-sh/setup-uv@v3
         with:
-          python-version-file: "pyproject.toml"
-      - uses: pre-commit/action@v3.0.1
+          version: "0.5.1"
+          enable-cache: true
+      - run: echo PYTHON_DIR=$(uv python dir) | tee -a $GITHUB_ENV
+      - name: Configure cache for pre-commit
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pre-commit
+          key: pre-commit-3|${{ env.PYTHON_DIR }}|${{ hashFiles('.pre-commit-config.yaml') }}|${{ hashFiles('pyproject.toml') }}
+      - run: uv run pre-commit run --show-diff-on-failure --color=always --all-files

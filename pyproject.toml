@@ -51,9 +51,9 @@ ignore = [
 
 [tool.uv]
 dev-dependencies = [
-    "pre-commit>=3.8.0,<3.9.0",
+    "pre-commit>=4.0.1,<4.1.0",
     "pytest>=8.3.2,<9.0.0",
-    "ruff>=0.6.1,<7.0.0",
+    "ruff>=0.7.0,<0.8.0",
 ]
 environments = [
     "sys_platform == 'darwin'",

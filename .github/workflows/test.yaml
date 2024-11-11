@@ -32,26 +32,16 @@ jobs:
         os: [ ubuntu-22.04, macos-14 ]
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: astral-sh/setup-uv@v3
         with:
-          python-version-file: "pyproject.toml"
-      - run: curl -LsSf https://astral.sh/uv/0.4.5/install.sh | sh
-      - name: UV Cache
-        uses: actions/cache@v4
-        with:
-          path: /tmp/.uv-cache
-          key: uv-${{ runner.os }}-${{ hashFiles('pyproject.toml', 'uv.lock') }}
-          restore-keys: |
-            uv-${{ runner.os }}-${{ hashFiles('pyproject.toml', 'uv.lock') }}
-            uv-${{ runner.os }}
+          version: "0.5.1"
+          enable-cache: true
       - if: startsWith(matrix.os, 'macos-')
         run: |
           # Install postgres so that the Python psycopg2 module can build from source.
           brew install postgresql@14
       - name: Install dependencies
         run: |
-          which uv
-          uv --version
           uv sync --locked
       - name: write secrets
         run: |
@@ -75,9 +65,9 @@ jobs:
           uv run xngin-cli bootstrap-testing-dwh --force
           uv run xngin-cli bootstrap-spreadsheet sqlite:///./src/xngin/apiserver/testdata/testing_dwh.db test_unit_type > config.csv
           uv run xngin-cli parse-config-spreadsheet file://./config.csv test_unit_type
-
-      - name: build docker image
-        if: startsWith(matrix.os, 'ubuntu-')
-        run: docker build .
-      - name: Minimize UV Cache contents
-        run: uv cache prune --ci
+  docker:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - run: docker build .
