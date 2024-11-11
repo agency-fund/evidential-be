@@ -47,7 +47,7 @@ def test_api(script, update_api_tests_flag):
     response = client.request(
         hurl.method, hurl.url, headers=hurl.headers, content=hurl.body
     )
-    temporary = tempfile.NamedTemporaryFile(delete=False, suffix=".hurl")
+    temporary = tempfile.NamedTemporaryFile(delete=False, suffix=".hurl")  # noqa: SIM115
     # Write the actual response to a temporary file. If an exception is thrown, we optionally replace the script we just
     # executed with the new script.
     with temporary as tmpf:
@@ -56,12 +56,12 @@ def test_api(script, update_api_tests_flag):
         actual.expected_response = json.dumps(response.json(), indent=2, sort_keys=True)
         tmpf.write(actual.to_script().encode("utf-8"))
     try:
-        assert (
-            response.status_code == hurl.expected_status
-        ), f"HTTP response body: {temporary.name}\nResponse:\n{trunc(response.content)}"
-        assert response.json() == json.loads(
-            hurl.expected_response
-        ), f"HTTP response body: {temporary.name}\nResponse:\n{trunc(response.content)}"
+        assert response.status_code == hurl.expected_status, (
+            f"HTTP response body: {temporary.name}\nResponse:\n{trunc(response.content)}"
+        )
+        assert response.json() == json.loads(hurl.expected_response), (
+            f"HTTP response body: {temporary.name}\nResponse:\n{trunc(response.content)}"
+        )
     except AssertionError:
         if update_api_tests_flag:
             logger.info(f"Updating API test {script}.")

@@ -153,7 +153,7 @@ class CannotFindTableException(Exception):
         self.table_name = table_name
         self.alternatives = existing_tables
         if existing_tables:
-            self.message = f"The table '{table_name}' does not exist. Known tables: {", ".join(sorted(existing_tables))}"
+            self.message = f"The table '{table_name}' does not exist. Known tables: {', '.join(sorted(existing_tables))}"
         else:
             self.message = f"The table '{table_name}' does not exist; the database does not contain any tables."
 

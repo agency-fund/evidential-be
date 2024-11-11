@@ -107,7 +107,7 @@ class ConfigWorksheet(BaseModel):
         if len(uniques) > 1:
             raise ValueError(
                 f"There are {len(uniques)} columns marked as the unique ID, but there should "
-                f"only be one: {", ".join(sorted(uniques))}"
+                f"only be one: {', '.join(sorted(uniques))}"
             )
         return self
 
@@ -117,7 +117,7 @@ class ConfigWorksheet(BaseModel):
         duplicates = [item for item, count in counted.items() if count > 1]
         if duplicates:
             raise ValueError(
-                f"Duplicate 'column_name' values found: {", ".join(duplicates)}."
+                f"Duplicate 'column_name' values found: {', '.join(duplicates)}."
             )
         return self
 
