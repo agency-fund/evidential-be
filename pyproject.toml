@@ -44,7 +44,9 @@ select = [
     "E9",
     "F",
     "FAST",
+    "RET",
     "RUF",
+    "SIM",
     "UP"
 ]
 ignore = [
