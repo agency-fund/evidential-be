@@ -1,6 +1,5 @@
 import re
 
-from typing import Self
 
 from parsy import regex, string, seq, alt, generate, whitespace
 from pydantic import BaseModel
@@ -45,7 +44,7 @@ class Hurl(BaseModel):
         ])
 
     @staticmethod
-    def from_script(script: str) -> Self:
+    def from_script(script: str) -> "Hurl":
         """Constructs a Hurl from a string."""
 
         @generate
