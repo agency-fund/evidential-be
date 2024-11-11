@@ -41,7 +41,7 @@ def update_api_tests_flag(pytestconfig):
 
 @pytest.mark.parametrize("script", STATIC_TESTS)
 def test_api(script, update_api_tests_flag):
-    with open(script, "r") as f:
+    with open(script) as f:
         contents = f.read()
     hurl = Hurl.from_script(contents)
     response = client.request(
