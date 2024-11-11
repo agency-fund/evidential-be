@@ -5,7 +5,6 @@ import logging
 import uuid
 
 import httpx
-import requests
 import sqlalchemy
 from fastapi import FastAPI, HTTPException, Depends, Query
 from fastapi import Request
@@ -20,6 +19,7 @@ from xngin.apiserver.api_types import (
     UnimplementedResponse,
     GetStrataResponseElement,
     GetFiltersResponseElement,
+    GetMetricsResponseElement,
 )
 from xngin.apiserver.dependencies import (
     settings_dependency,
@@ -100,7 +100,7 @@ class CommonQueryParams:
 )
 def get_strata(
     commons: Annotated[CommonQueryParams, Depends()],
-    gsheet_cache: Annotated[GSheetCache, Depends(gsheet_cache)],
+    gsheets: Annotated[GSheetCache, Depends(gsheet_cache)],
     client: Annotated[ClientConfig | None, Depends(config_dependency)] = None,
 ) -> list[GetStrataResponseElement]:
     """
@@ -114,7 +114,7 @@ def get_strata(
             session.get_bind(), commons.unit_type
         )
         db_schema = generate_column_descriptors(sa_table)
-        config_sheet = fetch_worksheet(commons, config, gsheet_cache)
+        config_sheet = fetch_worksheet(commons, config, gsheets)
         strata_cols = {c.column_name: c for c in config_sheet.columns if c.is_strata}
 
     return sorted(
@@ -140,7 +140,7 @@ def get_strata(
 )
 def get_filters(
     commons: Annotated[CommonQueryParams, Depends()],
-    gsheet_cache: Annotated[GSheetCache, Depends(gsheet_cache)],
+    gsheets: Annotated[GSheetCache, Depends(gsheet_cache)],
     client: Annotated[ClientConfig | None, Depends(config_dependency)] = None,
 ) -> list[GetFiltersResponseElement]:
     config = require_config(client)
@@ -149,7 +149,7 @@ def get_filters(
             session.get_bind(), commons.unit_type
         )
         db_schema = generate_column_descriptors(sa_table)
-        config_sheet = fetch_worksheet(commons, config, gsheet_cache)
+        config_sheet = fetch_worksheet(commons, config, gsheets)
         filter_cols = {c.column_name: c for c in config_sheet.columns if c.is_filter}
 
         # TODO: implement caching, respecting commons.refresh
@@ -202,15 +202,39 @@ def get_filters(
 @app.get(
     "/metrics",
     summary="Get possible metric covariates for a given unit type.",
-    response_model=UnimplementedResponse,
     tags=["Experiment Design"],
 )
 def get_metrics(
     commons: Annotated[CommonQueryParams, Depends()],
+    gsheets: Annotated[GSheetCache, Depends(gsheet_cache)],
     client: Annotated[ClientConfig | None, Depends(config_dependency)] = None,
-):
-    # Implement get_metrics logic
-    return UnimplementedResponse()
+) -> list[GetMetricsResponseElement]:
+    """
+    Get possible metrics for a given unit type.
+
+    This reimplements dwh.R get_metrics().
+    """
+    config = require_config(client)
+    with config.dbsession(commons.unit_type) as session:
+        sa_table = get_sqlalchemy_table_from_engine(
+            session.get_bind(), commons.unit_type
+        )
+        db_schema = generate_column_descriptors(sa_table)
+        config_sheet = fetch_worksheet(commons, config, gsheets)
+        metric_cols = {c.column_name: c for c in config_sheet.columns if c.is_metric}
+
+    return sorted(
+        [
+            GetMetricsResponseElement(
+                data_type=db_schema.get(col_name).data_type,
+                column_name=col_name,
+                description=col_descriptor.description,
+            )
+            for col_name, col_descriptor in metric_cols.items()
+            if db_schema.get(col_name)
+        ],
+        key=lambda item: item.column_name,
+    )
 
 
 @app.post(
@@ -378,12 +402,12 @@ def experiments_reg_request(
         endpoint.startswith("get-file-name-by-experiment-id")
         or endpoint == "get-all-experiments"
     ):
-        response = requests.get(url, headers=headers)
+        response = httpx.get(url, headers=headers)
     else:
         if endpoint.startswith("update"):
-            response = requests.put(url, headers=headers, json=json_data)
+            response = httpx.put(url, headers=headers, json=json_data)
         else:
-            response = requests.post(url, headers=headers, json=json_data)
+            response = httpx.post(url, headers=headers, json=json_data)
 
     if response.status_code != 200:
         raise HTTPException(status_code=response.status_code, detail="Request failed")
@@ -400,10 +424,10 @@ def require_config(client: ClientConfig | None):
     return client.config
 
 
-def fetch_worksheet(commons: CommonQueryParams, config, gsheet_cache: GSheetCache):
+def fetch_worksheet(commons: CommonQueryParams, config, gsheets: GSheetCache):
     """Fetches a worksheet from the cache, reading it from the source if refresh or if the cache doesn't have it."""
     sheet = config.find_unit(commons.unit_type).sheet
-    return gsheet_cache.get(
+    return gsheets.get(
         sheet,
         lambda: fetch_and_parse_sheet(sheet),
         refresh=commons.refresh,
