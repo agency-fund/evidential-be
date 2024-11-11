@@ -1,5 +1,5 @@
 from contextlib import asynccontextmanager
-from typing import List, Dict, Any, Annotated
+from typing import Any, Annotated
 
 import httpx
 import sqlalchemy
@@ -289,7 +289,7 @@ def assignment_file(
 def commit_experiment(
     design_spec: DesignSpec,
     audience_spec: AudienceSpec,
-    experiment_assignment: Dict[str, Any],
+    experiment_assignment: dict[str, Any],
     user_id: str = "testuser",
     client: Annotated[ClientConfig | None, Depends(config_dependency)] = None,
 ):
@@ -306,7 +306,7 @@ def commit_experiment(
 def update_experiment(
     design_spec: DesignSpec,
     audience_spec: AudienceSpec,
-    experiment_assignment: Dict[str, Any],
+    experiment_assignment: dict[str, Any],
     user_id: str = "testuser",
     client: Annotated[ClientConfig | None, Depends(config_dependency)] = None,
 ):
@@ -346,14 +346,14 @@ def get_dwh_participants(audience_spec: AudienceSpec, chosen_n: int):
     pass
 
 
-def get_metric_meta(metrics: List[str], audience_spec: AudienceSpec):
+def get_metric_meta(metrics: list[str], audience_spec: AudienceSpec):
     # Implement logic to get metric metadata
     pass
 
 
 # MongoDB interaction function
 def experiments_reg_request(
-    settings: XnginSettings, endpoint: str, json_data: Dict[str, Any] | None = None
+    settings: XnginSettings, endpoint: str, json_data: dict[str, Any] | None = None
 ):
     url = f"https://{settings.api_host}/dev/api/v1/experiment-commit/{endpoint}"
 

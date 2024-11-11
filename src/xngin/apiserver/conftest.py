@@ -17,6 +17,11 @@ from xngin.apiserver.testing import testing_dwh
 logger = logging.getLogger(__name__)
 
 
+class DeveloperErrorRunFromRootOfRepositoryPleaseException(Exception):
+    def __init__(self):
+        super().__init__("Tests must be run from the root of the repository.")
+
+
 def get_settings_for_test() -> XnginSettings:
     filename = Path(__file__).parent / "testdata/xngin.testing.settings.json"
     with open(filename) as f:
@@ -24,8 +29,8 @@ def get_settings_for_test() -> XnginSettings:
             contents = f.read()
             return TypeAdapter(SettingsForTesting).validate_json(contents)
         except ValidationError as pyve:
-            print(f"Failed to parse {filename}. Contents:\n{contents}")
-            raise pyve
+            print(f"Failed to parse {filename}. Contents:\n{contents}\n\nError:{pyve}")
+            raise
 
 
 def setup(app):
@@ -75,4 +80,4 @@ def raise_unless_running_from_top_directory():
     """Raises an exception unless the current working directory is the root of the project."""
     pypt = Path(os.getcwd()) / "pyproject.toml"
     if not pypt.exists():
-        raise Exception("Tests must be run from the root of the repository.")
+        raise DeveloperErrorRunFromRootOfRepositoryPleaseException()

@@ -1,6 +1,6 @@
 import enum
 from datetime import datetime
-from typing import List, Literal
+from typing import Literal
 import sqlalchemy.sql.sqltypes
 from pydantic import BaseModel, Field
 
@@ -90,7 +90,7 @@ class AudienceSpec(BaseModel):
     """Audience specification."""
 
     type: str
-    filters: List[AudienceSpecFilter]
+    filters: list[AudienceSpecFilter]
 
 
 class DesignSpecArm(BaseModel):
@@ -109,14 +109,14 @@ class DesignSpec(BaseModel):
     experiment_id: str
     experiment_name: str
     description: str
-    arms: List[DesignSpecArm]
+    arms: list[DesignSpecArm]
     start_date: datetime
     end_date: datetime
-    strata_cols: List[str]
+    strata_cols: list[str]
     power: float
     alpha: float
     fstat_thresh: float
-    metrics: List[DesignSpecMetric]
+    metrics: list[DesignSpecMetric]
 
 
 class UnimplementedResponse(BaseModel):
@@ -133,7 +133,7 @@ class GetStrataResponseElement(BaseModel):
 class GetFiltersResponseElement(BaseModel):
     data_type: DataType
     description: str
-    distinct_values: List[str] | None = Field(
+    distinct_values: list[str] | None = Field(
         ...,
         description="If the type of the column is non-numeric, contains sorted list of unique values.",
     )
@@ -147,7 +147,7 @@ class GetFiltersResponseElement(BaseModel):
     )
     # TODO: Can we rename this to column_name for consistency with GetStrataResponseElement?
     filter_name: str = Field(..., description="Name of the column.")
-    relations: List[Relation] = Field(..., min_length=1)
+    relations: list[Relation] = Field(..., min_length=1)
 
 
 class GetMetricsResponseElement(BaseModel):

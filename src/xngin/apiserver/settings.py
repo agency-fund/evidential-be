@@ -1,7 +1,7 @@
 import json
 import os
 from functools import lru_cache
-from typing import Literal, List, Union
+from typing import Literal
 
 import sqlalchemy
 from pydantic import BaseModel, PositiveInt, SecretStr, Field
@@ -55,7 +55,7 @@ class Unit(BaseModel):
 class UnitsMixin(BaseModel):
     """UnitsMixin can be added to a config type to add standardized unit definitions."""
 
-    units: List[Unit]
+    units: list[Unit]
 
     def find_unit(self, unit_type: str):
         found = next(
@@ -126,15 +126,13 @@ class SqliteLocalConfig(UnitsMixin, BaseModel):
 
 class ClientConfig(BaseModel):
     id: str
-    config: Union[RocketLearningConfig, SqliteLocalConfig] = Field(
-        ..., discriminator="type"
-    )
+    config: RocketLearningConfig | SqliteLocalConfig = Field(..., discriminator="type")
 
 
 class XnginSettings(BaseModel):
-    trusted_ips: List[str] = list()
+    trusted_ips: list[str] = list()
     db_connect_timeout_secs: int = 3
-    client_configs: List[ClientConfig]
+    client_configs: list[ClientConfig]
 
     def get_client_config(self, config_id):
         """Finds the config for a specific ID if it exists, or returns None."""
@@ -155,7 +153,7 @@ class CannotFindTableException(Exception):
         self.table_name = table_name
         self.alternatives = existing_tables
         if existing_tables:
-            self.message = f"The table '{table_name}' does not exist. Known tables: {", ".join(sorted(existing_tables))}"
+            self.message = f"The table '{table_name}' does not exist. Known tables: {', '.join(sorted(existing_tables))}"
         else:
             self.message = f"The table '{table_name}' does not exist; the database does not contain any tables."
 

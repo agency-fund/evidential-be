@@ -1,5 +1,3 @@
-from typing import Union
-
 import gspread
 import pandas
 
@@ -11,7 +9,7 @@ def fetch_sheet(url, worksheet) -> gspread.Worksheet:
     return sheet.worksheet(worksheet)
 
 
-def read_sheet_from_gsheet(url, worksheet) -> list[dict[str, Union[str, int, bool]]]:
+def read_sheet_from_gsheet(url, worksheet) -> list[dict[str, str | int | bool]]:
     """Reads a Google Spreadsheet."""
     return fetch_sheet(url, worksheet).get_all_records()
 
