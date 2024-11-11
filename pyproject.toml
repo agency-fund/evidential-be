@@ -37,13 +37,15 @@ exclude = ["*.ipynb"]
 
 [tool.ruff.lint]
 select = [
+    "A",
     "B",
     "E4",
     "E7",
     "E9",
     "F",
     "FAST",
-    "RUF"
+    "RUF",
+    "UP"
 ]
 ignore = [
     "RUF029"
