@@ -53,6 +53,40 @@
       }
     },
     {
+      "id": "customer-test-badconfig",
+      "config": {
+        "type": "customer",
+        "units": [
+          {
+            "id": "test_unit_type",
+            "sheet": {
+              "url": "https://docs.google.com/spreadsheets/d/redacted/edit",
+              "worksheet": "Sheet1"
+            },
+            "table_name": "transforms"
+          }
+        ],
+        "webhook_config": {
+          "actions": {
+          },
+          "common_headers": {
+            "authorization": "abc"
+          }
+        },
+        "api_host": "api_host",
+        "api_token": "api_token",
+        "dwh": {
+          "user": "user",
+          "port": 5439,
+          "host": "__example__.redshift.amazonaws.com",
+          "password": "password",
+          "dbname": "dbname",
+          "sslmode": "require"
+        }
+      }
+    },
+
+    {
       "id": "testing",
       "config": {
         "type": "sqlite_local",

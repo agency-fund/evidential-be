@@ -76,6 +76,7 @@ def test_commit_endpoint(mocker):
         contents = f.read()
     hurl = Hurl.from_script(contents)
     # Mock the POST using pytest-mock
+    # TODO: consider using dep injection for the httpx client
     mock_response = mocker.Mock()
     mock_response.status_code = hurl.expected_status
     expected_response_json = json.loads(hurl.expected_response)
@@ -89,13 +90,32 @@ def test_commit_endpoint(mocker):
 
     # Assert that httpx.AsyncClient.post was called with the correct arguments
     mock_post.assert_called_once()
-    args, kwargs = mock_post.call_args
+    _, kwargs = mock_post.call_args
     # TODO: Replace with actual URL based on settings
-    assert args[0] == "https://api.example.com/submit"
+    assert (
+        kwargs["url"]
+        == "http://localhost:4001/dev/api/v1/experiment-commit/save-experiment-commit"
+    )
+    assert kwargs["headers"]["Authorization"] == "abc"
+    assert kwargs["json"]["creator_user_id"] == "commituser"
     assert "experiment_commit_datetime" in kwargs["json"]
     assert "experiment_commit_id" in kwargs["json"]
-    assert kwargs["json"]["creator_user_id"] == "commituser"
 
     # Assert that the response from our API is correct
     assert response.status_code == 200
     assert response.json() == expected_response_json
+
+
+def test_commit_endpoint_badconfig():
+    data_file = str(Path(__file__).parent / "testdata/nonbulk/apitest.commit.hurl")
+    with open(data_file, "r", encoding="utf-8") as f:
+        contents = f.read()
+    hurl = Hurl.from_script(contents)
+    # Load our bad settings that are missing a commit action.
+    hurl.headers["Config-ID"] = "customer-test-badconfig"
+
+    response = client.request(
+        hurl.method, hurl.url, headers=hurl.headers, content=hurl.body
+    )
+
+    assert response.status_code == 501

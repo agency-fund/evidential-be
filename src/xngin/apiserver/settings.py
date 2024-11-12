@@ -4,7 +4,7 @@ from functools import lru_cache
 from typing import Literal, List, Union
 
 import sqlalchemy
-from pydantic import BaseModel, PositiveInt, SecretStr, Field
+from pydantic import BaseModel, PositiveInt, SecretStr, Field, field_validator
 from sqlalchemy.exc import NoSuchTableError
 from sqlalchemy.orm import Session
 
@@ -66,21 +66,29 @@ class UnitsMixin(BaseModel):
         return found
 
 
-class Url(BaseModel):
+class WebhookUrl(BaseModel):
     """Represents a url and HTTP method to use with it."""
 
-    method: str
+    method: Literal["get", "post", "put", "patch"]
     url: str
     # headers: dict[str, str]
+
+    @field_validator("method", mode="before")
+    @classmethod
+    def to_lower(cls, value):
+        """Force the http 'method' to be lowercase before validation."""
+
+        return str(value).lower().strip()
 
 
 class WebhookActions(BaseModel):
     """The set of supported actions that trigger a user callback."""
 
-    commit: Url | None
-    assignment_file: Url | None
-    update_timestamps: Url | None
-    update_description: Url | None
+    # No action is required, so a user can leave it out completely.
+    commit: WebhookUrl | None = None
+    assignment_file: WebhookUrl | None = None
+    update_timestamps: WebhookUrl | None = None
+    update_description: WebhookUrl | None = None
 
 
 class WebhookCommonHeaders(BaseModel):
@@ -127,6 +135,7 @@ class RocketLearningConfig(UnitsMixin, WebhookMixin, BaseModel):
     """
 
     type: Literal["customer"]
+
     dwh: PostgresDsn
     api_host: str
     api_token: SecretStr

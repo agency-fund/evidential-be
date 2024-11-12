@@ -1,5 +1,5 @@
 POST http://localhost:8000/commit?user_id=commituser
-Config-ID: testing
+Config-ID: customer-test
 ```json
 {
   "design_spec": {

@@ -293,14 +293,25 @@ def assignment_file(
 async def commit_experiment(
     design_spec: DesignSpec,
     audience_spec: AudienceSpec,
+    # TODO: convert to a proper api_types.py model
     experiment_assignment: Dict[str, Any],
     user_id: str = "testuser",
     client: Annotated[ClientConfig | None, Depends(config_dependency)] = None,
 ):
-    # TODO: integrate client configuration of webhook
+    config = require_config(client).webhook_config
+    action = config.actions.commit
+    if action is None:
+        # TODO: write to internal storage if webhooks are not defined.
+        raise HTTPException(501, "Action 'commit' not configured.")
+
     # Expect user webhook to take a POST payload:
-    async with httpx.AsyncClient() as client:
-        headers = {"Authorization": "Bearer token"}
+    async with httpx.AsyncClient() as http_client:
+        headers = {}
+        auth_header_value = config.common_headers.authorization
+        if auth_header_value is not None:
+            headers["Authorization"] = auth_header_value
+
+        # TODO: convert to a proper api_types.py model
         data = {
             "experiment_commit_datetime": datetime.datetime.now().isoformat(),
             "experiment_commit_id": str(uuid.uuid4()),
@@ -309,9 +320,18 @@ async def commit_experiment(
             "design_spec": design_spec.model_dump_json(),
             "audience_spec": audience_spec.model_dump_json(),
         }
+
         try:
-            response = await client.post(
-                "https://api.example.com/submit", headers=headers, json=data
+            # dynamically call method based on action
+            method = action.method
+            dispatcher = {
+                "get": httpx.AsyncClient.get,
+                "post": httpx.AsyncClient.post,
+                "put": httpx.AsyncClient.put,
+                "patch": httpx.AsyncClient.patch,
+            }
+            response = await dispatcher[method](
+                http_client, url=action.url, headers=headers, json=data
             )
             response.raise_for_status()
         except httpx.HTTPStatusError as e:
@@ -327,6 +347,7 @@ async def commit_experiment(
             logger.error("ERROR requesting webhook: %s (%s)", e.request.url, str(e))
             raise HTTPException(status_code=500, detail="server error") from e
 
+    # TODO: embed response in our own custom return type for better extensibility
     return response.json()
 
 
