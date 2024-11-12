@@ -13,7 +13,7 @@ class AssignmentResult:
     f_statistic: float
     numerator_df: int
     denominator_df: int
-    p_value: float
+    f_pvalue: float
     balance_ok: bool
     experiment_id: str
     description: str
@@ -54,12 +54,10 @@ def assign_treatment(
     # Create strata for numeric columns (no missing values)
     for col in df.select_dtypes(include=[np.number]).columns:
         if df[col].isnull().sum() == 0:
+            df[f"{col}_strata"] = df[col]
+        elif df[col].isnull().sum() > 0:
             df[f"{col}_strata"] = pd.qcut(df[col], q=3, labels=False)
-    
-    # Create strata for numeric columns (with missing values)
-    for col in df.select_dtypes(include=[np.number]).columns:
-        if df[col].isnull().sum() > 0:
-            df[f"{col}_strata"] = pd.qcut(df[col], q=3, labels=False)
+            df[f"{col}_strata"] = df[f"{col}_strata"].astype('category')
             df[f"{col}_strata"] = df[f"{col}_strata"].cat.add_categories(["_NA"])
             df[f"{col}_strata"].fillna("_NA", inplace=True)
     
@@ -91,8 +89,12 @@ def assign_treatment(
                    and c != 'selected_strata'
                    and df[c].nunique() > 1
                    and not any(x in c for x in ['name', 'id'])]
+
+    balance_cols.append('treat')
     
     balance_data = pd.get_dummies(balance_data[balance_cols])
+    # Convert all columns to float
+    balance_data = balance_data.astype(float)
     
     # Fit model for balance check
     model = sm.OLS(balance_data['treat'], balance_data.drop('treat', axis=1)).fit()
@@ -112,7 +114,7 @@ def assign_treatment(
         f_statistic=f_stat,
         numerator_df=model.df_model,
         denominator_df=model.df_resid,
-        p_value=f_pvalue,
+        f_pvalue=f_pvalue,
         balance_ok=f_pvalue > fstat_thresh,
         experiment_id=experiment_id,
         description=description,

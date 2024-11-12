@@ -9,13 +9,13 @@ def sample_data():
     n = 1000
     data = {
         'id': range(n),
-        'age': np.random.normal(30, 5, n),
-        'income': np.random.lognormal(10, 1, n),
+        'age': np.round(np.random.normal(30, 5, n), 0),
+        'income': np.round(np.float64(np.random.lognormal(10, 1, n)), 0),
         'gender': np.random.choice(['M', 'F'], n),
         'region': np.random.choice(['North', 'South', 'East', 'West'], n)
     }
     df = pd.DataFrame(data)
-    df.set_index('id', inplace=True)
+    #df.set_index('id', inplace=True)
     return df
 
 def test_assign_treatment(sample_data):
