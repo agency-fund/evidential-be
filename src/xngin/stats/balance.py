@@ -1,6 +1,6 @@
 import pandas as pd
 import statsmodels.formula.api as smf
-from typing import List, Optional, enum
+from typing import List
 from dataclasses import dataclass
 
 @dataclass(slots=True)
