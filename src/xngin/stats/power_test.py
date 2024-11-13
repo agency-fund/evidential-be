@@ -19,8 +19,8 @@ def test_analyze_metric_power_continuous():
     assert result.metric_baseline == 100
     assert result.metric_target == 110
     assert result.available_n == 1000
-    assert isinstance(result.target_n, int)
-    assert isinstance(result.sufficient_n, bool)
+    assert result.target_n == 128.0
+    assert result.sufficient_n == True
     assert result.msg is not None
 
 def test_analyze_metric_power_binary():

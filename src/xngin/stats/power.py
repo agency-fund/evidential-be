@@ -74,21 +74,22 @@ def analyze_metric_power(
                 )
             ) * n_arms
         else:  # BINARY
-            power_analysis = sms.proportion_effectsize(
+            power_analysis = sms.TTestIndPower()
+            effect_size = sms.proportion_effectsize(
                 metric.metric_baseline,
                 metric.metric_target
             )
             target_n = np.ceil(
                 power_analysis.solve_power(
-                    effect_size=power_analysis,
+                    effect_size=effect_size,
                     alpha=alpha,
                     power=power,
                     ratio=1
                 )
             ) * n_arms
 
-        analysis.target_n = target_n
-        analysis.sufficient_n = target_n <= metric.metric_available_n
+        analysis.target_n = int(target_n)
+        analysis.sufficient_n = bool(target_n <= metric.metric_available_n)
 
         msg = f"there are {metric.metric_available_n} units available to run your experiment and {target_n} units are needed to meet your experimental design specs."
 
@@ -99,20 +100,28 @@ def analyze_metric_power(
             if metric.metric_type == MetricType.CONTINUOUS:
                 power_analysis = sms.TTestIndPower()
                 needed_delta = power_analysis.solve_power(
-                    n=metric.metric_available_n // n_arms,
+                    nobs1=metric.metric_available_n // n_arms,
                     effect_size=None,
                     alpha=alpha,
                     power=power
                 ) * metric.metric_stddev
                 needed_target = needed_delta + metric.metric_baseline
             else:  # BINARY
-                power_analysis = sms.proportion_effectsize(metric.metric_baseline, None)
-                needed_target = power_analysis.solve_power(
-                    n=metric.metric_available_n // n_arms,
-                    effect_size=None,
+                power_analysis = sms.NormalIndPower()
+                # Calculate minimum detectable effect size given sample size
+                min_effect_size = power_analysis.solve_power(
+                    nobs1=metric.metric_available_n // n_arms,
                     alpha=alpha,
-                    power=power
+                    power=power,
+                    ratio=1
                 )
+                
+                # Convert Cohen's h back to proportion
+                # h = 2 * arcsin(sqrt(p1)) - 2 * arcsin(sqrt(p2))
+                # where p1 is baseline and p2 is target
+                p1 = metric.metric_baseline
+                arcsin_p2 = 2 * np.arcsin(np.sqrt(p1)) - min_effect_size
+                needed_target = np.sin(arcsin_p2 / 2) ** 2
 
             analysis.needed_target = needed_target
             msg += (f" there are not enough units available, you need {target_n - metric.metric_available_n} more units "
@@ -127,7 +136,7 @@ def analyze_metric_power(
         if metric.metric_type == MetricType.CONTINUOUS:
             power_analysis = sms.TTestIndPower()
             delta = power_analysis.solve_power(
-                n=metric.metric_available_n // n_arms,
+                nobs1=metric.metric_available_n // n_arms,
                 effect_size=None,
                 alpha=alpha,
                 power=power

@@ -22,7 +22,7 @@ def test_check_balance(sample_data):
     
     assert result.f_statistic is not None
     assert result.f_pvalue is not None
-    assert result.is_balanced is True
+    assert result.is_balanced == True
     assert result.model_summary is not None
 
 def test_check_balance_with_missing_values(sample_data):
@@ -33,7 +33,7 @@ def test_check_balance_with_missing_values(sample_data):
     
     assert result.f_statistic is not None
     assert result.f_pvalue is not None
-    assert result.is_balanced is True
+    assert result.is_balanced == True
 
 def test_check_balance_with_excluded_cols(sample_data):
     result = check_balance(
