@@ -69,18 +69,25 @@ def test_api(script, update_api_tests_flag):
         raise
 
 
-def test_commit_endpoint(mocker):
+def load_mock_response_from_hurl(mocker, file):
+    """Returns a tuple with the hurl obj specified in file and a mock response."""
+
     # Set up the mock response - first load our test data.
-    data_file = str(Path(__file__).parent / "testdata/nonbulk/apitest.commit.hurl")
+    data_file = str(Path(__file__).parent / "testdata/nonbulk" / file)
     with open(data_file, "r", encoding="utf-8") as f:
         contents = f.read()
     hurl = Hurl.from_script(contents)
-    # Mock the POST using pytest-mock
     # TODO: consider using dep injection for the httpx client
     mock_response = mocker.Mock()
     mock_response.status_code = hurl.expected_status
-    expected_response_json = json.loads(hurl.expected_response)
-    mock_response.json.return_value = expected_response_json
+    mock_response.json.return_value = json.loads(hurl.expected_response)
+    return (hurl, mock_response)
+
+
+def test_commit_endpoint(mocker):
+    """Test /commit success case by mocking the webhook request with pytest-mock"""
+
+    (hurl, mock_response) = load_mock_response_from_hurl(mocker, "apitest.commit.hurl")
     # Mock the httpx.AsyncClient.post method
     mock_post = mocker.patch("httpx.AsyncClient.post", return_value=mock_response)
 
@@ -91,7 +98,6 @@ def test_commit_endpoint(mocker):
     # Assert that httpx.AsyncClient.post was called with the correct arguments
     mock_post.assert_called_once()
     _, kwargs = mock_post.call_args
-    # TODO: Replace with actual URL based on settings
     assert (
         kwargs["url"]
         == "http://localhost:4001/dev/api/v1/experiment-commit/save-experiment-commit"
@@ -103,7 +109,22 @@ def test_commit_endpoint(mocker):
 
     # Assert that the response from our API is correct
     assert response.status_code == 200
-    assert response.json() == expected_response_json
+    assert response.json() == mock_response.json.return_value
+
+
+def test_commit_endpoint_webhook_has_non_200_status(mocker):
+    (hurl, mock_response) = load_mock_response_from_hurl(mocker, "apitest.commit.hurl")
+    # Override the mock status with an unaccepted code
+    mock_response.status_code = 203
+    mock_post = mocker.patch("httpx.AsyncClient.post", return_value=mock_response)
+
+    response = client.request(
+        hurl.method, hurl.url, headers=hurl.headers, content=hurl.body
+    )
+
+    mock_post.assert_called_once()
+    # Assert that downsream errors result ina 502 bad gateway error.
+    assert response.status_code == 502
 
 
 def test_commit_endpoint_badconfig():

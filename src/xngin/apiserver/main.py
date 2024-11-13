@@ -333,16 +333,17 @@ async def commit_experiment(
             response = await dispatcher[method](
                 http_client, url=action.url, headers=headers, json=data
             )
-            response.raise_for_status()
-        except httpx.HTTPStatusError as e:
-            logger.error(
-                "ERROR response %s requesting webhook: %s",
-                e.response.status_code,
-                e.request.url,
-            )
-            raise HTTPException(
-                status_code=e.response.status_code, detail="webhook request failed"
-            ) from e
+            # Stricter than response.raise_for_status(), we require HTTP 200:
+            if response.status_code != 200:
+                logger.error(
+                    "ERROR response %s requesting webhook: %s",
+                    response.status_code,
+                    action.url,
+                )
+                raise HTTPException(
+                    status_code=502,  # Would a 421 be better?
+                    detail=f"webhook request failed with status {response.status_code}",
+                )
         except httpx.RequestError as e:
             logger.error("ERROR requesting webhook: %s (%s)", e.request.url, str(e))
             raise HTTPException(status_code=500, detail="server error") from e
