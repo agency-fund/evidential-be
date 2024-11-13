@@ -1,13 +1,12 @@
-from typing import List, Dict, Any, Optional
+from typing import List, Optional
 import pandas as pd
 import numpy as np
 from dataclasses import dataclass
 from stochatreat import stochatreat
 import statsmodels.api as sm
-import statsmodels.stats.api as sms
 import scipy.stats as stats
 
-@dataclass
+@dataclass(slots=True)
 class AssignmentResult:
     """Results from treatment assignment."""
     f_statistic: float
@@ -29,7 +28,7 @@ def assign_treatment(
     experiment_id: str,
     description: str,
     fstat_thresh: float = 0.1,
-    random_state: Optional[int] = None
+    random_state: int | None = None
 ) -> AssignmentResult:
     """
     Perform stratified random assignment and balance checking.
@@ -59,7 +58,7 @@ def assign_treatment(
             df[f"{col}_strata"] = pd.qcut(df[col], q=3, labels=False)
             df[f"{col}_strata"] = df[f"{col}_strata"].astype('category')
             df[f"{col}_strata"] = df[f"{col}_strata"].cat.add_categories(["_NA"])
-            df[f"{col}_strata"].fillna("_NA", inplace=True)
+            df[f"{col}_strata"].fillna({col: "_NA"}, inplace=True)
     
     # Create strata for character columns
     for col in df.select_dtypes(include=['object']).columns:

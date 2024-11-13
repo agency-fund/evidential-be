@@ -1,10 +1,9 @@
 import pandas as pd
-import numpy as np
 import statsmodels.formula.api as smf
-from typing import Dict, Any, List
+from typing import List, Optional, enum
 from dataclasses import dataclass
 
-@dataclass
+@dataclass(slots=True)
 class BalanceResult:
     """Results from balance check."""
     f_statistic: float
@@ -15,7 +14,7 @@ class BalanceResult:
 def check_balance(
     data: pd.DataFrame,
     treatment_col: str = 'treat',
-    exclude_cols: List[str] = None,
+    exclude_cols: List[str] | None = None,
     alpha: float = 0.05
 ) -> BalanceResult:
     """
@@ -51,7 +50,7 @@ def check_balance(
                 df_analysis[f'{col}_quartile']
                 .cat.add_categories(['Missing'])
             )
-            df_analysis[f'{col}_quartile'].fillna('Missing', inplace=True)
+            df_analysis[f'{col}_quartile'].fillna({col: 'Missing'}, inplace=True)
             df_analysis = pd.get_dummies(
                 df_analysis, 
                 columns=[f'{col}_quartile'], 

@@ -1,5 +1,3 @@
-import pytest
-import numpy as np
 from xngin.stats.power import MetricSpec, MetricType, analyze_metric_power, check_power
 
 def test_analyze_metric_power_continuous():
@@ -20,7 +18,7 @@ def test_analyze_metric_power_continuous():
     assert result.metric_target == 110
     assert result.available_n == 1000
     assert result.target_n == 128.0
-    assert result.sufficient_n == True
+    assert result.sufficient_n
     assert result.msg is not None
 
 def test_analyze_metric_power_binary():

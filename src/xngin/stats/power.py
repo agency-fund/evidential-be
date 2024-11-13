@@ -1,25 +1,37 @@
 import numpy as np
 import statsmodels.stats.api as sms
-from typing import Dict, Union, Tuple, List
+from typing import List
 from dataclasses import dataclass
-from enum import Enum
+from enum import Enum, StrEnum
 
 class MetricType(str, Enum):
     CONTINUOUS = "continuous"
     BINARY = "binary"
 
-@dataclass
+@dataclass(slots=True)
 class MetricSpec:
     """Specification for a metric to analyze."""
     metric_name: str
     metric_type: MetricType
     metric_baseline: float
-    metric_target: float = None
-    metric_pct_change: float = None
-    metric_stddev: float = None
-    metric_available_n: int = None
+    metric_target: float | None = None
+    metric_pct_change: float | None = None
+    metric_stddev: float | None = None
+    metric_available_n: int | None = None
 
-@dataclass
+class MetricAnalysisMessageType(StrEnum):
+  SUFFICIENT = "sufficient"
+  INSUFFICIENT = "insufficient"
+  EFFECT_SIZE = "effect_size"
+  NOPE = "nope"
+
+@dataclass(slots=True)
+class MetricAnalysisMessage:
+  type: MetricAnalysisMessageType
+  msg: str
+  values: dict[str, str]
+
+@dataclass(slots=True)
 class MetricAnalysis:
     """Analysis results for a single metric."""
     metric_name: str
@@ -27,13 +39,13 @@ class MetricAnalysis:
     metric_baseline: float
     metric_target: float
     available_n: int
-    target_n: int = None
-    sufficient_n: bool = None
-    needed_target: float = None
-    metric_target_possible: float = None
-    metric_pct_change_possible: float = None
+    target_n: int | None = None
+    sufficient_n: bool | None = None
+    needed_target: float | None = None
+    metric_target_possible: float | None = None
+    metric_pct_change_possible: float | None = None
     delta: float = None
-    msg: str = None
+    msg: MetricAnalysisMessage = None
 
 def analyze_metric_power(
     metric: MetricSpec,
@@ -91,10 +103,15 @@ def analyze_metric_power(
         analysis.target_n = int(target_n)
         analysis.sufficient_n = bool(target_n <= metric.metric_available_n)
 
-        msg = f"there are {metric.metric_available_n} units available to run your experiment and {target_n} units are needed to meet your experimental design specs."
-
         if analysis.sufficient_n:
-            msg += f" there are enough units available, you only need {target_n} of the {metric.metric_available_n} units to meet your experimental design specs."
+            analysis.msg = MetricAnalysisMessage(
+                type=MetricAnalysisMessageType.SUFFICIENT,
+                msg=(f"there are {metric.metric_available_n} units available to run your experiment and"
+                     f" {target_n} units are needed to meet your experimental design specs."
+                     f" there are enough units available, you only need {target_n}"
+                     f" of the {metric.metric_available_n} units to meet your experimental design specs."),
+                values = {}
+            )
         else:
             # Calculate needed target if insufficient sample
             if metric.metric_type == MetricType.CONTINUOUS:
@@ -124,12 +141,16 @@ def analyze_metric_power(
                 needed_target = np.sin(arcsin_p2 / 2) ** 2
 
             analysis.needed_target = needed_target
-            msg += (f" there are not enough units available, you need {target_n - metric.metric_available_n} more units "
-                   f"to meet your experimental design specifications. in order to meet your specification with the available "
-                   f"{metric.metric_available_n} units and a baseline metric value of {metric.metric_baseline:.4f}, your metric "
-                   f"target value needs to be {needed_target:.4f}, the current target is {metric.metric_target:.4f}.")
+            analysis.msg = MetricAnalysisMessage(
+                type=MetricAnalysisMessageType.INSUFFICIENT,
+                msg=(f"there are {metric.metric_available_n} units available to run your experiment and {target_n} units are needed to meet your experimental design specs."
+                     f" there are not enough units available, you need {target_n - metric.metric_available_n} more units"
+                     f" to meet your experimental design specifications. in order to meet your specification with the available"
+                     f" {metric.metric_available_n} units and a baseline metric value of {metric.metric_baseline:.4f}, your metric"
+                     f" target value needs to be {needed_target:.4f}, the current target is {metric.metric_target:.4f}."),
+                values = {}
 
-        analysis.msg = msg
+            )
 
     # Case B: Only baseline defined - calculate possible effect size
     elif metric.metric_baseline is not None and metric.metric_target is None:
