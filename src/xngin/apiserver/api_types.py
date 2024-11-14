@@ -1,8 +1,8 @@
 import enum
 from datetime import datetime
-from typing import ClassVar, List, Literal
+from typing import ClassVar, Dict, List, Literal
 import sqlalchemy.sql.sqltypes
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 
 class DataType(enum.StrEnum):
@@ -122,6 +122,44 @@ class DesignSpec(BaseModel):
         """Let pydantic convert dates to strings when serializing in model_dump_json()/model_dump(mode='json')"""
 
         json_encoders: ClassVar[dict] = {datetime: lambda v: v.isoformat()}
+
+
+class ExperimentStrata(BaseModel):
+    strata_name: str
+    strata_value: str
+
+
+class ExperimentAssignmentUnit(BaseModel):
+    # Name of the experiment arm this unit was assigned to
+    treatment_assignment: str
+    strata: List[ExperimentStrata]
+
+    # Allow extra fields so that we can support dwh-specific ids
+    model_config = {"extra": "allow"}
+    # And require the extra field to be an integer;
+    # can loosen this if string ids are used in the future
+    __pydantic_extra__: Dict[str, int] = Field(init=False)
+
+    @model_validator(mode="after")
+    def validate_single_id_field(self) -> "ExperimentAssignmentUnit":
+        num_extra = len(self.__pydantic_extra__)
+        if num_extra != 1:
+            raise ValueError(f"Model must have exactly one id field. Found {num_extra}")
+        return self
+
+
+class ExperimentAssignment(BaseModel):
+    """Experiment assignment details including balance statistics and group assignments."""
+
+    f_stat: float = Field(alias="f.stat")
+    numerator_df: int = Field(alias="numerator.df")
+    denominator_df: int = Field(alias="denominator.df")
+    p_value: float = Field(alias="p.value")
+    balance_ok: bool
+    experiment_id: str
+    description: str
+    sample_size: int
+    assignments: List[ExperimentAssignmentUnit]
 
 
 class UnimplementedResponse(BaseModel):

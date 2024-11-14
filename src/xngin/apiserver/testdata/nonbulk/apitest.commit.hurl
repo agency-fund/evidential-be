@@ -44,14 +44,14 @@ Config-ID: customer-test
     ]
   },
   "experiment_assignment": {
-    "f_stat": "NaN",
-    "numerator_df": 66,
-    "denominator_df": 0,
-    "p._value": "NaN",
-    "balance_ok": {},
-    "experiment_id": "test-eea257d2-4a3f-46d9-b3dd-7a1d3f6c8d47",
+    "f.stat": 1.1153,
+    "numerator.df": 523,
+    "denominator.df": 476,
+    "p.value": 0.1121,
+    "balance_ok": false,
+    "experiment_id": "df6456bf-09c5-4d7f-82f1-75679db54477",
     "description": "Sample experiment description.",
-    "sample_size": 100,
+    "sample_size": 1000,
     "assignments": [
       {
         "groups_id": 35634,

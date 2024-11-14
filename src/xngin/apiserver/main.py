@@ -16,6 +16,7 @@ from xngin.apiserver.api_types import (
     DataTypeClass,
     AudienceSpec,
     DesignSpec,
+    ExperimentAssignment,
     UnimplementedResponse,
     GetStrataResponseElement,
     GetFiltersResponseElement,
@@ -293,8 +294,7 @@ def assignment_file(
 async def commit_experiment(
     design_spec: DesignSpec,
     audience_spec: AudienceSpec,
-    # TODO: convert to a proper api_types.py model
-    experiment_assignment: Dict[str, Any],
+    experiment_assignment: ExperimentAssignment,
     user_id: str = "testuser",
     client: Annotated[ClientConfig | None, Depends(config_dependency)] = None,
 ):
@@ -310,6 +310,8 @@ async def commit_experiment(
         auth_header_value = config.common_headers.authorization
         if auth_header_value is not None:
             headers["Authorization"] = auth_header_value
+        headers["Accept"] = "application/json"
+        headers["Content-Type"] = "application/json"
 
         # TODO: convert to a proper api_types.py model
         data = {
