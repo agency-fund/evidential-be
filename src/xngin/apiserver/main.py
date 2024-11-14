@@ -1,8 +1,6 @@
 from contextlib import asynccontextmanager
-import datetime
 from typing import List, Dict, Any, Annotated
 import logging
-import uuid
 
 import httpx
 import sqlalchemy
@@ -42,6 +40,7 @@ from xngin.sheets.config_sheet import (
     create_sheetconfig_from_table,
 )
 import warnings
+from xngin.apiserver.webhook_types import WebhookRequestCommit
 
 # Workaround for: https://github.com/fastapi/fastapi/discussions/10537
 warnings.filterwarnings(
@@ -313,15 +312,12 @@ async def commit_experiment(
         headers["Accept"] = "application/json"
         headers["Content-Type"] = "application/json"
 
-        # TODO: convert to a proper api_types.py model
-        data = {
-            "experiment_commit_datetime": datetime.datetime.now().isoformat(),
-            "experiment_commit_id": str(uuid.uuid4()),
-            "creator_user_id": user_id,
-            "experiment_assignment": experiment_assignment,
-            "design_spec": design_spec.model_dump_json(),
-            "audience_spec": audience_spec.model_dump_json(),
-        }
+        data = WebhookRequestCommit(
+            creator_user_id=user_id,
+            experiment_assignment=experiment_assignment,
+            design_spec=design_spec,
+            audience_spec=audience_spec,
+        ).model_dump()
 
         try:
             # dynamically call method based on action

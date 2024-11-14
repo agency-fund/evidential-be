@@ -1,8 +1,8 @@
 import enum
 from datetime import datetime
-from typing import ClassVar, Dict, List, Literal
+from typing import Dict, List, Literal
 import sqlalchemy.sql.sqltypes
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 
 class DataType(enum.StrEnum):
@@ -118,10 +118,8 @@ class DesignSpec(BaseModel):
     fstat_thresh: float
     metrics: List[DesignSpecMetric]
 
-    class Config:
-        """Let pydantic convert dates to strings when serializing in model_dump_json()/model_dump(mode='json')"""
-
-        json_encoders: ClassVar[dict] = {datetime: lambda v: v.isoformat()}
+    # Let pydantic convert dates to strings when serializing in model_dump_json()/model_dump(mode='json')
+    model_config = ConfigDict(json_encoders={datetime: lambda dt: dt.isoformat()})
 
 
 class ExperimentStrata(BaseModel):
