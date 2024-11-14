@@ -3,9 +3,22 @@
 from datetime import datetime
 import uuid
 
+import httpx
 from pydantic import BaseModel, Field, ConfigDict
 
 from xngin.apiserver.api_types import DesignSpec, AudienceSpec, ExperimentAssignment
+
+
+class WebhookResponse(BaseModel):
+    """Generic wrapper around downstream webhook responses."""
+
+    proxied_response: str
+
+    @classmethod
+    def from_httpx(cls, response: httpx.Response):
+        """Create WebhookResponse from an httpx.Response object."""
+        # No need to parse the response text as json, just pass it through.
+        return cls(proxied_response=response.text)
 
 
 class WebhookRequestCommit(BaseModel):

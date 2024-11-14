@@ -12,6 +12,7 @@ from fastapi.testclient import TestClient
 from xngin.apiserver import conftest
 from xngin.apiserver.main import app
 from xngin.apiserver.testing.hurl import Hurl
+from xngin.apiserver.webhook_types import WebhookResponse
 
 logger = logging.getLogger(__name__)
 
@@ -80,7 +81,11 @@ def load_mock_response_from_hurl(mocker, file):
     # TODO: consider using dep injection for the httpx client
     mock_response = mocker.Mock()
     mock_response.status_code = hurl.expected_status
-    mock_response.json.return_value = json.loads(hurl.expected_response)
+    # Extract the fake webhook response from the mock api server response,
+    # then re-serialize it to use as a mock webhook response.
+    mock_webhook_response_dict = json.loads(hurl.expected_response)["proxied_response"]
+    proxied_response_text = json.dumps(mock_webhook_response_dict)
+    mock_response.text = proxied_response_text
     return (hurl, mock_response)
 
 
@@ -109,7 +114,10 @@ def test_commit_endpoint(mocker):
 
     # Assert that the response from our API is correct
     assert response.status_code == 200
-    assert response.json() == mock_response.json.return_value
+    # We mocked the response as text, so need to reconstruct the serialized form of the
+    # expected response to compare.
+    expected_response_model = WebhookResponse(proxied_response=mock_response.text)
+    assert response.text == expected_response_model.model_dump_json()
 
 
 def test_commit_endpoint_webhook_has_non_200_status(mocker):

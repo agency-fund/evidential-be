@@ -40,7 +40,7 @@ from xngin.sheets.config_sheet import (
     create_sheetconfig_from_table,
 )
 import warnings
-from xngin.apiserver.webhook_types import WebhookRequestCommit
+from xngin.apiserver.webhook_types import WebhookRequestCommit, WebhookResponse
 
 # Workaround for: https://github.com/fastapi/fastapi/discussions/10537
 warnings.filterwarnings(
@@ -310,8 +310,9 @@ async def commit_experiment(
         if auth_header_value is not None:
             headers["Authorization"] = auth_header_value
         headers["Accept"] = "application/json"
-        headers["Content-Type"] = "application/json"
+        # headers["Content-Type"] is set by httpx
 
+        # Convert pydantic model to dict for serializing by httpx
         data = WebhookRequestCommit(
             creator_user_id=user_id,
             experiment_assignment=experiment_assignment,
@@ -346,8 +347,7 @@ async def commit_experiment(
             logger.error("ERROR requesting webhook: %s (%s)", e.request.url, str(e))
             raise HTTPException(status_code=500, detail="server error") from e
 
-    # TODO: embed response in our own custom return type for better extensibility
-    return response.json()
+    return WebhookResponse.from_httpx(response)
 
 
 @app.post(
