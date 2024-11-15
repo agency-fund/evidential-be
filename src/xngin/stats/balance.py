@@ -50,7 +50,7 @@ def check_balance(
                 df_analysis[f'{col}_quartile']
                 .cat.add_categories(['Missing'])
             )
-            df_analysis[f'{col}_quartile'].fillna({col: 'Missing'}, inplace=True)
+            df_analysis[f'{col}_quartile'] = df_analysis[f'{col}_quartile'].fillna('Missing')
             df_analysis = pd.get_dummies(
                 df_analysis, 
                 columns=[f'{col}_quartile'], 

@@ -58,7 +58,7 @@ def assign_treatment(
             df[f"{col}_strata"] = pd.qcut(df[col], q=3, labels=False)
             df[f"{col}_strata"] = df[f"{col}_strata"].astype('category')
             df[f"{col}_strata"] = df[f"{col}_strata"].cat.add_categories(["_NA"])
-            df[f"{col}_strata"].fillna({col: "_NA"}, inplace=True)
+            df[f"{col}_strata"] = df[f"{col}_strata"].fillna("_NA")
     
     # Create strata for character columns
     for col in df.select_dtypes(include=['object']).columns:
