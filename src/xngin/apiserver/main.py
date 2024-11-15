@@ -1,6 +1,7 @@
 from contextlib import asynccontextmanager
-from typing import List, Dict, Any, Annotated
+from typing import List, Dict, Any, Annotated, Literal
 import logging
+import warnings
 
 import httpx
 import sqlalchemy
@@ -39,8 +40,11 @@ from xngin.sheets.config_sheet import (
     fetch_and_parse_sheet,
     create_sheetconfig_from_table,
 )
-import warnings
-from xngin.apiserver.webhook_types import WebhookRequestCommit, WebhookResponse
+from xngin.apiserver.webhook_types import (
+    WebhookRequestCommit,
+    WebhookRequestUpdateContainer,
+    WebhookResponse,
+)
 
 # Workaround for: https://github.com/fastapi/fastapi/discussions/10537
 warnings.filterwarnings(
@@ -287,7 +291,7 @@ def assignment_file(
 @app.post(
     "/commit",
     summary="Commit an experiment to the database.",
-    response_model=Any,  # Any since we're forwarding the webhook response
+    response_model=WebhookResponse,
     tags=["Manage Experiments"],
 )
 async def commit_experiment(
@@ -303,7 +307,7 @@ async def commit_experiment(
         # TODO: write to internal storage if webhooks are not defined.
         raise HTTPException(501, "Action 'commit' not configured.")
 
-    # Expect user webhook to take a POST payload:
+    # TODO: use DI for a consistently configured shared client across endpoints
     async with httpx.AsyncClient() as http_client:
         headers = {}
         auth_header_value = config.common_headers.authorization
@@ -318,19 +322,13 @@ async def commit_experiment(
             experiment_assignment=experiment_assignment,
             design_spec=design_spec,
             audience_spec=audience_spec,
-        ).model_dump()
+        )
 
         try:
-            # dynamically call method based on action
-            method = action.method
-            dispatcher = {
-                "get": httpx.AsyncClient.get,
-                "post": httpx.AsyncClient.post,
-                "put": httpx.AsyncClient.put,
-                "patch": httpx.AsyncClient.patch,
-            }
-            response = await dispatcher[method](
-                http_client, url=action.url, headers=headers, json=data
+            # Explicitly covert to a dict via pydantic since we use custom serializers
+            json_data = data.model_dump(mode="json")
+            response = await http_client.request(
+                method=action.method, url=action.url, headers=headers, json=json_data
             )
             # Stricter than response.raise_for_status(), we require HTTP 200:
             if response.status_code != 200:
@@ -352,19 +350,55 @@ async def commit_experiment(
 
 @app.post(
     "/update-commit",
-    summary="TODO",
-    response_model=UnimplementedResponse,
+    summary="Update an existing experiment's timestamps or description (experiment and arms)",
+    response_model=WebhookResponse,
     tags=["Manage Experiments"],
 )
-def update_experiment(
-    design_spec: DesignSpec,
-    audience_spec: AudienceSpec,
-    experiment_assignment: Dict[str, Any],
-    user_id: str = "testuser",
+async def update_experiment(
+    update_payload: WebhookRequestUpdateContainer,
+    update_type: Annotated[
+        Literal["timestamps", "description"],
+        Query(description="The type of experiment metadata update to perform"),
+    ],
     client: Annotated[ClientConfig | None, Depends(config_dependency)] = None,
 ):
-    # Implement experiment commit logic
-    return UnimplementedResponse()
+    config = require_config(client).webhook_config
+    action = None
+    if update_type == "timestamps":
+        action = config.actions.update_timestamps
+    elif update_type == "description":
+        action = config.actions.update_description
+    if action is None:
+        # TODO: write to internal storage if webhooks are not defined.
+        raise HTTPException(501, f"Action 'update_{update_type}' not configured.")
+
+    async with httpx.AsyncClient() as http_client:
+        headers = {}
+        auth_header_value = config.common_headers.authorization
+        if auth_header_value is not None:
+            headers["Authorization"] = auth_header_value
+        headers["Accept"] = "application/json"
+
+        try:
+            json_data = update_payload.model_dump(mode="json")
+            response = await http_client.request(
+                method=action.method, url=action.url, headers=headers, json=json_data
+            )
+            if response.status_code != 200:
+                logger.error(
+                    "ERROR response %s requesting webhook: %s",
+                    response.status_code,
+                    action.url,
+                )
+                raise HTTPException(
+                    status_code=502,  # Would a 421 be better?
+                    detail=f"webhook request failed with status {response.status_code}",
+                )
+        except httpx.RequestError as e:
+            logger.error("ERROR requesting webhook: %s (%s)", e.request.url, str(e))
+            raise HTTPException(status_code=500, detail="server error") from e
+
+    return WebhookResponse.from_httpx(response)
 
 
 @app.get("/_settings", include_in_schema=False)

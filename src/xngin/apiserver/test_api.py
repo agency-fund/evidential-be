@@ -89,20 +89,22 @@ def load_mock_response_from_hurl(mocker, file):
     return (hurl, mock_response)
 
 
-def test_commit_endpoint(mocker):
+def test_commit(mocker):
     """Test /commit success case by mocking the webhook request with pytest-mock"""
 
     (hurl, mock_response) = load_mock_response_from_hurl(mocker, "apitest.commit.hurl")
     # Mock the httpx.AsyncClient.post method
-    mock_post = mocker.patch("httpx.AsyncClient.post", return_value=mock_response)
+    mock_request = mocker.patch("httpx.AsyncClient.request", return_value=mock_response)
 
     response = client.request(
         hurl.method, hurl.url, headers=hurl.headers, content=hurl.body
     )
 
+    assert response.status_code == 200
     # Assert that httpx.AsyncClient.post was called with the correct arguments
-    mock_post.assert_called_once()
-    _, kwargs = mock_post.call_args
+    mock_request.assert_called_once()
+    _, kwargs = mock_request.call_args
+    assert kwargs["method"] == "post"
     assert (
         kwargs["url"]
         == "http://localhost:4001/dev/api/v1/experiment-commit/save-experiment-commit"
@@ -111,36 +113,33 @@ def test_commit_endpoint(mocker):
     assert kwargs["json"]["creator_user_id"] == "commituser"
     assert "experiment_commit_datetime" in kwargs["json"]
     assert "experiment_commit_id" in kwargs["json"]
-
-    # Assert that the response from our API is correct
-    assert response.status_code == 200
     # We mocked the response as text, so need to reconstruct the serialized form of the
     # expected response to compare.
     expected_response_model = WebhookResponse(proxied_response=mock_response.text)
     assert response.text == expected_response_model.model_dump_json()
 
 
-def test_commit_endpoint_webhook_has_non_200_status(mocker):
+def test_commit_when_webhook_has_non_200_status(mocker):
     (hurl, mock_response) = load_mock_response_from_hurl(mocker, "apitest.commit.hurl")
     # Override the mock status with an unaccepted code
     mock_response.status_code = 203
-    mock_post = mocker.patch("httpx.AsyncClient.post", return_value=mock_response)
+    mock_request = mocker.patch("httpx.AsyncClient.request", return_value=mock_response)
 
     response = client.request(
         hurl.method, hurl.url, headers=hurl.headers, content=hurl.body
     )
 
-    mock_post.assert_called_once()
-    # Assert that downsream errors result ina 502 bad gateway error.
+    # Assert that downsream errors result in a 502 bad gateway error.
     assert response.status_code == 502
+    _, kwargs = mock_request.call_args
+    mock_request.assert_called_once()
+    assert kwargs["method"] == "post"
 
 
-def test_commit_endpoint_badconfig():
-    data_file = str(Path(__file__).parent / "testdata/nonbulk/apitest.commit.hurl")
-    with open(data_file, "r", encoding="utf-8") as f:
-        contents = f.read()
-    hurl = Hurl.from_script(contents)
-    # Load our bad settings that are missing a commit action.
+def test_commit_with_badconfig(mocker):
+    """Test for error when settings are missing a commit action webhook."""
+
+    (hurl, _) = load_mock_response_from_hurl(mocker, "apitest.commit.hurl")
     hurl.headers["Config-ID"] = "customer-test-badconfig"
 
     response = client.request(
@@ -148,3 +147,49 @@ def test_commit_endpoint_badconfig():
     )
 
     assert response.status_code == 501
+
+
+def test_update_experiment_timestamps(mocker):
+    """Test /update-commit?update_type=timestamps success case"""
+
+    (hurl, mock_response) = load_mock_response_from_hurl(
+        mocker, "apitest.update-commit.timestamps.hurl"
+    )
+    mock_request = mocker.patch("httpx.AsyncClient.request", return_value=mock_response)
+
+    response = client.request(
+        hurl.method, hurl.url, headers=hurl.headers, content=hurl.body
+    )
+
+    assert response.status_code == 200
+    # Now check that the right action was used given our update_type
+    _, kwargs = mock_request.call_args
+    mock_request.assert_called_once()
+    assert kwargs["method"] == "put"
+    assert (
+        kwargs["url"]
+        == "http://localhost:4001/dev/api/v1/experiment-commit/update-timestamps-for-experiment"
+    )
+
+
+def test_update_experiment_description(mocker):
+    """Test /update-commit?update_type=description success case"""
+
+    (hurl, mock_response) = load_mock_response_from_hurl(
+        mocker, "apitest.update-commit.description.hurl"
+    )
+    mock_request = mocker.patch("httpx.AsyncClient.request", return_value=mock_response)
+
+    response = client.request(
+        hurl.method, hurl.url, headers=hurl.headers, content=hurl.body
+    )
+
+    assert response.status_code == 200
+    # Now check that the right action was used given our update_type
+    _, kwargs = mock_request.call_args
+    assert kwargs["method"] == "put"
+    assert (
+        kwargs["url"]
+        == "http://localhost:4001/dev/api/v1/experiment-commit/update-experiment-commit"
+    )
+    mock_request.assert_called_once()

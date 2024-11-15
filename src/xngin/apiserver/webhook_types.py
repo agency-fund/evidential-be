@@ -1,6 +1,7 @@
 """This defines the various webhook request/response contracts as pydantic models."""
 
 from datetime import datetime
+from typing import List
 import uuid
 
 import httpx
@@ -41,3 +42,31 @@ class WebhookRequestCommit(BaseModel):
     def serialize_dt(self, dt: datetime, _info):
         """Convert dates to iso strings in model_dump_json()/model_dump(mode='json')"""
         return dt.isoformat()
+
+
+class WebhookRequestUpdateTimestamps(BaseModel):
+    experiment_id: uuid.UUID
+    start_date: datetime
+    end_date: datetime
+
+    @field_serializer("start_date", "end_date", when_used="json")
+    def serialize_dt(self, dt: datetime, _info):
+        """Convert dates to iso strings in model_dump_json()/model_dump(mode='json')"""
+        return dt.isoformat()
+
+
+class ExperimentArm(BaseModel):
+    arm_name: str
+    arm_id: uuid.UUID
+
+
+class WebhookRequestUpdateDescriptions(BaseModel):
+    experiment_id: uuid.UUID
+    description: str
+    arms: List[ExperimentArm]
+
+
+class WebhookRequestUpdateContainer(BaseModel):
+    """Wrapper around experiment update types."""
+
+    update_json: WebhookRequestUpdateTimestamps | WebhookRequestUpdateDescriptions
