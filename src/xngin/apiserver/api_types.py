@@ -2,7 +2,7 @@ import enum
 from datetime import datetime
 from typing import Dict, List, Literal
 import sqlalchemy.sql.sqltypes
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, Field, field_serializer, model_validator
 
 
 class DataType(enum.StrEnum):
@@ -118,8 +118,10 @@ class DesignSpec(BaseModel):
     fstat_thresh: float
     metrics: List[DesignSpecMetric]
 
-    # Let pydantic convert dates to strings when serializing in model_dump_json()/model_dump(mode='json')
-    model_config = ConfigDict(json_encoders={datetime: lambda dt: dt.isoformat()})
+    @field_serializer("start_date", "end_date", when_used="json")
+    def serialize_dt(self, dt: datetime, _info):
+        """Convert dates to iso strings in model_dump_json()/model_dump(mode='json')"""
+        return dt.isoformat()
 
 
 class ExperimentStrata(BaseModel):

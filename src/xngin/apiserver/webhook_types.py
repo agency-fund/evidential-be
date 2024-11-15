@@ -4,7 +4,7 @@ from datetime import datetime
 import uuid
 
 import httpx
-from pydantic import BaseModel, Field, ConfigDict
+from pydantic import BaseModel, Field, field_serializer
 
 from xngin.apiserver.api_types import DesignSpec, AudienceSpec, ExperimentAssignment
 
@@ -24,8 +24,6 @@ class WebhookResponse(BaseModel):
 class WebhookRequestCommit(BaseModel):
     """Data model for experiment commit webhook payload."""
 
-    model_config = ConfigDict(json_encoders={datetime: lambda dt: dt.isoformat()})
-
     experiment_commit_datetime: datetime = Field(
         description="timestamp when the experiment was committed",
         default_factory=datetime.now,
@@ -38,3 +36,8 @@ class WebhookRequestCommit(BaseModel):
     experiment_assignment: ExperimentAssignment
     design_spec: DesignSpec
     audience_spec: AudienceSpec
+
+    @field_serializer("experiment_commit_datetime", when_used="json")
+    def serialize_dt(self, dt: datetime, _info):
+        """Convert dates to iso strings in model_dump_json()/model_dump(mode='json')"""
+        return dt.isoformat()
