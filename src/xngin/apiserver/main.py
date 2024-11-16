@@ -307,45 +307,14 @@ async def commit_experiment(
         # TODO: write to internal storage if webhooks are not defined.
         raise HTTPException(501, "Action 'commit' not configured.")
 
-    # TODO: use DI for a consistently configured shared client across endpoints
-    async with httpx.AsyncClient() as http_client:
-        headers = {}
-        auth_header_value = config.common_headers.authorization
-        if auth_header_value is not None:
-            headers["Authorization"] = auth_header_value
-        headers["Accept"] = "application/json"
-        # headers["Content-Type"] is set by httpx
+    commit_payload = WebhookRequestCommit(
+        creator_user_id=user_id,
+        experiment_assignment=experiment_assignment,
+        design_spec=design_spec,
+        audience_spec=audience_spec,
+    )
 
-        # Convert pydantic model to dict for serializing by httpx
-        data = WebhookRequestCommit(
-            creator_user_id=user_id,
-            experiment_assignment=experiment_assignment,
-            design_spec=design_spec,
-            audience_spec=audience_spec,
-        )
-
-        try:
-            # Explicitly covert to a dict via pydantic since we use custom serializers
-            json_data = data.model_dump(mode="json")
-            response = await http_client.request(
-                method=action.method, url=action.url, headers=headers, json=json_data
-            )
-            # Stricter than response.raise_for_status(), we require HTTP 200:
-            if response.status_code != 200:
-                logger.error(
-                    "ERROR response %s requesting webhook: %s",
-                    response.status_code,
-                    action.url,
-                )
-                raise HTTPException(
-                    status_code=502,  # Would a 421 be better?
-                    detail=f"webhook request failed with status {response.status_code}",
-                )
-        except httpx.RequestError as e:
-            logger.error("ERROR requesting webhook: %s (%s)", e.request.url, str(e))
-            raise HTTPException(status_code=500, detail="server error") from e
-
-    return WebhookResponse.from_httpx(response)
+    return await make_webhook_request(config, action, commit_payload)
 
 
 @app.post(
@@ -372,18 +341,27 @@ async def update_experiment(
         # TODO: write to internal storage if webhooks are not defined.
         raise HTTPException(501, f"Action 'update_{update_type}' not configured.")
 
+    return await make_webhook_request(config, action, update_payload)
+
+
+async def make_webhook_request(config, action, data):
+    """Helper function to make webhook requests with common error handling."""
+    # TODO: use DI for a consistently configured shared client across endpoints
     async with httpx.AsyncClient() as http_client:
         headers = {}
         auth_header_value = config.common_headers.authorization
         if auth_header_value is not None:
             headers["Authorization"] = auth_header_value
         headers["Accept"] = "application/json"
+        # headers["Content-Type"] is set by httpx
 
         try:
-            json_data = update_payload.model_dump(mode="json")
+            # Explicitly convert to a dict via pydantic since we use custom serializers
+            json_data = data.model_dump(mode="json")
             response = await http_client.request(
                 method=action.method, url=action.url, headers=headers, json=json_data
             )
+            # Stricter than response.raise_for_status(), we require HTTP 200:
             if response.status_code != 200:
                 logger.error(
                     "ERROR response %s requesting webhook: %s",
