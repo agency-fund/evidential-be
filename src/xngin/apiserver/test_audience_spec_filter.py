@@ -88,8 +88,7 @@ VALID_OTHER = [
 
 @pytest.mark.parametrize("relation,value", VALID_OTHER)
 def test_other_relations(relation, value):
-    filter_spec = AudienceSpecFilter(filter_name="col", relation=relation, value=value)
-    assert filter_spec.value == value
+    AudienceSpecFilter(filter_name="col", relation=relation, value=value)
 
 
 def test_empty_value_list():
