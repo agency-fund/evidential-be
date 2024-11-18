@@ -1,0 +1,98 @@
+import pytest
+from pydantic import ValidationError
+
+from xngin.apiserver.api_types import AudienceSpecFilter, Relation
+
+VALID_COLUMN_NAMES = [
+    "column_name",
+    "Column_Name",
+    "_hidden",
+    "a123",
+    "very_long_column_name_123",
+]
+
+
+@pytest.mark.parametrize("name", VALID_COLUMN_NAMES)
+def test_valid_filter_names(name):
+    AudienceSpecFilter(filter_name=name, relation=Relation.INCLUDES, value=[1])
+
+
+INVALID_COLUMN_NAMES = [
+    "123column",  # Can't start with number
+    "column-name",  # No hyphens allowed
+    "column.name",  # No periods allowed
+    "",  # Empty string
+    "column$name",  # No special characters
+    "column name",  # No spaces
+]
+
+
+@pytest.mark.parametrize("name", INVALID_COLUMN_NAMES)
+def test_invalid_filter_names(name):
+    with pytest.raises(
+        ValidationError, match="filter_name must be a valid SQL column name"
+    ):
+        AudienceSpecFilter(filter_name=name, relation=Relation.INCLUDES, value=[1])
+
+
+VALID_BETWEEN = [
+    ([1, 2], "integers"),
+    ([1.0, 2.0], "floats"),
+    (["a", "b"], "strings"),
+    ([1, None], "with right None"),
+    ([None, 1], "with left None"),
+    ([1.0, 2], "float and int"),  # pydantic coerces to [1.0, 2.0]
+    ([1.5, 2.5], "floats again"),
+]
+
+
+@pytest.mark.parametrize("value,descr", VALID_BETWEEN)
+def test_between_relation(value, descr):
+    filter_spec = AudienceSpecFilter(
+        filter_name="col", relation=Relation.BETWEEN, value=value
+    )
+    assert filter_spec.value == value, f"Failed for case: {descr}"
+
+
+INVALID_BETWEEN = [
+    ([1], "single value"),
+    ([1, 2, 3], "three values"),
+    ([None, None], "both None"),
+    ([1, "2"], "int and string int"),
+    (["1", 2.0], "string int and float"),
+    (["1.0", 2], "string float and int"),
+    (["1.0", 2.0], "string float and float"),
+    ([], "empty list"),
+]
+
+
+@pytest.mark.parametrize("value,descr", INVALID_BETWEEN)
+def test_between_relation_invalid(value, descr):
+    # The third case occurs when Pydantic backtracks internally to solve the constraints on `value`.
+    with pytest.raises(
+        ValidationError, match=r"(BETWEEN relation|same type| validation errors )"
+    ):
+        v = AudienceSpecFilter(
+            filter_name="col", relation=Relation.BETWEEN, value=value
+        )
+        print(v)
+
+
+VALID_OTHER = [
+    (Relation.INCLUDES, [1, 2, 3]),
+    (Relation.INCLUDES, ["a"]),
+    (Relation.EXCLUDES, [1.0, 2.0, 3.0]),
+    (Relation.INCLUDES, [1]),
+]
+
+
+@pytest.mark.parametrize("relation,value", VALID_OTHER)
+def test_other_relations(relation, value):
+    filter_spec = AudienceSpecFilter(filter_name="col", relation=relation, value=value)
+    assert filter_spec.value == value
+
+
+def test_empty_value_list():
+    for relation in (Relation.INCLUDES, Relation.EXCLUDES):
+        with pytest.raises(ValidationError, match="value must be a non-empty list"):
+            AudienceSpecFilter(filter_name="col", relation=relation, value=[])

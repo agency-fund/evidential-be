@@ -340,17 +340,6 @@ def experiment_assignment(
     pass
 
 
-# Helper functions for database operations
-def get_dwh_participants(audience_spec: AudienceSpec, chosen_n: int):
-    # Implement logic to get participants from the data warehouse
-    pass
-
-
-def get_metric_meta(metrics: list[str], audience_spec: AudienceSpec):
-    # Implement logic to get metric metadata
-    pass
-
-
 # MongoDB interaction function
 def experiments_reg_request(
     settings: XnginSettings, endpoint: str, json_data: dict[str, Any] | None = None

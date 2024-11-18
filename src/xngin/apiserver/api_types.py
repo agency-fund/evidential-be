@@ -1,8 +1,17 @@
 import enum
+import re
 from datetime import datetime
 from typing import Literal
+
 import sqlalchemy.sql.sqltypes
-from pydantic import BaseModel, Field
+from pydantic import (
+    BaseModel,
+    Field,
+    model_validator,
+    field_validator,
+    conint,
+    confloat,
+)
 
 
 class DataType(enum.StrEnum):
@@ -81,14 +90,52 @@ class Relation(enum.StrEnum):
 
 
 class AudienceSpecFilter(BaseModel):
+    # TODO(qixotic): rename this to column_name?
     filter_name: str
     relation: Relation
-    value: list[str] | list[int] | list[float]
+    value: (
+        list[conint(strict=True) | None]
+        | list[confloat(strict=True, allow_inf_nan=False) | None]
+        | list[str | None]
+    )
+
+    @field_validator("filter_name")
+    @classmethod
+    def ensure_filter_name_is_sql_compatible(cls, v: str) -> str:
+        if not re.match(r"^[a-zA-Z_][a-zA-Z0-9_]*$", v):
+            raise ValueError("filter_name must be a valid SQL column name")
+        return v
+
+    @model_validator(mode="after")
+    def ensure_value(self) -> "AudienceSpecFilter":
+        """Ensures that the `value` field is an unambiguous filter and correct for the relation.
+
+        Note this happens /after/ Pydantic does its type coercion, so we control some of the
+        built-in type coercion using the strict=True annotations on the value field. There
+        are probably some bugs in this.
+        """
+        if self.relation == Relation.BETWEEN:
+            if len(self.value) != 2:
+                raise ValueError("BETWEEN relation requires exactly 2 values")
+
+            none_count = sum(1 for v in self.value if v is None)
+            if none_count > 1:
+                raise ValueError("BETWEEN relation can have at most one None value")
+            if none_count == 0 and type(self.value[0]) is not type(self.value[1]):
+                raise ValueError(
+                    "BETWEEN relation requires same values to be of the same type"
+                )
+        else:
+            if not self.value:
+                raise ValueError("value must be a non-empty list")
+
+        return self
 
 
 class AudienceSpec(BaseModel):
     """Audience specification."""
 
+    # TODO(qixotic): rename to unit_type?
     type: str
     filters: list[AudienceSpecFilter]
 
