@@ -4,8 +4,9 @@ import logging
 import warnings
 
 import httpx
+from pydantic import BaseModel
 import sqlalchemy
-from fastapi import FastAPI, HTTPException, Depends, Query
+from fastapi import FastAPI, HTTPException, Depends, Query, Response
 from fastapi import Request
 from sqlalchemy import distinct
 from starlette.responses import JSONResponse
@@ -28,6 +29,8 @@ from xngin.apiserver.dependencies import (
 )
 from xngin.apiserver.gsheet_cache import GSheetCache
 from xngin.apiserver.settings import (
+    WebhookConfig,
+    WebhookUrl,
     get_settings_for_server,
     XnginSettings,
     ClientConfig,
@@ -292,9 +295,16 @@ def assignment_file(
     "/commit",
     summary="Commit an experiment to the database.",
     response_model=WebhookResponse,
+    responses={
+        502: {
+            "model": WebhookResponse,
+            "description": "Webhook service returned a non-200 code.",
+        }
+    },
     tags=["Manage Experiments"],
 )
 async def commit_experiment(
+    response: Response,
     design_spec: DesignSpec,
     audience_spec: AudienceSpec,
     experiment_assignment: ExperimentAssignment,
@@ -314,7 +324,7 @@ async def commit_experiment(
         audience_spec=audience_spec,
     )
 
-    return await make_webhook_request(config, action, commit_payload)
+    return await make_webhook_request(config, action, commit_payload, response)
 
 
 @app.post(
@@ -324,6 +334,7 @@ async def commit_experiment(
     tags=["Manage Experiments"],
 )
 async def update_experiment(
+    response: Response,
     update_payload: WebhookRequestUpdate,
     update_type: Annotated[
         Literal["timestamps", "description"],
@@ -341,10 +352,12 @@ async def update_experiment(
         # TODO: write to internal storage if webhooks are not defined.
         raise HTTPException(501, f"Action 'update_{update_type}' not configured.")
 
-    return await make_webhook_request(config, action, update_payload)
+    return await make_webhook_request(config, action, update_payload, response)
 
 
-async def make_webhook_request(config, action, data):
+async def make_webhook_request(
+    config: WebhookConfig, action: WebhookUrl, data: BaseModel, api_response: Response
+):
     """Helper function to make webhook requests with common error handling."""
     # TODO: use DI for a consistently configured shared client across endpoints
     async with httpx.AsyncClient() as http_client:
@@ -358,25 +371,23 @@ async def make_webhook_request(config, action, data):
         try:
             # Explicitly convert to a dict via pydantic since we use custom serializers
             json_data = data.model_dump(mode="json")
-            response = await http_client.request(
+            downstream_response = await http_client.request(
                 method=action.method, url=action.url, headers=headers, json=json_data
             )
+            webhook_response = WebhookResponse.from_httpx(downstream_response)
             # Stricter than response.raise_for_status(), we require HTTP 200:
-            if response.status_code != 200:
+            if downstream_response.status_code != 200:
                 logger.error(
                     "ERROR response %s requesting webhook: %s",
-                    response.status_code,
+                    downstream_response.status_code,
                     action.url,
                 )
-                raise HTTPException(
-                    status_code=502,
-                    detail=f"webhook request failed with status {response.status_code}",
-                )
+                api_response.status_code = 502
+            # Always return a WebhookResponse in the body on HTTPStatusError and non-200 response.
+            return webhook_response
         except httpx.RequestError as e:
             logger.error("ERROR requesting webhook: %s (%s)", e.request.url, str(e))
             raise HTTPException(status_code=500, detail="server error") from e
-
-    return WebhookResponse.from_httpx(response)
 
 
 @app.get("/_settings", include_in_schema=False)

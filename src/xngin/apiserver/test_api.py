@@ -137,6 +137,11 @@ def test_commit_when_webhook_has_non_200_status(mocker):
     mock_request.assert_called_once()
     _, kwargs = mock_request.call_args
     assert kwargs["method"] == "post"
+    # And also verify that we are still passing back our WebhookResponse in the body, including the
+    # downstream service's code.
+    downstream_response = WebhookResponse.model_validate_json(response.text)
+    assert downstream_response.status_code == 203
+    assert downstream_response.body == mock_response.text
 
 
 def test_commit_with_badconfig(mocker):
