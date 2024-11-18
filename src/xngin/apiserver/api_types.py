@@ -1,7 +1,7 @@
 import enum
 import re
 from datetime import datetime
-from typing import Literal
+from typing import Literal, Annotated
 
 import sqlalchemy.sql.sqltypes
 from pydantic import (
@@ -9,8 +9,6 @@ from pydantic import (
     Field,
     model_validator,
     field_validator,
-    conint,
-    confloat,
 )
 
 
@@ -94,8 +92,8 @@ class AudienceSpecFilter(BaseModel):
     filter_name: str
     relation: Relation
     value: (
-        list[conint(strict=True) | None]
-        | list[confloat(strict=True, allow_inf_nan=False) | None]
+        list[Annotated[int, Field(strict=True)] | None]
+        | list[Annotated[float, Field(strict=True, allow_inf_nan=False)] | None]
         | list[str | None]
     )
 
