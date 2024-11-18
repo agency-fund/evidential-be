@@ -74,7 +74,8 @@ Config-ID: customer-test
 HTTP 200
 ```json
 {
-  "proxied_response": {
+  "status_code": 200,
+  "body": {
     "status": true,
     "message": "Success!",
     "data": {

@@ -42,7 +42,7 @@ from xngin.sheets.config_sheet import (
 )
 from xngin.apiserver.webhook_types import (
     WebhookRequestCommit,
-    WebhookRequestUpdateContainer,
+    WebhookRequestUpdate,
     WebhookResponse,
 )
 
@@ -324,7 +324,7 @@ async def commit_experiment(
     tags=["Manage Experiments"],
 )
 async def update_experiment(
-    update_payload: WebhookRequestUpdateContainer,
+    update_payload: WebhookRequestUpdate,
     update_type: Annotated[
         Literal["timestamps", "description"],
         Query(description="The type of experiment metadata update to perform"),
@@ -369,7 +369,7 @@ async def make_webhook_request(config, action, data):
                     action.url,
                 )
                 raise HTTPException(
-                    status_code=502,  # Would a 421 be better?
+                    status_code=502,
                     detail=f"webhook request failed with status {response.status_code}",
                 )
         except httpx.RequestError as e:
@@ -398,7 +398,7 @@ def debug_settings(
 
 
 # Main experiment assignment function
-def experiment_assignment(
+def assign_units_to_arms(
     design_spec: DesignSpec, audience_spec: AudienceSpec, chosen_n: int
 ):
     # Implement experiment assignment logic

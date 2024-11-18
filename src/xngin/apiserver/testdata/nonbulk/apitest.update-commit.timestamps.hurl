@@ -5,14 +5,15 @@ Config-ID: customer-test
   "update_json": {
     "experiment_id": "3fa85f64-5717-4562-b3fc-2c963f66afa6",
     "start_date": "2024-11-15T17:15:13.576Z",
-    "end_date": "2024-11-15T17:15:13.576Z"
+    "end_date": "2024-11-16T17:15:13.576Z"
   }
 }
 ```
 HTTP 200
 ```json
 {
- "proxied_response": {
+  "status_code": 200,
+  "body": {
     "status": true,
     "message": "Experiment Commit Start or End Date Updated!"
   }

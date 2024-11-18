@@ -1,6 +1,6 @@
 import enum
 from datetime import datetime
-from typing import Dict, List, Literal
+from typing import Dict, List, Literal, Self
 import sqlalchemy.sql.sqltypes
 from pydantic import BaseModel, Field, field_serializer, model_validator
 
@@ -141,7 +141,7 @@ class ExperimentAssignmentUnit(BaseModel):
     __pydantic_extra__: Dict[str, int] = Field(init=False)
 
     @model_validator(mode="after")
-    def validate_single_id_field(self) -> "ExperimentAssignmentUnit":
+    def validate_single_id_field(self) -> Self:
         num_extra = len(self.__pydantic_extra__)
         if num_extra != 1:
             raise ValueError(f"Model must have exactly one id field. Found {num_extra}")

@@ -1,3 +1,4 @@
+from datetime import timedelta
 import glob
 import json
 import logging
@@ -12,7 +13,7 @@ from fastapi.testclient import TestClient
 from xngin.apiserver import conftest
 from xngin.apiserver.main import app
 from xngin.apiserver.testing.hurl import Hurl
-from xngin.apiserver.webhook_types import WebhookResponse
+from xngin.apiserver.webhook_types import WebhookRequestUpdate, WebhookResponse
 
 logger = logging.getLogger(__name__)
 
@@ -83,9 +84,9 @@ def load_mock_response_from_hurl(mocker, file):
     mock_response.status_code = hurl.expected_status
     # Extract the fake webhook response from the mock api server response,
     # then re-serialize it to use as a mock webhook response.
-    mock_webhook_response_dict = json.loads(hurl.expected_response)["proxied_response"]
-    proxied_response_text = json.dumps(mock_webhook_response_dict)
-    mock_response.text = proxied_response_text
+    mock_webhook_response_dict = json.loads(hurl.expected_response)["body"]
+    body_text = json.dumps(mock_webhook_response_dict)
+    mock_response.text = body_text
     return (hurl, mock_response)
 
 
@@ -113,9 +114,11 @@ def test_commit(mocker):
     assert kwargs["json"]["creator_user_id"] == "commituser"
     assert "experiment_commit_datetime" in kwargs["json"]
     assert "experiment_commit_id" in kwargs["json"]
-    # We mocked the response as text, so need to reconstruct the serialized form of the
-    # expected response to compare.
-    expected_response_model = WebhookResponse(proxied_response=mock_response.text)
+    # We mocked the response body as text, so need to reconstruct the serialized form
+    # of the expected response to compare.
+    expected_response_model = WebhookResponse(
+        status_code=mock_response.status_code, body=mock_response.text
+    )
     assert response.text == expected_response_model.model_dump_json()
 
 
@@ -131,8 +134,8 @@ def test_commit_when_webhook_has_non_200_status(mocker):
 
     # Assert that downsream errors result in a 502 bad gateway error.
     assert response.status_code == 502
-    _, kwargs = mock_request.call_args
     mock_request.assert_called_once()
+    _, kwargs = mock_request.call_args
     assert kwargs["method"] == "post"
 
 
@@ -163,13 +166,34 @@ def test_update_experiment_timestamps(mocker):
 
     assert response.status_code == 200
     # Now check that the right action was used given our update_type
-    _, kwargs = mock_request.call_args
     mock_request.assert_called_once()
+    _, kwargs = mock_request.call_args
     assert kwargs["method"] == "put"
     assert (
         kwargs["url"]
         == "http://localhost:4001/dev/api/v1/experiment-commit/update-timestamps-for-experiment"
     )
+
+
+def test_update_experiment_fails_when_end_before_start(mocker):
+    """Test /update-commit?update_type=timestamps with bad end_date"""
+
+    (hurl, _) = load_mock_response_from_hurl(
+        mocker, "apitest.update-commit.timestamps.hurl"
+    )
+    # Replace the valid body with one that has end_date < start_date
+    bad_body = WebhookRequestUpdate.model_validate_json(hurl.body)
+    bad_body.update_json.end_date = bad_body.update_json.start_date - timedelta(days=1)
+    hurl.body = bad_body.model_dump_json()
+    # Expect to fail before even making the request due to validation error.
+    response = client.request(
+        hurl.method, hurl.url, headers=hurl.headers, content=hurl.body
+    )
+    # Check for validation error
+    assert response.status_code == 422
+    response_detail = response.json()["detail"][0]
+    assert response_detail["type"] == "value_error"
+    assert "end_date must be after start_date" in response_detail["msg"]
 
 
 def test_update_experiment_description(mocker):

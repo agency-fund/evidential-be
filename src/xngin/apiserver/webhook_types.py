@@ -1,11 +1,11 @@
 """This defines the various webhook request/response contracts as pydantic models."""
 
 from datetime import datetime
-from typing import List
+from typing import List, Self
 import uuid
 
 import httpx
-from pydantic import BaseModel, Field, field_serializer
+from pydantic import BaseModel, Field, field_serializer, model_validator
 
 from xngin.apiserver.api_types import DesignSpec, AudienceSpec, ExperimentAssignment
 
@@ -13,13 +13,18 @@ from xngin.apiserver.api_types import DesignSpec, AudienceSpec, ExperimentAssign
 class WebhookResponse(BaseModel):
     """Generic wrapper around downstream webhook responses."""
 
-    proxied_response: str
+    status_code: int = Field(
+        description="HTTP status code we received from the webhook's server."
+    )
+    body: str = Field(
+        description="HTTP body (if any) we received from the webhook's server. May be empty."
+    )
 
     @classmethod
     def from_httpx(cls, response: httpx.Response):
         """Create WebhookResponse from an httpx.Response object."""
         # No need to parse the response text as json, just pass it through.
-        return cls(proxied_response=response.text)
+        return cls(status_code=response.status_code, body=response.text)
 
 
 class WebhookRequestCommit(BaseModel):
@@ -45,9 +50,22 @@ class WebhookRequestCommit(BaseModel):
 
 
 class WebhookRequestUpdateTimestamps(BaseModel):
-    experiment_id: uuid.UUID
-    start_date: datetime
-    end_date: datetime
+    """Describes how to update an experiment's start and/or end dates."""
+
+    experiment_id: str = Field(description="ID of the experiment to update.")
+    start_date: datetime = Field(
+        description="New or the same start date to update with."
+    )
+    end_date: datetime = Field(
+        description="New or the same end date to update with. Must be later "
+        "than start_date."
+    )
+
+    @model_validator(mode="after")
+    def validate_end_date_after_start(self) -> Self:
+        if self.end_date <= self.start_date:
+            raise ValueError("end_date must be after start_date")
+        return self
 
     @field_serializer("start_date", "end_date", when_used="json")
     def serialize_dt(self, dt: datetime, _info):
@@ -56,17 +74,24 @@ class WebhookRequestUpdateTimestamps(BaseModel):
 
 
 class ExperimentArm(BaseModel):
-    arm_name: str
-    arm_id: uuid.UUID
+    arm_name: str = Field(description="New experiment arm name to be updated.")
+    arm_id: str = Field(
+        description="The id originally assigned to this arm by the user."
+    )
 
 
 class WebhookRequestUpdateDescriptions(BaseModel):
-    experiment_id: uuid.UUID
-    description: str
-    arms: List[ExperimentArm]
+    """Describes how to update an experiment description and/or the names of its arms."""
+
+    experiment_id: str = Field(description="ID of the experiment to update.")
+    description: str = Field(description="New experiment description to be updated.")
+    arms: List[ExperimentArm] = Field(
+        description="All arms as saved in the original DesignSpec must be present here, even if "
+        "you don't intend to change the arm_name"
+    )
 
 
-class WebhookRequestUpdateContainer(BaseModel):
-    """Wrapper around experiment update types."""
+class WebhookRequestUpdate(BaseModel):
+    """Request structure for supported types of experiment updates."""
 
     update_json: WebhookRequestUpdateTimestamps | WebhookRequestUpdateDescriptions

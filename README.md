@@ -49,6 +49,9 @@ Follow the steps below to get a local development environment running.
    uv run pytest
    ```
 
+   `pytest -rA` to print out _all_ stdout from your tests; `-rx` for just those failing. (See
+   [docs](https://docs.pytest.org/en/latest/how-to/output.html#producing-a-detailed-summary-report) for more info.)
+
    Running the unit tests will create the testing_dwh.db database. This database will be used by your local development
    server.
 
