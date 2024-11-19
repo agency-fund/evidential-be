@@ -11,7 +11,7 @@ from xngin.apiserver.api_types import DesignSpec, AudienceSpec, ExperimentAssign
 
 
 class WebhookResponse(BaseModel):
-    """Generic wrapper around downstream webhook responses."""
+    """Generic wrapper around upstream webhook responses."""
 
     status_code: int = Field(
         description="HTTP status code we received from the webhook's server."

@@ -404,15 +404,15 @@ async def make_webhook_request(
         try:
             # Explicitly convert to a dict via pydantic since we use custom serializers
             json_data = data.model_dump(mode="json")
-            downstream_response = await http_client.request(
+            upstream_response = await http_client.request(
                 method=action.method, url=action.url, headers=headers, json=json_data
             )
-            webhook_response = WebhookResponse.from_httpx(downstream_response)
+            webhook_response = WebhookResponse.from_httpx(upstream_response)
             # Stricter than response.raise_for_status(), we require HTTP 200:
-            if downstream_response.status_code != 200:
+            if upstream_response.status_code != 200:
                 logger.error(
                     "ERROR response %s requesting webhook: %s",
-                    downstream_response.status_code,
+                    upstream_response.status_code,
                     action.url,
                 )
                 api_response.status_code = 502
