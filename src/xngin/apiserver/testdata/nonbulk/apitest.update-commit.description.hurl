@@ -4,7 +4,7 @@ Config-ID: customer-test
 {
   "update_json": {
     "experiment_id": "3fa85f64-5717-4562-b3fc-2c963f66afa6",
-    "description": "Sample experiment description and new description",
+    "description": "Sample new description",
     "arms": [
       {
         "arm_name": "Control",

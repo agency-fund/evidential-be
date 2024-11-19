@@ -1,4 +1,4 @@
-from datetime import timedelta
+from datetime import datetime, timedelta
 import glob
 import json
 import logging
@@ -13,7 +13,12 @@ from fastapi.testclient import TestClient
 from xngin.apiserver import conftest
 from xngin.apiserver.main import app
 from xngin.apiserver.testing.hurl import Hurl
-from xngin.apiserver.webhook_types import WebhookRequestUpdate, WebhookResponse
+from xngin.apiserver.webhook_types import (
+    WebhookRequestUpdate,
+    WebhookRequestUpdateDescriptions,
+    WebhookRequestUpdateTimestamps,
+    WebhookResponse,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -178,6 +183,10 @@ def test_update_experiment_timestamps(mocker):
         kwargs["url"]
         == "http://localhost:4001/dev/api/v1/experiment-commit/update-timestamps-for-experiment"
     )
+    # And check that we not only have the expected payload structure that the upstream server expects, but that one of
+    # the values within matches our test data.
+    model = WebhookRequestUpdateTimestamps.model_validate(kwargs["json"])
+    assert model.start_date == datetime.fromisoformat("2024-11-15T17:15:13.576Z")
 
 
 def test_update_experiment_fails_when_end_before_start(mocker):
@@ -214,6 +223,7 @@ def test_update_experiment_description(mocker):
     )
 
     assert response.status_code == 200
+    mock_request.assert_called_once()
     # Now check that the right action was used given our update_type
     _, kwargs = mock_request.call_args
     assert kwargs["method"] == "put"
@@ -221,4 +231,5 @@ def test_update_experiment_description(mocker):
         kwargs["url"]
         == "http://localhost:4001/dev/api/v1/experiment-commit/update-experiment-commit"
     )
-    mock_request.assert_called_once()
+    model = WebhookRequestUpdateDescriptions.model_validate(kwargs["json"])
+    assert model.description == "Sample new description"

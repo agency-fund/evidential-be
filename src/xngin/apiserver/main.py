@@ -337,7 +337,7 @@ async def commit_experiment(
 )
 async def update_experiment(
     response: Response,
-    update_payload: WebhookRequestUpdate,
+    request_payload: WebhookRequestUpdate,
     update_type: Annotated[
         Literal["timestamps", "description"],
         Query(description="The type of experiment metadata update to perform"),
@@ -354,9 +354,9 @@ async def update_experiment(
     if action is None:
         # TODO: write to internal storage if webhooks are not defined.
         raise HTTPException(501, f"Action '{update_type}' not configured.")
-
+    # Need to pull out the upstream server payload:
     response.status_code, payload = await make_webhook_request(
-        http_client, config, action, update_payload
+        http_client, config, action, request_payload.update_json
     )
     return payload
 
