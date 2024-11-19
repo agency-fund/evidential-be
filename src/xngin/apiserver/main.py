@@ -23,6 +23,7 @@ from xngin.apiserver.api_types import (
     GetMetricsResponseElement,
 )
 from xngin.apiserver.dependencies import (
+    httpx_dependency,
     settings_dependency,
     config_dependency,
     gsheet_cache,
@@ -306,6 +307,7 @@ async def commit_experiment(
     audience_spec: AudienceSpec,
     experiment_assignment: ExperimentAssignment,
     user_id: str = "testuser",
+    http_client: Annotated[httpx.AsyncClient, Depends(httpx_dependency)] = None,
     client: Annotated[ClientConfig | None, Depends(config_dependency)] = None,
 ) -> WebhookResponse:
     config = require_config(client).webhook_config
@@ -322,7 +324,7 @@ async def commit_experiment(
     )
 
     response.status_code, payload = await make_webhook_request(
-        config, action, commit_payload
+        http_client, config, action, commit_payload
     )
     return payload
 
@@ -340,6 +342,7 @@ async def update_experiment(
         Literal["timestamps", "description"],
         Query(description="The type of experiment metadata update to perform"),
     ],
+    http_client: Annotated[httpx.AsyncClient, Depends(httpx_dependency)] = None,
     client: Annotated[ClientConfig | None, Depends(config_dependency)] = None,
 ) -> WebhookResponse:
     config = require_config(client).webhook_config
@@ -353,7 +356,7 @@ async def update_experiment(
         raise HTTPException(501, f"Action '{update_type}' not configured.")
 
     response.status_code, payload = await make_webhook_request(
-        config, action, update_payload
+        http_client, config, action, update_payload
     )
     return payload
 
@@ -370,6 +373,7 @@ async def alt_update_experiment(
     experiment_id: str = Annotated[
         str, Path(description="The ID of the experiment to update.")
     ],
+    http_client: Annotated[httpx.AsyncClient, Depends(httpx_dependency)] = None,
     client: Annotated[ClientConfig | None, Depends(config_dependency)] = None,
 ) -> WebhookResponse:
     config = require_config(client).webhook_config
@@ -387,49 +391,53 @@ async def alt_update_experiment(
     # (Wouldn't be needed in the body if we handled the request here saving internally.)
     if body.experiment_id is None:
         body.experiment_id = experiment_id
-    response.status_code, payload = await make_webhook_request(config, action, body)
+    response.status_code, payload = await make_webhook_request(
+        http_client, config, action, body
+    )
     return payload
 
 
 async def make_webhook_request(
-    config: WebhookConfig, action: WebhookUrl, data: BaseModel
+    http_client: httpx.AsyncClient,
+    config: WebhookConfig,
+    action: WebhookUrl,
+    data: BaseModel,
 ) -> Tuple[int, WebhookResponse]:
     """Helper function to make webhook requests with common error handling.
 
     Returns: tuple of (status_code, WebhookResponse to use as body)
     """
     # TODO: use DI for a consistently configured shared client across endpoints
-    async with httpx.AsyncClient() as http_client:
-        headers = {}
-        auth_header_value = config.common_headers.authorization
-        if auth_header_value is not None:
-            headers["Authorization"] = auth_header_value
-        headers["Accept"] = "application/json"
-        # headers["Content-Type"] is set by httpx
+    headers = {}
+    auth_header_value = config.common_headers.authorization
+    if auth_header_value is not None:
+        headers["Authorization"] = auth_header_value
+    headers["Accept"] = "application/json"
+    # headers["Content-Type"] is set by httpx
 
-        try:
-            # Explicitly convert to a dict via pydantic since we use custom serializers
-            json_data = data.model_dump(mode="json")
-            upstream_response = await http_client.request(
-                method=action.method, url=action.url, headers=headers, json=json_data
-            )
-            webhook_response = WebhookResponse.from_httpx(upstream_response)
-            # Stricter than response.raise_for_status(), we require HTTP 200:
-            status_code = 200
-            if upstream_response.status_code != 200:
-                logger.error(
-                    "ERROR response %s requesting webhook: %s",
-                    upstream_response.status_code,
-                    action.url,
-                )
-                status_code = 502
-            # Always return a WebhookResponse in the body on HTTPStatusError and non-200 response.
-            return (status_code, webhook_response)
-        except httpx.RequestError as e:
+    try:
+        # Explicitly convert to a dict via pydantic since we use custom serializers
+        json_data = data.model_dump(mode="json")
+        upstream_response = await http_client.request(
+            method=action.method, url=action.url, headers=headers, json=json_data
+        )
+        webhook_response = WebhookResponse.from_httpx(upstream_response)
+        # Stricter than response.raise_for_status(), we require HTTP 200:
+        status_code = 200
+        if upstream_response.status_code != 200:
             logger.error(
-                "ERROR %s requesting webhook: %s (%s)", type(e), e.request.url, str(e)
+                "ERROR response %s requesting webhook: %s",
+                upstream_response.status_code,
+                action.url,
             )
-            raise HTTPException(status_code=500, detail="server error") from e
+            status_code = 502
+        # Always return a WebhookResponse in the body on HTTPStatusError and non-200 response.
+        return (status_code, webhook_response)
+    except httpx.RequestError as e:
+        logger.error(
+            "ERROR %s requesting webhook: %s (%s)", type(e), e.request.url, str(e)
+        )
+        raise HTTPException(status_code=500, detail="server error") from e
 
 
 @app.get("/_settings", include_in_schema=False)

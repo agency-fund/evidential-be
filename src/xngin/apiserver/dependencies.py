@@ -1,13 +1,14 @@
+import warnings
+
 from typing import Annotated
 
 from fastapi import Depends, Header
+import httpx
 from sqlalchemy.orm import Session
 
 from xngin.apiserver.database import SessionLocal
 from xngin.apiserver.gsheet_cache import GSheetCache
 from xngin.apiserver.settings import get_settings_for_server, XnginSettings
-
-import warnings
 
 # Workaround for: https://github.com/fastapi/fastapi/discussions/10537
 warnings.filterwarnings(
@@ -47,3 +48,9 @@ def xngin_db_session() -> Session:
 
 def gsheet_cache(xngin_db: Annotated[Session, Depends(xngin_db_session)]):
     return GSheetCache(xngin_db)
+
+
+async def httpx_dependency():
+    """Returns a new httpx client with default configuration, to be used with each request"""
+    async with httpx.AsyncClient(timeout=15.0) as client:
+        yield client
