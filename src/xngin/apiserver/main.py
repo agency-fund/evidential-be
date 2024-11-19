@@ -1,5 +1,5 @@
 from contextlib import asynccontextmanager
-from typing import List, Dict, Any, Annotated, Literal, Tuple, Union
+from typing import Any, Annotated, Literal
 import logging
 import warnings
 
@@ -369,7 +369,7 @@ async def update_experiment(
 )
 async def alt_update_experiment(
     response: Response,
-    body: Union[UpdateExperimentStartEndRequest, UpdateExperimentDescriptionsRequest],
+    body: UpdateExperimentStartEndRequest | UpdateExperimentDescriptionsRequest,
     experiment_id: str = Annotated[
         str, Path(description="The ID of the experiment to update.")
     ],
@@ -402,7 +402,7 @@ async def make_webhook_request(
     config: WebhookConfig,
     action: WebhookUrl,
     data: BaseModel,
-) -> Tuple[int, WebhookResponse]:
+) -> tuple[int, WebhookResponse]:
     """Helper function to make webhook requests with common error handling.
 
     Returns: tuple of (status_code, WebhookResponse to use as body)
@@ -422,8 +422,8 @@ async def make_webhook_request(
             method=action.method, url=action.url, headers=headers, json=json_data
         )
         webhook_response = WebhookResponse.from_httpx(upstream_response)
-        # Stricter than response.raise_for_status(), we require HTTP 200:
         status_code = 200
+        # Stricter than response.raise_for_status(), we require HTTP 200:
         if upstream_response.status_code != 200:
             logger.error(
                 "ERROR response %s requesting webhook: %s",
@@ -431,13 +431,12 @@ async def make_webhook_request(
                 action.url,
             )
             status_code = 502
-        # Always return a WebhookResponse in the body on HTTPStatusError and non-200 response.
-        return (status_code, webhook_response)
     except httpx.RequestError as e:
-        logger.error(
-            "ERROR %s requesting webhook: %s (%s)", type(e), e.request.url, str(e)
-        )
+        logger.exception("ERROR requesting webhook: %s", e.request.url)
         raise HTTPException(status_code=500, detail="server error") from e
+    else:
+        # Always return a WebhookResponse in the body, even on non-200 responses.
+        return (status_code, webhook_response)
 
 
 @app.get("/_settings", include_in_schema=False)
@@ -472,14 +471,14 @@ def get_dwh_participants(audience_spec: AudienceSpec, chosen_n: int):
     pass
 
 
-def get_metric_meta(metrics: List[str], audience_spec: AudienceSpec):
+def get_metric_meta(metrics: list[str], audience_spec: AudienceSpec):
     # Implement logic to get metric metadata
     pass
 
 
 # MongoDB interaction function
 def experiments_reg_request(
-    settings: XnginSettings, endpoint: str, json_data: Dict[str, Any] | None = None
+    settings: XnginSettings, endpoint: str, json_data: dict[str, Any] | None = None
 ):
     url = f"https://{settings.api_host}/dev/api/v1/experiment-commit/{endpoint}"
 

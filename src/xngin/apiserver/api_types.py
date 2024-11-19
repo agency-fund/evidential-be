@@ -1,6 +1,6 @@
 import enum
 from datetime import datetime
-from typing import Dict, List, Literal, Self
+from typing import Literal, Self
 import sqlalchemy.sql.sqltypes
 from pydantic import BaseModel, Field, field_serializer, model_validator
 
@@ -90,7 +90,7 @@ class AudienceSpec(BaseModel):
     """Audience specification."""
 
     type: str
-    filters: List[AudienceSpecFilter]
+    filters: list[AudienceSpecFilter]
 
 
 class DesignSpecArm(BaseModel):
@@ -109,14 +109,14 @@ class DesignSpec(BaseModel):
     experiment_id: str
     experiment_name: str
     description: str
-    arms: List[DesignSpecArm]
+    arms: list[DesignSpecArm]
     start_date: datetime
     end_date: datetime
-    strata_cols: List[str]
+    strata_cols: list[str]
     power: float
     alpha: float
     fstat_thresh: float
-    metrics: List[DesignSpecMetric]
+    metrics: list[DesignSpecMetric]
 
     @field_serializer("start_date", "end_date", when_used="json")
     def serialize_dt(self, dt: datetime, _info):
@@ -132,13 +132,13 @@ class ExperimentStrata(BaseModel):
 class ExperimentAssignmentUnit(BaseModel):
     # Name of the experiment arm this unit was assigned to
     treatment_assignment: str
-    strata: List[ExperimentStrata]
+    strata: list[ExperimentStrata]
 
     # Allow extra fields so that we can support dwh-specific ids
     model_config = {"extra": "allow"}
     # And require the extra field to be an integer;
     # can loosen this if string ids are used in the future
-    __pydantic_extra__: Dict[str, int] = Field(init=False)
+    __pydantic_extra__: dict[str, int] = Field(init=False)
 
     @model_validator(mode="after")
     def validate_single_id_field(self) -> Self:
@@ -159,7 +159,7 @@ class ExperimentAssignment(BaseModel):
     experiment_id: str
     description: str
     sample_size: int
-    assignments: List[ExperimentAssignmentUnit]
+    assignments: list[ExperimentAssignmentUnit]
 
 
 class UnimplementedResponse(BaseModel):
@@ -176,7 +176,7 @@ class GetStrataResponseElement(BaseModel):
 class GetFiltersResponseElement(BaseModel):
     data_type: DataType
     description: str
-    distinct_values: List[str] | None = Field(
+    distinct_values: list[str] | None = Field(
         ...,
         description="If the type of the column is non-numeric, contains sorted list of unique values.",
     )
@@ -190,7 +190,7 @@ class GetFiltersResponseElement(BaseModel):
     )
     # TODO: Can we rename this to column_name for consistency with GetStrataResponseElement?
     filter_name: str = Field(..., description="Name of the column.")
-    relations: List[Relation] = Field(..., min_length=1)
+    relations: list[Relation] = Field(..., min_length=1)
 
 
 class GetMetricsResponseElement(BaseModel):

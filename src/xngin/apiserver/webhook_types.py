@@ -1,7 +1,7 @@
 """This defines the various webhook request/response contracts as pydantic models."""
 
 from datetime import datetime
-from typing import Any, Dict, List, Literal, Self
+from typing import Any, Literal, Self
 import uuid
 
 import httpx
@@ -30,7 +30,7 @@ class WebhookResponse(BaseModel):
 # Dict of extra responses to use with all webhook-related endpoints. See:
 # https://fastapi.tiangolo.com/advanced/additional-responses/?h=responses#additional-response-with-model
 # for how to use with path operation decorators.
-STANDARD_WEBHOOK_RESPONSES: Dict[int, Dict[str, Any]] = {
+STANDARD_WEBHOOK_RESPONSES: dict[int, dict[str, Any]] = {
     502: {
         "model": WebhookResponse,
         "description": "Webhook service returned a non-200 code.",
@@ -100,7 +100,7 @@ class WebhookRequestUpdateDescriptions(BaseModel):
     description: str = Field(
         description="New experiment description to be updated.", min_length=1
     )
-    arms: List[ExperimentArm] = Field(
+    arms: list[ExperimentArm] = Field(
         description="All arms as saved in the original DesignSpec must be present here, even if "
         "you don't intend to change the arm_name"
     )

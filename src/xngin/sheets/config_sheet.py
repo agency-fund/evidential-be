@@ -1,6 +1,5 @@
 import csv
 from collections import Counter
-from typing import List, Union
 
 import sqlalchemy
 from pydantic import BaseModel, ValidationError, field_validator, model_validator
@@ -38,12 +37,12 @@ class InvalidSheetDetails(BaseModel):
 class InvalidSheetException(Exception):
     """Raised when a spreadsheet fails to parse into a valid configuration."""
 
-    def __init__(self, err: List[InvalidSheetDetails]):
+    def __init__(self, err: list[InvalidSheetDetails]):
         super().__init__()
         self.errors = err
 
     def __str__(self):
-        return "\n".join((err.model_dump_json() for err in self.errors))
+        return "\n".join(err.model_dump_json() for err in self.errors)
 
 
 class ColumnDescriptor(BaseModel):
@@ -93,7 +92,7 @@ class ConfigWorksheet(BaseModel):
     """SheetConfig represents a single worksheet."""
 
     table_name: str
-    columns: List[ColumnDescriptor]
+    columns: list[ColumnDescriptor]
 
     model_config = {
         "strict": True,
@@ -108,7 +107,7 @@ class ConfigWorksheet(BaseModel):
         if len(uniques) > 1:
             raise ValueError(
                 f"There are {len(uniques)} columns marked as the unique ID, but there should "
-                f"only be one: {", ".join(sorted(uniques))}"
+                f"only be one: {', '.join(sorted(uniques))}"
             )
         return self
 
@@ -118,7 +117,7 @@ class ConfigWorksheet(BaseModel):
         duplicates = [item for item, count in counted.items() if count > 1]
         if duplicates:
             raise ValueError(
-                f"Duplicate 'column_name' values found: {", ".join(duplicates)}."
+                f"Duplicate 'column_name' values found: {', '.join(duplicates)}."
             )
         return self
 
@@ -129,8 +128,8 @@ class ConfigWorksheet(BaseModel):
         return self
 
 
-def parse_csv(filename: str) -> List[dict[str, Union[int, float, str]]]:
-    with open(filename, "r") as csvfile:
+def parse_csv(filename: str) -> list[dict[str, int | float | str]]:
+    with open(filename) as csvfile:
         reader = csv.DictReader(csvfile)
 
         for row in reader:
@@ -190,11 +189,14 @@ def fetch_and_parse_sheet(ref: SheetRef):
             )
     try:
         parsed = ConfigWorksheet(table_name=ref.worksheet, columns=collector)
+        # Parsing succeeded, but also raise if there were /any/ errors from above.
+        if errors:
+            raise InvalidSheetException(errors)
     except ValidationError as pve:
         errors.append(InvalidSheetDetails.from_pydantic_error(row=None, pve=pve))
-    if errors:
-        raise InvalidSheetException(errors)
-    return parsed
+    else:
+        return parsed
+    raise InvalidSheetException(errors)
 
 
 def create_sheetconfig_from_table(table: sqlalchemy.Table):

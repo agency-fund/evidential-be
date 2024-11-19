@@ -5,7 +5,7 @@ import json
 import logging
 import sys
 from pathlib import Path
-from typing import Annotated, Tuple
+from typing import Annotated
 
 import gspread
 import sqlalchemy
@@ -106,7 +106,7 @@ def bootstrap_spreadsheet(
         ),
     ] = None,
     share_email: Annotated[
-        Tuple[str] | None,
+        tuple[str] | None,
         typer.Option(
             help="Share the newly created Google Sheet with one or more email addresses.",
         ),

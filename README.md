@@ -1,3 +1,7 @@
+[![lint](https://github.com/agency-fund/xngin/actions/workflows/lint.yaml/badge.svg?branch=main)](https://github.com/agency-fund/xngin/actions/workflows/lint.yaml)
+[![precommit](https://github.com/agency-fund/xngin/actions/workflows/precommit.yaml/badge.svg?branch=main)](https://github.com/agency-fund/xngin/actions/workflows/precommit.yaml)
+[![test](https://github.com/agency-fund/xngin/actions/workflows/test.yaml/badge.svg?branch=main)](https://github.com/agency-fund/xngin/actions/workflows/test.yaml)
+
 # xngin
 
 Python version of [RL Experiments Engine](https://github.com/agency-fund/rl-experiments-engine).
@@ -18,7 +22,7 @@ The following is a proposal of the main components of this service:
 The commands below require you to have [uv](https://docs.astral.sh/uv/) installed:
 
 ```shell
-curl -LsSf https://astral.sh/uv/0.4.5/install.sh | sh
+curl -LsSf https://astral.sh/uv/0.5.1/install.sh | sh
 ```
 
 ## Settings

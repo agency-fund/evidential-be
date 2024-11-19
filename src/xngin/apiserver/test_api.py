@@ -48,13 +48,13 @@ def update_api_tests_flag(pytestconfig):
 
 @pytest.mark.parametrize("script", STATIC_TESTS)
 def test_api(script, update_api_tests_flag):
-    with open(script, "r") as f:
+    with open(script) as f:
         contents = f.read()
     hurl = Hurl.from_script(contents)
     response = client.request(
         hurl.method, hurl.url, headers=hurl.headers, content=hurl.body
     )
-    temporary = tempfile.NamedTemporaryFile(delete=False, suffix=".hurl")
+    temporary = tempfile.NamedTemporaryFile(delete=False, suffix=".hurl")  # noqa: SIM115
     # Write the actual response to a temporary file. If an exception is thrown, we optionally replace the script we just
     # executed with the new script.
     with temporary as tmpf:
@@ -63,12 +63,12 @@ def test_api(script, update_api_tests_flag):
         actual.expected_response = json.dumps(response.json(), indent=2, sort_keys=True)
         tmpf.write(actual.to_script().encode("utf-8"))
     try:
-        assert (
-            response.status_code == hurl.expected_status
-        ), f"HTTP response body: {temporary.name}\nResponse:\n{trunc(response.content)}"
-        assert response.json() == json.loads(
-            hurl.expected_response
-        ), f"HTTP response body: {temporary.name}\nResponse:\n{trunc(response.content)}"
+        assert response.status_code == hurl.expected_status, (
+            f"HTTP response body: {temporary.name}\nResponse:\n{trunc(response.content)}"
+        )
+        assert response.json() == json.loads(hurl.expected_response), (
+            f"HTTP response body: {temporary.name}\nResponse:\n{trunc(response.content)}"
+        )
     except AssertionError:
         if update_api_tests_flag:
             logger.info(f"Updating API test {script}.")
@@ -81,7 +81,7 @@ def load_mock_response_from_hurl(mocker, file):
 
     # Set up the mock response - first load our test data.
     data_file = str(Path(__file__).parent / "testdata/nonbulk" / file)
-    with open(data_file, "r", encoding="utf-8") as f:
+    with open(data_file, encoding="utf-8") as f:
         contents = f.read()
     hurl = Hurl.from_script(contents)
     # TODO: consider using dep injection for the httpx client
