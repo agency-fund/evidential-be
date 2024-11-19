@@ -1,7 +1,7 @@
 """This defines the various webhook request/response contracts as pydantic models."""
 
 from datetime import datetime
-from typing import List, Self
+from typing import List, Literal, Self
 import uuid
 
 import httpx
@@ -95,3 +95,26 @@ class WebhookRequestUpdate(BaseModel):
     """Request structure for supported types of experiment updates."""
 
     update_json: WebhookRequestUpdateTimestamps | WebhookRequestUpdateDescriptions
+
+
+# TODO: as part of potential API endpoint revisions
+class UpdateExperimentStartEndRequest(BaseModel):
+    """WIP to alternate interface to updating an experiment"""
+
+    update_type: Literal["timestamps"]
+    experiment_id: str = Field(
+        default=None, description="ID of the experiment to update."
+    )
+    start_date: datetime
+    end_date: datetime
+
+
+# TODO: as part of potential API endpoint revisions
+class UpdateExperimentDescriptionsRequest(BaseModel):
+    """WIP to alternate interface to updating an experiment"""
+
+    update_type: Literal["description"]
+    experiment_id: str | None = Field(
+        default=None, description="ID of the experiment to update."
+    )
+    description: str

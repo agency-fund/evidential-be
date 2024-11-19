@@ -1,12 +1,12 @@
 from contextlib import asynccontextmanager
-from typing import List, Dict, Any, Annotated, Literal
+from typing import List, Dict, Any, Annotated, Literal, Union
 import logging
 import warnings
 
 import httpx
 from pydantic import BaseModel
 import sqlalchemy
-from fastapi import FastAPI, HTTPException, Depends, Query, Response
+from fastapi import FastAPI, HTTPException, Depends, Path, Query, Response
 from fastapi import Request
 from sqlalchemy import distinct
 from starlette.responses import JSONResponse
@@ -44,6 +44,8 @@ from xngin.sheets.config_sheet import (
     create_sheetconfig_from_table,
 )
 from xngin.apiserver.webhook_types import (
+    UpdateExperimentDescriptionsRequest,
+    UpdateExperimentStartEndRequest,
     WebhookRequestCommit,
     WebhookRequestUpdate,
     WebhookResponse,
@@ -350,9 +352,40 @@ async def update_experiment(
         action = config.actions.update_description
     if action is None:
         # TODO: write to internal storage if webhooks are not defined.
-        raise HTTPException(501, f"Action 'update_{update_type}' not configured.")
+        raise HTTPException(501, f"Action '{update_type}' not configured.")
 
     return await make_webhook_request(config, action, update_payload, response)
+
+
+@app.post(
+    "/experiment/{experiment_id}",
+    summary="Update an existing experiment. (limited update capabilities)",
+    tags=["WIP New API"],
+)
+async def alt_update_experiment(
+    response: Response,
+    body: Union[UpdateExperimentStartEndRequest, UpdateExperimentDescriptionsRequest],
+    experiment_id: str = Annotated[
+        str, Path(description="The ID of the experiment to update.")
+    ],
+    client: Annotated[ClientConfig | None, Depends(config_dependency)] = None,
+) -> WebhookResponse:
+    config = require_config(client).webhook_config
+    # TODO: write to internal storage if no webhook_config
+    action = None
+    if body.update_type == "timestamps":
+        action = config.actions.update_timestamps
+    elif body.update_type == "description":
+        action = config.actions.update_description
+    if action is None:
+        raise HTTPException(501, f"Action for '{body.update_type}' not configured.")
+
+    # TODO: how best to handle experiment_id?
+    # Fill it in for the user as part of the request bodies only if missing?
+    # (Wouldn't be needed in the body if we handled the request here saving internally.)
+    if body.experiment_id is None:
+        body.experiment_id = experiment_id
+    return await make_webhook_request(config, action, body, response)
 
 
 async def make_webhook_request(
@@ -386,7 +419,9 @@ async def make_webhook_request(
             # Always return a WebhookResponse in the body on HTTPStatusError and non-200 response.
             return webhook_response
         except httpx.RequestError as e:
-            logger.error("ERROR requesting webhook: %s (%s)", e.request.url, str(e))
+            logger.error(
+                "ERROR %s requesting webhook: %s (%s)", type(e), e.request.url, str(e)
+            )
             raise HTTPException(status_code=500, detail="server error") from e
 
 
