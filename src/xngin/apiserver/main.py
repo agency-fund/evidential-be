@@ -1,5 +1,5 @@
 from contextlib import asynccontextmanager
-from typing import List, Dict, Any, Annotated, Literal, Union
+from typing import List, Dict, Any, Annotated, Literal, Tuple, Union
 import logging
 import warnings
 
@@ -321,7 +321,10 @@ async def commit_experiment(
         audience_spec=audience_spec,
     )
 
-    return await make_webhook_request(config, action, commit_payload, response)
+    response.status_code, payload = await make_webhook_request(
+        config, action, commit_payload
+    )
+    return payload
 
 
 @app.post(
@@ -349,7 +352,10 @@ async def update_experiment(
         # TODO: write to internal storage if webhooks are not defined.
         raise HTTPException(501, f"Action '{update_type}' not configured.")
 
-    return await make_webhook_request(config, action, update_payload, response)
+    response.status_code, payload = await make_webhook_request(
+        config, action, update_payload
+    )
+    return payload
 
 
 @app.post(
@@ -381,13 +387,17 @@ async def alt_update_experiment(
     # (Wouldn't be needed in the body if we handled the request here saving internally.)
     if body.experiment_id is None:
         body.experiment_id = experiment_id
-    return await make_webhook_request(config, action, body, response)
+    response.status_code, payload = await make_webhook_request(config, action, body)
+    return payload
 
 
 async def make_webhook_request(
-    config: WebhookConfig, action: WebhookUrl, data: BaseModel, api_response: Response
-):
-    """Helper function to make webhook requests with common error handling."""
+    config: WebhookConfig, action: WebhookUrl, data: BaseModel
+) -> Tuple[int, WebhookResponse]:
+    """Helper function to make webhook requests with common error handling.
+
+    Returns: tuple of (status_code, WebhookResponse to use as body)
+    """
     # TODO: use DI for a consistently configured shared client across endpoints
     async with httpx.AsyncClient() as http_client:
         headers = {}
@@ -405,15 +415,16 @@ async def make_webhook_request(
             )
             webhook_response = WebhookResponse.from_httpx(upstream_response)
             # Stricter than response.raise_for_status(), we require HTTP 200:
+            status_code = 200
             if upstream_response.status_code != 200:
                 logger.error(
                     "ERROR response %s requesting webhook: %s",
                     upstream_response.status_code,
                     action.url,
                 )
-                api_response.status_code = 502
+                status_code = 502
             # Always return a WebhookResponse in the body on HTTPStatusError and non-200 response.
-            return webhook_response
+            return (status_code, webhook_response)
         except httpx.RequestError as e:
             logger.error(
                 "ERROR %s requesting webhook: %s (%s)", type(e), e.request.url, str(e)
