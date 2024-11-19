@@ -44,6 +44,7 @@ from xngin.sheets.config_sheet import (
     create_sheetconfig_from_table,
 )
 from xngin.apiserver.webhook_types import (
+    STANDARD_WEBHOOK_RESPONSES,
     UpdateExperimentDescriptionsRequest,
     UpdateExperimentStartEndRequest,
     WebhookRequestCommit,
@@ -296,13 +297,7 @@ def assignment_file(
 @app.post(
     "/commit",
     summary="Commit an experiment to the database.",
-    response_model=WebhookResponse,
-    responses={
-        502: {
-            "model": WebhookResponse,
-            "description": "Webhook service returned a non-200 code.",
-        }
-    },
+    responses=STANDARD_WEBHOOK_RESPONSES,
     tags=["Manage Experiments"],
 )
 async def commit_experiment(
@@ -312,7 +307,7 @@ async def commit_experiment(
     experiment_assignment: ExperimentAssignment,
     user_id: str = "testuser",
     client: Annotated[ClientConfig | None, Depends(config_dependency)] = None,
-):
+) -> WebhookResponse:
     config = require_config(client).webhook_config
     action = config.actions.commit
     if action is None:
@@ -332,7 +327,7 @@ async def commit_experiment(
 @app.post(
     "/update-commit",
     summary="Update an existing experiment's timestamps or description (experiment and arms)",
-    response_model=WebhookResponse,
+    responses=STANDARD_WEBHOOK_RESPONSES,
     tags=["Manage Experiments"],
 )
 async def update_experiment(
@@ -343,7 +338,7 @@ async def update_experiment(
         Query(description="The type of experiment metadata update to perform"),
     ],
     client: Annotated[ClientConfig | None, Depends(config_dependency)] = None,
-):
+) -> WebhookResponse:
     config = require_config(client).webhook_config
     action = None
     if update_type == "timestamps":
@@ -360,6 +355,7 @@ async def update_experiment(
 @app.post(
     "/experiment/{experiment_id}",
     summary="Update an existing experiment. (limited update capabilities)",
+    responses=STANDARD_WEBHOOK_RESPONSES,
     tags=["WIP New API"],
 )
 async def alt_update_experiment(

@@ -1,7 +1,7 @@
 """This defines the various webhook request/response contracts as pydantic models."""
 
 from datetime import datetime
-from typing import List, Literal, Self
+from typing import Any, Dict, List, Literal, Self
 import uuid
 
 import httpx
@@ -25,6 +25,17 @@ class WebhookResponse(BaseModel):
         """Create WebhookResponse from an httpx.Response object."""
         # No need to parse the response text as json, just pass it through.
         return cls(status_code=response.status_code, body=response.text)
+
+
+# Dict of extra responses to use with all webhook-related endpoints. See:
+# https://fastapi.tiangolo.com/advanced/additional-responses/?h=responses#additional-response-with-model
+# for how to use with path operation decorators.
+STANDARD_WEBHOOK_RESPONSES: Dict[int, Dict[str, Any]] = {
+    502: {
+        "model": WebhookResponse,
+        "description": "Webhook service returned a non-200 code.",
+    }
+}
 
 
 class WebhookRequestCommit(BaseModel):
@@ -74,7 +85,9 @@ class WebhookRequestUpdateTimestamps(BaseModel):
 
 
 class ExperimentArm(BaseModel):
-    arm_name: str = Field(description="New experiment arm name to be updated.")
+    arm_name: str = Field(
+        description="New experiment arm name to be updated.", min_length=1
+    )
     arm_id: str = Field(
         description="The id originally assigned to this arm by the user."
     )
@@ -84,7 +97,9 @@ class WebhookRequestUpdateDescriptions(BaseModel):
     """Describes how to update an experiment description and/or the names of its arms."""
 
     experiment_id: str = Field(description="ID of the experiment to update.")
-    description: str = Field(description="New experiment description to be updated.")
+    description: str = Field(
+        description="New experiment description to be updated.", min_length=1
+    )
     arms: List[ExperimentArm] = Field(
         description="All arms as saved in the original DesignSpec must be present here, even if "
         "you don't intend to change the arm_name"
