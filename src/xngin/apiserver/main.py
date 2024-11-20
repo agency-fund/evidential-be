@@ -385,12 +385,7 @@ async def alt_update_experiment(
         action = config.actions.update_description
     if action is None:
         raise HTTPException(501, f"Action for '{body.update_type}' not configured.")
-
-    # TODO: how best to handle experiment_id?
-    # Fill it in for the user as part of the request bodies only if missing?
-    # (Wouldn't be needed in the body if we handled the request here saving internally.)
-    if body.experiment_id is None:
-        body.experiment_id = experiment_id
+    # TODO: use the experiment_id in an upstream url
     response.status_code, payload = await make_webhook_request(
         http_client, config, action, body
     )
@@ -407,7 +402,6 @@ async def make_webhook_request(
 
     Returns: tuple of (status_code, WebhookResponse to use as body)
     """
-    # TODO: use DI for a consistently configured shared client across endpoints
     headers = {}
     auth_header_value = config.common_headers.authorization
     if auth_header_value is not None:
@@ -436,7 +430,7 @@ async def make_webhook_request(
         raise HTTPException(status_code=500, detail="server error") from e
     else:
         # Always return a WebhookResponse in the body, even on non-200 responses.
-        return (status_code, webhook_response)
+        return status_code, webhook_response
 
 
 @app.get("/_settings", include_in_schema=False)

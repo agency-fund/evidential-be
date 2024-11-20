@@ -117,19 +117,14 @@ class UpdateExperimentStartEndRequest(BaseModel):
     """WIP to alternate interface to updating an experiment"""
 
     update_type: Literal["timestamps"]
-    experiment_id: str = Field(
-        default=None, description="ID of the experiment to update."
-    )
     start_date: datetime
     end_date: datetime
 
 
 # TODO: as part of potential API endpoint revisions
 class UpdateExperimentDescriptionsRequest(BaseModel):
-    """WIP to alternate interface to updating an experiment"""
+    """WIP to alternate interface to updating an experiment name & description."""
 
     update_type: Literal["description"]
-    experiment_id: str | None = Field(
-        default=None, description="ID of the experiment to update."
-    )
+    name: str = Field(description="New experiment name to update.")
     description: str
