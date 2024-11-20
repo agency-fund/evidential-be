@@ -1,6 +1,7 @@
 import enum
 from datetime import datetime
 from typing import Literal, Self
+import uuid
 import sqlalchemy.sql.sqltypes
 from pydantic import BaseModel, Field, field_serializer, model_validator
 
@@ -95,7 +96,7 @@ class AudienceSpec(BaseModel):
 
 class DesignSpecArm(BaseModel):
     arm_name: str
-    arm_id: str
+    arm_id: uuid.UUID
 
 
 class DesignSpecMetric(BaseModel):
@@ -106,7 +107,7 @@ class DesignSpecMetric(BaseModel):
 class DesignSpec(BaseModel):
     """Design specification."""
 
-    experiment_id: str
+    experiment_id: uuid.UUID
     experiment_name: str
     description: str
     arms: list[DesignSpecArm]
@@ -156,7 +157,7 @@ class ExperimentAssignment(BaseModel):
     denominator_df: int = Field(alias="denominator.df")
     p_value: float = Field(alias="p.value")
     balance_ok: bool
-    experiment_id: str
+    experiment_id: uuid.UUID
     description: str
     sample_size: int
     assignments: list[ExperimentAssignmentUnit]

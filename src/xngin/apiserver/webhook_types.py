@@ -63,7 +63,7 @@ class WebhookRequestCommit(BaseModel):
 class WebhookRequestUpdateTimestamps(BaseModel):
     """Describes how to update an experiment's start and/or end dates."""
 
-    experiment_id: str = Field(description="ID of the experiment to update.")
+    experiment_id: uuid.UUID = Field(description="ID of the experiment to update.")
     start_date: datetime = Field(
         description="New or the same start date to update with."
     )
@@ -88,7 +88,7 @@ class ExperimentArm(BaseModel):
     arm_name: str = Field(
         description="New experiment arm name to be updated.", min_length=1
     )
-    arm_id: str = Field(
+    arm_id: uuid.UUID = Field(
         description="The id originally assigned to this arm by the user."
     )
 
@@ -96,7 +96,7 @@ class ExperimentArm(BaseModel):
 class WebhookRequestUpdateDescriptions(BaseModel):
     """Describes how to update an experiment description and/or the names of its arms."""
 
-    experiment_id: str = Field(description="ID of the experiment to update.")
+    experiment_id: uuid.UUID = Field(description="ID of the experiment to update.")
     experiment_name: str = Field(description="New experiment name.", min_length=1)
     description: str = Field(description="New experiment description.", min_length=1)
     arms: list[ExperimentArm] = Field(
@@ -125,5 +125,5 @@ class UpdateExperimentDescriptionsRequest(BaseModel):
     """WIP to alternate interface to updating an experiment name & description."""
 
     update_type: Literal["description"]
-    name: str = Field(description="New experiment name to update.")
-    description: str
+    experiment_name: str = Field(description="New experiment name.", min_length=1)
+    description: str = Field(description="New experiment description.", min_length=1)

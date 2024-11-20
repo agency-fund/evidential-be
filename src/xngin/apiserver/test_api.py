@@ -87,11 +87,16 @@ def load_mock_response_from_hurl(mocker, file):
     # TODO: consider using dep injection for the httpx client
     mock_response = mocker.Mock()
     mock_response.status_code = hurl.expected_status
-    # Extract the fake webhook response from the mock api server response,
-    # then re-serialize it to use as a mock webhook response.
-    mock_webhook_response_dict = json.loads(hurl.expected_response)["body"]
-    body_text = json.dumps(mock_webhook_response_dict)
-    mock_response.text = body_text
+    expected_response_as_dict = json.loads(hurl.expected_response)
+    if "body" in expected_response_as_dict:
+        # Extract the fake webhook response from the mock api server response,
+        # then re-serialize it to use as a mock webhook response.
+        mock_webhook_response_dict = expected_response_as_dict["body"]
+        body_text = json.dumps(mock_webhook_response_dict)
+        mock_response.text = body_text
+    else:
+        # We're faking something else, so just pass it through.
+        mock_response.text = hurl.expected_response
     return (hurl, mock_response)
 
 
@@ -233,3 +238,19 @@ def test_update_experiment_description(mocker):
     )
     model = WebhookRequestUpdateDescriptions.model_validate(kwargs["json"])
     assert model.description == "Sample new description"
+
+
+def test_update_experiment_fails_with_bad_ids(mocker):
+    """Test /update-commit?update_type=description fails with non-uuid ids"""
+
+    (hurl, _) = load_mock_response_from_hurl(
+        mocker, "apitest.update-commit.description.bad.hurl"
+    )
+    # Expect to fail before even making the request due to validation error.
+    response = client.request(
+        hurl.method, hurl.url, headers=hurl.headers, content=hurl.body
+    )
+    # Check for validation error
+    assert response.status_code == hurl.expected_status
+    response_detail = response.json()["detail"][0]
+    assert response_detail["type"] == "uuid_parsing"
