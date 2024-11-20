@@ -97,9 +97,8 @@ class WebhookRequestUpdateDescriptions(BaseModel):
     """Describes how to update an experiment description and/or the names of its arms."""
 
     experiment_id: str = Field(description="ID of the experiment to update.")
-    description: str = Field(
-        description="New experiment description to be updated.", min_length=1
-    )
+    experiment_name: str = Field(description="New experiment name.", min_length=1)
+    description: str = Field(description="New experiment description.", min_length=1)
     arms: list[ExperimentArm] = Field(
         description="All arms as saved in the original DesignSpec must be present here, even if "
         "you don't intend to change the arm_name"
