@@ -1,9 +1,12 @@
 from contextlib import asynccontextmanager
-from typing import Any, Annotated
+from typing import Any, Annotated, Literal
+import logging
+import warnings
 
 import httpx
+from pydantic import BaseModel
 import sqlalchemy
-from fastapi import FastAPI, HTTPException, Depends, Query
+from fastapi import FastAPI, HTTPException, Depends, Path, Query, Response
 from fastapi import Request
 from sqlalchemy import distinct
 from starlette.responses import JSONResponse
@@ -13,18 +16,22 @@ from xngin.apiserver.api_types import (
     DataTypeClass,
     AudienceSpec,
     DesignSpec,
+    ExperimentAssignment,
     UnimplementedResponse,
     GetStrataResponseElement,
     GetFiltersResponseElement,
     GetMetricsResponseElement,
 )
 from xngin.apiserver.dependencies import (
+    httpx_dependency,
     settings_dependency,
     config_dependency,
     gsheet_cache,
 )
 from xngin.apiserver.gsheet_cache import GSheetCache
 from xngin.apiserver.settings import (
+    WebhookConfig,
+    WebhookUrl,
     get_settings_for_server,
     XnginSettings,
     ClientConfig,
@@ -37,7 +44,14 @@ from xngin.sheets.config_sheet import (
     fetch_and_parse_sheet,
     create_sheetconfig_from_table,
 )
-import warnings
+from xngin.apiserver.webhook_types import (
+    STANDARD_WEBHOOK_RESPONSES,
+    UpdateExperimentDescriptionsRequest,
+    UpdateExperimentStartEndRequest,
+    WebhookRequestCommit,
+    WebhookRequestUpdate,
+    WebhookResponse,
+)
 
 # Workaround for: https://github.com/fastapi/fastapi/discussions/10537
 warnings.filterwarnings(
@@ -56,6 +70,7 @@ async def lifespan(_app: FastAPI):
 
 
 app = FastAPI(lifespan=lifespan)
+logger = logging.getLogger(__name__)
 
 
 # TODO: unify exception handling
@@ -283,35 +298,139 @@ def assignment_file(
 @app.post(
     "/commit",
     summary="Commit an experiment to the database.",
-    response_model=UnimplementedResponse,
+    responses=STANDARD_WEBHOOK_RESPONSES,
     tags=["Manage Experiments"],
 )
-def commit_experiment(
+async def commit_experiment(
+    response: Response,
     design_spec: DesignSpec,
     audience_spec: AudienceSpec,
-    experiment_assignment: dict[str, Any],
+    experiment_assignment: ExperimentAssignment,
     user_id: str = "testuser",
+    http_client: Annotated[httpx.AsyncClient, Depends(httpx_dependency)] = None,
     client: Annotated[ClientConfig | None, Depends(config_dependency)] = None,
-):
-    # Implement experiment commit logic
-    return UnimplementedResponse()
+) -> WebhookResponse:
+    config = require_config(client).webhook_config
+    action = config.actions.commit
+    if action is None:
+        # TODO: write to internal storage if webhooks are not defined.
+        raise HTTPException(501, "Action 'commit' not configured.")
+
+    commit_payload = WebhookRequestCommit(
+        creator_user_id=user_id,
+        experiment_assignment=experiment_assignment,
+        design_spec=design_spec,
+        audience_spec=audience_spec,
+    )
+
+    response.status_code, payload = await make_webhook_request(
+        http_client, config, action, commit_payload
+    )
+    return payload
 
 
 @app.post(
     "/update-commit",
-    summary="TODO",
-    response_model=UnimplementedResponse,
+    summary="Update an existing experiment's timestamps or description (experiment and arms)",
+    responses=STANDARD_WEBHOOK_RESPONSES,
     tags=["Manage Experiments"],
 )
-def update_experiment(
-    design_spec: DesignSpec,
-    audience_spec: AudienceSpec,
-    experiment_assignment: dict[str, Any],
-    user_id: str = "testuser",
+async def update_experiment(
+    response: Response,
+    request_payload: WebhookRequestUpdate,
+    update_type: Annotated[
+        Literal["timestamps", "description"],
+        Query(description="The type of experiment metadata update to perform"),
+    ],
+    http_client: Annotated[httpx.AsyncClient, Depends(httpx_dependency)] = None,
     client: Annotated[ClientConfig | None, Depends(config_dependency)] = None,
-):
-    # Implement experiment commit logic
-    return UnimplementedResponse()
+) -> WebhookResponse:
+    config = require_config(client).webhook_config
+    action = None
+    if update_type == "timestamps":
+        action = config.actions.update_timestamps
+    elif update_type == "description":
+        action = config.actions.update_description
+    if action is None:
+        # TODO: write to internal storage if webhooks are not defined.
+        raise HTTPException(501, f"Action '{update_type}' not configured.")
+    # Need to pull out the upstream server payload:
+    response.status_code, payload = await make_webhook_request(
+        http_client, config, action, request_payload.update_json
+    )
+    return payload
+
+
+@app.post(
+    "/experiment/{experiment_id}",
+    summary="Update an existing experiment. (limited update capabilities)",
+    responses=STANDARD_WEBHOOK_RESPONSES,
+    tags=["WIP New API"],
+)
+async def alt_update_experiment(
+    response: Response,
+    body: UpdateExperimentStartEndRequest | UpdateExperimentDescriptionsRequest,
+    experiment_id: str = Annotated[
+        str, Path(description="The ID of the experiment to update.")
+    ],
+    http_client: Annotated[httpx.AsyncClient, Depends(httpx_dependency)] = None,
+    client: Annotated[ClientConfig | None, Depends(config_dependency)] = None,
+) -> WebhookResponse:
+    config = require_config(client).webhook_config
+    # TODO: write to internal storage if no webhook_config
+    action = None
+    if body.update_type == "timestamps":
+        action = config.actions.update_timestamps
+    elif body.update_type == "description":
+        action = config.actions.update_description
+    if action is None:
+        raise HTTPException(501, f"Action for '{body.update_type}' not configured.")
+    # TODO: use the experiment_id in an upstream url
+    response.status_code, payload = await make_webhook_request(
+        http_client, config, action, body
+    )
+    return payload
+
+
+async def make_webhook_request(
+    http_client: httpx.AsyncClient,
+    config: WebhookConfig,
+    action: WebhookUrl,
+    data: BaseModel,
+) -> tuple[int, WebhookResponse]:
+    """Helper function to make webhook requests with common error handling.
+
+    Returns: tuple of (status_code, WebhookResponse to use as body)
+    """
+    headers = {}
+    auth_header_value = config.common_headers.authorization
+    if auth_header_value is not None:
+        headers["Authorization"] = auth_header_value
+    headers["Accept"] = "application/json"
+    # headers["Content-Type"] is set by httpx
+
+    try:
+        # Explicitly convert to a dict via pydantic since we use custom serializers
+        json_data = data.model_dump(mode="json")
+        upstream_response = await http_client.request(
+            method=action.method, url=action.url, headers=headers, json=json_data
+        )
+        webhook_response = WebhookResponse.from_httpx(upstream_response)
+        status_code = 200
+        # Stricter than response.raise_for_status(), we require HTTP 200:
+        if upstream_response.status_code != 200:
+            logger.error(
+                "ERROR response %s requesting webhook: %s",
+                upstream_response.status_code,
+                action.url,
+            )
+            status_code = 502
+    except httpx.RequestError as e:
+        logger.exception("ERROR requesting webhook: %s", e.request.url)
+        raise HTTPException(status_code=500, detail="server error") from e
+    else:
+        # Always return a WebhookResponse in the body, even on non-200 responses.
+        return status_code, webhook_response
 
 
 @app.get("/_settings", include_in_schema=False)
@@ -333,7 +452,7 @@ def debug_settings(
 
 
 # Main experiment assignment function
-def experiment_assignment(
+def assign_units_to_arms(
     design_spec: DesignSpec, audience_spec: AudienceSpec, chosen_n: int
 ):
     # Implement experiment assignment logic

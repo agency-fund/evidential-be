@@ -17,6 +17,29 @@
             "table_name": "transforms"
           }
         ],
+        "webhook_config": {
+          "actions": {
+            "commit": {
+              "method": "POST",
+              "url": "http://localhost:4001/dev/api/v1/experiment-commit/save-experiment-commit"
+            },
+            "assignment_file": {
+              "method": "POST",
+              "url": "http://localhost:4001/dev/api/v1/experiment-commit/get-file-name-by-experiment-id/{experimentId}?qs={experimentCode}"
+            },
+            "update_timestamps": {
+              "method": "PUT",
+              "url": "http://localhost:4001/dev/api/v1/experiment-commit/update-timestamps-for-experiment"
+            },
+            "update_description": {
+              "method": "PUT",
+              "url": "http://localhost:4001/dev/api/v1/experiment-commit/update-experiment-commit"
+            }
+          },
+          "common_headers": {
+            "authorization": "abc"
+          }
+        },
         "api_host": "api_host",
         "api_token": "api_token",
         "dwh": {
@@ -29,6 +52,40 @@
         }
       }
     },
+    {
+      "id": "customer-test-badconfig",
+      "config": {
+        "type": "customer",
+        "units": [
+          {
+            "id": "test_unit_type",
+            "sheet": {
+              "url": "https://docs.google.com/spreadsheets/d/redacted/edit",
+              "worksheet": "Sheet1"
+            },
+            "table_name": "transforms"
+          }
+        ],
+        "webhook_config": {
+          "actions": {
+          },
+          "common_headers": {
+            "authorization": "abc"
+          }
+        },
+        "api_host": "api_host",
+        "api_token": "api_token",
+        "dwh": {
+          "user": "user",
+          "port": 5439,
+          "host": "__example__.redshift.amazonaws.com",
+          "password": "password",
+          "dbname": "dbname",
+          "sslmode": "require"
+        }
+      }
+    },
+
     {
       "id": "testing",
       "config": {
