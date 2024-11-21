@@ -63,8 +63,8 @@ jobs:
 
           # import/export lifecycle
           uv run xngin-cli bootstrap-testing-dwh --force
-          uv run xngin-cli bootstrap-spreadsheet sqlite:///./src/xngin/apiserver/testdata/testing_dwh.db test_unit_type > config.csv
-          uv run xngin-cli parse-config-spreadsheet file://./config.csv test_unit_type
+          uv run xngin-cli bootstrap-spreadsheet sqlite:///./src/xngin/apiserver/testdata/testing_dwh.db test_participant_type > config.csv
+          uv run xngin-cli parse-config-spreadsheet file://./config.csv test_participant_type
   docker:
     runs-on: ubuntu-22.04
     timeout-minutes: 15

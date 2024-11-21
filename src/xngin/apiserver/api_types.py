@@ -135,7 +135,7 @@ class AudienceSpecFilter(BaseModel):
 class AudienceSpec(BaseModel):
     """Audience specification."""
 
-    # TODO(qixotic): rename to unit_type?
+    # TODO(qixotic): rename to participant_type?
     type: str
     filters: list[AudienceSpecFilter]
 

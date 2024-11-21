@@ -93,15 +93,16 @@ class CommonQueryParams:
 
     def __init__(
         self,
-        unit_type: Annotated[
+        participant_type: Annotated[
             str,
             Query(
-                description="Unit of analysis for experiment.", example="test_unit_type"
+                description="Unit of analysis for experiment.",
+                example="test_participant_type",
             ),
         ],
         refresh: Annotated[bool, Query(description="Refresh the cache.")] = False,
     ):
-        self.unit_type = unit_type
+        self.participant_type = participant_type
         self.refresh = refresh
 
 
@@ -120,9 +121,9 @@ def get_strata(
     This reimplements dwh.R get_strata().
     """
     config = require_config(client)
-    with config.dbsession(commons.unit_type) as session:
+    with config.dbsession(commons.participant_type) as session:
         sa_table = get_sqlalchemy_table_from_engine(
-            session.get_bind(), commons.unit_type
+            session.get_bind(), commons.participant_type
         )
         db_schema = generate_column_descriptors(sa_table)
         config_sheet = fetch_worksheet(commons, config, gsheets)
@@ -155,9 +156,9 @@ def get_filters(
     client: Annotated[ClientConfig | None, Depends(config_dependency)] = None,
 ) -> list[GetFiltersResponseElement]:
     config = require_config(client)
-    with config.dbsession(commons.unit_type) as session:
+    with config.dbsession(commons.participant_type) as session:
         sa_table = get_sqlalchemy_table_from_engine(
-            session.get_bind(), commons.unit_type
+            session.get_bind(), commons.participant_type
         )
         db_schema = generate_column_descriptors(sa_table)
         config_sheet = fetch_worksheet(commons, config, gsheets)
@@ -226,9 +227,9 @@ def get_metrics(
     This reimplements dwh.R get_metrics().
     """
     config = require_config(client)
-    with config.dbsession(commons.unit_type) as session:
+    with config.dbsession(commons.participant_type) as session:
         sa_table = get_sqlalchemy_table_from_engine(
-            session.get_bind(), commons.unit_type
+            session.get_bind(), commons.participant_type
         )
         db_schema = generate_column_descriptors(sa_table)
         config_sheet = fetch_worksheet(commons, config, gsheets)
@@ -501,7 +502,7 @@ def require_config(client: ClientConfig | None):
 
 def fetch_worksheet(commons: CommonQueryParams, config, gsheets: GSheetCache):
     """Fetches a worksheet from the cache, reading it from the source if refresh or if the cache doesn't have it."""
-    sheet = config.find_unit(commons.unit_type).sheet
+    sheet = config.find_unit(commons.participant_type).sheet
     return gsheets.get(
         sheet,
         lambda: fetch_and_parse_sheet(sheet),

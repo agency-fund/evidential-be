@@ -1,4 +1,4 @@
-GET http://localhost:8000/metrics?unit_type=test_unit_type
+GET http://localhost:8000/metrics?participant_type=test_participant_type
 Config-ID: testing
 HTTP 200
 ```json
