@@ -4,7 +4,7 @@ from functools import lru_cache
 from typing import Literal
 
 import sqlalchemy
-from pydantic import BaseModel, PositiveInt, SecretStr, Field
+from pydantic import BaseModel, PositiveInt, SecretStr, Field, field_validator
 from sqlalchemy.exc import NoSuchTableError
 from sqlalchemy.orm import Session
 
@@ -66,13 +66,76 @@ class UnitsMixin(BaseModel):
         return found
 
 
-class RocketLearningConfig(UnitsMixin, BaseModel):
+class WebhookUrl(BaseModel):
+    """Represents a url and HTTP method to use with it."""
+
+    method: Literal["get", "post", "put", "patch"]
+    url: str
+    # headers: dict[str, str]
+
+    @field_validator("method", mode="before")
+    @classmethod
+    def to_lower(cls, value):
+        """Force the http 'method' to be lowercase before validation."""
+
+        return str(value).lower().strip()
+
+
+class WebhookActions(BaseModel):
+    """The set of supported actions that trigger a user callback."""
+
+    # No action is required, so a user can leave it out completely.
+    commit: WebhookUrl | None = None
+    assignment_file: WebhookUrl | None = None
+    update_timestamps: WebhookUrl | None = None
+    update_description: WebhookUrl | None = None
+
+
+class WebhookCommonHeaders(BaseModel):
+    """Enumerates supported headers to attach to all webhook requests."""
+
+    authorization: str | None
+
+
+class WebhookConfig(BaseModel):
+    """Top-level configuration object for user-defined webhooks."""
+
+    actions: WebhookActions
+    common_headers: WebhookCommonHeaders
+
+
+class WebhookMixin(BaseModel):
+    """Add this to a config type to support using webhooks to persist changes.
+
+    Example:
+    "webhook_config": {
+      "actions": {
+        "commit": {
+          "method": "POST",
+          "url": "http://localhost:4001/dev/api/v1/experiment-commit/save-experiment-commit"
+        },
+        "assignment_file": {
+          "method": "POST",
+          "url": "http://localhost:4001/dev/api/v1/experiment-commit/get-file-name-by-experiment-id/{experimentId}?qs={experimentCode}",
+        }
+      },
+      "common_headers": {
+        "authorization": "abc"
+      }
+    }
+    """
+
+    webhook_config: WebhookConfig
+
+
+class RocketLearningConfig(UnitsMixin, WebhookMixin, BaseModel):
     """
 
     TODO: implement dbsession(self, unit_type)
     """
 
     type: Literal["customer"]
+
     dwh: PostgresDsn
     api_host: str
     api_token: SecretStr

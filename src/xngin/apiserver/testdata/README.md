@@ -2,7 +2,7 @@
 
 Also see: src/xngin/apiserver/testing/testdatasetup.py.
 
-## config-id: customer-testing
+## config-id: customer-test
 
 Currently unused.
 

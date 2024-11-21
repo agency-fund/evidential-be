@@ -1,7 +1,8 @@
 import enum
 import re
+import uuid
 from datetime import datetime
-from typing import Literal, Annotated
+from typing import Literal, Annotated, Self
 
 import sqlalchemy.sql.sqltypes
 from pydantic import (
@@ -9,6 +10,7 @@ from pydantic import (
     Field,
     model_validator,
     field_validator,
+    field_serializer,
 )
 
 
@@ -140,7 +142,7 @@ class AudienceSpec(BaseModel):
 
 class DesignSpecArm(BaseModel):
     arm_name: str
-    arm_id: str
+    arm_id: uuid.UUID
 
 
 class DesignSpecMetric(BaseModel):
@@ -151,7 +153,7 @@ class DesignSpecMetric(BaseModel):
 class DesignSpec(BaseModel):
     """Design specification."""
 
-    experiment_id: str
+    experiment_id: uuid.UUID
     experiment_name: str
     description: str
     arms: list[DesignSpecArm]
@@ -162,6 +164,49 @@ class DesignSpec(BaseModel):
     alpha: float
     fstat_thresh: float
     metrics: list[DesignSpecMetric]
+
+    @field_serializer("start_date", "end_date", when_used="json")
+    def serialize_dt(self, dt: datetime, _info):
+        """Convert dates to iso strings in model_dump_json()/model_dump(mode='json')"""
+        return dt.isoformat()
+
+
+class ExperimentStrata(BaseModel):
+    strata_name: str
+    strata_value: str
+
+
+class ExperimentAssignmentUnit(BaseModel):
+    # Name of the experiment arm this unit was assigned to
+    treatment_assignment: str
+    strata: list[ExperimentStrata]
+
+    # Allow extra fields so that we can support dwh-specific ids
+    model_config = {"extra": "allow"}
+    # And require the extra field to be an integer;
+    # can loosen this if string ids are used in the future
+    __pydantic_extra__: dict[str, int] = Field(init=False)
+
+    @model_validator(mode="after")
+    def validate_single_id_field(self) -> Self:
+        num_extra = len(self.__pydantic_extra__)
+        if num_extra != 1:
+            raise ValueError(f"Model must have exactly one id field. Found {num_extra}")
+        return self
+
+
+class ExperimentAssignment(BaseModel):
+    """Experiment assignment details including balance statistics and group assignments."""
+
+    f_stat: float = Field(alias="f.stat")
+    numerator_df: int = Field(alias="numerator.df")
+    denominator_df: int = Field(alias="denominator.df")
+    p_value: float = Field(alias="p.value")
+    balance_ok: bool
+    experiment_id: uuid.UUID
+    description: str
+    sample_size: int
+    assignments: list[ExperimentAssignmentUnit]
 
 
 class UnimplementedResponse(BaseModel):

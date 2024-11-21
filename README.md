@@ -53,6 +53,9 @@ Follow the steps below to get a local development environment running.
    uv run pytest
    ```
 
+   `pytest -rA` to print out _all_ stdout from your tests; `-rx` for just those failing. (See
+   [docs](https://docs.pytest.org/en/latest/how-to/output.html#producing-a-detailed-summary-report) for more info.)
+
    Running the unit tests will create the testing_dwh.db database. This database will be used by your local development
    server.
 
@@ -76,7 +79,31 @@ Follow the steps below to get a local development environment running.
    Also see [apitest.strata.hurl](src/xngin/apiserver/testdata/apitest.strata.hurl) for a complete example of how to
    write an API test script.
 
-6. Visit the local interactive docs page: http://localhost:8000/docs
+5. Visit the local interactive docs page: http://localhost:8000/docs
+
+6. `uv` sets up a virtual environment by default. To avoid needing to use `uv run` before commands installed by our
+   project, activate the environment with:
+
+   ```shell
+   source .venv/bin/activate
+   ```
+
+   The environment var `VIRTUAL_ENV` should now be set, pointing to the project's environment.
+
+   You can exit the virtual environment with `deactivate`.
+
+7. Now set up the pre-commit hooks in your local git with:
+
+   ```shell
+   pre-commit install
+   ```
+
+   which will run the checks whenever you create or modify a commit. It only does checks against files that changed; to
+   force it to check all files, you can run:
+
+   ```
+   pre-commit run -a
+   ```
 
 ## FAQ
 
