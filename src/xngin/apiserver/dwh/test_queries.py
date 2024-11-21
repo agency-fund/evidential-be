@@ -149,7 +149,10 @@ def test_compose_query(testcase, db_session):
     ]
     table = Base.metadata.tables.get(SampleTable.__tablename__)
     filters = create_filters(
-        table, AudienceSpec(type=SampleTable.__tablename__, filters=testcase.filters)
+        table,
+        AudienceSpec(
+            participant_type=SampleTable.__tablename__, filters=testcase.filters
+        ),
     )
     q = compose_query(db_session, SampleTable, testcase.chosen_n, filters)
     sql = str(q.statement.compile(compile_kwargs={"literal_binds": True}))

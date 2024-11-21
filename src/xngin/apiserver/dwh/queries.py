@@ -21,7 +21,7 @@ def get_dwh_participants(
     * _latest hack (why: not sure what it is)
     * unpacking experiment_ids into a list
     """
-    participant_type = audience_spec.type
+    participant_type = audience_spec.participant_type
     with config.dbsession(participant_type) as session:
         sa_table = get_sqlalchemy_table_from_engine(
             session.get_bind(), participant_type
