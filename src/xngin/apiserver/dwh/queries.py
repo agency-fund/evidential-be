@@ -21,13 +21,7 @@ def get_metric_meta(metrics: list[str], audience_spec: AudienceSpec):
 def get_dwh_participants(
     config: ClientConfigType, audience_spec: AudienceSpec, chosen_n: int
 ):
-    """get_dwh_participants resembles the dwh.R implementation.
-
-    Not ported:
-    * type_map support (why: told this isn't used anymore)
-    * _latest hack (why: not sure what it is)
-    * unpacking experiment_ids into a list
-    """
+    """get_dwh_participants resembles the dwh.R implementation."""
     participant_type = audience_spec.participant_type
     with config.dbsession(participant_type) as session:
         sa_table = get_sqlalchemy_table_from_engine(
