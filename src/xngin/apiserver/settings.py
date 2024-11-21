@@ -187,13 +187,16 @@ class SqliteLocalConfig(UnitsMixin, BaseModel):
         )
 
 
+type ClientConfigType = RocketLearningConfig | SqliteLocalConfig
+
+
 class ClientConfig(BaseModel):
     id: str
-    config: RocketLearningConfig | SqliteLocalConfig = Field(..., discriminator="type")
+    config: ClientConfigType = Field(..., discriminator="type")
 
 
 class XnginSettings(BaseModel):
-    trusted_ips: list[str] = list()
+    trusted_ips: list[str] = Field(default_factory=list)
     db_connect_timeout_secs: int = 3
     client_configs: list[ClientConfig]
 
