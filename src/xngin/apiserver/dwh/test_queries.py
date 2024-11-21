@@ -52,7 +52,7 @@ ROW_200 = Row(
     float_col=2.718,
     bool_col=False,
     string_col="world",
-    experiment_ids="a,b",
+    experiment_ids="a,B",
 )
 ROW_300 = Row(
     id=300,
@@ -60,7 +60,7 @@ ROW_300 = Row(
     float_col=1.618,
     bool_col=True,
     string_col="goodbye",
-    experiment_ids="a,b,c",
+    experiment_ids="A,b,c",
 )
 SAMPLE_TABLE_ROWS = [
     ROW_100,
@@ -120,10 +120,10 @@ FILTER_GENERATION_SUBCASES = [
             AudienceSpecFilter(
                 filter_name="experiment_ids",
                 relation=Relation.INCLUDES,
-                value=["b", "c"],
+                value=["b", "C"],
             ),
         ],
-        where="""test_table.int_col IN (42, -17) AND test_table.experiment_ids <regexp> '(^(b|c)$)|(^(b|c),)|(,(b|c)$)|(,(b|c),)' ORDER BY random() LIMIT 3""",
+        where="""test_table.int_col IN (42, -17) AND lower(test_table.experiment_ids) <regexp> '(^(b|c)$)|(^(b|c),)|(,(b|c)$)|(,(b|c),)' ORDER BY random() LIMIT 3""",
         matches=[ROW_200],
     ),
     Case(
@@ -139,7 +139,7 @@ FILTER_GENERATION_SUBCASES = [
                 value=["b", "c"],
             ),
         ],
-        where="""test_table.int_col IN (42, -17) AND (test_table.experiment_ids IS NULL OR char_length(test_table.experiment_ids) = 0 OR test_table.experiment_ids <not regexp> '(^(b|c)$)|(^(b|c),)|(,(b|c)$)|(,(b|c),)') ORDER BY random() LIMIT 3""",
+        where="""test_table.int_col IN (42, -17) AND (test_table.experiment_ids IS NULL OR char_length(test_table.experiment_ids) = 0 OR lower(test_table.experiment_ids) <not regexp> '(^(b|c)$)|(^(b|c),)|(,(b|c)$)|(,(b|c),)') ORDER BY random() LIMIT 3""",
         matches=[ROW_100],
     ),
     # int_col
@@ -203,16 +203,16 @@ FILTER_GENERATION_SUBCASES = [
                 filter_name="experiment_ids", relation=Relation.INCLUDES, value=["a"]
             )
         ],
-        where="""test_table.experiment_ids <regexp> '(^(a)$)|(^(a),)|(,(a)$)|(,(a),)' ORDER BY random() LIMIT 3""",
+        where="""lower(test_table.experiment_ids) <regexp> '(^(a)$)|(^(a),)|(,(a)$)|(,(a),)' ORDER BY random() LIMIT 3""",
         matches=[ROW_100, ROW_200, ROW_300],
     ),
     Case(
         filters=[
             AudienceSpecFilter(
-                filter_name="experiment_ids", relation=Relation.INCLUDES, value=["b"]
+                filter_name="experiment_ids", relation=Relation.INCLUDES, value=["B"]
             )
         ],
-        where="""test_table.experiment_ids <regexp> '(^(b)$)|(^(b),)|(,(b)$)|(,(b),)' ORDER BY random() LIMIT 3""",
+        where="""lower(test_table.experiment_ids) <regexp> '(^(b)$)|(^(b),)|(,(b)$)|(,(b),)' ORDER BY random() LIMIT 3""",
         matches=[ROW_200, ROW_300],
     ),
     Case(
@@ -221,7 +221,7 @@ FILTER_GENERATION_SUBCASES = [
                 filter_name="experiment_ids", relation=Relation.INCLUDES, value=["c"]
             )
         ],
-        where="""test_table.experiment_ids <regexp> '(^(c)$)|(^(c),)|(,(c)$)|(,(c),)' ORDER BY random() LIMIT 3""",
+        where="""lower(test_table.experiment_ids) <regexp> '(^(c)$)|(^(c),)|(,(c)$)|(,(c),)' ORDER BY random() LIMIT 3""",
         matches=[ROW_300],
     ),
     Case(
@@ -230,16 +230,16 @@ FILTER_GENERATION_SUBCASES = [
                 filter_name="experiment_ids", relation=Relation.EXCLUDES, value=["a"]
             )
         ],
-        where="""test_table.experiment_ids IS NULL OR char_length(test_table.experiment_ids) = 0 OR test_table.experiment_ids <not regexp> '(^(a)$)|(^(a),)|(,(a)$)|(,(a),)' ORDER BY random() LIMIT 3""",
+        where="""test_table.experiment_ids IS NULL OR char_length(test_table.experiment_ids) = 0 OR lower(test_table.experiment_ids) <not regexp> '(^(a)$)|(^(a),)|(,(a)$)|(,(a),)' ORDER BY random() LIMIT 3""",
         matches=[],
     ),
     Case(
         filters=[
             AudienceSpecFilter(
-                filter_name="experiment_ids", relation=Relation.EXCLUDES, value=["d"]
+                filter_name="experiment_ids", relation=Relation.EXCLUDES, value=["D"]
             )
         ],
-        where="""test_table.experiment_ids IS NULL OR char_length(test_table.experiment_ids) = 0 OR test_table.experiment_ids <not regexp> '(^(d)$)|(^(d),)|(,(d)$)|(,(d),)' ORDER BY random() LIMIT 3""",
+        where="""test_table.experiment_ids IS NULL OR char_length(test_table.experiment_ids) = 0 OR lower(test_table.experiment_ids) <not regexp> '(^(d)$)|(^(d),)|(,(d)$)|(,(d),)' ORDER BY random() LIMIT 3""",
         matches=[ROW_100, ROW_200, ROW_300],
     ),
     Case(
@@ -250,7 +250,7 @@ FILTER_GENERATION_SUBCASES = [
                 value=["a", "d"],
             )
         ],
-        where="""test_table.experiment_ids <regexp> '(^(a|d)$)|(^(a|d),)|(,(a|d)$)|(,(a|d),)' ORDER BY random() LIMIT 3""",
+        where="""lower(test_table.experiment_ids) <regexp> '(^(a|d)$)|(^(a|d),)|(,(a|d)$)|(,(a|d),)' ORDER BY random() LIMIT 3""",
         matches=[ROW_100, ROW_200, ROW_300],
     ),
     Case(
@@ -261,7 +261,7 @@ FILTER_GENERATION_SUBCASES = [
                 value=["a", "d"],
             )
         ],
-        where="""test_table.experiment_ids IS NULL OR char_length(test_table.experiment_ids) = 0 OR test_table.experiment_ids <not regexp> '(^(a|d)$)|(^(a|d),)|(,(a|d)$)|(,(a|d),)' ORDER BY random() LIMIT 3""",
+        where="""test_table.experiment_ids IS NULL OR char_length(test_table.experiment_ids) = 0 OR lower(test_table.experiment_ids) <not regexp> '(^(a|d)$)|(^(a|d),)|(,(a|d)$)|(,(a|d),)' ORDER BY random() LIMIT 3""",
         matches=[],
     ),
     Case(
@@ -270,7 +270,7 @@ FILTER_GENERATION_SUBCASES = [
                 filter_name="experiment_ids", relation=Relation.INCLUDES, value=["d"]
             )
         ],
-        where="""test_table.experiment_ids <regexp> '(^(d)$)|(^(d),)|(,(d)$)|(,(d),)' ORDER BY random() LIMIT 3""",
+        where="""lower(test_table.experiment_ids) <regexp> '(^(d)$)|(^(d),)|(,(d)$)|(,(d),)' ORDER BY random() LIMIT 3""",
         matches=[],
     ),
     Case(
@@ -279,7 +279,7 @@ FILTER_GENERATION_SUBCASES = [
                 filter_name="experiment_ids", relation=Relation.EXCLUDES, value=["d"]
             )
         ],
-        where="""test_table.experiment_ids IS NULL OR char_length(test_table.experiment_ids) = 0 OR test_table.experiment_ids <not regexp> '(^(d)$)|(^(d),)|(,(d)$)|(,(d),)' ORDER BY random() LIMIT 3""",
+        where="""test_table.experiment_ids IS NULL OR char_length(test_table.experiment_ids) = 0 OR lower(test_table.experiment_ids) <not regexp> '(^(d)$)|(^(d),)|(,(d)$)|(,(d),)' ORDER BY random() LIMIT 3""",
         matches=[ROW_100, ROW_200, ROW_300],
     ),
 ]

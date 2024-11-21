@@ -54,12 +54,12 @@ def create_special_experiment_id_filter(
     matching_regex = make_csv_regex(filter_.value)
     match filter_.relation:
         case Relation.INCLUDES:
-            return col.regexp_match(matching_regex)
+            return func.lower(col).regexp_match(matching_regex)
         case Relation.EXCLUDES:
             return or_(
                 col.is_(None),
                 func.char_length(col) == 0,
-                not_(col.regexp_match(matching_regex)),
+                not_(func.lower(col).regexp_match(matching_regex)),
             )
 
 
@@ -70,7 +70,9 @@ def make_csv_regex(values):
     will support identical syntax.
     """
     value_regexp = (
-        r"(" + r"|".join(re.escape(str(v)) for v in values if v is not None) + r")"
+        r"("
+        + r"|".join(re.escape(str(v).lower()) for v in values if v is not None)
+        + r")"
     )
     return r"(^x$)|(^x,)|(,x$)|(,x,)".replace("x", value_regexp)
 
