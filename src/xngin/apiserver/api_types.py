@@ -86,19 +86,51 @@ class DataTypeClass(enum.StrEnum):
 
 
 class Relation(enum.StrEnum):
-    # INCLUDES matches when the database value matches any of the provided values. For CSV fields
-    # (i.e. experiment_ids), any value in the CSV that matches the provided values will match.
+    """Relation defines the operator to apply in this filter.
+
+    INCLUDES matches when the database value matches any of the provided values. For CSV fields
+    (i.e. experiment_ids), any value in the CSV that matches the provided values will match.
+
+    EXCLUDES matches when the database value does not match any of the provided values. For CSV fields
+    (i.e. experiment_ids), the match will fail if any of the provided values are present in the database value.
+
+    BETWEEN matches when the database value is between the two provided values. Not allowed for CSV fields.
+    """
+
     INCLUDES = "includes"
-
-    # EXCLUDES matches when the database value does not match any of the provided values. For CSV fields
-    # (i.e. experiment_ids), the match will fail if any of the provided values are present in the database value.
     EXCLUDES = "excludes"
-
-    # BETWEEN matches when the database value is between the two provided values. Not allowed for CSV fields.
     BETWEEN = "between"
 
 
 class AudienceSpecFilter(BaseModel):
+    """Defines a filter on the rows in the database.
+
+    ## Examples
+
+    | Relation | Value      | Result                       |
+    |----------|------------|------------------------------|
+    | INCLUDES | ["a"]      | Match when `x IN ("a")`      |
+    | INCLUDES | ["a", "b"] | Match when `x IN ("a", "b")` |
+    | EXCLUDES | ["a","b"]  | Match `x NOT IN ("a", "b")`  |
+
+    String comparisons are case-sensitive.
+
+    ## Special Handling for Comma-Separated Fields
+
+    When the filter name ends in "experiment_ids", the filter is interpreted as follows:
+
+    | Value | Filter         | Result   |
+    |-------|----------------|----------|
+    | "a,b" | INCLUDES ["a"] | Match    |
+    | "a,b" | INCLUDES ["d"] | No match |
+    | "a,b" | EXCLUDES ["d"] | Match    |
+    | "a,b" | EXCLUDES ["b"] | No match |
+
+    Note: The BETWEEN relation is not supported for comma-separated values.
+
+    Note: CSV field comparisons are case-insensitive.
+    """
+
     # TODO(qixotic): rename this to column_name?
     filter_name: str
     relation: Relation
