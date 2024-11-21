@@ -1,4 +1,4 @@
-GET http://localhost:8000/filters?unit_type=test_unit_type
+GET http://localhost:8000/filters?participant_type=test_participant_type
 Config-ID: testing
 HTTP 200
 ```json

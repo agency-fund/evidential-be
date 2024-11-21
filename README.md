@@ -72,8 +72,8 @@ Follow the steps below to get a local development environment running.
    and local dev, use `testing`.
 
    ```shell
-   curl -H "Config-ID: testing" 'http://localhost:8000/filters?unit_type=test_unit_type'
-   curl -H "Config-ID: testing" 'http://localhost:8000/strata?unit_type=test_unit_type'
+   curl -H "Config-ID: testing" 'http://localhost:8000/filters?participant_type=test_participant_type'
+   curl -H "Config-ID: testing" 'http://localhost:8000/strata?participant_type=test_participant_type'
    ```
 
    Also see [apitest.strata.hurl](src/xngin/apiserver/testdata/apitest.strata.hurl) for a complete example of how to

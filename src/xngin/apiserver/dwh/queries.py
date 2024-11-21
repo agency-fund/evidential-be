@@ -21,9 +21,11 @@ def get_dwh_participants(
     * _latest hack (why: not sure what it is)
     * unpacking experiment_ids into a list
     """
-    unit_type = audience_spec.type
-    with config.dbsession(unit_type) as session:
-        sa_table = get_sqlalchemy_table_from_engine(session.get_bind(), unit_type)
+    participant_type = audience_spec.participant_type
+    with config.dbsession(participant_type) as session:
+        sa_table = get_sqlalchemy_table_from_engine(
+            session.get_bind(), participant_type
+        )
         # TODO: sheetconfig contains the assumptions that the experiment designers have
         # made about the data warehouse table. We should compare that data against the
         # actual schema to ensure that the comparators will behave as expected.

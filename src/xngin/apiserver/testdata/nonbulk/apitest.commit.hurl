@@ -32,7 +32,7 @@ Config-ID: customer-test
     ]
   },
   "audience_spec": {
-    "type": "groups",
+    "participant_type": "groups",
     "filters": [
       {
         "filter_name": "onboarded",

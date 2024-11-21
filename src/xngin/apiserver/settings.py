@@ -57,12 +57,13 @@ class UnitsMixin(BaseModel):
 
     units: list[Unit]
 
-    def find_unit(self, unit_type: str):
+    def find_unit(self, participant_type: str):
         found = next(
-            (u for u in self.units if u.table_name.lower() == unit_type.lower()), None
+            (u for u in self.units if u.table_name.lower() == participant_type.lower()),
+            None,
         )
         if found is None:
-            raise CannotFindUnitException(unit_type)
+            raise CannotFindUnitException(participant_type)
         return found
 
 
@@ -131,7 +132,7 @@ class WebhookMixin(BaseModel):
 class RocketLearningConfig(UnitsMixin, WebhookMixin, BaseModel):
     """
 
-    TODO: implement dbsession(self, unit_type)
+    TODO: implement dbsession(self, participant_type)
     """
 
     type: Literal["customer"]
@@ -140,8 +141,8 @@ class RocketLearningConfig(UnitsMixin, WebhookMixin, BaseModel):
     api_host: str
     api_token: SecretStr
 
-    def to_sqlalchemy_url_and_table(self, unit_type: str) -> SqlalchemyAndTable:
-        unit = self.find_unit(unit_type)
+    def to_sqlalchemy_url_and_table(self, participant_type: str) -> SqlalchemyAndTable:
+        unit = self.find_unit(participant_type)
         return SqlalchemyAndTable(
             sqlalchemy_url=str(
                 sqlalchemy.URL.create(
@@ -162,9 +163,9 @@ class SqliteLocalConfig(UnitsMixin, BaseModel):
     type: Literal["sqlite_local"]
     sqlite_filename: str
 
-    def to_sqlalchemy_url_and_table(self, unit_type: str) -> SqlalchemyAndTable:
+    def to_sqlalchemy_url_and_table(self, participant_type: str) -> SqlalchemyAndTable:
         """Returns a tuple of SQLAlchemy URL and a table name."""
-        unit = self.find_unit(unit_type)
+        unit = self.find_unit(participant_type)
         return SqlalchemyAndTable(
             sqlalchemy_url=str(
                 sqlalchemy.URL.create(
@@ -176,14 +177,16 @@ class SqliteLocalConfig(UnitsMixin, BaseModel):
             table_name=unit.table_name,
         )
 
-    def dbsession(self, unit_type: str):
+    def dbsession(self, participant_type: str):
         """Returns a Session to be used to send queries to the customer database.
 
         Use this in a `with` block to ensure correct transaction handling. If you need the
         sqlalchemy Engine, call .get_bind().
         """
         return Session(
-            sqlite_connect(self.to_sqlalchemy_url_and_table(unit_type).sqlalchemy_url)
+            sqlite_connect(
+                self.to_sqlalchemy_url_and_table(participant_type).sqlalchemy_url
+            )
         )
 
 
