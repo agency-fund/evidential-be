@@ -111,7 +111,7 @@ def test_commit(mocker):
         hurl.method, hurl.url, headers=hurl.headers, content=hurl.body
     )
 
-    assert response.status_code == 200
+    assert response.status_code == 200, response.text
     # Assert that httpx.AsyncClient.post was called with the correct arguments
     mock_request.assert_called_once()
     _, kwargs = mock_request.call_args
@@ -143,7 +143,7 @@ def test_commit_when_webhook_has_non_200_status(mocker):
     )
 
     # Assert that downsream errors result in a 502 bad gateway error.
-    assert response.status_code == 502
+    assert response.status_code == 502, response.text
     mock_request.assert_called_once()
     _, kwargs = mock_request.call_args
     assert kwargs["method"] == "post"
@@ -179,7 +179,7 @@ def test_update_experiment_timestamps(mocker):
         hurl.method, hurl.url, headers=hurl.headers, content=hurl.body
     )
 
-    assert response.status_code == 200
+    assert response.status_code == 200, response.text
     # Now check that the right action was used given our update_type
     mock_request.assert_called_once()
     _, kwargs = mock_request.call_args
