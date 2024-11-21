@@ -71,7 +71,9 @@ def get_sqlalchemy_table(sqlat: SqlalchemyAndTable):
 def bootstrap_testing_dwh(
     src: Path = testing_dwh.TESTING_DWH_RAW_DATA,
     dest: Path = testing_dwh.TESTING_DWH_SQLITE_PATH,
-    force: bool = False,
+    force: Annotated[
+        bool, typer.Option(help="Forcibly recreate the testing database.")
+    ] = False,
 ):
     """Bootstraps the local testing data warehouse."""
     testing_dwh.create_dwh_sqlite_database(src, dest, force=force)
