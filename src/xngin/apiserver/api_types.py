@@ -86,8 +86,15 @@ class DataTypeClass(enum.StrEnum):
 
 
 class Relation(enum.StrEnum):
+    # INCLUDES matches when the database value matches any of the provided values. For CSV fields
+    # (i.e. experiment_ids), any value in the CSV that matches the provided values will match.
     INCLUDES = "includes"
+
+    # EXCLUDES matches when the database value does not match any of the provided values. For CSV fields
+    # (i.e. experiment_ids), the match will fail if any of the provided values are present in the database value.
     EXCLUDES = "excludes"
+
+    # BETWEEN matches when the database value is between the two provided values. Not allowed for CSV fields.
     BETWEEN = "between"
 
 
