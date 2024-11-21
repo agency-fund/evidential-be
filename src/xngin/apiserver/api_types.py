@@ -13,6 +13,8 @@ from pydantic import (
     field_serializer,
 )
 
+EXPERIMENT_IDS_SUFFIX = "experiment_ids"
+
 
 class DataType(enum.StrEnum):
     BOOLEAN = "boolean"
@@ -105,6 +107,29 @@ class AudienceSpecFilter(BaseModel):
         if not re.match(r"^[a-zA-Z_][a-zA-Z0-9_]*$", v):
             raise ValueError("filter_name must be a valid SQL column name")
         return v
+
+    @model_validator(mode="after")
+    def ensure_experiment_ids_hack_compatible(self) -> "AudienceSpecFilter":
+        """Ensures that the filter is compatible with the "experiment_ids" hack."""
+        if not self.filter_name.endswith(EXPERIMENT_IDS_SUFFIX):
+            return self
+        allowed_relations = (Relation.INCLUDES, Relation.EXCLUDES)
+        if self.relation not in allowed_relations:
+            raise ValueError(
+                f"filters on experiment_id fields must have relations of type {', '.join(sorted(allowed_relations))}"
+            )
+        for v in self.value:
+            if not isinstance(v, str):
+                continue
+            if "," in v:
+                raise ValueError(
+                    "values in an experiment_id filter may not contain commas"
+                )
+            if v.strip() != v:
+                raise ValueError(
+                    "values in an experiment_id filter may not contain leading or trailing whitespace"
+                )
+        return self
 
     @model_validator(mode="after")
     def ensure_value(self) -> "AudienceSpecFilter":

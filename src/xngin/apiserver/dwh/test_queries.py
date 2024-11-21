@@ -1,12 +1,18 @@
 """Stand-alone test cases for basic dynamic query generation."""
 
+import re
+
 import pytest
 from sqlalchemy import create_engine, Column, Integer, Float, Boolean, String
 from sqlalchemy.orm import declarative_base, Session
 from dataclasses import dataclass
 
 from xngin.apiserver.api_types import AudienceSpec, Relation, AudienceSpecFilter
-from xngin.apiserver.dwh.queries import compose_query, create_filters
+from xngin.apiserver.dwh.queries import (
+    compose_query,
+    create_filters,
+    make_csv_regex,
+)
 
 Base = declarative_base()
 
@@ -19,6 +25,7 @@ class SampleTable(Base):
     float_col = Column(Float, nullable=False)
     bool_col = Column(Boolean, nullable=False)
     string_col = Column(String, nullable=False)
+    experiment_ids = Column(String, nullable=False)
 
 
 @dataclass
@@ -28,12 +35,32 @@ class Data:
     float_col: float
     bool_col: bool
     string_col: str
+    experiment_ids: str
 
 
-ROW_100 = Data(id=100, int_col=42, float_col=3.14, bool_col=True, string_col="hello")
-ROW_200 = Data(id=200, int_col=-17, float_col=2.718, bool_col=False, string_col="world")
+ROW_100 = Data(
+    id=100,
+    int_col=42,
+    float_col=3.14,
+    bool_col=True,
+    string_col="hello",
+    experiment_ids="a",
+)
+ROW_200 = Data(
+    id=200,
+    int_col=-17,
+    float_col=2.718,
+    bool_col=False,
+    string_col="world",
+    experiment_ids="a,b",
+)
 ROW_300 = Data(
-    id=300, int_col=100, float_col=1.618, bool_col=True, string_col="goodbye"
+    id=300,
+    int_col=100,
+    float_col=1.618,
+    bool_col=True,
+    string_col="goodbye",
+    experiment_ids="a,b,c",
 )
 SAMPLE_TABLE_ROWS = [
     ROW_100,
@@ -62,7 +89,7 @@ def test_compose_query_with_no_filters(db_session):
     q = compose_query(db_session, SampleTable, 2, [])
     sql = str(q.statement.compile(compile_kwargs={"literal_binds": True}))
     assert sql.replace("\n", "") == (
-        """SELECT test_table.id, test_table.int_col, test_table.float_col, test_table.bool_col, test_table.string_col """
+        """SELECT test_table.id, test_table.int_col, test_table.float_col, test_table.bool_col, test_table.string_col, test_table.experiment_ids """
         """FROM test_table ORDER BY random() LIMIT 2"""
     )
 
@@ -70,10 +97,15 @@ def test_compose_query_with_no_filters(db_session):
 @dataclass
 class Case:
     filters: list[AudienceSpecFilter]
-    expected_query: str
+    expected: str
     expected_ids: list[int]
     chosen_n: int = 3
 
+
+EXPECTED_PREAMBLE = (
+    """SELECT test_table.id, test_table.int_col, test_table.float_col, test_table.bool_col, test_table.string_col, test_table.experiment_ids """
+    """FROM test_table """
+)
 
 FILTER_GENERATION_SUBCASES = [
     # int_col
@@ -85,9 +117,7 @@ FILTER_GENERATION_SUBCASES = [
                 value=[ROW_100.int_col],
             )
         ],
-        expected_query=(
-            """SELECT test_table.id, test_table.int_col, test_table.float_col, test_table.bool_col, test_table.string_col """
-            """FROM test_table """
+        expected=(
             """WHERE test_table.int_col IN (42) """
             """ORDER BY random() LIMIT 3"""
         ),
@@ -99,9 +129,7 @@ FILTER_GENERATION_SUBCASES = [
                 filter_name="int_col", relation=Relation.BETWEEN, value=[-17, 42]
             )
         ],
-        expected_query=(
-            """SELECT test_table.id, test_table.int_col, test_table.float_col, test_table.bool_col, test_table.string_col """
-            """FROM test_table """
+        expected=(
             """WHERE test_table.int_col BETWEEN -17 AND 42 """
             """ORDER BY random() LIMIT 3"""
         ),
@@ -115,9 +143,7 @@ FILTER_GENERATION_SUBCASES = [
                 value=[ROW_100.int_col],
             )
         ],
-        expected_query=(
-            """SELECT test_table.id, test_table.int_col, test_table.float_col, test_table.bool_col, test_table.string_col """
-            """FROM test_table """
+        expected=(
             """WHERE test_table.int_col IS NULL OR (test_table.int_col NOT IN (42)) """
             """ORDER BY random() LIMIT 3"""
         ),
@@ -130,13 +156,88 @@ FILTER_GENERATION_SUBCASES = [
                 filter_name="float_col", relation=Relation.BETWEEN, value=[2, 3]
             )
         ],
-        expected_query=(
-            """SELECT test_table.id, test_table.int_col, test_table.float_col, test_table.bool_col, test_table.string_col """
-            """FROM test_table """
+        expected=(
             """WHERE test_table.float_col BETWEEN 2 AND 3 """
             """ORDER BY random() LIMIT 3"""
         ),
         expected_ids=[ROW_200.id],
+    ),
+    # regexp hacks
+    Case(
+        filters=[
+            AudienceSpecFilter(
+                filter_name="experiment_ids", relation=Relation.INCLUDES, value=["a"]
+            )
+        ],
+        expected="""WHERE test_table.experiment_ids <regexp> '(^(a)$)|(^(a),)|(,(a)$)|(,(a),)' ORDER BY random() LIMIT 3""",
+        expected_ids=[ROW_100.id, ROW_200.id, ROW_300.id],
+    ),
+    Case(
+        filters=[
+            AudienceSpecFilter(
+                filter_name="experiment_ids", relation=Relation.INCLUDES, value=["b"]
+            )
+        ],
+        expected="""WHERE test_table.experiment_ids <regexp> '(^(b)$)|(^(b),)|(,(b)$)|(,(b),)' ORDER BY random() LIMIT 3""",
+        expected_ids=[ROW_200.id, ROW_300.id],
+    ),
+    Case(
+        filters=[
+            AudienceSpecFilter(
+                filter_name="experiment_ids", relation=Relation.INCLUDES, value=["c"]
+            )
+        ],
+        expected="""WHERE test_table.experiment_ids <regexp> '(^(c)$)|(^(c),)|(,(c)$)|(,(c),)' ORDER BY random() LIMIT 3""",
+        expected_ids=[ROW_300.id],
+    ),
+    Case(
+        filters=[
+            AudienceSpecFilter(
+                filter_name="experiment_ids", relation=Relation.EXCLUDES, value=["a"]
+            )
+        ],
+        expected="""WHERE test_table.experiment_ids IS NULL OR char_length(test_table.experiment_ids) = 0 OR test_table.experiment_ids <not regexp> '(^(a)$)|(^(a),)|(,(a)$)|(,(a),)' ORDER BY random() LIMIT 3""",
+        expected_ids=[],
+    ),
+    Case(
+        filters=[
+            AudienceSpecFilter(
+                filter_name="experiment_ids",
+                relation=Relation.INCLUDES,
+                value=["a", "d"],
+            )
+        ],
+        expected="""WHERE test_table.experiment_ids <regexp> '(^(a|d)$)|(^(a|d),)|(,(a|d)$)|(,(a|d),)' ORDER BY random() LIMIT 3""",
+        expected_ids=[ROW_100.id, ROW_200.id, ROW_300.id],
+    ),
+    Case(
+        filters=[
+            AudienceSpecFilter(
+                filter_name="experiment_ids",
+                relation=Relation.EXCLUDES,
+                value=["a", "d"],
+            )
+        ],
+        expected="""WHERE test_table.experiment_ids IS NULL OR char_length(test_table.experiment_ids) = 0 OR test_table.experiment_ids <not regexp> '(^(a|d)$)|(^(a|d),)|(,(a|d)$)|(,(a|d),)' ORDER BY random() LIMIT 3""",
+        expected_ids=[],
+    ),
+    Case(
+        filters=[
+            AudienceSpecFilter(
+                filter_name="experiment_ids", relation=Relation.INCLUDES, value=["d"]
+            )
+        ],
+        expected="""WHERE test_table.experiment_ids <regexp> '(^(d)$)|(^(d),)|(,(d)$)|(,(d),)' ORDER BY random() LIMIT 3""",
+        expected_ids=[],
+    ),
+    Case(
+        filters=[
+            AudienceSpecFilter(
+                filter_name="experiment_ids", relation=Relation.EXCLUDES, value=["d"]
+            )
+        ],
+        expected="""WHERE test_table.experiment_ids IS NULL OR char_length(test_table.experiment_ids) = 0 OR test_table.experiment_ids <not regexp> '(^(d)$)|(^(d),)|(,(d)$)|(,(d),)' ORDER BY random() LIMIT 3""",
+        expected_ids=[ROW_100.id, ROW_200.id, ROW_300.id],
     ),
 ]
 
@@ -155,6 +256,38 @@ def test_compose_query(testcase, db_session):
         ),
     )
     q = compose_query(db_session, SampleTable, testcase.chosen_n, filters)
-    sql = str(q.statement.compile(compile_kwargs={"literal_binds": True}))
-    assert sql.replace("\n", "") == testcase.expected_query
+    sql = str(q.statement.compile(compile_kwargs={"literal_binds": True})).replace(
+        "\n", ""
+    )
+    assert sql.startswith(EXPECTED_PREAMBLE)
+    sql = sql[len(EXPECTED_PREAMBLE) :]
+    assert sql == testcase.expected
     assert list(sorted([r.id for r in q.all()])) == list(sorted(testcase.expected_ids))
+
+
+REGEX_TESTS = [
+    ("", ["a"], False),
+    ("a", [""], False),
+    ("a", ["a"], True),
+    ("a,b", ["a"], True),
+    ("b,a", ["a"], True),
+    ("b,a", ["a", "b"], True),
+    ("b,a", ["b", "a"], True),
+    ("b,a", ["b", ""], True),
+    ("c,a,b,d", ["a"], True),
+]
+
+
+@pytest.mark.parametrize("csv,values,expected", REGEX_TESTS)
+def test_make_csv_regex(csv, values, expected):
+    """Tests for the regular expression, generated in isolation of the database stack.
+
+    Null-, empty string, and negative cases are special and handled in SQL elsewhere.
+    """
+    r = make_csv_regex(values)
+    # confirmed that sqlalchemy.dialects.sqlite.pysqlite also uses re.search
+    matches = re.search(r, csv)
+    actual = matches is not None
+    assert actual == expected, (
+        f'Expression {r} is expected to {"match" if expected else "not match"} in "{csv}". Values = {values}. Matches = {matches}.'
+    )
