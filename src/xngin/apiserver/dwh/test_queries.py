@@ -1,12 +1,19 @@
 """Stand-alone test cases for basic dynamic query generation."""
 
-import pytest
-from sqlalchemy import create_engine, Column, Integer, Float, Boolean, String
-from sqlalchemy.orm import declarative_base, Session
+import math
 from dataclasses import dataclass
 
+import pytest
+from sqlalchemy import create_engine, Column, Integer, Float, Boolean, String, event
+from sqlalchemy.orm import declarative_base, Session
+
 from xngin.apiserver.api_types import AudienceSpec, Relation, AudienceSpecFilter
-from xngin.apiserver.dwh.queries import compose_query, create_filters
+from xngin.sqlite_extensions.custom_functions import NumpyStddev
+from xngin.apiserver.dwh.queries import (
+    compose_query,
+    create_filters,
+    query_baseline_for_metrics,
+)
 
 Base = declarative_base()
 
@@ -46,6 +53,11 @@ SAMPLE_TABLE_ROWS = [
 def db_session():
     """Creates an in-memory SQLite database with test data."""
     engine = create_engine("sqlite:///:memory:", echo=False)
+
+    @event.listens_for(engine, "connect")
+    def register_sqlite_functions(dbapi_connection, _):
+        NumpyStddev.register(dbapi_connection)
+
     Base.metadata.create_all(engine)
     session = Session(engine)
     for data in SAMPLE_TABLE_ROWS:
@@ -158,3 +170,27 @@ def test_compose_query(testcase, db_session):
     sql = str(q.statement.compile(compile_kwargs={"literal_binds": True}))
     assert sql.replace("\n", "") == testcase.expected_query
     assert list(sorted([r.id for r in q.all()])) == list(sorted(testcase.expected_ids))
+
+
+def test_query_baseline_metrics(db_session):
+    table = Base.metadata.tables.get(SampleTable.__tablename__)
+    row = query_baseline_for_metrics(
+        db_session,
+        table,
+        ["int_col", "float_col"],
+        AudienceSpec(
+            participant_type="ignored",
+            filters=[],
+        ),
+    )[0]._mapping
+    expected = {
+        "float_col__metric_count": 3,
+        "float_col__metric_mean": 2.492,
+        "float_col__metric_sd": 0.7857658684366482,
+        "int_col__metric_count": 3,
+        "int_col__metric_mean": 41.666666666666664,
+        "int_col__metric_sd": 58.500712246376395,
+    }
+    assert set(row.keys()) == expected.keys()
+    for k, v in expected.items():
+        assert math.isclose(row[k], v), (k, row[k], v)

@@ -1,14 +1,49 @@
 import sqlalchemy
-from sqlalchemy import or_, func, ColumnOperators, Table
+from sqlalchemy import or_, func, ColumnOperators, Table, select
 from sqlalchemy.orm import Session
 
 from xngin.apiserver.api_types import AudienceSpec, Relation, AudienceSpecFilter
 from xngin.apiserver.settings import ClientConfigType, get_sqlalchemy_table_from_engine
 
 
-def get_metric_meta(metrics: list[str], audience_spec: AudienceSpec):
-    # Implement logic to get metric metadata
-    raise NotImplementedError()
+def get_metric_meta(
+    config: ClientConfigType, metric_names: list[str], audience_spec: AudienceSpec
+):
+    """WIP for get_metric_meta.
+
+    TODO: adjust parameters to be appropriate for being called from /power. E.g. we should accept a session, not a
+    config.
+
+    TODO: get metric_names from the config data rather than as a method argument.
+    """
+    participant_type = audience_spec.participant_type
+    with config.dbsession(participant_type) as session:
+        sa_table = get_sqlalchemy_table_from_engine(
+            session.get_bind(), participant_type
+        )
+        baseline = query_baseline_for_metrics(
+            session, sa_table, metric_names, audience_spec
+        )
+        # TODO: metric_meta?
+        return (baseline,)
+
+
+def query_baseline_for_metrics(
+    session, sa_table: Table, metric_names: list[str], audience_spec: AudienceSpec
+):
+    metric_columns = []
+    for metric in sorted(metric_names):
+        col = sa_table.c[metric]
+        # Note: R code used . as separator; that causes pain with JSON and would require quoting in SQL so we use
+        # double underscores instead.
+        mean = func.avg(col).label(f"{metric}__metric_mean")
+        stddev = func.stddev(col).label(f"{metric}__metric_sd")
+        available_n = func.count(col).label(f"{metric}__metric_count")
+        metric_columns.extend((mean, stddev, available_n))
+    query = select(*metric_columns)
+    filters = create_filters(sa_table, audience_spec)
+    query = query.filter(*filters)
+    return session.execute(query).all()
 
 
 def get_dwh_participants(
@@ -34,6 +69,7 @@ def get_dwh_participants(
         return query.all()
 
 
+# TODO: rename for clarity
 def create_filters(sa_table: sqlalchemy.Table, audience_spec: AudienceSpec):
     """Converts an AudienceSpec into a list of SQLAlchemy filters."""
     return [
