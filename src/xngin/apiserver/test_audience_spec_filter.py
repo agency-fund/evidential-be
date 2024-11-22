@@ -95,3 +95,32 @@ def test_empty_value_list():
     for relation in (Relation.INCLUDES, Relation.EXCLUDES):
         with pytest.raises(ValidationError, match="value must be a non-empty list"):
             AudienceSpecFilter(filter_name="col", relation=relation, value=[])
+
+
+EXPERIMENT_IDS_FILTER_BAD = [
+    (Relation.BETWEEN, ["a", "b"], "must have relations of type excludes, includes"),
+    (Relation.INCLUDES, ["a,b", "b"], "commas"),
+    (Relation.INCLUDES, [" a", "b"], "whitespace"),
+]
+
+
+@pytest.mark.parametrize("relation,value,descr", EXPERIMENT_IDS_FILTER_BAD)
+def test_experiment_ids_hack_validators_invalid(relation, value, descr):
+    with pytest.raises(ValidationError, match=descr):
+        print(
+            AudienceSpecFilter(
+                filter_name="_experiment_ids", relation=relation, value=value
+            )
+        )
+
+
+EXPERIMENT_IDS_FILTER_GOOD = [
+    (Relation.INCLUDES, ["ab", "b"], "strings"),
+    (Relation.INCLUDES, ["ab", None], "None"),
+    (Relation.EXCLUDES, ["a"], "mixed"),
+]
+
+
+@pytest.mark.parametrize("relation,value,descr", EXPERIMENT_IDS_FILTER_GOOD)
+def test_experiment_ids_hack_validators_valid(relation, value, descr):
+    AudienceSpecFilter(filter_name="_experiment_ids", relation=relation, value=value)
