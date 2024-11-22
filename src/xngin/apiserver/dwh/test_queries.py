@@ -186,10 +186,10 @@ def test_query_baseline_metrics(db_session):
     expected = {
         "float_col__metric_count": 3,
         "float_col__metric_mean": 2.492,
-        "float_col__metric_sd": 0.7857658684366482,
+        "float_col__metric_sd": 0.6415751449882287,
         "int_col__metric_count": 3,
         "int_col__metric_mean": 41.666666666666664,
-        "int_col__metric_sd": 58.500712246376395,
+        "int_col__metric_sd": 47.76563153100307,
     }
     assert set(row.keys()) == expected.keys()
     for k, v in expected.items():

@@ -2,7 +2,7 @@ import numpy as np
 
 
 class NumpyStddev:
-    """SQLite extension function to compute the standard deviation using numpy.
+    """SQLite extension function to compute the standard deviation (population) using numpy.
 
     Register with:
     ```
@@ -24,7 +24,7 @@ class NumpyStddev:
             self.values.append(float(value))
 
     def finalize(self):
-        return float(np.std(self.values, ddof=1)) if self.values else None
+        return float(np.std(self.values, ddof=0)) if self.values else None
 
     @classmethod
     def register(cls, dbapi_connection):
