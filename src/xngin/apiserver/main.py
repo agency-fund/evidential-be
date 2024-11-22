@@ -23,7 +23,6 @@ from xngin.apiserver.api_types import (
     GetMetricsResponseElement,
     GetPowerResponse,
     GetPowerResponseElement,
-    MetricType,
 )
 from xngin.apiserver.dependencies import (
     httpx_dependency,
@@ -31,7 +30,7 @@ from xngin.apiserver.dependencies import (
     config_dependency,
     gsheet_cache,
 )
-from xngin.apiserver.dwh.queries import get_metric_meta_column_stats
+from xngin.apiserver.dwh.queries import get_stats_on_metrics
 from xngin.apiserver.gsheet_cache import GSheetCache
 from xngin.apiserver.settings import (
     WebhookConfig,
@@ -277,7 +276,7 @@ def check_power(
         sa_table = get_sqlalchemy_table_from_engine(
             session.get_bind(), participant_type
         )
-        stats = get_metric_meta_column_stats(
+        metric_stats = get_stats_on_metrics(
             session,
             sa_table,
             list(dsm.metric_name for dsm in design_spec.metrics),
@@ -285,17 +284,17 @@ def check_power(
         )
         return [
             GetPowerResponseElement(
-                metric_name=stat.metric,
+                metric_name=metric_stat.metric,
                 metric_pct_change=0.0,  # TODO
-                metric_type=MetricType.CONTINUOUS,  # TODO(dctaf)
-                stats=stat.stats,  # TODO
+                metric_type=metric_stat.metric_type,
+                stats=metric_stat.stats,  # TODO
                 metric_target=0,  # TODO
                 target_n=0,  # TODO
                 sufficient_n=False,  # TODO
                 needed_target=None,  # TODO
                 msg="hello",  # TODO
             )
-            for stat in stats
+            for metric_stat in metric_stats
         ]
 
 

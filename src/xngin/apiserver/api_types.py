@@ -332,8 +332,21 @@ type GetPowerResponse = list[GetPowerResponseElement]
 
 
 class MetricType(enum.StrEnum):
-    CONTINUOUS = "continuous"
     BINARY = "binary"
+    CHARACTER = "character"
+    CONTINUOUS = "continuous"
+
+    @classmethod
+    def from_python_type(cls, python_type: type) -> "MetricType":
+        """Given a Python type, return an appropriate MetricType."""
+
+        if python_type is str:
+            return MetricType.CHARACTER
+        if python_type in (int, float):
+            return MetricType.CONTINUOUS
+        if python_type is bool:
+            return MetricType.BINARY
+        raise ValueError(f"Unsupported type: {python_type}")
 
 
 class Stats(BaseModel):
