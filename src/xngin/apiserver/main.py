@@ -21,6 +21,7 @@ from xngin.apiserver.api_types import (
     GetStrataResponseElement,
     GetFiltersResponseElement,
     GetMetricsResponseElement,
+    GetPowerResponse,
 )
 from xngin.apiserver.dependencies import (
     httpx_dependency,
@@ -28,6 +29,7 @@ from xngin.apiserver.dependencies import (
     config_dependency,
     gsheet_cache,
 )
+from xngin.apiserver.dwh.queries import query_baseline_for_metrics
 from xngin.apiserver.gsheet_cache import GSheetCache
 from xngin.apiserver.settings import (
     WebhookConfig,
@@ -252,16 +254,29 @@ def get_metrics(
 @app.post(
     "/power",
     summary="Check power given an experiment and audience specification.",
-    response_model=UnimplementedResponse,
     tags=["Experiment Design"],
 )
 def check_power(
     design_spec: DesignSpec,
     audience_spec: AudienceSpec,
     client: Annotated[ClientConfig | None, Depends(config_dependency)] = None,
-):
-    # Implement power calculation logic
-    return UnimplementedResponse()
+) -> GetPowerResponse:
+    config = require_config(client)
+
+    # TODO(roboton): Implement power calculation logic. This is just a placeholder.
+    participant_type = audience_spec.participant_type
+    with config.dbsession(participant_type) as session:
+        sa_table = get_sqlalchemy_table_from_engine(
+            session.get_bind(), participant_type
+        )
+        baseline = query_baseline_for_metrics(
+            session,
+            sa_table,
+            [dsm.metric_name for dsm in design_spec.metrics],
+            audience_spec,
+        )
+
+    return GetPowerResponse(wip_baseline=baseline)
 
 
 @app.post(

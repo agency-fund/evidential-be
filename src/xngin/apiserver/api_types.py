@@ -243,3 +243,9 @@ class GetMetricsResponseElement(BaseModel):
     data_type: DataType
     column_name: str
     description: str
+
+
+class GetPowerResponse(BaseModel):
+    """Response for the /power endpoint."""
+
+    wip_baseline: dict  # TODO
