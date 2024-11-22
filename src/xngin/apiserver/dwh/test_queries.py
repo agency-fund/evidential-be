@@ -7,14 +7,20 @@ import pytest
 from sqlalchemy import create_engine, Column, Integer, Float, Boolean, String, event
 from sqlalchemy.orm import declarative_base, Session
 
-from xngin.apiserver.api_types import AudienceSpec, Relation, AudienceSpecFilter
+from xngin.apiserver.api_types import (
+    AudienceSpec,
+    Relation,
+    AudienceSpecFilter,
+    MetricType,
+    Stats,
+)
 from xngin.sqlite_extensions.custom_functions import NumpyStddev
 from xngin.apiserver.dwh.queries import (
     compose_query,
     create_filters,
-    get_metric_meta_column_stats,
+    get_stats_on_metrics,
     make_csv_regex,
-    GetMetricMetaColumnStatsOut,
+    MetricStats,
 )
 
 Base = declarative_base()
@@ -348,29 +354,35 @@ def test_make_csv_regex(csv, values, expected):
 
 def test_query_baseline_metrics(db_session):
     table = Base.metadata.tables.get(SampleTable.__tablename__)
-    row = get_metric_meta_column_stats(
+    row = get_stats_on_metrics(
         db_session,
         table,
-        ["int_col", "float_col"],
+        ["int_col", "bool_col", "float_col"],
         AudienceSpec(
             participant_type="ignored",
             filters=[],
         ),
     )
-    # hack hack
     expected = [
-        GetMetricMetaColumnStatsOut.model_validate({
-            "metric": "float_col",
-            "stats": {"mean": 2.492, "stddev": 0.6415751449882287, "available_n": 3},
-        }),
-        GetMetricMetaColumnStatsOut.model_validate({
-            "metric": "int_col",
-            "stats": {
-                "mean": 41.666666666666664,
-                "stddev": 47.76563153100307,
-                "available_n": 3,
-            },
-        }),
+        MetricStats(
+            metric="bool_col",
+            metric_type=MetricType.BINARY,
+            stats=Stats(
+                mean=0.6666666666666666, stddev=0.4714045207910317, available_n=3
+            ),
+        ),
+        MetricStats(
+            metric_type=MetricType.CONTINUOUS,
+            metric="float_col",
+            stats=Stats(mean=2.492, stddev=0.6415751449882287, available_n=3),
+        ),
+        MetricStats(
+            metric="int_col",
+            metric_type=MetricType.CONTINUOUS,
+            stats=Stats(
+                mean=41.666666666666664, stddev=47.76563153100307, available_n=3
+            ),
+        ),
     ]
-    assert row == expected
     # TODO: use float safe comparison
+    assert row == expected

@@ -11,12 +11,10 @@ from xngin.apiserver.api_types import (
     AudienceSpecFilter,
     EXPERIMENT_IDS_SUFFIX,
     Stats,
+    MetricType,
 )
 from xngin.apiserver.settings import ClientConfigType, get_sqlalchemy_table_from_engine
 from xngin.sqlite_extensions import custom_functions
-
-
-# from xngin.sqlite_extensions import custom_functions
 
 
 def get_metric_meta():
@@ -24,34 +22,35 @@ def get_metric_meta():
     pass
 
 
-class GetMetricMetaColumnStatsOut(BaseModel):
+class MetricStats(BaseModel):
     metric: str
+    metric_type: MetricType
     stats: Stats
 
 
-def get_metric_meta_column_stats(
+def get_stats_on_metrics(
     session, sa_table: Table, metric_names: list[str], audience_spec: AudienceSpec
-):
-    """TODO: WIP for column metadata"""
+) -> list[MetricStats]:
     metric_columns = []
     metric_names = sorted(metric_names)
     for metric in metric_names:
         col = sa_table.c[metric]
-        # Note: R code used . as separator; that causes pain with JSON and would require quoting in SQL so we use
-        # double underscores instead.
-        mean = func.avg(col).label(f"{metric}__mean")
-        stddev = custom_functions.stddev_pop(col).label(f"{metric}__sd")
         # TODO(roboton): consider whether mitigations for null are important
-        available_n = func.count(col).label(f"{metric}__count")
-        # TODO: column type: binary or continuous
-        metric_columns.extend((mean, stddev, available_n))
+        metric_columns.extend((
+            func.avg(col).label(f"{metric}__mean"),
+            custom_functions.stddev_pop(col).label(f"{metric}__sd"),
+            func.count(col).label(f"{metric}__count"),
+        ))
     query = select(*metric_columns)
     filters = create_filters(sa_table, audience_spec)
     query = query.filter(*filters)
-    stats = session.execute(query).fetchone()._mapping
+    stats = session.execute(query).mappings().fetchone()
     return [
-        GetMetricMetaColumnStatsOut(
+        MetricStats(
             metric=metric,
+            metric_type=MetricType.from_python_type(
+                sa_table.c[metric].type.python_type
+            ),
             stats=Stats(
                 mean=stats[f"{metric}__mean"],
                 stddev=stats[f"{metric}__sd"],
