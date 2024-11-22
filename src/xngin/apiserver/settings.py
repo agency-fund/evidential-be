@@ -45,28 +45,32 @@ class SheetRef(BaseModel):
     worksheet: str
 
 
-class Unit(BaseModel):
-    """Units are a logical representation of a table in the data warehouse.
+class Participant(BaseModel):
+    """Participants are a logical representation of a table in the data warehouse.
 
-    Units are defined by a table_name and a configuration worksheet.
+    Participants are defined by a table_name and a configuration worksheet.
     """
 
     table_name: str
     sheet: SheetRef
 
 
-class UnitsMixin(BaseModel):
-    """UnitsMixin can be added to a config type to add standardized unit definitions."""
+class ParticipantsMixin(BaseModel):
+    """ParticipantsMixin can be added to a config type to add standardized participant definitions."""
 
-    units: list[Unit]
+    participants: list[Participant]
 
-    def find_unit(self, participant_type: str):
+    def find_participants(self, participant_type: str):
         found = next(
-            (u for u in self.units if u.table_name.lower() == participant_type.lower()),
+            (
+                u
+                for u in self.participants
+                if u.table_name.lower() == participant_type.lower()
+            ),
             None,
         )
         if found is None:
-            raise CannotFindUnitException(participant_type)
+            raise CannotFindParticipantsException(participant_type)
         return found
 
 
@@ -132,7 +136,7 @@ class WebhookMixin(BaseModel):
     webhook_config: WebhookConfig
 
 
-class RocketLearningConfig(UnitsMixin, WebhookMixin, BaseModel):
+class RocketLearningConfig(ParticipantsMixin, WebhookMixin, BaseModel):
     """
 
     TODO: implement dbsession(self, participant_type)
@@ -145,7 +149,7 @@ class RocketLearningConfig(UnitsMixin, WebhookMixin, BaseModel):
     api_token: SecretStr
 
     def to_sqlalchemy_url_and_table(self, participant_type: str) -> SqlalchemyAndTable:
-        unit = self.find_unit(participant_type)
+        participants = self.find_participants(participant_type)
         return SqlalchemyAndTable(
             sqlalchemy_url=str(
                 sqlalchemy.URL.create(
@@ -158,17 +162,17 @@ class RocketLearningConfig(UnitsMixin, WebhookMixin, BaseModel):
                     query={"sslmode": self.dwh.sslmode},
                 )
             ),
-            table_name=unit.table_name,
+            table_name=participants.table_name,
         )
 
 
-class SqliteLocalConfig(UnitsMixin, BaseModel):
+class SqliteLocalConfig(ParticipantsMixin, BaseModel):
     type: Literal["sqlite_local"]
     sqlite_filename: str
 
     def to_sqlalchemy_url_and_table(self, participant_type: str) -> SqlalchemyAndTable:
         """Returns a tuple of SQLAlchemy URL and a table name."""
-        unit = self.find_unit(participant_type)
+        participants = self.find_participants(participant_type)
         return SqlalchemyAndTable(
             sqlalchemy_url=str(
                 sqlalchemy.URL.create(
@@ -177,7 +181,7 @@ class SqliteLocalConfig(UnitsMixin, BaseModel):
                     query={"mode": "ro"},
                 )
             ),
-            table_name=unit.table_name,
+            table_name=participants.table_name,
         )
 
     def dbsession(self, participant_type: str):
@@ -237,14 +241,12 @@ class CannotFindTableException(Exception):
         return self.message
 
 
-class CannotFindUnitException(Exception):
-    """Raised when we cannot find a unit in the configuration."""
+class CannotFindParticipantsException(Exception):
+    """Raised when we cannot find a participant in the configuration."""
 
-    def __init__(self, unit_name):
-        self.unit_name = unit_name
-        self.message = (
-            f"The unit {unit_name} does not exist. Check the configuration files."
-        )
+    def __init__(self, participant_type):
+        self.participant_type = participant_type
+        self.message = f"The configuration for participant type {participant_type} does not exist. Check the configuration files."
 
     def __str__(self):
         return self.message

@@ -41,7 +41,7 @@ from xngin.apiserver.settings import (
     ClientConfig,
     CannotFindTableException,
     get_sqlalchemy_table_from_engine,
-    CannotFindUnitException,
+    CannotFindParticipantsException,
 )
 from xngin.apiserver.utils import safe_for_headers
 from xngin.sheets.config_sheet import (
@@ -85,9 +85,9 @@ async def exception_handler_cannotfindthetableexception(
     return JSONResponse(status_code=404, content={"message": exc.message})
 
 
-@app.exception_handler(CannotFindUnitException)
+@app.exception_handler(CannotFindParticipantsException)
 async def exception_handler_cannotfindtheunitexception(
-    _request: Request, exc: CannotFindUnitException
+    _request: Request, exc: CannotFindParticipantsException
 ):
     return JSONResponse(status_code=404, content={"message": exc.message})
 
@@ -535,7 +535,7 @@ def require_config(client: ClientConfig | None):
 
 def fetch_worksheet(commons: CommonQueryParams, config, gsheets: GSheetCache):
     """Fetches a worksheet from the cache, reading it from the source if refresh or if the cache doesn't have it."""
-    sheet = config.find_unit(commons.participant_type).sheet
+    sheet = config.find_participants(commons.participant_type).sheet
     return gsheets.get(
         sheet,
         lambda: fetch_and_parse_sheet(sheet),

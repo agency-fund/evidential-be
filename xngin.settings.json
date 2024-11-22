@@ -5,7 +5,7 @@
       "id": "customer",
       "config": {
         "type": "customer",
-        "units": [
+        "participants": [
           {
             "table_name": "transforms",
             "sheet": {
