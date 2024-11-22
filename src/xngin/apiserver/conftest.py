@@ -1,8 +1,9 @@
 """conftest configures FastAPI dependency injection for testing and also does some setup before tests in this module are run."""
 
+import logging
 import os
 from pathlib import Path
-import logging
+
 import pytest
 import sqlalchemy
 from pydantic import TypeAdapter, ValidationError
@@ -41,6 +42,7 @@ def setup(app):
         connect_args={"check_same_thread": False},
         poolclass=StaticPool,
     )
+
     testing_session_local = sessionmaker(
         autocommit=False, autoflush=False, bind=db_engine
     )

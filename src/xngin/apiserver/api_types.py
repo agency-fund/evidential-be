@@ -307,3 +307,50 @@ class GetMetricsResponseElement(BaseModel):
     data_type: DataType
     column_name: str
     description: str
+
+
+"""
+  {
+    "metric_name": "moderator_msgs_month",
+    "metric_pct_change": 0.05,
+    "type": "continuous",
+    "stats": {
+        "baseline": 21.0936,
+        "stddev": 126.0397,
+        "available_n": 127724,
+    },
+    "metric_target": 22.1483,
+    "target_n": 448376,
+    "sufficient_n": false,
+    "needed_target": 23.0697,
+    "msg": "there are 127724 units available to run your experiment and 448376 units are needed to meet your experimental design specs. there are not enough units available, you need 320652 more units to meet your experimental design specifications. in order to meet your specification with the available 127724 units and a baseline metric value of 21.0936, your metric target value needs to be 23.0697, the current target is 22.1483."
+  }
+"""
+
+
+class MetricType(enum.StrEnum):
+    CONTINUOUS = "continuous"
+    BINARY = "binary"
+
+
+type GetPowerResponse = list[GetPowerResponseElement]
+
+
+class Stats(BaseModel):
+    mean: float
+    stddev: float
+    available_n: int
+
+
+class GetPowerResponseElement(BaseModel):
+    """Response for the /power endpoint."""
+
+    metric_name: str
+    metric_pct_change: float
+    metric_type: MetricType
+    stats: Stats
+    metric_target: float
+    target_n: int
+    sufficient_n: bool
+    needed_target: float | None
+    msg: str

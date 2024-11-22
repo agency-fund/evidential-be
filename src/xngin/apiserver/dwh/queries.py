@@ -1,7 +1,8 @@
 import re
 
 import sqlalchemy
-from sqlalchemy import or_, func, ColumnOperators, Table, not_
+from pydantic import BaseModel
+from sqlalchemy import or_, func, ColumnOperators, Table, not_, select
 from sqlalchemy.orm import Session
 
 from xngin.apiserver.api_types import (
@@ -9,13 +10,56 @@ from xngin.apiserver.api_types import (
     Relation,
     AudienceSpecFilter,
     EXPERIMENT_IDS_SUFFIX,
+    Stats,
 )
 from xngin.apiserver.settings import ClientConfigType, get_sqlalchemy_table_from_engine
+from xngin.sqlite_extensions import custom_functions
 
 
-def get_metric_meta(metrics: list[str], audience_spec: AudienceSpec):
-    # Implement logic to get metric metadata
-    raise NotImplementedError()
+# from xngin.sqlite_extensions import custom_functions
+
+
+def get_metric_meta():
+    # TODO: implement
+    pass
+
+
+class GetMetricMetaColumnStatsOut(BaseModel):
+    metric: str
+    stats: Stats
+
+
+def get_metric_meta_column_stats(
+    session, sa_table: Table, metric_names: list[str], audience_spec: AudienceSpec
+):
+    """TODO: WIP for column metadata"""
+    metric_columns = []
+    metric_names = sorted(metric_names)
+    for metric in metric_names:
+        col = sa_table.c[metric]
+        # Note: R code used . as separator; that causes pain with JSON and would require quoting in SQL so we use
+        # double underscores instead.
+        mean = func.avg(col).label(f"{metric}__mean")
+        stddev = custom_functions.stddev_pop(col).label(f"{metric}__sd")
+        # TODO(roboton): consider whether mitigations for null are important
+        available_n = func.count(col).label(f"{metric}__count")
+        # TODO: column type: binary or continuous
+        metric_columns.extend((mean, stddev, available_n))
+    query = select(*metric_columns)
+    filters = create_filters(sa_table, audience_spec)
+    query = query.filter(*filters)
+    stats = session.execute(query).fetchone()._mapping
+    return [
+        GetMetricMetaColumnStatsOut(
+            metric=metric,
+            stats=Stats(
+                mean=stats[f"{metric}__mean"],
+                stddev=stats[f"{metric}__sd"],
+                available_n=stats[f"{metric}__count"],
+            ),
+        )
+        for metric in metric_names
+    ]
 
 
 def get_dwh_participants(
@@ -35,6 +79,7 @@ def get_dwh_participants(
         return query.all()
 
 
+# TODO: rename for clarity
 def create_filters(sa_table: sqlalchemy.Table, audience_spec: AudienceSpec):
     """Converts an AudienceSpec into a list of SQLAlchemy filters."""
 

@@ -1,17 +1,20 @@
 """Stand-alone test cases for basic dynamic query generation."""
 
 import re
-
-import pytest
-from sqlalchemy import create_engine, Column, Integer, Float, Boolean, String
-from sqlalchemy.orm import declarative_base, Session
 from dataclasses import dataclass
 
+import pytest
+from sqlalchemy import create_engine, Column, Integer, Float, Boolean, String, event
+from sqlalchemy.orm import declarative_base, Session
+
 from xngin.apiserver.api_types import AudienceSpec, Relation, AudienceSpecFilter
+from xngin.sqlite_extensions.custom_functions import NumpyStddev
 from xngin.apiserver.dwh.queries import (
     compose_query,
     create_filters,
+    get_metric_meta_column_stats,
     make_csv_regex,
+    GetMetricMetaColumnStatsOut,
 )
 
 Base = declarative_base()
@@ -73,6 +76,11 @@ SAMPLE_TABLE_ROWS = [
 def db_session():
     """Creates an in-memory SQLite database with test data."""
     engine = create_engine("sqlite:///:memory:", echo=False)
+
+    @event.listens_for(engine, "connect")
+    def register_sqlite_functions(dbapi_connection, _):
+        NumpyStddev.register(dbapi_connection)
+
     Base.metadata.create_all(engine)
     session = Session(engine)
     for data in SAMPLE_TABLE_ROWS:
@@ -336,3 +344,33 @@ def test_make_csv_regex(csv, values, expected):
     assert actual == expected, (
         f'Expression {r} is expected to {"match" if expected else "not match"} in "{csv}". Values = {values}. Matches = {matches}.'
     )
+
+
+def test_query_baseline_metrics(db_session):
+    table = Base.metadata.tables.get(SampleTable.__tablename__)
+    row = get_metric_meta_column_stats(
+        db_session,
+        table,
+        ["int_col", "float_col"],
+        AudienceSpec(
+            participant_type="ignored",
+            filters=[],
+        ),
+    )
+    # hack hack
+    expected = [
+        GetMetricMetaColumnStatsOut.model_validate({
+            "metric": "float_col",
+            "stats": {"mean": 2.492, "stddev": 0.6415751449882287, "available_n": 3},
+        }),
+        GetMetricMetaColumnStatsOut.model_validate({
+            "metric": "int_col",
+            "stats": {
+                "mean": 41.666666666666664,
+                "stddev": 47.76563153100307,
+                "available_n": 3,
+            },
+        }),
+    ]
+    assert row == expected
+    # TODO: use float safe comparison

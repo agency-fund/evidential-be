@@ -21,6 +21,9 @@ from xngin.apiserver.api_types import (
     GetStrataResponseElement,
     GetFiltersResponseElement,
     GetMetricsResponseElement,
+    GetPowerResponse,
+    GetPowerResponseElement,
+    MetricType,
 )
 from xngin.apiserver.dependencies import (
     httpx_dependency,
@@ -28,6 +31,7 @@ from xngin.apiserver.dependencies import (
     config_dependency,
     gsheet_cache,
 )
+from xngin.apiserver.dwh.queries import get_metric_meta_column_stats
 from xngin.apiserver.gsheet_cache import GSheetCache
 from xngin.apiserver.settings import (
     WebhookConfig,
@@ -252,16 +256,45 @@ def get_metrics(
 @app.post(
     "/power",
     summary="Check power given an experiment and audience specification.",
-    response_model=UnimplementedResponse,
     tags=["Experiment Design"],
 )
 def check_power(
     design_spec: DesignSpec,
     audience_spec: AudienceSpec,
     client: Annotated[ClientConfig | None, Depends(config_dependency)] = None,
-):
-    # Implement power calculation logic
-    return UnimplementedResponse()
+) -> GetPowerResponse:
+    """
+    TODO: Design issue: The request takes participant_type as an HTTP header but this is also in audience_spec.participant_type.
+    TODO(roboton): redefine GetPowerResponse
+    """
+    config = require_config(client)
+
+    # TODO(roboton): Implement power calculation logic. This is just a placeholder.
+    participant_type = audience_spec.participant_type
+    with config.dbsession(participant_type) as session:
+        sa_table = get_sqlalchemy_table_from_engine(
+            session.get_bind(), participant_type
+        )
+        stats = get_metric_meta_column_stats(
+            session,
+            sa_table,
+            list(dsm.metric_name for dsm in design_spec.metrics),
+            audience_spec,
+        )
+        return [
+            GetPowerResponseElement(
+                metric_name=stat.metric,
+                metric_pct_change=0.0,
+                metric_type=MetricType.CONTINUOUS,
+                stats=stat.stats,
+                metric_target=0,
+                target_n=0,
+                sufficient_n=False,
+                needed_target=None,
+                msg="hello",
+            )
+            for stat in stats
+        ]
 
 
 @app.post(

@@ -5,8 +5,11 @@ from typing import Literal
 
 import sqlalchemy
 from pydantic import BaseModel, PositiveInt, SecretStr, Field, field_validator
+from sqlalchemy import event
 from sqlalchemy.exc import NoSuchTableError
 from sqlalchemy.orm import Session
+
+from xngin.sqlite_extensions import NumpyStddev
 
 DEFAULT_SECRETS_DIRECTORY = "secrets"
 DEFAULT_SETTINGS_FILE = "xngin.settings.json"
@@ -183,11 +186,15 @@ class SqliteLocalConfig(UnitsMixin, BaseModel):
         Use this in a `with` block to ensure correct transaction handling. If you need the
         sqlalchemy Engine, call .get_bind().
         """
-        return Session(
-            sqlite_connect(
-                self.to_sqlalchemy_url_and_table(participant_type).sqlalchemy_url
-            )
-        )
+        url = self.to_sqlalchemy_url_and_table(participant_type).sqlalchemy_url
+        engine = sqlalchemy_connect(url)
+        if url.startswith("sqlite://"):
+
+            @event.listens_for(engine, "connect")
+            def register_sqlite_functions(dbapi_connection, _):
+                NumpyStddev.register(dbapi_connection)
+
+        return Session(engine)
 
 
 type ClientConfigType = RocketLearningConfig | SqliteLocalConfig
@@ -257,7 +264,11 @@ def get_sqlalchemy_table_from_engine(engine: sqlalchemy.engine.Engine, table_nam
         raise CannotFindTableException(table_name, existing_tables) from nste
 
 
-def sqlite_connect(sqlalchemy_url):
+def sqlalchemy_connect(sqlalchemy_url):
+    """Connect to a database, given a SQLAlchemy-compatible URL.
+
+    This is intended to be used to connect to customer databases.
+    """
     connect_args = {}
     if sqlalchemy_url.startswith("postgres"):
         connect_args["connect_timeout"] = 5
