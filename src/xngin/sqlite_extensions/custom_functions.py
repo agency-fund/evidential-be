@@ -1,8 +1,26 @@
 import numpy as np
 
+from sqlalchemy.ext import compiler
+from sqlalchemy.sql.functions import func
+
+stddev_pop = func.stddev_pop
+
+
+@compiler.compiles(stddev_pop, "mysql")
+@compiler.compiles(stddev_pop, "postgresql")
+def _std_default(element, compiler, **_kw):
+    return f"STDDEV_POP({compiler.process(element.clauses)})"
+
+
+@compiler.compiles(stddev_pop, "mssql")
+def _std_mssql(element, compiler, **_kw):
+    return f"STDEVP({compiler.process(element.clauses)})"
+
 
 class NumpyStddev:
     """SQLite extension function to compute the standard deviation (population) using numpy.
+
+    This only needs to be registered on SQLite connections.
 
     Register with:
     ```
@@ -14,7 +32,7 @@ class NumpyStddev:
     ```
     """
 
-    SQL_FUNCTION_NAME = "stddev"
+    SQL_FUNCTION_NAME = "stddev_pop"
 
     def __init__(self):
         self.values: list[float] = []

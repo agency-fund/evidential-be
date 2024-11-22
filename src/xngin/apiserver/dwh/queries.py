@@ -4,6 +4,9 @@ from sqlalchemy.orm import Session
 
 from xngin.apiserver.api_types import AudienceSpec, Relation, AudienceSpecFilter
 from xngin.apiserver.settings import ClientConfigType, get_sqlalchemy_table_from_engine
+from xngin.sqlite_extensions import custom_functions
+
+
 # from xngin.sqlite_extensions import custom_functions
 
 
@@ -22,7 +25,7 @@ def get_metric_meta_column_stats(
         # Note: R code used . as separator; that causes pain with JSON and would require quoting in SQL so we use
         # double underscores instead.
         mean = func.avg(col).label(f"{metric}__metric_mean")
-        stddev = func.stddev(col).label(f"{metric}__metric_sd")
+        stddev = custom_functions.stddev_pop(col).label(f"{metric}__metric_sd")
         available_n = func.count(col).label(f"{metric}__metric_count")
         metric_columns.extend((mean, stddev, available_n))
     query = select(*metric_columns)
