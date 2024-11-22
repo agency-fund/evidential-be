@@ -29,7 +29,7 @@ from xngin.apiserver.dependencies import (
     config_dependency,
     gsheet_cache,
 )
-from xngin.apiserver.dwh.queries import query_baseline_for_metrics
+from xngin.apiserver.dwh.queries import get_metric_meta_column_stats
 from xngin.apiserver.gsheet_cache import GSheetCache
 from xngin.apiserver.settings import (
     WebhookConfig,
@@ -261,6 +261,10 @@ def check_power(
     audience_spec: AudienceSpec,
     client: Annotated[ClientConfig | None, Depends(config_dependency)] = None,
 ) -> GetPowerResponse:
+    """
+    TODO: Design issue: The request takes participant_type as an HTTP header but this is also in audience_spec.participant_type.
+    TODO(roboton): redefine GetPowerResponse
+    """
     config = require_config(client)
 
     # TODO(roboton): Implement power calculation logic. This is just a placeholder.
@@ -269,10 +273,12 @@ def check_power(
         sa_table = get_sqlalchemy_table_from_engine(
             session.get_bind(), participant_type
         )
-        baseline = query_baseline_for_metrics(
+        # Placeholder: fetches the stats on metric columns and turns it into a naive dict; this is probably not what
+        # we want to put in the API but it does validate that the database wiring is working.
+        baseline = get_metric_meta_column_stats(
             session,
             sa_table,
-            [dsm.metric_name for dsm in design_spec.metrics],
+            (dsm.metric_name for dsm in design_spec.metrics),
             audience_spec,
         )
 

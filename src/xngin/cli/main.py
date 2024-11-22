@@ -57,7 +57,7 @@ def infer_config_from_schema(dsn: str, table: str):
 
 def get_sqlalchemy_table(sqlat: SqlalchemyAndTable):
     """Connects to a SQLAlchemy DSN and creates a sqlalchemy.Table for introspection."""
-    engine = settings.sqlite_connect(sqlat.sqlalchemy_url)
+    engine = settings.sqlalchemy_connect(sqlat.sqlalchemy_url)
     metadata = sqlalchemy.MetaData()
     try:
         return sqlalchemy.Table(sqlat.table_name, metadata, autoload_with=engine)

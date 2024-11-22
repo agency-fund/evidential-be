@@ -7,14 +7,13 @@ from pathlib import Path
 import pytest
 import sqlalchemy
 from pydantic import TypeAdapter, ValidationError
-from sqlalchemy import StaticPool, event
+from sqlalchemy import StaticPool
 from sqlalchemy.orm import sessionmaker
 
 from xngin.apiserver import database
 from xngin.apiserver.dependencies import settings_dependency, xngin_db_session
 from xngin.apiserver.settings import XnginSettings, SettingsForTesting
 from xngin.apiserver.testing import testing_dwh
-from xngin.sqlite_extensions.custom_functions import NumpyStddev
 
 logger = logging.getLogger(__name__)
 
@@ -43,10 +42,6 @@ def setup(app):
         connect_args={"check_same_thread": False},
         poolclass=StaticPool,
     )
-
-    @event.listens_for(db_engine, "connect")
-    def register_sqlite_functions(dbapi_connection, _):
-        NumpyStddev.register(dbapi_connection)
 
     testing_session_local = sessionmaker(
         autocommit=False, autoflush=False, bind=db_engine

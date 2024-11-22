@@ -4,33 +4,18 @@ from sqlalchemy.orm import Session
 
 from xngin.apiserver.api_types import AudienceSpec, Relation, AudienceSpecFilter
 from xngin.apiserver.settings import ClientConfigType, get_sqlalchemy_table_from_engine
+# from xngin.sqlite_extensions import custom_functions
 
 
-def get_metric_meta(
-    config: ClientConfigType, metric_names: list[str], audience_spec: AudienceSpec
-):
-    """WIP for get_metric_meta.
-
-    TODO: adjust parameters to be appropriate for being called from /power. E.g. we should accept a session, not a
-    config.
-
-    TODO: get metric_names from the config data rather than as a method argument.
-    """
-    participant_type = audience_spec.participant_type
-    with config.dbsession(participant_type) as session:
-        sa_table = get_sqlalchemy_table_from_engine(
-            session.get_bind(), participant_type
-        )
-        baseline = query_baseline_for_metrics(
-            session, sa_table, metric_names, audience_spec
-        )
-        # TODO: metric_meta?
-        return (baseline,)
+def get_metric_meta():
+    # TODO: implement
+    pass
 
 
-def query_baseline_for_metrics(
+def get_metric_meta_column_stats(
     session, sa_table: Table, metric_names: list[str], audience_spec: AudienceSpec
 ):
+    """TODO: WIP for column metadata"""
     metric_columns = []
     for metric in sorted(metric_names):
         col = sa_table.c[metric]
@@ -43,7 +28,7 @@ def query_baseline_for_metrics(
     query = select(*metric_columns)
     filters = create_filters(sa_table, audience_spec)
     query = query.filter(*filters)
-    return session.execute(query).all()
+    return session.execute(query).fetchone()._mapping  # hack
 
 
 def get_dwh_participants(

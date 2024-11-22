@@ -12,7 +12,7 @@ from xngin.sqlite_extensions.custom_functions import NumpyStddev
 from xngin.apiserver.dwh.queries import (
     compose_query,
     create_filters,
-    query_baseline_for_metrics,
+    get_metric_meta_column_stats,
 )
 
 Base = declarative_base()
@@ -174,7 +174,7 @@ def test_compose_query(testcase, db_session):
 
 def test_query_baseline_metrics(db_session):
     table = Base.metadata.tables.get(SampleTable.__tablename__)
-    row = query_baseline_for_metrics(
+    row = get_metric_meta_column_stats(
         db_session,
         table,
         ["int_col", "float_col"],
@@ -182,7 +182,7 @@ def test_query_baseline_metrics(db_session):
             participant_type="ignored",
             filters=[],
         ),
-    )[0]._mapping
+    )
     expected = {
         "float_col__metric_count": 3,
         "float_col__metric_mean": 2.492,
