@@ -22,6 +22,8 @@ from xngin.apiserver.api_types import (
     GetFiltersResponseElement,
     GetMetricsResponseElement,
     GetPowerResponse,
+    GetPowerResponseElement,
+    MetricType,
 )
 from xngin.apiserver.dependencies import (
     httpx_dependency,
@@ -273,16 +275,26 @@ def check_power(
         sa_table = get_sqlalchemy_table_from_engine(
             session.get_bind(), participant_type
         )
-        # Placeholder: fetches the stats on metric columns and turns it into a naive dict; this is probably not what
-        # we want to put in the API but it does validate that the database wiring is working.
-        baseline = get_metric_meta_column_stats(
+        stats = get_metric_meta_column_stats(
             session,
             sa_table,
-            (dsm.metric_name for dsm in design_spec.metrics),
+            list(dsm.metric_name for dsm in design_spec.metrics),
             audience_spec,
         )
-
-    return GetPowerResponse(wip_baseline=baseline)
+        return [
+            GetPowerResponseElement(
+                metric_name=stat.metric,
+                metric_pct_change=0.0,
+                metric_type=MetricType.CONTINUOUS,
+                stats=stat.stats,
+                metric_target=0,
+                target_n=0,
+                sufficient_n=False,
+                needed_target=None,
+                msg="hello",
+            )
+            for stat in stats
+        ]
 
 
 @app.post(

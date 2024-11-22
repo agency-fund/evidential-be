@@ -39,7 +39,21 @@ Config-ID: testing
 ```
 HTTP 200
 ```json
-{"wip_baseline": {"current_income__metric_count": 1000000,
-                  "current_income__metric_mean": 34673.197818833825,
-                  "current_income__metric_sd": 13438.083721278974}}
+[
+  {
+    "metric_name": "current_income",
+    "metric_pct_change": 0.0,
+    "metric_type": "continuous",
+    "stats": {
+      "mean": 34673.197818833825,
+      "stddev": 13438.083721278974,
+      "available_n": 1000000
+    },
+    "metric_target": 0.0,
+    "target_n": 0,
+    "sufficient_n": false,
+    "needed_target": null,
+    "msg": "hello"
+  }
+]
 ```

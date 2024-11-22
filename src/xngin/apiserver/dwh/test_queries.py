@@ -1,6 +1,5 @@
 """Stand-alone test cases for basic dynamic query generation."""
 
-import math
 import re
 from dataclasses import dataclass
 
@@ -15,6 +14,7 @@ from xngin.apiserver.dwh.queries import (
     create_filters,
     get_metric_meta_column_stats,
     make_csv_regex,
+    GetMetricMetaColumnStatsOut,
 )
 
 Base = declarative_base()
@@ -357,14 +357,20 @@ def test_query_baseline_metrics(db_session):
             filters=[],
         ),
     )
-    expected = {
-        "float_col__metric_count": 3,
-        "float_col__metric_mean": 2.492,
-        "float_col__metric_sd": 0.6415751449882287,
-        "int_col__metric_count": 3,
-        "int_col__metric_mean": 41.666666666666664,
-        "int_col__metric_sd": 47.76563153100307,
-    }
-    assert set(row.keys()) == expected.keys()
-    for k, v in expected.items():
-        assert math.isclose(row[k], v), (k, row[k], v)
+    # hack hack
+    expected = [
+        GetMetricMetaColumnStatsOut.model_validate({
+            "metric": "float_col",
+            "stats": {"mean": 2.492, "stddev": 0.6415751449882287, "available_n": 3},
+        }),
+        GetMetricMetaColumnStatsOut.model_validate({
+            "metric": "int_col",
+            "stats": {
+                "mean": 41.666666666666664,
+                "stddev": 47.76563153100307,
+                "available_n": 3,
+            },
+        }),
+    ]
+    assert row == expected
+    # TODO: use float safe comparison
