@@ -264,13 +264,15 @@ def check_power(
     client: Annotated[ClientConfig | None, Depends(config_dependency)] = None,
 ) -> GetPowerResponse:
     """
-    TODO: Design issue: The request takes participant_type as an HTTP header but this is also in audience_spec.participant_type.
-    TODO(roboton): redefine GetPowerResponse
+    TODO(roboton): finish implementing this method
     """
     config = require_config(client)
 
     # TODO(roboton): Implement power calculation logic. This is just a placeholder.
     participant_type = audience_spec.participant_type
+
+    # TODO(roboton): This is how you read the unique ID column name from the participants config.
+    _unique_id_column_example = config.find_participants(participant_type)
     with config.dbsession(participant_type) as session:
         sa_table = get_sqlalchemy_table_from_engine(
             session.get_bind(), participant_type
@@ -284,14 +286,14 @@ def check_power(
         return [
             GetPowerResponseElement(
                 metric_name=stat.metric,
-                metric_pct_change=0.0,
-                metric_type=MetricType.CONTINUOUS,
-                stats=stat.stats,
-                metric_target=0,
-                target_n=0,
-                sufficient_n=False,
-                needed_target=None,
-                msg="hello",
+                metric_pct_change=0.0,  # TODO
+                metric_type=MetricType.CONTINUOUS,  # TODO(dctaf)
+                stats=stat.stats,  # TODO
+                metric_target=0,  # TODO
+                target_n=0,  # TODO
+                sufficient_n=False,  # TODO
+                needed_target=None,  # TODO
+                msg="hello",  # TODO
             )
             for stat in stats
         ]

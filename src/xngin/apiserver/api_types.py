@@ -328,12 +328,12 @@ class GetMetricsResponseElement(BaseModel):
 """
 
 
+type GetPowerResponse = list[GetPowerResponseElement]
+
+
 class MetricType(enum.StrEnum):
     CONTINUOUS = "continuous"
     BINARY = "binary"
-
-
-type GetPowerResponse = list[GetPowerResponseElement]
 
 
 class Stats(BaseModel):
@@ -353,4 +353,4 @@ class GetPowerResponseElement(BaseModel):
     target_n: int
     sufficient_n: bool
     needed_target: float | None
-    msg: str
+    msg: str  # TODO: replace with structured message
