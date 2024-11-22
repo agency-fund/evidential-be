@@ -273,7 +273,7 @@ class ExperimentAssignment(BaseModel):
 
 
 class UnimplementedResponse(BaseModel):
-    todo: Literal["TODO"]
+    todo: Literal["TODO"] = "TODO"
 
 
 class GetStrataResponseElement(BaseModel):
