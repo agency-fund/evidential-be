@@ -248,8 +248,10 @@ class ExperimentAssignmentUnit(BaseModel):
     model_config = {"extra": "allow"}
     # And require the extra field to be an integer;
     # can loosen this if string ids are used in the future
+    # TODO(qixotic): would prefer NOT to have customer-defined fields be keys in API response types
     __pydantic_extra__: dict[str, int] = Field(init=False)
 
+    # TODO(qixotic): This validator is preventing construction of this object directly from Python code :(
     @model_validator(mode="after")
     def validate_single_id_field(self) -> Self:
         num_extra = len(self.__pydantic_extra__)
@@ -261,10 +263,10 @@ class ExperimentAssignmentUnit(BaseModel):
 class ExperimentAssignment(BaseModel):
     """Experiment assignment details including balance statistics and group assignments."""
 
-    f_stat: float = Field(alias="f.stat")
-    numerator_df: int = Field(alias="numerator.df")
-    denominator_df: int = Field(alias="denominator.df")
-    p_value: float = Field(alias="p.value")
+    f_stat: float
+    numerator_df: int
+    denominator_df: int
+    p_value: float
     balance_ok: bool
     experiment_id: uuid.UUID
     description: str
