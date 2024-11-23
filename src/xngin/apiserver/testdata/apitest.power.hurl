@@ -53,7 +53,7 @@ HTTP 200
     "target_n": 0,
     "sufficient_n": false,
     "needed_target": null,
-    "msg": "hello"
+    "msg": "id"
   }
 ]
 ```

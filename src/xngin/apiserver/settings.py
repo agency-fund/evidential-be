@@ -1,7 +1,7 @@
 import json
 import os
 from functools import lru_cache
-from typing import Literal, Annotated
+from typing import Literal
 
 import sqlalchemy
 from pydantic import BaseModel, PositiveInt, SecretStr, Field, field_validator
@@ -53,14 +53,6 @@ class Participant(BaseModel):
 
     table_name: str
     sheet: SheetRef
-    # TODO(roboton): Should this be a required field?
-    unique_id_column: Annotated[
-        str | None,
-        Field(
-            None,
-            description="Optional. The name of the column containing a unique user identifier.",
-        ),
-    ]
 
 
 class ParticipantsMixin(BaseModel):

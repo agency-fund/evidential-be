@@ -260,28 +260,34 @@ def get_metrics(
 def check_power(
     design_spec: DesignSpec,
     audience_spec: AudienceSpec,
+    gsheets: Annotated[GSheetCache, Depends(gsheet_cache)],
     client: Annotated[ClientConfig | None, Depends(config_dependency)] = None,
+    refresh: Annotated[bool, Query(description="Refresh the cache.")] = False,
 ) -> GetPowerResponse:
     """
     TODO(roboton): finish implementing this method
     """
     config = require_config(client)
-
-    # TODO(roboton): Implement power calculation logic. This is just a placeholder.
     participant_type = audience_spec.participant_type
-
-    # TODO(roboton): This is how you read the unique ID column name from the participants config.
-    _unique_id_column_example = config.find_participants(participant_type)
     with config.dbsession(participant_type) as session:
         sa_table = get_sqlalchemy_table_from_engine(
             session.get_bind(), participant_type
         )
+        config_sheet = fetch_worksheet(
+            CommonQueryParams(participant_type=participant_type, refresh=refresh),
+            config,
+            gsheets,
+        )
+        _unique_id_col = config_sheet.get_unique_id_col()
         metric_stats = get_stats_on_metrics(
             session,
             sa_table,
             list(dsm.metric_name for dsm in design_spec.metrics),
             audience_spec,
         )
+
+        # TODO(roboton): Implement power calculation logic.
+
         return [
             GetPowerResponseElement(
                 metric_name=metric_stat.metric,
@@ -292,7 +298,7 @@ def check_power(
                 target_n=0,  # TODO
                 sufficient_n=False,  # TODO
                 needed_target=None,  # TODO
-                msg="hello",  # TODO
+                msg=_unique_id_col,  # TODO
             )
             for metric_stat in metric_stats
         ]

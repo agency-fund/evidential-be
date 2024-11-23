@@ -93,7 +93,6 @@
         "participants": [
           {
             "table_name": "test_participant_type",
-            "unique_id_column": "id",
             "sheet": {
               "url": "file://src/xngin/apiserver/testdata/testing_sheet.csv",
               "worksheet": "Sheet1"
