@@ -1,3 +1,4 @@
+import uuid
 from contextlib import asynccontextmanager
 from typing import Any, Annotated, Literal
 import logging
@@ -23,6 +24,8 @@ from xngin.apiserver.api_types import (
     GetMetricsResponseElement,
     GetPowerResponse,
     GetPowerResponseElement,
+    ExperimentAssignmentUnit,
+    ExperimentStrata,
 )
 from xngin.apiserver.dependencies import (
     httpx_dependency,
@@ -30,7 +33,7 @@ from xngin.apiserver.dependencies import (
     config_dependency,
     gsheet_cache,
 )
-from xngin.apiserver.dwh.queries import get_stats_on_metrics
+from xngin.apiserver.dwh.queries import get_stats_on_metrics, query_for_participants
 from xngin.apiserver.gsheet_cache import GSheetCache
 from xngin.apiserver.settings import (
     WebhookConfig,
@@ -301,7 +304,6 @@ def check_power(
 @app.post(
     "/assign",
     summary="Assign treatment given experiment and audience specification.",
-    response_model=UnimplementedResponse,
     tags=["Manage Experiments"],
 )
 def assign_treatment(
@@ -309,9 +311,38 @@ def assign_treatment(
     audience_spec: AudienceSpec,
     client: Annotated[ClientConfig | None, Depends(config_dependency)] = None,
     chosen_n: int = 1000,
-):
-    # Implement treatment assignment logic
-    return UnimplementedResponse()
+) -> ExperimentAssignment:
+    config = require_config(client)
+    participant_type = audience_spec.participant_type
+
+    # TODO: This is probably useful.
+    _unique_id_column = config.find_participants(participant_type)
+
+    with config.dbsession(participant_type) as session:
+        sa_table = get_sqlalchemy_table_from_engine(
+            session.get_bind(), participant_type
+        )
+        participants = query_for_participants(
+            session, sa_table, audience_spec, chosen_n
+        )
+        print(participants)
+
+    eau = ExperimentAssignmentUnit(
+        treatment_assignment="todo",
+        strata=[ExperimentStrata(strata_name="todo", strata_value="todo")],
+    )
+
+    return ExperimentAssignment(
+        f_stat=0,
+        numerator_df=0,
+        denominator_df=0,
+        p_value=0,
+        balance_ok=False,
+        experiment_id=uuid.uuid4(),
+        description="todo",
+        sample_size=0,
+        assignments=[eau for _ in range(10)],
+    )
 
 
 @app.post(
