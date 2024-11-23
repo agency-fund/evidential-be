@@ -133,7 +133,24 @@ docker run xngin:latest
    uv run pytest
    ```
 4. Commit the changed uv.lock and pyproject.toml files.
-5.
+
+### How do I run xngin against a local Postgres?
+
+Here's an example of how to run a local Postgres in Docker and have
+xngin use it as the system database:
+
+```shell
+PASSWORD="secret$(cat /dev/urandom | head -c128 | sha256sum | cut -b1-16)"
+docker run -d --name xngin-postgres \
+  -e POSTGRES_USER=xnginwebserver \
+  -e POSTGRES_PASSWORD=${PASSWORD} \
+  -e POSTGRES_DB=xngin \
+  -p 5432:5432 \
+  -d postgres:17
+export XNGIN_SETTINGS=src/xngin/apiserver/testdata/xngin.testing.settings.json
+export XNGIN_DB=postgresql://xnginwebserver:${PASSWORD}@localhost:5432/xngin
+uv run fastapi dev src/xngin/apiserver/main.py
+```
 
 ### psycopg2 module does not install correctly.
 
