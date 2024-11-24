@@ -14,3 +14,4 @@
 .venv
 dist
 secrets/
+xngin.db
