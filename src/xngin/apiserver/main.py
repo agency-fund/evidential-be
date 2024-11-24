@@ -24,7 +24,7 @@ from xngin.apiserver.api_types import (
     GetMetricsResponseElement,
     GetPowerResponse,
     GetPowerResponseElement,
-    ExperimentAssignmentUnit,
+    ExperimentParticipant,
     ExperimentStrata,
 )
 from xngin.apiserver.dependencies import (
@@ -325,9 +325,9 @@ def assign_treatment(
         participants = query_for_participants(
             session, sa_table, audience_spec, chosen_n
         )
-        print(participants)
 
-    eau = ExperimentAssignmentUnit(
+    participant = ExperimentParticipant(
+        id = 123,
         treatment_assignment="todo",
         strata=[ExperimentStrata(strata_name="todo", strata_value="todo")],
     )
@@ -338,10 +338,12 @@ def assign_treatment(
         denominator_df=0,
         p_value=0,
         balance_ok=False,
-        experiment_id=uuid.uuid4(),
+        #experiment_id=uuid.uuid4(),
+        # TODO(roboton): set seed to produce stable uuid for testing
+        experiment_id="8c3eb9a1-8d8c-402e-b407-a4002acd4f17",
         description="todo",
         sample_size=0,
-        assignments=[eau for _ in range(10)],
+        assignments=[participant for _ in range(1)],
     )
 
 

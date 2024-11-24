@@ -39,21 +39,26 @@ Config-ID: testing
 ```
 HTTP 200
 ```json
-[
-  {
-    "metric_name": "current_income",
-    "metric_pct_change": 0.0,
-    "metric_type": "continuous",
-    "stats": {
-      "mean": 34673.197818833825,
-      "stddev": 13438.083721278974,
-      "available_n": 1000000
-    },
-    "metric_target": 0.0,
-    "target_n": 0,
-    "sufficient_n": false,
-    "needed_target": null,
-    "msg": "hello"
-  }
-]
+{
+  "f_stat": 0.0,
+  "numerator_df": 0,
+  "denominator_df": 0,
+  "p_value": 0.0,
+  "balance_ok": false,
+  "experiment_id": "8c3eb9a1-8d8c-402e-b407-a4002acd4f17",
+  "description": "todo",
+  "sample_size": 0,
+  "assignments": [
+    {
+      "id": 123,
+      "treatment_assignment": "todo",
+      "strata": [
+        {
+          "strata_name": "todo",
+          "strata_value": "todo"
+        }
+      ]
+    }
+  ]
+}
 ```

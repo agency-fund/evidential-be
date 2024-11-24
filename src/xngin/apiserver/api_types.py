@@ -239,7 +239,7 @@ class ExperimentStrata(BaseModel):
     strata_value: str
 
 
-class ExperimentAssignmentUnit(BaseModel):
+class ExperimentParticipant(BaseModel):
     # Name of the experiment arm this unit was assigned to
     treatment_assignment: str
     strata: list[ExperimentStrata]
@@ -271,7 +271,7 @@ class ExperimentAssignment(BaseModel):
     experiment_id: uuid.UUID
     description: str
     sample_size: int
-    assignments: list[ExperimentAssignmentUnit]
+    assignments: list[ExperimentParticipant]
 
 
 class UnimplementedResponse(BaseModel):
