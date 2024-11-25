@@ -2,7 +2,7 @@ import enum
 import re
 import uuid
 from datetime import datetime
-from typing import Literal, Annotated, Self
+from typing import Literal, Annotated, Self, Optional
 
 import sqlalchemy.sql.sqltypes
 from pydantic import (
@@ -15,7 +15,9 @@ from pydantic import (
 
 EXPERIMENT_IDS_SUFFIX = "experiment_ids"
 
+# Audience Specification (input)
 
+## Filters
 class DataType(enum.StrEnum):
     BOOLEAN = "boolean"
     CHARACTER_VARYING = "character varying"
@@ -195,48 +197,114 @@ class AudienceSpecFilter(BaseModel):
 
         return self
 
-
 class AudienceSpec(BaseModel):
-    """Audience specification."""
+    """Audience specification.
+
+    Determines the set of participants targeted for an experiment using filters
+    based on the experiment participant_type.
+    """
 
     participant_type: str
     filters: list[AudienceSpecFilter]
 
+# Design Specification (input)
 
-class DesignSpecArm(BaseModel):
-    arm_name: str
-    arm_id: uuid.UUID
+## Metric Specs
+class MetricType(enum.StrEnum):
+    BINARY = "binary"
+    NUMERIC = "numeric"
 
+    @classmethod
+    def from_python_type(cls, python_type: type) -> "MetricType":
+        """Given a Python type, return an appropriate MetricType."""
+
+        if python_type in (int, float):
+            return MetricType.NUMERIC
+        if python_type is bool:
+            return MetricType.BINARY
+        raise ValueError(f"Unsupported type: {python_type}")
 
 class DesignSpecMetric(BaseModel):
     metric_name: str
-    metric_pct_change: float
+    metric_type: Optional[MetricType] = None
+    metric_pct_change: Optional[float] = None
+    metric_baseline: Optional[float] = None
+    metric_target: Optional[float] = None
+    metric_stddev: Optional[float] = None
 
+class ExperimentArm(BaseModel):
+    arm_id: uuid.UUID
+    arm_name: str
+    arm_description: Optional[str] = None
 
 class DesignSpec(BaseModel):
     """Design specification."""
 
+    # experiment meta
     experiment_id: uuid.UUID
     experiment_name: str
     description: str
-    arms: list[DesignSpecArm]
     start_date: datetime
     end_date: datetime
+
+    # arms
+    arms: list[ExperimentArm]
+
+    # strata as strings
     strata_cols: list[str]
+
+    # metric specs
+    metrics: list[DesignSpecMetric]
+
+    # stat parameters
     power: float
     alpha: float
     fstat_thresh: float
-    metrics: list[DesignSpecMetric]
 
     @field_serializer("start_date", "end_date", when_used="json")
     def serialize_dt(self, dt: datetime, _info):
         """Convert dates to iso strings in model_dump_json()/model_dump(mode='json')"""
         return dt.isoformat()
 
+# Experiment Assignment (output)
+
+## Strata 
+class StrataType(enum.StrEnum):
+    BINARY = "binary"
+    NUMERIC = "numeric"
+    CATEGORICAL = "categorical"
+    
+    @classmethod
+    def from_python_type(cls, python_type: type) -> "MetricType":
+        """Given a Python type, return an appropriate StrataType."""
+
+        if python_type in (int, float):
+            return MetricType.NUMERIC
+        if python_type is bool:
+            return MetricType.BINARY
+        if python_type is str:
+            return MetricType.CATEGORICAL
+
+        raise ValueError(f"Unsupported type: {python_type}")
 
 class ExperimentStrata(BaseModel):
     strata_name: str
-    strata_value: str
+    strata_type: Optional[StrataType] = None
+    strata_value: Optional[str] = None
+
+    @model_validator('strata_value')
+    def validate_strata_value(cls, value, values):
+        strata_type = values.get('strata_type')
+        if strata_type == StrataType.NUMERIC:
+            if value is None or not value.replace('.', '', 1).isdigit():  # Check if it's a numeric value
+                raise ValueError("strata_value must be a numeric string when strata_type is NUMERIC.")
+        elif strata_type == StrataType.BINARY:
+            if value is None or value not in ['0', '1']:
+                raise ValueError("strata_value must be '0' or '1' when strata_type is BINARY.")
+        elif strata_type == StrataType.CATEGORICAL:
+            if value is None or not value:  # Check for non-empty string for categorical
+                raise ValueError("strata_value must be a non-empty string when strata_type is CATEGORICAL.")
+        return value
 
 
 class ExperimentParticipant(BaseModel):
@@ -284,7 +352,6 @@ class GetStrataResponseElement(BaseModel):
     description: str
     strata_group: str
 
-
 class GetFiltersResponseElement(BaseModel):
     data_type: DataType
     description: str
@@ -310,43 +377,29 @@ class GetMetricsResponseElement(BaseModel):
     column_name: str
     description: str
 
+type PowerAnalaysis = list[MetricAnalysis]
 
-type GetPowerResponse = list[GetPowerResponseElement]
-
-
-class MetricType(enum.StrEnum):
-    BINARY = "binary"
-    CHARACTER = "character"
-    CONTINUOUS = "continuous"
-
-    @classmethod
-    def from_python_type(cls, python_type: type) -> "MetricType":
-        """Given a Python type, return an appropriate MetricType."""
-
-        if python_type is str:
-            return MetricType.CHARACTER
-        if python_type in (int, float):
-            return MetricType.CONTINUOUS
-        if python_type is bool:
-            return MetricType.BINARY
-        raise ValueError(f"Unsupported type: {python_type}")
-
-
-class Stats(BaseModel):
+class MetricStats(BaseModel):
     mean: float
     stddev: float
     available_n: int
 
+class MetricSpec(BaseModel):
+    metric_name: str
+    metric_type: MetricType
+    stats: MetricStats
 
-class GetPowerResponseElement(BaseModel):
-    """Response for the /power endpoint."""
+class MetricAnalysis(BaseModel):
+    """Power analysis for a single metric."""
 
     metric_name: str
-    metric_pct_change: float
     metric_type: MetricType
+    metric_pct_change: float
     stats: Stats
     metric_target: float
     target_n: int
     sufficient_n: bool
     msg: str  # TODO: replace with structured message
     needed_target: float | None = None
+
+

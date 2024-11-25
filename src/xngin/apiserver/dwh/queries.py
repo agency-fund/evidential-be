@@ -22,7 +22,7 @@ def get_metric_meta():
 
 
 class MetricStats(BaseModel):
-    metric: str
+    metric_name: str
     metric_type: MetricType
     stats: Stats
 

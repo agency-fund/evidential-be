@@ -20,8 +20,8 @@ from xngin.apiserver.api_types import (
     GetStrataResponseElement,
     GetFiltersResponseElement,
     GetMetricsResponseElement,
-    GetPowerResponse,
-    GetPowerResponseElement,
+    PowerAnalysis,
+    MetricAnalysis,
     ExperimentParticipant,
     ExperimentStrata,
 )
@@ -249,7 +249,7 @@ def check_power(
     gsheets: Annotated[GSheetCache, Depends(gsheet_cache)],
     client: Annotated[ClientConfig | None, Depends(config_dependency)] = None,
     refresh: Annotated[bool, Query(description="Refresh the cache.")] = False,
-) -> GetPowerResponse:
+) -> PowerAnalysis:
     """
     TODO(roboton): finish implementing this method
     """
@@ -275,7 +275,7 @@ def check_power(
         # TODO(roboton): Implement power calculation logic.
 
         return [
-            GetPowerResponseElement(
+            MetricAnalysis(
                 metric_name=metric_stat.metric,
                 metric_pct_change=0.0,  # TODO
                 metric_type=metric_stat.metric_type,
