@@ -41,19 +41,27 @@ HTTP 200
 ```json
 [
   {
-    "metric_name": "current_income",
-    "metric_pct_change": 0.0,
-    "metric_type": "continuous",
-    "stats": {
-      "mean": 34673.197818833825,
-      "stddev": 13438.083721278974,
-      "available_n": 1000000
+    "available_n": 1000000,
+    "delta": null,
+    "metric_pct_change_possible": null,
+    "metric_spec": {
+      "available_n": 1000000,
+      "metric_baseline": 34673.197818833825,
+      "metric_name": "current_income",
+      "metric_pct_change": 0.1,
+      "metric_stddev": 13438.083721278974,
+      "metric_target": null,
+      "metric_type": null
     },
-    "metric_target": 0.0,
-    "target_n": 0,
-    "sufficient_n": false,
+    "metric_target_possible": null,
+    "msg": {
+        "type": "sufficient",
+        "msg": "hello",
+        "values": null
+    },
     "needed_target": null,
-    "msg": "id"
+    "sufficient_n": false,
+    "target_n": 0
   }
 ]
 ```

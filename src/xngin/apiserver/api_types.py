@@ -231,6 +231,7 @@ class DesignSpecMetric(BaseModel):
     metric_baseline: Optional[float] = None
     metric_target: Optional[float] = None
     metric_stddev: Optional[float] = None
+    available_n: Optional[int] = None
 
 class ExperimentArm(BaseModel):
     arm_id: uuid.UUID
@@ -289,23 +290,7 @@ class StrataType(enum.StrEnum):
 
 class ExperimentStrata(BaseModel):
     strata_name: str
-    strata_type: Optional[StrataType] = None
     strata_value: Optional[str] = None
-
-    @model_validator('strata_value')
-    def validate_strata_value(cls, value, values):
-        strata_type = values.get('strata_type')
-        if strata_type == StrataType.NUMERIC:
-            if value is None or not value.replace('.', '', 1).isdigit():  # Check if it's a numeric value
-                raise ValueError("strata_value must be a numeric string when strata_type is NUMERIC.")
-        elif strata_type == StrataType.BINARY:
-            if value is None or value not in ['0', '1']:
-                raise ValueError("strata_value must be '0' or '1' when strata_type is BINARY.")
-        elif strata_type == StrataType.CATEGORICAL:
-            if value is None or not value:  # Check for non-empty string for categorical
-                raise ValueError("strata_value must be a non-empty string when strata_type is CATEGORICAL.")
-        return value
-
 
 class ExperimentParticipant(BaseModel):
     # Name of the experiment arm this unit was assigned to
@@ -377,29 +362,38 @@ class GetMetricsResponseElement(BaseModel):
     column_name: str
     description: str
 
-type PowerAnalaysis = list[MetricAnalysis]
+type PowerAnalysis = list[MetricAnalysis]
 
-class MetricStats(BaseModel):
-    mean: float
-    stddev: float
-    available_n: int
+# class MetricAnalysis(BaseModel):
+#     """Power analysis for a single metric."""
 
-class MetricSpec(BaseModel):
-    metric_name: str
-    metric_type: MetricType
-    stats: MetricStats
+#     metric_name: str
+#     metric_type: MetricType
+#     metric_pct_change: float
+#     stats: MetricStats
+#     metric_target: float
+#     target_n: int
+#     sufficient_n: bool
+#     msg: str  # TODO: replace with structured message
+#     needed_target: float | None = None
+
+class MetricAnalysisMessageType(enum.StrEnum):
+  SUFFICIENT = "sufficient"
+  INSUFFICIENT = "insufficient"
+
+class MetricAnalysisMessage(BaseModel):
+  type: MetricAnalysisMessageType
+  msg: str
+  values: dict[str, str] | None = None
 
 class MetricAnalysis(BaseModel):
-    """Power analysis for a single metric."""
-
-    metric_name: str
-    metric_type: MetricType
-    metric_pct_change: float
-    stats: Stats
-    metric_target: float
-    target_n: int
-    sufficient_n: bool
-    msg: str  # TODO: replace with structured message
+    """Analysis results for a single metric."""
+    metric_spec: DesignSpecMetric
+    available_n: int
+    target_n: int | None = None
+    sufficient_n: bool | None = None
     needed_target: float | None = None
-
-
+    metric_target_possible: float | None = None
+    metric_pct_change_possible: float | None = None
+    delta: float = None
+    msg: MetricAnalysisMessage = None

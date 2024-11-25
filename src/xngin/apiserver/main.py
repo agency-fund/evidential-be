@@ -22,6 +22,9 @@ from xngin.apiserver.api_types import (
     GetMetricsResponseElement,
     PowerAnalysis,
     MetricAnalysis,
+    MetricAnalysisMessage,
+    MetricAnalysisMessageType,
+    MetricType,
     ExperimentParticipant,
     ExperimentStrata,
 )
@@ -268,23 +271,22 @@ def check_power(
         metric_stats = get_stats_on_metrics(
             session,
             sa_table,
-            list(dsm.metric_name for dsm in design_spec.metrics),
+            design_spec.metrics,
             audience_spec,
         )
-
-        # TODO(roboton): Implement power calculation logic.
-
+        # TODO: do power calc
         return [
             MetricAnalysis(
-                metric_name=metric_stat.metric,
+                metric_spec = metric_stat,
                 metric_pct_change=0.0,  # TODO
-                metric_type=metric_stat.metric_type,
-                stats=metric_stat.stats,  # TODO
-                metric_target=0,  # TODO
+                available_n = 1000000,
                 target_n=0,  # TODO
                 sufficient_n=False,  # TODO
                 needed_target=None,  # TODO
-                msg=_unique_id_col,  # TODO
+                msg=MetricAnalysisMessage(
+                    type = MetricAnalysisMessageType.SUFFICIENT,
+                    msg = "hello"
+                    ),  # TODO
             )
             for metric_stat in metric_stats
         ]

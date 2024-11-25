@@ -4,51 +4,17 @@ from typing import List
 from dataclasses import dataclass
 from enum import Enum, StrEnum
 
-class MetricType(str, Enum):
-    CONTINUOUS = "continuous"
-    BINARY = "binary"
+from xngin.apiserver.api_types import (
+    DesignSpecMetric,
+    MetricType,
+    MetricAnalysis,
+    MetricAnalysisMessage,
+    MetricAnalysisMessageType
+)
 
-@dataclass(slots=True)
-class MetricSpec:
-    """Specification for a metric to analyze."""
-    metric_name: str
-    metric_type: MetricType
-    metric_baseline: float
-    metric_target: float | None = None
-    metric_pct_change: float | None = None
-    metric_stddev: float | None = None
-    metric_available_n: int | None = None
-
-class MetricAnalysisMessageType(StrEnum):
-  SUFFICIENT = "sufficient"
-  INSUFFICIENT = "insufficient"
-  EFFECT_SIZE = "effect_size"
-  NOPE = "nope"
-
-@dataclass(slots=True)
-class MetricAnalysisMessage:
-  type: MetricAnalysisMessageType
-  msg: str
-  values: dict[str, str]
-
-@dataclass(slots=True)
-class MetricAnalysis:
-    """Analysis results for a single metric."""
-    metric_name: str
-    metric_type: MetricType
-    metric_baseline: float
-    metric_target: float
-    available_n: int
-    target_n: int | None = None
-    sufficient_n: bool | None = None
-    needed_target: float | None = None
-    metric_target_possible: float | None = None
-    metric_pct_change_possible: float | None = None
-    delta: float = None
-    msg: MetricAnalysisMessage = None
 
 def analyze_metric_power(
-    metric: MetricSpec,
+    metric: DesignSpecMetric,
     n_arms: int,
     power: float = 0.8,
     alpha: float = 0.05
@@ -57,7 +23,7 @@ def analyze_metric_power(
     Analyze power for a single metric.
     
     Args:
-        metric: MetricSpec containing metric details
+        metric: DesignSpecMetric containing metric details
         n_arms: Number of treatment arms
         power: Desired statistical power
         alpha: Significance level
@@ -66,16 +32,13 @@ def analyze_metric_power(
         MetricAnalysis containing power analysis results
     """
     analysis = MetricAnalysis(
-        metric_name=metric.metric_name,
-        metric_type=metric.metric_type,
-        metric_baseline=metric.metric_baseline,
-        metric_target=metric.metric_target,
-        available_n=metric.metric_available_n
+        metric_spec = metric,
+        available_n=100 # metric.metric_available_n
     )
 
     # Case A: Both target and baseline defined - calculate required n
     if metric.metric_target is not None and metric.metric_baseline is not None:
-        if metric.metric_type == MetricType.CONTINUOUS:
+        if metric.metric_type == MetricType.NUMERIC:
             power_analysis = sms.TTestIndPower()
             target_n = np.ceil(
                 power_analysis.solve_power(
@@ -101,23 +64,23 @@ def analyze_metric_power(
             ) * n_arms
 
         analysis.target_n = int(target_n)
-        analysis.sufficient_n = bool(target_n <= metric.metric_available_n)
+        analysis.sufficient_n = bool(target_n <= metric.available_n)
 
         if analysis.sufficient_n:
             analysis.msg = MetricAnalysisMessage(
                 type=MetricAnalysisMessageType.SUFFICIENT,
-                msg=(f"there are {metric.metric_available_n} units available to run your experiment and"
+                msg=(f"there are {metric.available_n} units available to run your experiment and"
                      f" {target_n} units are needed to meet your experimental design specs."
                      f" there are enough units available, you only need {target_n}"
-                     f" of the {metric.metric_available_n} units to meet your experimental design specs."),
+                     f" of the {metric.available_n} units to meet your experimental design specs."),
                 values = {}
             )
         else:
             # Calculate needed target if insufficient sample
-            if metric.metric_type == MetricType.CONTINUOUS:
+            if metric.metric_type == MetricType.NUMERIC:
                 power_analysis = sms.TTestIndPower()
                 needed_delta = power_analysis.solve_power(
-                    nobs1=metric.metric_available_n // n_arms,
+                    nobs1=metric.available_n // n_arms,
                     effect_size=None,
                     alpha=alpha,
                     power=power
@@ -127,7 +90,7 @@ def analyze_metric_power(
                 power_analysis = sms.NormalIndPower()
                 # Calculate minimum detectable effect size given sample size
                 min_effect_size = power_analysis.solve_power(
-                    nobs1=metric.metric_available_n // n_arms,
+                    nobs1=metric.available_n // n_arms,
                     alpha=alpha,
                     power=power,
                     ratio=1
@@ -143,10 +106,10 @@ def analyze_metric_power(
             analysis.needed_target = needed_target
             analysis.msg = MetricAnalysisMessage(
                 type=MetricAnalysisMessageType.INSUFFICIENT,
-                msg=(f"there are {metric.metric_available_n} units available to run your experiment and {target_n} units are needed to meet your experimental design specs."
-                     f" there are not enough units available, you need {target_n - metric.metric_available_n} more units"
+                msg=(f"there are {metric.available_n} units available to run your experiment and {target_n} units are needed to meet your experimental design specs."
+                     f" there are not enough units available, you need {target_n - metric.available_n} more units"
                      f" to meet your experimental design specifications. in order to meet your specification with the available"
-                     f" {metric.metric_available_n} units and a baseline metric value of {metric.metric_baseline:.4f}, your metric"
+                     f" {metric.available_n} units and a baseline metric value of {metric.metric_baseline:.4f}, your metric"
                      f" target value needs to be {needed_target:.4f}, the current target is {metric.metric_target:.4f}."),
                 values = {}
 
@@ -154,10 +117,10 @@ def analyze_metric_power(
 
     # Case B: Only baseline defined - calculate possible effect size
     elif metric.metric_baseline is not None and metric.metric_target is None:
-        if metric.metric_type == MetricType.CONTINUOUS:
+        if metric.metric_type == MetricType.NUMERIC:
             power_analysis = sms.TTestIndPower()
             delta = power_analysis.solve_power(
-                nobs1=metric.metric_available_n // n_arms,
+                nobs1=metric.available_n // n_arms,
                 effect_size=None,
                 alpha=alpha,
                 power=power
@@ -170,7 +133,7 @@ def analyze_metric_power(
         else:  # BINARY
             power_analysis = sms.proportion_effectsize(metric.metric_baseline, None)
             p2 = power_analysis.solve_power(
-                n=metric.metric_available_n // n_arms,
+                n=metric.available_n // n_arms,
                 effect_size=None,
                 alpha=alpha,
                 power=power
@@ -190,7 +153,7 @@ def analyze_metric_power(
     return analysis
 
 def check_power(
-    metrics: List[MetricSpec],
+    metrics: List[DesignSpecMetric],
     n_arms: int,
     power: float = 0.8,
     alpha: float = 0.05
@@ -199,7 +162,7 @@ def check_power(
     Check power for multiple metrics.
     
     Args:
-        metrics: List of MetricSpec objects to analyze
+        metrics: List of DesignSpecMetric objects to analyze
         n_arms: Number of treatment arms
         power: Desired statistical power
         alpha: Significance level

@@ -10,54 +10,51 @@ from xngin.apiserver.api_types import (
     Relation,
     AudienceSpecFilter,
     EXPERIMENT_IDS_SUFFIX,
-    Stats,
     MetricType,
+    DesignSpecMetric
 )
 from xngin.sqlite_extensions import custom_functions
 
+class SummaryStats:
+    mean: float
+    stddev: float
+    available_n: int
 
 def get_metric_meta():
     # TODO: implement
     pass
 
 
-class MetricStats(BaseModel):
-    metric_name: str
-    metric_type: MetricType
-    stats: Stats
-
-
 def get_stats_on_metrics(
-    session, sa_table: Table, metric_names: list[str], audience_spec: AudienceSpec
-) -> list[MetricStats]:
+    session, sa_table: Table, metrics: list[DesignSpecMetric], audience_spec: AudienceSpec
+) -> list[DesignSpecMetric]:
+
     metric_columns = []
-    metric_names = sorted(metric_names)
-    for metric in metric_names:
-        col = sa_table.c[metric]
+
+    for metric in metrics:
+        metric_name = metric.metric_name
+        col = sa_table.c[metric_name]
         # TODO(roboton): consider whether mitigations for null are important
         metric_columns.extend((
-            func.avg(col).label(f"{metric}__mean"),
-            custom_functions.stddev_pop(col).label(f"{metric}__sd"),
-            func.count(col).label(f"{metric}__count"),
+            func.avg(col).label(f"{metric_name}__mean"),
+            custom_functions.stddev_pop(col).label(f"{metric_name}__stddev"),
+            func.count(col).label(f"{metric_name}__count"),
         ))
     query = select(*metric_columns)
     filters = create_filters(sa_table, audience_spec)
     query = query.filter(*filters)
     stats = session.execute(query).mappings().fetchone()
-    return [
-        MetricStats(
-            metric=metric,
-            metric_type=MetricType.from_python_type(
-                sa_table.c[metric].type.python_type
-            ),
-            stats=Stats(
-                mean=stats[f"{metric}__mean"],
-                stddev=stats[f"{metric}__sd"],
-                available_n=stats[f"{metric}__count"],
-            ),
-        )
-        for metric in metric_names
-    ]
+
+    metrics_with_stats = []
+    for metric in metrics:
+        metric_name = metric.metric_name
+        metric_with_stats = metric.model_copy()
+        metric_with_stats.metric_baseline = stats[f"{metric_name}__mean"]
+        metric_with_stats.metric_stddev = stats[f"{metric_name}__stddev"]
+        metric_with_stats.available_n = stats[f"{metric_name}__count"]
+        metrics_with_stats.append(metric_with_stats)
+
+    return metrics_with_stats
 
 
 def query_for_participants(
