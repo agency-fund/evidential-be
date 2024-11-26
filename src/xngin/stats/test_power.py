@@ -17,7 +17,7 @@ def test_analyze_metric_power_numeric():
     assert result.metric_spec.metric_type == MetricType.NUMERIC
     assert result.metric_spec.metric_baseline == 100
     assert result.metric_spec.metric_target == 110
-    assert result.available_n == 100
+    assert result.available_n == 1000
     assert result.target_n == 128.0
     assert result.sufficient_n
     assert result.msg is not None
@@ -36,8 +36,8 @@ def test_analyze_metric_power_binary():
     assert result.metric_spec.metric_type == MetricType.BINARY
     assert result.metric_spec.metric_baseline == 0.5
     assert result.metric_spec.metric_target == 0.55
-    assert isinstance(result.target_n, int)
-    assert isinstance(result.sufficient_n, bool)
+    assert result.target_n == 3132
+    assert result.sufficient_n == False
 
 def test_analyze_metric_power_baseline_only():
     metric = DesignSpecMetric(
@@ -51,9 +51,9 @@ def test_analyze_metric_power_baseline_only():
     result = analyze_metric_power(metric, n_arms=2)
     
     assert result.metric_spec.metric_target is None
-    assert result.metric_target_possible is not None
-    assert result.metric_pct_change_possible is not None
-    assert result.delta is not None
+    assert result.metric_target_possible == 103.54716846144846
+    assert result.metric_pct_change_possible == 0.03547168461448466
+    assert result.delta == 3.547168461448466
 
 def test_check_power_multiple_metrics():
     metrics = [

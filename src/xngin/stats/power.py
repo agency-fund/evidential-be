@@ -4,11 +4,11 @@ import statsmodels.stats.api as sms
 from xngin.apiserver.api_types import (
     DesignSpecMetric,
     MetricType,
+    PowerAnalysis,
     MetricAnalysis,
     MetricAnalysisMessage,
     MetricAnalysisMessageType
 )
-
 
 def analyze_metric_power(
     metric: DesignSpecMetric,
@@ -30,7 +30,7 @@ def analyze_metric_power(
     """
     analysis = MetricAnalysis(
         metric_spec = metric,
-        available_n=100 # metric.metric_available_n
+        available_n = metric.available_n
     )
 
     # Case A: Both target and baseline defined - calculate required n
@@ -154,7 +154,7 @@ def check_power(
     n_arms: int,
     power: float = 0.8,
     alpha: float = 0.05
-) -> list[MetricAnalysis]:
+) -> PowerAnalysis:
     """
     Check power for multiple metrics.
     
