@@ -15,6 +15,37 @@ from pydantic import (
 
 EXPERIMENT_IDS_SUFFIX = "experiment_ids"
 
+# An experiment is comprised of two primary components:
+# 1. An AudienceSpec which defines the pool of potential participants
+# 2. A DesignSpec specifying:
+#   a. the treatment arms
+#   b. outcome metrics,
+#   c. strata
+#   d. experiment meta data (start/end date, name, description)
+#   e. statistical parameters (power, significance, balance test threshold)
+
+# The goal is to produce an ExperimentAssignment from the AudienceSpec and DesignSpec.
+# We go through two steps to enable this:
+# 0. Baseline data retrieval - 
+# 1. Power analysis - Given and AudienceSpec and DesignSpec we analyze the
+#    statistical power for each metric in the DesignSpec, along with the statistical 
+#    parameters. This occurs as follows for each metric:
+#   a. If there is no baseline value (and std dev for numeric metrics), go to the
+#      database to fetch these values.
+#   b. Use the declared metric_target or compute this target based on
+#      metric_pct_change and the baseline value.
+#   c. Use the number of arms, metric baseline and target, statistical parameters
+#      and the number of participants available using the Audience filter to determine
+#      if we're sufficiently powered. If we are not, compute the effect size needed to
+#      be powered. This power information can be added to the metrics in the DesignSpec.
+# 2. Assignment - the Power analysis computes the minimum number of participants needed
+#    to be statistically powered "n" which is left to the user to choose during assignment.
+#    Assignment takes the same inputs, the AudienceSpec and DesignSpec to generate a list
+#    of "n" users randomly assigned using the set of treatment arms and the strata. This
+#    should return a list of objects containing a participant id, treatment assignment,
+#    and strata values.
+# 3. Analysis - TBD
+
 # Audience Specification (input)
 
 ## Filters
