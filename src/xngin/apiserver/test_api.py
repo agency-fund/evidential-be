@@ -37,8 +37,8 @@ def trunc(s, n=4096):
     return s
 
 
-@pytest.fixture
-def update_api_tests_flag(pytestconfig):
+@pytest.fixture(name="update_api_tests_flag")
+def fixture_update_api_tests_flag(pytestconfig):
     """Returns true iff the UPDATE_API_TESTS environment variable resembles a truthy value.
 
     TODO: replace this with something less error-prone.

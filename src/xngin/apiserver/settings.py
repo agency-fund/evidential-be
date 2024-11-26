@@ -307,7 +307,7 @@ class CannotFindParticipantsException(Exception):
 
     def __init__(self, participant_type):
         self.participant_type = participant_type
-        self.message = f"The configuration for participant type {participant_type} does not exist. Check the configuration files."
+        self.message = f"The configuration for participant type '{participant_type}' does not exist. Check the configuration files."
 
     def __str__(self):
         return self.message
