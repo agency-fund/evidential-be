@@ -257,15 +257,24 @@ class MetricType(enum.StrEnum):
 
 class DesignSpecMetric(BaseModel):
     metric_name: str
+    # TODO(roboton): metric_type should be inferred by name from db when missing
     metric_type: Optional[MetricType] = None
-    metric_pct_change: Optional[float] = None
+    # TODO(roboton): metric_baseline should be drawn from dwh when missing
     metric_baseline: Optional[float] = None
-    metric_target: Optional[float] = None
+    # TODO(roboton): we should only set this value if metric_type is NUMERIC
     metric_stddev: Optional[float] = None
+    # TOOD(roboton): if target is set, metric_pct_change is ignored, but we
+    # should display a warning
+    metric_pct_change: Optional[float] = None
+    # TODO(roboton): metric_target will be computed from metric_baseline and
+    # TODO(roboton): metric_pct_change if missing
+    # TODO(roboton): metric_target = 1 + metric_pct_change * metric_baseline
+    metric_target: Optional[float] = None
+    # TODO(roboton): available_n should probably be in another structure related to power_analysis?
     available_n: Optional[int] = None
 
 class ExperimentArm(BaseModel):
-    arm_id: uuid.UUID
+    arm_id: uuid.UUID # generally should not let users set this, auto-generated uuid by default
     arm_name: str
     arm_description: Optional[str] = None
 
@@ -279,24 +288,72 @@ class DesignSpec(BaseModel):
     start_date: datetime
     end_date: datetime
 
-    # arms
+    # arms (at least two)
     arms: list[ExperimentArm]
 
     # strata as strings
+    # TODO(roboton): rename as strata_names?
     strata_cols: list[str]
 
-    # metric specs
+    # metric specs (at least one)
     metrics: list[DesignSpecMetric]
 
     # stat parameters
-    power: float
-    alpha: float
-    fstat_thresh: float
+    # TODO(roboton): validation checks that all these numbers are between 0 and 1
+    power: float = 0.8
+    alpha: float = 0.05
+    fstat_thresh: float = 0.6
 
     @field_serializer("start_date", "end_date", when_used="json")
     def serialize_dt(self, dt: datetime, _info):
         """Convert dates to iso strings in model_dump_json()/model_dump(mode='json')"""
         return dt.isoformat()
+
+    @field_validator('power', 'alpha', 'fstat_thresh')
+    def check_values_between_0_and_1(cls, value, field):
+        """Ensure that power, alpha, and fstat_thresh are between 0 and 1."""
+        if not (0 <= value <= 1):
+            raise ValueError(f"{field.name} must be between 0 and 1.")
+        return value
+
+    @field_validator('arms')
+    def check_arms_length(cls, value):
+        """Ensure that arms list has at least two elements."""
+        if len(value) < 2:
+            raise ValueError("The arms list must contain at least two elements.")
+        return value
+
+    @field_validator('metrics')
+    def check_metrics_length(cls, value):
+        """Ensure that metrics list has at least one element."""
+        if len(value) < 1:
+            raise ValueError("The metrics list must contain at least one element.")
+        return value
+
+# Power Analysis
+
+type PowerAnalysis = list[MetricAnalysis]
+
+class MetricAnalysisMessageType(enum.StrEnum):
+  SUFFICIENT = "sufficient"
+  INSUFFICIENT = "insufficient"
+
+class MetricAnalysisMessage(BaseModel):
+  type: MetricAnalysisMessageType
+  msg: str
+  values: dict[str, str] | None = None
+
+class MetricAnalysis(BaseModel):
+    """Analysis results for a single metric."""
+    metric_spec: DesignSpecMetric
+    available_n: int
+    target_n: int | None = None
+    sufficient_n: bool | None = None
+    needed_target: float | None = None
+    metric_target_possible: float | None = None
+    metric_pct_change_possible: float | None = None
+    delta: float = None
+    msg: MetricAnalysisMessage = None
 
 # Experiment Assignment (output)
 
@@ -321,6 +378,9 @@ class StrataType(enum.StrEnum):
 
 class ExperimentStrata(BaseModel):
     strata_name: str
+    # TODO(roboton): Add in strata type, update tests to reflect this field, should be derived
+    # from data warehouse.
+    #strata_type: Optional[StrataType]
     strata_value: Optional[str] = None
 
 class ExperimentParticipant(BaseModel):
@@ -328,6 +388,7 @@ class ExperimentParticipant(BaseModel):
     treatment_assignment: str
     strata: list[ExperimentStrata]
 
+    # TODO(roboton): Would a simple id string field along with participant type be sufficient here?
     # Allow extra fields so that we can support dwh-specific ids
     model_config = {"extra": "allow"}
     # And require the extra field to be an integer;
@@ -343,24 +404,28 @@ class ExperimentParticipant(BaseModel):
             raise ValueError(f"Model must have exactly one id field. Found {num_extra}")
         return self
 
-
-class ExperimentAssignment(BaseModel):
-    """Experiment assignment details including balance statistics and group assignments."""
-
+class BalanceCheck(BaseModel):
     f_stat: float
     numerator_df: int
     denominator_df: int
     p_value: float
     balance_ok: bool
+
+class ExperimentAssignment(BaseModel):
+    """Experiment assignment details including balance statistics and group assignments."""
+    # TODO(roboton): remove next 5 fields in favor of BalanceCheck object
+    f_stat: float
+    numerator_df: int
+    denominator_df: int
+    p_value: float
+    balance_ok: bool
+
+    # TODO(roboton): should we include design_spec and audience_spec in this object
     experiment_id: uuid.UUID
+    # TODO(roboton): drop description since it will be in included design_spec
     description: str
     sample_size: int
     assignments: list[ExperimentParticipant]
-
-
-class UnimplementedResponse(BaseModel):
-    todo: Literal["TODO"] = "TODO"
-
 
 class GetStrataResponseElement(BaseModel):
     data_type: DataType
@@ -387,44 +452,10 @@ class GetFiltersResponseElement(BaseModel):
     filter_name: str = Field(..., description="Name of the column.")
     relations: list[Relation] = Field(..., min_length=1)
 
-
 class GetMetricsResponseElement(BaseModel):
     data_type: DataType
     column_name: str
     description: str
 
-type PowerAnalysis = list[MetricAnalysis]
-
-# class MetricAnalysis(BaseModel):
-#     """Power analysis for a single metric."""
-
-#     metric_name: str
-#     metric_type: MetricType
-#     metric_pct_change: float
-#     stats: MetricStats
-#     metric_target: float
-#     target_n: int
-#     sufficient_n: bool
-#     msg: str  # TODO: replace with structured message
-#     needed_target: float | None = None
-
-class MetricAnalysisMessageType(enum.StrEnum):
-  SUFFICIENT = "sufficient"
-  INSUFFICIENT = "insufficient"
-
-class MetricAnalysisMessage(BaseModel):
-  type: MetricAnalysisMessageType
-  msg: str
-  values: dict[str, str] | None = None
-
-class MetricAnalysis(BaseModel):
-    """Analysis results for a single metric."""
-    metric_spec: DesignSpecMetric
-    available_n: int
-    target_n: int | None = None
-    sufficient_n: bool | None = None
-    needed_target: float | None = None
-    metric_target_possible: float | None = None
-    metric_pct_change_possible: float | None = None
-    delta: float = None
-    msg: MetricAnalysisMessage = None
+class UnimplementedResponse(BaseModel):
+    todo: Literal["TODO"] = "TODO"
