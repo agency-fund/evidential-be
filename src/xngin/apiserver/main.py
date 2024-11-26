@@ -47,6 +47,7 @@ from xngin.apiserver.settings import (
     get_sqlalchemy_table_from_engine,
 )
 from xngin.stats.power import check_power
+from xngin.stats.assignment import assign_treatment
 from xngin.apiserver.utils import substitute_url
 from xngin.sheets.config_sheet import (
     fetch_and_parse_sheet,
@@ -287,7 +288,7 @@ def check_power_api(
     summary="Assign treatment given experiment and audience specification.",
     tags=["Manage Experiments"],
 )
-def assign_treatment(
+def assign_treatment_api(
     design_spec: DesignSpec,
     audience_spec: AudienceSpec,
     client: Annotated[ClientConfig | None, Depends(config_dependency)] = None,
@@ -307,25 +308,19 @@ def assign_treatment(
             session, sa_table, audience_spec, chosen_n
         )
 
-    participant = ExperimentParticipant(
-        id=123,
-        treatment_assignment="todo",
-        strata=[ExperimentStrata(strata_name="todo", strata_value="todo")],
-    )
-
-    return ExperimentAssignment(
-        f_stat=0,
-        numerator_df=0,
-        denominator_df=0,
-        p_value=0,
-        balance_ok=False,
-        # experiment_id=uuid.uuid4(),
-        # TODO(roboton): set seed to produce stable uuid for testing
-        experiment_id="8c3eb9a1-8d8c-402e-b407-a4002acd4f17",
-        description="todo",
-        sample_size=0,
-        assignments=[participant for _ in range(1)],
-    )
+    participants = query_for_participants(session, sa_table, audience_spec, chosen_n)
+    print(participants.__class__)
+    metric_names = [ metric.metric_name for metric in design_spec.metrics ]
+    arm_names = [ arm.arm_name for arm in design_spec.arms ]
+    assigned = assign_treatment(data = participants,
+                                stratum_cols = design_spec.strata_cols,
+                                metric_cols = metric_names,
+                                id_col = _unique_id_column,
+                                arm_names = arm_names,
+                                experiment_id = design_spec.experiment_id,
+                                description = design_spec.description,
+                                fstat_thresh = design_spec.fstat_thresh)
+    return(assigned)
 
 
 @app.get(

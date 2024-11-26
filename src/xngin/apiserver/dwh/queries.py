@@ -1,4 +1,5 @@
 import re
+import pandas as pd
 
 import sqlalchemy
 from sqlalchemy import or_, func, ColumnOperators, Table, not_, select
@@ -13,15 +14,9 @@ from xngin.apiserver.api_types import (
 )
 from xngin.sqlite_extensions import custom_functions
 
-class SummaryStats:
-    mean: float
-    stddev: float
-    available_n: int
-
 def get_metric_meta():
     # TODO: implement
     pass
-
 
 def get_stats_on_metrics(
     session, sa_table: Table, metrics: list[DesignSpecMetric], audience_spec: AudienceSpec
@@ -57,10 +52,11 @@ def get_stats_on_metrics(
 
 def query_for_participants(
     session: Session, sa_table: Table, audience_spec: AudienceSpec, chosen_n: int
-):
+) -> pd.DataFrame:
     filters = create_filters(sa_table, audience_spec)
     query = compose_query(sa_table, chosen_n, filters)
-    return session.scalars(query).all()
+    participants = session.scalars(query).all()
+    return pd.DataFrame(participants)
 
 
 # TODO: rename for clarity
