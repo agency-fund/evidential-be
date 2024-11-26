@@ -1,7 +1,6 @@
 import pytest
 import pandas as pd
 import numpy as np
-from xngin.apiserver.api_types import MetricType
 from xngin.stats.assignment import assign_treatment
 
 @pytest.fixture

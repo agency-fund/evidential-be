@@ -3,7 +3,6 @@ import pandas as pd
 import numpy as np
 from patsy import PatsyError
 from xngin.stats.balance import check_balance
-from xngin.apiserver.api_types import MetricType
 
 @pytest.fixture
 def sample_data():

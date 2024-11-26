@@ -24,7 +24,6 @@ from xngin.apiserver.api_types import (
     MetricAnalysis,
     MetricAnalysisMessage,
     MetricAnalysisMessageType,
-    MetricType,
     ExperimentParticipant,
     ExperimentStrata,
 )

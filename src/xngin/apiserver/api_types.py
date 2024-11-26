@@ -2,7 +2,7 @@ import enum
 import re
 import uuid
 from datetime import datetime
-from typing import Literal, Annotated, Self, Optional
+from typing import Literal, Annotated, Self
 
 import sqlalchemy.sql.sqltypes
 from pydantic import (
@@ -258,25 +258,25 @@ class MetricType(enum.StrEnum):
 class DesignSpecMetric(BaseModel):
     metric_name: str
     # TODO(roboton): metric_type should be inferred by name from db when missing
-    metric_type: Optional[MetricType] = None
+    metric_type: MetricType | None = None
     # TODO(roboton): metric_baseline should be drawn from dwh when missing
-    metric_baseline: Optional[float] = None
+    metric_baseline: float | None = None
     # TODO(roboton): we should only set this value if metric_type is NUMERIC
-    metric_stddev: Optional[float] = None
+    metric_stddev: float | None = None
     # TOOD(roboton): if target is set, metric_pct_change is ignored, but we
     # should display a warning
-    metric_pct_change: Optional[float] = None
+    metric_pct_change: float | None = None
     # TODO(roboton): metric_target will be computed from metric_baseline and
     # TODO(roboton): metric_pct_change if missing
     # TODO(roboton): metric_target = 1 + metric_pct_change * metric_baseline
-    metric_target: Optional[float] = None
+    metric_target: float | None = None
     # TODO(roboton): available_n should probably be in another structure related to power_analysis?
-    available_n: Optional[int] = None
+    available_n: int | None = None
 
 class ExperimentArm(BaseModel):
     arm_id: uuid.UUID # generally should not let users set this, auto-generated uuid by default
     arm_name: str
-    arm_description: Optional[str] = None
+    arm_description: str | None = None
 
 class DesignSpec(BaseModel):
     """Design specification."""
@@ -381,7 +381,7 @@ class ExperimentStrata(BaseModel):
     # TODO(roboton): Add in strata type, update tests to reflect this field, should be derived
     # from data warehouse.
     #strata_type: Optional[StrataType]
-    strata_value: Optional[str] = None
+    strata_value: str | None = None
 
 class ExperimentParticipant(BaseModel):
     # Name of the experiment arm this unit was assigned to

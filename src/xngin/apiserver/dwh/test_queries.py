@@ -21,7 +21,6 @@ from xngin.apiserver.dwh.queries import (
     create_filters,
     get_stats_on_metrics,
     make_csv_regex,
-    SummaryStats,
 )
 
 Base = declarative_base()

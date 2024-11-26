@@ -1,4 +1,3 @@
-from typing import List, Optional
 import pandas as pd
 import numpy as np
 from dataclasses import dataclass
@@ -21,10 +20,10 @@ class AssignmentResult:
 
 def assign_treatment(
     data: pd.DataFrame,
-    stratum_cols: List[str],
-    metric_cols: List[str],
+    stratum_cols: list[str],
+    metric_cols: list[str],
     id_col: str,
-    arm_names: List[str],
+    arm_names: list[str],
     experiment_id: str,
     description: str,
     fstat_thresh: float = 0.1,

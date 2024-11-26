@@ -1,8 +1,5 @@
 import numpy as np
 import statsmodels.stats.api as sms
-from typing import List
-from dataclasses import dataclass
-from enum import Enum, StrEnum
 
 from xngin.apiserver.api_types import (
     DesignSpecMetric,
@@ -153,11 +150,11 @@ def analyze_metric_power(
     return analysis
 
 def check_power(
-    metrics: List[DesignSpecMetric],
+    metrics: list[DesignSpecMetric],
     n_arms: int,
     power: float = 0.8,
     alpha: float = 0.05
-) -> List[MetricAnalysis]:
+) -> list[MetricAnalysis]:
     """
     Check power for multiple metrics.
     

@@ -1,7 +1,6 @@
 import re
 
 import sqlalchemy
-from pydantic import BaseModel
 from sqlalchemy import or_, func, ColumnOperators, Table, not_, select
 from sqlalchemy.orm import Session
 
@@ -10,7 +9,6 @@ from xngin.apiserver.api_types import (
     Relation,
     AudienceSpecFilter,
     EXPERIMENT_IDS_SUFFIX,
-    MetricType,
     DesignSpecMetric
 )
 from xngin.sqlite_extensions import custom_functions

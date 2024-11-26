@@ -1,6 +1,5 @@
 import pandas as pd
 import statsmodels.formula.api as smf
-from typing import List
 from dataclasses import dataclass
 
 @dataclass(slots=True)
@@ -14,7 +13,7 @@ class BalanceResult:
 def check_balance(
     data: pd.DataFrame,
     treatment_col: str = 'treat',
-    exclude_cols: List[str] | None = None,
+    exclude_cols: list[str] | None = None,
     alpha: float = 0.05
 ) -> BalanceResult:
     """
