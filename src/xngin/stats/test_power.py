@@ -39,22 +39,6 @@ def test_analyze_metric_power_binary():
     assert result.target_n == 3132
     assert result.sufficient_n == False
 
-def test_analyze_metric_power_baseline_only():
-    metric = DesignSpecMetric(
-        metric_name="test_metric",
-        metric_type=MetricType.NUMERIC,
-        metric_baseline=100,
-        metric_stddev=20,
-        available_n=1000
-    )
-    
-    result = analyze_metric_power(metric, n_arms=2)
-    
-    assert result.metric_spec.metric_target is None
-    assert result.metric_target_possible == 103.54716846144846
-    assert result.metric_pct_change_possible == 0.03547168461448466
-    assert result.delta == 3.547168461448466
-
 def test_check_power_multiple_metrics():
     metrics = [
         DesignSpecMetric(

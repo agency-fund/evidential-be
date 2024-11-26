@@ -27,13 +27,18 @@ Config-ID: testing
     "metrics": [
       {
         "metric_name": "current_income",
+        "metric_type": "numeric",
         "metric_pct_change": 0.1
       }
     ]
   },
   "audience_spec": {
     "participant_type": "test_participant_type",
-    "filters": []
+    "filters": [{
+      "filter_name": "ethnicity",
+      "relation": "includes",
+      "value": ["Asian"]
+    }]
   }
 }
 ```
@@ -41,27 +46,27 @@ HTTP 200
 ```json
 [
   {
-    "available_n": 1000000,
+    "available_n": 39405,
     "delta": null,
     "metric_pct_change_possible": null,
     "metric_spec": {
-      "available_n": 1000000,
-      "metric_baseline": 34673.197818833825,
+      "available_n": 39405,
+      "metric_baseline": 26333.628738429015,
       "metric_name": "current_income",
       "metric_pct_change": 0.1,
-      "metric_stddev": 13438.083721278974,
-      "metric_target": null,
-      "metric_type": null
+      "metric_stddev": 6752.850516930193,
+      "metric_target": 28966.99161227192,
+      "metric_type": "numeric"
     },
     "metric_target_possible": null,
     "msg": {
         "type": "sufficient",
-        "msg": "hello",
-        "values": null
+        "msg": "there are 39405 units available to run your experiment and 210.0 units are needed to meet your experimental design specs. there are enough units available, you only need 210.0 of the 39405 units to meet your experimental design specs.",
+        "values": {}
     },
     "needed_target": null,
-    "sufficient_n": false,
-    "target_n": 0
+    "sufficient_n": true,
+    "target_n": 210
   }
 ]
 ```

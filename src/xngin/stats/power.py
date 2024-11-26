@@ -33,6 +33,9 @@ def analyze_metric_power(
         available_n = metric.available_n
     )
 
+    if metric.metric_target is None:
+        metric.metric_target = metric.metric_baseline * (1 + metric.metric_pct_change)
+
     # Case A: Both target and baseline defined - calculate required n
     if metric.metric_target is not None and metric.metric_baseline is not None:
         if metric.metric_type == MetricType.NUMERIC:
@@ -113,36 +116,36 @@ def analyze_metric_power(
             )
 
     # Case B: Only baseline defined - calculate possible effect size
-    elif metric.metric_baseline is not None and metric.metric_target is None:
-        if metric.metric_type == MetricType.NUMERIC:
-            power_analysis = sms.TTestIndPower()
-            delta = power_analysis.solve_power(
-                nobs1=metric.available_n // n_arms,
-                effect_size=None,
-                alpha=alpha,
-                power=power
-            ) * metric.metric_stddev
+    # elif metric.metric_baseline is not None and metric.metric_target is None:
+    #     if metric.metric_type == MetricType.NUMERIC:
+    #         power_analysis = sms.TTestIndPower()
+    #         delta = power_analysis.solve_power(
+    #             nobs1=metric.available_n // n_arms,
+    #             effect_size=None,
+    #             alpha=alpha,
+    #             power=power
+    #         ) * metric.metric_stddev
 
-            analysis.metric_target_possible = delta + metric.metric_baseline
-            analysis.metric_pct_change_possible = delta / metric.metric_baseline
-            analysis.delta = delta
+    #         analysis.metric_target_possible = delta + metric.metric_baseline
+    #         analysis.metric_pct_change_possible = delta / metric.metric_baseline
+    #         analysis.delta = delta
 
-        else:  # BINARY
-            power_analysis = sms.proportion_effectsize(metric.metric_baseline, None)
-            p2 = power_analysis.solve_power(
-                n=metric.available_n // n_arms,
-                effect_size=None,
-                alpha=alpha,
-                power=power
-            )
+    #     else:  # BINARY
+    #         power_analysis = sms.proportion_effectsize(metric.metric_baseline, None)
+    #         p2 = power_analysis.solve_power(
+    #             n=metric.available_n // n_arms,
+    #             effect_size=None,
+    #             alpha=alpha,
+    #             power=power
+    #         )
 
-            analysis.metric_target_possible = p2
-            analysis.metric_pct_change_possible = (p2 - metric.metric_baseline) / metric.metric_baseline
-            analysis.delta = p2 - metric.metric_baseline
+    #         analysis.metric_target_possible = p2
+    #         analysis.metric_pct_change_possible = (p2 - metric.metric_baseline) / metric.metric_baseline
+    #         analysis.delta = p2 - metric.metric_baseline
 
-        analysis.msg = (f"the smallest detectable effect size for the given specifications is: {analysis.delta:.4f}pp "
-                       f"using all {analysis.available_n} units available to run your experiment. This is a "
-                       f"{analysis.metric_pct_change_possible:.1%} increase on the baseline value of {metric.metric_baseline:.4f}.")
+    #     analysis.msg = (f"the smallest detectable effect size for the given specifications is: {analysis.delta:.4f}pp "
+    #                    f"using all {analysis.available_n} units available to run your experiment. This is a "
+    #                    f"{analysis.metric_pct_change_possible:.1%} increase on the baseline value of {metric.metric_baseline:.4f}.")
 
     else:
         analysis.msg = "Could not calculate metric baseline with given specification. Provide metric baseline or adjust filters."

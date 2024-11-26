@@ -10,13 +10,15 @@ import sqlalchemy
 from fastapi import FastAPI, HTTPException, Depends, Path, Query, Response
 from fastapi import Request
 from sqlalchemy import distinct
-
+from starlette.responses import JSONResponse
 from xngin.apiserver import database, exceptionhandlers
+from xngin.apiserver import database
 from xngin.apiserver.api_types import (
     DataTypeClass,
     AudienceSpec,
     DesignSpec,
     ExperimentAssignment,
+    UnimplementedResponse,
     GetStrataResponseElement,
     GetFiltersResponseElement,
     GetMetricsResponseElement,
@@ -44,6 +46,7 @@ from xngin.apiserver.settings import (
     CannotFindTableException,
     get_sqlalchemy_table_from_engine,
 )
+from xngin.stats.power import check_power
 from xngin.apiserver.utils import substitute_url
 from xngin.sheets.config_sheet import (
     fetch_and_parse_sheet,
@@ -245,7 +248,7 @@ def get_metrics(
     summary="Check power given an experiment and audience specification.",
     tags=["Experiment Design"],
 )
-def check_power(
+def check_power_api(
     design_spec: DesignSpec,
     audience_spec: AudienceSpec,
     gsheets: Annotated[GSheetCache, Depends(gsheet_cache)],
@@ -256,39 +259,27 @@ def check_power(
     TODO(roboton): finish implementing this method
     """
     config = require_config(client)
+
+    # TODO(roboton): Implement power calculation logic. This is just a placeholder.
     participant_type = audience_spec.participant_type
+
+    # TODO(roboton): This is how you read the unique ID column name from the participants config.
+    _unique_id_column_example = config.find_participants(participant_type)
     with config.dbsession(participant_type) as session:
         sa_table = get_sqlalchemy_table_from_engine(
             session.get_bind(), participant_type
         )
-        config_sheet = fetch_worksheet(
-            CommonQueryParams(participant_type=participant_type, refresh=refresh),
-            config,
-            gsheets,
-        )
-        _unique_id_col = config_sheet.get_unique_id_col()
         metric_stats = get_stats_on_metrics(
             session,
             sa_table,
             design_spec.metrics,
             audience_spec,
         )
-        # TODO: do power calc
-        return [
-            MetricAnalysis(
-                metric_spec = metric_stat,
-                metric_pct_change=0.0,  # TODO
-                available_n = 1000000,
-                target_n=0,  # TODO
-                sufficient_n=False,  # TODO
-                needed_target=None,  # TODO
-                msg=MetricAnalysisMessage(
-                    type = MetricAnalysisMessageType.SUFFICIENT,
-                    msg = "hello"
-                    ),  # TODO
-            )
-            for metric_stat in metric_stats
-        ]
+
+        return check_power(metrics = metric_stats,
+                           n_arms = len(design_spec.arms),
+                           power = design_spec.power,
+                           alpha = design_spec.alpha)
 
 
 @app.post(
