@@ -299,7 +299,6 @@ class DesignSpec(BaseModel):
     metrics: list[DesignSpecMetric]
 
     # stat parameters
-    # TODO(roboton): validation checks that all these numbers are between 0 and 1
     power: float = 0.8
     alpha: float = 0.05
     fstat_thresh: float = 0.6
@@ -353,7 +352,7 @@ class MetricAnalysis(BaseModel):
     metric_target_possible: float | None = None
     metric_pct_change_possible: float | None = None
     delta: float = None
-    msg: MetricAnalysisMessage = None
+    msg: MetricAnalysisMessage | None = None
 
 # Experiment Assignment (output)
 
@@ -368,11 +367,11 @@ class StrataType(enum.StrEnum):
         """Given a Python type, return an appropriate StrataType."""
 
         if python_type in (int, float):
-            return MetricType.NUMERIC
+            return StrataType.NUMERIC
         if python_type is bool:
-            return MetricType.BINARY
+            return StrataType.BINARY
         if python_type is str:
-            return MetricType.CATEGORICAL
+            return StrataType.CATEGORICAL
 
         raise ValueError(f"Unsupported type: {python_type}")
 
