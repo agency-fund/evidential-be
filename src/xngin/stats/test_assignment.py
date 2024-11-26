@@ -14,9 +14,7 @@ def sample_data():
         'gender': np.random.choice(['M', 'F'], n),
         'region': np.random.choice(['North', 'South', 'East', 'West'], n)
     }
-    df = pd.DataFrame(data)
-    #df.set_index('id', inplace=True)
-    return df
+    return pd.DataFrame(data)
 
 def test_assign_treatment(sample_data):
     result = assign_treatment(

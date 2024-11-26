@@ -23,11 +23,6 @@ from xngin.apiserver.api_types import (
     GetFiltersResponseElement,
     GetMetricsResponseElement,
     PowerAnalysis,
-    MetricAnalysis,
-    MetricAnalysisMessage,
-    MetricAnalysisMessageType,
-    ExperimentParticipant,
-    ExperimentStrata,
 )
 from xngin.apiserver.dependencies import (
     httpx_dependency,
@@ -312,15 +307,14 @@ def assign_treatment_api(
     print(participants.__class__)
     metric_names = [ metric.metric_name for metric in design_spec.metrics ]
     arm_names = [ arm.arm_name for arm in design_spec.arms ]
-    assigned = assign_treatment(data = participants,
-                                stratum_cols = design_spec.strata_cols,
-                                metric_cols = metric_names,
-                                id_col = _unique_id_column,
-                                arm_names = arm_names,
-                                experiment_id = design_spec.experiment_id,
-                                description = design_spec.description,
-                                fstat_thresh = design_spec.fstat_thresh)
-    return(assigned)
+    return(assign_treatment(data = participants,
+                            stratum_cols = design_spec.strata_cols,
+                            metric_cols = metric_names,
+                            id_col = _unique_id_column,
+                            arm_names = arm_names,
+                            experiment_id = design_spec.experiment_id,
+                            description = design_spec.description,
+                            fstat_thresh = design_spec.fstat_thresh))
 
 
 @app.get(

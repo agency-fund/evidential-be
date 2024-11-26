@@ -1,5 +1,4 @@
 from xngin.stats.power import DesignSpecMetric, MetricType, analyze_metric_power, check_power
-from xngin.apiserver.api_types import MetricType
 
 def test_analyze_metric_power_numeric():
     metric = DesignSpecMetric(
@@ -37,7 +36,7 @@ def test_analyze_metric_power_binary():
     assert result.metric_spec.metric_baseline == 0.5
     assert result.metric_spec.metric_target == 0.55
     assert result.target_n == 3132
-    assert result.sufficient_n == False
+    assert not result.sufficient_n
 
 def test_check_power_multiple_metrics():
     metrics = [

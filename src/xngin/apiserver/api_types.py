@@ -384,7 +384,8 @@ class ExperimentStrata(BaseModel):
     strata_value: str | None = None
 
 class ExperimentParticipant(BaseModel):
-    # Name of the experiment arm this unit was assigned to
+    # this references the column marked is_unique_id == TRUE in the configuration spreadsheet
+    # participant_id: str
     treatment_assignment: str
     strata: list[ExperimentStrata]
 
