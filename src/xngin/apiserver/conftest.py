@@ -14,6 +14,7 @@ from xngin.apiserver import database
 from xngin.apiserver.dependencies import settings_dependency, xngin_db_session
 from xngin.apiserver.settings import XnginSettings, SettingsForTesting
 from xngin.apiserver.testing import testing_dwh
+from xngin.sqlite_extensions import custom_functions
 
 logger = logging.getLogger(__name__)
 
@@ -61,6 +62,9 @@ def setup(app):
     # https://fastapi.tiangolo.com/advanced/testing-dependencies/#use-the-appdependency_overrides-attribute
     app.dependency_overrides[xngin_db_session] = get_db_for_test
     app.dependency_overrides[settings_dependency] = get_settings_for_test
+
+    # Use a deterministic sort order instead of RANDOM for unit tests.
+    custom_functions.TESTING = True
 
 
 @pytest.fixture(scope="module", autouse=True)

@@ -5,6 +5,19 @@ from sqlalchemy.sql.functions import func
 
 stddev_pop = func.stddev_pop
 
+# Hack: Allow the conftest setup function to let us use a deterministic random function for sorting.
+TESTING = False
+
+
+def our_random(expr_for_tests=None):
+    """Returns a RANDOM() call.
+
+    When in a unit test, this returns the value returned by expr_for_tests().
+    """
+    if TESTING:
+        return expr_for_tests()
+    return func.random()
+
 
 @compiler.compiles(stddev_pop, "mysql")
 @compiler.compiles(stddev_pop, "postgresql")

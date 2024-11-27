@@ -2,7 +2,7 @@ import re
 
 import sqlalchemy
 from pydantic import BaseModel
-from sqlalchemy import or_, func, ColumnOperators, Table, not_, select
+from sqlalchemy import or_, func, ColumnOperators, Table, not_, select, inspect
 from sqlalchemy.orm import Session
 
 from xngin.apiserver.api_types import (
@@ -144,6 +144,6 @@ def compose_query(session: Session, sa_table: Table, chosen_n: int, filters):
     query = session.query(sa_table)
     filtered = query.filter(*filters)
     ordered = filtered.order_by(
-        func.random()
-    )  # TODO: func.random works only with postgres and sqlite (not mysql)
+        custom_functions.our_random(lambda: inspect(sa_table).primary_key[0])
+    )
     return ordered.limit(chosen_n)
