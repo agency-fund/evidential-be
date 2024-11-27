@@ -69,9 +69,9 @@ def analyze_metric_power(
         if analysis.sufficient_n:
             analysis.msg = MetricAnalysisMessage(
                 type=MetricAnalysisMessageType.SUFFICIENT,
-                msg=(f"there are {metric.available_n} units available to run your experiment and"
+                msg=(f"There are {metric.available_n} units available to run your experiment and"
                      f" {target_n} units are needed to meet your experimental design specs."
-                     f" there are enough units available, you only need {target_n}"
+                     f" There are enough units available, you only need {target_n}"
                      f" of the {metric.available_n} units to meet your experimental design specs."),
                 values = {}
             )

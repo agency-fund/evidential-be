@@ -61,7 +61,7 @@ HTTP 200
     "metric_target_possible": null,
     "msg": {
         "type": "sufficient",
-        "msg": "there are 39405 units available to run your experiment and 210.0 units are needed to meet your experimental design specs. there are enough units available, you only need 210.0 of the 39405 units to meet your experimental design specs.",
+        "msg": "There are 39405 units available to run your experiment and 210.0 units are needed to meet your experimental design specs. There are enough units available, you only need 210.0 of the 39405 units to meet your experimental design specs.",
         "values": {}
     },
     "needed_target": null,
