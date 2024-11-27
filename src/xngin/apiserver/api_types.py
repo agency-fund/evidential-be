@@ -414,7 +414,7 @@ class BalanceCheck(BaseModel):
 class ExperimentAssignment(BaseModel):
     """Experiment assignment details including balance statistics and group assignments."""
     # TODO(roboton): remove next 5 fields in favor of BalanceCheck object
-    f_stat: float
+    f_statistic: float
     numerator_df: int
     denominator_df: int
     p_value: float

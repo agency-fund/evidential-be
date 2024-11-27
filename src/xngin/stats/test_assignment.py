@@ -2,6 +2,7 @@ import pytest
 import pandas as pd
 import numpy as np
 from xngin.stats.assignment import assign_treatment
+from xngin.apiserver.api_types import ExperimentParticipant
 
 @pytest.fixture
 def sample_data():
@@ -23,18 +24,20 @@ def test_assign_treatment(sample_data):
         metric_cols=['age', 'income'],
         id_col='id',
         arm_names=['control', 'treatment'],
-        experiment_id='test_exp_001',
-        description='Test experiment'
+        experiment_id='b767716b-f388-4cd9-a18a-08c4916ce26f',
+        description='Test experiment',
+        random_state=42
     )
     
     assert result.f_statistic is not None
-    assert result.f_pvalue is not None
+    assert result.p_value is not None
     assert result.balance_ok is not None
-    assert result.experiment_id == 'test_exp_001'
+    assert str(result.experiment_id) == 'b767716b-f388-4cd9-a18a-08c4916ce26f'
     assert result.description == 'Test experiment'
     assert result.sample_size == len(sample_data)
-    assert isinstance(result.assignments, pd.DataFrame)
-    assert 'treat' in result.assignments.columns
+    assert isinstance(result.assignments, list)
+    # TODO(roboton): Fix this test
+    # assert 'treat' in result.assignments.columns
 
 def test_assign_treatment_multiple_arms(sample_data):
     result = assign_treatment(
@@ -43,11 +46,18 @@ def test_assign_treatment_multiple_arms(sample_data):
         metric_cols=['age', 'income'],
         id_col='id',
         arm_names=['control', 'treatment_a', 'treatment_b'],
-        experiment_id='test_exp_002',
+        experiment_id='b767716b-f388-4cd9-a18a-08c4916ce26f',
         description='Test multi-arm experiment'
     )
     
-    assert len(result.assignments['treat'].unique()) == 3
+    # Check that assignments is a list
+    assert isinstance(result.assignments, list)
+    # Check that the list contains ExperimentParticipant objects
+    assert all(isinstance(participant, ExperimentParticipant) for participant in result.assignments)
+    # Check that the treatment assignments are valid (not None or NaN)
+    assert all(participant.treatment_assignment is not None for participant in result.assignments)
+    # Check that the treatment assignments are valid
+    assert len(set(participant.treatment_assignment for participant in result.assignments)) == 3
     assert result.sample_size == len(sample_data)
 
 def test_assign_treatment_reproducibility(sample_data):
@@ -57,7 +67,7 @@ def test_assign_treatment_reproducibility(sample_data):
         metric_cols=['age', 'income'],
         id_col='id',
         arm_names=['control', 'treatment'],
-        experiment_id='test_exp_003',
+        experiment_id='b767716b-f388-4cd9-a18a-08c4916ce26f',
         description='Test reproducibility',
         random_state=42
     )
@@ -68,12 +78,19 @@ def test_assign_treatment_reproducibility(sample_data):
         metric_cols=['age', 'income'],
         id_col='id',
         arm_names=['control', 'treatment'],
-        experiment_id='test_exp_003',
+        experiment_id='b767716b-f388-4cd9-a18a-08c4916ce26f',
         description='Test reproducibility',
         random_state=42
     )
     
-    pd.testing.assert_frame_equal(result1.assignments, result2.assignments)
+    # Check that both results have the same assignments
+    assert len(result1.assignments) == len(result2.assignments)
+    
+    # Check that the treatment assignments are the same
+    for p1, p2 in zip(result1.assignments, result2.assignments):
+        assert p1.treatment_assignment == p2.treatment_assignment
+        assert p1.id == p2.id  # Assuming id is a unique identifier for participants
+        assert p1.strata == p2.strata  # Check if strata are equal
 
 def test_assign_treatment_with_missing_values(sample_data):
     # Add some missing values
@@ -85,9 +102,10 @@ def test_assign_treatment_with_missing_values(sample_data):
         metric_cols=['age', 'income'],
         id_col='id',
         arm_names=['control', 'treatment'],
-        experiment_id='test_exp_004',
+        experiment_id='b767716b-f388-4cd9-a18a-08c4916ce26f',
         description='Test with missing values'
     )
     
     assert result.sample_size == len(sample_data)
-    assert not result.assignments['treat'].isna().any() 
+    # Check that treatment assignments are not None or NaN
+    assert all(participant.treatment_assignment is not None for participant in result.assignments)

@@ -1,22 +1,27 @@
 import pandas as pd
 import numpy as np
-from dataclasses import dataclass
+# from dataclasses import dataclass
 from stochatreat import stochatreat
 import statsmodels.api as sm
 import scipy.stats as stats
+from xngin.apiserver.api_types import (
+    ExperimentAssignment,
+    ExperimentParticipant,
+    ExperimentStrata
+)
 
-@dataclass(slots=True)
-class AssignmentResult:
-    """Results from treatment assignment."""
-    f_statistic: float
-    numerator_df: int
-    denominator_df: int
-    f_pvalue: float
-    balance_ok: bool
-    experiment_id: str
-    description: str
-    sample_size: int
-    assignments: pd.DataFrame
+# @dataclass(slots=True)
+# class AssignmentResult:
+#     """Results from treatment assignment."""
+#     f_statistic: float
+#     numerator_df: int
+#     denominator_df: int
+#     f_pvalue: float
+#     balance_ok: bool
+#     experiment_id: str
+#     description: str
+#     sample_size: int
+#     assignments: pd.DataFrame
 
 def assign_treatment(
     data: pd.DataFrame,
@@ -28,7 +33,7 @@ def assign_treatment(
     description: str,
     fstat_thresh: float = 0.1,
     random_state: int | None = None
-) -> AssignmentResult:
+) -> ExperimentAssignment:
     """
     Perform stratified random assignment and balance checking.
     
@@ -107,15 +112,27 @@ def assign_treatment(
         value_name='strata_value'
     )
     assignments['strata_value'] = assignments['strata_value'].fillna('NA')
-    
-    return AssignmentResult(
+
+    # Convert the assignments DataFrame to a list of ExperimentParticipant objects
+    participants_list = []
+    for index, row in assignments.iterrows():
+        strata = [ExperimentStrata(strata_name=row['strata_name'], strata_value=str(row['strata_value']))]
+        participant = ExperimentParticipant(
+            id=str(row[id_col]),
+            treatment_assignment=str(row['treat']),
+            strata=strata
+        )
+        participants_list.append(participant)
+
+    # Return the ExperimentAssignment with the list of participants
+    return ExperimentAssignment(
         f_statistic=f_stat,
         numerator_df=model.df_model,
         denominator_df=model.df_resid,
-        f_pvalue=f_pvalue,
+        p_value=f_pvalue,
         balance_ok=f_pvalue > fstat_thresh,
         experiment_id=experiment_id,
         description=description,
         sample_size=len(df),
-        assignments=assignments
+        assignments=participants_list  # Use the list of participants here
     )

@@ -51,12 +51,15 @@ def get_stats_on_metrics(
 
 
 def query_for_participants(
-    session: Session, sa_table: Table, audience_spec: AudienceSpec, chosen_n: int
+    session: Session, sa_table: Table, audience_spec: AudienceSpec, chosen_n: int, random_state: int = None
 ) -> pd.DataFrame:
     filters = create_filters(sa_table, audience_spec)
     query = compose_query(sa_table, chosen_n, filters)
-    participants = session.scalars(query).all()
-    return pd.DataFrame(participants)
+    # postgres
+    # if random_state is not None:
+    #   session.execute(func.setseed(random_state))
+    # TODO(roboton): we can't set a random seed in SQLLite so hurl unit tests are broken
+    return session.execute(query).all()
 
 
 # TODO: rename for clarity

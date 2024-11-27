@@ -9,6 +9,7 @@ from pydantic import BaseModel
 import sqlalchemy
 from fastapi import FastAPI, HTTPException, Depends, Path, Query, Response
 from fastapi import Request
+from pandas import DataFrame
 from sqlalchemy import distinct
 from starlette.responses import JSONResponse
 from xngin.apiserver import database, exceptionhandlers
@@ -286,35 +287,32 @@ def check_power_api(
 def assign_treatment_api(
     design_spec: DesignSpec,
     audience_spec: AudienceSpec,
-    client: Annotated[ClientConfig | None, Depends(config_dependency)] = None,
-    chosen_n: int = 1000,
+    chosen_n: int,
+    random_state: int,
+    client: Annotated[ClientConfig | None, Depends(config_dependency)] = None
 ) -> ExperimentAssignment:
     config = require_config(client)
     participant_type = audience_spec.participant_type
-
-    # TODO: This is probably useful.
-    _unique_id_column = config.find_participants(participant_type)
 
     with config.dbsession(participant_type) as session:
         sa_table = get_sqlalchemy_table_from_engine(
             session.get_bind(), participant_type
         )
-        _participants = query_for_participants(
-            session, sa_table, audience_spec, chosen_n
+        participants = query_for_participants(
+            session, sa_table, audience_spec, chosen_n, random_state
         )
 
-    participants = query_for_participants(session, sa_table, audience_spec, chosen_n)
-    print(participants.__class__)
     metric_names = [ metric.metric_name for metric in design_spec.metrics ]
     arm_names = [ arm.arm_name for arm in design_spec.arms ]
-    return(assign_treatment(data = participants,
+    return(assign_treatment(data = DataFrame(participants),
                             stratum_cols = design_spec.strata_cols,
                             metric_cols = metric_names,
-                            id_col = _unique_id_column,
+                            id_col = "id",
                             arm_names = arm_names,
                             experiment_id = design_spec.experiment_id,
                             description = design_spec.description,
-                            fstat_thresh = design_spec.fstat_thresh))
+                            fstat_thresh = design_spec.fstat_thresh,
+                            random_state = random_state))
 
 
 @app.get(
