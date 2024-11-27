@@ -40,8 +40,6 @@
             "authorization": "abc"
           }
         },
-        "api_host": "api_host",
-        "api_token": "api_token",
         "dwh": {
           "user": "user",
           "port": 5439,
@@ -73,8 +71,6 @@
             "authorization": "abc"
           }
         },
-        "api_host": "api_host",
-        "api_token": "api_token",
         "dwh": {
           "user": "user",
           "port": 5439,

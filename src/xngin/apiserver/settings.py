@@ -146,8 +146,6 @@ class RocketLearningConfig(ParticipantsMixin, WebhookMixin, BaseModel):
     type: Literal["customer"]
 
     dwh: PostgresDsn
-    api_host: str
-    api_token: SecretStr
 
     def to_sqlalchemy_url_and_table(self, participant_type: str) -> SqlalchemyAndTable:
         participants = self.find_participants(participant_type)

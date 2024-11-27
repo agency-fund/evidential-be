@@ -37,8 +37,6 @@
             "authorization": "=secret:CUSTOMER_API_TOKEN"
           }
         },
-        "api_host": "api.example.com",
-        "api_token": "=secret:CUSTOMER_API_TOKEN",
         "dwh": {
           "user": "agency",
           "port": 5439,

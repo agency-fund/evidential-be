@@ -1,5 +1,5 @@
 from contextlib import asynccontextmanager
-from typing import Any, Annotated, Literal
+from typing import Annotated, Literal
 import logging
 import warnings
 
@@ -42,7 +42,7 @@ from xngin.apiserver.settings import (
     get_sqlalchemy_table_from_engine,
     CannotFindParticipantsException,
 )
-from xngin.apiserver.utils import safe_for_headers, substitute_url
+from xngin.apiserver.utils import substitute_url
 from xngin.sheets.config_sheet import (
     fetch_and_parse_sheet,
     create_sheetconfig_from_table,
@@ -529,37 +529,6 @@ def assign_units_to_arms(
 ):
     # Implement experiment assignment logic
     pass
-
-
-# MongoDB interaction function
-def experiments_reg_request(
-    settings: XnginSettings, endpoint: str, json_data: dict[str, Any] | None = None
-):
-    url = f"https://{settings.api_host}/dev/api/v1/experiment-commit/{endpoint}"
-
-    api_token = safe_for_headers(
-        settings.get_client_config("customer").config.api_token.get_secret_value()
-    )
-    headers = {
-        "accept": "application/json",
-        "Authorization": f"Bearer {api_token}",
-    }
-
-    if (
-        endpoint.startswith("get-file-name-by-experiment-id")
-        or endpoint == "get-all-experiments"
-    ):
-        response = httpx.get(url, headers=headers)
-    else:
-        if endpoint.startswith("update"):
-            response = httpx.put(url, headers=headers, json=json_data)
-        else:
-            response = httpx.post(url, headers=headers, json=json_data)
-
-    if response.status_code != 200:
-        raise HTTPException(status_code=response.status_code, detail="Request failed")
-
-    return response.json()
 
 
 def require_config(client: ClientConfig | None):
