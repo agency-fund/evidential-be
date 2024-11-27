@@ -1,4 +1,5 @@
 import numpy as np
+from sqlalchemy import inspect
 
 from sqlalchemy.ext import compiler
 from sqlalchemy.sql.functions import func
@@ -9,13 +10,13 @@ stddev_pop = func.stddev_pop
 TESTING = False
 
 
-def our_random(expr_for_tests=None):
+def our_random(sa_table=None):
     """Returns a RANDOM() call.
 
     When in a unit test, this returns the value returned by expr_for_tests().
     """
     if TESTING:
-        return expr_for_tests()
+        return inspect(sa_table).primary_key[0]
     return func.random()
 
 
