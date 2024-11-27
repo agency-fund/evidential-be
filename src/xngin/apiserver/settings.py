@@ -103,7 +103,7 @@ class WebhookActions(BaseModel):
 class WebhookCommonHeaders(BaseModel):
     """Enumerates supported headers to attach to all webhook requests."""
 
-    authorization: str | None
+    authorization: SecretStr | None
 
 
 class WebhookConfig(BaseModel):
@@ -124,8 +124,8 @@ class WebhookMixin(BaseModel):
           "url": "http://localhost:4001/dev/api/v1/experiment-commit/save-experiment-commit"
         },
         "assignment_file": {
-          "method": "POST",
-          "url": "http://localhost:4001/dev/api/v1/experiment-commit/get-file-name-by-experiment-id/{experimentId}?qs={experimentCode}",
+          "method": "GET",
+          "url": "http://localhost:4001/dev/api/v1/experiment-commit/get-file-name-by-experiment-id/{experiment_id}",
         }
       },
       "common_headers": {

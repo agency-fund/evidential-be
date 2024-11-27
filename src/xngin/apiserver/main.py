@@ -42,7 +42,7 @@ from xngin.apiserver.settings import (
     get_sqlalchemy_table_from_engine,
     CannotFindParticipantsException,
 )
-from xngin.apiserver.utils import safe_for_headers
+from xngin.apiserver.utils import safe_for_headers, substitute_url
 from xngin.sheets.config_sheet import (
     fetch_and_parse_sheet,
     create_sheetconfig_from_table,
@@ -320,20 +320,32 @@ def assign_treatment(
     return UnimplementedResponse()
 
 
-@app.post(
+@app.get(
     "/assignment-file",
-    summary="TODO",
-    response_model=UnimplementedResponse,
+    summary="Retrieve all participant assignments for the given experiment_id.",
+    responses=STANDARD_WEBHOOK_RESPONSES,
     tags=["Manage Experiments"],
 )
-def assignment_file(
-    design_spec: DesignSpec,
-    audience_spec: AudienceSpec,
+async def assignment_file(
+    response: Response,
+    experiment_id: str = Annotated[
+        str,
+        Path(description="ID of the experiment whose assignments we wish to fetch."),
+    ],
+    http_client: Annotated[httpx.AsyncClient, Depends(httpx_dependency)] = None,
     client: Annotated[ClientConfig | None, Depends(config_dependency)] = None,
-    chosen_n: int = 1000,
-):
-    # Implement treatment assignment logic
-    return UnimplementedResponse()
+) -> WebhookResponse:
+    config = require_config(client).webhook_config
+    action = config.actions.assignment_file
+    if action is None:
+        # TODO: read from internal storage if webhooks are not defined.
+        raise HTTPException(501, "Action 'commit' not configured.")
+
+    url = substitute_url(action.url, {"experiment_id": experiment_id})
+    response.status_code, payload = await make_webhook_request_base(
+        http_client, config, method=action.method, url=url
+    )
+    return payload
 
 
 @app.post(
@@ -443,18 +455,34 @@ async def make_webhook_request(
 
     Returns: tuple of (status_code, WebhookResponse to use as body)
     """
+    return await make_webhook_request_base(
+        http_client, config, action.method, action.url, data
+    )
+
+
+async def make_webhook_request_base(
+    http_client: httpx.AsyncClient,
+    config: WebhookConfig,
+    method: Literal["get", "post", "put", "patch", "delete"],
+    url: str,
+    data: BaseModel = None,
+) -> tuple[int, WebhookResponse]:
+    """Like make_webhook_request() but can directly take an http method and url.
+
+    Returns: tuple of (status_code, WebhookResponse to use as body)
+    """
     headers = {}
     auth_header_value = config.common_headers.authorization
     if auth_header_value is not None:
-        headers["Authorization"] = auth_header_value
+        headers["Authorization"] = auth_header_value.get_secret_value()
     headers["Accept"] = "application/json"
     # headers["Content-Type"] is set by httpx
 
     try:
         # Explicitly convert to a dict via pydantic since we use custom serializers
-        json_data = data.model_dump(mode="json")
+        json_data = data.model_dump(mode="json") if data else None
         upstream_response = await http_client.request(
-            method=action.method, url=action.url, headers=headers, json=json_data
+            method=method, url=url, headers=headers, json=json_data
         )
         webhook_response = WebhookResponse.from_httpx(upstream_response)
         status_code = 200
@@ -463,9 +491,12 @@ async def make_webhook_request(
             logger.error(
                 "ERROR response %s requesting webhook: %s",
                 upstream_response.status_code,
-                action.url,
+                url,
             )
             status_code = 502
+    except httpx.ConnectError as e:
+        logger.exception("ERROR requesting webhook (ConnectError): %s", e.request.url)
+        raise HTTPException(status_code=502, detail="upstream server error") from e
     except httpx.RequestError as e:
         logger.exception("ERROR requesting webhook: %s", e.request.url)
         raise HTTPException(status_code=500, detail="server error") from e
