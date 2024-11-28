@@ -169,7 +169,7 @@ class RocketLearningConfig(
         return SqlalchemyAndTable(
             sqlalchemy_url=str(
                 sqlalchemy.URL.create(
-                    drivername="postgresql",
+                    drivername="postgresql+psycopg",
                     username=self.dwh.user,
                     password=self.dwh.password.get_secret_value(),
                     host=self.dwh.host,
