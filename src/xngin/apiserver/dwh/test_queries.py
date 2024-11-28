@@ -14,6 +14,7 @@ from xngin.apiserver.api_types import (
     MetricType,
     Stats,
 )
+from xngin.sqlite_extensions import custom_functions
 from xngin.sqlite_extensions.custom_functions import NumpyStddev
 from xngin.apiserver.dwh.queries import (
     compose_query,
@@ -104,7 +105,7 @@ def test_compose_query_with_no_filters(db_session):
     sql = str(q.statement.compile(compile_kwargs={"literal_binds": True}))
     assert sql.replace("\n", "") == (
         """SELECT test_table.id, test_table.int_col, test_table.float_col, test_table.bool_col, test_table.string_col, test_table.experiment_ids """
-        """FROM test_table ORDER BY test_table.id LIMIT 2"""
+        """FROM test_table ORDER BY random() LIMIT 2"""
     )
 
 
@@ -299,8 +300,21 @@ FILTER_GENERATION_SUBCASES = [
 ]
 
 
+@pytest.fixture()
+def use_deterministic_random():
+    """Tests that want deterministic SQL random() behavior can request this fixture. This will only affect
+    SQLAlchemy expressions that use custom_functions.our_random().
+    """
+    original = custom_functions.USE_DETERMINISTIC_RANDOM
+    try:
+        custom_functions.USE_DETERMINISTIC_RANDOM = True
+        yield
+    finally:
+        custom_functions.USE_DETERMINISTIC_RANDOM = original
+
+
 @pytest.mark.parametrize("testcase", FILTER_GENERATION_SUBCASES)
-def test_compose_query(testcase, db_session):
+def test_compose_query(testcase, db_session, use_deterministic_random):
     testcase.filters = [
         AudienceSpecFilter.model_validate(filt.model_dump())
         for filt in testcase.filters

@@ -1,3 +1,3 @@
-from xngin.sqlite_extensions.custom_functions import NumpyStddev, stddev_pop
+from xngin.sqlite_extensions.custom_functions import NumpyStddev, stddev_pop, our_random
 
-__all__ = ["NumpyStddev", "stddev_pop"]
+__all__ = ["NumpyStddev", "our_random", "stddev_pop"]
