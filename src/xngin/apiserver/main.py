@@ -253,7 +253,7 @@ def check_power_api(
     refresh: Annotated[bool, Query(description="Refresh the cache.")] = False,
 ) -> PowerAnalysis:
     """
-    TODO(roboton): finish implementing this method
+    Calculates statistical power given an AudienceSpec and a DesignSpec
     """
     config = require_config(client)
 
@@ -266,6 +266,12 @@ def check_power_api(
         sa_table = get_sqlalchemy_table_from_engine(
             session.get_bind(), participant_type
         )
+        config_sheet = fetch_worksheet(
+            CommonQueryParams(participant_type=participant_type, refresh=refresh),
+            config,
+            gsheets
+        )
+        _unique_id_col = config_sheet.get_unique_id_col()
         metric_stats = get_stats_on_metrics(
             session,
             sa_table,

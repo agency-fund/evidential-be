@@ -105,7 +105,8 @@ def assign_treatment(
     f_pvalue = 1 - stats.f.cdf(f_stat, model.df_model, model.df_resid)
     
     # Prepare assignments for return
-    assignments = df[[id_col, 'treat'] + stratum_cols].copy()
+    #assignments = df[[id_col, 'treat'] + stratum_cols].copy()
+    assignments = df[[id_col, "treat", *stratum_cols]].copy()
     assignments = assignments.melt(
         id_vars=[id_col, 'treat'],
         var_name='strata_name',
@@ -115,7 +116,8 @@ def assign_treatment(
 
     # Convert the assignments DataFrame to a list of ExperimentParticipant objects
     participants_list = []
-    for index, row in assignments.iterrows():
+    for row in assignments.itertuples(index = False):
+        row = row._asdict()
         strata = [ExperimentStrata(strata_name=row['strata_name'], strata_value=str(row['strata_value']))]
         participant = ExperimentParticipant(
             id=str(row[id_col]),
