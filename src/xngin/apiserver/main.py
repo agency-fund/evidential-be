@@ -496,7 +496,9 @@ async def make_webhook_request_base(
             status_code = 502
     except httpx.ConnectError as e:
         logger.exception("ERROR requesting webhook (ConnectError): %s", e.request.url)
-        raise HTTPException(status_code=502, detail="upstream server error") from e
+        raise HTTPException(
+            status_code=502, detail=f"Error connecting to {e.request.url}: {e}"
+        ) from e
     except httpx.RequestError as e:
         logger.exception("ERROR requesting webhook: %s", e.request.url)
         raise HTTPException(status_code=500, detail="server error") from e
