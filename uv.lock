@@ -494,10 +494,16 @@ wheels = [
 ]
 
 [[package]]
-name = "psycopg2"
-version = "2.9.9"
+name = "psycopg"
+version = "3.2.3"
 source = { registry = "https://pypi.org/simple" }
-sdist = { url = "https://files.pythonhosted.org/packages/c9/5e/dc6acaf46d78979d6b03458b7a1618a68e152a6776fce95daac5e0f0301b/psycopg2-2.9.9.tar.gz", hash = "sha256:d1454bde93fb1e224166811694d600e746430c006fbb031ea06ecc2ea41bf156", size = 384926 }
+dependencies = [
+    { name = "typing-extensions", marker = "(sys_platform == 'darwin' and python_full_version == '3.12.*') or (sys_platform == 'linux' and python_full_version == '3.12.*')" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/d1/ad/7ce016ae63e231575df0498d2395d15f005f05e32d3a2d439038e1bd0851/psycopg-3.2.3.tar.gz", hash = "sha256:a5764f67c27bec8bfac85764d23c534af2c27b893550377e37ce59c12aac47a2", size = 155550 }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/ce/21/534b8f5bd9734b7a2fcd3a16b1ee82ef6cad81a4796e95ebf4e0c6a24119/psycopg-3.2.3-py3-none-any.whl", hash = "sha256:644d3973fe26908c73d4be746074f6e5224b03c1101d302d9a53bf565ad64907", size = 197934 },
+]
 
 [[package]]
 name = "pyasn1"
@@ -929,7 +935,7 @@ dependencies = [
     { name = "numpy", marker = "sys_platform == 'darwin' or sys_platform == 'linux'" },
     { name = "pandas", marker = "sys_platform == 'darwin' or sys_platform == 'linux'" },
     { name = "parsy", marker = "sys_platform == 'darwin' or sys_platform == 'linux'" },
-    { name = "psycopg2", marker = "sys_platform == 'darwin' or sys_platform == 'linux'" },
+    { name = "psycopg", marker = "sys_platform == 'darwin' or sys_platform == 'linux'" },
     { name = "pydantic", marker = "sys_platform == 'darwin' or sys_platform == 'linux'" },
     { name = "sqlalchemy", marker = "sys_platform == 'darwin' or sys_platform == 'linux'" },
     { name = "typer", marker = "sys_platform == 'darwin' or sys_platform == 'linux'" },
@@ -953,7 +959,7 @@ requires-dist = [
     { name = "numpy", specifier = "==2.1.0" },
     { name = "pandas", specifier = "==2.2.2" },
     { name = "parsy", specifier = ">=2.1,<3" },
-    { name = "psycopg2", specifier = ">=2.9,<3" },
+    { name = "psycopg", specifier = ">=3.2.3,<4" },
     { name = "pydantic", specifier = ">=2.7.0,<3.0.0" },
     { name = "sqlalchemy", specifier = "==2.0.32" },
     { name = "typer", specifier = ">=0.12.5,<0.13.0" },

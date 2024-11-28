@@ -137,12 +137,27 @@ class WebhookMixin(BaseModel):
     webhook_config: WebhookConfig
 
 
-class RocketLearningConfig(ParticipantsMixin, WebhookMixin, BaseModel):
-    """
+class StandardDatabaseConnectionMixin:
+    def dbsession(self, participant_type: str):
+        """Returns a Session to be used to send queries to the customer database.
 
-    TODO: implement dbsession(self, participant_type)
-    """
+        Use this in a `with` block to ensure correct transaction handling. If you need the
+        sqlalchemy Engine, call .get_bind().
+        """
+        url = self.to_sqlalchemy_url_and_table(participant_type).sqlalchemy_url
+        engine = sqlalchemy_connect(url)
+        if url.startswith("sqlite://"):
 
+            @event.listens_for(engine, "connect")
+            def register_sqlite_functions(dbapi_connection, _):
+                NumpyStddev.register(dbapi_connection)
+
+        return Session(engine)
+
+
+class RocketLearningConfig(
+    StandardDatabaseConnectionMixin, ParticipantsMixin, WebhookMixin, BaseModel
+):
     type: Literal["customer"]
 
     dwh: PostgresDsn
@@ -154,7 +169,7 @@ class RocketLearningConfig(ParticipantsMixin, WebhookMixin, BaseModel):
         return SqlalchemyAndTable(
             sqlalchemy_url=str(
                 sqlalchemy.URL.create(
-                    drivername="postgresql+psycopg2",
+                    drivername="postgresql",
                     username=self.dwh.user,
                     password=self.dwh.password.get_secret_value(),
                     host=self.dwh.host,
@@ -167,7 +182,7 @@ class RocketLearningConfig(ParticipantsMixin, WebhookMixin, BaseModel):
         )
 
 
-class SqliteLocalConfig(ParticipantsMixin, BaseModel):
+class SqliteLocalConfig(StandardDatabaseConnectionMixin, ParticipantsMixin, BaseModel):
     type: Literal["sqlite_local"]
     sqlite_filename: str
 
@@ -184,22 +199,6 @@ class SqliteLocalConfig(ParticipantsMixin, BaseModel):
             ),
             table_name=participants.table_name,
         )
-
-    def dbsession(self, participant_type: str):
-        """Returns a Session to be used to send queries to the customer database.
-
-        Use this in a `with` block to ensure correct transaction handling. If you need the
-        sqlalchemy Engine, call .get_bind().
-        """
-        url = self.to_sqlalchemy_url_and_table(participant_type).sqlalchemy_url
-        engine = sqlalchemy_connect(url)
-        if url.startswith("sqlite://"):
-
-            @event.listens_for(engine, "connect")
-            def register_sqlite_functions(dbapi_connection, _):
-                NumpyStddev.register(dbapi_connection)
-
-        return Session(engine)
 
 
 type ClientConfigType = RocketLearningConfig | SqliteLocalConfig
