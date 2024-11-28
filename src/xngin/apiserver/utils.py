@@ -34,8 +34,8 @@ def substitute_url(url_template: str, raw_replacements: dict[str, str]):
     safe_replacements = {k: quote(v, safe="") for k, v in raw_replacements.items()}
     # Replace any placeholders in the path and query parameters
     new_path = parsed.path.format(**safe_replacements)
-    # Note: if ultra-picky, could parse_qs() the .query and look to replace
-    # values with urlencode()'ed replacements.
+    # TODO: if ultra-picky, could parse_qs() the .query and look to replace
+    # values with urlencode()'ed replacements instead of the quote() above.
     new_query = parsed.query.format(**safe_replacements)
 
     # Return the reconstructed url

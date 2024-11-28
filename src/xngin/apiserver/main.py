@@ -330,7 +330,7 @@ async def assignment_file(
     response: Response,
     experiment_id: str = Annotated[
         str,
-        Path(description="ID of the experiment whose assignments we wish to fetch."),
+        Query(description="ID of the experiment whose assignments we wish to fetch."),
     ],
     http_client: Annotated[httpx.AsyncClient, Depends(httpx_dependency)] = None,
     client: Annotated[ClientConfig | None, Depends(config_dependency)] = None,
@@ -339,7 +339,7 @@ async def assignment_file(
     action = config.actions.assignment_file
     if action is None:
         # TODO: read from internal storage if webhooks are not defined.
-        raise HTTPException(501, "Action 'commit' not configured.")
+        raise HTTPException(501, "Action 'assignment_file' not configured.")
 
     url = substitute_url(action.url, {"experiment_id": experiment_id})
     response.status_code, payload = await make_webhook_request_base(
