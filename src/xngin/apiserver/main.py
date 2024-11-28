@@ -309,7 +309,7 @@ def assign_treatment_api(
                             metric_cols = metric_names,
                             id_col = "id",
                             arm_names = arm_names,
-                            experiment_id = design_spec.experiment_id,
+                            experiment_id = str(design_spec.experiment_id),
                             description = design_spec.description,
                             fstat_thresh = design_spec.fstat_thresh,
                             random_state = random_state))

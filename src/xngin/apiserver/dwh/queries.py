@@ -51,7 +51,8 @@ def get_stats_on_metrics(
 
 
 def query_for_participants(
-    session: Session, sa_table: Table, audience_spec: AudienceSpec, chosen_n: int, random_state: int = None
+    session: Session, sa_table: Table, audience_spec: AudienceSpec, chosen_n: int,
+    random_state: int | None = None
 ) -> pd.DataFrame:
     filters = create_filters(sa_table, audience_spec)
     query = compose_query(sa_table, chosen_n, filters)

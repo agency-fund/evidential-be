@@ -104,6 +104,11 @@ def analyze_metric_power(
                 needed_target = np.sin(arcsin_p2 / 2) ** 2
 
             analysis.needed_target = needed_target
+            # TODO(roboton): Consider this instead:
+            # # note: not an f-string
+            # msg="There are {available_n} units available... {target_n} units are needed... {target_n} ...",
+            # values = {"available_n": 123, "target_n": 456, ...}
+            # This allows the frontend to provide structured/enriched UX experiences based on the message type (e.g. SUFFICIENT) and the variables, and also allows translation to a local language.
             analysis.msg = MetricAnalysisMessage(
                 type=MetricAnalysisMessageType.INSUFFICIENT,
                 msg=(f"there are {metric.available_n} units available to run your experiment and {target_n} units are needed to meet your experimental design specs."
@@ -114,39 +119,6 @@ def analyze_metric_power(
                 values = {}
 
             )
-
-    # Case B: Only baseline defined - calculate possible effect size
-    # elif metric.metric_baseline is not None and metric.metric_target is None:
-    #     if metric.metric_type == MetricType.NUMERIC:
-    #         power_analysis = sms.TTestIndPower()
-    #         delta = power_analysis.solve_power(
-    #             nobs1=metric.available_n // n_arms,
-    #             effect_size=None,
-    #             alpha=alpha,
-    #             power=power
-    #         ) * metric.metric_stddev
-
-    #         analysis.metric_target_possible = delta + metric.metric_baseline
-    #         analysis.metric_pct_change_possible = delta / metric.metric_baseline
-    #         analysis.delta = delta
-
-    #     else:  # BINARY
-    #         power_analysis = sms.proportion_effectsize(metric.metric_baseline, None)
-    #         p2 = power_analysis.solve_power(
-    #             n=metric.available_n // n_arms,
-    #             effect_size=None,
-    #             alpha=alpha,
-    #             power=power
-    #         )
-
-    #         analysis.metric_target_possible = p2
-    #         analysis.metric_pct_change_possible = (p2 - metric.metric_baseline) / metric.metric_baseline
-    #         analysis.delta = p2 - metric.metric_baseline
-
-    #     analysis.msg = (f"the smallest detectable effect size for the given specifications is: {analysis.delta:.4f}pp "
-    #                    f"using all {analysis.available_n} units available to run your experiment. This is a "
-    #                    f"{analysis.metric_pct_change_possible:.1%} increase on the baseline value of {metric.metric_baseline:.4f}.")
-
     else:
         analysis.msg = "Could not calculate metric baseline with given specification. Provide metric baseline or adjust filters."
 

@@ -329,8 +329,6 @@ class DesignSpec(BaseModel):
             raise ValueError("The metrics list must contain at least one element.")
         return value
 
-# Power Analysis
-
 type PowerAnalysis = list[MetricAnalysis]
 
 class MetricAnalysisMessageType(enum.StrEnum):
@@ -340,7 +338,7 @@ class MetricAnalysisMessageType(enum.StrEnum):
 class MetricAnalysisMessage(BaseModel):
   type: MetricAnalysisMessageType
   msg: str
-  values: dict[str, str] | None = None
+  values: dict[str, float | int] | None = None
 
 class MetricAnalysis(BaseModel):
     """Analysis results for a single metric."""
