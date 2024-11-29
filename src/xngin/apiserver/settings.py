@@ -195,13 +195,17 @@ class RocketLearningConfig(
         participants = self.find_participants(participant_type)
         return SqlalchemyAndTable(
             sqlalchemy_url=sqlalchemy.URL.create(
-                drivername="postgresql",
+                drivername="postgresql+psycopg",
                 username=self.dwh.user,
                 password=self.dwh.password.get_secret_value(),
                 host=self.dwh.host,
                 port=self.dwh.port,
                 database=self.dwh.dbname,
-                query={"sslmode": self.dwh.sslmode},
+                query={
+                    "sslmode": self.dwh.sslmode,
+                    # re:  https://github.com/psycopg/psycopg/issues/122#issuecomment-985742751
+                    "client_encoding": "utf-8",
+                },
             ),
             table_name=participants.table_name,
         )
