@@ -12,7 +12,7 @@ from pydantic import (
     field_serializer,
     field_validator,
 )
-from sqlalchemy import event
+from sqlalchemy import Engine, event
 from sqlalchemy.exc import NoSuchTableError
 from sqlalchemy.orm import Session
 
@@ -175,6 +175,8 @@ class StandardDatabaseConnectionMixin:
         """
         url = self.to_sqlalchemy_url_and_table(participant_type).sqlalchemy_url
         engine = sqlalchemy_connect(url)
+        self.extra_engine_setup(engine)
+
         if url.get_backend_name() == "sqlite":
 
             @event.listens_for(engine, "connect")
@@ -203,12 +205,19 @@ class RocketLearningConfig(
                 database=self.dwh.dbname,
                 query={
                     "sslmode": self.dwh.sslmode,
-                    # re:  https://github.com/psycopg/psycopg/issues/122#issuecomment-985742751
+                    # re: redshift issue https://github.com/psycopg/psycopg/issues/122#issuecomment-985742751
                     "client_encoding": "utf-8",
                 },
             ),
             table_name=participants.table_name,
         )
+
+    def extra_engine_setup(self, engine: Engine):
+        """Partially address any redshift incompatibilities."""
+
+        # re: https://github.com/sqlalchemy-redshift/sqlalchemy-redshift/issues/264#issuecomment-2181124071
+        if hasattr(engine.dialect, "_set_backslash_escapes"):
+            engine.dialect._set_backslash_escapes = lambda _: None
 
 
 class SqliteLocalConfig(StandardDatabaseConnectionMixin, ParticipantsMixin, BaseModel):
@@ -226,6 +235,9 @@ class SqliteLocalConfig(StandardDatabaseConnectionMixin, ParticipantsMixin, Base
             ),
             table_name=participants.table_name,
         )
+
+    def extra_engine_setup(self, engine: Engine):
+        pass
 
 
 type ClientConfigType = RocketLearningConfig | SqliteLocalConfig
