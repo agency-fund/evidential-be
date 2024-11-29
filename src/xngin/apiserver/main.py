@@ -1,4 +1,5 @@
 from contextlib import asynccontextmanager
+import os
 from typing import Annotated, Literal
 import logging
 import warnings
@@ -568,7 +569,8 @@ def main():
 
     import uvicorn
 
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+    # Handy for debugging in your IDE
+    uvicorn.run(app, host="0.0.0.0", port=int(os.environ.get("UVICORN_PORT", 8000)))
 
 
 if __name__ == "__main__":

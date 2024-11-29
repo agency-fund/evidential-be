@@ -64,6 +64,7 @@ Follow the steps below to get a local development environment running.
    ```shell
    uv run fastapi dev src/xngin/apiserver/main.py
    ```
+   To change the port, add the flag `--port <myport>`.
 
 4. Send some test requests:
 

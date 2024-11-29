@@ -4,7 +4,14 @@ from functools import lru_cache
 from typing import Literal
 
 import sqlalchemy
-from pydantic import BaseModel, PositiveInt, SecretStr, Field, field_validator
+from pydantic import (
+    BaseModel,
+    PositiveInt,
+    SecretStr,
+    Field,
+    field_serializer,
+    field_validator,
+)
 from sqlalchemy import event
 from sqlalchemy.exc import NoSuchTableError
 from sqlalchemy.orm import Session
@@ -35,8 +42,30 @@ class PostgresDsn(BaseModel):
 
 
 class SqlalchemyAndTable(BaseModel):
-    sqlalchemy_url: str
+    sqlalchemy_url: sqlalchemy.engine.URL
     table_name: str
+
+    # URL isn't a pydantic model so doesn't know how to generate json schema.
+    # We need to allow non-standard lib types and sub our own description here.
+    model_config = {
+        "arbitrary_types_allowed": True,
+        "json_schema_extra": {"properties": {"sqlalchemy_url": {"type": "string"}}},
+    }
+
+    @field_validator("sqlalchemy_url", mode="before")
+    @classmethod
+    def parse_url(cls, value):
+        """Convert strings into valid sqlalchemy.engine.URLs"""
+
+        if isinstance(value, str):
+            return sqlalchemy.make_url(value)
+        return value
+
+    @field_serializer("sqlalchemy_url")
+    def serialize_url(self, url: sqlalchemy.engine.URL):
+        """If rendering URLs, use the string representation with the pw masked."""
+
+        return url.render_as_string(hide_password=True)
 
 
 class SheetRef(BaseModel):
@@ -146,7 +175,7 @@ class StandardDatabaseConnectionMixin:
         """
         url = self.to_sqlalchemy_url_and_table(participant_type).sqlalchemy_url
         engine = sqlalchemy_connect(url)
-        if url.startswith("sqlite://"):
+        if url.get_backend_name() == "sqlite":
 
             @event.listens_for(engine, "connect")
             def register_sqlite_functions(dbapi_connection, _):
@@ -165,16 +194,14 @@ class RocketLearningConfig(
     def to_sqlalchemy_url_and_table(self, participant_type: str) -> SqlalchemyAndTable:
         participants = self.find_participants(participant_type)
         return SqlalchemyAndTable(
-            sqlalchemy_url=str(
-                sqlalchemy.URL.create(
-                    drivername="postgresql+psycopg",
-                    username=self.dwh.user,
-                    password=self.dwh.password.get_secret_value(),
-                    host=self.dwh.host,
-                    port=self.dwh.port,
-                    database=self.dwh.dbname,
-                    query={"sslmode": self.dwh.sslmode},
-                )
+            sqlalchemy_url=sqlalchemy.URL.create(
+                drivername="postgresql",
+                username=self.dwh.user,
+                password=self.dwh.password.get_secret_value(),
+                host=self.dwh.host,
+                port=self.dwh.port,
+                database=self.dwh.dbname,
+                query={"sslmode": self.dwh.sslmode},
             ),
             table_name=participants.table_name,
         )
@@ -188,12 +215,10 @@ class SqliteLocalConfig(StandardDatabaseConnectionMixin, ParticipantsMixin, Base
         """Returns a tuple of SQLAlchemy URL and a table name."""
         participants = self.find_participants(participant_type)
         return SqlalchemyAndTable(
-            sqlalchemy_url=str(
-                sqlalchemy.URL.create(
-                    drivername="sqlite",
-                    database=self.sqlite_filename,
-                    query={"mode": "ro"},
-                )
+            sqlalchemy_url=sqlalchemy.URL.create(
+                drivername="sqlite",
+                database=self.sqlite_filename,
+                query={"mode": "ro"},
             ),
             table_name=participants.table_name,
         )
@@ -270,8 +295,8 @@ def sqlalchemy_connect(sqlalchemy_url):
     This is intended to be used to connect to customer databases.
     """
     connect_args = {}
-    if sqlalchemy_url.startswith("postgres"):
+    if sqlalchemy_url.get_backend_name() == "postgres":
         connect_args["connect_timeout"] = 5
-    elif sqlalchemy_url.startswith("sqlite"):
+    elif sqlalchemy_url.get_backend_name() == "sqlite":
         connect_args["timeout"] = 5
     return sqlalchemy.create_engine(sqlalchemy_url, connect_args=connect_args)
