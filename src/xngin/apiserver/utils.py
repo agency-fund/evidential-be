@@ -24,9 +24,14 @@ def merge_dicts(left: dict, right: dict):
 
 
 def substitute_url(url_template: str, raw_replacements: dict[str, str]):
-    """Sub placeholders using curly brackets {key} with un-escaped replacement values.
+    """
+    Replace placeholder values in url_template with values from raw_replacements.
 
-    Substitutions are done using python's string format() after escaping the values.
+    Placeholders are replaced with properly escaped values.
+    Placeholders may in the path or query string.
+
+    The returned URL is guaranteed to be safe; i.e. all values in
+    raw_replacements are quoted appropriately in paths and query parameters.
     """
 
     parsed = urlparse(url_template)
