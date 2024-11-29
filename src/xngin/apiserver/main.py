@@ -1,5 +1,5 @@
 from contextlib import asynccontextmanager
-from typing import Any, Annotated, Literal
+from typing import Annotated, Literal
 import logging
 import warnings
 
@@ -42,7 +42,7 @@ from xngin.apiserver.settings import (
     get_sqlalchemy_table_from_engine,
     CannotFindParticipantsException,
 )
-from xngin.apiserver.utils import safe_for_headers
+from xngin.apiserver.utils import substitute_url
 from xngin.sheets.config_sheet import (
     fetch_and_parse_sheet,
     create_sheetconfig_from_table,
@@ -320,20 +320,32 @@ def assign_treatment(
     return UnimplementedResponse()
 
 
-@app.post(
+@app.get(
     "/assignment-file",
-    summary="TODO",
-    response_model=UnimplementedResponse,
+    summary="Retrieve all participant assignments for the given experiment_id.",
+    responses=STANDARD_WEBHOOK_RESPONSES,
     tags=["Manage Experiments"],
 )
-def assignment_file(
-    design_spec: DesignSpec,
-    audience_spec: AudienceSpec,
+async def assignment_file(
+    response: Response,
+    experiment_id: str = Annotated[
+        str,
+        Query(description="ID of the experiment whose assignments we wish to fetch."),
+    ],
+    http_client: Annotated[httpx.AsyncClient, Depends(httpx_dependency)] = None,
     client: Annotated[ClientConfig | None, Depends(config_dependency)] = None,
-    chosen_n: int = 1000,
-):
-    # Implement treatment assignment logic
-    return UnimplementedResponse()
+) -> WebhookResponse:
+    config = require_config(client).webhook_config
+    action = config.actions.assignment_file
+    if action is None:
+        # TODO: read from internal storage if webhooks are not defined.
+        raise HTTPException(501, "Action 'assignment_file' not configured.")
+
+    url = substitute_url(action.url, {"experiment_id": experiment_id})
+    response.status_code, payload = await make_webhook_request_base(
+        http_client, config, method=action.method, url=url
+    )
+    return payload
 
 
 @app.post(
@@ -443,18 +455,34 @@ async def make_webhook_request(
 
     Returns: tuple of (status_code, WebhookResponse to use as body)
     """
+    return await make_webhook_request_base(
+        http_client, config, action.method, action.url, data
+    )
+
+
+async def make_webhook_request_base(
+    http_client: httpx.AsyncClient,
+    config: WebhookConfig,
+    method: Literal["get", "post", "put", "patch", "delete"],
+    url: str,
+    data: BaseModel = None,
+) -> tuple[int, WebhookResponse]:
+    """Like make_webhook_request() but can directly take an http method and url.
+
+    Returns: tuple of (status_code, WebhookResponse to use as body)
+    """
     headers = {}
     auth_header_value = config.common_headers.authorization
     if auth_header_value is not None:
-        headers["Authorization"] = auth_header_value
+        headers["Authorization"] = auth_header_value.get_secret_value()
     headers["Accept"] = "application/json"
     # headers["Content-Type"] is set by httpx
 
     try:
         # Explicitly convert to a dict via pydantic since we use custom serializers
-        json_data = data.model_dump(mode="json")
+        json_data = data.model_dump(mode="json") if data else None
         upstream_response = await http_client.request(
-            method=action.method, url=action.url, headers=headers, json=json_data
+            method=method, url=url, headers=headers, json=json_data
         )
         webhook_response = WebhookResponse.from_httpx(upstream_response)
         status_code = 200
@@ -463,9 +491,14 @@ async def make_webhook_request(
             logger.error(
                 "ERROR response %s requesting webhook: %s",
                 upstream_response.status_code,
-                action.url,
+                url,
             )
             status_code = 502
+    except httpx.ConnectError as e:
+        logger.exception("ERROR requesting webhook (ConnectError): %s", e.request.url)
+        raise HTTPException(
+            status_code=502, detail=f"Error connecting to {e.request.url}: {e}"
+        ) from e
     except httpx.RequestError as e:
         logger.exception("ERROR requesting webhook: %s", e.request.url)
         raise HTTPException(status_code=500, detail="server error") from e
@@ -498,37 +531,6 @@ def assign_units_to_arms(
 ):
     # Implement experiment assignment logic
     pass
-
-
-# MongoDB interaction function
-def experiments_reg_request(
-    settings: XnginSettings, endpoint: str, json_data: dict[str, Any] | None = None
-):
-    url = f"https://{settings.api_host}/dev/api/v1/experiment-commit/{endpoint}"
-
-    api_token = safe_for_headers(
-        settings.get_client_config("customer").config.api_token.get_secret_value()
-    )
-    headers = {
-        "accept": "application/json",
-        "Authorization": f"Bearer {api_token}",
-    }
-
-    if (
-        endpoint.startswith("get-file-name-by-experiment-id")
-        or endpoint == "get-all-experiments"
-    ):
-        response = httpx.get(url, headers=headers)
-    else:
-        if endpoint.startswith("update"):
-            response = httpx.put(url, headers=headers, json=json_data)
-        else:
-            response = httpx.post(url, headers=headers, json=json_data)
-
-    if response.status_code != 200:
-        raise HTTPException(status_code=response.status_code, detail="Request failed")
-
-    return response.json()
 
 
 def require_config(client: ClientConfig | None):

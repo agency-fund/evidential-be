@@ -103,7 +103,7 @@ class WebhookActions(BaseModel):
 class WebhookCommonHeaders(BaseModel):
     """Enumerates supported headers to attach to all webhook requests."""
 
-    authorization: str | None
+    authorization: SecretStr | None
 
 
 class WebhookConfig(BaseModel):
@@ -124,8 +124,8 @@ class WebhookMixin(BaseModel):
           "url": "http://localhost:4001/dev/api/v1/experiment-commit/save-experiment-commit"
         },
         "assignment_file": {
-          "method": "POST",
-          "url": "http://localhost:4001/dev/api/v1/experiment-commit/get-file-name-by-experiment-id/{experimentId}?qs={experimentCode}",
+          "method": "GET",
+          "url": "http://localhost:4001/dev/api/v1/experiment-commit/get-file-name-by-experiment-id/{experiment_id}",
         }
       },
       "common_headers": {
@@ -161,8 +161,6 @@ class RocketLearningConfig(
     type: Literal["customer"]
 
     dwh: PostgresDsn
-    api_host: str
-    api_token: SecretStr
 
     def to_sqlalchemy_url_and_table(self, participant_type: str) -> SqlalchemyAndTable:
         participants = self.find_participants(participant_type)

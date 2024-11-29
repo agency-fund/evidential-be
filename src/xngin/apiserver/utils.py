@@ -1,4 +1,5 @@
 import copy
+from urllib.parse import urlparse, urlunparse, quote
 
 STRIP_UNSAFE_HEADER_CHARS = str.maketrans("", "", "\r\n")
 
@@ -20,3 +21,27 @@ def merge_dicts(left: dict, right: dict):
         else:
             result[key] = rvalue
     return result
+
+
+def substitute_url(url_template: str, raw_replacements: dict[str, str]):
+    """
+    Replace placeholder values in url_template with values from raw_replacements.
+
+    Placeholders are replaced with properly escaped values.
+    Placeholders may in the path or query string.
+
+    The returned URL is guaranteed to be safe; i.e. all values in
+    raw_replacements are quoted appropriately in paths and query parameters.
+    """
+
+    parsed = urlparse(url_template)
+    # Don't want users putting '/' in any values, hence safe=''
+    safe_replacements = {k: quote(v, safe="") for k, v in raw_replacements.items()}
+    # Replace any placeholders in the path and query parameters
+    new_path = parsed.path.format(**safe_replacements)
+    # TODO: if ultra-picky, could parse_qs() the .query and look to replace
+    # values with urlencode()'ed replacements instead of the quote() above.
+    new_query = parsed.query.format(**safe_replacements)
+
+    # Return the reconstructed url
+    return urlunparse(parsed._replace(path=new_path, query=new_query))

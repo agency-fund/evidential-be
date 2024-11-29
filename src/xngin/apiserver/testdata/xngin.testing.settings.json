@@ -24,8 +24,8 @@
               "url": "http://localhost:4001/dev/api/v1/experiment-commit/save-experiment-commit"
             },
             "assignment_file": {
-              "method": "POST",
-              "url": "http://localhost:4001/dev/api/v1/experiment-commit/get-file-name-by-experiment-id/{experimentId}?qs={experimentCode}"
+              "method": "GET",
+              "url": "http://localhost:4001/dev/api/v1/experiment-commit/get-file-name-by-experiment-id/{experiment_id}"
             },
             "update_timestamps": {
               "method": "PUT",
@@ -40,8 +40,6 @@
             "authorization": "abc"
           }
         },
-        "api_host": "api_host",
-        "api_token": "api_token",
         "dwh": {
           "user": "user",
           "port": 5439,
@@ -73,8 +71,6 @@
             "authorization": "abc"
           }
         },
-        "api_host": "api_host",
-        "api_token": "api_token",
         "dwh": {
           "user": "user",
           "port": 5439,
