@@ -143,7 +143,5 @@ def create_filter(
 def compose_query(session: Session, sa_table: Table, chosen_n: int, filters):
     query = session.query(sa_table)
     filtered = query.filter(*filters)
-    ordered = filtered.order_by(
-        func.random()
-    )  # TODO: func.random works only with postgres and sqlite (not mysql)
+    ordered = filtered.order_by(custom_functions.our_random(sa_table))
     return ordered.limit(chosen_n)
