@@ -47,7 +47,9 @@ def infer_config_from_schema(dsn: str, table: str):
     """
     try:
         dwh = get_sqlalchemy_table(
-            SqlalchemyAndTable(sqlalchemy_url=dsn, table_name=table)
+            SqlalchemyAndTable(
+                sqlalchemy_url=sqlalchemy.engine.make_url(dsn), table_name=table
+            )
         )
     except CannotFindTableException as cfte:
         err_console.print(cfte.message)
