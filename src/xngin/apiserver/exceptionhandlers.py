@@ -10,6 +10,12 @@ from xngin.apiserver.settings import (
 
 
 def setup(app):
+    """Registers exception handlers to the FastAPI app.
+
+    The general goal of these exception handlers should be to return stable API responses (including meaningful HTTP
+    status codes) to exceptions we recognize, and ideally not reveal too much about internal implementation details.
+    """
+
     @app.exception_handler(CannotFindTableException)
     async def exception_handler_cannotfindthetableexception(
         _request: Request, exc: CannotFindTableException
