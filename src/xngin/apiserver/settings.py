@@ -12,7 +12,7 @@ from pydantic import (
     field_serializer,
     field_validator,
 )
-from sqlalchemy import Engine, event
+from sqlalchemy import Engine, event, text
 from sqlalchemy.exc import NoSuchTableError
 from sqlalchemy.orm import Session
 
@@ -197,7 +197,9 @@ class RocketLearningConfig(
         participants = self.find_participants(participant_type)
         return SqlalchemyAndTable(
             sqlalchemy_url=sqlalchemy.URL.create(
-                drivername="postgresql+psycopg",
+                # re: psycopg (3) doesn't work with redshift and
+                # "redshift+redshift_connector" doesn't work with sqlalchemy2
+                drivername="postgresql+psycopg2",
                 username=self.dwh.user,
                 password=self.dwh.password.get_secret_value(),
                 host=self.dwh.host,
@@ -291,6 +293,71 @@ class CannotFindParticipantsException(Exception):
         return self.message
 
 
+def sqlalchemy_table_from_cursor(
+    engine: sqlalchemy.engine.Engine, table_name: str
+) -> sqlalchemy.Table:
+    """Creates a SQLAlchemy Table instance from cursor description metadata."""
+
+    columns = []
+    metadata = sqlalchemy.MetaData()
+    try:
+        with engine.connect() as connection:
+            # TODO: get the schema from the user's settings or the config sheet
+            safe_table = sqlalchemy.quoted_name(f"transforms.{table_name}", quote=True)
+            # Create a select statement - this is safe from SQL injection
+            query = sqlalchemy.select(text("*")).select_from(text(safe_table)).limit(0)
+            result = connection.execute(query)
+            description = result.cursor.description
+            # print("CURSOR DESC: ", result.cursor.description)
+            for col in description:
+                # Unpack cursor.description tuple
+                (
+                    name,
+                    type_code,
+                    _,  # display_size,
+                    internal_size,
+                    precision,
+                    scale,
+                    null_ok,
+                ) = col
+
+                # Map Redshift type codes to SQLAlchemy types. Not comprehensive.
+                # https://docs.sqlalchemy.org/en/20/core/types.html
+                # Comment shows both pg_type.typename / information_schema.data_type
+                sa_type = None
+                if type_code == 16:  # BOOL / boolean
+                    sa_type = sqlalchemy.Boolean
+                elif type_code == 20:  # INT8 / bigint
+                    sa_type = sqlalchemy.BigInteger
+                elif type_code == 23:  # INT4 / integer
+                    sa_type = sqlalchemy.Integer
+                elif type_code == 701:  # FLOAT8 / double precision
+                    sa_type = sqlalchemy.Double
+                elif type_code == 1043:  # VARCHAR / character varying
+                    sa_type = sqlalchemy.String(internal_size)
+                elif type_code == 1082:  # DATE / date
+                    sa_type = sqlalchemy.Date
+                elif type_code == 1114:  # TIMESTAMP / timestamp without time zone
+                    sa_type = sqlalchemy.DateTime
+                elif type_code == 1700:  # NUMERIC / numeric
+                    sa_type = sqlalchemy.Numeric(precision, scale)
+                else:  # type_code == 25
+                    # Default to Text for unknown types
+                    sa_type = sqlalchemy.Text
+
+                columns.append(
+                    sqlalchemy.Column(
+                        name, sa_type, nullable=null_ok if null_ok is not None else True
+                    )
+                )
+
+            return sqlalchemy.Table(table_name, metadata, *columns)
+    except NoSuchTableError as nste:
+        metadata.reflect(engine)
+        existing_tables = metadata.tables.keys()
+        raise CannotFindTableException(table_name, existing_tables) from nste
+
+
 def get_sqlalchemy_table_from_engine(engine: sqlalchemy.engine.Engine, table_name: str):
     """Constructs a Table via reflection.
 
@@ -299,6 +366,9 @@ def get_sqlalchemy_table_from_engine(engine: sqlalchemy.engine.Engine, table_nam
     metadata = sqlalchemy.MetaData()
     try:
         return sqlalchemy.Table(table_name, metadata, autoload_with=engine)
+    except sqlalchemy.exc.ProgrammingError:
+        # Fall back to introspection through the cursor description of columns.
+        return sqlalchemy_table_from_cursor(engine, table_name)
     except NoSuchTableError as nste:
         metadata.reflect(engine)
         existing_tables = metadata.tables.keys()
@@ -315,4 +385,8 @@ def sqlalchemy_connect(sqlalchemy_url):
         connect_args["connect_timeout"] = 5
     elif sqlalchemy_url.get_backend_name() == "sqlite":
         connect_args["timeout"] = 5
-    return sqlalchemy.create_engine(sqlalchemy_url, connect_args=connect_args)
+    return sqlalchemy.create_engine(
+        sqlalchemy_url,
+        connect_args=connect_args,
+        echo=os.environ.get("ECHO_SQL", "").lower() in ("true", "1"),
+    )

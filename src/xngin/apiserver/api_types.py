@@ -42,12 +42,22 @@ class DataType(enum.StrEnum):
             return DataType.DOUBLE_PRECISION
         if isinstance(value, sqlalchemy.sql.sqltypes.String):
             return DataType.CHARACTER_VARYING
-        if isinstance(value, sqlalchemy.sql.sqltypes.Integer):
-            return DataType.INTEGER
-        if isinstance(value, sqlalchemy.sql.sqltypes.Float):
-            return DataType.DOUBLE_PRECISION
         if isinstance(value, sqlalchemy.sql.sqltypes.Boolean):
             return DataType.BOOLEAN
+        if isinstance(value, sqlalchemy.sql.sqltypes.BigInteger):
+            return DataType.INTEGER
+        if isinstance(value, sqlalchemy.sql.sqltypes.Integer):
+            return DataType.INTEGER
+        if isinstance(value, sqlalchemy.sql.sqltypes.Double):
+            return DataType.DOUBLE_PRECISION
+        if isinstance(value, sqlalchemy.sql.sqltypes.Float):
+            return DataType.DOUBLE_PRECISION
+        if isinstance(value, sqlalchemy.sql.sqltypes.Numeric):
+            return DataType.NUMERIC
+        if isinstance(value, sqlalchemy.sql.sqltypes.Date):
+            return DataType.DATE
+        if isinstance(value, sqlalchemy.sql.sqltypes.DateTime):
+            return DataType.TIMESTAMP_WITHOUT_TIMEZONE
         raise ValueError(f"Unmatched type: {value}.")
 
     def filter_class(self, column_name):

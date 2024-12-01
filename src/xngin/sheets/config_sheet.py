@@ -209,7 +209,9 @@ def create_sheetconfig_from_table(table: sqlalchemy.Table):
     pk_col = next((c.name for c in table.columns.values() if c.primary_key), None)
     # if the database doesn't have one, assume the existence of an "id" column.
     if not pk_col:
-        pk_col = "id"
+        # TODO: should fall back to GSheets worksheet if not specified in the db
+        # see main.py:fetch_worksheet
+        pk_col = "groups_id"
     for column in table.columns.values():
         type_hint = column.type
         collected.append(
