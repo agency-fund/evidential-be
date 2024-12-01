@@ -41,6 +41,7 @@
           }
         },
         "dwh": {
+          "driver": "postgresql+psycopg2",
           "user": "user",
           "port": 5439,
           "host": "__example__.redshift.amazonaws.com",
@@ -72,6 +73,7 @@
           }
         },
         "dwh": {
+          "driver": "postgresql+psycopg2",
           "user": "user",
           "port": 5439,
           "host": "__example__.redshift.amazonaws.com",

@@ -31,6 +31,11 @@ def get_settings_for_server():
 
 
 class PostgresDsn(BaseModel):
+    driver: Literal[
+        "postgresql+psycopg",  # Preferred for most Postgres-compatible databases.
+        "postgresql+psycopg2",  # Use with: Redshift
+        "sqlite",
+    ]
     user: str
     port: PositiveInt = 5432
     host: str
@@ -197,7 +202,7 @@ class RocketLearningConfig(
         participants = self.find_participants(participant_type)
         return SqlalchemyAndTable(
             sqlalchemy_url=sqlalchemy.URL.create(
-                drivername="postgresql+psycopg",
+                drivername=self.dwh.driver,
                 username=self.dwh.user,
                 password=self.dwh.password.get_secret_value(),
                 host=self.dwh.host,

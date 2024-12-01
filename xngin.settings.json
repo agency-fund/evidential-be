@@ -38,6 +38,7 @@
           }
         },
         "dwh": {
+          "driver": "postgresql+psycopg2",
           "user": "agency",
           "port": 5439,
           "password": "=secret:CUSTOMER_DWH_PASSWORD",
