@@ -176,6 +176,8 @@ def create_testing_dwh(
             )
             cur.execute(f"SELECT COUNT(*) FROM {table_name}")
             count = cur.fetchone()[0]
+            print("Deleting temporary file...")
+            s3.delete_object(Bucket=bucket, Key=key)
             print(f"Loaded {count} rows into {table_name}.")
     else:
         conn = create_engine(url)
