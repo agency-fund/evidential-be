@@ -4,7 +4,7 @@
     {
       "id": "customer",
       "config": {
-        "type": "customer",
+        "type": "remote",
         "participants": [
           {
             "table_name": "transforms",

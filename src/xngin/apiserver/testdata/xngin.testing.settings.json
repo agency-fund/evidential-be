@@ -6,7 +6,7 @@
     {
       "id": "customer-test",
       "config": {
-        "type": "customer",
+        "type": "remote",
         "participants": [
           {
             "id": "test_participant_type",
@@ -54,7 +54,7 @@
     {
       "id": "customer-test-badconfig",
       "config": {
-        "type": "customer",
+        "type": "remote",
         "participants": [
           {
             "id": "test_participant_type",

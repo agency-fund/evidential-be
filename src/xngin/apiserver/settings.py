@@ -30,22 +30,6 @@ def get_settings_for_server():
     return XnginSettings.model_validate(settings_raw)
 
 
-class PostgresDsn(BaseModel):
-    driver: Literal[
-        "postgresql+psycopg",  # Preferred for most Postgres-compatible databases.
-        "postgresql+psycopg2",  # Use with: Redshift
-        "sqlite",
-    ]
-    user: str
-    port: PositiveInt = 5432
-    host: str
-    password: SecretStr
-    dbname: str
-    sslmode: Literal[
-        "disable", "allow", "prefer", "require", "verify-ca", "verify-full"
-    ]
-
-
 class SqlalchemyAndTable(BaseModel):
     sqlalchemy_url: sqlalchemy.engine.URL
     table_name: str
@@ -191,37 +175,69 @@ class StandardDatabaseConnectionMixin:
         return Session(engine)
 
 
-class RocketLearningConfig(
+class Dsn(BaseModel):
+    """Describes a set of parameters suitable for connecting to most types of remote databases."""
+
+    driver: Literal[
+        "postgresql+psycopg",  # Preferred for most Postgres-compatible databases.
+        "postgresql+psycopg2",  # Use with: Redshift
+    ]
+    user: str
+    port: PositiveInt = 5432
+    host: str
+    password: SecretStr
+    dbname: str
+    sslmode: (
+        Literal["disable", "allow", "prefer", "require", "verify-ca", "verify-full"]
+        | None
+    ) = None
+
+    def is_redshift(self):
+        """Return true iff the hostname indicates that this is connecting to Redshift."""
+        return self.host.endswith("redshift.amazonaws.com")
+
+    def to_sqlalchemy_url(self):
+        """Creates a sqlalchemy.URL from this Dsn."""
+        url = sqlalchemy.URL.create(
+            drivername=self.dwh.driver,
+            username=self.dwh.user,
+            password=self.dwh.password.get_secret_value(),
+            host=self.dwh.host,
+            port=self.dwh.port,
+            database=self.dwh.dbname,
+        )
+        if self.driver.startswith("postgresql"):
+            query = dict(url.query)
+            query.update({
+                "sslmode": self.dwh.sslmode if self.dwh.sslmode else "verify-full",
+                # re: redshift issue https://github.com/psycopg/psycopg/issues/122#issuecomment-985742751
+                "client_encoding": "utf-8",
+            })
+            url = url.set(query=query)
+        return url
+
+
+class RemoteDatabaseConfig(
     StandardDatabaseConnectionMixin, ParticipantsMixin, WebhookMixin, BaseModel
 ):
-    type: Literal["customer"]
+    """RemoteDatabaseConfig defines a configuration for a remote data warehouse."""
 
-    dwh: PostgresDsn
+    type: Literal["remote"]
+
+    dwh: Dsn
 
     def to_sqlalchemy_url_and_table(self, participant_type: str) -> SqlalchemyAndTable:
         participants = self.find_participants(participant_type)
         return SqlalchemyAndTable(
-            sqlalchemy_url=sqlalchemy.URL.create(
-                drivername=self.dwh.driver,
-                username=self.dwh.user,
-                password=self.dwh.password.get_secret_value(),
-                host=self.dwh.host,
-                port=self.dwh.port,
-                database=self.dwh.dbname,
-                query={
-                    "sslmode": self.dwh.sslmode,
-                    # re: redshift issue https://github.com/psycopg/psycopg/issues/122#issuecomment-985742751
-                    "client_encoding": "utf-8",
-                },
-            ),
+            sqlalchemy_url=self.dwh.to_sqlalchemy_url(),
             table_name=participants.table_name,
         )
 
     def extra_engine_setup(self, engine: Engine):
-        """Partially address any redshift incompatibilities."""
+        """Partially address any Redshift incompatibilities."""
 
         # re: https://github.com/sqlalchemy-redshift/sqlalchemy-redshift/issues/264#issuecomment-2181124071
-        if hasattr(engine.dialect, "_set_backslash_escapes"):
+        if self.dwh.is_redshift() and hasattr(engine.dialect, "_set_backslash_escapes"):
             engine.dialect._set_backslash_escapes = lambda _: None
 
 
@@ -245,7 +261,7 @@ class SqliteLocalConfig(StandardDatabaseConnectionMixin, ParticipantsMixin, Base
         pass
 
 
-type ClientConfigType = RocketLearningConfig | SqliteLocalConfig
+type ClientConfigType = RemoteDatabaseConfig | SqliteLocalConfig
 
 
 class ClientConfig(BaseModel):
