@@ -6,7 +6,7 @@
     {
       "id": "customer-test",
       "config": {
-        "type": "customer",
+        "type": "remote",
         "participants": [
           {
             "id": "test_participant_type",
@@ -41,6 +41,7 @@
           }
         },
         "dwh": {
+          "driver": "postgresql+psycopg2",
           "user": "user",
           "port": 5439,
           "host": "__example__.redshift.amazonaws.com",
@@ -53,7 +54,7 @@
     {
       "id": "customer-test-badconfig",
       "config": {
-        "type": "customer",
+        "type": "remote",
         "participants": [
           {
             "id": "test_participant_type",
@@ -72,6 +73,7 @@
           }
         },
         "dwh": {
+          "driver": "postgresql+psycopg2",
           "user": "user",
           "port": 5439,
           "host": "__example__.redshift.amazonaws.com",
