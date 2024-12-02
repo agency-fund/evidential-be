@@ -35,7 +35,7 @@ use [xngin.testing.settings.json](src/xngin/apiserver/testdata/xngin.testing.set
 work.
 
 The settings files can be committed to version control but secret values should not be. They should be referred to with
-`${secret:NAME}` syntax. When XNGIN_SECRETS_SOURCE is unset or set to "environ", those references will be replaced with
+`${secret:NAME}` syntax. When the XNGIN_SECRETS_SOURCE environment variable is unset or set to "environ", those references will be replaced with
 a corresponding environment variable value.
 
 ## Getting Started
