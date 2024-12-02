@@ -16,9 +16,9 @@ from sqlalchemy import Engine, event
 from sqlalchemy.exc import NoSuchTableError
 from sqlalchemy.orm import Session
 
+from xngin.apiserver.settings_secrets import replace_secrets
 from xngin.sqlite_extensions import NumpyStddev
 
-DEFAULT_SECRETS_DIRECTORY = "secrets"
 DEFAULT_SETTINGS_FILE = "xngin.settings.json"
 
 
@@ -27,6 +27,7 @@ def get_settings_for_server():
     """Constructs an XnginSettings for use by the API server."""
     with open(os.environ.get("XNGIN_SETTINGS", DEFAULT_SETTINGS_FILE)) as f:
         settings_raw = json.load(f)
+    settings_raw = replace_secrets(settings_raw)
     return XnginSettings.model_validate(settings_raw)
 
 

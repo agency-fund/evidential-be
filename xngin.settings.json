@@ -34,13 +34,13 @@
             }
           },
           "common_headers": {
-            "authorization": "=secret:CUSTOMER_API_TOKEN"
+            "authorization": "${secret:CUSTOMER_API_TOKEN}"
           }
         },
         "dwh": {
           "user": "agency",
           "port": 5439,
-          "password": "=secret:CUSTOMER_DWH_PASSWORD",
+          "password": "${secret:CUSTOMER_DWH_PASSWORD}",
           "host": "instance.redshift.amazonaws.com",
           "dbname": "customer_dwh_prod",
           "sslmode": "require"
