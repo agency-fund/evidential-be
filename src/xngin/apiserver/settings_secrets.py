@@ -2,9 +2,14 @@ import os
 import re
 from collections.abc import Callable
 
-# Defines a capturing regex for ${src:ref} pairs.
+REF = "ref"
+NAMESPACE = "ns"
+NAMESPACE_FOR_SECRETS = "secret"
+SOURCE_ENVIRONMENT_VARIABLES = "environ"
+
+# Defines a capturing regex for ${ns:ref} pairs.
 SECRET_REF = re.compile(
-    re.escape("${") + r"(?P<src>secret):(?P<ref>[a-zA-Z0-9_]+)" + re.escape("}")
+    re.escape("${") + r"(?P<ns>secret):(?P<ref>[a-zA-Z0-9_]+)" + re.escape("}")
 )
 
 
@@ -29,7 +34,7 @@ def _search_for_variables(tmpl) -> set[str]:
     def visitor_onepassword_refs(s):
         if not isinstance(s, str):
             return set()
-        return {(m.group("src"), m.group("ref")) for m in SECRET_REF.finditer(s)}
+        return {(m.group(NAMESPACE), m.group(REF)) for m in SECRET_REF.finditer(s)}
 
     return walk_unique(tmpl, visitor_onepassword_refs)
 
@@ -50,10 +55,13 @@ def walk_unique(node, visitor: Callable[[str], set[str]]) -> set[str]:
 
 def _resolve_secrets(variables):
     # We only want to resolve secrets.
-    variables = [v for v in variables if v[0] == "secret"]
+    variables = [v for v in variables if v[0] == NAMESPACE_FOR_SECRETS]
     # We only support environment variables for secrets; in the future, this might be AWS Secrets Manager, files,
     # BitWarden, etc.
-    if os.environ.get("XNGIN_SECRETS_SOURCE", "environ") != "environ":
+    if (
+        os.environ.get("XNGIN_SECRETS_SOURCE", SOURCE_ENVIRONMENT_VARIABLES)
+        != SOURCE_ENVIRONMENT_VARIABLES
+    ):
         raise ValueError("XNGIN_SECRETS_SOURCE is misconfigured.")
     replacements = {}
     for source, name in variables:
@@ -65,14 +73,14 @@ def _resolve_secrets(variables):
 
 
 def _replace_variables(tmpl, variables):
-    """Replaces all ${SRC:REF} references with the corresponding value from the variables dict."""
+    """Replaces all ${NS:REF} references with the corresponding value from the variables dict."""
 
     def visitor_var_subst(s):
         if not isinstance(s, str):
             return s
         return re.sub(
             SECRET_REF,
-            lambda match: variables[match.group("src"), match.group("ref")],
+            lambda match: variables[match.group(NAMESPACE), match.group(REF)],
             s,
         )
 
