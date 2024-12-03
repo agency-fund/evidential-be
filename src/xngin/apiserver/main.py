@@ -11,15 +11,12 @@ from fastapi import FastAPI, HTTPException, Depends, Path, Query, Response
 from fastapi import Request
 from pandas import DataFrame
 from sqlalchemy import distinct
-from starlette.responses import JSONResponse
 from xngin.apiserver import database, exceptionhandlers
-from xngin.apiserver import database
 from xngin.apiserver.api_types import (
     DataTypeClass,
     AudienceSpec,
     DesignSpec,
     ExperimentAssignment,
-    UnimplementedResponse,
     GetStrataResponseElement,
     GetFiltersResponseElement,
     GetMetricsResponseElement,
@@ -269,7 +266,7 @@ def check_power_api(
         config_sheet = fetch_worksheet(
             CommonQueryParams(participant_type=participant_type, refresh=refresh),
             config,
-            gsheets
+            gsheets,
         )
         _unique_id_col = config_sheet.get_unique_id_col()
         metric_stats = get_stats_on_metrics(
@@ -279,10 +276,12 @@ def check_power_api(
             audience_spec,
         )
 
-        return check_power(metrics = metric_stats,
-                           n_arms = len(design_spec.arms),
-                           power = design_spec.power,
-                           alpha = design_spec.alpha)
+        return check_power(
+            metrics=metric_stats,
+            n_arms=len(design_spec.arms),
+            power=design_spec.power,
+            alpha=design_spec.alpha,
+        )
 
 
 @app.post(
@@ -295,7 +294,7 @@ def assign_treatment_api(
     audience_spec: AudienceSpec,
     chosen_n: int,
     random_state: int,
-    client: Annotated[ClientConfig | None, Depends(config_dependency)] = None
+    client: Annotated[ClientConfig | None, Depends(config_dependency)] = None,
 ) -> ExperimentAssignment:
     config = require_config(client)
     participant_type = audience_spec.participant_type
@@ -308,17 +307,19 @@ def assign_treatment_api(
             session, sa_table, audience_spec, chosen_n, random_state
         )
 
-    metric_names = [ metric.metric_name for metric in design_spec.metrics ]
-    arm_names = [ arm.arm_name for arm in design_spec.arms ]
-    return(assign_treatment(data = DataFrame(participants),
-                            stratum_cols = design_spec.strata_cols,
-                            metric_cols = metric_names,
-                            id_col = "id",
-                            arm_names = arm_names,
-                            experiment_id = str(design_spec.experiment_id),
-                            description = design_spec.description,
-                            fstat_thresh = design_spec.fstat_thresh,
-                            random_state = random_state))
+    metric_names = [metric.metric_name for metric in design_spec.metrics]
+    arm_names = [arm.arm_name for arm in design_spec.arms]
+    return assign_treatment(
+        data=DataFrame(participants),
+        stratum_cols=design_spec.strata_cols,
+        metric_cols=metric_names,
+        id_col="id",
+        arm_names=arm_names,
+        experiment_id=str(design_spec.experiment_id),
+        description=design_spec.description,
+        fstat_thresh=design_spec.fstat_thresh,
+        random_state=random_state,
+    )
 
 
 @app.get(

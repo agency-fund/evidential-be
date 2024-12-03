@@ -10,18 +10,22 @@ from xngin.apiserver.api_types import (
     Relation,
     AudienceSpecFilter,
     EXPERIMENT_IDS_SUFFIX,
-    DesignSpecMetric
+    DesignSpecMetric,
 )
 from xngin.sqlite_extensions import custom_functions
+
 
 def get_metric_meta():
     # TODO: implement
     pass
 
-def get_stats_on_metrics(
-    session, sa_table: Table, metrics: list[DesignSpecMetric], audience_spec: AudienceSpec
-) -> list[DesignSpecMetric]:
 
+def get_stats_on_metrics(
+    session,
+    sa_table: Table,
+    metrics: list[DesignSpecMetric],
+    audience_spec: AudienceSpec,
+) -> list[DesignSpecMetric]:
     metric_columns = []
 
     for metric in metrics:
@@ -51,8 +55,11 @@ def get_stats_on_metrics(
 
 
 def query_for_participants(
-    session: Session, sa_table: Table, audience_spec: AudienceSpec, chosen_n: int,
-    random_state: int | None = None
+    session: Session,
+    sa_table: Table,
+    audience_spec: AudienceSpec,
+    chosen_n: int,
+    random_state: int | None = None,
 ) -> pd.DataFrame:
     filters = create_filters(sa_table, audience_spec)
     query = compose_query(sa_table, chosen_n, filters)

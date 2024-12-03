@@ -26,9 +26,9 @@ EXPERIMENT_IDS_SUFFIX = "experiment_ids"
 
 # The goal is to produce an ExperimentAssignment from the AudienceSpec and DesignSpec.
 # We go through two steps to enable this:
-# 0. Baseline data retrieval - 
+# 0. Baseline data retrieval -
 # 1. Power analysis - Given and AudienceSpec and DesignSpec we analyze the
-#    statistical power for each metric in the DesignSpec, along with the statistical 
+#    statistical power for each metric in the DesignSpec, along with the statistical
 #    parameters. This occurs as follows for each metric:
 #   a. If there is no baseline value (and std dev for numeric metrics), go to the
 #      database to fetch these values.
@@ -47,6 +47,7 @@ EXPERIMENT_IDS_SUFFIX = "experiment_ids"
 # 3. Analysis - TBD
 
 # Audience Specification (input)
+
 
 ## Filters
 class DataType(enum.StrEnum):
@@ -228,6 +229,7 @@ class AudienceSpecFilter(BaseModel):
 
         return self
 
+
 class AudienceSpec(BaseModel):
     """Audience specification.
 
@@ -238,7 +240,9 @@ class AudienceSpec(BaseModel):
     participant_type: str
     filters: list[AudienceSpecFilter]
 
+
 # Design Specification (input)
+
 
 ## Metric Specs
 class MetricType(enum.StrEnum):
@@ -254,6 +258,7 @@ class MetricType(enum.StrEnum):
         if python_type is bool:
             return MetricType.BINARY
         raise ValueError(f"Unsupported type: {python_type}")
+
 
 class DesignSpecMetric(BaseModel):
     metric_name: str
@@ -273,10 +278,14 @@ class DesignSpecMetric(BaseModel):
     # TODO(roboton): available_n should probably be in another structure related to power_analysis?
     available_n: int | None = None
 
+
 class ExperimentArm(BaseModel):
-    arm_id: uuid.UUID # generally should not let users set this, auto-generated uuid by default
+    arm_id: (
+        uuid.UUID
+    )  # generally should not let users set this, auto-generated uuid by default
     arm_name: str
     arm_description: str | None = None
+
 
 class DesignSpec(BaseModel):
     """Design specification."""
@@ -308,40 +317,45 @@ class DesignSpec(BaseModel):
         """Convert dates to iso strings in model_dump_json()/model_dump(mode='json')"""
         return dt.isoformat()
 
-    @field_validator('power', 'alpha', 'fstat_thresh')
+    @field_validator("power", "alpha", "fstat_thresh")
     def check_values_between_0_and_1(cls, value, field):
         """Ensure that power, alpha, and fstat_thresh are between 0 and 1."""
         if not (0 <= value <= 1):
             raise ValueError(f"{field.name} must be between 0 and 1.")
         return value
 
-    @field_validator('arms')
+    @field_validator("arms")
     def check_arms_length(cls, value):
         """Ensure that arms list has at least two elements."""
         if len(value) < 2:
             raise ValueError("The arms list must contain at least two elements.")
         return value
 
-    @field_validator('metrics')
+    @field_validator("metrics")
     def check_metrics_length(cls, value):
         """Ensure that metrics list has at least one element."""
         if len(value) < 1:
             raise ValueError("The metrics list must contain at least one element.")
         return value
 
+
 type PowerAnalysis = list[MetricAnalysis]
 
+
 class MetricAnalysisMessageType(enum.StrEnum):
-  SUFFICIENT = "sufficient"
-  INSUFFICIENT = "insufficient"
+    SUFFICIENT = "sufficient"
+    INSUFFICIENT = "insufficient"
+
 
 class MetricAnalysisMessage(BaseModel):
-  type: MetricAnalysisMessageType
-  msg: str
-  values: dict[str, float | int] | None = None
+    type: MetricAnalysisMessageType
+    msg: str
+    values: dict[str, float | int] | None = None
+
 
 class MetricAnalysis(BaseModel):
     """Analysis results for a single metric."""
+
     metric_spec: DesignSpecMetric
     available_n: int
     target_n: int | None = None
@@ -352,14 +366,16 @@ class MetricAnalysis(BaseModel):
     delta: float = None
     msg: MetricAnalysisMessage | None = None
 
+
 # Experiment Assignment (output)
 
-## Strata 
+
+## Strata
 class StrataType(enum.StrEnum):
     BINARY = "binary"
     NUMERIC = "numeric"
     CATEGORICAL = "categorical"
-    
+
     @classmethod
     def from_python_type(cls, python_type: type) -> "MetricType":
         """Given a Python type, return an appropriate StrataType."""
@@ -373,12 +389,14 @@ class StrataType(enum.StrEnum):
 
         raise ValueError(f"Unsupported type: {python_type}")
 
+
 class ExperimentStrata(BaseModel):
     strata_name: str
     # TODO(roboton): Add in strata type, update tests to reflect this field, should be derived
     # from data warehouse.
-    #strata_type: Optional[StrataType]
+    # strata_type: Optional[StrataType]
     strata_value: str | None = None
+
 
 class ExperimentParticipant(BaseModel):
     # this references the column marked is_unique_id == TRUE in the configuration spreadsheet
@@ -402,6 +420,7 @@ class ExperimentParticipant(BaseModel):
             raise ValueError(f"Model must have exactly one id field. Found {num_extra}")
         return self
 
+
 class BalanceCheck(BaseModel):
     f_stat: float
     numerator_df: int
@@ -409,8 +428,10 @@ class BalanceCheck(BaseModel):
     p_value: float
     balance_ok: bool
 
+
 class ExperimentAssignment(BaseModel):
     """Experiment assignment details including balance statistics and group assignments."""
+
     # TODO(roboton): remove next 5 fields in favor of BalanceCheck object
     f_statistic: float
     numerator_df: int
@@ -425,11 +446,13 @@ class ExperimentAssignment(BaseModel):
     sample_size: int
     assignments: list[ExperimentParticipant]
 
+
 class GetStrataResponseElement(BaseModel):
     data_type: DataType
     column_name: str
     description: str
     strata_group: str
+
 
 class GetFiltersResponseElement(BaseModel):
     data_type: DataType
@@ -450,10 +473,12 @@ class GetFiltersResponseElement(BaseModel):
     filter_name: str = Field(..., description="Name of the column.")
     relations: list[Relation] = Field(..., min_length=1)
 
+
 class GetMetricsResponseElement(BaseModel):
     data_type: DataType
     column_name: str
     description: str
+
 
 class UnimplementedResponse(BaseModel):
     todo: Literal["TODO"] = "TODO"
