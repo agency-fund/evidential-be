@@ -156,26 +156,6 @@ class WebhookMixin(BaseModel):
     webhook_config: WebhookConfig
 
 
-class StandardDatabaseConnectionMixin:
-    def dbsession(self, participant_type: str):
-        """Returns a Session to be used to send queries to the customer database.
-
-        Use this in a `with` block to ensure correct transaction handling. If you need the
-        sqlalchemy Engine, call .get_bind().
-        """
-        url = self.to_sqlalchemy_url_and_table(participant_type).sqlalchemy_url
-        engine = sqlalchemy_connect(url)
-        self.extra_engine_setup(engine)
-
-        if url.get_backend_name() == "sqlite":
-
-            @event.listens_for(engine, "connect")
-            def register_sqlite_functions(dbapi_connection, _):
-                NumpyStddev.register(dbapi_connection)
-
-        return Session(engine)
-
-
 class Dsn(BaseModel):
     """Describes a set of parameters suitable for connecting to most types of remote databases."""
 
@@ -218,21 +198,44 @@ class Dsn(BaseModel):
         return url
 
 
-class RemoteDatabaseConfig(
-    StandardDatabaseConnectionMixin, ParticipantsMixin, WebhookMixin, BaseModel
-):
+class DbapiArg(BaseModel):
+    """Describes a DBAPI connect() argument.
+
+    These can be arbitrary kv pairs and are database-driver specific."""
+
+    arg: str
+    value: str
+
+
+class RemoteDatabaseConfig(ParticipantsMixin, WebhookMixin, BaseModel):
     """RemoteDatabaseConfig defines a configuration for a remote data warehouse."""
 
     type: Literal["remote"]
 
     dwh: Dsn
 
-    def to_sqlalchemy_url_and_table(self, participant_type: str) -> SqlalchemyAndTable:
-        participants = self.find_participants(participant_type)
-        return SqlalchemyAndTable(
-            sqlalchemy_url=self.dwh.to_sqlalchemy_url(),
-            table_name=participants.table_name,
+    dbapi_args: list[DbapiArg] | None = None
+
+    def dbsession(self):
+        """Returns a Session to be used to send queries to the customer database.
+
+        Use this in a `with` block to ensure correct transaction handling. If you need the
+        sqlalchemy Engine, call .get_bind().
+        """
+        url = self.dwh.to_sqlalchemy_url()
+        connect_args = {}
+        if self.dbapi_args:
+            for entry in self.dbapi_args:
+                connect_args[entry.arg] = entry.value
+        if url.get_backend_name() == "postgres":
+            connect_args["connect_timeout"] = 5
+        engine = sqlalchemy.create_engine(
+            url,
+            connect_args=connect_args,
+            echo=os.environ.get("ECHO_SQL", "").lower() in ("true", "1"),
         )
+        self.extra_engine_setup(engine)
+        return Session(engine)
 
     def extra_engine_setup(self, engine: Engine):
         """Partially address any Redshift incompatibilities."""
@@ -242,24 +245,32 @@ class RemoteDatabaseConfig(
             engine.dialect._set_backslash_escapes = lambda _: None
 
 
-class SqliteLocalConfig(StandardDatabaseConnectionMixin, ParticipantsMixin, BaseModel):
+class SqliteLocalConfig(ParticipantsMixin, BaseModel):
     type: Literal["sqlite_local"]
     sqlite_filename: str
 
-    def to_sqlalchemy_url_and_table(self, participant_type: str) -> SqlalchemyAndTable:
-        """Returns a tuple of SQLAlchemy URL and a table name."""
-        participants = self.find_participants(participant_type)
-        return SqlalchemyAndTable(
-            sqlalchemy_url=sqlalchemy.URL.create(
-                drivername="sqlite",
-                database=self.sqlite_filename,
-                query={"mode": "ro"},
-            ),
-            table_name=participants.table_name,
+    def dbsession(self):
+        """Returns a Session to be used to send queries to a SQLite database.
+
+        Use this in a `with` block to ensure correct transaction handling. If you need the
+        sqlalchemy Engine, call .get_bind().
+        """
+        url = sqlalchemy.URL.create(
+            drivername="sqlite",
+            database=self.sqlite_filename,
+            query={"mode": "ro"},
+        )
+        engine = sqlalchemy.create_engine(
+            url,
+            connect_args={"timeout": 5},
+            echo=os.environ.get("ECHO_SQL", "").lower() in ("true", "1"),
         )
 
-    def extra_engine_setup(self, engine: Engine):
-        pass
+        @event.listens_for(engine, "connect")
+        def register_sqlite_functions(dbapi_connection, _):
+            NumpyStddev.register(dbapi_connection)
+
+        return Session(engine)
 
 
 type ClientConfigType = RemoteDatabaseConfig | SqliteLocalConfig
@@ -313,10 +324,12 @@ class CannotFindParticipantsException(Exception):
         return self.message
 
 
-def get_sqlalchemy_table_from_engine(engine: sqlalchemy.engine.Engine, table_name: str):
+def infer_table(engine: sqlalchemy.engine.Engine, table_name: str):
     """Constructs a Table via reflection.
 
     Raises CannotFindTheTableException containing helpful error message if the table doesn't exist.
+
+    TODO: add workarounds for Redshift or other engines here.
     """
     metadata = sqlalchemy.MetaData()
     try:
@@ -325,20 +338,3 @@ def get_sqlalchemy_table_from_engine(engine: sqlalchemy.engine.Engine, table_nam
         metadata.reflect(engine)
         existing_tables = metadata.tables.keys()
         raise CannotFindTableException(table_name, existing_tables) from nste
-
-
-def sqlalchemy_connect(sqlalchemy_url):
-    """Connect to a database, given a SQLAlchemy-compatible URL.
-
-    This is intended to be used to connect to customer databases.
-    """
-    connect_args = {}
-    if sqlalchemy_url.get_backend_name() == "postgres":
-        connect_args["connect_timeout"] = 5
-    elif sqlalchemy_url.get_backend_name() == "sqlite":
-        connect_args["timeout"] = 5
-    return sqlalchemy.create_engine(
-        sqlalchemy_url,
-        connect_args=connect_args,
-        echo=os.environ.get("ECHO_SQL", "").lower() in ("true", "1"),
-    )

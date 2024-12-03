@@ -9,7 +9,6 @@
         "type": "remote",
         "participants": [
           {
-            "id": "test_participant_type",
             "sheet": {
               "url": "https://docs.google.com/spreadsheets/d/redacted/edit",
               "worksheet": "Sheet1"
