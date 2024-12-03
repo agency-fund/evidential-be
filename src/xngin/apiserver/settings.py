@@ -75,6 +75,7 @@ class Participant(ConfigBaseModel):
     Participants are defined by a table_name and a configuration worksheet.
     """
 
+    participant_type: str
     table_name: str
     sheet: SheetRef
 
@@ -89,7 +90,7 @@ class ParticipantsMixin(ConfigBaseModel):
             (
                 u
                 for u in self.participants
-                if u.table_name.lower() == participant_type.lower()
+                if u.participant_type.lower() == participant_type.lower()
             ),
             None,
         )
