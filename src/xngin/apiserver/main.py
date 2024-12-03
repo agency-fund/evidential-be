@@ -37,7 +37,7 @@ from xngin.apiserver.settings import (
     XnginSettings,
     ClientConfig,
     CannotFindTableException,
-    get_sqlalchemy_table_from_engine,
+    infer_table,
 )
 from xngin.stats.power import check_power
 from xngin.stats.assignment import assign_treatment
@@ -110,9 +110,7 @@ def get_strata(
     """
     config = require_config(client)
     with config.dbsession() as session:
-        sa_table = get_sqlalchemy_table_from_engine(
-            session.get_bind(), commons.participant_type
-        )
+        sa_table = infer_table(session.get_bind(), commons.participant_type)
         db_schema = generate_column_descriptors(sa_table)
         config_sheet = fetch_worksheet(commons, config, gsheets)
         strata_cols = {c.column_name: c for c in config_sheet.columns if c.is_strata}
@@ -145,9 +143,7 @@ def get_filters(
 ) -> list[GetFiltersResponseElement]:
     config = require_config(client)
     with config.dbsession() as session:
-        sa_table = get_sqlalchemy_table_from_engine(
-            session.get_bind(), commons.participant_type
-        )
+        sa_table = infer_table(session.get_bind(), commons.participant_type)
         db_schema = generate_column_descriptors(sa_table)
         config_sheet = fetch_worksheet(commons, config, gsheets)
         filter_cols = {c.column_name: c for c in config_sheet.columns if c.is_filter}
@@ -216,9 +212,7 @@ def get_metrics(
     """
     config = require_config(client)
     with config.dbsession() as session:
-        sa_table = get_sqlalchemy_table_from_engine(
-            session.get_bind(), commons.participant_type
-        )
+        sa_table = infer_table(session.get_bind(), commons.participant_type)
         db_schema = generate_column_descriptors(sa_table)
         config_sheet = fetch_worksheet(commons, config, gsheets)
         metric_cols = {c.column_name: c for c in config_sheet.columns if c.is_metric}
@@ -255,9 +249,7 @@ def check_power_api(
     config = require_config(client)
     participant_type = audience_spec.participant_type
     with config.dbsession() as session:
-        sa_table = get_sqlalchemy_table_from_engine(
-            session.get_bind(), participant_type
-        )
+        sa_table = infer_table(session.get_bind(), participant_type)
         config_sheet = fetch_worksheet(
             CommonQueryParams(participant_type=participant_type, refresh=refresh),
             config,
@@ -294,10 +286,8 @@ def assign_treatment_api(
     config = require_config(client)
     participant_type = audience_spec.participant_type
 
-    with config.dbsession(participant_type) as session:
-        sa_table = get_sqlalchemy_table_from_engine(
-            session.get_bind(), participant_type
-        )
+    with config.dbsession() as session:
+        sa_table = infer_table(session.get_bind(), participant_type)
         participants = query_for_participants(
             session, sa_table, audience_spec, chosen_n, random_state
         )

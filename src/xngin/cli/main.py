@@ -16,12 +16,10 @@ import typer
 from gspread import GSpreadException
 from rich.console import Console
 from sqlalchemy import create_engine, make_url
-from sqlalchemy.exc import NoSuchTableError
 
 from xngin.apiserver import settings
 from xngin.apiserver.api_types import DataType
 from xngin.apiserver.settings import (
-    SqlalchemyAndTable,
     SheetRef,
     XnginSettings,
     CannotFindTableException,
@@ -52,27 +50,13 @@ def infer_config_from_schema(dsn: str, table: str):
     :param table The name of the table to inspect.
     """
     try:
-        dwh = get_sqlalchemy_table(
-            SqlalchemyAndTable(
-                sqlalchemy_url=sqlalchemy.engine.make_url(dsn), table_name=table
-            )
+        dwh = settings.infer_table(
+            sqlalchemy.create_engine(sqlalchemy.engine.make_url(dsn)), table
         )
     except CannotFindTableException as cfte:
         err_console.print(cfte.message)
         raise typer.Exit(1) from cfte
     return create_sheetconfig_from_table(dwh)
-
-
-def get_sqlalchemy_table(sqlat: SqlalchemyAndTable):
-    """Connects to a SQLAlchemy DSN and creates a sqlalchemy.Table for introspection."""
-    engine = settings.sqlalchemy_connect(sqlat.sqlalchemy_url)
-    metadata = sqlalchemy.MetaData()
-    try:
-        return sqlalchemy.Table(sqlat.table_name, metadata, autoload_with=engine)
-    except NoSuchTableError as nste:
-        metadata.reflect(engine)
-        existing_tables = metadata.tables.keys()
-        raise CannotFindTableException(sqlat.table_name, existing_tables) from nste
 
 
 @app.command()

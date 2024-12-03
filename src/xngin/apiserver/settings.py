@@ -233,13 +233,6 @@ class RemoteDatabaseConfig(ParticipantsMixin, WebhookMixin, BaseModel):
         self.extra_engine_setup(engine)
         return Session(engine)
 
-    def to_sqlalchemy_url_and_table(self, participant_type: str) -> SqlalchemyAndTable:
-        participants = self.find_participants(participant_type)
-        return SqlalchemyAndTable(
-            sqlalchemy_url=self.dwh.to_sqlalchemy_url(),
-            table_name=participants.table_name,
-        )
-
     def extra_engine_setup(self, engine: Engine):
         """Partially address any Redshift incompatibilities."""
 
@@ -263,25 +256,13 @@ class SqliteLocalConfig(ParticipantsMixin, BaseModel):
             database=self.sqlite_filename,
             query={"mode": "ro"},
         )
-        engine = sqlalchemy_connect(url)
+        engine = sqlalchemy.create_engine(url, connect_args={"timeout": 5})
 
         @event.listens_for(engine, "connect")
         def register_sqlite_functions(dbapi_connection, _):
             NumpyStddev.register(dbapi_connection)
 
         return Session(engine)
-
-    def to_sqlalchemy_url_and_table(self, participant_type: str) -> SqlalchemyAndTable:
-        """Returns a tuple of SQLAlchemy URL and a table name."""
-        participants = self.find_participants(participant_type)
-        return SqlalchemyAndTable(
-            sqlalchemy_url=sqlalchemy.URL.create(
-                drivername="sqlite",
-                database=self.sqlite_filename,
-                query={"mode": "ro"},
-            ),
-            table_name=participants.table_name,
-        )
 
 
 type ClientConfigType = RemoteDatabaseConfig | SqliteLocalConfig
@@ -335,10 +316,12 @@ class CannotFindParticipantsException(Exception):
         return self.message
 
 
-def get_sqlalchemy_table_from_engine(engine: sqlalchemy.engine.Engine, table_name: str):
+def infer_table(engine: sqlalchemy.engine.Engine, table_name: str):
     """Constructs a Table via reflection.
 
     Raises CannotFindTheTableException containing helpful error message if the table doesn't exist.
+
+    TODO: add workarounds for Redshift or other engines here.
     """
     metadata = sqlalchemy.MetaData()
     try:
@@ -347,16 +330,3 @@ def get_sqlalchemy_table_from_engine(engine: sqlalchemy.engine.Engine, table_nam
         metadata.reflect(engine)
         existing_tables = metadata.tables.keys()
         raise CannotFindTableException(table_name, existing_tables) from nste
-
-
-def sqlalchemy_connect(sqlalchemy_url):
-    """Connect to a database, given a SQLAlchemy-compatible URL.
-
-    This is intended to be used to connect to customer databases.
-    """
-    connect_args = {}
-    if sqlalchemy_url.get_backend_name() == "postgres":
-        connect_args["connect_timeout"] = 5
-    elif sqlalchemy_url.get_backend_name() == "sqlite":
-        connect_args["timeout"] = 5
-    return sqlalchemy.create_engine(sqlalchemy_url, connect_args=connect_args)
