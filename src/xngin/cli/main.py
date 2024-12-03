@@ -15,7 +15,9 @@ import sqlalchemy
 import typer
 from gspread import GSpreadException
 from rich.console import Console
-from sqlalchemy import create_engine, make_url
+from sqlalchemy import create_engine, make_url, func, text
+from sqlalchemy import select
+from sqlalchemy.orm import Session
 
 from xngin.apiserver import settings
 from xngin.apiserver.api_types import DataType
@@ -164,10 +166,16 @@ def create_testing_dwh(
             s3.delete_object(Bucket=bucket, Key=key)
             print(f"Loaded {count} rows into {table_name}.")
     else:
-        conn = create_engine(url)
+        print("Reading CSV...")
         df = pd.read_csv(src)
-        row_count = df.to_sql(table_name, conn, if_exists="replace", index=False)
-        print(f"Loaded {row_count} rows into {table_name}.")
+        print("Loading...")
+        engine = create_engine(url)
+        df.to_sql(table_name, engine, if_exists="replace", index=False)
+        with Session(engine) as session:
+            row_count = session.scalar(
+                select(func.count(text("*"))).select_from(text("dwh"))
+            )
+            print(f"Loaded {row_count} rows into {table_name}.")
 
 
 @app.command()

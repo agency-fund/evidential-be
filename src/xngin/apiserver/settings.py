@@ -180,17 +180,17 @@ class Dsn(BaseModel):
     def to_sqlalchemy_url(self):
         """Creates a sqlalchemy.URL from this Dsn."""
         url = sqlalchemy.URL.create(
-            drivername=self.dwh.driver,
-            username=self.dwh.user,
-            password=self.dwh.password.get_secret_value(),
-            host=self.dwh.host,
-            port=self.dwh.port,
-            database=self.dwh.dbname,
+            drivername=self.driver,
+            username=self.user,
+            password=self.password.get_secret_value(),
+            host=self.host,
+            port=self.port,
+            database=self.dbname,
         )
         if self.driver.startswith("postgresql"):
             query = dict(url.query)
             query.update({
-                "sslmode": self.dwh.sslmode if self.dwh.sslmode else "verify-full",
+                "sslmode": self.sslmode if self.sslmode else "verify-full",
                 # re: redshift issue https://github.com/psycopg/psycopg/issues/122#issuecomment-985742751
                 "client_encoding": "utf-8",
             })
