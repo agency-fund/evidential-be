@@ -1,5 +1,5 @@
 import numpy as np
-from sqlalchemy import inspect
+from sqlalchemy import inspect, ColumnCollection
 
 from sqlalchemy.ext import compiler
 from sqlalchemy.sql.functions import func
@@ -26,7 +26,7 @@ def our_random(sa_table=None):
         if len(meta.primary_key) > 0:
             return meta.primary_key[0]
         # If we can't order by a single primary key, order by all the columns.
-        return meta.columns
+        return ColumnCollection(columns=list(sorted(meta.columns.items())))
     return func.random()
 
 

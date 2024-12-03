@@ -42,47 +42,7 @@ HTTP 200
 {
   "assignments": [
     {
-      "id": 101638,
-      "strata": [
-        {
-          "strata_name": "is_onboarded",
-          "strata_value": "0"
-        }
-      ],
-      "treatment_assignment": "1"
-    },
-    {
-      "id": 765334,
-      "strata": [
-        {
-          "strata_name": "is_onboarded",
-          "strata_value": "1"
-        }
-      ],
-      "treatment_assignment": "0"
-    },
-    {
-      "id": 144894,
-      "strata": [
-        {
-          "strata_name": "is_onboarded",
-          "strata_value": "0"
-        }
-      ],
-      "treatment_assignment": "1"
-    },
-    {
-      "id": 364015,
-      "strata": [
-        {
-          "strata_name": "is_onboarded",
-          "strata_value": "0"
-        }
-      ],
-      "treatment_assignment": "1"
-    },
-    {
-      "id": 662027,
+      "id": 710929,
       "strata": [
         {
           "strata_name": "is_onboarded",
@@ -92,67 +52,7 @@ HTTP 200
       "treatment_assignment": "0"
     },
     {
-      "id": 24098,
-      "strata": [
-        {
-          "strata_name": "is_onboarded",
-          "strata_value": "0"
-        }
-      ],
-      "treatment_assignment": "1"
-    },
-    {
-      "id": 612541,
-      "strata": [
-        {
-          "strata_name": "is_onboarded",
-          "strata_value": "0"
-        }
-      ],
-      "treatment_assignment": "1"
-    },
-    {
-      "id": 709857,
-      "strata": [
-        {
-          "strata_name": "is_onboarded",
-          "strata_value": "1"
-        }
-      ],
-      "treatment_assignment": "1"
-    },
-    {
-      "id": 714173,
-      "strata": [
-        {
-          "strata_name": "is_onboarded",
-          "strata_value": "0"
-        }
-      ],
-      "treatment_assignment": "1"
-    },
-    {
-      "id": 223979,
-      "strata": [
-        {
-          "strata_name": "is_onboarded",
-          "strata_value": "0"
-        }
-      ],
-      "treatment_assignment": "1"
-    },
-    {
-      "id": 316979,
-      "strata": [
-        {
-          "strata_name": "is_onboarded",
-          "strata_value": "0"
-        }
-      ],
-      "treatment_assignment": "1"
-    },
-    {
-      "id": 349088,
+      "id": 730934,
       "strata": [
         {
           "strata_name": "is_onboarded",
@@ -162,17 +62,17 @@ HTTP 200
       "treatment_assignment": "0"
     },
     {
-      "id": 904464,
+      "id": 440263,
       "strata": [
         {
           "strata_name": "is_onboarded",
-          "strata_value": "1"
+          "strata_value": "0"
         }
       ],
       "treatment_assignment": "0"
     },
     {
-      "id": 725801,
+      "id": 410077,
       "strata": [
         {
           "strata_name": "is_onboarded",
@@ -182,7 +82,7 @@ HTTP 200
       "treatment_assignment": "1"
     },
     {
-      "id": 525958,
+      "id": 486195,
       "strata": [
         {
           "strata_name": "is_onboarded",
@@ -192,27 +92,7 @@ HTTP 200
       "treatment_assignment": "0"
     },
     {
-      "id": 698018,
-      "strata": [
-        {
-          "strata_name": "is_onboarded",
-          "strata_value": "1"
-        }
-      ],
-      "treatment_assignment": "0"
-    },
-    {
-      "id": 740855,
-      "strata": [
-        {
-          "strata_name": "is_onboarded",
-          "strata_value": "0"
-        }
-      ],
-      "treatment_assignment": "0"
-    },
-    {
-      "id": 523605,
+      "id": 484970,
       "strata": [
         {
           "strata_name": "is_onboarded",
@@ -222,17 +102,27 @@ HTTP 200
       "treatment_assignment": "1"
     },
     {
-      "id": 716737,
+      "id": 393637,
       "strata": [
         {
           "strata_name": "is_onboarded",
           "strata_value": "0"
         }
       ],
-      "treatment_assignment": "0"
+      "treatment_assignment": "1"
     },
     {
-      "id": 995199,
+      "id": 122169,
+      "strata": [
+        {
+          "strata_name": "is_onboarded",
+          "strata_value": "0"
+        }
+      ],
+      "treatment_assignment": "1"
+    },
+    {
+      "id": 155035,
       "strata": [
         {
           "strata_name": "is_onboarded",
@@ -242,37 +132,7 @@ HTTP 200
       "treatment_assignment": "1"
     },
     {
-      "id": 449677,
-      "strata": [
-        {
-          "strata_name": "is_onboarded",
-          "strata_value": "0"
-        }
-      ],
-      "treatment_assignment": "0"
-    },
-    {
-      "id": 758356,
-      "strata": [
-        {
-          "strata_name": "is_onboarded",
-          "strata_value": "0"
-        }
-      ],
-      "treatment_assignment": "1"
-    },
-    {
-      "id": 396379,
-      "strata": [
-        {
-          "strata_name": "is_onboarded",
-          "strata_value": "0"
-        }
-      ],
-      "treatment_assignment": "0"
-    },
-    {
-      "id": 531374,
+      "id": 295539,
       "strata": [
         {
           "strata_name": "is_onboarded",
@@ -282,7 +142,17 @@ HTTP 200
       "treatment_assignment": "1"
     },
     {
-      "id": 275539,
+      "id": 552382,
+      "strata": [
+        {
+          "strata_name": "is_onboarded",
+          "strata_value": "1"
+        }
+      ],
+      "treatment_assignment": "0"
+    },
+    {
+      "id": 947098,
       "strata": [
         {
           "strata_name": "is_onboarded",
@@ -292,7 +162,7 @@ HTTP 200
       "treatment_assignment": "0"
     },
     {
-      "id": 591264,
+      "id": 431735,
       "strata": [
         {
           "strata_name": "is_onboarded",
@@ -302,7 +172,17 @@ HTTP 200
       "treatment_assignment": "1"
     },
     {
-      "id": 347822,
+      "id": 866648,
+      "strata": [
+        {
+          "strata_name": "is_onboarded",
+          "strata_value": "0"
+        }
+      ],
+      "treatment_assignment": "0"
+    },
+    {
+      "id": 407190,
       "strata": [
         {
           "strata_name": "is_onboarded",
@@ -312,27 +192,7 @@ HTTP 200
       "treatment_assignment": "1"
     },
     {
-      "id": 727298,
-      "strata": [
-        {
-          "strata_name": "is_onboarded",
-          "strata_value": "0"
-        }
-      ],
-      "treatment_assignment": "0"
-    },
-    {
-      "id": 756198,
-      "strata": [
-        {
-          "strata_name": "is_onboarded",
-          "strata_value": "0"
-        }
-      ],
-      "treatment_assignment": "1"
-    },
-    {
-      "id": 638281,
+      "id": 248783,
       "strata": [
         {
           "strata_name": "is_onboarded",
@@ -342,47 +202,7 @@ HTTP 200
       "treatment_assignment": "1"
     },
     {
-      "id": 871555,
-      "strata": [
-        {
-          "strata_name": "is_onboarded",
-          "strata_value": "1"
-        }
-      ],
-      "treatment_assignment": "0"
-    },
-    {
-      "id": 587848,
-      "strata": [
-        {
-          "strata_name": "is_onboarded",
-          "strata_value": "1"
-        }
-      ],
-      "treatment_assignment": "0"
-    },
-    {
-      "id": 541539,
-      "strata": [
-        {
-          "strata_name": "is_onboarded",
-          "strata_value": "1"
-        }
-      ],
-      "treatment_assignment": "0"
-    },
-    {
-      "id": 748975,
-      "strata": [
-        {
-          "strata_name": "is_onboarded",
-          "strata_value": "0"
-        }
-      ],
-      "treatment_assignment": "0"
-    },
-    {
-      "id": 920612,
+      "id": 76948,
       "strata": [
         {
           "strata_name": "is_onboarded",
@@ -392,17 +212,37 @@ HTTP 200
       "treatment_assignment": "1"
     },
     {
-      "id": 985629,
+      "id": 171643,
       "strata": [
         {
           "strata_name": "is_onboarded",
-          "strata_value": "1"
+          "strata_value": "0"
         }
       ],
-      "treatment_assignment": "0"
+      "treatment_assignment": "1"
     },
     {
-      "id": 680188,
+      "id": 302146,
+      "strata": [
+        {
+          "strata_name": "is_onboarded",
+          "strata_value": "0"
+        }
+      ],
+      "treatment_assignment": "1"
+    },
+    {
+      "id": 812175,
+      "strata": [
+        {
+          "strata_name": "is_onboarded",
+          "strata_value": "0"
+        }
+      ],
+      "treatment_assignment": "1"
+    },
+    {
+      "id": 154001,
       "strata": [
         {
           "strata_name": "is_onboarded",
@@ -412,7 +252,77 @@ HTTP 200
       "treatment_assignment": "0"
     },
     {
-      "id": 283187,
+      "id": 12955,
+      "strata": [
+        {
+          "strata_name": "is_onboarded",
+          "strata_value": "0"
+        }
+      ],
+      "treatment_assignment": "1"
+    },
+    {
+      "id": 35426,
+      "strata": [
+        {
+          "strata_name": "is_onboarded",
+          "strata_value": "1"
+        }
+      ],
+      "treatment_assignment": "0"
+    },
+    {
+      "id": 237616,
+      "strata": [
+        {
+          "strata_name": "is_onboarded",
+          "strata_value": "0"
+        }
+      ],
+      "treatment_assignment": "1"
+    },
+    {
+      "id": 210073,
+      "strata": [
+        {
+          "strata_name": "is_onboarded",
+          "strata_value": "0"
+        }
+      ],
+      "treatment_assignment": "0"
+    },
+    {
+      "id": 179916,
+      "strata": [
+        {
+          "strata_name": "is_onboarded",
+          "strata_value": "0"
+        }
+      ],
+      "treatment_assignment": "1"
+    },
+    {
+      "id": 65425,
+      "strata": [
+        {
+          "strata_name": "is_onboarded",
+          "strata_value": "0"
+        }
+      ],
+      "treatment_assignment": "0"
+    },
+    {
+      "id": 469679,
+      "strata": [
+        {
+          "strata_name": "is_onboarded",
+          "strata_value": "0"
+        }
+      ],
+      "treatment_assignment": "0"
+    },
+    {
+      "id": 510222,
       "strata": [
         {
           "strata_name": "is_onboarded",
@@ -422,7 +332,27 @@ HTTP 200
       "treatment_assignment": "1"
     },
     {
-      "id": 477955,
+      "id": 23560,
+      "strata": [
+        {
+          "strata_name": "is_onboarded",
+          "strata_value": "1"
+        }
+      ],
+      "treatment_assignment": "0"
+    },
+    {
+      "id": 773941,
+      "strata": [
+        {
+          "strata_name": "is_onboarded",
+          "strata_value": "0"
+        }
+      ],
+      "treatment_assignment": "1"
+    },
+    {
+      "id": 865084,
       "strata": [
         {
           "strata_name": "is_onboarded",
@@ -432,7 +362,77 @@ HTTP 200
       "treatment_assignment": "0"
     },
     {
-      "id": 924026,
+      "id": 33392,
+      "strata": [
+        {
+          "strata_name": "is_onboarded",
+          "strata_value": "0"
+        }
+      ],
+      "treatment_assignment": "0"
+    },
+    {
+      "id": 310074,
+      "strata": [
+        {
+          "strata_name": "is_onboarded",
+          "strata_value": "0"
+        }
+      ],
+      "treatment_assignment": "1"
+    },
+    {
+      "id": 198781,
+      "strata": [
+        {
+          "strata_name": "is_onboarded",
+          "strata_value": "1"
+        }
+      ],
+      "treatment_assignment": "1"
+    },
+    {
+      "id": 776353,
+      "strata": [
+        {
+          "strata_name": "is_onboarded",
+          "strata_value": "0"
+        }
+      ],
+      "treatment_assignment": "0"
+    },
+    {
+      "id": 996915,
+      "strata": [
+        {
+          "strata_name": "is_onboarded",
+          "strata_value": "1"
+        }
+      ],
+      "treatment_assignment": "0"
+    },
+    {
+      "id": 830767,
+      "strata": [
+        {
+          "strata_name": "is_onboarded",
+          "strata_value": "0"
+        }
+      ],
+      "treatment_assignment": "0"
+    },
+    {
+      "id": 956625,
+      "strata": [
+        {
+          "strata_name": "is_onboarded",
+          "strata_value": "0"
+        }
+      ],
+      "treatment_assignment": "1"
+    },
+    {
+      "id": 895588,
       "strata": [
         {
           "strata_name": "is_onboarded",
@@ -446,9 +446,9 @@ HTTP 200
   "denominator_df": 33,
   "description": "Sample experiment description.",
   "experiment_id": "0897bbd7-dacd-41b4-b164-7a1950fa61f2",
-  "f_statistic": 5.9651128135123805,
+  "f_statistic": 7.367106128752492,
   "numerator_df": 7,
-  "p_value": 0.00015424592986257313,
+  "p_value": 2.4555756260924433e-05,
   "sample_size": 40
 }
 ```
