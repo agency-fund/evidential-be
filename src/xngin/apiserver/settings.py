@@ -1,7 +1,7 @@
 import json
 import os
 from functools import lru_cache
-from typing import Literal, Protocol
+from typing import Literal
 
 import sqlalchemy
 from pydantic import (
@@ -156,10 +156,6 @@ class WebhookMixin(BaseModel):
     webhook_config: WebhookConfig
 
 
-class Sessionable(Protocol):
-    def dbsession(self, participant_type: str) -> Session: ...
-
-
 class Dsn(BaseModel):
     """Describes a set of parameters suitable for connecting to most types of remote databases."""
 
@@ -203,6 +199,10 @@ class Dsn(BaseModel):
 
 
 class DbapiArg(BaseModel):
+    """Describes a DBAPI connect() argument.
+
+    These can be arbitrary kv pairs and are database-driver specific."""
+
     arg: str
     value: str
 
@@ -223,12 +223,13 @@ class RemoteDatabaseConfig(ParticipantsMixin, WebhookMixin, BaseModel):
         sqlalchemy Engine, call .get_bind().
         """
         url = self.dsn.to_sqlalchemy_url()
-        dbapi_args = {}
+        connect_args = {}
         if self.dbapi_args:
-            dbapi_args.update(self.dbapi_args)
+            for entry in self.dbapi_args:
+                connect_args[entry.arg] = entry.value
         if url.get_backend_name() == "postgres":
-            dbapi_args["connect_timeout"] = 5
-        engine = sqlalchemy.create_engine(url, connect_args=dbapi_args)
+            connect_args["connect_timeout"] = 5
+        engine = sqlalchemy.create_engine(url, connect_args=connect_args)
         self.extra_engine_setup(engine)
         return Session(engine)
 
