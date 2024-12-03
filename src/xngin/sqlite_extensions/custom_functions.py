@@ -15,6 +15,8 @@ def our_random(sa_table=None):
 
     When USE_DETERMINISTIC_RANDOM is True, the RANDOM is replaced by the primary key of the table passed
     via the sa_table argument.
+
+    Also see: conftest.use_deterministic_random
     """
     if USE_DETERMINISTIC_RANDOM:
         if sa_table is None:
