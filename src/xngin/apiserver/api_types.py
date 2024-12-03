@@ -2,7 +2,7 @@ import enum
 import re
 import uuid
 from datetime import datetime
-from typing import Literal, Annotated, Self
+from typing import Annotated, Self
 
 import sqlalchemy.sql.sqltypes
 from pydantic import (
@@ -478,7 +478,3 @@ class GetMetricsResponseElement(BaseModel):
     data_type: DataType
     column_name: str
     description: str
-
-
-class UnimplementedResponse(BaseModel):
-    todo: Literal["TODO"] = "TODO"
