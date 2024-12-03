@@ -1,5 +1,5 @@
 import numpy as np
-from sqlalchemy import inspect
+from sqlalchemy import inspect, ColumnCollection
 
 from sqlalchemy.ext import compiler
 from sqlalchemy.sql.functions import func
@@ -15,13 +15,22 @@ def our_random(sa_table=None):
 
     When USE_DETERMINISTIC_RANDOM is True, the RANDOM is replaced by the primary key of the table passed
     via the sa_table argument.
+
+    Also see: conftest.use_deterministic_random
     """
     if USE_DETERMINISTIC_RANDOM:
-        if not sa_table:
+        if sa_table is None:
             raise ValueError(
                 "our_random requires sa_table= to be an inspectable table-like entity."
             )
-        return inspect(sa_table).primary_key[0]
+        # Find a suitable key (or keys) to order by.
+        meta = inspect(sa_table)
+        if len(meta.primary_key) > 0:
+            return ColumnCollection(
+                columns=[(c.name, c) for c in meta.columns.values() if c.primary_key]
+            )
+        # If we can't order by a single primary key, order by all the columns.
+        return ColumnCollection(columns=list(sorted(meta.columns.items())))
     return func.random()
 
 

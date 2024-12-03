@@ -14,6 +14,7 @@ from xngin.apiserver import database
 from xngin.apiserver.dependencies import settings_dependency, xngin_db_session
 from xngin.apiserver.settings import XnginSettings, SettingsForTesting
 from xngin.apiserver.testing import testing_dwh
+from xngin.sqlite_extensions import custom_functions
 
 logger = logging.getLogger(__name__)
 
@@ -41,6 +42,7 @@ def setup(app):
         "sqlite://",
         connect_args={"check_same_thread": False},
         poolclass=StaticPool,
+        echo=os.environ.get("ECHO_SQL", "").lower() in ("true", "1"),
     )
 
     testing_session_local = sessionmaker(
@@ -83,3 +85,16 @@ def raise_unless_running_from_top_directory():
     pypt = Path(os.getcwd()) / "pyproject.toml"
     if not pypt.exists():
         raise DeveloperErrorRunFromRootOfRepositoryPleaseException()
+
+
+@pytest.fixture(name="use_deterministic_random")
+def fixture_use_deterministic_random():
+    """Tests that want deterministic SQL random() behavior can request this fixture. This will only affect
+    SQLAlchemy expressions that use custom_functions.our_random().
+    """
+    original = custom_functions.USE_DETERMINISTIC_RANDOM
+    try:
+        custom_functions.USE_DETERMINISTIC_RANDOM = True
+        yield
+    finally:
+        custom_functions.USE_DETERMINISTIC_RANDOM = original

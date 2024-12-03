@@ -229,7 +229,11 @@ class RemoteDatabaseConfig(ParticipantsMixin, WebhookMixin, BaseModel):
                 connect_args[entry.arg] = entry.value
         if url.get_backend_name() == "postgres":
             connect_args["connect_timeout"] = 5
-        engine = sqlalchemy.create_engine(url, connect_args=connect_args)
+        engine = sqlalchemy.create_engine(
+            url,
+            connect_args=connect_args,
+            echo=os.environ.get("ECHO_SQL", "").lower() in ("true", "1"),
+        )
         self.extra_engine_setup(engine)
         return Session(engine)
 
@@ -256,7 +260,11 @@ class SqliteLocalConfig(ParticipantsMixin, BaseModel):
             database=self.sqlite_filename,
             query={"mode": "ro"},
         )
-        engine = sqlalchemy.create_engine(url, connect_args={"timeout": 5})
+        engine = sqlalchemy.create_engine(
+            url,
+            connect_args={"timeout": 5},
+            echo=os.environ.get("ECHO_SQL", "").lower() in ("true", "1"),
+        )
 
         @event.listens_for(engine, "connect")
         def register_sqlite_functions(dbapi_connection, _):
