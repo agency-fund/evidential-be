@@ -1,9 +1,28 @@
 import numpy as np
+from sqlalchemy import inspect
 
 from sqlalchemy.ext import compiler
 from sqlalchemy.sql.functions import func
 
 stddev_pop = func.stddev_pop
+
+# Set this to True to override the our_random() behavior to return a deterministic value instead.
+USE_DETERMINISTIC_RANDOM = False
+
+
+def our_random(sa_table=None):
+    """Returns a RANDOM() call.
+
+    When USE_DETERMINISTIC_RANDOM is True, the RANDOM is replaced by the primary key of the table passed
+    via the sa_table argument.
+    """
+    if USE_DETERMINISTIC_RANDOM:
+        if not sa_table:
+            raise ValueError(
+                "our_random requires sa_table= to be an inspectable table-like entity."
+            )
+        return inspect(sa_table).primary_key[0]
+    return func.random()
 
 
 @compiler.compiles(stddev_pop, "mysql")

@@ -6,7 +6,7 @@
     {
       "id": "customer-test",
       "config": {
-        "type": "customer",
+        "type": "remote",
         "participants": [
           {
             "id": "test_participant_type",
@@ -24,8 +24,8 @@
               "url": "http://localhost:4001/dev/api/v1/experiment-commit/save-experiment-commit"
             },
             "assignment_file": {
-              "method": "POST",
-              "url": "http://localhost:4001/dev/api/v1/experiment-commit/get-file-name-by-experiment-id/{experimentId}?qs={experimentCode}"
+              "method": "GET",
+              "url": "http://localhost:4001/dev/api/v1/experiment-commit/get-file-name-by-experiment-id/{experiment_id}"
             },
             "update_timestamps": {
               "method": "PUT",
@@ -40,9 +40,8 @@
             "authorization": "abc"
           }
         },
-        "api_host": "api_host",
-        "api_token": "api_token",
         "dwh": {
+          "driver": "postgresql+psycopg2",
           "user": "user",
           "port": 5439,
           "host": "__example__.redshift.amazonaws.com",
@@ -55,7 +54,7 @@
     {
       "id": "customer-test-badconfig",
       "config": {
-        "type": "customer",
+        "type": "remote",
         "participants": [
           {
             "id": "test_participant_type",
@@ -73,9 +72,8 @@
             "authorization": "abc"
           }
         },
-        "api_host": "api_host",
-        "api_token": "api_token",
         "dwh": {
+          "driver": "postgresql+psycopg2",
           "user": "user",
           "port": 5439,
           "host": "__example__.redshift.amazonaws.com",
@@ -93,7 +91,6 @@
         "participants": [
           {
             "table_name": "test_participant_type",
-            "unique_id_column": "id",
             "sheet": {
               "url": "file://src/xngin/apiserver/testdata/testing_sheet.csv",
               "worksheet": "Sheet1"

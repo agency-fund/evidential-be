@@ -28,14 +28,15 @@ curl -LsSf https://astral.sh/uv/0.5.4/install.sh | sh
 ## Settings
 
 The settings schema is defined in [xngin.apiserver.settings](src/xngin/apiserver/settings.py). Values are read at
-startup from environment variables and from a JSON file specified by the XNGIN_SETTINGS environment variable. This
+startup from environment variables and from a JSON file specified by the `XNGIN_SETTINGS` environment variable. This
 defaults
 to [xngin.settings.json](xngin.settings.json), but you will
 use [xngin.testing.settings.json](src/xngin/apiserver/testdata/xngin.testing.settings.json) file during most of your
 work.
 
 The settings files can be committed to version control but secret values should not be. They should be referred to with
-`=secret:NAME` syntax. Resolving these values is not yet implemented.
+`${secret:NAME}` syntax. When the XNGIN_SECRETS_SOURCE environment variable is unset or set to "environ", those references will be replaced with
+a corresponding environment variable value.
 
 ## Getting Started
 
@@ -64,6 +65,7 @@ Follow the steps below to get a local development environment running.
    ```shell
    uv run fastapi dev src/xngin/apiserver/main.py
    ```
+   To change the port, add the flag `--port <myport>`.
 
 4. Send some test requests:
 
@@ -105,6 +107,24 @@ Follow the steps below to get a local development environment running.
    pre-commit run -a
    ```
 
+### Learn more
+
+Regarding some of the python libraries and features we use, see:
+
+* [Pydantic concepts](https://docs.pydantic.dev/2.8/concepts/models/) for defining model schemas with input parsing and
+  coercion, [custom validation](https://docs.pydantic.dev/2.8/concepts/validators/) and
+  custom [serialization](https://docs.pydantic.dev/2.8/concepts/serialization/) support as needed. Also be aware of its
+  use of `Annotated` to add metadata that modify how types are validated, serialized,
+  etc. [[1](https://docs.pydantic.dev/2.8/concepts/fields/#using-annotated), [2](https://docs.pydantic.dev/2.8/concepts/types/#composing-types-via-annotated)].
+* [FastAPI Tutorial](https://fastapi.tiangolo.com/tutorial/first-steps/) - skim this for key concepts around defining "
+  path operations" and [adding metadata using
+  `Annotated`](https://fastapi.tiangolo.com/python-types/#type-hints-with-metadata-annotations) for key components (e.g.
+  Query, Path, ...) to add extra documentation or do additional validation (internally using Pydantic). Also read up on
+  how it does [dependency injection](https://fastapi.tiangolo.com/tutorial/dependencies/) with its `Depends` metadata,
+  which we use (see [main.py](src/xngin/apiserver/main.py) and [dependencies.py](src/xngin/apiserver/dependencies.py)).
+  FastAPI also generates OpenAPI documentation for us under the server's `/docs` endpoint, leveraging Pydantic data
+  models to generate the schemas.
+
 ## FAQ
 
 ### How do I build and run via Docker?
@@ -133,7 +153,24 @@ docker run xngin:latest
    uv run pytest
    ```
 4. Commit the changed uv.lock and pyproject.toml files.
-5.
+
+### How do I run xngin against a local Postgres?
+
+Here's an example of how to run a local Postgres in Docker and have
+xngin use it as the system database:
+
+```shell
+PASSWORD="secret$(cat /dev/urandom | head -c128 | sha256sum | cut -b1-16)"
+docker run -d --name xngin-postgres \
+  -e POSTGRES_USER=xnginwebserver \
+  -e POSTGRES_PASSWORD=${PASSWORD} \
+  -e POSTGRES_DB=xngin \
+  -p 5432:5432 \
+  -d postgres:17
+export XNGIN_SETTINGS=src/xngin/apiserver/testdata/xngin.testing.settings.json
+export XNGIN_DB=postgresql://xnginwebserver:${PASSWORD}@localhost:5432/xngin
+uv run fastapi dev src/xngin/apiserver/main.py
+```
 
 ### psycopg2 module does not install correctly.
 

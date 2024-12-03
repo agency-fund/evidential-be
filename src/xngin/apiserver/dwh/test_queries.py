@@ -14,6 +14,7 @@ from xngin.apiserver.api_types import (
     MetricType,
     Stats,
 )
+from xngin.sqlite_extensions import custom_functions
 from xngin.sqlite_extensions.custom_functions import NumpyStddev
 from xngin.apiserver.dwh.queries import (
     compose_query,
@@ -150,7 +151,7 @@ FILTER_GENERATION_SUBCASES = [
                 value=["b", "C"],
             ),
         ],
-        where="""test_table.int_col IN (42, -17) AND lower(test_table.experiment_ids) REGEXP '(^(b|c)$)|(^(b|c),)|(,(b|c)$)|(,(b|c),)' ORDER BY random() LIMIT 3 OFFSET 0""",
+        where="""test_table.int_col IN (42, -17) AND lower(test_table.experiment_ids) REGEXP '(^(b|c)$)|(^(b|c),)|(,(b|c)$)|(,(b|c),)' {randomize} LIMIT 3 OFFSET 0""",
         matches=[ROW_200],
     ),
     Case(
@@ -166,7 +167,7 @@ FILTER_GENERATION_SUBCASES = [
                 value=["b", "c"],
             ),
         ],
-        where="""test_table.int_col IN (42, -17) AND (test_table.experiment_ids IS NULL OR length(test_table.experiment_ids) = 0 OR lower(test_table.experiment_ids) NOT REGEXP '(^(b|c)$)|(^(b|c),)|(,(b|c)$)|(,(b|c),)') ORDER BY random() LIMIT 3 OFFSET 0""",
+        where="""test_table.int_col IN (42, -17) AND (test_table.experiment_ids IS NULL OR length(test_table.experiment_ids) = 0 OR lower(test_table.experiment_ids) NOT REGEXP '(^(b|c)$)|(^(b|c),)|(,(b|c)$)|(,(b|c),)') {randomize} LIMIT 3 OFFSET 0""",
         matches=[ROW_100],
     ),
     # int_col
@@ -180,7 +181,7 @@ FILTER_GENERATION_SUBCASES = [
         ],
         where=(
             """test_table.int_col IN (42) """
-            """ORDER BY random() LIMIT 3 OFFSET 0"""
+            """{randomize} LIMIT 3 OFFSET 0"""
         ),
         matches=[ROW_100],
     ),
@@ -192,7 +193,7 @@ FILTER_GENERATION_SUBCASES = [
         ],
         where=(
             """test_table.int_col BETWEEN -17 AND 42 """
-            """ORDER BY random() LIMIT 3 OFFSET 0"""
+            """{randomize} LIMIT 3 OFFSET 0"""
         ),
         matches=[ROW_100, ROW_200],
     ),
@@ -206,7 +207,7 @@ FILTER_GENERATION_SUBCASES = [
         ],
         where=(
             """test_table.int_col IS NULL OR (test_table.int_col NOT IN (42)) """
-            """ORDER BY random() LIMIT 3 OFFSET 0"""
+            """{randomize} LIMIT 3 OFFSET 0"""
         ),
         matches=[ROW_200, ROW_300],
     ),
@@ -219,7 +220,7 @@ FILTER_GENERATION_SUBCASES = [
         ],
         where=(
             """test_table.float_col BETWEEN 2 AND 3 """
-            """ORDER BY random() LIMIT 3 OFFSET 0"""
+            """{randomize} LIMIT 3 OFFSET 0"""
         ),
         matches=[ROW_200],
     ),
@@ -230,7 +231,7 @@ FILTER_GENERATION_SUBCASES = [
                 filter_name="experiment_ids", relation=Relation.INCLUDES, value=["a"]
             )
         ],
-        where="""lower(test_table.experiment_ids) REGEXP '(^(a)$)|(^(a),)|(,(a)$)|(,(a),)' ORDER BY random() LIMIT 3 OFFSET 0""",
+        where="""lower(test_table.experiment_ids) REGEXP '(^(a)$)|(^(a),)|(,(a)$)|(,(a),)' {randomize} LIMIT 3 OFFSET 0""",
         matches=[ROW_100, ROW_200, ROW_300],
     ),
     Case(
@@ -239,7 +240,7 @@ FILTER_GENERATION_SUBCASES = [
                 filter_name="experiment_ids", relation=Relation.INCLUDES, value=["B"]
             )
         ],
-        where="""lower(test_table.experiment_ids) REGEXP '(^(b)$)|(^(b),)|(,(b)$)|(,(b),)' ORDER BY random() LIMIT 3 OFFSET 0""",
+        where="""lower(test_table.experiment_ids) REGEXP '(^(b)$)|(^(b),)|(,(b)$)|(,(b),)' {randomize} LIMIT 3 OFFSET 0""",
         matches=[ROW_200, ROW_300],
     ),
     Case(
@@ -248,7 +249,7 @@ FILTER_GENERATION_SUBCASES = [
                 filter_name="experiment_ids", relation=Relation.INCLUDES, value=["c"]
             )
         ],
-        where="""lower(test_table.experiment_ids) REGEXP '(^(c)$)|(^(c),)|(,(c)$)|(,(c),)' ORDER BY random() LIMIT 3 OFFSET 0""",
+        where="""lower(test_table.experiment_ids) REGEXP '(^(c)$)|(^(c),)|(,(c)$)|(,(c),)' {randomize} LIMIT 3 OFFSET 0""",
         matches=[ROW_300],
     ),
     Case(
@@ -257,7 +258,7 @@ FILTER_GENERATION_SUBCASES = [
                 filter_name="experiment_ids", relation=Relation.EXCLUDES, value=["a"]
             )
         ],
-        where="""test_table.experiment_ids IS NULL OR length(test_table.experiment_ids) = 0 OR lower(test_table.experiment_ids) NOT REGEXP '(^(a)$)|(^(a),)|(,(a)$)|(,(a),)' ORDER BY random() LIMIT 3 OFFSET 0""",
+        where="""test_table.experiment_ids IS NULL OR length(test_table.experiment_ids) = 0 OR lower(test_table.experiment_ids) NOT REGEXP '(^(a)$)|(^(a),)|(,(a)$)|(,(a),)' {randomize} LIMIT 3 OFFSET 0""",
         matches=[],
     ),
     Case(
@@ -266,7 +267,7 @@ FILTER_GENERATION_SUBCASES = [
                 filter_name="experiment_ids", relation=Relation.EXCLUDES, value=["D"]
             )
         ],
-        where="""test_table.experiment_ids IS NULL OR length(test_table.experiment_ids) = 0 OR lower(test_table.experiment_ids) NOT REGEXP '(^(d)$)|(^(d),)|(,(d)$)|(,(d),)' ORDER BY random() LIMIT 3 OFFSET 0""",
+        where="""test_table.experiment_ids IS NULL OR length(test_table.experiment_ids) = 0 OR lower(test_table.experiment_ids) NOT REGEXP '(^(d)$)|(^(d),)|(,(d)$)|(,(d),)' {randomize} LIMIT 3 OFFSET 0""",
         matches=[ROW_100, ROW_200, ROW_300],
     ),
     Case(
@@ -277,7 +278,7 @@ FILTER_GENERATION_SUBCASES = [
                 value=["a", "d"],
             )
         ],
-        where="""lower(test_table.experiment_ids) REGEXP '(^(a|d)$)|(^(a|d),)|(,(a|d)$)|(,(a|d),)' ORDER BY random() LIMIT 3 OFFSET 0""",
+        where="""lower(test_table.experiment_ids) REGEXP '(^(a|d)$)|(^(a|d),)|(,(a|d)$)|(,(a|d),)' {randomize} LIMIT 3 OFFSET 0""",
         matches=[ROW_100, ROW_200, ROW_300],
     ),
     Case(
@@ -288,7 +289,7 @@ FILTER_GENERATION_SUBCASES = [
                 value=["a", "d"],
             )
         ],
-        where="""test_table.experiment_ids IS NULL OR length(test_table.experiment_ids) = 0 OR lower(test_table.experiment_ids) NOT REGEXP '(^(a|d)$)|(^(a|d),)|(,(a|d)$)|(,(a|d),)' ORDER BY random() LIMIT 3 OFFSET 0""",
+        where="""test_table.experiment_ids IS NULL OR length(test_table.experiment_ids) = 0 OR lower(test_table.experiment_ids) NOT REGEXP '(^(a|d)$)|(^(a|d),)|(,(a|d)$)|(,(a|d),)' {randomize} LIMIT 3 OFFSET 0""",
         matches=[],
     ),
     Case(
@@ -297,7 +298,7 @@ FILTER_GENERATION_SUBCASES = [
                 filter_name="experiment_ids", relation=Relation.INCLUDES, value=["d"]
             )
         ],
-        where="""lower(test_table.experiment_ids) REGEXP '(^(d)$)|(^(d),)|(,(d)$)|(,(d),)' ORDER BY random() LIMIT 3 OFFSET 0""",
+        where="""lower(test_table.experiment_ids) REGEXP '(^(d)$)|(^(d),)|(,(d)$)|(,(d),)' {randomize} LIMIT 3 OFFSET 0""",
         matches=[],
     ),
     Case(
@@ -306,14 +307,27 @@ FILTER_GENERATION_SUBCASES = [
                 filter_name="experiment_ids", relation=Relation.EXCLUDES, value=["d"]
             )
         ],
-        where="""test_table.experiment_ids IS NULL OR length(test_table.experiment_ids) = 0 OR lower(test_table.experiment_ids) NOT REGEXP '(^(d)$)|(^(d),)|(,(d)$)|(,(d),)' ORDER BY random() LIMIT 3 OFFSET 0""",
+        where="""test_table.experiment_ids IS NULL OR length(test_table.experiment_ids) = 0 OR lower(test_table.experiment_ids) NOT REGEXP '(^(d)$)|(^(d),)|(,(d)$)|(,(d),)' {randomize} LIMIT 3 OFFSET 0""",
         matches=[ROW_100, ROW_200, ROW_300],
     ),
 ]
 
 
+@pytest.fixture()
+def use_deterministic_random():
+    """Tests that want deterministic SQL random() behavior can request this fixture. This will only affect
+    SQLAlchemy expressions that use custom_functions.our_random().
+    """
+    original = custom_functions.USE_DETERMINISTIC_RANDOM
+    try:
+        custom_functions.USE_DETERMINISTIC_RANDOM = True
+        yield
+    finally:
+        custom_functions.USE_DETERMINISTIC_RANDOM = original
+
+
 @pytest.mark.parametrize("testcase", FILTER_GENERATION_SUBCASES)
-def test_compose_query(testcase, compiler, db_session):
+def test_compose_query(testcase, db_session, compiler, use_deterministic_random):
     testcase.filters = [
         AudienceSpecFilter.model_validate(filt.model_dump())
         for filt in testcase.filters
@@ -329,7 +343,7 @@ def test_compose_query(testcase, compiler, db_session):
     sql = compiler(q)
     assert sql.startswith(EXPECTED_PREAMBLE)
     sql = sql[len(EXPECTED_PREAMBLE) :]
-    assert sql == testcase.where
+    assert sql == str.format(testcase.where, randomize="ORDER BY test_table.id")
     query_results = db_session.scalars(q).all()
     assert list(sorted([r.id for r in query_results])) == list(
         sorted(r.id for r in testcase.matches)

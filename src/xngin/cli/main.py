@@ -7,11 +7,15 @@ import sys
 from pathlib import Path
 from typing import Annotated
 
+import boto3
 import gspread
+import pandas as pd
+import psycopg2
 import sqlalchemy
 import typer
 from gspread import GSpreadException
 from rich.console import Console
+from sqlalchemy import create_engine, make_url
 from sqlalchemy.exc import NoSuchTableError
 
 from xngin.apiserver import settings
@@ -31,6 +35,8 @@ from xngin.sheets.config_sheet import (
     ConfigWorksheet,
 )
 
+REDSHIFT_HOSTNAME_SUFFIX = "redshift.amazonaws.com"
+
 err_console = Console(stderr=True)
 app = typer.Typer(help=__doc__)
 
@@ -47,7 +53,9 @@ def infer_config_from_schema(dsn: str, table: str):
     """
     try:
         dwh = get_sqlalchemy_table(
-            SqlalchemyAndTable(sqlalchemy_url=dsn, table_name=table)
+            SqlalchemyAndTable(
+                sqlalchemy_url=sqlalchemy.engine.make_url(dsn), table_name=table
+            )
         )
     except CannotFindTableException as cfte:
         err_console.print(cfte.message)
@@ -77,6 +85,105 @@ def bootstrap_testing_dwh(
 ):
     """Bootstraps the local testing data warehouse."""
     testing_dwh.create_dwh_sqlite_database(src, dest, force=force)
+
+
+def csv_to_ddl(csv_path: Path, table_name: str) -> str:
+    """Helper to transform a CSV with Pandas-inferred schema into a CREATE TABLE statement."""
+    df = pd.read_csv(csv_path)
+    type_map = {
+        "int64": "INTEGER",
+        "float64": "DECIMAL",
+        "object": "VARCHAR(255)",
+        "datetime64[ns]": "TIMESTAMP",
+        "bool": "BOOLEAN",
+    }
+    columns = [
+        f'"{col}" {type_map.get(str(dtype), "VARCHAR(255)")}'
+        for col, dtype in df.dtypes.items()
+    ]
+    return f"""CREATE TABLE {table_name} ({",\n    ".join(columns)});"""
+
+
+@app.command()
+def create_testing_dwh(
+    password: Annotated[
+        str, typer.Option(envvar="PGPASSWORD", help="The database password.")
+    ],
+    dsn: Annotated[str, typer.Option(help="The SQLAlchemy URL for the database.")],
+    src: Annotated[
+        Path,
+        typer.Option(
+            help="Local path to the testing data warehouse CSV. This may be zstd-compressed."
+        ),
+    ] = testing_dwh.TESTING_DWH_RAW_DATA,
+    table_name: Annotated[
+        str,
+        typer.Option(
+            help="Desired name of the data warehouse table. This will be replaced if it already exists."
+        ),
+    ] = "dwh",
+    bucket: Annotated[
+        str | None,
+        typer.Option(
+            help="Name of the temporary S3 bucket that is readable by Redshfit when --iam-role is assumed. Required when connecting to Redshift."
+        ),
+    ] = None,
+    iam_role: Annotated[
+        str | None,
+        typer.Option(
+            help="ARN of an IAM Role for Redshift to assume when reading from the bucket specified by --bucket. Required when connecting to Redshift."
+        ),
+    ] = None,
+):
+    """Loads the testing data warehouse CSV into a SQLAlchemy database or Redshift Cluster.
+
+    The schema of the CSV is inferred by Pandas df.read_csv helper method.
+
+    Note: The schemas may be different
+    """
+    url = make_url(dsn).set(password=password)
+    if url.host.endswith(REDSHIFT_HOSTNAME_SUFFIX):
+        if not bucket:
+            print("--bucket is required when importing into Redshift.")
+            raise typer.Exit(2)
+        if not iam_role:
+            print("--iam-role is required when importing into Redshift.")
+            raise typer.Exit(2)
+        create_table = csv_to_ddl(src, table_name)
+        print(create_table)
+        with (
+            psycopg2.connect(
+                database=url.database,
+                host=url.host,
+                password=url.password,
+                port=url.port,
+                user=url.username,
+            ) as conn,
+            conn.cursor() as cur,
+        ):
+            print("Dropping...")
+            cur.execute(f"DROP TABLE IF EXISTS {table_name} ")
+            print("Creating...")
+            cur.execute(create_table)
+            key = src.name
+            print(f"Uploading to s3://{bucket}/{key}...")
+            s3 = boto3.client("s3")
+            s3.upload_file(src, bucket, f"{key}")
+            print("Loading...")
+            zstd = "ZSTD" if key.endswith(".zst") else ""
+            cur.execute(
+                f"""COPY {table_name} FROM 's3://{bucket}/{key}' IAM_ROLE '{iam_role}' FORMAT CSV IGNOREHEADER 1 {zstd};"""
+            )
+            cur.execute(f"SELECT COUNT(*) FROM {table_name}")
+            count = cur.fetchone()[0]
+            print("Deleting temporary file...")
+            s3.delete_object(Bucket=bucket, Key=key)
+            print(f"Loaded {count} rows into {table_name}.")
+    else:
+        conn = create_engine(url)
+        df = pd.read_csv(src)
+        row_count = df.to_sql(table_name, conn, if_exists="replace", index=False)
+        print(f"Loaded {row_count} rows into {table_name}.")
 
 
 @app.command()

@@ -131,5 +131,9 @@ def create_filter(
 
 
 def compose_query(sa_table: Table, chosen_n: int, filters):
-    # TODO: func.random works only with postgres and sqlite (not mysql)
-    return select(sa_table).filter(*filters).order_by(func.random()).limit(chosen_n)
+    return (
+        select(sa_table)
+        .filter(*filters)
+        .order_by(custom_functions.our_random(sa_table))
+        .limit(chosen_n)
+    )

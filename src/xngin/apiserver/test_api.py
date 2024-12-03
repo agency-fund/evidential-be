@@ -227,7 +227,7 @@ def test_update_experiment_description(mocker):
         hurl.method, hurl.url, headers=hurl.headers, content=hurl.body
     )
 
-    assert response.status_code == 200
+    assert response.status_code == 200, response.text
     mock_request.assert_called_once()
     # Now check that the right action was used given our update_type
     _, kwargs = mock_request.call_args
@@ -254,3 +254,32 @@ def test_update_experiment_fails_with_bad_ids(mocker):
     assert response.status_code == hurl.expected_status
     response_detail = response.json()["detail"][0]
     assert response_detail["type"] == "uuid_parsing"
+
+
+def test_assignment_file(mocker):
+    """Test /assignment-file?experiment_id=foo1 success case"""
+
+    (hurl, mock_response) = load_mock_response_from_hurl(
+        mocker, "apitest.assignment-file.hurl"
+    )
+    mock_request = mocker.patch("httpx.AsyncClient.request", return_value=mock_response)
+
+    response = client.request(
+        hurl.method, hurl.url, headers=hurl.headers, content=hurl.body
+    )
+
+    mock_request.assert_called_once()
+    # Now check that the right action was used given our update_type
+    _, kwargs = mock_request.call_args
+    assert kwargs["method"] == "get"
+    assert (
+        kwargs["url"]
+        == "http://localhost:4001/dev/api/v1/experiment-commit/get-file-name-by-experiment-id/foo1"
+    )
+    assert kwargs["json"] is None
+
+    assert response.status_code == 200, response.text
+    # And verify that our mocked response was packaged up properly.
+    upstream_response = WebhookResponse.model_validate_json(response.text)
+    assert upstream_response.status_code == 200
+    assert upstream_response.body == mock_response.text

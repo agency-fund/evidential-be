@@ -99,6 +99,10 @@ class ConfigWorksheet(BaseModel):
         "extra": "forbid",
     }
 
+    def get_unique_id_col(self):
+        """Gets the name of the unique ID field."""
+        return next(i.column_name for i in self.columns if i.is_unique_id)
+
     @model_validator(mode="after")
     def check_one_unique_id(self) -> "ConfigWorksheet":
         uniques = [r.column_name for r in self.columns if r.is_unique_id]

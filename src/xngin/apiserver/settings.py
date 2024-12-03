@@ -1,17 +1,24 @@
 import json
 import os
 from functools import lru_cache
-from typing import Literal, Annotated
+from typing import Literal
 
 import sqlalchemy
-from pydantic import BaseModel, PositiveInt, SecretStr, Field, field_validator
-from sqlalchemy import event
+from pydantic import (
+    BaseModel,
+    PositiveInt,
+    SecretStr,
+    Field,
+    field_serializer,
+    field_validator,
+)
+from sqlalchemy import Engine, event
 from sqlalchemy.exc import NoSuchTableError
 from sqlalchemy.orm import Session
 
+from xngin.apiserver.settings_secrets import replace_secrets
 from xngin.sqlite_extensions import NumpyStddev
 
-DEFAULT_SECRETS_DIRECTORY = "secrets"
 DEFAULT_SETTINGS_FILE = "xngin.settings.json"
 
 
@@ -20,23 +27,35 @@ def get_settings_for_server():
     """Constructs an XnginSettings for use by the API server."""
     with open(os.environ.get("XNGIN_SETTINGS", DEFAULT_SETTINGS_FILE)) as f:
         settings_raw = json.load(f)
+    settings_raw = replace_secrets(settings_raw)
     return XnginSettings.model_validate(settings_raw)
 
 
-class PostgresDsn(BaseModel):
-    user: str
-    port: PositiveInt = 5432
-    host: str
-    password: SecretStr
-    dbname: str
-    sslmode: Literal[
-        "disable", "allow", "prefer", "require", "verify-ca", "verify-full"
-    ]
-
-
 class SqlalchemyAndTable(BaseModel):
-    sqlalchemy_url: str
+    sqlalchemy_url: sqlalchemy.engine.URL
     table_name: str
+
+    # URL isn't a pydantic model so doesn't know how to generate json schema.
+    # We need to allow non-standard lib types and sub our own description here.
+    model_config = {
+        "arbitrary_types_allowed": True,
+        "json_schema_extra": {"properties": {"sqlalchemy_url": {"type": "string"}}},
+    }
+
+    @field_validator("sqlalchemy_url", mode="before")
+    @classmethod
+    def parse_url(cls, value):
+        """Convert strings into valid sqlalchemy.engine.URLs"""
+
+        if isinstance(value, str):
+            return sqlalchemy.make_url(value)
+        return value
+
+    @field_serializer("sqlalchemy_url")
+    def serialize_url(self, url: sqlalchemy.engine.URL):
+        """If rendering URLs, use the string representation with the pw masked."""
+
+        return url.render_as_string(hide_password=True)
 
 
 class SheetRef(BaseModel):
@@ -53,14 +72,6 @@ class Participant(BaseModel):
 
     table_name: str
     sheet: SheetRef
-    # TODO(roboton): Should this be a required field?
-    unique_id_column: Annotated[
-        str | None,
-        Field(
-            None,
-            description="Optional. The name of the column containing a unique user identifier.",
-        ),
-    ]
 
 
 class ParticipantsMixin(BaseModel):
@@ -111,7 +122,7 @@ class WebhookActions(BaseModel):
 class WebhookCommonHeaders(BaseModel):
     """Enumerates supported headers to attach to all webhook requests."""
 
-    authorization: str | None
+    authorization: SecretStr | None
 
 
 class WebhookConfig(BaseModel):
@@ -132,8 +143,8 @@ class WebhookMixin(BaseModel):
           "url": "http://localhost:4001/dev/api/v1/experiment-commit/save-experiment-commit"
         },
         "assignment_file": {
-          "method": "POST",
-          "url": "http://localhost:4001/dev/api/v1/experiment-commit/get-file-name-by-experiment-id/{experimentId}?qs={experimentCode}",
+          "method": "GET",
+          "url": "http://localhost:4001/dev/api/v1/experiment-commit/get-file-name-by-experiment-id/{experiment_id}",
         }
       },
       "common_headers": {
@@ -145,54 +156,7 @@ class WebhookMixin(BaseModel):
     webhook_config: WebhookConfig
 
 
-class RocketLearningConfig(ParticipantsMixin, WebhookMixin, BaseModel):
-    """
-
-    TODO: implement dbsession(self, participant_type)
-    """
-
-    type: Literal["customer"]
-
-    dwh: PostgresDsn
-    api_host: str
-    api_token: SecretStr
-
-    def to_sqlalchemy_url_and_table(self, participant_type: str) -> SqlalchemyAndTable:
-        participants = self.find_participants(participant_type)
-        return SqlalchemyAndTable(
-            sqlalchemy_url=str(
-                sqlalchemy.URL.create(
-                    drivername="postgresql+psycopg2",
-                    username=self.dwh.user,
-                    password=self.dwh.password.get_secret_value(),
-                    host=self.dwh.host,
-                    port=self.dwh.port,
-                    database=self.dwh.dbname,
-                    query={"sslmode": self.dwh.sslmode},
-                )
-            ),
-            table_name=participants.table_name,
-        )
-
-
-class SqliteLocalConfig(ParticipantsMixin, BaseModel):
-    type: Literal["sqlite_local"]
-    sqlite_filename: str
-
-    def to_sqlalchemy_url_and_table(self, participant_type: str) -> SqlalchemyAndTable:
-        """Returns a tuple of SQLAlchemy URL and a table name."""
-        participants = self.find_participants(participant_type)
-        return SqlalchemyAndTable(
-            sqlalchemy_url=str(
-                sqlalchemy.URL.create(
-                    drivername="sqlite",
-                    database=self.sqlite_filename,
-                    query={"mode": "ro"},
-                )
-            ),
-            table_name=participants.table_name,
-        )
-
+class StandardDatabaseConnectionMixin:
     def dbsession(self, participant_type: str):
         """Returns a Session to be used to send queries to the customer database.
 
@@ -201,7 +165,9 @@ class SqliteLocalConfig(ParticipantsMixin, BaseModel):
         """
         url = self.to_sqlalchemy_url_and_table(participant_type).sqlalchemy_url
         engine = sqlalchemy_connect(url)
-        if url.startswith("sqlite://"):
+        self.extra_engine_setup(engine)
+
+        if url.get_backend_name() == "sqlite":
 
             @event.listens_for(engine, "connect")
             def register_sqlite_functions(dbapi_connection, _):
@@ -210,7 +176,93 @@ class SqliteLocalConfig(ParticipantsMixin, BaseModel):
         return Session(engine)
 
 
-type ClientConfigType = RocketLearningConfig | SqliteLocalConfig
+class Dsn(BaseModel):
+    """Describes a set of parameters suitable for connecting to most types of remote databases."""
+
+    driver: Literal[
+        "postgresql+psycopg",  # Preferred for most Postgres-compatible databases.
+        "postgresql+psycopg2",  # Use with: Redshift
+    ]
+    user: str
+    port: PositiveInt = 5432
+    host: str
+    password: SecretStr
+    dbname: str
+    sslmode: (
+        Literal["disable", "allow", "prefer", "require", "verify-ca", "verify-full"]
+        | None
+    ) = None
+
+    def is_redshift(self):
+        """Return true iff the hostname indicates that this is connecting to Redshift."""
+        return self.host.endswith("redshift.amazonaws.com")
+
+    def to_sqlalchemy_url(self):
+        """Creates a sqlalchemy.URL from this Dsn."""
+        url = sqlalchemy.URL.create(
+            drivername=self.dwh.driver,
+            username=self.dwh.user,
+            password=self.dwh.password.get_secret_value(),
+            host=self.dwh.host,
+            port=self.dwh.port,
+            database=self.dwh.dbname,
+        )
+        if self.driver.startswith("postgresql"):
+            query = dict(url.query)
+            query.update({
+                "sslmode": self.dwh.sslmode if self.dwh.sslmode else "verify-full",
+                # re: redshift issue https://github.com/psycopg/psycopg/issues/122#issuecomment-985742751
+                "client_encoding": "utf-8",
+            })
+            url = url.set(query=query)
+        return url
+
+
+class RemoteDatabaseConfig(
+    StandardDatabaseConnectionMixin, ParticipantsMixin, WebhookMixin, BaseModel
+):
+    """RemoteDatabaseConfig defines a configuration for a remote data warehouse."""
+
+    type: Literal["remote"]
+
+    dwh: Dsn
+
+    def to_sqlalchemy_url_and_table(self, participant_type: str) -> SqlalchemyAndTable:
+        participants = self.find_participants(participant_type)
+        return SqlalchemyAndTable(
+            sqlalchemy_url=self.dwh.to_sqlalchemy_url(),
+            table_name=participants.table_name,
+        )
+
+    def extra_engine_setup(self, engine: Engine):
+        """Partially address any Redshift incompatibilities."""
+
+        # re: https://github.com/sqlalchemy-redshift/sqlalchemy-redshift/issues/264#issuecomment-2181124071
+        if self.dwh.is_redshift() and hasattr(engine.dialect, "_set_backslash_escapes"):
+            engine.dialect._set_backslash_escapes = lambda _: None
+
+
+class SqliteLocalConfig(StandardDatabaseConnectionMixin, ParticipantsMixin, BaseModel):
+    type: Literal["sqlite_local"]
+    sqlite_filename: str
+
+    def to_sqlalchemy_url_and_table(self, participant_type: str) -> SqlalchemyAndTable:
+        """Returns a tuple of SQLAlchemy URL and a table name."""
+        participants = self.find_participants(participant_type)
+        return SqlalchemyAndTable(
+            sqlalchemy_url=sqlalchemy.URL.create(
+                drivername="sqlite",
+                database=self.sqlite_filename,
+                query={"mode": "ro"},
+            ),
+            table_name=participants.table_name,
+        )
+
+    def extra_engine_setup(self, engine: Engine):
+        pass
+
+
+type ClientConfigType = RemoteDatabaseConfig | SqliteLocalConfig
 
 
 class ClientConfig(BaseModel):
@@ -281,8 +333,8 @@ def sqlalchemy_connect(sqlalchemy_url):
     This is intended to be used to connect to customer databases.
     """
     connect_args = {}
-    if sqlalchemy_url.startswith("postgres"):
+    if sqlalchemy_url.get_backend_name() == "postgres":
         connect_args["connect_timeout"] = 5
-    elif sqlalchemy_url.startswith("sqlite"):
+    elif sqlalchemy_url.get_backend_name() == "sqlite":
         connect_args["timeout"] = 5
     return sqlalchemy.create_engine(sqlalchemy_url, connect_args=connect_args)

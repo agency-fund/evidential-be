@@ -4,7 +4,7 @@
     {
       "id": "customer",
       "config": {
-        "type": "customer",
+        "type": "remote",
         "participants": [
           {
             "table_name": "transforms",
@@ -21,8 +21,8 @@
               "url": "http://localhost:4001/dev/api/v1/experiment-commit/save-experiment-commit"
             },
             "assignment_file": {
-              "method": "POST",
-              "url": "http://localhost:4001/dev/api/v1/experiment-commit/get-file-name-by-experiment-id/{experimentId}?qs={experimentCode}"
+              "method": "GET",
+              "url": "http://localhost:4001/dev/api/v1/experiment-commit/get-file-name-by-experiment-id/{experiment_id}"
             },
             "update_timestamps": {
               "method": "PUT",
@@ -34,15 +34,14 @@
             }
           },
           "common_headers": {
-            "authorization": "abc"
+            "authorization": "${secret:CUSTOMER_API_TOKEN}"
           }
         },
-        "api_host": "api.example.com",
-        "api_token": "=secret:CUSTOMER_API_TOKEN",
         "dwh": {
+          "driver": "postgresql+psycopg2",
           "user": "agency",
           "port": 5439,
-          "password": "=secret:CUSTOMER_DWH_PASSWORD",
+          "password": "${secret:CUSTOMER_DWH_PASSWORD}",
           "host": "instance.redshift.amazonaws.com",
           "dbname": "customer_dwh_prod",
           "sslmode": "require"

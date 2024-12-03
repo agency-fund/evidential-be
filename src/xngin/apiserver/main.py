@@ -1,6 +1,6 @@
-import uuid
 from contextlib import asynccontextmanager
-from typing import Any, Annotated, Literal
+import os
+from typing import Annotated, Literal
 import logging
 import warnings
 
@@ -10,15 +10,13 @@ import sqlalchemy
 from fastapi import FastAPI, HTTPException, Depends, Path, Query, Response
 from fastapi import Request
 from sqlalchemy import distinct
-from starlette.responses import JSONResponse
 
-from xngin.apiserver import database
+from xngin.apiserver import database, exceptionhandlers
 from xngin.apiserver.api_types import (
     DataTypeClass,
     AudienceSpec,
     DesignSpec,
     ExperimentAssignment,
-    UnimplementedResponse,
     GetStrataResponseElement,
     GetFiltersResponseElement,
     GetMetricsResponseElement,
@@ -43,9 +41,8 @@ from xngin.apiserver.settings import (
     ClientConfig,
     CannotFindTableException,
     get_sqlalchemy_table_from_engine,
-    CannotFindParticipantsException,
 )
-from xngin.apiserver.utils import safe_for_headers
+from xngin.apiserver.utils import substitute_url
 from xngin.sheets.config_sheet import (
     fetch_and_parse_sheet,
     create_sheetconfig_from_table,
@@ -77,21 +74,7 @@ async def lifespan(_app: FastAPI):
 
 app = FastAPI(lifespan=lifespan)
 logger = logging.getLogger(__name__)
-
-
-# TODO: unify exception handling
-@app.exception_handler(CannotFindTableException)
-async def exception_handler_cannotfindthetableexception(
-    _request: Request, exc: CannotFindTableException
-):
-    return JSONResponse(status_code=404, content={"message": exc.message})
-
-
-@app.exception_handler(CannotFindParticipantsException)
-async def exception_handler_cannotfindtheunitexception(
-    _request: Request, exc: CannotFindParticipantsException
-):
-    return JSONResponse(status_code=404, content={"message": exc.message})
+exceptionhandlers.setup(app)
 
 
 class CommonQueryParams:
@@ -263,28 +246,34 @@ def get_metrics(
 def check_power(
     design_spec: DesignSpec,
     audience_spec: AudienceSpec,
+    gsheets: Annotated[GSheetCache, Depends(gsheet_cache)],
     client: Annotated[ClientConfig | None, Depends(config_dependency)] = None,
+    refresh: Annotated[bool, Query(description="Refresh the cache.")] = False,
 ) -> GetPowerResponse:
     """
     TODO(roboton): finish implementing this method
     """
     config = require_config(client)
-
-    # TODO(roboton): Implement power calculation logic. This is just a placeholder.
     participant_type = audience_spec.participant_type
-
-    # TODO(roboton): This is how you read the unique ID column name from the participants config.
-    _unique_id_column_example = config.find_participants(participant_type)
     with config.dbsession(participant_type) as session:
         sa_table = get_sqlalchemy_table_from_engine(
             session.get_bind(), participant_type
         )
+        config_sheet = fetch_worksheet(
+            CommonQueryParams(participant_type=participant_type, refresh=refresh),
+            config,
+            gsheets,
+        )
+        _unique_id_col = config_sheet.get_unique_id_col()
         metric_stats = get_stats_on_metrics(
             session,
             sa_table,
             list(dsm.metric_name for dsm in design_spec.metrics),
             audience_spec,
         )
+
+        # TODO(roboton): Implement power calculation logic.
+
         return [
             GetPowerResponseElement(
                 metric_name=metric_stat.metric,
@@ -295,7 +284,7 @@ def check_power(
                 target_n=0,  # TODO
                 sufficient_n=False,  # TODO
                 needed_target=None,  # TODO
-                msg="hello",  # TODO
+                msg=_unique_id_col,  # TODO
             )
             for metric_stat in metric_stats
         ]
@@ -322,12 +311,12 @@ def assign_treatment(
         sa_table = get_sqlalchemy_table_from_engine(
             session.get_bind(), participant_type
         )
-        participants = query_for_participants(
+        _participants = query_for_participants(
             session, sa_table, audience_spec, chosen_n
         )
 
     participant = ExperimentParticipant(
-        id = 123,
+        id=123,
         treatment_assignment="todo",
         strata=[ExperimentStrata(strata_name="todo", strata_value="todo")],
     )
@@ -338,7 +327,7 @@ def assign_treatment(
         denominator_df=0,
         p_value=0,
         balance_ok=False,
-        #experiment_id=uuid.uuid4(),
+        # experiment_id=uuid.uuid4(),
         # TODO(roboton): set seed to produce stable uuid for testing
         experiment_id="8c3eb9a1-8d8c-402e-b407-a4002acd4f17",
         description="todo",
@@ -347,20 +336,32 @@ def assign_treatment(
     )
 
 
-@app.post(
+@app.get(
     "/assignment-file",
-    summary="TODO",
-    response_model=UnimplementedResponse,
+    summary="Retrieve all participant assignments for the given experiment_id.",
+    responses=STANDARD_WEBHOOK_RESPONSES,
     tags=["Manage Experiments"],
 )
-def assignment_file(
-    design_spec: DesignSpec,
-    audience_spec: AudienceSpec,
+async def assignment_file(
+    response: Response,
+    experiment_id: str = Annotated[
+        str,
+        Query(description="ID of the experiment whose assignments we wish to fetch."),
+    ],
+    http_client: Annotated[httpx.AsyncClient, Depends(httpx_dependency)] = None,
     client: Annotated[ClientConfig | None, Depends(config_dependency)] = None,
-    chosen_n: int = 1000,
-):
-    # Implement treatment assignment logic
-    return UnimplementedResponse()
+) -> WebhookResponse:
+    config = require_config(client).webhook_config
+    action = config.actions.assignment_file
+    if action is None:
+        # TODO: read from internal storage if webhooks are not defined.
+        raise HTTPException(501, "Action 'assignment_file' not configured.")
+
+    url = substitute_url(action.url, {"experiment_id": experiment_id})
+    response.status_code, payload = await make_webhook_request_base(
+        http_client, config, method=action.method, url=url
+    )
+    return payload
 
 
 @app.post(
@@ -470,18 +471,34 @@ async def make_webhook_request(
 
     Returns: tuple of (status_code, WebhookResponse to use as body)
     """
+    return await make_webhook_request_base(
+        http_client, config, action.method, action.url, data
+    )
+
+
+async def make_webhook_request_base(
+    http_client: httpx.AsyncClient,
+    config: WebhookConfig,
+    method: Literal["get", "post", "put", "patch", "delete"],
+    url: str,
+    data: BaseModel = None,
+) -> tuple[int, WebhookResponse]:
+    """Like make_webhook_request() but can directly take an http method and url.
+
+    Returns: tuple of (status_code, WebhookResponse to use as body)
+    """
     headers = {}
     auth_header_value = config.common_headers.authorization
     if auth_header_value is not None:
-        headers["Authorization"] = auth_header_value
+        headers["Authorization"] = auth_header_value.get_secret_value()
     headers["Accept"] = "application/json"
     # headers["Content-Type"] is set by httpx
 
     try:
         # Explicitly convert to a dict via pydantic since we use custom serializers
-        json_data = data.model_dump(mode="json")
+        json_data = data.model_dump(mode="json") if data else None
         upstream_response = await http_client.request(
-            method=action.method, url=action.url, headers=headers, json=json_data
+            method=method, url=url, headers=headers, json=json_data
         )
         webhook_response = WebhookResponse.from_httpx(upstream_response)
         status_code = 200
@@ -490,9 +507,14 @@ async def make_webhook_request(
             logger.error(
                 "ERROR response %s requesting webhook: %s",
                 upstream_response.status_code,
-                action.url,
+                url,
             )
             status_code = 502
+    except httpx.ConnectError as e:
+        logger.exception("ERROR requesting webhook (ConnectError): %s", e.request.url)
+        raise HTTPException(
+            status_code=502, detail=f"Error connecting to {e.request.url}: {e}"
+        ) from e
     except httpx.RequestError as e:
         logger.exception("ERROR requesting webhook: %s", e.request.url)
         raise HTTPException(status_code=500, detail="server error") from e
@@ -525,37 +547,6 @@ def assign_units_to_arms(
 ):
     # Implement experiment assignment logic
     pass
-
-
-# MongoDB interaction function
-def experiments_reg_request(
-    settings: XnginSettings, endpoint: str, json_data: dict[str, Any] | None = None
-):
-    url = f"https://{settings.api_host}/dev/api/v1/experiment-commit/{endpoint}"
-
-    api_token = safe_for_headers(
-        settings.get_client_config("customer").config.api_token.get_secret_value()
-    )
-    headers = {
-        "accept": "application/json",
-        "Authorization": f"Bearer {api_token}",
-    }
-
-    if (
-        endpoint.startswith("get-file-name-by-experiment-id")
-        or endpoint == "get-all-experiments"
-    ):
-        response = httpx.get(url, headers=headers)
-    else:
-        if endpoint.startswith("update"):
-            response = httpx.put(url, headers=headers, json=json_data)
-        else:
-            response = httpx.post(url, headers=headers, json=json_data)
-
-    if response.status_code != 200:
-        raise HTTPException(status_code=response.status_code, detail="Request failed")
-
-    return response.json()
 
 
 def require_config(client: ClientConfig | None):
@@ -593,7 +584,8 @@ def main():
 
     import uvicorn
 
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+    # Handy for debugging in your IDE
+    uvicorn.run(app, host="0.0.0.0", port=int(os.environ.get("UVICORN_PORT", 8000)))
 
 
 if __name__ == "__main__":
