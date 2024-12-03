@@ -1,5 +1,4 @@
 import re
-import pandas as pd
 
 import sqlalchemy
 from sqlalchemy import or_, func, ColumnOperators, Table, not_, select
@@ -59,15 +58,10 @@ def query_for_participants(
     sa_table: Table,
     audience_spec: AudienceSpec,
     chosen_n: int,
-    random_state: int | None = None,
-) -> pd.DataFrame:
-    # TODO(roboton): return type on this method is wrong
+):
+    """Samples participants."""
     filters = create_filters(sa_table, audience_spec)
     query = compose_query(sa_table, chosen_n, filters)
-    # postgres
-    # if random_state is not None:
-    #   session.execute(func.setseed(random_state))
-    # TODO(roboton): we can't set a random seed in SQLLite so hurl unit tests are broken
     return session.execute(query).all()
 
 

@@ -17,11 +17,16 @@ def our_random(sa_table=None):
     via the sa_table argument.
     """
     if USE_DETERMINISTIC_RANDOM:
-        if not sa_table:
+        if sa_table is None:
             raise ValueError(
                 "our_random requires sa_table= to be an inspectable table-like entity."
             )
-        return inspect(sa_table).primary_key[0]
+        # Find a suitable key (or keys) to order by.
+        meta = inspect(sa_table)
+        if len(meta.primary_key) > 0:
+            return meta.primary_key[0]
+        # If we can't order by a single primary key, order by all the columns.
+        return meta.columns
     return func.random()
 
 

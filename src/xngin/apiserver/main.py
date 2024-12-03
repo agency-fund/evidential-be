@@ -299,7 +299,7 @@ def assign_treatment_api(
             session.get_bind(), participant_type
         )
         participants = query_for_participants(
-            session, sa_table, audience_spec, chosen_n, random_state
+            session, sa_table, audience_spec, chosen_n
         )
 
     metric_names = [metric.metric_name for metric in design_spec.metrics]

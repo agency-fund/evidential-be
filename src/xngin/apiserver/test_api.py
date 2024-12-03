@@ -47,7 +47,7 @@ def fixture_update_api_tests_flag(pytestconfig):
 
 
 @pytest.mark.parametrize("script", STATIC_TESTS)
-def test_api(script, update_api_tests_flag):
+def test_api(script, update_api_tests_flag, use_deterministic_random):
     with open(script) as f:
         contents = f.read()
     hurl = Hurl.from_script(contents)

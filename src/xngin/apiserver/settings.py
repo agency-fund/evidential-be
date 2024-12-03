@@ -337,4 +337,8 @@ def sqlalchemy_connect(sqlalchemy_url):
         connect_args["connect_timeout"] = 5
     elif sqlalchemy_url.get_backend_name() == "sqlite":
         connect_args["timeout"] = 5
-    return sqlalchemy.create_engine(sqlalchemy_url, connect_args=connect_args)
+    return sqlalchemy.create_engine(
+        sqlalchemy_url,
+        connect_args=connect_args,
+        echo=os.environ.get("ECHO_SQL", "").lower() in ("true", "1"),
+    )

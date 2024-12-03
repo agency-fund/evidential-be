@@ -14,14 +14,13 @@ from xngin.apiserver.api_types import (
     AudienceSpecFilter,
     MetricType,
 )
-from xngin.sqlite_extensions import custom_functions
-from xngin.sqlite_extensions.custom_functions import NumpyStddev
 from xngin.apiserver.dwh.queries import (
     compose_query,
     create_filters,
     get_stats_on_metrics,
     make_csv_regex,
 )
+from xngin.sqlite_extensions.custom_functions import NumpyStddev
 
 Base = declarative_base()
 
@@ -310,19 +309,6 @@ FILTER_GENERATION_SUBCASES = [
         matches=[ROW_100, ROW_200, ROW_300],
     ),
 ]
-
-
-@pytest.fixture()
-def use_deterministic_random():
-    """Tests that want deterministic SQL random() behavior can request this fixture. This will only affect
-    SQLAlchemy expressions that use custom_functions.our_random().
-    """
-    original = custom_functions.USE_DETERMINISTIC_RANDOM
-    try:
-        custom_functions.USE_DETERMINISTIC_RANDOM = True
-        yield
-    finally:
-        custom_functions.USE_DETERMINISTIC_RANDOM = original
 
 
 @pytest.mark.parametrize("testcase", FILTER_GENERATION_SUBCASES)
