@@ -1,7 +1,7 @@
 import json
 import os
 from functools import lru_cache
-from typing import Literal
+from typing import Literal, Protocol
 
 import sqlalchemy
 from pydantic import (
@@ -156,24 +156,8 @@ class WebhookMixin(BaseModel):
     webhook_config: WebhookConfig
 
 
-class StandardDatabaseConnectionMixin:
-    def dbsession(self, participant_type: str):
-        """Returns a Session to be used to send queries to the customer database.
-
-        Use this in a `with` block to ensure correct transaction handling. If you need the
-        sqlalchemy Engine, call .get_bind().
-        """
-        url = self.to_sqlalchemy_url_and_table(participant_type).sqlalchemy_url
-        engine = sqlalchemy_connect(url)
-        self.extra_engine_setup(engine)
-
-        if url.get_backend_name() == "sqlite":
-
-            @event.listens_for(engine, "connect")
-            def register_sqlite_functions(dbapi_connection, _):
-                NumpyStddev.register(dbapi_connection)
-
-        return Session(engine)
+class Sessionable(Protocol):
+    def dbsession(self, participant_type: str) -> Session: ...
 
 
 class Dsn(BaseModel):
@@ -218,14 +202,35 @@ class Dsn(BaseModel):
         return url
 
 
-class RemoteDatabaseConfig(
-    StandardDatabaseConnectionMixin, ParticipantsMixin, WebhookMixin, BaseModel
-):
+class DbapiArg(BaseModel):
+    arg: str
+    value: str
+
+
+class RemoteDatabaseConfig(ParticipantsMixin, WebhookMixin, BaseModel):
     """RemoteDatabaseConfig defines a configuration for a remote data warehouse."""
 
     type: Literal["remote"]
 
     dwh: Dsn
+
+    dbapi_args: list[DbapiArg] | None = None
+
+    def dbsession(self):
+        """Returns a Session to be used to send queries to the customer database.
+
+        Use this in a `with` block to ensure correct transaction handling. If you need the
+        sqlalchemy Engine, call .get_bind().
+        """
+        url = self.dsn.to_sqlalchemy_url()
+        dbapi_args = {}
+        if self.dbapi_args:
+            dbapi_args.update(self.dbapi_args)
+        if url.get_backend_name() == "postgres":
+            dbapi_args["connect_timeout"] = 5
+        engine = sqlalchemy.create_engine(url, connect_args=dbapi_args)
+        self.extra_engine_setup(engine)
+        return Session(engine)
 
     def to_sqlalchemy_url_and_table(self, participant_type: str) -> SqlalchemyAndTable:
         participants = self.find_participants(participant_type)
@@ -242,9 +247,28 @@ class RemoteDatabaseConfig(
             engine.dialect._set_backslash_escapes = lambda _: None
 
 
-class SqliteLocalConfig(StandardDatabaseConnectionMixin, ParticipantsMixin, BaseModel):
+class SqliteLocalConfig(ParticipantsMixin, BaseModel):
     type: Literal["sqlite_local"]
     sqlite_filename: str
+
+    def dbsession(self):
+        """Returns a Session to be used to send queries to a SQLite database.
+
+        Use this in a `with` block to ensure correct transaction handling. If you need the
+        sqlalchemy Engine, call .get_bind().
+        """
+        url = sqlalchemy.URL.create(
+            drivername="sqlite",
+            database=self.sqlite_filename,
+            query={"mode": "ro"},
+        )
+        engine = sqlalchemy_connect(url)
+
+        @event.listens_for(engine, "connect")
+        def register_sqlite_functions(dbapi_connection, _):
+            NumpyStddev.register(dbapi_connection)
+
+        return Session(engine)
 
     def to_sqlalchemy_url_and_table(self, participant_type: str) -> SqlalchemyAndTable:
         """Returns a tuple of SQLAlchemy URL and a table name."""
@@ -257,9 +281,6 @@ class SqliteLocalConfig(StandardDatabaseConnectionMixin, ParticipantsMixin, Base
             ),
             table_name=participants.table_name,
         )
-
-    def extra_engine_setup(self, engine: Engine):
-        pass
 
 
 type ClientConfigType = RemoteDatabaseConfig | SqliteLocalConfig

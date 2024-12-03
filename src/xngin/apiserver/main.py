@@ -109,7 +109,7 @@ def get_strata(
     This reimplements dwh.R get_strata().
     """
     config = require_config(client)
-    with config.dbsession(commons.participant_type) as session:
+    with config.dbsession() as session:
         sa_table = get_sqlalchemy_table_from_engine(
             session.get_bind(), commons.participant_type
         )
@@ -144,7 +144,7 @@ def get_filters(
     client: Annotated[ClientConfig | None, Depends(config_dependency)] = None,
 ) -> list[GetFiltersResponseElement]:
     config = require_config(client)
-    with config.dbsession(commons.participant_type) as session:
+    with config.dbsession() as session:
         sa_table = get_sqlalchemy_table_from_engine(
             session.get_bind(), commons.participant_type
         )
@@ -215,7 +215,7 @@ def get_metrics(
     This reimplements dwh.R get_metrics().
     """
     config = require_config(client)
-    with config.dbsession(commons.participant_type) as session:
+    with config.dbsession() as session:
         sa_table = get_sqlalchemy_table_from_engine(
             session.get_bind(), commons.participant_type
         )
@@ -254,7 +254,7 @@ def check_power_api(
     """
     config = require_config(client)
     participant_type = audience_spec.participant_type
-    with config.dbsession(participant_type) as session:
+    with config.dbsession() as session:
         sa_table = get_sqlalchemy_table_from_engine(
             session.get_bind(), participant_type
         )
