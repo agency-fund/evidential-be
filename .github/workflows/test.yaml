@@ -99,7 +99,7 @@ jobs:
         run: |
           uv run xngin-cli create-testing-dwh --dsn postgresql+psycopg://postgres:postgres@127.0.0.1:5499/postgres --password postgres
           XNGIN_SETTINGS=src/xngin/apiserver/testdata/xngin.gha.settings.json uv run fastapi dev src/xngin/apiserver/main.py &
-          sleep 5  # hack
+          sleep 10  # hack
           curl -fv http://localhost:8000/_settings
           curl -fv -H "Config-ID: gha-postgres" 'http://localhost:8000/filters?participant_type=dwh'
           kill %1
