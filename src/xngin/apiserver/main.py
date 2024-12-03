@@ -253,12 +253,7 @@ def check_power_api(
     Calculates statistical power given an AudienceSpec and a DesignSpec
     """
     config = require_config(client)
-
-    # TODO(roboton): Implement power calculation logic. This is just a placeholder.
     participant_type = audience_spec.participant_type
-
-    # TODO(roboton): This is how you read the unique ID column name from the participants config.
-    _unique_id_column_example = config.find_participants(participant_type)
     with config.dbsession(participant_type) as session:
         sa_table = get_sqlalchemy_table_from_engine(
             session.get_bind(), participant_type

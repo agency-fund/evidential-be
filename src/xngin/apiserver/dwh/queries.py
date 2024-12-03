@@ -61,6 +61,7 @@ def query_for_participants(
     chosen_n: int,
     random_state: int | None = None,
 ) -> pd.DataFrame:
+    # TODO(roboton): return type on this method is wrong
     filters = create_filters(sa_table, audience_spec)
     query = compose_query(sa_table, chosen_n, filters)
     # postgres
