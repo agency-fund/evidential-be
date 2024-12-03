@@ -7,6 +7,7 @@
         "type": "remote",
         "participants": [
           {
+            "participant_type": "transforms",
             "table_name": "transforms",
             "sheet": {
               "url": "https://docs.google.com/spreadsheets/d/redacted/edit",

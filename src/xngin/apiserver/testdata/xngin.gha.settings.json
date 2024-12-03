@@ -9,6 +9,7 @@
         "type": "remote",
         "participants": [
           {
+            "participant_type": "dwh",
             "table_name": "dwh",
             "sheet": {
               "url": "file://src/xngin/apiserver/testdata/testing_sheet.csv",
