@@ -9,7 +9,6 @@ from pydantic import (
     PositiveInt,
     SecretStr,
     Field,
-    field_serializer,
     field_validator,
 )
 from sqlalchemy import Engine, event
@@ -29,33 +28,6 @@ def get_settings_for_server():
         settings_raw = json.load(f)
     settings_raw = replace_secrets(settings_raw)
     return XnginSettings.model_validate(settings_raw)
-
-
-class SqlalchemyAndTable(BaseModel):
-    sqlalchemy_url: sqlalchemy.engine.URL
-    table_name: str
-
-    # URL isn't a pydantic model so doesn't know how to generate json schema.
-    # We need to allow non-standard lib types and sub our own description here.
-    model_config = {
-        "arbitrary_types_allowed": True,
-        "json_schema_extra": {"properties": {"sqlalchemy_url": {"type": "string"}}},
-    }
-
-    @field_validator("sqlalchemy_url", mode="before")
-    @classmethod
-    def parse_url(cls, value):
-        """Convert strings into valid sqlalchemy.engine.URLs"""
-
-        if isinstance(value, str):
-            return sqlalchemy.make_url(value)
-        return value
-
-    @field_serializer("sqlalchemy_url")
-    def serialize_url(self, url: sqlalchemy.engine.URL):
-        """If rendering URLs, use the string representation with the pw masked."""
-
-        return url.render_as_string(hide_password=True)
 
 
 class SheetRef(BaseModel):
