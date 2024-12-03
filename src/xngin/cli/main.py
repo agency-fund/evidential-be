@@ -14,6 +14,8 @@ import psycopg2
 import sqlalchemy
 import typer
 from gspread import GSpreadException
+from pydantic import ValidationError
+from pydantic_core import from_json
 from rich.console import Console
 from sqlalchemy import create_engine, make_url, func, text
 from sqlalchemy import select
@@ -321,6 +323,20 @@ def export_json_schemas(output: Path = ".schemas"):
         with open(filename, "w") as outf:
             outf.write(json.dumps(model.model_json_schema(), indent=2, sort_keys=True))
             print(f"Wrote {filename}.")
+
+
+@app.command()
+def validate_settings(file: Path):
+    """Validates a settings .json file against the Pydantic models."""
+
+    with open(file) as f:
+        config = f.read()
+    try:
+        XnginSettings.model_validate(from_json(config))
+    except ValidationError as verr:
+        print(f"{file} failed validation:", file=sys.stderr)
+        print(verr, file=sys.stderr)
+        raise typer.Exit(1) from verr
 
 
 if __name__ == "__main__":
