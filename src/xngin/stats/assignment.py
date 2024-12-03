@@ -129,7 +129,9 @@ def assign_treatment(
             )
         ]
         participant = ExperimentParticipant(
-            participant_id=str(row[id_col]), treatment_assignment=str(row["treat"]), strata=strata
+            participant_id=str(row[id_col]),
+            treatment_assignment=str(row["treat"]),
+            strata=strata,
         )
         participants_list.append(participant)
 
