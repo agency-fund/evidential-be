@@ -1,7 +1,7 @@
 import json
 import os
 from functools import lru_cache
-from typing import Literal
+from typing import Literal, Annotated
 
 import sqlalchemy
 from pydantic import (
@@ -278,11 +278,11 @@ type ClientConfigType = RemoteDatabaseConfig | SqliteLocalConfig
 
 class ClientConfig(BaseModel):
     id: str
-    config: ClientConfigType = Field(..., discriminator="type")
+    config: Annotated[ClientConfigType, Field(discriminator="type")]
 
 
 class XnginSettings(BaseModel):
-    trusted_ips: list[str] = Field(default_factory=list)
+    trusted_ips: Annotated[list[str], Field(default_factory=list)]
     db_connect_timeout_secs: int = 3
     client_configs: list[ClientConfig]
 
