@@ -159,9 +159,12 @@ docker run xngin:latest
 Here's an example of how to run a local Postgres in Docker and have
 xngin use it as the system database:
 
+> Note: This example creates a Postgres database for the /system/ database; this is used only for caching
+> configuration spreadsheets. If you want to test a customer database with postgres, you must edit the settings JSON.
+
 ```shell
 PASSWORD="secret$(cat /dev/urandom | head -c128 | sha256sum | cut -b1-16)"
-docker run -d --name xngin-postgres \
+docker run --rm -d --name xngin-postgres \
   -e POSTGRES_USER=xnginwebserver \
   -e POSTGRES_PASSWORD=${PASSWORD} \
   -e POSTGRES_DB=xngin \
