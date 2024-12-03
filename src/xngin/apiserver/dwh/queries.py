@@ -1,7 +1,7 @@
 import re
+import pandas as pd
 
 import sqlalchemy
-from pydantic import BaseModel
 from sqlalchemy import or_, func, ColumnOperators, Table, not_, select
 from sqlalchemy.orm import Session
 
@@ -10,8 +10,7 @@ from xngin.apiserver.api_types import (
     Relation,
     AudienceSpecFilter,
     EXPERIMENT_IDS_SUFFIX,
-    Stats,
-    MetricType,
+    DesignSpecMetric,
 )
 from xngin.sqlite_extensions import custom_functions
 
@@ -21,51 +20,55 @@ def get_metric_meta():
     pass
 
 
-class MetricStats(BaseModel):
-    metric: str
-    metric_type: MetricType
-    stats: Stats
-
-
 def get_stats_on_metrics(
-    session, sa_table: Table, metric_names: list[str], audience_spec: AudienceSpec
-) -> list[MetricStats]:
+    session,
+    sa_table: Table,
+    metrics: list[DesignSpecMetric],
+    audience_spec: AudienceSpec,
+) -> list[DesignSpecMetric]:
     metric_columns = []
-    metric_names = sorted(metric_names)
-    for metric in metric_names:
-        col = sa_table.c[metric]
+
+    for metric in metrics:
+        metric_name = metric.metric_name
+        col = sa_table.c[metric_name]
         # TODO(roboton): consider whether mitigations for null are important
         metric_columns.extend((
-            func.avg(col).label(f"{metric}__mean"),
-            custom_functions.stddev_pop(col).label(f"{metric}__sd"),
-            func.count(col).label(f"{metric}__count"),
+            func.avg(col).label(f"{metric_name}__mean"),
+            custom_functions.stddev_pop(col).label(f"{metric_name}__stddev"),
+            func.count(col).label(f"{metric_name}__count"),
         ))
     query = select(*metric_columns)
     filters = create_filters(sa_table, audience_spec)
     query = query.filter(*filters)
     stats = session.execute(query).mappings().fetchone()
-    return [
-        MetricStats(
-            metric=metric,
-            metric_type=MetricType.from_python_type(
-                sa_table.c[metric].type.python_type
-            ),
-            stats=Stats(
-                mean=stats[f"{metric}__mean"],
-                stddev=stats[f"{metric}__sd"],
-                available_n=stats[f"{metric}__count"],
-            ),
-        )
-        for metric in metric_names
-    ]
+
+    metrics_with_stats = []
+    for metric in metrics:
+        metric_name = metric.metric_name
+        metric_with_stats = metric.model_copy()
+        metric_with_stats.metric_baseline = stats[f"{metric_name}__mean"]
+        metric_with_stats.metric_stddev = stats[f"{metric_name}__stddev"]
+        metric_with_stats.available_n = stats[f"{metric_name}__count"]
+        metrics_with_stats.append(metric_with_stats)
+
+    return metrics_with_stats
 
 
 def query_for_participants(
-    session: Session, sa_table: Table, audience_spec: AudienceSpec, chosen_n: int
-):
+    session: Session,
+    sa_table: Table,
+    audience_spec: AudienceSpec,
+    chosen_n: int,
+    random_state: int | None = None,
+) -> pd.DataFrame:
+    # TODO(roboton): return type on this method is wrong
     filters = create_filters(sa_table, audience_spec)
     query = compose_query(sa_table, chosen_n, filters)
-    return session.scalars(query).all()
+    # postgres
+    # if random_state is not None:
+    #   session.execute(func.setseed(random_state))
+    # TODO(roboton): we can't set a random seed in SQLLite so hurl unit tests are broken
+    return session.execute(query).all()
 
 
 # TODO: rename for clarity

@@ -15,7 +15,41 @@ from pydantic import (
 
 EXPERIMENT_IDS_SUFFIX = "experiment_ids"
 
+# An experiment is comprised of two primary components:
+# 1. An AudienceSpec which defines the pool of potential participants
+# 2. A DesignSpec specifying:
+#   a. the treatment arms
+#   b. outcome metrics,
+#   c. strata
+#   d. experiment meta data (start/end date, name, description)
+#   e. statistical parameters (power, significance, balance test threshold)
 
+# The goal is to produce an ExperimentAssignment from the AudienceSpec and DesignSpec.
+# We go through two steps to enable this:
+# 0. Baseline data retrieval -
+# 1. Power analysis - Given and AudienceSpec and DesignSpec we analyze the
+#    statistical power for each metric in the DesignSpec, along with the statistical
+#    parameters. This occurs as follows for each metric:
+#   a. If there is no baseline value (and std dev for numeric metrics), go to the
+#      database to fetch these values.
+#   b. Use the declared metric_target or compute this target based on
+#      metric_pct_change and the baseline value.
+#   c. Use the number of arms, metric baseline and target, statistical parameters
+#      and the number of participants available using the Audience filter to determine
+#      if we're sufficiently powered. If we are not, compute the effect size needed to
+#      be powered. This power information can be added to the metrics in the DesignSpec.
+# 2. Assignment - the Power analysis computes the minimum number of participants needed
+#    to be statistically powered "n" which is left to the user to choose during assignment.
+#    Assignment takes the same inputs, the AudienceSpec and DesignSpec to generate a list
+#    of "n" users randomly assigned using the set of treatment arms and the strata. This
+#    should return a list of objects containing a participant id, treatment assignment,
+#    and strata values.
+# 3. Analysis - TBD
+
+# Audience Specification (input)
+
+
+## Filters
 class DataType(enum.StrEnum):
     BOOLEAN = "boolean"
     CHARACTER_VARYING = "character varying"
@@ -197,53 +231,180 @@ class AudienceSpecFilter(BaseModel):
 
 
 class AudienceSpec(BaseModel):
-    """Audience specification."""
+    """Audience specification.
+
+    Determines the set of participants targeted for an experiment using filters
+    based on the experiment participant_type.
+    """
 
     participant_type: str
     filters: list[AudienceSpecFilter]
 
 
-class DesignSpecArm(BaseModel):
-    arm_name: str
-    arm_id: uuid.UUID
+# Design Specification (input)
+
+
+## Metric Specs
+class MetricType(enum.StrEnum):
+    BINARY = "binary"
+    NUMERIC = "numeric"
+
+    @classmethod
+    def from_python_type(cls, python_type: type) -> "MetricType":
+        """Given a Python type, return an appropriate MetricType."""
+
+        if python_type in (int, float):
+            return MetricType.NUMERIC
+        if python_type is bool:
+            return MetricType.BINARY
+        raise ValueError(f"Unsupported type: {python_type}")
 
 
 class DesignSpecMetric(BaseModel):
     metric_name: str
-    metric_pct_change: float
+    # TODO(roboton): metric_type should be inferred by name from db when missing
+    metric_type: MetricType | None = None
+    # TODO(roboton): metric_baseline should be drawn from dwh when missing
+    metric_baseline: float | None = None
+    # TODO(roboton): we should only set this value if metric_type is NUMERIC
+    metric_stddev: float | None = None
+    # TOOD(roboton): if target is set, metric_pct_change is ignored, but we
+    # should display a warning
+    metric_pct_change: float | None = None
+    # TODO(roboton): metric_target will be computed from metric_baseline and
+    # TODO(roboton): metric_pct_change if missing
+    # TODO(roboton): metric_target = 1 + metric_pct_change * metric_baseline
+    metric_target: float | None = None
+    # TODO(roboton): available_n should probably be in another structure related to power_analysis?
+    available_n: int | None = None
+
+
+class ExperimentArm(BaseModel):
+    arm_id: (
+        uuid.UUID
+    )  # generally should not let users set this, auto-generated uuid by default
+    arm_name: str
+    arm_description: str | None = None
 
 
 class DesignSpec(BaseModel):
     """Design specification."""
 
+    # experiment meta
     experiment_id: uuid.UUID
     experiment_name: str
     description: str
-    arms: list[DesignSpecArm]
     start_date: datetime
     end_date: datetime
+
+    # arms (at least two)
+    arms: list[ExperimentArm]
+
+    # strata as strings
+    # TODO(roboton): rename as strata_names?
     strata_cols: list[str]
-    power: float
-    alpha: float
-    fstat_thresh: float
+
+    # metric specs (at least one)
     metrics: list[DesignSpecMetric]
+
+    # stat parameters
+    power: float = 0.8
+    alpha: float = 0.05
+    fstat_thresh: float = 0.6
 
     @field_serializer("start_date", "end_date", when_used="json")
     def serialize_dt(self, dt: datetime, _info):
         """Convert dates to iso strings in model_dump_json()/model_dump(mode='json')"""
         return dt.isoformat()
 
+    @field_validator("power", "alpha", "fstat_thresh")
+    def check_values_between_0_and_1(cls, value, field):
+        """Ensure that power, alpha, and fstat_thresh are between 0 and 1."""
+        if not (0 <= value <= 1):
+            raise ValueError(f"{field.name} must be between 0 and 1.")
+        return value
+
+    @field_validator("arms")
+    def check_arms_length(cls, value):
+        """Ensure that arms list has at least two elements."""
+        if len(value) < 2:
+            raise ValueError("The arms list must contain at least two elements.")
+        return value
+
+    @field_validator("metrics")
+    def check_metrics_length(cls, value):
+        """Ensure that metrics list has at least one element."""
+        if len(value) < 1:
+            raise ValueError("The metrics list must contain at least one element.")
+        return value
+
+
+type PowerAnalysis = list[MetricAnalysis]
+
+
+class MetricAnalysisMessageType(enum.StrEnum):
+    SUFFICIENT = "sufficient"
+    INSUFFICIENT = "insufficient"
+
+
+class MetricAnalysisMessage(BaseModel):
+    type: MetricAnalysisMessageType
+    msg: str
+    values: dict[str, float | int] | None = None
+
+
+class MetricAnalysis(BaseModel):
+    """Analysis results for a single metric."""
+
+    metric_spec: DesignSpecMetric
+    available_n: int
+    target_n: int | None = None
+    sufficient_n: bool | None = None
+    needed_target: float | None = None
+    metric_target_possible: float | None = None
+    metric_pct_change_possible: float | None = None
+    delta: float = None
+    msg: MetricAnalysisMessage | None = None
+
+
+# Experiment Assignment (output)
+
+
+## Strata
+class StrataType(enum.StrEnum):
+    BINARY = "binary"
+    NUMERIC = "numeric"
+    CATEGORICAL = "categorical"
+
+    @classmethod
+    def from_python_type(cls, python_type: type) -> "MetricType":
+        """Given a Python type, return an appropriate StrataType."""
+
+        if python_type in (int, float):
+            return StrataType.NUMERIC
+        if python_type is bool:
+            return StrataType.BINARY
+        if python_type is str:
+            return StrataType.CATEGORICAL
+
+        raise ValueError(f"Unsupported type: {python_type}")
+
 
 class ExperimentStrata(BaseModel):
     strata_name: str
-    strata_value: str
+    # TODO(roboton): Add in strata type, update tests to reflect this field, should be derived
+    # from data warehouse.
+    # strata_type: Optional[StrataType]
+    strata_value: str | None = None
 
 
 class ExperimentParticipant(BaseModel):
-    # Name of the experiment arm this unit was assigned to
+    # this references the column marked is_unique_id == TRUE in the configuration spreadsheet
+    # participant_id: str
     treatment_assignment: str
     strata: list[ExperimentStrata]
 
+    # TODO(roboton): Would a simple id string field along with participant type be sufficient here?
     # Allow extra fields so that we can support dwh-specific ids
     model_config = {"extra": "allow"}
     # And require the extra field to be an integer;
@@ -260,22 +421,30 @@ class ExperimentParticipant(BaseModel):
         return self
 
 
-class ExperimentAssignment(BaseModel):
-    """Experiment assignment details including balance statistics and group assignments."""
-
+class BalanceCheck(BaseModel):
     f_stat: float
     numerator_df: int
     denominator_df: int
     p_value: float
     balance_ok: bool
+
+
+class ExperimentAssignment(BaseModel):
+    """Experiment assignment details including balance statistics and group assignments."""
+
+    # TODO(roboton): remove next 5 fields in favor of BalanceCheck object
+    f_statistic: float
+    numerator_df: int
+    denominator_df: int
+    p_value: float
+    balance_ok: bool
+
+    # TODO(roboton): should we include design_spec and audience_spec in this object
     experiment_id: uuid.UUID
+    # TODO(roboton): drop description since it will be in included design_spec
     description: str
     sample_size: int
     assignments: list[ExperimentParticipant]
-
-
-class UnimplementedResponse(BaseModel):
-    todo: Literal["TODO"] = "TODO"
 
 
 class GetStrataResponseElement(BaseModel):
@@ -311,42 +480,5 @@ class GetMetricsResponseElement(BaseModel):
     description: str
 
 
-type GetPowerResponse = list[GetPowerResponseElement]
-
-
-class MetricType(enum.StrEnum):
-    BINARY = "binary"
-    CHARACTER = "character"
-    CONTINUOUS = "continuous"
-
-    @classmethod
-    def from_python_type(cls, python_type: type) -> "MetricType":
-        """Given a Python type, return an appropriate MetricType."""
-
-        if python_type is str:
-            return MetricType.CHARACTER
-        if python_type in (int, float):
-            return MetricType.CONTINUOUS
-        if python_type is bool:
-            return MetricType.BINARY
-        raise ValueError(f"Unsupported type: {python_type}")
-
-
-class Stats(BaseModel):
-    mean: float
-    stddev: float
-    available_n: int
-
-
-class GetPowerResponseElement(BaseModel):
-    """Response for the /power endpoint."""
-
-    metric_name: str
-    metric_pct_change: float
-    metric_type: MetricType
-    stats: Stats
-    metric_target: float
-    target_n: int
-    sufficient_n: bool
-    msg: str  # TODO: replace with structured message
-    needed_target: float | None = None
+class UnimplementedResponse(BaseModel):
+    todo: Literal["TODO"] = "TODO"

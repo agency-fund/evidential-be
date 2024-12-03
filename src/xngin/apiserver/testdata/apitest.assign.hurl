@@ -1,4 +1,4 @@
-POST http://localhost:8000/assign?participant_type=test_participant_type
+POST http://localhost:8000/assign?participant_type=test_participant_type&chosen_n=40&random_state=42
 Config-ID: testing
 ```json
 {
@@ -40,17 +40,27 @@ Config-ID: testing
 HTTP 200
 ```json
 {
-  "f_stat": 0.0,
-  "numerator_df": 0,
-  "denominator_df": 0,
-  "p_value": 0.0,
-  "balance_ok": false,
-  "experiment_id": "8c3eb9a1-8d8c-402e-b407-a4002acd4f17",
-  "description": "todo",
-  "sample_size": 0,
+  "f_statistic": 0.5692826346438268,
+  "numerator_df": 13,
+  "denominator_df": 26,
+  "p_value": 0.8559923122792419,
+  "balance_ok": true,
+  "experiment_id": "0897bbd7-dacd-41b4-b164-7a1950fa61f2",
+  "description": "Sample experiment description.",
+  "sample_size": 40,
   "assignments": [
     {
-      "id": 123,
+      "id": "b767716b-f388-4cd9-a18a-08c4916ce26f",
+      "treatment_assignment": "0",
+      "strata": [
+        {
+          "strata_name": "is_onboarded",
+          "strata_value": "0"
+        }
+      ]
+    },
+    {
+      "id": "b767716b-f388-4cd9-a18a-08c4916ce26g",
       "treatment_assignment": "todo",
       "strata": [
         {

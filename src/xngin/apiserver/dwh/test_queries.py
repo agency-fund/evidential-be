@@ -9,10 +9,10 @@ from sqlalchemy.orm import declarative_base, Session
 
 from xngin.apiserver.api_types import (
     AudienceSpec,
+    DesignSpecMetric,
     Relation,
     AudienceSpecFilter,
     MetricType,
-    Stats,
 )
 from xngin.sqlite_extensions import custom_functions
 from xngin.sqlite_extensions.custom_functions import NumpyStddev
@@ -21,7 +21,6 @@ from xngin.apiserver.dwh.queries import (
     create_filters,
     get_stats_on_metrics,
     make_csv_regex,
-    MetricStats,
 )
 
 Base = declarative_base()
@@ -79,8 +78,8 @@ SAMPLE_TABLE_ROWS = [
 ]
 
 
-@pytest.fixture
-def db_session():
+@pytest.fixture(name="db_session")
+def fixture_db_session():
     """Creates an in-memory SQLite database with test data."""
     engine = create_engine("sqlite:///:memory:", echo=False)
 
@@ -100,14 +99,14 @@ def db_session():
     Base.metadata.drop_all(engine)
 
 
-@pytest.fixture()
-def engine(db_session):
+@pytest.fixture(name="engine")
+def fixture_engine(db_session):
     """Injects an engine into a test."""
     return db_session.get_bind()
 
 
-@pytest.fixture()
-def compiler(engine):
+@pytest.fixture(name="compiler")
+def fixture_compiler(engine):
     """Returns a helper method to compile a SQLAlchemy Select into a SQL string."""
     return lambda query: str(
         query.compile(engine, compile_kwargs={"literal_binds": True})
@@ -383,31 +382,37 @@ def test_query_baseline_metrics(db_session):
     row = get_stats_on_metrics(
         db_session,
         table,
-        ["int_col", "bool_col", "float_col"],
+        [
+            DesignSpecMetric(metric_name="bool_col", metric_type=MetricType.BINARY),
+            DesignSpecMetric(metric_name="float_col", metric_type=MetricType.NUMERIC),
+            DesignSpecMetric(metric_name="int_col", metric_type=MetricType.NUMERIC),
+        ],
         AudienceSpec(
             participant_type="ignored",
             filters=[],
         ),
     )
     expected = [
-        MetricStats(
-            metric="bool_col",
+        DesignSpecMetric(
+            metric_name="bool_col",
             metric_type=MetricType.BINARY,
-            stats=Stats(
-                mean=0.6666666666666666, stddev=0.4714045207910317, available_n=3
-            ),
+            metric_baseline=0.6666666666666666,
+            metric_stddev=0.4714045207910317,
+            available_n=3,
         ),
-        MetricStats(
-            metric_type=MetricType.CONTINUOUS,
-            metric="float_col",
-            stats=Stats(mean=2.492, stddev=0.6415751449882287, available_n=3),
+        DesignSpecMetric(
+            metric_name="float_col",
+            metric_type=MetricType.NUMERIC,
+            metric_baseline=2.492,
+            metric_stddev=0.6415751449882287,
+            available_n=3,
         ),
-        MetricStats(
-            metric="int_col",
-            metric_type=MetricType.CONTINUOUS,
-            stats=Stats(
-                mean=41.666666666666664, stddev=47.76563153100307, available_n=3
-            ),
+        DesignSpecMetric(
+            metric_name="int_col",
+            metric_type=MetricType.NUMERIC,
+            metric_baseline=41.666666666666664,
+            metric_stddev=47.76563153100307,
+            available_n=3,
         ),
     ]
     # TODO: use float safe comparison

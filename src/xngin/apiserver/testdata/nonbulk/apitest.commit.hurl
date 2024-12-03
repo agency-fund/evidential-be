@@ -35,7 +35,7 @@ Config-ID: customer-test
     "participant_type": "groups",
     "filters": [
       {
-        "filter_name": "onboarded",
+        "filter_name": "is_onboarded",
         "relation": "includes",
         "value": [
           "TRUE"
@@ -44,7 +44,7 @@ Config-ID: customer-test
     ]
   },
   "experiment_assignment": {
-    "f_stat": 1.1153,
+    "f_statistic": 1.1153,
     "numerator_df": 523,
     "denominator_df": 476,
     "p_value": 0.1121,
