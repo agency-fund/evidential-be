@@ -46,11 +46,13 @@ exclude = ["*.ipynb"]
 [tool.ruff.lint]
 select = [
     "A",
+    "ASYNC",
     "B",
     "E",
     "W",
     "F",
     "N",
+    "PD",
     "FAST",
     "RET",
     "RUF",
@@ -63,6 +65,10 @@ ignore = [
     "TRY003",
     "E501", # redundant line length warnings
     "E266", # Too many leading `#` before block comment
+    "PD003", # `.isna` is preferred to `.isnull`; functionality is equivalent"
+    "PD002", # `inplace=True` should be avoided; it has inconsistent behavior
+    "PD101", # Using `series.nunique()` for checking that a series is constant is inefficient
+    "PD901", # Avoid using the generic variable name `df` for DataFrames
 ]
 
 [tool.uv]
