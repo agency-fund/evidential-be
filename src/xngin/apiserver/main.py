@@ -17,12 +17,13 @@ from xngin.apiserver.api_types import (
     AudienceSpec,
     DesignSpec,
     ExperimentAssignment,
-    UnimplementedResponse,
     GetStrataResponseElement,
     GetFiltersResponseElement,
     GetMetricsResponseElement,
     GetPowerResponse,
     GetPowerResponseElement,
+    ExperimentParticipant,
+    ExperimentStrata,
 )
 from xngin.apiserver.dependencies import (
     httpx_dependency,
@@ -30,7 +31,7 @@ from xngin.apiserver.dependencies import (
     config_dependency,
     gsheet_cache,
 )
-from xngin.apiserver.dwh.queries import get_stats_on_metrics
+from xngin.apiserver.dwh.queries import get_stats_on_metrics, query_for_participants
 from xngin.apiserver.gsheet_cache import GSheetCache
 from xngin.apiserver.settings import (
     WebhookConfig,
@@ -292,7 +293,6 @@ def check_power(
 @app.post(
     "/assign",
     summary="Assign treatment given experiment and audience specification.",
-    response_model=UnimplementedResponse,
     tags=["Manage Experiments"],
 )
 def assign_treatment(
@@ -300,9 +300,40 @@ def assign_treatment(
     audience_spec: AudienceSpec,
     client: Annotated[ClientConfig | None, Depends(config_dependency)] = None,
     chosen_n: int = 1000,
-):
-    # Implement treatment assignment logic
-    return UnimplementedResponse()
+) -> ExperimentAssignment:
+    config = require_config(client)
+    participant_type = audience_spec.participant_type
+
+    # TODO: This is probably useful.
+    _unique_id_column = config.find_participants(participant_type)
+
+    with config.dbsession(participant_type) as session:
+        sa_table = get_sqlalchemy_table_from_engine(
+            session.get_bind(), participant_type
+        )
+        _participants = query_for_participants(
+            session, sa_table, audience_spec, chosen_n
+        )
+
+    participant = ExperimentParticipant(
+        id=123,
+        treatment_assignment="todo",
+        strata=[ExperimentStrata(strata_name="todo", strata_value="todo")],
+    )
+
+    return ExperimentAssignment(
+        f_stat=0,
+        numerator_df=0,
+        denominator_df=0,
+        p_value=0,
+        balance_ok=False,
+        # experiment_id=uuid.uuid4(),
+        # TODO(roboton): set seed to produce stable uuid for testing
+        experiment_id="8c3eb9a1-8d8c-402e-b407-a4002acd4f17",
+        description="todo",
+        sample_size=0,
+        assignments=[participant for _ in range(1)],
+    )
 
 
 @app.get(

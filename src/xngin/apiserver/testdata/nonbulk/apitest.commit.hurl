@@ -44,10 +44,10 @@ Config-ID: customer-test
     ]
   },
   "experiment_assignment": {
-    "f.stat": 1.1153,
-    "numerator.df": 523,
-    "denominator.df": 476,
-    "p.value": 0.1121,
+    "f_stat": 1.1153,
+    "numerator_df": 523,
+    "denominator_df": 476,
+    "p_value": 0.1121,
     "balance_ok": false,
     "experiment_id": "df6456bf-09c5-4d7f-82f1-75679db54477",
     "description": "Sample experiment description.",
