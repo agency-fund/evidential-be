@@ -102,7 +102,7 @@ def test_assign_treatment_reproducibility(sample_data):
     # Check that the treatment assignments are the same
     for p1, p2 in zip(result1.assignments, result2.assignments, strict=False):
         assert p1.treatment_assignment == p2.treatment_assignment
-        assert p1.id == p2.id  # Assuming id is a unique identifier for participants
+        assert p1.participant_id == p2.participant_id  # Assuming id is a unique identifier for participants
         assert p1.strata == p2.strata  # Check if strata are equal
 
 

@@ -54,7 +54,7 @@ Config-ID: customer-test
     "sample_size": 1000,
     "assignments": [
       {
-        "groups_id": 35634,
+        "participant_id": "35634",
         "treatment_assignment": "Treatment1",
         "strata": [
           {
