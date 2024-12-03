@@ -49,7 +49,7 @@ HTTP 200
           "strata_value": "0"
         }
       ],
-      "treatment_assignment": "0"
+      "treatment_assignment": "1"
     },
     {
       "id": 730934,
@@ -59,7 +59,7 @@ HTTP 200
           "strata_value": "0"
         }
       ],
-      "treatment_assignment": "0"
+      "treatment_assignment": "1"
     },
     {
       "id": 440263,
@@ -79,7 +79,7 @@ HTTP 200
           "strata_value": "0"
         }
       ],
-      "treatment_assignment": "1"
+      "treatment_assignment": "0"
     },
     {
       "id": 486195,
@@ -99,7 +99,7 @@ HTTP 200
           "strata_value": "0"
         }
       ],
-      "treatment_assignment": "1"
+      "treatment_assignment": "0"
     },
     {
       "id": 393637,
@@ -129,7 +129,7 @@ HTTP 200
           "strata_value": "1"
         }
       ],
-      "treatment_assignment": "1"
+      "treatment_assignment": "0"
     },
     {
       "id": 295539,
@@ -139,7 +139,7 @@ HTTP 200
           "strata_value": "1"
         }
       ],
-      "treatment_assignment": "1"
+      "treatment_assignment": "0"
     },
     {
       "id": 552382,
@@ -159,7 +159,7 @@ HTTP 200
           "strata_value": "0"
         }
       ],
-      "treatment_assignment": "0"
+      "treatment_assignment": "1"
     },
     {
       "id": 431735,
@@ -179,7 +179,7 @@ HTTP 200
           "strata_value": "0"
         }
       ],
-      "treatment_assignment": "0"
+      "treatment_assignment": "1"
     },
     {
       "id": 407190,
@@ -189,7 +189,7 @@ HTTP 200
           "strata_value": "0"
         }
       ],
-      "treatment_assignment": "1"
+      "treatment_assignment": "0"
     },
     {
       "id": 248783,
@@ -229,7 +229,7 @@ HTTP 200
           "strata_value": "0"
         }
       ],
-      "treatment_assignment": "1"
+      "treatment_assignment": "0"
     },
     {
       "id": 812175,
@@ -239,7 +239,7 @@ HTTP 200
           "strata_value": "0"
         }
       ],
-      "treatment_assignment": "1"
+      "treatment_assignment": "0"
     },
     {
       "id": 154001,
@@ -249,7 +249,7 @@ HTTP 200
           "strata_value": "0"
         }
       ],
-      "treatment_assignment": "0"
+      "treatment_assignment": "1"
     },
     {
       "id": 12955,
@@ -279,7 +279,7 @@ HTTP 200
           "strata_value": "0"
         }
       ],
-      "treatment_assignment": "1"
+      "treatment_assignment": "0"
     },
     {
       "id": 210073,
@@ -299,7 +299,7 @@ HTTP 200
           "strata_value": "0"
         }
       ],
-      "treatment_assignment": "1"
+      "treatment_assignment": "0"
     },
     {
       "id": 65425,
@@ -319,7 +319,7 @@ HTTP 200
           "strata_value": "0"
         }
       ],
-      "treatment_assignment": "0"
+      "treatment_assignment": "1"
     },
     {
       "id": 510222,
@@ -329,7 +329,7 @@ HTTP 200
           "strata_value": "1"
         }
       ],
-      "treatment_assignment": "1"
+      "treatment_assignment": "0"
     },
     {
       "id": 23560,
@@ -339,7 +339,7 @@ HTTP 200
           "strata_value": "1"
         }
       ],
-      "treatment_assignment": "0"
+      "treatment_assignment": "1"
     },
     {
       "id": 773941,
@@ -359,7 +359,7 @@ HTTP 200
           "strata_value": "0"
         }
       ],
-      "treatment_assignment": "0"
+      "treatment_assignment": "1"
     },
     {
       "id": 33392,
@@ -379,7 +379,7 @@ HTTP 200
           "strata_value": "0"
         }
       ],
-      "treatment_assignment": "1"
+      "treatment_assignment": "0"
     },
     {
       "id": 198781,
@@ -419,7 +419,7 @@ HTTP 200
           "strata_value": "0"
         }
       ],
-      "treatment_assignment": "0"
+      "treatment_assignment": "1"
     },
     {
       "id": 956625,
@@ -439,16 +439,16 @@ HTTP 200
           "strata_value": "0"
         }
       ],
-      "treatment_assignment": "1"
+      "treatment_assignment": "0"
     }
   ],
   "balance_ok": false,
   "denominator_df": 33,
   "description": "Sample experiment description.",
   "experiment_id": "0897bbd7-dacd-41b4-b164-7a1950fa61f2",
-  "f_statistic": 7.367106128752492,
+  "f_statistic": 4.855391132,
   "numerator_df": 7,
-  "p_value": 2.4555756260924433e-05,
+  "p_value": 0.000761024,
   "sample_size": 40
 }
 ```

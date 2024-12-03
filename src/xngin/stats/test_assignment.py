@@ -31,9 +31,9 @@ def test_assign_treatment(sample_data):
         random_state=42,
     )
 
-    assert result.f_statistic is not None
-    assert result.p_value is not None
-    assert result.balance_ok is not None
+    assert result.f_statistic == 1.019724888
+    assert result.p_value == 0.410778246
+    assert not result.balance_ok
     assert str(result.experiment_id) == "b767716b-f388-4cd9-a18a-08c4916ce26f"
     assert result.description == "Test experiment"
     assert result.sample_size == len(sample_data)
