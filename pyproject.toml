@@ -47,10 +47,10 @@ exclude = ["*.ipynb"]
 select = [
     "A",
     "B",
-    "E4",
-    "E7",
-    "E9",
+    "E",
+    "W",
     "F",
+    "N",
     "FAST",
     "RET",
     "RUF",
@@ -60,7 +60,9 @@ select = [
 ]
 ignore = [
     "RUF029",
-    "TRY003"
+    "TRY003",
+    "E501", # redundant line length warnings
+    "E266", # Too many leading `#` before block comment
 ]
 
 [tool.uv]
