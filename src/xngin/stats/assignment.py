@@ -129,6 +129,7 @@ def assign_treatment(
                 strata_name=row["strata_name"], strata_value=str(row["strata_value"])
             )
         ]
+        # TODO(roboton): the id= field doesn't exist on ExperimentParticipant.
         participant = ExperimentParticipant(
             id=str(row[id_col]), treatment_assignment=str(row["treat"]), strata=strata
         )
