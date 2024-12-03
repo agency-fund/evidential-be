@@ -428,6 +428,7 @@ class ExperimentAssignment(BaseModel):
     # TODO(roboton): drop description since it will be in included design_spec
     description: str
     sample_size: int
+    id_col: str
     assignments: list[ExperimentParticipant]
 
 

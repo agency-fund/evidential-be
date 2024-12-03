@@ -52,6 +52,7 @@ Config-ID: customer-test
     "experiment_id": "df6456bf-09c5-4d7f-82f1-75679db54477",
     "description": "Sample experiment description.",
     "sample_size": 1000,
+    "id_col": "groups_id",
     "assignments": [
       {
         "participant_id": "35634",

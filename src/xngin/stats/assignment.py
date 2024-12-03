@@ -143,5 +143,6 @@ def assign_treatment(
         experiment_id=experiment_id,
         description=description,
         sample_size=len(df),
+        id_col=id_col,
         assignments=participants_list,  # Use the list of participants here
     )
