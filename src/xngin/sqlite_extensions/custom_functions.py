@@ -24,7 +24,9 @@ def our_random(sa_table=None):
         # Find a suitable key (or keys) to order by.
         meta = inspect(sa_table)
         if len(meta.primary_key) > 0:
-            return meta.primary_key[0]
+            return ColumnCollection(
+                columns=[(c.name, c) for c in meta.columns.values() if c.primary_key]
+            )
         # If we can't order by a single primary key, order by all the columns.
         return ColumnCollection(columns=list(sorted(meta.columns.items())))
     return func.random()
