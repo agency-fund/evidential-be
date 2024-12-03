@@ -222,7 +222,7 @@ class RemoteDatabaseConfig(ParticipantsMixin, WebhookMixin, BaseModel):
         Use this in a `with` block to ensure correct transaction handling. If you need the
         sqlalchemy Engine, call .get_bind().
         """
-        url = self.dsn.to_sqlalchemy_url()
+        url = self.dwh.to_sqlalchemy_url()
         connect_args = {}
         if self.dbapi_args:
             for entry in self.dbapi_args:
