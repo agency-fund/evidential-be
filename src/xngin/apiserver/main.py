@@ -109,8 +109,9 @@ def get_strata(
     This reimplements dwh.R get_strata().
     """
     config = require_config(client)
+    participants = config.find_participants(commons.participant_type)
     with config.dbsession() as session:
-        sa_table = infer_table(session.get_bind(), commons.participant_type)
+        sa_table = infer_table(session.get_bind(), participants.table_name)
         db_schema = generate_column_descriptors(sa_table)
         config_sheet = fetch_worksheet(commons, config, gsheets)
         strata_cols = {c.column_name: c for c in config_sheet.columns if c.is_strata}
@@ -142,8 +143,9 @@ def get_filters(
     client: Annotated[ClientConfig | None, Depends(config_dependency)] = None,
 ) -> list[GetFiltersResponseElement]:
     config = require_config(client)
+    participants = config.find_participants(commons.participant_type)
     with config.dbsession() as session:
-        sa_table = infer_table(session.get_bind(), commons.participant_type)
+        sa_table = infer_table(session.get_bind(), participants.table_name)
         db_schema = generate_column_descriptors(sa_table)
         config_sheet = fetch_worksheet(commons, config, gsheets)
         filter_cols = {c.column_name: c for c in config_sheet.columns if c.is_filter}
@@ -211,8 +213,9 @@ def get_metrics(
     This reimplements dwh.R get_metrics().
     """
     config = require_config(client)
+    participants = config.find_participants(commons.participant_type)
     with config.dbsession() as session:
-        sa_table = infer_table(session.get_bind(), commons.participant_type)
+        sa_table = infer_table(session.get_bind(), participants.table_name)
         db_schema = generate_column_descriptors(sa_table)
         config_sheet = fetch_worksheet(commons, config, gsheets)
         metric_cols = {c.column_name: c for c in config_sheet.columns if c.is_metric}
@@ -247,11 +250,13 @@ def check_power_api(
     Calculates statistical power given an AudienceSpec and a DesignSpec
     """
     config = require_config(client)
-    participant_type = audience_spec.participant_type
+    participant = config.find_participants(audience_spec.participant_type)
     with config.dbsession() as session:
-        sa_table = infer_table(session.get_bind(), participant_type)
+        sa_table = infer_table(session.get_bind(), participant.table_name)
         config_sheet = fetch_worksheet(
-            CommonQueryParams(participant_type=participant_type, refresh=refresh),
+            CommonQueryParams(
+                participant_type=participant.participant_type, refresh=refresh
+            ),
             config,
             gsheets,
         )
@@ -284,10 +289,9 @@ def assign_treatment_api(
     client: Annotated[ClientConfig | None, Depends(config_dependency)] = None,
 ) -> ExperimentAssignment:
     config = require_config(client)
-    participant_type = audience_spec.participant_type
-
+    participant = config.find_participants(audience_spec.participant_type)
     with config.dbsession() as session:
-        sa_table = infer_table(session.get_bind(), participant_type)
+        sa_table = infer_table(session.get_bind(), participant.table_name)
         participants = query_for_participants(
             session, sa_table, audience_spec, chosen_n
         )
