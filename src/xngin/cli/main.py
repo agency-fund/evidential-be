@@ -190,7 +190,7 @@ def bootstrap_spreadsheet(
         typer.Argument(
             ...,
             help="The name of the table to pull field metadata from. If creating a Google Sheet, this will also be "
-            "used as the worksheet name, unless overridden by --worksheet-name.",
+            "used as the worksheet name, unless overridden by --participant-type.",
         ),
     ],
     create_gsheet: Annotated[
@@ -200,12 +200,12 @@ def bootstrap_spreadsheet(
             help="Create a Google Sheet version of the configuration spreadsheet from `table_name`.",
         ),
     ] = False,
-    worksheet_name: Annotated[
+    participant_type: Annotated[
         str | None,
         typer.Option(
             ...,
             help="When creating the Google Sheet, use the specified value rather than the table name "
-            "as the worksheet name.",
+            "as the worksheet name. This corresponds to the participant_type field in the settings file.",
         ),
     ] = None,
     share_email: Annotated[
@@ -247,9 +247,9 @@ def bootstrap_spreadsheet(
 
     gc = gspread.service_account()
     # TODO: if the sheet exists already, add a new worksheet instead of erroring.
-    if worksheet_name is None:
-        worksheet_name = table_name
-    sheet = gc.create(worksheet_name)
+    if participant_type is None:
+        participant_type = table_name
+    sheet = gc.create(participant_type)
     # The "Sheet1" worksheet is created automatically. We don't want to use that, so hold on to its ID for later
     # so that we can delete it.
     sheets_to_delete = [s.id for s in sheet.worksheets()]
