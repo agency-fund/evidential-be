@@ -33,7 +33,7 @@ def assign_treatment(
     arm_names: list[str],
     experiment_id: str,
     description: str,
-    fstat_thresh: float = 0.1,
+    fstat_thresh: float = 0.5,
     random_state: int | None = None,
 ) -> ExperimentAssignment:
     """
