@@ -1,5 +1,6 @@
 import json
 import os
+from collections import Counter
 from functools import lru_cache
 from typing import Literal
 
@@ -12,6 +13,7 @@ from pydantic import (
     field_serializer,
     field_validator,
     ConfigDict,
+    model_validator,
 )
 from sqlalchemy import Engine, event
 from sqlalchemy.exc import NoSuchTableError
@@ -97,6 +99,18 @@ class ParticipantsMixin(ConfigBaseModel):
         if found is None:
             raise CannotFindParticipantsException(participant_type)
         return found
+
+    @model_validator(mode="after")
+    def check_unique_participant_types(self):
+        counted = Counter([
+            participant.participant_type for participant in self.participants
+        ])
+        duplicates = [item for item, count in counted.items() if count > 1]
+        if duplicates:
+            raise ValueError(
+                f"Participants with conflicting identifiers found: {', '.join(duplicates)}."
+            )
+        return self
 
 
 class WebhookUrl(ConfigBaseModel):
