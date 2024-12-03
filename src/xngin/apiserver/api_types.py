@@ -2,7 +2,7 @@ import enum
 import re
 import uuid
 from datetime import datetime
-from typing import Annotated, Self
+from typing import Annotated
 
 import sqlalchemy.sql.sqltypes
 from pydantic import (
