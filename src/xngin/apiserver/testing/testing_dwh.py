@@ -16,7 +16,7 @@ TESTING_DWH_SQLITE_PATH = Path(__file__).parent.parent / "testdata/testing_dwh.d
 TESTING_DWH_RAW_DATA = Path(__file__).parent.parent / "testdata/testing_dwh.csv.zst"
 
 
-class FailedSettingVersionException(Exception):
+class FailedSettingVersionError(Exception):
     """Raised when setting schema version on the test database fails."""
 
     pass
@@ -44,7 +44,7 @@ def import_csv_to_sqlite(
         cursor = conn.cursor()
         cursor.execute(f"PRAGMA user_version = {src_version}")
         if cursor.execute("PRAGMA user_version").fetchone()[0] != src_version:
-            raise FailedSettingVersionException()
+            raise FailedSettingVersionError()
 
 
 def read_user_version_from_sqlite(db_path: Path):

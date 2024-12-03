@@ -13,7 +13,7 @@ SECRET_REF = re.compile(
 )
 
 
-class MissingSecretException(Exception):
+class MissingSecretError(Exception):
     def __init__(self, variable):
         super().__init__(f'Secret "{variable}" could not be found.')
 
@@ -68,7 +68,7 @@ def _resolve_secrets(variables):
         try:
             replacements[source, name] = os.environ[name]
         except KeyError as exc:
-            raise MissingSecretException(name) from exc
+            raise MissingSecretError(name) from exc
     return replacements
 
 
