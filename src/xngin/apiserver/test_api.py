@@ -1,10 +1,10 @@
-from datetime import datetime, timedelta
 import glob
 import json
 import logging
 import os
 import shutil
 import tempfile
+from datetime import datetime, timedelta
 from pathlib import Path
 
 import pytest
@@ -12,6 +12,7 @@ from fastapi.testclient import TestClient
 
 from xngin.apiserver import conftest
 from xngin.apiserver.main import app
+from xngin.apiserver.testing.assertions import assert_same
 from xngin.apiserver.testing.hurl import Hurl
 from xngin.apiserver.webhook_types import (
     WebhookRequestUpdate,
@@ -75,8 +76,10 @@ def test_api(script, update_api_tests_flag, use_deterministic_random):
         assert response.status_code == hurl.expected_status, (
             f"HTTP response body: {temporary.name}\nResponse:\n{trunc(response.content)}"
         )
-        assert response.json() == json.loads(hurl.expected_response), (
-            f"HTTP response body: {temporary.name}\nResponse:\n{trunc(response.content)}"
+        assert_same(
+            response.json(),
+            json.loads(hurl.expected_response),
+            extra=f"HTTP response body: {temporary.name}\nResponse:\n{trunc(response.content)}",
         )
     except AssertionError:
         if update_api_tests_flag:
