@@ -317,7 +317,7 @@ def infer_table_from_cursor(
     try:
         with engine.connect() as connection:
             # TODO: get the schema from the user's settings or the config sheet
-            safe_table = sqlalchemy.quoted_name(f"transforms.{table_name}", quote=True)
+            safe_table = sqlalchemy.quoted_name(table_name, quote=True)
             # Create a select statement - this is safe from SQL injection
             query = sqlalchemy.select(text("*")).select_from(text(safe_table)).limit(0)
             result = connection.execute(query)
@@ -364,8 +364,8 @@ def infer_table_from_cursor(
                         name, sa_type, nullable=null_ok if null_ok is not None else True
                     )
                 )
-
-            return sqlalchemy.Table(table_name, metadata, *columns)
+            # TODO: use param schema= instead of allowing unquoted dotted table_names which won't work with pg
+            return sqlalchemy.Table(table_name, metadata, *columns, quote=False)
     except NoSuchTableError as nste:
         metadata.reflect(engine)
         existing_tables = metadata.tables.keys()
@@ -382,7 +382,9 @@ def infer_table(engine: sqlalchemy.engine.Engine, table_name: str, use_reflectio
     metadata = sqlalchemy.MetaData()
     try:
         if use_reflection:
-            return sqlalchemy.Table(table_name, metadata, autoload_with=engine)
+            return sqlalchemy.Table(
+                table_name, metadata, autoload_with=engine, quote=False
+            )
         # This method of introspection should only be used if the db dialect doesn't support Sqlalchemy2 reflection.
         return infer_table_from_cursor(engine, table_name)
     except sqlalchemy.exc.ProgrammingError:
