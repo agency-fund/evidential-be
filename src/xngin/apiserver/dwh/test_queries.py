@@ -401,5 +401,11 @@ def test_query_baseline_metrics(db_session):
             available_n=3,
         ),
     ]
-    # TODO: use float safe comparison
-    assert row == expected
+    numeric_fields = {"metric_baseline", "metric_stddev", "available_n"}
+    for actual, result in zip(row, expected, strict=True):
+        assert actual.metric_name == result.metric_name
+        assert actual.metric_type == result.metric_type
+        # pytest.approx does a reasonable fuzzy comparison of floats for non-nested dictionaries.
+        assert actual.model_dump(include=numeric_fields) == pytest.approx(
+            result.model_dump(include=numeric_fields)
+        )

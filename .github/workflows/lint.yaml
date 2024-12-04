@@ -17,7 +17,6 @@ env:
   DEBIAN_FRONTEND: noninteractive
   FORCE_COLOR: "1"
   PYTHONUNBUFFERED: "1"
-  UV_SYSTEM_PYTHON: "1"
 
 jobs:
   ruff:

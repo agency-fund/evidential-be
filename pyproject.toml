@@ -37,7 +37,7 @@ markers = [
     "integration: integration tests that rely on remote resources",
     "nondeterministic: tests that are nondeterministic (but should be)"
     ]
-addopts = "-m 'not integration' -m 'not nondeterministic'"
+addopts = "-m 'not integration and not nondeterministic'"
 
 [tool.ruff]
 preview = true

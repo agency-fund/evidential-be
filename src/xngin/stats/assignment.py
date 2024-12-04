@@ -33,7 +33,7 @@ def assign_treatment(
     arm_names: list[str],
     experiment_id: str,
     description: str,
-    fstat_thresh: float = 0.1,
+    fstat_thresh: float = 0.5,
     random_state: int | None = None,
 ) -> ExperimentAssignment:
     """
@@ -137,10 +137,10 @@ def assign_treatment(
 
     # Return the ExperimentAssignment with the list of participants
     return ExperimentAssignment(
-        f_statistic=f_stat,
+        f_statistic=np.round(f_stat, 9),
         numerator_df=model.df_model,
         denominator_df=model.df_resid,
-        p_value=f_pvalue,
+        p_value=np.round(f_pvalue, 9),
         balance_ok=f_pvalue > fstat_thresh,
         experiment_id=experiment_id,
         description=description,

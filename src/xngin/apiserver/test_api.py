@@ -28,8 +28,6 @@ client = TestClient(app)
 
 def mark_nondeterministic_tests(c):
     """Marks known nondeterministic tests with a mark that allows us to skip them except when requested."""
-    if c.endswith("assign.hurl"):
-        return pytest.param(c, marks=[pytest.mark.nondeterministic])
     return c
 
 
