@@ -402,7 +402,7 @@ def test_query_baseline_metrics(db_session):
         ),
     ]
     numeric_fields = {"metric_baseline", "metric_stddev", "available_n"}
-    for actual, result in zip(row, expected, strict=False):
+    for actual, result in zip(row, expected, strict=True):
         assert actual.metric_name == result.metric_name
         assert actual.metric_type == result.metric_type
         # pytest.approx does a reasonable fuzzy comparison of floats for non-nested dictionaries.
