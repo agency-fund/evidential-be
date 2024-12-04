@@ -5,6 +5,7 @@ on:
     branches: [ main ]
   pull_request:
     branches: [ main ]
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -31,9 +32,9 @@ jobs:
         os: [ ubuntu-22.04, macos-14 ]
     steps:
       - uses: actions/checkout@v4
-      - uses: astral-sh/setup-uv@v3
+      - uses: astral-sh/setup-uv@v4
         with:
-          version: "0.5.4"
+          version: "0.5.5"
           enable-cache: true
       - if: startsWith(matrix.os, 'macos-')
         run: |
@@ -59,6 +60,9 @@ jobs:
         run: |
           uv run xngin-cli --help
           uv run xngin-cli export-json-schemas
+          uv run xngin-cli validate-settings ./src/xngin/apiserver/testdata/xngin.testing.settings.json
+          uv run xngin-cli validate-settings ./src/xngin/apiserver/testdata/xngin.gha.settings.json
+          uv run xngin-cli validate-settings xngin.settings.json
 
           # import/export lifecycle
           uv run xngin-cli bootstrap-testing-dwh --force
@@ -88,9 +92,9 @@ jobs:
           - 5499:5432
     steps:
       - uses: actions/checkout@v4
-      - uses: astral-sh/setup-uv@v3
+      - uses: astral-sh/setup-uv@v4
         with:
-          version: "0.5.4"
+          version: "0.5.5"
           enable-cache: true
       - run: uv sync --locked
       - env:
