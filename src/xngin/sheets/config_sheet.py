@@ -101,7 +101,7 @@ class ConfigWorksheet(BaseModel):
 
     def get_unique_id_col(self):
         """Gets the name of the unique ID field."""
-        return next(i.column_name for i in self.columns if i.is_unique_id)
+        return next((i.column_name for i in self.columns if i.is_unique_id), None)
 
     @model_validator(mode="after")
     def check_one_unique_id(self) -> "ConfigWorksheet":
