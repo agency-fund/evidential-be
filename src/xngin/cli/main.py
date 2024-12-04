@@ -7,17 +7,23 @@ import sys
 from pathlib import Path
 from typing import Annotated
 
+import boto3
 import gspread
+import pandas as pd
+import psycopg2
 import sqlalchemy
 import typer
 from gspread import GSpreadException
+from pydantic import ValidationError
+from pydantic_core import from_json
 from rich.console import Console
-from sqlalchemy.exc import NoSuchTableError
+from sqlalchemy import create_engine, make_url, func, text
+from sqlalchemy import select
+from sqlalchemy.orm import Session
 
 from xngin.apiserver import settings
 from xngin.apiserver.api_types import DataType
 from xngin.apiserver.settings import (
-    SqlalchemyAndTable,
     SheetRef,
     XnginSettings,
     CannotFindTableException,
@@ -30,6 +36,8 @@ from xngin.sheets.config_sheet import (
     create_sheetconfig_from_table,
     ConfigWorksheet,
 )
+
+REDSHIFT_HOSTNAME_SUFFIX = "redshift.amazonaws.com"
 
 err_console = Console(stderr=True)
 app = typer.Typer(help=__doc__)
@@ -46,27 +54,13 @@ def infer_config_from_schema(dsn: str, table: str):
     :param table The name of the table to inspect.
     """
     try:
-        dwh = get_sqlalchemy_table(
-            SqlalchemyAndTable(
-                sqlalchemy_url=sqlalchemy.engine.make_url(dsn), table_name=table
-            )
+        dwh = settings.infer_table(
+            sqlalchemy.create_engine(sqlalchemy.engine.make_url(dsn)), table
         )
     except CannotFindTableException as cfte:
         err_console.print(cfte.message)
         raise typer.Exit(1) from cfte
     return create_sheetconfig_from_table(dwh)
-
-
-def get_sqlalchemy_table(sqlat: SqlalchemyAndTable):
-    """Connects to a SQLAlchemy DSN and creates a sqlalchemy.Table for introspection."""
-    engine = settings.sqlalchemy_connect(sqlat.sqlalchemy_url)
-    metadata = sqlalchemy.MetaData()
-    try:
-        return sqlalchemy.Table(sqlat.table_name, metadata, autoload_with=engine)
-    except NoSuchTableError as nste:
-        metadata.reflect(engine)
-        existing_tables = metadata.tables.keys()
-        raise CannotFindTableException(sqlat.table_name, existing_tables) from nste
 
 
 @app.command()
@@ -81,6 +75,111 @@ def bootstrap_testing_dwh(
     testing_dwh.create_dwh_sqlite_database(src, dest, force=force)
 
 
+def csv_to_ddl(csv_path: Path, table_name: str) -> str:
+    """Helper to transform a CSV with Pandas-inferred schema into a CREATE TABLE statement."""
+    df = pd.read_csv(csv_path)
+    type_map = {
+        "int64": "INTEGER",
+        "float64": "DECIMAL",
+        "object": "VARCHAR(255)",
+        "datetime64[ns]": "TIMESTAMP",
+        "bool": "BOOLEAN",
+    }
+    columns = [
+        f'"{col}" {type_map.get(str(dtype), "VARCHAR(255)")}'
+        for col, dtype in df.dtypes.items()
+    ]
+    return f"""CREATE TABLE {table_name} ({",\n    ".join(columns)});"""
+
+
+@app.command()
+def create_testing_dwh(
+    password: Annotated[
+        str, typer.Option(envvar="PGPASSWORD", help="The database password.")
+    ],
+    dsn: Annotated[str, typer.Option(help="The SQLAlchemy URL for the database.")],
+    src: Annotated[
+        Path,
+        typer.Option(
+            help="Local path to the testing data warehouse CSV. This may be zstd-compressed."
+        ),
+    ] = testing_dwh.TESTING_DWH_RAW_DATA,
+    table_name: Annotated[
+        str,
+        typer.Option(
+            help="Desired name of the data warehouse table. This will be replaced if it already exists."
+        ),
+    ] = "dwh",
+    bucket: Annotated[
+        str | None,
+        typer.Option(
+            help="Name of the temporary S3 bucket that is readable by Redshfit when --iam-role is assumed. Required when connecting to Redshift."
+        ),
+    ] = None,
+    iam_role: Annotated[
+        str | None,
+        typer.Option(
+            help="ARN of an IAM Role for Redshift to assume when reading from the bucket specified by --bucket. Required when connecting to Redshift."
+        ),
+    ] = None,
+):
+    """Loads the testing data warehouse CSV into a SQLAlchemy database or Redshift Cluster.
+
+    The schema of the CSV is inferred by Pandas df.read_csv helper method.
+
+    Note: The schemas may be different
+    """
+    url = make_url(dsn).set(password=password)
+    if url.host.endswith(REDSHIFT_HOSTNAME_SUFFIX):
+        if not bucket:
+            print("--bucket is required when importing into Redshift.")
+            raise typer.Exit(2)
+        if not iam_role:
+            print("--iam-role is required when importing into Redshift.")
+            raise typer.Exit(2)
+        create_table = csv_to_ddl(src, table_name)
+        print(create_table)
+        with (
+            psycopg2.connect(
+                database=url.database,
+                host=url.host,
+                password=url.password,
+                port=url.port,
+                user=url.username,
+            ) as conn,
+            conn.cursor() as cur,
+        ):
+            print("Dropping...")
+            cur.execute(f"DROP TABLE IF EXISTS {table_name} ")
+            print("Creating...")
+            cur.execute(create_table)
+            key = src.name
+            print(f"Uploading to s3://{bucket}/{key}...")
+            s3 = boto3.client("s3")
+            s3.upload_file(src, bucket, f"{key}")
+            print("Loading...")
+            zstd = "ZSTD" if key.endswith(".zst") else ""
+            cur.execute(
+                f"""COPY {table_name} FROM 's3://{bucket}/{key}' IAM_ROLE '{iam_role}' FORMAT CSV IGNOREHEADER 1 {zstd};"""
+            )
+            cur.execute(f"SELECT COUNT(*) FROM {table_name}")
+            count = cur.fetchone()[0]
+            print("Deleting temporary file...")
+            s3.delete_object(Bucket=bucket, Key=key)
+            print(f"Loaded {count} rows into {table_name}.")
+    else:
+        print("Reading CSV...")
+        df = pd.read_csv(src)
+        print("Loading...")
+        engine = create_engine(url)
+        df.to_sql(table_name, engine, if_exists="replace", index=False)
+        with Session(engine) as session:
+            row_count = session.scalar(
+                select(func.count(text("*"))).select_from(text("dwh"))
+            )
+            print(f"Loaded {row_count} rows into {table_name}.")
+
+
 @app.command()
 def bootstrap_spreadsheet(
     dsn: Annotated[
@@ -91,7 +190,7 @@ def bootstrap_spreadsheet(
         typer.Argument(
             ...,
             help="The name of the table to pull field metadata from. If creating a Google Sheet, this will also be "
-            "used as the worksheet name, unless overridden by --worksheet-name.",
+            "used as the worksheet name, unless overridden by --participant-type.",
         ),
     ],
     create_gsheet: Annotated[
@@ -101,12 +200,12 @@ def bootstrap_spreadsheet(
             help="Create a Google Sheet version of the configuration spreadsheet from `table_name`.",
         ),
     ] = False,
-    worksheet_name: Annotated[
+    participant_type: Annotated[
         str | None,
         typer.Option(
             ...,
             help="When creating the Google Sheet, use the specified value rather than the table name "
-            "as the worksheet name.",
+            "as the worksheet name. This corresponds to the participant_type field in the settings file.",
         ),
     ] = None,
     share_email: Annotated[
@@ -148,9 +247,9 @@ def bootstrap_spreadsheet(
 
     gc = gspread.service_account()
     # TODO: if the sheet exists already, add a new worksheet instead of erroring.
-    if worksheet_name is None:
-        worksheet_name = table_name
-    sheet = gc.create(worksheet_name)
+    if participant_type is None:
+        participant_type = table_name
+    sheet = gc.create(participant_type)
     # The "Sheet1" worksheet is created automatically. We don't want to use that, so hold on to its ID for later
     # so that we can delete it.
     sheets_to_delete = [s.id for s in sheet.worksheets()]
@@ -224,6 +323,20 @@ def export_json_schemas(output: Path = ".schemas"):
         with open(filename, "w") as outf:
             outf.write(json.dumps(model.model_json_schema(), indent=2, sort_keys=True))
             print(f"Wrote {filename}.")
+
+
+@app.command()
+def validate_settings(file: Path):
+    """Validates a settings .json file against the Pydantic models."""
+
+    with open(file) as f:
+        config = f.read()
+    try:
+        XnginSettings.model_validate(from_json(config))
+    except ValidationError as verr:
+        print(f"{file} failed validation:", file=sys.stderr)
+        print(verr, file=sys.stderr)
+        raise typer.Exit(1) from verr
 
 
 if __name__ == "__main__":

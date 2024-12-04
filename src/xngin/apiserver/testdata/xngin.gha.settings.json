@@ -1,0 +1,43 @@
+{
+  "trusted_ips": [
+    "127.0.0.1"
+  ],
+  "client_configs": [
+    {
+      "id": "gha-postgres",
+      "config": {
+        "type": "remote",
+        "participants": [
+          {
+            "participant_type": "dwh",
+            "table_name": "dwh",
+            "sheet": {
+              "url": "file://src/xngin/apiserver/testdata/testing_sheet.csv",
+              "worksheet": "Sheet1"
+            }
+          }
+        ],
+        "webhook_config": {
+          "actions": {
+            "assignment_file": null,
+            "commit": null,
+            "update_description": null,
+            "update_timestamps": null
+          },
+          "common_headers": {
+            "authorization": null
+          }
+        },
+        "dwh": {
+          "dbname": "postgres",
+          "driver": "postgresql+psycopg",
+          "host": "127.0.0.1",
+          "password": "postgres",
+          "port": 5499,
+          "user": "postgres",
+          "sslmode": "disable"
+        }
+      }
+    }
+  ]
+}

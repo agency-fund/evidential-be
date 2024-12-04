@@ -25,7 +25,16 @@ logger = logging.getLogger(__name__)
 conftest.setup(app)
 client = TestClient(app)
 
-STATIC_TESTS = tuple(glob.glob(str(Path(__file__).parent / "testdata/*.hurl")))
+
+def mark_nondeterministic_tests(c):
+    """Marks known nondeterministic tests with a mark that allows us to skip them except when requested."""
+    return c
+
+
+API_TESTS = [
+    mark_nondeterministic_tests(c)
+    for c in glob.glob(str(Path(__file__).parent / "testdata/*.hurl"))
+]
 
 
 def trunc(s, n=4096):
@@ -37,8 +46,8 @@ def trunc(s, n=4096):
     return s
 
 
-@pytest.fixture
-def update_api_tests_flag(pytestconfig):
+@pytest.fixture(name="update_api_tests_flag")
+def fixture_update_api_tests_flag(pytestconfig):
     """Returns true iff the UPDATE_API_TESTS environment variable resembles a truthy value.
 
     TODO: replace this with something less error-prone.
@@ -46,8 +55,8 @@ def update_api_tests_flag(pytestconfig):
     return os.environ.get("UPDATE_API_TESTS", "").lower() in ("true", "1")
 
 
-@pytest.mark.parametrize("script", STATIC_TESTS)
-def test_api(script, update_api_tests_flag):
+@pytest.mark.parametrize("script", API_TESTS)
+def test_api(script, update_api_tests_flag, use_deterministic_random):
     with open(script) as f:
         contents = f.read()
     hurl = Hurl.from_script(contents)

@@ -9,20 +9,18 @@ from pydantic import BaseModel
 import sqlalchemy
 from fastapi import FastAPI, HTTPException, Depends, Path, Query, Response
 from fastapi import Request
+from pandas import DataFrame
 from sqlalchemy import distinct
-
 from xngin.apiserver import database, exceptionhandlers
 from xngin.apiserver.api_types import (
     DataTypeClass,
     AudienceSpec,
     DesignSpec,
     ExperimentAssignment,
-    UnimplementedResponse,
     GetStrataResponseElement,
     GetFiltersResponseElement,
     GetMetricsResponseElement,
-    GetPowerResponse,
-    GetPowerResponseElement,
+    PowerAnalysis,
 )
 from xngin.apiserver.dependencies import (
     httpx_dependency,
@@ -30,7 +28,7 @@ from xngin.apiserver.dependencies import (
     config_dependency,
     gsheet_cache,
 )
-from xngin.apiserver.dwh.queries import get_stats_on_metrics
+from xngin.apiserver.dwh.queries import get_stats_on_metrics, query_for_participants
 from xngin.apiserver.gsheet_cache import GSheetCache
 from xngin.apiserver.settings import (
     WebhookConfig,
@@ -39,8 +37,10 @@ from xngin.apiserver.settings import (
     XnginSettings,
     ClientConfig,
     CannotFindTableException,
-    get_sqlalchemy_table_from_engine,
+    infer_table,
 )
+from xngin.stats.power import check_power
+from xngin.stats.assignment import assign_treatment
 from xngin.apiserver.utils import substitute_url
 from xngin.sheets.config_sheet import (
     fetch_and_parse_sheet,
@@ -109,10 +109,9 @@ def get_strata(
     This reimplements dwh.R get_strata().
     """
     config = require_config(client)
-    with config.dbsession(commons.participant_type) as session:
-        sa_table = get_sqlalchemy_table_from_engine(
-            session.get_bind(), commons.participant_type
-        )
+    participants = config.find_participants(commons.participant_type)
+    with config.dbsession() as session:
+        sa_table = infer_table(session.get_bind(), participants.table_name)
         db_schema = generate_column_descriptors(sa_table)
         config_sheet = fetch_worksheet(commons, config, gsheets)
         strata_cols = {c.column_name: c for c in config_sheet.columns if c.is_strata}
@@ -144,10 +143,9 @@ def get_filters(
     client: Annotated[ClientConfig | None, Depends(config_dependency)] = None,
 ) -> list[GetFiltersResponseElement]:
     config = require_config(client)
-    with config.dbsession(commons.participant_type) as session:
-        sa_table = get_sqlalchemy_table_from_engine(
-            session.get_bind(), commons.participant_type
-        )
+    participants = config.find_participants(commons.participant_type)
+    with config.dbsession() as session:
+        sa_table = infer_table(session.get_bind(), participants.table_name)
         db_schema = generate_column_descriptors(sa_table)
         config_sheet = fetch_worksheet(commons, config, gsheets)
         filter_cols = {c.column_name: c for c in config_sheet.columns if c.is_filter}
@@ -215,10 +213,9 @@ def get_metrics(
     This reimplements dwh.R get_metrics().
     """
     config = require_config(client)
-    with config.dbsession(commons.participant_type) as session:
-        sa_table = get_sqlalchemy_table_from_engine(
-            session.get_bind(), commons.participant_type
-        )
+    participants = config.find_participants(commons.participant_type)
+    with config.dbsession() as session:
+        sa_table = infer_table(session.get_bind(), participants.table_name)
         db_schema = generate_column_descriptors(sa_table)
         config_sheet = fetch_worksheet(commons, config, gsheets)
         metric_cols = {c.column_name: c for c in config_sheet.columns if c.is_metric}
@@ -242,24 +239,24 @@ def get_metrics(
     summary="Check power given an experiment and audience specification.",
     tags=["Experiment Design"],
 )
-def check_power(
+def check_power_api(
     design_spec: DesignSpec,
     audience_spec: AudienceSpec,
     gsheets: Annotated[GSheetCache, Depends(gsheet_cache)],
     client: Annotated[ClientConfig | None, Depends(config_dependency)] = None,
     refresh: Annotated[bool, Query(description="Refresh the cache.")] = False,
-) -> GetPowerResponse:
+) -> PowerAnalysis:
     """
-    TODO(roboton): finish implementing this method
+    Calculates statistical power given an AudienceSpec and a DesignSpec
     """
     config = require_config(client)
-    participant_type = audience_spec.participant_type
-    with config.dbsession(participant_type) as session:
-        sa_table = get_sqlalchemy_table_from_engine(
-            session.get_bind(), participant_type
-        )
+    participant = config.find_participants(audience_spec.participant_type)
+    with config.dbsession() as session:
+        sa_table = infer_table(session.get_bind(), participant.table_name)
         config_sheet = fetch_worksheet(
-            CommonQueryParams(participant_type=participant_type, refresh=refresh),
+            CommonQueryParams(
+                participant_type=participant.participant_type, refresh=refresh
+            ),
             config,
             gsheets,
         )
@@ -267,42 +264,51 @@ def check_power(
         metric_stats = get_stats_on_metrics(
             session,
             sa_table,
-            list(dsm.metric_name for dsm in design_spec.metrics),
+            design_spec.metrics,
             audience_spec,
         )
 
-        # TODO(roboton): Implement power calculation logic.
-
-        return [
-            GetPowerResponseElement(
-                metric_name=metric_stat.metric,
-                metric_pct_change=0.0,  # TODO
-                metric_type=metric_stat.metric_type,
-                stats=metric_stat.stats,  # TODO
-                metric_target=0,  # TODO
-                target_n=0,  # TODO
-                sufficient_n=False,  # TODO
-                needed_target=None,  # TODO
-                msg=_unique_id_col,  # TODO
-            )
-            for metric_stat in metric_stats
-        ]
+        return check_power(
+            metrics=metric_stats,
+            n_arms=len(design_spec.arms),
+            power=design_spec.power,
+            alpha=design_spec.alpha,
+        )
 
 
 @app.post(
     "/assign",
     summary="Assign treatment given experiment and audience specification.",
-    response_model=UnimplementedResponse,
     tags=["Manage Experiments"],
 )
-def assign_treatment(
+def assign_treatment_api(
     design_spec: DesignSpec,
     audience_spec: AudienceSpec,
+    chosen_n: int,
+    random_state: int,
     client: Annotated[ClientConfig | None, Depends(config_dependency)] = None,
-    chosen_n: int = 1000,
-):
-    # Implement treatment assignment logic
-    return UnimplementedResponse()
+) -> ExperimentAssignment:
+    config = require_config(client)
+    participant = config.find_participants(audience_spec.participant_type)
+    with config.dbsession() as session:
+        sa_table = infer_table(session.get_bind(), participant.table_name)
+        participants = query_for_participants(
+            session, sa_table, audience_spec, chosen_n
+        )
+
+    metric_names = [metric.metric_name for metric in design_spec.metrics]
+    arm_names = [arm.arm_name for arm in design_spec.arms]
+    return assign_treatment(
+        data=DataFrame(participants),
+        stratum_cols=design_spec.strata_cols,
+        metric_cols=metric_names,
+        id_col="id",
+        arm_names=arm_names,
+        experiment_id=str(design_spec.experiment_id),
+        description=design_spec.description,
+        fstat_thresh=design_spec.fstat_thresh,
+        random_state=random_state,
+    )
 
 
 @app.get(

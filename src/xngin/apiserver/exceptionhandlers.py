@@ -38,5 +38,5 @@ def setup(app):
             status = 504
         # Return a minimal error message
         return JSONResponse(
-            status_code=status, content={"message": str(type(cause)) or str(exc)}
+            status_code=status, content={"message": str(cause) or str(exc)}
         )

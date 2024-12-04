@@ -17,7 +17,6 @@ env:
   DEBIAN_FRONTEND: noninteractive
   FORCE_COLOR: "1"
   PYTHONUNBUFFERED: "1"
-  UV_SYSTEM_PYTHON: "1"
 
 jobs:
   unittests:
@@ -60,6 +59,9 @@ jobs:
         run: |
           uv run xngin-cli --help
           uv run xngin-cli export-json-schemas
+          uv run xngin-cli validate-settings ./src/xngin/apiserver/testdata/xngin.testing.settings.json
+          uv run xngin-cli validate-settings ./src/xngin/apiserver/testdata/xngin.gha.settings.json
+          uv run xngin-cli validate-settings xngin.settings.json
 
           # import/export lifecycle
           uv run xngin-cli bootstrap-testing-dwh --force
@@ -71,3 +73,35 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - run: docker build .
+  smoke:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 15
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_DB: postgres
+          POSTGRES_PASSWORD: postgres
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 5499:5432
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v3
+        with:
+          version: "0.5.4"
+          enable-cache: true
+      - run: uv sync --locked
+      - env:
+          PGPASSWORD: postgres
+        run: |
+          uv run xngin-cli create-testing-dwh --dsn postgresql+psycopg://postgres:postgres@127.0.0.1:5499/postgres --password postgres
+          XNGIN_SETTINGS=src/xngin/apiserver/testdata/xngin.gha.settings.json uv run fastapi dev src/xngin/apiserver/main.py &
+          sleep 10  # hack
+          curl -fv http://localhost:8000/_settings
+          curl -fv -H "Config-ID: gha-postgres" 'http://localhost:8000/filters?participant_type=dwh'
+          kill %1

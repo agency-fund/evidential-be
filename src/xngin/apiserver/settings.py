@@ -1,7 +1,8 @@
 import json
 import os
+from collections import Counter
 from functools import lru_cache
-from typing import Literal
+from typing import Literal, Annotated
 
 import sqlalchemy
 from pydantic import (
@@ -9,16 +10,17 @@ from pydantic import (
     PositiveInt,
     SecretStr,
     Field,
-    field_serializer,
     field_validator,
+    ConfigDict,
+    model_validator,
 )
 from sqlalchemy import Engine, event, text
 from sqlalchemy.exc import NoSuchTableError
 from sqlalchemy.orm import Session
 
+from xngin.apiserver.settings_secrets import replace_secrets
 from xngin.sqlite_extensions import NumpyStddev
 
-DEFAULT_SECRETS_DIRECTORY = "secrets"
 DEFAULT_SETTINGS_FILE = "xngin.settings.json"
 
 
@@ -27,74 +29,43 @@ def get_settings_for_server():
     """Constructs an XnginSettings for use by the API server."""
     with open(os.environ.get("XNGIN_SETTINGS", DEFAULT_SETTINGS_FILE)) as f:
         settings_raw = json.load(f)
+    settings_raw = replace_secrets(settings_raw)
     return XnginSettings.model_validate(settings_raw)
 
 
-class PostgresDsn(BaseModel):
-    user: str
-    port: PositiveInt = 5432
-    host: str
-    password: SecretStr
-    dbname: str
-    sslmode: Literal[
-        "disable", "allow", "prefer", "require", "verify-ca", "verify-full"
-    ]
+class ConfigBaseModel(BaseModel):
+    model_config = ConfigDict(extra="forbid")
 
 
-class SqlalchemyAndTable(BaseModel):
-    sqlalchemy_url: sqlalchemy.engine.URL
-    table_name: str
-
-    # URL isn't a pydantic model so doesn't know how to generate json schema.
-    # We need to allow non-standard lib types and sub our own description here.
-    model_config = {
-        "arbitrary_types_allowed": True,
-        "json_schema_extra": {"properties": {"sqlalchemy_url": {"type": "string"}}},
-    }
-
-    @field_validator("sqlalchemy_url", mode="before")
-    @classmethod
-    def parse_url(cls, value):
-        """Convert strings into valid sqlalchemy.engine.URLs"""
-
-        if isinstance(value, str):
-            return sqlalchemy.make_url(value)
-        return value
-
-    @field_serializer("sqlalchemy_url")
-    def serialize_url(self, url: sqlalchemy.engine.URL):
-        """If rendering URLs, use the string representation with the pw masked."""
-
-        return url.render_as_string(hide_password=True)
-
-
-class SheetRef(BaseModel):
+class SheetRef(ConfigBaseModel):
     url: str
     # worksheet is the name of the worksheet. This is usually the name of the database warehouse table.
     worksheet: str
 
 
-class Participant(BaseModel):
+class Participant(ConfigBaseModel):
     """Participants are a logical representation of a table in the data warehouse.
 
     Participants are defined by a table_name and a configuration worksheet.
     """
 
+    participant_type: str
     table_name: str
     sheet: SheetRef
 
 
-class ParticipantsMixin(BaseModel):
+class ParticipantsMixin(ConfigBaseModel):
     """ParticipantsMixin can be added to a config type to add standardized participant definitions."""
 
     participants: list[Participant]
 
     def find_participants(self, participant_type: str):
+        """Returns the participant matching participant_type or raises CannotFindParticipantsException."""
         found = next(
             (
                 u
                 for u in self.participants
-                if u.table_name.lower() == participant_type.lower()
+                if u.participant_type.lower() == participant_type.lower()
             ),
             None,
         )
@@ -102,8 +73,20 @@ class ParticipantsMixin(BaseModel):
             raise CannotFindParticipantsException(participant_type)
         return found
 
+    @model_validator(mode="after")
+    def check_unique_participant_types(self):
+        counted = Counter([
+            participant.participant_type for participant in self.participants
+        ])
+        duplicates = [item for item, count in counted.items() if count > 1]
+        if duplicates:
+            raise ValueError(
+                f"Participants with conflicting identifiers found: {', '.join(duplicates)}."
+            )
+        return self
 
-class WebhookUrl(BaseModel):
+
+class WebhookUrl(ConfigBaseModel):
     """Represents a url and HTTP method to use with it."""
 
     method: Literal["get", "post", "put", "patch"]
@@ -119,7 +102,7 @@ class WebhookUrl(BaseModel):
         return str(value).lower().strip()
 
 
-class WebhookActions(BaseModel):
+class WebhookActions(ConfigBaseModel):
     """The set of supported actions that trigger a user callback."""
 
     # No action is required, so a user can leave it out completely.
@@ -129,129 +112,148 @@ class WebhookActions(BaseModel):
     update_description: WebhookUrl | None = None
 
 
-class WebhookCommonHeaders(BaseModel):
+class WebhookCommonHeaders(ConfigBaseModel):
     """Enumerates supported headers to attach to all webhook requests."""
 
     authorization: SecretStr | None
 
 
-class WebhookConfig(BaseModel):
+class WebhookConfig(ConfigBaseModel):
     """Top-level configuration object for user-defined webhooks."""
 
     actions: WebhookActions
     common_headers: WebhookCommonHeaders
 
 
-class WebhookMixin(BaseModel):
-    """Add this to a config type to support using webhooks to persist changes.
+class Dsn(ConfigBaseModel):
+    """Describes a set of parameters suitable for connecting to most types of remote databases."""
 
-    Example:
-    "webhook_config": {
-      "actions": {
-        "commit": {
-          "method": "POST",
-          "url": "http://localhost:4001/dev/api/v1/experiment-commit/save-experiment-commit"
-        },
-        "assignment_file": {
-          "method": "GET",
-          "url": "http://localhost:4001/dev/api/v1/experiment-commit/get-file-name-by-experiment-id/{experiment_id}",
-        }
-      },
-      "common_headers": {
-        "authorization": "abc"
-      }
-    }
-    """
+    driver: Literal[
+        "postgresql+psycopg",  # Preferred for most Postgres-compatible databases.
+        "postgresql+psycopg2",  # Use with: Redshift
+    ]
+    user: str
+    port: PositiveInt = 5432
+    host: str
+    password: SecretStr
+    dbname: str
+    sslmode: (
+        Literal["disable", "allow", "prefer", "require", "verify-ca", "verify-full"]
+        | None
+    ) = None
+
+    def is_redshift(self):
+        """Return true iff the hostname indicates that this is connecting to Redshift."""
+        return self.host.endswith("redshift.amazonaws.com")
+
+    def to_sqlalchemy_url(self):
+        """Creates a sqlalchemy.URL from this Dsn."""
+        url = sqlalchemy.URL.create(
+            drivername=self.driver,
+            username=self.user,
+            password=self.password.get_secret_value(),
+            host=self.host,
+            port=self.port,
+            database=self.dbname,
+        )
+        if self.driver.startswith("postgresql"):
+            query = dict(url.query)
+            query.update({
+                "sslmode": self.sslmode if self.sslmode else "verify-full",
+                # re: redshift issue https://github.com/psycopg/psycopg/issues/122#issuecomment-985742751
+                "client_encoding": "utf-8",
+            })
+            url = url.set(query=query)
+        return url
+
+
+class DbapiArg(ConfigBaseModel):
+    """Describes a DBAPI connect() argument.
+
+    These can be arbitrary kv pairs and are database-driver specific."""
+
+    arg: str
+    value: str
+
+
+class RemoteDatabaseConfig(ParticipantsMixin, ConfigBaseModel):
+    """RemoteDatabaseConfig defines a configuration for a remote data warehouse."""
 
     webhook_config: WebhookConfig
 
+    type: Literal["remote"]
 
-class StandardDatabaseConnectionMixin:
-    def dbsession(self, participant_type: str):
+    dwh: Dsn
+
+    dbapi_args: list[DbapiArg] | None = None
+
+    def dbsession(self):
         """Returns a Session to be used to send queries to the customer database.
 
         Use this in a `with` block to ensure correct transaction handling. If you need the
         sqlalchemy Engine, call .get_bind().
         """
-        url = self.to_sqlalchemy_url_and_table(participant_type).sqlalchemy_url
-        engine = sqlalchemy_connect(url)
+        url = self.dwh.to_sqlalchemy_url()
+        connect_args = {}
+        if self.dbapi_args:
+            for entry in self.dbapi_args:
+                connect_args[entry.arg] = entry.value
+        if url.get_backend_name() == "postgres":
+            connect_args["connect_timeout"] = 5
+        engine = sqlalchemy.create_engine(
+            url,
+            connect_args=connect_args,
+            echo=os.environ.get("ECHO_SQL", "").lower() in ("true", "1"),
+        )
         self.extra_engine_setup(engine)
+        return Session(engine)
 
-        if url.get_backend_name() == "sqlite":
+    def extra_engine_setup(self, engine: Engine):
+        """Partially address any Redshift incompatibilities."""
 
-            @event.listens_for(engine, "connect")
-            def register_sqlite_functions(dbapi_connection, _):
-                NumpyStddev.register(dbapi_connection)
+        # re: https://github.com/sqlalchemy-redshift/sqlalchemy-redshift/issues/264#issuecomment-2181124071
+        if self.dwh.is_redshift() and hasattr(engine.dialect, "_set_backslash_escapes"):
+            engine.dialect._set_backslash_escapes = lambda _: None
+
+
+class SqliteLocalConfig(ParticipantsMixin, ConfigBaseModel):
+    type: Literal["sqlite_local"]
+    sqlite_filename: str
+
+    def dbsession(self):
+        """Returns a Session to be used to send queries to a SQLite database.
+
+        Use this in a `with` block to ensure correct transaction handling. If you need the
+        sqlalchemy Engine, call .get_bind().
+        """
+        url = sqlalchemy.URL.create(
+            drivername="sqlite",
+            database=self.sqlite_filename,
+            query={"mode": "ro"},
+        )
+        engine = sqlalchemy.create_engine(
+            url,
+            connect_args={"timeout": 5},
+            echo=os.environ.get("ECHO_SQL", "").lower() in ("true", "1"),
+        )
+
+        @event.listens_for(engine, "connect")
+        def register_sqlite_functions(dbapi_connection, _):
+            NumpyStddev.register(dbapi_connection)
 
         return Session(engine)
 
 
-class RocketLearningConfig(
-    StandardDatabaseConnectionMixin, ParticipantsMixin, WebhookMixin, BaseModel
-):
-    type: Literal["customer"]
-
-    dwh: PostgresDsn
-
-    def to_sqlalchemy_url_and_table(self, participant_type: str) -> SqlalchemyAndTable:
-        participants = self.find_participants(participant_type)
-        return SqlalchemyAndTable(
-            sqlalchemy_url=sqlalchemy.URL.create(
-                # re: psycopg (3) doesn't work with redshift and
-                # "redshift+redshift_connector" doesn't work with sqlalchemy2
-                drivername="postgresql+psycopg2",
-                username=self.dwh.user,
-                password=self.dwh.password.get_secret_value(),
-                host=self.dwh.host,
-                port=self.dwh.port,
-                database=self.dwh.dbname,
-                query={
-                    "sslmode": self.dwh.sslmode,
-                    # re: redshift issue https://github.com/psycopg/psycopg/issues/122#issuecomment-985742751
-                    "client_encoding": "utf-8",
-                },
-            ),
-            table_name=participants.table_name,
-        )
-
-    def extra_engine_setup(self, engine: Engine):
-        """Partially address any redshift incompatibilities."""
-
-        # re: https://github.com/sqlalchemy-redshift/sqlalchemy-redshift/issues/264#issuecomment-2181124071
-        if hasattr(engine.dialect, "_set_backslash_escapes"):
-            engine.dialect._set_backslash_escapes = lambda _: None
+type ClientConfigType = RemoteDatabaseConfig | SqliteLocalConfig
 
 
-class SqliteLocalConfig(StandardDatabaseConnectionMixin, ParticipantsMixin, BaseModel):
-    type: Literal["sqlite_local"]
-    sqlite_filename: str
-
-    def to_sqlalchemy_url_and_table(self, participant_type: str) -> SqlalchemyAndTable:
-        """Returns a tuple of SQLAlchemy URL and a table name."""
-        participants = self.find_participants(participant_type)
-        return SqlalchemyAndTable(
-            sqlalchemy_url=sqlalchemy.URL.create(
-                drivername="sqlite",
-                database=self.sqlite_filename,
-                query={"mode": "ro"},
-            ),
-            table_name=participants.table_name,
-        )
-
-    def extra_engine_setup(self, engine: Engine):
-        pass
-
-
-type ClientConfigType = RocketLearningConfig | SqliteLocalConfig
-
-
-class ClientConfig(BaseModel):
+class ClientConfig(ConfigBaseModel):
     id: str
-    config: ClientConfigType = Field(..., discriminator="type")
+    config: Annotated[ClientConfigType, Field(discriminator="type")]
 
 
-class XnginSettings(BaseModel):
-    trusted_ips: list[str] = Field(default_factory=list)
+class XnginSettings(ConfigBaseModel):
+    trusted_ips: Annotated[list[str], Field(default_factory=list)]
     db_connect_timeout_secs: int = 3
     client_configs: list[ClientConfig]
 
@@ -287,13 +289,13 @@ class CannotFindParticipantsException(Exception):
 
     def __init__(self, participant_type):
         self.participant_type = participant_type
-        self.message = f"The configuration for participant type {participant_type} does not exist. Check the configuration files."
+        self.message = f"The configuration for participant type '{participant_type}' does not exist. Check the configuration files."
 
     def __str__(self):
         return self.message
 
 
-def sqlalchemy_table_from_cursor(
+def infer_table_from_cursor(
     engine: sqlalchemy.engine.Engine, table_name: str
 ) -> sqlalchemy.Table:
     """Creates a SQLAlchemy Table instance from cursor description metadata."""
@@ -358,35 +360,20 @@ def sqlalchemy_table_from_cursor(
         raise CannotFindTableException(table_name, existing_tables) from nste
 
 
-def get_sqlalchemy_table_from_engine(engine: sqlalchemy.engine.Engine, table_name: str):
+def infer_table(engine: sqlalchemy.engine.Engine, table_name: str):
     """Constructs a Table via reflection.
 
     Raises CannotFindTheTableException containing helpful error message if the table doesn't exist.
+
+    TODO: add workarounds for Redshift or other engines here.
     """
     metadata = sqlalchemy.MetaData()
     try:
         return sqlalchemy.Table(table_name, metadata, autoload_with=engine)
     except sqlalchemy.exc.ProgrammingError:
         # Fall back to introspection through the cursor description of columns.
-        return sqlalchemy_table_from_cursor(engine, table_name)
+        return infer_table_from_cursor(engine, table_name)
     except NoSuchTableError as nste:
         metadata.reflect(engine)
         existing_tables = metadata.tables.keys()
         raise CannotFindTableException(table_name, existing_tables) from nste
-
-
-def sqlalchemy_connect(sqlalchemy_url):
-    """Connect to a database, given a SQLAlchemy-compatible URL.
-
-    This is intended to be used to connect to customer databases.
-    """
-    connect_args = {}
-    if sqlalchemy_url.get_backend_name() == "postgres":
-        connect_args["connect_timeout"] = 5
-    elif sqlalchemy_url.get_backend_name() == "sqlite":
-        connect_args["timeout"] = 5
-    return sqlalchemy.create_engine(
-        sqlalchemy_url,
-        connect_args=connect_args,
-        echo=os.environ.get("ECHO_SQL", "").lower() in ("true", "1"),
-    )

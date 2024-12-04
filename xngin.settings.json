@@ -4,9 +4,10 @@
     {
       "id": "customer",
       "config": {
-        "type": "customer",
+        "type": "remote",
         "participants": [
           {
+            "participant_type": "transforms",
             "table_name": "transforms",
             "sheet": {
               "url": "https://docs.google.com/spreadsheets/d/redacted/edit",
@@ -34,13 +35,14 @@
             }
           },
           "common_headers": {
-            "authorization": "=secret:CUSTOMER_API_TOKEN"
+            "authorization": "${secret:CUSTOMER_API_TOKEN}"
           }
         },
         "dwh": {
+          "driver": "postgresql+psycopg2",
           "user": "agency",
           "port": 5439,
-          "password": "=secret:CUSTOMER_DWH_PASSWORD",
+          "password": "${secret:CUSTOMER_DWH_PASSWORD}",
           "host": "instance.redshift.amazonaws.com",
           "dbname": "customer_dwh_prod",
           "sslmode": "require"
