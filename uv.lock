@@ -52,7 +52,7 @@ source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "jmespath", marker = "sys_platform == 'darwin' or sys_platform == 'linux'" },
     { name = "python-dateutil", marker = "sys_platform == 'darwin' or sys_platform == 'linux'" },
-    { name = "urllib3", marker = "sys_platform == 'darwin' or sys_platform == 'linux'" },
+    { name = "urllib3", marker = "(sys_platform == 'darwin' and python_full_version == '3.12.*') or (sys_platform == 'linux' and python_full_version == '3.12.*')" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/15/59/62bdffdfa472acde76179fbb1f62aef94406c0e682c47113542a596529bb/botocore-1.35.72.tar.gz", hash = "sha256:6b5fac38ef7cfdbc7781a751e0f78833ccb9149ba815bc238b1dbb75c90fbae5", size = 13332751 }
 wheels = [
@@ -147,6 +147,18 @@ source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/d8/53/6f443c9a4a8358a93a6792e2acffb9d9d5cb0a5cfd8802644b7b1c9a02e4/colorama-0.4.6.tar.gz", hash = "sha256:08695f5cb7ed6e0531a20572697297273c47b8cae5a63ffc6d6ed5c201be6e44", size = 27697 }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/d1/d6/3965ed04c63042e047cb6a3e6ed1a63a35087b6a609aa3a15ed8ac56c221/colorama-0.4.6-py2.py3-none-any.whl", hash = "sha256:4f1d9991f5acc0ca119f9d443620b77f9d6b33703e51011c16baf57afb285fc6", size = 25335 },
+]
+
+[[package]]
+name = "deepdiff"
+version = "8.0.1"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "orderly-set", marker = "sys_platform == 'darwin' or sys_platform == 'linux'" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/62/ba/aced1d6a7d988ca1b6f9b274faed7dafc7356a733e45a457819bddcf2dbc/deepdiff-8.0.1.tar.gz", hash = "sha256:245599a4586ab59bb599ca3517a9c42f3318ff600ded5e80a3432693c8ec3c4b", size = 427721 }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/06/46/01673060e83277a863baf0909b387cd809865cba2d5e7213db76516bedd9/deepdiff-8.0.1-py3-none-any.whl", hash = "sha256:42e99004ce603f9a53934c634a57b04ad5900e0d8ed0abb15e635767489cbc05", size = 82741 },
 ]
 
 [[package]]
@@ -457,6 +469,15 @@ wheels = [
 ]
 
 [[package]]
+name = "orderly-set"
+version = "5.2.2"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/c8/71/5408fee86ce5408132a3ece6eff61afa2c25d5b37cd76bc100a9a4a4d8dd/orderly_set-5.2.2.tar.gz", hash = "sha256:52a18b86aaf3f5d5a498bbdb27bf3253a4e5c57ab38e5b7a56fa00115cd28448", size = 19103 }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/69/71/6f9554919da608cb5bcf709822a9644ba4785cc7856e01ea375f6d808774/orderly_set-5.2.2-py3-none-any.whl", hash = "sha256:f7a37c95a38c01cdfe41c3ffb62925a318a2286ea0a41790c057fc802aec54da", size = 11621 },
+]
+
+[[package]]
 name = "packaging"
 version = "24.2"
 source = { registry = "https://pypi.org/simple" }
@@ -470,7 +491,7 @@ name = "pandas"
 version = "2.2.3"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "numpy", marker = "sys_platform == 'darwin' or sys_platform == 'linux'" },
+    { name = "numpy", marker = "(sys_platform == 'darwin' and python_full_version == '3.12.*') or (sys_platform == 'linux' and python_full_version == '3.12.*')" },
     { name = "python-dateutil", marker = "sys_platform == 'darwin' or sys_platform == 'linux'" },
     { name = "pytz", marker = "sys_platform == 'darwin' or sys_platform == 'linux'" },
     { name = "tzdata", marker = "sys_platform == 'darwin' or sys_platform == 'linux'" },
@@ -545,7 +566,7 @@ name = "psycopg"
 version = "3.2.3"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "typing-extensions", marker = "sys_platform == 'darwin' or sys_platform == 'linux'" },
+    { name = "typing-extensions", marker = "(sys_platform == 'darwin' and python_full_version == '3.12.*') or (sys_platform == 'linux' and python_full_version == '3.12.*')" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/d1/ad/7ce016ae63e231575df0498d2395d15f005f05e32d3a2d439038e1bd0851/psycopg-3.2.3.tar.gz", hash = "sha256:a5764f67c27bec8bfac85764d23c534af2c27b893550377e37ce59c12aac47a2", size = 155550 }
 wheels = [
@@ -850,7 +871,7 @@ name = "sqlalchemy"
 version = "2.0.32"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "greenlet", marker = "(platform_machine == 'AMD64' and sys_platform == 'darwin') or (platform_machine == 'AMD64' and sys_platform == 'linux') or (platform_machine == 'WIN32' and sys_platform == 'darwin') or (platform_machine == 'WIN32' and sys_platform == 'linux') or (platform_machine == 'aarch64' and sys_platform == 'darwin') or (platform_machine == 'aarch64' and sys_platform == 'linux') or (platform_machine == 'amd64' and sys_platform == 'darwin') or (platform_machine == 'amd64' and sys_platform == 'linux') or (platform_machine == 'ppc64le' and sys_platform == 'darwin') or (platform_machine == 'ppc64le' and sys_platform == 'linux') or (platform_machine == 'win32' and sys_platform == 'darwin') or (platform_machine == 'win32' and sys_platform == 'linux') or (platform_machine == 'x86_64' and sys_platform == 'darwin') or (platform_machine == 'x86_64' and sys_platform == 'linux')" },
+    { name = "greenlet", marker = "(platform_machine == 'AMD64' and sys_platform == 'darwin' and python_full_version == '3.12.*') or (platform_machine == 'AMD64' and sys_platform == 'linux' and python_full_version == '3.12.*') or (platform_machine == 'WIN32' and sys_platform == 'darwin' and python_full_version == '3.12.*') or (platform_machine == 'WIN32' and sys_platform == 'linux' and python_full_version == '3.12.*') or (platform_machine == 'aarch64' and sys_platform == 'darwin' and python_full_version == '3.12.*') or (platform_machine == 'aarch64' and sys_platform == 'linux' and python_full_version == '3.12.*') or (platform_machine == 'amd64' and sys_platform == 'darwin' and python_full_version == '3.12.*') or (platform_machine == 'amd64' and sys_platform == 'linux' and python_full_version == '3.12.*') or (platform_machine == 'ppc64le' and sys_platform == 'darwin' and python_full_version == '3.12.*') or (platform_machine == 'ppc64le' and sys_platform == 'linux' and python_full_version == '3.12.*') or (platform_machine == 'win32' and sys_platform == 'darwin' and python_full_version == '3.12.*') or (platform_machine == 'win32' and sys_platform == 'linux' and python_full_version == '3.12.*') or (platform_machine == 'x86_64' and sys_platform == 'darwin' and python_full_version == '3.12.*') or (platform_machine == 'x86_64' and sys_platform == 'linux' and python_full_version == '3.12.*')" },
     { name = "typing-extensions", marker = "sys_platform == 'darwin' or sys_platform == 'linux'" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/af/6f/967e987683908af816aa3072c1a6997ac9933cf38d66b0474fb03f253323/SQLAlchemy-2.0.32.tar.gz", hash = "sha256:c1b88cc8b02b6a5f0efb0345a03672d4c897dc7d92585176f88c67346f565ea8", size = 9546691 }
@@ -1046,6 +1067,7 @@ version = "0.0.1"
 source = { editable = "." }
 dependencies = [
     { name = "boto3", marker = "sys_platform == 'darwin' or sys_platform == 'linux'" },
+    { name = "deepdiff", marker = "sys_platform == 'darwin' or sys_platform == 'linux'" },
     { name = "fastapi", extra = ["standard"], marker = "sys_platform == 'darwin' or sys_platform == 'linux'" },
     { name = "gspread", marker = "sys_platform == 'darwin' or sys_platform == 'linux'" },
     { name = "httpx", marker = "sys_platform == 'darwin' or sys_platform == 'linux'" },
@@ -1075,6 +1097,7 @@ dev = [
 [package.metadata]
 requires-dist = [
     { name = "boto3", specifier = ">=1.35,<1.36" },
+    { name = "deepdiff", specifier = ">=8.0.1,<8.1" },
     { name = "fastapi", extras = ["standard"], specifier = ">=0.115.4,<0.116.0" },
     { name = "gspread", specifier = ">=6.1.2,<6.2.0" },
     { name = "httpx", specifier = ">=0.27.0,<0.28.0" },
