@@ -1,4 +1,5 @@
 import json
+import logging
 import os
 from collections import Counter
 from functools import lru_cache
@@ -22,6 +23,8 @@ from xngin.apiserver.settings_secrets import replace_secrets
 from xngin.sqlite_extensions import NumpyStddev
 
 DEFAULT_SETTINGS_FILE = "xngin.settings.json"
+
+logger = logging.getLogger(__name__)
 
 
 @lru_cache
@@ -372,6 +375,7 @@ def infer_table(engine: sqlalchemy.engine.Engine, table_name: str):
         return sqlalchemy.Table(table_name, metadata, autoload_with=engine)
     except sqlalchemy.exc.ProgrammingError:
         # Fall back to introspection through the cursor description of columns.
+        logger.exception("Falling back to cursor.description for types info!")
         return infer_table_from_cursor(engine, table_name)
     except NoSuchTableError as nste:
         metadata.reflect(engine)
