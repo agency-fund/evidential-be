@@ -9,6 +9,7 @@
         "type": "remote",
         "participants": [
           {
+            "participant_type": "transforms",
             "sheet": {
               "url": "https://docs.google.com/spreadsheets/d/redacted/edit",
               "worksheet": "Sheet1"
@@ -56,7 +57,7 @@
         "type": "remote",
         "participants": [
           {
-            "id": "test_participant_type",
+            "participant_type": "transforms",
             "sheet": {
               "url": "https://docs.google.com/spreadsheets/d/redacted/edit",
               "worksheet": "Sheet1"
@@ -89,6 +90,7 @@
         "type": "sqlite_local",
         "participants": [
           {
+            "participant_type": "test_participant_type",
             "table_name": "test_participant_type",
             "sheet": {
               "url": "file://src/xngin/apiserver/testdata/testing_sheet.csv",

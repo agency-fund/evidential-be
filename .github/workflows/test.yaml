@@ -59,6 +59,9 @@ jobs:
         run: |
           uv run xngin-cli --help
           uv run xngin-cli export-json-schemas
+          uv run xngin-cli validate-settings ./src/xngin/apiserver/testdata/xngin.testing.settings.json
+          uv run xngin-cli validate-settings ./src/xngin/apiserver/testdata/xngin.gha.settings.json
+          uv run xngin-cli validate-settings xngin.settings.json
 
           # import/export lifecycle
           uv run xngin-cli bootstrap-testing-dwh --force

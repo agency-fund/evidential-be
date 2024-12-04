@@ -1,5 +1,6 @@
 import json
 import os
+from collections import Counter
 from functools import lru_cache
 from typing import Literal, Annotated
 
@@ -10,6 +11,8 @@ from pydantic import (
     SecretStr,
     Field,
     field_validator,
+    ConfigDict,
+    model_validator,
 )
 from sqlalchemy import Engine, event
 from sqlalchemy.exc import NoSuchTableError
@@ -30,33 +33,39 @@ def get_settings_for_server():
     return XnginSettings.model_validate(settings_raw)
 
 
-class SheetRef(BaseModel):
+class ConfigBaseModel(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+
+class SheetRef(ConfigBaseModel):
     url: str
     # worksheet is the name of the worksheet. This is usually the name of the database warehouse table.
     worksheet: str
 
 
-class Participant(BaseModel):
+class Participant(ConfigBaseModel):
     """Participants are a logical representation of a table in the data warehouse.
 
     Participants are defined by a table_name and a configuration worksheet.
     """
 
+    participant_type: str
     table_name: str
     sheet: SheetRef
 
 
-class ParticipantsMixin(BaseModel):
+class ParticipantsMixin(ConfigBaseModel):
     """ParticipantsMixin can be added to a config type to add standardized participant definitions."""
 
     participants: list[Participant]
 
     def find_participants(self, participant_type: str):
+        """Returns the participant matching participant_type or raises CannotFindParticipantsException."""
         found = next(
             (
                 u
                 for u in self.participants
-                if u.table_name.lower() == participant_type.lower()
+                if u.participant_type.lower() == participant_type.lower()
             ),
             None,
         )
@@ -64,8 +73,20 @@ class ParticipantsMixin(BaseModel):
             raise CannotFindParticipantsException(participant_type)
         return found
 
+    @model_validator(mode="after")
+    def check_unique_participant_types(self):
+        counted = Counter([
+            participant.participant_type for participant in self.participants
+        ])
+        duplicates = [item for item, count in counted.items() if count > 1]
+        if duplicates:
+            raise ValueError(
+                f"Participants with conflicting identifiers found: {', '.join(duplicates)}."
+            )
+        return self
 
-class WebhookUrl(BaseModel):
+
+class WebhookUrl(ConfigBaseModel):
     """Represents a url and HTTP method to use with it."""
 
     method: Literal["get", "post", "put", "patch"]
@@ -81,7 +102,7 @@ class WebhookUrl(BaseModel):
         return str(value).lower().strip()
 
 
-class WebhookActions(BaseModel):
+class WebhookActions(ConfigBaseModel):
     """The set of supported actions that trigger a user callback."""
 
     # No action is required, so a user can leave it out completely.
@@ -91,44 +112,20 @@ class WebhookActions(BaseModel):
     update_description: WebhookUrl | None = None
 
 
-class WebhookCommonHeaders(BaseModel):
+class WebhookCommonHeaders(ConfigBaseModel):
     """Enumerates supported headers to attach to all webhook requests."""
 
     authorization: SecretStr | None
 
 
-class WebhookConfig(BaseModel):
+class WebhookConfig(ConfigBaseModel):
     """Top-level configuration object for user-defined webhooks."""
 
     actions: WebhookActions
     common_headers: WebhookCommonHeaders
 
 
-class WebhookMixin(BaseModel):
-    """Add this to a config type to support using webhooks to persist changes.
-
-    Example:
-    "webhook_config": {
-      "actions": {
-        "commit": {
-          "method": "POST",
-          "url": "http://localhost:4001/dev/api/v1/experiment-commit/save-experiment-commit"
-        },
-        "assignment_file": {
-          "method": "GET",
-          "url": "http://localhost:4001/dev/api/v1/experiment-commit/get-file-name-by-experiment-id/{experiment_id}",
-        }
-      },
-      "common_headers": {
-        "authorization": "abc"
-      }
-    }
-    """
-
-    webhook_config: WebhookConfig
-
-
-class Dsn(BaseModel):
+class Dsn(ConfigBaseModel):
     """Describes a set of parameters suitable for connecting to most types of remote databases."""
 
     driver: Literal[
@@ -170,7 +167,7 @@ class Dsn(BaseModel):
         return url
 
 
-class DbapiArg(BaseModel):
+class DbapiArg(ConfigBaseModel):
     """Describes a DBAPI connect() argument.
 
     These can be arbitrary kv pairs and are database-driver specific."""
@@ -179,8 +176,10 @@ class DbapiArg(BaseModel):
     value: str
 
 
-class RemoteDatabaseConfig(ParticipantsMixin, WebhookMixin, BaseModel):
+class RemoteDatabaseConfig(ParticipantsMixin, ConfigBaseModel):
     """RemoteDatabaseConfig defines a configuration for a remote data warehouse."""
+
+    webhook_config: WebhookConfig
 
     type: Literal["remote"]
 
@@ -217,7 +216,7 @@ class RemoteDatabaseConfig(ParticipantsMixin, WebhookMixin, BaseModel):
             engine.dialect._set_backslash_escapes = lambda _: None
 
 
-class SqliteLocalConfig(ParticipantsMixin, BaseModel):
+class SqliteLocalConfig(ParticipantsMixin, ConfigBaseModel):
     type: Literal["sqlite_local"]
     sqlite_filename: str
 
@@ -248,12 +247,12 @@ class SqliteLocalConfig(ParticipantsMixin, BaseModel):
 type ClientConfigType = RemoteDatabaseConfig | SqliteLocalConfig
 
 
-class ClientConfig(BaseModel):
+class ClientConfig(ConfigBaseModel):
     id: str
     config: Annotated[ClientConfigType, Field(discriminator="type")]
 
 
-class XnginSettings(BaseModel):
+class XnginSettings(ConfigBaseModel):
     trusted_ips: Annotated[list[str], Field(default_factory=list)]
     db_connect_timeout_secs: int = 3
     client_configs: list[ClientConfig]
