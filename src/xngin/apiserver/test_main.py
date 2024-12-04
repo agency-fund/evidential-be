@@ -5,7 +5,7 @@ from xngin.apiserver import conftest
 from xngin.apiserver.api_types import DataType
 from xngin.apiserver.main import app, generate_column_descriptors
 from xngin.apiserver.settings import (
-    CannotFindParticipantsException,
+    CannotFindParticipantsError,
     XnginSettings,
     infer_table,
 )
@@ -79,5 +79,5 @@ def test_generate_column_descriptors():
 def test_find_participants_raises_exception_for_invalid_participant_type():
     settings = conftest.get_settings_for_test()
     config = settings.get_client_config("testing").config
-    with pytest.raises(CannotFindParticipantsException):
+    with pytest.raises(CannotFindParticipantsError):
         config.find_participants("bad_type")

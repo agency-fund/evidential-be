@@ -24,11 +24,11 @@ from xngin.apiserver.api_types import DataType
 from xngin.apiserver.settings import (
     SheetRef,
     XnginSettings,
-    CannotFindTableException,
+    CannotFindTableError,
 )
 from xngin.apiserver.testing import testing_dwh
 from xngin.sheets.config_sheet import (
-    InvalidSheetException,
+    InvalidSheetError,
     fetch_and_parse_sheet,
     ColumnDescriptor,
     create_sheetconfig_from_table,
@@ -57,7 +57,7 @@ def infer_config_from_schema(dsn: str, table: str, use_reflection=True):
             table,
             use_reflection=use_reflection,
         )
-    except CannotFindTableException as cfte:
+    except CannotFindTableError as cfte:
         err_console.print(cfte.message)
         raise typer.Exit(1) from cfte
     return create_sheetconfig_from_table(dwh)
@@ -338,7 +338,7 @@ def parse_config_spreadsheet(
             err_console.print("You do not have permission to open this spreadsheet.")
             raise typer.Exit(1) from pe
         raise
-    except InvalidSheetException as ise:
+    except InvalidSheetError as ise:
         err_console.print(f"Error(s):\n{ise}")
         raise typer.Exit(1) from ise
 

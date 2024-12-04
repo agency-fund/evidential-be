@@ -31,9 +31,9 @@ jobs:
         os: [ ubuntu-22.04, macos-14 ]
     steps:
       - uses: actions/checkout@v4
-      - uses: astral-sh/setup-uv@v3
+      - uses: astral-sh/setup-uv@v4
         with:
-          version: "0.5.4"
+          version: "0.5.5"
           enable-cache: true
       - if: startsWith(matrix.os, 'macos-')
         run: |
@@ -91,9 +91,9 @@ jobs:
           - 5499:5432
     steps:
       - uses: actions/checkout@v4
-      - uses: astral-sh/setup-uv@v3
+      - uses: astral-sh/setup-uv@v4
         with:
-          version: "0.5.4"
+          version: "0.5.5"
           enable-cache: true
       - run: uv sync --locked
       - env:

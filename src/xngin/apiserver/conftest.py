@@ -19,7 +19,7 @@ from xngin.sqlite_extensions import custom_functions
 logger = logging.getLogger(__name__)
 
 
-class DeveloperErrorRunFromRootOfRepositoryPleaseException(Exception):
+class DeveloperErrorRunFromRootOfRepositoryPleaseError(Exception):
     def __init__(self):
         super().__init__("Tests must be run from the root of the repository.")
 
@@ -84,7 +84,7 @@ def raise_unless_running_from_top_directory():
     """Raises an exception unless the current working directory is the root of the project."""
     pypt = Path(os.getcwd()) / "pyproject.toml"
     if not pypt.exists():
-        raise DeveloperErrorRunFromRootOfRepositoryPleaseException()
+        raise DeveloperErrorRunFromRootOfRepositoryPleaseError()
 
 
 @pytest.fixture(name="use_deterministic_random")

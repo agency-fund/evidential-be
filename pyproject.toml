@@ -11,7 +11,7 @@ dependencies = [
     "parsy>=2.1,<3",
     "psycopg>=3.2.3,<4",
     "psycopg2>=2.9.10,<3",
-    "pydantic>=2.7.0,<3.0.0",
+    "pydantic>=2.10.3,<3.0.0",
     "scipy>=1.12.0,<2",
     "sqlalchemy==2.0.32",
     "statsmodels>=0.14.1,<0.20",
@@ -46,11 +46,13 @@ exclude = ["*.ipynb"]
 [tool.ruff.lint]
 select = [
     "A",
+    "ASYNC",
     "B",
-    "E4",
-    "E7",
-    "E9",
+    "E",
+    "W",
     "F",
+    "N",
+    "PD",
     "FAST",
     "RET",
     "RUF",
@@ -60,7 +62,13 @@ select = [
 ]
 ignore = [
     "RUF029",
-    "TRY003"
+    "TRY003",
+    "E501", # redundant line length warnings
+    "E266", # Too many leading `#` before block comment
+    "PD003", # `.isna` is preferred to `.isnull`; functionality is equivalent"
+    "PD002", # `inplace=True` should be avoided; it has inconsistent behavior
+    "PD101", # Using `series.nunique()` for checking that a series is constant is inefficient
+    "PD901", # Avoid using the generic variable name `df` for DataFrames
 ]
 
 [tool.uv]

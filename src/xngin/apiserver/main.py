@@ -37,7 +37,7 @@ from xngin.apiserver.settings import (
     get_settings_for_server,
     XnginSettings,
     ClientConfig,
-    CannotFindTableException,
+    CannotFindTableError,
     infer_table,
 )
 from xngin.stats.power import check_power
@@ -582,7 +582,7 @@ def generate_column_descriptors(
                 table, fallback_unique_id_name
             ).columns
         }
-    except CannotFindTableException as cfte:
+    except CannotFindTableError as cfte:
         raise HTTPException(status_code=500, detail=cfte.message) from cfte
 
 
