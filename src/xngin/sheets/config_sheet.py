@@ -203,15 +203,18 @@ def fetch_and_parse_sheet(ref: SheetRef):
     raise InvalidSheetException(errors)
 
 
-def create_sheetconfig_from_table(table: sqlalchemy.Table):
+def create_sheetconfig_from_table(
+    table: sqlalchemy.Table, fallback_unique_id_name: str | None = None
+):
+    """Attempts to get name and type info from the database Table itself (formerly done via gsheets)."""
+
     collected = []
     # find the primary key
     pk_col = next((c.name for c in table.columns.values() if c.primary_key), None)
     # if the database doesn't have one, assume the existence of an "id" column.
     if not pk_col:
-        # TODO: should fall back to GSheets worksheet if not specified in the db
-        # see main.py:fetch_worksheet
-        pk_col = "groups_id"
+        # fall back to Participant.unique_id in a client's settings
+        pk_col = fallback_unique_id_name if fallback_unique_id_name else "id"
     for column in table.columns.values():
         type_hint = column.type
         collected.append(

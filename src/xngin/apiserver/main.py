@@ -31,6 +31,7 @@ from xngin.apiserver.dependencies import (
 from xngin.apiserver.dwh.queries import get_stats_on_metrics, query_for_participants
 from xngin.apiserver.gsheet_cache import GSheetCache
 from xngin.apiserver.settings import (
+    ParticipantsMixin,
     WebhookConfig,
     WebhookUrl,
     get_settings_for_server,
@@ -110,9 +111,12 @@ def get_strata(
     """
     config = require_config(client)
     participants = config.find_participants(commons.participant_type)
+    config_sheet = fetch_worksheet(commons, config, gsheets)
     with config.dbsession() as session:
         sa_table = infer_table(session.get_bind(), participants.table_name)
-        db_schema = generate_column_descriptors(sa_table)
+        db_schema = generate_column_descriptors(
+            sa_table, config_sheet.get_unique_id_col()
+        )
         config_sheet = fetch_worksheet(commons, config, gsheets)
         strata_cols = {c.column_name: c for c in config_sheet.columns if c.is_strata}
 
@@ -144,9 +148,12 @@ def get_filters(
 ) -> list[GetFiltersResponseElement]:
     config = require_config(client)
     participants = config.find_participants(commons.participant_type)
+    config_sheet = fetch_worksheet(commons, config, gsheets)
     with config.dbsession() as session:
         sa_table = infer_table(session.get_bind(), participants.table_name)
-        db_schema = generate_column_descriptors(sa_table)
+        db_schema = generate_column_descriptors(
+            sa_table, config_sheet.get_unique_id_col()
+        )
         config_sheet = fetch_worksheet(commons, config, gsheets)
         filter_cols = {c.column_name: c for c in config_sheet.columns if c.is_filter}
 
@@ -214,12 +221,15 @@ def get_metrics(
     """
     config = require_config(client)
     participants = config.find_participants(commons.participant_type)
+    config_sheet = fetch_worksheet(commons, config, gsheets)
     with config.dbsession() as session:
         sa_table = infer_table(session.get_bind(), participants.table_name)
-        db_schema = generate_column_descriptors(sa_table)
-        config_sheet = fetch_worksheet(commons, config, gsheets)
-        metric_cols = {c.column_name: c for c in config_sheet.columns if c.is_metric}
+        db_schema = generate_column_descriptors(
+            sa_table, config_sheet.get_unique_id_col()
+        )
 
+    metric_cols = {c.column_name: c for c in config_sheet.columns if c.is_metric}
+    # Merge data type info above with the columns to be used as metrics:
     return sorted(
         [
             GetMetricsResponseElement(
@@ -533,7 +543,9 @@ def require_config(client: ClientConfig | None):
     return client.config
 
 
-def fetch_worksheet(commons: CommonQueryParams, config, gsheets: GSheetCache):
+def fetch_worksheet(
+    commons: CommonQueryParams, config: ParticipantsMixin, gsheets: GSheetCache
+):
     """Fetches a worksheet from the cache, reading it from the source if refresh or if the cache doesn't have it."""
     sheet = config.find_participants(commons.participant_type).sheet
     return gsheets.get(
@@ -543,13 +555,23 @@ def fetch_worksheet(commons: CommonQueryParams, config, gsheets: GSheetCache):
     )
 
 
-def generate_column_descriptors(table: sqlalchemy.Table):
+def generate_column_descriptors(
+    table: sqlalchemy.Table, fallback_unique_id_name: str | None = None
+):
     """Fetches a map of column name to SheetConfig column metadata.
+
+    A fallback_unique_id_name should be supplied in case the schema does not have a primary key defined.
+    Uniqueness of the values in the column is not verified!
 
     Raises 500 if the table does not exist.
     """
     try:
-        return {c.column_name: c for c in create_sheetconfig_from_table(table).columns}
+        return {
+            c.column_name: c
+            for c in create_sheetconfig_from_table(
+                table, fallback_unique_id_name
+            ).columns
+        }
     except CannotFindTableException as cfte:
         raise HTTPException(status_code=500, detail=cfte.message) from cfte
 
