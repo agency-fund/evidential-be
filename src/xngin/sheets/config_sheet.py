@@ -34,7 +34,7 @@ class InvalidSheetDetails(BaseModel):
         return InvalidSheetDetails(**vals)
 
 
-class InvalidSheetException(Exception):
+class InvalidSheetError(Exception):
     """Raised when a spreadsheet fails to parse into a valid configuration."""
 
     def __init__(self, err: list[InvalidSheetDetails]):
@@ -171,7 +171,7 @@ def fetch_and_parse_sheet(ref: SheetRef):
         raise ValueError("Path to configuration spreadsheet is not usable.")
     num_rows = len(sheet)
     if num_rows == 0:
-        raise InvalidSheetException([
+        raise InvalidSheetError([
             InvalidSheetDetails(
                 row_number=None,
                 column=None,
@@ -195,12 +195,12 @@ def fetch_and_parse_sheet(ref: SheetRef):
         parsed = ConfigWorksheet(table_name=ref.worksheet, columns=collector)
         # Parsing succeeded, but also raise if there were /any/ errors from above.
         if errors:
-            raise InvalidSheetException(errors)
+            raise InvalidSheetError(errors)
     except ValidationError as pve:
         errors.append(InvalidSheetDetails.from_pydantic_error(row=None, pve=pve))
     else:
         return parsed
-    raise InvalidSheetException(errors)
+    raise InvalidSheetError(errors)
 
 
 def create_sheetconfig_from_table(table: sqlalchemy.Table):

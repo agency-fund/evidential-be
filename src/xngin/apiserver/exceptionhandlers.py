@@ -4,8 +4,8 @@ from starlette.requests import Request
 from starlette.responses import JSONResponse
 
 from xngin.apiserver.settings import (
-    CannotFindTableException,
-    CannotFindParticipantsException,
+    CannotFindTableError,
+    CannotFindParticipantsError,
 )
 
 
@@ -16,15 +16,15 @@ def setup(app):
     status codes) to exceptions we recognize, and ideally not reveal too much about internal implementation details.
     """
 
-    @app.exception_handler(CannotFindTableException)
+    @app.exception_handler(CannotFindTableError)
     async def exception_handler_cannotfindthetableexception(
-        _request: Request, exc: CannotFindTableException
+        _request: Request, exc: CannotFindTableError
     ):
         return JSONResponse(status_code=404, content={"message": exc.message})
 
-    @app.exception_handler(CannotFindParticipantsException)
+    @app.exception_handler(CannotFindParticipantsError)
     async def exception_handler_cannotfindtheparticipantexception(
-        _request: Request, exc: CannotFindParticipantsException
+        _request: Request, exc: CannotFindParticipantsError
     ):
         return JSONResponse(status_code=404, content={"message": exc.message})
 

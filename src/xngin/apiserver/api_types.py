@@ -318,6 +318,7 @@ class DesignSpec(BaseModel):
         return dt.isoformat()
 
     @field_validator("power", "alpha", "fstat_thresh")
+    @classmethod
     def check_values_between_0_and_1(cls, value, field):
         """Ensure that power, alpha, and fstat_thresh are between 0 and 1."""
         if not (0 <= value <= 1):
@@ -325,6 +326,7 @@ class DesignSpec(BaseModel):
         return value
 
     @field_validator("arms")
+    @classmethod
     def check_arms_length(cls, value):
         """Ensure that arms list has at least two elements."""
         if len(value) < 2:
@@ -332,6 +334,7 @@ class DesignSpec(BaseModel):
         return value
 
     @field_validator("metrics")
+    @classmethod
     def check_metrics_length(cls, value):
         """Ensure that metrics list has at least one element."""
         if len(value) < 1:

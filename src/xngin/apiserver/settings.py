@@ -70,7 +70,7 @@ class ParticipantsMixin(ConfigBaseModel):
             None,
         )
         if found is None:
-            raise CannotFindParticipantsException(participant_type)
+            raise CannotFindParticipantsError(participant_type)
         return found
 
     @model_validator(mode="after")
@@ -269,7 +269,7 @@ class SettingsForTesting(XnginSettings):
     pass
 
 
-class CannotFindTableException(Exception):
+class CannotFindTableError(Exception):
     """Raised when we cannot find a table in the database."""
 
     def __init__(self, table_name, existing_tables):
@@ -284,7 +284,7 @@ class CannotFindTableException(Exception):
         return self.message
 
 
-class CannotFindParticipantsException(Exception):
+class CannotFindParticipantsError(Exception):
     """Raised when we cannot find a participant in the configuration."""
 
     def __init__(self, participant_type):
@@ -308,4 +308,4 @@ def infer_table(engine: sqlalchemy.engine.Engine, table_name: str):
     except NoSuchTableError as nste:
         metadata.reflect(engine)
         existing_tables = metadata.tables.keys()
-        raise CannotFindTableException(table_name, existing_tables) from nste
+        raise CannotFindTableError(table_name, existing_tables) from nste

@@ -36,7 +36,7 @@ from xngin.apiserver.settings import (
     get_settings_for_server,
     XnginSettings,
     ClientConfig,
-    CannotFindTableException,
+    CannotFindTableError,
     infer_table,
 )
 from xngin.stats.power import check_power
@@ -550,7 +550,7 @@ def generate_column_descriptors(table: sqlalchemy.Table):
     """
     try:
         return {c.column_name: c for c in create_sheetconfig_from_table(table).columns}
-    except CannotFindTableException as cfte:
+    except CannotFindTableError as cfte:
         raise HTTPException(status_code=500, detail=cfte.message) from cfte
 
 
