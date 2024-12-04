@@ -2,7 +2,7 @@
 **/*.md
 **/*.sqlite
 **/__pycache__
-**/testdata
+#**/testdata
 *.iml
 *.ipynb
 .env*
