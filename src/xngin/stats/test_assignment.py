@@ -37,6 +37,7 @@ def test_assign_treatment(sample_data):
     assert str(result.experiment_id) == "b767716b-f388-4cd9-a18a-08c4916ce26f"
     assert result.description == "Test experiment"
     assert result.sample_size == len(sample_data)
+    assert result.id_col == "id"
     assert isinstance(result.assignments, list)
     # TODO(roboton): Fix this test
     # assert 'treat' in result.assignments.columns
@@ -71,6 +72,7 @@ def test_assign_treatment_multiple_arms(sample_data):
         == 3
     )
     assert result.sample_size == len(sample_data)
+    assert result.id_col == "id"
 
 
 def test_assign_treatment_reproducibility(sample_data):
@@ -98,11 +100,14 @@ def test_assign_treatment_reproducibility(sample_data):
 
     # Check that both results have the same assignments
     assert len(result1.assignments) == len(result2.assignments)
+    assert result1.id_col == result2.id_col
 
     # Check that the treatment assignments are the same
     for p1, p2 in zip(result1.assignments, result2.assignments, strict=False):
         assert p1.treatment_assignment == p2.treatment_assignment
-        assert p1.id == p2.id  # Assuming id is a unique identifier for participants
+        assert (
+            p1.participant_id == p2.participant_id
+        )  # Assuming id is a unique identifier for participants
         assert p1.strata == p2.strata  # Check if strata are equal
 
 
@@ -121,6 +126,7 @@ def test_assign_treatment_with_missing_values(sample_data):
     )
 
     assert result.sample_size == len(sample_data)
+    assert result.id_col == "id"
     # Check that treatment assignments are not None or NaN
     assert all(
         participant.treatment_assignment is not None

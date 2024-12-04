@@ -2,7 +2,7 @@ import enum
 import re
 import uuid
 from datetime import datetime
-from typing import Annotated, Self
+from typing import Annotated
 
 import sqlalchemy.sql.sqltypes
 from pydantic import (
@@ -400,25 +400,9 @@ class ExperimentStrata(BaseModel):
 
 class ExperimentParticipant(BaseModel):
     # this references the column marked is_unique_id == TRUE in the configuration spreadsheet
-    # participant_id: str
+    participant_id: str
     treatment_assignment: str
     strata: list[ExperimentStrata]
-
-    # TODO(roboton): Would a simple id string field along with participant type be sufficient here?
-    # Allow extra fields so that we can support dwh-specific ids
-    model_config = {"extra": "allow"}
-    # And require the extra field to be an integer;
-    # can loosen this if string ids are used in the future
-    # TODO(qixotic): would prefer NOT to have customer-defined fields be keys in API response types
-    __pydantic_extra__: dict[str, int] = Field(init=False)
-
-    # TODO(qixotic): This validator is preventing construction of this object directly from Python code :(
-    @model_validator(mode="after")
-    def validate_single_id_field(self) -> Self:
-        num_extra = len(self.__pydantic_extra__)
-        if num_extra != 1:
-            raise ValueError(f"Model must have exactly one id field. Found {num_extra}")
-        return self
 
 
 class BalanceCheck(BaseModel):
@@ -444,6 +428,7 @@ class ExperimentAssignment(BaseModel):
     # TODO(roboton): drop description since it will be in included design_spec
     description: str
     sample_size: int
+    id_col: str
     assignments: list[ExperimentParticipant]
 
 

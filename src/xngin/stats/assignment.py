@@ -113,7 +113,6 @@ def assign_treatment(
     f_pvalue = 1 - stats.f.cdf(f_stat, model.df_model, model.df_resid)
 
     # Prepare assignments for return
-    # assignments = df[[id_col, 'treat'] + stratum_cols].copy()
     assignments = df[[id_col, "treat", *stratum_cols]].copy()
     assignments = assignments.melt(
         id_vars=[id_col, "treat"], var_name="strata_name", value_name="strata_value"
@@ -129,9 +128,10 @@ def assign_treatment(
                 strata_name=row["strata_name"], strata_value=str(row["strata_value"])
             )
         ]
-        # TODO(roboton): the id= field doesn't exist on ExperimentParticipant.
         participant = ExperimentParticipant(
-            id=str(row[id_col]), treatment_assignment=str(row["treat"]), strata=strata
+            participant_id=str(row[id_col]),
+            treatment_assignment=str(row["treat"]),
+            strata=strata,
         )
         participants_list.append(participant)
 
@@ -145,5 +145,6 @@ def assign_treatment(
         experiment_id=experiment_id,
         description=description,
         sample_size=len(df),
+        id_col=id_col,
         assignments=participants_list,  # Use the list of participants here
     )
