@@ -47,7 +47,7 @@ logging.basicConfig(
 )
 
 
-def infer_config_from_schema(dsn: str, table: str):
+def infer_config_from_schema(dsn: str, table: str, use_reflection=True):
     """Infers a configuration from a SQLAlchemy schema.
 
     :param dsn The SQLAlchemy-compatible DSN.
@@ -55,7 +55,9 @@ def infer_config_from_schema(dsn: str, table: str):
     """
     try:
         dwh = settings.infer_table(
-            sqlalchemy.create_engine(sqlalchemy.engine.make_url(dsn)), table
+            sqlalchemy.create_engine(sqlalchemy.engine.make_url(dsn)),
+            table,
+            use_reflection=use_reflection,
         )
     except CannotFindTableException as cfte:
         err_console.print(cfte.message)
@@ -214,12 +216,18 @@ def bootstrap_spreadsheet(
             help="Share the newly created Google Sheet with one or more email addresses.",
         ),
     ] = None,
+    use_reflection: Annotated[
+        bool,
+        typer.Option(
+            help="True to use SQLAlchemy's table reflection, else use a cursor to infer types",
+        ),
+    ] = True,
 ):
     """Generates a Google Spreadsheet from a SQLAlchemy DSN and a table name.
 
     Use this to get a customer started on configuring an experiment.
     """
-    config = infer_config_from_schema(dsn, table_name)
+    config = infer_config_from_schema(dsn, table_name, use_reflection)
 
     # Exclude the `extra` field.
     column_names = [c for c in ColumnDescriptor.model_fields if c != "extra"]

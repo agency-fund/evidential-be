@@ -113,7 +113,9 @@ def get_strata(
     participants = config.find_participants(commons.participant_type)
     config_sheet = fetch_worksheet(commons, config, gsheets)
     with config.dbsession() as session:
-        sa_table = infer_table(session.get_bind(), participants.table_name)
+        sa_table = infer_table(
+            session.get_bind(), participants.table_name, config.supports_reflection()
+        )
         db_schema = generate_column_descriptors(
             sa_table, config_sheet.get_unique_id_col()
         )
@@ -150,7 +152,9 @@ def get_filters(
     participants = config.find_participants(commons.participant_type)
     config_sheet = fetch_worksheet(commons, config, gsheets)
     with config.dbsession() as session:
-        sa_table = infer_table(session.get_bind(), participants.table_name)
+        sa_table = infer_table(
+            session.get_bind(), participants.table_name, config.supports_reflection()
+        )
         db_schema = generate_column_descriptors(
             sa_table, config_sheet.get_unique_id_col()
         )
@@ -223,7 +227,9 @@ def get_metrics(
     participants = config.find_participants(commons.participant_type)
     config_sheet = fetch_worksheet(commons, config, gsheets)
     with config.dbsession() as session:
-        sa_table = infer_table(session.get_bind(), participants.table_name)
+        sa_table = infer_table(
+            session.get_bind(), participants.table_name, config.supports_reflection()
+        )
         db_schema = generate_column_descriptors(
             sa_table, config_sheet.get_unique_id_col()
         )
@@ -262,7 +268,9 @@ def check_power_api(
     config = require_config(client)
     participant = config.find_participants(audience_spec.participant_type)
     with config.dbsession() as session:
-        sa_table = infer_table(session.get_bind(), participant.table_name)
+        sa_table = infer_table(
+            session.get_bind(), participant.table_name, config.supports_reflection()
+        )
         config_sheet = fetch_worksheet(
             CommonQueryParams(
                 participant_type=participant.participant_type, refresh=refresh
@@ -301,7 +309,9 @@ def assign_treatment_api(
     config = require_config(client)
     participant = config.find_participants(audience_spec.participant_type)
     with config.dbsession() as session:
-        sa_table = infer_table(session.get_bind(), participant.table_name)
+        sa_table = infer_table(
+            session.get_bind(), participant.table_name, config.supports_reflection()
+        )
         participants = query_for_participants(
             session, sa_table, audience_spec, chosen_n
         )

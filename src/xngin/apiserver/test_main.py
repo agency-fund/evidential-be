@@ -43,7 +43,9 @@ def test_generate_column_descriptors():
     settings = conftest.get_settings_for_test()
     config = settings.get_client_config("testing").config
     with config.dbsession() as session:
-        sa_table = infer_table(session.get_bind(), "test_participant_type")
+        sa_table = infer_table(
+            session.get_bind(), "test_participant_type", config.supports_reflection()
+        )
 
     db_schema = generate_column_descriptors(sa_table, "last_name")
 

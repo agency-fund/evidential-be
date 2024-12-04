@@ -149,6 +149,9 @@ class Dsn(ConfigBaseModel):
         """Return true iff the hostname indicates that this is connecting to Redshift."""
         return self.host.endswith("redshift.amazonaws.com")
 
+    def supports_table_reflection(self):
+        return not self.is_redshift()
+
     def to_sqlalchemy_url(self):
         """Creates a sqlalchemy.URL from this Dsn."""
         url = sqlalchemy.URL.create(
@@ -190,6 +193,9 @@ class RemoteDatabaseConfig(ParticipantsMixin, ConfigBaseModel):
 
     dbapi_args: list[DbapiArg] | None = None
 
+    def supports_reflection(self):
+        return self.dwh.supports_table_reflection()
+
     def dbsession(self):
         """Returns a Session to be used to send queries to the customer database.
 
@@ -222,6 +228,9 @@ class RemoteDatabaseConfig(ParticipantsMixin, ConfigBaseModel):
 class SqliteLocalConfig(ParticipantsMixin, ConfigBaseModel):
     type: Literal["sqlite_local"]
     sqlite_filename: str
+
+    def supports_reflection(self):
+        return True
 
     def dbsession(self):
         """Returns a Session to be used to send queries to a SQLite database.
@@ -363,7 +372,7 @@ def infer_table_from_cursor(
         raise CannotFindTableException(table_name, existing_tables) from nste
 
 
-def infer_table(engine: sqlalchemy.engine.Engine, table_name: str):
+def infer_table(engine: sqlalchemy.engine.Engine, table_name: str, use_reflection=True):
     """Constructs a Table via reflection.
 
     Raises CannotFindTheTableException containing helpful error message if the table doesn't exist.
@@ -372,11 +381,13 @@ def infer_table(engine: sqlalchemy.engine.Engine, table_name: str):
     """
     metadata = sqlalchemy.MetaData()
     try:
-        return sqlalchemy.Table(table_name, metadata, autoload_with=engine)
-    except sqlalchemy.exc.ProgrammingError:
-        # Fall back to introspection through the cursor description of columns.
-        logger.exception("Falling back to cursor.description for types info!")
+        if use_reflection:
+            return sqlalchemy.Table(table_name, metadata, autoload_with=engine)
+        # This method of introspection should only be used if the db dialect doesn't support Sqlalchemy2 reflection.
         return infer_table_from_cursor(engine, table_name)
+    except sqlalchemy.exc.ProgrammingError:
+        logger.exception("Failed to create a Table! use_reflection: %s", use_reflection)
+        raise
     except NoSuchTableError as nste:
         metadata.reflect(engine)
         existing_tables = metadata.tables.keys()
