@@ -298,7 +298,9 @@ def assign_treatment_api(
             session, sa_table, audience_spec, chosen_n
         )
         config_sheet = fetch_worksheet(
-            CommonQueryParams(participant_type=participant.participant_type, refresh=refresh),
+            CommonQueryParams(
+                participant_type=participant.participant_type, refresh=refresh
+            ),
             config,
             gsheets,
         )
