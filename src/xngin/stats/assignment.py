@@ -127,7 +127,7 @@ def assign_treatment(
     for row in assignments.itertuples(index=False):
         row = row._asdict()
         id_str = str(row[id_col])
-        if not id_str in participants_dict:
+        if id_str not in participants_dict:
             strata = [
                 ExperimentStrata(
                     strata_name=row["strata_name"],
