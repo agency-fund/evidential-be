@@ -37,7 +37,6 @@ from xngin.apiserver.settings import (
     get_settings_for_server,
     XnginSettings,
     ClientConfig,
-    CannotFindTableError,
     infer_table,
 )
 from xngin.stats.power import check_power
@@ -579,15 +578,11 @@ def generate_column_descriptors(table: sqlalchemy.Table, unique_id_col: str):
     """Fetches a map of column name to SheetConfig column metadata.
 
     Uniqueness of the values in the column unique_id_col is assumed, not verified!
-    Raises 500 if the table does not exist.
     """
-    try:
-        return {
-            c.column_name: c
-            for c in create_sheetconfig_from_table(table, unique_id_col).columns
-        }
-    except CannotFindTableError as cfte:
-        raise HTTPException(status_code=500, detail=cfte.message) from cfte
+    return {
+        c.column_name: c
+        for c in create_sheetconfig_from_table(table, unique_id_col).columns
+    }
 
 
 def main():
