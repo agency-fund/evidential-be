@@ -30,7 +30,9 @@ logger = logging.getLogger(__name__)
 @lru_cache
 def get_settings_for_server():
     """Constructs an XnginSettings for use by the API server."""
-    with open(os.environ.get("XNGIN_SETTINGS", DEFAULT_SETTINGS_FILE)) as f:
+    settings_file = os.environ.get("XNGIN_SETTINGS", DEFAULT_SETTINGS_FILE)
+    logger.info("Loading XNGIN_SETTINGS: %s", settings_file)
+    with open(settings_file) as f:
         settings_raw = json.load(f)
     settings_raw = replace_secrets(settings_raw)
     return XnginSettings.model_validate(settings_raw)
@@ -234,9 +236,6 @@ class RemoteDatabaseConfig(ParticipantsMixin, ConfigBaseModel):
                 dbapi_connection.autocommit = True
                 cursor = dbapi_connection.cursor()
                 cursor.execute(f"SET SESSION search_path={self.dwh.search_path}")
-                # cursor.execute("show search_path")
-                # print("SEARCH_PATH: ", cursor.fetchone())
-
                 cursor.close()
                 dbapi_connection.autocommit = existing_autocommit
 
