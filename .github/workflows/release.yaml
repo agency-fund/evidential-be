@@ -10,6 +10,13 @@ on:
   push:
     tags:
       - 'v*.*.*'
+  workflow_dispatch:
+    inputs:
+      branch:
+        description: 'Branch to build and release'
+        required: true
+        type: string
+        default: 'main'
 
 env:
   REGISTRY: ghcr.io
@@ -20,13 +27,19 @@ jobs:
     timeout-minutes: 5
     runs-on: ubuntu-22.04
     if: |
-      github.event_name == 'workflow_run' &&
-      github.event.workflow_run.conclusion == 'success'
+      (github.event_name == 'workflow_run' &&
+      github.event.workflow_run.conclusion == 'success') ||
+      github.event_name == 'workflow_dispatch'
     outputs:
       should_run: ${{ steps.check.outputs.should_run }}
     steps:
       - id: check
-        run: echo "should_run=true" | tee -a $GITHUB_OUTPUT
+        run: |
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+            echo "should_run=true" | tee -a $GITHUB_OUTPUT
+          elif [[ "${{ github.event.workflow }}" == "tests" ]]; then
+            echo "should_run=true" | tee -a $GITHUB_OUTPUT
+          fi
   build-and-push:
     timeout-minutes: 10
     needs: [ check-tests ]
@@ -41,6 +54,8 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event_name == 'workflow_dispatch' && inputs.branch || github.ref }}
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
       - name: Log in to the Container registry
