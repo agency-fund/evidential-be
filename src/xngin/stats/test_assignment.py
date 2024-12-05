@@ -37,10 +37,18 @@ def test_assign_treatment(sample_data):
     assert str(result.experiment_id) == "b767716b-f388-4cd9-a18a-08c4916ce26f"
     assert result.description == "Test experiment"
     assert result.sample_size == len(sample_data)
+    assert result.sample_size == result.numerator_df + result.denominator_df + 1
     assert result.id_col == "id"
     assert isinstance(result.assignments, list)
-    # TODO(roboton): Fix this test
-    # assert 'treat' in result.assignments.columns
+    assert len(set([x.participant_id for x in result.assignments])) == len(
+        result.assignments
+    )
+    assert all(len(participant.strata) == 2 for participant in result.assignments)
+    print(set([x.treatment_assignment for x in result.assignments]))
+    assert all(
+        participant.treatment_assignment in ["control", "treatment"]
+        for participant in result.assignments
+    )
 
 
 def test_assign_treatment_multiple_arms(sample_data):
