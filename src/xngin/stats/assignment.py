@@ -130,7 +130,8 @@ def assign_treatment(
         if not id_str in participants_dict:
             strata = [
                 ExperimentStrata(
-                    strata_name=row["strata_name"], strata_value=str(row["strata_value"])
+                    strata_name=row["strata_name"],
+                    strata_value=str(row["strata_value"]),
                 )
             ]
             participant = ExperimentParticipant(
@@ -142,12 +143,15 @@ def assign_treatment(
         else:
             participants_dict[id_str].strata.append(
                 ExperimentStrata(
-                    strata_name=row["strata_name"], strata_value=str(row["strata_value"])
-                ))
+                    strata_name=row["strata_name"],
+                    strata_value=str(row["strata_value"]),
+                )
+            )
 
     # Sort participants_list by participant_id
-    participants_list = sorted(participants_dict.values(),
-                               key=lambda p: p.participant_id)
+    participants_list = sorted(
+        participants_dict.values(), key=lambda p: p.participant_id
+    )
 
     # Return the ExperimentAssignment with the list of participants
     return ExperimentAssignment(
