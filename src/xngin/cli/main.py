@@ -45,7 +45,7 @@ logging.basicConfig(
 )
 
 
-def infer_config_from_schema(dsn: str, table: str, use_reflection=True):
+def infer_config_from_schema(dsn: str, table: str, use_reflection):
     """Infers a configuration from a SQLAlchemy schema.
 
     :param dsn The SQLAlchemy-compatible DSN.

@@ -54,22 +54,21 @@ def test_generate_column_descriptors():
     assert db_schema["gender"].data_type == DataType.CHARACTER_VARYING
     assert db_schema["gender"].column_group == ""
     assert db_schema["gender"].description == ""
-    assert not db_schema["gender"].is_unique_id
-    assert not db_schema["gender"].is_strata
-    assert not db_schema["gender"].is_filter
-    assert not db_schema["gender"].is_metric
+    assert db_schema["gender"].is_unique_id is False
+    assert db_schema["gender"].is_strata is False
+    assert db_schema["gender"].is_filter is False
+    assert db_schema["gender"].is_metric is False
     assert db_schema["last_name"].column_name == "last_name"
     assert db_schema["last_name"].data_type == DataType.CHARACTER_VARYING
     # Next assertion ust because we labeled it that way in settings!
     assert db_schema["last_name"].is_unique_id
     assert db_schema["current_income"].column_name == "current_income"
     assert db_schema["current_income"].data_type == DataType.DOUBLE_PRECISION
-    assert not db_schema["current_income"].is_unique_id
+    assert db_schema["current_income"].is_unique_id is False
     assert db_schema["is_recruited"].column_name == "is_recruited"
-    assert (
-        db_schema["is_recruited"].data_type == DataType.INTEGER
-    )  # sqlite stores booleans as ints
-    assert not db_schema["is_recruited"].is_unique_id
+    # sqlite stores booleans as ints, so:
+    assert db_schema["is_recruited"].data_type == DataType.INTEGER
+    assert db_schema["is_recruited"].is_unique_id is False
 
 
 def test_find_participants_raises_exception_for_invalid_participant_type():
