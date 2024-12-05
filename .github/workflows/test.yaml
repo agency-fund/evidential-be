@@ -73,7 +73,8 @@ jobs:
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
-      - run: docker build .
+      - run: docker build -t xngin .
+      - run: docker run --rm xngin uv run pytest
   smoke:
     runs-on: ubuntu-22.04
     timeout-minutes: 15
