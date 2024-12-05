@@ -7,11 +7,19 @@
         "type": "remote",
         "participants": [
           {
-            "participant_type": "transforms",
-            "table_name": "transforms",
+            "participant_type": "groups",
+            "table_name": "final_groups",
             "sheet": {
-              "url": "https://docs.google.com/spreadsheets/d/redacted/edit",
-              "worksheet": "Sheet1"
+              "url": "${secret:CUSTOMER_CONFIG_SHEET}",
+              "worksheet": "DevExplatConfig"
+            }
+          },
+          {
+            "participant_type": "alt",
+            "table_name": "alt_table",
+            "sheet": {
+              "url": "${secret:CUSTOMER_CONFIG_SHEET}",
+              "worksheet": "DevLinusConfig"
             }
           }
         ],
@@ -19,33 +27,34 @@
           "actions": {
             "commit": {
               "method": "POST",
-              "url": "http://localhost:4001/dev/api/v1/experiment-commit/save-experiment-commit"
+              "url": "${secret:CUSTOMER_API_BASE}/save-experiment-commit"
             },
             "assignment_file": {
               "method": "GET",
-              "url": "http://localhost:4001/dev/api/v1/experiment-commit/get-file-name-by-experiment-id/{experiment_id}"
+              "url": "${secret:CUSTOMER_API_BASE}/get-file-name-by-experiment-id/{experiment_id}"
             },
             "update_timestamps": {
               "method": "PUT",
-              "url": "http://localhost:4001/dev/api/v1/experiment-commit/update-timestamps-for-experiment"
+              "url": "${secret:CUSTOMER_API_BASE}/update-timestamps-for-experiment"
             },
             "update_description": {
               "method": "PUT",
-              "url": "http://localhost:4001/dev/api/v1/experiment-commit/update-experiment-commit"
+              "url": "${secret:CUSTOMER_API_BASE}/update-experiment-commit"
             }
           },
           "common_headers": {
-            "authorization": "${secret:CUSTOMER_API_TOKEN}"
+            "authorization": "${secret:CUSTOMER_API_AUTH}"
           }
         },
         "dwh": {
           "driver": "postgresql+psycopg2",
-          "user": "agency",
+          "host": "${secret:CUSTOMER_DWH_HOST}",
           "port": 5439,
+          "user": "${secret:CUSTOMER_DWH_USER}",
           "password": "${secret:CUSTOMER_DWH_PASSWORD}",
-          "host": "instance.redshift.amazonaws.com",
-          "dbname": "customer_dwh_prod",
-          "sslmode": "require"
+          "dbname": "customer_dwh_dev",
+          "sslmode": "require",
+          "search_path": "transforms, linus_transforms"
         }
       }
     }
