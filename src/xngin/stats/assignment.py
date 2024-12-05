@@ -37,6 +37,7 @@ def assign_treatment(
     description: str,
     fstat_thresh: float = 0.5,
     random_state: int | None = None,
+    num_strata: int = 3,
 ) -> ExperimentAssignment:
     """
     Perform stratified random assignment and balance checking.
@@ -58,12 +59,12 @@ def assign_treatment(
     # Create copy for analysis
     df = data.copy()
 
-    # Create strata for numeric columns (no missing values)
     for col in df.select_dtypes(include=[np.number]).columns:
         if df[col].isnull().sum() == 0:
             df[f"{col}_strata"] = df[col]
+        # Create strata for numeric columns with missing values
         elif df[col].isnull().sum() > 0:
-            df[f"{col}_strata"] = pd.qcut(df[col], q=3, labels=False)
+            df[f"{col}_strata"] = pd.qcut(df[col], q=num_strata, labels=False)
             df[f"{col}_strata"] = df[f"{col}_strata"].astype("category")
             df[f"{col}_strata"] = df[f"{col}_strata"].cat.add_categories(["_NA"])
             df[f"{col}_strata"] = df[f"{col}_strata"].fillna("_NA")
@@ -72,7 +73,7 @@ def assign_treatment(
     for col in df.select_dtypes(include=["object"]).columns:
         df[f"{col}_strata"] = df[col].str.lower().fillna("_NA")
 
-    # Combine strata columns
+    # Combine strata columns into a single column
     strata_cols = [f"{col}_strata" for col in stratum_cols + metric_cols]
     df["selected_strata"] = df[strata_cols].apply(
         lambda x: "_".join(x.astype(str)), axis=1
@@ -122,23 +123,31 @@ def assign_treatment(
     assignments["strata_value"] = assignments["strata_value"].fillna("NA")
 
     # Convert the assignments DataFrame to a list of ExperimentParticipant objects
-    participants_list = []
+    participants_dict = {}
     for row in assignments.itertuples(index=False):
         row = row._asdict()
-        strata = [
-            ExperimentStrata(
-                strata_name=row["strata_name"], strata_value=str(row["strata_value"])
+        id_str = str(row[id_col])
+        if not id_str in participants_dict:
+            strata = [
+                ExperimentStrata(
+                    strata_name=row["strata_name"], strata_value=str(row["strata_value"])
+                )
+            ]
+            participant = ExperimentParticipant(
+                participant_id=str(row[id_col]),
+                treatment_assignment=arm_names[row["treat"]],
+                strata=strata,
             )
-        ]
-        participant = ExperimentParticipant(
-            participant_id=str(row[id_col]),
-            treatment_assignment=str(row["treat"]),
-            strata=strata,
-        )
-        participants_list.append(participant)
+            participants_dict[id_str] = participant
+        else:
+            participants_dict[id_str].strata.append(
+                ExperimentStrata(
+                    strata_name=row["strata_name"], strata_value=str(row["strata_value"])
+                ))
 
     # Sort participants_list by participant_id
-    participants_list = sorted(participants_list, key=lambda p: p.participant_id)
+    participants_list = sorted(participants_dict.values(),
+                               key=lambda p: p.participant_id)
 
     # Return the ExperimentAssignment with the list of participants
     return ExperimentAssignment(
