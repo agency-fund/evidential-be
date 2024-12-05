@@ -135,15 +135,17 @@ class Dsn(ConfigBaseModel):
         "postgresql+psycopg",  # Preferred for most Postgres-compatible databases.
         "postgresql+psycopg2",  # Use with: Redshift
     ]
-    user: str
-    port: PositiveInt = 5432
     host: str
+    port: PositiveInt = 5432
+    user: str
     password: SecretStr
     dbname: str
     sslmode: (
         Literal["disable", "allow", "prefer", "require", "verify-ca", "verify-full"]
         | None
     ) = None
+    # Specify the order in which schemas are searched if your dwh supports it.
+    search_path: str | None = None
 
     def is_redshift(self):
         """Return true iff the hostname indicates that this is connecting to Redshift."""
@@ -214,12 +216,31 @@ class RemoteDatabaseConfig(ParticipantsMixin, ConfigBaseModel):
             connect_args=connect_args,
             echo=os.environ.get("ECHO_SQL", "").lower() in ("true", "1"),
         )
-        self.extra_engine_setup(engine)
+        self._extra_engine_setup(engine)
         return Session(engine)
 
-    def extra_engine_setup(self, engine: Engine):
-        """Partially address any Redshift incompatibilities."""
+    def _extra_engine_setup(self, engine: Engine):
+        """Do any extra configuration if needed before a connection is made."""
 
+        # Avoid explicitly setting schema whenever we build a Table.
+        #   https://docs.sqlalchemy.org/en/20/dialects/postgresql.html#setting-alternate-search-paths-on-connect
+        # If possible, have the client also consider setting that as a default on the role, e.g.:
+        #   ALTER USER username SET search_path = schema1, schema2, public;
+        if self.dwh.search_path:
+
+            @event.listens_for(engine, "connect", insert=True)
+            def set_search_path(dbapi_connection, connection_record):
+                existing_autocommit = dbapi_connection.autocommit
+                dbapi_connection.autocommit = True
+                cursor = dbapi_connection.cursor()
+                cursor.execute(f"SET SESSION search_path={self.dwh.search_path}")
+                # cursor.execute("show search_path")
+                # print("SEARCH_PATH: ", cursor.fetchone())
+
+                cursor.close()
+                dbapi_connection.autocommit = existing_autocommit
+
+        # Partially address any Redshift incompatibilities
         # re: https://github.com/sqlalchemy-redshift/sqlalchemy-redshift/issues/264#issuecomment-2181124071
         if self.dwh.is_redshift() and hasattr(engine.dialect, "_set_backslash_escapes"):
             engine.dialect._set_backslash_escapes = lambda _: None
@@ -316,7 +337,6 @@ def infer_table_from_cursor(
     metadata = sqlalchemy.MetaData()
     try:
         with engine.connect() as connection:
-            # TODO: get the schema from the user's settings or the config sheet
             safe_table = sqlalchemy.quoted_name(table_name, quote=True)
             # Create a select statement - this is safe from SQL injection
             query = sqlalchemy.select(text("*")).select_from(text(safe_table)).limit(0)
@@ -364,7 +384,6 @@ def infer_table_from_cursor(
                         name, sa_type, nullable=null_ok if null_ok is not None else True
                     )
                 )
-            # TODO: use param schema= instead of allowing unquoted dotted table_names which won't work with pg
             return sqlalchemy.Table(table_name, metadata, *columns, quote=False)
     except NoSuchTableError as nste:
         metadata.reflect(engine)
@@ -376,9 +395,7 @@ def infer_table(engine: sqlalchemy.engine.Engine, table_name: str, use_reflectio
     """Constructs a Table via reflection.
 
     Raises CannotFindTheTableException containing helpful error message if the table doesn't exist.
-
-    TODO: add workarounds for Redshift or other engines here.
-    """
+    #"""
     metadata = sqlalchemy.MetaData()
     try:
         if use_reflection:
