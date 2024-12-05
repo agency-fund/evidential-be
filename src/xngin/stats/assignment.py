@@ -1,3 +1,5 @@
+from uuid import UUID
+
 import pandas as pd
 import numpy as np
 
@@ -142,7 +144,7 @@ def assign_treatment(
         denominator_df=model.df_resid,
         p_value=np.round(f_pvalue, 9),
         balance_ok=f_pvalue > fstat_thresh,
-        experiment_id=experiment_id,
+        experiment_id=UUID(experiment_id),
         description=description,
         sample_size=len(df),
         id_col=id_col,
