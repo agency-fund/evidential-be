@@ -137,6 +137,9 @@ def assign_treatment(
         )
         participants_list.append(participant)
 
+    # Sort participants_list by participant_id
+    participants_list = sorted(participants_list, key=lambda p: p.participant_id)
+
     # Return the ExperimentAssignment with the list of participants
     return ExperimentAssignment(
         f_statistic=np.round(f_stat, 9),
