@@ -42,6 +42,276 @@ HTTP 200
 {
   "assignments": [
     {
+      "participant_id": "122169",
+      "strata": [
+        {
+          "strata_name": "is_onboarded",
+          "strata_value": "0"
+        }
+      ],
+      "treatment_assignment": "1"
+    },
+    {
+      "participant_id": "12955",
+      "strata": [
+        {
+          "strata_name": "is_onboarded",
+          "strata_value": "0"
+        }
+      ],
+      "treatment_assignment": "1"
+    },
+    {
+      "participant_id": "154001",
+      "strata": [
+        {
+          "strata_name": "is_onboarded",
+          "strata_value": "0"
+        }
+      ],
+      "treatment_assignment": "1"
+    },
+    {
+      "participant_id": "155035",
+      "strata": [
+        {
+          "strata_name": "is_onboarded",
+          "strata_value": "1"
+        }
+      ],
+      "treatment_assignment": "0"
+    },
+    {
+      "participant_id": "171643",
+      "strata": [
+        {
+          "strata_name": "is_onboarded",
+          "strata_value": "0"
+        }
+      ],
+      "treatment_assignment": "1"
+    },
+    {
+      "participant_id": "179916",
+      "strata": [
+        {
+          "strata_name": "is_onboarded",
+          "strata_value": "0"
+        }
+      ],
+      "treatment_assignment": "0"
+    },
+    {
+      "participant_id": "198781",
+      "strata": [
+        {
+          "strata_name": "is_onboarded",
+          "strata_value": "1"
+        }
+      ],
+      "treatment_assignment": "1"
+    },
+    {
+      "participant_id": "210073",
+      "strata": [
+        {
+          "strata_name": "is_onboarded",
+          "strata_value": "0"
+        }
+      ],
+      "treatment_assignment": "0"
+    },
+    {
+      "participant_id": "23560",
+      "strata": [
+        {
+          "strata_name": "is_onboarded",
+          "strata_value": "1"
+        }
+      ],
+      "treatment_assignment": "1"
+    },
+    {
+      "participant_id": "237616",
+      "strata": [
+        {
+          "strata_name": "is_onboarded",
+          "strata_value": "0"
+        }
+      ],
+      "treatment_assignment": "0"
+    },
+    {
+      "participant_id": "248783",
+      "strata": [
+        {
+          "strata_name": "is_onboarded",
+          "strata_value": "1"
+        }
+      ],
+      "treatment_assignment": "1"
+    },
+    {
+      "participant_id": "295539",
+      "strata": [
+        {
+          "strata_name": "is_onboarded",
+          "strata_value": "1"
+        }
+      ],
+      "treatment_assignment": "0"
+    },
+    {
+      "participant_id": "302146",
+      "strata": [
+        {
+          "strata_name": "is_onboarded",
+          "strata_value": "0"
+        }
+      ],
+      "treatment_assignment": "0"
+    },
+    {
+      "participant_id": "310074",
+      "strata": [
+        {
+          "strata_name": "is_onboarded",
+          "strata_value": "0"
+        }
+      ],
+      "treatment_assignment": "0"
+    },
+    {
+      "participant_id": "33392",
+      "strata": [
+        {
+          "strata_name": "is_onboarded",
+          "strata_value": "0"
+        }
+      ],
+      "treatment_assignment": "0"
+    },
+    {
+      "participant_id": "35426",
+      "strata": [
+        {
+          "strata_name": "is_onboarded",
+          "strata_value": "1"
+        }
+      ],
+      "treatment_assignment": "0"
+    },
+    {
+      "participant_id": "393637",
+      "strata": [
+        {
+          "strata_name": "is_onboarded",
+          "strata_value": "0"
+        }
+      ],
+      "treatment_assignment": "1"
+    },
+    {
+      "participant_id": "407190",
+      "strata": [
+        {
+          "strata_name": "is_onboarded",
+          "strata_value": "0"
+        }
+      ],
+      "treatment_assignment": "0"
+    },
+    {
+      "participant_id": "410077",
+      "strata": [
+        {
+          "strata_name": "is_onboarded",
+          "strata_value": "0"
+        }
+      ],
+      "treatment_assignment": "0"
+    },
+    {
+      "participant_id": "431735",
+      "strata": [
+        {
+          "strata_name": "is_onboarded",
+          "strata_value": "1"
+        }
+      ],
+      "treatment_assignment": "1"
+    },
+    {
+      "participant_id": "440263",
+      "strata": [
+        {
+          "strata_name": "is_onboarded",
+          "strata_value": "0"
+        }
+      ],
+      "treatment_assignment": "0"
+    },
+    {
+      "participant_id": "469679",
+      "strata": [
+        {
+          "strata_name": "is_onboarded",
+          "strata_value": "0"
+        }
+      ],
+      "treatment_assignment": "1"
+    },
+    {
+      "participant_id": "484970",
+      "strata": [
+        {
+          "strata_name": "is_onboarded",
+          "strata_value": "0"
+        }
+      ],
+      "treatment_assignment": "0"
+    },
+    {
+      "participant_id": "486195",
+      "strata": [
+        {
+          "strata_name": "is_onboarded",
+          "strata_value": "0"
+        }
+      ],
+      "treatment_assignment": "0"
+    },
+    {
+      "participant_id": "510222",
+      "strata": [
+        {
+          "strata_name": "is_onboarded",
+          "strata_value": "1"
+        }
+      ],
+      "treatment_assignment": "0"
+    },
+    {
+      "participant_id": "552382",
+      "strata": [
+        {
+          "strata_name": "is_onboarded",
+          "strata_value": "1"
+        }
+      ],
+      "treatment_assignment": "0"
+    },
+    {
+      "participant_id": "65425",
+      "strata": [
+        {
+          "strata_name": "is_onboarded",
+          "strata_value": "0"
+        }
+      ],
+      "treatment_assignment": "0"
+    },
+    {
       "participant_id": "710929",
       "strata": [
         {
@@ -62,146 +332,6 @@ HTTP 200
       "treatment_assignment": "1"
     },
     {
-      "participant_id": "440263",
-      "strata": [
-        {
-          "strata_name": "is_onboarded",
-          "strata_value": "0"
-        }
-      ],
-      "treatment_assignment": "0"
-    },
-    {
-      "participant_id": "410077",
-      "strata": [
-        {
-          "strata_name": "is_onboarded",
-          "strata_value": "0"
-        }
-      ],
-      "treatment_assignment": "0"
-    },
-    {
-      "participant_id": "486195",
-      "strata": [
-        {
-          "strata_name": "is_onboarded",
-          "strata_value": "0"
-        }
-      ],
-      "treatment_assignment": "0"
-    },
-    {
-      "participant_id": "484970",
-      "strata": [
-        {
-          "strata_name": "is_onboarded",
-          "strata_value": "0"
-        }
-      ],
-      "treatment_assignment": "0"
-    },
-    {
-      "participant_id": "393637",
-      "strata": [
-        {
-          "strata_name": "is_onboarded",
-          "strata_value": "0"
-        }
-      ],
-      "treatment_assignment": "1"
-    },
-    {
-      "participant_id": "122169",
-      "strata": [
-        {
-          "strata_name": "is_onboarded",
-          "strata_value": "0"
-        }
-      ],
-      "treatment_assignment": "1"
-    },
-    {
-      "participant_id": "155035",
-      "strata": [
-        {
-          "strata_name": "is_onboarded",
-          "strata_value": "1"
-        }
-      ],
-      "treatment_assignment": "0"
-    },
-    {
-      "participant_id": "295539",
-      "strata": [
-        {
-          "strata_name": "is_onboarded",
-          "strata_value": "1"
-        }
-      ],
-      "treatment_assignment": "0"
-    },
-    {
-      "participant_id": "552382",
-      "strata": [
-        {
-          "strata_name": "is_onboarded",
-          "strata_value": "1"
-        }
-      ],
-      "treatment_assignment": "0"
-    },
-    {
-      "participant_id": "947098",
-      "strata": [
-        {
-          "strata_name": "is_onboarded",
-          "strata_value": "0"
-        }
-      ],
-      "treatment_assignment": "1"
-    },
-    {
-      "participant_id": "431735",
-      "strata": [
-        {
-          "strata_name": "is_onboarded",
-          "strata_value": "1"
-        }
-      ],
-      "treatment_assignment": "1"
-    },
-    {
-      "participant_id": "866648",
-      "strata": [
-        {
-          "strata_name": "is_onboarded",
-          "strata_value": "0"
-        }
-      ],
-      "treatment_assignment": "1"
-    },
-    {
-      "participant_id": "407190",
-      "strata": [
-        {
-          "strata_name": "is_onboarded",
-          "strata_value": "0"
-        }
-      ],
-      "treatment_assignment": "0"
-    },
-    {
-      "participant_id": "248783",
-      "strata": [
-        {
-          "strata_name": "is_onboarded",
-          "strata_value": "1"
-        }
-      ],
-      "treatment_assignment": "1"
-    },
-    {
       "participant_id": "76948",
       "strata": [
         {
@@ -212,7 +342,7 @@ HTTP 200
       "treatment_assignment": "1"
     },
     {
-      "participant_id": "171643",
+      "participant_id": "773941",
       "strata": [
         {
           "strata_name": "is_onboarded",
@@ -222,7 +352,7 @@ HTTP 200
       "treatment_assignment": "1"
     },
     {
-      "participant_id": "302146",
+      "participant_id": "776353",
       "strata": [
         {
           "strata_name": "is_onboarded",
@@ -242,107 +372,7 @@ HTTP 200
       "treatment_assignment": "0"
     },
     {
-      "participant_id": "154001",
-      "strata": [
-        {
-          "strata_name": "is_onboarded",
-          "strata_value": "0"
-        }
-      ],
-      "treatment_assignment": "1"
-    },
-    {
-      "participant_id": "12955",
-      "strata": [
-        {
-          "strata_name": "is_onboarded",
-          "strata_value": "0"
-        }
-      ],
-      "treatment_assignment": "1"
-    },
-    {
-      "participant_id": "35426",
-      "strata": [
-        {
-          "strata_name": "is_onboarded",
-          "strata_value": "1"
-        }
-      ],
-      "treatment_assignment": "0"
-    },
-    {
-      "participant_id": "237616",
-      "strata": [
-        {
-          "strata_name": "is_onboarded",
-          "strata_value": "0"
-        }
-      ],
-      "treatment_assignment": "0"
-    },
-    {
-      "participant_id": "210073",
-      "strata": [
-        {
-          "strata_name": "is_onboarded",
-          "strata_value": "0"
-        }
-      ],
-      "treatment_assignment": "0"
-    },
-    {
-      "participant_id": "179916",
-      "strata": [
-        {
-          "strata_name": "is_onboarded",
-          "strata_value": "0"
-        }
-      ],
-      "treatment_assignment": "0"
-    },
-    {
-      "participant_id": "65425",
-      "strata": [
-        {
-          "strata_name": "is_onboarded",
-          "strata_value": "0"
-        }
-      ],
-      "treatment_assignment": "0"
-    },
-    {
-      "participant_id": "469679",
-      "strata": [
-        {
-          "strata_name": "is_onboarded",
-          "strata_value": "0"
-        }
-      ],
-      "treatment_assignment": "1"
-    },
-    {
-      "participant_id": "510222",
-      "strata": [
-        {
-          "strata_name": "is_onboarded",
-          "strata_value": "1"
-        }
-      ],
-      "treatment_assignment": "0"
-    },
-    {
-      "participant_id": "23560",
-      "strata": [
-        {
-          "strata_name": "is_onboarded",
-          "strata_value": "1"
-        }
-      ],
-      "treatment_assignment": "1"
-    },
-    {
-      "participant_id": "773941",
+      "participant_id": "830767",
       "strata": [
         {
           "strata_name": "is_onboarded",
@@ -362,37 +392,17 @@ HTTP 200
       "treatment_assignment": "1"
     },
     {
-      "participant_id": "33392",
+      "participant_id": "866648",
       "strata": [
         {
           "strata_name": "is_onboarded",
           "strata_value": "0"
-        }
-      ],
-      "treatment_assignment": "0"
-    },
-    {
-      "participant_id": "310074",
-      "strata": [
-        {
-          "strata_name": "is_onboarded",
-          "strata_value": "0"
-        }
-      ],
-      "treatment_assignment": "0"
-    },
-    {
-      "participant_id": "198781",
-      "strata": [
-        {
-          "strata_name": "is_onboarded",
-          "strata_value": "1"
         }
       ],
       "treatment_assignment": "1"
     },
     {
-      "participant_id": "776353",
+      "participant_id": "895588",
       "strata": [
         {
           "strata_name": "is_onboarded",
@@ -402,17 +412,7 @@ HTTP 200
       "treatment_assignment": "0"
     },
     {
-      "participant_id": "996915",
-      "strata": [
-        {
-          "strata_name": "is_onboarded",
-          "strata_value": "1"
-        }
-      ],
-      "treatment_assignment": "0"
-    },
-    {
-      "participant_id": "830767",
+      "participant_id": "947098",
       "strata": [
         {
           "strata_name": "is_onboarded",
@@ -432,11 +432,11 @@ HTTP 200
       "treatment_assignment": "1"
     },
     {
-      "participant_id": "895588",
+      "participant_id": "996915",
       "strata": [
         {
           "strata_name": "is_onboarded",
-          "strata_value": "0"
+          "strata_value": "1"
         }
       ],
       "treatment_assignment": "0"
@@ -447,9 +447,9 @@ HTTP 200
   "description": "Sample experiment description.",
   "experiment_id": "0897bbd7-dacd-41b4-b164-7a1950fa61f2",
   "f_statistic": 4.855391132,
-  "id_col": "id",
   "numerator_df": 7,
   "p_value": 0.000761024,
-  "sample_size": 40
+  "sample_size": 40,
+  "id_col": "id"
 }
 ```

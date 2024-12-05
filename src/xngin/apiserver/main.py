@@ -304,7 +304,9 @@ def assign_treatment_api(
     audience_spec: AudienceSpec,
     chosen_n: int,
     random_state: int,
+    gsheets: Annotated[GSheetCache, Depends(gsheet_cache)],
     client: Annotated[ClientConfig | None, Depends(config_dependency)] = None,
+    refresh: Annotated[bool, Query(description="Refresh the cache.")] = False,
 ) -> ExperimentAssignment:
     config = require_config(client)
     participant = config.find_participants(audience_spec.participant_type)
@@ -315,6 +317,14 @@ def assign_treatment_api(
         participants = query_for_participants(
             session, sa_table, audience_spec, chosen_n
         )
+        config_sheet = fetch_worksheet(
+            CommonQueryParams(
+                participant_type=participant.participant_type, refresh=refresh
+            ),
+            config,
+            gsheets,
+        )
+        _unique_id_col = config_sheet.get_unique_id_col()
 
     metric_names = [metric.metric_name for metric in design_spec.metrics]
     arm_names = [arm.arm_name for arm in design_spec.arms]
@@ -322,7 +332,7 @@ def assign_treatment_api(
         data=DataFrame(participants),
         stratum_cols=design_spec.strata_cols,
         metric_cols=metric_names,
-        id_col="id",
+        id_col=_unique_id_col,
         arm_names=arm_names,
         experiment_id=str(design_spec.experiment_id),
         description=design_spec.description,

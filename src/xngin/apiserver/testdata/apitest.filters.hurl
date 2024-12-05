@@ -64,8 +64,8 @@ HTTP 200
     "description": "Engaged?",
     "distinct_values": null,
     "filter_name": "is_engaged",
-    "max": 1.0,
-    "min": 0.0,
+    "max": 1,
+    "min": 0,
     "relations": [
       "between"
     ]
@@ -75,8 +75,8 @@ HTTP 200
     "description": "Onboarded?",
     "distinct_values": null,
     "filter_name": "is_onboarded",
-    "max": 1.0,
-    "min": 0.0,
+    "max": 1,
+    "min": 0,
     "relations": [
       "between"
     ]
@@ -86,8 +86,8 @@ HTTP 200
     "description": "Recruited?",
     "distinct_values": null,
     "filter_name": "is_recruited",
-    "max": 1.0,
-    "min": 1.0,
+    "max": 1,
+    "min": 1,
     "relations": [
       "between"
     ]
@@ -97,8 +97,8 @@ HTTP 200
     "description": "Registered?",
     "distinct_values": null,
     "filter_name": "is_registered",
-    "max": 1.0,
-    "min": 0.0,
+    "max": 1,
+    "min": 0,
     "relations": [
       "between"
     ]
@@ -108,8 +108,8 @@ HTTP 200
     "description": "Retained?",
     "distinct_values": null,
     "filter_name": "is_retained",
-    "max": 1.0,
-    "min": 0.0,
+    "max": 1,
+    "min": 0,
     "relations": [
       "between"
     ]

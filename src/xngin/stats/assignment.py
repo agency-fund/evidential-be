@@ -1,3 +1,5 @@
+from uuid import UUID
+
 import pandas as pd
 import numpy as np
 
@@ -135,6 +137,9 @@ def assign_treatment(
         )
         participants_list.append(participant)
 
+    # Sort participants_list by participant_id
+    participants_list = sorted(participants_list, key=lambda p: p.participant_id)
+
     # Return the ExperimentAssignment with the list of participants
     return ExperimentAssignment(
         f_statistic=np.round(f_stat, 9),
@@ -142,7 +147,7 @@ def assign_treatment(
         denominator_df=model.df_resid,
         p_value=np.round(f_pvalue, 9),
         balance_ok=f_pvalue > fstat_thresh,
-        experiment_id=experiment_id,
+        experiment_id=UUID(experiment_id),
         description=description,
         sample_size=len(df),
         id_col=id_col,
