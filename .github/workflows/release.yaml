@@ -34,12 +34,10 @@ jobs:
     steps:
       - id: check
         run: |
-          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
-            echo "should_run=true" | tee -a $GITHUB_OUTPUT
-          elif [[ "${{ github.event.workflow }}" == "tests" ]]; then
+          echo github.event_name = "${{ github.event_name }}"
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" || "${{ github.event_name }}" == "workflow_run" ]]; then
             echo "should_run=true" | tee -a $GITHUB_OUTPUT
           fi
-
   build-and-push:
     needs: [ check-tests ]
     if: |
