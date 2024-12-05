@@ -70,10 +70,6 @@ class DataType(enum.StrEnum):
             return DataType[value]
         if value is str:
             return DataType.CHARACTER_VARYING
-        if value is int:
-            return DataType.INTEGER
-        if value is float:
-            return DataType.DOUBLE_PRECISION
         if isinstance(value, sqlalchemy.sql.sqltypes.String):
             return DataType.CHARACTER_VARYING
         if isinstance(value, sqlalchemy.sql.sqltypes.Boolean):
@@ -92,6 +88,10 @@ class DataType(enum.StrEnum):
             return DataType.DATE
         if isinstance(value, sqlalchemy.sql.sqltypes.DateTime):
             return DataType.TIMESTAMP_WITHOUT_TIMEZONE
+        if value is int:
+            return DataType.INTEGER
+        if value is float:
+            return DataType.DOUBLE_PRECISION
         raise ValueError(f"Unmatched type: {value}.")
 
     def filter_class(self, column_name):

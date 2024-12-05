@@ -71,10 +71,6 @@ def test_generate_column_descriptors():
     )  # sqlite stores booleans as ints
     assert not db_schema["is_recruited"].is_unique_id
 
-    # Now confirm that if no column was marked, we use a default id.
-    db_schema = generate_column_descriptors(sa_table)
-    assert db_schema["id"].is_unique_id
-
 
 def test_find_participants_raises_exception_for_invalid_participant_type():
     settings = conftest.get_settings_for_test()

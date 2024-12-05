@@ -203,18 +203,19 @@ def fetch_and_parse_sheet(ref: SheetRef):
     raise InvalidSheetError(errors)
 
 
-def create_sheetconfig_from_table(
-    table: sqlalchemy.Table, fallback_unique_id_name: str | None = None
-):
-    """Attempts to get name and type info from the database Table itself (formerly done via gsheets)."""
+def create_sheetconfig_from_table(table: sqlalchemy.Table, unique_id_col: str | None):
+    """Attempts to get name and type info from the database Table itself (formerly done via gsheets).
+
+    If unique_id_col is explicitly set to None, we will look for a primary key else assume "id".
+    (This mode should only be used if bootstrapping a sheet config from a table's schema.)
+    """
 
     collected = []
-    # find the primary key
-    pk_col = next((c.name for c in table.columns.values() if c.primary_key), None)
-    # if the database doesn't have one, assume the existence of an "id" column.
-    if not pk_col:
-        # fall back to Participant.unique_id in a client's settings
-        pk_col = fallback_unique_id_name if fallback_unique_id_name else "id"
+    if unique_id_col is None:
+        unique_id_col = (
+            next((c.name for c in table.columns.values() if c.primary_key), None)
+            or "id"
+        )
     for column in table.columns.values():
         type_hint = column.type
         collected.append(
@@ -223,7 +224,7 @@ def create_sheetconfig_from_table(
                 data_type=DataType.match(type_hint),
                 column_group="",
                 description="",
-                is_unique_id=column.name == pk_col,
+                is_unique_id=column.name == unique_id_col,
                 is_strata=False,
                 is_filter=False,
                 is_metric=False,

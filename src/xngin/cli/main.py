@@ -60,7 +60,7 @@ def infer_config_from_schema(dsn: str, table: str, use_reflection=True):
     except CannotFindTableError as cfte:
         err_console.print(cfte.message)
         raise typer.Exit(1) from cfte
-    return create_sheetconfig_from_table(dwh)
+    return create_sheetconfig_from_table(dwh, unique_id_col=None)
 
 
 @app.command()

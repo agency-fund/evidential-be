@@ -575,22 +575,16 @@ def fetch_worksheet(
     )
 
 
-def generate_column_descriptors(
-    table: sqlalchemy.Table, fallback_unique_id_name: str | None = None
-):
+def generate_column_descriptors(table: sqlalchemy.Table, unique_id_col: str):
     """Fetches a map of column name to SheetConfig column metadata.
 
-    A fallback_unique_id_name should be supplied in case the schema does not have a primary key defined.
-    Uniqueness of the values in the column is not verified!
-
+    Uniqueness of the values in the column unique_id_col is assumed, not verified!
     Raises 500 if the table does not exist.
     """
     try:
         return {
             c.column_name: c
-            for c in create_sheetconfig_from_table(
-                table, fallback_unique_id_name
-            ).columns
+            for c in create_sheetconfig_from_table(table, unique_id_col).columns
         }
     except CannotFindTableError as cfte:
         raise HTTPException(status_code=500, detail=cfte.message) from cfte
