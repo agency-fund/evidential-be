@@ -45,7 +45,7 @@ logging.basicConfig(
 )
 
 
-def infer_config_from_schema(dsn: str, table: str, use_reflection):
+def infer_config_from_schema(dsn: str, table: str, use_reflection: bool):
     """Infers a configuration from a SQLAlchemy schema.
 
     :param dsn The SQLAlchemy-compatible DSN.
@@ -60,7 +60,7 @@ def infer_config_from_schema(dsn: str, table: str, use_reflection):
     except CannotFindTableError as cfte:
         err_console.print(cfte.message)
         raise typer.Exit(1) from cfte
-    return create_sheetconfig_from_table(dwh, unique_id_col=None)
+    return create_sheetconfig_from_table(dwh)
 
 
 @app.command()

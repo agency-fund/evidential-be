@@ -394,7 +394,7 @@ def infer_table(engine: sqlalchemy.engine.Engine, table_name: str, use_reflectio
     """Constructs a Table via reflection.
 
     Raises CannotFindTheTableException containing helpful error message if the table doesn't exist.
-    #"""
+    """
     metadata = sqlalchemy.MetaData()
     try:
         if use_reflection:

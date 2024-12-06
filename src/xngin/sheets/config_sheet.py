@@ -203,7 +203,9 @@ def fetch_and_parse_sheet(ref: SheetRef):
     raise InvalidSheetError(errors)
 
 
-def create_sheetconfig_from_table(table: sqlalchemy.Table, unique_id_col: str | None):
+def create_sheetconfig_from_table(
+    table: sqlalchemy.Table, unique_id_col: str | None = None
+):
     """Attempts to get name and type info from the database Table itself (formerly done via gsheets).
 
     If unique_id_col is explicitly set to None, we will look for a primary key else assume "id".
@@ -212,9 +214,8 @@ def create_sheetconfig_from_table(table: sqlalchemy.Table, unique_id_col: str | 
 
     collected = []
     if unique_id_col is None:
-        unique_id_col = (
-            next((c.name for c in table.columns.values() if c.primary_key), None)
-            or "id"
+        unique_id_col = next(
+            (c.name for c in table.columns.values() if c.primary_key), "id"
         )
     for column in table.columns.values():
         type_hint = column.type

@@ -13,14 +13,6 @@
               "url": "${secret:CUSTOMER_CONFIG_SHEET}",
               "worksheet": "DevExplatConfig"
             }
-          },
-          {
-            "participant_type": "alt",
-            "table_name": "alt_table",
-            "sheet": {
-              "url": "${secret:CUSTOMER_CONFIG_SHEET}",
-              "worksheet": "DevLinusConfig"
-            }
           }
         ],
         "webhook_config": {
@@ -54,7 +46,7 @@
           "password": "${secret:CUSTOMER_DWH_PASSWORD}",
           "dbname": "customer_dwh_dev",
           "sslmode": "require",
-          "search_path": "transforms, linus_transforms"
+          "search_path": "transforms"
         }
       }
     }
