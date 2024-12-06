@@ -206,6 +206,18 @@ export XNGIN_DB=postgresql://xnginwebserver:${PASSWORD}@localhost:5432/xngin
 uv run fastapi dev src/xngin/apiserver/main.py
 ```
 
+### How do I run our Github Action smoke tests?
+
+You could run the individual component tests as defined in the various jobs under [test.yaml](.github/workflows/test.yaml), but to best replicate the environment as used by our GHA, we recommend you install [`act`](https://github.com/nektos/act). Then you could execute whole workflows or individual jobs within, e.g.:
+```shell
+# list all jobs across our different workflows
+act -l
+# run an particular job in a workflow (for the default "on: push" event)
+act -W .github/workflows/test.yaml -j smoke-server
+# equivalently:
+act -j smoke-server
+```
+
 ### psycopg2 module does not install correctly.
 
 You might see this error:

@@ -17,7 +17,7 @@ from gspread import GSpreadException
 from pydantic import ValidationError
 from pydantic_core import from_json
 from rich.console import Console
-from sqlalchemy import create_engine, make_url, text
+from sqlalchemy import create_engine, func, make_url, select, text
 
 from xngin.apiserver import settings
 from xngin.apiserver.api_types import DataType
@@ -41,7 +41,7 @@ err_console = Console(stderr=True)
 app = typer.Typer(help=__doc__)
 
 logging.basicConfig(
-    level="INFO", format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+    level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s - %(message)s"
 )
 
 
@@ -201,6 +201,11 @@ def create_testing_dwh(
                 if_exists="replace",
                 index=False,
             )
+            # Depending on the db driver sometimes to_sql() doesn't know the row count, so explicitly query for it.
+            if row_count < 0:
+                row_count = conn.scalar(
+                    select(func.count()).select_from(text(full_table_name))
+                )
             print(f"Loaded {row_count} rows into {full_table_name}.")
 
 

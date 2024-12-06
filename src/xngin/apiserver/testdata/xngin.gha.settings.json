@@ -1,7 +1,5 @@
 {
-  "trusted_ips": [
-    "127.0.0.1"
-  ],
+  "trusted_ips": ["127.0.0.1"],
   "client_configs": [
     {
       "id": "gha-postgres",
@@ -36,6 +34,32 @@
           "port": 5499,
           "user": "postgres",
           "sslmode": "disable"
+        }
+      }
+    },
+    {
+      "id": "gha-postgres-alt",
+      "config": {
+        "type": "remote",
+        "participants": [
+          {
+            "participant_type": "alt",
+            "table_name": "alt_table",
+            "sheet": {
+              "url": "file://src/xngin/apiserver/testdata/testing_sheet.csv",
+              "worksheet": "Sheet1"
+            }
+          }
+        ],
+        "dwh": {
+          "dbname": "postgres",
+          "driver": "postgresql+psycopg",
+          "host": "127.0.0.1",
+          "password": "postgres",
+          "port": 5499,
+          "user": "postgres",
+          "sslmode": "disable",
+          "search_path": "alt"
         }
       }
     }
