@@ -21,8 +21,6 @@ env:
 
 jobs:
   unittests:
-    env:
-      UV_CACHE_DIR: /tmp/.uv-cache
     timeout-minutes: 15
     name: Python on ${{ startsWith(matrix.os, 'macos-') && 'macOS' || 'Linux' }}
     runs-on: ${{ matrix.os }}
@@ -56,6 +54,22 @@ jobs:
         run: |
           sudo apt-get install -y --no-install-recommends -y retry
           retry -t 3 -d 30 -- uv run pytest -m integration
+  unittests-in-docker:
+    timeout-minutes: 15
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - run: docker build -t xngin .
+      - run: docker run --rm xngin uv run pytest
+  smoke-cli:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v4
+        with:
+          version: "0.5.5"
+          enable-cache: true
       - name: xngin-cli smoke tests
         run: |
           uv run xngin-cli --help
@@ -68,14 +82,7 @@ jobs:
           uv run xngin-cli bootstrap-testing-dwh --force
           uv run xngin-cli bootstrap-spreadsheet sqlite:///./src/xngin/apiserver/testdata/testing_dwh.db test_participant_type > config.csv
           uv run xngin-cli parse-config-spreadsheet file://./config.csv test_participant_type
-  docker:
-    runs-on: ubuntu-22.04
-    timeout-minutes: 15
-    steps:
-      - uses: actions/checkout@v4
-      - run: docker build -t xngin .
-      - run: docker run --rm xngin uv run pytest
-  smoke:
+  smoke-server:
     runs-on: ubuntu-22.04
     timeout-minutes: 15
     services:
