@@ -35,7 +35,8 @@ use [xngin.testing.settings.json](src/xngin/apiserver/testdata/xngin.testing.set
 work.
 
 The settings files can be committed to version control but secret values should not be. They should be referred to with
-`${secret:NAME}` syntax. When the XNGIN_SECRETS_SOURCE environment variable is unset or set to "environ", those references will be replaced with
+`${secret:NAME}` syntax. When the XNGIN_SECRETS_SOURCE environment variable is unset or set to "environ", those
+references will be replaced with
 a corresponding environment variable value.
 
 ## Getting Started
@@ -127,14 +128,40 @@ Regarding some of the python libraries and features we use, see:
 
 ## FAQ
 
-### How do I build and run via Docker?
-
-> The Docker image is not useful for anything (yet).
+### How do I build the Docker container locally?
 
 ```shell
 docker build -t xngin .
 docker run xngin:latest
 ```
+
+See the next question for an example of how to pass settings to the container.
+
+### How do I run the tests in the Docker container?
+
+See [.github/workflows/test.yaml](.github/workflows/test.yaml).
+
+### How do I run the Docker images built by the CI?
+
+```shell
+# Authenticate your local Docker to the ghcr using a GitHub Personal Access Token that has at least the `read:packages`
+# scope. Create one here: https://github.com/settings/tokens
+docker login ghcr.io -u YOUR_GITHUB_USERNAME
+```
+
+Then you can start the container locally with something like this:
+
+```shell
+docker run \
+  -it \
+  --env-file ./.env \
+  -v path/to/settings/directory:/settings \
+  -e XNGIN_SETTINGS=/settings/xngin.settings.json \
+  ghcr.io/agency-fund/xngin:main
+```
+
+> Note: These flags change depending on runtime environment. If running under an orchestrator, omit the -it. To run in
+> the background, omit `-it` and add `-d`.
 
 ### How do I add a Python dependency?
 
