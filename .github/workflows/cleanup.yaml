@@ -1,0 +1,23 @@
+name: Cleanup Packages
+
+on:
+  schedule:
+    - cron: '0 0 1 * *'
+  workflow_dispatch:
+
+permissions:
+  packages: write
+
+jobs:
+  cleanup:
+    timeout-minutes: 10
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/delete-package-versions@v4
+        with:
+          package-name: ${{ github.repository_owner }}/${{ github.event.repository.name }}
+          package-type: 'container'
+          token: ${{ secrets.GITHUB_TOKEN }}
+          ignore-versions: '^latest|main$'
+          min-versions-to-keep: 10
+          delete-only-untagged-versions: true
