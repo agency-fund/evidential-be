@@ -1,4 +1,5 @@
 import json
+import logging
 import os
 from collections import Counter
 from functools import lru_cache
@@ -14,7 +15,7 @@ from pydantic import (
     ConfigDict,
     model_validator,
 )
-from sqlalchemy import Engine, event
+from sqlalchemy import Engine, event, text
 from sqlalchemy.exc import NoSuchTableError
 from sqlalchemy.orm import Session
 
@@ -23,11 +24,15 @@ from xngin.sqlite_extensions import NumpyStddev
 
 DEFAULT_SETTINGS_FILE = "xngin.settings.json"
 
+logger = logging.getLogger(__name__)
+
 
 @lru_cache
 def get_settings_for_server():
     """Constructs an XnginSettings for use by the API server."""
-    with open(os.environ.get("XNGIN_SETTINGS", DEFAULT_SETTINGS_FILE)) as f:
+    settings_file = os.environ.get("XNGIN_SETTINGS", DEFAULT_SETTINGS_FILE)
+    logger.info("Loading XNGIN_SETTINGS: %s", settings_file)
+    with open(settings_file) as f:
         settings_raw = json.load(f)
     settings_raw = replace_secrets(settings_raw)
     return XnginSettings.model_validate(settings_raw)
@@ -132,19 +137,24 @@ class Dsn(ConfigBaseModel):
         "postgresql+psycopg",  # Preferred for most Postgres-compatible databases.
         "postgresql+psycopg2",  # Use with: Redshift
     ]
-    user: str
-    port: PositiveInt = 5432
     host: str
+    port: PositiveInt = 5432
+    user: str
     password: SecretStr
     dbname: str
     sslmode: (
         Literal["disable", "allow", "prefer", "require", "verify-ca", "verify-full"]
         | None
     ) = None
+    # Specify the order in which schemas are searched if your dwh supports it.
+    search_path: str | None = None
 
     def is_redshift(self):
         """Return true iff the hostname indicates that this is connecting to Redshift."""
         return self.host.endswith("redshift.amazonaws.com")
+
+    def supports_table_reflection(self):
+        return not self.is_redshift()
 
     def to_sqlalchemy_url(self):
         """Creates a sqlalchemy.URL from this Dsn."""
@@ -187,6 +197,9 @@ class RemoteDatabaseConfig(ParticipantsMixin, ConfigBaseModel):
 
     dbapi_args: list[DbapiArg] | None = None
 
+    def supports_reflection(self):
+        return self.dwh.supports_table_reflection()
+
     def dbsession(self):
         """Returns a Session to be used to send queries to the customer database.
 
@@ -205,12 +218,28 @@ class RemoteDatabaseConfig(ParticipantsMixin, ConfigBaseModel):
             connect_args=connect_args,
             echo=os.environ.get("ECHO_SQL", "").lower() in ("true", "1"),
         )
-        self.extra_engine_setup(engine)
+        self._extra_engine_setup(engine)
         return Session(engine)
 
-    def extra_engine_setup(self, engine: Engine):
-        """Partially address any Redshift incompatibilities."""
+    def _extra_engine_setup(self, engine: Engine):
+        """Do any extra configuration if needed before a connection is made."""
 
+        # Avoid explicitly setting schema whenever we build a Table.
+        #   https://docs.sqlalchemy.org/en/20/dialects/postgresql.html#setting-alternate-search-paths-on-connect
+        # If possible, have the client also consider setting that as a default on the role, e.g.:
+        #   ALTER USER username SET search_path = schema1, schema2, public;
+        if self.dwh.search_path:
+
+            @event.listens_for(engine, "connect", insert=True)
+            def set_search_path(dbapi_connection, connection_record):
+                existing_autocommit = dbapi_connection.autocommit
+                dbapi_connection.autocommit = True
+                cursor = dbapi_connection.cursor()
+                cursor.execute(f"SET SESSION search_path={self.dwh.search_path}")
+                cursor.close()
+                dbapi_connection.autocommit = existing_autocommit
+
+        # Partially address any Redshift incompatibilities
         # re: https://github.com/sqlalchemy-redshift/sqlalchemy-redshift/issues/264#issuecomment-2181124071
         if self.dwh.is_redshift() and hasattr(engine.dialect, "_set_backslash_escapes"):
             engine.dialect._set_backslash_escapes = lambda _: None
@@ -219,6 +248,9 @@ class RemoteDatabaseConfig(ParticipantsMixin, ConfigBaseModel):
 class SqliteLocalConfig(ParticipantsMixin, ConfigBaseModel):
     type: Literal["sqlite_local"]
     sqlite_filename: str
+
+    def supports_reflection(self):
+        return True
 
     def dbsession(self):
         """Returns a Session to be used to send queries to a SQLite database.
@@ -295,16 +327,85 @@ class CannotFindParticipantsError(Exception):
         return self.message
 
 
-def infer_table(engine: sqlalchemy.engine.Engine, table_name: str):
+def infer_table_from_cursor(
+    engine: sqlalchemy.engine.Engine, table_name: str
+) -> sqlalchemy.Table:
+    """Creates a SQLAlchemy Table instance from cursor description metadata."""
+
+    columns = []
+    metadata = sqlalchemy.MetaData()
+    try:
+        with engine.connect() as connection:
+            safe_table = sqlalchemy.quoted_name(table_name, quote=True)
+            # Create a select statement - this is safe from SQL injection
+            query = sqlalchemy.select(text("*")).select_from(text(safe_table)).limit(0)
+            result = connection.execute(query)
+            description = result.cursor.description
+            # print("CURSOR DESC: ", result.cursor.description)
+            for col in description:
+                # Unpack cursor.description tuple
+                (
+                    name,
+                    type_code,
+                    _,  # display_size,
+                    internal_size,
+                    precision,
+                    scale,
+                    null_ok,
+                ) = col
+
+                # Map Redshift type codes to SQLAlchemy types. Not comprehensive.
+                # https://docs.sqlalchemy.org/en/20/core/types.html
+                # Comment shows both pg_type.typename / information_schema.data_type
+                sa_type = None
+                if type_code == 16:  # BOOL / boolean
+                    sa_type = sqlalchemy.Boolean
+                elif type_code == 20:  # INT8 / bigint
+                    sa_type = sqlalchemy.BigInteger
+                elif type_code == 23:  # INT4 / integer
+                    sa_type = sqlalchemy.Integer
+                elif type_code == 701:  # FLOAT8 / double precision
+                    sa_type = sqlalchemy.Double
+                elif type_code == 1043:  # VARCHAR / character varying
+                    sa_type = sqlalchemy.String(internal_size)
+                elif type_code == 1082:  # DATE / date
+                    sa_type = sqlalchemy.Date
+                elif type_code == 1114:  # TIMESTAMP / timestamp without time zone
+                    sa_type = sqlalchemy.DateTime
+                elif type_code == 1700:  # NUMERIC / numeric
+                    sa_type = sqlalchemy.Numeric(precision, scale)
+                else:  # type_code == 25
+                    # Default to Text for unknown types
+                    sa_type = sqlalchemy.Text
+
+                columns.append(
+                    sqlalchemy.Column(
+                        name, sa_type, nullable=null_ok if null_ok is not None else True
+                    )
+                )
+            return sqlalchemy.Table(table_name, metadata, *columns, quote=False)
+    except NoSuchTableError as nste:
+        metadata.reflect(engine)
+        existing_tables = metadata.tables.keys()
+        raise CannotFindTableError(table_name, existing_tables) from nste
+
+
+def infer_table(engine: sqlalchemy.engine.Engine, table_name: str, use_reflection=True):
     """Constructs a Table via reflection.
 
     Raises CannotFindTheTableException containing helpful error message if the table doesn't exist.
-
-    TODO: add workarounds for Redshift or other engines here.
     """
     metadata = sqlalchemy.MetaData()
     try:
-        return sqlalchemy.Table(table_name, metadata, autoload_with=engine)
+        if use_reflection:
+            return sqlalchemy.Table(
+                table_name, metadata, autoload_with=engine, quote=False
+            )
+        # This method of introspection should only be used if the db dialect doesn't support Sqlalchemy2 reflection.
+        return infer_table_from_cursor(engine, table_name)
+    except sqlalchemy.exc.ProgrammingError:
+        logger.exception("Failed to create a Table! use_reflection: %s", use_reflection)
+        raise
     except NoSuchTableError as nste:
         metadata.reflect(engine)
         existing_tables = metadata.tables.keys()

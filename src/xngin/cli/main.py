@@ -17,9 +17,7 @@ from gspread import GSpreadException
 from pydantic import ValidationError
 from pydantic_core import from_json
 from rich.console import Console
-from sqlalchemy import create_engine, make_url, func, text
-from sqlalchemy import select
-from sqlalchemy.orm import Session
+from sqlalchemy import create_engine, make_url, text
 
 from xngin.apiserver import settings
 from xngin.apiserver.api_types import DataType
@@ -47,7 +45,7 @@ logging.basicConfig(
 )
 
 
-def infer_config_from_schema(dsn: str, table: str):
+def infer_config_from_schema(dsn: str, table: str, use_reflection: bool):
     """Infers a configuration from a SQLAlchemy schema.
 
     :param dsn The SQLAlchemy-compatible DSN.
@@ -55,7 +53,9 @@ def infer_config_from_schema(dsn: str, table: str):
     """
     try:
         dwh = settings.infer_table(
-            sqlalchemy.create_engine(sqlalchemy.engine.make_url(dsn)), table
+            sqlalchemy.create_engine(sqlalchemy.engine.make_url(dsn)),
+            table,
+            use_reflection=use_reflection,
         )
     except CannotFindTableError as cfte:
         err_console.print(cfte.message)
@@ -104,6 +104,18 @@ def create_testing_dwh(
             help="Local path to the testing data warehouse CSV. This may be zstd-compressed."
         ),
     ] = testing_dwh.TESTING_DWH_RAW_DATA,
+    nrows: Annotated[
+        int | None,
+        typer.Option(
+            help="(If NOT using redshift) specify a limit to the number of rows to load from the csv."
+        ),
+    ] = None,
+    schema_name: Annotated[
+        str | None,
+        typer.Option(
+            help="Desired schema to use with the table, else uses your warehouse's default schema."
+        ),
+    ] = None,
     table_name: Annotated[
         str,
         typer.Option(
@@ -129,6 +141,10 @@ def create_testing_dwh(
 
     Note: The schemas may be different
     """
+    create_schema = text(
+        f"CREATE SCHEMA IF NOT EXISTS {schema_name}" if schema_name else ""
+    )
+    full_table_name = f"{schema_name}.{table_name}" if schema_name else table_name
     url = make_url(dsn).set(password=password)
     if url.host.endswith(REDSHIFT_HOSTNAME_SUFFIX):
         if not bucket:
@@ -137,7 +153,7 @@ def create_testing_dwh(
         if not iam_role:
             print("--iam-role is required when importing into Redshift.")
             raise typer.Exit(2)
-        create_table = csv_to_ddl(src, table_name)
+        create_table = csv_to_ddl(src, full_table_name)
         print(create_table)
         with (
             psycopg2.connect(
@@ -150,8 +166,10 @@ def create_testing_dwh(
             conn.cursor() as cur,
         ):
             print("Dropping...")
-            cur.execute(f"DROP TABLE IF EXISTS {table_name} ")
+            cur.execute(f"DROP TABLE IF EXISTS {full_table_name} ")
             print("Creating...")
+            if schema_name is not None:
+                cur.execute(create_schema)
             cur.execute(create_table)
             key = src.name
             print(f"Uploading to s3://{bucket}/{key}...")
@@ -160,24 +178,30 @@ def create_testing_dwh(
             print("Loading...")
             zstd = "ZSTD" if key.endswith(".zst") else ""
             cur.execute(
-                f"""COPY {table_name} FROM 's3://{bucket}/{key}' IAM_ROLE '{iam_role}' FORMAT CSV IGNOREHEADER 1 {zstd};"""
+                f"""COPY {full_table_name} FROM 's3://{bucket}/{key}' IAM_ROLE '{iam_role}' FORMAT CSV IGNOREHEADER 1 {zstd};"""
             )
-            cur.execute(f"SELECT COUNT(*) FROM {table_name}")
+            cur.execute(f"SELECT COUNT(*) FROM {full_table_name}")
             count = cur.fetchone()[0]
             print("Deleting temporary file...")
             s3.delete_object(Bucket=bucket, Key=key)
-            print(f"Loaded {count} rows into {table_name}.")
+            print(f"Loaded {count} rows into {full_table_name}.")
     else:
         print("Reading CSV...")
-        df = pd.read_csv(src)
+        df = pd.read_csv(src, nrows=nrows)
         print("Loading...")
         engine = create_engine(url)
-        df.to_sql(table_name, engine, if_exists="replace", index=False)
-        with Session(engine) as session:
-            row_count = session.scalar(
-                select(func.count(text("*"))).select_from(text("dwh"))
+        with engine.connect() as conn, conn.begin():
+            if schema_name is not None:
+                print(create_schema)
+                conn.execute(create_schema)
+            row_count = df.to_sql(
+                table_name,
+                conn,
+                schema=schema_name,
+                if_exists="replace",
+                index=False,
             )
-            print(f"Loaded {row_count} rows into {table_name}.")
+            print(f"Loaded {row_count} rows into {full_table_name}.")
 
 
 @app.command()
@@ -214,12 +238,18 @@ def bootstrap_spreadsheet(
             help="Share the newly created Google Sheet with one or more email addresses.",
         ),
     ] = None,
+    use_reflection: Annotated[
+        bool,
+        typer.Option(
+            help="True to use SQLAlchemy's table reflection, else use a cursor to infer types",
+        ),
+    ] = True,
 ):
     """Generates a Google Spreadsheet from a SQLAlchemy DSN and a table name.
 
     Use this to get a customer started on configuring an experiment.
     """
-    config = infer_config_from_schema(dsn, table_name)
+    config = infer_config_from_schema(dsn, table_name, use_reflection)
 
     # Exclude the `extra` field.
     column_names = [c for c in ColumnDescriptor.model_fields if c != "extra"]

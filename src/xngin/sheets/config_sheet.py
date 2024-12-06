@@ -101,7 +101,7 @@ class ConfigWorksheet(BaseModel):
 
     def get_unique_id_col(self):
         """Gets the name of the unique ID field."""
-        return next(i.column_name for i in self.columns if i.is_unique_id)
+        return next((i.column_name for i in self.columns if i.is_unique_id), None)
 
     @model_validator(mode="after")
     def check_one_unique_id(self) -> "ConfigWorksheet":
@@ -203,13 +203,20 @@ def fetch_and_parse_sheet(ref: SheetRef):
     raise InvalidSheetError(errors)
 
 
-def create_sheetconfig_from_table(table: sqlalchemy.Table):
+def create_sheetconfig_from_table(
+    table: sqlalchemy.Table, unique_id_col: str | None = None
+):
+    """Attempts to get name and type info from the database Table itself (formerly done via gsheets).
+
+    If unique_id_col is explicitly set to None, we will look for a primary key else assume "id".
+    (This mode should only be used if bootstrapping a sheet config from a table's schema.)
+    """
+
     collected = []
-    # find the primary key
-    pk_col = next((c.name for c in table.columns.values() if c.primary_key), None)
-    # if the database doesn't have one, assume the existence of an "id" column.
-    if not pk_col:
-        pk_col = "id"
+    if unique_id_col is None:
+        unique_id_col = next(
+            (c.name for c in table.columns.values() if c.primary_key), "id"
+        )
     for column in table.columns.values():
         type_hint = column.type
         collected.append(
@@ -218,7 +225,7 @@ def create_sheetconfig_from_table(table: sqlalchemy.Table):
                 data_type=DataType.match(type_hint),
                 column_group="",
                 description="",
-                is_unique_id=column.name == pk_col,
+                is_unique_id=column.name == unique_id_col,
                 is_strata=False,
                 is_filter=False,
                 is_metric=False,

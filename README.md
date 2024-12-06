@@ -107,6 +107,10 @@ Follow the steps below to get a local development environment running.
    ```
    pre-commit run -a
    ```
+8. To parse a proper Google Sheets config, you'll need a service worker token, whose json info should be placed in `~/.config/gspread/service_account.json` by default.
+   - [Setup a service account in your GCP console](console.cloud.google.com) > select your project via dropdown at the top > IAM & Admin > Service Accounts > + Create Service Account > give it a name, desc and create; *note the email addr created* > After creation, click the email for that account > Keys tab > Create the json key file and put it in the above location. Lastly, share the spreadsheet as Viewer-only with this special service account email address.
+   - Ensure that the [Google Sheets API](  https://console.developers.google.com/apis/api/sheets.googleapis.com/overview) is enabled for your google cloud project.
+
 
 ### Learn more
 

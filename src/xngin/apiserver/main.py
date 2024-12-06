@@ -31,12 +31,12 @@ from xngin.apiserver.dependencies import (
 from xngin.apiserver.dwh.queries import get_stats_on_metrics, query_for_participants
 from xngin.apiserver.gsheet_cache import GSheetCache
 from xngin.apiserver.settings import (
+    ParticipantsMixin,
     WebhookConfig,
     WebhookUrl,
     get_settings_for_server,
     XnginSettings,
     ClientConfig,
-    CannotFindTableError,
     infer_table,
 )
 from xngin.stats.power import check_power
@@ -114,9 +114,14 @@ def get_strata(
     """
     config = require_config(client)
     participants = config.find_participants(commons.participant_type)
+    config_sheet = fetch_worksheet(commons, config, gsheets)
     with config.dbsession() as session:
-        sa_table = infer_table(session.get_bind(), participants.table_name)
-        db_schema = generate_column_descriptors(sa_table)
+        sa_table = infer_table(
+            session.get_bind(), participants.table_name, config.supports_reflection()
+        )
+        db_schema = generate_column_descriptors(
+            sa_table, config_sheet.get_unique_id_col()
+        )
         config_sheet = fetch_worksheet(commons, config, gsheets)
         strata_cols = {c.column_name: c for c in config_sheet.columns if c.is_strata}
 
@@ -148,9 +153,14 @@ def get_filters(
 ) -> list[GetFiltersResponseElement]:
     config = require_config(client)
     participants = config.find_participants(commons.participant_type)
+    config_sheet = fetch_worksheet(commons, config, gsheets)
     with config.dbsession() as session:
-        sa_table = infer_table(session.get_bind(), participants.table_name)
-        db_schema = generate_column_descriptors(sa_table)
+        sa_table = infer_table(
+            session.get_bind(), participants.table_name, config.supports_reflection()
+        )
+        db_schema = generate_column_descriptors(
+            sa_table, config_sheet.get_unique_id_col()
+        )
         config_sheet = fetch_worksheet(commons, config, gsheets)
         filter_cols = {c.column_name: c for c in config_sheet.columns if c.is_filter}
 
@@ -218,12 +228,17 @@ def get_metrics(
     """
     config = require_config(client)
     participants = config.find_participants(commons.participant_type)
+    config_sheet = fetch_worksheet(commons, config, gsheets)
     with config.dbsession() as session:
-        sa_table = infer_table(session.get_bind(), participants.table_name)
-        db_schema = generate_column_descriptors(sa_table)
-        config_sheet = fetch_worksheet(commons, config, gsheets)
-        metric_cols = {c.column_name: c for c in config_sheet.columns if c.is_metric}
+        sa_table = infer_table(
+            session.get_bind(), participants.table_name, config.supports_reflection()
+        )
+        db_schema = generate_column_descriptors(
+            sa_table, config_sheet.get_unique_id_col()
+        )
 
+    metric_cols = {c.column_name: c for c in config_sheet.columns if c.is_metric}
+    # Merge data type info above with the columns to be used as metrics:
     return sorted(
         [
             GetMetricsResponseElement(
@@ -256,7 +271,9 @@ def check_power_api(
     config = require_config(client)
     participant = config.find_participants(audience_spec.participant_type)
     with config.dbsession() as session:
-        sa_table = infer_table(session.get_bind(), participant.table_name)
+        sa_table = infer_table(
+            session.get_bind(), participant.table_name, config.supports_reflection()
+        )
         config_sheet = fetch_worksheet(
             CommonQueryParams(
                 participant_type=participant.participant_type, refresh=refresh
@@ -297,7 +314,9 @@ def assign_treatment_api(
     config = require_config(client)
     participant = config.find_participants(audience_spec.participant_type)
     with config.dbsession() as session:
-        sa_table = infer_table(session.get_bind(), participant.table_name)
+        sa_table = infer_table(
+            session.get_bind(), participant.table_name, config.supports_reflection()
+        )
         participants = query_for_participants(
             session, sa_table, audience_spec, chosen_n
         )
@@ -547,7 +566,9 @@ def require_config(client: ClientConfig | None):
     return client.config
 
 
-def fetch_worksheet(commons: CommonQueryParams, config, gsheets: GSheetCache):
+def fetch_worksheet(
+    commons: CommonQueryParams, config: ParticipantsMixin, gsheets: GSheetCache
+):
     """Fetches a worksheet from the cache, reading it from the source if refresh or if the cache doesn't have it."""
     sheet = config.find_participants(commons.participant_type).sheet
     return gsheets.get(
@@ -557,15 +578,15 @@ def fetch_worksheet(commons: CommonQueryParams, config, gsheets: GSheetCache):
     )
 
 
-def generate_column_descriptors(table: sqlalchemy.Table):
+def generate_column_descriptors(table: sqlalchemy.Table, unique_id_col: str):
     """Fetches a map of column name to SheetConfig column metadata.
 
-    Raises 500 if the table does not exist.
+    Uniqueness of the values in the column unique_id_col is assumed, not verified!
     """
-    try:
-        return {c.column_name: c for c in create_sheetconfig_from_table(table).columns}
-    except CannotFindTableError as cfte:
-        raise HTTPException(status_code=500, detail=cfte.message) from cfte
+    return {
+        c.column_name: c
+        for c in create_sheetconfig_from_table(table, unique_id_col).columns
+    }
 
 
 def main():

@@ -45,7 +45,8 @@ def get_stats_on_metrics(
     for metric in metrics:
         metric_name = metric.metric_name
         metric_with_stats = metric.model_copy()
-        metric_with_stats.metric_baseline = stats[f"{metric_name}__mean"]
+        # Explicit cast to float in case the db mean is a decimal.Decimal
+        metric_with_stats.metric_baseline = float(stats[f"{metric_name}__mean"])
         metric_with_stats.metric_stddev = stats[f"{metric_name}__stddev"]
         metric_with_stats.available_n = stats[f"{metric_name}__count"]
         metrics_with_stats.append(metric_with_stats)
