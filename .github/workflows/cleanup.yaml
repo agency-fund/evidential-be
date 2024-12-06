@@ -5,6 +5,7 @@ on:
     - cron: '0 0 1 * *'
   workflow_dispatch:
 
+# Additional permissions required: enable "Admin" access in Package Settings > Manage Actions Access.
 permissions:
   packages: write
 
@@ -13,9 +14,9 @@ jobs:
     timeout-minutes: 10
     runs-on: ubuntu-22.04
     steps:
-      - uses: actions/delete-package-versions@v4
+      - uses: actions/delete-package-versions@v5
         with:
-          package-name: ${{ github.repository_owner }}/${{ github.event.repository.name }}
+          package-name: ${{ github.event.repository.name }}
           package-type: 'container'
           token: ${{ secrets.GITHUB_TOKEN }}
           ignore-versions: '^latest|main$'
