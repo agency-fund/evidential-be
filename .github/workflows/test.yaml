@@ -110,8 +110,10 @@ jobs:
         run: |
           XNGIN_SETTINGS=src/xngin/apiserver/testdata/xngin.gha.settings.json uv run fastapi dev src/xngin/apiserver/main.py &
           # Load two tables, one in the default schema, one in an 'alt'
+          sleep 10 &
           uv run xngin-cli create-testing-dwh --dsn postgresql+psycopg://postgres@127.0.0.1:5499/postgres --password postgres
           uv run xngin-cli create-testing-dwh --dsn postgresql://postgres:postgres@127.0.0.1:5499/postgres --schema-name alt --table-name=alt_table --nrows 10
+          wait %2  # ensure our server has at least the sleep duration to start
           curl -fv http://localhost:8000/_settings
           # Verify we can get data from a table in the default schema
           curl -fv -H "Config-ID: gha-postgres" 'http://localhost:8000/filters?participant_type=dwh'
