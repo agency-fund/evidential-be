@@ -44,11 +44,20 @@ def test_assign_treatment(sample_data):
         result.assignments
     )
     assert all(len(participant.strata) == 2 for participant in result.assignments)
-    print(set([x.treatment_assignment for x in result.assignments]))
     assert all(
         participant.treatment_assignment in ["control", "treatment"]
         for participant in result.assignments
     )
+    assert(result.assignments[0].treatment_assignment == "control")
+    assert(result.assignments[1].treatment_assignment == "control")
+    assert(result.assignments[2].treatment_assignment == "treatment")
+    assert(result.assignments[3].treatment_assignment == "control")
+    assert(result.assignments[4].treatment_assignment == "treatment")
+    assert(result.assignments[5].treatment_assignment == "control")
+    assert(result.assignments[6].treatment_assignment == "treatment")
+    assert(result.assignments[7].treatment_assignment == "control")
+    assert(result.assignments[8].treatment_assignment == "control")
+    assert(result.assignments[9].treatment_assignment == "control")
 
 
 def test_assign_treatment_multiple_arms(sample_data):
