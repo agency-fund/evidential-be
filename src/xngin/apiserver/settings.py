@@ -189,7 +189,7 @@ class DbapiArg(ConfigBaseModel):
 class RemoteDatabaseConfig(ParticipantsMixin, ConfigBaseModel):
     """RemoteDatabaseConfig defines a configuration for a remote data warehouse."""
 
-    webhook_config: WebhookConfig
+    webhook_config: WebhookConfig | None = None
 
     type: Literal["remote"]
 

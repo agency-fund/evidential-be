@@ -2,9 +2,9 @@ name: tests
 
 on:
   push:
-    branches: [ main ]
+    branches: [main]
   pull_request:
-    branches: [ main ]
+    branches: [main]
   workflow_dispatch:
 
 permissions:
@@ -27,7 +27,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ ubuntu-22.04, macos-14 ]
+        os: [ubuntu-22.04, macos-14]
     steps:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v4
@@ -108,9 +108,15 @@ jobs:
       - env:
           PGPASSWORD: postgres
         run: |
-          uv run xngin-cli create-testing-dwh --dsn postgresql+psycopg://postgres:postgres@127.0.0.1:5499/postgres --password postgres
           XNGIN_SETTINGS=src/xngin/apiserver/testdata/xngin.gha.settings.json uv run fastapi dev src/xngin/apiserver/main.py &
-          sleep 10  # hack
+          # Load two tables, one in the default schema, one in an 'alt'
+          sleep 10 &
+          uv run xngin-cli create-testing-dwh --dsn postgresql+psycopg://postgres@127.0.0.1:5499/postgres --password postgres
+          uv run xngin-cli create-testing-dwh --dsn postgresql://postgres:postgres@127.0.0.1:5499/postgres --schema-name alt --table-name=alt_table --nrows 10
+          wait %2  # ensure our server has at least the sleep duration to start
           curl -fv http://localhost:8000/_settings
+          # Verify we can get data from a table in the default schema
           curl -fv -H "Config-ID: gha-postgres" 'http://localhost:8000/filters?participant_type=dwh'
+          # Now verify search_path can override defaults
+          curl -fv -H "Config-ID: gha-postgres-alt" 'http://localhost:8000/filters?participant_type=alt'
           kill %1
