@@ -64,6 +64,19 @@ jobs:
   smoke-cli:
     runs-on: ubuntu-22.04
     timeout-minutes: 15
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_DB: postgres
+          POSTGRES_PASSWORD: postgres
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 5499:5432
     steps:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v4
@@ -71,6 +84,8 @@ jobs:
           version: "0.5.5"
           enable-cache: true
       - name: xngin-cli smoke tests
+        env:
+          PGPASSWORD: postgres
         run: |
           uv run xngin-cli --help
           uv run xngin-cli export-json-schemas
@@ -79,9 +94,13 @@ jobs:
           uv run xngin-cli validate-settings xngin.settings.json
 
           # import/export lifecycle
-          uv run xngin-cli bootstrap-testing-dwh --force
           uv run xngin-cli bootstrap-spreadsheet sqlite:///./src/xngin/apiserver/testdata/testing_dwh.db test_participant_type > config.csv
           uv run xngin-cli parse-config-spreadsheet file://./config.csv test_participant_type
+
+          # Verify create-testing-dwh executes against SQLite, default Postgres driver, and psycopg2 driver.
+          uv run xngin-cli create-testing-dwh --dsn sqlite:///smoke.db --table-name=sqlitetest --nrows 100
+          uv run xngin-cli create-testing-dwh --dsn postgresql://postgres@127.0.0.1:5499/postgres --nrows 100
+          uv run xngin-cli create-testing-dwh --dsn postgresql+psycopg2://postgres@127.0.0.1:5499/postgres --schema-name alt --table-name=alt_table --nrows 100
   smoke-server:
     runs-on: ubuntu-22.04
     timeout-minutes: 15
@@ -108,12 +127,14 @@ jobs:
       - env:
           PGPASSWORD: postgres
         run: |
-          XNGIN_SETTINGS=src/xngin/apiserver/testdata/xngin.gha.settings.json uv run fastapi dev src/xngin/apiserver/main.py &
-          # Load two tables, one in the default schema, one in an 'alt'
-          sleep 10 &
-          uv run xngin-cli create-testing-dwh --dsn postgresql+psycopg://postgres@127.0.0.1:5499/postgres --password postgres
-          uv run xngin-cli create-testing-dwh --dsn postgresql://postgres:postgres@127.0.0.1:5499/postgres --schema-name alt --table-name=alt_table --nrows 10
-          wait %2  # ensure our server has at least the sleep duration to start
+          # These imports correspond to entries in xngin.gha.settings.json.
+          uv run xngin-cli create-testing-dwh --dsn postgresql+psycopg://postgres@127.0.0.1:5499/postgres
+          uv run xngin-cli create-testing-dwh --dsn postgresql+psycopg://postgres@127.0.0.1:5499/postgres \
+            --schema-name alt --table-name=alt_table
+
+          XNGIN_SETTINGS=src/xngin/apiserver/testdata/xngin.gha.settings.json uv run fastapi dev \
+            src/xngin/apiserver/main.py &
+          sleep 10
           curl -fv http://localhost:8000/_settings
           # Verify we can get data from a table in the default schema
           curl -fv -H "Config-ID: gha-postgres" 'http://localhost:8000/filters?participant_type=dwh'
