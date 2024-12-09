@@ -453,7 +453,10 @@ class GetStrataResponseElement(BaseModel):
 
 
 class GetFiltersResponseElement(BaseModel):
+    # TODO: Can we rename this to column_name for consistency with GetStrataResponseElement?
+    filter_name: str = Field(..., description="Name of the column.")
     data_type: DataType
+    relations: list[Relation] = Field(..., min_length=1)
     description: str
     distinct_values: list[str] | None = Field(
         ...,
@@ -467,9 +470,6 @@ class GetFiltersResponseElement(BaseModel):
         ...,
         description="If the type of the column is numeric, this will contain the maximum observed value.",
     )
-    # TODO: Can we rename this to column_name for consistency with GetStrataResponseElement?
-    filter_name: str = Field(..., description="Name of the column.")
-    relations: list[Relation] = Field(..., min_length=1)
 
 
 class GetMetricsResponseElement(BaseModel):

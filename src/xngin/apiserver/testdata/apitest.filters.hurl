@@ -6,7 +6,6 @@ HTTP 200
   {
     "data_type": "double precision",
     "description": "Baseline Income",
-    "distinct_values": null,
     "filter_name": "baseline_income",
     "max": 120621.36985115612,
     "min": 9778.910653027706,
@@ -17,7 +16,6 @@ HTTP 200
   {
     "data_type": "double precision",
     "description": "Current Income",
-    "distinct_values": null,
     "filter_name": "current_income",
     "max": 96941.0,
     "min": 8466.284540241537,
@@ -37,8 +35,6 @@ HTTP 200
       "White"
     ],
     "filter_name": "ethnicity",
-    "max": null,
-    "min": null,
     "relations": [
       "includes",
       "excludes"
@@ -52,8 +48,6 @@ HTTP 200
       "Male"
     ],
     "filter_name": "gender",
-    "max": null,
-    "min": null,
     "relations": [
       "includes",
       "excludes"
@@ -62,7 +56,6 @@ HTTP 200
   {
     "data_type": "integer",
     "description": "Engaged?",
-    "distinct_values": null,
     "filter_name": "is_engaged",
     "max": 1,
     "min": 0,
@@ -73,7 +66,6 @@ HTTP 200
   {
     "data_type": "integer",
     "description": "Onboarded?",
-    "distinct_values": null,
     "filter_name": "is_onboarded",
     "max": 1,
     "min": 0,
@@ -84,7 +76,6 @@ HTTP 200
   {
     "data_type": "integer",
     "description": "Recruited?",
-    "distinct_values": null,
     "filter_name": "is_recruited",
     "max": 1,
     "min": 1,
@@ -95,7 +86,6 @@ HTTP 200
   {
     "data_type": "integer",
     "description": "Registered?",
-    "distinct_values": null,
     "filter_name": "is_registered",
     "max": 1,
     "min": 0,
@@ -106,7 +96,6 @@ HTTP 200
   {
     "data_type": "integer",
     "description": "Retained?",
-    "distinct_values": null,
     "filter_name": "is_retained",
     "max": 1,
     "min": 0,

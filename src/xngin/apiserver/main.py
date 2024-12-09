@@ -1,6 +1,6 @@
 from contextlib import asynccontextmanager
 import os
-from typing import Annotated, Literal
+from typing import Annotated, Any, Literal
 import logging
 import warnings
 
@@ -150,7 +150,7 @@ def get_filters(
     commons: Annotated[CommonQueryParams, Depends()],
     gsheets: Annotated[GSheetCache, Depends(gsheet_cache)],
     client: Annotated[ClientConfig | None, Depends(config_dependency)] = None,
-) -> list[GetFiltersResponseElement]:
+) -> list[dict[str, Any]]:
     config = require_config(client)
     participants = config.find_participants(commons.participant_type)
     config_sheet = fetch_worksheet(commons, config, gsheets)
@@ -199,7 +199,8 @@ def get_filters(
                 distinct_values=distinct_values,
                 min=min_,
                 max=max_,
-            )
+            ).model_dump(exclude_none=True)
+            # TODO: handle skipping nulls better https://github.com/fastapi/fastapi/discussions/8882
 
         return sorted(
             [
@@ -207,7 +208,7 @@ def get_filters(
                 for col_name, col_descriptor in filter_cols.items()
                 if db_schema.get(col_name)
             ],
-            key=lambda item: item.filter_name,
+            key=lambda item: item["filter_name"],
         )
 
 
