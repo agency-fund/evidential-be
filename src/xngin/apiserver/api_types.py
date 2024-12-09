@@ -450,6 +450,8 @@ class GetStrataResponseElement(BaseModel):
     column_name: str
     description: str
     strata_group: str
+    # Extra fields are allowed in case a user configured their worksheet with extra metadata
+    model_config = {"extra": "allow"}
 
 
 class GetFiltersResponseElement(BaseModel):

@@ -133,6 +133,8 @@ def get_strata(
                 description=col_descriptor.description,
                 # TODO: work on naming for strata_group/column_group
                 strata_group=col_descriptor.column_group,
+                # For strata columns, we will echo back any extra annotations
+                **(col_descriptor.extra or {}),
             )
             for col_name, col_descriptor in strata_cols.items()
             if db_schema.get(col_name)
