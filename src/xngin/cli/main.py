@@ -153,7 +153,7 @@ def create_testing_dwh(
     is_compressed = src.suffix == ".zst"
 
     url = make_url(dsn)
-    if password is not None:
+    if password is not None and url.username is not None:
         url = url.set(password=password)
 
     def read_csv():
