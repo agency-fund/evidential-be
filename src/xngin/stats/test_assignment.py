@@ -33,8 +33,8 @@ def test_assign_treatment(sample_data):
         random_state=42,
     )
 
-    assert result.f_statistic == 0.022813936
-    assert result.p_value == 0.999988278
+    assert result.f_statistic == 0.006156735
+    assert result.p_value == 0.99992466
     assert result.balance_ok
     assert str(result.experiment_id) == "b767716b-f388-4cd9-a18a-08c4916ce26f"
     assert result.description == "Test experiment"

@@ -19,7 +19,7 @@ def check_balance(
     data: pd.DataFrame,
     treatment_col: str = "treat",
     exclude_cols: list[str] | None = None,
-    alpha: float = 0.05,
+    alpha: float = 0.5,
 ) -> BalanceResult:
     """
     Perform balance check on treatment assignment.
@@ -68,13 +68,15 @@ def check_balance(
         if col != treatment_col and col not in exclude_cols
     ]
 
+    # TODO(roboton): Run multi-class regression via MVLogit
+    # df_analysis[treatment_col] = pd.Categorical(df_analysis[treatment_col])
+    # only check the first two treatment groups
+    df_analysis = df_analysis[df_analysis[treatment_col].isin([0, 1])]
+
     formula = f"{treatment_col} ~ " + " + ".join(covariates)
 
-    print(formula)
     # Fit regression model
     model = smf.ols(formula=formula, data=df_analysis).fit()
-    # model = sm.OLS(balance_data["treat"], balance_data.drop("treat", axis=1)).fit()
-    # print(model.summary().as_text())
 
     return BalanceResult(
         f_statistic=model.fvalue,

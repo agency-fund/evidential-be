@@ -14,20 +14,6 @@ from xngin.apiserver.api_types import (
 )
 from xngin.stats.balance import check_balance
 
-# @dataclass(slots=True)
-# class AssignmentResult:
-#     """Results from treatment assignment."""
-#     f_statistic: float
-#     numerator_df: int
-#     denominator_df: int
-#     f_pvalue: float
-#     balance_ok: bool
-#     experiment_id: str
-#     description: str
-#     sample_size: int
-#     assignments: pd.DataFrame
-
-
 def assign_treatment(
     data: pd.DataFrame,
     stratum_cols: list[str],
@@ -62,7 +48,6 @@ def assign_treatment(
 
     # Assign treatments
     n_arms = len(arm_names)
-    print(df.columns)
     treatment_status = stochatreat(
         data=df,
         stratum_cols=stratum_cols,
@@ -74,8 +59,8 @@ def assign_treatment(
     df = df.merge(treatment_status, on=id_col)
 
     # check balance
-    balance_check = check_balance(df, "treat",
-                                  exclude_cols=[id_col])
+    balance_check = check_balance(df[stratum_cols + ["treat"]], "treat",
+                                  exclude_cols=[id_col], alpha = fstat_thresh)
                                                              
 
     # Prepare assignments for return
