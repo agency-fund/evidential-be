@@ -115,6 +115,8 @@ def get_strata(
     config = require_config(client)
     participants = config.find_participants(commons.participant_type)
     config_sheet = fetch_worksheet(commons, config, gsheets)
+    strata_cols = {c.column_name: c for c in config_sheet.columns if c.is_strata}
+
     with config.dbsession() as session:
         sa_table = infer_table(
             session.get_bind(), participants.table_name, config.supports_reflection()
@@ -122,8 +124,6 @@ def get_strata(
         db_schema = generate_column_descriptors(
             sa_table, config_sheet.get_unique_id_col()
         )
-        config_sheet = fetch_worksheet(commons, config, gsheets)
-        strata_cols = {c.column_name: c for c in config_sheet.columns if c.is_strata}
 
     return sorted(
         [
@@ -154,6 +154,8 @@ def get_filters(
     config = require_config(client)
     participants = config.find_participants(commons.participant_type)
     config_sheet = fetch_worksheet(commons, config, gsheets)
+    filter_cols = {c.column_name: c for c in config_sheet.columns if c.is_filter}
+
     with config.dbsession() as session:
         sa_table = infer_table(
             session.get_bind(), participants.table_name, config.supports_reflection()
@@ -161,8 +163,6 @@ def get_filters(
         db_schema = generate_column_descriptors(
             sa_table, config_sheet.get_unique_id_col()
         )
-        config_sheet = fetch_worksheet(commons, config, gsheets)
-        filter_cols = {c.column_name: c for c in config_sheet.columns if c.is_filter}
 
         # TODO: implement caching, respecting commons.refresh
         def mapper(col_name, column_descriptor):
@@ -229,6 +229,8 @@ def get_metrics(
     config = require_config(client)
     participants = config.find_participants(commons.participant_type)
     config_sheet = fetch_worksheet(commons, config, gsheets)
+    metric_cols = {c.column_name: c for c in config_sheet.columns if c.is_metric}
+
     with config.dbsession() as session:
         sa_table = infer_table(
             session.get_bind(), participants.table_name, config.supports_reflection()
@@ -237,7 +239,6 @@ def get_metrics(
             sa_table, config_sheet.get_unique_id_col()
         )
 
-    metric_cols = {c.column_name: c for c in config_sheet.columns if c.is_metric}
     # Merge data type info above with the columns to be used as metrics:
     return sorted(
         [
@@ -270,18 +271,12 @@ def check_power_api(
     """
     config = require_config(client)
     participant = config.find_participants(audience_spec.participant_type)
+
     with config.dbsession() as session:
         sa_table = infer_table(
             session.get_bind(), participant.table_name, config.supports_reflection()
         )
-        config_sheet = fetch_worksheet(
-            CommonQueryParams(
-                participant_type=participant.participant_type, refresh=refresh
-            ),
-            config,
-            gsheets,
-        )
-        _unique_id_col = config_sheet.get_unique_id_col()
+
         metric_stats = get_stats_on_metrics(
             session,
             sa_table,
@@ -306,13 +301,24 @@ def assign_treatment_api(
     design_spec: DesignSpec,
     audience_spec: AudienceSpec,
     chosen_n: int,
-    random_state: int,
     gsheets: Annotated[GSheetCache, Depends(gsheet_cache)],
     client: Annotated[ClientConfig | None, Depends(config_dependency)] = None,
     refresh: Annotated[bool, Query(description="Refresh the cache.")] = False,
+    random_state: Annotated[
+        int | None, Query(description="Specify a random seed for reproducibility.")
+    ] = None,
 ) -> ExperimentAssignment:
     config = require_config(client)
     participant = config.find_participants(audience_spec.participant_type)
+    config_sheet = fetch_worksheet(
+        CommonQueryParams(
+            participant_type=participant.participant_type, refresh=refresh
+        ),
+        config,
+        gsheets,
+    )
+    _unique_id_col = config_sheet.get_unique_id_col()
+
     with config.dbsession() as session:
         sa_table = infer_table(
             session.get_bind(), participant.table_name, config.supports_reflection()
@@ -320,14 +326,6 @@ def assign_treatment_api(
         participants = query_for_participants(
             session, sa_table, audience_spec, chosen_n
         )
-        config_sheet = fetch_worksheet(
-            CommonQueryParams(
-                participant_type=participant.participant_type, refresh=refresh
-            ),
-            config,
-            gsheets,
-        )
-        _unique_id_col = config_sheet.get_unique_id_col()
 
     metric_names = [metric.metric_name for metric in design_spec.metrics]
     arm_names = [arm.arm_name for arm in design_spec.arms]

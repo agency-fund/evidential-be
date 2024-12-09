@@ -19,7 +19,9 @@ class Hurl(BaseModel):
         ```json        # required
         expected response
         ```
+        trailer        # optional, arbitrary content available as .trailer
 
+    Note: This does not implement the official Hurl grammar.
     """
 
     method: str
@@ -28,6 +30,7 @@ class Hurl(BaseModel):
     expected_status: int
     expected_response: str | None = None
     body: str | None = None
+    trailer: str | None = None
 
     def to_script(self):
         """Generates a Hurl script from this Hurl instance."""
@@ -73,6 +76,7 @@ class Hurl(BaseModel):
                 )
                 << whitespace.optional()
             )
+            trailer = yield regex("(?s).*").map(lambda v: v if v else None)
 
             return Hurl(  # noqa: B901
                 method=method,
@@ -81,6 +85,7 @@ class Hurl(BaseModel):
                 expected_response=payloads.get("resp_body"),
                 body=payloads.get("req_body"),
                 expected_status=payloads.get("status"),
+                trailer=trailer,
             )
 
         return parser.parse(script)

@@ -10,6 +10,7 @@ def test_hurl():
         headers={"H1": "v1"},
         expected_response="contents",
         expected_status=200,
+        trailer=None,
     )
     assert Hurl.from_script(
         """GET /foo/bar\nHTTP 200\n```json\ncontents\n```"""
@@ -19,6 +20,7 @@ def test_hurl():
         headers={},
         expected_response="contents",
         expected_status=200,
+        trailer=None,
     )
     assert Hurl.from_script(
         """GET /foo/bar\n```json\npayload\n```\nHTTP 200\n```json\ncontents\n```"""
@@ -29,6 +31,7 @@ def test_hurl():
         expected_response="contents",
         expected_status=200,
         body="payload",
+        trailer=None,
     )
     assert Hurl.from_script("""GET http://localhost:8000/strata?participant_type=test_participant_type
 ```json
@@ -47,6 +50,7 @@ HTTP 200
         expected_status=200,
         expected_response='[\n  { "k": "v" }',
         body="requestbody",
+        trailer=None,
     )
     assert Hurl.from_script("""GET http://localhost:8000/strata?participant_type=test_participant_type
 Config-ID: testing
@@ -66,6 +70,7 @@ HTTP 200
         expected_status=200,
         expected_response='[\n  { "k": "v" }',
         body="requestbody",
+        trailer=None,
     )
     # Test case for multi-line JSON payload and response
     assert Hurl.from_script("""GET /foo/bar
@@ -89,4 +94,29 @@ HTTP 200
         expected_status=200,
         expected_response='{\n  "response": "data",\n  "success": true\n}',
         body='{\n  "payload": "value",\n  "multiline": true\n}',
+        trailer=None,
+    )
+
+
+def test_hurl_trailer():
+    assert Hurl.from_script(
+        """GET /foo/bar\nH1: v1\nHTTP 200\n```json\ncontents\n```trailer"""
+    ) == Hurl(
+        method="GET",
+        url="/foo/bar",
+        headers={"H1": "v1"},
+        expected_response="contents",
+        expected_status=200,
+        trailer="trailer",
+    )
+
+    assert Hurl.from_script(
+        """GET /foo/bar\nH1: v1\nHTTP 200\n```json\ncontents\n```trailer1\ntrailer2\n"""
+    ) == Hurl(
+        method="GET",
+        url="/foo/bar",
+        headers={"H1": "v1"},
+        expected_response="contents",
+        expected_status=200,
+        trailer="trailer1\ntrailer2\n",
     )
