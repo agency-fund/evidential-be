@@ -15,7 +15,7 @@ from fastapi.testclient import TestClient
 from xngin.apiserver import conftest
 from xngin.apiserver.main import app
 from xngin.apiserver.testing.assertions import assert_same
-from xngin.apiserver.testing.hurl import Hurl
+from xngin.apiserver.testing.xurl import Xurl
 from xngin.apiserver.webhook_types import (
     WebhookRequestUpdate,
     WebhookRequestUpdateDescriptions,
@@ -95,7 +95,7 @@ def test_api(script, update_api_tests_flag, use_deterministic_random):
 
     with open(script) as f:
         contents = f.read()
-    hurl = Hurl.from_script(contents)
+    hurl = Xurl.from_script(contents)
     response = client.request(
         hurl.method, hurl.url, headers=hurl.headers, content=hurl.body
     )
@@ -132,7 +132,7 @@ def load_mock_response_from_hurl(mocker, file):
     data_file = str(Path(__file__).parent / "testdata/nonbulk" / file)
     with open(data_file, encoding="utf-8") as f:
         contents = f.read()
-    hurl = Hurl.from_script(contents)
+    hurl = Xurl.from_script(contents)
     # TODO: consider using dep injection for the httpx client
     mock_response = mocker.Mock()
     mock_response.status_code = hurl.expected_status
