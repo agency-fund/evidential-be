@@ -306,10 +306,12 @@ def assign_treatment_api(
     design_spec: DesignSpec,
     audience_spec: AudienceSpec,
     chosen_n: int,
-    random_state: int,
     gsheets: Annotated[GSheetCache, Depends(gsheet_cache)],
     client: Annotated[ClientConfig | None, Depends(config_dependency)] = None,
     refresh: Annotated[bool, Query(description="Refresh the cache.")] = False,
+    random_state: Annotated[
+        int | None, Query(description="Specify a random seed for reproducibility.")
+    ] = None,
 ) -> ExperimentAssignment:
     config = require_config(client)
     participant = config.find_participants(audience_spec.participant_type)
