@@ -11,6 +11,8 @@ class BalanceResult:
     f_pvalue: float
     model_summary: str
     is_balanced: bool
+    numerator_df: float
+    denominator_df: float
 
 
 def check_balance(
@@ -65,14 +67,20 @@ def check_balance(
         for col in df_analysis.columns
         if col != treatment_col and col not in exclude_cols
     ]
+
     formula = f"{treatment_col} ~ " + " + ".join(covariates)
 
+    print(formula)
     # Fit regression model
     model = smf.ols(formula=formula, data=df_analysis).fit()
+    # model = sm.OLS(balance_data["treat"], balance_data.drop("treat", axis=1)).fit()
+    # print(model.summary().as_text())
 
     return BalanceResult(
         f_statistic=model.fvalue,
         f_pvalue=model.f_pvalue,
-        model_summary=model.summary().as_text(),
         is_balanced=bool(model.f_pvalue > alpha),
+        numerator_df=model.df_model,
+        denominator_df=model.df_resid,
+        model_summary=model.summary().as_text(),
     )
