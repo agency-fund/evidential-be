@@ -74,7 +74,7 @@ def test_create_sheetconfig_from_table_success():
     assert worksheet.get_unique_id_col() == "name"
     assert len(worksheet.columns) == 3
     expected_type = {
-        "id": DataType.INTEGER,
+        "id": DataType.BIGINT,
         "name": DataType.CHARACTER_VARYING,
         "primary_id": DataType.INTEGER,
     }
