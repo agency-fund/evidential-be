@@ -79,7 +79,7 @@ Follow the steps below to get a local development environment running.
    curl -H "Config-ID: testing" 'http://localhost:8000/strata?participant_type=test_participant_type'
    ```
 
-   Also see [apitest.strata.hurl](src/xngin/apiserver/testdata/apitest.strata.hurl) for a complete example of how to
+   Also see [apitest.strata.xurl](src/xngin/apiserver/testdata/apitest.strata.xurl) for a complete example of how to
    write an API test script.
 
 5. Visit the local interactive docs page: http://localhost:8000/docs

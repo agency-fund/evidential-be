@@ -36,7 +36,7 @@ def mark_nondeterministic_tests(c):
 
 API_TESTS = [
     mark_nondeterministic_tests(c)
-    for c in glob.glob(str(Path(__file__).parent / "testdata/*.hurl"))
+    for c in glob.glob(str(Path(__file__).parent / "testdata/*.xurl"))
 ]
 
 
@@ -99,7 +99,7 @@ def test_api(script, update_api_tests_flag, use_deterministic_random):
     response = client.request(
         hurl.method, hurl.url, headers=hurl.headers, content=hurl.body
     )
-    temporary = tempfile.NamedTemporaryFile(delete=False, suffix=".hurl")  # noqa: SIM115
+    temporary = tempfile.NamedTemporaryFile(delete=False, suffix=".xurl")  # noqa: SIM115
     # Write the actual response to a temporary file. If an exception is thrown, we optionally replace the script we just
     # executed with the new script.
     with temporary as tmpf:
@@ -152,7 +152,7 @@ def load_mock_response_from_hurl(mocker, file):
 def test_commit(mocker):
     """Test /commit success case by mocking the webhook request with pytest-mock"""
 
-    (hurl, mock_response) = load_mock_response_from_hurl(mocker, "apitest.commit.hurl")
+    (hurl, mock_response) = load_mock_response_from_hurl(mocker, "apitest.commit.xurl")
     # Mock the httpx.AsyncClient.post method
     mock_request = mocker.patch("httpx.AsyncClient.request", return_value=mock_response)
 
@@ -182,7 +182,7 @@ def test_commit(mocker):
 
 
 def test_commit_when_webhook_has_non_200_status(mocker):
-    (hurl, mock_response) = load_mock_response_from_hurl(mocker, "apitest.commit.hurl")
+    (hurl, mock_response) = load_mock_response_from_hurl(mocker, "apitest.commit.xurl")
     # Override the mock status with an unaccepted code
     mock_response.status_code = 203
     mock_request = mocker.patch("httpx.AsyncClient.request", return_value=mock_response)
@@ -206,7 +206,7 @@ def test_commit_when_webhook_has_non_200_status(mocker):
 def test_commit_with_badconfig(mocker):
     """Test for error when settings are missing a commit action webhook."""
 
-    (hurl, _) = load_mock_response_from_hurl(mocker, "apitest.commit.hurl")
+    (hurl, _) = load_mock_response_from_hurl(mocker, "apitest.commit.xurl")
     hurl.headers["Config-ID"] = "customer-test-badconfig"
 
     response = client.request(
@@ -220,7 +220,7 @@ def test_update_experiment_timestamps(mocker):
     """Test /update-commit?update_type=timestamps success case"""
 
     (hurl, mock_response) = load_mock_response_from_hurl(
-        mocker, "apitest.update-commit.timestamps.hurl"
+        mocker, "apitest.update-commit.timestamps.xurl"
     )
     mock_request = mocker.patch("httpx.AsyncClient.request", return_value=mock_response)
 
@@ -247,7 +247,7 @@ def test_update_experiment_fails_when_end_before_start(mocker):
     """Test /update-commit?update_type=timestamps with bad end_date"""
 
     (hurl, _) = load_mock_response_from_hurl(
-        mocker, "apitest.update-commit.timestamps.hurl"
+        mocker, "apitest.update-commit.timestamps.xurl"
     )
     # Replace the valid body with one that has end_date < start_date
     bad_body = WebhookRequestUpdate.model_validate_json(hurl.body)
@@ -268,7 +268,7 @@ def test_update_experiment_description(mocker):
     """Test /update-commit?update_type=description success case"""
 
     (hurl, mock_response) = load_mock_response_from_hurl(
-        mocker, "apitest.update-commit.description.hurl"
+        mocker, "apitest.update-commit.description.xurl"
     )
     mock_request = mocker.patch("httpx.AsyncClient.request", return_value=mock_response)
 
@@ -293,7 +293,7 @@ def test_update_experiment_fails_with_bad_ids(mocker):
     """Test /update-commit?update_type=description fails with non-uuid ids"""
 
     (hurl, _) = load_mock_response_from_hurl(
-        mocker, "apitest.update-commit.description.bad.hurl"
+        mocker, "apitest.update-commit.description.bad.xurl"
     )
     # Expect to fail before even making the request due to validation error.
     response = client.request(
@@ -309,7 +309,7 @@ def test_assignment_file(mocker):
     """Test /assignment-file?experiment_id=foo1 success case"""
 
     (hurl, mock_response) = load_mock_response_from_hurl(
-        mocker, "apitest.assignment-file.hurl"
+        mocker, "apitest.assignment-file.xurl"
     )
     mock_request = mocker.patch("httpx.AsyncClient.request", return_value=mock_response)
 
