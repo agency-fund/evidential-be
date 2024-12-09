@@ -87,6 +87,7 @@ jobs:
         env:
           PGPASSWORD: postgres
         run: |
+          set -x
           uv run xngin-cli --help
           uv run xngin-cli export-json-schemas
           uv run xngin-cli validate-settings ./src/xngin/apiserver/testdata/xngin.testing.settings.json
