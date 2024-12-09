@@ -33,7 +33,7 @@ class Xurl(BaseModel):
     trailer: str | None = None
 
     def to_script(self):
-        """Generates a Hurl script from this Hurl instance."""
+        """Generates a Xurl script from this Xurl instance."""
         return "\n".join([
             line
             for line in [
@@ -48,7 +48,7 @@ class Xurl(BaseModel):
 
     @staticmethod
     def from_script(script: str) -> "Xurl":
-        """Constructs a Hurl from a string."""
+        """Constructs a Xurl from a string."""
 
         @generate
         def parser():
