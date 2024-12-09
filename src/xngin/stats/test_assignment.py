@@ -15,8 +15,9 @@ def sample_data():
         "income": np.round(np.float64(np.random.lognormal(10, 1, n)), 0),
         "gender": np.random.choice(["M", "F"], n),
         "region": np.random.choice(["North", "South", "East", "West"], n),
-        "skewed": np.random.permutation(np.concatenate(
-            (np.repeat([1], 900), np.repeat([0], 100))))
+        "skewed": np.random.permutation(
+            np.concatenate((np.repeat([1], 900), np.repeat([0], 100)))
+        ),
     }
     return pd.DataFrame(data)
 
@@ -50,16 +51,16 @@ def test_assign_treatment(sample_data):
         participant.treatment_assignment in ["control", "treatment"]
         for participant in result.assignments
     )
-    assert(result.assignments[0].treatment_assignment == "control")
-    assert(result.assignments[1].treatment_assignment == "control")
-    assert(result.assignments[2].treatment_assignment == "treatment")
-    assert(result.assignments[3].treatment_assignment == "control")
-    assert(result.assignments[4].treatment_assignment == "treatment")
-    assert(result.assignments[5].treatment_assignment == "control")
-    assert(result.assignments[6].treatment_assignment == "treatment")
-    assert(result.assignments[7].treatment_assignment == "treatment")
-    assert(result.assignments[8].treatment_assignment == "treatment")
-    assert(result.assignments[9].treatment_assignment == "treatment")
+    assert result.assignments[0].treatment_assignment == "control"
+    assert result.assignments[1].treatment_assignment == "control"
+    assert result.assignments[2].treatment_assignment == "treatment"
+    assert result.assignments[3].treatment_assignment == "control"
+    assert result.assignments[4].treatment_assignment == "treatment"
+    assert result.assignments[5].treatment_assignment == "control"
+    assert result.assignments[6].treatment_assignment == "treatment"
+    assert result.assignments[7].treatment_assignment == "treatment"
+    assert result.assignments[8].treatment_assignment == "treatment"
+    assert result.assignments[9].treatment_assignment == "treatment"
 
 
 def test_assign_treatment_multiple_arms(sample_data):
