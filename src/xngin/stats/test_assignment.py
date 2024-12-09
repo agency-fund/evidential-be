@@ -15,6 +15,9 @@ def sample_data():
         "income": np.round(np.float64(np.random.lognormal(10, 1, n)), 0),
         "gender": np.random.choice(["M", "F"], n),
         "region": np.random.choice(["North", "South", "East", "West"], n),
+        "skewed": np.random.permutation(
+            np.concatenate((np.repeat([1], 900), np.repeat([0], 100)))
+        ),
     }
     return pd.DataFrame(data)
 
@@ -31,9 +34,9 @@ def test_assign_treatment(sample_data):
         random_state=42,
     )
 
-    assert result.f_statistic == 1.019724888
-    assert result.p_value == 0.410778246
-    assert not result.balance_ok
+    assert result.f_statistic == pytest.approx(0.006156735)
+    assert result.p_value == pytest.approx(0.99992466)
+    assert result.balance_ok
     assert str(result.experiment_id) == "b767716b-f388-4cd9-a18a-08c4916ce26f"
     assert result.description == "Test experiment"
     assert result.sample_size == len(sample_data)
@@ -44,11 +47,20 @@ def test_assign_treatment(sample_data):
         result.assignments
     )
     assert all(len(participant.strata) == 2 for participant in result.assignments)
-    print(set([x.treatment_assignment for x in result.assignments]))
     assert all(
         participant.treatment_assignment in ["control", "treatment"]
         for participant in result.assignments
     )
+    assert result.assignments[0].treatment_assignment == "control"
+    assert result.assignments[1].treatment_assignment == "control"
+    assert result.assignments[2].treatment_assignment == "treatment"
+    assert result.assignments[3].treatment_assignment == "control"
+    assert result.assignments[4].treatment_assignment == "treatment"
+    assert result.assignments[5].treatment_assignment == "control"
+    assert result.assignments[6].treatment_assignment == "treatment"
+    assert result.assignments[7].treatment_assignment == "treatment"
+    assert result.assignments[8].treatment_assignment == "treatment"
+    assert result.assignments[9].treatment_assignment == "treatment"
 
 
 def test_assign_treatment_multiple_arms(sample_data):

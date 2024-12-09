@@ -59,7 +59,7 @@ HTTP 200
           "strata_value": "0"
         }
       ],
-      "treatment_assignment": "Treatment"
+      "treatment_assignment": "Control"
     },
     {
       "participant_id": "154001",
@@ -69,7 +69,7 @@ HTTP 200
           "strata_value": "0"
         }
       ],
-      "treatment_assignment": "Treatment"
+      "treatment_assignment": "Control"
     },
     {
       "participant_id": "155035",
@@ -109,7 +109,7 @@ HTTP 200
           "strata_value": "1"
         }
       ],
-      "treatment_assignment": "Treatment"
+      "treatment_assignment": "Control"
     },
     {
       "participant_id": "210073",
@@ -119,7 +119,7 @@ HTTP 200
           "strata_value": "0"
         }
       ],
-      "treatment_assignment": "Control"
+      "treatment_assignment": "Treatment"
     },
     {
       "participant_id": "23560",
@@ -129,7 +129,7 @@ HTTP 200
           "strata_value": "1"
         }
       ],
-      "treatment_assignment": "Treatment"
+      "treatment_assignment": "Control"
     },
     {
       "participant_id": "237616",
@@ -159,7 +159,7 @@ HTTP 200
           "strata_value": "1"
         }
       ],
-      "treatment_assignment": "Control"
+      "treatment_assignment": "Treatment"
     },
     {
       "participant_id": "302146",
@@ -179,7 +179,7 @@ HTTP 200
           "strata_value": "0"
         }
       ],
-      "treatment_assignment": "Control"
+      "treatment_assignment": "Treatment"
     },
     {
       "participant_id": "33392",
@@ -189,7 +189,7 @@ HTTP 200
           "strata_value": "0"
         }
       ],
-      "treatment_assignment": "Control"
+      "treatment_assignment": "Treatment"
     },
     {
       "participant_id": "35426",
@@ -219,7 +219,7 @@ HTTP 200
           "strata_value": "0"
         }
       ],
-      "treatment_assignment": "Control"
+      "treatment_assignment": "Treatment"
     },
     {
       "participant_id": "410077",
@@ -229,7 +229,7 @@ HTTP 200
           "strata_value": "0"
         }
       ],
-      "treatment_assignment": "Control"
+      "treatment_assignment": "Treatment"
     },
     {
       "participant_id": "431735",
@@ -249,7 +249,7 @@ HTTP 200
           "strata_value": "0"
         }
       ],
-      "treatment_assignment": "Control"
+      "treatment_assignment": "Treatment"
     },
     {
       "participant_id": "469679",
@@ -259,7 +259,7 @@ HTTP 200
           "strata_value": "0"
         }
       ],
-      "treatment_assignment": "Treatment"
+      "treatment_assignment": "Control"
     },
     {
       "participant_id": "484970",
@@ -269,7 +269,7 @@ HTTP 200
           "strata_value": "0"
         }
       ],
-      "treatment_assignment": "Control"
+      "treatment_assignment": "Treatment"
     },
     {
       "participant_id": "486195",
@@ -289,7 +289,7 @@ HTTP 200
           "strata_value": "1"
         }
       ],
-      "treatment_assignment": "Control"
+      "treatment_assignment": "Treatment"
     },
     {
       "participant_id": "552382",
@@ -299,7 +299,7 @@ HTTP 200
           "strata_value": "1"
         }
       ],
-      "treatment_assignment": "Control"
+      "treatment_assignment": "Treatment"
     },
     {
       "participant_id": "65425",
@@ -319,7 +319,7 @@ HTTP 200
           "strata_value": "0"
         }
       ],
-      "treatment_assignment": "Treatment"
+      "treatment_assignment": "Control"
     },
     {
       "participant_id": "730934",
@@ -339,7 +339,7 @@ HTTP 200
           "strata_value": "0"
         }
       ],
-      "treatment_assignment": "Treatment"
+      "treatment_assignment": "Control"
     },
     {
       "participant_id": "773941",
@@ -349,7 +349,7 @@ HTTP 200
           "strata_value": "0"
         }
       ],
-      "treatment_assignment": "Treatment"
+      "treatment_assignment": "Control"
     },
     {
       "participant_id": "776353",
@@ -359,7 +359,7 @@ HTTP 200
           "strata_value": "0"
         }
       ],
-      "treatment_assignment": "Control"
+      "treatment_assignment": "Treatment"
     },
     {
       "participant_id": "812175",
@@ -399,7 +399,7 @@ HTTP 200
           "strata_value": "0"
         }
       ],
-      "treatment_assignment": "Treatment"
+      "treatment_assignment": "Control"
     },
     {
       "participant_id": "895588",
@@ -429,7 +429,7 @@ HTTP 200
           "strata_value": "0"
         }
       ],
-      "treatment_assignment": "Treatment"
+      "treatment_assignment": "Control"
     },
     {
       "participant_id": "996915",
@@ -442,13 +442,13 @@ HTTP 200
       "treatment_assignment": "Control"
     }
   ],
-  "balance_ok": false,
-  "denominator_df": 33,
+  "balance_ok": true,
+  "denominator_df": 38,
   "description": "Sample experiment description.",
   "experiment_id": "0897bbd7-dacd-41b4-b164-7a1950fa61f2",
-  "f_statistic": 4.855391132,
-  "numerator_df": 7,
-  "p_value": 0.000761024,
+  "f_statistic": 0.0,
+  "numerator_df": 1,
+  "p_value": 1.0,
   "sample_size": 40,
   "id_col": "id"
 }

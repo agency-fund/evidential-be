@@ -3,28 +3,13 @@ from uuid import UUID
 import pandas as pd
 import numpy as np
 
-# from dataclasses import dataclass
 from stochatreat import stochatreat
-import statsmodels.api as sm
-import scipy.stats as stats
 from xngin.apiserver.api_types import (
     ExperimentAssignment,
     ExperimentParticipant,
     ExperimentStrata,
 )
-
-# @dataclass(slots=True)
-# class AssignmentResult:
-#     """Results from treatment assignment."""
-#     f_statistic: float
-#     numerator_df: int
-#     denominator_df: int
-#     f_pvalue: float
-#     balance_ok: bool
-#     experiment_id: str
-#     description: str
-#     sample_size: int
-#     assignments: pd.DataFrame
+from xngin.stats.balance import check_balance
 
 
 def assign_treatment(
@@ -59,61 +44,22 @@ def assign_treatment(
     # Create copy for analysis
     df = data.copy()
 
-    for col in df.select_dtypes(include=[np.number]).columns:
-        if df[col].isnull().sum() == 0:
-            df[f"{col}_strata"] = df[col]
-        # Create strata for numeric columns with missing values
-        elif df[col].isnull().sum() > 0:
-            df[f"{col}_strata"] = pd.qcut(df[col], q=num_strata, labels=False)
-            df[f"{col}_strata"] = df[f"{col}_strata"].astype("category")
-            df[f"{col}_strata"] = df[f"{col}_strata"].cat.add_categories(["_NA"])
-            df[f"{col}_strata"] = df[f"{col}_strata"].fillna("_NA")
-
-    # Create strata for character columns
-    for col in df.select_dtypes(include=["object"]).columns:
-        df[f"{col}_strata"] = df[col].str.lower().fillna("_NA")
-
-    # Combine strata columns into a single column
-    strata_cols = [f"{col}_strata" for col in stratum_cols + metric_cols]
-    df["selected_strata"] = df[strata_cols].apply(
-        lambda x: "_".join(x.astype(str)), axis=1
-    )
-
     # Assign treatments
     n_arms = len(arm_names)
     treatment_status = stochatreat(
         data=df,
-        stratum_cols=["selected_strata"],
+        stratum_cols=stratum_cols,
         treats=n_arms,
         probs=[1 / n_arms] * n_arms,
         idx_col=id_col,
         random_state=random_state,
-    )
+    ).drop(columns=["stratum_id"])
     df = df.merge(treatment_status, on=id_col)
 
-    # Check balance (for first two arms only)
-    balance_data = df[df["treat"].isin([0, 1])].copy()
-
-    # Prepare covariates for balance check
-    balance_cols = [
-        c
-        for c in df.columns
-        if c.endswith("_strata")
-        and c != "selected_strata"
-        and df[c].nunique() > 1
-        and not any(x in c for x in ["name", "id"])
-    ]
-
-    balance_cols.append("treat")
-
-    balance_data = pd.get_dummies(balance_data[balance_cols])
-    # Convert all columns to float
-    balance_data = balance_data.astype(float)
-
-    # Fit model for balance check
-    model = sm.OLS(balance_data["treat"], balance_data.drop("treat", axis=1)).fit()
-    f_stat = model.fvalue
-    f_pvalue = 1 - stats.f.cdf(f_stat, model.df_model, model.df_resid)
+    # check balance
+    balance_check = check_balance(
+        df[[*stratum_cols, "treat"]], "treat", exclude_cols=[id_col], alpha=fstat_thresh
+    )
 
     # Prepare assignments for return
     assignments = df[[id_col, "treat", *stratum_cols]].copy()
@@ -155,11 +101,11 @@ def assign_treatment(
 
     # Return the ExperimentAssignment with the list of participants
     return ExperimentAssignment(
-        f_statistic=np.round(f_stat, 9),
-        numerator_df=model.df_model,
-        denominator_df=model.df_resid,
-        p_value=np.round(f_pvalue, 9),
-        balance_ok=f_pvalue > fstat_thresh,
+        f_statistic=np.round(balance_check.f_statistic, 9),
+        numerator_df=balance_check.numerator_df,
+        denominator_df=balance_check.denominator_df,
+        p_value=np.round(balance_check.f_pvalue, 9),
+        balance_ok=balance_check.f_pvalue > fstat_thresh,
         experiment_id=UUID(experiment_id),
         description=description,
         sample_size=len(df),
