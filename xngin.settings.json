@@ -11,7 +11,7 @@
             "table_name": "final_groups_latest",
             "sheet": {
               "url": "${secret:CUSTOMER_CONFIG_SHEET}",
-              "worksheet": "DevExplatConfig"
+              "worksheet": "GroupsExplatConfig"
             }
           }
         ],
