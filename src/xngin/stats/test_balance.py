@@ -1,7 +1,6 @@
 import pytest
 import pandas as pd
 import numpy as np
-from patsy import PatsyError
 from xngin.stats.balance import check_balance
 
 

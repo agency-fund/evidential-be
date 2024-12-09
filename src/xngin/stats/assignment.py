@@ -3,10 +3,7 @@ from uuid import UUID
 import pandas as pd
 import numpy as np
 
-# from dataclasses import dataclass
 from stochatreat import stochatreat
-import statsmodels.api as sm
-import scipy.stats as stats
 from xngin.apiserver.api_types import (
     ExperimentAssignment,
     ExperimentParticipant,
@@ -61,7 +58,7 @@ def assign_treatment(
 
     # check balance
     balance_check = check_balance(
-        df[stratum_cols + ["treat"]], "treat", exclude_cols=[id_col], alpha=fstat_thresh
+        df[[*stratum_cols, "treat"]], "treat", exclude_cols=[id_col], alpha=fstat_thresh
     )
 
     # Prepare assignments for return
