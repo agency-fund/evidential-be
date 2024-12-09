@@ -95,11 +95,11 @@ jobs:
           uv run xngin-cli validate-settings xngin.settings.json
 
           # import/export lifecycle
+          uv run xngin-cli create-testing-dwh --dsn sqlite:///./src/xngin/apiserver/testdata/testing_dwh.db --table-name=test_participant_type
           uv run xngin-cli bootstrap-spreadsheet sqlite:///./src/xngin/apiserver/testdata/testing_dwh.db test_participant_type > config.csv
           uv run xngin-cli parse-config-spreadsheet file://./config.csv test_participant_type
 
           # Verify create-testing-dwh executes against SQLite, default Postgres driver, and psycopg2 driver.
-          uv run xngin-cli create-testing-dwh --dsn sqlite:///smoke.db --table-name=sqlitetest --nrows 100
           uv run xngin-cli create-testing-dwh --dsn postgresql://postgres@127.0.0.1:5499/postgres --nrows 100
           uv run xngin-cli create-testing-dwh --dsn postgresql+psycopg2://postgres@127.0.0.1:5499/postgres --schema-name alt --table-name=alt_table --nrows 100
   smoke-server:
