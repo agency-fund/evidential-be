@@ -15,6 +15,8 @@ def sample_data():
         "income": np.round(np.float64(np.random.lognormal(10, 1, n)), 0),
         "gender": np.random.choice(["M", "F"], n),
         "region": np.random.choice(["North", "South", "East", "West"], n),
+        "skewed": np.random.permutation(np.concatenate(
+            (np.repeat([1], 900), np.repeat([0], 100))))
     }
     return pd.DataFrame(data)
 
@@ -31,9 +33,9 @@ def test_assign_treatment(sample_data):
         random_state=42,
     )
 
-    assert result.f_statistic == 1.019724888
-    assert result.p_value == 0.410778246
-    assert not result.balance_ok
+    assert result.f_statistic == 0.022813936
+    assert result.p_value == 0.999988278
+    assert result.balance_ok
     assert str(result.experiment_id) == "b767716b-f388-4cd9-a18a-08c4916ce26f"
     assert result.description == "Test experiment"
     assert result.sample_size == len(sample_data)
@@ -55,9 +57,9 @@ def test_assign_treatment(sample_data):
     assert(result.assignments[4].treatment_assignment == "treatment")
     assert(result.assignments[5].treatment_assignment == "control")
     assert(result.assignments[6].treatment_assignment == "treatment")
-    assert(result.assignments[7].treatment_assignment == "control")
-    assert(result.assignments[8].treatment_assignment == "control")
-    assert(result.assignments[9].treatment_assignment == "control")
+    assert(result.assignments[7].treatment_assignment == "treatment")
+    assert(result.assignments[8].treatment_assignment == "treatment")
+    assert(result.assignments[9].treatment_assignment == "treatment")
 
 
 def test_assign_treatment_multiple_arms(sample_data):
