@@ -2,9 +2,11 @@ import glob
 import json
 import logging
 import os
+import re
 import shutil
 import tempfile
 from datetime import datetime, timedelta
+from json import JSONDecodeError
 from pathlib import Path
 
 import pytest
@@ -58,6 +60,39 @@ def fixture_update_api_tests_flag(pytestconfig):
 
 @pytest.mark.parametrize("script", API_TESTS)
 def test_api(script, update_api_tests_flag, use_deterministic_random):
+    """Runs all the API_TESTS test scripts.
+
+    Test scripts may omit asserting equality of actual response and expected response on specific paths. For example:
+
+    [test_api]
+    {
+        "deepdiff_kwargs": {
+            "exclude_paths": [
+                "root['assignments']",
+                "root['f_statistic']",
+                "root['p_value']"
+            ]
+        }
+    }
+
+    Furthermore, arbitrary args can be passed to deepdiff.diff via the deepdiff_kwargs key.
+    """
+
+    def parse_trailer(trailer):
+        """Extracts the value of deepdiff_kwargs from the JSON following any [test_api] header, or empty dict."""
+        if not hurl.trailer:
+            return {}
+        matches = re.search(r"(?s)\[test_api\]\n(?P<args>.*)", trailer)
+        if not matches:
+            return {}
+        try:
+            config = json.loads(matches.group("args"))
+            return config["deepdiff_kwargs"]
+        except JSONDecodeError as e:
+            pytest.fail(
+                f"The script {script} contains an invalid JSON body in the [test_api] trailer: {e!s}"
+            )
+
     with open(script) as f:
         contents = f.read()
     hurl = Hurl.from_script(contents)
@@ -76,9 +111,11 @@ def test_api(script, update_api_tests_flag, use_deterministic_random):
         assert response.status_code == hurl.expected_status, (
             f"HTTP response body: {temporary.name}\nResponse:\n{trunc(response.content)}"
         )
+        deepdiff_kwargs = parse_trailer(hurl.trailer)
         assert_same(
             response.json(),
             json.loads(hurl.expected_response),
+            deepdiff_kwargs=deepdiff_kwargs,
             extra=f"HTTP response body: {temporary.name}\nResponse:\n{trunc(response.content)}",
         )
     except AssertionError:
