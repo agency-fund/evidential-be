@@ -449,9 +449,12 @@ class GetStrataResponseElement(BaseModel):
     data_type: DataType
     column_name: str
     description: str
-    strata_group: str
-    # Extra fields are allowed in case a user configured their worksheet with extra metadata
-    model_config = {"extra": "allow"}
+    strata_group: Annotated[
+        str | None, Field(deprecated="Please use extra.strata_group instead.")
+    ] = None
+    # Extra fields will be stored here in case a user configured their worksheet with extra metadata for their own
+    # downstream use, e.g. to group strata with a friendly identifier.
+    extra: dict[str, str] = None
 
 
 class GetFiltersResponseElement(BaseModel):

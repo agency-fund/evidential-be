@@ -131,10 +131,11 @@ def get_strata(
                 data_type=db_schema.get(col_name).data_type,
                 column_name=col_name,
                 description=col_descriptor.description,
-                # TODO: work on naming for strata_group/column_group
+                # TODO: deprecate strata_group as a top-level key
                 strata_group=col_descriptor.column_group,
                 # For strata columns, we will echo back any extra annotations
-                **(col_descriptor.extra or {}),
+                extra=(col_descriptor.extra or {})
+                | {"strata_group": col_descriptor.column_group},
             )
             for col_name, col_descriptor in strata_cols.items()
             if db_schema.get(col_name)
