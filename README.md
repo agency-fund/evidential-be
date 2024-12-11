@@ -218,6 +218,26 @@ act -W .github/workflows/test.yaml -j smoke-server
 act -j smoke-server
 ```
 
+#### On Macs
+
+* You might see this error:
+```
+Error: failed to start container: Error response from daemon: error while creating mount source path '/host_mnt/Users/me/.docker/run/docker.sock': mkdir /host_mnt/Users/me/.docker/run/docker.sock: operation not supported
+```
+If so, you can resolve it by adding this line to a `~/.actrc` file as noted in [this issue](https://github.com/nektos/act/issues/2239#issuecomment-2189419148):
+`--container-daemon-socket=unix:///var/run/docker.sock`
+
+* When running `-j unittests`, you can ignore this error line, as `act` doesn't support a macos runner:
+```
+[tests/Python on macOS-2] 🚧  Skipping unsupported platform -- Try running with `-P macos-14=...`
+```
+You can force `act` to [use your localhost as the runner](https://github.com/nektos/act/issues/97#issuecomment-1868974264) with the experimental platform `-P macos-14=-self-hosted` flag, but that's not advisable as you may overwrite local files such as service_account.json.
+
+* [Run a particular matrix](https://github.com/nektos/act/pull/1675) configuration with e.g. `--matrix os:ubuntu-22.04`
+So a more complex command that also injects a secret from a file (which could also be [placed in your .actrc](https://nektosact.com/usage/index.html?highlight=secret#envsecrets-files-structure)) might look like:
+```act --matrix os:ubuntu-22.04 -j unittests -s GCLOUD_SERVICE_ACCOUNT_CREDENTIALS="$(< ~/.config/gspread/service_account.json)"
+```
+
 ### psycopg2 module does not install correctly.
 
 You might see this error:

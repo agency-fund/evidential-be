@@ -41,18 +41,22 @@ jobs:
       - name: Install dependencies
         run: |
           uv sync --locked
+      - name: pytest unit tests
+        run: uv run pytest
       - name: write secrets
+        # The secret is only needed by the integration test
+        if: startsWith(matrix.os, 'ubuntu-')
         run: |
           mkdir -p ~/.config/gspread && echo "${GCLOUD_SERVICE_ACCOUNT_CREDENTIALS}" > ~/.config/gspread/service_account.json
           openssl sha256 ~/.config/gspread/service_account.json
         env:
           GCLOUD_SERVICE_ACCOUNT_CREDENTIALS: ${{ secrets.GOOGLE_APPLICATION_CREDENTIALS_CONTENT }}
-      - name: pytest unit tests
-        run: uv run pytest
       - name: pytest integration tests
         if: startsWith(matrix.os, 'ubuntu-')
         run: |
-          sudo apt-get install -y --no-install-recommends -y retry
+          set -x
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends retry
           retry -t 3 -d 30 -- uv run pytest -m integration
   unittests-in-docker:
     timeout-minutes: 15
