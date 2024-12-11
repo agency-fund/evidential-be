@@ -46,7 +46,7 @@ from xngin.stats.assignment import assign_treatment
 from xngin.apiserver.utils import substitute_url
 from xngin.sheets.config_sheet import (
     fetch_and_parse_sheet,
-    create_sheetconfig_from_table,
+    create_configworksheet_from_table,
 )
 from xngin.apiserver.webhook_types import (
     STANDARD_WEBHOOK_RESPONSES,
@@ -584,13 +584,13 @@ def fetch_worksheet(
 
 
 def generate_column_descriptors(table: sqlalchemy.Table, unique_id_col: str):
-    """Fetches a map of column name to SheetConfig column metadata.
+    """Fetches a map of column name to ConfigWorksheet column metadata.
 
     Uniqueness of the values in the column unique_id_col is assumed, not verified!
     """
     return {
         c.column_name: c
-        for c in create_sheetconfig_from_table(table, unique_id_col).columns
+        for c in create_configworksheet_from_table(table, unique_id_col).columns
     }
 
 

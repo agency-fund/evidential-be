@@ -8,7 +8,7 @@ from xngin.apiserver.api_types import DataType
 from xngin.sheets.config_sheet import (
     ColumnDescriptor,
     ConfigWorksheet,
-    create_sheetconfig_from_table,
+    create_configworksheet_from_table,
 )
 from xngin.sheets.gsheets import read_sheet_df
 
@@ -59,7 +59,7 @@ def test_config_worksheet_get_unique_id_col():
     assert fake_worksheet.get_unique_id_col() is None
 
 
-def test_create_sheetconfig_from_table_success():
+def test_create_configworksheet_from_table_success():
     metadata_obj = MetaData()
     my_table = Table(
         "table_name",
@@ -70,7 +70,7 @@ def test_create_sheetconfig_from_table_success():
     )
 
     # Explicit column found
-    worksheet = create_sheetconfig_from_table(my_table, "name")
+    worksheet = create_configworksheet_from_table(my_table, "name")
     assert worksheet.get_unique_id_col() == "name"
     assert len(worksheet.columns) == 3
     expected_type = {
@@ -84,7 +84,7 @@ def test_create_sheetconfig_from_table_success():
         )
 
     # PK found
-    worksheet = create_sheetconfig_from_table(my_table, None)
+    worksheet = create_configworksheet_from_table(my_table, None)
     assert worksheet.get_unique_id_col() == "primary_id"
 
     # default id found
@@ -94,11 +94,11 @@ def test_create_sheetconfig_from_table_success():
         Column("id", BigInteger),
         Column("name", String),
     )
-    worksheet = create_sheetconfig_from_table(my_table, None)
+    worksheet = create_configworksheet_from_table(my_table, None)
     assert worksheet.get_unique_id_col() == "id"
 
 
-def test_create_sheetconfig_from_table_fails_if_no_unique_id():
+def test_create_configworksheet_from_table_fails_if_no_unique_id():
     my_table = Table(
         "table_name",
         MetaData(),
@@ -108,8 +108,8 @@ def test_create_sheetconfig_from_table_fails_if_no_unique_id():
 
     # Doesn't find the specified id
     with pytest.raises(ValidationError):
-        create_sheetconfig_from_table(my_table, "id")
+        create_configworksheet_from_table(my_table, "id")
 
     # Has no primary key or generic "id"
     with pytest.raises(ValidationError):
-        create_sheetconfig_from_table(my_table, None)
+        create_configworksheet_from_table(my_table, None)
