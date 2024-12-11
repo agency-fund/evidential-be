@@ -133,11 +133,10 @@ def get_strata(
                 data_type=db_schema.get(col_name).data_type,
                 column_name=col_name,
                 description=col_descriptor.description,
-                # TODO: deprecate strata_group as a top-level key
+                # TODO: deprecate strata_group as a top-level key; will naturally appear in extra:
                 strata_group=col_descriptor.column_group,
                 # For strata columns, we will echo back any extra annotations
-                extra=(col_descriptor.extra or {})
-                | {"strata_group": col_descriptor.column_group},
+                extra=col_descriptor.extra,
             )
             for col_name, col_descriptor in strata_cols.items()
             if db_schema.get(col_name)

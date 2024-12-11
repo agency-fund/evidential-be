@@ -449,12 +449,10 @@ class GetStrataResponseElement(BaseModel):
     data_type: DataType
     column_name: str
     description: str
-    strata_group: Annotated[
-        str | None, Field(deprecated="Please use extra.strata_group instead.")
-    ] = None
+    strata_group: str
     # Extra fields will be stored here in case a user configured their worksheet with extra metadata for their own
     # downstream use, e.g. to group strata with a friendly identifier.
-    extra: dict[str, str] = None
+    extra: dict[str, str] | None = None
 
 
 class GetFiltersResponseBase(BaseModel):

@@ -2,7 +2,7 @@ import csv
 from collections import Counter
 
 import sqlalchemy
-from pydantic import BaseModel, ValidationError, field_validator, model_validator, Field
+from pydantic import BaseModel, ValidationError, field_validator, model_validator
 
 from xngin.apiserver.settings import SheetRef
 from xngin.sheets.gsheets import read_sheet_from_gsheet
@@ -54,7 +54,7 @@ class ColumnDescriptor(BaseModel):
     is_strata: bool
     is_filter: bool
     is_metric: bool
-    extra: dict[str, str] = Field(..., default_factory=dict)
+    extra: dict[str, str] | None = None
 
     model_config = {
         "strict": True,
