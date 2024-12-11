@@ -32,11 +32,12 @@ def import_csv_to_sqlite(
 
     We store src_version in the database's `user_version` field so that we can automatically recreate it if the version
     changes.
+
+    TODO: Replace this with something that re-uses the xngin-cli create-testing-dwh implementation.
     """
     logger.info(f"Importing {source_csv} to {db_path}")
     df = pd.read_csv(source_csv)
     with closing(sqlite3.connect(db_path)) as conn:
-        # TODO: Replace to_sql with something that lets us mark a column as a primary key.
         row_count = df.to_sql(table_name, conn, if_exists="replace", index=False)
         logger.info(
             f"{row_count:,} rows inserted into {table_name} (data version {src_version})."

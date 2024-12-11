@@ -17,6 +17,8 @@ from xngin.apiserver.api_types import (
     AudienceSpec,
     DesignSpec,
     ExperimentAssignment,
+    GetFiltersResponseDiscrete,
+    GetFiltersResponseNumeric,
     GetStrataResponseElement,
     GetFiltersResponseElement,
     GetMetricsResponseElement,
@@ -185,24 +187,29 @@ def get_filters(
                             .order_by(sa_col)
                         ).scalars()
                     ]
+                    return GetFiltersResponseDiscrete(
+                        filter_name=col_name,
+                        data_type=db_col.data_type,
+                        relations=filter_class.valid_relations(),
+                        description=column_descriptor.description,
+                        distinct_values=distinct_values,
+                    )
                 case DataTypeClass.NUMERIC:
                     min_, max_ = session.execute(
                         sqlalchemy.select(
                             sqlalchemy.func.min(sa_col), sqlalchemy.func.max(sa_col)
                         ).where(sa_col.is_not(None))
                     ).first()
+                    return GetFiltersResponseNumeric(
+                        filter_name=col_name,
+                        data_type=db_col.data_type,
+                        relations=filter_class.valid_relations(),
+                        description=column_descriptor.description,
+                        min=min_,
+                        max=max_,
+                    )
                 case _:
                     raise RuntimeError("unexpected filter class")
-
-            return GetFiltersResponseElement(
-                filter_name=col_name,
-                data_type=db_col.data_type,
-                relations=filter_class.valid_relations(),
-                description=column_descriptor.description,
-                distinct_values=distinct_values,
-                min=min_,
-                max=max_,
-            )
 
         return sorted(
             [

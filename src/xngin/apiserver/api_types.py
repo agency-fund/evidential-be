@@ -457,13 +457,15 @@ class GetStrataResponseElement(BaseModel):
     extra: dict[str, str] = None
 
 
-class GetFiltersResponseElement(BaseModel):
+class GetFiltersResponseBase(BaseModel):
+    # TODO: Can we rename this to column_name for consistency with GetStrataResponseElement?
+    filter_name: str = Field(..., description="Name of the column.")
     data_type: DataType
+    relations: list[Relation] = Field(..., min_length=1)
     description: str
-    distinct_values: list[str] | None = Field(
-        ...,
-        description="If the type of the column is non-numeric, contains sorted list of unique values.",
-    )
+
+
+class GetFiltersResponseNumeric(GetFiltersResponseBase):
     min: float | int | None = Field(
         ...,
         description="If the type of the column is numeric, this will contain the minimum observed value.",
@@ -472,9 +474,16 @@ class GetFiltersResponseElement(BaseModel):
         ...,
         description="If the type of the column is numeric, this will contain the maximum observed value.",
     )
-    # TODO: Can we rename this to column_name for consistency with GetStrataResponseElement?
-    filter_name: str = Field(..., description="Name of the column.")
-    relations: list[Relation] = Field(..., min_length=1)
+
+
+class GetFiltersResponseDiscrete(GetFiltersResponseBase):
+    distinct_values: list[str] | None = Field(
+        ...,
+        description="If the type of the column is non-numeric, contains sorted list of unique values.",
+    )
+
+
+type GetFiltersResponseElement = GetFiltersResponseNumeric | GetFiltersResponseDiscrete
 
 
 class GetMetricsResponseElement(BaseModel):
