@@ -13,11 +13,13 @@ import pandas as pd
 import psycopg2
 import sqlalchemy
 import typer
+import zstandard
 from gspread import GSpreadException
+from pandas import DataFrame
 from pydantic import ValidationError
 from pydantic_core import from_json
 from rich.console import Console
-from sqlalchemy import create_engine, func, make_url, select, text
+from sqlalchemy import create_engine, make_url
 
 from xngin.apiserver import settings
 from xngin.apiserver.api_types import DataType
@@ -63,21 +65,14 @@ def infer_config_from_schema(dsn: str, table: str, use_reflection: bool):
     return create_sheetconfig_from_table(dwh)
 
 
-@app.command()
-def bootstrap_testing_dwh(
-    src: Path = testing_dwh.TESTING_DWH_RAW_DATA,
-    dest: Path = testing_dwh.TESTING_DWH_SQLITE_PATH,
-    force: Annotated[
-        bool, typer.Option(help="Forcibly recreate the testing database.")
-    ] = False,
-):
-    """Bootstraps the local testing data warehouse."""
-    testing_dwh.create_dwh_sqlite_database(src, dest, force=force)
-
-
 def csv_to_ddl(csv_path: Path, table_name: str) -> str:
     """Helper to transform a CSV with Pandas-inferred schema into a CREATE TABLE statement."""
     df = pd.read_csv(csv_path)
+    return df_to_ddl(df, table_name)
+
+
+def df_to_ddl(df: DataFrame, table_name: str):
+    """Helper to transform a DataFrame into a CREATE TABLE statement."""
     type_map = {
         "int64": "INTEGER",
         "float64": "DECIMAL",
@@ -94,9 +89,6 @@ def csv_to_ddl(csv_path: Path, table_name: str) -> str:
 
 @app.command()
 def create_testing_dwh(
-    password: Annotated[
-        str, typer.Option(envvar="PGPASSWORD", help="The database password.")
-    ],
     dsn: Annotated[str, typer.Option(help="The SQLAlchemy URL for the database.")],
     src: Annotated[
         Path,
@@ -107,13 +99,14 @@ def create_testing_dwh(
     nrows: Annotated[
         int | None,
         typer.Option(
-            help="(If NOT using redshift) specify a limit to the number of rows to load from the csv."
+            help="Limit to the number of rows to load from the CSV. Does not apply to Redshift or postgresql+psycopg."
         ),
     ] = None,
     schema_name: Annotated[
         str | None,
         typer.Option(
-            help="Desired schema to use with the table, else uses your warehouse's default schema."
+            help="Desired schema to use with the table, else uses your warehouse's default schema. Only applies to "
+            "Postgres-like databases."
         ),
     ] = None,
     table_name: Annotated[
@@ -125,36 +118,66 @@ def create_testing_dwh(
     bucket: Annotated[
         str | None,
         typer.Option(
-            help="Name of the temporary S3 bucket that is readable by Redshfit when --iam-role is assumed. Required when connecting to Redshift."
+            help="Name of the temporary S3 bucket that is readable by Redshift when --iam-role is assumed. Required "
+            "when connecting to Redshift."
         ),
     ] = None,
     iam_role: Annotated[
         str | None,
         typer.Option(
-            help="ARN of an IAM Role for Redshift to assume when reading from the bucket specified by --bucket. Required when connecting to Redshift."
+            help="ARN of an IAM Role for Redshift to assume when reading from the bucket specified by --bucket. "
+            "Required when connecting to Redshift."
         ),
     ] = None,
+    password: Annotated[
+        str | None, typer.Option(envvar="PGPASSWORD", help="The database password.")
+    ] = None,
 ):
-    """Loads the testing data warehouse CSV into a SQLAlchemy database or Redshift Cluster.
+    """Loads the testing data warehouse CSV into a database.
 
-    The schema of the CSV is inferred by Pandas df.read_csv helper method.
+    On Redshift Clusters: CSV is parsed by Redshift's native CSV parser. Table DDL is derived from Pandas read_csv.
 
-    Note: The schemas may be different
+    On postgres+psycopg connections: CSV is parsed with Postgres' CSV parser. Table DDL is derived from Pandas read_csv.
+
+    On all other databases: CSV is parsed by Pandas. Table DDL is derived from Pandas read_csv and written via
+    SQLAlchemy and Pandas to_sql().
+
+    Due to variations in all of the above, the loaded data may vary in small ways when loaded with different data
+    stores. E.g. floats may not roundtrip.
     """
-    create_schema = text(
+    create_schema_ddl = (
         f"CREATE SCHEMA IF NOT EXISTS {schema_name}" if schema_name else ""
     )
     full_table_name = f"{schema_name}.{table_name}" if schema_name else table_name
-    url = make_url(dsn).set(password=password)
-    if url.host.endswith(REDSHIFT_HOSTNAME_SUFFIX):
+    drop_table_ddl = f"DROP TABLE IF EXISTS {full_table_name}"
+    is_compressed = src.suffix == ".zst"
+
+    url = make_url(dsn)
+    if password is not None and url.username is not None:
+        url = url.set(password=password)
+
+    def read_csv():
+        return pd.read_csv(src, nrows=nrows)
+
+    def drop_and_create(cur, create_table_ddl: str):
+        cur.execute(drop_table_ddl)
+        if schema_name is not None:
+            cur.execute(create_schema_ddl)
+        print(f"Creating table:\n{create_table_ddl}")
+        cur.execute(create_table_ddl)
+
+    def count(cur):
+        cur.execute(f"SELECT COUNT(*) FROM {full_table_name}")
+        ct = cur.fetchone()[0]
+        print(f"Loaded {ct} rows into {full_table_name}.")
+
+    if url.host and url.host.endswith(REDSHIFT_HOSTNAME_SUFFIX):
         if not bucket:
             print("--bucket is required when importing into Redshift.")
             raise typer.Exit(2)
         if not iam_role:
             print("--iam-role is required when importing into Redshift.")
             raise typer.Exit(2)
-        create_table = csv_to_ddl(src, full_table_name)
-        print(create_table)
         with (
             psycopg2.connect(
                 database=url.database,
@@ -165,48 +188,50 @@ def create_testing_dwh(
             ) as conn,
             conn.cursor() as cur,
         ):
-            print("Dropping...")
-            cur.execute(f"DROP TABLE IF EXISTS {full_table_name} ")
-            print("Creating...")
-            if schema_name is not None:
-                cur.execute(create_schema)
-            cur.execute(create_table)
+            drop_and_create(cur, csv_to_ddl(src, full_table_name))
             key = src.name
             print(f"Uploading to s3://{bucket}/{key}...")
             s3 = boto3.client("s3")
             s3.upload_file(src, bucket, f"{key}")
+            try:
+                print("Loading...")
+                zstd = "ZSTD" if is_compressed else ""
+                cur.execute(
+                    f"COPY {full_table_name} FROM 's3://{bucket}/{key}' "
+                    f"IAM_ROLE '{iam_role}' FORMAT CSV IGNOREHEADER 1 {zstd};"
+                )
+                count(cur)
+            finally:
+                print("Deleting temporary file...")
+                s3.delete_object(Bucket=bucket, Key=key)
+    elif url.drivername == "postgresql+psycopg":
+        df = read_csv()
+        with create_engine(url).connect() as conn, conn.begin():
+            cursor = conn.connection.cursor()
+            drop_and_create(cursor, df_to_ddl(df, full_table_name))
+            opener = (lambda x: zstandard.open(x, "r")) if is_compressed else open
             print("Loading...")
-            zstd = "ZSTD" if key.endswith(".zst") else ""
-            cur.execute(
-                f"""COPY {full_table_name} FROM 's3://{bucket}/{key}' IAM_ROLE '{iam_role}' FORMAT CSV IGNOREHEADER 1 {zstd};"""
-            )
-            cur.execute(f"SELECT COUNT(*) FROM {full_table_name}")
-            count = cur.fetchone()[0]
-            print("Deleting temporary file...")
-            s3.delete_object(Bucket=bucket, Key=key)
-            print(f"Loaded {count} rows into {full_table_name}.")
+            with opener(src) as reader:
+                cols = [h.strip() for h in reader.readline().split(",")]
+                sql = f"COPY {full_table_name} ({', '.join(cols)}) FROM STDIN (FORMAT CSV, DELIMITER ',')"
+                with cursor.copy(sql) as copy:
+                    while data := reader.read(1 << 20):
+                        copy.write(data)
+            count(cursor)
     else:
-        print("Reading CSV...")
-        df = pd.read_csv(src, nrows=nrows)
-        print("Loading...")
-        engine = create_engine(url)
-        with engine.connect() as conn, conn.begin():
-            if schema_name is not None:
-                print(create_schema)
-                conn.execute(create_schema)
-            row_count = df.to_sql(
+        df = read_csv()
+        with create_engine(url).connect() as conn, conn.begin():
+            cursor = conn.connection.cursor()
+            drop_and_create(cursor, df_to_ddl(df, full_table_name))
+            print("Loading...")
+            df.to_sql(
                 table_name,
                 conn,
                 schema=schema_name,
-                if_exists="replace",
+                if_exists="append",
                 index=False,
             )
-            # Depending on the db driver sometimes to_sql() doesn't know the row count, so explicitly query for it.
-            if row_count < 0:
-                row_count = conn.scalar(
-                    select(func.count()).select_from(text(full_table_name))
-                )
-            print(f"Loaded {row_count} rows into {full_table_name}.")
+            count(cursor)
 
 
 @app.command()

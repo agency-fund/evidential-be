@@ -75,7 +75,7 @@ class DataType(enum.StrEnum):
         if isinstance(value, sqlalchemy.sql.sqltypes.Boolean):
             return DataType.BOOLEAN
         if isinstance(value, sqlalchemy.sql.sqltypes.BigInteger):
-            return DataType.INTEGER
+            return DataType.BIGINT
         if isinstance(value, sqlalchemy.sql.sqltypes.Integer):
             return DataType.INTEGER
         if isinstance(value, sqlalchemy.sql.sqltypes.Double):
@@ -482,6 +482,6 @@ type GetFiltersResponseElement = GetFiltersResponseNumeric | GetFiltersResponseD
 
 
 class GetMetricsResponseElement(BaseModel):
-    data_type: DataType
     column_name: str
+    data_type: DataType
     description: str

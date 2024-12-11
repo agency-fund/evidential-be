@@ -1,7 +1,6 @@
 import pytest
 import pandas as pd
 import numpy as np
-from patsy import PatsyError
 from xngin.stats.balance import check_balance
 
 
@@ -50,5 +49,5 @@ def test_check_balance_with_excluded_cols(sample_data):
 def test_check_balance_invalid_treatment(sample_data):
     invalid_data = sample_data.drop("treat", axis=1)
 
-    with pytest.raises(PatsyError):
+    with pytest.raises(KeyError):
         check_balance(invalid_data)

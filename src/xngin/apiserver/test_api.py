@@ -2,9 +2,11 @@ import glob
 import json
 import logging
 import os
+import re
 import shutil
 import tempfile
 from datetime import datetime, timedelta
+from json import JSONDecodeError
 from pathlib import Path
 
 import pytest
@@ -13,7 +15,7 @@ from fastapi.testclient import TestClient
 from xngin.apiserver import conftest
 from xngin.apiserver.main import app
 from xngin.apiserver.testing.assertions import assert_same
-from xngin.apiserver.testing.hurl import Hurl
+from xngin.apiserver.testing.xurl import Xurl
 from xngin.apiserver.webhook_types import (
     WebhookRequestUpdate,
     WebhookRequestUpdateDescriptions,
@@ -34,7 +36,7 @@ def mark_nondeterministic_tests(c):
 
 API_TESTS = [
     mark_nondeterministic_tests(c)
-    for c in glob.glob(str(Path(__file__).parent / "testdata/*.hurl"))
+    for c in glob.glob(str(Path(__file__).parent / "testdata/*.xurl"))
 ]
 
 
@@ -58,27 +60,62 @@ def fixture_update_api_tests_flag(pytestconfig):
 
 @pytest.mark.parametrize("script", API_TESTS)
 def test_api(script, update_api_tests_flag, use_deterministic_random):
+    """Runs all the API_TESTS test scripts.
+
+    Test scripts may omit asserting equality of actual response and expected response on specific paths. For example:
+
+    [test_api]
+    {
+        "deepdiff_kwargs": {
+            "exclude_paths": [
+                "root['assignments']",
+                "root['f_statistic']",
+                "root['p_value']"
+            ]
+        }
+    }
+
+    Furthermore, arbitrary args can be passed to deepdiff.diff via the deepdiff_kwargs key.
+    """
+
+    def parse_trailer(trailer):
+        """Extracts the value of deepdiff_kwargs from the JSON following any [test_api] header, or empty dict."""
+        if not trailer:
+            return {}
+        matches = re.search(r"(?s)\[test_api\]\n(?P<args>.*)", trailer)
+        if not matches:
+            return {}
+        try:
+            config = json.loads(matches.group("args"))
+            return config["deepdiff_kwargs"]
+        except JSONDecodeError as e:
+            pytest.fail(
+                f"The script {script} contains an invalid JSON body in the [test_api] trailer: {e!s}"
+            )
+
     with open(script) as f:
         contents = f.read()
-    hurl = Hurl.from_script(contents)
+    xurl = Xurl.from_script(contents)
     response = client.request(
-        hurl.method, hurl.url, headers=hurl.headers, content=hurl.body
+        xurl.method, xurl.url, headers=xurl.headers, content=xurl.body
     )
-    temporary = tempfile.NamedTemporaryFile(delete=False, suffix=".hurl")  # noqa: SIM115
+    temporary = tempfile.NamedTemporaryFile(delete=False, suffix=".xurl")  # noqa: SIM115
     # Write the actual response to a temporary file. If an exception is thrown, we optionally replace the script we just
     # executed with the new script.
     with temporary as tmpf:
-        actual = hurl.model_copy()
+        actual = xurl.model_copy()
         actual.expected_status = response.status_code
         actual.expected_response = json.dumps(response.json(), indent=2, sort_keys=True)
         tmpf.write(actual.to_script().encode("utf-8"))
     try:
-        assert response.status_code == hurl.expected_status, (
+        assert response.status_code == xurl.expected_status, (
             f"HTTP response body: {temporary.name}\nResponse:\n{trunc(response.content)}"
         )
+        deepdiff_kwargs = parse_trailer(xurl.trailer)
         assert_same(
             response.json(),
-            json.loads(hurl.expected_response),
+            json.loads(xurl.expected_response),
+            deepdiff_kwargs=deepdiff_kwargs,
             extra=f"HTTP response body: {temporary.name}\nResponse:\n{trunc(response.content)}",
         )
     except AssertionError:
@@ -88,18 +125,18 @@ def test_api(script, update_api_tests_flag, use_deterministic_random):
         raise
 
 
-def load_mock_response_from_hurl(mocker, file):
-    """Returns a tuple with the hurl obj specified in file and a mock response."""
+def load_mock_response_from_xurl(mocker, file):
+    """Returns a tuple with the Xurl obj specified in file and a mock response."""
 
     # Set up the mock response - first load our test data.
     data_file = str(Path(__file__).parent / "testdata/nonbulk" / file)
     with open(data_file, encoding="utf-8") as f:
         contents = f.read()
-    hurl = Hurl.from_script(contents)
+    xurl = Xurl.from_script(contents)
     # TODO: consider using dep injection for the httpx client
     mock_response = mocker.Mock()
-    mock_response.status_code = hurl.expected_status
-    expected_response_as_dict = json.loads(hurl.expected_response)
+    mock_response.status_code = xurl.expected_status
+    expected_response_as_dict = json.loads(xurl.expected_response)
     if "body" in expected_response_as_dict:
         # Extract the fake webhook response from the mock api server response,
         # then re-serialize it to use as a mock webhook response.
@@ -108,19 +145,19 @@ def load_mock_response_from_hurl(mocker, file):
         mock_response.text = body_text
     else:
         # We're faking something else, so just pass it through.
-        mock_response.text = hurl.expected_response
-    return (hurl, mock_response)
+        mock_response.text = xurl.expected_response
+    return xurl, mock_response
 
 
 def test_commit(mocker):
     """Test /commit success case by mocking the webhook request with pytest-mock"""
 
-    (hurl, mock_response) = load_mock_response_from_hurl(mocker, "apitest.commit.hurl")
+    (xurl, mock_response) = load_mock_response_from_xurl(mocker, "apitest.commit.xurl")
     # Mock the httpx.AsyncClient.post method
     mock_request = mocker.patch("httpx.AsyncClient.request", return_value=mock_response)
 
     response = client.request(
-        hurl.method, hurl.url, headers=hurl.headers, content=hurl.body
+        xurl.method, xurl.url, headers=xurl.headers, content=xurl.body
     )
 
     assert response.status_code == 200, response.text
@@ -145,13 +182,13 @@ def test_commit(mocker):
 
 
 def test_commit_when_webhook_has_non_200_status(mocker):
-    (hurl, mock_response) = load_mock_response_from_hurl(mocker, "apitest.commit.hurl")
+    (xurl, mock_response) = load_mock_response_from_xurl(mocker, "apitest.commit.xurl")
     # Override the mock status with an unaccepted code
     mock_response.status_code = 203
     mock_request = mocker.patch("httpx.AsyncClient.request", return_value=mock_response)
 
     response = client.request(
-        hurl.method, hurl.url, headers=hurl.headers, content=hurl.body
+        xurl.method, xurl.url, headers=xurl.headers, content=xurl.body
     )
 
     # Assert that downsream errors result in a 502 bad gateway error.
@@ -169,11 +206,11 @@ def test_commit_when_webhook_has_non_200_status(mocker):
 def test_commit_with_badconfig(mocker):
     """Test for error when settings are missing a commit action webhook."""
 
-    (hurl, _) = load_mock_response_from_hurl(mocker, "apitest.commit.hurl")
-    hurl.headers["Config-ID"] = "customer-test-badconfig"
+    (xurl, _) = load_mock_response_from_xurl(mocker, "apitest.commit.xurl")
+    xurl.headers["Config-ID"] = "customer-test-badconfig"
 
     response = client.request(
-        hurl.method, hurl.url, headers=hurl.headers, content=hurl.body
+        xurl.method, xurl.url, headers=xurl.headers, content=xurl.body
     )
 
     assert response.status_code == 501
@@ -182,13 +219,13 @@ def test_commit_with_badconfig(mocker):
 def test_update_experiment_timestamps(mocker):
     """Test /update-commit?update_type=timestamps success case"""
 
-    (hurl, mock_response) = load_mock_response_from_hurl(
-        mocker, "apitest.update-commit.timestamps.hurl"
+    (xurl, mock_response) = load_mock_response_from_xurl(
+        mocker, "apitest.update-commit.timestamps.xurl"
     )
     mock_request = mocker.patch("httpx.AsyncClient.request", return_value=mock_response)
 
     response = client.request(
-        hurl.method, hurl.url, headers=hurl.headers, content=hurl.body
+        xurl.method, xurl.url, headers=xurl.headers, content=xurl.body
     )
 
     assert response.status_code == 200, response.text
@@ -209,8 +246,8 @@ def test_update_experiment_timestamps(mocker):
 def test_update_experiment_fails_when_end_before_start(mocker):
     """Test /update-commit?update_type=timestamps with bad end_date"""
 
-    (hurl, _) = load_mock_response_from_hurl(
-        mocker, "apitest.update-commit.timestamps.hurl"
+    (hurl, _) = load_mock_response_from_xurl(
+        mocker, "apitest.update-commit.timestamps.xurl"
     )
     # Replace the valid body with one that has end_date < start_date
     bad_body = WebhookRequestUpdate.model_validate_json(hurl.body)
@@ -230,8 +267,8 @@ def test_update_experiment_fails_when_end_before_start(mocker):
 def test_update_experiment_description(mocker):
     """Test /update-commit?update_type=description success case"""
 
-    (hurl, mock_response) = load_mock_response_from_hurl(
-        mocker, "apitest.update-commit.description.hurl"
+    (hurl, mock_response) = load_mock_response_from_xurl(
+        mocker, "apitest.update-commit.description.xurl"
     )
     mock_request = mocker.patch("httpx.AsyncClient.request", return_value=mock_response)
 
@@ -255,8 +292,8 @@ def test_update_experiment_description(mocker):
 def test_update_experiment_fails_with_bad_ids(mocker):
     """Test /update-commit?update_type=description fails with non-uuid ids"""
 
-    (hurl, _) = load_mock_response_from_hurl(
-        mocker, "apitest.update-commit.description.bad.hurl"
+    (hurl, _) = load_mock_response_from_xurl(
+        mocker, "apitest.update-commit.description.bad.xurl"
     )
     # Expect to fail before even making the request due to validation error.
     response = client.request(
@@ -271,8 +308,8 @@ def test_update_experiment_fails_with_bad_ids(mocker):
 def test_assignment_file(mocker):
     """Test /assignment-file?experiment_id=foo1 success case"""
 
-    (hurl, mock_response) = load_mock_response_from_hurl(
-        mocker, "apitest.assignment-file.hurl"
+    (hurl, mock_response) = load_mock_response_from_xurl(
+        mocker, "apitest.assignment-file.xurl"
     )
     mock_request = mocker.patch("httpx.AsyncClient.request", return_value=mock_response)
 

@@ -5,7 +5,7 @@ from parsy import regex, string, seq, alt, generate, whitespace
 from pydantic import BaseModel
 
 
-class Hurl(BaseModel):
+class Xurl(BaseModel):
     """Simple parser for a Hurl-like request/response format.
 
     The format of the input is line-oriented::
@@ -19,7 +19,9 @@ class Hurl(BaseModel):
         ```json        # required
         expected response
         ```
+        trailer        # optional, arbitrary content available as .trailer
 
+    Note: This does not implement the official Hurl grammar.
     """
 
     method: str
@@ -28,9 +30,10 @@ class Hurl(BaseModel):
     expected_status: int
     expected_response: str | None = None
     body: str | None = None
+    trailer: str | None = None
 
     def to_script(self):
-        """Generates a Hurl script from this Hurl instance."""
+        """Generates a Xurl script from this Xurl instance."""
         return "\n".join([
             line
             for line in [
@@ -44,8 +47,8 @@ class Hurl(BaseModel):
         ])
 
     @staticmethod
-    def from_script(script: str) -> "Hurl":
-        """Constructs a Hurl from a string."""
+    def from_script(script: str) -> "Xurl":
+        """Constructs a Xurl from a string."""
 
         @generate
         def parser():
@@ -73,14 +76,16 @@ class Hurl(BaseModel):
                 )
                 << whitespace.optional()
             )
+            trailer = yield regex("(?s).*").map(lambda v: v if v else None)
 
-            return Hurl(  # noqa: B901
+            return Xurl(  # noqa: B901
                 method=method,
                 url=path,
                 headers=headers,
                 expected_response=payloads.get("resp_body"),
                 body=payloads.get("req_body"),
                 expected_status=payloads.get("status"),
+                trailer=trailer,
             )
 
         return parser.parse(script)
