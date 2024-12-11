@@ -449,7 +449,6 @@ class GetStrataResponseElement(BaseModel):
     data_type: DataType
     column_name: str
     description: str
-    strata_group: str
     # Extra fields will be stored here in case a user configured their worksheet with extra metadata for their own
     # downstream use, e.g. to group strata with a friendly identifier.
     extra: dict[str, str] | None = None
