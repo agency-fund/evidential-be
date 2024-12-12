@@ -28,6 +28,10 @@ def setup(app):
     ):
         return JSONResponse(status_code=404, content={"message": exc.message})
 
+    @app.exception_handler(ValueError)
+    async def exception_handler_valueerror(_request: Request, exc: ValueError):
+        return JSONResponse(status_code=422, content={"message": str(exc)})
+
     @app.exception_handler(sqlalchemy.exc.OperationalError)
     async def exception_handler_sqlalchemy_opex(
         _request: Request, exc: sqlalchemy.exc.OperationalError
