@@ -107,10 +107,16 @@ Follow the steps below to get a local development environment running.
    ```
    pre-commit run -a
    ```
-8. To parse a proper Google Sheets config, you'll need a service worker token, whose json info should be placed in `~/.config/gspread/service_account.json` by default.
-   - [Setup a service account in your GCP console](console.cloud.google.com) > select your project via dropdown at the top > IAM & Admin > Service Accounts > + Create Service Account > give it a name, desc and create; *note the email addr created* > After creation, click the email for that account > Keys tab > Create the json key file and put it in the above location. Lastly, share the spreadsheet as Viewer-only with this special service account email address.
-   - Ensure that the [Google Sheets API](  https://console.developers.google.com/apis/api/sheets.googleapis.com/overview) is enabled for your google cloud project.
-
+8. To parse a proper Google Sheets config, you'll need a service worker token, whose json info should be placed in
+   `~/.config/gspread/service_account.json` by default.
+    - [Setup a service account in your GCP console](console.cloud.google.com) > select your project via dropdown at the
+      top > IAM & Admin > Service Accounts > + Create Service Account > give it a name, desc and create; *note the email
+      addr created* > After creation, click the email for that account > Keys tab > Create the json key file and put it
+      in the above location. Lastly, share the spreadsheet as Viewer-only with this special service account email
+      address.
+    - Ensure that
+      the [Google Sheets API](  https://console.developers.google.com/apis/api/sheets.googleapis.com/overview) is
+      enabled for your google cloud project.
 
 ### Learn more
 
@@ -208,7 +214,11 @@ uv run fastapi dev src/xngin/apiserver/main.py
 
 ### How do I run our Github Action smoke tests?
 
-You could run the individual component tests as defined in the various jobs under [test.yaml](.github/workflows/test.yaml), but to best replicate the environment as used by our GHA, we recommend you install [`act`](https://github.com/nektos/act). Then you could execute whole workflows or individual jobs within, e.g.:
+You could run the individual component tests as defined in the various jobs
+under [test.yaml](.github/workflows/test.yaml), but to best replicate the environment as used by our GHA, we recommend
+you install [`act`](https://github.com/nektos/act). Then you could execute whole workflows or individual jobs within,
+e.g.:
+
 ```shell
 # list all jobs across our different workflows
 act -l
@@ -221,20 +231,31 @@ act -j smoke-server
 #### On Macs
 
 * You might see this error:
+
 ```
 Error: failed to start container: Error response from daemon: error while creating mount source path '/host_mnt/Users/me/.docker/run/docker.sock': mkdir /host_mnt/Users/me/.docker/run/docker.sock: operation not supported
 ```
-If so, you can resolve it by adding this line to a `~/.actrc` file as noted in [this issue](https://github.com/nektos/act/issues/2239#issuecomment-2189419148):
+
+If so, you can resolve it by adding this line to a `~/.actrc` file as noted
+in [this issue](https://github.com/nektos/act/issues/2239#issuecomment-2189419148):
 `--container-daemon-socket=unix:///var/run/docker.sock`
 
 * When running `-j unittests`, you can ignore this error line, as `act` doesn't support a macos runner:
+
 ```
 [tests/Python on macOS-2] 🚧  Skipping unsupported platform -- Try running with `-P macos-14=...`
 ```
-You can force `act` to [use your localhost as the runner](https://github.com/nektos/act/issues/97#issuecomment-1868974264) with the experimental platform `-P macos-14=-self-hosted` flag, but that's not advisable as you may overwrite local files such as service_account.json.
+
+You can force `act`
+to [use your localhost as the runner](https://github.com/nektos/act/issues/97#issuecomment-1868974264) with the
+experimental platform `-P macos-14=-self-hosted` flag, but that's not advisable as you may overwrite local files such as
+service_account.json.
 
 * [Run a particular matrix](https://github.com/nektos/act/pull/1675) configuration with e.g. `--matrix os:ubuntu-22.04`
-So a more complex command that also injects a secret from a file (which could also be [placed in your .actrc](https://nektosact.com/usage/index.html?highlight=secret#envsecrets-files-structure)) might look like:
+  So a more complex command that also injects a secret from a file (which could also
+  be [placed in your .actrc](https://nektosact.com/usage/index.html?highlight=secret#envsecrets-files-structure)) might
+  look like:
+
 ```act --matrix os:ubuntu-22.04 -j unittests -s GCLOUD_SERVICE_ACCOUNT_CREDENTIALS="$(< ~/.config/gspread/service_account.json)"
 ```
 
@@ -247,6 +268,20 @@ You might see this error:
 > pg_config is required to build psycopg2 from source.
 
 The fix will depend on your specific environment.
+
+### BigQuery Support
+
+BigQuery support is a work in progress (https://github.com/agency-fund/xngin/issues/75).
+
+The example below assumes that a BigQuery dataset named `ds` exists in the us-west-1 region and that your service
+account has BigQuery Admin permissions.
+
+> Note: If you're using the GHA service account, you have permission on the dataset referenced below.
+
+```shell
+export GOOGLE_APPLICATION_CREDENTIALS=~/.config/gspread/service_account.json
+xngin-cli create-testing-dwh --dsn 'bigquery://xngin-development-dc/ds'
+```
 
 #### Linux
 

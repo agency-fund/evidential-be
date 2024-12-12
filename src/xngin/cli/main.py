@@ -71,8 +71,11 @@ def csv_to_ddl(csv_path: Path, table_name: str) -> str:
     return df_to_ddl(df, table_name)
 
 
-def df_to_ddl(df: DataFrame, table_name: str):
+def df_to_ddl(df: DataFrame, table_name: str, *, driver: str | None = None):
     """Helper to transform a DataFrame into a CREATE TABLE statement."""
+    # These rules work for most backends.
+    quotes = '"'
+    default_sql_type = "VARCHAR(255)"
     type_map = {
         "int64": "INTEGER",
         "float64": "DECIMAL",
@@ -80,8 +83,14 @@ def df_to_ddl(df: DataFrame, table_name: str):
         "datetime64[ns]": "TIMESTAMP",
         "bool": "BOOLEAN",
     }
+    if driver == "bigquery":
+        quotes = "`"
+        type_map["object"] = "STRING"
+        default_sql_type = "STRING"
+    # TODO: This quoting is a terrible hack; we should replace it with a call to sqlalchemy quoting helpers appropriate
+    # for the backend.
     columns = [
-        f'"{col}" {type_map.get(str(dtype), "VARCHAR(255)")}'
+        f"{quotes}{col}{quotes} {type_map.get(str(dtype), default_sql_type)}"
         for col, dtype in df.dtypes.items()
     ]
     return f"""CREATE TABLE {table_name} ({",\n    ".join(columns)});"""
@@ -222,7 +231,9 @@ def create_testing_dwh(
         df = read_csv()
         with create_engine(url).connect() as conn, conn.begin():
             cursor = conn.connection.cursor()
-            drop_and_create(cursor, df_to_ddl(df, full_table_name))
+            drop_and_create(
+                cursor, df_to_ddl(df, full_table_name, driver=url.drivername)
+            )
             print("Loading...")
             df.to_sql(
                 table_name,
