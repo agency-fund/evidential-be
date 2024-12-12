@@ -37,7 +37,7 @@ def config_dependency(
     return settings.get_client_config(config_id)
 
 
-def xngin_db_session() -> Session:
+def xngin_db_session():
     """Returns a database connection to the xngin sqlite database (not customer data warehouse)."""
     db = SessionLocal()
     try:
