@@ -27,7 +27,7 @@ Base = declarative_base()
 class Cache(Base):
     __tablename__ = "cache"
 
-    # TODO: handle non-sqlite SQLALCHEMY_DATABASE_URLs
+    # non-sqlite SQLALCHEMY_DATABASE_URLs will ignore the dialect-specific parameter
     key = Column(String, primary_key=True, sqlite_on_conflict_primary_key="REPLACE")
     value = Column(String)
 

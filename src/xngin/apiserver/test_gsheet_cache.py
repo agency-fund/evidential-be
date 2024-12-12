@@ -79,25 +79,47 @@ def test_get_new_entry(sheet_cache, mock_session, mock_sheet_config):
     mock_session.commit.assert_called_once()
 
 
-def test_get_refresh(sheet_cache, mock_session, mock_sheet_config):
+def test_get_refresh_with_cache_miss(sheet_cache, mock_session, mock_sheet_config):
     key = SheetRef(url="https://example.com", worksheet="Sheet1")
-
+    # When the key does not exist:
+    mock_session.get.return_value = None
     fetcher = Mock(return_value=mock_sheet_config)
 
     result = sheet_cache.get(key, fetcher, refresh=True)
 
     assert isinstance(result, ConfigWorksheet)
     assert result.model_dump() == mock_sheet_config.model_dump()
-    mock_session.get.assert_not_called()
+    # sheet_cache will always check if the key already exists first
+    mock_session.get.assert_called_once()
     fetcher.assert_called_once()
     mock_session.add.assert_called_once()
     mock_session.commit.assert_called_once()
 
 
-def test_get_cache_and_refresh(mock_sheet_config):
+def test_get_refresh_with_cache_hit(sheet_cache, mock_session, mock_sheet_config):
+    key = SheetRef(url="https://example.com", worksheet="Sheet1")
+    # When the key already exists:
+    mock_session.get.return_value = Cache(
+        key=key,
+        value=mock_sheet_config.model_copy(update={"is_strata": True}, deep=True),
+    )
+    fetcher = Mock(return_value=mock_sheet_config)
+
+    result = sheet_cache.get(key, fetcher, refresh=True)
+
+    assert isinstance(result, ConfigWorksheet)
+    assert result.model_dump() == mock_sheet_config.model_dump()
+    mock_session.get.assert_called_once()
+    fetcher.assert_called_once()
+    mock_session.add.assert_not_called()  # since we updated via the ORM object
+    mock_session.commit.assert_called_once()
+
+
+@pytest.mark.parametrize("auto_handle_conflicts", [True, False])
+def test_get_cache_and_refresh(mock_sheet_config, auto_handle_conflicts):
     """Tests the full cycle against a real in-mem db."""
     make_session = conftest.get_test_sessionmaker()
-    local_cache = GSheetCache(next(make_session()))
+    local_cache = GSheetCache(next(make_session()), auto_handle_conflicts)
 
     key = SheetRef(url="https://example.com", worksheet="Sheet1")
     fetcher = Mock(return_value=mock_sheet_config)
