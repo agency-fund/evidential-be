@@ -8,81 +8,81 @@ HTTP 200
     "data_type": "double precision",
     "description": "Baseline Income",
     "extra": {
-      "Extra Ad-Hoc Field": ""
-    },
-    "strata_group": ""
+      "Extra Ad-Hoc Field": "",
+      "column_group": ""
+    }
   },
   {
     "column_name": "current_income",
     "data_type": "double precision",
     "description": "Current Income",
     "extra": {
-      "Extra Ad-Hoc Field": ""
-    },
-    "strata_group": ""
+      "Extra Ad-Hoc Field": "",
+      "column_group": ""
+    }
   },
   {
     "column_name": "ethnicity",
     "data_type": "character varying",
     "description": "The ethnicity",
     "extra": {
-      "Extra Ad-Hoc Field": "adhoc2"
-    },
-    "strata_group": "TODO"
+      "Extra Ad-Hoc Field": "adhoc2",
+      "column_group": "TODO"
+    }
   },
   {
     "column_name": "gender",
     "data_type": "character varying",
     "description": "Gender",
     "extra": {
-      "Extra Ad-Hoc Field": "adhoc1"
-    },
-    "strata_group": "TODO"
+      "Extra Ad-Hoc Field": "adhoc1",
+      "column_group": "TODO"
+    }
   },
   {
     "column_name": "is_engaged",
     "data_type": "integer",
     "description": "Engaged?",
     "extra": {
-      "Extra Ad-Hoc Field": ""
-    },
-    "strata_group": ""
+      "Extra Ad-Hoc Field": "",
+      "column_group": ""
+    }
   },
   {
     "column_name": "is_onboarded",
     "data_type": "integer",
     "description": "Onboarded?",
     "extra": {
-      "Extra Ad-Hoc Field": ""
-    },
-    "strata_group": ""
+      "Extra Ad-Hoc Field": "",
+      "column_group": ""
+    }
   },
   {
     "column_name": "is_recruited",
     "data_type": "integer",
     "description": "Recruited?",
     "extra": {
-      "Extra Ad-Hoc Field": ""
-    },
-    "strata_group": ""
+      "Extra Ad-Hoc Field": "",
+      "column_group": ""
+    }
   },
   {
     "column_name": "is_registered",
     "data_type": "integer",
     "description": "Registered?",
     "extra": {
-      "Extra Ad-Hoc Field": ""
-    },
-    "strata_group": ""
+      "Extra Ad-Hoc Field": "",
+      "column_group": ""
+    }
   },
   {
     "column_name": "is_retained",
     "data_type": "integer",
     "description": "Retained?",
     "extra": {
-      "Extra Ad-Hoc Field": ""
-    },
-    "strata_group": ""
+      "Extra Ad-Hoc Field": "",
+      "column_group": ""
+    }
   }
 ]
 ```

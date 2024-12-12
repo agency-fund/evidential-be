@@ -296,9 +296,7 @@ def bootstrap_spreadsheet(
 
     for row in config.columns:
         # Exclude the `extra` field.
-        rows.append([
-            convert(n) for n in row.model_dump().values() if not isinstance(n, dict)
-        ])
+        rows.append([convert(v) for k, v in row.model_dump().items() if k != "extra"])
 
     if not create_gsheet:
         writer = csv.writer(sys.stdout)

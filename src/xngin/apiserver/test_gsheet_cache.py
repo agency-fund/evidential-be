@@ -29,12 +29,12 @@ def mock_sheet_config():
             ColumnDescriptor(
                 column_name="c",
                 data_type=DataType.BOOLEAN,
-                column_group="g",
                 description="d",
                 is_unique_id=True,
                 is_strata=False,
                 is_filter=False,
                 is_metric=True,
+                extra={"column_group": "g"},
             )
         ],
     )

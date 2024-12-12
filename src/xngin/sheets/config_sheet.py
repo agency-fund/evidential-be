@@ -48,7 +48,6 @@ class InvalidSheetError(Exception):
 class ColumnDescriptor(BaseModel):
     column_name: str
     data_type: DataType
-    column_group: str
     description: str
     is_unique_id: bool
     is_strata: bool
@@ -61,7 +60,7 @@ class ColumnDescriptor(BaseModel):
         "extra": "forbid",
     }
 
-    @field_validator("description", "column_group", mode="before")
+    @field_validator("description", mode="before")
     @classmethod
     def to_string_loose(cls, value) -> str:
         if not isinstance(value, str):
@@ -223,7 +222,6 @@ def create_sheetconfig_from_table(
             ColumnDescriptor(
                 column_name=column.name,
                 data_type=DataType.match(type_hint),
-                column_group="",
                 description="",
                 is_unique_id=column.name == unique_id_col,
                 is_strata=False,
