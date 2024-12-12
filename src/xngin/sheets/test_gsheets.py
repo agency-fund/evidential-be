@@ -35,17 +35,16 @@ def test_config_worksheet_get_unique_id_col():
             ColumnDescriptor(
                 column_name="first_name",
                 data_type=DataType.CHARACTER_VARYING,
-                column_group="g",
                 description="d",
                 is_unique_id=False,
                 is_strata=False,
                 is_filter=False,
                 is_metric=True,
+                extra={"column_group": "g"},
             ),
             ColumnDescriptor(
                 column_name="last_name",
                 data_type=DataType.CHARACTER_VARYING,
-                column_group="g",
                 description="d",
                 is_unique_id=True,
                 is_strata=False,
