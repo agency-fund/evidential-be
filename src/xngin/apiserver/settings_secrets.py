@@ -5,11 +5,12 @@ from collections.abc import Callable
 REF = "ref"
 NAMESPACE = "ns"
 NAMESPACE_FOR_SECRETS = "secret"
+NAMESPACE_FOR_ENVVARS = "env"
 SOURCE_ENVIRONMENT_VARIABLES = "environ"
 
 # Defines a capturing regex for ${ns:ref} pairs.
 SECRET_REF = re.compile(
-    re.escape("${") + r"(?P<ns>secret):(?P<ref>[a-zA-Z0-9_]+)" + re.escape("}")
+    re.escape("${") + r"(?P<ns>secret|env):(?P<ref>[a-zA-Z0-9_]+)" + re.escape("}")
 )
 
 
@@ -54,8 +55,11 @@ def walk_unique(node, visitor: Callable[[str], set[str]]) -> set[str]:
 
 
 def _resolve_secrets(variables):
-    # We only want to resolve secrets.
-    variables = [v for v in variables if v[0] == NAMESPACE_FOR_SECRETS]
+    # We only want to resolve secrets. Since we only support environment variables for now, we also allow the env:
+    # prefix so that we can have non-secret variable substitution.
+    variables = [
+        v for v in variables if v[0] in (NAMESPACE_FOR_SECRETS, NAMESPACE_FOR_ENVVARS)
+    ]
     # We only support environment variables for secrets; in the future, this might be AWS Secrets Manager, files,
     # BitWarden, etc.
     if (
