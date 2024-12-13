@@ -47,8 +47,7 @@ def xngin_db_session():
 
 
 def gsheet_cache(xngin_db: Annotated[Session, Depends(xngin_db_session)]):
-    engine = xngin_db.get_bind()
-    return GSheetCache(xngin_db, auto_handle_conflicts=engine.dialect == "sqlite")
+    return GSheetCache(xngin_db)
 
 
 async def httpx_dependency():
