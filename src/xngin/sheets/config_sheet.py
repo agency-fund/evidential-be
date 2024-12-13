@@ -127,7 +127,9 @@ class ConfigWorksheet(BaseModel):
     @model_validator(mode="after")
     def check_non_empty_rows(self) -> "ConfigWorksheet":
         if len(self.columns) == 0:
-            raise ValueError(f"{__class__} must contain at least one ColumnDescriptor.")
+            raise ValueError(
+                f"{self.__class__} must contain at least one ColumnDescriptor."
+            )
         return self
 
 
