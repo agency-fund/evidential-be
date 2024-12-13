@@ -1,5 +1,6 @@
 """Command line tool for various xngin-related operations."""
 
+from google.cloud import bigquery
 import csv
 import json
 import logging
@@ -458,6 +459,37 @@ def validate_settings(file: Path):
         print(f"{file} failed validation:", file=sys.stderr)
         print(verr, file=sys.stderr)
         raise typer.Exit(1) from verr
+
+
+@app.command()
+def bigquery_dataset_set_default_expiration(
+    project_id: Annotated[
+        str,
+        typer.Option(..., help="The Google Cloud Project ID containing the dataset."),
+    ],
+    dataset_id: Annotated[str, typer.Option(..., help="The dataset name.")],
+    days: Annotated[
+        int,
+        typer.Option(
+            ...,
+            help="The default expiration for new tables in the dataset (in days).",
+            min=0,
+        ),
+    ] = 1,
+):
+    """Sets the default TTL (in days) of tables created in a dataset.
+
+    Does not apply to existing tables. To remove the expiration time, specify --days 0.
+    """
+    new_expiration_ms = days * 24 * 60 * 60 * 1000
+    client = bigquery.Client()
+    dataset = client.get_dataset(f"{project_id}.{dataset_id}")
+    dataset.default_table_expiration_ms = new_expiration_ms
+    dataset = client.update_dataset(dataset, ["default_table_expiration_ms"])
+    print(
+        f"Updated dataset {dataset.project}.{dataset.dataset_id} with new default table "
+        f"expiration {dataset.default_table_expiration_ms}"
+    )
 
 
 if __name__ == "__main__":
