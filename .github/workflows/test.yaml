@@ -123,7 +123,7 @@ jobs:
           mkdir -p ~/.config/gspread && echo "${GCLOUD_SERVICE_ACCOUNT_CREDENTIALS}" > service_account.json
           openssl sha256 service_account.json
       - env:
-          XNGIN_CLI_TABLE_NAME: gha_{{ github.run_id }}_${{ github.run_attempt }}
+          XNGIN_CLI_TABLE_NAME: gha_${{ github.run_id }}_${{ github.run_attempt }}
         run: |
           set -x
 
