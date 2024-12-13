@@ -4,8 +4,8 @@ import re
 from dataclasses import dataclass
 
 import pytest
-from sqlalchemy import create_engine, Column, Integer, Float, Boolean, String, event
-from sqlalchemy.orm import declarative_base, Session
+from sqlalchemy import create_engine, Integer, Float, Boolean, String, event
+from sqlalchemy.orm import Session, DeclarativeBase, mapped_column
 
 from xngin.apiserver.api_types import (
     AudienceSpec,
@@ -22,18 +22,20 @@ from xngin.apiserver.dwh.queries import (
 )
 from xngin.sqlite_extensions.custom_functions import NumpyStddev
 
-Base = declarative_base()
+
+class Base(DeclarativeBase):
+    pass
 
 
 class SampleTable(Base):
     __tablename__ = "test_table"
 
-    id = Column(Integer, primary_key=True)
-    int_col = Column(Integer, nullable=False)
-    float_col = Column(Float, nullable=False)
-    bool_col = Column(Boolean, nullable=False)
-    string_col = Column(String, nullable=False)
-    experiment_ids = Column(String, nullable=False)
+    id = mapped_column(Integer, primary_key=True)
+    int_col = mapped_column(Integer, nullable=False)
+    float_col = mapped_column(Float, nullable=False)
+    bool_col = mapped_column(Boolean, nullable=False)
+    string_col = mapped_column(String, nullable=False)
+    experiment_ids = mapped_column(String, nullable=False)
 
 
 @dataclass
