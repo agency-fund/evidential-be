@@ -62,6 +62,32 @@
           "search_path": "alt"
         }
       }
+    },
+    {
+      "id": "gha-bq",
+      "config": {
+        "type": "remote",
+        "participants": [
+          {
+            "participant_type": "warehouse",
+            "table_name": "${env:XNGIN_CLI_TABLE_NAME}",
+            "sheet": {
+              "url": "file://src/xngin/apiserver/testdata/testing_sheet.csv",
+              "worksheet": "Sheet1"
+            }
+          }
+        ],
+        "dwh": {
+          "dataset_id": "ds",
+          "driver": "bigquery",
+          "project_id": "xngin-development-dc",
+          "credentials": {
+            "type": "serviceaccountfile",
+            "path": "service_account.json"
+          }
+        }
+      }
     }
+
   ]
 }

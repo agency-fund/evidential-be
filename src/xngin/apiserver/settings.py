@@ -3,7 +3,7 @@ import logging
 import os
 from collections import Counter
 from functools import lru_cache
-from typing import Literal, Annotated
+from typing import Literal, Annotated, Protocol
 
 import sqlalchemy
 from pydantic import (
@@ -130,7 +130,84 @@ class WebhookConfig(ConfigBaseModel):
     common_headers: WebhookCommonHeaders
 
 
-class Dsn(ConfigBaseModel):
+class ToSqlalchemyUrl(Protocol):
+    def to_sqlalchemy_url(self) -> sqlalchemy.URL:
+        """Creates a sqlalchemy.URL from this Dsn."""
+        ...
+
+
+class BaseDsn:
+    def is_redshift(self):
+        """Return true iff the hostname indicates that this is connecting to Redshift."""
+        return False
+
+    def supports_table_reflection(self):
+        return not self.is_redshift()
+
+
+class GcpServiceAccountInfo(ConfigBaseModel):
+    """Describes a Google Cloud Service Account credential."""
+
+    type: Literal["serviceaccountinfo"]
+    content_base64: Annotated[
+        str,
+        Field(
+            ...,
+            description="The base64-encoded service account info in the canonical JSON form.",
+        ),
+    ]
+
+
+class GcpServiceAccountFile(ConfigBaseModel):
+    """Describes a file path to a Google Cloud Service Account credential file."""
+
+    type: Literal["serviceaccountfile"]
+    path: Annotated[
+        str,
+        Field(
+            ...,
+            description="The path to the service account credentials file containing the credentials "
+            "in canonical JSON form.",
+        ),
+    ]
+
+
+class BqDsn(ConfigBaseModel, BaseDsn):
+    """Describes a BigQuery connection."""
+
+    driver: Literal["bigquery"]
+    project_id: Annotated[
+        str,
+        Field(..., description="The Google Cloud Project ID containing the dataset."),
+    ]
+    dataset_id: Annotated[str, Field(..., description="The dataset name.")]
+
+    # These two authentication modes are documented here:
+    # https://googleapis.dev/python/google-api-core/latest/auth.html#service-accounts
+    credentials: Annotated[
+        GcpServiceAccountInfo | GcpServiceAccountFile,
+        Field(
+            ...,
+            discriminator="type",
+            description="The base64-encoded Google Cloud service account credentials.",
+        ),
+    ]
+
+    def to_sqlalchemy_url(self) -> sqlalchemy.URL:
+        qopts = {}
+        if self.credentials.type == "serviceaccountinfo":
+            qopts["credentials_base64"] = self.credentials.content_base64
+        elif self.credentials.type == "serviceaccountfile":
+            qopts["credentials_path"] = self.credentials.path
+        return sqlalchemy.URL.create(
+            drivername="bigquery",
+            host=self.project_id,
+            database=self.dataset_id,
+            query=qopts,
+        )
+
+
+class Dsn(ConfigBaseModel, BaseDsn):
     """Describes a set of parameters suitable for connecting to most types of remote databases."""
 
     driver: Literal[
@@ -150,14 +227,9 @@ class Dsn(ConfigBaseModel):
     search_path: str | None = None
 
     def is_redshift(self):
-        """Return true iff the hostname indicates that this is connecting to Redshift."""
         return self.host.endswith("redshift.amazonaws.com")
 
-    def supports_table_reflection(self):
-        return not self.is_redshift()
-
     def to_sqlalchemy_url(self):
-        """Creates a sqlalchemy.URL from this Dsn."""
         url = sqlalchemy.URL.create(
             drivername=self.driver,
             username=self.user,
@@ -193,7 +265,7 @@ class RemoteDatabaseConfig(ParticipantsMixin, ConfigBaseModel):
 
     type: Literal["remote"]
 
-    dwh: Dsn
+    dwh: Annotated[Dsn | BqDsn, Field(discriminator="driver")]
 
     dbapi_args: list[DbapiArg] | None = None
 
@@ -224,11 +296,11 @@ class RemoteDatabaseConfig(ParticipantsMixin, ConfigBaseModel):
     def _extra_engine_setup(self, engine: Engine):
         """Do any extra configuration if needed before a connection is made."""
 
-        # Avoid explicitly setting schema whenever we build a Table.
-        #   https://docs.sqlalchemy.org/en/20/dialects/postgresql.html#setting-alternate-search-paths-on-connect
-        # If possible, have the client also consider setting that as a default on the role, e.g.:
-        #   ALTER USER username SET search_path = schema1, schema2, public;
-        if self.dwh.search_path:
+        if self.dwh.driver.startswith("postgres") and self.dwh.search_path:
+            # Avoid explicitly setting schema whenever we build a Table.
+            #   https://docs.sqlalchemy.org/en/20/dialects/postgresql.html#setting-alternate-search-paths-on-connect
+            # If possible, have the client also consider setting that as a default on the role, e.g.:
+            #   ALTER USER username SET search_path = schema1, schema2, public;
 
             @event.listens_for(engine, "connect", insert=True)
             def set_search_path(dbapi_connection, connection_record):
