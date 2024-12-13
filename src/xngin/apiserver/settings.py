@@ -279,7 +279,7 @@ class RemoteDatabaseConfig(ParticipantsMixin, ConfigBaseModel):
         sqlalchemy Engine, call .get_bind().
         """
         url = self.dwh.to_sqlalchemy_url()
-        connect_args = {}
+        connect_args: dict = {}
         if self.dbapi_args:
             for entry in self.dbapi_args:
                 connect_args[entry.arg] = entry.value
@@ -296,14 +296,14 @@ class RemoteDatabaseConfig(ParticipantsMixin, ConfigBaseModel):
     def _extra_engine_setup(self, engine: Engine):
         """Do any extra configuration if needed before a connection is made."""
 
-        if self.dwh.driver.startswith("postgres") and self.dwh.search_path:
+        if isinstance(self.dwh.driver, Dsn) and self.dwh.search_path:
             # Avoid explicitly setting schema whenever we build a Table.
             #   https://docs.sqlalchemy.org/en/20/dialects/postgresql.html#setting-alternate-search-paths-on-connect
             # If possible, have the client also consider setting that as a default on the role, e.g.:
             #   ALTER USER username SET search_path = schema1, schema2, public;
 
             @event.listens_for(engine, "connect", insert=True)
-            def set_search_path(dbapi_connection, connection_record):
+            def set_search_path(dbapi_connection, _connection_record):
                 existing_autocommit = dbapi_connection.autocommit
                 dbapi_connection.autocommit = True
                 cursor = dbapi_connection.cursor()
