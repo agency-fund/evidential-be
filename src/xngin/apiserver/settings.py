@@ -189,7 +189,7 @@ class BqDsn(ConfigBaseModel, BaseDsn):
         Field(
             ...,
             discriminator="type",
-            description="The base64-encoded Google Cloud service account credentials.",
+            description="The Google Cloud Service Account credentials.",
         ),
     ]
 
