@@ -33,6 +33,7 @@ class GSheetCache:
                 self.session.commit()
             # This fallback should support sqlite and postgresql
             except IntegrityError:
+                self.session.rollback()
                 self.session.execute(
                     update(Cache)
                     .where(Cache.key == entry.key)

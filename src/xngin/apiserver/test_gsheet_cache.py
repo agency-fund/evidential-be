@@ -110,6 +110,7 @@ def test_get_refresh_with_integrityerror(sheet_cache, mock_session, mock_sheet_c
     assert result.model_dump() == mock_sheet_config.model_dump()
     fetcher.assert_called_once()
     mock_session.add.assert_called_once()
+    mock_session.rollback.assert_called_once()
     mock_session.execute.assert_called_once()
     assert isinstance(mock_session.execute.call_args.args[0], Update)
     mock_session.commit.assert_called_once()
