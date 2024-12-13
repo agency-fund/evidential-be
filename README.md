@@ -27,17 +27,33 @@ curl -LsSf https://astral.sh/uv/0.5.5/install.sh | sh
 
 ## Settings
 
-The settings schema is defined in [xngin.apiserver.settings](src/xngin/apiserver/settings.py). Values are read at
-startup from environment variables and from a JSON file specified by the `XNGIN_SETTINGS` environment variable. This
-defaults
-to [xngin.settings.json](xngin.settings.json), but you will
-use [xngin.testing.settings.json](src/xngin/apiserver/testdata/xngin.testing.settings.json) file during most of your
-work.
+The settings schema is defined in
+[`xngin.apiserver.settings:XnginSettings`](src/xngin/apiserver/settings.py). Values are read at
+startup from environment variables and from a JSON file specified by the `XNGIN_SETTINGS`
+environment variable. This defaults to [xngin.settings.json](xngin.settings.json), but you will use
+[xngin.testing.settings.json](src/xngin/apiserver/testdata/xngin.testing.settings.json) file during
+most of your work.
 
 The settings files can be committed to version control but secret values should not be. They should be referred to with
 `${secret:NAME}` syntax. When the XNGIN_SECRETS_SOURCE environment variable is unset or set to "environ", those
-references will be replaced with
-a corresponding environment variable value.
+references will be replaced with a corresponding environment variable value.
+
+There are 3 levels of configuration behind Xngin:
+
+* App-wide settings as noted above in `XnginSettings`. This includes per-client configuration allowing us to provide a
+  multi-tenant service. It is retrieved in production via dependency injection (see
+  [`settings.py:get_settings_for_server`](src/xngin/apiserver/settings.py)), which is overriden in tests (see
+  [`conftest.py:get_settings_for_test`](src/xngin/apiserver/conftest.py)).
+* Client-level configuration whose schema is [`ClientConfig`](src/xngin/apiserver/settings.py), which can be one of a
+  fixed set of supported customer configurations (e.g. `RemoteDatabaseConfig`) that package up how to connect to the
+  data warehouse (see `Dsn`) along with all the different `Participant` types (aka each type of unit of experimentation,
+  e.g. a WhatsApp group, or individuals).
+* Participant type-level configuration with schema [`config_sheet.py:ConfigWorksheet`](src/xngin/sheets/config_sheet.py), including column and type info derived from the warehouse via introspection (see
+  [`config_sheet.py:create_configworksheet_from_table`](src/xngin/sheets/config_sheet.py),
+  [`main.py:get_sqlalchemy_table_from_engine`](src/xngin/apiserver/main.py)), as well as extra metadata about columns
+  (is_strata/is_filter/is_metric) in Google spreadsheets as specified by the client. Both sources (dwh introspection,
+  gsheets) are represented by the `ConfigWorksheet` model, although not all information may be supplied by either.
+
 
 ## Getting Started
 
@@ -167,6 +183,15 @@ docker run \
 > Note: These flags change depending on runtime environment. If running under an orchestrator, omit the -it. To run in
 > the background, omit `-it` and add `-d`.
 
+### How do I see the sql commands being executed in my logs?
+
+Set `ECHO_SQL=1` in your environment, e.g.:
+
+```shell
+ECHO_SQL=1 XNGIN_SETTINGS=xngin.settings.json \
+   uv run fastapi dev src/xngin/apiserver/main.py --port 8144
+```
+
 ### How do I add a Python dependency?
 
 1. Add the dependency to [pyproject.toml](pyproject.toml) (replace httpx with whatever dependency you are adding). Try
@@ -184,6 +209,19 @@ docker run \
    uv run pytest
    ```
 4. Commit the changed uv.lock and pyproject.toml files.
+
+### How do I force-build the test sqlite database?
+
+Recommend deleting the `src/xngin/apiserver/testdata/testing_dwh.db` and let the unit tests rebuild it
+for you.
+
+You could use the [CLI](src/xngin/cli/main.py) `create-testing-dwh` command (see --help for more):
+```shell
+uv run xngin-cli create-testing-dwh \
+   --dsn sqlite:///src/xngin/apiserver/testdata/testing_dwh.db \
+   --table-name=test_participant_type
+```
+BUT the data types used in the create ddl will differ right now as the former relies on pandas to infer types while the latter uses our own mapping based on dataframe types.
 
 ### How do I run xngin against a local Postgres?
 
@@ -204,6 +242,25 @@ docker run --rm -d --name xngin-postgres \
 export XNGIN_SETTINGS=src/xngin/apiserver/testdata/xngin.testing.settings.json
 export XNGIN_DB=postgresql://xnginwebserver:${PASSWORD}@localhost:5432/xngin
 uv run fastapi dev src/xngin/apiserver/main.py
+```
+
+#### How can I load test data into this pg instance with a different schema?
+
+As with a sqlite db above, use the CLI command:
+```shell
+uv run xngin-cli create-testing-dwh \
+   --dsn=$XNGIN_DB \
+   --password=$PASSWORD \
+   --table-name=test_participant_type \
+   --schema-name=alt
+```
+
+Now you can edit your `XNGIN_SETTINGS` json to add a ClientConfig that points to your local pg and
+new table.
+
+One way to manually query pg is using the `psql` terminal included with Postgres, e.g.:
+```shell
+psql -h localhost -p 5432 -d xngin -U xnginwebserver -c "select count(*) from alt.test_participant_type"
 ```
 
 ### How do I run our Github Action smoke tests?
