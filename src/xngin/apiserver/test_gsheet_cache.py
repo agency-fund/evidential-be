@@ -90,6 +90,7 @@ def test_get_refresh(sheet_cache, mock_session, mock_sheet_config):
 
     assert isinstance(result, ConfigWorksheet)
     assert result.model_dump() == mock_sheet_config.model_dump()
+    mock_session.get.assert_not_called()
     fetcher.assert_called_once()
     mock_session.add.assert_called_once()
     mock_session.commit.assert_called_once()
@@ -108,6 +109,7 @@ def test_get_refresh_with_integrityerror(sheet_cache, mock_session, mock_sheet_c
 
     assert isinstance(result, ConfigWorksheet)
     assert result.model_dump() == mock_sheet_config.model_dump()
+    mock_session.get.assert_not_called()
     fetcher.assert_called_once()
     mock_session.add.assert_called_once()
     mock_session.rollback.assert_called_once()
