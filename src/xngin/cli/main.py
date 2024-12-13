@@ -20,6 +20,7 @@ from pydantic import ValidationError
 from pydantic_core import from_json
 from rich.console import Console
 from sqlalchemy import create_engine, make_url
+from sqlalchemy.sql.compiler import IdentifierPreparer
 
 from xngin.apiserver import settings
 from xngin.apiserver.api_types import DataType
@@ -65,16 +66,35 @@ def infer_config_from_schema(dsn: str, table: str, use_reflection: bool):
     return create_sheetconfig_from_table(dwh)
 
 
-def csv_to_ddl(csv_path: Path, table_name: str) -> str:
+def csv_to_ddl(
+    csv_path: Path,
+    table_name: str,
+    *,
+    driver: str | None = None,
+    quoter: IdentifierPreparer | None = None,
+) -> str:
     """Helper to transform a CSV with Pandas-inferred schema into a CREATE TABLE statement."""
     df = pd.read_csv(csv_path)
-    return df_to_ddl(df, table_name)
+    return df_to_ddl(df, table_name, driver=driver, quoter=quoter)
 
 
-def df_to_ddl(df: DataFrame, table_name: str, *, driver: str | None = None):
-    """Helper to transform a DataFrame into a CREATE TABLE statement."""
+def df_to_ddl(
+    df: DataFrame,
+    table_name: str,
+    *,
+    driver: str | None = None,
+    quoter: IdentifierPreparer | None = None,
+):
+    """Helper to transform a DataFrame into a CREATE TABLE statement.
+    :param quoter:
+    """
+
     # These rules work for most backends.
-    quotes = '"'
+    def quote_for_pg_sqlite(v):
+        # TODO: inner double quotes
+        return f'"{v}"'
+
+    iquote = quote_for_pg_sqlite
     default_sql_type = "VARCHAR(255)"
     type_map = {
         "int64": "INTEGER",
@@ -84,13 +104,12 @@ def df_to_ddl(df: DataFrame, table_name: str, *, driver: str | None = None):
         "bool": "BOOLEAN",
     }
     if driver == "bigquery":
-        quotes = "`"
         type_map["object"] = "STRING"
         default_sql_type = "STRING"
-    # TODO: This quoting is a terrible hack; we should replace it with a call to sqlalchemy quoting helpers appropriate
-    # for the backend.
+    if quoter is not None:
+        iquote = quoter.quote
     columns = [
-        f"{quotes}{col}{quotes} {type_map.get(str(dtype), default_sql_type)}"
+        f"{iquote(col)} {type_map.get(str(dtype), default_sql_type)}"
         for col, dtype in df.dtypes.items()
     ]
     return f"""CREATE TABLE {table_name} ({",\n    ".join(columns)});"""
@@ -215,9 +234,15 @@ def create_testing_dwh(
                 s3.delete_object(Bucket=bucket, Key=key)
     elif url.drivername == "postgresql+psycopg":
         df = read_csv()
-        with create_engine(url).connect() as conn, conn.begin():
+        engine = create_engine(url)
+        with engine.connect() as conn, conn.begin():
             cursor = conn.connection.cursor()
-            drop_and_create(cursor, df_to_ddl(df, full_table_name))
+            drop_and_create(
+                cursor,
+                df_to_ddl(
+                    df, full_table_name, quoter=engine.dialect.identifier_preparer
+                ),
+            )
             opener = (lambda x: zstandard.open(x, "r")) if is_compressed else open
             print("Loading...")
             with opener(src) as reader:
@@ -229,10 +254,17 @@ def create_testing_dwh(
             count(cursor)
     else:
         df = read_csv()
-        with create_engine(url).connect() as conn, conn.begin():
+        engine = create_engine(url)
+        with engine.connect() as conn, conn.begin():
             cursor = conn.connection.cursor()
             drop_and_create(
-                cursor, df_to_ddl(df, full_table_name, driver=url.drivername)
+                cursor,
+                df_to_ddl(
+                    df,
+                    full_table_name,
+                    driver=url.drivername,
+                    quoter=engine.dialect.identifier_preparer,
+                ),
             )
             print("Loading...")
             df.to_sql(
