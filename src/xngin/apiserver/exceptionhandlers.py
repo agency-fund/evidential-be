@@ -7,6 +7,7 @@ from xngin.apiserver.settings import (
     CannotFindTableError,
     CannotFindParticipantsError,
 )
+from xngin.stats.stats_errors import StatsError
 
 
 def setup(app):
@@ -17,19 +18,19 @@ def setup(app):
     """
 
     @app.exception_handler(CannotFindTableError)
-    async def exception_handler_cannotfindthetableexception(
+    async def exception_handler_cannotfindthetableerror(
         _request: Request, exc: CannotFindTableError
     ):
         return JSONResponse(status_code=404, content={"message": exc.message})
 
     @app.exception_handler(CannotFindParticipantsError)
-    async def exception_handler_cannotfindtheparticipantexception(
+    async def exception_handler_cannotfindtheparticipanterror(
         _request: Request, exc: CannotFindParticipantsError
     ):
         return JSONResponse(status_code=404, content={"message": exc.message})
 
-    @app.exception_handler(ValueError)
-    async def exception_handler_valueerror(_request: Request, exc: ValueError):
+    @app.exception_handler(StatsError)
+    async def exception_handler_statsmodelerror(_request: Request, exc: StatsError):
         return JSONResponse(status_code=422, content={"message": str(exc)})
 
     @app.exception_handler(sqlalchemy.exc.OperationalError)
