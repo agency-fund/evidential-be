@@ -10,6 +10,7 @@ from typing import Annotated
 import boto3
 import gspread
 import pandas as pd
+import pandas_gbq
 import psycopg2
 import sqlalchemy
 import typer
@@ -167,6 +168,8 @@ def create_testing_dwh(
 
     On postgres+psycopg connections: CSV is parsed with Postgres' CSV parser. Table DDL is derived from Pandas read_csv.
 
+    On BigQuery: CSV is parsed by Pandas. Table DDL is derived by pandas-gbq and written via to_gbq().
+
     On all other databases: CSV is parsed by Pandas. Table DDL is derived from Pandas read_csv and written via
     SQLAlchemy and Pandas to_sql().
 
@@ -252,6 +255,12 @@ def create_testing_dwh(
                     while data := reader.read(1 << 20):
                         copy.write(data)
             count(cursor)
+    elif url.drivername == "bigquery":
+        df = read_csv()
+        destination_table = f"{url.database}.{table_name}"
+        pandas_gbq.to_gbq(
+            df, destination_table, project_id=url.host, if_exists="replace"
+        )
     else:
         df = read_csv()
         engine = create_engine(url)
