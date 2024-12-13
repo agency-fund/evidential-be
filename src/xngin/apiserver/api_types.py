@@ -376,7 +376,7 @@ class MetricAnalysis(BaseModel):
     needed_target: float | None = None
     metric_target_possible: float | None = None
     metric_pct_change_possible: float | None = None
-    delta: float = None
+    delta: float | None = None
     msg: MetricAnalysisMessage | None = None
 
 
@@ -390,7 +390,7 @@ class StrataType(enum.StrEnum):
     CATEGORICAL = "categorical"
 
     @classmethod
-    def from_python_type(cls, python_type: type) -> "MetricType":
+    def from_python_type(cls, python_type: type):
         """Given a Python type, return an appropriate StrataType."""
 
         if python_type in (int, float):
