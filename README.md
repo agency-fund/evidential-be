@@ -48,12 +48,13 @@ There are 3 levels of configuration behind Xngin:
   fixed set of supported customer configurations (e.g. `RemoteDatabaseConfig`) that package up how to connect to the
   data warehouse (see `Dsn`) along with all the different `Participant` types (aka each type of unit of experimentation,
   e.g. a WhatsApp group, or individuals).
-* Participant type-level configuration with schema [`config_sheet.py:ConfigWorksheet`](src/xngin/sheets/config_sheet.py), including column and type info derived from the warehouse via introspection (see
+* Participant type-level configuration with schema [
+  `config_sheet.py:ConfigWorksheet`](src/xngin/sheets/config_sheet.py), including column and type info derived from the
+  warehouse via introspection (see
   [`config_sheet.py:create_configworksheet_from_table`](src/xngin/sheets/config_sheet.py),
   [`main.py:get_sqlalchemy_table_from_engine`](src/xngin/apiserver/main.py)), as well as extra metadata about columns
   (is_strata/is_filter/is_metric) in Google spreadsheets as specified by the client. Both sources (dwh introspection,
   gsheets) are represented by the `ConfigWorksheet` model, although not all information may be supplied by either.
-
 
 ## Getting Started
 
@@ -222,12 +223,15 @@ Recommend deleting the `src/xngin/apiserver/testdata/testing_dwh.db` and let the
 for you.
 
 You could use the [CLI](src/xngin/cli/main.py) `create-testing-dwh` command (see --help for more):
+
 ```shell
 uv run xngin-cli create-testing-dwh \
    --dsn sqlite:///src/xngin/apiserver/testdata/testing_dwh.db \
    --table-name=test_participant_type
 ```
-BUT the data types used in the create ddl will differ right now as the former relies on pandas to infer types while the latter uses our own mapping based on dataframe types.
+
+BUT the data types used in the create ddl will differ right now as the former relies on pandas to infer types while the
+latter uses our own mapping based on dataframe types.
 
 ### How do I run xngin against a local Postgres?
 
@@ -253,6 +257,7 @@ uv run fastapi dev src/xngin/apiserver/main.py
 #### How can I load test data into this pg instance with a different schema?
 
 As with a sqlite db above, use the CLI command:
+
 ```shell
 uv run xngin-cli create-testing-dwh \
    --dsn=$XNGIN_DB \
@@ -265,6 +270,7 @@ Now you can edit your `XNGIN_SETTINGS` json to add a ClientConfig that points to
 new table.
 
 One way to manually query pg is using the `psql` terminal included with Postgres, e.g.:
+
 ```shell
 psql -h localhost -p 5432 -d xngin -U xnginwebserver -c "select count(*) from alt.test_participant_type"
 ```
@@ -328,17 +334,23 @@ The fix will depend on your specific environment.
 
 ### BigQuery Support
 
-BigQuery support is a work in progress (https://github.com/agency-fund/xngin/issues/75).
+BigQuery support is implemented but has not yet been fully tested.
+See [.github/workflows/test.yaml](.github/workflows/test.yaml) for lifecycle tests.
 
-The example below assumes that a BigQuery dataset named `ds` exists in the us-west-1 region and that your service
-account has BigQuery Admin permissions.
+Authentication:
 
-> Note: If you're using the GHA service account, you have permission on the dataset referenced below.
+* Only service account authentication is supported.
+* The xngin-cli tools will authenticate via the GOOGLE_APPLICATION_CREDENTIALS environment variable. Example:
+    ```shell
+    export GOOGLE_APPLICATION_CREDENTIALS=~/.config/gspread/service_account.json
+    xngin-cli create-testing-dwh --dsn 'bigquery://xngin-development-dc/ds'
+    ```
+* The xngin server authenticates using credentials specified in the settings file.
+  See [xngin.gha.settings.json](xngin.gha.settings.json) for an example.
 
-```shell
-export GOOGLE_APPLICATION_CREDENTIALS=~/.config/gspread/service_account.json
-xngin-cli create-testing-dwh --dsn 'bigquery://xngin-development-dc/ds'
-```
+> Note: The GHA service account has permissions to access the xngin-development-dc.ds dataset.
+
+> Note: You do not need the gcloud CLI or related tooling installed.
 
 #### Linux
 
