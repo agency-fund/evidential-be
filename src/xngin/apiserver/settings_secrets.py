@@ -72,7 +72,10 @@ def _resolve_secrets(variables):
         try:
             replacements[source, name] = os.environ[name]
         except KeyError as exc:
-            raise MissingSecretError(name) from exc
+            # Only raise if we are missing a secret; missing environment variables are treated as empty string.
+            if source == NAMESPACE_FOR_SECRETS:
+                raise MissingSecretError(name) from exc
+            replacements[source, name] = ""
     return replacements
 
 
