@@ -63,3 +63,21 @@ def test_check_balance_with_single_value_columns(sample_data):
     assert result.f_pvalue is not None
     assert result.is_balanced
     assert result.model_summary is not None
+
+
+def test_check_balance_with_skewed_column():
+    """
+    If pd.qcut() used labels, this triggers the ValueError:
+      Bin labels must be one fewer than the number of bin edges
+    """
+    data = {
+        "treat": [0, 0, 0, 0, 1, 1, 1, 1, 0, 1],
+        "skews": [0, 0, 0, 0, 0, 0, 4, 4, np.nan, np.nan],
+    }
+    df = pd.DataFrame(data)
+    result = check_balance(df)
+
+    assert result.f_statistic is not None
+    assert result.f_pvalue is not None
+    assert result.is_balanced is False
+    assert result.model_summary is not None

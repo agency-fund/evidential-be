@@ -1,3 +1,4 @@
+import numpy as np
 import pandas as pd
 import statsmodels.formula.api as smf
 from dataclasses import dataclass
@@ -46,22 +47,25 @@ def check_balance(
     # Handle missing values in numeric columns by converting to quartiles
     cols_with_missing = df_analysis.columns[df_analysis.isnull().any()].tolist()
 
+    quantiles = 4
     for col in cols_with_missing:
         if pd.api.types.is_numeric_dtype(df_analysis[col]):
-            df_analysis[f"{col}_quartile"] = pd.qcut(
+            labels = pd.qcut(
                 df_analysis[col],
-                q=4,
+                q=quantiles,
                 duplicates="drop",
-                labels=["q1", "q2", "q3", "q4"],
+                # No labels as dropping edges will misalign labels and trigger a ValueError.
+                # Integer indicators starting at 0 will be returned instead.
+                labels=False,
             )
-            df_analysis[f"{col}_quartile"] = df_analysis[
-                f"{col}_quartile"
-            ].cat.add_categories(["Missing"])
-            df_analysis[f"{col}_quartile"] = df_analysis[f"{col}_quartile"].fillna(
-                "Missing"
+            new_col = f"{col}_quartile"
+            # Since there are NaNs, labels will be dtype=float64. To avoid bugs later due to dummy var naming, first
+            # replace NaNs with an integer beyond the number of buckets, then convert to int, and finally a category.
+            df_analysis[new_col] = pd.Categorical(
+                np.nan_to_num(labels, nan=quantiles).astype("int8")
             )
             df_analysis = pd.get_dummies(
-                df_analysis, columns=[f"{col}_quartile"], prefix=[col], dummy_na=False
+                df_analysis, columns=[new_col], prefix=[col], dummy_na=False
             )
             df_analysis.drop(columns=[col], inplace=True)
 
