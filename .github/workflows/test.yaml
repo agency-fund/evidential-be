@@ -100,12 +100,56 @@ jobs:
 
           # import/export lifecycle
           uv run xngin-cli create-testing-dwh --dsn sqlite:///smoke.db --table-name=test_participant_type
-          uv run xngin-cli bootstrap-spreadsheet sqlite:///smoke.db test_participant_type > config.csv
+          uv run xngin-cli bootstrap-spreadsheet sqlite:///smoke.db test_participant_type | tee config.csv
           uv run xngin-cli parse-config-spreadsheet file://./config.csv test_participant_type
 
           # Verify create-testing-dwh executes against default Postgres driver and psycopg2 driver.
           uv run xngin-cli create-testing-dwh --dsn postgresql://postgres@127.0.0.1:5499/postgres --nrows 100
           uv run xngin-cli create-testing-dwh --dsn postgresql+psycopg2://postgres@127.0.0.1:5499/postgres --schema-name alt --table-name=alt_table --nrows 100
+  smoke-server-bq:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v4
+        with:
+          version: "0.5.5"
+          enable-cache: true
+      - run: uv sync --locked
+      - name: write secrets
+        env:
+          GCLOUD_SERVICE_ACCOUNT_CREDENTIALS: ${{ secrets.GOOGLE_APPLICATION_CREDENTIALS_CONTENT }}
+        run: |
+          mkdir -p ~/.config/gspread && echo "${GCLOUD_SERVICE_ACCOUNT_CREDENTIALS}" > service_account.json
+          openssl sha256 service_account.json
+      - env:
+          XNGIN_CLI_TABLE_NAME: gha_${{ github.run_id }}_${{ github.run_attempt }}
+        run: |
+          set -x
+
+          # Authenticate with environment variable because the CLI doesn't support
+          # specifying credentials explicitly.
+          export GOOGLE_APPLICATION_CREDENTIALS=service_account.json
+
+          # Populate the test warehouse. This is read by the two CLI commands and the server we start below.
+          uv run xngin-cli create-testing-dwh --dsn bigquery://xngin-development-dc/ds --nrows 1000
+
+          # The outputs of bootstrap-spreadsheet and parse-config-spreadsheet aren't actually used by the HTTP test
+          # below. We run them to ensure that the commands can interact with BigQuery without failing.
+          uv run xngin-cli bootstrap-spreadsheet bigquery://xngin-development-dc/ds | tee config.csv
+          uv run xngin-cli parse-config-spreadsheet file://./config.csv "$XNGIN_CLI_TABLE_NAME"
+
+          # Unset the environment variable because we want to ensure the server is authenticating with the credentials
+          # configured in the settings file and not relying on fallback behavior.
+          unset GOOGLE_APPLICATION_CREDENTIALS
+
+          # Start a server using the gha-bq profile.
+          XNGIN_SETTINGS=src/xngin/apiserver/testdata/xngin.gha.settings.json uv run fastapi dev \
+            src/xngin/apiserver/main.py &
+          sleep 10
+          curl -fv http://localhost:8000/_settings
+          curl -fv -H "Config-ID: gha-bq" 'http://localhost:8000/filters?participant_type=warehouse'
+          kill %1
   smoke-server:
     runs-on: ubuntu-22.04
     timeout-minutes: 15

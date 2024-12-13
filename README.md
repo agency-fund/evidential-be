@@ -48,12 +48,13 @@ There are 3 levels of configuration behind Xngin:
   fixed set of supported customer configurations (e.g. `RemoteDatabaseConfig`) that package up how to connect to the
   data warehouse (see `Dsn`) along with all the different `Participant` types (aka each type of unit of experimentation,
   e.g. a WhatsApp group, or individuals).
-* Participant type-level configuration with schema [`config_sheet.py:ConfigWorksheet`](src/xngin/sheets/config_sheet.py), including column and type info derived from the warehouse via introspection (see
+* Participant type-level configuration with schema [
+  `config_sheet.py:ConfigWorksheet`](src/xngin/sheets/config_sheet.py), including column and type info derived from the
+  warehouse via introspection (see
   [`config_sheet.py:create_configworksheet_from_table`](src/xngin/sheets/config_sheet.py),
   [`main.py:get_sqlalchemy_table_from_engine`](src/xngin/apiserver/main.py)), as well as extra metadata about columns
   (is_strata/is_filter/is_metric) in Google spreadsheets as specified by the client. Both sources (dwh introspection,
   gsheets) are represented by the `ConfigWorksheet` model, although not all information may be supplied by either.
-
 
 ## Getting Started
 
@@ -123,10 +124,16 @@ Follow the steps below to get a local development environment running.
    ```
    pre-commit run -a
    ```
-8. To parse a proper Google Sheets config, you'll need a service worker token, whose json info should be placed in `~/.config/gspread/service_account.json` by default.
-   - [Setup a service account in your GCP console](console.cloud.google.com) > select your project via dropdown at the top > IAM & Admin > Service Accounts > + Create Service Account > give it a name, desc and create; *note the email addr created* > After creation, click the email for that account > Keys tab > Create the json key file and put it in the above location. Lastly, share the spreadsheet as Viewer-only with this special service account email address.
-   - Ensure that the [Google Sheets API](  https://console.developers.google.com/apis/api/sheets.googleapis.com/overview) is enabled for your google cloud project.
-
+8. To parse a proper Google Sheets config, you'll need a service worker token, whose json info should be placed in
+   `~/.config/gspread/service_account.json` by default.
+    - [Setup a service account in your GCP console](console.cloud.google.com) > select your project via dropdown at the
+      top > IAM & Admin > Service Accounts > + Create Service Account > give it a name, desc and create; *note the email
+      addr created* > After creation, click the email for that account > Keys tab > Create the json key file and put it
+      in the above location. Lastly, share the spreadsheet as Viewer-only with this special service account email
+      address.
+    - Ensure that
+      the [Google Sheets API](  https://console.developers.google.com/apis/api/sheets.googleapis.com/overview) is
+      enabled for your google cloud project.
 
 ### Learn more
 
@@ -216,12 +223,15 @@ Recommend deleting the `src/xngin/apiserver/testdata/testing_dwh.db` and let the
 for you.
 
 You could use the [CLI](src/xngin/cli/main.py) `create-testing-dwh` command (see --help for more):
+
 ```shell
 uv run xngin-cli create-testing-dwh \
    --dsn sqlite:///src/xngin/apiserver/testdata/testing_dwh.db \
    --table-name=test_participant_type
 ```
-BUT the data types used in the create ddl will differ right now as the former relies on pandas to infer types while the latter uses our own mapping based on dataframe types.
+
+BUT the data types used in the create ddl will differ right now as the former relies on pandas to infer types while the
+latter uses our own mapping based on dataframe types.
 
 ### How do I run xngin against a local Postgres?
 
@@ -247,6 +257,7 @@ uv run fastapi dev src/xngin/apiserver/main.py
 #### How can I load test data into this pg instance with a different schema?
 
 As with a sqlite db above, use the CLI command:
+
 ```shell
 uv run xngin-cli create-testing-dwh \
    --dsn=$XNGIN_DB \
@@ -259,13 +270,18 @@ Now you can edit your `XNGIN_SETTINGS` json to add a ClientConfig that points to
 new table.
 
 One way to manually query pg is using the `psql` terminal included with Postgres, e.g.:
+
 ```shell
 psql -h localhost -p 5432 -d xngin -U xnginwebserver -c "select count(*) from alt.test_participant_type"
 ```
 
 ### How do I run our Github Action smoke tests?
 
-You could run the individual component tests as defined in the various jobs under [test.yaml](.github/workflows/test.yaml), but to best replicate the environment as used by our GHA, we recommend you install [`act`](https://github.com/nektos/act). Then you could execute whole workflows or individual jobs within, e.g.:
+You could run the individual component tests as defined in the various jobs
+under [test.yaml](.github/workflows/test.yaml), but to best replicate the environment as used by our GHA, we recommend
+you install [`act`](https://github.com/nektos/act). Then you could execute whole workflows or individual jobs within,
+e.g.:
+
 ```shell
 # list all jobs across our different workflows
 act -l
@@ -278,20 +294,31 @@ act -j smoke-server
 #### On Macs
 
 * You might see this error:
+
 ```
 Error: failed to start container: Error response from daemon: error while creating mount source path '/host_mnt/Users/me/.docker/run/docker.sock': mkdir /host_mnt/Users/me/.docker/run/docker.sock: operation not supported
 ```
-If so, you can resolve it by adding this line to a `~/.actrc` file as noted in [this issue](https://github.com/nektos/act/issues/2239#issuecomment-2189419148):
+
+If so, you can resolve it by adding this line to a `~/.actrc` file as noted
+in [this issue](https://github.com/nektos/act/issues/2239#issuecomment-2189419148):
 `--container-daemon-socket=unix:///var/run/docker.sock`
 
 * When running `-j unittests`, you can ignore this error line, as `act` doesn't support a macos runner:
+
 ```
 [tests/Python on macOS-2] 🚧  Skipping unsupported platform -- Try running with `-P macos-14=...`
 ```
-You can force `act` to [use your localhost as the runner](https://github.com/nektos/act/issues/97#issuecomment-1868974264) with the experimental platform `-P macos-14=-self-hosted` flag, but that's not advisable as you may overwrite local files such as service_account.json.
+
+You can force `act`
+to [use your localhost as the runner](https://github.com/nektos/act/issues/97#issuecomment-1868974264) with the
+experimental platform `-P macos-14=-self-hosted` flag, but that's not advisable as you may overwrite local files such as
+service_account.json.
 
 * [Run a particular matrix](https://github.com/nektos/act/pull/1675) configuration with e.g. `--matrix os:ubuntu-22.04`
-So a more complex command that also injects a secret from a file (which could also be [placed in your .actrc](https://nektosact.com/usage/index.html?highlight=secret#envsecrets-files-structure)) might look like:
+  So a more complex command that also injects a secret from a file (which could also
+  be [placed in your .actrc](https://nektosact.com/usage/index.html?highlight=secret#envsecrets-files-structure)) might
+  look like:
+
 ```act --matrix os:ubuntu-22.04 -j unittests -s GCLOUD_SERVICE_ACCOUNT_CREDENTIALS="$(< ~/.config/gspread/service_account.json)"
 ```
 
@@ -304,6 +331,26 @@ You might see this error:
 > pg_config is required to build psycopg2 from source.
 
 The fix will depend on your specific environment.
+
+### BigQuery Support
+
+BigQuery support is implemented but has not yet been fully tested.
+See [.github/workflows/test.yaml](.github/workflows/test.yaml) for lifecycle tests.
+
+Authentication:
+
+* Only service account authentication is supported.
+* The xngin-cli tools will authenticate via the GOOGLE_APPLICATION_CREDENTIALS environment variable. Example:
+    ```shell
+    export GOOGLE_APPLICATION_CREDENTIALS=~/.config/gspread/service_account.json
+    xngin-cli create-testing-dwh --dsn 'bigquery://xngin-development-dc/ds'
+    ```
+* The xngin server authenticates using credentials specified in the settings file.
+  See [xngin.gha.settings.json](xngin.gha.settings.json) for an example.
+
+> Note: The GHA service account has permissions to access the xngin-development-dc.ds dataset.
+
+> Note: You do not need the gcloud CLI or related tooling installed.
 
 #### Linux
 
