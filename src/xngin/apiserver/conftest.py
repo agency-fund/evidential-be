@@ -35,8 +35,8 @@ def get_settings_for_test() -> XnginSettings:
             raise
 
 
-def setup(app):
-    """Configures FastAPI dependencies for testing."""
+def get_test_sessionmaker():
+    """Returns a Session generator backed by an ephemeral db for use in tests as our app db."""
     # We use an in-memory ephemeral database for the xngindb during tests.
     db_engine = sqlalchemy.create_engine(
         "sqlite://",
@@ -60,12 +60,17 @@ def setup(app):
         finally:
             db.close()
 
+    return get_db_for_test
+
+
+def setup(app):
+    """Configures FastAPI dependencies for testing."""
     # https://fastapi.tiangolo.com/advanced/testing-dependencies/#use-the-appdependency_overrides-attribute
-    app.dependency_overrides[xngin_db_session] = get_db_for_test
+    app.dependency_overrides[xngin_db_session] = get_test_sessionmaker()
     app.dependency_overrides[settings_dependency] = get_settings_for_test
 
 
-@pytest.fixture(scope="module", autouse=True)
+@pytest.fixture(scope="session", autouse=True)
 def ensure_correct_working_directory():
     """Ensures the tests are being run from the root of the repo.
 
@@ -74,7 +79,7 @@ def ensure_correct_working_directory():
     raise_unless_running_from_top_directory()
 
 
-@pytest.fixture(scope="module", autouse=True)
+@pytest.fixture(scope="session", autouse=True)
 def ensure_dwh_sqlite_database_exists(ensure_correct_working_directory):
     """Create testing_dwh.db, if it doesn't already exist."""
     testing_dwh.create_dwh_sqlite_database()

@@ -4,6 +4,7 @@ import pytest
 from unittest.mock import Mock
 from sqlalchemy.orm import Session
 
+from xngin.apiserver import conftest
 from xngin.apiserver.api_types import DataType
 from xngin.apiserver.database import Cache
 from xngin.apiserver.gsheet_cache import GSheetCache
@@ -29,12 +30,12 @@ def mock_sheet_config():
             ColumnDescriptor(
                 column_name="c",
                 data_type=DataType.BOOLEAN,
-                column_group="g",
                 description="d",
                 is_unique_id=True,
                 is_strata=False,
                 is_filter=False,
                 is_metric=True,
+                extra={"column_group": "g"},
             )
         ],
     )
@@ -91,6 +92,36 @@ def test_get_refresh(sheet_cache, mock_session, mock_sheet_config):
     fetcher.assert_called_once()
     mock_session.add.assert_called_once()
     mock_session.commit.assert_called_once()
+
+
+def test_get_cache_and_refresh(mock_sheet_config):
+    """Tests the full cycle against a real in-mem db."""
+    make_session = conftest.get_test_sessionmaker()
+    local_cache = GSheetCache(next(make_session()))
+
+    key = SheetRef(url="https://example.com", worksheet="Sheet1")
+    fetcher = Mock(return_value=mock_sheet_config)
+
+    # cache miss
+    result = local_cache.get(key, fetcher)
+    assert isinstance(result, ConfigWorksheet)
+    assert result.model_dump() == mock_sheet_config.model_dump()
+    fetcher.assert_called_once()
+
+    # cache hit
+    fetcher = Mock(return_value=None)
+    result = local_cache.get(key, fetcher)
+    assert isinstance(result, ConfigWorksheet)
+    assert result.model_dump() == mock_sheet_config.model_dump()
+    fetcher.assert_not_called()
+
+    # Now test an update
+    modified_sheet = mock_sheet_config.model_copy(update={"is_strata": True}, deep=True)
+    fetcher = Mock(return_value=modified_sheet)
+    result = local_cache.get(key, fetcher, refresh=True)
+    assert isinstance(result, ConfigWorksheet)
+    assert result.model_dump() == modified_sheet.model_dump()
+    fetcher.assert_called_once()
 
 
 @pytest.mark.parametrize(

@@ -34,7 +34,7 @@ from xngin.sheets.config_sheet import (
     InvalidSheetError,
     fetch_and_parse_sheet,
     ColumnDescriptor,
-    create_sheetconfig_from_table,
+    create_configworksheet_from_table,
     ConfigWorksheet,
 )
 
@@ -63,7 +63,7 @@ def infer_config_from_schema(dsn: str, table: str, use_reflection: bool):
     except CannotFindTableError as cfte:
         err_console.print(cfte.message)
         raise typer.Exit(1) from cfte
-    return create_sheetconfig_from_table(dwh)
+    return create_configworksheet_from_table(dwh)
 
 
 def csv_to_ddl(
@@ -339,9 +339,7 @@ def bootstrap_spreadsheet(
 
     for row in config.columns:
         # Exclude the `extra` field.
-        rows.append([
-            convert(n) for n in row.model_dump().values() if not isinstance(n, dict)
-        ])
+        rows.append([convert(v) for k, v in row.model_dump().items() if k != "extra"])
 
     if not create_gsheet:
         writer = csv.writer(sys.stdout)

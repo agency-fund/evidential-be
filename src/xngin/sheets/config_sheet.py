@@ -2,7 +2,7 @@ import csv
 from collections import Counter
 
 import sqlalchemy
-from pydantic import BaseModel, ValidationError, field_validator, model_validator, Field
+from pydantic import BaseModel, ValidationError, field_validator, model_validator
 
 from xngin.apiserver.settings import SheetRef
 from xngin.sheets.gsheets import read_sheet_from_gsheet
@@ -48,20 +48,19 @@ class InvalidSheetError(Exception):
 class ColumnDescriptor(BaseModel):
     column_name: str
     data_type: DataType
-    column_group: str
     description: str
     is_unique_id: bool
     is_strata: bool
     is_filter: bool
     is_metric: bool
-    extra: dict[str, str] = Field(..., default_factory=dict)
+    extra: dict[str, str] | None = None
 
     model_config = {
         "strict": True,
         "extra": "forbid",
     }
 
-    @field_validator("description", "column_group", mode="before")
+    @field_validator("description", mode="before")
     @classmethod
     def to_string_loose(cls, value) -> str:
         if not isinstance(value, str):
@@ -89,7 +88,7 @@ class ColumnDescriptor(BaseModel):
 
 
 class ConfigWorksheet(BaseModel):
-    """SheetConfig represents a single worksheet."""
+    """Represents a single worksheet describing metadata about a type of Participant."""
 
     table_name: str
     columns: list[ColumnDescriptor]
@@ -159,7 +158,7 @@ def read_sheet_from_file(path):
 
 
 def fetch_and_parse_sheet(ref: SheetRef):
-    """Fetches a Google Spreadsheet and parses it into a SheetConfig.
+    """Fetches a Google Spreadsheet and parses it into a ConfigWorksheet.
 
     :raise InvalidSheetException if there are any problems with the sheet.
     """
@@ -203,7 +202,7 @@ def fetch_and_parse_sheet(ref: SheetRef):
     raise InvalidSheetError(errors)
 
 
-def create_sheetconfig_from_table(
+def create_configworksheet_from_table(
     table: sqlalchemy.Table, unique_id_col: str | None = None
 ):
     """Attempts to get name and type info from the database Table itself (formerly done via gsheets).
@@ -223,7 +222,6 @@ def create_sheetconfig_from_table(
             ColumnDescriptor(
                 column_name=column.name,
                 data_type=DataType.match(type_hint),
-                column_group="",
                 description="",
                 is_unique_id=column.name == unique_id_col,
                 is_strata=False,

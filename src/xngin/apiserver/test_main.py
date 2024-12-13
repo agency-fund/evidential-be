@@ -52,12 +52,12 @@ def test_generate_column_descriptors():
     # Check a few columns:
     assert db_schema["gender"].column_name == "gender"
     assert db_schema["gender"].data_type == DataType.CHARACTER_VARYING
-    assert db_schema["gender"].column_group == ""
     assert db_schema["gender"].description == ""
     assert db_schema["gender"].is_unique_id is False
     assert db_schema["gender"].is_strata is False
     assert db_schema["gender"].is_filter is False
     assert db_schema["gender"].is_metric is False
+    assert db_schema["gender"].extra is None  # only necessary info loaded
     assert db_schema["last_name"].column_name == "last_name"
     assert db_schema["last_name"].data_type == DataType.CHARACTER_VARYING
     # Next assertion ust because we labeled it that way in settings!
