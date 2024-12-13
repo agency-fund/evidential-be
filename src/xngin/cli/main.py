@@ -480,6 +480,8 @@ def bigquery_dataset_set_default_expiration(
     """Sets the default TTL (in days) of tables created in a dataset.
 
     Does not apply to existing tables. To remove the expiration time, specify --days 0.
+
+    This is useful in testing environments that create BigQuery tables that are of minimal use when testing completes.
     """
     new_expiration_ms = days * 24 * 60 * 60 * 1000
     client = bigquery.Client()
