@@ -9,6 +9,7 @@ from xngin.apiserver.api_types import (
     MetricAnalysisMessage,
     MetricAnalysisMessageType,
 )
+from xngin.stats.stats_errors import StatsPowerError
 
 
 def analyze_metric_power(
@@ -147,4 +148,10 @@ def check_power(
     Returns:
         List of MetricAnalysis results
     """
-    return [analyze_metric_power(metric, n_arms, power, alpha) for metric in metrics]
+    analyses = []
+    for metric in metrics:
+        try:
+            analyses.append(analyze_metric_power(metric, n_arms, power, alpha))
+        except ValueError as verr:
+            raise StatsPowerError(verr, metric) from verr
+    return analyses

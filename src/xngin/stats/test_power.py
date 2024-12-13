@@ -1,9 +1,11 @@
+import pytest
 from xngin.stats.power import (
     DesignSpecMetric,
     MetricType,
     analyze_metric_power,
     check_power,
 )
+from xngin.stats.stats_errors import StatsPowerError
 
 
 def test_analyze_metric_power_numeric():
@@ -70,3 +72,26 @@ def test_check_power_multiple_metrics():
     assert len(results) == 2
     assert results[0].metric_spec.metric_name == "metric1"
     assert results[1].metric_spec.metric_name == "metric2"
+
+
+def test_check_power_effect_size_zero_raises_error():
+    metrics = [
+        DesignSpecMetric(
+            metric_name="test_metric",
+            metric_type=MetricType.BINARY,
+            metric_baseline=0.5,
+            metric_target=0.55,
+            available_n=1000,
+        ),
+        DesignSpecMetric(
+            metric_name="bad_metric",
+            metric_type=MetricType.BINARY,
+            metric_baseline=0.5,
+            metric_target=0.5,
+            available_n=1000,
+        ),
+    ]
+
+    with pytest.raises(StatsPowerError) as excinfo:
+        check_power(metrics, n_arms=2)
+    assert "bad_metric" in str(excinfo.value)
