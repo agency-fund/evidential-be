@@ -109,7 +109,6 @@ jobs:
   smoke-cli-bq:
     runs-on: ubuntu-22.04
     timeout-minutes: 15
-    if: startsWith(matrix.os, 'ubuntu-')
     steps:
       - name: write secrets
         env:
@@ -128,7 +127,7 @@ jobs:
           export GOOGLE_APPLICATION_CREDENTIALS=~/.config/gspread/service_account.json
           uv run xngin-cli create-testing-dwh --dsn bigquery://xngin-development-dc/ds --nrows 10
           uv run xngin-cli bootstrap-spreadsheet bigquery://xngin-development-dc/ds | tee config.csv
-          uv run xngin-cli parse-config-spreadsheet file://./config.csv $XNGIN_CLI_TABLE_NAME
+          uv run xngin-cli parse-config-spreadsheet file://./config.csv "$XNGIN_CLI_TABLE_NAME"
   smoke-server:
     runs-on: ubuntu-22.04
     timeout-minutes: 15
