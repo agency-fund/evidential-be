@@ -38,6 +38,7 @@ from xngin.sheets.config_sheet import (
     create_configworksheet_from_table,
     ConfigWorksheet,
 )
+import sqlalchemy.dialects.postgresql.psycopg2 as psycopg2sa
 
 REDSHIFT_HOSTNAME_SUFFIX = "redshift.amazonaws.com"
 
@@ -69,33 +70,24 @@ def infer_config_from_schema(dsn: str, table: str, use_reflection: bool):
 
 def csv_to_ddl(
     csv_path: Path,
-    table_name: str,
     *,
-    driver: str | None = None,
-    quoter: IdentifierPreparer | None = None,
+    table_name: str,
+    quoter: IdentifierPreparer,
 ) -> str:
     """Helper to transform a CSV with Pandas-inferred schema into a CREATE TABLE statement."""
     df = pd.read_csv(csv_path)
-    return df_to_ddl(df, table_name, driver=driver, quoter=quoter)
+    return df_to_ddl(df, table_name=table_name, quoter=quoter)
 
 
 def df_to_ddl(
     df: DataFrame,
-    table_name: str,
     *,
-    driver: str | None = None,
-    quoter: IdentifierPreparer | None = None,
+    table_name: str,
+    quoter: IdentifierPreparer,
 ):
-    """Helper to transform a DataFrame into a CREATE TABLE statement.
-    :param quoter:
-    """
-
-    # These rules work for most backends.
-    def quote_for_pg_sqlite(v):
-        # TODO: inner double quotes
-        return f'"{v}"'
-
-    iquote = quote_for_pg_sqlite
+    """Helper to transform a DataFrame into a CREATE TABLE statement."""
+    # TODO: replace these types with more generic/widely supported defaults.
+    # TODO: warn/fail if Pandas type does not map onto a known SQL type
     default_sql_type = "VARCHAR(255)"
     type_map = {
         "int64": "INTEGER",
@@ -104,13 +96,8 @@ def df_to_ddl(
         "datetime64[ns]": "TIMESTAMP",
         "bool": "BOOLEAN",
     }
-    if driver == "bigquery":
-        type_map["object"] = "STRING"
-        default_sql_type = "STRING"
-    if quoter is not None:
-        iquote = quoter.quote
     columns = [
-        f"{iquote(col)} {type_map.get(str(dtype), default_sql_type)}"
+        f"{quoter.quote(col)} {type_map.get(str(dtype), default_sql_type)}"
         for col, dtype in df.dtypes.items()
     ]
     return f"""CREATE TABLE {table_name} ({",\n    ".join(columns)});"""
@@ -219,7 +206,14 @@ def create_testing_dwh(
             ) as conn,
             conn.cursor() as cur,
         ):
-            drop_and_create(cur, csv_to_ddl(src, full_table_name))
+            drop_and_create(
+                cur,
+                csv_to_ddl(
+                    src,
+                    table_name=full_table_name,
+                    quoter=psycopg2sa.dialect.identifier_preparer,
+                ),
+            )
             key = src.name
             print(f"Uploading to s3://{bucket}/{key}...")
             s3 = boto3.client("s3")
@@ -243,7 +237,9 @@ def create_testing_dwh(
             drop_and_create(
                 cursor,
                 df_to_ddl(
-                    df, full_table_name, quoter=engine.dialect.identifier_preparer
+                    df,
+                    table_name=full_table_name,
+                    quoter=engine.dialect.identifier_preparer,
                 ),
             )
             opener = (lambda x: zstandard.open(x, "r")) if is_compressed else open
@@ -270,8 +266,7 @@ def create_testing_dwh(
                 cursor,
                 df_to_ddl(
                     df,
-                    full_table_name,
-                    driver=url.drivername,
+                    table_name=full_table_name,
                     quoter=engine.dialect.identifier_preparer,
                 ),
             )
