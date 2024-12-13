@@ -123,6 +123,7 @@ jobs:
           mkdir -p ~/.config/gspread && echo "${GCLOUD_SERVICE_ACCOUNT_CREDENTIALS}" > ~/.config/gspread/service_account.json
           openssl sha256 ~/.config/gspread/service_account.json
       - name: xngin-cli smoke tests for bigquery
+        # The tables created in this test are in a dataset configured to expire tables automatically after 1 day.
         env:
           GOOGLE_APPLICATION_CREDENTIALS: ~/.config/gspread/service_account.json
           XNGIN_CLI_TABLE_NAME: gha_${{ github.run_id }}_${{ github.run_attempt }}
