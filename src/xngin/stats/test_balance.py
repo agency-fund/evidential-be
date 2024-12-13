@@ -51,3 +51,15 @@ def test_check_balance_invalid_treatment(sample_data):
 
     with pytest.raises(KeyError):
         check_balance(invalid_data)
+
+
+def test_check_balance_with_single_value_columns(sample_data):
+    sample_data["constant_one"] = [1] * len(sample_data)
+    sample_data["constant_none"] = [None] * len(sample_data)
+
+    result = check_balance(sample_data)
+
+    assert result.f_statistic is not None
+    assert result.f_pvalue is not None
+    assert result.is_balanced
+    assert result.model_summary is not None

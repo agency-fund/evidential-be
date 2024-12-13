@@ -39,6 +39,10 @@ def check_balance(
     if exclude_cols is None:
         exclude_cols = []
 
+    # Exclude columns from the check that contain only the same value (including None).
+    single_value_cols = df_analysis.columns[df_analysis.nunique(dropna=False) <= 1]
+    exclude_cols.extend(single_value_cols.to_list())
+
     # Handle missing values in numeric columns by converting to quartiles
     cols_with_missing = df_analysis.columns[df_analysis.isnull().any()].tolist()
 
