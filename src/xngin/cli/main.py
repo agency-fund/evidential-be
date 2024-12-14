@@ -18,6 +18,7 @@ import sqlalchemy
 import typer
 import zstandard
 from gspread import GSpreadException
+from gspread.worksheet import CellFormat
 from pandas import DataFrame
 from pydantic import ValidationError
 from pydantic_core import from_json
@@ -378,7 +379,7 @@ def bootstrap_spreadsheet(
     worksheet = sheet.add_worksheet(table_name, rows=len(rows), cols=len(column_names))
     worksheet.append_rows(rows)
     # Bold the first row.
-    formats = [
+    formats: list[CellFormat] = [
         {
             "range": "1:1",
             "format": {
@@ -436,7 +437,7 @@ def parse_config_spreadsheet(
 
 
 @app.command()
-def export_json_schemas(output: Path = ".schemas"):
+def export_json_schemas(output: Path = Path(".schemas")):
     """Generates JSON schemas for Xngin settings files."""
     if not output.exists():
         output.mkdir()
