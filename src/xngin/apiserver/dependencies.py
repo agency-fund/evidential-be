@@ -1,5 +1,3 @@
-import warnings
-
 from typing import Annotated
 
 from fastapi import Depends, Header
@@ -9,14 +7,6 @@ from sqlalchemy.orm import Session
 from xngin.apiserver.database import SessionLocal
 from xngin.apiserver.gsheet_cache import GSheetCache
 from xngin.apiserver.settings import get_settings_for_server, XnginSettings
-
-# Workaround for: https://github.com/fastapi/fastapi/discussions/10537
-warnings.filterwarnings(
-    "ignore",
-    message="`example`",
-    category=DeprecationWarning,
-    module="xngin.apiserver.dependencies",
-)
 
 
 def settings_dependency():
