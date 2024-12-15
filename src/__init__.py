@@ -1,6 +1,6 @@
-# Workaround for: https://github.com/fastapi/fastapi/discussions/10537
 import warnings
 
+# Workaround for: https://github.com/fastapi/fastapi/discussions/10537
 warnings.filterwarnings(
     "ignore",
     message="`example`",
