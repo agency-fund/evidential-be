@@ -334,7 +334,7 @@ def assign_treatment_api(
         config,
         gsheets,
     )
-    _unique_id_col = config_sheet.get_unique_id_col()
+    unique_id_col = config_sheet.get_unique_id_col()
 
     with config.dbsession() as session:
         sa_table = infer_table(
@@ -350,7 +350,7 @@ def assign_treatment_api(
         data=DataFrame(participants),
         stratum_cols=design_spec.strata_cols,
         metric_cols=metric_names,
-        id_col=_unique_id_col,
+        id_col=unique_id_col,
         arm_names=arm_names,
         experiment_id=str(design_spec.experiment_id),
         description=design_spec.description,
