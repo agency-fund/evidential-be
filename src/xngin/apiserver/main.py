@@ -344,12 +344,10 @@ def assign_treatment_api(
             session, sa_table, audience_spec, chosen_n
         )
 
-    metric_names = [metric.metric_name for metric in design_spec.metrics]
     arm_names = [arm.arm_name for arm in design_spec.arms]
     return assign_treatment(
         data=DataFrame(participants),
         stratum_cols=design_spec.strata_cols,
-        metric_cols=metric_names,
         id_col=_unique_id_col,
         arm_names=arm_names,
         experiment_id=str(design_spec.experiment_id),

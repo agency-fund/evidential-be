@@ -26,7 +26,6 @@ def test_assign_treatment(sample_data):
     result = assign_treatment(
         data=sample_data,
         stratum_cols=["gender", "region"],
-        metric_cols=["age", "income"],
         id_col="id",
         arm_names=["control", "treatment"],
         experiment_id="b767716b-f388-4cd9-a18a-08c4916ce26f",
@@ -67,7 +66,6 @@ def test_assign_treatment_multiple_arms(sample_data):
     result = assign_treatment(
         data=sample_data,
         stratum_cols=["gender", "region"],
-        metric_cols=["age", "income"],
         id_col="id",
         arm_names=["control", "treatment_a", "treatment_b"],
         experiment_id="b767716b-f388-4cd9-a18a-08c4916ce26f",
@@ -99,7 +97,6 @@ def test_assign_treatment_reproducibility(sample_data):
     result1 = assign_treatment(
         data=sample_data,
         stratum_cols=["gender", "region"],
-        metric_cols=["age", "income"],
         id_col="id",
         arm_names=["control", "treatment"],
         experiment_id="b767716b-f388-4cd9-a18a-08c4916ce26f",
@@ -110,7 +107,6 @@ def test_assign_treatment_reproducibility(sample_data):
     result2 = assign_treatment(
         data=sample_data,
         stratum_cols=["gender", "region"],
-        metric_cols=["age", "income"],
         id_col="id",
         arm_names=["control", "treatment"],
         experiment_id="b767716b-f388-4cd9-a18a-08c4916ce26f",
@@ -138,7 +134,6 @@ def test_assign_treatment_with_missing_values(sample_data):
     result = assign_treatment(
         data=sample_data,
         stratum_cols=["gender", "region"],
-        metric_cols=["age", "income"],
         id_col="id",
         arm_names=["control", "treatment"],
         experiment_id="b767716b-f388-4cd9-a18a-08c4916ce26f",
