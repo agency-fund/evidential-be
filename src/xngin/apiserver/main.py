@@ -70,7 +70,7 @@ warnings.filterwarnings(
 # https://github.com/googleapis/python-bigquery/blob/main/pyproject.toml
 warnings.filterwarnings(
     action="ignore",
-    message="the dependency google-cloud-bigquery-storage is not installed",
+    message="Cannot create BigQuery Storage client, the dependency google-cloud-bigquery-storage is not installed.",
     category=UserWarning,
     module="google.cloud.bigquery.client",
 )
