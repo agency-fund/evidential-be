@@ -41,6 +41,9 @@ markers = [
     "nondeterministic: tests that are nondeterministic (but should be)"
     ]
 addopts = "-m 'not integration and not nondeterministic'"
+filterwarnings = [  # format is: action:message:category:module
+    "ignore:`example` has been deprecated:DeprecationWarning:xngin.apiserver.dependencies",
+]
 
 [tool.ruff]
 preview = true
