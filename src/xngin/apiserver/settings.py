@@ -296,7 +296,7 @@ class RemoteDatabaseConfig(ParticipantsMixin, ConfigBaseModel):
     def _extra_engine_setup(self, engine: Engine):
         """Do any extra configuration if needed before a connection is made."""
 
-        if isinstance(self.dwh.driver, Dsn) and self.dwh.search_path:
+        if isinstance(self.dwh, Dsn) and self.dwh.search_path:
             # Avoid explicitly setting schema whenever we build a Table.
             #   https://docs.sqlalchemy.org/en/20/dialects/postgresql.html#setting-alternate-search-paths-on-connect
             # If possible, have the client also consider setting that as a default on the role, e.g.:
