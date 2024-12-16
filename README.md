@@ -174,20 +174,25 @@ There are 3 levels of configuration behind Xngin:
 
 ## Docker
 
-### How do I build the Docker container locally?
+### How do I build and run the Docker container locally?
 
 ```shell
 docker build -t xngin .
-docker run xngin:latest
+docker run \
+  -it \
+  --env-file secrets/.env \
+  -v `pwd`/settings/:/settings \
+  -e XNGIN_SETTINGS=/settings/xngin.settings.json \
+  -e GOOGLE_APPLICATION_CREDENTIALS=/settings/gs_service_account.json \
+  -p 8000:8000  \
+   xngin:latest
 ```
 
-See the next question for an example of how to pass settings to the container.
-
-### How do I run the Docker images built by the CI?
+### How do I run the Docker images [built by the CI](https://github.com/agency-fund/xngin/pkgs/container/xngin)?
 
 ```shell
-# Authenticate your local Docker to the ghcr using a GitHub Personal Access Token that has at least the `read:packages`
-# scope. Create one here: https://github.com/settings/tokens
+# Authenticate your local Docker to the ghcr using a GitHub Personal Access Token (classic) that has at least the
+# `read:packages` scope. Create one here: https://github.com/settings/tokens
 docker login ghcr.io -u YOUR_GITHUB_USERNAME
 ```
 
@@ -244,8 +249,11 @@ In addition to the unittests run via [pytest](https://docs.pytest.org/en/stable/
   `testing_dwh.csv.zst`.
   * `test_data.csv` is the corresponding spreadsheet that simulates a typical table configuration for the participant
   type data above.
-* Our pytests have a test marked as 'integration' which is also only run as part of that workflow; to run just those
-  tests marked as such, do: `pytest -m integration`, but make sure you have the test credentials to access the gsheet.
+* Our pytests have a test marked as 'integration' which is also only run as part of that workflow. To run, ensure you
+  have the test credentials to access the gsheet then do:
+   ```shell
+   pytest -m integration
+   ```
 
 ### How do I force-build the test sqlite database?
 
@@ -336,7 +344,8 @@ service_account.json.
   be [placed in your .actrc](https://nektosact.com/usage/index.html?highlight=secret#envsecrets-files-structure)) might
   look like:
 
-```act --matrix os:ubuntu-22.04 -j unittests -s GOOGLE_APPLICATION_CREDENTIALS_CONTENT="$(< ~/.config/gspread/service_account.json)"
+```shell
+act --matrix os:ubuntu-22.04 -j unittests -s GOOGLE_APPLICATION_CREDENTIALS_CONTENT="$(< ~/.config/gspread/service_account.json)"
 ```
 
 
