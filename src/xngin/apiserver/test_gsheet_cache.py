@@ -2,7 +2,9 @@
 
 import pytest
 from unittest.mock import Mock
+from sqlalchemy import Update
 from sqlalchemy.orm import Session
+from sqlalchemy.exc import IntegrityError
 
 from xngin.apiserver import conftest
 from xngin.apiserver.api_types import DataType
@@ -91,6 +93,28 @@ def test_get_refresh(sheet_cache, mock_session, mock_sheet_config):
     mock_session.get.assert_not_called()
     fetcher.assert_called_once()
     mock_session.add.assert_called_once()
+    mock_session.commit.assert_called_once()
+
+
+def test_get_refresh_with_integrityerror(sheet_cache, mock_session, mock_sheet_config):
+    key = SheetRef(url="https://example.com", worksheet="Sheet1")
+
+    fetcher = Mock(return_value=mock_sheet_config)
+    # Simulate when the key already exists and triggers an exception:
+    mock_session.add.side_effect = IntegrityError(
+        statement="SQL", params=None, orig=Exception()
+    )
+
+    result = sheet_cache.get(key, fetcher, refresh=True)
+
+    assert isinstance(result, ConfigWorksheet)
+    assert result.model_dump() == mock_sheet_config.model_dump()
+    mock_session.get.assert_not_called()
+    fetcher.assert_called_once()
+    mock_session.add.assert_called_once()
+    mock_session.rollback.assert_called_once()
+    mock_session.execute.assert_called_once()
+    assert isinstance(mock_session.execute.call_args.args[0], Update)
     mock_session.commit.assert_called_once()
 
 
