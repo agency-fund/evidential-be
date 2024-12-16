@@ -4,6 +4,16 @@
 
 # xngin
 
+- [xngin](#xngin)
+  - [Prerequisites](#prerequisites)
+  - [Getting Started](#getting-started)
+  - [Settings](#settings)
+  - [Docker](#docker)
+  - [Testing](#testing)
+  - [The CLI](#the-cli)
+  - [Onboarding new Clients](#onboarding-new-clients)
+  - [FAQ](#faq)
+
 Python version of [RL Experiments Engine](https://github.com/agency-fund/rl-experiments-engine).
 
 The following is a proposal of the main components of this service:
@@ -17,7 +27,7 @@ The following is a proposal of the main components of this service:
    status by ID
 6. Save experiment (inclusive of Audience) specifications
 
-## Prerequisite
+## Prerequisites
 
 The commands below require you to have [uv](https://docs.astral.sh/uv/) installed:
 
@@ -156,7 +166,10 @@ There are 3 levels of configuration behind Xngin:
   (is_strata/is_filter/is_metric). The extra metadata may come from CSV or in Google spreadsheets as filled out by the
   client. Both sources (dwh introspection, gsheets) are represented by the `ConfigWorksheet` model, although not all
   information may be supplied by either.
-  * This information is also cached in our app (system) db as specified in [`database.py`](src/xngin/apiserver/database.py). The db DSN can be overriden via the `XNGIN_DB` environment variable to point to something other than the default sqlite database `xngin.db`, which otherwise is created at this root level.
+  * This information is also cached in our app (system) db as specified in
+  * [`database.py`](src/xngin/apiserver/database.py). The db DSN can be overriden via the `XNGIN_DB` environment
+    variable to point to something other than the default sqlite database `xngin.db`, which otherwise is created at this
+    root level.
 
 
 ## Docker
@@ -169,10 +182,6 @@ docker run xngin:latest
 ```
 
 See the next question for an example of how to pass settings to the container.
-
-### How do I run the tests in the Docker container?
-
-See [.github/workflows/test.yaml](.github/workflows/test.yaml).
 
 ### How do I run the Docker images built by the CI?
 
@@ -190,8 +199,19 @@ docker run \
   --env-file ./.env \
   -v path/to/settings/directory:/settings \
   -e XNGIN_SETTINGS=/settings/xngin.settings.json \
+  -p 127.0.0.1:8000:8000 \
   ghcr.io/agency-fund/xngin:main
 ```
+
+This also means we can fetch prod settings from elsewhere on our host and mount the dir with it in the container.
+Don't forget to add other environment variables not set on the command line to a `.env` file such as
+GOOGLE_APPLICATION_CREDENTIALS; these are not part of the image. Also beware that Docker
+[includes double quotes in the value of your env variables](https://github.com/docker/compose/issues/3702)
+read in via --env-file.
+
+### How do I run the tests in the Docker container?
+
+See [.github/workflows/test.yaml](.github/workflows/test.yaml).
 
 ### How do I run xngin against a local Postgres running in Docker?
 
@@ -220,9 +240,10 @@ In addition to the unittests run via [pytest](https://docs.pytest.org/en/stable/
 [smoke tests](.github/workflows/test.yaml) run as part of our github action test workflow.
 
 * Some of our tests that rely on `conftest.py` will create a local sqlite db for testing in
-  `src/xngin/apiserver/testdata/testing_dwh.db` using the zipped data dump in `testing_dwh.csv.zst`.
+  `src/xngin/apiserver/testdata/testing_dwh.db` if it doesn't exist already using the zipped data dump in
+  `testing_dwh.csv.zst`.
   * `test_data.csv` is the corresponding spreadsheet that simulates a typical table configuration for the participant
-    type data above.
+  type data above.
 * Our pytests have a test marked as 'integration' which is also only run as part of that workflow; to run just those
   tests marked as such, do: `pytest -m integration`, but make sure you have the test credentials to access the gsheet.
 
@@ -279,6 +300,14 @@ act -W .github/workflows/test.yaml -j smoke-server
 act -j smoke-server
 ```
 
+To inject secrets, (e.g. `${{ secrets.GOOGLE_APPLICATION_CREDENTIALS_CONTENT }}`), supply it with the `-s` flag. This is
+necessary to provide credentials for Google services, or else the tests that need them will fail. So to run the
+unittests job successfully, do something like:
+
+```shell
+act -j unittests -s GOOGLE_APPLICATION_CREDENTIALS_CONTENT="$(< settings/service_account.json)"
+```
+
 #### On Macs
 
 * You might see this error:
@@ -307,8 +336,48 @@ service_account.json.
   be [placed in your .actrc](https://nektosact.com/usage/index.html?highlight=secret#envsecrets-files-structure)) might
   look like:
 
-```act --matrix os:ubuntu-22.04 -j unittests -s GCLOUD_SERVICE_ACCOUNT_CREDENTIALS="$(< ~/.config/gspread/service_account.json)"
+```act --matrix os:ubuntu-22.04 -j unittests -s GOOGLE_APPLICATION_CREDENTIALS_CONTENT="$(< ~/.config/gspread/service_account.json)"
 ```
+
+
+## The CLI
+
+Helper tool to bootstap a new user and other operations such creating test data and validating configs. See the source
+in `src/xngin/cli/main.py` and run:
+```shell
+uv run xngin-cli --help
+```
+
+## Onboarding new Clients
+
+1. Get credentials to the client's data warehouse that has at least read-only access to the schemas/datasets
+containing the table(s) of interest. Each table will be a different "participant type" the user wishes to experiment
+over, and should contain a) a unique id column, b) features to filter the partipcants with (i.e. target for experiment
+eligibility), and c) metrics to use as possible outcomes to track, and optionally d) features to stratify on.
+
+1. Generate the participant-level column metadata. This will ultimately be a google sheet the user can configure.
+   1. First bootstrap column names and types from the dwh schema. There will be one row output per column in the target
+   dwh table.  See the command `uv run xngin-cli bootstrap-spreadsheet --help`
+      1. If output as csv, import it to a new google spreadsheet that we the service provider will own.
+      1. Share it with our gsheet service account.
+   1. Share it with the client to mark which columns are filters/metrics/strata and which to use as the unique_id.
+   1. Additional table columns can be added (or removed) in the future by the user.
+
+1. Generate the client's config block in `xngin.settings.json`. Give them a unique string `"id:"` that they will pass
+back to us with every API request, specify `"type: "remote"` as the general type of dwh (see `settings.py`), provide dwh
+connectivity info in `"dwh":`, and lastly create the `"participants:"` list. Each item is a Participant object with a
+`"participant_type":` identifier for use in API requests, a `"table_name"` to look up in their dwh, and the GSheets URL
+and worksheet tab name from above to find its associated column metadata.
+
+1. Bootstrap a set of data in the warehouse to use as a new Participant type.
+
+For more examples, see the `xngin.gha.settings.json` settings used for testing.
+
+### Supported DWHs and DSN url format
+
+* Redshift - `postgresql+psycopg2://username@host:port/databasename`
+* Postgres - `postgresql+psycopg://username@host:port/databasename`
+* (experimental) BigQuery - `bigquery://some-project/some-dataset`
 
 
 ## FAQ
