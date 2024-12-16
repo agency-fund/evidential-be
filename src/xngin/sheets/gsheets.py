@@ -1,10 +1,19 @@
+import os
 import gspread
 import pandas
+
+DEFAULT_GSPREAD_CREDENTIALS = os.path.expanduser(
+    "~/.config/gspread/service_account.json"
+)
 
 
 def fetch_sheet(url, worksheet) -> gspread.Worksheet:
     """Reads a Google Spreadsheet."""
-    gc = gspread.service_account()
+    gc = gspread.service_account(
+        filename=os.environ.get(
+            "GOOGLE_APPLICATION_CREDENTIALS", DEFAULT_GSPREAD_CREDENTIALS
+        )
+    )
     sheet = gc.open_by_url(url)
     return sheet.worksheet(worksheet)
 
