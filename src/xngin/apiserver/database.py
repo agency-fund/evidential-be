@@ -29,9 +29,7 @@ class Cache(Base):
     __tablename__ = "cache"
 
     # TODO: handle non-sqlite SQLALCHEMY_DATABASE_URLs
-    key = mapped_column(
-        String, primary_key=True, sqlite_on_conflict_primary_key="REPLACE"
-    )
+    key = mapped_column(String, primary_key=True)
     value = mapped_column(String)
 
 

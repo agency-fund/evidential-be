@@ -15,14 +15,12 @@ from xngin.stats.balance import check_balance
 def assign_treatment(
     data: pd.DataFrame,
     stratum_cols: list[str],
-    metric_cols: list[str],
     id_col: str,
     arm_names: list[str],
     experiment_id: str,
     description: str,
     fstat_thresh: float = 0.5,
     random_state: int | None = None,
-    num_strata: int = 3,
 ) -> ExperimentAssignment:
     """
     Perform stratified random assignment and balance checking.
@@ -30,7 +28,6 @@ def assign_treatment(
     Args:
         data: DataFrame containing units to be assigned
         stratum_cols: List of column names to stratify on
-        metric_cols: List of metric column names
         id_col: Name of column containing unit identifiers
         arm_names: Names of treatment arms
         experiment_id: Unique identifier for experiment
