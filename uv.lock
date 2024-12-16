@@ -52,7 +52,7 @@ source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "jmespath", marker = "sys_platform == 'darwin' or sys_platform == 'linux'" },
     { name = "python-dateutil", marker = "sys_platform == 'darwin' or sys_platform == 'linux'" },
-    { name = "urllib3", marker = "(sys_platform == 'darwin' and python_full_version == '3.12.*') or (sys_platform == 'linux' and python_full_version == '3.12.*')" },
+    { name = "urllib3", marker = "sys_platform == 'darwin' or sys_platform == 'linux'" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/15/59/62bdffdfa472acde76179fbb1f62aef94406c0e682c47113542a596529bb/botocore-1.35.72.tar.gz", hash = "sha256:6b5fac38ef7cfdbc7781a751e0f78833ccb9149ba815bc238b1dbb75c90fbae5", size = 13332751 }
 wheels = [
@@ -132,21 +132,9 @@ wheels = [
 name = "click"
 version = "8.1.7"
 source = { registry = "https://pypi.org/simple" }
-dependencies = [
-    { name = "colorama", marker = "(platform_system == 'Windows' and sys_platform == 'darwin') or (platform_system == 'Windows' and sys_platform == 'linux')" },
-]
 sdist = { url = "https://files.pythonhosted.org/packages/96/d3/f04c7bfcf5c1862a2a5b845c6b2b360488cf47af55dfa79c98f6a6bf98b5/click-8.1.7.tar.gz", hash = "sha256:ca9853ad459e787e2192211578cc907e7594e294c7ccc834310722b41b9ca6de", size = 336121 }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/00/2e/d53fa4befbf2cfa713304affc7ca780ce4fc1fd8710527771b58311a3229/click-8.1.7-py3-none-any.whl", hash = "sha256:ae74fb96c20a0277a1d615f1e4d73c8414f5a98db8b799a7931d1582f3390c28", size = 97941 },
-]
-
-[[package]]
-name = "colorama"
-version = "0.4.6"
-source = { registry = "https://pypi.org/simple" }
-sdist = { url = "https://files.pythonhosted.org/packages/d8/53/6f443c9a4a8358a93a6792e2acffb9d9d5cb0a5cfd8802644b7b1c9a02e4/colorama-0.4.6.tar.gz", hash = "sha256:08695f5cb7ed6e0531a20572697297273c47b8cae5a63ffc6d6ed5c201be6e44", size = 27697 }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/d1/d6/3965ed04c63042e047cb6a3e6ed1a63a35087b6a609aa3a15ed8ac56c221/colorama-0.4.6-py2.py3-none-any.whl", hash = "sha256:4f1d9991f5acc0ca119f9d443620b77f9d6b33703e51011c16baf57afb285fc6", size = 25335 },
 ]
 
 [[package]]
@@ -570,6 +558,32 @@ wheels = [
 ]
 
 [[package]]
+name = "mypy"
+version = "1.13.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "mypy-extensions", marker = "sys_platform == 'darwin' or sys_platform == 'linux'" },
+    { name = "typing-extensions", marker = "sys_platform == 'darwin' or sys_platform == 'linux'" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/e8/21/7e9e523537991d145ab8a0a2fd98548d67646dc2aaaf6091c31ad883e7c1/mypy-1.13.0.tar.gz", hash = "sha256:0291a61b6fbf3e6673e3405cfcc0e7650bebc7939659fdca2702958038bd835e", size = 3152532 }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/fb/31/c526a7bd2e5c710ae47717c7a5f53f616db6d9097caf48ad650581e81748/mypy-1.13.0-cp312-cp312-macosx_10_13_x86_64.whl", hash = "sha256:5c7051a3461ae84dfb5dd15eff5094640c61c5f22257c8b766794e6dd85e72d5", size = 11077900 },
+    { url = "https://files.pythonhosted.org/packages/83/67/b7419c6b503679d10bd26fc67529bc6a1f7a5f220bbb9f292dc10d33352f/mypy-1.13.0-cp312-cp312-macosx_11_0_arm64.whl", hash = "sha256:39bb21c69a5d6342f4ce526e4584bc5c197fd20a60d14a8624d8743fffb9472e", size = 10074818 },
+    { url = "https://files.pythonhosted.org/packages/ba/07/37d67048786ae84e6612575e173d713c9a05d0ae495dde1e68d972207d98/mypy-1.13.0-cp312-cp312-manylinux_2_17_x86_64.manylinux2014_x86_64.manylinux_2_28_x86_64.whl", hash = "sha256:164f28cb9d6367439031f4c81e84d3ccaa1e19232d9d05d37cb0bd880d3f93c2", size = 12589275 },
+    { url = "https://files.pythonhosted.org/packages/1f/17/b1018c6bb3e9f1ce3956722b3bf91bff86c1cefccca71cec05eae49d6d41/mypy-1.13.0-cp312-cp312-musllinux_1_1_x86_64.whl", hash = "sha256:a4c1bfcdbce96ff5d96fc9b08e3831acb30dc44ab02671eca5953eadad07d6d0", size = 13037783 },
+    { url = "https://files.pythonhosted.org/packages/3b/86/72ce7f57431d87a7ff17d442f521146a6585019eb8f4f31b7c02801f78ad/mypy-1.13.0-py3-none-any.whl", hash = "sha256:9c250883f9fd81d212e0952c92dbfcc96fc237f4b7c92f56ac81fd48460b3e5a", size = 2647043 },
+]
+
+[[package]]
+name = "mypy-extensions"
+version = "1.0.0"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/98/a4/1ab47638b92648243faf97a5aeb6ea83059cc3624972ab6b8d2316078d3f/mypy_extensions-1.0.0.tar.gz", hash = "sha256:75dbf8955dc00442a438fc4d0666508a9a97b6bd41aa2f0ffe9d2f2725af0782", size = 4433 }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/2a/e2/5d3f6ada4297caebe1a2add3b126fe800c96f56dbe5d1988a2cbe0b267aa/mypy_extensions-1.0.0-py3-none-any.whl", hash = "sha256:4392f6c0eb8a5668a69e23d168ffa70f0be9ccfd32b5cc2d26a34ae5b844552d", size = 4695 },
+]
+
+[[package]]
 name = "nodeenv"
 version = "1.9.1"
 source = { registry = "https://pypi.org/simple" }
@@ -624,7 +638,7 @@ name = "pandas"
 version = "2.2.3"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "numpy", marker = "(sys_platform == 'darwin' and python_full_version == '3.12.*') or (sys_platform == 'linux' and python_full_version == '3.12.*')" },
+    { name = "numpy", marker = "sys_platform == 'darwin' or sys_platform == 'linux'" },
     { name = "python-dateutil", marker = "sys_platform == 'darwin' or sys_platform == 'linux'" },
     { name = "pytz", marker = "sys_platform == 'darwin' or sys_platform == 'linux'" },
     { name = "tzdata", marker = "sys_platform == 'darwin' or sys_platform == 'linux'" },
@@ -659,6 +673,19 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/1c/45/11cc72ad49587112a95bb053a271660816c205b8e55159763991776138a1/pandas_gbq-0.25.0.tar.gz", hash = "sha256:e16362701788c2b528e0202ac744195b1e1c9153e1fe5cfa130401756077e2d7", size = 60705 }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/f9/7e/3efc07e054ebc950fe7370937b2a073aa10240baf0559357d08193359962/pandas_gbq-0.25.0-py2.py3-none-any.whl", hash = "sha256:fbb89146c959cf54ed9003db0a5775af908c41de8cf5f24739fa8959893c67e6", size = 35799 },
+]
+
+[[package]]
+name = "pandas-stubs"
+version = "2.2.3.241126"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "numpy", marker = "sys_platform == 'darwin' or sys_platform == 'linux'" },
+    { name = "types-pytz", marker = "sys_platform == 'darwin' or sys_platform == 'linux'" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/90/86/93c545d149c3e1fe1c4c55478cc3a69859d0ea3467e1d9892e9eb28cb1e7/pandas_stubs-2.2.3.241126.tar.gz", hash = "sha256:cf819383c6d9ae7d4dabf34cd47e1e45525bb2f312e6ad2939c2c204cb708acd", size = 104204 }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/6f/ab/ed42acf15bab2e86e5c49fad4aa038315233c4c2d22f41b49faa4d837516/pandas_stubs-2.2.3.241126-py3-none-any.whl", hash = "sha256:74aa79c167af374fe97068acc90776c0ebec5266a6e5c69fe11e9c2cf51f2267", size = 158280 },
 ]
 
 [[package]]
@@ -745,7 +772,7 @@ name = "psycopg"
 version = "3.2.3"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "typing-extensions", marker = "(sys_platform == 'darwin' and python_full_version == '3.12.*') or (sys_platform == 'linux' and python_full_version == '3.12.*')" },
+    { name = "typing-extensions", marker = "sys_platform == 'darwin' or sys_platform == 'linux'" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/d1/ad/7ce016ae63e231575df0498d2395d15f005f05e32d3a2d439038e1bd0851/psycopg-3.2.3.tar.gz", hash = "sha256:a5764f67c27bec8bfac85764d23c534af2c27b893550377e37ce59c12aac47a2", size = 155550 }
 wheels = [
@@ -1087,7 +1114,7 @@ name = "sqlalchemy"
 version = "2.0.32"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "greenlet", marker = "(platform_machine == 'AMD64' and sys_platform == 'darwin' and python_full_version == '3.12.*') or (platform_machine == 'AMD64' and sys_platform == 'linux' and python_full_version == '3.12.*') or (platform_machine == 'WIN32' and sys_platform == 'darwin' and python_full_version == '3.12.*') or (platform_machine == 'WIN32' and sys_platform == 'linux' and python_full_version == '3.12.*') or (platform_machine == 'aarch64' and sys_platform == 'darwin' and python_full_version == '3.12.*') or (platform_machine == 'aarch64' and sys_platform == 'linux' and python_full_version == '3.12.*') or (platform_machine == 'amd64' and sys_platform == 'darwin' and python_full_version == '3.12.*') or (platform_machine == 'amd64' and sys_platform == 'linux' and python_full_version == '3.12.*') or (platform_machine == 'ppc64le' and sys_platform == 'darwin' and python_full_version == '3.12.*') or (platform_machine == 'ppc64le' and sys_platform == 'linux' and python_full_version == '3.12.*') or (platform_machine == 'win32' and sys_platform == 'darwin' and python_full_version == '3.12.*') or (platform_machine == 'win32' and sys_platform == 'linux' and python_full_version == '3.12.*') or (platform_machine == 'x86_64' and sys_platform == 'darwin' and python_full_version == '3.12.*') or (platform_machine == 'x86_64' and sys_platform == 'linux' and python_full_version == '3.12.*')" },
+    { name = "greenlet", marker = "(platform_machine == 'AMD64' and sys_platform == 'darwin') or (platform_machine == 'WIN32' and sys_platform == 'darwin') or (platform_machine == 'aarch64' and sys_platform == 'darwin') or (platform_machine == 'amd64' and sys_platform == 'darwin') or (platform_machine == 'ppc64le' and sys_platform == 'darwin') or (platform_machine == 'win32' and sys_platform == 'darwin') or (platform_machine == 'x86_64' and sys_platform == 'darwin') or (platform_machine == 'AMD64' and sys_platform == 'linux') or (platform_machine == 'WIN32' and sys_platform == 'linux') or (platform_machine == 'aarch64' and sys_platform == 'linux') or (platform_machine == 'amd64' and sys_platform == 'linux') or (platform_machine == 'ppc64le' and sys_platform == 'linux') or (platform_machine == 'win32' and sys_platform == 'linux') or (platform_machine == 'x86_64' and sys_platform == 'linux')" },
     { name = "typing-extensions", marker = "sys_platform == 'darwin' or sys_platform == 'linux'" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/af/6f/967e987683908af816aa3072c1a6997ac9933cf38d66b0474fb03f253323/SQLAlchemy-2.0.32.tar.gz", hash = "sha256:c1b88cc8b02b6a5f0efb0345a03672d4c897dc7d92585176f88c67346f565ea8", size = 9546691 }
@@ -1174,6 +1201,24 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/c5/58/a79003b91ac2c6890fc5d90145c662fd5771c6f11447f116b63300436bc9/typer-0.12.5.tar.gz", hash = "sha256:f592f089bedcc8ec1b974125d64851029c3b1af145f04aca64d69410f0c9b722", size = 98953 }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/a8/2b/886d13e742e514f704c33c4caa7df0f3b89e5a25ef8db02aa9ca3d9535d5/typer-0.12.5-py3-none-any.whl", hash = "sha256:62fe4e471711b147e3365034133904df3e235698399bc4de2b36c8579298d52b", size = 47288 },
+]
+
+[[package]]
+name = "types-psycopg2"
+version = "2.9.21.20241019"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/60/ca/81a545e0e005c062fddbc36ac6159838b3eec63199a62b2c3ed5360fc9cf/types-psycopg2-2.9.21.20241019.tar.gz", hash = "sha256:bca89b988d2ebd19bcd08b177d22a877ea8b841decb10ed130afcf39404612fa", size = 21626 }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/ef/ca/c29b9411d2e025bad0b9964404baa8f4ff20d1dc351e92b31d9bc371ed26/types_psycopg2-2.9.21.20241019-py3-none-any.whl", hash = "sha256:44d091e67732d16a941baae48cd7b53bf91911bc36888652447cf1ef0c1fb3f6", size = 20088 },
+]
+
+[[package]]
+name = "types-pytz"
+version = "2024.2.0.20241003"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/66/d0/73aa3063a9ef9881bd7103cb4ae379bfd8fafda0e86b01b694d676313a4b/types-pytz-2024.2.0.20241003.tar.gz", hash = "sha256:575dc38f385a922a212bac00a7d6d2e16e141132a3c955078f4a4fd13ed6cb44", size = 5474 }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/86/60/2a2977ce0f91255bbb668350b127a801a06ad37c326a2e5bfd52f03e0784/types_pytz-2024.2.0.20241003-py3-none-any.whl", hash = "sha256:3e22df1336c0c6ad1d29163c8fda82736909eb977281cb823c57f8bae07118b7", size = 5245 },
 ]
 
 [[package]]
@@ -1322,10 +1367,13 @@ dependencies = [
 
 [package.dev-dependencies]
 dev = [
+    { name = "mypy", marker = "sys_platform == 'darwin' or sys_platform == 'linux'" },
+    { name = "pandas-stubs", marker = "sys_platform == 'darwin' or sys_platform == 'linux'" },
     { name = "pre-commit", marker = "sys_platform == 'darwin' or sys_platform == 'linux'" },
     { name = "pytest", marker = "sys_platform == 'darwin' or sys_platform == 'linux'" },
     { name = "pytest-mock", marker = "sys_platform == 'darwin' or sys_platform == 'linux'" },
     { name = "ruff", marker = "sys_platform == 'darwin' or sys_platform == 'linux'" },
+    { name = "types-psycopg2", marker = "sys_platform == 'darwin' or sys_platform == 'linux'" },
 ]
 
 [package.metadata]
@@ -1354,10 +1402,13 @@ requires-dist = [
 
 [package.metadata.requires-dev]
 dev = [
+    { name = "mypy", specifier = ">=1.13.0" },
+    { name = "pandas-stubs", specifier = ">=2.2.3.241126" },
     { name = "pre-commit", specifier = ">=4.0.1,<4.1.0" },
     { name = "pytest", specifier = ">=8.3.2,<9.0.0" },
     { name = "pytest-mock", specifier = ">=3.14.0,<4" },
     { name = "ruff", specifier = ">=0.8.0,<0.9.0" },
+    { name = "types-psycopg2", specifier = ">=2.9.10,<3" },
 ]
 
 [[package]]

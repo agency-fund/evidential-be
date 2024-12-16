@@ -22,7 +22,7 @@ class InvalidSheetDetails(BaseModel):
     def from_pydantic_error(cls, row: int | None, pve: ValidationError):
         """Converts a pydantic ValidationError into an InvalidSheetDetails."""
         pve = pve.errors()[0]
-        vals = {}
+        vals: dict = {}
         if row is not None:
             vals["row_number"] = row
         if loc := pve.get("loc"):
@@ -127,7 +127,9 @@ class ConfigWorksheet(BaseModel):
     @model_validator(mode="after")
     def check_non_empty_rows(self) -> "ConfigWorksheet":
         if len(self.columns) == 0:
-            raise ValueError(f"{__class__} must contain at least one ColumnDescriptor.")
+            raise ValueError(
+                f"{self.__class__} must contain at least one ColumnDescriptor."
+            )
         return self
 
 
@@ -136,7 +138,7 @@ def parse_csv(filename: str) -> list[dict[str, int | float | str]]:
         reader = csv.DictReader(csvfile)
 
         for row in reader:
-            parsed_row = {}
+            parsed_row: dict = {}
             for key, value in row.items():
                 try:
                     # Try to convert to int first

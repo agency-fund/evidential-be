@@ -1,8 +1,8 @@
 import os
 from pathlib import Path
 
-from sqlalchemy import create_engine, Column, String
-from sqlalchemy.orm import declarative_base
+from sqlalchemy import create_engine, String
+from sqlalchemy.orm import DeclarativeBase, mapped_column
 from sqlalchemy.orm import sessionmaker
 
 # TODO: replace with something that looks upwards until it finds pyproject.toml.
@@ -21,14 +21,16 @@ engine = create_engine(SQLALCHEMY_DATABASE_URL, connect_args=get_connect_args())
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
 
-Base = declarative_base()
+class Base(DeclarativeBase):
+    pass
 
 
 class Cache(Base):
     __tablename__ = "cache"
 
-    key = Column(String, primary_key=True)
-    value = Column(String)
+    # TODO: handle non-sqlite SQLALCHEMY_DATABASE_URLs
+    key = mapped_column(String, primary_key=True)
+    value = mapped_column(String)
 
 
 def setup():
