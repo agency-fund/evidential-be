@@ -4,6 +4,16 @@
 
 # xngin
 
+- [xngin](#xngin)
+  - [Prerequisites](#prerequisites)
+  - [Getting Started](#getting-started)
+  - [Settings](#settings)
+  - [Docker](#docker)
+  - [Testing](#testing)
+  - [The CLI](#the-cli)
+  - [Onboarding new Clients](#onboarding-new-clients)
+  - [FAQ](#faq)
+
 Python version of [RL Experiments Engine](https://github.com/agency-fund/rl-experiments-engine).
 
 The following is a proposal of the main components of this service:
@@ -17,44 +27,13 @@ The following is a proposal of the main components of this service:
    status by ID
 6. Save experiment (inclusive of Audience) specifications
 
-## Prerequisite
+## Prerequisites
 
 The commands below require you to have [uv](https://docs.astral.sh/uv/) installed:
 
 ```shell
 curl -LsSf https://astral.sh/uv/0.5.5/install.sh | sh
 ```
-
-## Settings
-
-The settings schema is defined in
-[`xngin.apiserver.settings:XnginSettings`](src/xngin/apiserver/settings.py). Values are read at
-startup from environment variables and from a JSON file specified by the `XNGIN_SETTINGS`
-environment variable. This defaults to [xngin.settings.json](xngin.settings.json), but you will use
-[xngin.testing.settings.json](src/xngin/apiserver/testdata/xngin.testing.settings.json) file during
-most of your work.
-
-The settings files can be committed to version control but secret values should not be. They should be referred to with
-`${secret:NAME}` syntax. When the XNGIN_SECRETS_SOURCE environment variable is unset or set to "environ", those
-references will be replaced with a corresponding environment variable value.
-
-There are 3 levels of configuration behind Xngin:
-
-* App-wide settings as noted above in `XnginSettings`. This includes per-client configuration allowing us to provide a
-  multi-tenant service. It is retrieved in production via dependency injection (see
-  [`settings.py:get_settings_for_server`](src/xngin/apiserver/settings.py)), which is overriden in tests (see
-  [`conftest.py:get_settings_for_test`](src/xngin/apiserver/conftest.py)).
-* Client-level configuration whose schema is [`ClientConfig`](src/xngin/apiserver/settings.py), which can be one of a
-  fixed set of supported customer configurations (e.g. `RemoteDatabaseConfig`) that package up how to connect to the
-  data warehouse (see `Dsn`) along with all the different `Participant` types (aka each type of unit of experimentation,
-  e.g. a WhatsApp group, or individuals).
-* Participant type-level configuration with schema [
-  `config_sheet.py:ConfigWorksheet`](src/xngin/sheets/config_sheet.py), including column and type info derived from the
-  warehouse via introspection (see
-  [`config_sheet.py:create_configworksheet_from_table`](src/xngin/sheets/config_sheet.py),
-  [`main.py:get_sqlalchemy_table_from_engine`](src/xngin/apiserver/main.py)), as well as extra metadata about columns
-  (is_strata/is_filter/is_metric) in Google spreadsheets as specified by the client. Both sources (dwh introspection,
-  gsheets) are represented by the `ConfigWorksheet` model, although not all information may be supplied by either.
 
 ## Getting Started
 
@@ -75,7 +54,7 @@ Follow the steps below to get a local development environment running.
    `pytest -rA` to print out _all_ stdout from your tests; `-rx` for just those failing. (See
    [docs](https://docs.pytest.org/en/latest/how-to/output.html#producing-a-detailed-summary-report) for more info.)
 
-   Running the unit tests will create the testing_dwh.db database. This database will be used by your local development
+   Running the unit tests will create the `testing_dwh.db` database. This database will be used by your local development
    server.
 
 3. Then start the dev server:
@@ -152,8 +131,48 @@ Regarding some of the python libraries and features we use, see:
   which we use (see [main.py](src/xngin/apiserver/main.py) and [dependencies.py](src/xngin/apiserver/dependencies.py)).
   FastAPI also generates OpenAPI documentation for us under the server's `/docs` endpoint, leveraging Pydantic data
   models to generate the schemas.
+* [SQLAlchemy 2.0](https://docs.sqlalchemy.org/en/20/tutorial/index.html) - is used to allow more uniform
+   interaction with a variety of database dialects via its DBAPI interface and ORM features. These include client data
+   warehouses as well as our own application store (e.g. for caching client configuration of their tables).
+* Other dev tooling: [mypy](https://mypy-lang.org/) for static type checking (configured in `pyproject.toml`), [ruff](https://github.com/astral-sh/ruff) for fast python linting and formatting (also see `pyproject.toml`), [pre-commit](https://pre-commit.com/) to automatically run a number of checks including ruff before your commit (see `.pre-commit-config.yaml`).
 
-## FAQ
+
+## Settings
+
+Values are read at startup from environment variables and from a JSON file specified by the `XNGIN_SETTINGS` environment
+variable. This defaults to [xngin.settings.json](xngin.settings.json), but you will use
+[xngin.testing.settings.json](src/xngin/apiserver/testdata/xngin.testing.settings.json) file during most of your work.
+
+The settings files can be committed to version control but secret values should not be. They should be referred to with
+`${secret:NAME}` syntax. When the `XNGIN_SECRETS_SOURCE` environment variable is unset or set to "environ", those
+references will be replaced with a corresponding environment variable value.
+
+There are 3 levels of configuration behind Xngin:
+
+* **App-wide** settings as noted above use a schema defined in
+  [`xngin.apiserver.settings:XnginSettings`](src/xngin/apiserver/settings.py). This includes per-client configuration
+  allowing us to provide a multi-tenant service. It is retrieved in production via dependency injection (see
+  [`settings.py:get_settings_for_server`](src/xngin/apiserver/settings.py)), which is overriden in tests (see
+  [`conftest.py:get_settings_for_test`](src/xngin/apiserver/conftest.py)).
+* The above wraps **client-level** configuration whose schema is [`ClientConfig`](src/xngin/apiserver/settings.py), which
+  can be one of a fixed set of supported customer configurations (e.g. `RemoteDatabaseConfig`) that package up how to
+  connect to the data warehouse (see `BaseDsn` and descendants) along with all the different `Participant` types (aka
+  each type of unit of experimentation, e.g. a WhatsApp group, or individual phone numbers, hospitals, schools, ...).
+* **Participant type-level** configuration with schema
+  [`config_sheet.py:ConfigWorksheet`](src/xngin/sheets/config_sheet.py), including column and type info derived from the
+  warehouse via introspection (see
+  [`config_sheet.py:create_configworksheet_from_table`](src/xngin/sheets/config_sheet.py),
+  [`main.py:get_sqlalchemy_table_from_engine`](src/xngin/apiserver/main.py)), as well as extra metadata about columns
+  (is_strata/is_filter/is_metric). The extra metadata may come from CSV or in Google spreadsheets as filled out by the
+  client. Both sources (dwh introspection, gsheets) are represented by the `ConfigWorksheet` model, although not all
+  information may be supplied by either.
+  * This information is also cached in our app (system) db as specified in
+  * [`database.py`](src/xngin/apiserver/database.py). The db DSN can be overriden via the `XNGIN_DB` environment
+    variable to point to something other than the default sqlite database `xngin.db`, which otherwise is created at this
+    root level.
+
+
+## Docker
 
 ### How do I build the Docker container locally?
 
@@ -163,10 +182,6 @@ docker run xngin:latest
 ```
 
 See the next question for an example of how to pass settings to the container.
-
-### How do I run the tests in the Docker container?
-
-See [.github/workflows/test.yaml](.github/workflows/test.yaml).
 
 ### How do I run the Docker images built by the CI?
 
@@ -184,59 +199,23 @@ docker run \
   --env-file ./.env \
   -v path/to/settings/directory:/settings \
   -e XNGIN_SETTINGS=/settings/xngin.settings.json \
+  -p 127.0.0.1:8000:8000 \
   ghcr.io/agency-fund/xngin:main
 ```
 
-> Note: These flags change depending on runtime environment. If running under an orchestrator, omit the -it. To run in
-> the background, omit `-it` and add `-d`.
+This also means we can fetch prod settings from elsewhere on our host and mount the dir with it in the container.
+Don't forget to add other environment variables not set on the command line to a `.env` file such as
+GOOGLE_APPLICATION_CREDENTIALS; these are not part of the image. Also beware that Docker
+[includes double quotes in the value of your env variables](https://github.com/docker/compose/issues/3702)
+read in via --env-file.
 
-### How do I see the sql commands being executed in my logs?
+### How do I run the tests in the Docker container?
 
-Set `ECHO_SQL=1` in your environment, e.g.:
+See [.github/workflows/test.yaml](.github/workflows/test.yaml).
 
-```shell
-ECHO_SQL=1 XNGIN_SETTINGS=xngin.settings.json \
-   uv run fastapi dev src/xngin/apiserver/main.py --port 8144
-```
+### How do I run xngin against a local Postgres running in Docker?
 
-### How do I add a Python dependency?
-
-1. Add the dependency to [pyproject.toml](pyproject.toml) (replace httpx with whatever dependency you are adding). Try
-   to pin it to a narrow version range, if possible.
-   ```shell
-   uv add httpx
-   ```
-2. Install the new dependencies into your environment:
-    ```shell
-    uv lock
-    uv sync
-    ```
-3. Run the unit tests to ensure everything still works.
-   ```shell
-   uv run pytest
-   ```
-4. Commit the changed uv.lock and pyproject.toml files.
-
-### How do I force-build the test sqlite database?
-
-Recommend deleting the `src/xngin/apiserver/testdata/testing_dwh.db` and let the unit tests rebuild it
-for you.
-
-You could use the [CLI](src/xngin/cli/main.py) `create-testing-dwh` command (see --help for more):
-
-```shell
-uv run xngin-cli create-testing-dwh \
-   --dsn sqlite:///src/xngin/apiserver/testdata/testing_dwh.db \
-   --table-name=test_participant_type
-```
-
-BUT the data types used in the create ddl will differ right now as the former relies on pandas to infer types while the
-latter uses our own mapping based on dataframe types.
-
-### How do I run xngin against a local Postgres?
-
-Here's an example of how to run a local Postgres in Docker and have
-xngin use it as the system database:
+Here's an example of how to run a local Postgres and have xngin use it as the system database:
 
 > Note: This example creates a Postgres database for the /system/ database; this is used only for caching
 > configuration spreadsheets. If you want to test a customer database with postgres, you must edit the settings JSON.
@@ -254,7 +233,37 @@ export XNGIN_DB=postgresql://xnginwebserver:${PASSWORD}@localhost:5432/xngin
 uv run fastapi dev src/xngin/apiserver/main.py
 ```
 
-#### How can I load test data into this pg instance with a different schema?
+
+## Testing
+
+In addition to the unittests run via [pytest](https://docs.pytest.org/en/stable/), we have
+[smoke tests](.github/workflows/test.yaml) run as part of our github action test workflow.
+
+* Some of our tests that rely on `conftest.py` will create a local sqlite db for testing in
+  `src/xngin/apiserver/testdata/testing_dwh.db` if it doesn't exist already using the zipped data dump in
+  `testing_dwh.csv.zst`.
+  * `test_data.csv` is the corresponding spreadsheet that simulates a typical table configuration for the participant
+  type data above.
+* Our pytests have a test marked as 'integration' which is also only run as part of that workflow; to run just those
+  tests marked as such, do: `pytest -m integration`, but make sure you have the test credentials to access the gsheet.
+
+### How do I force-build the test sqlite database?
+
+Recommend deleting the `src/xngin/apiserver/testdata/testing_dwh.db` and let the unit tests rebuild it
+for you.
+
+You could use the [CLI](src/xngin/cli/main.py) `create-testing-dwh` command (see --help for more):
+
+```shell
+uv run xngin-cli create-testing-dwh \
+   --dsn sqlite:///src/xngin/apiserver/testdata/testing_dwh.db \
+   --table-name=test_participant_type
+```
+
+BUT the data types used in the create ddl will differ right now as the former relies on pandas to infer types while the
+latter uses our own mapping based on dataframe types.
+
+### How can I load test data into my pg instance with a different schema?
 
 As with a sqlite db above, use the CLI command:
 
@@ -291,6 +300,14 @@ act -W .github/workflows/test.yaml -j smoke-server
 act -j smoke-server
 ```
 
+To inject secrets, (e.g. `${{ secrets.GOOGLE_APPLICATION_CREDENTIALS_CONTENT }}`), supply it with the `-s` flag. This is
+necessary to provide credentials for Google services, or else the tests that need them will fail. So to run the
+unittests job successfully, do something like:
+
+```shell
+act -j unittests -s GOOGLE_APPLICATION_CREDENTIALS_CONTENT="$(< settings/service_account.json)"
+```
+
 #### On Macs
 
 * You might see this error:
@@ -319,8 +336,81 @@ service_account.json.
   be [placed in your .actrc](https://nektosact.com/usage/index.html?highlight=secret#envsecrets-files-structure)) might
   look like:
 
-```act --matrix os:ubuntu-22.04 -j unittests -s GCLOUD_SERVICE_ACCOUNT_CREDENTIALS="$(< ~/.config/gspread/service_account.json)"
+```act --matrix os:ubuntu-22.04 -j unittests -s GOOGLE_APPLICATION_CREDENTIALS_CONTENT="$(< ~/.config/gspread/service_account.json)"
 ```
+
+
+## The CLI
+
+Helper tool to bootstap a new user and other operations such creating test data and validating configs. See the source
+in `src/xngin/cli/main.py` and run:
+```shell
+uv run xngin-cli --help
+```
+
+## Onboarding new Clients
+
+1. Get credentials to the client's data warehouse that has at least read-only access to the schemas/datasets
+containing the table(s) of interest. Each table will be a different "participant type" the user wishes to experiment
+over, and should contain a) a unique id column, b) features to filter the partipcants with (i.e. target for experiment
+eligibility), and c) metrics to use as possible outcomes to track, and optionally d) features to stratify on.
+
+1. Generate the participant-level column metadata. This will ultimately be a google sheet the user can configure.
+   1. First bootstrap column names and types from the dwh schema. There will be one row output per column in the target
+   dwh table.  See the command `uv run xngin-cli bootstrap-spreadsheet --help`
+      1. If output as csv, import it to a new google spreadsheet that we the service provider will own.
+      1. Share it with our gsheet service account.
+   1. Share it with the client to mark which columns are filters/metrics/strata and which to use as the unique_id.
+   1. Additional table columns can be added (or removed) in the future by the user.
+
+1. Generate the client's config block in `xngin.settings.json`. Give them a unique string `"id:"` that they will pass
+back to us with every API request, specify `"type: "remote"` as the general type of dwh (see `settings.py`), provide dwh
+connectivity info in `"dwh":`, and lastly create the `"participants:"` list. Each item is a Participant object with a
+`"participant_type":` identifier for use in API requests, a `"table_name"` to look up in their dwh, and the GSheets URL
+and worksheet tab name from above to find its associated column metadata.
+
+1. Bootstrap a set of data in the warehouse to use as a new Participant type.
+
+For more examples, see the `xngin.gha.settings.json` settings used for testing.
+
+### Supported DWHs and DSN url format
+
+* Redshift - `postgresql+psycopg2://username@host:port/databasename`
+* Postgres - `postgresql+psycopg://username@host:port/databasename`
+* (experimental) BigQuery - `bigquery://some-project/some-dataset`
+
+
+## FAQ
+
+> Note: These flags change depending on runtime environment. If running under an orchestrator, omit the -it. To run in
+> the background, omit `-it` and add `-d`.
+
+### How do I see the sql commands being executed in my logs?
+
+Set `ECHO_SQL=1` in your environment, e.g.:
+
+```shell
+ECHO_SQL=1 XNGIN_SETTINGS=xngin.settings.json \
+   uv run fastapi dev src/xngin/apiserver/main.py --port 8144
+```
+
+### How do I add a Python dependency?
+
+1. Add the dependency to [pyproject.toml](pyproject.toml) (replace httpx with whatever dependency you are adding). Try
+   to pin it to a narrow version range, if possible.
+   ```shell
+   uv add httpx
+   ```
+2. Install the new dependencies into your environment:
+    ```shell
+    uv lock
+    uv sync
+    ```
+3. Run the unit tests to ensure everything still works.
+   ```shell
+   uv run pytest
+   ```
+4. Commit the changed uv.lock and pyproject.toml files.
 
 ### psycopg2 module does not install correctly.
 
