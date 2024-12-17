@@ -445,7 +445,8 @@ def infer_table_from_cursor(
                 elif type_code == 1114:  # TIMESTAMP / timestamp without time zone
                     sa_type = sqlalchemy.DateTime
                 elif type_code == 1700:  # NUMERIC / numeric
-                    sa_type = sqlalchemy.Numeric(precision, scale)
+                    # Accept a loss of precision and overhead in conversion to float so pandas infers type properly.
+                    sa_type = sqlalchemy.Numeric(precision, scale, asdecimal=False)
                 else:  # type_code == 25
                     # Default to Text for unknown types
                     sa_type = sqlalchemy.Text
