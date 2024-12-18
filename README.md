@@ -471,7 +471,12 @@ Run `brew install postgresql@14`.
 The Railway deployment relies on [Dockerfile.railway](Dockerfile.railway), [railway.json](railway.json), and two
 environment variables:
 
-| Environment Variable         | Purpose                                                                               | Example                                                                                       |
-|------------------------------|---------------------------------------------------------------------------------------|-----------------------------------------------------------------------------------------------|
-| XNGIN_SETTINGS               | URL of the settings to fetch. This may be a private repository.                       | https://api.github.com/repos/agency-fund/xngin-settings/contents/xngin.settings.json?ref=main |
-| XNGIN_SETTINGS_AUTHORIZATION | The value of the "Authorization:" header sent on the request to fetch XNGIN_SETTINGS. | `token ghp_....`                                                                              |                                                                             |
+| Environment Variable         | Purpose                                                                               | Example                                                                                               |
+|------------------------------|---------------------------------------------------------------------------------------|-------------------------------------------------------------------------------------------------------|
+| XNGIN_SETTINGS               | URL of the settings to fetch. This may be a private repository.                       | https://api.github.com/repos/agency-fund/xngin-settings/contents/xngin.railway.settings.json?ref=main |
+| XNGIN_SETTINGS_AUTHORIZATION | The value of the "Authorization:" header sent on the request to fetch XNGIN_SETTINGS. | `token ghp_....`                                                                                      |                                                                             |
+
+In addition, there are runtime environment variables set in the Railway console corresponding to configuration values
+referenced by
+the [xngin.railway.settings.json](https://github.com/agency-fund/xngin-settings/xngin.railway.settings.json) file in the
+limited-access https://github.com/agency-fund/xngin-settings repository.
