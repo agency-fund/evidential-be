@@ -5,14 +5,14 @@
 # xngin
 
 - [xngin](#xngin)
-  - [Prerequisites](#prerequisites)
-  - [Getting Started](#getting-started)
-  - [Settings](#settings)
-  - [Docker](#docker)
-  - [Testing](#testing)
-  - [The CLI](#the-cli)
-  - [Onboarding new Clients](#onboarding-new-clients)
-  - [FAQ](#faq)
+    - [Prerequisites](#prerequisites)
+    - [Getting Started](#getting-started)
+    - [Settings](#settings)
+    - [Docker](#docker)
+    - [Testing](#testing)
+    - [The CLI](#the-cli)
+    - [Onboarding new Clients](#onboarding-new-clients)
+    - [FAQ](#faq)
 
 Python version of [RL Experiments Engine](https://github.com/agency-fund/rl-experiments-engine).
 
@@ -54,7 +54,8 @@ Follow the steps below to get a local development environment running.
    `pytest -rA` to print out _all_ stdout from your tests; `-rx` for just those failing. (See
    [docs](https://docs.pytest.org/en/latest/how-to/output.html#producing-a-detailed-summary-report) for more info.)
 
-   Running the unit tests will create the `testing_dwh.db` database. This database will be used by your local development
+   Running the unit tests will create the `testing_dwh.db` database. This database will be used by your local
+   development
    server.
 
 3. Then start the dev server:
@@ -132,10 +133,12 @@ Regarding some of the python libraries and features we use, see:
   FastAPI also generates OpenAPI documentation for us under the server's `/docs` endpoint, leveraging Pydantic data
   models to generate the schemas.
 * [SQLAlchemy 2.0](https://docs.sqlalchemy.org/en/20/tutorial/index.html) - is used to allow more uniform
-   interaction with a variety of database dialects via its DBAPI interface and ORM features. These include client data
-   warehouses as well as our own application store (e.g. for caching client configuration of their tables).
-* Other dev tooling: [mypy](https://mypy-lang.org/) for static type checking (configured in `pyproject.toml`), [ruff](https://github.com/astral-sh/ruff) for fast python linting and formatting (also see `pyproject.toml`), [pre-commit](https://pre-commit.com/) to automatically run a number of checks including ruff before your commit (see `.pre-commit-config.yaml`).
-
+  interaction with a variety of database dialects via its DBAPI interface and ORM features. These include client data
+  warehouses as well as our own application store (e.g. for caching client configuration of their tables).
+* Other dev tooling: [mypy](https://mypy-lang.org/) for static type checking (configured in
+  `pyproject.toml`), [ruff](https://github.com/astral-sh/ruff) for fast python linting and formatting (also see
+  `pyproject.toml`), [pre-commit](https://pre-commit.com/) to automatically run a number of checks including ruff before
+  your commit (see `.pre-commit-config.yaml`).
 
 ## Settings
 
@@ -154,7 +157,8 @@ There are 3 levels of configuration behind Xngin:
   allowing us to provide a multi-tenant service. It is retrieved in production via dependency injection (see
   [`settings.py:get_settings_for_server`](src/xngin/apiserver/settings.py)), which is overriden in tests (see
   [`conftest.py:get_settings_for_test`](src/xngin/apiserver/conftest.py)).
-* The above wraps **client-level** configuration whose schema is [`ClientConfig`](src/xngin/apiserver/settings.py), which
+* The above wraps **client-level** configuration whose schema is [`ClientConfig`](src/xngin/apiserver/settings.py),
+  which
   can be one of a fixed set of supported customer configurations (e.g. `RemoteDatabaseConfig`) that package up how to
   connect to the data warehouse (see `BaseDsn` and descendants) along with all the different `Participant` types (aka
   each type of unit of experimentation, e.g. a WhatsApp group, or individual phone numbers, hospitals, schools, ...).
@@ -166,11 +170,11 @@ There are 3 levels of configuration behind Xngin:
   (is_strata/is_filter/is_metric). The extra metadata may come from CSV or in Google spreadsheets as filled out by the
   client. Both sources (dwh introspection, gsheets) are represented by the `ConfigWorksheet` model, although not all
   information may be supplied by either.
-  * This information is also cached in our app (system) db as specified in
-  * [`database.py`](src/xngin/apiserver/database.py). The db DSN can be overriden via the `XNGIN_DB` environment
-    variable to point to something other than the default sqlite database `xngin.db`, which otherwise is created at this
-    root level.
-
+    * This information is also cached in our app (system) db as specified in
+    * [`database.py`](src/xngin/apiserver/database.py). The db DSN can be overriden via the `XNGIN_DB` environment
+      variable to point to something other than the default sqlite database `xngin.db`, which otherwise is created at
+      this
+      root level.
 
 ## Docker
 
@@ -238,7 +242,6 @@ export XNGIN_DB=postgresql://xnginwebserver:${PASSWORD}@localhost:5432/xngin
 uv run fastapi dev src/xngin/apiserver/main.py
 ```
 
-
 ## Testing
 
 In addition to the unittests run via [pytest](https://docs.pytest.org/en/stable/), we have
@@ -247,8 +250,8 @@ In addition to the unittests run via [pytest](https://docs.pytest.org/en/stable/
 * Some of our tests that rely on `conftest.py` will create a local sqlite db for testing in
   `src/xngin/apiserver/testdata/testing_dwh.db` if it doesn't exist already using the zipped data dump in
   `testing_dwh.csv.zst`.
-  * `test_data.csv` is the corresponding spreadsheet that simulates a typical table configuration for the participant
-  type data above.
+    * `test_data.csv` is the corresponding spreadsheet that simulates a typical table configuration for the participant
+      type data above.
 * Our pytests have a test marked as 'integration' which is also only run as part of that workflow. To run, ensure you
   have the test credentials to access the gsheet then do:
    ```shell
@@ -348,11 +351,11 @@ service_account.json.
 act --matrix os:ubuntu-22.04 -j unittests -s GOOGLE_APPLICATION_CREDENTIALS_CONTENT="$(< ~/.config/gspread/service_account.json)"
 ```
 
-
 ## The CLI
 
 Helper tool to bootstap a new user and other operations such creating test data and validating configs. See the source
 in `src/xngin/cli/main.py` and run:
+
 ```shell
 uv run xngin-cli --help
 ```
@@ -360,23 +363,26 @@ uv run xngin-cli --help
 ## Onboarding new Clients
 
 1. Get credentials to the client's data warehouse that has at least read-only access to the schemas/datasets
-containing the table(s) of interest. Each table will be a different "participant type" the user wishes to experiment
-over, and should contain a) a unique id column, b) features to filter the partipcants with (i.e. target for experiment
-eligibility), and c) metrics to use as possible outcomes to track, and optionally d) features to stratify on.
+   containing the table(s) of interest. Each table will be a different "participant type" the user wishes to experiment
+   over, and should contain a) a unique id column, b) features to filter the partipcants with (i.e. target for
+   experiment
+   eligibility), and c) metrics to use as possible outcomes to track, and optionally d) features to stratify on.
 
 1. Generate the participant-level column metadata. This will ultimately be a google sheet the user can configure.
-   1. First bootstrap column names and types from the dwh schema. There will be one row output per column in the target
-   dwh table.  See the command `uv run xngin-cli bootstrap-spreadsheet --help`
-      1. If output as csv, import it to a new google spreadsheet that we the service provider will own.
-      1. Share it with our gsheet service account.
-   1. Share it with the client to mark which columns are filters/metrics/strata and which to use as the unique_id.
-   1. Additional table columns can be added (or removed) in the future by the user.
+    1. First bootstrap column names and types from the dwh schema. There will be one row output per column in the target
+       dwh table. See the command `uv run xngin-cli bootstrap-spreadsheet --help`
+        1. If output as csv, import it to a new google spreadsheet that we the service provider will own.
+        1. Share it with our gsheet service account.
+    1. Share it with the client to mark which columns are filters/metrics/strata and which to use as the unique_id.
+    1. Additional table columns can be added (or removed) in the future by the user.
 
 1. Generate the client's config block in `xngin.settings.json`. Give them a unique string `"id:"` that they will pass
-back to us with every API request, specify `"type: "remote"` as the general type of dwh (see `settings.py`), provide dwh
-connectivity info in `"dwh":`, and lastly create the `"participants:"` list. Each item is a Participant object with a
-`"participant_type":` identifier for use in API requests, a `"table_name"` to look up in their dwh, and the GSheets URL
-and worksheet tab name from above to find its associated column metadata.
+   back to us with every API request, specify `"type: "remote"` as the general type of dwh (see `settings.py`), provide
+   dwh
+   connectivity info in `"dwh":`, and lastly create the `"participants:"` list. Each item is a Participant object with a
+   `"participant_type":` identifier for use in API requests, a `"table_name"` to look up in their dwh, and the GSheets
+   URL
+   and worksheet tab name from above to find its associated column metadata.
 
 1. Bootstrap a set of data in the warehouse to use as a new Participant type.
 
@@ -387,7 +393,6 @@ For more examples, see the `xngin.gha.settings.json` settings used for testing.
 * Redshift - `postgresql+psycopg2://username@host:port/databasename`
 * Postgres - `postgresql+psycopg://username@host:port/databasename`
 * (experimental) BigQuery - `bigquery://some-project/some-dataset`
-
 
 ## FAQ
 
@@ -460,3 +465,18 @@ Authentication:
 #### OSX
 
 Run `brew install postgresql@14`.
+
+### Deployment on Railway
+
+The Railway deployment relies on [Dockerfile.railway](Dockerfile.railway), [railway.json](railway.json), and two
+environment variables:
+
+| Environment Variable         | Purpose                                                                               | Example                                                                                               |
+|------------------------------|---------------------------------------------------------------------------------------|-------------------------------------------------------------------------------------------------------|
+| XNGIN_SETTINGS               | URL of the settings to fetch. This may be a private repository.                       | https://api.github.com/repos/agency-fund/xngin-settings/contents/xngin.railway.settings.json?ref=main |
+| XNGIN_SETTINGS_AUTHORIZATION | The value of the "Authorization:" header sent on the request to fetch XNGIN_SETTINGS. | `token ghp_....`                                                                                      |                                                                             |
+
+In addition, there are runtime environment variables set in the Railway console corresponding to configuration values
+referenced by
+the [xngin.railway.settings.json](https://github.com/agency-fund/xngin-settings/xngin.railway.settings.json) file in the
+limited-access https://github.com/agency-fund/xngin-settings repository.
