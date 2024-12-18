@@ -147,3 +147,35 @@ def test_assign_treatment_with_missing_values(sample_data):
         participant.treatment_assignment is not None
         for participant in result.assignments
     )
+
+
+def test_assign_treatment_with_obj_columns_inferred(sample_data):
+    # Extend samples with values simulating incorrect type inference as objects.
+    n = len(sample_data)
+    sample_data = sample_data.assign(
+        object1=[2**32] * (n - 1) + [2],
+        # If not converted, causes SyntaxError due to floating point numbers
+        # converted to dummy variables with bad column names
+        object2=np.concatenate(([None] * 900, np.random.uniform(size=100))),
+        # If not converted, will cause a recursion error
+        object3=np.random.uniform(size=n),
+    ).astype({"object1": "O", "object2": "O", "object3": "O"})
+
+    result = assign_treatment(
+        data=sample_data,
+        stratum_cols=["gender", "region", "object2", "object3"],
+        id_col="id",
+        arm_names=["control", "treatment"],
+        experiment_id="b767716b-f388-4cd9-a18a-08c4916ce26f",
+        description="Test with numeric types mistakenly typed as objects",
+    )
+
+    assert result.sample_size == len(sample_data)
+    assert result.id_col == "id"
+    assert pd.isna(result.p_value) is False
+    assert pd.isna(result.f_statistic) is False
+    # Check that treatment assignments are not None or NaN
+    assert all(
+        participant.treatment_assignment is not None
+        for participant in result.assignments
+    )

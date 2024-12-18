@@ -65,6 +65,26 @@ def test_check_balance_with_single_value_columns(sample_data):
     assert result.model_summary is not None
 
 
+def test_check_balance_with_column_exclusion_from_dummy_var_generation():
+    """
+    If pd.qcut() used labels, this triggers the ValueError:
+      Bin labels must be one fewer than the number of bin edges
+    """
+    data = {
+        "treat": [0, 0, 0, 0, 0, 1, 1, 1, 1, 1],
+        "int64": [0, 1, 0, 1, 0, 1, 0, 1, 0, 1],
+        "index": [None, *range(0, 9)],
+        "sindex": [str(i) for i in range(0, 10)],
+    }
+    df = pd.DataFrame(data)
+    result = check_balance(df, exclude_cols=["index", "sindex"])
+
+    assert result.numerator_df == 1
+    assert result.denominator_df == 8
+    assert result.is_balanced is True
+    assert result.model_summary is not None
+
+
 def test_check_balance_with_skewed_column():
     """
     If pd.qcut() used labels, this triggers the ValueError:
@@ -80,4 +100,26 @@ def test_check_balance_with_skewed_column():
     assert result.f_statistic is not None
     assert result.f_pvalue is not None
     assert result.is_balanced is False
+    assert result.model_summary is not None
+
+
+def test_check_balance_with_mostly_nulls_categorical():
+    """
+    Dataset purposely design to result in predictors > # observations *if we
+    failed* to handle NAs in non-numeric columns (which otherwise would
+    induce dropped rows in the ols).
+    """
+    data = {
+        "treat": [0, 0, 0, 0, 0, 1, 1, 1, 1, 1],
+        "int64": [0, 1, 0, 1, 0, 1, 0, 1, 0, 1],
+        "float": np.random.uniform(size=10),
+        "nulls": [None] * 8 + ["a", "b"],
+    }
+    df = pd.DataFrame(data)
+    result = check_balance(df)
+
+    assert pd.isna(result.f_pvalue) is False, result.model_summary
+    assert pd.isna(result.f_statistic) is False, result.model_summary
+    assert result.denominator_df > 0
+    assert isinstance(result.is_balanced, bool)
     assert result.model_summary is not None

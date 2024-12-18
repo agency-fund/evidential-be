@@ -38,8 +38,9 @@ def assign_treatment(
     Returns:
         AssignmentResult containing assignments and balance check results
     """
-    # Create copy for analysis
-    df = data.copy()
+    # Create copy for analysis while attempting to convert any numeric "object" types that pandas didn't originally
+    # recognize when creating the dataframe.
+    df = data.infer_objects()
 
     # Assign treatments
     n_arms = len(arm_names)

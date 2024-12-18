@@ -1,7 +1,9 @@
+from dataclasses import dataclass
+
 import numpy as np
 import pandas as pd
+from pandas.api.types import is_numeric_dtype
 import statsmodels.formula.api as smf
-from dataclasses import dataclass
 
 
 @dataclass(slots=True)
@@ -21,6 +23,8 @@ def check_balance(
     treatment_col: str = "treat",
     exclude_cols: list[str] | None = None,
     alpha: float = 0.5,
+    quantiles: int = 4,
+    missing_string="__NULL__",
 ) -> BalanceResult:
     """
     Perform balance check on treatment assignment.
@@ -30,6 +34,8 @@ def check_balance(
         treatment_col: Name of treatment assignment column
         exclude_cols: List of columns to exclude from balance check
         alpha: Significance level for balance test
+        quantiles: Number of quantiles to bucket numeric columns with NAs
+        missing_string: value used internally for replacing NAs in non-numeric columns
 
     Returns:
         BalanceResult object containing test results
@@ -37,37 +43,55 @@ def check_balance(
     # Create copy of data for analysis
     df_analysis = data.copy()
 
-    if exclude_cols is None:
-        exclude_cols = []
+    exclude_cols = set() if exclude_cols is None else set(exclude_cols)
 
     # Exclude columns from the check that contain only the same value (including None).
     single_value_cols = df_analysis.columns[df_analysis.nunique(dropna=False) <= 1]
-    exclude_cols.extend(single_value_cols.to_list())
+    exclude_cols.union(single_value_cols)
 
     # Handle missing values in numeric columns by converting to quartiles
-    cols_with_missing = df_analysis.columns[df_analysis.isnull().any()].tolist()
+    cols_with_missing = df_analysis.columns[df_analysis.isnull().any()]
+    numeric_columns_with_na = [
+        c for c in cols_with_missing if is_numeric_dtype(df_analysis[c])
+    ]
+    for col in set(numeric_columns_with_na) - exclude_cols:
+        labels = pd.qcut(
+            df_analysis[col],
+            q=quantiles,
+            duplicates="drop",
+            # No labels as dropping edges will misalign labels and trigger a ValueError.
+            # Integer indicators starting at 0 will be returned instead.
+            labels=False,
+        )
+        new_col = f"{col}_quantile"
+        # Since there are NaNs, labels will be dtype=float64. To avoid bugs later due to dummy var naming, first
+        # replace NaNs with an integer beyond the number of buckets, then *convert to int*, and finally a category.
+        df_analysis[new_col] = pd.Series(
+            np.nan_to_num(labels, nan=quantiles).astype("int8"), dtype="category"
+        )
+        df_analysis = pd.get_dummies(
+            df_analysis,
+            columns=[new_col],
+            prefix=[col],
+            dummy_na=False,
+            drop_first=True,
+        )
+        df_analysis.drop(columns=[col], inplace=True)
 
-    quantiles = 4
-    for col in cols_with_missing:
-        if pd.api.types.is_numeric_dtype(df_analysis[col]):
-            labels = pd.qcut(
-                df_analysis[col],
-                q=quantiles,
-                duplicates="drop",
-                # No labels as dropping edges will misalign labels and trigger a ValueError.
-                # Integer indicators starting at 0 will be returned instead.
-                labels=False,
-            )
-            new_col = f"{col}_quartile"
-            # Since there are NaNs, labels will be dtype=float64. To avoid bugs later due to dummy var naming, first
-            # replace NaNs with an integer beyond the number of buckets, then convert to int, and finally a category.
-            df_analysis[new_col] = pd.Categorical(
-                np.nan_to_num(labels, nan=quantiles).astype("int8")
-            )
-            df_analysis = pd.get_dummies(
-                df_analysis, columns=[new_col], prefix=[col], dummy_na=False
-            )
-            df_analysis.drop(columns=[col], inplace=True)
+    # Now convert all non-numeric columns into dummy vars as well
+    non_numeric_columns = [
+        c for c in df_analysis.columns if not is_numeric_dtype(df_analysis[c])
+    ]
+    for col in set(non_numeric_columns) - exclude_cols:
+        if df_analysis[col].isnull().any():
+            df_analysis.fillna({col: missing_string}, inplace=True)
+        df_analysis = pd.get_dummies(
+            df_analysis,
+            columns=[col],
+            prefix=[col],
+            dummy_na=False,
+            drop_first=True,
+        )
 
     # Create formula excluding specified columns
     covariates = [
@@ -82,6 +106,7 @@ def check_balance(
     df_analysis = df_analysis[df_analysis[treatment_col].isin([0, 1])]
 
     formula = f"{treatment_col} ~ " + " + ".join(covariates)
+    # print(f"------FORMULA:\n\t{formula}")
 
     # Fit regression model
     model = smf.ols(formula=formula, data=df_analysis).fit()
