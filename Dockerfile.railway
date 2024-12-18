@@ -11,8 +11,8 @@ WORKDIR /code
 COPY pyproject.toml /code/
 COPY uv.lock /code/
 RUN echo Railway service ID = ${RAILWAY_SERVICE_ID}
-RUN --mount=type=cache,id=s/53dd800c-90e7-49cd-b7f6-549131ff038e-/root/.cache/uv,target=/root/.cache/uv /bin/uv sync --frozen --no-install-project
+RUN --mount=type=cache,id=s/$RAILWAY_SERVICE_ID/root/.cache/uv,target=/root/.cache/uv /bin/uv sync --frozen --no-install-project
 COPY xngin.settings.json .
 COPY ./src /code/src
-RUN --mount=type=cache,id=s/53dd800c-90e7-49cd-b7f6-549131ff038e-/root/.cache/uv,target=/root/.cache/uv /bin/uv sync --frozen
+RUN --mount=type=cache,id=s/$RAILWAY_SERVICE_ID-/root/.cache/uv,target=/root/.cache/uv /bin/uv sync --frozen
 CMD ["uv", "run", "fastapi", "run", "src/xngin/apiserver/main.py"]
