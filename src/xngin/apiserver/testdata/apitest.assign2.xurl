@@ -5,7 +5,7 @@ Config-ID: testing
  "design_spec": {
     "experiment_id": "0897bbd7-dacd-41b4-b164-7a1950fa61f2",
     "experiment_name": "Sample experiment name.",
-    "description": "Sample experiment description.",
+    "description": "Test a duplicate column name shared in strata_cols and metrics",
     "arms": [
       {
         "arm_name": "Control",
@@ -19,7 +19,9 @@ Config-ID: testing
     "start_date": "2024-11-06",
     "end_date": "2024-11-20",
     "strata_cols": [
-      "is_onboarded"
+      "is_onboarded",
+      "potential_1",
+      "current_income"
     ],
     "power": 0.8,
     "alpha": 0.05,
@@ -51,6 +53,10 @@ HTTP 200
         {
           "strata_name": "is_onboarded",
           "strata_value": "0"
+        },
+        {
+          "strata_name": "potential_1",
+          "strata_value": "10587"
         }
       ],
       "treatment_assignment": "Treatment"
@@ -65,6 +71,10 @@ HTTP 200
         {
           "strata_name": "is_onboarded",
           "strata_value": "0"
+        },
+        {
+          "strata_name": "potential_1",
+          "strata_value": "11063"
         }
       ],
       "treatment_assignment": "Control"
@@ -79,6 +89,10 @@ HTTP 200
         {
           "strata_name": "is_onboarded",
           "strata_value": "0"
+        },
+        {
+          "strata_name": "potential_1",
+          "strata_value": "12100"
         }
       ],
       "treatment_assignment": "Control"
@@ -93,6 +107,10 @@ HTTP 200
         {
           "strata_name": "is_onboarded",
           "strata_value": "1"
+        },
+        {
+          "strata_name": "potential_1",
+          "strata_value": "10553"
         }
       ],
       "treatment_assignment": "Control"
@@ -107,6 +125,10 @@ HTTP 200
         {
           "strata_name": "is_onboarded",
           "strata_value": "0"
+        },
+        {
+          "strata_name": "potential_1",
+          "strata_value": "11022"
         }
       ],
       "treatment_assignment": "Treatment"
@@ -121,6 +143,10 @@ HTTP 200
         {
           "strata_name": "is_onboarded",
           "strata_value": "0"
+        },
+        {
+          "strata_name": "potential_1",
+          "strata_value": "12108"
         }
       ],
       "treatment_assignment": "Control"
@@ -135,6 +161,10 @@ HTTP 200
         {
           "strata_name": "is_onboarded",
           "strata_value": "1"
+        },
+        {
+          "strata_name": "potential_1",
+          "strata_value": "11898"
         }
       ],
       "treatment_assignment": "Control"
@@ -149,6 +179,10 @@ HTTP 200
         {
           "strata_name": "is_onboarded",
           "strata_value": "0"
+        },
+        {
+          "strata_name": "potential_1",
+          "strata_value": "11523"
         }
       ],
       "treatment_assignment": "Treatment"
@@ -163,6 +197,10 @@ HTTP 200
         {
           "strata_name": "is_onboarded",
           "strata_value": "1"
+        },
+        {
+          "strata_name": "potential_1",
+          "strata_value": "12347"
         }
       ],
       "treatment_assignment": "Control"
@@ -177,6 +215,10 @@ HTTP 200
         {
           "strata_name": "is_onboarded",
           "strata_value": "0"
+        },
+        {
+          "strata_name": "potential_1",
+          "strata_value": "11971"
         }
       ],
       "treatment_assignment": "Treatment"
@@ -191,6 +233,10 @@ HTTP 200
         {
           "strata_name": "is_onboarded",
           "strata_value": "1"
+        },
+        {
+          "strata_name": "potential_1",
+          "strata_value": "10893"
         }
       ],
       "treatment_assignment": "Treatment"
@@ -205,6 +251,10 @@ HTTP 200
         {
           "strata_name": "is_onboarded",
           "strata_value": "1"
+        },
+        {
+          "strata_name": "potential_1",
+          "strata_value": "10567"
         }
       ],
       "treatment_assignment": "Treatment"
@@ -219,6 +269,10 @@ HTTP 200
         {
           "strata_name": "is_onboarded",
           "strata_value": "0"
+        },
+        {
+          "strata_name": "potential_1",
+          "strata_value": "11254"
         }
       ],
       "treatment_assignment": "Treatment"
@@ -233,6 +287,10 @@ HTTP 200
         {
           "strata_name": "is_onboarded",
           "strata_value": "0"
+        },
+        {
+          "strata_name": "potential_1",
+          "strata_value": "9940"
         }
       ],
       "treatment_assignment": "Treatment"
@@ -247,6 +305,10 @@ HTTP 200
         {
           "strata_name": "is_onboarded",
           "strata_value": "0"
+        },
+        {
+          "strata_name": "potential_1",
+          "strata_value": "11604"
         }
       ],
       "treatment_assignment": "Control"
@@ -261,6 +323,10 @@ HTTP 200
         {
           "strata_name": "is_onboarded",
           "strata_value": "1"
+        },
+        {
+          "strata_name": "potential_1",
+          "strata_value": "11823"
         }
       ],
       "treatment_assignment": "Control"
@@ -275,6 +341,10 @@ HTTP 200
         {
           "strata_name": "is_onboarded",
           "strata_value": "0"
+        },
+        {
+          "strata_name": "potential_1",
+          "strata_value": "12155"
         }
       ],
       "treatment_assignment": "Control"
@@ -289,6 +359,10 @@ HTTP 200
         {
           "strata_name": "is_onboarded",
           "strata_value": "0"
+        },
+        {
+          "strata_name": "potential_1",
+          "strata_value": "12463"
         }
       ],
       "treatment_assignment": "Control"
@@ -303,6 +377,10 @@ HTTP 200
         {
           "strata_name": "is_onboarded",
           "strata_value": "0"
+        },
+        {
+          "strata_name": "potential_1",
+          "strata_value": "11081"
         }
       ],
       "treatment_assignment": "Control"
@@ -317,6 +395,10 @@ HTTP 200
         {
           "strata_name": "is_onboarded",
           "strata_value": "1"
+        },
+        {
+          "strata_name": "potential_1",
+          "strata_value": "10241"
         }
       ],
       "treatment_assignment": "Control"
@@ -331,6 +413,10 @@ HTTP 200
         {
           "strata_name": "is_onboarded",
           "strata_value": "0"
+        },
+        {
+          "strata_name": "potential_1",
+          "strata_value": "11847"
         }
       ],
       "treatment_assignment": "Control"
@@ -345,6 +431,10 @@ HTTP 200
         {
           "strata_name": "is_onboarded",
           "strata_value": "0"
+        },
+        {
+          "strata_name": "potential_1",
+          "strata_value": "12137"
         }
       ],
       "treatment_assignment": "Treatment"
@@ -359,6 +449,10 @@ HTTP 200
         {
           "strata_name": "is_onboarded",
           "strata_value": "0"
+        },
+        {
+          "strata_name": "potential_1",
+          "strata_value": "11348"
         }
       ],
       "treatment_assignment": "Treatment"
@@ -373,6 +467,10 @@ HTTP 200
         {
           "strata_name": "is_onboarded",
           "strata_value": "0"
+        },
+        {
+          "strata_name": "potential_1",
+          "strata_value": "10270"
         }
       ],
       "treatment_assignment": "Treatment"
@@ -387,6 +485,10 @@ HTTP 200
         {
           "strata_name": "is_onboarded",
           "strata_value": "1"
+        },
+        {
+          "strata_name": "potential_1",
+          "strata_value": "11893"
         }
       ],
       "treatment_assignment": "Control"
@@ -401,6 +503,10 @@ HTTP 200
         {
           "strata_name": "is_onboarded",
           "strata_value": "1"
+        },
+        {
+          "strata_name": "potential_1",
+          "strata_value": "10873"
         }
       ],
       "treatment_assignment": "Treatment"
@@ -415,6 +521,10 @@ HTTP 200
         {
           "strata_name": "is_onboarded",
           "strata_value": "0"
+        },
+        {
+          "strata_name": "potential_1",
+          "strata_value": "11744"
         }
       ],
       "treatment_assignment": "Treatment"
@@ -429,6 +539,10 @@ HTTP 200
         {
           "strata_name": "is_onboarded",
           "strata_value": "0"
+        },
+        {
+          "strata_name": "potential_1",
+          "strata_value": "11860"
         }
       ],
       "treatment_assignment": "Treatment"
@@ -443,6 +557,10 @@ HTTP 200
         {
           "strata_name": "is_onboarded",
           "strata_value": "0"
+        },
+        {
+          "strata_name": "potential_1",
+          "strata_value": "10937"
         }
       ],
       "treatment_assignment": "Treatment"
@@ -457,6 +575,10 @@ HTTP 200
         {
           "strata_name": "is_onboarded",
           "strata_value": "0"
+        },
+        {
+          "strata_name": "potential_1",
+          "strata_value": "11123"
         }
       ],
       "treatment_assignment": "Control"
@@ -471,6 +593,10 @@ HTTP 200
         {
           "strata_name": "is_onboarded",
           "strata_value": "0"
+        },
+        {
+          "strata_name": "potential_1",
+          "strata_value": "11755"
         }
       ],
       "treatment_assignment": "Control"
@@ -485,6 +611,10 @@ HTTP 200
         {
           "strata_name": "is_onboarded",
           "strata_value": "0"
+        },
+        {
+          "strata_name": "potential_1",
+          "strata_value": "12145"
         }
       ],
       "treatment_assignment": "Treatment"
@@ -499,6 +629,10 @@ HTTP 200
         {
           "strata_name": "is_onboarded",
           "strata_value": "0"
+        },
+        {
+          "strata_name": "potential_1",
+          "strata_value": "11582"
         }
       ],
       "treatment_assignment": "Treatment"
@@ -513,6 +647,10 @@ HTTP 200
         {
           "strata_name": "is_onboarded",
           "strata_value": "0"
+        },
+        {
+          "strata_name": "potential_1",
+          "strata_value": "10229"
         }
       ],
       "treatment_assignment": "Treatment"
@@ -527,6 +665,10 @@ HTTP 200
         {
           "strata_name": "is_onboarded",
           "strata_value": "0"
+        },
+        {
+          "strata_name": "potential_1",
+          "strata_value": "12568"
         }
       ],
       "treatment_assignment": "Control"
@@ -541,6 +683,10 @@ HTTP 200
         {
           "strata_name": "is_onboarded",
           "strata_value": "0"
+        },
+        {
+          "strata_name": "potential_1",
+          "strata_value": "12686"
         }
       ],
       "treatment_assignment": "Treatment"
@@ -555,6 +701,10 @@ HTTP 200
         {
           "strata_name": "is_onboarded",
           "strata_value": "0"
+        },
+        {
+          "strata_name": "potential_1",
+          "strata_value": "12235"
         }
       ],
       "treatment_assignment": "Control"
@@ -569,6 +719,10 @@ HTTP 200
         {
           "strata_name": "is_onboarded",
           "strata_value": "0"
+        },
+        {
+          "strata_name": "potential_1",
+          "strata_value": "11477"
         }
       ],
       "treatment_assignment": "Control"
@@ -583,6 +737,10 @@ HTTP 200
         {
           "strata_name": "is_onboarded",
           "strata_value": "0"
+        },
+        {
+          "strata_name": "potential_1",
+          "strata_value": "13021"
         }
       ],
       "treatment_assignment": "Treatment"
@@ -597,19 +755,23 @@ HTTP 200
         {
           "strata_name": "is_onboarded",
           "strata_value": "1"
+        },
+        {
+          "strata_name": "potential_1",
+          "strata_value": "12314"
         }
       ],
       "treatment_assignment": "Control"
     }
   ],
   "balance_ok": false,
-  "denominator_df": 37,
-  "description": "Sample experiment description.",
+  "denominator_df": 36,
+  "description": "Test a duplicate column name shared in strata_cols and metrics",
   "experiment_id": "0897bbd7-dacd-41b4-b164-7a1950fa61f2",
-  "f_statistic": 2.794349008,
+  "f_statistic": 2.180416775,
   "id_col": "id",
-  "numerator_df": 2,
-  "p_value": 0.074094534,
+  "numerator_df": 3,
+  "p_value": 0.107230543,
   "sample_size": 40
 }
 ```
