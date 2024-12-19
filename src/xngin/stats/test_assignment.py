@@ -156,7 +156,7 @@ def test_assign_treatment_with_obj_columns_inferred(sample_data):
         object1=[2**32] * (n - 1) + [2],
         # If not converted, causes SyntaxError due to floating point numbers
         # converted to dummy variables with bad column names
-        object2=np.concatenate(([None] * 900, np.random.uniform(size=100))),
+        object2=np.concatenate(([None] * (n - 100), np.random.uniform(size=100))),
         # If not converted, will cause a recursion error
         object3=np.random.uniform(size=n),
     ).astype({"object1": "O", "object2": "O", "object3": "O"})
@@ -179,3 +179,35 @@ def test_assign_treatment_with_obj_columns_inferred(sample_data):
         participant.treatment_assignment is not None
         for participant in result.assignments
     )
+
+
+def test_assign_treatment_with_integers_as_floats_for_unique_id(sample_data):
+    def assign(data):
+        return assign_treatment(
+            data=data,
+            stratum_cols=["gender", "region"],
+            id_col="id",
+            arm_names=["control", "treatment"],
+            experiment_id="b767716b-f388-4cd9-a18a-08c4916ce26f",
+            description="Test integers_as_floats_for_unique_id",
+            random_state=42,
+        )
+
+    # When it's a float that can be converted to an int, we're still ok
+    sample_data["id"] = sample_data["id"].apply(float)
+    result = assign(sample_data)
+    assert result.f_statistic == pytest.approx(0.006156735)
+    assert result.p_value == pytest.approx(0.99992466)
+    json = result.model_dump()
+    assert json["assignments"][0]["participant_id"] == "0"
+    assert json["assignments"][1]["participant_id"] == "1"
+
+    # But if it's too large we raise an exception
+    with pytest.raises(ValueError):
+        sample_data.loc[0, "id"] = float(2**53) + 2.0
+        result = assign(sample_data)
+
+    # Similarly if it's negative, raise an exception
+    with pytest.raises(ValueError):
+        sample_data.loc[0, "id"] = -1.0
+        result = assign(sample_data)
