@@ -5,12 +5,16 @@ from typing import Any, Literal, Self
 import uuid
 
 import httpx
-from pydantic import BaseModel, Field, field_serializer, model_validator
+from pydantic import BaseModel, Field, field_serializer, model_validator, ConfigDict
 
 from xngin.apiserver.api_types import DesignSpec, AudienceSpec, ExperimentAssignment
 
 
-class WebhookResponse(BaseModel):
+class WebhookBaseModel(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+
+class WebhookResponse(WebhookBaseModel):
     """Generic wrapper around upstream webhook responses."""
 
     status_code: int = Field(
@@ -38,7 +42,7 @@ STANDARD_WEBHOOK_RESPONSES: dict[int, dict[str, Any]] = {
 }
 
 
-class WebhookRequestCommit(BaseModel):
+class WebhookRequestCommit(WebhookBaseModel):
     """Data model for experiment commit webhook payload."""
 
     experiment_commit_datetime: datetime = Field(
@@ -60,7 +64,7 @@ class WebhookRequestCommit(BaseModel):
         return dt.isoformat()
 
 
-class WebhookRequestUpdateTimestamps(BaseModel):
+class WebhookRequestUpdateTimestamps(WebhookBaseModel):
     """Describes how to update an experiment's start and/or end dates."""
 
     experiment_id: uuid.UUID = Field(description="ID of the experiment to update.")
@@ -84,7 +88,7 @@ class WebhookRequestUpdateTimestamps(BaseModel):
         return dt.isoformat()
 
 
-class ExperimentArm(BaseModel):
+class ArmUpdate(WebhookBaseModel):
     arm_name: str = Field(
         description="New experiment arm name to be updated.", min_length=1
     )
@@ -93,26 +97,26 @@ class ExperimentArm(BaseModel):
     )
 
 
-class WebhookRequestUpdateDescriptions(BaseModel):
+class WebhookRequestUpdateDescriptions(WebhookBaseModel):
     """Describes how to update an experiment description and/or the names of its arms."""
 
     experiment_id: uuid.UUID = Field(description="ID of the experiment to update.")
     experiment_name: str = Field(description="New experiment name.", min_length=1)
     description: str = Field(description="New experiment description.", min_length=1)
-    arms: list[ExperimentArm] = Field(
+    arms: list[ArmUpdate] = Field(
         description="All arms as saved in the original DesignSpec must be present here, even if "
         "you don't intend to change the arm_name"
     )
 
 
-class WebhookRequestUpdate(BaseModel):
+class WebhookRequestUpdate(WebhookBaseModel):
     """Request structure for supported types of experiment updates."""
 
     update_json: WebhookRequestUpdateTimestamps | WebhookRequestUpdateDescriptions
 
 
 # TODO: as part of potential API endpoint revisions
-class UpdateExperimentStartEndRequest(BaseModel):
+class UpdateExperimentStartEndRequest(WebhookBaseModel):
     """WIP to alternate interface to updating an experiment"""
 
     update_type: Literal["timestamps"]
@@ -121,7 +125,7 @@ class UpdateExperimentStartEndRequest(BaseModel):
 
 
 # TODO: as part of potential API endpoint revisions
-class UpdateExperimentDescriptionsRequest(BaseModel):
+class UpdateExperimentDescriptionsRequest(WebhookBaseModel):
     """WIP to alternate interface to updating an experiment name & description."""
 
     update_type: Literal["description"]
