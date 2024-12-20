@@ -204,10 +204,10 @@ def test_assign_treatment_with_integers_as_floats_for_unique_id(sample_data):
 
     # But if it's too large we raise an exception
     with pytest.raises(ValueError):
-        sample_data.loc[0, "id"] = float(2**53) + 2.0
+        sample_data.loc[0, "id"] = float(1 << 53)
         result = assign(sample_data)
 
     # Similarly if it's negative, raise an exception
     with pytest.raises(ValueError):
-        sample_data.loc[0, "id"] = -1.0
+        sample_data.loc[0, "id"] = float(-1 << 53)
         result = assign(sample_data)

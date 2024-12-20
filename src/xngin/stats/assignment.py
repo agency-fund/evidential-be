@@ -12,7 +12,7 @@ from xngin.apiserver.api_types import (
 from xngin.stats.balance import check_balance
 
 
-LARGEST_SEQUENTIAL_INT_IN_FLOAT64 = 2**53
+MAX_SAFE_INTEGER = (1 << 53) - 1
 
 
 def assign_treatment(
@@ -49,7 +49,8 @@ def assign_treatment(
     # then the data in the data frame would be problematic to begin with and we should instead try using
     # https://pandas.pydata.org/docs/user_guide/pyarrow.html's pa.decimal128 and not convert to float in settings.py.
     if is_float_dtype(df[id_col].dtype):
-        if df[id_col].max() > LARGEST_SEQUENTIAL_INT_IN_FLOAT64 or df[id_col].min() < 0:
+        min_, max_ = df[id_col].aggregate(["min", "max"])
+        if min_ < -MAX_SAFE_INTEGER or max_ > MAX_SAFE_INTEGER:
             raise ValueError(f"Cannot safely convert '{id_col}' from float to Int64")
         df[id_col] = df[id_col].astype("Int64")
 
