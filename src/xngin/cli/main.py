@@ -52,11 +52,15 @@ logging.basicConfig(
 )
 
 
-def infer_config_from_schema(dsn: str, table: str, use_reflection: bool):
+def infer_config_from_schema(
+    dsn: str, table: str, use_reflection: bool, unique_id_col: str | None = None
+):
     """Infers a configuration from a SQLAlchemy schema.
 
     :param dsn The SQLAlchemy-compatible DSN.
     :param table The name of the table to inspect.
+    :param use_reflection True if you want to use SQLAlchemy's reflection, else infer from cursor.
+    :param unique_id_col The column name in the table to use as a participant's unique identifier.
     """
     try:
         dwh = settings.infer_table(
@@ -67,7 +71,7 @@ def infer_config_from_schema(dsn: str, table: str, use_reflection: bool):
     except CannotFindTableError as cfte:
         err_console.print(cfte.message)
         raise typer.Exit(1) from cfte
-    return create_configworksheet_from_table(dwh)
+    return create_configworksheet_from_table(dwh, unique_id_col=unique_id_col)
 
 
 def csv_to_ddl(
@@ -301,6 +305,13 @@ def bootstrap_spreadsheet(
             "used as the worksheet name, unless overridden by --participant-type.",
         ),
     ],
+    unique_id_col: Annotated[
+        str | None,
+        typer.Option(
+            help="Specify the column name within table_name to use as the unique identifier for each participant. If "
+            "None, will attempt to infer a reasonable column from the schema or raise an error."
+        ),
+    ] = None,
     create_gsheet: Annotated[
         bool,
         typer.Option(
@@ -333,7 +344,7 @@ def bootstrap_spreadsheet(
 
     Use this to get a customer started on configuring an experiment.
     """
-    config = infer_config_from_schema(dsn, table_name, use_reflection)
+    config = infer_config_from_schema(dsn, table_name, use_reflection, unique_id_col)
 
     # Exclude the `extra` field.
     column_names = [c for c in ColumnDescriptor.model_fields if c != "extra"]
