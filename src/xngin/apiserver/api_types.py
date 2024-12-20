@@ -289,7 +289,7 @@ class DesignSpecMetric(BaseModel):
     available_n: int | None = None
 
 
-class ExperimentArm(BaseModel):
+class Arm(BaseModel):
     arm_id: (
         uuid.UUID
     )  # generally should not let users set this, auto-generated uuid by default
@@ -308,7 +308,7 @@ class DesignSpec(BaseModel):
     end_date: datetime
 
     # arms (at least two)
-    arms: list[ExperimentArm]
+    arms: list[Arm]
 
     # strata as strings
     # TODO(roboton): rename as strata_names?
