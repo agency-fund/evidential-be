@@ -1,6 +1,8 @@
 # Defines a production runtime environment for the service hosted on Railway.
 # This is not for development uses.
 FROM python:3.12
+ARG RAILWAY_GIT_COMMIT_SHA
+ENV SENTRY_RELEASE=${RAILWAY_GIT_COMMIT_SHA}
 ENV PYTHONUNBUFFERED=1
 ENV UV_COMPILE_BYTECODE=1
 ENV UV_PYTHON_DOWNLOADS=0
