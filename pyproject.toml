@@ -45,6 +45,9 @@ addopts = "-m 'not integration and not nondeterministic'"
 filterwarnings = [  # format is: action:message:category:module
     "ignore:`example` has been deprecated:DeprecationWarning:xngin.apiserver.dependencies",
 ]
+env = [
+    "SENTRY_DSX="  # Disable Sentry in unit tests.
+]
 
 [tool.ruff]
 preview = true
@@ -87,6 +90,7 @@ dev-dependencies = [
     "types-psycopg2>=2.9.10,<3",
     "mypy>=1.13.0",
     "pandas-stubs>=2.2.3.241126",
+    "pytest-env>=1.1.5,<1.2",
 ]
 environments = [
     "sys_platform == 'darwin'",
