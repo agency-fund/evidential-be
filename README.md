@@ -468,15 +468,16 @@ Run `brew install postgresql@14`.
 
 ### Deployment on Railway
 
-The Railway deployment relies on [Dockerfile.railway](Dockerfile.railway), [railway.json](railway.json), and two
+The Railway deployment relies on [Dockerfile.railway](Dockerfile.railway), [railway.json](railway.json), and some
 environment variables:
 
-| Environment Variable         | Purpose                                                                               | Example                                                                                               |
-|------------------------------|---------------------------------------------------------------------------------------|-------------------------------------------------------------------------------------------------------|
-| XNGIN_SETTINGS               | URL of the settings to fetch. This may be a private repository.                       | https://api.github.com/repos/agency-fund/xngin-settings/contents/xngin.railway.settings.json?ref=main |
-| XNGIN_SETTINGS_AUTHORIZATION | The value of the "Authorization:" header sent on the request to fetch XNGIN_SETTINGS. | `token ghp_....`                                                                                      |                                                                             |
+| Environment Variable         | Purpose                                                                                                                                                                                                    | Example                                                                                               |
+|------------------------------|------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|-------------------------------------------------------------------------------------------------------|
+| XNGIN_SETTINGS               | URL of the settings to fetch. This may be a private repository.                                                                                                                                            | https://api.github.com/repos/agency-fund/xngin-settings/contents/xngin.railway.settings.json?ref=main |
+| XNGIN_SETTINGS_AUTHORIZATION | The value of the "Authorization:" header sent on the request to fetch XNGIN_SETTINGS. For GitHub URLs, this token requires read access to the content of the repository and must be prefixed with `token`. | `token ghp_....`                                                                                      |                                                                             |
+| SENTRY_DSN                   | The Sentry ingestion endpoint. If unset, Sentry will not be configured for this instance. For TAF instances, see https://agency-fund.sentry.io/settings/projects/xngin/keys/.                              | https://...@...ingest.us.sentry.io/...                                                                |
+| ENVIRONMENT                  | Declares an "environment" label for the runtime environment. Used by Sentry.                                                                                                                               | xngin-main.railway.app                                                                                |
 
-In addition, there are runtime environment variables set in the Railway console corresponding to configuration values
-referenced by
+In addition, there are variables set in the Railway console corresponding to configuration values referenced by
 the [xngin.railway.settings.json](https://github.com/agency-fund/xngin-settings/xngin.railway.settings.json) file in the
 limited-access https://github.com/agency-fund/xngin-settings repository.

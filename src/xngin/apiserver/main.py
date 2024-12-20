@@ -56,6 +56,18 @@ from xngin.apiserver.webhook_types import (
     WebhookResponse,
 )
 
+if sentry_dsn := os.environ.get("SENTRY_DSN"):
+    import sentry_sdk
+
+    sentry_sdk.init(
+        dsn=sentry_dsn,
+        environment=os.environ.get("ENVIRONMENT", "local"),
+        traces_sample_rate=1.0,
+        _experiments={
+            "continuous_profiling_auto_start": True,
+        },
+    )
+
 
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
@@ -71,6 +83,13 @@ logging.basicConfig(
     level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
 )
 logger = logging.getLogger(__name__)
+
+# TODO: remove this after verifying Sentry works.
+if os.environ.get("SENTRY_DSN", ""):
+
+    @app.get("/_sentry-debug")
+    async def trigger_error():
+        division_by_zero = 1 / 0  # noqa: F841
 
 
 class CommonQueryParams:
