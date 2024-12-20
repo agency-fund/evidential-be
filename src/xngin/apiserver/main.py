@@ -84,13 +84,6 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# TODO: remove this after verifying Sentry works.
-if os.environ.get("SENTRY_DSN", ""):
-
-    @app.get("/_sentry-debug")
-    async def trigger_error():
-        division_by_zero = 1 / 0  # noqa: F841
-
 
 class CommonQueryParams:
     """Describes query parameters common to the /strata, /filters, and /metrics APIs."""
