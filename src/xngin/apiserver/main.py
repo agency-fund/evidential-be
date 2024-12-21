@@ -319,7 +319,9 @@ def check_power_api(
 )
 def assign_treatment_api(
     body: AssignRequest,
-    chosen_n: Annotated[int, Query(..., description="# of participants to assign.")],
+    chosen_n: Annotated[
+        int, Query(..., description="Number of participants to assign.")
+    ],
     gsheets: Annotated[GSheetCache, Depends(gsheet_cache)],
     client: Annotated[ClientConfig | None, Depends(config_dependency)] = None,
     refresh: Annotated[bool, Query(description="Refresh the cache.")] = False,
