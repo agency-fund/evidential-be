@@ -11,6 +11,7 @@ from pydantic import (
     model_validator,
     field_validator,
     field_serializer,
+    ConfigDict,
 )
 
 EXPERIMENT_IDS_SUFFIX = "experiment_ids"
@@ -31,7 +32,7 @@ EXPERIMENT_IDS_SUFFIX = "experiment_ids"
 #    statistical power for each metric in the DesignSpec, along with the statistical
 #    parameters. This occurs as follows for each metric:
 #   a. If there is no baseline value (and std dev for numeric metrics), go to the
-#      database to fetch these values.
+#      data source to fetch these values.
 #   b. Use the declared metric_target or compute this target based on
 #      metric_pct_change and the baseline value.
 #   c. Use the number of arms, metric baseline and target, statistical parameters
@@ -46,11 +47,14 @@ EXPERIMENT_IDS_SUFFIX = "experiment_ids"
 #    and strata values.
 # 3. Analysis - TBD
 
-# Audience Specification (input)
+
+class ApiBaseModel(BaseModel):
+    model_config = ConfigDict(extra="forbid")
 
 
-## Filters
 class DataType(enum.StrEnum):
+    """Defines the supported data types for columns in the data source."""
+
     BOOLEAN = "boolean"
     CHARACTER_VARYING = "character varying"
     DATE = "date"
@@ -62,7 +66,7 @@ class DataType(enum.StrEnum):
 
     @classmethod
     def match(cls, value):
-        """Attempt to infer the appropriate DataType for a value.
+        """Maps a Python or SQLAlchemy type or value's type to the corresponding DataType.
 
         Value may be a Python type or a SQLAlchemy type.
         """
@@ -121,24 +125,25 @@ class DataTypeClass(enum.StrEnum):
     UNKNOWN = "unknown"
 
     def valid_relations(self):
+        """Gets the valid relation operators for this data type class."""
         match self:
             case DataTypeClass.DISCRETE:
                 return [Relation.INCLUDES, Relation.EXCLUDES]
             case DataTypeClass.NUMERIC:
                 return [Relation.BETWEEN]
-        raise ValueError(f"{self} has no valid defined relations..")
+        raise ValueError(f"{self} has no valid defined relations.")
 
 
 class Relation(enum.StrEnum):
-    """Relation defines the operator to apply in this filter.
+    """Defines operators for filtering values.
 
-    INCLUDES matches when the database value matches any of the provided values. For CSV fields
+    INCLUDES matches when the value matches any of the provided values. For CSV fields
     (i.e. experiment_ids), any value in the CSV that matches the provided values will match.
 
-    EXCLUDES matches when the database value does not match any of the provided values. For CSV fields
-    (i.e. experiment_ids), the match will fail if any of the provided values are present in the database value.
+    EXCLUDES matches when the value does not match any of the provided values. For CSV fields
+    (i.e. experiment_ids), the match will fail if any of the provided values are present in the value.
 
-    BETWEEN matches when the database value is between the two provided values. Not allowed for CSV fields.
+    BETWEEN matches when the value is between the two provided values. Not allowed for CSV fields.
     """
 
     INCLUDES = "includes"
@@ -146,8 +151,8 @@ class Relation(enum.StrEnum):
     BETWEEN = "between"
 
 
-class AudienceSpecFilter(BaseModel):
-    """Defines a filter on the rows in the database.
+class AudienceSpecFilter(ApiBaseModel):
+    """Defines criteria for filtering rows by value.
 
     ## Examples
 
@@ -240,28 +245,22 @@ class AudienceSpecFilter(BaseModel):
         return self
 
 
-class AudienceSpec(BaseModel):
-    """Audience specification.
-
-    Determines the set of participants targeted for an experiment using filters
-    based on the experiment participant_type.
-    """
+class AudienceSpec(ApiBaseModel):
+    """Defines target participants for an experiment using filters."""
 
     participant_type: str
     filters: list[AudienceSpecFilter]
 
 
-# Design Specification (input)
-
-
-## Metric Specs
 class MetricType(enum.StrEnum):
+    """Classifies metrics by their value type."""
+
     BINARY = "binary"
     NUMERIC = "numeric"
 
     @classmethod
     def from_python_type(cls, python_type: type) -> "MetricType":
-        """Given a Python type, return an appropriate MetricType."""
+        """Maps Python types to metric types."""
 
         if python_type in (int, float):
             return MetricType.NUMERIC
@@ -270,7 +269,9 @@ class MetricType(enum.StrEnum):
         raise ValueError(f"Unsupported type: {python_type}")
 
 
-class DesignSpecMetric(BaseModel):
+class DesignSpecMetric(ApiBaseModel):
+    """Defines a metric to measure in the experiment."""
+
     metric_name: str
     # TODO(roboton): metric_type should be inferred by name from db when missing
     metric_type: MetricType | None = None
@@ -289,18 +290,18 @@ class DesignSpecMetric(BaseModel):
     available_n: int | None = None
 
 
-class Arm(BaseModel):
-    arm_id: (
-        uuid.UUID
-    )  # generally should not let users set this, auto-generated uuid by default
+class Arm(ApiBaseModel):
+    """Describes an experiment treatment arm."""
+
+    # generally should not let users set this, auto-generated uuid by default
+    arm_id: uuid.UUID
     arm_name: str
     arm_description: str | None = None
 
 
-class DesignSpec(BaseModel):
-    """Design specification."""
+class DesignSpec(ApiBaseModel):
+    """Describes the experiment design parameters."""
 
-    # experiment meta
     experiment_id: uuid.UUID
     experiment_name: str
     description: str
@@ -356,18 +357,22 @@ type PowerAnalysis = list[MetricAnalysis]
 
 
 class MetricAnalysisMessageType(enum.StrEnum):
+    """Classifies metric analysis results."""
+
     SUFFICIENT = "sufficient"
     INSUFFICIENT = "insufficient"
 
 
-class MetricAnalysisMessage(BaseModel):
+class MetricAnalysisMessage(ApiBaseModel):
+    """Describes interpretation of analysis results."""
+
     type: MetricAnalysisMessageType
     msg: str
     values: dict[str, float | int] | None = None
 
 
-class MetricAnalysis(BaseModel):
-    """Analysis results for a single metric."""
+class MetricAnalysis(ApiBaseModel):
+    """Describes analysis results of a single metric."""
 
     metric_spec: DesignSpecMetric
     available_n: int
@@ -380,18 +385,16 @@ class MetricAnalysis(BaseModel):
     msg: MetricAnalysisMessage | None = None
 
 
-# Experiment Assignment (output)
-
-
-## Strata
 class StrataType(enum.StrEnum):
+    """Classifies strata by their value type."""
+
     BINARY = "binary"
     NUMERIC = "numeric"
     CATEGORICAL = "categorical"
 
     @classmethod
     def from_python_type(cls, python_type: type):
-        """Given a Python type, return an appropriate StrataType."""
+        """ "Maps Python types to strata types."""
 
         if python_type in (int, float):
             return StrataType.NUMERIC
@@ -403,7 +406,9 @@ class StrataType(enum.StrEnum):
         raise ValueError(f"Unsupported type: {python_type}")
 
 
-class ExperimentStrata(BaseModel):
+class ExperimentStrata(ApiBaseModel):
+    """Describes stratification for an experiment participant."""
+
     strata_name: str
     # TODO(roboton): Add in strata type, update tests to reflect this field, should be derived
     # from data warehouse.
@@ -411,14 +416,18 @@ class ExperimentStrata(BaseModel):
     strata_value: str | None = None
 
 
-class ExperimentParticipant(BaseModel):
+class ExperimentParticipant(ApiBaseModel):
+    """Describes treatment assignment for an experiment participant."""
+
     # this references the column marked is_unique_id == TRUE in the configuration spreadsheet
     participant_id: str
     treatment_assignment: str
     strata: list[ExperimentStrata]
 
 
-class BalanceCheck(BaseModel):
+class BalanceCheck(ApiBaseModel):
+    """Describes balance test results for treatment assignment."""
+
     f_stat: float
     numerator_df: int
     denominator_df: int
@@ -426,8 +435,8 @@ class BalanceCheck(BaseModel):
     balance_ok: bool
 
 
-class ExperimentAssignment(BaseModel):
-    """Experiment assignment details including balance statistics and group assignments."""
+class ExperimentAssignment(ApiBaseModel):
+    """Describes assignments for all participants and balance test results."""
 
     # TODO(roboton): remove next 5 fields in favor of BalanceCheck object
     f_statistic: float
@@ -445,7 +454,9 @@ class ExperimentAssignment(BaseModel):
     assignments: list[ExperimentParticipant]
 
 
-class GetStrataResponseElement(BaseModel):
+class GetStrataResponseElement(ApiBaseModel):
+    """Describes a stratification variable."""
+
     data_type: DataType
     column_name: str
     description: str
@@ -454,7 +465,7 @@ class GetStrataResponseElement(BaseModel):
     extra: dict[str, str] | None = None
 
 
-class GetFiltersResponseBase(BaseModel):
+class GetFiltersResponseBase(ApiBaseModel):
     # TODO: Can we rename this to column_name for consistency with GetStrataResponseElement?
     filter_name: str = Field(..., description="Name of the column.")
     data_type: DataType
@@ -463,27 +474,33 @@ class GetFiltersResponseBase(BaseModel):
 
 
 class GetFiltersResponseNumeric(GetFiltersResponseBase):
+    """Describes a numeric filter variable."""
+
     min: float | int | None = Field(
         ...,
-        description="If the type of the column is numeric, this will contain the minimum observed value.",
+        description="The minimum observed value.",
     )
     max: float | int | None = Field(
         ...,
-        description="If the type of the column is numeric, this will contain the maximum observed value.",
+        description="The maximum observed value.",
     )
 
 
 class GetFiltersResponseDiscrete(GetFiltersResponseBase):
+    """Describes a discrete filter variable."""
+
     distinct_values: list[str] | None = Field(
         ...,
-        description="If the type of the column is non-numeric, contains sorted list of unique values.",
+        description="Sorted list of unique values.",
     )
 
 
 type GetFiltersResponseElement = GetFiltersResponseNumeric | GetFiltersResponseDiscrete
 
 
-class GetMetricsResponseElement(BaseModel):
+class GetMetricsResponseElement(ApiBaseModel):
+    """Describes a metric."""
+
     column_name: str
     data_type: DataType
     description: str
