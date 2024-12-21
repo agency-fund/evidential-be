@@ -511,7 +511,6 @@ type GetStrataResponse = list[GetStrataResponseElement]
 class AssignRequest(ApiBaseModel):
     design_spec: DesignSpec
     audience_spec: AudienceSpec
-    chosen_n: int
 
 
 class CommitRequest(ApiBaseModel):

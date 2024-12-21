@@ -319,6 +319,7 @@ def check_power_api(
 )
 def assign_treatment_api(
     body: AssignRequest,
+    chosen_n: Annotated[int, Query(..., description="# of participants to assign.")],
     gsheets: Annotated[GSheetCache, Depends(gsheet_cache)],
     client: Annotated[ClientConfig | None, Depends(config_dependency)] = None,
     refresh: Annotated[bool, Query(description="Refresh the cache.")] = False,
@@ -326,13 +327,8 @@ def assign_treatment_api(
         int | None, Query(description="Specify a random seed for reproducibility.")
     ] = None,
 ) -> Assignments:
-    audience_spec, design_spec, chosen_n = (
-        body.audience_spec,
-        body.design_spec,
-        body.chosen_n,
-    )
     config = require_config(client)
-    participant = config.find_participants(audience_spec.participant_type)
+    participant = config.find_participants(body.audience_spec.participant_type)
     config_sheet = fetch_worksheet(
         CommonQueryParams(
             participant_type=participant.participant_type, refresh=refresh
@@ -347,18 +343,18 @@ def assign_treatment_api(
             session.get_bind(), participant.table_name, config.supports_reflection()
         )
         participants = query_for_participants(
-            session, sa_table, audience_spec, chosen_n
+            session, sa_table, body.audience_spec, chosen_n
         )
 
-    arm_names = [arm.arm_name for arm in design_spec.arms]
+    arm_names = [arm.arm_name for arm in body.design_spec.arms]
     return assign_treatment(
         data=DataFrame(participants),
-        stratum_cols=design_spec.strata_cols,
+        stratum_cols=body.design_spec.strata_cols,
         id_col=unique_id_col,
         arm_names=arm_names,
-        experiment_id=str(design_spec.experiment_id),
-        description=design_spec.description,
-        fstat_thresh=design_spec.fstat_thresh,
+        experiment_id=str(body.design_spec.experiment_id),
+        description=body.design_spec.description,
+        fstat_thresh=body.design_spec.fstat_thresh,
         random_state=random_state,
     )
 
