@@ -100,6 +100,10 @@ jobs:
 
           # import/export lifecycle
           uv run xngin-cli create-testing-dwh --dsn sqlite:///smoke.db --table-name=test_participant_type
+          # First bootstrap just tests --unique-id-col (although the column itself isn't unique)
+          uv run xngin-cli bootstrap-spreadsheet sqlite:///smoke.db test_participant_type --unique-id-col potential_1 | tee config-unique.csv
+          uv run xngin-cli parse-config-spreadsheet file://./config-unique.csv test_participant_type
+          # This next bootstrap is a more appropriate testing config
           uv run xngin-cli bootstrap-spreadsheet sqlite:///smoke.db test_participant_type | tee config.csv
           uv run xngin-cli parse-config-spreadsheet file://./config.csv test_participant_type
 
