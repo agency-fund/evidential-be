@@ -5,9 +5,9 @@ from pandas.api.types import is_float_dtype
 import numpy as np
 from stochatreat import stochatreat
 from xngin.apiserver.api_types import (
-    ExperimentAssignment,
-    ExperimentParticipant,
-    ExperimentStrata,
+    Assignments,
+    Assignment,
+    Strata,
 )
 from xngin.stats.balance import check_balance
 
@@ -24,7 +24,7 @@ def assign_treatment(
     description: str,
     fstat_thresh: float = 0.5,
     random_state: int | None = None,
-) -> ExperimentAssignment:
+) -> Assignments:
     """
     Perform stratified random assignment and balance checking.
 
@@ -85,12 +85,12 @@ def assign_treatment(
         id_str = str(row[id_col])
         if id_str not in participants_dict:
             strata = [
-                ExperimentStrata(
+                Strata(
                     strata_name=row["strata_name"],
                     strata_value=str(row["strata_value"]),
                 )
             ]
-            participant = ExperimentParticipant(
+            participant = Assignment(
                 participant_id=str(row[id_col]),
                 treatment_assignment=arm_names[row["treat"]],
                 strata=strata,
@@ -98,7 +98,7 @@ def assign_treatment(
             participants_dict[id_str] = participant
         else:
             participants_dict[id_str].strata.append(
-                ExperimentStrata(
+                Strata(
                     strata_name=row["strata_name"],
                     strata_value=str(row["strata_value"]),
                 )
@@ -110,7 +110,7 @@ def assign_treatment(
     )
 
     # Return the ExperimentAssignment with the list of participants
-    return ExperimentAssignment(
+    return Assignments(
         f_statistic=np.round(balance_check.f_statistic, 9),
         numerator_df=balance_check.numerator_df,
         denominator_df=balance_check.denominator_df,

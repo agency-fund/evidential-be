@@ -403,7 +403,7 @@ class StrataType(enum.StrEnum):
         raise ValueError(f"Unsupported type: {python_type}")
 
 
-class ExperimentStrata(ApiBaseModel):
+class Strata(ApiBaseModel):
     """Describes stratification for an experiment participant."""
 
     strata_name: str
@@ -413,13 +413,13 @@ class ExperimentStrata(ApiBaseModel):
     strata_value: str | None = None
 
 
-class ExperimentParticipant(ApiBaseModel):
+class Assignment(ApiBaseModel):
     """Describes treatment assignment for an experiment participant."""
 
     # this references the column marked is_unique_id == TRUE in the configuration spreadsheet
     participant_id: str
     treatment_assignment: str
-    strata: list[ExperimentStrata]
+    strata: list[Strata]
 
 
 class BalanceCheck(ApiBaseModel):
@@ -432,7 +432,7 @@ class BalanceCheck(ApiBaseModel):
     balance_ok: bool
 
 
-class ExperimentAssignment(ApiBaseModel):
+class Assignments(ApiBaseModel):
     """Describes assignments for all participants and balance test results."""
 
     # TODO(roboton): remove next 5 fields in favor of BalanceCheck object
@@ -448,7 +448,7 @@ class ExperimentAssignment(ApiBaseModel):
     description: str
     sample_size: int
     id_col: str
-    assignments: list[ExperimentParticipant]
+    assignments: list[Assignment]
 
 
 class GetStrataResponseElement(ApiBaseModel):

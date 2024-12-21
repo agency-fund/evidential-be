@@ -16,7 +16,7 @@ from xngin.apiserver.api_types import (
     DataTypeClass,
     AudienceSpec,
     DesignSpec,
-    ExperimentAssignment,
+    Assignments,
     GetFiltersResponseDiscrete,
     GetFiltersResponseNumeric,
     GetStrataResponseElement,
@@ -327,7 +327,7 @@ def assign_treatment_api(
     random_state: Annotated[
         int | None, Query(description="Specify a random seed for reproducibility.")
     ] = None,
-) -> ExperimentAssignment:
+) -> Assignments:
     config = require_config(client)
     participant = config.find_participants(audience_spec.participant_type)
     config_sheet = fetch_worksheet(
@@ -398,7 +398,7 @@ async def commit_experiment(
     response: Response,
     design_spec: DesignSpec,
     audience_spec: AudienceSpec,
-    experiment_assignment: ExperimentAssignment,
+    experiment_assignment: Assignments,
     user_id: str = "testuser",
     http_client: Annotated[httpx.AsyncClient, Depends(httpx_dependency)] = None,
     client: Annotated[ClientConfig | None, Depends(config_dependency)] = None,
