@@ -9,11 +9,13 @@ from pydantic import (
     BaseModel,
     Field,
     model_validator,
-    field_validator,
     field_serializer,
     ConfigDict,
+    BeforeValidator,
 )
+from pydantic_core.core_schema import ValidationInfo
 
+VALID_SQL_COLUMN_REGEX = r"^[a-zA-Z_][a-zA-Z0-9_]*$"
 
 EXPERIMENT_IDS_SUFFIX = "experiment_ids"
 
@@ -47,6 +49,24 @@ EXPERIMENT_IDS_SUFFIX = "experiment_ids"
 #    should return a list of objects containing a participant id, treatment assignment,
 #    and strata values.
 # 3. Analysis - TBD
+
+
+def validate_column_name(value: str, info: ValidationInfo) -> str:
+    """Validates value is usable as a SQL column name."""
+    if not isinstance(value, str):
+        raise ValueError(f"{info.field_name} must be a string")  # noqa: TRY004
+    if not re.match(VALID_SQL_COLUMN_REGEX, value):
+        raise ValueError(
+            f"{info.field_name} must start with letter/underscore and contain only letters, numbers, underscores"
+        )
+    return value
+
+
+ColumnName = Annotated[
+    str,
+    BeforeValidator(validate_column_name),
+    Field(json_schema_extra={"pattern": VALID_SQL_COLUMN_REGEX}),
+]
 
 
 class ApiBaseModel(BaseModel):
@@ -182,20 +202,13 @@ class AudienceSpecFilter(ApiBaseModel):
     """
 
     # TODO(qixotic): rename this to column_name?
-    filter_name: str
+    filter_name: ColumnName
     relation: Relation
     value: (
         list[Annotated[int, Field(strict=True)] | None]
         | list[Annotated[float, Field(strict=True, allow_inf_nan=False)] | None]
         | list[str | None]
     )
-
-    @field_validator("filter_name")
-    @classmethod
-    def ensure_filter_name_is_sql_compatible(cls, v: str) -> str:
-        if not re.match(r"^[a-zA-Z_][a-zA-Z0-9_]*$", v):
-            raise ValueError("filter_name must be a valid SQL column name")
-        return v
 
     @model_validator(mode="after")
     def ensure_experiment_ids_hack_compatible(self) -> "AudienceSpecFilter":
@@ -273,7 +286,7 @@ class MetricType(enum.StrEnum):
 class DesignSpecMetric(ApiBaseModel):
     """Defines a metric to measure in the experiment."""
 
-    metric_name: str
+    metric_name: ColumnName
     # TODO(roboton): metric_type should be inferred by name from db when missing
     metric_type: MetricType | None = None
     # TODO(roboton): metric_baseline should be drawn from dwh when missing
@@ -310,48 +323,24 @@ class DesignSpec(ApiBaseModel):
     end_date: datetime
 
     # arms (at least two)
-    arms: list[Arm]
+    arms: Annotated[list[Arm], Field(..., min_length=2)]
 
     # strata as strings
     # TODO(roboton): rename as strata_names?
-    strata_cols: list[str]
+    strata_cols: list[ColumnName]
 
     # metric specs (at least one)
-    metrics: list[DesignSpecMetric]
+    metrics: Annotated[list[DesignSpecMetric], Field(..., min_length=1)]
 
     # stat parameters
-    power: float = 0.8
-    alpha: float = 0.05
-    fstat_thresh: float = 0.6
+    power: Annotated[float, Field(0.8, ge=0, le=1)]
+    alpha: Annotated[float, Field(0.05, ge=0, le=1)]
+    fstat_thresh: Annotated[float, Field(0.6, ge=0, le=1)]
 
     @field_serializer("start_date", "end_date", when_used="json")
     def serialize_dt(self, dt: datetime, _info):
         """Convert dates to iso strings in model_dump_json()/model_dump(mode='json')"""
         return dt.isoformat()
-
-    @field_validator("power", "alpha", "fstat_thresh")
-    @classmethod
-    def check_values_between_0_and_1(cls, value, field):
-        """Ensure that power, alpha, and fstat_thresh are between 0 and 1."""
-        if not (0 <= value <= 1):
-            raise ValueError(f"{field.name} must be between 0 and 1.")
-        return value
-
-    @field_validator("arms")
-    @classmethod
-    def check_arms_length(cls, value):
-        """Ensure that arms list has at least two elements."""
-        if len(value) < 2:
-            raise ValueError("The arms list must contain at least two elements.")
-        return value
-
-    @field_validator("metrics")
-    @classmethod
-    def check_metrics_length(cls, value):
-        """Ensure that metrics list has at least one element."""
-        if len(value) < 1:
-            raise ValueError("The metrics list must contain at least one element.")
-        return value
 
 
 class MetricAnalysisMessageType(enum.StrEnum):
@@ -407,7 +396,7 @@ class StrataType(enum.StrEnum):
 class Strata(ApiBaseModel):
     """Describes stratification for an experiment participant."""
 
-    strata_name: str
+    strata_name: ColumnName
     # TODO(roboton): Add in strata type, update tests to reflect this field, should be derived
     # from data warehouse.
     # strata_type: Optional[StrataType]
@@ -456,7 +445,7 @@ class GetStrataResponseElement(ApiBaseModel):
     """Describes a stratification variable."""
 
     data_type: DataType
-    column_name: str
+    column_name: ColumnName
     description: str
     # Extra fields will be stored here in case a user configured their worksheet with extra metadata for their own
     # downstream use, e.g. to group strata with a friendly identifier.
@@ -465,7 +454,7 @@ class GetStrataResponseElement(ApiBaseModel):
 
 class GetFiltersResponseBase(ApiBaseModel):
     # TODO: Can we rename this to column_name for consistency with GetStrataResponseElement?
-    filter_name: str = Field(..., description="Name of the column.")
+    filter_name: Annotated[ColumnName, Field(..., description="Name of the column.")]
     data_type: DataType
     relations: list[Relation] = Field(..., min_length=1)
     description: str
@@ -496,7 +485,7 @@ class GetFiltersResponseDiscrete(GetFiltersResponseBase):
 class GetMetricsResponseElement(ApiBaseModel):
     """Describes a metric."""
 
-    column_name: str
+    column_name: ColumnName
     data_type: DataType
     description: str
 

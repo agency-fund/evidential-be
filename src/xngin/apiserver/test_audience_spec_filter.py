@@ -30,7 +30,8 @@ INVALID_COLUMN_NAMES = [
 @pytest.mark.parametrize("name", INVALID_COLUMN_NAMES)
 def test_invalid_filter_names(name):
     with pytest.raises(
-        ValidationError, match="filter_name must be a valid SQL column name"
+        ValidationError,
+        match="filter_name must start with letter/underscore and contain only letters, numbers, underscores",
     ):
         AudienceSpecFilter(filter_name=name, relation=Relation.INCLUDES, value=[1])
 
