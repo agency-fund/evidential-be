@@ -21,7 +21,7 @@ from xngin.apiserver.api_types import (
     GetFiltersResponseNumeric,
     GetStrataResponseElement,
     GetMetricsResponseElement,
-    PowerAnalysis,
+    GetPowerResponse,
     GetStrataResponse,
     GetFiltersResponse,
     GetMetricsResponse,
@@ -285,7 +285,7 @@ def check_power_api(
     design_spec: DesignSpec,
     audience_spec: AudienceSpec,
     client: Annotated[ClientConfig | None, Depends(config_dependency)] = None,
-) -> PowerAnalysis:
+) -> GetPowerResponse:
     """
     Calculates statistical power given an AudienceSpec and a DesignSpec
     """

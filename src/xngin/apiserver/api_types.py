@@ -353,9 +353,6 @@ class DesignSpec(ApiBaseModel):
         return value
 
 
-type PowerAnalysis = list[MetricAnalysis]
-
-
 class MetricAnalysisMessageType(enum.StrEnum):
     """Classifies metric analysis results."""
 
@@ -495,9 +492,6 @@ class GetFiltersResponseDiscrete(GetFiltersResponseBase):
     )
 
 
-type GetFiltersResponseElement = GetFiltersResponseNumeric | GetFiltersResponseDiscrete
-
-
 class GetMetricsResponseElement(ApiBaseModel):
     """Describes a metric."""
 
@@ -506,6 +500,8 @@ class GetMetricsResponseElement(ApiBaseModel):
     description: str
 
 
-type GetStrataResponse = list[GetStrataResponseElement]
 type GetFiltersResponse = list[GetFiltersResponseElement]
+type GetFiltersResponseElement = GetFiltersResponseNumeric | GetFiltersResponseDiscrete
 type GetMetricsResponse = list[GetMetricsResponseElement]
+type GetPowerResponse = list[MetricAnalysis]
+type GetStrataResponse = list[GetStrataResponseElement]
