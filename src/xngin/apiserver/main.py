@@ -4,6 +4,7 @@ from typing import Annotated, Literal
 import logging
 
 import httpx
+from fastapi.openapi.utils import get_openapi
 from pydantic import BaseModel
 import sqlalchemy
 from fastapi import FastAPI, HTTPException, Depends, Path, Query, Response
@@ -58,6 +59,11 @@ from xngin.apiserver.webhook_types import (
     WebhookResponse,
 )
 
+logging.basicConfig(
+    level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+)
+logger = logging.getLogger(__name__)
+
 if sentry_dsn := os.environ.get("SENTRY_DSN"):
     import sentry_sdk
 
@@ -81,10 +87,23 @@ async def lifespan(_app: FastAPI):
 app = FastAPI(lifespan=lifespan)
 exceptionhandlers.setup(app)
 
-logging.basicConfig(
-    level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
-)
-logger = logging.getLogger(__name__)
+
+def custom_openapi():
+    """Customizes the generated OpenAPI schema."""
+    if app.openapi_schema:  # cache
+        return app.openapi_schema
+    openapi_schema = get_openapi(
+        title="xngin: Experiments API",
+        version="0.9.0",
+        summary="",
+        description="",
+        routes=app.routes,
+    )
+    app.openapi_schema = openapi_schema
+    return app.openapi_schema
+
+
+app.openapi = custom_openapi
 
 
 class CommonQueryParams:
@@ -299,7 +318,7 @@ def check_power_api(
 @app.post(
     "/assign",
     summary="Assign treatment given experiment and audience specification.",
-    tags=["Manage Experiments"],
+    tags=["Experiment Management"],
 )
 def assign_treatment_api(
     design_spec: DesignSpec,
@@ -348,7 +367,7 @@ def assign_treatment_api(
     "/assignment-file",
     summary="Retrieve all participant assignments for the given experiment_id.",
     responses=STANDARD_WEBHOOK_RESPONSES,
-    tags=["Manage Experiments"],
+    tags=["Experiment Management"],
 )
 async def assignment_file(
     response: Response,
@@ -376,7 +395,7 @@ async def assignment_file(
     "/commit",
     summary="Commit an experiment to the database.",
     responses=STANDARD_WEBHOOK_RESPONSES,
-    tags=["Manage Experiments"],
+    tags=["Experiment Management"],
 )
 async def commit_experiment(
     response: Response,
@@ -410,7 +429,7 @@ async def commit_experiment(
     "/update-commit",
     summary="Update an existing experiment's timestamps or description (experiment and arms)",
     responses=STANDARD_WEBHOOK_RESPONSES,
-    tags=["Manage Experiments"],
+    tags=["Experiment Management"],
 )
 async def update_experiment(
     response: Response,
