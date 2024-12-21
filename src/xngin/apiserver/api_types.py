@@ -14,6 +14,7 @@ from pydantic import (
     ConfigDict,
 )
 
+
 EXPERIMENT_IDS_SUFFIX = "experiment_ids"
 
 # An experiment is comprised of two primary components:
@@ -505,3 +506,20 @@ type GetFiltersResponseElement = GetFiltersResponseNumeric | GetFiltersResponseD
 type GetMetricsResponse = list[GetMetricsResponseElement]
 type GetPowerResponse = list[MetricAnalysis]
 type GetStrataResponse = list[GetStrataResponseElement]
+
+
+class AssignRequest(ApiBaseModel):
+    design_spec: DesignSpec
+    audience_spec: AudienceSpec
+    chosen_n: int
+
+
+class CommitRequest(ApiBaseModel):
+    design_spec: DesignSpec
+    audience_spec: AudienceSpec
+    experiment_assignment: Assignments
+
+
+class PowerRequest(ApiBaseModel):
+    design_spec: DesignSpec
+    audience_spec: AudienceSpec

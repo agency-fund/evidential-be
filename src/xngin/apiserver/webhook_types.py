@@ -64,7 +64,7 @@ class WebhookRequestCommit(WebhookBaseModel):
         return dt.isoformat()
 
 
-class WebhookRequestUpdateTimestamps(WebhookBaseModel):
+class UpdateTimestampsRequest(WebhookBaseModel):
     """Describes how to update an experiment's start and/or end dates."""
 
     experiment_id: uuid.UUID = Field(description="ID of the experiment to update.")
@@ -97,7 +97,7 @@ class ArmUpdate(WebhookBaseModel):
     )
 
 
-class WebhookRequestUpdateDescriptions(WebhookBaseModel):
+class UpdateDescriptionRequest(WebhookBaseModel):
     """Describes how to update an experiment description and/or the names of its arms."""
 
     experiment_id: uuid.UUID = Field(description="ID of the experiment to update.")
@@ -109,10 +109,10 @@ class WebhookRequestUpdateDescriptions(WebhookBaseModel):
     )
 
 
-class WebhookRequestUpdate(WebhookBaseModel):
+class UpdateCommitRequest(WebhookBaseModel):
     """Request structure for supported types of experiment updates."""
 
-    update_json: WebhookRequestUpdateTimestamps | WebhookRequestUpdateDescriptions
+    update_json: UpdateTimestampsRequest | UpdateDescriptionRequest
 
 
 # TODO: as part of potential API endpoint revisions

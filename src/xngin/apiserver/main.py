@@ -14,8 +14,6 @@ from sqlalchemy import distinct
 from xngin.apiserver import database, exceptionhandlers
 from xngin.apiserver.api_types import (
     DataTypeClass,
-    AudienceSpec,
-    DesignSpec,
     Assignments,
     GetFiltersResponseDiscrete,
     GetFiltersResponseNumeric,
@@ -25,6 +23,9 @@ from xngin.apiserver.api_types import (
     GetStrataResponse,
     GetFiltersResponse,
     GetMetricsResponse,
+    AssignRequest,
+    CommitRequest,
+    PowerRequest,
 )
 from xngin.apiserver.dependencies import (
     httpx_dependency,
@@ -55,8 +56,8 @@ from xngin.apiserver.webhook_types import (
     UpdateExperimentDescriptionsRequest,
     UpdateExperimentStartEndRequest,
     WebhookRequestCommit,
-    WebhookRequestUpdate,
     WebhookResponse,
+    UpdateCommitRequest,
 )
 
 logging.basicConfig(
@@ -282,15 +283,14 @@ def get_metrics(
     tags=["Experiment Design"],
 )
 def check_power_api(
-    design_spec: DesignSpec,
-    audience_spec: AudienceSpec,
+    body: PowerRequest,
     client: Annotated[ClientConfig | None, Depends(config_dependency)] = None,
 ) -> GetPowerResponse:
     """
     Calculates statistical power given an AudienceSpec and a DesignSpec
     """
     config = require_config(client)
-    participant = config.find_participants(audience_spec.participant_type)
+    participant = config.find_participants(body.audience_spec.participant_type)
 
     with config.dbsession() as session:
         sa_table = infer_table(
@@ -300,15 +300,15 @@ def check_power_api(
         metric_stats = get_stats_on_metrics(
             session,
             sa_table,
-            design_spec.metrics,
-            audience_spec,
+            body.design_spec.metrics,
+            body.audience_spec,
         )
 
         return check_power(
             metrics=metric_stats,
-            n_arms=len(design_spec.arms),
-            power=design_spec.power,
-            alpha=design_spec.alpha,
+            n_arms=len(body.design_spec.arms),
+            power=body.design_spec.power,
+            alpha=body.design_spec.alpha,
         )
 
 
@@ -318,9 +318,7 @@ def check_power_api(
     tags=["Experiment Management"],
 )
 def assign_treatment_api(
-    design_spec: DesignSpec,
-    audience_spec: AudienceSpec,
-    chosen_n: int,
+    body: AssignRequest,
     gsheets: Annotated[GSheetCache, Depends(gsheet_cache)],
     client: Annotated[ClientConfig | None, Depends(config_dependency)] = None,
     refresh: Annotated[bool, Query(description="Refresh the cache.")] = False,
@@ -328,6 +326,11 @@ def assign_treatment_api(
         int | None, Query(description="Specify a random seed for reproducibility.")
     ] = None,
 ) -> Assignments:
+    audience_spec, design_spec, chosen_n = (
+        body.audience_spec,
+        body.design_spec,
+        body.chosen_n,
+    )
     config = require_config(client)
     participant = config.find_participants(audience_spec.participant_type)
     config_sheet = fetch_worksheet(
@@ -396,10 +399,8 @@ async def assignment_file(
 )
 async def commit_experiment(
     response: Response,
-    design_spec: DesignSpec,
-    audience_spec: AudienceSpec,
-    experiment_assignment: Assignments,
-    user_id: str = "testuser",
+    body: CommitRequest,
+    user_id: Annotated[str, Query(...)] = "testuser",
     http_client: Annotated[httpx.AsyncClient, Depends(httpx_dependency)] = None,
     client: Annotated[ClientConfig | None, Depends(config_dependency)] = None,
 ) -> WebhookResponse:
@@ -411,9 +412,9 @@ async def commit_experiment(
 
     commit_payload = WebhookRequestCommit(
         creator_user_id=user_id,
-        experiment_assignment=experiment_assignment,
-        design_spec=design_spec,
-        audience_spec=audience_spec,
+        experiment_assignment=body.experiment_assignment,
+        design_spec=body.design_spec,
+        audience_spec=body.audience_spec,
     )
 
     response.status_code, payload = await make_webhook_request(
@@ -430,7 +431,7 @@ async def commit_experiment(
 )
 async def update_experiment(
     response: Response,
-    request_payload: WebhookRequestUpdate,
+    body: UpdateCommitRequest,
     update_type: Annotated[
         Literal["timestamps", "description"],
         Query(description="The type of experiment metadata update to perform"),
@@ -449,7 +450,7 @@ async def update_experiment(
         raise HTTPException(501, f"Action '{update_type}' not configured.")
     # Need to pull out the upstream server payload:
     response.status_code, payload = await make_webhook_request(
-        http_client, config, action, request_payload.update_json
+        http_client, config, action, body.update_json
     )
     return payload
 
