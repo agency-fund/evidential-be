@@ -193,7 +193,6 @@ def get_filters(
 
             # Collect metadata on the values in the database.
             sa_col = sa_table.columns[col_name]
-            distinct_values, min_, max_ = None, None, None
             match filter_class:
                 case DataTypeClass.DISCRETE:
                     distinct_values = [
@@ -285,9 +284,7 @@ def get_metrics(
 def check_power_api(
     design_spec: DesignSpec,
     audience_spec: AudienceSpec,
-    gsheets: Annotated[GSheetCache, Depends(gsheet_cache)],
     client: Annotated[ClientConfig | None, Depends(config_dependency)] = None,
-    refresh: Annotated[bool, Query(description="Refresh the cache.")] = False,
 ) -> PowerAnalysis:
     """
     Calculates statistical power given an AudienceSpec and a DesignSpec
@@ -566,14 +563,6 @@ def debug_settings(
     if config:
         config_id = config.id
     return {"settings": settings, "config_id": config_id}
-
-
-# Main experiment assignment function
-def assign_units_to_arms(
-    design_spec: DesignSpec, audience_spec: AudienceSpec, chosen_n: int
-):
-    # Implement experiment assignment logic
-    pass
 
 
 def require_config(client: ClientConfig | None):
