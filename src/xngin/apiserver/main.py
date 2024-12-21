@@ -19,9 +19,11 @@ from xngin.apiserver.api_types import (
     GetFiltersResponseDiscrete,
     GetFiltersResponseNumeric,
     GetStrataResponseElement,
-    GetFiltersResponseElement,
     GetMetricsResponseElement,
     PowerAnalysis,
+    GetStrataResponse,
+    GetFiltersResponse,
+    GetMetricsResponse,
 )
 from xngin.apiserver.dependencies import (
     httpx_dependency,
@@ -111,7 +113,7 @@ def get_strata(
     commons: Annotated[CommonQueryParams, Depends()],
     gsheets: Annotated[GSheetCache, Depends(gsheet_cache)],
     client: Annotated[ClientConfig | None, Depends(config_dependency)] = None,
-) -> list[GetStrataResponseElement]:
+) -> GetStrataResponse:
     """
     Get possible strata covariates for a given unit type.
 
@@ -155,7 +157,7 @@ def get_filters(
     commons: Annotated[CommonQueryParams, Depends()],
     gsheets: Annotated[GSheetCache, Depends(gsheet_cache)],
     client: Annotated[ClientConfig | None, Depends(config_dependency)] = None,
-) -> list[GetFiltersResponseElement]:
+) -> GetFiltersResponse:
     config = require_config(client)
     participants = config.find_participants(commons.participant_type)
     config_sheet = fetch_worksheet(commons, config, gsheets)
@@ -230,7 +232,7 @@ def get_metrics(
     commons: Annotated[CommonQueryParams, Depends()],
     gsheets: Annotated[GSheetCache, Depends(gsheet_cache)],
     client: Annotated[ClientConfig | None, Depends(config_dependency)] = None,
-) -> list[GetMetricsResponseElement]:
+) -> GetMetricsResponse:
     """
     Get possible metrics for a given unit type.
 

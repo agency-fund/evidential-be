@@ -504,3 +504,8 @@ class GetMetricsResponseElement(ApiBaseModel):
     column_name: str
     data_type: DataType
     description: str
+
+
+type GetStrataResponse = list[GetStrataResponseElement]
+type GetFiltersResponse = list[GetFiltersResponseElement]
+type GetMetricsResponse = list[GetMetricsResponseElement]
