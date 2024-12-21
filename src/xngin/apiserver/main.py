@@ -114,11 +114,7 @@ def get_strata(
     gsheets: Annotated[GSheetCache, Depends(gsheet_cache)],
     client: Annotated[ClientConfig | None, Depends(config_dependency)] = None,
 ) -> GetStrataResponse:
-    """
-    Get possible strata covariates for a given unit type.
-
-    This reimplements dwh.R get_strata().
-    """
+    """Get possible strata covariates for a given unit type."""
     config = require_config(client)
     participants = config.find_participants(commons.participant_type)
     config_sheet = fetch_worksheet(commons, config, gsheets)
@@ -233,11 +229,7 @@ def get_metrics(
     gsheets: Annotated[GSheetCache, Depends(gsheet_cache)],
     client: Annotated[ClientConfig | None, Depends(config_dependency)] = None,
 ) -> GetMetricsResponse:
-    """
-    Get possible metrics for a given unit type.
-
-    This reimplements dwh.R get_metrics().
-    """
+    """Get possible metrics for a given unit type."""
     config = require_config(client)
     participants = config.find_participants(commons.participant_type)
     config_sheet = fetch_worksheet(commons, config, gsheets)
