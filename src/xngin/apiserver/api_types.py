@@ -65,7 +65,9 @@ def validate_column_name(value: str, info: ValidationInfo) -> str:
 ColumnName = Annotated[
     str,
     BeforeValidator(validate_column_name),
-    Field(json_schema_extra={"pattern": VALID_SQL_COLUMN_REGEX}),
+    Field(
+        json_schema_extra={"pattern": VALID_SQL_COLUMN_REGEX}, examples=["column_name"]
+    ),
 ]
 
 
