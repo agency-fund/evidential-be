@@ -563,7 +563,7 @@ def debug_settings(
     if request.client.host not in settings.trusted_ips:
         raise HTTPException(403)
     response = {"settings": settings}
-    if config_id := request.headers["config-id"]:
+    if config_id := request.headers.get("config-id"):
         response["config_id"] = config_id
     return response
 
