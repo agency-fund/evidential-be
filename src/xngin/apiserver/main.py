@@ -378,7 +378,7 @@ async def assignment_file(
         str,
         Query(description="ID of the experiment whose assignments we wish to fetch."),
     ],
-    http_client: Annotated[httpx.AsyncClient, Depends(httpx_dependency)] = None,
+    http_client: Annotated[httpx.AsyncClient, Depends(httpx_dependency)],
     client: Annotated[ClientConfig | None, Depends(config_dependency)] = None,
 ) -> WebhookResponse:
     config = require_config(client).webhook_config
@@ -403,8 +403,8 @@ async def assignment_file(
 async def commit_experiment(
     response: Response,
     body: CommitRequest,
-    user_id: Annotated[str, Query(...)] = "testuser",
-    http_client: Annotated[httpx.AsyncClient, Depends(httpx_dependency)] = None,
+    user_id: Annotated[str, Query(...)],
+    http_client: Annotated[httpx.AsyncClient, Depends(httpx_dependency)],
     client: Annotated[ClientConfig | None, Depends(config_dependency)] = None,
 ) -> WebhookResponse:
     config = require_config(client).webhook_config
@@ -439,7 +439,7 @@ async def update_experiment(
         Literal["timestamps", "description"],
         Query(description="The type of experiment metadata update to perform"),
     ],
-    http_client: Annotated[httpx.AsyncClient, Depends(httpx_dependency)] = None,
+    http_client: Annotated[httpx.AsyncClient, Depends(httpx_dependency)],
     client: Annotated[ClientConfig | None, Depends(config_dependency)] = None,
 ) -> WebhookResponse:
     config = require_config(client).webhook_config
@@ -471,7 +471,7 @@ async def alt_update_experiment(
         str,
         Path(description="The ID of the experiment to update.", alias="experiment_id"),
     ],
-    http_client: Annotated[httpx.AsyncClient, Depends(httpx_dependency)] = None,
+    http_client: Annotated[httpx.AsyncClient, Depends(httpx_dependency)],
     client: Annotated[ClientConfig | None, Depends(config_dependency)] = None,
 ) -> WebhookResponse:
     config = require_config(client).webhook_config
