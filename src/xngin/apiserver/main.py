@@ -373,7 +373,7 @@ def assign_treatment_api(
 )
 async def assignment_file(
     response: Response,
-    experiment_id: str = Annotated[
+    experiment_id: Annotated[
         str,
         Query(description="ID of the experiment whose assignments we wish to fetch."),
     ],
@@ -466,8 +466,9 @@ async def update_experiment(
 async def alt_update_experiment(
     response: Response,
     body: UpdateExperimentStartEndRequest | UpdateExperimentDescriptionsRequest,
-    experiment_id: str = Annotated[
-        str, Path(description="The ID of the experiment to update.")
+    _experiment_id: Annotated[
+        str,
+        Path(description="The ID of the experiment to update.", alias="experiment_id"),
     ],
     http_client: Annotated[httpx.AsyncClient, Depends(httpx_dependency)] = None,
     client: Annotated[ClientConfig | None, Depends(config_dependency)] = None,
