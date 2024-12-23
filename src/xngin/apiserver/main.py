@@ -562,7 +562,10 @@ def debug_settings(
     # should only be invoked from trusted IP addresses.
     if request.client.host not in settings.trusted_ips:
         raise HTTPException(403)
-    return {"settings": settings}
+    response = {"settings": settings}
+    if config_id := request.headers["config-id"]:
+        response["config_id"] = config_id
+    return response
 
 
 def require_config(client: ClientConfig | None):
