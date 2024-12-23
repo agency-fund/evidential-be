@@ -326,7 +326,11 @@ def assign_treatment_api(
     client: Annotated[ClientConfig | None, Depends(config_dependency)] = None,
     refresh: Annotated[bool, Query(description="Refresh the cache.")] = False,
     random_state: Annotated[
-        int | None, Query(description="Specify a random seed for reproducibility.")
+        int | None,
+        Query(
+            description="Specify a random seed for reproducibility.",
+            include_in_schema=False,
+        ),
     ] = None,
 ) -> Assignments:
     config = require_config(client)
