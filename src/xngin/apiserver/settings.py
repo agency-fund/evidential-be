@@ -366,12 +366,11 @@ class SqliteLocalConfig(ParticipantsMixin, ConfigBaseModel):
         return Session(engine)
 
 
-type ClientConfigType = RemoteDatabaseConfig | SqliteLocalConfig
-
-
 class ClientConfig(ConfigBaseModel):
     id: str
-    config: Annotated[ClientConfigType, Field(discriminator="type")]
+    config: Annotated[
+        RemoteDatabaseConfig | SqliteLocalConfig, Field(discriminator="type")
+    ]
 
 
 class XnginSettings(ConfigBaseModel):
