@@ -290,8 +290,6 @@ class RemoteDatabaseConfig(ParticipantsMixin, ConfigBaseModel):
 
     dwh: Annotated[Dsn | BqDsn, Field(discriminator="driver")]
 
-    dbapi_args: list[DbapiArg] | None = None
-
     def supports_reflection(self):
         return self.dwh.supports_table_reflection()
 
@@ -303,9 +301,6 @@ class RemoteDatabaseConfig(ParticipantsMixin, ConfigBaseModel):
         """
         url = self.dwh.to_sqlalchemy_url()
         connect_args: dict = {}
-        if self.dbapi_args:
-            for entry in self.dbapi_args:
-                connect_args[entry.arg] = entry.value
         if url.get_backend_name() == "postgres":
             connect_args["connect_timeout"] = 5
         engine = sqlalchemy.create_engine(
