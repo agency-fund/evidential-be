@@ -1,16 +1,17 @@
-from contextlib import asynccontextmanager
-import os
-from typing import Annotated, Literal
 import logging
+import os
+from contextlib import asynccontextmanager
+from typing import Annotated, Literal
 
 import httpx
-from fastapi.openapi.utils import get_openapi
-from pydantic import BaseModel
 import sqlalchemy
 from fastapi import FastAPI, HTTPException, Depends, Path, Query, Response
 from fastapi import Request
+from fastapi.openapi.utils import get_openapi
 from pandas import DataFrame
+from pydantic import BaseModel
 from sqlalchemy import distinct
+
 from xngin.apiserver import database, exceptionhandlers
 from xngin.apiserver.api_types import (
     DataTypeClass,
@@ -44,13 +45,7 @@ from xngin.apiserver.settings import (
     ClientConfig,
     infer_table,
 )
-from xngin.stats.power import check_power
-from xngin.stats.assignment import assign_treatment
 from xngin.apiserver.utils import substitute_url
-from xngin.sheets.config_sheet import (
-    fetch_and_parse_sheet,
-    create_configworksheet_from_table,
-)
 from xngin.apiserver.webhook_types import (
     STANDARD_WEBHOOK_RESPONSES,
     UpdateExperimentDescriptionsRequest,
@@ -59,6 +54,12 @@ from xngin.apiserver.webhook_types import (
     WebhookResponse,
     UpdateCommitRequest,
 )
+from xngin.sheets.config_sheet import (
+    fetch_and_parse_sheet,
+    create_configworksheet_from_table,
+)
+from xngin.stats.assignment import assign_treatment
+from xngin.stats.power import check_power
 
 logging.basicConfig(
     level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
@@ -555,18 +556,13 @@ async def make_webhook_request_base(
 def debug_settings(
     request: Request,
     settings: Annotated[XnginSettings, Depends(settings_dependency)],
-    config: Annotated[ClientConfig | None, Depends(config_dependency)] = None,
 ):
     """Endpoint for testing purposes. Returns the current server configuration and optionally the config ID."""
     # Secrets will not be returned because they are stored as SecretStrs, but nonetheless this method
     # should only be invoked from trusted IP addresses.
     if request.client.host not in settings.trusted_ips:
         raise HTTPException(403)
-
-    config_id = None
-    if config:
-        config_id = config.id
-    return {"settings": settings, "config_id": config_id}
+    return {"settings": settings}
 
 
 def require_config(client: ClientConfig | None):
