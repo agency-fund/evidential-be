@@ -1,4 +1,4 @@
-POST http://localhost:8000/assign?participant_type=test_participant_type&chosen_n=40&random_state=42
+POST http://localhost:8000/assign?chosen_n=40&random_state=42
 Config-ID: testing
 ```json
 {
