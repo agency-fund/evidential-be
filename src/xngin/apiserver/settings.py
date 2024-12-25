@@ -4,7 +4,9 @@ import os
 from collections import Counter
 from functools import lru_cache
 from typing import Literal, Annotated, Protocol
+from urllib.parse import urlparse
 
+import httpx
 import sqlalchemy
 from pydantic import (
     BaseModel,
@@ -27,13 +29,34 @@ DEFAULT_SETTINGS_FILE = "xngin.settings.json"
 logger = logging.getLogger(__name__)
 
 
+class FailureFetchingSettingsError(Exception):
+    pass
+
+
 @lru_cache
 def get_settings_for_server():
     """Constructs an XnginSettings for use by the API server."""
-    settings_file = os.environ.get("XNGIN_SETTINGS", DEFAULT_SETTINGS_FILE)
-    logger.info("Loading XNGIN_SETTINGS: %s", settings_file)
-    with open(settings_file) as f:
-        settings_raw = json.load(f)
+    settings_path = os.environ.get("XNGIN_SETTINGS", DEFAULT_SETTINGS_FILE)
+    logger.info("Loading XNGIN_SETTINGS: %s", settings_path)
+
+    # TODO: Retries, timeout, logging config summary, etc.
+    if settings_path.startswith("https://"):
+        parsed = urlparse(settings_path)
+        headers: dict = {}
+        if auth := os.environ.get("XNGIN_SETTINGS_AUTHORIZATION"):
+            headers["Authorization"] = auth.strip()
+        if parsed.hostname == "api.github.com" and parsed.path.startswith("/repos"):
+            headers["Accept"] = "application/vnd.github.v3.raw"
+        with httpx.Client(headers=headers) as client:
+            response = client.get(settings_path)
+            if response.status_code != httpx.codes.OK:
+                raise FailureFetchingSettingsError(
+                    f"{response.status_code} {response.content}"
+                )
+            settings_raw = response.json()
+    else:
+        with open(settings_path) as f:
+            settings_raw = json.load(f)
     settings_raw = replace_secrets(settings_raw)
     return XnginSettings.model_validate(settings_raw)
 

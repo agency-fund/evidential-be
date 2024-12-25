@@ -56,6 +56,18 @@ from xngin.apiserver.webhook_types import (
     WebhookResponse,
 )
 
+if sentry_dsn := os.environ.get("SENTRY_DSN"):
+    import sentry_sdk
+
+    sentry_sdk.init(
+        dsn=sentry_dsn,
+        environment=os.environ.get("ENVIRONMENT", "local"),
+        traces_sample_rate=1.0,
+        _experiments={
+            "continuous_profiling_auto_start": True,
+        },
+    )
+
 
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
@@ -347,11 +359,11 @@ def assign_treatment_api(
 )
 async def assignment_file(
     response: Response,
+    http_client: Annotated[httpx.AsyncClient, Depends(httpx_dependency)],
     experiment_id: str = Annotated[
         str,
         Query(description="ID of the experiment whose assignments we wish to fetch."),
     ],
-    http_client: Annotated[httpx.AsyncClient, Depends(httpx_dependency)] = None,
     client: Annotated[ClientConfig | None, Depends(config_dependency)] = None,
 ) -> WebhookResponse:
     config = require_config(client).webhook_config
@@ -378,8 +390,8 @@ async def commit_experiment(
     design_spec: DesignSpec,
     audience_spec: AudienceSpec,
     experiment_assignment: ExperimentAssignment,
-    user_id: str = "testuser",
-    http_client: Annotated[httpx.AsyncClient, Depends(httpx_dependency)] = None,
+    user_id: str,
+    http_client: Annotated[httpx.AsyncClient, Depends(httpx_dependency)],
     client: Annotated[ClientConfig | None, Depends(config_dependency)] = None,
 ) -> WebhookResponse:
     config = require_config(client).webhook_config
@@ -414,7 +426,7 @@ async def update_experiment(
         Literal["timestamps", "description"],
         Query(description="The type of experiment metadata update to perform"),
     ],
-    http_client: Annotated[httpx.AsyncClient, Depends(httpx_dependency)] = None,
+    http_client: Annotated[httpx.AsyncClient, Depends(httpx_dependency)],
     client: Annotated[ClientConfig | None, Depends(config_dependency)] = None,
 ) -> WebhookResponse:
     config = require_config(client).webhook_config
@@ -442,10 +454,10 @@ async def update_experiment(
 async def alt_update_experiment(
     response: Response,
     body: UpdateExperimentStartEndRequest | UpdateExperimentDescriptionsRequest,
+    http_client: Annotated[httpx.AsyncClient, Depends(httpx_dependency)],
     experiment_id: str = Annotated[
         str, Path(description="The ID of the experiment to update.")
     ],
-    http_client: Annotated[httpx.AsyncClient, Depends(httpx_dependency)] = None,
     client: Annotated[ClientConfig | None, Depends(config_dependency)] = None,
 ) -> WebhookResponse:
     config = require_config(client).webhook_config

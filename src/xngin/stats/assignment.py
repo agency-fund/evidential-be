@@ -1,8 +1,8 @@
 from uuid import UUID
 
 import pandas as pd
+from pandas.api.types import is_float_dtype
 import numpy as np
-
 from stochatreat import stochatreat
 from xngin.apiserver.api_types import (
     ExperimentAssignment,
@@ -10,6 +10,9 @@ from xngin.apiserver.api_types import (
     ExperimentStrata,
 )
 from xngin.stats.balance import check_balance
+
+
+MAX_SAFE_INTEGER = (1 << 53) - 1
 
 
 def assign_treatment(
@@ -39,8 +42,17 @@ def assign_treatment(
         AssignmentResult containing assignments and balance check results
     """
     # Create copy for analysis while attempting to convert any numeric "object" types that pandas didn't originally
-    # recognize when creating the dataframe.
+    # recognize when creating the dataframe. This does NOT handle Decimal types!
     df = data.infer_objects()
+    # Check if the unique identifier was incorrectly inferred to be a float, and try to make it an integer type.
+    # WARNING: if the original data actually had ints larger than are representable with full precision as a float64,
+    # then the data in the data frame would be problematic to begin with and we should instead try using
+    # https://pandas.pydata.org/docs/user_guide/pyarrow.html's pa.decimal128 and not convert to float in settings.py.
+    if is_float_dtype(df[id_col].dtype):
+        min_, max_ = df[id_col].aggregate(["min", "max"])
+        if min_ < -MAX_SAFE_INTEGER or max_ > MAX_SAFE_INTEGER:
+            raise ValueError(f"Cannot safely convert '{id_col}' from float to Int64")
+        df[id_col] = df[id_col].astype("Int64")
 
     # Dedupe the strata names and then sort them for a stable output ordering
     stratum_cols = sorted(set(stratum_cols))
