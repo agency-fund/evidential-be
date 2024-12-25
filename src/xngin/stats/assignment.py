@@ -42,8 +42,10 @@ def assign_treatment(
     # recognize when creating the dataframe.
     df = data.infer_objects()
 
+    # Dedupe the strata names and then sort them for a stable output ordering
+    stratum_cols = sorted(set(stratum_cols))
+
     # Assign treatments
-    stratum_cols.sort()
     n_arms = len(arm_names)
     treatment_status = stochatreat(
         data=df,
