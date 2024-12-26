@@ -7,7 +7,7 @@ import uuid
 import httpx
 from pydantic import BaseModel, Field, field_serializer, model_validator, ConfigDict
 
-from xngin.apiserver.api_types import DesignSpec, AudienceSpec, Assignments
+from xngin.apiserver.api_types import DesignSpec, AudienceSpec, AssignResponse
 
 
 class WebhookBaseModel(BaseModel):
@@ -54,7 +54,7 @@ class WebhookRequestCommit(WebhookBaseModel):
         default_factory=uuid.uuid4,
     )
     creator_user_id: str = Field(description="ID of the user creating the experiment")
-    experiment_assignment: Assignments
+    experiment_assignment: AssignResponse
     design_spec: DesignSpec
     audience_spec: AudienceSpec
 

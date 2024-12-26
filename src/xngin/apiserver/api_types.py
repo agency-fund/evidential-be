@@ -424,7 +424,7 @@ class BalanceCheck(ApiBaseModel):
     balance_ok: bool
 
 
-class Assignments(ApiBaseModel):
+class AssignResponse(ApiBaseModel):
     """Describes assignments for all participants and balance test results."""
 
     # TODO(roboton): remove next 5 fields in favor of BalanceCheck object
@@ -495,8 +495,8 @@ class GetMetricsResponseElement(ApiBaseModel):
 type GetFiltersResponse = list[GetFiltersResponseElement]
 type GetFiltersResponseElement = GetFiltersResponseNumeric | GetFiltersResponseDiscrete
 type GetMetricsResponse = list[GetMetricsResponseElement]
-type GetPowerResponse = list[MetricAnalysis]
 type GetStrataResponse = list[GetStrataResponseElement]
+type PowerResponse = list[MetricAnalysis]
 
 
 class AssignRequest(ApiBaseModel):
@@ -507,7 +507,7 @@ class AssignRequest(ApiBaseModel):
 class CommitRequest(ApiBaseModel):
     design_spec: DesignSpec
     audience_spec: AudienceSpec
-    experiment_assignment: Assignments
+    experiment_assignment: AssignResponse
 
 
 class PowerRequest(ApiBaseModel):

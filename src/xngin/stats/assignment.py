@@ -5,7 +5,7 @@ from pandas.api.types import is_float_dtype
 import numpy as np
 from stochatreat import stochatreat
 from xngin.apiserver.api_types import (
-    Assignments,
+    AssignResponse,
     Assignment,
     Strata,
 )
@@ -24,7 +24,7 @@ def assign_treatment(
     description: str,
     fstat_thresh: float = 0.5,
     random_state: int | None = None,
-) -> Assignments:
+) -> AssignResponse:
     """
     Perform stratified random assignment and balance checking.
 
@@ -110,7 +110,7 @@ def assign_treatment(
     )
 
     # Return the ExperimentAssignment with the list of participants
-    return Assignments(
+    return AssignResponse(
         f_statistic=np.round(balance_check.f_statistic, 9),
         numerator_df=balance_check.numerator_df,
         denominator_df=balance_check.denominator_df,

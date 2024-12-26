@@ -15,12 +15,12 @@ from sqlalchemy import distinct
 from xngin.apiserver import database, exceptionhandlers
 from xngin.apiserver.api_types import (
     DataTypeClass,
-    Assignments,
+    AssignResponse,
     GetFiltersResponseDiscrete,
     GetFiltersResponseNumeric,
     GetStrataResponseElement,
     GetMetricsResponseElement,
-    GetPowerResponse,
+    PowerResponse,
     GetStrataResponse,
     GetFiltersResponse,
     GetMetricsResponse,
@@ -286,7 +286,7 @@ def get_metrics(
 def check_power_api(
     body: PowerRequest,
     client: Annotated[ClientConfig | None, Depends(config_dependency)] = None,
-) -> GetPowerResponse:
+) -> PowerResponse:
     """
     Calculates statistical power given an AudienceSpec and a DesignSpec
     """
@@ -333,7 +333,7 @@ def assign_treatment_api(
             include_in_schema=False,
         ),
     ] = None,
-) -> Assignments:
+) -> AssignResponse:
     config = require_config(client)
     participant = config.find_participants(body.audience_spec.participant_type)
     config_sheet = fetch_worksheet(
