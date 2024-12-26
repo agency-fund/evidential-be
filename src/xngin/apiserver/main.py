@@ -354,9 +354,10 @@ def assign_treatment_api(
         )
 
     arm_names = [arm.arm_name for arm in body.design_spec.arms]
+    metric_names = [m.metric_name for m in body.design_spec.metrics]
     return assign_treatment(
         data=DataFrame(participants),
-        stratum_cols=body.design_spec.strata_cols,
+        stratum_cols=body.design_spec.strata_cols + metric_names,
         id_col=unique_id_col,
         arm_names=arm_names,
         experiment_id=str(body.design_spec.experiment_id),
