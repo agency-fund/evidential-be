@@ -4,7 +4,7 @@ import statsmodels.stats.api as sms
 from xngin.apiserver.api_types import (
     DesignSpecMetric,
     MetricType,
-    PowerAnalysis,
+    PowerResponse,
     MetricAnalysis,
     MetricAnalysisMessage,
     MetricAnalysisMessageType,
@@ -135,7 +135,7 @@ def check_power(
     n_arms: int,
     power: float = 0.8,
     alpha: float = 0.05,
-) -> PowerAnalysis:
+) -> PowerResponse:
     """
     Check power for multiple metrics.
 

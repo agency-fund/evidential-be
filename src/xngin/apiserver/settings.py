@@ -71,7 +71,7 @@ class SheetRef(ConfigBaseModel):
     worksheet: str
 
 
-class Participant(ConfigBaseModel):
+class ParticipantsRef(ConfigBaseModel):
     """Participants are a logical representation of a table in the data warehouse.
 
     Participants are defined by a table_name and a configuration worksheet.
@@ -85,7 +85,7 @@ class Participant(ConfigBaseModel):
 class ParticipantsMixin(ConfigBaseModel):
     """ParticipantsMixin can be added to a config type to add standardized participant definitions."""
 
-    participants: list[Participant]
+    participants: list[ParticipantsRef]
 
     def find_participants(self, participant_type: str):
         """Returns the participant matching participant_type or raises CannotFindParticipantsException."""
@@ -290,8 +290,6 @@ class RemoteDatabaseConfig(ParticipantsMixin, ConfigBaseModel):
 
     dwh: Annotated[Dsn | BqDsn, Field(discriminator="driver")]
 
-    dbapi_args: list[DbapiArg] | None = None
-
     def supports_reflection(self):
         return self.dwh.supports_table_reflection()
 
@@ -303,9 +301,6 @@ class RemoteDatabaseConfig(ParticipantsMixin, ConfigBaseModel):
         """
         url = self.dwh.to_sqlalchemy_url()
         connect_args: dict = {}
-        if self.dbapi_args:
-            for entry in self.dbapi_args:
-                connect_args[entry.arg] = entry.value
         if url.get_backend_name() == "postgres":
             connect_args["connect_timeout"] = 5
         engine = sqlalchemy.create_engine(
@@ -371,12 +366,11 @@ class SqliteLocalConfig(ParticipantsMixin, ConfigBaseModel):
         return Session(engine)
 
 
-type ClientConfigType = RemoteDatabaseConfig | SqliteLocalConfig
-
-
 class ClientConfig(ConfigBaseModel):
     id: str
-    config: Annotated[ClientConfigType, Field(discriminator="type")]
+    config: Annotated[
+        RemoteDatabaseConfig | SqliteLocalConfig, Field(discriminator="type")
+    ]
 
 
 class XnginSettings(ConfigBaseModel):

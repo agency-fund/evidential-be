@@ -9,9 +9,13 @@ from pydantic import (
     BaseModel,
     Field,
     model_validator,
-    field_validator,
     field_serializer,
+    ConfigDict,
+    BeforeValidator,
 )
+from pydantic_core.core_schema import ValidationInfo
+
+VALID_SQL_COLUMN_REGEX = r"^[a-zA-Z_][a-zA-Z0-9_]*$"
 
 EXPERIMENT_IDS_SUFFIX = "experiment_ids"
 
@@ -31,7 +35,7 @@ EXPERIMENT_IDS_SUFFIX = "experiment_ids"
 #    statistical power for each metric in the DesignSpec, along with the statistical
 #    parameters. This occurs as follows for each metric:
 #   a. If there is no baseline value (and std dev for numeric metrics), go to the
-#      database to fetch these values.
+#      data source to fetch these values.
 #   b. Use the declared metric_target or compute this target based on
 #      metric_pct_change and the baseline value.
 #   c. Use the number of arms, metric baseline and target, statistical parameters
@@ -46,11 +50,34 @@ EXPERIMENT_IDS_SUFFIX = "experiment_ids"
 #    and strata values.
 # 3. Analysis - TBD
 
-# Audience Specification (input)
+
+def validate_column_name(value: str, info: ValidationInfo) -> str:
+    """Validates value is usable as a SQL column name."""
+    if not isinstance(value, str):
+        raise ValueError(f"{info.field_name} must be a string")  # noqa: TRY004
+    if not re.match(VALID_SQL_COLUMN_REGEX, value):
+        raise ValueError(
+            f"{info.field_name} must start with letter/underscore and contain only letters, numbers, underscores"
+        )
+    return value
 
 
-## Filters
+ColumnName = Annotated[
+    str,
+    BeforeValidator(validate_column_name),
+    Field(
+        json_schema_extra={"pattern": VALID_SQL_COLUMN_REGEX}, examples=["column_name"]
+    ),
+]
+
+
+class ApiBaseModel(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+
 class DataType(enum.StrEnum):
+    """Defines the supported data types for columns in the data source."""
+
     BOOLEAN = "boolean"
     CHARACTER_VARYING = "character varying"
     DATE = "date"
@@ -62,7 +89,7 @@ class DataType(enum.StrEnum):
 
     @classmethod
     def match(cls, value):
-        """Attempt to infer the appropriate DataType for a value.
+        """Maps a Python or SQLAlchemy type or value's type to the corresponding DataType.
 
         Value may be a Python type or a SQLAlchemy type.
         """
@@ -121,24 +148,25 @@ class DataTypeClass(enum.StrEnum):
     UNKNOWN = "unknown"
 
     def valid_relations(self):
+        """Gets the valid relation operators for this data type class."""
         match self:
             case DataTypeClass.DISCRETE:
                 return [Relation.INCLUDES, Relation.EXCLUDES]
             case DataTypeClass.NUMERIC:
                 return [Relation.BETWEEN]
-        raise ValueError(f"{self} has no valid defined relations..")
+        raise ValueError(f"{self} has no valid defined relations.")
 
 
 class Relation(enum.StrEnum):
-    """Relation defines the operator to apply in this filter.
+    """Defines operators for filtering values.
 
-    INCLUDES matches when the database value matches any of the provided values. For CSV fields
+    INCLUDES matches when the value matches any of the provided values. For CSV fields
     (i.e. experiment_ids), any value in the CSV that matches the provided values will match.
 
-    EXCLUDES matches when the database value does not match any of the provided values. For CSV fields
-    (i.e. experiment_ids), the match will fail if any of the provided values are present in the database value.
+    EXCLUDES matches when the value does not match any of the provided values. For CSV fields
+    (i.e. experiment_ids), the match will fail if any of the provided values are present in the value.
 
-    BETWEEN matches when the database value is between the two provided values. Not allowed for CSV fields.
+    BETWEEN matches when the value is between the two provided values. Not allowed for CSV fields.
     """
 
     INCLUDES = "includes"
@@ -146,8 +174,8 @@ class Relation(enum.StrEnum):
     BETWEEN = "between"
 
 
-class AudienceSpecFilter(BaseModel):
-    """Defines a filter on the rows in the database.
+class AudienceSpecFilter(ApiBaseModel):
+    """Defines criteria for filtering rows by value.
 
     ## Examples
 
@@ -176,20 +204,13 @@ class AudienceSpecFilter(BaseModel):
     """
 
     # TODO(qixotic): rename this to column_name?
-    filter_name: str
+    filter_name: ColumnName
     relation: Relation
     value: (
         list[Annotated[int, Field(strict=True)] | None]
         | list[Annotated[float, Field(strict=True, allow_inf_nan=False)] | None]
         | list[str | None]
     )
-
-    @field_validator("filter_name")
-    @classmethod
-    def ensure_filter_name_is_sql_compatible(cls, v: str) -> str:
-        if not re.match(r"^[a-zA-Z_][a-zA-Z0-9_]*$", v):
-            raise ValueError("filter_name must be a valid SQL column name")
-        return v
 
     @model_validator(mode="after")
     def ensure_experiment_ids_hack_compatible(self) -> "AudienceSpecFilter":
@@ -240,28 +261,22 @@ class AudienceSpecFilter(BaseModel):
         return self
 
 
-class AudienceSpec(BaseModel):
-    """Audience specification.
-
-    Determines the set of participants targeted for an experiment using filters
-    based on the experiment participant_type.
-    """
+class AudienceSpec(ApiBaseModel):
+    """Defines target participants for an experiment using filters."""
 
     participant_type: str
     filters: list[AudienceSpecFilter]
 
 
-# Design Specification (input)
-
-
-## Metric Specs
 class MetricType(enum.StrEnum):
+    """Classifies metrics by their value type."""
+
     BINARY = "binary"
     NUMERIC = "numeric"
 
     @classmethod
     def from_python_type(cls, python_type: type) -> "MetricType":
-        """Given a Python type, return an appropriate MetricType."""
+        """Maps Python types to metric types."""
 
         if python_type in (int, float):
             return MetricType.NUMERIC
@@ -270,8 +285,10 @@ class MetricType(enum.StrEnum):
         raise ValueError(f"Unsupported type: {python_type}")
 
 
-class DesignSpecMetric(BaseModel):
-    metric_name: str
+class DesignSpecMetric(ApiBaseModel):
+    """Defines a metric to measure in the experiment."""
+
+    metric_name: ColumnName
     # TODO(roboton): metric_type should be inferred by name from db when missing
     metric_type: MetricType | None = None
     # TODO(roboton): metric_baseline should be drawn from dwh when missing
@@ -289,18 +306,18 @@ class DesignSpecMetric(BaseModel):
     available_n: int | None = None
 
 
-class ExperimentArm(BaseModel):
-    arm_id: (
-        uuid.UUID
-    )  # generally should not let users set this, auto-generated uuid by default
+class Arm(ApiBaseModel):
+    """Describes an experiment treatment arm."""
+
+    # generally should not let users set this, auto-generated uuid by default
+    arm_id: uuid.UUID
     arm_name: str
     arm_description: str | None = None
 
 
-class DesignSpec(BaseModel):
-    """Design specification."""
+class DesignSpec(ApiBaseModel):
+    """Describes the experiment design parameters."""
 
-    # experiment meta
     experiment_id: uuid.UUID
     experiment_name: str
     description: str
@@ -308,66 +325,43 @@ class DesignSpec(BaseModel):
     end_date: datetime
 
     # arms (at least two)
-    arms: list[ExperimentArm]
+    arms: Annotated[list[Arm], Field(..., min_length=2)]
 
     # strata as strings
     # TODO(roboton): rename as strata_names?
-    strata_cols: list[str]
+    strata_cols: list[ColumnName]
 
     # metric specs (at least one)
-    metrics: list[DesignSpecMetric]
+    metrics: Annotated[list[DesignSpecMetric], Field(..., min_length=1)]
 
     # stat parameters
-    power: float = 0.8
-    alpha: float = 0.05
-    fstat_thresh: float = 0.6
+    power: Annotated[float, Field(0.8, ge=0, le=1)]
+    alpha: Annotated[float, Field(0.05, ge=0, le=1)]
+    fstat_thresh: Annotated[float, Field(0.6, ge=0, le=1)]
 
     @field_serializer("start_date", "end_date", when_used="json")
     def serialize_dt(self, dt: datetime, _info):
         """Convert dates to iso strings in model_dump_json()/model_dump(mode='json')"""
         return dt.isoformat()
 
-    @field_validator("power", "alpha", "fstat_thresh")
-    @classmethod
-    def check_values_between_0_and_1(cls, value, field):
-        """Ensure that power, alpha, and fstat_thresh are between 0 and 1."""
-        if not (0 <= value <= 1):
-            raise ValueError(f"{field.name} must be between 0 and 1.")
-        return value
-
-    @field_validator("arms")
-    @classmethod
-    def check_arms_length(cls, value):
-        """Ensure that arms list has at least two elements."""
-        if len(value) < 2:
-            raise ValueError("The arms list must contain at least two elements.")
-        return value
-
-    @field_validator("metrics")
-    @classmethod
-    def check_metrics_length(cls, value):
-        """Ensure that metrics list has at least one element."""
-        if len(value) < 1:
-            raise ValueError("The metrics list must contain at least one element.")
-        return value
-
-
-type PowerAnalysis = list[MetricAnalysis]
-
 
 class MetricAnalysisMessageType(enum.StrEnum):
+    """Classifies metric analysis results."""
+
     SUFFICIENT = "sufficient"
     INSUFFICIENT = "insufficient"
 
 
-class MetricAnalysisMessage(BaseModel):
+class MetricAnalysisMessage(ApiBaseModel):
+    """Describes interpretation of analysis results."""
+
     type: MetricAnalysisMessageType
     msg: str
     values: dict[str, float | int] | None = None
 
 
-class MetricAnalysis(BaseModel):
-    """Analysis results for a single metric."""
+class MetricAnalysis(ApiBaseModel):
+    """Describes analysis results of a single metric."""
 
     metric_spec: DesignSpecMetric
     available_n: int
@@ -380,18 +374,16 @@ class MetricAnalysis(BaseModel):
     msg: MetricAnalysisMessage | None = None
 
 
-# Experiment Assignment (output)
-
-
-## Strata
 class StrataType(enum.StrEnum):
+    """Classifies strata by their value type."""
+
     BINARY = "binary"
     NUMERIC = "numeric"
     CATEGORICAL = "categorical"
 
     @classmethod
     def from_python_type(cls, python_type: type):
-        """Given a Python type, return an appropriate StrataType."""
+        """ "Maps Python types to strata types."""
 
         if python_type in (int, float):
             return StrataType.NUMERIC
@@ -403,22 +395,28 @@ class StrataType(enum.StrEnum):
         raise ValueError(f"Unsupported type: {python_type}")
 
 
-class ExperimentStrata(BaseModel):
-    strata_name: str
+class Strata(ApiBaseModel):
+    """Describes stratification for an experiment participant."""
+
+    strata_name: ColumnName
     # TODO(roboton): Add in strata type, update tests to reflect this field, should be derived
     # from data warehouse.
     # strata_type: Optional[StrataType]
     strata_value: str | None = None
 
 
-class ExperimentParticipant(BaseModel):
+class Assignment(ApiBaseModel):
+    """Describes treatment assignment for an experiment participant."""
+
     # this references the column marked is_unique_id == TRUE in the configuration spreadsheet
     participant_id: str
     treatment_assignment: str
-    strata: list[ExperimentStrata]
+    strata: list[Strata]
 
 
-class BalanceCheck(BaseModel):
+class BalanceCheck(ApiBaseModel):
+    """Describes balance test results for treatment assignment."""
+
     f_stat: float
     numerator_df: int
     denominator_df: int
@@ -426,8 +424,8 @@ class BalanceCheck(BaseModel):
     balance_ok: bool
 
 
-class ExperimentAssignment(BaseModel):
-    """Experiment assignment details including balance statistics and group assignments."""
+class AssignResponse(ApiBaseModel):
+    """Describes assignments for all participants and balance test results."""
 
     # TODO(roboton): remove next 5 fields in favor of BalanceCheck object
     f_statistic: float
@@ -442,48 +440,76 @@ class ExperimentAssignment(BaseModel):
     description: str
     sample_size: int
     id_col: str
-    assignments: list[ExperimentParticipant]
+    assignments: list[Assignment]
 
 
-class GetStrataResponseElement(BaseModel):
+class GetStrataResponseElement(ApiBaseModel):
+    """Describes a stratification variable."""
+
     data_type: DataType
-    column_name: str
+    column_name: ColumnName
     description: str
     # Extra fields will be stored here in case a user configured their worksheet with extra metadata for their own
     # downstream use, e.g. to group strata with a friendly identifier.
     extra: dict[str, str] | None = None
 
 
-class GetFiltersResponseBase(BaseModel):
+class GetFiltersResponseBase(ApiBaseModel):
     # TODO: Can we rename this to column_name for consistency with GetStrataResponseElement?
-    filter_name: str = Field(..., description="Name of the column.")
+    filter_name: Annotated[ColumnName, Field(..., description="Name of the column.")]
     data_type: DataType
     relations: list[Relation] = Field(..., min_length=1)
     description: str
 
 
 class GetFiltersResponseNumeric(GetFiltersResponseBase):
+    """Describes a numeric filter variable."""
+
     min: float | int | None = Field(
         ...,
-        description="If the type of the column is numeric, this will contain the minimum observed value.",
+        description="The minimum observed value.",
     )
     max: float | int | None = Field(
         ...,
-        description="If the type of the column is numeric, this will contain the maximum observed value.",
+        description="The maximum observed value.",
     )
 
 
 class GetFiltersResponseDiscrete(GetFiltersResponseBase):
+    """Describes a discrete filter variable."""
+
     distinct_values: list[str] | None = Field(
         ...,
-        description="If the type of the column is non-numeric, contains sorted list of unique values.",
+        description="Sorted list of unique values.",
     )
 
 
-type GetFiltersResponseElement = GetFiltersResponseNumeric | GetFiltersResponseDiscrete
+class GetMetricsResponseElement(ApiBaseModel):
+    """Describes a metric."""
 
-
-class GetMetricsResponseElement(BaseModel):
-    column_name: str
+    column_name: ColumnName
     data_type: DataType
     description: str
+
+
+type GetFiltersResponse = list[GetFiltersResponseElement]
+type GetFiltersResponseElement = GetFiltersResponseNumeric | GetFiltersResponseDiscrete
+type GetMetricsResponse = list[GetMetricsResponseElement]
+type GetStrataResponse = list[GetStrataResponseElement]
+type PowerResponse = list[MetricAnalysis]
+
+
+class AssignRequest(ApiBaseModel):
+    design_spec: DesignSpec
+    audience_spec: AudienceSpec
+
+
+class CommitRequest(ApiBaseModel):
+    design_spec: DesignSpec
+    audience_spec: AudienceSpec
+    experiment_assignment: AssignResponse
+
+
+class PowerRequest(ApiBaseModel):
+    design_spec: DesignSpec
+    audience_spec: AudienceSpec

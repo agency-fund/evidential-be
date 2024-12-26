@@ -21,7 +21,7 @@ def test_get_settings_for_test():
 
 
 def test_settings_can_be_overridden_by_tests():
-    response = client.get("/_settings")
+    response = client.get("/_settings", headers={"config-id": "testing"})
     assert response.status_code == 200, response.content
     settings = XnginSettings.model_validate(response.json()["settings"])
     assert settings.get_client_config("customer-test").config.dwh.user == "user"

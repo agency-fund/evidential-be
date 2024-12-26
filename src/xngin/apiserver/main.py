@@ -1,27 +1,32 @@
-from contextlib import asynccontextmanager
-import os
-from typing import Annotated, Literal
 import logging
+import os
+from contextlib import asynccontextmanager
+from typing import Annotated, Literal
 
 import httpx
-from pydantic import BaseModel
 import sqlalchemy
 from fastapi import FastAPI, HTTPException, Depends, Path, Query, Response
 from fastapi import Request
+from fastapi.openapi.utils import get_openapi
 from pandas import DataFrame
+from pydantic import BaseModel
 from sqlalchemy import distinct
+
 from xngin.apiserver import database, exceptionhandlers
 from xngin.apiserver.api_types import (
     DataTypeClass,
-    AudienceSpec,
-    DesignSpec,
-    ExperimentAssignment,
+    AssignResponse,
     GetFiltersResponseDiscrete,
     GetFiltersResponseNumeric,
     GetStrataResponseElement,
-    GetFiltersResponseElement,
     GetMetricsResponseElement,
-    PowerAnalysis,
+    PowerResponse,
+    GetStrataResponse,
+    GetFiltersResponse,
+    GetMetricsResponse,
+    AssignRequest,
+    CommitRequest,
+    PowerRequest,
 )
 from xngin.apiserver.dependencies import (
     httpx_dependency,
@@ -40,21 +45,26 @@ from xngin.apiserver.settings import (
     ClientConfig,
     infer_table,
 )
-from xngin.stats.power import check_power
-from xngin.stats.assignment import assign_treatment
 from xngin.apiserver.utils import substitute_url
-from xngin.sheets.config_sheet import (
-    fetch_and_parse_sheet,
-    create_configworksheet_from_table,
-)
 from xngin.apiserver.webhook_types import (
     STANDARD_WEBHOOK_RESPONSES,
     UpdateExperimentDescriptionsRequest,
     UpdateExperimentStartEndRequest,
     WebhookRequestCommit,
-    WebhookRequestUpdate,
     WebhookResponse,
+    UpdateCommitRequest,
 )
+from xngin.sheets.config_sheet import (
+    fetch_and_parse_sheet,
+    create_configworksheet_from_table,
+)
+from xngin.stats.assignment import assign_treatment
+from xngin.stats.power import check_power
+
+logging.basicConfig(
+    level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+)
+logger = logging.getLogger(__name__)
 
 if sentry_dsn := os.environ.get("SENTRY_DSN"):
     import sentry_sdk
@@ -79,10 +89,23 @@ async def lifespan(_app: FastAPI):
 app = FastAPI(lifespan=lifespan)
 exceptionhandlers.setup(app)
 
-logging.basicConfig(
-    level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
-)
-logger = logging.getLogger(__name__)
+
+def custom_openapi():
+    """Customizes the generated OpenAPI schema."""
+    if app.openapi_schema:  # cache
+        return app.openapi_schema
+    openapi_schema = get_openapi(
+        title="xngin: Experiments API",
+        version="0.9.0",
+        summary="",
+        description="",
+        routes=app.routes,
+    )
+    app.openapi_schema = openapi_schema
+    return app.openapi_schema
+
+
+app.openapi = custom_openapi
 
 
 class CommonQueryParams:
@@ -111,12 +134,8 @@ def get_strata(
     commons: Annotated[CommonQueryParams, Depends()],
     gsheets: Annotated[GSheetCache, Depends(gsheet_cache)],
     client: Annotated[ClientConfig | None, Depends(config_dependency)] = None,
-) -> list[GetStrataResponseElement]:
-    """
-    Get possible strata covariates for a given unit type.
-
-    This reimplements dwh.R get_strata().
-    """
+) -> GetStrataResponse:
+    """Get possible strata covariates for a given unit type."""
     config = require_config(client)
     participants = config.find_participants(commons.participant_type)
     config_sheet = fetch_worksheet(commons, config, gsheets)
@@ -155,7 +174,7 @@ def get_filters(
     commons: Annotated[CommonQueryParams, Depends()],
     gsheets: Annotated[GSheetCache, Depends(gsheet_cache)],
     client: Annotated[ClientConfig | None, Depends(config_dependency)] = None,
-) -> list[GetFiltersResponseElement]:
+) -> GetFiltersResponse:
     config = require_config(client)
     participants = config.find_participants(commons.participant_type)
     config_sheet = fetch_worksheet(commons, config, gsheets)
@@ -176,7 +195,6 @@ def get_filters(
 
             # Collect metadata on the values in the database.
             sa_col = sa_table.columns[col_name]
-            distinct_values, min_, max_ = None, None, None
             match filter_class:
                 case DataTypeClass.DISCRETE:
                     distinct_values = [
@@ -230,12 +248,8 @@ def get_metrics(
     commons: Annotated[CommonQueryParams, Depends()],
     gsheets: Annotated[GSheetCache, Depends(gsheet_cache)],
     client: Annotated[ClientConfig | None, Depends(config_dependency)] = None,
-) -> list[GetMetricsResponseElement]:
-    """
-    Get possible metrics for a given unit type.
-
-    This reimplements dwh.R get_metrics().
-    """
+) -> GetMetricsResponse:
+    """Get possible metrics for a given unit type."""
     config = require_config(client)
     participants = config.find_participants(commons.participant_type)
     config_sheet = fetch_worksheet(commons, config, gsheets)
@@ -270,17 +284,14 @@ def get_metrics(
     tags=["Experiment Design"],
 )
 def check_power_api(
-    design_spec: DesignSpec,
-    audience_spec: AudienceSpec,
-    gsheets: Annotated[GSheetCache, Depends(gsheet_cache)],
+    body: PowerRequest,
     client: Annotated[ClientConfig | None, Depends(config_dependency)] = None,
-    refresh: Annotated[bool, Query(description="Refresh the cache.")] = False,
-) -> PowerAnalysis:
+) -> PowerResponse:
     """
     Calculates statistical power given an AudienceSpec and a DesignSpec
     """
     config = require_config(client)
-    participant = config.find_participants(audience_spec.participant_type)
+    participant = config.find_participants(body.audience_spec.participant_type)
 
     with config.dbsession() as session:
         sa_table = infer_table(
@@ -290,36 +301,41 @@ def check_power_api(
         metric_stats = get_stats_on_metrics(
             session,
             sa_table,
-            design_spec.metrics,
-            audience_spec,
+            body.design_spec.metrics,
+            body.audience_spec,
         )
 
         return check_power(
             metrics=metric_stats,
-            n_arms=len(design_spec.arms),
-            power=design_spec.power,
-            alpha=design_spec.alpha,
+            n_arms=len(body.design_spec.arms),
+            power=body.design_spec.power,
+            alpha=body.design_spec.alpha,
         )
 
 
 @app.post(
     "/assign",
     summary="Assign treatment given experiment and audience specification.",
-    tags=["Manage Experiments"],
+    tags=["Experiment Management"],
 )
 def assign_treatment_api(
-    design_spec: DesignSpec,
-    audience_spec: AudienceSpec,
-    chosen_n: int,
+    body: AssignRequest,
+    chosen_n: Annotated[
+        int, Query(..., description="Number of participants to assign.")
+    ],
     gsheets: Annotated[GSheetCache, Depends(gsheet_cache)],
     client: Annotated[ClientConfig | None, Depends(config_dependency)] = None,
     refresh: Annotated[bool, Query(description="Refresh the cache.")] = False,
     random_state: Annotated[
-        int | None, Query(description="Specify a random seed for reproducibility.")
+        int | None,
+        Query(
+            description="Specify a random seed for reproducibility.",
+            include_in_schema=False,
+        ),
     ] = None,
-) -> ExperimentAssignment:
+) -> AssignResponse:
     config = require_config(client)
-    participant = config.find_participants(audience_spec.participant_type)
+    participant = config.find_participants(body.audience_spec.participant_type)
     config_sheet = fetch_worksheet(
         CommonQueryParams(
             participant_type=participant.participant_type, refresh=refresh
@@ -334,19 +350,19 @@ def assign_treatment_api(
             session.get_bind(), participant.table_name, config.supports_reflection()
         )
         participants = query_for_participants(
-            session, sa_table, audience_spec, chosen_n
+            session, sa_table, body.audience_spec, chosen_n
         )
 
-    arm_names = [arm.arm_name for arm in design_spec.arms]
-    metric_names = [m.metric_name for m in design_spec.metrics]
+    arm_names = [arm.arm_name for arm in body.design_spec.arms]
+    metric_names = [m.metric_name for m in body.design_spec.metrics]
     return assign_treatment(
         data=DataFrame(participants),
-        stratum_cols=design_spec.strata_cols + metric_names,
+        stratum_cols=body.design_spec.strata_cols + metric_names,
         id_col=unique_id_col,
         arm_names=arm_names,
-        experiment_id=str(design_spec.experiment_id),
-        description=design_spec.description,
-        fstat_thresh=design_spec.fstat_thresh,
+        experiment_id=str(body.design_spec.experiment_id),
+        description=body.design_spec.description,
+        fstat_thresh=body.design_spec.fstat_thresh,
         random_state=random_state,
     )
 
@@ -355,15 +371,15 @@ def assign_treatment_api(
     "/assignment-file",
     summary="Retrieve all participant assignments for the given experiment_id.",
     responses=STANDARD_WEBHOOK_RESPONSES,
-    tags=["Manage Experiments"],
+    tags=["Experiment Management"],
 )
 async def assignment_file(
     response: Response,
-    http_client: Annotated[httpx.AsyncClient, Depends(httpx_dependency)],
-    experiment_id: str = Annotated[
+    experiment_id: Annotated[
         str,
         Query(description="ID of the experiment whose assignments we wish to fetch."),
     ],
+    http_client: Annotated[httpx.AsyncClient, Depends(httpx_dependency)],
     client: Annotated[ClientConfig | None, Depends(config_dependency)] = None,
 ) -> WebhookResponse:
     config = require_config(client).webhook_config
@@ -383,14 +399,12 @@ async def assignment_file(
     "/commit",
     summary="Commit an experiment to the database.",
     responses=STANDARD_WEBHOOK_RESPONSES,
-    tags=["Manage Experiments"],
+    tags=["Experiment Management"],
 )
 async def commit_experiment(
     response: Response,
-    design_spec: DesignSpec,
-    audience_spec: AudienceSpec,
-    experiment_assignment: ExperimentAssignment,
-    user_id: str,
+    body: CommitRequest,
+    user_id: Annotated[str, Query(...)],
     http_client: Annotated[httpx.AsyncClient, Depends(httpx_dependency)],
     client: Annotated[ClientConfig | None, Depends(config_dependency)] = None,
 ) -> WebhookResponse:
@@ -402,9 +416,9 @@ async def commit_experiment(
 
     commit_payload = WebhookRequestCommit(
         creator_user_id=user_id,
-        experiment_assignment=experiment_assignment,
-        design_spec=design_spec,
-        audience_spec=audience_spec,
+        experiment_assignment=body.experiment_assignment,
+        design_spec=body.design_spec,
+        audience_spec=body.audience_spec,
     )
 
     response.status_code, payload = await make_webhook_request(
@@ -417,11 +431,11 @@ async def commit_experiment(
     "/update-commit",
     summary="Update an existing experiment's timestamps or description (experiment and arms)",
     responses=STANDARD_WEBHOOK_RESPONSES,
-    tags=["Manage Experiments"],
+    tags=["Experiment Management"],
 )
 async def update_experiment(
     response: Response,
-    request_payload: WebhookRequestUpdate,
+    body: UpdateCommitRequest,
     update_type: Annotated[
         Literal["timestamps", "description"],
         Query(description="The type of experiment metadata update to perform"),
@@ -440,7 +454,7 @@ async def update_experiment(
         raise HTTPException(501, f"Action '{update_type}' not configured.")
     # Need to pull out the upstream server payload:
     response.status_code, payload = await make_webhook_request(
-        http_client, config, action, request_payload.update_json
+        http_client, config, action, body.update_json
     )
     return payload
 
@@ -454,10 +468,11 @@ async def update_experiment(
 async def alt_update_experiment(
     response: Response,
     body: UpdateExperimentStartEndRequest | UpdateExperimentDescriptionsRequest,
-    http_client: Annotated[httpx.AsyncClient, Depends(httpx_dependency)],
-    experiment_id: str = Annotated[
-        str, Path(description="The ID of the experiment to update.")
+    _experiment_id: Annotated[
+        str,
+        Path(description="The ID of the experiment to update.", alias="experiment_id"),
     ],
+    http_client: Annotated[httpx.AsyncClient, Depends(httpx_dependency)],
     client: Annotated[ClientConfig | None, Depends(config_dependency)] = None,
 ) -> WebhookResponse:
     config = require_config(client).webhook_config
@@ -542,26 +557,16 @@ async def make_webhook_request_base(
 def debug_settings(
     request: Request,
     settings: Annotated[XnginSettings, Depends(settings_dependency)],
-    config: Annotated[ClientConfig | None, Depends(config_dependency)] = None,
 ):
     """Endpoint for testing purposes. Returns the current server configuration and optionally the config ID."""
     # Secrets will not be returned because they are stored as SecretStrs, but nonetheless this method
     # should only be invoked from trusted IP addresses.
     if request.client.host not in settings.trusted_ips:
         raise HTTPException(403)
-
-    config_id = None
-    if config:
-        config_id = config.id
-    return {"settings": settings, "config_id": config_id}
-
-
-# Main experiment assignment function
-def assign_units_to_arms(
-    design_spec: DesignSpec, audience_spec: AudienceSpec, chosen_n: int
-):
-    # Implement experiment assignment logic
-    pass
+    response = {"settings": settings}
+    if config_id := request.headers.get("config-id"):
+        response["config_id"] = config_id
+    return response
 
 
 def require_config(client: ClientConfig | None):

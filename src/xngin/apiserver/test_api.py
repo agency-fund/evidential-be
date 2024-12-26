@@ -17,9 +17,9 @@ from xngin.apiserver.main import app
 from xngin.apiserver.testing.assertions import assert_same
 from xngin.apiserver.testing.xurl import Xurl
 from xngin.apiserver.webhook_types import (
-    WebhookRequestUpdate,
-    WebhookRequestUpdateDescriptions,
-    WebhookRequestUpdateTimestamps,
+    UpdateCommitRequest,
+    UpdateDescriptionRequest,
+    UpdateTimestampsRequest,
     WebhookResponse,
 )
 
@@ -239,7 +239,7 @@ def test_update_experiment_timestamps(mocker):
     )
     # And check that we not only have the expected payload structure that the upstream server expects, but that one of
     # the values within matches our test data.
-    model = WebhookRequestUpdateTimestamps.model_validate(kwargs["json"])
+    model = UpdateTimestampsRequest.model_validate(kwargs["json"])
     assert model.start_date == datetime.fromisoformat("2024-11-15T17:15:13.576Z")
 
 
@@ -250,7 +250,7 @@ def test_update_experiment_fails_when_end_before_start(mocker):
         mocker, "apitest.update-commit.timestamps.xurl"
     )
     # Replace the valid body with one that has end_date < start_date
-    bad_body = WebhookRequestUpdate.model_validate_json(hurl.body)
+    bad_body = UpdateCommitRequest.model_validate_json(hurl.body)
     bad_body.update_json.end_date = bad_body.update_json.start_date - timedelta(days=1)
     hurl.body = bad_body.model_dump_json()
     # Expect to fail before even making the request due to validation error.
@@ -285,7 +285,7 @@ def test_update_experiment_description(mocker):
         kwargs["url"]
         == "http://localhost:4001/dev/api/v1/experiment-commit/update-experiment-commit"
     )
-    model = WebhookRequestUpdateDescriptions.model_validate(kwargs["json"])
+    model = UpdateDescriptionRequest.model_validate(kwargs["json"])
     assert model.description == "Sample new description"
 
 

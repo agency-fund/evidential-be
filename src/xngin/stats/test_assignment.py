@@ -2,7 +2,7 @@ import pytest
 import pandas as pd
 import numpy as np
 from xngin.stats.assignment import assign_treatment
-from xngin.apiserver.api_types import ExperimentParticipant
+from xngin.apiserver.api_types import Assignment
 
 
 @pytest.fixture
@@ -76,8 +76,7 @@ def test_assign_treatment_multiple_arms(sample_data):
     assert isinstance(result.assignments, list)
     # Check that the list contains ExperimentParticipant objects
     assert all(
-        isinstance(participant, ExperimentParticipant)
-        for participant in result.assignments
+        isinstance(participant, Assignment) for participant in result.assignments
     )
     # Check that the treatment assignments are valid (not None or NaN)
     assert all(
