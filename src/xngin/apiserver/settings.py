@@ -71,7 +71,7 @@ class SheetRef(ConfigBaseModel):
     worksheet: str
 
 
-class Participant(ConfigBaseModel):
+class ParticipantsRef(ConfigBaseModel):
     """Participants are a logical representation of a table in the data warehouse.
 
     Participants are defined by a table_name and a configuration worksheet.
@@ -85,7 +85,7 @@ class Participant(ConfigBaseModel):
 class ParticipantsMixin(ConfigBaseModel):
     """ParticipantsMixin can be added to a config type to add standardized participant definitions."""
 
-    participants: list[Participant]
+    participants: list[ParticipantsRef]
 
     def find_participants(self, participant_type: str):
         """Returns the participant matching participant_type or raises CannotFindParticipantsException."""
