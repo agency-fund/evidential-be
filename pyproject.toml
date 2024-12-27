@@ -23,6 +23,7 @@ dependencies = [
     "uvicorn[standard]>=0.32.0",
     "zstandard>=0.23.0,<0.24",
     "sentry-sdk[fastapi]>=2.19.2,<2.20",
+    "python-jose>=3.3.0",
 ]
 requires-python = ">=3.12,<3.13"
 

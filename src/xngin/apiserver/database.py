@@ -1,8 +1,8 @@
 import os
 from pathlib import Path
 
-from sqlalchemy import create_engine, String
-from sqlalchemy.orm import DeclarativeBase, mapped_column
+from sqlalchemy import create_engine, String, ForeignKey
+from sqlalchemy.orm import DeclarativeBase, mapped_column, Mapped, relationship
 from sqlalchemy.orm import sessionmaker
 
 DEFAULT_POSTGRES_DIALECT = "postgresql+psycopg"
@@ -54,6 +54,30 @@ class Cache(Base):
     # TODO: handle non-sqlite SQLALCHEMY_DATABASE_URLs
     key = mapped_column(String, primary_key=True)
     value = mapped_column(String)
+
+
+class ApiKey(Base):
+    __tablename__ = "apikeys"
+
+    id: Mapped[str] = mapped_column(String, primary_key=True, nullable=False)
+
+    key: Mapped[str] = mapped_column(String, nullable=False, unique=True)
+
+    datasources: Mapped[list["ApiKeyDatasource"]] = relationship(
+        back_populates="apikey", cascade="all, delete-orphan"
+    )
+
+
+class ApiKeyDatasource(Base):
+    __tablename__ = "apikey_datasources"
+
+    apikey_id: Mapped[str] = mapped_column(
+        ForeignKey("apikeys.id", ondelete="CASCADE"), primary_key=True, nullable=False
+    )
+
+    datasource_id: Mapped[str] = mapped_column(String, primary_key=True, nullable=False)
+
+    apikey: Mapped[ApiKey] = relationship(back_populates="datasources")
 
 
 def setup():

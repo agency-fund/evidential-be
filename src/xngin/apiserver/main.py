@@ -12,7 +12,7 @@ from pandas import DataFrame
 from pydantic import BaseModel
 from sqlalchemy import distinct
 
-from xngin.apiserver import database, exceptionhandlers
+from xngin.apiserver import database, exceptionhandlers, middleware
 from xngin.apiserver.api_types import (
     DataTypeClass,
     AssignResponse,
@@ -36,6 +36,7 @@ from xngin.apiserver.dependencies import (
 )
 from xngin.apiserver.dwh.queries import get_stats_on_metrics, query_for_participants
 from xngin.apiserver.gsheet_cache import GSheetCache
+from xngin.apiserver.routers import oidc, admin
 from xngin.apiserver.settings import (
     ParticipantsMixin,
     WebhookConfig,
@@ -60,6 +61,7 @@ from xngin.sheets.config_sheet import (
 )
 from xngin.stats.assignment import assign_treatment
 from xngin.stats.power import check_power
+
 
 logging.basicConfig(
     level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
@@ -86,8 +88,14 @@ async def lifespan(_app: FastAPI):
     yield
 
 
+# TODO: pass parameters to Swagger to support OIDC/PKCE
 app = FastAPI(lifespan=lifespan)
 exceptionhandlers.setup(app)
+middleware.setup(app)
+if oidc.is_enabled():
+    app.include_router(oidc.router, tags=["Auth"], include_in_schema=False)
+if oidc.is_enabled() and admin.is_enabled():
+    app.include_router(admin.router, tags=["Admin"], include_in_schema=False)
 
 
 def custom_openapi():
