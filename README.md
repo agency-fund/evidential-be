@@ -32,7 +32,7 @@ The following is a proposal of the main components of this service:
 The commands below require you to have [uv](https://docs.astral.sh/uv/) installed:
 
 ```shell
-curl -LsSf https://astral.sh/uv/0.5.5/install.sh | sh
+curl -LsSf https://astral.sh/uv/0.5.12/install.sh | sh
 ```
 
 ## Getting Started
