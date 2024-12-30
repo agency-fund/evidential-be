@@ -411,3 +411,52 @@ def test_query_baseline_metrics(db_session):
         assert actual.model_dump(include=numeric_fields) == pytest.approx(
             result.model_dump(include=numeric_fields)
         )
+
+
+def test_query_baseline_metrics_without_metric_type(db_session):
+    """Identical to test_query_baseline_metrics but without metric_type"""
+    table = Base.metadata.tables.get(SampleTable.__tablename__)
+    row = get_stats_on_metrics(
+        db_session,
+        table,
+        [
+            DesignSpecMetric(metric_name="bool_col"),
+            DesignSpecMetric(metric_name="float_col"),
+            DesignSpecMetric(metric_name="int_col"),
+        ],
+        AudienceSpec(
+            participant_type="ignored",
+            filters=[],
+        ),
+    )
+    expected = [
+        DesignSpecMetric(
+            metric_name="bool_col",
+            metric_type=MetricType.BINARY,
+            metric_baseline=0.6666666666666666,
+            metric_stddev=0.4714045207910317,
+            available_n=3,
+        ),
+        DesignSpecMetric(
+            metric_name="float_col",
+            metric_type=MetricType.NUMERIC,
+            metric_baseline=2.492,
+            metric_stddev=0.6415751449882287,
+            available_n=3,
+        ),
+        DesignSpecMetric(
+            metric_name="int_col",
+            metric_type=MetricType.NUMERIC,
+            metric_baseline=41.666666666666664,
+            metric_stddev=47.76563153100307,
+            available_n=3,
+        ),
+    ]
+    numeric_fields = {"metric_baseline", "metric_stddev", "available_n"}
+    for actual, result in zip(row, expected, strict=True):
+        assert actual.metric_name == result.metric_name
+        assert actual.metric_type == result.metric_type
+        # pytest.approx does a reasonable fuzzy comparison of floats for non-nested dictionaries.
+        assert actual.model_dump(include=numeric_fields) == pytest.approx(
+            result.model_dump(include=numeric_fields)
+        )

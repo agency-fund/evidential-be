@@ -6,6 +6,7 @@ from sqlalchemy.orm import Session
 
 from xngin.apiserver.api_types import (
     AudienceSpec,
+    MetricType,
     Relation,
     AudienceSpecFilter,
     EXPERIMENT_IDS_SUFFIX,
@@ -45,6 +46,11 @@ def get_stats_on_metrics(
     for metric in metrics:
         metric_name = metric.metric_name
         metric_with_stats = metric.model_copy()
+        # Derive type from the dwh if not supplied in the spec:
+        if metric_with_stats.metric_type is None:
+            metric_with_stats.metric_type = MetricType.from_python_type(
+                sa_table.c[metric_name].type.python_type
+            )
         # Explicit cast to float in case the db mean is a decimal.Decimal
         metric_with_stats.metric_baseline = float(stats[f"{metric_name}__mean"])
         metric_with_stats.metric_stddev = stats[f"{metric_name}__stddev"]

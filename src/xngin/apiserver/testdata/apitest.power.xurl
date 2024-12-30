@@ -29,6 +29,10 @@ Config-ID: testing
         "metric_name": "current_income",
         "metric_type": "numeric",
         "metric_pct_change": 0.1
+      },
+      {
+        "metric_name": "income",
+        "metric_pct_change": 0.1
       }
     ]
   },
@@ -60,13 +64,36 @@ HTTP 200
     },
     "metric_target_possible": null,
     "msg": {
-        "type": "sufficient",
-        "msg": "There are 39405 units available to run your experiment and 210.0 units are needed to meet your experimental design specs. There are enough units available, you only need 210.0 of the 39405 units to meet your experimental design specs.",
-        "values": {}
+      "msg": "There are 39405 units available to run your experiment and 210.0 units are needed to meet your experimental design specs. There are enough units available, you only need 210.0 of the 39405 units to meet your experimental design specs.",
+      "type": "sufficient",
+      "values": {}
     },
     "needed_target": null,
     "sufficient_n": true,
     "target_n": 210
+  },
+  {
+    "available_n": 39405,
+    "delta": null,
+    "metric_pct_change_possible": null,
+    "metric_spec": {
+      "available_n": 39405,
+      "metric_baseline": 30898.867656825856,
+      "metric_name": "income",
+      "metric_pct_change": 0.1,
+      "metric_stddev": 8449.033214299421,
+      "metric_target": 33988.75442250844,
+      "metric_type": "numeric"
+    },
+    "metric_target_possible": null,
+    "msg": {
+      "msg": "There are 39405 units available to run your experiment and 238.0 units are needed to meet your experimental design specs. There are enough units available, you only need 238.0 of the 39405 units to meet your experimental design specs.",
+      "type": "sufficient",
+      "values": {}
+    },
+    "needed_target": null,
+    "sufficient_n": true,
+    "target_n": 238
   }
 ]
 ```

@@ -289,19 +289,26 @@ class DesignSpecMetric(ApiBaseModel):
     """Defines a metric to measure in the experiment."""
 
     metric_name: ColumnName
-    # TODO(roboton): metric_type should be inferred by name from db when missing
-    metric_type: MetricType | None = None
+    metric_type: Annotated[
+        MetricType | None, Field(description="If not set, will infer from dwh type.")
+    ] = None
     # TODO(roboton): metric_baseline should be drawn from dwh when missing
     metric_baseline: float | None = None
     # TODO(roboton): we should only set this value if metric_type is NUMERIC
     metric_stddev: float | None = None
-    # TOOD(roboton): if target is set, metric_pct_change is ignored, but we
+    # TODO(roboton): if target is set, metric_pct_change is ignored, but we
     # should display a warning
-    metric_pct_change: float | None = None
-    # TODO(roboton): metric_target will be computed from metric_baseline and
-    # TODO(roboton): metric_pct_change if missing
-    # TODO(roboton): metric_target = 1 + metric_pct_change * metric_baseline
-    metric_target: float | None = None
+    metric_pct_change: Annotated[
+        float | None,
+        Field(description="If target is set, metric_pct_change is ignored."),
+    ] = None
+    metric_target: Annotated[
+        float | None,
+        Field(
+            description="Computed as metric_baseline*(1 + metric_pct_change) if missing."
+        ),
+    ] = None
+    # TODO(roboton): metric_pct_change if missing")] = None
     # TODO(roboton): available_n should probably be in another structure related to power_analysis?
     available_n: int | None = None
 

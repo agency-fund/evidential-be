@@ -95,3 +95,18 @@ def test_check_power_effect_size_zero_raises_error():
     with pytest.raises(StatsPowerError) as excinfo:
         check_power(metrics, n_arms=2)
     assert "bad_metric" in str(excinfo.value)
+
+
+def test_check_missing_metric_type_raises_error():
+    metrics = [
+        DesignSpecMetric(
+            metric_name="bad_metric",
+            metric_baseline=0.5,
+            metric_target=0.5,
+            available_n=1000,
+        ),
+    ]
+
+    with pytest.raises(StatsPowerError) as excinfo:
+        check_power(metrics, n_arms=2)
+    assert "Unknown metric_type" in str(excinfo.value)
