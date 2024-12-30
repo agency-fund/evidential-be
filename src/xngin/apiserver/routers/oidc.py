@@ -13,12 +13,42 @@ from fastapi.security import OpenIdConnect
 from starlette import status
 from starlette.responses import FileResponse
 
+ENV_GOOGLE_OIDC_CLIENT_ID = "GOOGLE_OIDC_CLIENT_ID"
+ENV_GOOGLE_OIDC_CLIENT_SECRET = "GOOGLE_OIDC_CLIENT_SECRET"
+ENV_GOOGLE_OIDC_REDIRECT_URI = "GOOGLE_OIDC_REDIRECT_URI"
+
+CLIENT_ID = os.environ.get(ENV_GOOGLE_OIDC_CLIENT_ID)
+CLIENT_SECRET = os.environ.get(ENV_GOOGLE_OIDC_CLIENT_SECRET)
+GOOGLE_DISCOVERY_URL = "https://accounts.google.com/.well-known/openid-configuration"
+DEFAULT_REDIRECT_URI = (
+    "http://localhost:8000/a/oidc"  # default value should match value in oidctest.html
+)
+REDIRECT_URI = os.environ.get(
+    ENV_GOOGLE_OIDC_REDIRECT_URI, DEFAULT_REDIRECT_URI
+)  # used for testing UI only
+SCOPES = ["openid", "email", "profile"]
+oidc_google = OpenIdConnect(openIdConnectUrl=GOOGLE_DISCOVERY_URL)
+
 logger = logging.getLogger(__name__)
+
+
+class OidcMisconfiguredError(Exception):
+    pass
 
 
 def is_enabled():
     """Feature flag: Returns true iff OIDC is enabled."""
-    return os.environ.get("ENABLE_OIDC", "").lower() in ("true", 1)
+    enabled = os.environ.get("ENABLE_OIDC", "").lower() in ("true", "1")
+    if enabled:
+        if not os.environ.get(ENV_GOOGLE_OIDC_CLIENT_ID):
+            raise OidcMisconfiguredError(
+                f"{ENV_GOOGLE_OIDC_CLIENT_ID} environment variable is not set."
+            )
+        if not os.environ.get(ENV_GOOGLE_OIDC_CLIENT_SECRET):
+            logger.warning(
+                f"{ENV_GOOGLE_OIDC_CLIENT_SECRET} environment variable is not set."
+            )
+    return enabled
 
 
 # TODO: refresh these occasionally
@@ -36,14 +66,6 @@ router = APIRouter(
     lifespan=lifespan,
     prefix="/a/oidc",
 )
-
-
-GOOGLE_DISCOVERY_URL = "https://accounts.google.com/.well-known/openid-configuration"
-oidc_google = OpenIdConnect(openIdConnectUrl=GOOGLE_DISCOVERY_URL)
-CLIENT_ID = os.environ.get("GOOGLE_OIDC_CLIENT_ID")
-CLIENT_SECRET = os.environ.get("GOOGLE_OIDC_CLIENT_SECRET")
-REDIRECT_URI = "http://localhost:8000/a/oidc"  # used for testing UI only
-SCOPES = ["openid", "email", "profile"]
 
 
 async def get_google_configuration():
@@ -72,7 +94,7 @@ async def get_google_jwks():
 # TODO: remove this once integration is confirmed to work
 @router.get("/")
 def index():
-    return FileResponse("static/oidctest.html")
+    return FileResponse("static/pkcetest.html")
 
 
 @router.get("/login")
@@ -80,7 +102,10 @@ async def login(
     code_challenge: Annotated[str, Query(...)],
     code_challenge_method: Annotated[str, Query(...)],
 ):
-    """Generates a login URL given a PKCE code challenge."""
+    """Generates a login URL given a PKCE code challenge.
+
+    Only relevant for PKCE.
+    """
     config = await get_google_configuration()
     if code_challenge_method not in {"S256"}:
         raise HTTPException(
@@ -104,19 +129,24 @@ async def login(
 async def auth_callback(
     code: Annotated[str, Query(...)], code_verifier: Annotated[str, Query(...)]
 ):
-    """OAuth callback endpoint that exchanges the authorization code for tokens."""
+    """OAuth callback endpoint that exchanges the authorization code for tokens.
+
+    Only relevant for PKCE.
+    """
     config = await get_google_configuration()
     async with httpx.AsyncClient() as client:
         token_response = await client.post(
             config["token_endpoint"],
             data={
                 "client_id": CLIENT_ID,
+                # client_secret is not strictly required by PKCE spec but Google requires it.
                 "client_secret": CLIENT_SECRET,
                 "code": code,
-                "code_verifier": code_verifier,  # Include PKCE verifier
+                "code_verifier": code_verifier,
                 "redirect_uri": REDIRECT_URI,
                 "grant_type": "authorization_code",
             },
         )
+        logger.info(f"token exchange response = {token_response.content}")
         token_response.raise_for_status()
         return token_response.json()

@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>OAuth PKCE Login</title>
+    <title>Admin UI</title>
     <style>
         body {
             font-family: Arial, sans-serif;
@@ -11,7 +11,7 @@
             margin: 40px auto;
             padding: 0 20px;
         }
-        button {
+        button, input {
             padding: 10px 20px;
             font-size: 16px;
             cursor: pointer;
@@ -25,7 +25,7 @@
     </style>
 </head>
 <body>
-    <h1>OAuth PKCE</h1>
+    <h1>Admin UI</h1>
 
     <div id="not-logged-in">
         <button onclick="login()">Login with Google</button>
@@ -33,9 +33,15 @@
 
     <div id="logged-in" style="display: none;">
         <h2>Logged In</h2>
-        <button onclick="callProtectedEndpoint('m/caller-identity')">Ping</button>
-        <button onclick="callProtectedEndpoint('m/organizations')">List Organizations</button>
         <button onclick="logout()">Logout</button>
+        <br/>
+        <button onclick="callProtectedEndpoint('m/caller-identity')">Ping</button>
+        <br/>
+        <button onclick="callProtectedEndpoint('m/datasources')">List Datasources</button>
+        <button onclick="callProtectedEndpoint('m/apikeys')">List API Keys</button>
+        <br/>
+        <input id="datasource" value="testing-secured"><button onclick="callCreateApiKey()">Create API Key</button>
+        <br/>
         <h3>Response:</h3>
         <pre id="response"></pre>
     </div>
@@ -125,6 +131,32 @@
                 console.error('API call error:', error);
                 alert('API call failed. Check console for details.');
             }
+        }
+
+        async function callCreateApiKey() {
+            const datasource = document.getElementById('datasource').value;
+            try {
+                const idToken = localStorage.getItem('id_token');
+                if (!idToken) {
+                    throw new Error('No ID token found');
+                }
+                const response = await fetch(`${API_URL}/m/apikeys`, {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': `Bearer ${idToken}`,
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        datasource_ids: [datasource]
+                    })
+                });
+                const data = await response.json();
+                document.getElementById('response').textContent = JSON.stringify(data, null, 2);
+            } catch (error) {
+                console.error('API call error:', error);
+                alert('API call failed. Check console for details.');
+            }
+
         }
 
         function logout() {

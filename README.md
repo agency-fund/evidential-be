@@ -466,7 +466,7 @@ Authentication:
 
 Run `brew install postgresql@14`.
 
-### Deployment on Railway
+## Deployment on Railway
 
 The Railway deployment relies on [Dockerfile.railway](Dockerfile.railway), [railway.json](railway.json), and some
 environment variables:
@@ -481,3 +481,53 @@ environment variables:
 In addition, there are variables set in the Railway console corresponding to configuration values referenced by
 the [xngin.railway.settings.json](https://github.com/agency-fund/xngin-settings/xngin.railway.settings.json) file in the
 limited-access https://github.com/agency-fund/xngin-settings repository.
+
+## Admin API
+
+The Admin API allows API keys to be managed by users from a trusted domain. The API is protected by OIDC and allows
+logins from Google Workspace accounts in the @agency.fund domain.
+
+The API is configured with environment variables:
+
+| Environment Variable | Purpose                                                                   | Example |
+|----------------------|---------------------------------------------------------------------------|---------|
+| ENABLE_OIDC          | Enables the OIDC endpoints. Must be `true` for the Admin API to function. | `true`  |
+| ENABLE_ADMIN         | Enables the Admin API.                                                    | `true`  |
+
+If the Admin API is enabled, OIDC must be configured with additional environment variables (see below).
+
+## OIDC
+
+Our OIDC implementation supports the popup-style OIDC flow (response_type=`id_token`) and PKCE exchanges
+(response_type=`code`).
+
+| Environment Variable      | Purpose                                                     | Example                              |
+|---------------------------|-------------------------------------------------------------|--------------------------------------|
+| GOOGLE_OIDC_CLIENT_ID     | The Google-issued client ID.                                | `2222-...apps.googleusercontent.com` |
+| GOOGLE_OIDC_CLIENT_SECRET | The Google-generated client secret. Only required for PKCE. | `G....`                              |
+
+## API Keys
+
+The datasources defined in settings can be protected with API keys. To require API keys for a specific datasource, set
+the `require_api_key` flag to true on the settings. Example:
+
+```json5
+{
+  "id": "my-secure-config",
+  "require_api_key": true,
+  "config": {
+    "type": "remote",
+    // ...
+  }
+}
+```
+
+Use the Admin API to create API keys.
+
+Clients must send the API keys as the `x-api-key` header. Example:
+
+```shell
+curl --header "x-api-key: xat_..." \
+  --header "Config-ID: my-secure-config" \
+  'http://localhost:8000/filters?participant_type=test_participant_type'
+```

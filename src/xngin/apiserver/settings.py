@@ -366,11 +366,13 @@ class SqliteLocalConfig(ParticipantsMixin, ConfigBaseModel):
         return Session(engine)
 
 
+# TODO: rename to "datasource"
 class ClientConfig(ConfigBaseModel):
     id: str
     config: Annotated[
         RemoteDatabaseConfig | SqliteLocalConfig, Field(discriminator="type")
     ]
+    require_api_key: Annotated[bool | None, Field(...)] = None
 
 
 class XnginSettings(ConfigBaseModel):

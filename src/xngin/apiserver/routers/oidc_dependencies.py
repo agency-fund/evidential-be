@@ -12,6 +12,9 @@ from xngin.apiserver.routers.oidc import (
 )
 import logging
 
+# JWTs generated for domains other than @agency.fund are considered invalid.
+ALLOWED_HOSTED_DOMAINS = ("agency.fund",)
+
 logger = logging.getLogger(__name__)
 
 
@@ -42,7 +45,7 @@ async def require_oidc_token(
             detail="Unable to find appropriate key",
         )
     try:
-        return jwt.decode(
+        decoded = jwt.decode(
             token,
             key,
             algorithms=["RS256"],
@@ -52,11 +55,20 @@ async def require_oidc_token(
                 "require_iss": True,
                 "require_aud": True,
                 "require_iat": True,
-                "verify_at_hash": False,
+                "require_exp": True,
+                "verify_at_hash": False,  # PKCE flow sends at_hash but we don't need to verify it.
             },
         )
+        if (
+            decoded["hd"] not in ALLOWED_HOSTED_DOMAINS
+            or decoded["azp"] != decoded["aud"]
+        ):
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid hd"
+            )
     except JWTError as e:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail=f"Invalid authentication credentials: {e}",
         ) from e
+    return decoded

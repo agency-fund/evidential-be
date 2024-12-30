@@ -3,6 +3,7 @@ import sqlalchemy
 from starlette.requests import Request
 from starlette.responses import JSONResponse
 
+from xngin.apiserver.apikeys import ApiKeyError
 from xngin.apiserver.settings import (
     CannotFindTableError,
     CannotFindParticipantsError,
@@ -44,4 +45,10 @@ def setup(app):
         # Return a minimal error message
         return JSONResponse(
             status_code=status, content={"message": str(cause) or str(exc)}
+        )
+
+    @app.exception_handler(ApiKeyError)
+    async def exception_handler_apikeys(_request: Request, _exc: ApiKeyError):
+        return JSONResponse(
+            status_code=403, content={"message": "API key missing or invalid."}
         )
