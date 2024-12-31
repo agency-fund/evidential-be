@@ -1,4 +1,4 @@
-from sqlalchemy import String, ForeignKey
+from sqlalchemy import ForeignKey
 from sqlalchemy.orm import DeclarativeBase, mapped_column, Mapped, relationship
 
 
@@ -9,8 +9,8 @@ class Base(DeclarativeBase):
 class Cache(Base):
     __tablename__ = "cache"
 
-    key = mapped_column(String, primary_key=True)
-    value = mapped_column(String)
+    key: Mapped[str] = mapped_column(primary_key=True)
+    value: Mapped[str] = mapped_column(nullable=False)
 
 
 class ApiKey(Base):
