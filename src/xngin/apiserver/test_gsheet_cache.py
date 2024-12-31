@@ -8,7 +8,7 @@ from sqlalchemy.exc import IntegrityError
 
 from xngin.apiserver import conftest
 from xngin.apiserver.api_types import DataType
-from xngin.apiserver.database import Cache
+from xngin.apiserver.models.tables import Cache
 from xngin.apiserver.gsheet_cache import GSheetCache
 from xngin.apiserver.settings import SheetRef
 from xngin.sheets.config_sheet import ConfigWorksheet, ColumnDescriptor

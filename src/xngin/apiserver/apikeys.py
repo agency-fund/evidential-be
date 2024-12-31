@@ -5,8 +5,10 @@ import string
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from xngin.apiserver.database import ApiKey as ApiKeyDB
-from xngin.apiserver.database import ApiKeyDatasource as ApiKeyDatasourceDB
+from xngin.apiserver.models.tables import (
+    ApiKey as ApiKeyDB,
+    ApiKeyDatasource as ApiKeyDatasourceDB,
+)
 import logging
 
 logger = logging.getLogger(__name__)

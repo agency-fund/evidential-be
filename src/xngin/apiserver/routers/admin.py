@@ -11,8 +11,10 @@ from sqlalchemy import delete, select
 from sqlalchemy.orm import Session, selectinload
 
 from xngin.apiserver.apikeys import make_key, hash_key
-from xngin.apiserver.database import ApiKey as ApiKeyDB
-from xngin.apiserver.database import ApiKeyDatasource as ApiKeyDatasourceDB
+from xngin.apiserver.models.tables import (
+    ApiKey as ApiKeyDB,
+    ApiKeyDatasource as ApiKeyDatasourceDB,
+)
 from xngin.apiserver.dependencies import settings_dependency, xngin_db_session
 from xngin.apiserver.routers.oidc_dependencies import require_oidc_token
 from xngin.apiserver.settings import XnginSettings

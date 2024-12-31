@@ -4,7 +4,7 @@ from sqlalchemy import update
 from sqlalchemy.orm import Session
 from sqlalchemy.exc import IntegrityError
 
-from xngin.apiserver.database import Cache
+from xngin.apiserver.models.tables import Cache
 from xngin.apiserver.settings import SheetRef
 from xngin.sheets.config_sheet import ConfigWorksheet
 

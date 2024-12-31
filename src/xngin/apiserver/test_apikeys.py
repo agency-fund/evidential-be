@@ -3,7 +3,7 @@ from sqlalchemy import delete
 
 from xngin.apiserver import conftest
 from xngin.apiserver.apikeys import make_key, hash_key
-from xngin.apiserver.database import ApiKey, ApiKeyDatasource
+from xngin.apiserver.models.tables import ApiKey, ApiKeyDatasource
 from xngin.apiserver.dependencies import xngin_db_session
 from xngin.apiserver.main import app
 
