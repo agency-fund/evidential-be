@@ -2,6 +2,7 @@
 name = "xngin"
 version = "0.0.1"
 dependencies = [
+    "atlas-provider-sqlalchemy>=0.2.4,<3",
     "boto3>=1.35,<1.36",
     "deepdiff>=8.0.1,<8.1",
     "fastapi[standard]>=0.115.6,<0.116.0",
