@@ -18,7 +18,7 @@ Python version of [RL Experiments Engine](https://github.com/agency-fund/rl-expe
 
 The following is a proposal of the main components of this service:
 
-1. A ODBC/DBI-based interfae module to connect to underlying data sources (one table per unit of analysis)
+1. A ODBC/DBI-based interface module to connect to underlying data sources (one table per unit of analysis)
 2. A configuration module that draws from the table(s) specified in (1) into a Google Sheet that can be annotated with
    filters, metrics and strata
 3. API endpoints that provide a list of fields and their values (/filters, /metrics, /strata)
@@ -530,4 +530,26 @@ Clients must send the API keys as the `x-api-key` header. Example:
 curl --header "x-api-key: xat_..." \
   --header "Config-ID: my-secure-config" \
   'http://localhost:8000/filters?participant_type=test_participant_type'
+```
+
+## Schema Migration
+
+We are using [Atlas](https://atlasgo.io/) to manage database schema migrations.
+
+To generate migrations:
+
+```shell
+uv run atlas migrate diff --env sa_postgres
+```
+
+To apply migrations to a local Postgres instance:
+
+```shell
+uv run atlas migrate apply --env sa_postgres --url 'postgresql://postgres:postgres@localhost:5499/postgres?sslmode=disable'
+```
+
+To apply migrations to the main.dev.agencyfund.org instance:
+
+```shell
+uv run atlas migrate apply --env sa_postgres --url 'postgresql://junction.proxy.rlwy.net:21126/railway?sslmode=require'
 ```
