@@ -21,9 +21,9 @@ class ApiKey(Base):
 
     __tablename__ = "apikeys"
 
-    id: Mapped[str] = mapped_column(String, primary_key=True, nullable=False)
+    id: Mapped[str] = mapped_column(primary_key=True, nullable=False)
 
-    key: Mapped[str] = mapped_column(String, nullable=False, unique=True)
+    key: Mapped[str] = mapped_column(nullable=False, unique=True)
 
     datasources: Mapped[list["ApiKeyDatasource"]] = relationship(
         "ApiKeyDatasource", back_populates="apikey", cascade="all, delete-orphan"
@@ -39,6 +39,6 @@ class ApiKeyDatasource(Base):
         ForeignKey("apikeys.id", ondelete="CASCADE"), primary_key=True, nullable=False
     )
 
-    datasource_id: Mapped[str] = mapped_column(String, primary_key=True, nullable=False)
+    datasource_id: Mapped[str] = mapped_column(primary_key=True, nullable=False)
 
-    apikey: Mapped[ApiKey] = relationship(ApiKey, back_populates="datasources")
+    apikey: Mapped[ApiKey] = relationship(back_populates="datasources")
