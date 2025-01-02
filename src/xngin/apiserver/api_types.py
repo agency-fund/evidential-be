@@ -1,3 +1,4 @@
+import decimal
 import enum
 import re
 import uuid
@@ -278,7 +279,7 @@ class MetricType(enum.StrEnum):
     def from_python_type(cls, python_type: type) -> "MetricType":
         """Maps Python types to metric types."""
 
-        if python_type in (int, float):
+        if python_type in (int, float, decimal.Decimal):
             return MetricType.NUMERIC
         if python_type is bool:
             return MetricType.BINARY
