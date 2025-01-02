@@ -5,14 +5,14 @@
 # xngin
 
 - [xngin](#xngin)
-    - [Prerequisites](#prerequisites)
-    - [Getting Started](#getting-started)
-    - [Settings](#settings)
-    - [Docker](#docker)
-    - [Testing](#testing)
-    - [The CLI](#the-cli)
-    - [Onboarding new Clients](#onboarding-new-clients)
-    - [FAQ](#faq)
+  - [Prerequisites](#prerequisites)
+  - [Getting Started](#getting-started)
+  - [Settings](#settings)
+  - [Docker](#docker)
+  - [Testing](#testing)
+  - [The CLI](#the-cli)
+  - [Onboarding new Clients](#onboarding-new-clients)
+  - [FAQ](#faq)
 
 Python version of [RL Experiments Engine](https://github.com/agency-fund/rl-experiments-engine).
 
@@ -250,7 +250,7 @@ In addition to the unittests run via [pytest](https://docs.pytest.org/en/stable/
 * Some of our tests that rely on `conftest.py` will create a local sqlite db for testing in
   `src/xngin/apiserver/testdata/testing_dwh.db` if it doesn't exist already using the zipped data dump in
   `testing_dwh.csv.zst`.
-    * `test_data.csv` is the corresponding spreadsheet that simulates a typical table configuration for the participant
+    * `testing_sheet.csv` is the corresponding spreadsheet that simulates a typical table configuration for the participant
       type data above.
 * Our pytests have a test marked as 'integration' which is also only run as part of that workflow. To run, ensure you
   have the test credentials to access the gsheet then do:
@@ -392,7 +392,8 @@ For more examples, see the `xngin.gha.settings.json` settings used for testing.
 
 * Redshift - `postgresql+psycopg2://username@host:port/databasename`
 * Postgres - `postgresql+psycopg://username@host:port/databasename`
-* (experimental) BigQuery - `bigquery://some-project/some-dataset`
+* BigQuery (experimental) - `bigquery://some-project/some-dataset`
+* SQLite3 (for tests) - `sqlite:///file_path`
 
 ## FAQ
 
