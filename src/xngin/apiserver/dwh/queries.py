@@ -1,7 +1,17 @@
 import re
 
 import sqlalchemy
-from sqlalchemy import Float, cast, or_, func, ColumnOperators, Table, not_, select
+from sqlalchemy import (
+    Float,
+    Integer,
+    cast,
+    or_,
+    func,
+    ColumnOperators,
+    Table,
+    not_,
+    select,
+)
 from sqlalchemy.orm import Session
 
 from xngin.apiserver.api_types import (
@@ -26,40 +36,47 @@ def get_stats_on_metrics(
     metrics: list[DesignSpecMetric],
     audience_spec: AudienceSpec,
 ) -> list[DesignSpecMetric]:
-    metric_columns = []
+    # First prep the list that will hold our annotated metrics to return:
+    def copy_with_type(metric: DesignSpecMetric):
+        """Make a copy of metric while deriving type from dwh if not present."""
+        updates = {}
+        if metric.metric_type is None:
+            updates["metric_type"] = MetricType.from_python_type(
+                sa_table.c[metric.metric_name].type.python_type
+            )
+        return metric.model_copy(update=updates)
 
-    for metric in metrics:
+    metrics_to_return = [copy_with_type(m) for m in metrics]
+
+    # now build our query
+    select_columns = []
+    for metric in metrics_to_return:
         metric_name = metric.metric_name
         col = sa_table.c[metric_name]
+        # Coerce everything to Float to avoid Decimal/Integer/Boolean issues across backends.
+        cast_column = col
+        if metric.metric_type is MetricType.NUMERIC:
+            cast_column = cast(col, Float)
+        else:
+            cast_column = cast(cast(col, Integer), Float)
         # TODO(roboton): consider whether mitigations for null are important
-        metric_columns.extend((
-            func.avg(cast(col, Float)).label(f"{metric_name}__mean"),
-            custom_functions.stddev_pop(cast(col, Float)).label(
-                f"{metric_name}__stddev"
-            ),
+        select_columns.extend((
+            func.avg(cast_column).label(f"{metric_name}__mean"),
+            custom_functions.stddev_pop(cast_column).label(f"{metric_name}__stddev"),
             func.count(col).label(f"{metric_name}__count"),
         ))
-    query = select(*metric_columns)
     filters = create_filters(sa_table, audience_spec)
-    query = query.filter(*filters)
+    query = select(*select_columns).filter(*filters)
     stats = session.execute(query).mappings().fetchone()
 
-    metrics_with_stats = []
-    for metric in metrics:
+    # finally backfill with the stats
+    for metric in metrics_to_return:
         metric_name = metric.metric_name
-        metric_with_stats = metric.model_copy()
-        # Derive type from the dwh if not supplied in the spec:
-        if metric_with_stats.metric_type is None:
-            metric_with_stats.metric_type = MetricType.from_python_type(
-                sa_table.c[metric_name].type.python_type
-            )
-        # Explicit cast to float in case the db mean is a decimal.Decimal
-        metric_with_stats.metric_baseline = float(stats[f"{metric_name}__mean"])
-        metric_with_stats.metric_stddev = stats[f"{metric_name}__stddev"]
-        metric_with_stats.available_n = stats[f"{metric_name}__count"]
-        metrics_with_stats.append(metric_with_stats)
+        metric.metric_baseline = stats[f"{metric_name}__mean"]
+        metric.metric_stddev = stats[f"{metric_name}__stddev"]
+        metric.available_n = stats[f"{metric_name}__count"]
 
-    return metrics_with_stats
+    return metrics_to_return
 
 
 def query_for_participants(
