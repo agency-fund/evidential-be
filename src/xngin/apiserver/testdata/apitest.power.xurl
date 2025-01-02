@@ -33,6 +33,11 @@ Config-ID: testing
       {
         "metric_name": "income",
         "metric_pct_change": 0.1
+      },
+      {
+        "metric_name": "is_engaged",
+        "metric_type": "binary",
+        "metric_pct_change": 0.1
       }
     ]
   },
@@ -94,6 +99,29 @@ HTTP 200
     "needed_target": null,
     "sufficient_n": true,
     "target_n": 238
+  },
+  {
+    "available_n": 39405,
+    "delta": null,
+    "metric_pct_change_possible": null,
+    "metric_spec": {
+      "available_n": 39405,
+      "metric_baseline": 0.20913589645984013,
+      "metric_name": "is_engaged",
+      "metric_pct_change": 0.1,
+      "metric_stddev": 0.40669161937735965,
+      "metric_target": 0.23004948610582415,
+      "metric_type": "binary"
+    },
+    "metric_target_possible": null,
+    "msg": {
+      "msg": "There are 39405 units available to run your experiment and 12298.0 units are needed to meet your experimental design specs. There are enough units available, you only need 12298.0 of the 39405 units to meet your experimental design specs.",
+      "type": "sufficient",
+      "values": {}
+    },
+    "needed_target": null,
+    "sufficient_n": true,
+    "target_n": 12298
   }
 ]
 ```

@@ -54,7 +54,6 @@ def get_stats_on_metrics(
         metric_name = metric.metric_name
         col = sa_table.c[metric_name]
         # Coerce everything to Float to avoid Decimal/Integer/Boolean issues across backends.
-        cast_column = col
         if metric.metric_type is MetricType.NUMERIC:
             cast_column = cast(col, Float)
         else:
