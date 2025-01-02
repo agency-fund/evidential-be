@@ -30,7 +30,7 @@ class Base(DeclarativeBase):
 class SampleTable(Base):
     __tablename__ = "test_table"
 
-    id = mapped_column(Integer, primary_key=True)
+    id = mapped_column(Integer, primary_key=True, autoincrement=False)
     int_col = mapped_column(Integer, nullable=False)
     float_col = mapped_column(Float, nullable=False)
     bool_col = mapped_column(Boolean, nullable=False)
@@ -80,13 +80,21 @@ SAMPLE_TABLE_ROWS = [
 
 
 @pytest.fixture(name="db_session")
-def fixture_db_session():
+def fixture_db_session(request):
     """Creates an in-memory SQLite database with test data."""
-    engine = create_engine("sqlite:///:memory:", echo=False)
+    connect_url = request.config.getoption("--test_db")
+    engine = create_engine(connect_url, echo=False)
 
-    @event.listens_for(engine, "connect")
-    def register_sqlite_functions(dbapi_connection, _):
-        NumpyStddev.register(dbapi_connection)
+    if "redshift.amazonaws.com" in connect_url and hasattr(
+        engine.dialect, "_set_backslash_escapes"
+    ):
+        engine.dialect._set_backslash_escapes = lambda _: None
+
+    if connect_url.startswith("sqlite"):
+
+        @event.listens_for(engine, "connect")
+        def register_sqlite_functions(dbapi_connection, _):
+            NumpyStddev.register(dbapi_connection)
 
     Base.metadata.create_all(engine)
     session = Session(engine)
@@ -116,10 +124,15 @@ def fixture_compiler(engine):
 
 def test_compose_query_with_no_filters(compiler):
     sql = compiler(compose_query(SampleTable, 2, []))
-    assert sql == (
-        """SELECT test_table.id, test_table.int_col, test_table.float_col, test_table.bool_col, test_table.string_col, test_table.experiment_ids """
-        """FROM test_table ORDER BY random() LIMIT 2 OFFSET 0"""
+    # regex to accommodate pg and sqlite compilers
+    match = re.match(
+        r"""SELECT test_table.id, test_table.int_col, test_table.float_col, test_table.bool_col,"""
+        r""" test_table.string_col, test_table.experiment_ids """
+        r"""FROM test_table ORDER BY random\(\) +LIMIT 2"""
+        r"""(?: OFFSET 0){0,1}""",
+        sql,
     )
+    assert match is not None, sql
 
 
 @dataclass
@@ -365,7 +378,38 @@ def test_make_csv_regex(csv, values, expected):
     )
 
 
-def test_query_baseline_metrics(db_session):
+def test_get_stats_on_integer_metric(db_session):
+    """Test would fail on postgres and redshift without a cast to float for different reasons."""
+    table = Base.metadata.tables.get(SampleTable.__tablename__)
+    rows = get_stats_on_metrics(
+        db_session,
+        table,
+        [DesignSpecMetric(metric_name="int_col", metric_type=MetricType.NUMERIC)],
+        AudienceSpec(
+            participant_type="ignored",
+            filters=[],
+        ),
+    )
+
+    expected = DesignSpecMetric(
+        metric_name="int_col",
+        metric_type=MetricType.NUMERIC,
+        metric_baseline=41.666666666666664,
+        metric_stddev=47.76563153100307,
+        available_n=3,
+    )
+    actual = rows[0]
+    numeric_fields = {"metric_baseline", "metric_stddev", "available_n"}
+    assert actual.metric_name == expected.metric_name
+    assert actual.metric_type == expected.metric_type
+    # PG: assertion would fail due to a float vs decimal.Decimal comparison.
+    # RS: assertion would fail due to avg() on int types keeps them as integers.
+    assert actual.model_dump(include=numeric_fields) == pytest.approx(
+        expected.model_dump(include=numeric_fields)
+    )
+
+
+def test_get_stats_on_other_metrics(db_session):
     table = Base.metadata.tables.get(SampleTable.__tablename__)
     row = get_stats_on_metrics(
         db_session,
@@ -373,7 +417,6 @@ def test_query_baseline_metrics(db_session):
         [
             DesignSpecMetric(metric_name="bool_col", metric_type=MetricType.BINARY),
             DesignSpecMetric(metric_name="float_col", metric_type=MetricType.NUMERIC),
-            DesignSpecMetric(metric_name="int_col", metric_type=MetricType.NUMERIC),
         ],
         AudienceSpec(
             participant_type="ignored",
@@ -395,13 +438,6 @@ def test_query_baseline_metrics(db_session):
             metric_stddev=0.6415751449882287,
             available_n=3,
         ),
-        DesignSpecMetric(
-            metric_name="int_col",
-            metric_type=MetricType.NUMERIC,
-            metric_baseline=41.666666666666664,
-            metric_stddev=47.76563153100307,
-            available_n=3,
-        ),
     ]
     numeric_fields = {"metric_baseline", "metric_stddev", "available_n"}
     for actual, result in zip(row, expected, strict=True):
@@ -413,8 +449,8 @@ def test_query_baseline_metrics(db_session):
         )
 
 
-def test_query_baseline_metrics_without_metric_type(db_session):
-    """Identical to test_query_baseline_metrics but without metric_type"""
+def test_get_stats_on_metrics_without_metric_type(db_session):
+    """Identical to earlier tests but without metric_type"""
     table = Base.metadata.tables.get(SampleTable.__tablename__)
     row = get_stats_on_metrics(
         db_session,

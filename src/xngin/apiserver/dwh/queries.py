@@ -1,7 +1,7 @@
 import re
 
 import sqlalchemy
-from sqlalchemy import or_, func, ColumnOperators, Table, not_, select
+from sqlalchemy import Float, cast, or_, func, ColumnOperators, Table, not_, select
 from sqlalchemy.orm import Session
 
 from xngin.apiserver.api_types import (
@@ -33,8 +33,10 @@ def get_stats_on_metrics(
         col = sa_table.c[metric_name]
         # TODO(roboton): consider whether mitigations for null are important
         metric_columns.extend((
-            func.avg(col).label(f"{metric_name}__mean"),
-            custom_functions.stddev_pop(col).label(f"{metric_name}__stddev"),
+            func.avg(cast(col, Float)).label(f"{metric_name}__mean"),
+            custom_functions.stddev_pop(cast(col, Float)).label(
+                f"{metric_name}__stddev"
+            ),
             func.count(col).label(f"{metric_name}__count"),
         ))
     query = select(*metric_columns)

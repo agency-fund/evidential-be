@@ -24,6 +24,16 @@ class DeveloperErrorRunFromRootOfRepositoryPleaseError(Exception):
         super().__init__("Tests must be run from the root of the repository.")
 
 
+def pytest_addoption(parser):
+    """Can add command line options to pytests here if needed."""
+    parser.addoption(
+        "--test_db",
+        action="store",
+        default="sqlite:///:memory:",
+        help="Connection url for use in one-off testing of specific unittests. Defaults to an in-mem sqlite db.",
+    )
+
+
 def get_settings_for_test() -> XnginSettings:
     filename = Path(__file__).parent / "testdata/xngin.testing.settings.json"
     with open(filename) as f:
