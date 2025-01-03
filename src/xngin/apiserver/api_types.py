@@ -301,17 +301,30 @@ class DesignSpecMetric(ApiBaseModel):
     # should display a warning
     metric_pct_change: Annotated[
         float | None,
-        Field(description="If target is set, metric_pct_change is ignored."),
+        Field(
+            description="Specify the min expected change relative to the metric_baseline we hope to detect. "
+            "If set in requests, you cannot also set metric_target."
+        ),
     ] = None
     metric_target: Annotated[
         float | None,
         Field(
-            description="Computed as metric_baseline*(1 + metric_pct_change) if missing."
+            description="Specify the absolute value we hope to detect. If not explicitly set, responses set this = "
+            "metric_baseline*(1 + metric_pct_change). If set in requests, you can not also set metric_pct_change."
         ),
     ] = None
     # TODO(roboton): metric_pct_change if missing")] = None
     # TODO(roboton): available_n should probably be in another structure related to power_analysis?
     available_n: int | None = None
+
+    # TODO? consider making this a @model_validator(mode='after') if there's a simple way to allow this class be used
+    # for both request which validates & response which doesn't since it's nice to show both, or make explicit separate
+    # ones (deriving from a shared base). The latter would likely require the DesignSpec to also have a separate request
+    # & response type, and thus make such a change pretty involved, unfortunately.
+    def check_has_only_one_of_pct_change_or_target(self) -> "DesignSpecMetric":
+        if self.metric_pct_change is not None and self.metric_target is not None:
+            raise ValueError("Cannot set both metric_pct_change and metric_target")
+        return self
 
 
 class Arm(ApiBaseModel):
