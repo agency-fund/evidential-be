@@ -12,8 +12,7 @@ WORKDIR /code
 COPY pyproject.toml /code/
 COPY uv.lock /code/
 # Note: Railway builders will error if the id= is set via build varabiles.
-RUN --mount=type=cache,id=s/53dd800c-90e7-49cd-b7f6-549131ff038e-/root/.cache/uv,target=/root/.cache/uv /bin/uv sync --frozen --no-install-project
-COPY xngin.settings.json .
+RUN --mount=type=cache,id=s/53dd800c-90e7-49cd-b7f6-549131ff038e-/root/.cache/uv,target=/root/.cache/uv /bin/uv sync --frozen --no-install-project --no-dev
 COPY ./src /code/src
-RUN --mount=type=cache,id=s/53dd800c-90e7-49cd-b7f6-549131ff038e-/root/.cache/uv,target=/root/.cache/uv /bin/uv sync --frozen
+RUN --mount=type=cache,id=s/53dd800c-90e7-49cd-b7f6-549131ff038e-/root/.cache/uv,target=/root/.cache/uv /bin/uv sync --frozen --no-dev
 CMD ["uv", "run", "fastapi", "run", "src/xngin/apiserver/main.py"]

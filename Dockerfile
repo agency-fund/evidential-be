@@ -8,8 +8,7 @@ COPY --from=ghcr.io/astral-sh/uv:0.5.14 /uv /bin/uv
 WORKDIR /code
 COPY pyproject.toml /code/
 COPY uv.lock /code/
-RUN --mount=type=cache,target=/root/.cache/uv /bin/uv sync --frozen --no-install-project
-COPY xngin.settings.json .
+RUN --mount=type=cache,target=/root/.cache/uv /bin/uv sync --frozen --no-install-project --no-dev
 COPY ./src /code/src
-RUN --mount=type=cache,target=/root/.cache/uv /bin/uv sync --frozen
+RUN --mount=type=cache,target=/root/.cache/uv /bin/uv sync --frozen --no-dev
 CMD ["uv", "run", "fastapi", "run", "src/xngin/apiserver/main.py"]
