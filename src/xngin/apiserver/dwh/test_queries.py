@@ -125,10 +125,12 @@ def test_compose_query_with_no_filters(compiler):
     sql = compiler(compose_query(SampleTable, 2, []))
     # regex to accommodate pg and sqlite compilers
     match = re.match(
-        r"""SELECT test_table.id, test_table.int_col, test_table.float_col, test_table.bool_col,"""
-        r""" test_table.string_col, test_table.experiment_ids """
-        r"""FROM test_table ORDER BY random\(\) +LIMIT 2"""
-        r"""(?: OFFSET 0){0,1}""",
+        re.escape(
+            "SELECT test_table.id, test_table.int_col, test_table.float_col,"
+            " test_table.bool_col, test_table.string_col, test_table.experiment_ids "
+            "FROM test_table ORDER BY random()"
+        )
+        + r" +LIMIT 2(?: OFFSET 0){0,1}",
         sql,
     )
     assert match is not None, sql
