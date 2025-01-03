@@ -2,7 +2,7 @@
 **/*.md
 **/*.sqlite
 **/__pycache__
-#**/testdata
+**/testdata
 *.iml
 *.ipynb
 .env*
@@ -15,3 +15,5 @@
 dist
 secrets/
 xngin.db
+tools
+test_*.py
