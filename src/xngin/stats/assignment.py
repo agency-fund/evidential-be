@@ -1,3 +1,4 @@
+import decimal
 from uuid import UUID
 
 import pandas as pd
@@ -44,6 +45,7 @@ def assign_treatment(
     # Create copy for analysis while attempting to convert any numeric "object" types that pandas didn't originally
     # recognize when creating the dataframe. This does NOT handle Decimal types!
     df = data.infer_objects()
+
     # Check if the unique identifier was incorrectly inferred to be a float, and try to make it an integer type.
     # WARNING: if the original data actually had ints larger than are representable with full precision as a float64,
     # then the data in the data frame would be problematic to begin with and we should instead try using
@@ -53,6 +55,15 @@ def assign_treatment(
         if min_ < -MAX_SAFE_INTEGER or max_ > MAX_SAFE_INTEGER:
             raise ValueError(f"Cannot safely convert '{id_col}' from float to Int64")
         df[id_col] = df[id_col].astype("Int64")
+
+    # Now convert any Decimal types to float (possible if the Table was created with reflection instead of cursor).
+    # Detecting by looking at the first row for each object column is a little brittle.
+    # TODO: use the sqlalchemy Table columns' .type.python_type
+    object_columns = df.select_dtypes(include=["object"]).columns
+    decimal_columns = [
+        c for c in object_columns if isinstance(df[c].iloc[0], decimal.Decimal)
+    ]
+    df[decimal_columns] = df[decimal_columns].astype(float)
 
     # Dedupe the strata names and then sort them for a stable output ordering
     stratum_cols = sorted(set(stratum_cols))
