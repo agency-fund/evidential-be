@@ -293,12 +293,9 @@ class DesignSpecMetric(ApiBaseModel):
     metric_type: Annotated[
         MetricType | None, Field(description="If not set, will infer from dwh type.")
     ] = None
-    # TODO(roboton): metric_baseline should be drawn from dwh when missing
     metric_baseline: float | None = None
     # TODO(roboton): we should only set this value if metric_type is NUMERIC
     metric_stddev: float | None = None
-    # TODO(roboton): if target is set, metric_pct_change is ignored, but we
-    # should display a warning
     metric_pct_change: Annotated[
         float | None,
         Field(
@@ -313,7 +310,6 @@ class DesignSpecMetric(ApiBaseModel):
             "metric_baseline*(1 + metric_pct_change). If set in requests, you can not also set metric_pct_change."
         ),
     ] = None
-    # TODO(roboton): metric_pct_change if missing")] = None
     # TODO(roboton): available_n should probably be in another structure related to power_analysis?
     available_n: int | None = None
 
