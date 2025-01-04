@@ -1,5 +1,5 @@
 # Defines a production runtime environment for the service. This is not for development uses.
-FROM python:3.12
+FROM python:3.12-bookworm
 ENV PYTHONUNBUFFERED=1
 ENV UV_COMPILE_BYTECODE=1
 ENV UV_PYTHON_DOWNLOADS=0
