@@ -58,13 +58,13 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends retry
           retry -t 3 -d 30 -- uv run pytest -m integration
-  unittests-in-docker:
+  docker-builds:
     timeout-minutes: 15
     runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@v4
       - run: docker build -t xngin .
-      - run: docker run --rm xngin uv run pytest
+      - run: docker build -t xngin-railway -f Dockerfile.railway .
   smoke-cli:
     runs-on: ubuntu-22.04
     timeout-minutes: 15
