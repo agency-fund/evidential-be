@@ -11,4 +11,4 @@ COPY uv.lock .
 RUN --mount=type=cache,target=/root/.cache/uv /bin/uv sync --frozen --no-install-project --no-dev
 COPY ./src /code/src
 RUN --mount=type=cache,target=/root/.cache/uv /bin/uv sync --frozen --no-dev
-CMD ["/bin/uv", "run", "fastapi", "run", "src/xngin/apiserver/main.py"]
+CMD ["/bin/uv", "run", "--no-dev", "fastapi", "run", "src/xngin/apiserver/main.py"]
