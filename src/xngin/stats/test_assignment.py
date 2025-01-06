@@ -1,8 +1,46 @@
+from dataclasses import dataclass
+import dataclasses
+from decimal import Decimal
+from typing import Any
 import pytest
 import pandas as pd
 import numpy as np
+from sqlalchemy import DECIMAL, Column, Float, Integer, MetaData, String, Table
 from xngin.stats.assignment import assign_treatment
 from xngin.apiserver.api_types import Assignment
+
+
+@dataclass
+class Row:
+    """Simulate the bits of a sqlalchemy Row that we need here."""
+
+    id: int
+    age: float
+    income: float
+    gender: str
+    region: str
+    skewed: int
+    income_dec: Decimal
+    is_male: bool
+
+    def _asdict(self) -> dict[str, Any]:
+        return dataclasses.asdict(self)
+
+
+@pytest.fixture
+def sample_table():
+    metadata_obj = MetaData()
+    return Table(
+        "table_name",
+        metadata_obj,
+        Column("id", String, primary_key=True, autoincrement=False),
+        Column("age", Integer),
+        Column("income", Float),
+        Column("gender", String),
+        Column("region", String),
+        Column("skewed", Float),
+        Column("income_dec", DECIMAL),
+    )
 
 
 @pytest.fixture
@@ -19,12 +57,17 @@ def sample_data():
             np.concatenate((np.repeat([1], 900), np.repeat([0], 100)))
         ),
     }
+    data["income_dec"] = [Decimal(i).quantize(Decimal("1")) for i in data["income"]]
+    data["is_male"] = [g == "M" for g in data["gender"]]
     return pd.DataFrame(data)
 
 
-def test_assign_treatment(sample_data):
+def test_assign_treatment(sample_table, sample_data):
+    rows = [Row(**row) for row in sample_data.to_dict("records")]
+
     result = assign_treatment(
-        data=sample_data,
+        sa_table=sample_table,
+        data=rows,
         stratum_cols=["gender", "region"],
         id_col="id",
         arm_names=["control", "treatment"],
@@ -62,9 +105,12 @@ def test_assign_treatment(sample_data):
     assert result.assignments[9].treatment_assignment == "treatment"
 
 
-def test_assign_treatment_multiple_arms(sample_data):
+def test_assign_treatment_multiple_arms(sample_table, sample_data):
+    rows = [Row(**row) for row in sample_data.to_dict("records")]
+
     result = assign_treatment(
-        data=sample_data,
+        sa_table=sample_table,
+        data=rows,
         stratum_cols=["gender", "region"],
         id_col="id",
         arm_names=["control", "treatment_a", "treatment_b"],
@@ -92,9 +138,12 @@ def test_assign_treatment_multiple_arms(sample_data):
     assert result.id_col == "id"
 
 
-def test_assign_treatment_reproducibility(sample_data):
+def test_assign_treatment_reproducibility(sample_table, sample_data):
+    rows = [Row(**row) for row in sample_data.to_dict("records")]
+
     result1 = assign_treatment(
-        data=sample_data,
+        sa_table=sample_table,
+        data=rows,
         stratum_cols=["gender", "region"],
         id_col="id",
         arm_names=["control", "treatment"],
@@ -104,7 +153,8 @@ def test_assign_treatment_reproducibility(sample_data):
     )
 
     result2 = assign_treatment(
-        data=sample_data,
+        sa_table=sample_table,
+        data=rows,
         stratum_cols=["gender", "region"],
         id_col="id",
         arm_names=["control", "treatment"],
@@ -126,12 +176,14 @@ def test_assign_treatment_reproducibility(sample_data):
         assert p1.strata == p2.strata  # Check if strata are equal
 
 
-def test_assign_treatment_with_missing_values(sample_data):
+def test_assign_treatment_with_missing_values(sample_table, sample_data):
     # Add some missing values
     sample_data.loc[sample_data.index[:100], "income"] = np.nan
+    rows = [Row(**row) for row in sample_data.to_dict("records")]
 
     result = assign_treatment(
-        data=sample_data,
+        sa_table=sample_table,
+        data=rows,
         stratum_cols=["gender", "region"],
         id_col="id",
         arm_names=["control", "treatment"],
@@ -148,8 +200,14 @@ def test_assign_treatment_with_missing_values(sample_data):
     )
 
 
-def test_assign_treatment_with_obj_columns_inferred(sample_data):
+def test_assign_treatment_with_obj_columns_inferred(sample_table, sample_data):
     # Extend samples with values simulating incorrect type inference as objects.
+    @dataclass
+    class ExtendedRow(Row):
+        object1: Any
+        object2: Any
+        object3: Any
+
     n = len(sample_data)
     sample_data = sample_data.assign(
         object1=[2**32] * (n - 1) + [2],
@@ -159,9 +217,11 @@ def test_assign_treatment_with_obj_columns_inferred(sample_data):
         # If not converted, will cause a recursion error
         object3=np.random.uniform(size=n),
     ).astype({"object1": "O", "object2": "O", "object3": "O"})
+    rows = [ExtendedRow(**row) for row in sample_data.to_dict("records")]
 
     result = assign_treatment(
-        data=sample_data,
+        sa_table=sample_table,
+        data=rows,
         stratum_cols=["gender", "region", "object2", "object3"],
         id_col="id",
         arm_names=["control", "treatment"],
@@ -180,10 +240,17 @@ def test_assign_treatment_with_obj_columns_inferred(sample_data):
     )
 
 
-def test_assign_treatment_with_integers_as_floats_for_unique_id(sample_data):
+MAX_SAFE_INTEGER = (1 << 53) - 1  # 9007199254740991
+
+
+def test_assign_treatment_with_integers_as_floats_for_unique_id(
+    sample_table, sample_data
+):
     def assign(data):
+        rows = [Row(**row) for row in data.to_dict("records")]
         return assign_treatment(
-            data=data,
+            sa_table=sample_table,
+            data=rows,
             stratum_cols=["gender", "region"],
             id_col="id",
             arm_names=["control", "treatment"],
@@ -192,8 +259,8 @@ def test_assign_treatment_with_integers_as_floats_for_unique_id(sample_data):
             random_state=42,
         )
 
-    # When it's a float that can be converted to an int, we're still ok
-    sample_data["id"] = sample_data["id"].apply(float)
+    # We should be able to handle Decimals (e.g. from psycopg2 with redshift numerics).
+    sample_data["id"] = sample_data["id"].apply(Decimal)
     result = assign(sample_data)
     assert result.f_statistic == pytest.approx(0.006156735)
     assert result.p_value == pytest.approx(0.99992466)
@@ -201,12 +268,36 @@ def test_assign_treatment_with_integers_as_floats_for_unique_id(sample_data):
     assert json["assignments"][0]["participant_id"] == "0"
     assert json["assignments"][1]["participant_id"] == "1"
 
-    # But if it's too large we raise an exception
-    with pytest.raises(ValueError):
-        sample_data.loc[0, "id"] = float(1 << 53)
-        result = assign(sample_data)
+    # We should be able to support bigger than signed int64s
+    sample_data.loc[0, "id"] = Decimal(MAX_SAFE_INTEGER + 2)
+    result = assign(sample_data)
+    # Ensure the id string is rendered properly. (index=891 since participant ids are ordered lexicogrpahically)
+    json_str = result.model_dump_json()
+    assert '"participant_id":"9007199254740993"' in json_str
 
-    # Similarly if it's negative, raise an exception
-    with pytest.raises(ValueError):
-        sample_data.loc[0, "id"] = float(-1 << 53)
-        result = assign(sample_data)
+    # We should be able to support very big negatives as well
+    sample_data.loc[0, "id"] = -MAX_SAFE_INTEGER - 2
+    result = assign(sample_data)
+    json = result.model_dump()
+    assert json["assignments"][0]["participant_id"] == "-9007199254740993"
+
+
+def test_decimal_and_bool_strata_are_rendered_correctly(sample_table, sample_data):
+    rows = [Row(**row) for row in sample_data.to_dict("records")]
+
+    result = assign_treatment(
+        sa_table=sample_table,
+        data=rows,
+        stratum_cols=["income_dec", "is_male"],
+        id_col="id",
+        arm_names=["control", "treatment"],
+        experiment_id="b767716b-f388-4cd9-a18a-08c4916ce26f",
+        description="Test decimals",
+        random_state=42,
+    )
+
+    for p in result.assignments:
+        json = p.model_dump()
+        # we rounded the Decimal to an int, so shouldn't see the decimal point
+        assert "." not in json["strata"][0]["strata_value"], json
+        assert json["strata"][1]["strata_value"] in ("True", "False"), json

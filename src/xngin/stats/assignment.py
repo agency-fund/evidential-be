@@ -1,9 +1,11 @@
 import decimal
+from collections.abc import Sequence
 from uuid import UUID
 
 import pandas as pd
-from pandas.api.types import is_float_dtype
+from pandas import DataFrame
 import numpy as np
+from sqlalchemy import Row, Table
 from stochatreat import stochatreat
 from xngin.apiserver.api_types import (
     AssignResponse,
@@ -13,11 +15,9 @@ from xngin.apiserver.api_types import (
 from xngin.stats.balance import check_balance
 
 
-MAX_SAFE_INTEGER = (1 << 53) - 1
-
-
 def assign_treatment(
-    data: pd.DataFrame,
+    sa_table: Table,
+    data: Sequence[Row],
     stratum_cols: list[str],
     id_col: str,
     arm_names: list[str],
@@ -30,7 +30,8 @@ def assign_treatment(
     Perform stratified random assignment and balance checking.
 
     Args:
-        data: DataFrame containing units to be assigned
+        sa_table: sqlalchemy table representation used for type info
+        data: sqlalchemy result set containing units to be assigned
         stratum_cols: List of column names to stratify on
         id_col: Name of column containing unit identifiers
         arm_names: Names of treatment arms
@@ -44,24 +45,11 @@ def assign_treatment(
     """
     # Create copy for analysis while attempting to convert any numeric "object" types that pandas didn't originally
     # recognize when creating the dataframe. This does NOT handle Decimal types!
-    df = data.infer_objects()
-
-    # Check if the unique identifier was incorrectly inferred to be a float, and try to make it an integer type.
-    # WARNING: if the original data actually had ints larger than are representable with full precision as a float64,
-    # then the data in the data frame would be problematic to begin with and we should instead try using
-    # https://pandas.pydata.org/docs/user_guide/pyarrow.html's pa.decimal128 and not convert to float in settings.py.
-    if is_float_dtype(df[id_col].dtype):
-        min_, max_ = df[id_col].aggregate(["min", "max"])
-        if min_ < -MAX_SAFE_INTEGER or max_ > MAX_SAFE_INTEGER:
-            raise ValueError(f"Cannot safely convert '{id_col}' from float to Int64")
-        df[id_col] = df[id_col].astype("Int64")
+    df = DataFrame(data).infer_objects()
 
     # Now convert any Decimal types to float (possible if the Table was created with reflection instead of cursor).
-    # Detecting by looking at the first row for each object column is a little brittle.
-    # TODO: use the sqlalchemy Table columns' .type.python_type
-    object_columns = df.select_dtypes(include=["object"]).columns
     decimal_columns = [
-        c for c in object_columns if isinstance(df[c].iloc[0], decimal.Decimal)
+        c.name for c in sa_table.columns if c.type.python_type is decimal.Decimal
     ]
     df[decimal_columns] = df[decimal_columns].astype(float)
 
@@ -84,11 +72,9 @@ def assign_treatment(
         df[[*stratum_cols, "treat"]], "treat", exclude_cols=[id_col], alpha=fstat_thresh
     )
 
-    # Prepare assignments for return
-    assignments = df[[id_col, "treat", *stratum_cols]].copy()
-    # Convert the assignments DataFrame to a list of ExperimentParticipant objects
+    # Prepare assignments for return along with the original data as a list of ExperimentParticipant objects.
     participants_list = []
-    for row in assignments.itertuples(index=False):
+    for treatment_assignment, row in zip(df["treat"], data, strict=False):
         # ExperimentStrata for each column
         row_dict = row._asdict()
         strata = [
@@ -103,7 +89,7 @@ def assign_treatment(
 
         participant = Assignment(
             participant_id=str(row_dict[id_col]),
-            treatment_assignment=arm_names[row_dict["treat"]],
+            treatment_assignment=arm_names[treatment_assignment],
             strata=strata,
         )
         participants_list.append(participant)
