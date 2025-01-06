@@ -291,7 +291,7 @@ class DesignSpecMetric(ApiBaseModel):
 
     metric_name: ColumnName
     metric_type: Annotated[
-        MetricType | None, Field(description="If not set, will infer from dwh type.")
+        MetricType | None, Field(description="Inferred from dwh type.")
     ] = None
     metric_baseline: float | None = None
     # TODO(roboton): we should only set this value if metric_type is NUMERIC

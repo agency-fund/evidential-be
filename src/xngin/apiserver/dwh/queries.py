@@ -38,13 +38,14 @@ def get_stats_on_metrics(
 ) -> list[DesignSpecMetric]:
     # First prep the list that will hold our annotated metrics to return:
     def copy_with_type(metric: DesignSpecMetric):
-        """Make a copy of metric while deriving type from dwh if not present."""
-        updates = {}
-        if metric.metric_type is None:
-            updates["metric_type"] = MetricType.from_python_type(
-                sa_table.c[metric.metric_name].type.python_type
-            )
-        return metric.model_copy(update=updates)
+        """Make a copy of metric while deriving type from dwh."""
+        return metric.model_copy(
+            update={
+                "metric_type": MetricType.from_python_type(
+                    sa_table.c[metric.metric_name].type.python_type
+                )
+            }
+        )
 
     metrics_to_return = [copy_with_type(m) for m in metrics]
 
@@ -56,7 +57,7 @@ def get_stats_on_metrics(
         # Coerce everything to Float to avoid Decimal/Integer/Boolean issues across backends.
         if metric.metric_type is MetricType.NUMERIC:
             cast_column = cast(col, Float)
-        else:
+        else:  # re: avg(boolean) doesn't work on pg-like backends
             cast_column = cast(cast(col, Integer), Float)
         # TODO(roboton): consider whether mitigations for null are important
         select_columns.extend((
