@@ -316,7 +316,7 @@ class DesignSpecMetric(DesignSpecMetricBase):
 
 
 class DesignSpecMetricRequest(DesignSpecMetricBase):
-    """Defines request to look up baseline stats for a metric to measure in an experiment."""
+    """Defines a request to look up baseline stats for a metric to measure in an experiment."""
 
     # TODO: consider supporting {metric_baseline, metric_stddev, available_n} as inputs when the metric may not exist or
     # be usable yet in the dwh, so that it it can be used as a general power/sizing calculator.

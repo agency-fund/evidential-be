@@ -66,6 +66,8 @@ def assign_treatment(
 
     # Assign treatments
     n_arms = len(arm_names)
+    # TODO: when we support unequal arm assigments, be careful about ensuring the right treatment assignment id is
+    #       mapped to the right arm_name.
     treatment_status = stochatreat(
         data=df,
         stratum_cols=stratum_cols,
