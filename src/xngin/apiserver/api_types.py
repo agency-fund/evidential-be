@@ -341,6 +341,8 @@ class DesignSpecMetricRequest(DesignSpecMetricBase):
     def check_has_only_one_of_pct_change_or_target(self) -> Self:
         if self.metric_pct_change is not None and self.metric_target is not None:
             raise ValueError("Cannot set both metric_pct_change and metric_target")
+        if self.metric_pct_change is None and self.metric_target is None:
+            raise ValueError("Must set one of metric_pct_change or metric_target")
         return self
 
 
