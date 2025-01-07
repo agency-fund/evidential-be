@@ -27,7 +27,6 @@ Config-ID: testing
     "metrics": [
       {
         "metric_name": "current_income",
-        "metric_type": "numeric",
         "metric_pct_change": 0.0
       }
     ]

@@ -27,7 +27,6 @@ Config-ID: testing
     "metrics": [
       {
         "metric_name": "current_income",
-        "metric_type": "numeric",
         "metric_pct_change": 0.1
       },
       {
@@ -36,7 +35,6 @@ Config-ID: testing
       },
       {
         "metric_name": "is_engaged",
-        "metric_type": "binary",
         "metric_pct_change": 0.1
       }
     ]

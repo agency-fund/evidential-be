@@ -27,7 +27,6 @@ Config-ID: testing
     "metrics": [
       {
         "metric_name": "current_income",
-        "metric_type": "numeric",
         "metric_pct_change": 0.1,
         "metric_target": 32000.0
       }
@@ -54,8 +53,7 @@ HTTP 422
       "input": {
         "metric_name": "current_income",
         "metric_pct_change": 0.1,
-        "metric_target": 32000.0,
-        "metric_type": "numeric"
+        "metric_target": 32000.0
       },
       "loc": [
         "body",

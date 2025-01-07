@@ -286,16 +286,10 @@ class MetricType(enum.StrEnum):
         raise ValueError(f"Unsupported type: {python_type}")
 
 
-class DesignSpecMetric(ApiBaseModel):
-    """Defines a metric to measure in the experiment."""
+class DesignSpecMetricBase(ApiBaseModel):
+    """Base class for defining a metric to measure in the experiment."""
 
     metric_name: ColumnName
-    metric_type: Annotated[
-        MetricType | None, Field(description="Inferred from dwh type.")
-    ] = None
-    metric_baseline: float | None = None
-    # TODO(roboton): we should only set this value if metric_type is NUMERIC
-    metric_stddev: float | None = None
     metric_pct_change: Annotated[
         float | None,
         Field(description="Percent change target relative to the metric_baseline."),
@@ -306,11 +300,24 @@ class DesignSpecMetric(ApiBaseModel):
             description="Absolute target value = metric_baseline*(1 + metric_pct_change)"
         ),
     ] = None
+
+
+class DesignSpecMetric(DesignSpecMetricBase):
+    """Defines a metric to measure in an experiment with its baseline stats."""
+
+    metric_type: Annotated[
+        MetricType | None, Field(description="Inferred from dwh type.")
+    ] = None
+    metric_baseline: float | None = None
+    # TODO(roboton): we should only set this value if metric_type is NUMERIC
+    metric_stddev: float | None = None
     # TODO(roboton): available_n should probably be in another structure related to power_analysis?
     available_n: int | None = None
 
 
-class DesignSpecMetricRequest(DesignSpecMetric):
+class DesignSpecMetricRequest(DesignSpecMetricBase):
+    """Defines request to look up baseline stats for a metric to measure in an experiment."""
+
     # TODO: consider supporting {metric_baseline, metric_stddev, available_n} as inputs when the metric may not exist or
     # be usable yet in the dwh, so that it it can be used as a general power/sizing calculator.
 

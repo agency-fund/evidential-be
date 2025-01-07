@@ -16,6 +16,7 @@ from sqlalchemy.orm import Session
 
 from xngin.apiserver.api_types import (
     AudienceSpec,
+    DesignSpecMetricRequest,
     MetricType,
     Relation,
     AudienceSpecFilter,
@@ -33,21 +34,23 @@ def get_metric_meta():
 def get_stats_on_metrics(
     session,
     sa_table: Table,
-    metrics: list[DesignSpecMetric],
+    metrics: list[DesignSpecMetricRequest],
     audience_spec: AudienceSpec,
 ) -> list[DesignSpecMetric]:
     # First prep the list that will hold our annotated metrics to return:
-    def copy_with_type(metric: DesignSpecMetric):
+    def init_metric_to_return(metric: DesignSpecMetricRequest) -> DesignSpecMetric:
         """Make a copy of metric while deriving type from dwh."""
-        return metric.model_copy(
-            update={
+        # Union a dict representation of the input metric with the metric_type and create the output metric object.
+        return DesignSpecMetric.model_validate(
+            metric.model_dump()
+            | {
                 "metric_type": MetricType.from_python_type(
                     sa_table.c[metric.metric_name].type.python_type
                 )
             }
         )
 
-    metrics_to_return = [copy_with_type(m) for m in metrics]
+    metrics_to_return = [init_metric_to_return(m) for m in metrics]
 
     # now build our query
     select_columns = []
