@@ -1,11 +1,12 @@
 import decimal
 from collections.abc import Sequence
+from typing import Any, Protocol
 from uuid import UUID
 
 import pandas as pd
 from pandas import DataFrame
 import numpy as np
-from sqlalchemy import Row, Table
+from sqlalchemy import Table
 from stochatreat import stochatreat
 from xngin.apiserver.api_types import (
     AssignResponse,
@@ -15,9 +16,16 @@ from xngin.apiserver.api_types import (
 from xngin.stats.balance import check_balance
 
 
+class RowProtocol(Protocol):
+    """Minimal methods to approximate a sqlalchemy.engine.row.Row for testing."""
+
+    def _asdict(self) -> dict[str, Any]:
+        """https://docs.sqlalchemy.org/en/20/core/connections.html#sqlalchemy.engine.Row._asdict"""
+
+
 def assign_treatment(
     sa_table: Table,
-    data: Sequence[Row],
+    data: Sequence[RowProtocol],
     stratum_cols: list[str],
     id_col: str,
     arm_names: list[str],
@@ -31,7 +39,7 @@ def assign_treatment(
 
     Args:
         sa_table: sqlalchemy table representation used for type info
-        data: sqlalchemy result set containing units to be assigned
+        data: sqlalchemy result set of Rows representing units to be assigned
         stratum_cols: List of column names to stratify on
         id_col: Name of column containing unit identifiers
         arm_names: Names of treatment arms
@@ -64,7 +72,8 @@ def assign_treatment(
         treats=n_arms,
         probs=[1 / n_arms] * n_arms,
         idx_col=id_col,
-        random_state=random_state,
+        # internally uses np.random.RandomState which can take None
+        random_state=random_state,  # type: ignore[arg-type]
     ).drop(columns=["stratum_id"])
     df = df.merge(treatment_status, on=id_col)
 
@@ -100,8 +109,8 @@ def assign_treatment(
     # Return the ExperimentAssignment with the list of participants
     return AssignResponse(
         f_statistic=np.round(balance_check.f_statistic, 9),
-        numerator_df=balance_check.numerator_df,
-        denominator_df=balance_check.denominator_df,
+        numerator_df=round(balance_check.numerator_df),
+        denominator_df=round(balance_check.denominator_df),
         p_value=np.round(balance_check.f_pvalue, 9),
         balance_ok=balance_check.f_pvalue > fstat_thresh,
         experiment_id=UUID(experiment_id),

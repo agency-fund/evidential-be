@@ -213,7 +213,7 @@ def test_assign_treatment_with_obj_columns_inferred(sample_table, sample_data):
         object1=[2**32] * (n - 1) + [2],
         # If not converted, causes SyntaxError due to floating point numbers
         # converted to dummy variables with bad column names
-        object2=np.concatenate(([None] * (n - 100), np.random.uniform(size=100))),
+        object2=np.concatenate([[None] * (n - 100), np.random.uniform(size=100)]),
         # If not converted, will cause a recursion error
         object3=np.random.uniform(size=n),
     ).astype({"object1": "O", "object2": "O", "object3": "O"})
