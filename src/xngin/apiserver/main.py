@@ -59,7 +59,6 @@ from xngin.sheets.config_sheet import (
 )
 from xngin.stats.assignment import assign_treatment
 from xngin.stats.power import check_power
-from xngin.stats.stats_errors import StatsPowerError
 
 logging.basicConfig(
     level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
@@ -287,16 +286,7 @@ def check_power_api(
     body: PowerRequest,
     client: Annotated[ClientConfig | None, Depends(config_dependency)] = None,
 ) -> PowerResponse:
-    """
-    Calculates statistical power given an AudienceSpec and a DesignSpec
-    """
-    # First validate all the metrics have a relative or absolute target.
-    for metric in body.design_spec.metrics:
-        try:
-            metric.check_has_only_one_of_pct_change_or_target()
-        except ValueError as verr:
-            raise StatsPowerError(verr, metric) from verr
-
+    """Calculates statistical power given the PowerRequest details."""
     config = require_config(client)
     participant = config.find_participants(body.audience_spec.participant_type)
 

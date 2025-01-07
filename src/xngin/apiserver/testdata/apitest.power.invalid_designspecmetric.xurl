@@ -46,6 +46,26 @@ Config-ID: testing
 HTTP 422
 ```json
 {
-  "message": "Power calc error for metric current_income: Cannot set both metric_pct_change and metric_target"
+  "detail": [
+    {
+      "ctx": {
+        "error": {}
+      },
+      "input": {
+        "metric_name": "current_income",
+        "metric_pct_change": 0.1,
+        "metric_target": 32000.0,
+        "metric_type": "numeric"
+      },
+      "loc": [
+        "body",
+        "design_spec",
+        "metrics",
+        0
+      ],
+      "msg": "Value error, Cannot set both metric_pct_change and metric_target",
+      "type": "value_error"
+    }
+  ]
 }
 ```

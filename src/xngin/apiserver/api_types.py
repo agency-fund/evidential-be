@@ -3,7 +3,7 @@ import enum
 import re
 import uuid
 from datetime import datetime
-from typing import Annotated
+from typing import Annotated, Self
 
 import sqlalchemy.sql.sqltypes
 from pydantic import (
@@ -298,26 +298,40 @@ class DesignSpecMetric(ApiBaseModel):
     metric_stddev: float | None = None
     metric_pct_change: Annotated[
         float | None,
-        Field(
-            description="Specify the min expected change relative to the metric_baseline we hope to detect. "
-            "If set in requests, you cannot also set metric_target."
-        ),
+        Field(description="Percent change target relative to the metric_baseline."),
     ] = None
     metric_target: Annotated[
         float | None,
         Field(
-            description="Specify the absolute value we hope to detect. If not explicitly set, responses set this = "
-            "metric_baseline*(1 + metric_pct_change). If set in requests, you can not also set metric_pct_change."
+            description="Absolute target value = metric_baseline*(1 + metric_pct_change)"
         ),
     ] = None
     # TODO(roboton): available_n should probably be in another structure related to power_analysis?
     available_n: int | None = None
 
-    # TODO? consider making this a @model_validator(mode='after') if there's a simple way to allow this class be used
-    # for both request which validates & response which doesn't since it's nice to show both, or make explicit separate
-    # ones (deriving from a shared base). The latter would likely require the DesignSpec to also have a separate request
-    # & response type, and thus make such a change pretty involved, unfortunately.
-    def check_has_only_one_of_pct_change_or_target(self) -> "DesignSpecMetric":
+
+class DesignSpecMetricRequest(DesignSpecMetric):
+    # TODO: consider supporting {metric_baseline, metric_stddev, available_n} as inputs when the metric may not exist or
+    # be usable yet in the dwh, so that it it can be used as a general power/sizing calculator.
+
+    # Override the descriptions from above:
+    metric_pct_change: Annotated[
+        float | None,
+        Field(
+            description="Specify a meaningful min percent change relative to the metric_baseline "
+            "you want to detect. Cannot be set if you set metric_target."
+        ),
+    ] = None
+    metric_target: Annotated[
+        float | None,
+        Field(
+            description="Specify the absolute value you want to detect. "
+            "Cannot be set if you set metric_pct_change."
+        ),
+    ] = None
+
+    @model_validator(mode="after")
+    def check_has_only_one_of_pct_change_or_target(self) -> Self:
         if self.metric_pct_change is not None and self.metric_target is not None:
             raise ValueError("Cannot set both metric_pct_change and metric_target")
         return self
@@ -332,8 +346,8 @@ class Arm(ApiBaseModel):
     arm_description: str | None = None
 
 
-class DesignSpec(ApiBaseModel):
-    """Describes the experiment design parameters."""
+class DesignSpecBase(ApiBaseModel):
+    """Describes the experiment design parameters excluding metrics."""
 
     experiment_id: uuid.UUID
     experiment_name: str
@@ -348,9 +362,6 @@ class DesignSpec(ApiBaseModel):
     # TODO(roboton): rename as strata_names?
     strata_cols: list[ColumnName]
 
-    # metric specs (at least one)
-    metrics: Annotated[list[DesignSpecMetric], Field(..., min_length=1)]
-
     # stat parameters
     power: Annotated[float, Field(0.8, ge=0, le=1)]
     alpha: Annotated[float, Field(0.05, ge=0, le=1)]
@@ -360,6 +371,25 @@ class DesignSpec(ApiBaseModel):
     def serialize_dt(self, dt: datetime, _info):
         """Convert dates to iso strings in model_dump_json()/model_dump(mode='json')"""
         return dt.isoformat()
+
+
+class DesignSpecForPower(DesignSpecBase):
+    """Experiment design parameters for power calculations."""
+
+    metrics: Annotated[
+        list[DesignSpecMetricRequest],
+        Field(
+            ...,
+            description="Primary and optional secondary metrics to target.",
+            min_length=1,
+        ),
+    ]
+
+
+class DesignSpec(DesignSpecBase):
+    """Describes the experiment design parameters."""
+
+    metrics: Annotated[list[DesignSpecMetric], Field(..., min_length=1)]
 
 
 class MetricAnalysisMessageType(enum.StrEnum):
@@ -509,8 +539,8 @@ class GetMetricsResponseElement(ApiBaseModel):
     description: str
 
 
-type GetFiltersResponse = list[GetFiltersResponseElement]
 type GetFiltersResponseElement = GetFiltersResponseNumeric | GetFiltersResponseDiscrete
+type GetFiltersResponse = list[GetFiltersResponseElement]
 type GetMetricsResponse = list[GetMetricsResponseElement]
 type GetStrataResponse = list[GetStrataResponseElement]
 type PowerResponse = list[MetricAnalysis]
@@ -528,5 +558,5 @@ class CommitRequest(ApiBaseModel):
 
 
 class PowerRequest(ApiBaseModel):
-    design_spec: DesignSpec
+    design_spec: DesignSpecForPower
     audience_spec: AudienceSpec
