@@ -26,11 +26,6 @@ from xngin.apiserver.api_types import (
 from xngin.sqlite_extensions import custom_functions
 
 
-def get_metric_meta():
-    # TODO: implement
-    pass
-
-
 def get_stats_on_metrics(
     session,
     sa_table: Table,

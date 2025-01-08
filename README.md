@@ -244,8 +244,9 @@ uv run fastapi dev src/xngin/apiserver/main.py
 
 ## Testing
 
-In addition to the unittests run via [pytest](https://docs.pytest.org/en/stable/), we have
-[smoke tests](.github/workflows/test.yaml) run as part of our github action test workflow.
+Run unittests with [pytest](https://docs.pytest.org/en/stable/).  `test_api.py` tests that use `testdata/*.xurl` data can be updated more easily as things change by prefixing your pytest run with the environment variable: `UPDATE_API_TESTS=1`.
+
+[Smoke tests](.github/workflows/test.yaml) are also run as part of our github action test workflow.
 
 * Some of our tests that rely on `conftest.py` will create a local sqlite db for testing in
   `src/xngin/apiserver/testdata/testing_dwh.db` if it doesn't exist already using the zipped data dump in

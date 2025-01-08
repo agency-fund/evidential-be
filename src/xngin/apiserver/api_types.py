@@ -311,7 +311,6 @@ class DesignSpecMetric(DesignSpecMetricBase):
     metric_baseline: float | None = None
     # TODO(roboton): we should only set this value if metric_type is NUMERIC
     metric_stddev: float | None = None
-    # TODO(roboton): available_n should probably be in another structure related to power_analysis?
     available_n: int | None = None
 
 
@@ -382,6 +381,10 @@ class DesignSpecBase(ApiBaseModel):
         return dt.isoformat()
 
 
+# TODO? Consider making this the one and only DesignSpec model, and if the user wants to store DesignSpecMetric details,
+# it should be done as part of storing PowerResponse in the CommitRequest, rather than assuming the user will fish out
+# the DesignSpecMetric details from the response just to put them back into the original DesignSpecForPower to create a
+# DesignSpec.
 class DesignSpecForPower(DesignSpecBase):
     """Experiment design parameters for power calculations."""
 
@@ -419,15 +422,34 @@ class MetricAnalysisMessage(ApiBaseModel):
 class MetricAnalysis(ApiBaseModel):
     """Describes analysis results of a single metric."""
 
+    # Store the original request+baseline info here
     metric_spec: DesignSpecMetric
+    # TODO: Remove available_n as it's redundant with the metric_spec.
     available_n: int
-    target_n: int | None = None
-    sufficient_n: bool | None = None
+
+    # The initial result of the power calculation
+    target_n: Annotated[
+        int | None,
+        Field(description="Minimum sample size needed to meet the design specs."),
+    ] = None
+    sufficient_n: Annotated[
+        bool | None,
+        Field(
+            description="Whether or not there are enough available units to sample from to meet target_n."
+        ),
+    ] = None
+
+    # If insufficient sample size, tell the user what metric value their n does let them possibly detect as an absolute
+    # value and % change from baseline.
+    # TODO? Rename target_possible and pct_change_possible
     needed_target: float | None = None
-    metric_target_possible: float | None = None
-    metric_pct_change_possible: float | None = None
-    delta: float | None = None
-    msg: MetricAnalysisMessage | None = None
+    # TODO: add compute the equivalent % change
+    # metric_pct_change_possible: float | None = None
+
+    msg: Annotated[
+        MetricAnalysisMessage | None,
+        Field(description="Human friendly message about the above results."),
+    ] = None
 
 
 class StrataType(enum.StrEnum):

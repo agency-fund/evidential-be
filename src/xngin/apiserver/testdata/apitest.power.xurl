@@ -54,8 +54,6 @@ HTTP 200
 [
   {
     "available_n": 39405,
-    "delta": null,
-    "metric_pct_change_possible": null,
     "metric_spec": {
       "available_n": 39405,
       "metric_baseline": 26333.628738429015,
@@ -65,7 +63,6 @@ HTTP 200
       "metric_target": 28966.99161227192,
       "metric_type": "numeric"
     },
-    "metric_target_possible": null,
     "msg": {
       "msg": "There are 39405 units available to run your experiment and 210.0 units are needed to meet your experimental design specs. There are enough units available, you only need 210.0 of the 39405 units to meet your experimental design specs.",
       "type": "sufficient",
@@ -77,8 +74,6 @@ HTTP 200
   },
   {
     "available_n": 39405,
-    "delta": null,
-    "metric_pct_change_possible": null,
     "metric_spec": {
       "available_n": 39405,
       "metric_baseline": 30898.867656825856,
@@ -88,7 +83,6 @@ HTTP 200
       "metric_target": 33988.75442250844,
       "metric_type": "numeric"
     },
-    "metric_target_possible": null,
     "msg": {
       "msg": "There are 39405 units available to run your experiment and 238.0 units are needed to meet your experimental design specs. There are enough units available, you only need 238.0 of the 39405 units to meet your experimental design specs.",
       "type": "sufficient",
@@ -100,8 +94,6 @@ HTTP 200
   },
   {
     "available_n": 39405,
-    "delta": null,
-    "metric_pct_change_possible": null,
     "metric_spec": {
       "available_n": 39405,
       "metric_baseline": 0.20913589645984013,
@@ -111,7 +103,6 @@ HTTP 200
       "metric_target": 0.23004948610582415,
       "metric_type": "numeric"
     },
-    "metric_target_possible": null,
     "msg": {
       "msg": "There are 39405 units available to run your experiment and 11876.0 units are needed to meet your experimental design specs. There are enough units available, you only need 11876.0 of the 39405 units to meet your experimental design specs.",
       "type": "sufficient",
