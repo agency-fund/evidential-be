@@ -51,7 +51,7 @@ def get_settings_for_server():
             response = client.get(settings_path)
             if response.status_code != httpx.codes.OK:
                 raise FailureFetchingSettingsError(
-                    f"{response.status_code} {response.content}"
+                    f"{response.status_code} {response.text}"
                 )
             settings_raw = response.json()
     else:
@@ -325,7 +325,7 @@ class RemoteDatabaseConfig(ParticipantsMixin, ConfigBaseModel):
                 existing_autocommit = dbapi_connection.autocommit
                 dbapi_connection.autocommit = True
                 cursor = dbapi_connection.cursor()
-                cursor.execute(f"SET SESSION search_path={self.dwh.search_path}")
+                cursor.execute(f"SET SESSION search_path={self.dwh.search_path}")  # type: ignore[union-attr]
                 cursor.close()
                 dbapi_connection.autocommit = existing_autocommit
 
@@ -446,12 +446,12 @@ def infer_table_from_cursor(
                 # Map Redshift type codes to SQLAlchemy types. Not comprehensive.
                 # https://docs.sqlalchemy.org/en/20/core/types.html
                 # Comment shows both pg_type.typename / information_schema.data_type
-                sa_type: type[sqlalchemy.types.TypeEngine]
+                sa_type: type[sqlalchemy.TypeEngine] | sqlalchemy.TypeEngine
                 match type_code:
                     case 16:  # BOOL / boolean
-                        sa_type = sqlalchemy.types.Boolean
+                        sa_type = sqlalchemy.Boolean
                     case 20:  # INT8 / bigint
-                        sa_type = sqlalchemy.types.BigInteger
+                        sa_type = sqlalchemy.BigInteger
                     case 23:  # INT4 / integer
                         sa_type = sqlalchemy.Integer
                     case 701:  # FLOAT8 / double precision
