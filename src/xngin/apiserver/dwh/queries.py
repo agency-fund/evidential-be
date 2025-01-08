@@ -4,6 +4,7 @@ import sqlalchemy
 from sqlalchemy import (
     Float,
     Integer,
+    Label,
     cast,
     or_,
     func,
@@ -48,7 +49,7 @@ def get_stats_on_metrics(
     metrics_to_return = [init_metric_to_return(m) for m in metrics]
 
     # now build our query
-    select_columns = []
+    select_columns: list[Label] = []
     for metric in metrics_to_return:
         metric_name = metric.metric_name
         col = sa_table.c[metric_name]
@@ -116,6 +117,10 @@ def create_special_experiment_id_filter(
                 func.char_length(col) == 0,
                 not_(func.lower(col).regexp_match(matching_regex)),
             )
+    # This should be impossible as it's caught by the AudienceSpecFilter validator:
+    raise ValueError(
+        f"Experiment id filter on {filter_.filter_name} has invalid relation: {filter_.relation}"
+    )
 
 
 def make_csv_regex(values):

@@ -446,26 +446,27 @@ def infer_table_from_cursor(
                 # Map Redshift type codes to SQLAlchemy types. Not comprehensive.
                 # https://docs.sqlalchemy.org/en/20/core/types.html
                 # Comment shows both pg_type.typename / information_schema.data_type
-                sa_type = None
-                if type_code == 16:  # BOOL / boolean
-                    sa_type = sqlalchemy.Boolean
-                elif type_code == 20:  # INT8 / bigint
-                    sa_type = sqlalchemy.BigInteger
-                elif type_code == 23:  # INT4 / integer
-                    sa_type = sqlalchemy.Integer
-                elif type_code == 701:  # FLOAT8 / double precision
-                    sa_type = sqlalchemy.Double
-                elif type_code == 1043:  # VARCHAR / character varying
-                    sa_type = sqlalchemy.String(internal_size)
-                elif type_code == 1082:  # DATE / date
-                    sa_type = sqlalchemy.Date
-                elif type_code == 1114:  # TIMESTAMP / timestamp without time zone
-                    sa_type = sqlalchemy.DateTime
-                elif type_code == 1700:  # NUMERIC / numeric
-                    sa_type = sqlalchemy.Numeric(precision, scale)
-                else:  # type_code == 25
-                    # Default to Text for unknown types
-                    sa_type = sqlalchemy.Text
+                sa_type: type[sqlalchemy.types.TypeEngine]
+                match type_code:
+                    case 16:  # BOOL / boolean
+                        sa_type = sqlalchemy.types.Boolean
+                    case 20:  # INT8 / bigint
+                        sa_type = sqlalchemy.types.BigInteger
+                    case 23:  # INT4 / integer
+                        sa_type = sqlalchemy.Integer
+                    case 701:  # FLOAT8 / double precision
+                        sa_type = sqlalchemy.Double
+                    case 1043:  # VARCHAR / character varying
+                        sa_type = sqlalchemy.String(internal_size)
+                    case 1082:  # DATE / date
+                        sa_type = sqlalchemy.Date
+                    case 1114:  # TIMESTAMP / timestamp without time zone
+                        sa_type = sqlalchemy.DateTime
+                    case 1700:  # NUMERIC / numeric
+                        sa_type = sqlalchemy.Numeric(precision, scale)
+                    case _:  # type_code == 25
+                        # Default to Text for unknown types
+                        sa_type = sqlalchemy.Text
 
                 columns.append(
                     sqlalchemy.Column(

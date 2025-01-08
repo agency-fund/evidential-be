@@ -4,6 +4,7 @@ import re
 import uuid
 from datetime import datetime
 from typing import Annotated, Self
+from collections.abc import Sequence
 
 import sqlalchemy.sql.sqltypes
 from pydantic import (
@@ -208,9 +209,9 @@ class AudienceSpecFilter(ApiBaseModel):
     filter_name: ColumnName
     relation: Relation
     value: (
-        list[Annotated[int, Field(strict=True)] | None]
-        | list[Annotated[float, Field(strict=True, allow_inf_nan=False)] | None]
-        | list[str | None]
+        Sequence[Annotated[int, Field(strict=True)] | None]
+        | Sequence[Annotated[float, Field(strict=True, allow_inf_nan=False)] | None]
+        | Sequence[str | None]
     )
 
     @model_validator(mode="after")

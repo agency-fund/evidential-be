@@ -4,12 +4,13 @@ import re
 from dataclasses import dataclass
 
 import pytest
-from sqlalchemy import create_engine, Integer, Float, Boolean, String, event
+from sqlalchemy import Table, create_engine, Integer, Float, Boolean, String, event
 from sqlalchemy.orm import Session, DeclarativeBase, mapped_column
 
 from xngin.apiserver.api_types import (
     AudienceSpec,
     DesignSpecMetric,
+    DesignSpecMetricRequest,
     Relation,
     AudienceSpecFilter,
     MetricType,
@@ -37,6 +38,15 @@ class SampleTable(Base):
     bool_col = mapped_column(Boolean, nullable=False)
     string_col = mapped_column(String, nullable=False)
     experiment_ids = mapped_column(String, nullable=False)
+
+
+def get_sample_table() -> Table:
+    """Helper to return a sqlalchemy.schema.Table for SampleTable"""
+    # Also gets around mypy typing issues, e.g. get() can return none, and SampleTable.__table__ is of type FromClause,
+    # but we know it's a Table and must exist.
+    table = Base.metadata.tables.get(SampleTable.__tablename__)
+    assert table is not None
+    return table
 
 
 @dataclass
@@ -122,7 +132,7 @@ def fixture_compiler(engine):
 
 
 def test_compose_query_with_no_filters(compiler):
-    sql = compiler(compose_query(SampleTable, 2, []))
+    sql = compiler(compose_query(get_sample_table(), 2, []))
     # regex to accommodate pg and sqlite compilers
     match = re.match(
         re.escape(
@@ -333,14 +343,13 @@ def test_compose_query(testcase, db_session, compiler, use_deterministic_random)
         AudienceSpecFilter.model_validate(filt.model_dump())
         for filt in testcase.filters
     ]
-    table = Base.metadata.tables.get(SampleTable.__tablename__)
     filters = create_filters(
-        table,
+        get_sample_table(),
         AudienceSpec(
             participant_type=SampleTable.__tablename__, filters=testcase.filters
         ),
     )
-    q = compose_query(SampleTable, testcase.chosen_n, filters)
+    q = compose_query(get_sample_table(), testcase.chosen_n, filters)
     sql = compiler(q)
     assert sql.startswith(EXPECTED_PREAMBLE)
     sql = sql[len(EXPECTED_PREAMBLE) :]
@@ -364,7 +373,7 @@ def test_compose_query(testcase, db_session, compiler, use_deterministic_random)
                 "limit_offset": " LIMIT 3",
             }
     assert sql == str.format(testcase.where, **subs)
-    query_results = db_session.scalars(q).all()
+    query_results = db_session.execute(q).all()
     assert list(sorted([r.id for r in query_results])) == list(
         sorted(r.id for r in testcase.matches)
     )
@@ -400,11 +409,10 @@ def test_make_csv_regex(csv, values, expected):
 
 def test_get_stats_on_integer_metric(db_session):
     """Test would fail on postgres and redshift without a cast to float for different reasons."""
-    table = Base.metadata.tables.get(SampleTable.__tablename__)
     rows = get_stats_on_metrics(
         db_session,
-        table,
-        [DesignSpecMetric(metric_name="int_col", metric_type=MetricType.NUMERIC)],
+        get_sample_table(),
+        [DesignSpecMetricRequest(metric_name="int_col", metric_pct_change=0.1)],
         AudienceSpec(
             participant_type="ignored",
             filters=[],
@@ -432,11 +440,10 @@ def test_get_stats_on_integer_metric(db_session):
 
 def test_get_stats_on_boolean_metric(db_session):
     """Test would fail on postgres and redshift without casting to int to float."""
-    table = Base.metadata.tables.get(SampleTable.__tablename__)
     rows = get_stats_on_metrics(
         db_session,
-        table,
-        [DesignSpecMetric(metric_name="bool_col", metric_type=MetricType.BINARY)],
+        get_sample_table(),
+        [DesignSpecMetricRequest(metric_name="bool_col", metric_pct_change=0.1)],
         AudienceSpec(
             participant_type="ignored",
             filters=[],
@@ -461,12 +468,10 @@ def test_get_stats_on_boolean_metric(db_session):
 
 
 def test_get_stats_on_numeric_metric(db_session):
-    """Test would fail on postgres and redshift without casting to int to float."""
-    table = Base.metadata.tables.get(SampleTable.__tablename__)
     rows = get_stats_on_metrics(
         db_session,
-        table,
-        [DesignSpecMetric(metric_name="float_col", metric_type=MetricType.NUMERIC)],
+        get_sample_table(),
+        [DesignSpecMetricRequest(metric_name="float_col", metric_pct_change=0.1)],
         AudienceSpec(
             participant_type="ignored",
             filters=[],
@@ -485,55 +490,7 @@ def test_get_stats_on_numeric_metric(db_session):
     numeric_fields = {"metric_baseline", "metric_stddev", "available_n"}
     assert actual.metric_name == expected.metric_name
     assert actual.metric_type == expected.metric_type
+    # pytest.approx does a reasonable fuzzy comparison of floats for non-nested dictionaries.
     assert actual.model_dump(include=numeric_fields) == pytest.approx(
         expected.model_dump(include=numeric_fields)
     )
-
-
-def test_get_stats_on_metrics_without_metric_type(db_session):
-    """Identical to earlier tests but without metric_type"""
-    table = Base.metadata.tables.get(SampleTable.__tablename__)
-    row = get_stats_on_metrics(
-        db_session,
-        table,
-        [
-            DesignSpecMetric(metric_name="bool_col"),
-            DesignSpecMetric(metric_name="float_col"),
-            DesignSpecMetric(metric_name="int_col"),
-        ],
-        AudienceSpec(
-            participant_type="ignored",
-            filters=[],
-        ),
-    )
-    expected = [
-        DesignSpecMetric(
-            metric_name="bool_col",
-            metric_type=MetricType.BINARY,
-            metric_baseline=0.6666666666666666,
-            metric_stddev=0.4714045207910317,
-            available_n=3,
-        ),
-        DesignSpecMetric(
-            metric_name="float_col",
-            metric_type=MetricType.NUMERIC,
-            metric_baseline=2.492,
-            metric_stddev=0.6415751449882287,
-            available_n=3,
-        ),
-        DesignSpecMetric(
-            metric_name="int_col",
-            metric_type=MetricType.NUMERIC,
-            metric_baseline=41.666666666666664,
-            metric_stddev=47.76563153100307,
-            available_n=3,
-        ),
-    ]
-    numeric_fields = {"metric_baseline", "metric_stddev", "available_n"}
-    for actual, result in zip(row, expected, strict=True):
-        assert actual.metric_name == result.metric_name
-        assert actual.metric_type == result.metric_type
-        # pytest.approx does a reasonable fuzzy comparison of floats for non-nested dictionaries.
-        assert actual.model_dump(include=numeric_fields) == pytest.approx(
-            result.model_dump(include=numeric_fields)
-        )
