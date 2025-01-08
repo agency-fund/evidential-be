@@ -27,8 +27,13 @@ Config-ID: testing
     "metrics": [
       {
         "metric_name": "current_income",
-        "metric_pct_change": 0.0
+        "metric_pct_change": 0.1,
+        "metric_target": 32000.0
+      },
+      {
+        "metric_name": "is_retained"
       }
+
     ]
   },
   "audience_spec": {
@@ -44,6 +49,41 @@ Config-ID: testing
 HTTP 422
 ```json
 {
-  "message": "Power calc error for metric current_income: Cannot detect an effect-size of 0. Try changing your effect-size."
+  "detail": [
+    {
+      "ctx": {
+        "error": {}
+      },
+      "input": {
+        "metric_name": "current_income",
+        "metric_pct_change": 0.1,
+        "metric_target": 32000.0
+      },
+      "loc": [
+        "body",
+        "design_spec",
+        "metrics",
+        0
+      ],
+      "msg": "Value error, Cannot set both metric_pct_change and metric_target",
+      "type": "value_error"
+    },
+    {
+      "ctx": {
+        "error": {}
+      },
+      "input": {
+        "metric_name": "is_retained"
+      },
+      "loc": [
+        "body",
+        "design_spec",
+        "metrics",
+        1
+      ],
+      "msg": "Value error, Must set one of metric_pct_change or metric_target",
+      "type": "value_error"
+    }
+  ]
 }
 ```

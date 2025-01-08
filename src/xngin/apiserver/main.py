@@ -8,7 +8,6 @@ import sqlalchemy
 from fastapi import FastAPI, HTTPException, Depends, Path, Query, Response
 from fastapi import Request
 from fastapi.openapi.utils import get_openapi
-from pandas import DataFrame
 from pydantic import BaseModel
 from sqlalchemy import distinct
 
@@ -287,9 +286,7 @@ def check_power_api(
     body: PowerRequest,
     client: Annotated[ClientConfig | None, Depends(config_dependency)] = None,
 ) -> PowerResponse:
-    """
-    Calculates statistical power given an AudienceSpec and a DesignSpec
-    """
+    """Calculates statistical power given the PowerRequest details."""
     config = require_config(client)
     participant = config.find_participants(body.audience_spec.participant_type)
 
@@ -356,7 +353,8 @@ def assign_treatment_api(
     arm_names = [arm.arm_name for arm in body.design_spec.arms]
     metric_names = [m.metric_name for m in body.design_spec.metrics]
     return assign_treatment(
-        data=DataFrame(participants),
+        sa_table=sa_table,
+        data=participants,
         stratum_cols=body.design_spec.strata_cols + metric_names,
         id_col=unique_id_col,
         arm_names=arm_names,

@@ -21,16 +21,16 @@ class InvalidSheetDetails(BaseModel):
     @classmethod
     def from_pydantic_error(cls, row: int | None, pve: ValidationError):
         """Converts a pydantic ValidationError into an InvalidSheetDetails."""
-        pve = pve.errors()[0]
+        details = pve.errors()[0]
         vals: dict = {}
         if row is not None:
             vals["row_number"] = row
-        if loc := pve.get("loc"):
+        if loc := details.get("loc"):
             vals["column"] = loc[0]
-        if ctx := pve.get("ctx"):
+        if ctx := details.get("ctx"):
             vals["msg"] = str(ctx.get("error"))
         else:
-            vals["msg"] = str(pve.get("msg"))
+            vals["msg"] = str(details.get("msg"))
         return InvalidSheetDetails(**vals)
 
 

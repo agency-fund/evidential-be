@@ -27,10 +27,13 @@ def analyze_metric_power(
     Returns:
         MetricAnalysis containing power analysis results
     """
-    analysis = MetricAnalysis(metric_spec=metric, available_n=metric.available_n)
+    if metric.metric_type is None:
+        raise ValueError("Unknown metric_type.")
 
     if metric.metric_target is None:
         metric.metric_target = metric.metric_baseline * (1 + metric.metric_pct_change)
+
+    analysis = MetricAnalysis(metric_spec=metric, available_n=metric.available_n)
 
     # Case A: Both target and baseline defined - calculate required n
     if metric.metric_target is not None and metric.metric_baseline is not None:
@@ -108,9 +111,9 @@ def analyze_metric_power(
                 needed_target = np.sin(arcsin_p2 / 2) ** 2
 
             analysis.needed_target = needed_target
-            # TODO(roboton): Consider this instead:
+            # TODO(roboton): Consider adding another message for localization:
             # # note: not an f-string
-            # msg="There are {available_n} units available... {target_n} units are needed... {target_n} ...",
+            # source_msg="There are {available_n} units available... {target_n} units are needed... {target_n} ...",
             # values = {"available_n": 123, "target_n": 456, ...}
             # This allows the frontend to provide structured/enriched UX experiences based on the message type (e.g. SUFFICIENT) and the variables, and also allows translation to a local language.
             analysis.msg = MetricAnalysisMessage(
@@ -124,7 +127,11 @@ def analyze_metric_power(
                 ),
                 values={},
             )
+    # TODO? To support more general power calculation functionality, also implement Case B:
+    # target is not defined (need to also relax request constraints), but baseline is
+    # => calculate effect size. (Case A does this only when there's insufficient available_n.)
     else:
+        # TODO: use a MetricAnalysisMessage
         analysis.msg = "Could not calculate metric baseline with given specification. Provide metric baseline or adjust filters."
 
     return analysis
