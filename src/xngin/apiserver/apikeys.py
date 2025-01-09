@@ -33,6 +33,7 @@ KEY_ALPHABET = [*string.ascii_lowercase, *string.ascii_uppercase, *string.digits
 
 
 def hash_key(key: str | bytes):
+    """Transforms the plain API key to the hashed (stored) value."""
     if isinstance(key, str):
         key = key.encode()
     return hashlib.blake2b(key, person=HASH_PURPOSE).hexdigest()
