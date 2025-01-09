@@ -48,7 +48,7 @@ def make_key() -> tuple[str, str]:
 def require_valid_api_key(session: Session, api_key: str | None, config_id: str):
     if not api_key:
         raise ApiKeyRequiredError()
-    key_hash = hash_key(api_key.encode())
+    key_hash = hash_key(api_key)
     stmt = (
         select(ApiKeyDB)
         .join(ApiKeyDatasourceDB)
