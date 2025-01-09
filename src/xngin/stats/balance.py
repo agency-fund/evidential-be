@@ -43,18 +43,18 @@ def check_balance(
     # Create copy of data for analysis
     df_analysis = data.copy()
 
-    exclude_cols = set() if exclude_cols is None else set(exclude_cols)
+    exclude_set = set() if exclude_cols is None else set(exclude_cols)
 
     # Exclude columns from the check that contain only the same value (including None).
     single_value_cols = df_analysis.columns[df_analysis.nunique(dropna=False) <= 1]
-    exclude_cols.union(single_value_cols)
+    exclude_set.union(single_value_cols)
 
     # Handle missing values in numeric columns by converting to quartiles
     cols_with_missing = df_analysis.columns[df_analysis.isnull().any()]
     numeric_columns_with_na = [
         c for c in cols_with_missing if is_numeric_dtype(df_analysis[c])
     ]
-    for col in set(numeric_columns_with_na) - exclude_cols:
+    for col in set(numeric_columns_with_na) - exclude_set:
         labels = pd.qcut(
             df_analysis[col],
             q=quantiles,
@@ -82,7 +82,7 @@ def check_balance(
     non_numeric_columns = [
         c for c in df_analysis.columns if not is_numeric_dtype(df_analysis[c])
     ]
-    for col in set(non_numeric_columns) - exclude_cols:
+    for col in set(non_numeric_columns) - exclude_set:
         if df_analysis[col].isnull().any():
             df_analysis.fillna({col: missing_string}, inplace=True)
         df_analysis = pd.get_dummies(
@@ -97,7 +97,7 @@ def check_balance(
     covariates = [
         col
         for col in df_analysis.columns
-        if col != treatment_col and col not in exclude_cols
+        if col != treatment_col and col not in exclude_set
     ]
 
     # TODO(roboton): Run multi-class regression via MVLogit

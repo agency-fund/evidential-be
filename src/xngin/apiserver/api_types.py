@@ -1,8 +1,10 @@
+import decimal
 import enum
 import re
 import uuid
 from datetime import datetime
-from typing import Annotated
+from typing import Annotated, Self
+from collections.abc import Sequence
 
 import sqlalchemy.sql.sqltypes
 from pydantic import (
@@ -207,9 +209,9 @@ class AudienceSpecFilter(ApiBaseModel):
     filter_name: ColumnName
     relation: Relation
     value: (
-        list[Annotated[int, Field(strict=True)] | None]
-        | list[Annotated[float, Field(strict=True, allow_inf_nan=False)] | None]
-        | list[str | None]
+        Sequence[Annotated[int, Field(strict=True)] | None]
+        | Sequence[Annotated[float, Field(strict=True, allow_inf_nan=False)] | None]
+        | Sequence[str | None]
     )
 
     @model_validator(mode="after")
@@ -278,32 +280,70 @@ class MetricType(enum.StrEnum):
     def from_python_type(cls, python_type: type) -> "MetricType":
         """Maps Python types to metric types."""
 
-        if python_type in (int, float):
+        if python_type in (int, float, decimal.Decimal):
             return MetricType.NUMERIC
         if python_type is bool:
             return MetricType.BINARY
         raise ValueError(f"Unsupported type: {python_type}")
 
 
-class DesignSpecMetric(ApiBaseModel):
-    """Defines a metric to measure in the experiment."""
+class DesignSpecMetricBase(ApiBaseModel):
+    """Base class for defining a metric to measure in the experiment."""
 
     metric_name: ColumnName
-    # TODO(roboton): metric_type should be inferred by name from db when missing
-    metric_type: MetricType | None = None
-    # TODO(roboton): metric_baseline should be drawn from dwh when missing
+    metric_pct_change: Annotated[
+        float | None,
+        Field(description="Percent change target relative to the metric_baseline."),
+    ] = None
+    metric_target: Annotated[
+        float | None,
+        Field(
+            description="Absolute target value = metric_baseline*(1 + metric_pct_change)"
+        ),
+    ] = None
+
+
+class DesignSpecMetric(DesignSpecMetricBase):
+    """Defines a metric to measure in an experiment with its baseline stats."""
+
+    metric_type: Annotated[
+        MetricType | None, Field(description="Inferred from dwh type.")
+    ] = None
     metric_baseline: float | None = None
     # TODO(roboton): we should only set this value if metric_type is NUMERIC
     metric_stddev: float | None = None
-    # TOOD(roboton): if target is set, metric_pct_change is ignored, but we
-    # should display a warning
-    metric_pct_change: float | None = None
-    # TODO(roboton): metric_target will be computed from metric_baseline and
-    # TODO(roboton): metric_pct_change if missing
-    # TODO(roboton): metric_target = 1 + metric_pct_change * metric_baseline
-    metric_target: float | None = None
-    # TODO(roboton): available_n should probably be in another structure related to power_analysis?
     available_n: int | None = None
+
+
+class DesignSpecMetricRequest(DesignSpecMetricBase):
+    """Defines a request to look up baseline stats for a metric to measure in an experiment."""
+
+    # TODO: consider supporting {metric_baseline, metric_stddev, available_n} as inputs when the metric may not exist or
+    # be usable yet in the dwh, so that it it can be used as a general power/sizing calculator.
+
+    # Override the descriptions from above:
+    metric_pct_change: Annotated[
+        float | None,
+        Field(
+            description="Specify a meaningful min percent change relative to the metric_baseline "
+            "you want to detect. Cannot be set if you set metric_target."
+        ),
+    ] = None
+    metric_target: Annotated[
+        float | None,
+        Field(
+            description="Specify the absolute value you want to detect. "
+            "Cannot be set if you set metric_pct_change."
+        ),
+    ] = None
+
+    @model_validator(mode="after")
+    def check_has_only_one_of_pct_change_or_target(self) -> Self:
+        if self.metric_pct_change is not None and self.metric_target is not None:
+            raise ValueError("Cannot set both metric_pct_change and metric_target")
+        if self.metric_pct_change is None and self.metric_target is None:
+            raise ValueError("Must set one of metric_pct_change or metric_target")
+        return self
 
 
 class Arm(ApiBaseModel):
@@ -315,8 +355,8 @@ class Arm(ApiBaseModel):
     arm_description: str | None = None
 
 
-class DesignSpec(ApiBaseModel):
-    """Describes the experiment design parameters."""
+class DesignSpecBase(ApiBaseModel):
+    """Describes the experiment design parameters excluding metrics."""
 
     experiment_id: uuid.UUID
     experiment_name: str
@@ -331,9 +371,6 @@ class DesignSpec(ApiBaseModel):
     # TODO(roboton): rename as strata_names?
     strata_cols: list[ColumnName]
 
-    # metric specs (at least one)
-    metrics: Annotated[list[DesignSpecMetric], Field(..., min_length=1)]
-
     # stat parameters
     power: Annotated[float, Field(0.8, ge=0, le=1)]
     alpha: Annotated[float, Field(0.05, ge=0, le=1)]
@@ -343,6 +380,29 @@ class DesignSpec(ApiBaseModel):
     def serialize_dt(self, dt: datetime, _info):
         """Convert dates to iso strings in model_dump_json()/model_dump(mode='json')"""
         return dt.isoformat()
+
+
+# TODO? Consider making this the one and only DesignSpec model, and if the user wants to store DesignSpecMetric details,
+# it should be done as part of storing PowerResponse in the CommitRequest, rather than assuming the user will fish out
+# the DesignSpecMetric details from the response just to put them back into the original DesignSpecForPower to create a
+# DesignSpec.
+class DesignSpecForPower(DesignSpecBase):
+    """Experiment design parameters for power calculations."""
+
+    metrics: Annotated[
+        list[DesignSpecMetricRequest],
+        Field(
+            ...,
+            description="Primary and optional secondary metrics to target.",
+            min_length=1,
+        ),
+    ]
+
+
+class DesignSpec(DesignSpecBase):
+    """Describes the experiment design parameters."""
+
+    metrics: Annotated[list[DesignSpecMetric], Field(..., min_length=1)]
 
 
 class MetricAnalysisMessageType(enum.StrEnum):
@@ -363,15 +423,34 @@ class MetricAnalysisMessage(ApiBaseModel):
 class MetricAnalysis(ApiBaseModel):
     """Describes analysis results of a single metric."""
 
+    # Store the original request+baseline info here
     metric_spec: DesignSpecMetric
+    # TODO: Remove available_n as it's redundant with the metric_spec.
     available_n: int
-    target_n: int | None = None
-    sufficient_n: bool | None = None
+
+    # The initial result of the power calculation
+    target_n: Annotated[
+        int | None,
+        Field(description="Minimum sample size needed to meet the design specs."),
+    ] = None
+    sufficient_n: Annotated[
+        bool | None,
+        Field(
+            description="Whether or not there are enough available units to sample from to meet target_n."
+        ),
+    ] = None
+
+    # If insufficient sample size, tell the user what metric value their n does let them possibly detect as an absolute
+    # value and % change from baseline.
+    # TODO? Rename target_possible and pct_change_possible
     needed_target: float | None = None
-    metric_target_possible: float | None = None
-    metric_pct_change_possible: float | None = None
-    delta: float | None = None
-    msg: MetricAnalysisMessage | None = None
+    # TODO: add compute the equivalent % change
+    # metric_pct_change_possible: float | None = None
+
+    msg: Annotated[
+        MetricAnalysisMessage | None,
+        Field(description="Human friendly message about the above results."),
+    ] = None
 
 
 class StrataType(enum.StrEnum):
@@ -492,8 +571,8 @@ class GetMetricsResponseElement(ApiBaseModel):
     description: str
 
 
-type GetFiltersResponse = list[GetFiltersResponseElement]
 type GetFiltersResponseElement = GetFiltersResponseNumeric | GetFiltersResponseDiscrete
+type GetFiltersResponse = list[GetFiltersResponseElement]
 type GetMetricsResponse = list[GetMetricsResponseElement]
 type GetStrataResponse = list[GetStrataResponseElement]
 type PowerResponse = list[MetricAnalysis]
@@ -511,5 +590,5 @@ class CommitRequest(ApiBaseModel):
 
 
 class PowerRequest(ApiBaseModel):
-    design_spec: DesignSpec
+    design_spec: DesignSpecForPower
     audience_spec: AudienceSpec

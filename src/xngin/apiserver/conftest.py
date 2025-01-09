@@ -1,5 +1,6 @@
 """conftest configures FastAPI dependency injection for testing and also does some setup before tests in this module are run."""
 
+import enum
 import logging
 import os
 from pathlib import Path
@@ -25,6 +26,14 @@ class DeveloperErrorRunFromRootOfRepositoryPleaseError(Exception):
         super().__init__("Tests must be run from the root of the repository.")
 
 
+class DbType(enum.StrEnum):
+    SQLITE = "sqlite"
+    REDSHIFT = "redshift"
+    PG = "postgres"
+    BQ = "bigquery"
+    OTHER = "other"
+
+
 def get_settings_for_test() -> XnginSettings:
     filename = Path(__file__).parent / "testdata/xngin.testing.settings.json"
     with open(filename) as f:
@@ -36,12 +45,47 @@ def get_settings_for_test() -> XnginSettings:
             raise
 
 
+def get_test_appdb_info():
+    """Use this for tests of our application db, e.g. for caching user table confgs."""
+    connection_uri = os.environ.get("XNGIN_TEST_APPDB_URI", "sqlite:///:memory:")
+    return get_test_uri_info(connection_uri)
+
+
+def get_test_dwh_info():
+    """Use this for tests that skip settings.json and directly connect to a simulated DWH."""
+    connection_uri = os.environ.get("XNGIN_TEST_DWH_URI", "sqlite:///:memory:")
+    return get_test_uri_info(connection_uri)
+
+
+def get_test_uri_info(connection_uri):
+    """Returns a tuple of info about a test database given its connection_uri.
+
+    Returns:
+    - connection string uri
+    - type of dwh backend derived from the uri
+    - map of connection args for use with SQLAlchemy's create_engine()
+    """
+    dbtype = DbType.OTHER
+    connect_args = {}
+    if connection_uri.startswith("sqlite"):
+        dbtype = DbType.SQLITE
+        connect_args = {"check_same_thread": False}
+    elif connection_uri.startswith("bigquery"):
+        dbtype = DbType.BQ
+    elif "redshift.amazonaws.com" in connection_uri:
+        dbtype = DbType.REDSHIFT
+    elif connection_uri.startswith("postgres"):
+        dbtype = DbType.PG
+    return connection_uri, dbtype, connect_args
+
+
 def get_test_sessionmaker():
     """Returns a Session generator backed by an ephemeral db for use in tests as our app db."""
     # We use an in-memory ephemeral database for the xngindb during tests.
+    connect_url, _, connect_args = get_test_appdb_info()
     db_engine = sqlalchemy.create_engine(
-        "sqlite://",
-        connect_args={"check_same_thread": False},
+        connect_url,
+        connect_args=connect_args,
         poolclass=StaticPool,
         echo=os.environ.get("ECHO_SQL", "").lower() in ("true", "1"),
     )
