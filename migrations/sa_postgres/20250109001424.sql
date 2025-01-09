@@ -8,7 +8,7 @@ CREATE TABLE "public"."apikeys" (
 -- Create "cache" table
 CREATE TABLE "public"."cache" (
   "key" character varying NOT NULL,
-  "value" character varying NULL,
+  "value" character varying NOT NULL,
   PRIMARY KEY ("key")
 );
 -- Create "apikey_datasources" table
