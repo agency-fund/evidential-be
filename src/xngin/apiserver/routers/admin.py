@@ -12,8 +12,8 @@ from sqlalchemy.orm import Session, selectinload
 
 from xngin.apiserver.apikeys import make_key, hash_key
 from xngin.apiserver.models.tables import (
-    ApiKey as ApiKeyDB,
-    ApiKeyDatasource as ApiKeyDatasourceDB,
+    ApiKeyTable,
+    ApiKeyDatasourceTable,
 )
 from xngin.apiserver.dependencies import settings_dependency, xngin_db_session
 from xngin.apiserver.routers.oidc_dependencies import require_oidc_token
@@ -80,7 +80,7 @@ class UpdateApiKeyRequest(AdminApiBaseModel):
 async def apikeys_list(
     session: Annotated[Session, Depends(xngin_db_session)],
 ) -> list[ApiKey]:
-    stmt = select(ApiKeyDB).options(selectinload(ApiKeyDB.datasources))
+    stmt = select(ApiKeyTable).options(selectinload(ApiKeyTable.datasources))
     result = session.execute(stmt)
     api_keys = result.scalars().all()
     return [
@@ -101,9 +101,9 @@ async def apikeys_create(
     """Creates an API key for the requested datasources."""
     label, key = make_key()
     key_hash = hash_key(key)
-    api_key = ApiKeyDB(id=label, key=key_hash)
+    api_key = ApiKeyTable(id=label, key=key_hash)
     api_key.datasources = [
-        ApiKeyDatasourceDB(datasource_id=ds_id) for ds_id in body.datasource_ids
+        ApiKeyDatasourceTable(datasource_id=ds_id) for ds_id in body.datasource_ids
     ]
     session.add(api_key)
     session.commit()
@@ -116,7 +116,7 @@ async def apikeys_delete(
     api_key_id: Annotated[str, Path(...)],
 ):
     """Deletes the specified API key."""
-    stmt = delete(ApiKeyDB).where(ApiKeyDB.id == api_key_id)
+    stmt = delete(ApiKeyTable).where(ApiKeyTable.id == api_key_id)
     session.execute(stmt)
     session.commit()
     return {"status": "success"}
@@ -130,16 +130,16 @@ async def apikeys_update(
 ) -> ApiKey:
     """Updates the list of datasources for the specified API key."""
     stmt = (
-        select(ApiKeyDB)
-        .options(selectinload(ApiKeyDB.datasources))
-        .where(ApiKeyDB.id == api_key_id)
+        select(ApiKeyTable)
+        .options(selectinload(ApiKeyTable.datasources))
+        .where(ApiKeyTable.id == api_key_id)
     )
     result = session.execute(stmt)
     api_key = result.scalar_one_or_none()
     if not api_key:
         raise HTTPException(status_code=404, detail="API key not found")
     api_key.datasources = [
-        ApiKeyDatasourceDB(datasource_id=ds_id) for ds_id in body.datasource_ids
+        ApiKeyDatasourceTable(datasource_id=ds_id) for ds_id in body.datasource_ids
     ]
     session.commit()
     return ApiKey(id=api_key_id, datasource_ids=body.datasource_ids)

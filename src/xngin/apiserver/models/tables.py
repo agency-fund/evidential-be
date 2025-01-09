@@ -6,14 +6,14 @@ class Base(DeclarativeBase):
     pass
 
 
-class Cache(Base):
+class CacheTable(Base):
     __tablename__ = "cache"
 
     key: Mapped[str] = mapped_column(primary_key=True)
     value: Mapped[str] = mapped_column()
 
 
-class ApiKey(Base):
+class ApiKeyTable(Base):
     """Stores API keys.
 
     API keys have a 1:M relationship with datasources.
@@ -25,12 +25,12 @@ class ApiKey(Base):
 
     key: Mapped[str] = mapped_column(unique=True)
 
-    datasources: Mapped[list["ApiKeyDatasource"]] = relationship(
-        "ApiKeyDatasource", back_populates="apikey", cascade="all, delete-orphan"
+    datasources: Mapped[list["ApiKeyDatasourceTable"]] = relationship(
+        back_populates="apikey", cascade="all, delete-orphan"
     )
 
 
-class ApiKeyDatasource(Base):
+class ApiKeyDatasourceTable(Base):
     """Stores the list of datasources that an API key has privileges on."""
 
     __tablename__ = "apikey_datasources"
@@ -41,4 +41,4 @@ class ApiKeyDatasource(Base):
 
     datasource_id: Mapped[str] = mapped_column(primary_key=True)
 
-    apikey: Mapped[ApiKey] = relationship(back_populates="datasources")
+    apikey: Mapped[ApiKeyTable] = relationship(back_populates="datasources")

@@ -6,8 +6,8 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from xngin.apiserver.models.tables import (
-    ApiKey as ApiKeyDB,
-    ApiKeyDatasource as ApiKeyDatasourceDB,
+    ApiKeyTable,
+    ApiKeyDatasourceTable,
 )
 import logging
 
@@ -51,10 +51,10 @@ def require_valid_api_key(session: Session, api_key: str | None, config_id: str)
         raise ApiKeyRequiredError()
     key_hash = hash_key(api_key)
     stmt = (
-        select(ApiKeyDB)
-        .join(ApiKeyDatasourceDB)
-        .where(ApiKeyDB.key == key_hash)
-        .where(ApiKeyDatasourceDB.datasource_id == config_id)
+        select(ApiKeyTable)
+        .join(ApiKeyDatasourceTable)
+        .where(ApiKeyTable.key == key_hash)
+        .where(ApiKeyDatasourceTable.datasource_id == config_id)
     )
     result = session.execute(stmt)
     db_key = result.scalar_one_or_none()

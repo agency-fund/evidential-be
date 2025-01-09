@@ -3,7 +3,7 @@ from sqlalchemy import delete
 
 from xngin.apiserver import conftest
 from xngin.apiserver.apikeys import make_key, hash_key
-from xngin.apiserver.models.tables import ApiKey, ApiKeyDatasource
+from xngin.apiserver.models.tables import ApiKeyTable, ApiKeyDatasourceTable
 from xngin.apiserver.dependencies import xngin_db_session
 from xngin.apiserver.main import app
 
@@ -37,8 +37,8 @@ def test_secured_correct_apikey():
     session = next(app.dependency_overrides[xngin_db_session]())  # hack
     # emulates behavior of POST /m/apikeys
     id_, key = make_key()
-    api_key = ApiKey(id=id_, key=hash_key(key))
-    api_key.datasources = [ApiKeyDatasource(datasource_id=CONFIG_ID_SECURED)]
+    api_key = ApiKeyTable(id=id_, key=hash_key(key))
+    api_key.datasources = [ApiKeyDatasourceTable(datasource_id=CONFIG_ID_SECURED)]
     session.add(api_key)
     session.commit()
     try:
@@ -55,4 +55,7 @@ def test_secured_correct_apikey():
             )
             assert response.status_code == 403, response.content
     finally:
-        assert session.execute(delete(ApiKey).where(ApiKey.id == id_)).rowcount == 1
+        assert (
+            session.execute(delete(ApiKeyTable).where(ApiKeyTable.id == id_)).rowcount
+            == 1
+        )
