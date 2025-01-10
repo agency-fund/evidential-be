@@ -10,7 +10,7 @@ class CacheTable(Base):
     __tablename__ = "cache"
 
     key: Mapped[str] = mapped_column(primary_key=True)
-    value: Mapped[str] = mapped_column()
+    value: Mapped[str]
 
 
 class ApiKeyTable(Base):
