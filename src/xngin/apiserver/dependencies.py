@@ -5,6 +5,7 @@ from fastapi import Depends, Header
 from fastapi.security import APIKeyHeader
 from sqlalchemy.orm import Session
 
+from xngin.apiserver import constants
 from xngin.apiserver.apikeys import require_valid_api_key
 from xngin.apiserver.database import SessionLocal
 from xngin.apiserver.gsheet_cache import GSheetCache
@@ -30,10 +31,13 @@ def xngin_db_session():
 
 def config_dependency(
     settings: Annotated[XnginSettings, Depends(settings_dependency)],
-    config_id: Annotated[str, Header(example="testing")],
+    config_id: Annotated[
+        str, Header(example="testing", name=constants.HEADER_CONFIG_ID)
+    ],
     xngin_db: Annotated[Session, Depends(xngin_db_session)],
     api_key: Annotated[
-        str | None, Depends(APIKeyHeader(name="X-API-Key", auto_error=False))
+        str | None,
+        Depends(APIKeyHeader(name=constants.HEADER_API_KEY, auto_error=False)),
     ],
 ):
     """Returns the configuration for the current request, as determined by the Config-ID HTTP request header."""

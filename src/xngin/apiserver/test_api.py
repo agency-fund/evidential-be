@@ -12,7 +12,7 @@ from pathlib import Path
 import pytest
 from fastapi.testclient import TestClient
 
-from xngin.apiserver import conftest
+from xngin.apiserver import conftest, constants
 from xngin.apiserver.main import app
 from xngin.apiserver.testing.assertions import assert_same
 from xngin.apiserver.testing.xurl import Xurl
@@ -207,7 +207,7 @@ def test_commit_with_badconfig(mocker):
     """Test for error when settings are missing a commit action webhook."""
 
     (xurl, _) = load_mock_response_from_xurl(mocker, "apitest.commit.xurl")
-    xurl.headers["Config-ID"] = "customer-test-badconfig"
+    xurl.headers[constants.HEADER_CONFIG_ID] = "customer-test-badconfig"
 
     response = client.request(
         xurl.method, xurl.url, headers=xurl.headers, content=xurl.body

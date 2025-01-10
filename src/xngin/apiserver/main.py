@@ -11,7 +11,7 @@ from fastapi.openapi.utils import get_openapi
 from pydantic import BaseModel
 from sqlalchemy import distinct
 
-from xngin.apiserver import database, exceptionhandlers, middleware
+from xngin.apiserver import database, exceptionhandlers, middleware, constants
 from xngin.apiserver.api_types import (
     DataTypeClass,
     AssignResponse,
@@ -570,7 +570,7 @@ def debug_settings(
     if request.client.host not in settings.trusted_ips:
         raise HTTPException(403)
     response = {"settings": settings}
-    if config_id := request.headers.get("config-id"):
+    if config_id := request.headers.get(constants.HEADER_CONFIG_ID):
         response["config_id"] = config_id
     return response
 

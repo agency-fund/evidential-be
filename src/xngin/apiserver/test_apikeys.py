@@ -1,7 +1,7 @@
 from fastapi.testclient import TestClient
 from sqlalchemy import delete
 
-from xngin.apiserver import conftest
+from xngin.apiserver import conftest, constants
 from xngin.apiserver.apikeys import make_key, hash_key
 from xngin.apiserver.models.tables import ApiKeyTable, ApiKeyDatasourceTable
 from xngin.apiserver.dependencies import xngin_db_session
@@ -18,7 +18,7 @@ def test_secured_requires_apikey():
     """Tests that a config marked as requiring an API key rejects requests w/o API keys."""
     response = client.get(
         "/filters?participant_type=test_participant_type",
-        headers={"config-id": CONFIG_ID_SECURED},
+        headers={constants.HEADER_CONFIG_ID: CONFIG_ID_SECURED},
     )
     assert response.status_code == 403, response.content
 
@@ -27,7 +27,10 @@ def test_secured_wrong_apikey():
     """Tests that a config marked as requiring an API key rejects requests when no API keys defined."""
     response = client.get(
         "/filters?participant_type=test_participant_type",
-        headers={"config-id": CONFIG_ID_SECURED, "x-api-key": "nonexistent"},
+        headers={
+            constants.HEADER_CONFIG_ID: CONFIG_ID_SECURED,
+            "x-api-key": "nonexistent",
+        },
     )
     assert response.status_code == 403, response.content
 
@@ -44,14 +47,17 @@ def test_secured_correct_apikey():
     try:
         response = client.get(
             "/filters?participant_type=test_participant_type",
-            headers={"config-id": CONFIG_ID_SECURED, "x-api-key": key},
+            headers={constants.HEADER_CONFIG_ID: CONFIG_ID_SECURED, "x-api-key": key},
         )
         assert response.status_code == 200, response.content
 
         for bad_key in ("", key + "suffix", key.lower(), key.upper()):
             response = client.get(
                 "/filters?participant_type=test_participant_type",
-                headers={"config-id": CONFIG_ID_SECURED, "x-api-key": bad_key},
+                headers={
+                    constants.HEADER_CONFIG_ID: CONFIG_ID_SECURED,
+                    "x-api-key": bad_key,
+                },
             )
             assert response.status_code == 403, response.content
     finally:
