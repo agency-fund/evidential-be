@@ -4,13 +4,12 @@ import asyncio
 import logging
 import os
 from contextlib import asynccontextmanager
-from typing import Annotated
+from typing import Annotated, Literal
 from urllib.parse import urlencode
 
 import httpx
-from fastapi import APIRouter, HTTPException, Query, FastAPI
+from fastapi import APIRouter, Query, FastAPI
 from fastapi.security import OpenIdConnect
-from starlette import status
 from starlette.responses import FileResponse
 
 ENV_GOOGLE_OIDC_CLIENT_ID = "GOOGLE_OIDC_CLIENT_ID"
@@ -20,9 +19,7 @@ ENV_GOOGLE_OIDC_REDIRECT_URI = "GOOGLE_OIDC_REDIRECT_URI"
 CLIENT_ID = os.environ.get(ENV_GOOGLE_OIDC_CLIENT_ID)
 CLIENT_SECRET = os.environ.get(ENV_GOOGLE_OIDC_CLIENT_SECRET)
 GOOGLE_DISCOVERY_URL = "https://accounts.google.com/.well-known/openid-configuration"
-DEFAULT_REDIRECT_URI = (
-    "http://localhost:8000/a/oidc"  # default value should match value in oidctest.html
-)
+DEFAULT_REDIRECT_URI = "http://localhost:8000/a/oidc"  # default value should match OIDC_BASE_URL in pkcetest.html
 REDIRECT_URI = os.environ.get(
     ENV_GOOGLE_OIDC_REDIRECT_URI, DEFAULT_REDIRECT_URI
 )  # used for testing UI only
@@ -100,18 +97,18 @@ def index():
 @router.get("/login")
 async def login(
     code_challenge: Annotated[str, Query(...)],
-    code_challenge_method: Annotated[str, Query(...)],
+    code_challenge_method: Annotated[
+        Literal["S256"],
+        Query(
+            ...,
+        ),
+    ],
 ):
     """Generates a login URL given a PKCE code challenge.
 
     Only relevant for PKCE.
     """
     config = await get_google_configuration()
-    if code_challenge_method not in {"S256"}:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Only S256 PKCE method is supported",
-        )
 
     params = {
         "client_id": CLIENT_ID,
