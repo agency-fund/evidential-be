@@ -124,7 +124,10 @@ async def login(
 
 @router.get("/callback")
 async def auth_callback(
-    code: Annotated[str, Query(...)], code_verifier: Annotated[str, Query(...)]
+    code: Annotated[str, Query(...)],
+    code_verifier: Annotated[
+        str, Query(min_length=43, max_length=128, pattern=r"^[A-Za-z0-9._~-]+$")
+    ],
 ):
     """OAuth callback endpoint that exchanges the authorization code for tokens.
 
