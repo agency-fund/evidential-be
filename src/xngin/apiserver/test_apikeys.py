@@ -29,7 +29,7 @@ def test_secured_wrong_apikey():
         "/filters?participant_type=test_participant_type",
         headers={
             constants.HEADER_CONFIG_ID: CONFIG_ID_SECURED,
-            "x-api-key": "nonexistent",
+            constants.HEADER_API_KEY: "nonexistent",
         },
     )
     assert response.status_code == 403, response.content
@@ -47,7 +47,10 @@ def test_secured_correct_apikey():
     try:
         response = client.get(
             "/filters?participant_type=test_participant_type",
-            headers={constants.HEADER_CONFIG_ID: CONFIG_ID_SECURED, "x-api-key": key},
+            headers={
+                constants.HEADER_CONFIG_ID: CONFIG_ID_SECURED,
+                constants.HEADER_API_KEY: key,
+            },
         )
         assert response.status_code == 200, response.content
 
@@ -56,7 +59,7 @@ def test_secured_correct_apikey():
                 "/filters?participant_type=test_participant_type",
                 headers={
                     constants.HEADER_CONFIG_ID: CONFIG_ID_SECURED,
-                    "x-api-key": bad_key,
+                    constants.HEADER_API_KEY: bad_key,
                 },
             )
             assert response.status_code == 403, response.content
