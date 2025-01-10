@@ -40,6 +40,14 @@ def hash_key(key: str | bytes):
 
 
 def make_key() -> tuple[str, str]:
+    """Generates an API key.
+
+    The general format is ``"xat_" || id || random``.
+
+    The xat_ prefix is to make the value easily recognizable as an xngin API token. The {id} value is used to identify
+    this specific key; it is not considered secret, may be presented in UIs, and is useful when we need to identify
+    specific API keys without worrying about revealing the secret portion.
+    """
     id_ = "".join([secrets.choice(KEY_ALPHABET) for _ in range(6)])
     rnd = "".join([secrets.choice(KEY_ALPHABET) for _ in range(32)])
     key = f"{API_KEY_PREFIX}_{id_}_{rnd}"
@@ -47,17 +55,21 @@ def make_key() -> tuple[str, str]:
 
 
 def require_valid_api_key(session: Session, api_key: str | None, config_id: str):
+    """Queries the database for a matching API key with privileges on the config referenced by config_id."""
     if not api_key:
         raise ApiKeyRequiredError()
+    if not api_key.startswith(API_KEY_PREFIX):
+        raise InvalidApiKeyError()
     key_hash = hash_key(api_key)
     stmt = (
-        select(ApiKeyTable)
+        select(True)
+        .select_from(ApiKeyTable)
         .join(ApiKeyDatasourceTable)
         .where(ApiKeyTable.key == key_hash)
         .where(ApiKeyDatasourceTable.datasource_id == config_id)
     )
     result = session.execute(stmt)
-    db_key = result.scalar_one_or_none()
+    row = result.scalar_one_or_none()
 
-    if not db_key:
+    if not row:
         raise InvalidApiKeyError()
