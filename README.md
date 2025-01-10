@@ -5,14 +5,14 @@
 # xngin
 
 - [xngin](#xngin)
-  - [Prerequisites](#prerequisites)
-  - [Getting Started](#getting-started)
-  - [Settings](#settings)
-  - [Docker](#docker)
-  - [Testing](#testing)
-  - [The CLI](#the-cli)
-  - [Onboarding new Clients](#onboarding-new-clients)
-  - [FAQ](#faq)
+    - [Prerequisites](#prerequisites)
+    - [Getting Started](#getting-started)
+    - [Settings](#settings)
+    - [Docker](#docker)
+    - [Testing](#testing)
+    - [The CLI](#the-cli)
+    - [Onboarding new Clients](#onboarding-new-clients)
+    - [FAQ](#faq)
 
 Python version of [RL Experiments Engine](https://github.com/agency-fund/rl-experiments-engine).
 
@@ -244,15 +244,18 @@ uv run fastapi dev src/xngin/apiserver/main.py
 
 ## Testing
 
-Run unittests with [pytest](https://docs.pytest.org/en/stable/).  `test_api.py` tests that use `testdata/*.xurl` data can be updated more easily as things change by prefixing your pytest run with the environment variable: `UPDATE_API_TESTS=1`.
+Run unittests with [pytest](https://docs.pytest.org/en/stable/).  `test_api.py` tests that use `testdata/*.xurl` data
+can be updated more easily as things change by prefixing your pytest run with the environment variable:
+`UPDATE_API_TESTS=1`.
 
 [Smoke tests](.github/workflows/test.yaml) are also run as part of our github action test workflow.
 
 * Some of our tests that rely on `conftest.py` will create a local sqlite db for testing in
   `src/xngin/apiserver/testdata/testing_dwh.db` if it doesn't exist already using the zipped data dump in
   `testing_dwh.csv.zst`.
-    * `testing_sheet.csv` is the corresponding spreadsheet that simulates a typical table configuration for the participant
-      type data above.
+* `testing_sheet.csv` is the corresponding spreadsheet that simulates a typical table configuration for the
+  participant
+  type data above.
 * Our pytests have a test marked as 'integration' which is also only run as part of that workflow. To run, ensure you
   have the test credentials to access the gsheet then do:
    ```shell
@@ -503,10 +506,11 @@ If the Admin API is enabled, OIDC must be configured with additional environment
 Our OIDC implementation supports the popup-style OIDC flow (response_type=`id_token`) and PKCE exchanges
 (response_type=`code`).
 
-| Environment Variable      | Purpose                                                     | Example                              |
-|---------------------------|-------------------------------------------------------------|--------------------------------------|
-| GOOGLE_OIDC_CLIENT_ID     | The Google-issued client ID.                                | `2222-...apps.googleusercontent.com` |
-| GOOGLE_OIDC_CLIENT_SECRET | The Google-generated client secret. Only required for PKCE. | `G....`                              |
+| Environment Variable      | Purpose                                                                                                                                                                                                                                                           | Example                              |
+|---------------------------|-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|--------------------------------------|
+| GOOGLE_OIDC_CLIENT_ID     | The Google-issued client ID.                                                                                                                                                                                                                                      | `2222-...apps.googleusercontent.com` |
+| GOOGLE_OIDC_CLIENT_SECRET | The Google-generated client secret. Only required for PKCE.                                                                                                                                                                                                       | `G....`                              |
+| GOOGLE_OIDC_REDIRECT_URI  | The URI that Google will redirect the user to after successfully authorizing. This should match the value configured in the Google Cloud console credential settings and the value embedded in the SPA. This is generally not used by the popup-style auth flows. | `http://localhost:8000/a/oidc`       |
 
 ## API Keys
 
