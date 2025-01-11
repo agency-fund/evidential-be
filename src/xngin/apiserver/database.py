@@ -1,9 +1,10 @@
 import os
 from pathlib import Path
 
-from sqlalchemy import create_engine, String
-from sqlalchemy.orm import DeclarativeBase, mapped_column
+from sqlalchemy import create_engine, event
 from sqlalchemy.orm import sessionmaker
+
+from xngin.apiserver.models.tables import Base
 
 DEFAULT_POSTGRES_DIALECT = "postgresql+psycopg"
 
@@ -40,20 +41,21 @@ def get_connect_args():
     return default
 
 
-engine = create_engine(SQLALCHEMY_DATABASE_URL, connect_args=get_connect_args())
+engine = create_engine(
+    SQLALCHEMY_DATABASE_URL,
+    connect_args=get_connect_args(),
+    echo=os.environ.get("ECHO_SQL", "").lower() in ("true", "1"),
+)
+
+
+@event.listens_for(engine, "connect")
+def set_sqlite_pragma(dbapi_connection, _):
+    cursor = dbapi_connection.cursor()
+    cursor.execute("PRAGMA foreign_keys=ON")  # for API key cascading deletes
+    cursor.close()
+
+
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
-
-
-class Base(DeclarativeBase):
-    pass
-
-
-class Cache(Base):
-    __tablename__ = "cache"
-
-    # TODO: handle non-sqlite SQLALCHEMY_DATABASE_URLs
-    key = mapped_column(String, primary_key=True)
-    value = mapped_column(String)
 
 
 def setup():

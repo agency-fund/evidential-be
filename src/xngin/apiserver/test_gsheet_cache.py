@@ -8,7 +8,7 @@ from sqlalchemy.exc import IntegrityError
 
 from xngin.apiserver import conftest
 from xngin.apiserver.api_types import DataType
-from xngin.apiserver.database import Cache
+from xngin.apiserver.models.tables import CacheTable
 from xngin.apiserver.gsheet_cache import GSheetCache
 from xngin.apiserver.settings import SheetRef
 from xngin.sheets.config_sheet import ConfigWorksheet, ColumnDescriptor
@@ -48,7 +48,7 @@ def test_get_cached_entry(sheet_cache, mock_session, mock_sheet_config):
     cache_key = f"{key.url}!{key.worksheet}"
 
     # Mock the session.get to return a cached entry
-    mock_session.get.return_value = Cache(
+    mock_session.get.return_value = CacheTable(
         key=cache_key, value=mock_sheet_config.model_dump_json()
     )
 
@@ -58,7 +58,7 @@ def test_get_cached_entry(sheet_cache, mock_session, mock_sheet_config):
 
     assert isinstance(result, ConfigWorksheet)
     assert result.model_dump() == mock_sheet_config.model_dump()
-    mock_session.get.assert_called_once_with(Cache, cache_key)
+    mock_session.get.assert_called_once_with(CacheTable, cache_key)
     fetcher.assert_not_called()
 
 
@@ -75,7 +75,7 @@ def test_get_new_entry(sheet_cache, mock_session, mock_sheet_config):
 
     assert isinstance(result, ConfigWorksheet)
     assert result.model_dump() == mock_sheet_config.model_dump()
-    mock_session.get.assert_called_once_with(Cache, cache_key)
+    mock_session.get.assert_called_once_with(CacheTable, cache_key)
     fetcher.assert_called_once()
     mock_session.add.assert_called_once()
     mock_session.commit.assert_called_once()
@@ -166,7 +166,7 @@ def test_cache_key_generation(
 
     sheet_cache.get(key, fetcher)
 
-    mock_session.get.assert_called_once_with(Cache, cache_key)
+    mock_session.get.assert_called_once_with(CacheTable, cache_key)
     mock_session.add.assert_called_once()
     added_cache_entry = mock_session.add.call_args[0][0]
     assert added_cache_entry.key == cache_key

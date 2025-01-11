@@ -1,3 +1,4 @@
+from xngin.apiserver import constants
 from xngin.apiserver.testing.xurl import Xurl
 
 
@@ -66,7 +67,7 @@ HTTP 200
 """) == Xurl(
         method="GET",
         url="http://localhost:8000/strata?participant_type=test_participant_type",
-        headers={"Config-ID": "testing"},
+        headers={constants.HEADER_CONFIG_ID: "testing"},
         expected_status=200,
         expected_response='[\n  { "k": "v" }',
         body="requestbody",

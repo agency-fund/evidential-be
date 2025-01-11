@@ -1,7 +1,7 @@
 from fastapi.testclient import TestClient
 
 import pytest
-from xngin.apiserver import conftest
+from xngin.apiserver import conftest, constants
 from xngin.apiserver.api_types import DataType
 from xngin.apiserver.main import app, generate_column_descriptors
 from xngin.apiserver.settings import (
@@ -21,7 +21,7 @@ def test_get_settings_for_test():
 
 
 def test_settings_can_be_overridden_by_tests():
-    response = client.get("/_settings", headers={"config-id": "testing"})
+    response = client.get("/_settings", headers={constants.HEADER_CONFIG_ID: "testing"})
     assert response.status_code == 200, response.content
     settings = XnginSettings.model_validate(response.json()["settings"])
     assert settings.get_client_config("customer-test").config.dwh.user == "user"
@@ -29,7 +29,9 @@ def test_settings_can_be_overridden_by_tests():
 
 
 def test_config_injection():
-    response = client.get("/_settings", headers={"Config-ID": "customer-test"})
+    response = client.get(
+        "/_settings", headers={constants.HEADER_CONFIG_ID: "customer-test"}
+    )
     assert response.status_code == 200, response.content
     assert response.json()["config_id"] == "customer-test"
 

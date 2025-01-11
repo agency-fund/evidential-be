@@ -13,6 +13,7 @@ from sqlalchemy.orm import sessionmaker
 
 from xngin.apiserver import database
 from xngin.apiserver.dependencies import settings_dependency, xngin_db_session
+from xngin.apiserver.models import tables
 from xngin.apiserver.settings import XnginSettings, SettingsForTesting
 from xngin.apiserver.testing import testing_dwh
 from xngin.sqlite_extensions import custom_functions
@@ -95,7 +96,7 @@ def get_test_sessionmaker():
     # Hack: Cause any direct access to production code from code to fail during tests.
     database.SessionLocal = None
     # Create all the ORM tables.
-    database.Base.metadata.create_all(bind=db_engine)
+    tables.Base.metadata.create_all(bind=db_engine)
 
     def get_db_for_test():
         db = testing_session_local()

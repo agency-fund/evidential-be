@@ -83,9 +83,26 @@
         }
       }
     },
-
     {
       "id": "testing",
+      "config": {
+        "type": "sqlite_local",
+        "participants": [
+          {
+            "participant_type": "test_participant_type",
+            "table_name": "test_participant_type",
+            "sheet": {
+              "url": "file://src/xngin/apiserver/testdata/testing_sheet.csv",
+              "worksheet": "Sheet1"
+            }
+          }
+        ],
+        "sqlite_filename": "src/xngin/apiserver/testdata/testing_dwh.db"
+      }
+    },
+    {
+      "id": "testing-secured",
+      "require_api_key": true,
       "config": {
         "type": "sqlite_local",
         "participants": [

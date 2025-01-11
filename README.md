@@ -5,20 +5,20 @@
 # xngin
 
 - [xngin](#xngin)
-  - [Prerequisites](#prerequisites)
-  - [Getting Started](#getting-started)
-  - [Settings](#settings)
-  - [Docker](#docker)
-  - [Testing](#testing)
-  - [The CLI](#the-cli)
-  - [Onboarding new Clients](#onboarding-new-clients)
-  - [FAQ](#faq)
+    - [Prerequisites](#prerequisites)
+    - [Getting Started](#getting-started)
+    - [Settings](#settings)
+    - [Docker](#docker)
+    - [Testing](#testing)
+    - [The CLI](#the-cli)
+    - [Onboarding new Clients](#onboarding-new-clients)
+    - [FAQ](#faq)
 
 Python version of [RL Experiments Engine](https://github.com/agency-fund/rl-experiments-engine).
 
 The following is a proposal of the main components of this service:
 
-1. A ODBC/DBI-based interfae module to connect to underlying data sources (one table per unit of analysis)
+1. A ODBC/DBI-based interface module to connect to underlying data sources (one table per unit of analysis)
 2. A configuration module that draws from the table(s) specified in (1) into a Google Sheet that can be annotated with
    filters, metrics and strata
 3. API endpoints that provide a list of fields and their values (/filters, /metrics, /strata)
@@ -244,15 +244,18 @@ uv run fastapi dev src/xngin/apiserver/main.py
 
 ## Testing
 
-Run unittests with [pytest](https://docs.pytest.org/en/stable/).  `test_api.py` tests that use `testdata/*.xurl` data can be updated more easily as things change by prefixing your pytest run with the environment variable: `UPDATE_API_TESTS=1`.
+Run unittests with [pytest](https://docs.pytest.org/en/stable/).  `test_api.py` tests that use `testdata/*.xurl` data
+can be updated more easily as things change by prefixing your pytest run with the environment variable:
+`UPDATE_API_TESTS=1`.
 
 [Smoke tests](.github/workflows/test.yaml) are also run as part of our github action test workflow.
 
 * Some of our tests that rely on `conftest.py` will create a local sqlite db for testing in
   `src/xngin/apiserver/testdata/testing_dwh.db` if it doesn't exist already using the zipped data dump in
   `testing_dwh.csv.zst`.
-    * `testing_sheet.csv` is the corresponding spreadsheet that simulates a typical table configuration for the participant
-      type data above.
+* `testing_sheet.csv` is the corresponding spreadsheet that simulates a typical table configuration for the
+  participant
+  type data above.
 * Our pytests have a test marked as 'integration' which is also only run as part of that workflow. To run, ensure you
   have the test credentials to access the gsheet then do:
    ```shell
@@ -468,7 +471,7 @@ Authentication:
 
 Run `brew install postgresql@14`.
 
-### Deployment on Railway
+## Deployment on Railway
 
 The Railway deployment relies on [Dockerfile.railway](Dockerfile.railway), [railway.json](railway.json), and some
 environment variables:
@@ -483,3 +486,76 @@ environment variables:
 In addition, there are variables set in the Railway console corresponding to configuration values referenced by
 the [xngin.railway.settings.json](https://github.com/agency-fund/xngin-settings/xngin.railway.settings.json) file in the
 limited-access https://github.com/agency-fund/xngin-settings repository.
+
+## Admin API
+
+The Admin API allows API keys to be managed by users from a trusted domain. The API is protected by OIDC and allows
+logins from Google Workspace accounts in the @agency.fund domain.
+
+The API is configured with environment variables:
+
+| Environment Variable | Purpose                                                                   | Example |
+|----------------------|---------------------------------------------------------------------------|---------|
+| ENABLE_OIDC          | Enables the OIDC endpoints. Must be `true` for the Admin API to function. | `true`  |
+| ENABLE_ADMIN         | Enables the Admin API.                                                    | `true`  |
+
+If the Admin API is enabled, OIDC must be configured with additional environment variables (see below).
+
+## OIDC
+
+Our OIDC implementation supports the popup-style OIDC flow (response_type=`id_token`) and PKCE exchanges
+(response_type=`code`).
+
+| Environment Variable      | Purpose                                                                                                                                                                                                                                                           | Example                              |
+|---------------------------|-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|--------------------------------------|
+| GOOGLE_OIDC_CLIENT_ID     | The Google-issued client ID.                                                                                                                                                                                                                                      | `2222-...apps.googleusercontent.com` |
+| GOOGLE_OIDC_CLIENT_SECRET | The Google-generated client secret. Only required for PKCE.                                                                                                                                                                                                       | `G....`                              |
+| GOOGLE_OIDC_REDIRECT_URI  | The URI that Google will redirect the user to after successfully authorizing. This should match the value configured in the Google Cloud console credential settings and the value embedded in the SPA. This is generally not used by the popup-style auth flows. | `http://localhost:8000/a/oidc`       |
+
+## API Keys
+
+The datasources defined in settings can be protected with API keys. To require API keys for a specific datasource, set
+the `require_api_key` flag to true on the settings. Example:
+
+```json5
+{
+  "id": "my-secure-config",
+  "require_api_key": true,
+  "config": {
+    "type": "remote",
+    // ...
+  }
+}
+```
+
+Use the Admin API to create API keys.
+
+Clients must send the API keys as the `x-api-key` header. Example:
+
+```shell
+curl --header "x-api-key: xat_..." \
+  --header "Config-ID: my-secure-config" \
+  'http://localhost:8000/filters?participant_type=test_participant_type'
+```
+
+## Schema Migration
+
+We are using [Atlas](https://atlasgo.io/) to manage database schema migrations.
+
+To generate migrations:
+
+```shell
+uv run atlas migrate diff --env sa_postgres
+```
+
+To apply migrations to a local Postgres instance:
+
+```shell
+uv run atlas migrate apply --env sa_postgres --url 'postgresql://postgres:postgres@localhost:5499/postgres?sslmode=disable'
+```
+
+To apply migrations to the main.dev.agencyfund.org instance:
+
+```shell
+uv run atlas migrate apply --env sa_postgres --url 'postgresql://junction.proxy.rlwy.net:21126/railway?sslmode=require'
+```

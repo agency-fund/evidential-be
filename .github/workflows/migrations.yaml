@@ -1,0 +1,36 @@
+name: migrations
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  DEBIAN_FRONTEND: noninteractive
+  FORCE_COLOR: "1"
+  PYTHONUNBUFFERED: "1"
+
+jobs:
+  ruff:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 15
+    steps:
+      - uses: ariga/setup-atlas@v0
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v4
+        with:
+          version: "0.5.12"
+          enable-cache: true
+      - name: validate sa_postgres
+        run: uv run atlas migrate validate --env sa_postgres
+      - name: lint sa_postgres
+        run: uv run atlas migrate lint --env sa_postgres --git-base HEAD
