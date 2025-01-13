@@ -487,7 +487,7 @@ class Strata(ApiBaseModel):
 class Assignment(ApiBaseModel):
     """Describes treatment assignment for an experiment participant."""
 
-    # this references the column marked is_unique_id == TRUE in the configuration spreadsheet
+    # this references the field marked is_unique_id == TRUE in the configuration spreadsheet
     participant_id: str
     treatment_assignment: str
     strata: list[Strata]

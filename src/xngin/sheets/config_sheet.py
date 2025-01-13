@@ -15,7 +15,7 @@ class InvalidSheetDetails(BaseModel):
     """Describes a problem with the configuration input."""
 
     row_number: int | None = None
-    column: str | None = None
+    field: str | None = None
     msg: str
 
     @classmethod
@@ -45,8 +45,8 @@ class InvalidSheetError(Exception):
         return "\n".join(err.model_dump_json() for err in self.errors)
 
 
-class ColumnDescriptor(BaseModel):
-    column_name: str
+class FieldDescriptor(BaseModel):
+    field_name: str
     data_type: DataType
     description: str
     is_unique_id: bool
@@ -91,20 +91,20 @@ class ConfigWorksheet(BaseModel):
     """Represents a single worksheet describing metadata about a type of Participant."""
 
     table_name: str
-    columns: list[ColumnDescriptor]
+    fields: list[FieldDescriptor]
 
     model_config = {
         "strict": True,
         "extra": "forbid",
     }
 
-    def get_unique_id_col(self):
+    def get_unique_id_field(self):
         """Gets the name of the unique ID field."""
-        return next((i.column_name for i in self.columns if i.is_unique_id), None)
+        return next((i.field_name for i in self.fields if i.is_unique_id), None)
 
     @model_validator(mode="after")
     def check_one_unique_id(self) -> "ConfigWorksheet":
-        uniques = [r.column_name for r in self.columns if r.is_unique_id]
+        uniques = [r.field_name for r in self.fields if r.is_unique_id]
         if len(uniques) == 0:
             raise ValueError("There are no columns marked as unique ID.")
         if len(uniques) > 1:
@@ -115,20 +115,20 @@ class ConfigWorksheet(BaseModel):
         return self
 
     @model_validator(mode="after")
-    def check_unique_columns(self) -> "ConfigWorksheet":
-        counted = Counter([".".join(row.column_name) for row in self.columns])
+    def check_unique_fields(self) -> "ConfigWorksheet":
+        counted = Counter([".".join(row.field_name) for row in self.fields])
         duplicates = [item for item, count in counted.items() if count > 1]
         if duplicates:
             raise ValueError(
-                f"Duplicate 'column_name' values found: {', '.join(duplicates)}."
+                f"Duplicate 'field_name' values found: {', '.join(duplicates)}."
             )
         return self
 
     @model_validator(mode="after")
     def check_non_empty_rows(self) -> "ConfigWorksheet":
-        if len(self.columns) == 0:
+        if len(self.fields) == 0:
             raise ValueError(
-                f"{self.__class__} must contain at least one ColumnDescriptor."
+                f"{self.__class__} must contain at least one FieldDescriptor."
             )
         return self
 
@@ -175,25 +175,25 @@ def fetch_and_parse_sheet(ref: SheetRef):
         raise InvalidSheetError([
             InvalidSheetDetails(
                 row_number=None,
-                column=None,
+                field=None,
                 msg="The sheet does not have any data rows.",
             )
         ])
-    column_names = sheet[0].keys()
-    required_column_names = ColumnDescriptor.model_fields.keys() - {"extra"}
-    extra_column_names = column_names - required_column_names
+    field_names = sheet[0].keys()
+    required_field_names = FieldDescriptor.model_fields.keys() - {"extra"}
+    extra_field_names = field_names - required_field_names
     errors = []
     collector = []
     for row_index, values in enumerate(sheet):
-        values["extra"] = {col: str(values.pop(col)) for col in extra_column_names}
+        values["extra"] = {col: str(values.pop(col)) for col in extra_field_names}
         try:
-            collector.append(ColumnDescriptor(**values))
+            collector.append(FieldDescriptor(**values))
         except ValidationError as pve:
             errors.append(
                 InvalidSheetDetails.from_pydantic_error(row=row_index + 1, pve=pve)
             )
     try:
-        parsed = ConfigWorksheet(table_name=ref.worksheet, columns=collector)
+        parsed = ConfigWorksheet(table_name=ref.worksheet, fields=collector)
         # Parsing succeeded, but also raise if there were /any/ errors from above.
         if errors:
             raise InvalidSheetError(errors)
@@ -221,8 +221,8 @@ def create_configworksheet_from_table(
     for column in table.columns.values():
         type_hint = column.type
         collected.append(
-            ColumnDescriptor(
-                column_name=column.name,
+            FieldDescriptor(
+                field_name=column.name,
                 data_type=DataType.match(type_hint),
                 description="",
                 is_unique_id=column.name == unique_id_col,
@@ -237,7 +237,7 @@ def create_configworksheet_from_table(
         key=lambda r: (
             not r.is_unique_id,
             r.data_type != DataType.CHARACTER_VARYING,
-            r.column_name,
+            r.field_name,
         ),
     )
-    return ConfigWorksheet(table_name=table.name, columns=rows)
+    return ConfigWorksheet(table_name=table.name, fields=rows)

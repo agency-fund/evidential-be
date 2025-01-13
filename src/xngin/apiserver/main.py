@@ -146,14 +146,14 @@ def get_strata(
     config = require_config(client)
     participants = config.find_participants(commons.participant_type)
     config_sheet = fetch_worksheet(commons, config, gsheets)
-    strata_fields = {c.column_name: c for c in config_sheet.columns if c.is_strata}
+    strata_fields = {c.field_name: c for c in config_sheet.fields if c.is_strata}
 
     with config.dbsession() as session:
         sa_table = infer_table(
             session.get_bind(), participants.table_name, config.supports_reflection()
         )
-        db_schema = generate_column_descriptors(
-            sa_table, config_sheet.get_unique_id_col()
+        db_schema = generate_field_descriptors(
+            sa_table, config_sheet.get_unique_id_field()
         )
 
     return sorted(
@@ -185,14 +185,14 @@ def get_filters(
     config = require_config(client)
     participants = config.find_participants(commons.participant_type)
     config_sheet = fetch_worksheet(commons, config, gsheets)
-    filter_cols = {c.column_name: c for c in config_sheet.columns if c.is_filter}
+    filter_cols = {c.field_name: c for c in config_sheet.fields if c.is_filter}
 
     with config.dbsession() as session:
         sa_table = infer_table(
             session.get_bind(), participants.table_name, config.supports_reflection()
         )
-        db_schema = generate_column_descriptors(
-            sa_table, config_sheet.get_unique_id_col()
+        db_schema = generate_field_descriptors(
+            sa_table, config_sheet.get_unique_id_field()
         )
 
         # TODO: implement caching, respecting commons.refresh
@@ -260,14 +260,14 @@ def get_metrics(
     config = require_config(client)
     participants = config.find_participants(commons.participant_type)
     config_sheet = fetch_worksheet(commons, config, gsheets)
-    metric_cols = {c.column_name: c for c in config_sheet.columns if c.is_metric}
+    metric_cols = {c.field_name: c for c in config_sheet.fields if c.is_metric}
 
     with config.dbsession() as session:
         sa_table = infer_table(
             session.get_bind(), participants.table_name, config.supports_reflection()
         )
-        db_schema = generate_column_descriptors(
-            sa_table, config_sheet.get_unique_id_col()
+        db_schema = generate_field_descriptors(
+            sa_table, config_sheet.get_unique_id_field()
         )
 
     # Merge data type info above with the columns to be used as metrics:
@@ -348,7 +348,7 @@ def assign_treatment_api(
         config,
         gsheets,
     )
-    unique_id_col = config_sheet.get_unique_id_col()
+    unique_id_col = config_sheet.get_unique_id_field()
 
     with config.dbsession() as session:
         sa_table = infer_table(
@@ -596,14 +596,14 @@ def fetch_worksheet(
     )
 
 
-def generate_column_descriptors(table: sqlalchemy.Table, unique_id_col: str):
+def generate_field_descriptors(table: sqlalchemy.Table, unique_id_col: str):
     """Fetches a map of column name to ConfigWorksheet column metadata.
 
     Uniqueness of the values in the column unique_id_col is assumed, not verified!
     """
     return {
-        c.column_name: c
-        for c in create_configworksheet_from_table(table, unique_id_col).columns
+        c.field_name: c
+        for c in create_configworksheet_from_table(table, unique_id_col).fields
     }
 
 
