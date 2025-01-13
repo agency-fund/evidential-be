@@ -367,8 +367,9 @@ class DesignSpecBase(ApiBaseModel):
     arms: Annotated[list[Arm], Field(..., min_length=2)]
 
     # strata as strings
-    # TODO(roboton): rename as strata_names?
-    strata_cols: list[FieldName]
+    # TODO? If we ever need to accept other metadata about strata, migrate to a new "strata:"
+    #       field that takes a list of Stratum objects, akin to filters: and metrics:.
+    strata_field_names: list[FieldName]
 
     # stat parameters
     power: Annotated[float, Field(0.8, ge=0, le=1)]

@@ -5,7 +5,7 @@ Config-ID: testing
  "design_spec": {
     "experiment_id": "0897bbd7-dacd-41b4-b164-7a1950fa61f2",
     "experiment_name": "Sample experiment name.",
-    "description": "Test a duplicate column name shared in strata_cols and metrics",
+    "description": "Test a duplicate column name shared in strata_field_names and metrics",
     "arms": [
       {
         "arm_name": "Control",
@@ -18,7 +18,7 @@ Config-ID: testing
     ],
     "start_date": "2024-11-06",
     "end_date": "2024-11-20",
-    "strata_cols": [
+    "strata_field_names": [
       "is_onboarded",
       "potential_1",
       "current_income"
@@ -766,7 +766,7 @@ HTTP 200
   ],
   "balance_ok": false,
   "denominator_df": 36,
-  "description": "Test a duplicate column name shared in strata_cols and metrics",
+  "description": "Test a duplicate column name shared in strata_field_names and metrics",
   "experiment_id": "0897bbd7-dacd-41b4-b164-7a1950fa61f2",
   "f_statistic": 2.180416775,
   "id_col": "id",

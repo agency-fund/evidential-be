@@ -146,7 +146,7 @@ def get_strata(
     config = require_config(client)
     participants = config.find_participants(commons.participant_type)
     config_sheet = fetch_worksheet(commons, config, gsheets)
-    strata_cols = {c.column_name: c for c in config_sheet.columns if c.is_strata}
+    strata_fields = {c.column_name: c for c in config_sheet.columns if c.is_strata}
 
     with config.dbsession() as session:
         sa_table = infer_table(
@@ -165,7 +165,7 @@ def get_strata(
                 # For strata columns, we will echo back any extra annotations
                 extra=col_descriptor.extra,
             )
-            for col_name, col_descriptor in strata_cols.items()
+            for col_name, col_descriptor in strata_fields.items()
             if db_schema.get(col_name)
         ],
         key=lambda item: item.field_name,
@@ -363,7 +363,7 @@ def assign_treatment_api(
     return assign_treatment(
         sa_table=sa_table,
         data=participants,
-        stratum_cols=body.design_spec.strata_cols + metric_names,
+        stratum_cols=body.design_spec.strata_field_names + metric_names,
         id_col=unique_id_col,
         arm_names=arm_names,
         experiment_id=str(body.design_spec.experiment_id),
