@@ -59,11 +59,11 @@ Config-ID: customer-test
         "treatment_assignment": "Treatment1",
         "strata": [
           {
-            "strata_name": "participants",
+            "field_name": "participants",
             "strata_value": "4"
           },
           {
-            "strata_name": "video_msgs_hour",
+            "field_name": "video_msgs_hour",
             "strata_value": "0"
           }
         ]

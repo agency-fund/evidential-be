@@ -90,7 +90,7 @@ def assign_treatment(
         row_dict = row._asdict()
         strata = [
             Strata(
-                strata_name=column,
+                field_name=column,
                 strata_value=str(
                     row_dict[column] if pd.notna(row_dict[column]) else "NA"
                 ),

@@ -476,7 +476,7 @@ class StrataType(enum.StrEnum):
 class Strata(ApiBaseModel):
     """Describes stratification for an experiment participant."""
 
-    strata_name: FieldName
+    field_name: FieldName
     # TODO(roboton): Add in strata type, update tests to reflect this field, should be derived
     # from data warehouse.
     # strata_type: Optional[StrataType]
