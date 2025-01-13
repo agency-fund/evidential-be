@@ -26,7 +26,7 @@ Config-ID: customer-test
     "fstat_thresh": 0.5,
     "metrics": [
       {
-        "metric_name": "chat_msgs_hour",
+        "field_name": "chat_msgs_hour",
         "metric_pct_change": 0.1
       }
     ]

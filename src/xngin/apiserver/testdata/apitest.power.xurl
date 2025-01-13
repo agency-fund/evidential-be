@@ -26,15 +26,15 @@ Config-ID: testing
     "fstat_thresh": 0.5,
     "metrics": [
       {
-        "metric_name": "current_income",
+        "field_name": "current_income",
         "metric_pct_change": 0.1
       },
       {
-        "metric_name": "income",
+        "field_name": "income",
         "metric_pct_change": 0.1
       },
       {
-        "metric_name": "is_engaged",
+        "field_name": "is_engaged",
         "metric_pct_change": 0.1
       }
     ]
@@ -57,7 +57,7 @@ HTTP 200
     "metric_spec": {
       "available_n": 39405,
       "metric_baseline": 26333.628738429015,
-      "metric_name": "current_income",
+      "field_name": "current_income",
       "metric_pct_change": 0.1,
       "metric_stddev": 6752.850516930193,
       "metric_target": 28966.99161227192,
@@ -77,7 +77,7 @@ HTTP 200
     "metric_spec": {
       "available_n": 39405,
       "metric_baseline": 30898.867656825856,
-      "metric_name": "income",
+      "field_name": "income",
       "metric_pct_change": 0.1,
       "metric_stddev": 8449.033214299421,
       "metric_target": 33988.75442250844,
@@ -97,7 +97,7 @@ HTTP 200
     "metric_spec": {
       "available_n": 39405,
       "metric_baseline": 0.20913589645984013,
-      "metric_name": "is_engaged",
+      "field_name": "is_engaged",
       "metric_pct_change": 0.1,
       "metric_stddev": 0.40669161937735965,
       "metric_target": 0.23004948610582415,

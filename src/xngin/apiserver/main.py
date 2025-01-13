@@ -359,7 +359,7 @@ def assign_treatment_api(
         )
 
     arm_names = [arm.arm_name for arm in body.design_spec.arms]
-    metric_names = [m.metric_name for m in body.design_spec.metrics]
+    metric_names = [m.field_name for m in body.design_spec.metrics]
     return assign_treatment(
         sa_table=sa_table,
         data=participants,

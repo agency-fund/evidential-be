@@ -26,12 +26,12 @@ Config-ID: testing
     "fstat_thresh": 0.5,
     "metrics": [
       {
-        "metric_name": "current_income",
+        "field_name": "current_income",
         "metric_pct_change": 0.1,
         "metric_target": 32000.0
       },
       {
-        "metric_name": "is_retained"
+        "field_name": "is_retained"
       }
 
     ]
@@ -55,7 +55,7 @@ HTTP 422
         "error": {}
       },
       "input": {
-        "metric_name": "current_income",
+        "field_name": "current_income",
         "metric_pct_change": 0.1,
         "metric_target": 32000.0
       },
@@ -73,7 +73,7 @@ HTTP 422
         "error": {}
       },
       "input": {
-        "metric_name": "is_retained"
+        "field_name": "is_retained"
       },
       "loc": [
         "body",

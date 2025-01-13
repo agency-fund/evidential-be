@@ -289,7 +289,7 @@ class MetricType(enum.StrEnum):
 class DesignSpecMetricBase(ApiBaseModel):
     """Base class for defining a metric to measure in the experiment."""
 
-    metric_name: FieldName
+    field_name: FieldName
     metric_pct_change: Annotated[
         float | None,
         Field(description="Percent change target relative to the metric_baseline."),

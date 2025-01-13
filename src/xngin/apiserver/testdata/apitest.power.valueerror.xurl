@@ -26,7 +26,7 @@ Config-ID: testing
     "fstat_thresh": 0.5,
     "metrics": [
       {
-        "metric_name": "current_income",
+        "field_name": "current_income",
         "metric_pct_change": 0.0
       }
     ]
