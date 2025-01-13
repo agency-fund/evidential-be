@@ -5,14 +5,19 @@
 # xngin
 
 - [xngin](#xngin)
-    - [Prerequisites](#prerequisites)
-    - [Getting Started](#getting-started)
-    - [Settings](#settings)
-    - [Docker](#docker)
-    - [Testing](#testing)
-    - [The CLI](#the-cli)
-    - [Onboarding new Clients](#onboarding-new-clients)
-    - [FAQ](#faq)
+  - [Prerequisites](#prerequisites)
+  - [Getting Started](#getting-started)
+  - [Settings](#settings)
+  - [Docker](#docker)
+  - [Testing](#testing)
+  - [The CLI](#the-cli)
+  - [Onboarding new Clients](#onboarding-new-clients)
+  - [FAQ](#faq)
+  - [Deployment on Railway](#deployment-on-railway)
+  - [Admin API](#admin-api)
+  - [OIDC](#oidc)
+  - [API Keys](#api-keys)
+  - [Schema Migration](#schema-migration)
 
 Python version of [RL Experiments Engine](https://github.com/agency-fund/rl-experiments-engine).
 
@@ -251,13 +256,13 @@ can be updated more easily as things change by prefixing your pytest run with th
 [Smoke tests](.github/workflows/test.yaml) are also run as part of our github action test workflow.
 
 * Some of our tests that rely on `conftest.py` will create a local sqlite db for testing in
-  `src/xngin/apiserver/testdata/testing_dwh.db` if it doesn't exist already using the zipped data dump in
-  `testing_dwh.csv.zst`.
-* `testing_sheet.csv` is the corresponding spreadsheet that simulates a typical table configuration for the
-  participant
-  type data above.
-* Our pytests have a test marked as 'integration' which is also only run as part of that workflow. To run, ensure you
-  have the test credentials to access the gsheet then do:
+  `src/xngin/apiserver/testdata/testing_dwh.db` if it doesn't exist already using the zipped data
+  dump in `testing_dwh.csv.zst`.
+* `testing_sheet.csv` is the corresponding spreadsheet that simulates a typical table configuration
+  for the participant type data above.
+* Our pytests have a test marked as 'integration' which is also only run as part of that workflow.
+  To run, ensure you have the test credentials to access the gsheet (setting env var
+  `GOOGLE_APPLICATION_CREDENTIALS` as necessary) then do:
    ```shell
    pytest -m integration
    ```
