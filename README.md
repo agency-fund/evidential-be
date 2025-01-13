@@ -5,14 +5,19 @@
 # xngin
 
 - [xngin](#xngin)
-    - [Prerequisites](#prerequisites)
-    - [Getting Started](#getting-started)
-    - [Settings](#settings)
-    - [Docker](#docker)
-    - [Testing](#testing)
-    - [The CLI](#the-cli)
-    - [Onboarding new Clients](#onboarding-new-clients)
-    - [FAQ](#faq)
+  - [Prerequisites](#prerequisites)
+  - [Getting Started](#getting-started)
+  - [Settings](#settings)
+  - [Docker](#docker)
+  - [Testing](#testing)
+  - [The CLI](#the-cli)
+  - [Onboarding new Clients](#onboarding-new-clients)
+  - [FAQ](#faq)
+  - [Deployment on Railway](#deployment-on-railway)
+  - [Admin API](#admin-api)
+  - [OIDC](#oidc)
+  - [API Keys](#api-keys)
+  - [Schema Migration](#schema-migration)
 
 Python version of [RL Experiments Engine](https://github.com/agency-fund/rl-experiments-engine).
 
@@ -39,13 +44,18 @@ curl -LsSf https://astral.sh/uv/0.5.14/install.sh | sh
 
 Follow the steps below to get a local development environment running.
 
-1. For local development, use the testing settings file:
+1. Update the project's environment, install dependencies, and create a virtual environment (.venv).
+  ```shell
+  uv sync
+  ```
+
+2. For local development, use the testing settings file:
 
    ```shell
    export XNGIN_SETTINGS=src/xngin/apiserver/testdata/xngin.testing.settings.json
    ```
 
-2. Then run the unit tests:
+3. Then run the unit tests:
 
    ```shell
    uv run pytest
@@ -58,14 +68,14 @@ Follow the steps below to get a local development environment running.
    development
    server.
 
-3. Then start the dev server:
+4. Then start the dev server:
 
    ```shell
    uv run fastapi dev src/xngin/apiserver/main.py
    ```
    To change the port, add the flag `--port <myport>`.
 
-4. Send some test requests:
+5. Send some test requests:
 
    Each request should have an HTTP request header `Config-ID` set to the `id` value of a configuration entry in the
    [xngin.testing.settings.json](src/xngin/apiserver/testdata/xngin.testing.settings.json) settings file. For testing
@@ -79,9 +89,9 @@ Follow the steps below to get a local development environment running.
    Also see [apitest.strata.xurl](src/xngin/apiserver/testdata/apitest.strata.xurl) for a complete example of how to
    write an API test script.
 
-5. Visit the local interactive docs page: http://localhost:8000/docs
+6. Visit the local interactive docs page: http://localhost:8000/docs
 
-6. `uv` sets up a virtual environment by default. To avoid needing to use `uv run` before commands installed by our
+7. `uv` sets up a virtual environment by default. To avoid needing to use `uv run` before commands installed by our
    project, activate the environment with:
 
    ```shell
@@ -92,7 +102,7 @@ Follow the steps below to get a local development environment running.
 
    You can exit the virtual environment with `deactivate`.
 
-7. Now set up the pre-commit hooks in your local git with:
+8. Now set up the pre-commit hooks in your local git with:
 
    ```shell
    pre-commit install
@@ -104,7 +114,8 @@ Follow the steps below to get a local development environment running.
    ```
    pre-commit run -a
    ```
-8. To parse a proper Google Sheets config, you'll need a service worker token, whose json info should be placed in
+
+9. To parse a proper Google Sheets config, you'll need a service worker token, whose json info should be placed in
    `~/.config/gspread/service_account.json` by default.
     - [Setup a service account in your GCP console](console.cloud.google.com) > select your project via dropdown at the
       top > IAM & Admin > Service Accounts > + Create Service Account > give it a name, desc and create; *note the email
