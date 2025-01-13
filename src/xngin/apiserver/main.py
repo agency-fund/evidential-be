@@ -321,7 +321,7 @@ def check_power_api(
 @app.post(
     "/assign",
     summary="Assign treatment given experiment and audience specification.",
-    tags=["Experiment Management"],
+    tags=["Experiment Design"],
 )
 def assign_treatment_api(
     body: AssignRequest,
