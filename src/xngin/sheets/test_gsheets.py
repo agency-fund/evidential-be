@@ -10,16 +10,16 @@ from xngin.sheets.config_sheet import (
     ConfigWorksheet,
     create_configworksheet_from_table,
 )
-from xngin.sheets.gsheets import read_sheet_df
+from xngin.sheets.gsheets import google_app_credentials_file, read_sheet_df
 
 
 @pytest.mark.integration
 def test_read_sheet():
-    assert (Path.home() / Path(".config/gspread/service_account.json")).exists()
+    assert Path(google_app_credentials_file()).exists()
     # The testing service account has been granted read access to this spreadsheet.
     test_sheet_url = "https://docs.google.com/spreadsheets/d/redacted/edit?usp=sharing"
 
-    sheet = read_sheet_df(test_sheet_url, "Fields")
+    sheet = read_sheet_df(test_sheet_url, "Sheet1")
     assert sheet["col1"][0] == "r1c1"
     assert sheet["col2"][1] == "r2c2", sheet
     assert sheet["col2"][2] == "", sheet
