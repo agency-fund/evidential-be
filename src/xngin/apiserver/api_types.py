@@ -525,7 +525,7 @@ class GetStrataResponseElement(ApiBaseModel):
     """Describes a stratification variable."""
 
     data_type: DataType
-    column_name: FieldName
+    field_name: FieldName
     description: str
     # Extra fields will be stored here in case a user configured their worksheet with extra metadata for their own
     # downstream use, e.g. to group strata with a friendly identifier.

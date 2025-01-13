@@ -160,7 +160,7 @@ def get_strata(
         [
             GetStrataResponseElement(
                 data_type=db_schema.get(col_name).data_type,
-                column_name=col_name,
+                field_name=col_name,
                 description=col_descriptor.description,
                 # For strata columns, we will echo back any extra annotations
                 extra=col_descriptor.extra,
@@ -168,7 +168,7 @@ def get_strata(
             for col_name, col_descriptor in strata_cols.items()
             if db_schema.get(col_name)
         ],
-        key=lambda item: item.column_name,
+        key=lambda item: item.field_name,
     )
 
 
