@@ -159,14 +159,14 @@ def get_strata(
     return sorted(
         [
             GetStrataResponseElement(
-                data_type=db_schema.get(col_name).data_type,
-                field_name=col_name,
-                description=col_descriptor.description,
+                data_type=db_schema.get(field_name).data_type,
+                field_name=field_name,
+                description=field_descriptor.description,
                 # For strata columns, we will echo back any extra annotations
-                extra=col_descriptor.extra,
+                extra=field_descriptor.extra,
             )
-            for col_name, col_descriptor in strata_fields.items()
-            if db_schema.get(col_name)
+            for field_name, field_descriptor in strata_fields.items()
+            if db_schema.get(field_name)
         ],
         key=lambda item: item.field_name,
     )
@@ -185,7 +185,7 @@ def get_filters(
     config = require_config(client)
     participants = config.find_participants(commons.participant_type)
     config_sheet = fetch_worksheet(commons, config, gsheets)
-    filter_cols = {c.field_name: c for c in config_sheet.fields if c.is_filter}
+    filter_fields = {c.field_name: c for c in config_sheet.fields if c.is_filter}
 
     with config.dbsession() as session:
         sa_table = infer_table(
@@ -238,9 +238,9 @@ def get_filters(
 
         return sorted(
             [
-                mapper(col_name, col_descriptor)
-                for col_name, col_descriptor in filter_cols.items()
-                if db_schema.get(col_name)
+                mapper(field_name, field_descriptor)
+                for field_name, field_descriptor in filter_fields.items()
+                if db_schema.get(field_name)
             ],
             key=lambda item: item.field_name,
         )
