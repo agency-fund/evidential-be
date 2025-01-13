@@ -43,6 +43,30 @@ Config-ID: customer-test
       }
     ]
   },
+  "power_analyses": {
+      "analyses": [
+        {
+          "metric_spec": {
+            "metric_name": "chat_msgs_hour",
+            "metric_pct_change": 0.1,
+            "metric_target": 0.1853794266441821,
+            "metric_type": "numeric",
+            "metric_baseline": 0.168526751494711,
+            "metric_stddev": 0.62489267825032,
+            "available_n": 100000
+          },
+          "available_n": 100000,
+          "target_n": 43168,
+          "sufficient_n": true,
+          "needed_target": null,
+          "msg": {
+            "type": "sufficient",
+            "msg": "There are 100000 units available to run your experiment and 43168.0 units are needed to meet your experimental design specs. There are enough units available, you only need 43168.0 of the 100000 units to meet your experimental design specs.",
+            "values": {}
+          }
+        }
+    ]
+  },
   "experiment_assignment": {
     "f_statistic": 1.1153,
     "numerator_df": 523,
