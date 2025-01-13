@@ -564,7 +564,7 @@ class GetFiltersResponseDiscrete(GetFiltersResponseBase):
 class GetMetricsResponseElement(ApiBaseModel):
     """Describes a metric."""
 
-    column_name: FieldName
+    field_name: FieldName
     data_type: DataType
     description: str
 
