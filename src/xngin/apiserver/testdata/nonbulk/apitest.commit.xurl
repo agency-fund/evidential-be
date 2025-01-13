@@ -35,7 +35,7 @@ Config-ID: customer-test
     "participant_type": "groups",
     "filters": [
       {
-        "filter_name": "is_onboarded",
+        "field_name": "is_onboarded",
         "relation": "includes",
         "value": [
           "TRUE"

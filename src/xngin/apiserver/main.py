@@ -213,7 +213,7 @@ def get_filters(
                         ).scalars()
                     ]
                     return GetFiltersResponseDiscrete(
-                        filter_name=col_name,
+                        field_name=col_name,
                         data_type=db_col.data_type,
                         relations=filter_class.valid_relations(),
                         description=column_descriptor.description,
@@ -226,7 +226,7 @@ def get_filters(
                         ).where(sa_col.is_not(None))
                     ).first()
                     return GetFiltersResponseNumeric(
-                        filter_name=col_name,
+                        field_name=col_name,
                         data_type=db_col.data_type,
                         relations=filter_class.valid_relations(),
                         description=column_descriptor.description,
@@ -242,7 +242,7 @@ def get_filters(
                 for col_name, col_descriptor in filter_cols.items()
                 if db_schema.get(col_name)
             ],
-            key=lambda item: item.filter_name,
+            key=lambda item: item.field_name,
         )
 
 

@@ -165,12 +165,12 @@ FILTER_GENERATION_SUBCASES = [
     Case(
         filters=[
             AudienceSpecFilter(
-                filter_name="int_col",
+                field_name="int_col",
                 relation=Relation.INCLUDES,
                 value=[ROW_100.int_col, ROW_200.int_col],
             ),
             AudienceSpecFilter(
-                filter_name="experiment_ids",
+                field_name="experiment_ids",
                 relation=Relation.INCLUDES,
                 value=["b", "C"],
             ),
@@ -181,12 +181,12 @@ FILTER_GENERATION_SUBCASES = [
     Case(
         filters=[
             AudienceSpecFilter(
-                filter_name="int_col",
+                field_name="int_col",
                 relation=Relation.INCLUDES,
                 value=[ROW_100.int_col, ROW_200.int_col],
             ),
             AudienceSpecFilter(
-                filter_name="experiment_ids",
+                field_name="experiment_ids",
                 relation=Relation.EXCLUDES,
                 value=["b", "c"],
             ),
@@ -198,7 +198,7 @@ FILTER_GENERATION_SUBCASES = [
     Case(
         filters=[
             AudienceSpecFilter(
-                filter_name="int_col",
+                field_name="int_col",
                 relation=Relation.INCLUDES,
                 value=[ROW_100.int_col],
             )
@@ -212,7 +212,7 @@ FILTER_GENERATION_SUBCASES = [
     Case(
         filters=[
             AudienceSpecFilter(
-                filter_name="int_col", relation=Relation.BETWEEN, value=[-17, 42]
+                field_name="int_col", relation=Relation.BETWEEN, value=[-17, 42]
             )
         ],
         where=(
@@ -224,7 +224,7 @@ FILTER_GENERATION_SUBCASES = [
     Case(
         filters=[
             AudienceSpecFilter(
-                filter_name="int_col",
+                field_name="int_col",
                 relation=Relation.EXCLUDES,
                 value=[ROW_100.int_col],
             )
@@ -239,7 +239,7 @@ FILTER_GENERATION_SUBCASES = [
     Case(
         filters=[
             AudienceSpecFilter(
-                filter_name="float_col", relation=Relation.BETWEEN, value=[2, 3]
+                field_name="float_col", relation=Relation.BETWEEN, value=[2, 3]
             )
         ],
         where=(
@@ -252,7 +252,7 @@ FILTER_GENERATION_SUBCASES = [
     Case(
         filters=[
             AudienceSpecFilter(
-                filter_name="experiment_ids", relation=Relation.INCLUDES, value=["a"]
+                field_name="experiment_ids", relation=Relation.INCLUDES, value=["a"]
             )
         ],
         where="""lower(test_table.experiment_ids) {regexp} '(^(a)$)|(^(a),)|(,(a)$)|(,(a),)' {randomize} {limit_offset}""",
@@ -261,7 +261,7 @@ FILTER_GENERATION_SUBCASES = [
     Case(
         filters=[
             AudienceSpecFilter(
-                filter_name="experiment_ids", relation=Relation.INCLUDES, value=["B"]
+                field_name="experiment_ids", relation=Relation.INCLUDES, value=["B"]
             )
         ],
         where="""lower(test_table.experiment_ids) {regexp} '(^(b)$)|(^(b),)|(,(b)$)|(,(b),)' {randomize} {limit_offset}""",
@@ -270,7 +270,7 @@ FILTER_GENERATION_SUBCASES = [
     Case(
         filters=[
             AudienceSpecFilter(
-                filter_name="experiment_ids", relation=Relation.INCLUDES, value=["c"]
+                field_name="experiment_ids", relation=Relation.INCLUDES, value=["c"]
             )
         ],
         where="""lower(test_table.experiment_ids) {regexp} '(^(c)$)|(^(c),)|(,(c)$)|(,(c),)' {randomize} {limit_offset}""",
@@ -279,7 +279,7 @@ FILTER_GENERATION_SUBCASES = [
     Case(
         filters=[
             AudienceSpecFilter(
-                filter_name="experiment_ids", relation=Relation.EXCLUDES, value=["a"]
+                field_name="experiment_ids", relation=Relation.EXCLUDES, value=["a"]
             )
         ],
         where="""test_table.experiment_ids IS NULL OR {length}(test_table.experiment_ids) = 0 OR lower(test_table.experiment_ids) {not_regexp} '(^(a)$)|(^(a),)|(,(a)$)|(,(a),)' {randomize} {limit_offset}""",
@@ -288,7 +288,7 @@ FILTER_GENERATION_SUBCASES = [
     Case(
         filters=[
             AudienceSpecFilter(
-                filter_name="experiment_ids", relation=Relation.EXCLUDES, value=["D"]
+                field_name="experiment_ids", relation=Relation.EXCLUDES, value=["D"]
             )
         ],
         where="""test_table.experiment_ids IS NULL OR {length}(test_table.experiment_ids) = 0 OR lower(test_table.experiment_ids) {not_regexp} '(^(d)$)|(^(d),)|(,(d)$)|(,(d),)' {randomize} {limit_offset}""",
@@ -297,7 +297,7 @@ FILTER_GENERATION_SUBCASES = [
     Case(
         filters=[
             AudienceSpecFilter(
-                filter_name="experiment_ids",
+                field_name="experiment_ids",
                 relation=Relation.INCLUDES,
                 value=["a", "d"],
             )
@@ -308,7 +308,7 @@ FILTER_GENERATION_SUBCASES = [
     Case(
         filters=[
             AudienceSpecFilter(
-                filter_name="experiment_ids",
+                field_name="experiment_ids",
                 relation=Relation.EXCLUDES,
                 value=["a", "d"],
             )
@@ -319,7 +319,7 @@ FILTER_GENERATION_SUBCASES = [
     Case(
         filters=[
             AudienceSpecFilter(
-                filter_name="experiment_ids", relation=Relation.INCLUDES, value=["d"]
+                field_name="experiment_ids", relation=Relation.INCLUDES, value=["d"]
             )
         ],
         where="""lower(test_table.experiment_ids) {regexp} '(^(d)$)|(^(d),)|(,(d)$)|(,(d),)' {randomize} {limit_offset}""",
@@ -328,7 +328,7 @@ FILTER_GENERATION_SUBCASES = [
     Case(
         filters=[
             AudienceSpecFilter(
-                filter_name="experiment_ids", relation=Relation.EXCLUDES, value=["d"]
+                field_name="experiment_ids", relation=Relation.EXCLUDES, value=["d"]
             )
         ],
         where="""test_table.experiment_ids IS NULL OR {length}(test_table.experiment_ids) = 0 OR lower(test_table.experiment_ids) {not_regexp} '(^(d)$)|(^(d),)|(,(d)$)|(,(d),)' {randomize} {limit_offset}""",

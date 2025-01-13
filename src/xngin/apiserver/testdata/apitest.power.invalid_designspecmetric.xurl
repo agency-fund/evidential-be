@@ -39,7 +39,7 @@ Config-ID: testing
   "audience_spec": {
     "participant_type": "test_participant_type",
     "filters": [{
-      "filter_name": "ethnicity",
+      "field_name": "ethnicity",
       "relation": "includes",
       "value": ["Asian"]
     }]

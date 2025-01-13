@@ -94,12 +94,12 @@ def query_for_participants(
 def create_filters(sa_table: sqlalchemy.Table, audience_spec: AudienceSpec):
     """Converts an AudienceSpec into a list of SQLAlchemy filters."""
 
-    def create_one_filter(filter_, sa_table):
-        if filter_.filter_name.endswith(EXPERIMENT_IDS_SUFFIX):
+    def create_one_filter(filter_: AudienceSpecFilter, sa_table: sqlalchemy.Table):
+        if filter_.field_name.endswith(EXPERIMENT_IDS_SUFFIX):
             return create_special_experiment_id_filter(
-                sa_table.columns[filter_.filter_name], filter_
+                sa_table.columns[filter_.field_name], filter_
             )
-        return create_filter(sa_table.columns[filter_.filter_name], filter_)
+        return create_filter(sa_table.columns[filter_.field_name], filter_)
 
     return [create_one_filter(filter_, sa_table) for filter_ in audience_spec.filters]
 
@@ -119,7 +119,7 @@ def create_special_experiment_id_filter(
             )
     # This should be impossible as it's caught by the AudienceSpecFilter validator:
     raise ValueError(
-        f"Experiment id filter on {filter_.filter_name} has invalid relation: {filter_.relation}"
+        f"Experiment id filter on {filter_.field_name} has invalid relation: {filter_.relation}"
     )
 
 
