@@ -42,7 +42,7 @@ STANDARD_WEBHOOK_RESPONSES: dict[int, dict[str, Any]] = {
 }
 
 
-class WebhookRequestCommit(WebhookBaseModel):
+class WebhookCommitRequest(WebhookBaseModel):
     """Data model for experiment commit webhook payload."""
 
     experiment_commit_datetime: datetime = Field(
@@ -64,7 +64,7 @@ class WebhookRequestCommit(WebhookBaseModel):
         return dt.isoformat()
 
 
-class UpdateTimestampsRequest(WebhookBaseModel):
+class WebhookUpdateTimestampsRequest(WebhookBaseModel):
     """Describes how to update an experiment's start and/or end dates."""
 
     experiment_id: uuid.UUID = Field(description="ID of the experiment to update.")
@@ -97,7 +97,7 @@ class ArmUpdate(WebhookBaseModel):
     )
 
 
-class UpdateDescriptionRequest(WebhookBaseModel):
+class WebhookUpdateDescriptionRequest(WebhookBaseModel):
     """Describes how to update an experiment description and/or the names of its arms."""
 
     experiment_id: uuid.UUID = Field(description="ID of the experiment to update.")
@@ -109,10 +109,10 @@ class UpdateDescriptionRequest(WebhookBaseModel):
     )
 
 
-class UpdateCommitRequest(WebhookBaseModel):
+class WebhookUpdateCommitRequest(WebhookBaseModel):
     """Request structure for supported types of experiment updates."""
 
-    update_json: UpdateTimestampsRequest | UpdateDescriptionRequest
+    update_json: WebhookUpdateTimestampsRequest | WebhookUpdateDescriptionRequest
 
 
 # TODO: as part of potential API endpoint revisions
