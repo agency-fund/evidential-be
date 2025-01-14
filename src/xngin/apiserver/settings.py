@@ -370,6 +370,8 @@ type DatasourceConfig = RemoteDatabaseConfig | SqliteLocalConfig
 
 
 class Datasource(ConfigBaseModel):
+    """Datasource describes data warehouse configuration and policy."""
+
     id: str
     config: Annotated[DatasourceConfig, Field(discriminator="type")]
     require_api_key: Annotated[bool | None, Field(...)] = None
@@ -381,7 +383,7 @@ class XnginSettings(ConfigBaseModel):
     datasources: list[Datasource]
 
     def get_datasource(self, datasource_id):
-        """Finds the config for a specific ID if it exists, or returns None."""
+        """Finds the datasource for a specific ID if it exists, or returns None."""
         for datasource in self.datasources:
             if datasource.id == datasource_id:
                 return datasource
@@ -412,7 +414,7 @@ class CannotFindParticipantsError(Exception):
 
     def __init__(self, participant_type):
         self.participant_type = participant_type
-        self.message = f"The configuration for participant type '{participant_type}' does not exist. Check the configuration files."
+        self.message = f"The participant type '{participant_type}' does not exist."
 
     def __str__(self):
         return self.message
