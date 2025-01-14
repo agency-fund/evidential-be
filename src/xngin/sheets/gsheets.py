@@ -1,10 +1,17 @@
+import logging
 import os
 import gspread
 import pandas
 
+logger = logging.getLogger(__name__)
+
 DEFAULT_GSPREAD_CREDENTIALS = os.path.expanduser(
     "~/.config/gspread/service_account.json"
 )
+
+
+class GSheetsPermissionError(Exception):
+    """Raised when your provided credentials do not have permission to access a sheet."""
 
 
 def google_app_credentials_file():
@@ -13,8 +20,19 @@ def google_app_credentials_file():
 
 def fetch_sheet(url, worksheet) -> gspread.Worksheet:
     """Reads a Google Spreadsheet."""
-    gc = gspread.service_account(filename=google_app_credentials_file())
-    sheet = gc.open_by_url(url)
+    try:
+        gc = gspread.service_account(filename=google_app_credentials_file())
+        sheet = gc.open_by_url(url)
+    except PermissionError as pe:
+        if isinstance(pe.__cause__, gspread.exceptions.APIError):
+            logger.exception(
+                "Credentials in %s do not have permission to access %s",
+                google_app_credentials_file(),
+                url,
+            )
+            raise GSheetsPermissionError() from pe
+        raise
+
     return sheet.worksheet(worksheet)
 
 

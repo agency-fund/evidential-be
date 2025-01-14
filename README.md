@@ -454,12 +454,15 @@ See [.github/workflows/test.yaml](.github/workflows/test.yaml) for lifecycle tes
 Authentication:
 
 * Only service account authentication is supported.
-* The xngin-cli tools will authenticate via the GOOGLE_APPLICATION_CREDENTIALS environment variable. Example:
+* Ensure that the service account has `BigQuery User` permissions to the client's Bigquery project,
+  otherwise the server will get the `User does not have bigquery.jobs.create permission in project
+  <project_name>` error.
+* The xngin-cli tools will authenticate via the `GOOGLE_APPLICATION_CREDENTIALS` environment variable. Example:
     ```shell
     export GOOGLE_APPLICATION_CREDENTIALS=~/.config/gspread/service_account.json
     xngin-cli create-testing-dwh --dsn 'bigquery://xngin-development-dc/ds'
     ```
-* The xngin server authenticates using credentials specified in the settings file.
+* The xngin server authenticates using credentials specified in the _settings_ file.
   See [xngin.gha.settings.json](xngin.gha.settings.json) for an example.
 
 > Note: The GHA service account has permissions to access the xngin-development-dc.ds dataset.
