@@ -9,7 +9,12 @@ from xngin.apiserver import constants
 from xngin.apiserver.apikeys import require_valid_api_key
 from xngin.apiserver.database import SessionLocal
 from xngin.apiserver.gsheet_cache import GSheetCache
-from xngin.apiserver.settings import get_settings_for_server, XnginSettings
+from xngin.apiserver.settings import (
+    get_settings_for_server,
+    XnginSettings,
+    Datasource,
+    DatasourceConfig,
+)
 
 
 def settings_dependency():
@@ -47,6 +52,13 @@ def datasource_dependency(
     if datasource and datasource.require_api_key:
         require_valid_api_key(xngin_db, api_key, datasource_id)
     return datasource
+
+
+def datasource_config_required(
+    ds: Annotated[Datasource, Depends(datasource_dependency)],
+) -> DatasourceConfig:
+    """Returns the connection-specific implementation for this datasource."""
+    return ds.config
 
 
 def gsheet_cache(xngin_db: Annotated[Session, Depends(xngin_db_session)]):

@@ -366,11 +366,12 @@ class SqliteLocalConfig(ParticipantsMixin, ConfigBaseModel):
         return Session(engine)
 
 
+type DatasourceConfig = RemoteDatabaseConfig | SqliteLocalConfig
+
+
 class Datasource(ConfigBaseModel):
     id: str
-    config: Annotated[
-        RemoteDatabaseConfig | SqliteLocalConfig, Field(discriminator="type")
-    ]
+    config: Annotated[DatasourceConfig, Field(discriminator="type")]
     require_api_key: Annotated[bool | None, Field(...)] = None
 
 
