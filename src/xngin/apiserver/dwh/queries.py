@@ -41,7 +41,7 @@ def get_stats_on_metrics(
             metric.model_dump()
             | {
                 "metric_type": MetricType.from_python_type(
-                    sa_table.c[metric.metric_name].type.python_type
+                    sa_table.c[metric.field_name].type.python_type
                 )
             }
         )
@@ -51,8 +51,8 @@ def get_stats_on_metrics(
     # now build our query
     select_columns: list[Label] = []
     for metric in metrics_to_return:
-        metric_name = metric.metric_name
-        col = sa_table.c[metric_name]
+        field_name = metric.field_name
+        col = sa_table.c[field_name]
         # Coerce everything to Float to avoid Decimal/Integer/Boolean issues across backends.
         if metric.metric_type is MetricType.NUMERIC:
             cast_column = cast(col, Float)
@@ -60,9 +60,9 @@ def get_stats_on_metrics(
             cast_column = cast(cast(col, Integer), Float)
         # TODO(roboton): consider whether mitigations for null are important
         select_columns.extend((
-            func.avg(cast_column).label(f"{metric_name}__mean"),
-            custom_functions.stddev_pop(cast_column).label(f"{metric_name}__stddev"),
-            func.count(col).label(f"{metric_name}__count"),
+            func.avg(cast_column).label(f"{field_name}__mean"),
+            custom_functions.stddev_pop(cast_column).label(f"{field_name}__stddev"),
+            func.count(col).label(f"{field_name}__count"),
         ))
     filters = create_filters(sa_table, audience_spec)
     query = select(*select_columns).filter(*filters)
@@ -70,10 +70,10 @@ def get_stats_on_metrics(
 
     # finally backfill with the stats
     for metric in metrics_to_return:
-        metric_name = metric.metric_name
-        metric.metric_baseline = stats[f"{metric_name}__mean"]
-        metric.metric_stddev = stats[f"{metric_name}__stddev"]
-        metric.available_n = stats[f"{metric_name}__count"]
+        field_name = metric.field_name
+        metric.metric_baseline = stats[f"{field_name}__mean"]
+        metric.metric_stddev = stats[f"{field_name}__stddev"]
+        metric.available_n = stats[f"{field_name}__count"]
 
     return metrics_to_return
 
@@ -94,12 +94,12 @@ def query_for_participants(
 def create_filters(sa_table: sqlalchemy.Table, audience_spec: AudienceSpec):
     """Converts an AudienceSpec into a list of SQLAlchemy filters."""
 
-    def create_one_filter(filter_, sa_table):
-        if filter_.filter_name.endswith(EXPERIMENT_IDS_SUFFIX):
+    def create_one_filter(filter_: AudienceSpecFilter, sa_table: sqlalchemy.Table):
+        if filter_.field_name.endswith(EXPERIMENT_IDS_SUFFIX):
             return create_special_experiment_id_filter(
-                sa_table.columns[filter_.filter_name], filter_
+                sa_table.columns[filter_.field_name], filter_
             )
-        return create_filter(sa_table.columns[filter_.filter_name], filter_)
+        return create_filter(sa_table.columns[filter_.field_name], filter_)
 
     return [create_one_filter(filter_, sa_table) for filter_ in audience_spec.filters]
 
@@ -119,7 +119,7 @@ def create_special_experiment_id_filter(
             )
     # This should be impossible as it's caught by the AudienceSpecFilter validator:
     raise ValueError(
-        f"Experiment id filter on {filter_.filter_name} has invalid relation: {filter_.relation}"
+        f"Experiment id filter on {filter_.field_name} has invalid relation: {filter_.relation}"
     )
 
 

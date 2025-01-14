@@ -3,7 +3,7 @@ from fastapi.testclient import TestClient
 import pytest
 from xngin.apiserver import conftest, constants
 from xngin.apiserver.api_types import DataType
-from xngin.apiserver.main import app, generate_column_descriptors
+from xngin.apiserver.main import app, generate_field_descriptors
 from xngin.apiserver.settings import (
     CannotFindParticipantsError,
     XnginSettings,
@@ -49,10 +49,10 @@ def test_generate_column_descriptors():
             session.get_bind(), "test_participant_type", config.supports_reflection()
         )
 
-    db_schema = generate_column_descriptors(sa_table, "last_name")
+    db_schema = generate_field_descriptors(sa_table, "last_name")
 
     # Check a few columns:
-    assert db_schema["gender"].column_name == "gender"
+    assert db_schema["gender"].field_name == "gender"
     assert db_schema["gender"].data_type == DataType.CHARACTER_VARYING
     assert db_schema["gender"].description == ""
     assert db_schema["gender"].is_unique_id is False
@@ -60,14 +60,14 @@ def test_generate_column_descriptors():
     assert db_schema["gender"].is_filter is False
     assert db_schema["gender"].is_metric is False
     assert db_schema["gender"].extra is None  # only necessary info loaded
-    assert db_schema["last_name"].column_name == "last_name"
+    assert db_schema["last_name"].field_name == "last_name"
     assert db_schema["last_name"].data_type == DataType.CHARACTER_VARYING
     # Next assertion ust because we labeled it that way in settings!
     assert db_schema["last_name"].is_unique_id
-    assert db_schema["current_income"].column_name == "current_income"
+    assert db_schema["current_income"].field_name == "current_income"
     assert db_schema["current_income"].data_type == DataType.DOUBLE_PRECISION
     assert db_schema["current_income"].is_unique_id is False
-    assert db_schema["is_recruited"].column_name == "is_recruited"
+    assert db_schema["is_recruited"].field_name == "is_recruited"
     # sqlite stores booleans as ints, so:
     assert db_schema["is_recruited"].data_type == DataType.INTEGER
     assert db_schema["is_recruited"].is_unique_id is False

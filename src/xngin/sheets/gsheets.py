@@ -7,13 +7,13 @@ DEFAULT_GSPREAD_CREDENTIALS = os.path.expanduser(
 )
 
 
+def google_app_credentials_file():
+    return os.environ.get("GOOGLE_APPLICATION_CREDENTIALS", DEFAULT_GSPREAD_CREDENTIALS)
+
+
 def fetch_sheet(url, worksheet) -> gspread.Worksheet:
     """Reads a Google Spreadsheet."""
-    gc = gspread.service_account(
-        filename=os.environ.get(
-            "GOOGLE_APPLICATION_CREDENTIALS", DEFAULT_GSPREAD_CREDENTIALS
-        )
-    )
+    gc = gspread.service_account(filename=google_app_credentials_file())
     sheet = gc.open_by_url(url)
     return sheet.worksheet(worksheet)
 

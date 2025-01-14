@@ -37,7 +37,7 @@ from xngin.apiserver.testing import testing_dwh
 from xngin.sheets.config_sheet import (
     InvalidSheetError,
     fetch_and_parse_sheet,
-    ColumnDescriptor,
+    FieldDescriptor,
     create_configworksheet_from_table,
     ConfigWorksheet,
 )
@@ -348,8 +348,8 @@ def bootstrap_spreadsheet(
     config = infer_config_from_schema(dsn, table_name, use_reflection, unique_id_col)
 
     # Exclude the `extra` field.
-    column_names = [c for c in ColumnDescriptor.model_fields if c != "extra"]
-    rows = [column_names]
+    field_names = [c for c in FieldDescriptor.model_fields if c != "extra"]
+    rows = [field_names]
 
     def convert(v):
         if isinstance(v, bool):
@@ -360,7 +360,7 @@ def bootstrap_spreadsheet(
             return str(v)
         return v
 
-    for row in config.columns:
+    for row in config.fields:
         # Exclude the `extra` field.
         rows.append([convert(v) for k, v in row.model_dump().items() if k != "extra"])
 
@@ -377,7 +377,7 @@ def bootstrap_spreadsheet(
     # The "Sheet1" worksheet is created automatically. We don't want to use that, so hold on to its ID for later
     # so that we can delete it.
     sheets_to_delete = [s.id for s in sheet.worksheets()]
-    worksheet = sheet.add_worksheet(table_name, rows=len(rows), cols=len(column_names))
+    worksheet = sheet.add_worksheet(table_name, rows=len(rows), cols=len(field_names))
     worksheet.append_rows(rows)
     # Bold the first row.
     formats: list[CellFormat] = [

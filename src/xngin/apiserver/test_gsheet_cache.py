@@ -11,7 +11,7 @@ from xngin.apiserver.api_types import DataType
 from xngin.apiserver.models.tables import CacheTable
 from xngin.apiserver.gsheet_cache import GSheetCache
 from xngin.apiserver.settings import SheetRef
-from xngin.sheets.config_sheet import ConfigWorksheet, ColumnDescriptor
+from xngin.sheets.config_sheet import ConfigWorksheet, FieldDescriptor
 
 
 @pytest.fixture
@@ -28,9 +28,9 @@ def sheet_cache(mock_session):
 def mock_sheet_config():
     return ConfigWorksheet(
         table_name="t",
-        columns=[
-            ColumnDescriptor(
-                column_name="c",
+        fields=[
+            FieldDescriptor(
+                field_name="c",
                 data_type=DataType.BOOLEAN,
                 description="d",
                 is_unique_id=True,

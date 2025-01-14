@@ -18,7 +18,7 @@ Config-ID: testing
     ],
     "start_date": "2024-11-06",
     "end_date": "2024-11-20",
-    "strata_cols": [
+    "strata_field_names": [
       "is_onboarded"
     ],
     "power": 0.8,
@@ -26,12 +26,12 @@ Config-ID: testing
     "fstat_thresh": 0.5,
     "metrics": [
       {
-        "metric_name": "current_income",
+        "field_name": "current_income",
         "metric_pct_change": 0.1,
         "metric_target": 32000.0
       },
       {
-        "metric_name": "is_retained"
+        "field_name": "is_retained"
       }
 
     ]
@@ -39,7 +39,7 @@ Config-ID: testing
   "audience_spec": {
     "participant_type": "test_participant_type",
     "filters": [{
-      "filter_name": "ethnicity",
+      "field_name": "ethnicity",
       "relation": "includes",
       "value": ["Asian"]
     }]
@@ -55,7 +55,7 @@ HTTP 422
         "error": {}
       },
       "input": {
-        "metric_name": "current_income",
+        "field_name": "current_income",
         "metric_pct_change": 0.1,
         "metric_target": 32000.0
       },
@@ -73,7 +73,7 @@ HTTP 422
         "error": {}
       },
       "input": {
-        "metric_name": "is_retained"
+        "field_name": "is_retained"
       },
       "loc": [
         "body",

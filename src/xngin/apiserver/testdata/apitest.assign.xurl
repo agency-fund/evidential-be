@@ -18,7 +18,7 @@ Config-ID: testing
     ],
     "start_date": "2024-11-06",
     "end_date": "2024-11-20",
-    "strata_cols": [
+    "strata_field_names": [
       "is_onboarded"
     ],
     "power": 0.8,
@@ -26,7 +26,7 @@ Config-ID: testing
     "fstat_thresh": 0.5,
     "metrics": [
       {
-        "metric_name": "current_income",
+        "field_name": "current_income",
         "metric_pct_change": 0.1
       }
     ]
@@ -45,11 +45,11 @@ HTTP 200
       "participant_id": "122169",
       "strata": [
         {
-          "strata_name": "current_income",
+          "field_name": "current_income",
           "strata_value": "10587.0"
         },
         {
-          "strata_name": "is_onboarded",
+          "field_name": "is_onboarded",
           "strata_value": "0"
         }
       ],
@@ -59,11 +59,11 @@ HTTP 200
       "participant_id": "12955",
       "strata": [
         {
-          "strata_name": "current_income",
+          "field_name": "current_income",
           "strata_value": "11063.0"
         },
         {
-          "strata_name": "is_onboarded",
+          "field_name": "is_onboarded",
           "strata_value": "0"
         }
       ],
@@ -73,11 +73,11 @@ HTTP 200
       "participant_id": "154001",
       "strata": [
         {
-          "strata_name": "current_income",
+          "field_name": "current_income",
           "strata_value": "12100.0"
         },
         {
-          "strata_name": "is_onboarded",
+          "field_name": "is_onboarded",
           "strata_value": "0"
         }
       ],
@@ -87,11 +87,11 @@ HTTP 200
       "participant_id": "155035",
       "strata": [
         {
-          "strata_name": "current_income",
+          "field_name": "current_income",
           "strata_value": "8466.284540241537"
         },
         {
-          "strata_name": "is_onboarded",
+          "field_name": "is_onboarded",
           "strata_value": "1"
         }
       ],
@@ -101,11 +101,11 @@ HTTP 200
       "participant_id": "171643",
       "strata": [
         {
-          "strata_name": "current_income",
+          "field_name": "current_income",
           "strata_value": "11022.0"
         },
         {
-          "strata_name": "is_onboarded",
+          "field_name": "is_onboarded",
           "strata_value": "0"
         }
       ],
@@ -115,11 +115,11 @@ HTTP 200
       "participant_id": "179916",
       "strata": [
         {
-          "strata_name": "current_income",
+          "field_name": "current_income",
           "strata_value": "12108.0"
         },
         {
-          "strata_name": "is_onboarded",
+          "field_name": "is_onboarded",
           "strata_value": "0"
         }
       ],
@@ -129,11 +129,11 @@ HTTP 200
       "participant_id": "198781",
       "strata": [
         {
-          "strata_name": "current_income",
+          "field_name": "current_income",
           "strata_value": "8831.94689270468"
         },
         {
-          "strata_name": "is_onboarded",
+          "field_name": "is_onboarded",
           "strata_value": "1"
         }
       ],
@@ -143,11 +143,11 @@ HTTP 200
       "participant_id": "210073",
       "strata": [
         {
-          "strata_name": "current_income",
+          "field_name": "current_income",
           "strata_value": "11523.0"
         },
         {
-          "strata_name": "is_onboarded",
+          "field_name": "is_onboarded",
           "strata_value": "0"
         }
       ],
@@ -157,11 +157,11 @@ HTTP 200
       "participant_id": "23560",
       "strata": [
         {
-          "strata_name": "current_income",
+          "field_name": "current_income",
           "strata_value": "8805.256210043137"
         },
         {
-          "strata_name": "is_onboarded",
+          "field_name": "is_onboarded",
           "strata_value": "1"
         }
       ],
@@ -171,11 +171,11 @@ HTTP 200
       "participant_id": "237616",
       "strata": [
         {
-          "strata_name": "current_income",
+          "field_name": "current_income",
           "strata_value": "11971.0"
         },
         {
-          "strata_name": "is_onboarded",
+          "field_name": "is_onboarded",
           "strata_value": "0"
         }
       ],
@@ -185,11 +185,11 @@ HTTP 200
       "participant_id": "248783",
       "strata": [
         {
-          "strata_name": "current_income",
+          "field_name": "current_income",
           "strata_value": "8571.712736754633"
         },
         {
-          "strata_name": "is_onboarded",
+          "field_name": "is_onboarded",
           "strata_value": "1"
         }
       ],
@@ -199,11 +199,11 @@ HTTP 200
       "participant_id": "295539",
       "strata": [
         {
-          "strata_name": "current_income",
+          "field_name": "current_income",
           "strata_value": "8475.626279173077"
         },
         {
-          "strata_name": "is_onboarded",
+          "field_name": "is_onboarded",
           "strata_value": "1"
         }
       ],
@@ -213,11 +213,11 @@ HTTP 200
       "participant_id": "302146",
       "strata": [
         {
-          "strata_name": "current_income",
+          "field_name": "current_income",
           "strata_value": "11254.0"
         },
         {
-          "strata_name": "is_onboarded",
+          "field_name": "is_onboarded",
           "strata_value": "0"
         }
       ],
@@ -227,11 +227,11 @@ HTTP 200
       "participant_id": "310074",
       "strata": [
         {
-          "strata_name": "current_income",
+          "field_name": "current_income",
           "strata_value": "9940.0"
         },
         {
-          "strata_name": "is_onboarded",
+          "field_name": "is_onboarded",
           "strata_value": "0"
         }
       ],
@@ -241,11 +241,11 @@ HTTP 200
       "participant_id": "33392",
       "strata": [
         {
-          "strata_name": "current_income",
+          "field_name": "current_income",
           "strata_value": "11604.0"
         },
         {
-          "strata_name": "is_onboarded",
+          "field_name": "is_onboarded",
           "strata_value": "0"
         }
       ],
@@ -255,11 +255,11 @@ HTTP 200
       "participant_id": "35426",
       "strata": [
         {
-          "strata_name": "current_income",
+          "field_name": "current_income",
           "strata_value": "8689.151740465422"
         },
         {
-          "strata_name": "is_onboarded",
+          "field_name": "is_onboarded",
           "strata_value": "1"
         }
       ],
@@ -269,11 +269,11 @@ HTTP 200
       "participant_id": "393637",
       "strata": [
         {
-          "strata_name": "current_income",
+          "field_name": "current_income",
           "strata_value": "12155.0"
         },
         {
-          "strata_name": "is_onboarded",
+          "field_name": "is_onboarded",
           "strata_value": "0"
         }
       ],
@@ -283,11 +283,11 @@ HTTP 200
       "participant_id": "407190",
       "strata": [
         {
-          "strata_name": "current_income",
+          "field_name": "current_income",
           "strata_value": "12463.0"
         },
         {
-          "strata_name": "is_onboarded",
+          "field_name": "is_onboarded",
           "strata_value": "0"
         }
       ],
@@ -297,11 +297,11 @@ HTTP 200
       "participant_id": "410077",
       "strata": [
         {
-          "strata_name": "current_income",
+          "field_name": "current_income",
           "strata_value": "11081.0"
         },
         {
-          "strata_name": "is_onboarded",
+          "field_name": "is_onboarded",
           "strata_value": "0"
         }
       ],
@@ -311,11 +311,11 @@ HTTP 200
       "participant_id": "431735",
       "strata": [
         {
-          "strata_name": "current_income",
+          "field_name": "current_income",
           "strata_value": "10241.0"
         },
         {
-          "strata_name": "is_onboarded",
+          "field_name": "is_onboarded",
           "strata_value": "1"
         }
       ],
@@ -325,11 +325,11 @@ HTTP 200
       "participant_id": "440263",
       "strata": [
         {
-          "strata_name": "current_income",
+          "field_name": "current_income",
           "strata_value": "11847.0"
         },
         {
-          "strata_name": "is_onboarded",
+          "field_name": "is_onboarded",
           "strata_value": "0"
         }
       ],
@@ -339,11 +339,11 @@ HTTP 200
       "participant_id": "469679",
       "strata": [
         {
-          "strata_name": "current_income",
+          "field_name": "current_income",
           "strata_value": "12137.0"
         },
         {
-          "strata_name": "is_onboarded",
+          "field_name": "is_onboarded",
           "strata_value": "0"
         }
       ],
@@ -353,11 +353,11 @@ HTTP 200
       "participant_id": "484970",
       "strata": [
         {
-          "strata_name": "current_income",
+          "field_name": "current_income",
           "strata_value": "11348.0"
         },
         {
-          "strata_name": "is_onboarded",
+          "field_name": "is_onboarded",
           "strata_value": "0"
         }
       ],
@@ -367,11 +367,11 @@ HTTP 200
       "participant_id": "486195",
       "strata": [
         {
-          "strata_name": "current_income",
+          "field_name": "current_income",
           "strata_value": "10270.0"
         },
         {
-          "strata_name": "is_onboarded",
+          "field_name": "is_onboarded",
           "strata_value": "0"
         }
       ],
@@ -381,11 +381,11 @@ HTTP 200
       "participant_id": "510222",
       "strata": [
         {
-          "strata_name": "current_income",
+          "field_name": "current_income",
           "strata_value": "8761.21658365159"
         },
         {
-          "strata_name": "is_onboarded",
+          "field_name": "is_onboarded",
           "strata_value": "1"
         }
       ],
@@ -395,11 +395,11 @@ HTTP 200
       "participant_id": "552382",
       "strata": [
         {
-          "strata_name": "current_income",
+          "field_name": "current_income",
           "strata_value": "8490.306154636924"
         },
         {
-          "strata_name": "is_onboarded",
+          "field_name": "is_onboarded",
           "strata_value": "1"
         }
       ],
@@ -409,11 +409,11 @@ HTTP 200
       "participant_id": "65425",
       "strata": [
         {
-          "strata_name": "current_income",
+          "field_name": "current_income",
           "strata_value": "11744.0"
         },
         {
-          "strata_name": "is_onboarded",
+          "field_name": "is_onboarded",
           "strata_value": "0"
         }
       ],
@@ -423,11 +423,11 @@ HTTP 200
       "participant_id": "710929",
       "strata": [
         {
-          "strata_name": "current_income",
+          "field_name": "current_income",
           "strata_value": "11860.0"
         },
         {
-          "strata_name": "is_onboarded",
+          "field_name": "is_onboarded",
           "strata_value": "0"
         }
       ],
@@ -437,11 +437,11 @@ HTTP 200
       "participant_id": "730934",
       "strata": [
         {
-          "strata_name": "current_income",
+          "field_name": "current_income",
           "strata_value": "10937.0"
         },
         {
-          "strata_name": "is_onboarded",
+          "field_name": "is_onboarded",
           "strata_value": "0"
         }
       ],
@@ -451,11 +451,11 @@ HTTP 200
       "participant_id": "76948",
       "strata": [
         {
-          "strata_name": "current_income",
+          "field_name": "current_income",
           "strata_value": "11123.0"
         },
         {
-          "strata_name": "is_onboarded",
+          "field_name": "is_onboarded",
           "strata_value": "0"
         }
       ],
@@ -465,11 +465,11 @@ HTTP 200
       "participant_id": "773941",
       "strata": [
         {
-          "strata_name": "current_income",
+          "field_name": "current_income",
           "strata_value": "11755.0"
         },
         {
-          "strata_name": "is_onboarded",
+          "field_name": "is_onboarded",
           "strata_value": "0"
         }
       ],
@@ -479,11 +479,11 @@ HTTP 200
       "participant_id": "776353",
       "strata": [
         {
-          "strata_name": "current_income",
+          "field_name": "current_income",
           "strata_value": "12145.0"
         },
         {
-          "strata_name": "is_onboarded",
+          "field_name": "is_onboarded",
           "strata_value": "0"
         }
       ],
@@ -493,11 +493,11 @@ HTTP 200
       "participant_id": "812175",
       "strata": [
         {
-          "strata_name": "current_income",
+          "field_name": "current_income",
           "strata_value": "11582.0"
         },
         {
-          "strata_name": "is_onboarded",
+          "field_name": "is_onboarded",
           "strata_value": "0"
         }
       ],
@@ -507,11 +507,11 @@ HTTP 200
       "participant_id": "830767",
       "strata": [
         {
-          "strata_name": "current_income",
+          "field_name": "current_income",
           "strata_value": "10229.0"
         },
         {
-          "strata_name": "is_onboarded",
+          "field_name": "is_onboarded",
           "strata_value": "0"
         }
       ],
@@ -521,11 +521,11 @@ HTTP 200
       "participant_id": "865084",
       "strata": [
         {
-          "strata_name": "current_income",
+          "field_name": "current_income",
           "strata_value": "12568.0"
         },
         {
-          "strata_name": "is_onboarded",
+          "field_name": "is_onboarded",
           "strata_value": "0"
         }
       ],
@@ -535,11 +535,11 @@ HTTP 200
       "participant_id": "866648",
       "strata": [
         {
-          "strata_name": "current_income",
+          "field_name": "current_income",
           "strata_value": "12686.0"
         },
         {
-          "strata_name": "is_onboarded",
+          "field_name": "is_onboarded",
           "strata_value": "0"
         }
       ],
@@ -549,11 +549,11 @@ HTTP 200
       "participant_id": "895588",
       "strata": [
         {
-          "strata_name": "current_income",
+          "field_name": "current_income",
           "strata_value": "12235.0"
         },
         {
-          "strata_name": "is_onboarded",
+          "field_name": "is_onboarded",
           "strata_value": "0"
         }
       ],
@@ -563,11 +563,11 @@ HTTP 200
       "participant_id": "947098",
       "strata": [
         {
-          "strata_name": "current_income",
+          "field_name": "current_income",
           "strata_value": "11477.0"
         },
         {
-          "strata_name": "is_onboarded",
+          "field_name": "is_onboarded",
           "strata_value": "0"
         }
       ],
@@ -577,11 +577,11 @@ HTTP 200
       "participant_id": "956625",
       "strata": [
         {
-          "strata_name": "current_income",
+          "field_name": "current_income",
           "strata_value": "13021.0"
         },
         {
-          "strata_name": "is_onboarded",
+          "field_name": "is_onboarded",
           "strata_value": "0"
         }
       ],
@@ -591,11 +591,11 @@ HTTP 200
       "participant_id": "996915",
       "strata": [
         {
-          "strata_name": "current_income",
+          "field_name": "current_income",
           "strata_value": "12314.0"
         },
         {
-          "strata_name": "is_onboarded",
+          "field_name": "is_onboarded",
           "strata_value": "1"
         }
       ],

@@ -6,16 +6,16 @@ import pytest
 from sqlalchemy import BigInteger, Column, Integer, MetaData, String, Table
 from xngin.apiserver.api_types import DataType
 from xngin.sheets.config_sheet import (
-    ColumnDescriptor,
+    FieldDescriptor,
     ConfigWorksheet,
     create_configworksheet_from_table,
 )
-from xngin.sheets.gsheets import read_sheet_df
+from xngin.sheets.gsheets import google_app_credentials_file, read_sheet_df
 
 
 @pytest.mark.integration
 def test_read_sheet():
-    assert (Path.home() / Path(".config/gspread/service_account.json")).exists()
+    assert Path(google_app_credentials_file()).exists()
     # The testing service account has been granted read access to this spreadsheet.
     test_sheet_url = "https://docs.google.com/spreadsheets/d/redacted/edit?usp=sharing"
 
@@ -31,9 +31,9 @@ def test_read_sheet():
 def test_config_worksheet_get_unique_id_col():
     fake_worksheet = ConfigWorksheet(
         table_name="table_name",
-        columns=[
-            ColumnDescriptor(
-                column_name="first_name",
+        fields=[
+            FieldDescriptor(
+                field_name="first_name",
                 data_type=DataType.CHARACTER_VARYING,
                 description="d",
                 is_unique_id=False,
@@ -42,8 +42,8 @@ def test_config_worksheet_get_unique_id_col():
                 is_metric=True,
                 extra={"column_group": "g"},
             ),
-            ColumnDescriptor(
-                column_name="last_name",
+            FieldDescriptor(
+                field_name="last_name",
                 data_type=DataType.CHARACTER_VARYING,
                 description="d",
                 is_unique_id=True,
@@ -53,10 +53,10 @@ def test_config_worksheet_get_unique_id_col():
             ),
         ],
     )
-    assert fake_worksheet.get_unique_id_col() == "last_name"
+    assert fake_worksheet.get_unique_id_field() == "last_name"
 
-    fake_worksheet.columns[1].is_unique_id = False
-    assert fake_worksheet.get_unique_id_col() is None
+    fake_worksheet.fields[1].is_unique_id = False
+    assert fake_worksheet.get_unique_id_field() is None
 
 
 def test_create_configworksheet_from_table_success():
@@ -71,21 +71,21 @@ def test_create_configworksheet_from_table_success():
 
     # Explicit column found
     worksheet = create_configworksheet_from_table(my_table, "name")
-    assert worksheet.get_unique_id_col() == "name"
-    assert len(worksheet.columns) == 3
+    assert worksheet.get_unique_id_field() == "name"
+    assert len(worksheet.fields) == 3
     expected_type = {
         "id": DataType.BIGINT,
         "name": DataType.CHARACTER_VARYING,
         "primary_id": DataType.INTEGER,
     }
-    for c in worksheet.columns:
-        assert c.data_type == expected_type.get(c.column_name, "BAD_COLUMN"), (
-            c.column_name
+    for c in worksheet.fields:
+        assert c.data_type == expected_type.get(c.field_name, "BAD_COLUMN"), (
+            c.field_name
         )
 
     # PK found
     worksheet = create_configworksheet_from_table(my_table, None)
-    assert worksheet.get_unique_id_col() == "primary_id"
+    assert worksheet.get_unique_id_field() == "primary_id"
 
     # default id found
     my_table = Table(
@@ -95,7 +95,7 @@ def test_create_configworksheet_from_table_success():
         Column("name", String),
     )
     worksheet = create_configworksheet_from_table(my_table, None)
-    assert worksheet.get_unique_id_col() == "id"
+    assert worksheet.get_unique_id_field() == "id"
 
 
 def test_create_configworksheet_from_table_fails_if_no_unique_id():

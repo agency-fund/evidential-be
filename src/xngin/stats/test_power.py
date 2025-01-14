@@ -10,7 +10,7 @@ from xngin.stats.stats_errors import StatsPowerError
 
 def test_analyze_metric_power_numeric():
     metric = DesignSpecMetric(
-        metric_name="test_metric",
+        field_name="test_metric",
         metric_type=MetricType.NUMERIC,
         metric_baseline=100,
         metric_target=110,
@@ -20,7 +20,7 @@ def test_analyze_metric_power_numeric():
 
     result = analyze_metric_power(metric, n_arms=2)
 
-    assert result.metric_spec.metric_name == "test_metric"
+    assert result.metric_spec.field_name == "test_metric"
     assert result.metric_spec.metric_type == MetricType.NUMERIC
     assert result.metric_spec.metric_baseline == 100
     assert result.metric_spec.metric_target == 110
@@ -32,7 +32,7 @@ def test_analyze_metric_power_numeric():
 
 def test_analyze_metric_power_binary():
     metric = DesignSpecMetric(
-        metric_name="test_metric",
+        field_name="test_metric",
         metric_type=MetricType.BINARY,
         metric_baseline=0.5,
         metric_target=0.55,
@@ -51,7 +51,7 @@ def test_analyze_metric_power_binary():
 def test_check_power_multiple_metrics():
     metrics = [
         DesignSpecMetric(
-            metric_name="metric1",
+            field_name="metric1",
             metric_type=MetricType.NUMERIC,
             metric_baseline=100,
             metric_target=110,
@@ -59,7 +59,7 @@ def test_check_power_multiple_metrics():
             available_n=1000,
         ),
         DesignSpecMetric(
-            metric_name="metric2",
+            field_name="metric2",
             metric_type=MetricType.BINARY,
             metric_baseline=0.5,
             metric_target=0.55,
@@ -70,21 +70,21 @@ def test_check_power_multiple_metrics():
     results = check_power(metrics, n_arms=2)
 
     assert len(results) == 2
-    assert results[0].metric_spec.metric_name == "metric1"
-    assert results[1].metric_spec.metric_name == "metric2"
+    assert results[0].metric_spec.field_name == "metric1"
+    assert results[1].metric_spec.field_name == "metric2"
 
 
 def test_check_power_effect_size_zero_raises_error():
     metrics = [
         DesignSpecMetric(
-            metric_name="test_metric",
+            field_name="test_metric",
             metric_type=MetricType.BINARY,
             metric_baseline=0.5,
             metric_target=0.55,
             available_n=1000,
         ),
         DesignSpecMetric(
-            metric_name="bad_metric",
+            field_name="bad_metric",
             metric_type=MetricType.BINARY,
             metric_baseline=0.5,
             metric_target=0.5,
@@ -100,7 +100,7 @@ def test_check_power_effect_size_zero_raises_error():
 def test_check_missing_metric_type_raises_error():
     metrics = [
         DesignSpecMetric(
-            metric_name="bad_metric",
+            field_name="bad_metric",
             metric_baseline=0.5,
             metric_target=0.5,
             available_n=1000,

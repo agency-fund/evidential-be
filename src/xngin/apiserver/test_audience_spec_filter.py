@@ -13,8 +13,8 @@ VALID_COLUMN_NAMES = [
 
 
 @pytest.mark.parametrize("name", VALID_COLUMN_NAMES)
-def test_valid_filter_names(name):
-    AudienceSpecFilter(filter_name=name, relation=Relation.INCLUDES, value=[1])
+def test_valid_field_names(name):
+    AudienceSpecFilter(field_name=name, relation=Relation.INCLUDES, value=[1])
 
 
 INVALID_COLUMN_NAMES = [
@@ -28,12 +28,12 @@ INVALID_COLUMN_NAMES = [
 
 
 @pytest.mark.parametrize("name", INVALID_COLUMN_NAMES)
-def test_invalid_filter_names(name):
+def test_invalid_field_names(name):
     with pytest.raises(
         ValidationError,
-        match="filter_name must start with letter/underscore and contain only letters, numbers, underscores",
+        match="field_name must start with letter/underscore and contain only letters, numbers, underscores",
     ):
-        AudienceSpecFilter(filter_name=name, relation=Relation.INCLUDES, value=[1])
+        AudienceSpecFilter(field_name=name, relation=Relation.INCLUDES, value=[1])
 
 
 VALID_BETWEEN = [
@@ -50,7 +50,7 @@ VALID_BETWEEN = [
 @pytest.mark.parametrize("value,descr", VALID_BETWEEN)
 def test_between_relation(value, descr):
     filter_spec = AudienceSpecFilter(
-        filter_name="col", relation=Relation.BETWEEN, value=value
+        field_name="col", relation=Relation.BETWEEN, value=value
     )
     assert filter_spec.value == value, f"Failed for case: {descr}"
 
@@ -73,9 +73,7 @@ def test_between_relation_invalid(value, descr):
     with pytest.raises(
         ValidationError, match=r"(BETWEEN relation|same type| validation errors )"
     ):
-        v = AudienceSpecFilter(
-            filter_name="col", relation=Relation.BETWEEN, value=value
-        )
+        v = AudienceSpecFilter(field_name="col", relation=Relation.BETWEEN, value=value)
         print(v)
 
 
@@ -89,13 +87,13 @@ VALID_OTHER = [
 
 @pytest.mark.parametrize("relation,value", VALID_OTHER)
 def test_other_relations(relation, value):
-    AudienceSpecFilter(filter_name="col", relation=relation, value=value)
+    AudienceSpecFilter(field_name="col", relation=relation, value=value)
 
 
 def test_empty_value_list():
     for relation in (Relation.INCLUDES, Relation.EXCLUDES):
         with pytest.raises(ValidationError, match="value must be a non-empty list"):
-            AudienceSpecFilter(filter_name="col", relation=relation, value=[])
+            AudienceSpecFilter(field_name="col", relation=relation, value=[])
 
 
 EXPERIMENT_IDS_FILTER_BAD = [
@@ -110,7 +108,7 @@ def test_experiment_ids_hack_validators_invalid(relation, value, descr):
     with pytest.raises(ValidationError, match=descr):
         print(
             AudienceSpecFilter(
-                filter_name="_experiment_ids", relation=relation, value=value
+                field_name="_experiment_ids", relation=relation, value=value
             )
         )
 
@@ -124,4 +122,4 @@ EXPERIMENT_IDS_FILTER_GOOD = [
 
 @pytest.mark.parametrize("relation,value,descr", EXPERIMENT_IDS_FILTER_GOOD)
 def test_experiment_ids_hack_validators_valid(relation, value, descr):
-    AudienceSpecFilter(filter_name="_experiment_ids", relation=relation, value=value)
+    AudienceSpecFilter(field_name="_experiment_ids", relation=relation, value=value)
