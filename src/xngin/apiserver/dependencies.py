@@ -45,7 +45,7 @@ def datasource_dependency(
         Depends(APIKeyHeader(name=constants.HEADER_API_KEY, auto_error=False)),
     ],
 ):
-    """Returns the configuration for the current request, as determined by the Config-ID HTTP request header."""
+    """Returns the configuration for the current request, as determined by the Datasource-ID HTTP request header."""
     if not datasource_id:
         return None
     datasource = settings.get_datasource(datasource_id)

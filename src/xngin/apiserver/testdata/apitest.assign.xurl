@@ -1,5 +1,5 @@
 POST http://localhost:8000/assign?chosen_n=40&random_state=42
-Config-ID: testing
+Datasource-ID: testing
 ```json
 {
  "design_spec": {

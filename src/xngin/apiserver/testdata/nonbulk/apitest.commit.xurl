@@ -1,5 +1,5 @@
 POST http://localhost:8000/commit?user_id=commituser
-Config-ID: customer-test
+Datasource-ID: customer-test
 ```json
 {
   "design_spec": {
