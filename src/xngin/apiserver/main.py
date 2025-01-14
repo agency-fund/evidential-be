@@ -447,14 +447,14 @@ async def update_experiment(
     http_client: Annotated[httpx.AsyncClient, Depends(httpx_dependency)],
     config: Annotated[DatasourceConfig, Depends(datasource_config_required)],
 ) -> WebhookResponse:
-    # TODO: this will break on configs that don't have a webhook_config
     webhook_config = config.webhook_config
-    action = None
-    if update_type == "timestamps":
+    if webhook_config is None:
+        raise HTTPException(501, "Webhook not configured.")
+    if update_type == "timestamps" and webhook_config.actions.update_timestamps:
         action = webhook_config.actions.update_timestamps
-    elif update_type == "description":
+    elif update_type == "description" and webhook_config.actions.update_description:
         action = webhook_config.actions.update_description
-    if action is None:
+    else:
         raise HTTPException(501, f"Action '{update_type}' not configured.")
     # Need to pull out the upstream server payload:
     response.status_code, payload = await make_webhook_request(
@@ -479,15 +479,17 @@ async def alt_update_experiment(
     http_client: Annotated[httpx.AsyncClient, Depends(httpx_dependency)],
     config: Annotated[DatasourceConfig, Depends(datasource_config_required)],
 ) -> WebhookResponse:
-    # TODO: this will break on configs that don't have a webhook_config
     webhook_config = config.webhook_config
-    action = None
-    if body.update_type == "timestamps":
+    if webhook_config is None:
+        raise HTTPException(501, "Webhook not configured.")
+    if body.update_type == "timestamps" and webhook_config.actions.update_timestamps:
         action = webhook_config.actions.update_timestamps
-    elif body.update_type == "description":
+    elif (
+        body.update_type == "description" and webhook_config.actions.update_description
+    ):
         action = webhook_config.actions.update_description
-    if action is None:
-        raise HTTPException(501, f"Action for '{body.update_type}' not configured.")
+    else:
+        raise HTTPException(501, f"Action '{body.update_type}' not configured.")
     # TODO: use the experiment_id in an upstream url
     response.status_code, payload = await make_webhook_request(
         http_client, webhook_config, action, body
