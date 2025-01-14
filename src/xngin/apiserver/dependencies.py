@@ -29,10 +29,10 @@ def xngin_db_session():
         db.close()
 
 
-def config_dependency(
+def datasource_dependency(
     settings: Annotated[XnginSettings, Depends(settings_dependency)],
-    config_id: Annotated[
-        str, Header(example="testing", name=constants.HEADER_CONFIG_ID)
+    datasource_id: Annotated[
+        str, Header(example="testing", alias=constants.HEADER_CONFIG_ID)
     ],
     xngin_db: Annotated[Session, Depends(xngin_db_session)],
     api_key: Annotated[
@@ -41,11 +41,11 @@ def config_dependency(
     ],
 ):
     """Returns the configuration for the current request, as determined by the Config-ID HTTP request header."""
-    if not config_id:
+    if not datasource_id:
         return None
-    datasource = settings.get_datasource(config_id)
+    datasource = settings.get_datasource(datasource_id)
     if datasource and datasource.require_api_key:
-        require_valid_api_key(xngin_db, api_key, config_id)
+        require_valid_api_key(xngin_db, api_key, datasource_id)
     return datasource
 
 
