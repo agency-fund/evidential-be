@@ -14,18 +14,18 @@ from sqlalchemy import distinct
 from xngin.apiserver import database, exceptionhandlers, middleware, constants
 from xngin.apiserver.api_types import (
     DataTypeClass,
-    AssignResponse,
     GetFiltersResponseDiscrete,
     GetFiltersResponseNumeric,
     GetStrataResponseElement,
     GetMetricsResponseElement,
-    PowerResponse,
     GetStrataResponse,
     GetFiltersResponse,
     GetMetricsResponse,
-    AssignRequest,
-    CommitRequest,
     PowerRequest,
+    PowerResponse,
+    AssignRequest,
+    AssignResponse,
+    CommitRequest,
 )
 from xngin.apiserver.dependencies import (
     httpx_dependency,
@@ -50,9 +50,9 @@ from xngin.apiserver.webhook_types import (
     STANDARD_WEBHOOK_RESPONSES,
     UpdateExperimentDescriptionsRequest,
     UpdateExperimentStartEndRequest,
-    WebhookRequestCommit,
+    WebhookCommitRequest,
     WebhookResponse,
-    UpdateCommitRequest,
+    WebhookUpdateCommitRequest,
 )
 from xngin.sheets.config_sheet import (
     fetch_and_parse_sheet,
@@ -310,18 +310,20 @@ def check_power_api(
             body.audience_spec,
         )
 
-        return check_power(
-            metrics=metric_stats,
-            n_arms=len(body.design_spec.arms),
-            power=body.design_spec.power,
-            alpha=body.design_spec.alpha,
+        return PowerResponse(
+            analyses=check_power(
+                metrics=metric_stats,
+                n_arms=len(body.design_spec.arms),
+                power=body.design_spec.power,
+                alpha=body.design_spec.alpha,
+            )
         )
 
 
 @app.post(
     "/assign",
     summary="Assign treatment given experiment and audience specification.",
-    tags=["Experiment Management"],
+    tags=["Experiment Design"],
 )
 def assign_treatment_api(
     body: AssignRequest,
@@ -377,7 +379,7 @@ def assign_treatment_api(
     "/assignment-file",
     summary="Retrieve all participant assignments for the given experiment_id.",
     responses=STANDARD_WEBHOOK_RESPONSES,
-    tags=["Experiment Management"],
+    tags=["Experiment Management Webhooks"],
 )
 async def assignment_file(
     response: Response,
@@ -405,7 +407,7 @@ async def assignment_file(
     "/commit",
     summary="Commit an experiment to the database.",
     responses=STANDARD_WEBHOOK_RESPONSES,
-    tags=["Experiment Management"],
+    tags=["Experiment Management Webhooks"],
 )
 async def commit_experiment(
     response: Response,
@@ -417,14 +419,14 @@ async def commit_experiment(
     config = require_config(client).webhook_config
     action = config.actions.commit
     if action is None:
-        # TODO: write to internal storage if webhooks are not defined.
         raise HTTPException(501, "Action 'commit' not configured.")
 
-    commit_payload = WebhookRequestCommit(
+    commit_payload = WebhookCommitRequest(
         creator_user_id=user_id,
-        experiment_assignment=body.experiment_assignment,
         design_spec=body.design_spec,
         audience_spec=body.audience_spec,
+        power_analyses=body.power_analyses,
+        experiment_assignment=body.experiment_assignment,
     )
 
     response.status_code, payload = await make_webhook_request(
@@ -437,11 +439,11 @@ async def commit_experiment(
     "/update-commit",
     summary="Update an existing experiment's timestamps or description (experiment and arms)",
     responses=STANDARD_WEBHOOK_RESPONSES,
-    tags=["Experiment Management"],
+    tags=["Experiment Management Webhooks"],
 )
 async def update_experiment(
     response: Response,
-    body: UpdateCommitRequest,
+    body: WebhookUpdateCommitRequest,
     update_type: Annotated[
         Literal["timestamps", "description"],
         Query(description="The type of experiment metadata update to perform"),
@@ -456,7 +458,6 @@ async def update_experiment(
     elif update_type == "description":
         action = config.actions.update_description
     if action is None:
-        # TODO: write to internal storage if webhooks are not defined.
         raise HTTPException(501, f"Action '{update_type}' not configured.")
     # Need to pull out the upstream server payload:
     response.status_code, payload = await make_webhook_request(
@@ -469,7 +470,7 @@ async def update_experiment(
     "/experiment/{experiment_id}",
     summary="Update an existing experiment. (limited update capabilities)",
     responses=STANDARD_WEBHOOK_RESPONSES,
-    tags=["WIP New API"],
+    tags=["Experimental"],
 )
 async def alt_update_experiment(
     response: Response,

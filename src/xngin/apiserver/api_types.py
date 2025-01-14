@@ -574,7 +574,6 @@ type GetFiltersResponseElement = GetFiltersResponseNumeric | GetFiltersResponseD
 type GetFiltersResponse = list[GetFiltersResponseElement]
 type GetMetricsResponse = list[GetMetricsResponseElement]
 type GetStrataResponse = list[GetStrataResponseElement]
-type PowerResponse = list[MetricAnalysis]
 
 
 class AssignRequest(ApiBaseModel):
@@ -582,12 +581,24 @@ class AssignRequest(ApiBaseModel):
     audience_spec: AudienceSpec
 
 
-class CommitRequest(ApiBaseModel):
-    design_spec: DesignSpec
-    audience_spec: AudienceSpec
-    experiment_assignment: AssignResponse
-
-
 class PowerRequest(ApiBaseModel):
     design_spec: DesignSpecForPower
     audience_spec: AudienceSpec
+
+
+class PowerResponse(ApiBaseModel):
+    analyses: list[MetricAnalysis]
+
+
+class CommitRequest(ApiBaseModel):
+    """The complete experiment configuration to persist in an experiment registry."""
+
+    design_spec: DesignSpec
+    audience_spec: AudienceSpec
+    power_analyses: Annotated[
+        PowerResponse | None,
+        Field(
+            description="Optionally include the power analyses of your tracking metrics if performed."
+        ),
+    ] = None
+    experiment_assignment: AssignResponse
