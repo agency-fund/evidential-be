@@ -47,7 +47,7 @@ Config-ID: customer-test
       "analyses": [
         {
           "metric_spec": {
-            "metric_name": "chat_msgs_hour",
+            "field_name": "chat_msgs_hour",
             "metric_pct_change": 0.1,
             "metric_target": 0.1853794266441821,
             "metric_type": "numeric",
