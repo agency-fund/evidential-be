@@ -1,7 +1,9 @@
 import os
+import sqlite3
 from pathlib import Path
 
 from sqlalchemy import create_engine, event
+from sqlalchemy.engine.interfaces import DBAPIConnection
 from sqlalchemy.orm import sessionmaker
 
 from xngin.apiserver.models.tables import Base
@@ -49,7 +51,9 @@ engine = create_engine(
 
 
 @event.listens_for(engine, "connect")
-def set_sqlite_pragma(dbapi_connection, _):
+def set_sqlite_pragma(dbapi_connection: DBAPIConnection, _):
+    if not isinstance(dbapi_connection, sqlite3.Connection):
+        return
     cursor = dbapi_connection.cursor()
     cursor.execute("PRAGMA foreign_keys=ON")  # for API key cascading deletes
     cursor.close()
