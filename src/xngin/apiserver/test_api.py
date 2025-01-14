@@ -13,6 +13,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from xngin.apiserver import conftest, constants
+from xngin.apiserver.api_types import CommitRequest
 from xngin.apiserver.main import app
 from xngin.apiserver.testing.assertions import assert_same
 from xngin.apiserver.testing.xurl import Xurl
@@ -179,6 +180,24 @@ def test_commit(mocker):
         status_code=mock_response.status_code, body=mock_response.text
     )
     assert response.text == expected_response_model.model_dump_json()
+
+
+def test_commit_without_power_analyses(mocker):
+    """Test /commit succeeds even if it has no power analysis results."""
+
+    (xurl, mock_response) = load_mock_response_from_xurl(mocker, "apitest.commit.xurl")
+    new_body = CommitRequest.model_validate_json(xurl.body)
+    new_body.power_analyses = None
+    # Mock the httpx.AsyncClient.post method
+    mock_request = mocker.patch("httpx.AsyncClient.request", return_value=mock_response)
+
+    response = client.request(
+        xurl.method, xurl.url, headers=xurl.headers, content=new_body.model_dump_json()
+    )
+
+    # Assert that httpx.AsyncClient.post was called
+    mock_request.assert_called_once()
+    assert response.status_code == 200, response.text
 
 
 def test_commit_when_webhook_has_non_200_status(mocker):

@@ -7,7 +7,12 @@ import uuid
 import httpx
 from pydantic import BaseModel, Field, field_serializer, model_validator, ConfigDict
 
-from xngin.apiserver.api_types import DesignSpec, AudienceSpec, AssignResponse
+from xngin.apiserver.api_types import (
+    DesignSpec,
+    AudienceSpec,
+    AssignResponse,
+    PowerResponse,
+)
 
 
 class WebhookBaseModel(BaseModel):
@@ -54,9 +59,10 @@ class WebhookCommitRequest(WebhookBaseModel):
         default_factory=uuid.uuid4,
     )
     creator_user_id: str = Field(description="ID of the user creating the experiment")
-    experiment_assignment: AssignResponse
     design_spec: DesignSpec
     audience_spec: AudienceSpec
+    power_analyses: PowerResponse | None = None
+    experiment_assignment: AssignResponse
 
     @field_serializer("experiment_commit_datetime", when_used="json")
     def serialize_dt(self, dt: datetime, _info):

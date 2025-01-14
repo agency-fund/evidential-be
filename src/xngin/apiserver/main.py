@@ -14,18 +14,18 @@ from sqlalchemy import distinct
 from xngin.apiserver import database, exceptionhandlers, middleware, constants
 from xngin.apiserver.api_types import (
     DataTypeClass,
-    AssignResponse,
     GetFiltersResponseDiscrete,
     GetFiltersResponseNumeric,
     GetStrataResponseElement,
     GetMetricsResponseElement,
-    PowerResponse,
     GetStrataResponse,
     GetFiltersResponse,
     GetMetricsResponse,
-    AssignRequest,
-    CommitRequest,
     PowerRequest,
+    PowerResponse,
+    AssignRequest,
+    AssignResponse,
+    CommitRequest,
 )
 from xngin.apiserver.dependencies import (
     httpx_dependency,
@@ -310,11 +310,13 @@ def check_power_api(
             body.audience_spec,
         )
 
-        return check_power(
-            metrics=metric_stats,
-            n_arms=len(body.design_spec.arms),
-            power=body.design_spec.power,
-            alpha=body.design_spec.alpha,
+        return PowerResponse(
+            analyses=check_power(
+                metrics=metric_stats,
+                n_arms=len(body.design_spec.arms),
+                power=body.design_spec.power,
+                alpha=body.design_spec.alpha,
+            )
         )
 
 
@@ -421,9 +423,10 @@ async def commit_experiment(
 
     commit_payload = WebhookCommitRequest(
         creator_user_id=user_id,
-        experiment_assignment=body.experiment_assignment,
         design_spec=body.design_spec,
         audience_spec=body.audience_spec,
+        power_analyses=body.power_analyses,
+        experiment_assignment=body.experiment_assignment,
     )
 
     response.status_code, payload = await make_webhook_request(
