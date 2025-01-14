@@ -43,7 +43,7 @@ def config_dependency(
     """Returns the configuration for the current request, as determined by the Config-ID HTTP request header."""
     if not config_id:
         return None
-    config = settings.get_client_config(config_id)
+    config = settings.get_datasource(config_id)
     if config and config.require_api_key:
         require_valid_api_key(xngin_db, api_key, config_id)
     return config

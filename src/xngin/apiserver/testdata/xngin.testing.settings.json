@@ -1,6 +1,6 @@
 {
   "trusted_ips": ["testclient"],
-  "client_configs": [
+  "datasources": [
     {
       "id": "customer-test",
       "config": {

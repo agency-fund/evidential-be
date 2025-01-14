@@ -31,7 +31,7 @@ from xngin.apiserver.settings import (
     SheetRef,
     XnginSettings,
     CannotFindTableError,
-    ClientConfig,
+    Datasource,
 )
 from xngin.apiserver.testing import testing_dwh
 from xngin.sheets.config_sheet import (
@@ -442,7 +442,7 @@ def export_json_schemas(output: Path = Path(".schemas")):
     """Generates JSON schemas for Xngin settings files."""
     if not output.exists():
         output.mkdir()
-    for model in (XnginSettings, ConfigWorksheet, ClientConfig):
+    for model in (XnginSettings, ConfigWorksheet, Datasource):
         filename = output / (model.__name__ + ".schema.json")
         with open(filename, "w") as outf:
             outf.write(json.dumps(model.model_json_schema(), indent=2, sort_keys=True))

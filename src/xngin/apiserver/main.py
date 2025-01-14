@@ -42,7 +42,7 @@ from xngin.apiserver.settings import (
     WebhookUrl,
     get_settings_for_server,
     XnginSettings,
-    ClientConfig,
+    Datasource,
     infer_table,
 )
 from xngin.apiserver.utils import substitute_url
@@ -140,7 +140,7 @@ class CommonQueryParams:
 def get_strata(
     commons: Annotated[CommonQueryParams, Depends()],
     gsheets: Annotated[GSheetCache, Depends(gsheet_cache)],
-    client: Annotated[ClientConfig | None, Depends(config_dependency)] = None,
+    client: Annotated[Datasource | None, Depends(config_dependency)] = None,
 ) -> GetStrataResponse:
     """Get possible strata covariates for a given unit type."""
     config = require_config(client)
@@ -180,7 +180,7 @@ def get_strata(
 def get_filters(
     commons: Annotated[CommonQueryParams, Depends()],
     gsheets: Annotated[GSheetCache, Depends(gsheet_cache)],
-    client: Annotated[ClientConfig | None, Depends(config_dependency)] = None,
+    client: Annotated[Datasource | None, Depends(config_dependency)] = None,
 ) -> GetFiltersResponse:
     config = require_config(client)
     participants = config.find_participants(commons.participant_type)
@@ -254,7 +254,7 @@ def get_filters(
 def get_metrics(
     commons: Annotated[CommonQueryParams, Depends()],
     gsheets: Annotated[GSheetCache, Depends(gsheet_cache)],
-    client: Annotated[ClientConfig | None, Depends(config_dependency)] = None,
+    client: Annotated[Datasource | None, Depends(config_dependency)] = None,
 ) -> GetMetricsResponse:
     """Get possible metrics for a given unit type."""
     config = require_config(client)
@@ -292,7 +292,7 @@ def get_metrics(
 )
 def check_power_api(
     body: PowerRequest,
-    client: Annotated[ClientConfig | None, Depends(config_dependency)] = None,
+    client: Annotated[Datasource | None, Depends(config_dependency)] = None,
 ) -> PowerResponse:
     """Calculates statistical power given the PowerRequest details."""
     config = require_config(client)
@@ -331,7 +331,7 @@ def assign_treatment_api(
         int, Query(..., description="Number of participants to assign.")
     ],
     gsheets: Annotated[GSheetCache, Depends(gsheet_cache)],
-    client: Annotated[ClientConfig | None, Depends(config_dependency)] = None,
+    client: Annotated[Datasource | None, Depends(config_dependency)] = None,
     refresh: Annotated[bool, Query(description="Refresh the cache.")] = False,
     random_state: Annotated[
         int | None,
@@ -388,7 +388,7 @@ async def assignment_file(
         Query(description="ID of the experiment whose assignments we wish to fetch."),
     ],
     http_client: Annotated[httpx.AsyncClient, Depends(httpx_dependency)],
-    client: Annotated[ClientConfig | None, Depends(config_dependency)] = None,
+    client: Annotated[Datasource | None, Depends(config_dependency)] = None,
 ) -> WebhookResponse:
     config = require_config(client).webhook_config
     action = config.actions.assignment_file
@@ -414,7 +414,7 @@ async def commit_experiment(
     body: CommitRequest,
     user_id: Annotated[str, Query(...)],
     http_client: Annotated[httpx.AsyncClient, Depends(httpx_dependency)],
-    client: Annotated[ClientConfig | None, Depends(config_dependency)] = None,
+    client: Annotated[Datasource | None, Depends(config_dependency)] = None,
 ) -> WebhookResponse:
     config = require_config(client).webhook_config
     action = config.actions.commit
@@ -449,7 +449,7 @@ async def update_experiment(
         Query(description="The type of experiment metadata update to perform"),
     ],
     http_client: Annotated[httpx.AsyncClient, Depends(httpx_dependency)],
-    client: Annotated[ClientConfig | None, Depends(config_dependency)] = None,
+    client: Annotated[Datasource | None, Depends(config_dependency)] = None,
 ) -> WebhookResponse:
     config = require_config(client).webhook_config
     action = None
@@ -480,7 +480,7 @@ async def alt_update_experiment(
         Path(description="The ID of the experiment to update.", alias="experiment_id"),
     ],
     http_client: Annotated[httpx.AsyncClient, Depends(httpx_dependency)],
-    client: Annotated[ClientConfig | None, Depends(config_dependency)] = None,
+    client: Annotated[Datasource | None, Depends(config_dependency)] = None,
 ) -> WebhookResponse:
     config = require_config(client).webhook_config
     # TODO: write to internal storage if no webhook_config
@@ -576,7 +576,7 @@ def debug_settings(
     return response
 
 
-def require_config(client: ClientConfig | None):
+def require_config(client: Datasource | None):
     """Raises an exception unless we have a usable ClientConfig available."""
     if not client:
         raise HTTPException(

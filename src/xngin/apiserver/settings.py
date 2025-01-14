@@ -366,8 +366,7 @@ class SqliteLocalConfig(ParticipantsMixin, ConfigBaseModel):
         return Session(engine)
 
 
-# TODO: rename to "datasource"
-class ClientConfig(ConfigBaseModel):
+class Datasource(ConfigBaseModel):
     id: str
     config: Annotated[
         RemoteDatabaseConfig | SqliteLocalConfig, Field(discriminator="type")
@@ -378,13 +377,13 @@ class ClientConfig(ConfigBaseModel):
 class XnginSettings(ConfigBaseModel):
     trusted_ips: Annotated[list[str], Field(default_factory=list)]
     db_connect_timeout_secs: int = 3
-    client_configs: list[ClientConfig]
+    datasources: list[Datasource]
 
-    def get_client_config(self, config_id):
+    def get_datasource(self, datasource_id):
         """Finds the config for a specific ID if it exists, or returns None."""
-        for config in self.client_configs:
-            if config.id == config_id:
-                return config
+        for datasource in self.datasources:
+            if datasource.id == datasource_id:
+                return datasource
         return None
 
 
