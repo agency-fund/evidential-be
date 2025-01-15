@@ -24,7 +24,7 @@ from xngin.apiserver.api_types import (
     EXPERIMENT_IDS_SUFFIX,
     DesignSpecMetric,
 )
-from xngin.sqlite_extensions import custom_functions
+from xngin.db_extensions import custom_functions
 
 
 def get_stats_on_metrics(
@@ -160,6 +160,6 @@ def compose_query(sa_table: Table, chosen_n: int, filters):
     return (
         select(sa_table)
         .filter(*filters)
-        .order_by(custom_functions.our_random(sa_table))
+        .order_by(custom_functions.Random(sa_table=sa_table))
         .limit(chosen_n)
     )
