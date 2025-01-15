@@ -49,7 +49,7 @@ def _default_random(element, _compiler, **_kw):
     if USE_DETERMINISTIC_RANDOM:
         return deterministic_random(element)
 
-    return "random()"
+    return _compiler.process(func.random())
 
 
 @compiler.compiles(Random, "bigquery")

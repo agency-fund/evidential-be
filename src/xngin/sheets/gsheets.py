@@ -2,13 +2,13 @@ import os
 import gspread
 import pandas
 
-DEFAULT_GSPREAD_CREDENTIALS = os.path.expanduser(
-    "~/.config/gspread/service_account.json"
-)
+DEFAULT_GSPREAD_CREDENTIALS = "~/.config/gspread/service_account.json"
 
 
 def google_app_credentials_file():
-    return os.environ.get("GOOGLE_APPLICATION_CREDENTIALS", DEFAULT_GSPREAD_CREDENTIALS)
+    return os.path.expanduser(
+        os.environ.get("GOOGLE_APPLICATION_CREDENTIALS", DEFAULT_GSPREAD_CREDENTIALS)
+    )
 
 
 def fetch_sheet(url, worksheet) -> gspread.Worksheet:
