@@ -37,8 +37,13 @@ def deterministic_random(element):
         )
     meta = inspect(element.sa_table)
     if len(meta.primary_key) == 1:
-        return ", ".join(str(c) for c in meta.primary_key.columns)
-    return ", ".join(str(c) for c in meta.columns)
+        return ", ".join(
+            str(c)
+            for c in sorted((c for c in meta.primary_key.columns), key=lambda c: c.name)
+        )
+    return ", ".join(
+        str(c) for c in sorted((c for c in meta.columns), key=lambda c: c.name)
+    )
 
 
 @compiler.compiles(Random)
