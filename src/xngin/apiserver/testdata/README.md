@@ -2,11 +2,11 @@
 
 Also see: src/xngin/apiserver/testing/testdatasetup.py.
 
-## config-id: customer-test
+## Datasource-ID: customer-test
 
 Currently unused.
 
-## config-id: testing
+## Datasource-ID: testing
 
 | Filename            | Description                                                                                                                                                                           |
 |---------------------|---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|

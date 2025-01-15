@@ -152,9 +152,9 @@ jobs:
             src/xngin/apiserver/main.py &
           sleep 10
           curl -v --fail-with-body http://localhost:8000/_settings
-          curl -v --fail-with-body -H "Config-ID: gha-bq" 'http://localhost:8000/filters?participant_type=warehouse'
+          curl -v --fail-with-body -H "Datasource-ID: gha-bq" 'http://localhost:8000/filters?participant_type=warehouse'
           curl -v --fail-with-body \
-            -H "Config-ID: gha-bq" \
+            -H "Datasource-ID: gha-bq" \
             -H "Accept: application/json" \
             -H "Content-Type: application/json" \
             -X POST "http://localhost:8000/assign?chosen_n=40&random_state=42" \
@@ -231,7 +231,7 @@ jobs:
           sleep 10
           curl -v --fail-with-body http://localhost:8000/_settings
           # Verify we can get data from a table in the default schema
-          curl -v --fail-with-body -H "Config-ID: gha-postgres" 'http://localhost:8000/filters?participant_type=dwh'
+          curl -v --fail-with-body -H "Datasource-ID: gha-postgres" 'http://localhost:8000/filters?participant_type=dwh'
           # Now verify search_path can override defaults
-          curl -v --fail-with-body -H "Config-ID: gha-postgres-alt" 'http://localhost:8000/filters?participant_type=alt'
+          curl -v --fail-with-body -H "Datasource-ID: gha-postgres-alt" 'http://localhost:8000/filters?participant_type=alt'
           kill %1

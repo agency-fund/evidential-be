@@ -77,13 +77,13 @@ Follow the steps below to get a local development environment running.
 
 5. Send some test requests:
 
-   Each request should have an HTTP request header `Config-ID` set to the `id` value of a configuration entry in the
+   Each request should have an HTTP request header `Datasource-ID` set to the `id` value of a configuration entry in the
    [xngin.testing.settings.json](src/xngin/apiserver/testdata/xngin.testing.settings.json) settings file. For testing
    and local dev, use `testing`.
 
    ```shell
-   curl -H "Config-ID: testing" 'http://localhost:8000/filters?participant_type=test_participant_type'
-   curl -H "Config-ID: testing" 'http://localhost:8000/strata?participant_type=test_participant_type'
+   curl -H "Datasource-ID: testing" 'http://localhost:8000/filters?participant_type=test_participant_type'
+   curl -H "Datasource-ID: testing" 'http://localhost:8000/strata?participant_type=test_participant_type'
    ```
 
    Also see [apitest.strata.xurl](src/xngin/apiserver/testdata/apitest.strata.xurl) for a complete example of how to
@@ -545,7 +545,7 @@ Clients must send the API keys as the `x-api-key` header. Example:
 
 ```shell
 curl --header "x-api-key: xat_..." \
-  --header "Config-ID: my-secure-config" \
+  --header "Datasource-ID: my-secure-config" \
   'http://localhost:8000/filters?participant_type=test_participant_type'
 ```
 

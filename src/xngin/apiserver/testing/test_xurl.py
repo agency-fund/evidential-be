@@ -54,7 +54,7 @@ HTTP 200
         trailer=None,
     )
     assert Xurl.from_script("""GET http://localhost:8000/strata?participant_type=test_participant_type
-Config-ID: testing
+Datasource-ID: testing
 ```json
 requestbody
 ```

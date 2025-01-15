@@ -1,5 +1,5 @@
 POST http://localhost:8000/power?participant_type=test_participant_type
-Config-ID: testing
+Datasource-ID: testing
 ```json
 {
  "design_spec": {

@@ -1,5 +1,5 @@
 POST http://localhost:8000/update-commit?update_type=timestamps
-Config-ID: customer-test
+Datasource-ID: customer-test
 ```json
 {
   "update_json": {

@@ -1,6 +1,6 @@
 {
   "trusted_ips": ["127.0.0.1"],
-  "client_configs": [
+  "datasources": [
     {
       "id": "gha-postgres",
       "config": {
