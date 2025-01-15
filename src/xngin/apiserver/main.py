@@ -30,8 +30,8 @@ from xngin.apiserver.api_types import (
 from xngin.apiserver.dependencies import (
     httpx_dependency,
     settings_dependency,
-    config_dependency,
     gsheet_cache,
+    datasource_config_required,
 )
 from xngin.apiserver.dwh.queries import get_stats_on_metrics, query_for_participants
 from xngin.apiserver.gsheet_cache import GSheetCache
@@ -42,8 +42,8 @@ from xngin.apiserver.settings import (
     WebhookUrl,
     get_settings_for_server,
     XnginSettings,
-    ClientConfig,
     infer_table,
+    DatasourceConfig,
 )
 from xngin.apiserver.utils import substitute_url
 from xngin.apiserver.webhook_types import (
@@ -60,7 +60,6 @@ from xngin.sheets.config_sheet import (
 )
 from xngin.stats.assignment import assign_treatment
 from xngin.stats.power import check_power
-
 
 logging.basicConfig(
     level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
@@ -140,10 +139,9 @@ class CommonQueryParams:
 def get_strata(
     commons: Annotated[CommonQueryParams, Depends()],
     gsheets: Annotated[GSheetCache, Depends(gsheet_cache)],
-    client: Annotated[ClientConfig | None, Depends(config_dependency)] = None,
+    config: Annotated[DatasourceConfig, Depends(datasource_config_required)],
 ) -> GetStrataResponse:
     """Get possible strata covariates for a given unit type."""
-    config = require_config(client)
     participants = config.find_participants(commons.participant_type)
     config_sheet = fetch_worksheet(commons, config, gsheets)
     strata_fields = {c.field_name: c for c in config_sheet.fields if c.is_strata}
@@ -180,9 +178,8 @@ def get_strata(
 def get_filters(
     commons: Annotated[CommonQueryParams, Depends()],
     gsheets: Annotated[GSheetCache, Depends(gsheet_cache)],
-    client: Annotated[ClientConfig | None, Depends(config_dependency)] = None,
+    config: Annotated[DatasourceConfig, Depends(datasource_config_required)],
 ) -> GetFiltersResponse:
-    config = require_config(client)
     participants = config.find_participants(commons.participant_type)
     config_sheet = fetch_worksheet(commons, config, gsheets)
     filter_fields = {c.field_name: c for c in config_sheet.fields if c.is_filter}
@@ -254,10 +251,9 @@ def get_filters(
 def get_metrics(
     commons: Annotated[CommonQueryParams, Depends()],
     gsheets: Annotated[GSheetCache, Depends(gsheet_cache)],
-    client: Annotated[ClientConfig | None, Depends(config_dependency)] = None,
+    config: Annotated[DatasourceConfig, Depends(datasource_config_required)],
 ) -> GetMetricsResponse:
     """Get possible metrics for a given unit type."""
-    config = require_config(client)
     participants = config.find_participants(commons.participant_type)
     config_sheet = fetch_worksheet(commons, config, gsheets)
     metric_cols = {c.field_name: c for c in config_sheet.fields if c.is_metric}
@@ -292,10 +288,9 @@ def get_metrics(
 )
 def check_power_api(
     body: PowerRequest,
-    client: Annotated[ClientConfig | None, Depends(config_dependency)] = None,
+    config: Annotated[DatasourceConfig, Depends(datasource_config_required)],
 ) -> PowerResponse:
     """Calculates statistical power given the PowerRequest details."""
-    config = require_config(client)
     participant = config.find_participants(body.audience_spec.participant_type)
 
     with config.dbsession() as session:
@@ -331,7 +326,7 @@ def assign_treatment_api(
         int, Query(..., description="Number of participants to assign.")
     ],
     gsheets: Annotated[GSheetCache, Depends(gsheet_cache)],
-    client: Annotated[ClientConfig | None, Depends(config_dependency)] = None,
+    config: Annotated[DatasourceConfig, Depends(datasource_config_required)],
     refresh: Annotated[bool, Query(description="Refresh the cache.")] = False,
     random_state: Annotated[
         int | None,
@@ -341,7 +336,6 @@ def assign_treatment_api(
         ),
     ] = None,
 ) -> AssignResponse:
-    config = require_config(client)
     participant = config.find_participants(body.audience_spec.participant_type)
     config_sheet = fetch_worksheet(
         CommonQueryParams(
@@ -388,17 +382,18 @@ async def assignment_file(
         Query(description="ID of the experiment whose assignments we wish to fetch."),
     ],
     http_client: Annotated[httpx.AsyncClient, Depends(httpx_dependency)],
-    client: Annotated[ClientConfig | None, Depends(config_dependency)] = None,
+    config: Annotated[DatasourceConfig, Depends(datasource_config_required)],
 ) -> WebhookResponse:
-    config = require_config(client).webhook_config
-    action = config.actions.assignment_file
+    # TODO: this will break on configs that don't have a webhook_config
+    webhook_config = config.webhook_config
+    action = webhook_config.actions.assignment_file
     if action is None:
         # TODO: read from internal storage if webhooks are not defined.
         raise HTTPException(501, "Action 'assignment_file' not configured.")
 
     url = substitute_url(action.url, {"experiment_id": experiment_id})
     response.status_code, payload = await make_webhook_request_base(
-        http_client, config, method=action.method, url=url
+        http_client, webhook_config, method=action.method, url=url
     )
     return payload
 
@@ -414,10 +409,11 @@ async def commit_experiment(
     body: CommitRequest,
     user_id: Annotated[str, Query(...)],
     http_client: Annotated[httpx.AsyncClient, Depends(httpx_dependency)],
-    client: Annotated[ClientConfig | None, Depends(config_dependency)] = None,
+    config: Annotated[DatasourceConfig, Depends(datasource_config_required)],
 ) -> WebhookResponse:
-    config = require_config(client).webhook_config
-    action = config.actions.commit
+    # TODO: this will break on configs that don't have a webhook_config
+    webhook_config = config.webhook_config
+    action = webhook_config.actions.commit
     if action is None:
         raise HTTPException(501, "Action 'commit' not configured.")
 
@@ -430,7 +426,7 @@ async def commit_experiment(
     )
 
     response.status_code, payload = await make_webhook_request(
-        http_client, config, action, commit_payload
+        http_client, webhook_config, action, commit_payload
     )
     return payload
 
@@ -449,19 +445,20 @@ async def update_experiment(
         Query(description="The type of experiment metadata update to perform"),
     ],
     http_client: Annotated[httpx.AsyncClient, Depends(httpx_dependency)],
-    client: Annotated[ClientConfig | None, Depends(config_dependency)] = None,
+    config: Annotated[DatasourceConfig, Depends(datasource_config_required)],
 ) -> WebhookResponse:
-    config = require_config(client).webhook_config
-    action = None
-    if update_type == "timestamps":
-        action = config.actions.update_timestamps
-    elif update_type == "description":
-        action = config.actions.update_description
-    if action is None:
+    webhook_config = config.webhook_config
+    if webhook_config is None:
+        raise HTTPException(501, "Webhook not configured.")
+    if update_type == "timestamps" and webhook_config.actions.update_timestamps:
+        action = webhook_config.actions.update_timestamps
+    elif update_type == "description" and webhook_config.actions.update_description:
+        action = webhook_config.actions.update_description
+    else:
         raise HTTPException(501, f"Action '{update_type}' not configured.")
     # Need to pull out the upstream server payload:
     response.status_code, payload = await make_webhook_request(
-        http_client, config, action, body.update_json
+        http_client, webhook_config, action, body.update_json
     )
     return payload
 
@@ -480,20 +477,22 @@ async def alt_update_experiment(
         Path(description="The ID of the experiment to update.", alias="experiment_id"),
     ],
     http_client: Annotated[httpx.AsyncClient, Depends(httpx_dependency)],
-    client: Annotated[ClientConfig | None, Depends(config_dependency)] = None,
+    config: Annotated[DatasourceConfig, Depends(datasource_config_required)],
 ) -> WebhookResponse:
-    config = require_config(client).webhook_config
-    # TODO: write to internal storage if no webhook_config
-    action = None
-    if body.update_type == "timestamps":
-        action = config.actions.update_timestamps
-    elif body.update_type == "description":
-        action = config.actions.update_description
-    if action is None:
-        raise HTTPException(501, f"Action for '{body.update_type}' not configured.")
+    webhook_config = config.webhook_config
+    if webhook_config is None:
+        raise HTTPException(501, "Webhook not configured.")
+    if body.update_type == "timestamps" and webhook_config.actions.update_timestamps:
+        action = webhook_config.actions.update_timestamps
+    elif (
+        body.update_type == "description" and webhook_config.actions.update_description
+    ):
+        action = webhook_config.actions.update_description
+    else:
+        raise HTTPException(501, f"Action '{body.update_type}' not configured.")
     # TODO: use the experiment_id in an upstream url
     response.status_code, payload = await make_webhook_request(
-        http_client, config, action, body
+        http_client, webhook_config, action, body
     )
     return payload
 
@@ -574,15 +573,6 @@ def debug_settings(
     if config_id := request.headers.get(constants.HEADER_CONFIG_ID):
         response["config_id"] = config_id
     return response
-
-
-def require_config(client: ClientConfig | None):
-    """Raises an exception unless we have a usable ClientConfig available."""
-    if not client:
-        raise HTTPException(
-            404, "Configuration for the requested client was not found."
-        )
-    return client.config
 
 
 def fetch_worksheet(

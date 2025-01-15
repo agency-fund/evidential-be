@@ -15,6 +15,7 @@ import pandas_gbq
 import psycopg2
 import sqlalchemy
 import typer
+from xngin.sheets.gsheets import GSheetsPermissionError
 import zstandard
 from gspread import GSpreadException
 from gspread.worksheet import CellFormat
@@ -31,7 +32,7 @@ from xngin.apiserver.settings import (
     SheetRef,
     XnginSettings,
     CannotFindTableError,
-    ClientConfig,
+    Datasource,
 )
 from xngin.apiserver.testing import testing_dwh
 from xngin.sheets.config_sheet import (
@@ -427,11 +428,9 @@ def parse_config_spreadsheet(
     except GSpreadException as gse:
         err_console.print(gse)
         raise typer.Exit(1) from gse
-    except PermissionError as pe:
-        if isinstance(pe.__cause__, gspread.exceptions.APIError):
-            err_console.print("You do not have permission to open this spreadsheet.")
-            raise typer.Exit(1) from pe
-        raise
+    except GSheetsPermissionError as pe:
+        err_console.print("You do not have permission to open this spreadsheet.")
+        raise typer.Exit(1) from pe
     except InvalidSheetError as ise:
         err_console.print(f"Error(s):\n{ise}")
         raise typer.Exit(1) from ise
@@ -442,7 +441,7 @@ def export_json_schemas(output: Path = Path(".schemas")):
     """Generates JSON schemas for Xngin settings files."""
     if not output.exists():
         output.mkdir()
-    for model in (XnginSettings, ConfigWorksheet, ClientConfig):
+    for model in (XnginSettings, ConfigWorksheet, Datasource):
         filename = output / (model.__name__ + ".schema.json")
         with open(filename, "w") as outf:
             outf.write(json.dumps(model.model_json_schema(), indent=2, sort_keys=True))

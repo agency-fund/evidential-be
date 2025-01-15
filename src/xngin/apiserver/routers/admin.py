@@ -58,7 +58,7 @@ async def datasources(
     """Returns a list of organizations."""
     return [
         {"id": s.id, "type": s.config.type, "secured": s.require_api_key is True}
-        for s in settings.client_configs
+        for s in settings.datasources
     ]
 
 

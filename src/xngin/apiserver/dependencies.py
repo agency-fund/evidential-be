@@ -9,7 +9,12 @@ from xngin.apiserver import constants
 from xngin.apiserver.apikeys import require_valid_api_key
 from xngin.apiserver.database import SessionLocal
 from xngin.apiserver.gsheet_cache import GSheetCache
-from xngin.apiserver.settings import get_settings_for_server, XnginSettings
+from xngin.apiserver.settings import (
+    get_settings_for_server,
+    XnginSettings,
+    Datasource,
+    DatasourceConfig,
+)
 
 
 def settings_dependency():
@@ -29,10 +34,10 @@ def xngin_db_session():
         db.close()
 
 
-def config_dependency(
+def datasource_dependency(
     settings: Annotated[XnginSettings, Depends(settings_dependency)],
-    config_id: Annotated[
-        str, Header(example="testing", name=constants.HEADER_CONFIG_ID)
+    datasource_id: Annotated[
+        str, Header(example="testing", alias=constants.HEADER_CONFIG_ID)
     ],
     xngin_db: Annotated[Session, Depends(xngin_db_session)],
     api_key: Annotated[
@@ -40,13 +45,20 @@ def config_dependency(
         Depends(APIKeyHeader(name=constants.HEADER_API_KEY, auto_error=False)),
     ],
 ):
-    """Returns the configuration for the current request, as determined by the Config-ID HTTP request header."""
-    if not config_id:
+    """Returns the configuration for the current request, as determined by the Datasource-ID HTTP request header."""
+    if not datasource_id:
         return None
-    config = settings.get_client_config(config_id)
-    if config and config.require_api_key:
-        require_valid_api_key(xngin_db, api_key, config_id)
-    return config
+    datasource = settings.get_datasource(datasource_id)
+    if datasource and datasource.require_api_key:
+        require_valid_api_key(xngin_db, api_key, datasource_id)
+    return datasource
+
+
+def datasource_config_required(
+    ds: Annotated[Datasource, Depends(datasource_dependency)],
+) -> DatasourceConfig:
+    """Returns the connection-specific implementation for this datasource."""
+    return ds.config
 
 
 def gsheet_cache(xngin_db: Annotated[Session, Depends(xngin_db_session)]):

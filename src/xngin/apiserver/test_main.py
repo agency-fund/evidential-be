@@ -16,7 +16,7 @@ client = TestClient(app)
 
 def test_get_settings_for_test():
     settings = conftest.get_settings_for_test()
-    assert settings.get_client_config("customer-test").config.dwh.user == "user"
+    assert settings.get_datasource("customer-test").config.dwh.user == "user"
     assert settings.trusted_ips == ["testclient"]
 
 
@@ -24,7 +24,7 @@ def test_settings_can_be_overridden_by_tests():
     response = client.get("/_settings", headers={constants.HEADER_CONFIG_ID: "testing"})
     assert response.status_code == 200, response.content
     settings = XnginSettings.model_validate(response.json()["settings"])
-    assert settings.get_client_config("customer-test").config.dwh.user == "user"
+    assert settings.get_datasource("customer-test").config.dwh.user == "user"
     assert settings.trusted_ips == ["testclient"]
 
 
@@ -43,7 +43,7 @@ def test_root_get_api():
 
 def test_generate_column_descriptors():
     settings = conftest.get_settings_for_test()
-    config = settings.get_client_config("testing").config
+    config = settings.get_datasource("testing").config
     with config.dbsession() as session:
         sa_table = infer_table(
             session.get_bind(), "test_participant_type", config.supports_reflection()
@@ -75,6 +75,6 @@ def test_generate_column_descriptors():
 
 def test_find_participants_raises_exception_for_invalid_participant_type():
     settings = conftest.get_settings_for_test()
-    config = settings.get_client_config("testing").config
+    config = settings.get_datasource("testing").config
     with pytest.raises(CannotFindParticipantsError):
         config.find_participants("bad_type")
