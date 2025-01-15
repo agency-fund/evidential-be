@@ -2,7 +2,6 @@ from typing import Any
 
 import numpy as np
 from sqlalchemy import inspect
-
 from sqlalchemy.ext import compiler
 from sqlalchemy.sql._typing import _ColumnExpressionOrLiteralArgument
 from sqlalchemy.sql.functions import func, FunctionElement
@@ -37,7 +36,7 @@ def deterministic_random(element):
             "our_random requires sa_table= to be an inspectable table-like entity."
         )
     meta = inspect(element.sa_table)
-    if len(meta.primary_key) == 1:
+    if meta.primary_key.columns:
         columns = (c for c in meta.primary_key.columns)
     else:
         columns = (c for c in meta.columns)
