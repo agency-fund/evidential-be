@@ -22,7 +22,7 @@ from sqlalchemy.exc import NoSuchTableError
 from sqlalchemy.orm import Session
 
 from xngin.apiserver.settings_secrets import replace_secrets
-from xngin.sqlite_extensions import NumpyStddev
+from xngin.db_extensions import NumpyStddev
 
 DEFAULT_SETTINGS_FILE = "xngin.settings.json"
 
@@ -366,25 +366,27 @@ class SqliteLocalConfig(ParticipantsMixin, ConfigBaseModel):
         return Session(engine)
 
 
-# TODO: rename to "datasource"
-class ClientConfig(ConfigBaseModel):
+type DatasourceConfig = RemoteDatabaseConfig | SqliteLocalConfig
+
+
+class Datasource(ConfigBaseModel):
+    """Datasource describes data warehouse configuration and policy."""
+
     id: str
-    config: Annotated[
-        RemoteDatabaseConfig | SqliteLocalConfig, Field(discriminator="type")
-    ]
+    config: Annotated[DatasourceConfig, Field(discriminator="type")]
     require_api_key: Annotated[bool | None, Field(...)] = None
 
 
 class XnginSettings(ConfigBaseModel):
     trusted_ips: Annotated[list[str], Field(default_factory=list)]
     db_connect_timeout_secs: int = 3
-    client_configs: list[ClientConfig]
+    datasources: list[Datasource]
 
-    def get_client_config(self, config_id):
-        """Finds the config for a specific ID if it exists, or returns None."""
-        for config in self.client_configs:
-            if config.id == config_id:
-                return config
+    def get_datasource(self, datasource_id):
+        """Finds the datasource for a specific ID if it exists, or returns None."""
+        for datasource in self.datasources:
+            if datasource.id == datasource_id:
+                return datasource
         return None
 
 
@@ -412,8 +414,8 @@ class CannotFindParticipantsError(Exception):
 
     def __init__(self, participant_type):
         self.participant_type = participant_type
-        self.message = f"""The configuration for participant type '{participant_type}' does not
-            exist. (Possible typo in request, or server settings for your dwh may be
+        self.message = f"""The participant type '{participant_type}' does not exist.
+            (Possible typo in request, or server settings for your dwh may be
             misconfigured.)"""
 
     def __str__(self):

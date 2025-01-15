@@ -13,13 +13,14 @@ import pytest
 from fastapi.testclient import TestClient
 
 from xngin.apiserver import conftest, constants
+from xngin.apiserver.api_types import CommitRequest
 from xngin.apiserver.main import app
 from xngin.apiserver.testing.assertions import assert_same
 from xngin.apiserver.testing.xurl import Xurl
 from xngin.apiserver.webhook_types import (
-    UpdateCommitRequest,
-    UpdateDescriptionRequest,
-    UpdateTimestampsRequest,
+    WebhookUpdateCommitRequest,
+    WebhookUpdateDescriptionRequest,
+    WebhookUpdateTimestampsRequest,
     WebhookResponse,
 )
 
@@ -181,6 +182,24 @@ def test_commit(mocker):
     assert response.text == expected_response_model.model_dump_json()
 
 
+def test_commit_without_power_analyses(mocker):
+    """Test /commit succeeds even if it has no power analysis results."""
+
+    (xurl, mock_response) = load_mock_response_from_xurl(mocker, "apitest.commit.xurl")
+    new_body = CommitRequest.model_validate_json(xurl.body)
+    new_body.power_analyses = None
+    # Mock the httpx.AsyncClient.post method
+    mock_request = mocker.patch("httpx.AsyncClient.request", return_value=mock_response)
+
+    response = client.request(
+        xurl.method, xurl.url, headers=xurl.headers, content=new_body.model_dump_json()
+    )
+
+    # Assert that httpx.AsyncClient.post was called
+    mock_request.assert_called_once()
+    assert response.status_code == 200, response.text
+
+
 def test_commit_when_webhook_has_non_200_status(mocker):
     (xurl, mock_response) = load_mock_response_from_xurl(mocker, "apitest.commit.xurl")
     # Override the mock status with an unaccepted code
@@ -239,7 +258,7 @@ def test_update_experiment_timestamps(mocker):
     )
     # And check that we not only have the expected payload structure that the upstream server expects, but that one of
     # the values within matches our test data.
-    model = UpdateTimestampsRequest.model_validate(kwargs["json"])
+    model = WebhookUpdateTimestampsRequest.model_validate(kwargs["json"])
     assert model.start_date == datetime.fromisoformat("2024-11-15T17:15:13.576Z")
 
 
@@ -250,7 +269,7 @@ def test_update_experiment_fails_when_end_before_start(mocker):
         mocker, "apitest.update-commit.timestamps.xurl"
     )
     # Replace the valid body with one that has end_date < start_date
-    bad_body = UpdateCommitRequest.model_validate_json(hurl.body)
+    bad_body = WebhookUpdateCommitRequest.model_validate_json(hurl.body)
     bad_body.update_json.end_date = bad_body.update_json.start_date - timedelta(days=1)
     hurl.body = bad_body.model_dump_json()
     # Expect to fail before even making the request due to validation error.
@@ -285,7 +304,7 @@ def test_update_experiment_description(mocker):
         kwargs["url"]
         == "http://localhost:4001/dev/api/v1/experiment-commit/update-experiment-commit"
     )
-    model = UpdateDescriptionRequest.model_validate(kwargs["json"])
+    model = WebhookUpdateDescriptionRequest.model_validate(kwargs["json"])
     assert model.description == "Sample new description"
 
 

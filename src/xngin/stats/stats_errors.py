@@ -17,4 +17,4 @@ class StatsPowerError(StatsError):
 
     def __init__(self, verr: ValueError, metric: DesignSpecMetric):
         self.metric = metric
-        super().__init__(f"Power calc error for metric {metric.metric_name}: {verr}")
+        super().__init__(f"Power calc error for metric {metric.field_name}: {verr}")

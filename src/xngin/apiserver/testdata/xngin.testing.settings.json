@@ -1,8 +1,6 @@
 {
-  "trusted_ips": [
-    "testclient"
-  ],
-  "client_configs": [
+  "trusted_ips": ["testclient"],
+  "datasources": [
     {
       "id": "customer-test",
       "config": {
@@ -66,8 +64,7 @@
           }
         ],
         "webhook_config": {
-          "actions": {
-          },
+          "actions": {},
           "common_headers": {
             "authorization": "abc"
           }

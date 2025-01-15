@@ -22,7 +22,7 @@ from xngin.apiserver.dwh.queries import (
     get_stats_on_metrics,
     make_csv_regex,
 )
-from xngin.sqlite_extensions.custom_functions import NumpyStddev
+from xngin.db_extensions.custom_functions import NumpyStddev
 
 
 class Base(DeclarativeBase):
@@ -165,12 +165,12 @@ FILTER_GENERATION_SUBCASES = [
     Case(
         filters=[
             AudienceSpecFilter(
-                filter_name="int_col",
+                field_name="int_col",
                 relation=Relation.INCLUDES,
                 value=[ROW_100.int_col, ROW_200.int_col],
             ),
             AudienceSpecFilter(
-                filter_name="experiment_ids",
+                field_name="experiment_ids",
                 relation=Relation.INCLUDES,
                 value=["b", "C"],
             ),
@@ -181,12 +181,12 @@ FILTER_GENERATION_SUBCASES = [
     Case(
         filters=[
             AudienceSpecFilter(
-                filter_name="int_col",
+                field_name="int_col",
                 relation=Relation.INCLUDES,
                 value=[ROW_100.int_col, ROW_200.int_col],
             ),
             AudienceSpecFilter(
-                filter_name="experiment_ids",
+                field_name="experiment_ids",
                 relation=Relation.EXCLUDES,
                 value=["b", "c"],
             ),
@@ -198,7 +198,7 @@ FILTER_GENERATION_SUBCASES = [
     Case(
         filters=[
             AudienceSpecFilter(
-                filter_name="int_col",
+                field_name="int_col",
                 relation=Relation.INCLUDES,
                 value=[ROW_100.int_col],
             )
@@ -212,7 +212,7 @@ FILTER_GENERATION_SUBCASES = [
     Case(
         filters=[
             AudienceSpecFilter(
-                filter_name="int_col", relation=Relation.BETWEEN, value=[-17, 42]
+                field_name="int_col", relation=Relation.BETWEEN, value=[-17, 42]
             )
         ],
         where=(
@@ -224,7 +224,7 @@ FILTER_GENERATION_SUBCASES = [
     Case(
         filters=[
             AudienceSpecFilter(
-                filter_name="int_col",
+                field_name="int_col",
                 relation=Relation.EXCLUDES,
                 value=[ROW_100.int_col],
             )
@@ -239,7 +239,7 @@ FILTER_GENERATION_SUBCASES = [
     Case(
         filters=[
             AudienceSpecFilter(
-                filter_name="float_col", relation=Relation.BETWEEN, value=[2, 3]
+                field_name="float_col", relation=Relation.BETWEEN, value=[2, 3]
             )
         ],
         where=(
@@ -252,7 +252,7 @@ FILTER_GENERATION_SUBCASES = [
     Case(
         filters=[
             AudienceSpecFilter(
-                filter_name="experiment_ids", relation=Relation.INCLUDES, value=["a"]
+                field_name="experiment_ids", relation=Relation.INCLUDES, value=["a"]
             )
         ],
         where="""lower(test_table.experiment_ids) {regexp} '(^(a)$)|(^(a),)|(,(a)$)|(,(a),)' {randomize} {limit_offset}""",
@@ -261,7 +261,7 @@ FILTER_GENERATION_SUBCASES = [
     Case(
         filters=[
             AudienceSpecFilter(
-                filter_name="experiment_ids", relation=Relation.INCLUDES, value=["B"]
+                field_name="experiment_ids", relation=Relation.INCLUDES, value=["B"]
             )
         ],
         where="""lower(test_table.experiment_ids) {regexp} '(^(b)$)|(^(b),)|(,(b)$)|(,(b),)' {randomize} {limit_offset}""",
@@ -270,7 +270,7 @@ FILTER_GENERATION_SUBCASES = [
     Case(
         filters=[
             AudienceSpecFilter(
-                filter_name="experiment_ids", relation=Relation.INCLUDES, value=["c"]
+                field_name="experiment_ids", relation=Relation.INCLUDES, value=["c"]
             )
         ],
         where="""lower(test_table.experiment_ids) {regexp} '(^(c)$)|(^(c),)|(,(c)$)|(,(c),)' {randomize} {limit_offset}""",
@@ -279,7 +279,7 @@ FILTER_GENERATION_SUBCASES = [
     Case(
         filters=[
             AudienceSpecFilter(
-                filter_name="experiment_ids", relation=Relation.EXCLUDES, value=["a"]
+                field_name="experiment_ids", relation=Relation.EXCLUDES, value=["a"]
             )
         ],
         where="""test_table.experiment_ids IS NULL OR {length}(test_table.experiment_ids) = 0 OR lower(test_table.experiment_ids) {not_regexp} '(^(a)$)|(^(a),)|(,(a)$)|(,(a),)' {randomize} {limit_offset}""",
@@ -288,7 +288,7 @@ FILTER_GENERATION_SUBCASES = [
     Case(
         filters=[
             AudienceSpecFilter(
-                filter_name="experiment_ids", relation=Relation.EXCLUDES, value=["D"]
+                field_name="experiment_ids", relation=Relation.EXCLUDES, value=["D"]
             )
         ],
         where="""test_table.experiment_ids IS NULL OR {length}(test_table.experiment_ids) = 0 OR lower(test_table.experiment_ids) {not_regexp} '(^(d)$)|(^(d),)|(,(d)$)|(,(d),)' {randomize} {limit_offset}""",
@@ -297,7 +297,7 @@ FILTER_GENERATION_SUBCASES = [
     Case(
         filters=[
             AudienceSpecFilter(
-                filter_name="experiment_ids",
+                field_name="experiment_ids",
                 relation=Relation.INCLUDES,
                 value=["a", "d"],
             )
@@ -308,7 +308,7 @@ FILTER_GENERATION_SUBCASES = [
     Case(
         filters=[
             AudienceSpecFilter(
-                filter_name="experiment_ids",
+                field_name="experiment_ids",
                 relation=Relation.EXCLUDES,
                 value=["a", "d"],
             )
@@ -319,7 +319,7 @@ FILTER_GENERATION_SUBCASES = [
     Case(
         filters=[
             AudienceSpecFilter(
-                filter_name="experiment_ids", relation=Relation.INCLUDES, value=["d"]
+                field_name="experiment_ids", relation=Relation.INCLUDES, value=["d"]
             )
         ],
         where="""lower(test_table.experiment_ids) {regexp} '(^(d)$)|(^(d),)|(,(d)$)|(,(d),)' {randomize} {limit_offset}""",
@@ -328,7 +328,7 @@ FILTER_GENERATION_SUBCASES = [
     Case(
         filters=[
             AudienceSpecFilter(
-                filter_name="experiment_ids", relation=Relation.EXCLUDES, value=["d"]
+                field_name="experiment_ids", relation=Relation.EXCLUDES, value=["d"]
             )
         ],
         where="""test_table.experiment_ids IS NULL OR {length}(test_table.experiment_ids) = 0 OR lower(test_table.experiment_ids) {not_regexp} '(^(d)$)|(^(d),)|(,(d)$)|(,(d),)' {randomize} {limit_offset}""",
@@ -412,7 +412,7 @@ def test_get_stats_on_integer_metric(db_session):
     rows = get_stats_on_metrics(
         db_session,
         get_sample_table(),
-        [DesignSpecMetricRequest(metric_name="int_col", metric_pct_change=0.1)],
+        [DesignSpecMetricRequest(field_name="int_col", metric_pct_change=0.1)],
         AudienceSpec(
             participant_type="ignored",
             filters=[],
@@ -420,7 +420,7 @@ def test_get_stats_on_integer_metric(db_session):
     )
 
     expected = DesignSpecMetric(
-        metric_name="int_col",
+        field_name="int_col",
         metric_type=MetricType.NUMERIC,
         metric_baseline=41.666666666666664,
         metric_stddev=47.76563153100307,
@@ -429,7 +429,7 @@ def test_get_stats_on_integer_metric(db_session):
     assert len(rows) == 1
     actual = rows[0]
     numeric_fields = {"metric_baseline", "metric_stddev", "available_n"}
-    assert actual.metric_name == expected.metric_name
+    assert actual.field_name == expected.field_name
     assert actual.metric_type == expected.metric_type
     # PG: assertion would fail due to a float vs decimal.Decimal comparison.
     # RS: assertion would fail due to avg() on int types keeps them as integers.
@@ -443,7 +443,7 @@ def test_get_stats_on_boolean_metric(db_session):
     rows = get_stats_on_metrics(
         db_session,
         get_sample_table(),
-        [DesignSpecMetricRequest(metric_name="bool_col", metric_pct_change=0.1)],
+        [DesignSpecMetricRequest(field_name="bool_col", metric_pct_change=0.1)],
         AudienceSpec(
             participant_type="ignored",
             filters=[],
@@ -451,7 +451,7 @@ def test_get_stats_on_boolean_metric(db_session):
     )
 
     expected = DesignSpecMetric(
-        metric_name="bool_col",
+        field_name="bool_col",
         metric_type=MetricType.BINARY,
         metric_baseline=0.6666666666666666,
         metric_stddev=0.4714045207910317,
@@ -460,7 +460,7 @@ def test_get_stats_on_boolean_metric(db_session):
     assert len(rows) == 1
     actual = rows[0]
     numeric_fields = {"metric_baseline", "metric_stddev", "available_n"}
-    assert actual.metric_name == expected.metric_name
+    assert actual.field_name == expected.field_name
     assert actual.metric_type == expected.metric_type
     assert actual.model_dump(include=numeric_fields) == pytest.approx(
         expected.model_dump(include=numeric_fields)
@@ -471,7 +471,7 @@ def test_get_stats_on_numeric_metric(db_session):
     rows = get_stats_on_metrics(
         db_session,
         get_sample_table(),
-        [DesignSpecMetricRequest(metric_name="float_col", metric_pct_change=0.1)],
+        [DesignSpecMetricRequest(field_name="float_col", metric_pct_change=0.1)],
         AudienceSpec(
             participant_type="ignored",
             filters=[],
@@ -479,7 +479,7 @@ def test_get_stats_on_numeric_metric(db_session):
     )
 
     expected = DesignSpecMetric(
-        metric_name="float_col",
+        field_name="float_col",
         metric_type=MetricType.NUMERIC,
         metric_baseline=2.492,
         metric_stddev=0.6415751449882287,
@@ -488,7 +488,7 @@ def test_get_stats_on_numeric_metric(db_session):
     assert len(rows) == 1
     actual = rows[0]
     numeric_fields = {"metric_baseline", "metric_stddev", "available_n"}
-    assert actual.metric_name == expected.metric_name
+    assert actual.field_name == expected.field_name
     assert actual.metric_type == expected.metric_type
     # pytest.approx does a reasonable fuzzy comparison of floats for non-nested dictionaries.
     assert actual.model_dump(include=numeric_fields) == pytest.approx(

@@ -53,7 +53,7 @@ EXPERIMENT_IDS_SUFFIX = "experiment_ids"
 # 3. Analysis - TBD
 
 
-def validate_column_name(value: str, info: ValidationInfo) -> str:
+def validate_can_be_used_as_column_name(value: str, info: ValidationInfo) -> str:
     """Validates value is usable as a SQL column name."""
     if not isinstance(value, str):
         raise ValueError(f"{info.field_name} must be a string")  # noqa: TRY004
@@ -64,11 +64,11 @@ def validate_column_name(value: str, info: ValidationInfo) -> str:
     return value
 
 
-ColumnName = Annotated[
+FieldName = Annotated[
     str,
-    BeforeValidator(validate_column_name),
+    BeforeValidator(validate_can_be_used_as_column_name),
     Field(
-        json_schema_extra={"pattern": VALID_SQL_COLUMN_REGEX}, examples=["column_name"]
+        json_schema_extra={"pattern": VALID_SQL_COLUMN_REGEX}, examples=["field_name"]
     ),
 ]
 
@@ -78,7 +78,7 @@ class ApiBaseModel(BaseModel):
 
 
 class DataType(enum.StrEnum):
-    """Defines the supported data types for columns in the data source."""
+    """Defines the supported data types for fields in the data source."""
 
     BOOLEAN = "boolean"
     CHARACTER_VARYING = "character varying"
@@ -123,11 +123,11 @@ class DataType(enum.StrEnum):
             return DataType.DOUBLE_PRECISION
         raise ValueError(f"Unmatched type: {value}.")
 
-    def filter_class(self, column_name):
+    def filter_class(self, field_name):
         """Classifies a DataType into a filter class."""
         match self:
             # TODO: is this customer specific?
-            case _ if column_name.lower().endswith("_id"):
+            case _ if field_name.lower().endswith("_id"):
                 return DataTypeClass.DISCRETE
             case DataType.BOOLEAN | DataType.CHARACTER_VARYING:
                 return DataTypeClass.DISCRETE
@@ -205,8 +205,7 @@ class AudienceSpecFilter(ApiBaseModel):
     Note: CSV field comparisons are case-insensitive.
     """
 
-    # TODO(qixotic): rename this to column_name?
-    filter_name: ColumnName
+    field_name: FieldName
     relation: Relation
     value: (
         Sequence[Annotated[int, Field(strict=True)] | None]
@@ -217,7 +216,7 @@ class AudienceSpecFilter(ApiBaseModel):
     @model_validator(mode="after")
     def ensure_experiment_ids_hack_compatible(self) -> "AudienceSpecFilter":
         """Ensures that the filter is compatible with the "experiment_ids" hack."""
-        if not self.filter_name.endswith(EXPERIMENT_IDS_SUFFIX):
+        if not self.field_name.endswith(EXPERIMENT_IDS_SUFFIX):
             return self
         allowed_relations = (Relation.INCLUDES, Relation.EXCLUDES)
         if self.relation not in allowed_relations:
@@ -290,7 +289,7 @@ class MetricType(enum.StrEnum):
 class DesignSpecMetricBase(ApiBaseModel):
     """Base class for defining a metric to measure in the experiment."""
 
-    metric_name: ColumnName
+    field_name: FieldName
     metric_pct_change: Annotated[
         float | None,
         Field(description="Percent change target relative to the metric_baseline."),
@@ -368,8 +367,9 @@ class DesignSpecBase(ApiBaseModel):
     arms: Annotated[list[Arm], Field(..., min_length=2)]
 
     # strata as strings
-    # TODO(roboton): rename as strata_names?
-    strata_cols: list[ColumnName]
+    # TODO? If we ever need to accept other metadata about strata, migrate to a new "strata:"
+    #       field that takes a list of Stratum objects, akin to filters: and metrics:.
+    strata_field_names: list[FieldName]
 
     # stat parameters
     power: Annotated[float, Field(0.8, ge=0, le=1)]
@@ -477,7 +477,7 @@ class StrataType(enum.StrEnum):
 class Strata(ApiBaseModel):
     """Describes stratification for an experiment participant."""
 
-    strata_name: ColumnName
+    field_name: FieldName
     # TODO(roboton): Add in strata type, update tests to reflect this field, should be derived
     # from data warehouse.
     # strata_type: Optional[StrataType]
@@ -487,7 +487,7 @@ class Strata(ApiBaseModel):
 class Assignment(ApiBaseModel):
     """Describes treatment assignment for an experiment participant."""
 
-    # this references the column marked is_unique_id == TRUE in the configuration spreadsheet
+    # this references the field marked is_unique_id == TRUE in the configuration spreadsheet
     participant_id: str
     treatment_assignment: str
     strata: list[Strata]
@@ -526,7 +526,7 @@ class GetStrataResponseElement(ApiBaseModel):
     """Describes a stratification variable."""
 
     data_type: DataType
-    column_name: ColumnName
+    field_name: FieldName
     description: str
     # Extra fields will be stored here in case a user configured their worksheet with extra metadata for their own
     # downstream use, e.g. to group strata with a friendly identifier.
@@ -534,8 +534,7 @@ class GetStrataResponseElement(ApiBaseModel):
 
 
 class GetFiltersResponseBase(ApiBaseModel):
-    # TODO: Can we rename this to column_name for consistency with GetStrataResponseElement?
-    filter_name: Annotated[ColumnName, Field(..., description="Name of the column.")]
+    field_name: Annotated[FieldName, Field(..., description="Name of the field.")]
     data_type: DataType
     relations: list[Relation] = Field(..., min_length=1)
     description: str
@@ -566,7 +565,7 @@ class GetFiltersResponseDiscrete(GetFiltersResponseBase):
 class GetMetricsResponseElement(ApiBaseModel):
     """Describes a metric."""
 
-    column_name: ColumnName
+    field_name: FieldName
     data_type: DataType
     description: str
 
@@ -575,7 +574,6 @@ type GetFiltersResponseElement = GetFiltersResponseNumeric | GetFiltersResponseD
 type GetFiltersResponse = list[GetFiltersResponseElement]
 type GetMetricsResponse = list[GetMetricsResponseElement]
 type GetStrataResponse = list[GetStrataResponseElement]
-type PowerResponse = list[MetricAnalysis]
 
 
 class AssignRequest(ApiBaseModel):
@@ -583,12 +581,24 @@ class AssignRequest(ApiBaseModel):
     audience_spec: AudienceSpec
 
 
-class CommitRequest(ApiBaseModel):
-    design_spec: DesignSpec
-    audience_spec: AudienceSpec
-    experiment_assignment: AssignResponse
-
-
 class PowerRequest(ApiBaseModel):
     design_spec: DesignSpecForPower
     audience_spec: AudienceSpec
+
+
+class PowerResponse(ApiBaseModel):
+    analyses: list[MetricAnalysis]
+
+
+class CommitRequest(ApiBaseModel):
+    """The complete experiment configuration to persist in an experiment registry."""
+
+    design_spec: DesignSpec
+    audience_spec: AudienceSpec
+    power_analyses: Annotated[
+        PowerResponse | None,
+        Field(
+            description="Optionally include the power analyses of your tracking metrics if performed."
+        ),
+    ] = None
+    experiment_assignment: AssignResponse

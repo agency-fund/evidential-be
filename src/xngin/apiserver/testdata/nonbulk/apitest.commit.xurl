@@ -1,5 +1,5 @@
 POST http://localhost:8000/commit?user_id=commituser
-Config-ID: customer-test
+Datasource-ID: customer-test
 ```json
 {
   "design_spec": {
@@ -18,7 +18,7 @@ Config-ID: customer-test
     ],
     "start_date": "2024-11-06",
     "end_date": "2024-11-20",
-    "strata_cols": [
+    "strata_field_names": [
       "active_experiment_ids"
     ],
     "power": 0.8,
@@ -26,7 +26,7 @@ Config-ID: customer-test
     "fstat_thresh": 0.5,
     "metrics": [
       {
-        "metric_name": "chat_msgs_hour",
+        "field_name": "chat_msgs_hour",
         "metric_pct_change": 0.1
       }
     ]
@@ -35,12 +35,36 @@ Config-ID: customer-test
     "participant_type": "groups",
     "filters": [
       {
-        "filter_name": "is_onboarded",
+        "field_name": "is_onboarded",
         "relation": "includes",
         "value": [
           "TRUE"
         ]
       }
+    ]
+  },
+  "power_analyses": {
+      "analyses": [
+        {
+          "metric_spec": {
+            "field_name": "chat_msgs_hour",
+            "metric_pct_change": 0.1,
+            "metric_target": 0.1853794266441821,
+            "metric_type": "numeric",
+            "metric_baseline": 0.168526751494711,
+            "metric_stddev": 0.62489267825032,
+            "available_n": 100000
+          },
+          "available_n": 100000,
+          "target_n": 43168,
+          "sufficient_n": true,
+          "needed_target": null,
+          "msg": {
+            "type": "sufficient",
+            "msg": "There are 100000 units available to run your experiment and 43168.0 units are needed to meet your experimental design specs. There are enough units available, you only need 43168.0 of the 100000 units to meet your experimental design specs.",
+            "values": {}
+          }
+        }
     ]
   },
   "experiment_assignment": {
@@ -59,11 +83,11 @@ Config-ID: customer-test
         "treatment_assignment": "Treatment1",
         "strata": [
           {
-            "strata_name": "participants",
+            "field_name": "participants",
             "strata_value": "4"
           },
           {
-            "strata_name": "video_msgs_hour",
+            "field_name": "video_msgs_hour",
             "strata_value": "0"
           }
         ]

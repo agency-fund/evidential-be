@@ -1,4 +1,4 @@
-column_name,data_type,description,is_unique_id,column_group,is_filter,is_metric,is_strata,Extra Ad-Hoc Field
+field_name,data_type,description,is_unique_id,column_group,is_filter,is_metric,is_strata,Extra Ad-Hoc Field
 gender,character varying,Gender,,TODO,TRUE,,TRUE,adhoc1
 ethnicity,character varying,The ethnicity,,TODO,TRUE,,TRUE,adhoc2
 first_name,character varying,The first name,,,,,,adhoc3

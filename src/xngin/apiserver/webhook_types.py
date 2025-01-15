@@ -7,7 +7,12 @@ import uuid
 import httpx
 from pydantic import BaseModel, Field, field_serializer, model_validator, ConfigDict
 
-from xngin.apiserver.api_types import DesignSpec, AudienceSpec, AssignResponse
+from xngin.apiserver.api_types import (
+    DesignSpec,
+    AudienceSpec,
+    AssignResponse,
+    PowerResponse,
+)
 
 
 class WebhookBaseModel(BaseModel):
@@ -42,7 +47,7 @@ STANDARD_WEBHOOK_RESPONSES: dict[int, dict[str, Any]] = {
 }
 
 
-class WebhookRequestCommit(WebhookBaseModel):
+class WebhookCommitRequest(WebhookBaseModel):
     """Data model for experiment commit webhook payload."""
 
     experiment_commit_datetime: datetime = Field(
@@ -54,9 +59,10 @@ class WebhookRequestCommit(WebhookBaseModel):
         default_factory=uuid.uuid4,
     )
     creator_user_id: str = Field(description="ID of the user creating the experiment")
-    experiment_assignment: AssignResponse
     design_spec: DesignSpec
     audience_spec: AudienceSpec
+    power_analyses: PowerResponse | None = None
+    experiment_assignment: AssignResponse
 
     @field_serializer("experiment_commit_datetime", when_used="json")
     def serialize_dt(self, dt: datetime, _info):
@@ -64,7 +70,7 @@ class WebhookRequestCommit(WebhookBaseModel):
         return dt.isoformat()
 
 
-class UpdateTimestampsRequest(WebhookBaseModel):
+class WebhookUpdateTimestampsRequest(WebhookBaseModel):
     """Describes how to update an experiment's start and/or end dates."""
 
     experiment_id: uuid.UUID = Field(description="ID of the experiment to update.")
@@ -97,7 +103,7 @@ class ArmUpdate(WebhookBaseModel):
     )
 
 
-class UpdateDescriptionRequest(WebhookBaseModel):
+class WebhookUpdateDescriptionRequest(WebhookBaseModel):
     """Describes how to update an experiment description and/or the names of its arms."""
 
     experiment_id: uuid.UUID = Field(description="ID of the experiment to update.")
@@ -109,10 +115,10 @@ class UpdateDescriptionRequest(WebhookBaseModel):
     )
 
 
-class UpdateCommitRequest(WebhookBaseModel):
+class WebhookUpdateCommitRequest(WebhookBaseModel):
     """Request structure for supported types of experiment updates."""
 
-    update_json: UpdateTimestampsRequest | UpdateDescriptionRequest
+    update_json: WebhookUpdateTimestampsRequest | WebhookUpdateDescriptionRequest
 
 
 # TODO: as part of potential API endpoint revisions

@@ -14,24 +14,24 @@ from sqlalchemy import distinct
 from xngin.apiserver import database, exceptionhandlers, middleware, constants
 from xngin.apiserver.api_types import (
     DataTypeClass,
-    AssignResponse,
     GetFiltersResponseDiscrete,
     GetFiltersResponseNumeric,
     GetStrataResponseElement,
     GetMetricsResponseElement,
-    PowerResponse,
     GetStrataResponse,
     GetFiltersResponse,
     GetMetricsResponse,
-    AssignRequest,
-    CommitRequest,
     PowerRequest,
+    PowerResponse,
+    AssignRequest,
+    AssignResponse,
+    CommitRequest,
 )
 from xngin.apiserver.dependencies import (
     httpx_dependency,
     settings_dependency,
-    config_dependency,
     gsheet_cache,
+    datasource_config_required,
 )
 from xngin.apiserver.dwh.queries import get_stats_on_metrics, query_for_participants
 from xngin.apiserver.gsheet_cache import GSheetCache
@@ -42,17 +42,17 @@ from xngin.apiserver.settings import (
     WebhookUrl,
     get_settings_for_server,
     XnginSettings,
-    ClientConfig,
     infer_table,
+    DatasourceConfig,
 )
 from xngin.apiserver.utils import substitute_url
 from xngin.apiserver.webhook_types import (
     STANDARD_WEBHOOK_RESPONSES,
     UpdateExperimentDescriptionsRequest,
     UpdateExperimentStartEndRequest,
-    WebhookRequestCommit,
+    WebhookCommitRequest,
     WebhookResponse,
-    UpdateCommitRequest,
+    WebhookUpdateCommitRequest,
 )
 from xngin.sheets.config_sheet import (
     fetch_and_parse_sheet,
@@ -60,7 +60,6 @@ from xngin.sheets.config_sheet import (
 )
 from xngin.stats.assignment import assign_treatment
 from xngin.stats.power import check_power
-
 
 logging.basicConfig(
     level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
@@ -140,35 +139,34 @@ class CommonQueryParams:
 def get_strata(
     commons: Annotated[CommonQueryParams, Depends()],
     gsheets: Annotated[GSheetCache, Depends(gsheet_cache)],
-    client: Annotated[ClientConfig | None, Depends(config_dependency)] = None,
+    config: Annotated[DatasourceConfig, Depends(datasource_config_required)],
 ) -> GetStrataResponse:
     """Get possible strata covariates for a given unit type."""
-    config = require_config(client)
     participants = config.find_participants(commons.participant_type)
     config_sheet = fetch_worksheet(commons, config, gsheets)
-    strata_cols = {c.column_name: c for c in config_sheet.columns if c.is_strata}
+    strata_fields = {c.field_name: c for c in config_sheet.fields if c.is_strata}
 
     with config.dbsession() as session:
         sa_table = infer_table(
             session.get_bind(), participants.table_name, config.supports_reflection()
         )
-        db_schema = generate_column_descriptors(
-            sa_table, config_sheet.get_unique_id_col()
+        db_schema = generate_field_descriptors(
+            sa_table, config_sheet.get_unique_id_field()
         )
 
     return sorted(
         [
             GetStrataResponseElement(
-                data_type=db_schema.get(col_name).data_type,
-                column_name=col_name,
-                description=col_descriptor.description,
+                data_type=db_schema.get(field_name).data_type,
+                field_name=field_name,
+                description=field_descriptor.description,
                 # For strata columns, we will echo back any extra annotations
-                extra=col_descriptor.extra,
+                extra=field_descriptor.extra,
             )
-            for col_name, col_descriptor in strata_cols.items()
-            if db_schema.get(col_name)
+            for field_name, field_descriptor in strata_fields.items()
+            if db_schema.get(field_name)
         ],
-        key=lambda item: item.column_name,
+        key=lambda item: item.field_name,
     )
 
 
@@ -180,19 +178,18 @@ def get_strata(
 def get_filters(
     commons: Annotated[CommonQueryParams, Depends()],
     gsheets: Annotated[GSheetCache, Depends(gsheet_cache)],
-    client: Annotated[ClientConfig | None, Depends(config_dependency)] = None,
+    config: Annotated[DatasourceConfig, Depends(datasource_config_required)],
 ) -> GetFiltersResponse:
-    config = require_config(client)
     participants = config.find_participants(commons.participant_type)
     config_sheet = fetch_worksheet(commons, config, gsheets)
-    filter_cols = {c.column_name: c for c in config_sheet.columns if c.is_filter}
+    filter_fields = {c.field_name: c for c in config_sheet.fields if c.is_filter}
 
     with config.dbsession() as session:
         sa_table = infer_table(
             session.get_bind(), participants.table_name, config.supports_reflection()
         )
-        db_schema = generate_column_descriptors(
-            sa_table, config_sheet.get_unique_id_col()
+        db_schema = generate_field_descriptors(
+            sa_table, config_sheet.get_unique_id_field()
         )
 
         # TODO: implement caching, respecting commons.refresh
@@ -213,7 +210,7 @@ def get_filters(
                         ).scalars()
                     ]
                     return GetFiltersResponseDiscrete(
-                        filter_name=col_name,
+                        field_name=col_name,
                         data_type=db_col.data_type,
                         relations=filter_class.valid_relations(),
                         description=column_descriptor.description,
@@ -226,7 +223,7 @@ def get_filters(
                         ).where(sa_col.is_not(None))
                     ).first()
                     return GetFiltersResponseNumeric(
-                        filter_name=col_name,
+                        field_name=col_name,
                         data_type=db_col.data_type,
                         relations=filter_class.valid_relations(),
                         description=column_descriptor.description,
@@ -238,11 +235,11 @@ def get_filters(
 
         return sorted(
             [
-                mapper(col_name, col_descriptor)
-                for col_name, col_descriptor in filter_cols.items()
-                if db_schema.get(col_name)
+                mapper(field_name, field_descriptor)
+                for field_name, field_descriptor in filter_fields.items()
+                if db_schema.get(field_name)
             ],
-            key=lambda item: item.filter_name,
+            key=lambda item: item.field_name,
         )
 
 
@@ -254,20 +251,19 @@ def get_filters(
 def get_metrics(
     commons: Annotated[CommonQueryParams, Depends()],
     gsheets: Annotated[GSheetCache, Depends(gsheet_cache)],
-    client: Annotated[ClientConfig | None, Depends(config_dependency)] = None,
+    config: Annotated[DatasourceConfig, Depends(datasource_config_required)],
 ) -> GetMetricsResponse:
     """Get possible metrics for a given unit type."""
-    config = require_config(client)
     participants = config.find_participants(commons.participant_type)
     config_sheet = fetch_worksheet(commons, config, gsheets)
-    metric_cols = {c.column_name: c for c in config_sheet.columns if c.is_metric}
+    metric_cols = {c.field_name: c for c in config_sheet.fields if c.is_metric}
 
     with config.dbsession() as session:
         sa_table = infer_table(
             session.get_bind(), participants.table_name, config.supports_reflection()
         )
-        db_schema = generate_column_descriptors(
-            sa_table, config_sheet.get_unique_id_col()
+        db_schema = generate_field_descriptors(
+            sa_table, config_sheet.get_unique_id_field()
         )
 
     # Merge data type info above with the columns to be used as metrics:
@@ -275,13 +271,13 @@ def get_metrics(
         [
             GetMetricsResponseElement(
                 data_type=db_schema.get(col_name).data_type,
-                column_name=col_name,
+                field_name=col_name,
                 description=col_descriptor.description,
             )
             for col_name, col_descriptor in metric_cols.items()
             if db_schema.get(col_name)
         ],
-        key=lambda item: item.column_name,
+        key=lambda item: item.field_name,
     )
 
 
@@ -292,10 +288,9 @@ def get_metrics(
 )
 def check_power_api(
     body: PowerRequest,
-    client: Annotated[ClientConfig | None, Depends(config_dependency)] = None,
+    config: Annotated[DatasourceConfig, Depends(datasource_config_required)],
 ) -> PowerResponse:
     """Calculates statistical power given the PowerRequest details."""
-    config = require_config(client)
     participant = config.find_participants(body.audience_spec.participant_type)
 
     with config.dbsession() as session:
@@ -310,18 +305,20 @@ def check_power_api(
             body.audience_spec,
         )
 
-        return check_power(
-            metrics=metric_stats,
-            n_arms=len(body.design_spec.arms),
-            power=body.design_spec.power,
-            alpha=body.design_spec.alpha,
+        return PowerResponse(
+            analyses=check_power(
+                metrics=metric_stats,
+                n_arms=len(body.design_spec.arms),
+                power=body.design_spec.power,
+                alpha=body.design_spec.alpha,
+            )
         )
 
 
 @app.post(
     "/assign",
     summary="Assign treatment given experiment and audience specification.",
-    tags=["Experiment Management"],
+    tags=["Experiment Design"],
 )
 def assign_treatment_api(
     body: AssignRequest,
@@ -329,7 +326,7 @@ def assign_treatment_api(
         int, Query(..., description="Number of participants to assign.")
     ],
     gsheets: Annotated[GSheetCache, Depends(gsheet_cache)],
-    client: Annotated[ClientConfig | None, Depends(config_dependency)] = None,
+    config: Annotated[DatasourceConfig, Depends(datasource_config_required)],
     refresh: Annotated[bool, Query(description="Refresh the cache.")] = False,
     random_state: Annotated[
         int | None,
@@ -339,7 +336,6 @@ def assign_treatment_api(
         ),
     ] = None,
 ) -> AssignResponse:
-    config = require_config(client)
     participant = config.find_participants(body.audience_spec.participant_type)
     config_sheet = fetch_worksheet(
         CommonQueryParams(
@@ -348,7 +344,7 @@ def assign_treatment_api(
         config,
         gsheets,
     )
-    unique_id_col = config_sheet.get_unique_id_col()
+    unique_id_col = config_sheet.get_unique_id_field()
 
     with config.dbsession() as session:
         sa_table = infer_table(
@@ -359,11 +355,11 @@ def assign_treatment_api(
         )
 
     arm_names = [arm.arm_name for arm in body.design_spec.arms]
-    metric_names = [m.metric_name for m in body.design_spec.metrics]
+    metric_names = [m.field_name for m in body.design_spec.metrics]
     return assign_treatment(
         sa_table=sa_table,
         data=participants,
-        stratum_cols=body.design_spec.strata_cols + metric_names,
+        stratum_cols=body.design_spec.strata_field_names + metric_names,
         id_col=unique_id_col,
         arm_names=arm_names,
         experiment_id=str(body.design_spec.experiment_id),
@@ -377,7 +373,7 @@ def assign_treatment_api(
     "/assignment-file",
     summary="Retrieve all participant assignments for the given experiment_id.",
     responses=STANDARD_WEBHOOK_RESPONSES,
-    tags=["Experiment Management"],
+    tags=["Experiment Management Webhooks"],
 )
 async def assignment_file(
     response: Response,
@@ -386,17 +382,18 @@ async def assignment_file(
         Query(description="ID of the experiment whose assignments we wish to fetch."),
     ],
     http_client: Annotated[httpx.AsyncClient, Depends(httpx_dependency)],
-    client: Annotated[ClientConfig | None, Depends(config_dependency)] = None,
+    config: Annotated[DatasourceConfig, Depends(datasource_config_required)],
 ) -> WebhookResponse:
-    config = require_config(client).webhook_config
-    action = config.actions.assignment_file
+    # TODO: this will break on configs that don't have a webhook_config
+    webhook_config = config.webhook_config
+    action = webhook_config.actions.assignment_file
     if action is None:
         # TODO: read from internal storage if webhooks are not defined.
         raise HTTPException(501, "Action 'assignment_file' not configured.")
 
     url = substitute_url(action.url, {"experiment_id": experiment_id})
     response.status_code, payload = await make_webhook_request_base(
-        http_client, config, method=action.method, url=url
+        http_client, webhook_config, method=action.method, url=url
     )
     return payload
 
@@ -405,30 +402,31 @@ async def assignment_file(
     "/commit",
     summary="Commit an experiment to the database.",
     responses=STANDARD_WEBHOOK_RESPONSES,
-    tags=["Experiment Management"],
+    tags=["Experiment Management Webhooks"],
 )
 async def commit_experiment(
     response: Response,
     body: CommitRequest,
     user_id: Annotated[str, Query(...)],
     http_client: Annotated[httpx.AsyncClient, Depends(httpx_dependency)],
-    client: Annotated[ClientConfig | None, Depends(config_dependency)] = None,
+    config: Annotated[DatasourceConfig, Depends(datasource_config_required)],
 ) -> WebhookResponse:
-    config = require_config(client).webhook_config
-    action = config.actions.commit
+    # TODO: this will break on configs that don't have a webhook_config
+    webhook_config = config.webhook_config
+    action = webhook_config.actions.commit
     if action is None:
-        # TODO: write to internal storage if webhooks are not defined.
         raise HTTPException(501, "Action 'commit' not configured.")
 
-    commit_payload = WebhookRequestCommit(
+    commit_payload = WebhookCommitRequest(
         creator_user_id=user_id,
-        experiment_assignment=body.experiment_assignment,
         design_spec=body.design_spec,
         audience_spec=body.audience_spec,
+        power_analyses=body.power_analyses,
+        experiment_assignment=body.experiment_assignment,
     )
 
     response.status_code, payload = await make_webhook_request(
-        http_client, config, action, commit_payload
+        http_client, webhook_config, action, commit_payload
     )
     return payload
 
@@ -437,30 +435,30 @@ async def commit_experiment(
     "/update-commit",
     summary="Update an existing experiment's timestamps or description (experiment and arms)",
     responses=STANDARD_WEBHOOK_RESPONSES,
-    tags=["Experiment Management"],
+    tags=["Experiment Management Webhooks"],
 )
 async def update_experiment(
     response: Response,
-    body: UpdateCommitRequest,
+    body: WebhookUpdateCommitRequest,
     update_type: Annotated[
         Literal["timestamps", "description"],
         Query(description="The type of experiment metadata update to perform"),
     ],
     http_client: Annotated[httpx.AsyncClient, Depends(httpx_dependency)],
-    client: Annotated[ClientConfig | None, Depends(config_dependency)] = None,
+    config: Annotated[DatasourceConfig, Depends(datasource_config_required)],
 ) -> WebhookResponse:
-    config = require_config(client).webhook_config
-    action = None
-    if update_type == "timestamps":
-        action = config.actions.update_timestamps
-    elif update_type == "description":
-        action = config.actions.update_description
-    if action is None:
-        # TODO: write to internal storage if webhooks are not defined.
+    webhook_config = config.webhook_config
+    if webhook_config is None:
+        raise HTTPException(501, "Webhook not configured.")
+    if update_type == "timestamps" and webhook_config.actions.update_timestamps:
+        action = webhook_config.actions.update_timestamps
+    elif update_type == "description" and webhook_config.actions.update_description:
+        action = webhook_config.actions.update_description
+    else:
         raise HTTPException(501, f"Action '{update_type}' not configured.")
     # Need to pull out the upstream server payload:
     response.status_code, payload = await make_webhook_request(
-        http_client, config, action, body.update_json
+        http_client, webhook_config, action, body.update_json
     )
     return payload
 
@@ -469,7 +467,7 @@ async def update_experiment(
     "/experiment/{experiment_id}",
     summary="Update an existing experiment. (limited update capabilities)",
     responses=STANDARD_WEBHOOK_RESPONSES,
-    tags=["WIP New API"],
+    tags=["Experimental"],
 )
 async def alt_update_experiment(
     response: Response,
@@ -479,20 +477,22 @@ async def alt_update_experiment(
         Path(description="The ID of the experiment to update.", alias="experiment_id"),
     ],
     http_client: Annotated[httpx.AsyncClient, Depends(httpx_dependency)],
-    client: Annotated[ClientConfig | None, Depends(config_dependency)] = None,
+    config: Annotated[DatasourceConfig, Depends(datasource_config_required)],
 ) -> WebhookResponse:
-    config = require_config(client).webhook_config
-    # TODO: write to internal storage if no webhook_config
-    action = None
-    if body.update_type == "timestamps":
-        action = config.actions.update_timestamps
-    elif body.update_type == "description":
-        action = config.actions.update_description
-    if action is None:
-        raise HTTPException(501, f"Action for '{body.update_type}' not configured.")
+    webhook_config = config.webhook_config
+    if webhook_config is None:
+        raise HTTPException(501, "Webhook not configured.")
+    if body.update_type == "timestamps" and webhook_config.actions.update_timestamps:
+        action = webhook_config.actions.update_timestamps
+    elif (
+        body.update_type == "description" and webhook_config.actions.update_description
+    ):
+        action = webhook_config.actions.update_description
+    else:
+        raise HTTPException(501, f"Action '{body.update_type}' not configured.")
     # TODO: use the experiment_id in an upstream url
     response.status_code, payload = await make_webhook_request(
-        http_client, config, action, body
+        http_client, webhook_config, action, body
     )
     return payload
 
@@ -575,15 +575,6 @@ def debug_settings(
     return response
 
 
-def require_config(client: ClientConfig | None):
-    """Raises an exception unless we have a usable ClientConfig available."""
-    if not client:
-        raise HTTPException(
-            404, "Configuration for the requested client was not found."
-        )
-    return client.config
-
-
 def fetch_worksheet(
     commons: CommonQueryParams, config: ParticipantsMixin, gsheets: GSheetCache
 ):
@@ -596,14 +587,14 @@ def fetch_worksheet(
     )
 
 
-def generate_column_descriptors(table: sqlalchemy.Table, unique_id_col: str):
+def generate_field_descriptors(table: sqlalchemy.Table, unique_id_col: str):
     """Fetches a map of column name to ConfigWorksheet column metadata.
 
     Uniqueness of the values in the column unique_id_col is assumed, not verified!
     """
     return {
-        c.column_name: c
-        for c in create_configworksheet_from_table(table, unique_id_col).columns
+        c.field_name: c
+        for c in create_configworksheet_from_table(table, unique_id_col).fields
     }
 
 
