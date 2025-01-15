@@ -22,7 +22,7 @@ from sqlalchemy.exc import NoSuchTableError
 from sqlalchemy.orm import Session
 
 from xngin.apiserver.settings_secrets import replace_secrets
-from xngin.sqlite_extensions import NumpyStddev
+from xngin.db_extensions import NumpyStddev
 
 DEFAULT_SETTINGS_FILE = "xngin.settings.json"
 
