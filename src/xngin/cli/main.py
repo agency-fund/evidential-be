@@ -15,6 +15,7 @@ import pandas_gbq
 import psycopg2
 import sqlalchemy
 import typer
+from xngin.sheets.gsheets import GSheetsPermissionError
 import zstandard
 from gspread import GSpreadException
 from gspread.worksheet import CellFormat
@@ -427,11 +428,9 @@ def parse_config_spreadsheet(
     except GSpreadException as gse:
         err_console.print(gse)
         raise typer.Exit(1) from gse
-    except PermissionError as pe:
-        if isinstance(pe.__cause__, gspread.exceptions.APIError):
-            err_console.print("You do not have permission to open this spreadsheet.")
-            raise typer.Exit(1) from pe
-        raise
+    except GSheetsPermissionError as pe:
+        err_console.print("You do not have permission to open this spreadsheet.")
+        raise typer.Exit(1) from pe
     except InvalidSheetError as ise:
         err_console.print(f"Error(s):\n{ise}")
         raise typer.Exit(1) from ise
