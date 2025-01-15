@@ -31,28 +31,26 @@ class Random(FunctionElement):
 
 
 def deterministic_random(element):
+    """Helper to implement a deterministic random."""
     if element.sa_table is None:
         raise ValueError(
             "our_random requires sa_table= to be an inspectable table-like entity."
         )
     meta = inspect(element.sa_table)
     if len(meta.primary_key) == 1:
-        return ", ".join(
-            str(c)
-            for c in sorted((c for c in meta.primary_key.columns), key=lambda c: c.name)
-        )
-    return ", ".join(
-        str(c) for c in sorted((c for c in meta.columns), key=lambda c: c.name)
-    )
+        columns = (c for c in meta.primary_key.columns)
+    else:
+        columns = (c for c in meta.columns)
+    return ", ".join(str(c) for c in sorted(columns, key=lambda c: c.name))
 
 
 @compiler.compiles(Random)
-def our_random(element, _compiler, **_kw):
+def _default_random(element, _compiler, **_kw):
     """Generates RANDOM()."""
     if USE_DETERMINISTIC_RANDOM:
         return deterministic_random(element)
 
-    return "RANDOM()"
+    return "random()"
 
 
 @compiler.compiles(Random, "bigquery")
@@ -61,7 +59,7 @@ def _bq_random(element, _compiler, **_kw):
     if USE_DETERMINISTIC_RANDOM:
         return deterministic_random(element)
     # https://cloud.google.com/bigquery/docs/reference/standard-sql/mathematical_functions#rand
-    return "RAND()"
+    return "rand()"
 
 
 @compiler.compiles(stddev_pop, "mysql")

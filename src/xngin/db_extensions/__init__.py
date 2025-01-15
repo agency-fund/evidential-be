@@ -1,3 +1,3 @@
-from xngin.db_extensions.custom_functions import NumpyStddev, stddev_pop, our_random
+from xngin.db_extensions.custom_functions import NumpyStddev, stddev_pop, Random
 
-__all__ = ["NumpyStddev", "our_random", "stddev_pop"]
+__all__ = ["NumpyStddev", "Random", "stddev_pop"]
