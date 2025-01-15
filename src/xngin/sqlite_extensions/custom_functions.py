@@ -34,6 +34,12 @@ def our_random(sa_table=None):
     return func.random()
 
 
+@compiler.compiles(our_random, "bigquery")
+def _bq_random(_element, _compiler, **_kw):
+    # https://cloud.google.com/bigquery/docs/reference/standard-sql/mathematical_functions#rand
+    return "RAND()"
+
+
 @compiler.compiles(stddev_pop, "mysql")
 @compiler.compiles(stddev_pop, "postgresql")
 def _std_default(element, compiler, **_kw):
