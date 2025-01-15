@@ -16,7 +16,7 @@ from xngin.apiserver.dependencies import settings_dependency, xngin_db_session
 from xngin.apiserver.models import tables
 from xngin.apiserver.settings import XnginSettings, SettingsForTesting
 from xngin.apiserver.testing import testing_dwh
-from xngin.sqlite_extensions import custom_functions
+from xngin.db_extensions import custom_functions
 
 logger = logging.getLogger(__name__)
 

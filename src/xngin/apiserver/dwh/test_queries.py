@@ -22,7 +22,7 @@ from xngin.apiserver.dwh.queries import (
     get_stats_on_metrics,
     make_csv_regex,
 )
-from xngin.sqlite_extensions.custom_functions import NumpyStddev
+from xngin.db_extensions.custom_functions import NumpyStddev
 
 
 class Base(DeclarativeBase):

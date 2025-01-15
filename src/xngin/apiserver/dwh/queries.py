@@ -24,7 +24,7 @@ from xngin.apiserver.api_types import (
     EXPERIMENT_IDS_SUFFIX,
     DesignSpecMetric,
 )
-from xngin.sqlite_extensions import custom_functions
+from xngin.db_extensions import custom_functions
 
 
 def get_stats_on_metrics(
