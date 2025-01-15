@@ -160,6 +160,6 @@ def compose_query(sa_table: Table, chosen_n: int, filters):
     return (
         select(sa_table)
         .filter(*filters)
-        .order_by(custom_functions.our_random(sa_table))
+        .order_by(custom_functions.Random(sa_table=sa_table))
         .limit(chosen_n)
     )
