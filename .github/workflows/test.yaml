@@ -156,6 +156,7 @@ jobs:
           curl -v --fail-with-body \
             -H "Config-ID: gha-bq" \
             -H "Accept: application/json" \
+            -H "Content-Type: application/json" \
             -X POST "http://localhost:8000/assign?chosen_n=40&random_state=42" \
             -d '{
               "design_spec": {
