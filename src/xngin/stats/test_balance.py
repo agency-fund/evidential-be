@@ -71,10 +71,8 @@ def test_check_balance_with_column_exclusion_from_dummy_var_generation():
       Bin labels must be one fewer than the number of bin edges
     """
     data = {
-        "treat": [0, 1, 0, 0, 1, 1, 1, 1, 1, 1,
-                  1, 1, 0, 1, 0, 1, 0, 0, 0, 0],
-        "int64": [0, 1, 0, 1, 0, 1, 0, 1, 0, 1,
-                  1, 0, 0, 0, 1, 0, 0, 1, 1, 1],
+        "treat": [0, 1, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 0, 1, 0, 1, 0, 0, 0, 0],
+        "int64": [0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 1, 0, 0, 0, 1, 0, 0, 1, 1, 1],
         "index": [None, *range(0, 19)],
         "sindex": [str(i) for i in range(0, 20)],
     }
@@ -115,7 +113,7 @@ def test_check_balance_with_mostly_nulls_categorical():
         "treat": [0, 0, 0, 0, 0, 1, 1, 1, 1, 1] * 2,
         "int64": [0, 1, 0, 1, 0, 1, 0, 1, 0, 1] * 2,
         "float": np.random.uniform(size=20),
-        "nulls": [None] * 16 + ["a", "b"]  * 2,
+        "nulls": [None] * 16 + ["a", "b"] * 2,
     }
     df = pd.DataFrame(data)
     result = check_balance(df)
