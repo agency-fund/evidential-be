@@ -71,16 +71,18 @@ def test_check_balance_with_column_exclusion_from_dummy_var_generation():
       Bin labels must be one fewer than the number of bin edges
     """
     data = {
-        "treat": [0, 0, 0, 0, 0, 1, 1, 1, 1, 1],
-        "int64": [0, 1, 0, 1, 0, 1, 0, 1, 0, 1],
-        "index": [None, *range(0, 9)],
-        "sindex": [str(i) for i in range(0, 10)],
+        "treat": [0, 1, 0, 0, 1, 1, 1, 1, 1, 1,
+                  1, 1, 0, 1, 0, 1, 0, 0, 0, 0],
+        "int64": [0, 1, 0, 1, 0, 1, 0, 1, 0, 1,
+                  1, 0, 0, 0, 1, 0, 0, 1, 1, 1],
+        "index": [None, *range(0, 19)],
+        "sindex": [str(i) for i in range(0, 20)],
     }
     df = pd.DataFrame(data)
     result = check_balance(df, exclude_cols=["index", "sindex"])
 
     assert result.numerator_df == 1
-    assert result.denominator_df == 8
+    assert result.denominator_df == 18
     assert result.is_balanced is True
     assert result.model_summary is not None
 
@@ -91,8 +93,8 @@ def test_check_balance_with_skewed_column():
       Bin labels must be one fewer than the number of bin edges
     """
     data = {
-        "treat": [0, 0, 0, 0, 1, 1, 1, 1, 0, 1],
-        "skews": [0, 0, 0, 0, 0, 0, 4, 4, np.nan, np.nan],
+        "treat": [0, 0, 0, 0, 1, 1, 1, 1, 0, 1] * 2,
+        "skews": [0, 0, 0, 0, 0, 0, 4, 4, np.nan, np.nan] * 2,
     }
     df = pd.DataFrame(data)
     result = check_balance(df)
@@ -110,10 +112,10 @@ def test_check_balance_with_mostly_nulls_categorical():
     induce dropped rows in the ols).
     """
     data = {
-        "treat": [0, 0, 0, 0, 0, 1, 1, 1, 1, 1],
-        "int64": [0, 1, 0, 1, 0, 1, 0, 1, 0, 1],
-        "float": np.random.uniform(size=10),
-        "nulls": [None] * 8 + ["a", "b"],
+        "treat": [0, 0, 0, 0, 0, 1, 1, 1, 1, 1] * 2,
+        "int64": [0, 1, 0, 1, 0, 1, 0, 1, 0, 1] * 2,
+        "float": np.random.uniform(size=20),
+        "nulls": [None] * 16 + ["a", "b"]  * 2,
     }
     df = pd.DataFrame(data)
     result = check_balance(df)
