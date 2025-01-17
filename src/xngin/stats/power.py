@@ -111,6 +111,7 @@ def analyze_metric_power(
                 needed_target = np.sin(arcsin_p2 / 2) ** 2
 
             analysis.needed_target = needed_target
+            analysis.pct_change_possible = needed_target / metric.metric_baseline - 1.0
             # TODO(roboton): Consider adding another message for localization:
             # # note: not an f-string
             # source_msg="There are {available_n} units available... {target_n} units are needed... {target_n} ...",

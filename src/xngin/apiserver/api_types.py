@@ -433,8 +433,7 @@ class MetricAnalysis(ApiBaseModel):
     # value and % change from baseline.
     # TODO? Rename target_possible and pct_change_possible
     needed_target: float | None = None
-    # TODO: add compute the equivalent % change
-    # metric_pct_change_possible: float | None = None
+    pct_change_possible: float | None = None
 
     msg: Annotated[
         MetricAnalysisMessage | None,
