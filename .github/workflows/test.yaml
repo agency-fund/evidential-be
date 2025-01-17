@@ -54,6 +54,8 @@ jobs:
       - name: pytest integration tests
         if: startsWith(matrix.os, 'ubuntu-')
         run: |
+          # used by the sqlalchemy bigquery driver in some integration tests
+          export GOOGLE_APPLICATION_CREDENTIALS=$HOME/.config/gspread/service_account.json
           set -x
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends retry
