@@ -55,7 +55,6 @@ Datasource-ID: customer-test
             "metric_stddev": 0.62489267825032,
             "available_n": 100000
           },
-          "available_n": 100000,
           "target_n": 43168,
           "sufficient_n": true,
           "needed_target": null,

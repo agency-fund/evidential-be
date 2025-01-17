@@ -412,8 +412,6 @@ class MetricAnalysis(ApiBaseModel):
 
     # Store the original request+baseline info here
     metric_spec: DesignSpecMetric
-    # TODO: Remove available_n as it's redundant with the metric_spec.
-    available_n: int
 
     # The initial result of the power calculation
     target_n: Annotated[

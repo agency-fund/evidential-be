@@ -54,7 +54,6 @@ HTTP 200
 {
   "analyses": [
     {
-      "available_n": 39405,
       "metric_spec": {
         "available_n": 39405,
         "metric_baseline": 26333.628738429015,
@@ -74,7 +73,6 @@ HTTP 200
       "target_n": 210
     },
     {
-      "available_n": 39405,
       "metric_spec": {
         "available_n": 39405,
         "metric_baseline": 30898.867656825856,
@@ -94,7 +92,6 @@ HTTP 200
       "target_n": 238
     },
     {
-      "available_n": 39405,
       "metric_spec": {
         "available_n": 39405,
         "metric_baseline": 0.20913589645984013,

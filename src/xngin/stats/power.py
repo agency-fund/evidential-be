@@ -33,7 +33,7 @@ def analyze_metric_power(
     if metric.metric_target is None:
         metric.metric_target = metric.metric_baseline * (1 + metric.metric_pct_change)
 
-    analysis = MetricAnalysis(metric_spec=metric, available_n=metric.available_n)
+    analysis = MetricAnalysis(metric_spec=metric)
 
     # Case A: Both target and baseline defined - calculate required n
     if metric.metric_target is not None and metric.metric_baseline is not None:

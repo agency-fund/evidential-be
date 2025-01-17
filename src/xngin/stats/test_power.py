@@ -24,7 +24,7 @@ def test_analyze_metric_power_numeric():
     assert result.metric_spec.metric_type == MetricType.NUMERIC
     assert result.metric_spec.metric_baseline == 100
     assert result.metric_spec.metric_target == 110
-    assert result.available_n == 1000
+    assert result.metric_spec.available_n == 1000
     assert result.target_n == 128.0
     assert result.sufficient_n
     assert result.msg is not None
