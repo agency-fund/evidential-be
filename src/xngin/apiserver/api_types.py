@@ -310,8 +310,12 @@ class DesignSpecMetric(DesignSpecMetricBase):
         MetricType | None, Field(description="Inferred from dwh type.")
     ] = None
     metric_baseline: float | None = None
-    # TODO(roboton): we should only set this value if metric_type is NUMERIC
-    metric_stddev: float | None = None
+    metric_stddev: Annotated[
+        float | None,
+        Field(
+            description="Standard deviation is set only for metric_type.NUMERIC metrics."
+        ),
+    ] = None
     available_n: int | None = None
 
 

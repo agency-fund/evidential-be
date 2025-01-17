@@ -72,7 +72,8 @@ def get_stats_on_metrics(
     for metric in metrics_to_return:
         field_name = metric.field_name
         metric.metric_baseline = stats[f"{field_name}__mean"]
-        metric.metric_stddev = stats[f"{field_name}__stddev"]
+        if metric.metric_type is MetricType.NUMERIC:
+            metric.metric_stddev = stats[f"{field_name}__stddev"]
         metric.available_n = stats[f"{field_name}__count"]
 
     return metrics_to_return
