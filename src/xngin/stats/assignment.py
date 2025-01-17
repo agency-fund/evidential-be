@@ -11,6 +11,7 @@ from stochatreat import stochatreat
 from xngin.apiserver.api_types import (
     AssignResponse,
     Assignment,
+    BalanceCheck,
     Strata,
 )
 from xngin.stats.balance import check_balance
@@ -110,11 +111,13 @@ def assign_treatment(
 
     # Return the ExperimentAssignment with the list of participants
     return AssignResponse(
-        f_statistic=np.round(balance_check.f_statistic, 9),
-        numerator_df=round(balance_check.numerator_df),
-        denominator_df=round(balance_check.denominator_df),
-        p_value=np.round(balance_check.f_pvalue, 9),
-        balance_ok=balance_check.f_pvalue > fstat_thresh,
+        balance=BalanceCheck(
+            f_statistic=np.round(balance_check.f_statistic, 9),
+            numerator_df=round(balance_check.numerator_df),
+            denominator_df=round(balance_check.denominator_df),
+            p_value=np.round(balance_check.f_pvalue, 9),
+            balance_ok=balance_check.f_pvalue > fstat_thresh,
+        ),
         experiment_id=UUID(experiment_id),
         description=description,
         sample_size=len(df),

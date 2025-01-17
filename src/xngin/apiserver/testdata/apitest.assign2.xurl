@@ -764,14 +764,15 @@ HTTP 200
       "treatment_assignment": "Control"
     }
   ],
-  "balance_ok": false,
-  "denominator_df": 36,
-  "description": "Test a duplicate column name shared in strata_field_names and metrics",
+  "balance": {
+    "balance_ok": false,
+    "denominator_df": 36,
+    "f_statistic": 2.180416775,
+    "numerator_df": 3,
+    "p_value": 0.107230543
+  },
   "experiment_id": "0897bbd7-dacd-41b4-b164-7a1950fa61f2",
-  "f_statistic": 2.180416775,
   "id_col": "id",
-  "numerator_df": 3,
-  "p_value": 0.107230543,
   "sample_size": 40
 }
 ```

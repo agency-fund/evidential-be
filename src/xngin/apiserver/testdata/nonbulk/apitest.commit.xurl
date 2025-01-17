@@ -67,11 +67,13 @@ Datasource-ID: customer-test
     ]
   },
   "experiment_assignment": {
-    "f_statistic": 1.1153,
-    "numerator_df": 523,
-    "denominator_df": 476,
-    "p_value": 0.1121,
-    "balance_ok": false,
+    "balance": {
+      "f_statistic": 1.1153,
+      "numerator_df": 523,
+      "denominator_df": 476,
+      "p_value": 0.1121,
+      "balance_ok": false
+    },
     "experiment_id": "df6456bf-09c5-4d7f-82f1-75679db54477",
     "description": "Sample experiment description.",
     "sample_size": 1000,

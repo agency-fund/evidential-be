@@ -481,7 +481,7 @@ class Assignment(ApiBaseModel):
 class BalanceCheck(ApiBaseModel):
     """Describes balance test results for treatment assignment."""
 
-    f_stat: float
+    f_statistic: float
     numerator_df: int
     denominator_df: int
     p_value: float
@@ -491,12 +491,7 @@ class BalanceCheck(ApiBaseModel):
 class AssignResponse(ApiBaseModel):
     """Describes assignments for all participants and balance test results."""
 
-    # TODO(roboton): remove next 5 fields in favor of BalanceCheck object
-    f_statistic: float
-    numerator_df: int
-    denominator_df: int
-    p_value: float
-    balance_ok: bool
+    balance: BalanceCheck
 
     # TODO(roboton): should we include design_spec and audience_spec in this object
     experiment_id: uuid.UUID
