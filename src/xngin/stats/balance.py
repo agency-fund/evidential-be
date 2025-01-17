@@ -40,6 +40,32 @@ def check_balance(
     Returns:
         BalanceResult object containing test results
     """
+    df_analysis, exclude_set = preprocess_for_balance_check(
+        data, exclude_cols, quantiles
+    )
+
+    return check_balance_of_preprocessed_df(
+        df_analysis=df_analysis,
+        treatment_col=treatment_col,
+        exclude_col_set=exclude_set,
+        alpha=alpha,
+        missing_string=missing_string,
+    )
+
+
+def preprocess_for_balance_check(data, exclude_cols, quantiles):
+    """
+    Preprocess data to quantize numerics and handle NaNs
+
+    Args:
+        data: DataFrame containing treatment assignments and covariates
+        exclude_cols: List of columns to exclude from balance check
+        quantiles: Number of quantiles to bucket numeric columns with NAs
+
+    Returns tuple:
+       df_analysis: processed df
+       exclude_set: column names to exclude from stratification and balance checks
+    """
     # Create copy of data for analysis
     df_analysis = data.copy()
 
@@ -50,9 +76,9 @@ def check_balance(
     exclude_set.union(single_value_cols)
 
     # Handle missing values in numeric columns by converting to quartiles
-    cols_with_missing = df_analysis.columns[df_analysis.isnull().any()]
+    cols_with_missing_values = df_analysis.columns[df_analysis.isnull().any()]
     numeric_columns_with_na = [
-        c for c in cols_with_missing if is_numeric_dtype(df_analysis[c])
+        c for c in cols_with_missing_values if is_numeric_dtype(df_analysis[c])
     ]
     for col in set(numeric_columns_with_na) - exclude_set:
         labels = pd.qcut(
@@ -64,8 +90,9 @@ def check_balance(
             labels=False,
         )
         new_col = f"{col}_quantile"
-        # Since there are NaNs, labels will be dtype=float64. To avoid bugs later due to dummy var naming, first
-        # replace NaNs with an integer beyond the number of buckets, then *convert to int*, and finally a category.
+        # Since there are NaNs, labels will be dtype=float64. To avoid bugs later due to dummy var
+        # naming, first replace NaNs with an integer beyond the number of buckets, then *convert to
+        # int*, and finally a category.
         df_analysis[new_col] = pd.Series(
             np.nan_to_num(labels, nan=quantiles).astype("int8"), dtype="category"
         )
@@ -78,11 +105,27 @@ def check_balance(
         )
         df_analysis.drop(columns=[col], inplace=True)
 
+    return df_analysis, exclude_set
+
+
+def check_balance_of_preprocessed_df(
+    df_analysis: pd.DataFrame,
+    treatment_col: str = "treat",
+    exclude_col_set: set[str] | None = None,
+    alpha: float = 0.5,
+    missing_string="__NULL__",
+) -> BalanceResult:
+    """
+    See check_balance(). Assumes the df and exclude_col_set came from preprocess_for_balance_check.
+    """
+    # Create copy of data for analysis
+    df_analysis = df_analysis.copy()
+
     # Now convert all non-numeric columns into dummy vars as well
     non_numeric_columns = [
         c for c in df_analysis.columns if not is_numeric_dtype(df_analysis[c])
     ]
-    for col in set(non_numeric_columns) - exclude_set:
+    for col in set(non_numeric_columns) - exclude_col_set:
         if df_analysis[col].isnull().any():
             df_analysis.fillna({col: missing_string}, inplace=True)
         df_analysis = pd.get_dummies(
@@ -97,7 +140,7 @@ def check_balance(
     covariates = [
         col
         for col in df_analysis.columns
-        if col != treatment_col and col not in exclude_set
+        if col != treatment_col and col not in exclude_col_set
     ]
 
     # TODO(roboton): Run multi-class regression via MVLogit
