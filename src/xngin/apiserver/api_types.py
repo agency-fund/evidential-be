@@ -431,9 +431,18 @@ class MetricAnalysis(ApiBaseModel):
 
     # If insufficient sample size, tell the user what metric value their n does let them possibly detect as an absolute
     # value and % change from baseline.
-    # TODO? Rename target_possible and pct_change_possible
-    needed_target: float | None = None
-    pct_change_possible: float | None = None
+    target_possible: Annotated[
+        float | None,
+        Field(
+            description="If there is an insufficient sample size to meet the desired metric_target, we report what is possible given the available_n. This value is equivalent to the relative pct_change_possible."
+        ),
+    ] = None
+    pct_change_possible: Annotated[
+        float | None,
+        Field(
+            description="If there is an insufficient sample size to meet the desired metric_pct_change, we report what is possible given the available_n. This value is equivalent to the absolute target_possible."
+        ),
+    ] = None
 
     msg: Annotated[
         MetricAnalysisMessage | None,

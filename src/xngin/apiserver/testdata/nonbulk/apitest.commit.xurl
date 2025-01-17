@@ -57,7 +57,7 @@ Datasource-ID: customer-test
           },
           "target_n": 43168,
           "sufficient_n": true,
-          "needed_target": null,
+          "target_possible": null,
           "msg": {
             "type": "sufficient",
             "msg": "There are 100000 units available to run your experiment and 43168.0 units are needed to meet your experimental design specs. There are enough units available, you only need 43168.0 of the 100000 units to meet your experimental design specs.",

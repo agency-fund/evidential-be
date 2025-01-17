@@ -47,7 +47,7 @@ def test_analyze_metric_power_binary():
     assert result.target_n == 3132
     # Given the available_n, here's the best we can do (cross-checked with R's power.prop.test):
     # (since it's 2-sided, an equivalent change down is fine, too)
-    assert result.needed_target == pytest.approx(1 - 0.588163, abs=1e-4)
+    assert result.target_possible == pytest.approx(1 - 0.588163, abs=1e-4)
     assert result.pct_change_possible == pytest.approx(1 - 1.176327, abs=1e-4)
     assert not result.sufficient_n
 
