@@ -493,10 +493,7 @@ class AssignResponse(ApiBaseModel):
 
     balance: BalanceCheck
 
-    # TODO(roboton): should we include design_spec and audience_spec in this object
     experiment_id: uuid.UUID
-    # TODO(roboton): drop description since it will be in included design_spec
-    description: str
     sample_size: int
     id_col: str
     assignments: list[Assignment]

@@ -72,7 +72,6 @@ def test_assign_treatment(sample_table, sample_data):
         id_col="id",
         arm_names=["control", "treatment"],
         experiment_id="b767716b-f388-4cd9-a18a-08c4916ce26f",
-        description="Test experiment",
         random_state=42,
     )
 
@@ -80,7 +79,6 @@ def test_assign_treatment(sample_table, sample_data):
     assert result.balance.p_value == pytest.approx(0.99992466)
     assert result.balance.balance_ok
     assert str(result.experiment_id) == "b767716b-f388-4cd9-a18a-08c4916ce26f"
-    assert result.description == "Test experiment"
     assert result.sample_size == len(sample_data)
     assert (
         result.sample_size
@@ -118,7 +116,6 @@ def test_assign_treatment_multiple_arms(sample_table, sample_data):
         id_col="id",
         arm_names=["control", "treatment_a", "treatment_b"],
         experiment_id="b767716b-f388-4cd9-a18a-08c4916ce26f",
-        description="Test multi-arm experiment",
     )
 
     # Check that assignments is a list
@@ -151,7 +148,6 @@ def test_assign_treatment_reproducibility(sample_table, sample_data):
         id_col="id",
         arm_names=["control", "treatment"],
         experiment_id="b767716b-f388-4cd9-a18a-08c4916ce26f",
-        description="Test reproducibility",
         random_state=42,
     )
 
@@ -162,7 +158,6 @@ def test_assign_treatment_reproducibility(sample_table, sample_data):
         id_col="id",
         arm_names=["control", "treatment"],
         experiment_id="b767716b-f388-4cd9-a18a-08c4916ce26f",
-        description="Test reproducibility",
         random_state=42,
     )
 
@@ -191,7 +186,6 @@ def test_assign_treatment_with_missing_values(sample_table, sample_data):
         id_col="id",
         arm_names=["control", "treatment"],
         experiment_id="b767716b-f388-4cd9-a18a-08c4916ce26f",
-        description="Test with missing values",
     )
 
     assert result.sample_size == len(sample_data)
@@ -212,6 +206,7 @@ def test_assign_treatment_with_obj_columns_inferred(sample_table, sample_data):
         object3: Any
 
     n = len(sample_data)
+    # Test numeric types mistakenly typed as objects
     sample_data = sample_data.assign(
         object1=[2**32] * (n - 1) + [2],
         # If not converted, causes SyntaxError due to floating point numbers
@@ -229,7 +224,6 @@ def test_assign_treatment_with_obj_columns_inferred(sample_table, sample_data):
         id_col="id",
         arm_names=["control", "treatment"],
         experiment_id="b767716b-f388-4cd9-a18a-08c4916ce26f",
-        description="Test with numeric types mistakenly typed as objects",
     )
 
     assert result.sample_size == len(sample_data)
@@ -258,7 +252,6 @@ def test_assign_treatment_with_integers_as_floats_for_unique_id(
             id_col="id",
             arm_names=["control", "treatment"],
             experiment_id="b767716b-f388-4cd9-a18a-08c4916ce26f",
-            description="Test integers_as_floats_for_unique_id",
             random_state=42,
         )
 
@@ -295,7 +288,6 @@ def test_decimal_and_bool_strata_are_rendered_correctly(sample_table, sample_dat
         id_col="id",
         arm_names=["control", "treatment"],
         experiment_id="b767716b-f388-4cd9-a18a-08c4916ce26f",
-        description="Test decimals",
         random_state=42,
     )
 

@@ -31,7 +31,6 @@ def assign_treatment(
     id_col: str,
     arm_names: list[str],
     experiment_id: str,
-    description: str,
     fstat_thresh: float = 0.5,
     random_state: int | None = None,
 ) -> AssignResponse:
@@ -45,7 +44,6 @@ def assign_treatment(
         id_col: Name of column containing unit identifiers
         arm_names: Names of treatment arms
         experiment_id: Unique identifier for experiment
-        description: Description of experiment
         fstat_thresh: Threshold for F-statistic p-value
         random_state: Random seed for reproducibility
 
@@ -119,7 +117,6 @@ def assign_treatment(
             balance_ok=balance_check.f_pvalue > fstat_thresh,
         ),
         experiment_id=UUID(experiment_id),
-        description=description,
         sample_size=len(df),
         id_col=id_col,
         assignments=participants_list,
