@@ -21,7 +21,7 @@ VALID_SQL_COLUMN_REGEX = r"^[a-zA-Z_][a-zA-Z0-9_]*$"
 
 EXPERIMENT_IDS_SUFFIX = "experiment_ids"
 
-# An experiment is comprised of two primary components:
+# An experiment config is comprised of the following primary components:
 # 1. An AudienceSpec which defines the pool of potential participants
 # 2. A DesignSpec specifying:
 #   a. the treatment arms
@@ -29,9 +29,10 @@ EXPERIMENT_IDS_SUFFIX = "experiment_ids"
 #   c. strata
 #   d. experiment meta data (start/end date, name, description)
 #   e. statistical parameters (power, significance, balance test threshold)
+# 3. Power calculations for the outcome metrics
+# 4. An Assignment for each sampled participant given the AudienceSpec and DesignSpec.
 
-# The goal is to produce an ExperimentAssignment from the AudienceSpec and DesignSpec.
-# We go through two steps to enable this:
+# For generating 3 and 4 above, we perform:
 # 0. Baseline data retrieval -
 # 1. Power analysis - Given and AudienceSpec and DesignSpec we analyze the
 #    statistical power for each metric in the DesignSpec, along with the statistical
@@ -45,8 +46,8 @@ EXPERIMENT_IDS_SUFFIX = "experiment_ids"
 #      if we're sufficiently powered. If we are not, compute the effect size needed to
 #      be powered. This power information can be added to the metrics in the DesignSpec.
 # 2. Assignment - the Power analysis computes the minimum number of participants needed
-#    to be statistically powered "n" which is left to the user to choose during assignment.
-#    Assignment takes the same inputs, the AudienceSpec and DesignSpec to generate a list
+#    to be statistically powered "n" which is left to the user to supply for assignment.
+#    AssignRequest takes the same inputs (AudienceSpec and DesignSpec) to generate a list
 #    of "n" users randomly assigned using the set of treatment arms and the strata. This
 #    should return a list of objects containing a participant id, treatment assignment,
 #    and strata values.
@@ -354,8 +355,8 @@ class Arm(ApiBaseModel):
     arm_description: str | None = None
 
 
-class DesignSpecBase(ApiBaseModel):
-    """Describes the experiment design parameters excluding metrics."""
+class DesignSpec(ApiBaseModel):
+    """Experiment design parameters for power calculations."""
 
     experiment_id: uuid.UUID
     experiment_name: str
@@ -371,24 +372,6 @@ class DesignSpecBase(ApiBaseModel):
     #       field that takes a list of Stratum objects, akin to filters: and metrics:.
     strata_field_names: list[FieldName]
 
-    # stat parameters
-    power: Annotated[float, Field(0.8, ge=0, le=1)]
-    alpha: Annotated[float, Field(0.05, ge=0, le=1)]
-    fstat_thresh: Annotated[float, Field(0.6, ge=0, le=1)]
-
-    @field_serializer("start_date", "end_date", when_used="json")
-    def serialize_dt(self, dt: datetime, _info):
-        """Convert dates to iso strings in model_dump_json()/model_dump(mode='json')"""
-        return dt.isoformat()
-
-
-# TODO? Consider making this the one and only DesignSpec model, and if the user wants to store DesignSpecMetric details,
-# it should be done as part of storing PowerResponse in the CommitRequest, rather than assuming the user will fish out
-# the DesignSpecMetric details from the response just to put them back into the original DesignSpecForPower to create a
-# DesignSpec.
-class DesignSpecForPower(DesignSpecBase):
-    """Experiment design parameters for power calculations."""
-
     metrics: Annotated[
         list[DesignSpecMetricRequest],
         Field(
@@ -398,11 +381,15 @@ class DesignSpecForPower(DesignSpecBase):
         ),
     ]
 
+    # stat parameters
+    power: Annotated[float, Field(0.8, ge=0, le=1)]
+    alpha: Annotated[float, Field(0.05, ge=0, le=1)]
+    fstat_thresh: Annotated[float, Field(0.6, ge=0, le=1)]
 
-class DesignSpec(DesignSpecBase):
-    """Describes the experiment design parameters."""
-
-    metrics: Annotated[list[DesignSpecMetric], Field(..., min_length=1)]
+    @field_serializer("start_date", "end_date", when_used="json")
+    def serialize_dt(self, dt: datetime, _info):
+        """Convert dates to iso strings in model_dump_json()/model_dump(mode='json')"""
+        return dt.isoformat()
 
 
 class MetricAnalysisMessageType(enum.StrEnum):
@@ -582,7 +569,7 @@ class AssignRequest(ApiBaseModel):
 
 
 class PowerRequest(ApiBaseModel):
-    design_spec: DesignSpecForPower
+    design_spec: DesignSpec
     audience_spec: AudienceSpec
 
 
