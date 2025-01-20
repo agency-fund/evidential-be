@@ -159,7 +159,14 @@ EXPECTED_PREAMBLE = (
     """FROM test_table """
     """WHERE """
 )
+EXPECTED_PREAMBLE_BQ = (
+    """SELECT `test_table`.`id`, `test_table`.`int_col`, `test_table`.`float_col`, """
+    """`test_table`.`bool_col`, `test_table`.`string_col`, `test_table`.`experiment_ids` """
+    """FROM `test_table` """
+    """WHERE """
+)
 
+# TODO: generalize better to also handle bq dialect's regexp notation.
 FILTER_GENERATION_SUBCASES = [
     # compound filters
     Case(
@@ -247,6 +254,21 @@ FILTER_GENERATION_SUBCASES = [
             """{randomize} {limit_offset}"""
         ),
         matches=[ROW_200],
+    ),
+    # bool_col
+    Case(
+        filters=[
+            AudienceSpecFilter(
+                field_name="bool_col",
+                relation=Relation.INCLUDES,
+                value=[True],
+            )
+        ],
+        where=(
+            """test_table.bool_col {bool_filter} """
+            """{randomize} {limit_offset}"""
+        ),
+        matches=[ROW_100, ROW_300],
     ),
     # regexp hacks
     Case(
@@ -351,15 +373,25 @@ def test_compose_query(testcase, db_session, compiler, use_deterministic_random)
     )
     q = compose_query(get_sample_table(), testcase.chosen_n, filters)
     sql = compiler(q)
-    assert sql.startswith(EXPECTED_PREAMBLE)
-    sql = sql[len(EXPECTED_PREAMBLE) :]
+
     _, db_type, _ = get_test_dwh_info()
+    match db_type:
+        case DbType.BQ:
+            assert sql.startswith(EXPECTED_PREAMBLE_BQ)
+            sql = sql[len(EXPECTED_PREAMBLE_BQ) :]
+            # Remove the conservative backticks around Identifiers for comparisons
+            sql = sql.replace("`", "")
+        case _:
+            assert sql.startswith(EXPECTED_PREAMBLE)
+            sql = sql[len(EXPECTED_PREAMBLE) :]
+
     match db_type:
         case DbType.SQLITE:
             subs = {
                 "length": "length",
                 "regexp": "REGEXP",
                 "not_regexp": "NOT REGEXP",
+                "bool_filter": "IN (1)",
                 "randomize": "ORDER BY test_table.id",
                 "limit_offset": "LIMIT 3 OFFSET 0",
             }
@@ -369,6 +401,7 @@ def test_compose_query(testcase, db_session, compiler, use_deterministic_random)
                 "length": "char_length",
                 "regexp": "~",
                 "not_regexp": "!~",
+                "bool_filter": "IN (true)",
                 "randomize": "ORDER BY test_table.id",
                 "limit_offset": " LIMIT 3",
             }
@@ -376,7 +409,7 @@ def test_compose_query(testcase, db_session, compiler, use_deterministic_random)
     query_results = db_session.execute(q).all()
     assert list(sorted([r.id for r in query_results])) == list(
         sorted(r.id for r in testcase.matches)
-    )
+    ), testcase
 
 
 REGEX_TESTS = [

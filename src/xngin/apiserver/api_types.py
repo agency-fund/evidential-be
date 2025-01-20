@@ -180,6 +180,7 @@ class AudienceSpecFilter(ApiBaseModel):
         Sequence[Annotated[int, Field(strict=True)] | None]
         | Sequence[Annotated[float, Field(strict=True, allow_inf_nan=False)] | None]
         | Sequence[str | None]
+        | Sequence[bool | None]
     )
 
     @model_validator(mode="after")
