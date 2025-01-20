@@ -73,7 +73,6 @@ def assign_treatment(
     post_stratum_cols = df_clean.columns.to_list()
     # Add back the id column for stochatreat
     df_clean[id_col] = df[id_col]
-    df = None  # make sure I'm not accessing it anymore below
 
     # Assign treatments
     n_arms = len(arm_names)
