@@ -33,7 +33,7 @@ def analyze_metric_power(
     if metric.metric_target is None:
         metric.metric_target = metric.metric_baseline * (1 + metric.metric_pct_change)
 
-    analysis = MetricAnalysis(metric_spec=metric, available_n=metric.available_n)
+    analysis = MetricAnalysis(metric_spec=metric)
 
     # Case A: Both target and baseline defined - calculate required n
     if metric.metric_target is not None and metric.metric_baseline is not None:
@@ -92,7 +92,7 @@ def analyze_metric_power(
                     )
                     * metric.metric_stddev
                 )
-                needed_target = needed_delta + metric.metric_baseline
+                target_possible = needed_delta + metric.metric_baseline
             else:  # BINARY
                 power_analysis = sms.NormalIndPower()
                 # Calculate minimum detectable effect size given sample size
@@ -108,9 +108,12 @@ def analyze_metric_power(
                 # where p1 is baseline and p2 is target
                 p1 = metric.metric_baseline
                 arcsin_p2 = 2 * np.arcsin(np.sqrt(p1)) - min_effect_size
-                needed_target = np.sin(arcsin_p2 / 2) ** 2
+                target_possible = np.sin(arcsin_p2 / 2) ** 2
 
-            analysis.needed_target = needed_target
+            analysis.target_possible = target_possible
+            analysis.pct_change_possible = (
+                target_possible / metric.metric_baseline - 1.0
+            )
             # TODO(roboton): Consider adding another message for localization:
             # # note: not an f-string
             # source_msg="There are {available_n} units available... {target_n} units are needed... {target_n} ...",
@@ -119,11 +122,11 @@ def analyze_metric_power(
             analysis.msg = MetricAnalysisMessage(
                 type=MetricAnalysisMessageType.INSUFFICIENT,
                 msg=(
-                    f"there are {metric.available_n} units available to run your experiment and {target_n} units are needed to meet your experimental design specs."
-                    f" there are not enough units available, you need {target_n - metric.available_n} more units"
-                    f" to meet your experimental design specifications. in order to meet your specification with the available"
+                    f"There are {metric.available_n} units available to run your experiment and {target_n} units are needed to meet your experimental design specs."
+                    f" There are not enough units available, you need {target_n - metric.available_n} more units"
+                    f" to meet your experimental design specifications. In order to meet your specification with the available"
                     f" {metric.available_n} units and a baseline metric value of {metric.metric_baseline:.4f}, your metric"
-                    f" target value needs to be {needed_target:.4f}, the current target is {metric.metric_target:.4f}."
+                    f" target value needs to be {target_possible:.4f} or further from the baseline; the current target is {metric.metric_target:.4f}."
                 ),
                 values={},
             )

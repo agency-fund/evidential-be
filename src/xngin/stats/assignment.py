@@ -11,6 +11,7 @@ from stochatreat import stochatreat
 from xngin.apiserver.api_types import (
     AssignResponse,
     Assignment,
+    BalanceCheck,
     Strata,
 )
 from xngin.stats.balance import (
@@ -33,7 +34,6 @@ def assign_treatment(
     id_col: str,
     arm_names: list[str],
     experiment_id: str,
-    description: str,
     fstat_thresh: float = 0.5,
     random_state: int | None = None,
 ) -> AssignResponse:
@@ -47,7 +47,6 @@ def assign_treatment(
         id_col: Name of column containing unit identifiers
         arm_names: Names of treatment arms
         experiment_id: Unique identifier for experiment
-        description: Description of experiment
         fstat_thresh: Threshold for F-statistic p-value
         random_state: Random seed for reproducibility
 
@@ -125,13 +124,14 @@ def assign_treatment(
 
     # Return the ExperimentAssignment with the list of participants
     return AssignResponse(
-        f_statistic=np.round(balance_check.f_statistic, 9),
-        numerator_df=round(balance_check.numerator_df),
-        denominator_df=round(balance_check.denominator_df),
-        p_value=np.round(balance_check.f_pvalue, 9),
-        balance_ok=bool(balance_check.f_pvalue > fstat_thresh),
+        balance_check=BalanceCheck(
+            f_statistic=np.round(balance_check.f_statistic, 9),
+            numerator_df=round(balance_check.numerator_df),
+            denominator_df=round(balance_check.denominator_df),
+            p_value=np.round(balance_check.f_pvalue, 9),
+            balance_ok=bool(balance_check.f_pvalue > fstat_thresh),
+        ),
         experiment_id=UUID(experiment_id),
-        description=description,
         sample_size=len(df_clean),
         id_col=id_col,
         assignments=participants_list,

@@ -24,7 +24,7 @@ def test_analyze_metric_power_numeric():
     assert result.metric_spec.metric_type == MetricType.NUMERIC
     assert result.metric_spec.metric_baseline == 100
     assert result.metric_spec.metric_target == 110
-    assert result.available_n == 1000
+    assert result.metric_spec.available_n == 1000
     assert result.target_n == 128.0
     assert result.sufficient_n
     assert result.msg is not None
@@ -45,6 +45,10 @@ def test_analyze_metric_power_binary():
     assert result.metric_spec.metric_baseline == 0.5
     assert result.metric_spec.metric_target == 0.55
     assert result.target_n == 3132
+    # Given the available_n, here's the best we can do (cross-checked with R's power.prop.test):
+    # (since it's 2-sided, an equivalent change down is fine, too)
+    assert result.target_possible == pytest.approx(1 - 0.588163, abs=1e-4)
+    assert result.pct_change_possible == pytest.approx(1 - 1.176327, abs=1e-4)
     assert not result.sufficient_n
 
 

@@ -602,14 +602,15 @@ HTTP 200
       "treatment_assignment": "Control"
     }
   ],
-  "balance_ok": false,
-  "denominator_df": 37,
-  "description": "Sample experiment description.",
+  "balance_check": {
+    "balance_ok": false,
+    "denominator_df": 37,
+    "f_statistic": 2.794349008,
+    "numerator_df": 2,
+    "p_value": 0.074094534
+  },
   "experiment_id": "0897bbd7-dacd-41b4-b164-7a1950fa61f2",
-  "f_statistic": 2.794349008,
   "id_col": "id",
-  "numerator_df": 2,
-  "p_value": 0.074094534,
   "sample_size": 40
 }
 ```
