@@ -37,12 +37,10 @@ def analyze_metric_power(
 
     # Case A: Both target and baseline defined - calculate required n
     if metric.metric_target is not None and metric.metric_baseline is not None:
-
         if metric.metric_type == MetricType.NUMERIC:
             effect_size = (
-                (metric.metric_target - metric.metric_baseline)
-                /metric.metric_stddev
-            )
+                metric.metric_target - metric.metric_baseline
+            ) / metric.metric_stddev
         elif metric.metric_type == MetricType.BINARY:
             effect_size = sms.proportion_effectsize(
                 metric.metric_baseline, metric.metric_target
@@ -51,8 +49,10 @@ def analyze_metric_power(
             raise ValueError("metric_type must be NUMERIC or BINARY.")
 
         if effect_size == 0.0:
-            raise ValueError(f'Cannot detect an effect-size of 0. Try changing your effect-size.')
-        
+            raise ValueError(
+                f"Cannot detect an effect-size of 0. Try changing your effect-size."
+            )
+
         power_analysis = sms.TTestIndPower()
         target_n = (
             np.ceil(
@@ -65,7 +65,7 @@ def analyze_metric_power(
             )
             * n_arms
         )
-            
+
         analysis.target_n = int(target_n)
         analysis.sufficient_n = bool(target_n <= metric.available_n)
 
@@ -134,7 +134,7 @@ def analyze_metric_power(
     else:
         analysis.msg = MetricAnalysisMessage(
             type=MetricAnalysisMessageType.NO_BASELINE,
-            msg="Could not calculate metric baseline with given specification. Provide metric baseline or adjust filters."
+            msg="Could not calculate metric baseline with given specification. Provide metric baseline or adjust filters.",
         )
 
     return analysis
