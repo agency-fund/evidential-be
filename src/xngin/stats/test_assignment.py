@@ -45,8 +45,11 @@ def sample_table():
 
 @pytest.fixture
 def sample_data():
+    return pd.DataFrame(make_sample_data_dict())
+
+
+def make_sample_data_dict(n=1000):
     np.random.seed(42)
-    n = 1000
     data = {
         "id": range(n),
         "age": np.round(np.random.normal(30, 5, n), 0),
@@ -54,12 +57,12 @@ def sample_data():
         "gender": np.random.choice(["M", "F"], n),
         "region": np.random.choice(["North", "South", "East", "West"], n),
         "skewed": np.random.permutation(
-            np.concatenate((np.repeat([1], 900), np.repeat([0], 100)))
+            np.concatenate((np.repeat([1], n * 0.9), np.repeat([0], n * 0.1)))
         ),
     }
     data["income_dec"] = [Decimal(i).quantize(Decimal("1")) for i in data["income"]]
     data["is_male"] = [g == "M" for g in data["gender"]]
-    return pd.DataFrame(data)
+    return data
 
 
 def test_assign_treatment(sample_table, sample_data):
@@ -296,3 +299,32 @@ def test_decimal_and_bool_strata_are_rendered_correctly(sample_table, sample_dat
         # we rounded the Decimal to an int, so shouldn't see the decimal point
         assert "." not in json["strata"][0]["strata_value"], json
         assert json["strata"][1]["strata_value"] in ("True", "False"), json
+
+
+def test_with_nans_that_would_break_stochatreat_without_preprocessing(sample_table):
+    local_data = make_sample_data_dict(20)
+    # Replace entries with NaN such that the grouping into strata causes stochatreat to raise a
+    # ValueError as it internally uses df.groupby(..., dropna=True), causing the count of
+    # synthetic rows created to be off.
+    local_data["age"] = [None, 2] + [1, 2] * 9
+    local_data = pd.DataFrame(local_data)
+    rows = [Row(**row) for row in local_data.to_dict("records")]
+    result = assign_treatment(
+        sa_table=sample_table,
+        data=rows,
+        stratum_cols=["age"],
+        id_col="id",
+        arm_names=["control", "treatment"],
+        experiment_id="b767716b-f388-4cd9-a18a-08c4916ce26f",
+        random_state=42,
+    )
+    # But we still expect success since internally we'll preprocess the data to handle NaNs.
+    assert result.balance_check.f_statistic > 0
+    assert result.balance_check.p_value > 0
+    assert result.balance_check.balance_ok is False
+    assert result.sample_size == len(local_data)
+    assert (
+        result.sample_size
+        == result.balance_check.numerator_df + result.balance_check.denominator_df + 1
+    )
+    assert all(len(participant.strata) == 1 for participant in result.assignments)
