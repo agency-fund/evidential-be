@@ -1,5 +1,4 @@
 from dataclasses import dataclass
-from typing import Literal
 
 import numpy as np
 import pandas as pd
@@ -57,7 +56,7 @@ def preprocess_for_balance_and_stratification(
     data: pd.DataFrame,
     exclude_cols: list[str] | None = None,
     quantiles: int = 4,
-    missing_string=Literal["__NULL__"],
+    missing_string="__NULL__",
 ):
     """
     Preprocess data to quantize numerics and replace NaNs with missing_string.
