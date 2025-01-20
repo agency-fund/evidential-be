@@ -458,7 +458,8 @@ def validate_settings(file: Path):
         XnginSettings.model_validate(from_json(config))
     except ValidationError as verr:
         print(f"{file} failed validation:", file=sys.stderr)
-        print(verr, file=sys.stderr)
+        for details in verr.errors():
+            print(details, file=sys.stderr)
         raise typer.Exit(1) from verr
 
 
