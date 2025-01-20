@@ -602,7 +602,7 @@ HTTP 200
       "treatment_assignment": "Control"
     }
   ],
-  "balance": {
+  "balance_check": {
     "balance_ok": false,
     "denominator_df": 37,
     "f_statistic": 2.794349008,

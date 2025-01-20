@@ -507,7 +507,7 @@ class BalanceCheck(ApiBaseModel):
 class AssignResponse(ApiBaseModel):
     """Describes assignments for all participants and balance test results."""
 
-    balance: BalanceCheck
+    balance_check: BalanceCheck
 
     experiment_id: uuid.UUID
     sample_size: int

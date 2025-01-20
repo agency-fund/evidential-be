@@ -764,7 +764,7 @@ HTTP 200
       "treatment_assignment": "Control"
     }
   ],
-  "balance": {
+  "balance_check": {
     "balance_ok": false,
     "denominator_df": 36,
     "f_statistic": 2.180416775,

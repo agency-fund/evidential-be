@@ -67,7 +67,7 @@ Datasource-ID: customer-test
     ]
   },
   "experiment_assignment": {
-    "balance": {
+    "balance_check": {
       "f_statistic": 1.1153,
       "numerator_df": 523,
       "denominator_df": 476,

@@ -75,14 +75,14 @@ def test_assign_treatment(sample_table, sample_data):
         random_state=42,
     )
 
-    assert result.balance.f_statistic == pytest.approx(0.006156735)
-    assert result.balance.p_value == pytest.approx(0.99992466)
-    assert result.balance.balance_ok
+    assert result.balance_check.f_statistic == pytest.approx(0.006156735)
+    assert result.balance_check.p_value == pytest.approx(0.99992466)
+    assert result.balance_check.balance_ok
     assert str(result.experiment_id) == "b767716b-f388-4cd9-a18a-08c4916ce26f"
     assert result.sample_size == len(sample_data)
     assert (
         result.sample_size
-        == result.balance.numerator_df + result.balance.denominator_df + 1
+        == result.balance_check.numerator_df + result.balance_check.denominator_df + 1
     )
     assert result.id_col == "id"
     assert isinstance(result.assignments, list)
@@ -228,8 +228,8 @@ def test_assign_treatment_with_obj_columns_inferred(sample_table, sample_data):
 
     assert result.sample_size == len(sample_data)
     assert result.id_col == "id"
-    assert pd.isna(result.balance.p_value) is False
-    assert pd.isna(result.balance.f_statistic) is False
+    assert pd.isna(result.balance_check.p_value) is False
+    assert pd.isna(result.balance_check.f_statistic) is False
     # Check that treatment assignments are not None or NaN
     assert all(
         participant.treatment_assignment is not None
@@ -258,8 +258,8 @@ def test_assign_treatment_with_integers_as_floats_for_unique_id(
     # We should be able to handle Decimals (e.g. from psycopg2 with redshift numerics).
     sample_data["id"] = sample_data["id"].apply(Decimal)
     result = assign(sample_data)
-    assert result.balance.f_statistic == pytest.approx(0.006156735)
-    assert result.balance.p_value == pytest.approx(0.99992466)
+    assert result.balance_check.f_statistic == pytest.approx(0.006156735)
+    assert result.balance_check.p_value == pytest.approx(0.99992466)
     json = result.model_dump()
     assert json["assignments"][0]["participant_id"] == "0"
     assert json["assignments"][1]["participant_id"] == "1"

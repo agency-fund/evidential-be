@@ -109,7 +109,7 @@ def assign_treatment(
 
     # Return the ExperimentAssignment with the list of participants
     return AssignResponse(
-        balance=BalanceCheck(
+        balance_check=BalanceCheck(
             f_statistic=np.round(balance_check.f_statistic, 9),
             numerator_df=round(balance_check.numerator_df),
             denominator_df=round(balance_check.denominator_df),
