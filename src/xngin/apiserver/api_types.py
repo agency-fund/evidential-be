@@ -21,38 +21,6 @@ VALID_SQL_COLUMN_REGEX = r"^[a-zA-Z_][a-zA-Z0-9_]*$"
 
 EXPERIMENT_IDS_SUFFIX = "experiment_ids"
 
-# An experiment config is comprised of the following primary components:
-# 1. An AudienceSpec which defines the pool of potential participants
-# 2. A DesignSpec specifying:
-#   a. the treatment arms
-#   b. outcome metrics,
-#   c. strata
-#   d. experiment meta data (start/end date, name, description)
-#   e. statistical parameters (power, significance, balance test threshold)
-# 3. Power calculations for the outcome metrics
-# 4. An Assignment for each sampled participant given the AudienceSpec and DesignSpec.
-
-# For generating 3 and 4 above, we perform:
-# 0. Baseline data retrieval -
-# 1. Power analysis - Given and AudienceSpec and DesignSpec we analyze the
-#    statistical power for each metric in the DesignSpec, along with the statistical
-#    parameters. This occurs as follows for each metric:
-#   a. If there is no baseline value (and std dev for numeric metrics), go to the
-#      data source to fetch these values.
-#   b. Use the declared metric_target or compute this target based on
-#      metric_pct_change and the baseline value.
-#   c. Use the number of arms, metric baseline and target, statistical parameters
-#      and the number of participants available using the Audience filter to determine
-#      if we're sufficiently powered. If we are not, compute the effect size needed to
-#      be powered. This power information can be added to the metrics in the DesignSpec.
-# 2. Assignment - the Power analysis computes the minimum number of participants needed
-#    to be statistically powered "n" which is left to the user to supply for assignment.
-#    AssignRequest takes the same inputs (AudienceSpec and DesignSpec) to generate a list
-#    of "n" users randomly assigned using the set of treatment arms and the strata. This
-#    should return a list of objects containing a participant id, treatment assignment,
-#    and strata values.
-# 3. Analysis - TBD
-
 
 def validate_can_be_used_as_column_name(value: str, info: ValidationInfo) -> str:
     """Validates value is usable as a SQL column name."""
