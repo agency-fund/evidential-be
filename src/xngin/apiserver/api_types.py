@@ -368,9 +368,33 @@ class DesignSpec(ApiBaseModel):
     ]
 
     # stat parameters
-    power: Annotated[float, Field(0.8, ge=0, le=1)]
-    alpha: Annotated[float, Field(0.05, ge=0, le=1)]
-    fstat_thresh: Annotated[float, Field(0.6, ge=0, le=1)]
+    power: Annotated[
+        float,
+        Field(
+            0.8,
+            ge=0,
+            le=1,
+            description="The chance of detecting a real non-null effect, i.e. 1 - false negative rate.",
+        ),
+    ]
+    alpha: Annotated[
+        float,
+        Field(
+            0.05,
+            ge=0,
+            le=1,
+            description="The chance of a false positive, i.e. there is no real non-null effect, but we mistakenly think there is one.",
+        ),
+    ]
+    fstat_thresh: Annotated[
+        float,
+        Field(
+            0.6,
+            ge=0,
+            le=1,
+            description='Threshold on the p-value of joint significance in doing the omnibus balance check, above which we declare the data to be "balanced".',
+        ),
+    ]
 
     @field_serializer("start_date", "end_date", when_used="json")
     def serialize_dt(self, dt: datetime, _info):
@@ -411,18 +435,16 @@ class MetricAnalysis(ApiBaseModel):
         ),
     ] = None
 
-    # If insufficient sample size, tell the user what metric value their n does let them possibly detect as an absolute
-    # value and % change from baseline.
     target_possible: Annotated[
         float | None,
         Field(
-            description="If there is an insufficient sample size to meet the desired metric_target, we report what is possible given the available_n. This value is equivalent to the relative pct_change_possible."
+            description="If there is an insufficient sample size to meet the desired metric_target, we report what is possible given the available_n. This value is equivalent to the relative pct_change_possible. This is None when there is a sufficient sample size to detect the desired change."
         ),
     ] = None
     pct_change_possible: Annotated[
         float | None,
         Field(
-            description="If there is an insufficient sample size to meet the desired metric_pct_change, we report what is possible given the available_n. This value is equivalent to the absolute target_possible."
+            description="If there is an insufficient sample size to meet the desired metric_pct_change, we report what is possible given the available_n. This value is equivalent to the absolute target_possible. This is None when there is a sufficient sample size to detect the desired change."
         ),
     ] = None
 
