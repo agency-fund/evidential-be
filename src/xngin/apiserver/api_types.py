@@ -277,7 +277,9 @@ class DesignSpecMetric(DesignSpecMetricBase):
     metric_type: Annotated[
         MetricType | None, Field(description="Inferred from dwh type.")
     ] = None
-    metric_baseline: float | None = None
+    metric_baseline: Annotated[
+        float | None, Field(description="Mean of the tracked metric.")
+    ] = None
     metric_stddev: Annotated[
         float | None,
         Field(
@@ -285,6 +287,18 @@ class DesignSpecMetric(DesignSpecMetricBase):
         ),
     ] = None
     available_n: int | None = None
+
+    @model_validator(mode="after")
+    def stddev_only_if_numeric(self):
+        """Enforce that metric_stddev is present for NUMERICs"""
+        if self.metric_type == MetricType.NUMERIC and self.metric_stddev is None:
+            raise ValueError("missing stddev")
+        if (
+            self.metric_type is not MetricType.NUMERIC
+            and self.metric_stddev is not None
+        ):
+            raise ValueError("should not have stddev")
+        return self
 
 
 class DesignSpecMetricRequest(DesignSpecMetricBase):
@@ -328,7 +342,7 @@ class Arm(ApiBaseModel):
 
 
 class DesignSpec(ApiBaseModel):
-    """Experiment design parameters for power calculations."""
+    """Experiment design parameters for power calculations and treatment assignment."""
 
     experiment_id: uuid.UUID
     experiment_name: str

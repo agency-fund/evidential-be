@@ -33,28 +33,17 @@ def get_stats_on_metrics(
     metrics: list[DesignSpecMetricRequest],
     audience_spec: AudienceSpec,
 ) -> list[DesignSpecMetric]:
-    # First prep the list that will hold our annotated metrics to return:
-    def init_metric_to_return(metric: DesignSpecMetricRequest) -> DesignSpecMetric:
-        """Make a copy of metric while deriving type from dwh."""
-        # Union a dict representation of the input metric with the metric_type and create the output metric object.
-        return DesignSpecMetric.model_validate(
-            metric.model_dump()
-            | {
-                "metric_type": MetricType.from_python_type(
-                    sa_table.c[metric.field_name].type.python_type
-                )
-            }
-        )
-
-    metrics_to_return = [init_metric_to_return(m) for m in metrics]
-
-    # now build our query
+    # build our query
+    metric_types = [
+        MetricType.from_python_type(sa_table.c[m.field_name].type.python_type)
+        for m in metrics
+    ]
     select_columns: list[Label] = []
-    for metric in metrics_to_return:
+    for metric, metric_type in zip(metrics, metric_types, strict=False):
         field_name = metric.field_name
         col = sa_table.c[field_name]
         # Coerce everything to Float to avoid Decimal/Integer/Boolean issues across backends.
-        if metric.metric_type is MetricType.NUMERIC:
+        if metric_type is MetricType.NUMERIC:
             cast_column = cast(col, Float)
         else:  # re: avg(boolean) doesn't work on pg-like backends
             cast_column = cast(cast(col, Integer), Float)
@@ -69,12 +58,22 @@ def get_stats_on_metrics(
     stats = session.execute(query).mappings().fetchone()
 
     # finally backfill with the stats
-    for metric in metrics_to_return:
+    metrics_to_return = []
+    for metric, metric_type in zip(metrics, metric_types, strict=False):
         field_name = metric.field_name
-        metric.metric_baseline = stats[f"{field_name}__mean"]
-        if metric.metric_type is MetricType.NUMERIC:
-            metric.metric_stddev = stats[f"{field_name}__stddev"]
-        metric.available_n = stats[f"{field_name}__count"]
+        metrics_to_return.append(
+            DesignSpecMetric(
+                field_name=metric.field_name,
+                metric_pct_change=metric.metric_pct_change,
+                metric_target=metric.metric_target,
+                metric_type=metric_type,
+                metric_baseline=stats[f"{field_name}__mean"],
+                metric_stddev=stats[f"{field_name}__stddev"]
+                if metric_type is MetricType.NUMERIC
+                else None,
+                available_n=stats[f"{field_name}__count"],
+            )
+        )
 
     return metrics_to_return
 
