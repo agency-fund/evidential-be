@@ -54,7 +54,7 @@ def get_stats_on_metrics(
             custom_functions.stddev_pop(cast_column).label(f"{field_name}__stddev"),
             func.count(col).label(f"{field_name}__count"),
         ))
-    filters = create_filters(sa_table, audience_spec)
+    filters = create_query_filters_from_spec(sa_table, audience_spec)
     query = select(*select_columns).filter(*filters)
     stats = session.execute(query).mappings().fetchone()
 
@@ -86,13 +86,14 @@ def query_for_participants(
     chosen_n: int,
 ):
     """Samples participants."""
-    filters = create_filters(sa_table, audience_spec)
+    filters = create_query_filters_from_spec(sa_table, audience_spec)
     query = compose_query(sa_table, chosen_n, filters)
     return session.execute(query).all()
 
 
-# TODO: rename for clarity
-def create_filters(sa_table: sqlalchemy.Table, audience_spec: AudienceSpec):
+def create_query_filters_from_spec(
+    sa_table: sqlalchemy.Table, audience_spec: AudienceSpec
+):
     """Converts an AudienceSpec into a list of SQLAlchemy filters."""
 
     def create_one_filter(filter_: AudienceSpecFilter, sa_table: sqlalchemy.Table):

@@ -28,7 +28,7 @@ from xngin.apiserver.conftest import DbType, get_test_dwh_info
 from xngin.apiserver.dwh.queries import (
     compose_query,
     create_filter,
-    create_filters,
+    create_query_filters_from_spec,
     get_stats_on_metrics,
     make_csv_regex,
 )
@@ -39,6 +39,8 @@ class Base(DeclarativeBase):
     @classmethod
     def get_table(cls) -> Table:
         """Helper to return a sqlalchemy.schema.Table"""
+        # Also gets around mypy typing issues, e.g. get() can return none, and SampleTable.__table__
+        # is of type FromClause, but we know it's a Table and must exist.
         table = Base.metadata.tables.get(cls.__tablename__)
         assert table is not None
         return table
@@ -85,15 +87,6 @@ class SampleTable(Base):
     bool_col = mapped_column(Boolean, nullable=False)
     string_col = mapped_column(String, nullable=False)
     experiment_ids = mapped_column(String, nullable=False)
-
-
-def get_sample_table() -> Table:
-    """Helper to return a sqlalchemy.schema.Table for SampleTable"""
-    # Also gets around mypy typing issues, e.g. get() can return none, and SampleTable.__table__ is of type FromClause,
-    # but we know it's a Table and must exist.
-    table = Base.metadata.tables.get(SampleTable.__tablename__)
-    assert table is not None
-    return table
 
 
 @dataclass
@@ -181,7 +174,7 @@ def fixture_compiler(engine):
 
 
 def test_compose_query_with_no_filters(compiler):
-    sql = compiler(compose_query(get_sample_table(), 2, []))
+    sql = compiler(compose_query(SampleTable.get_table(), 2, []))
     # regex to accommodate pg and sqlite compilers
     match = re.match(
         re.escape(
@@ -414,13 +407,13 @@ def test_compose_query(testcase, db_session, compiler, use_deterministic_random)
         AudienceSpecFilter.model_validate(filt.model_dump())
         for filt in testcase.filters
     ]
-    filters = create_filters(
-        get_sample_table(),
+    filters = create_query_filters_from_spec(
+        SampleTable.get_table(),
         AudienceSpec(
             participant_type=SampleTable.__tablename__, filters=testcase.filters
         ),
     )
-    q = compose_query(get_sample_table(), testcase.chosen_n, filters)
+    q = compose_query(SampleTable.get_table(), testcase.chosen_n, filters)
     sql = compiler(q)
 
     _, db_type, _ = get_test_dwh_info()
@@ -428,7 +421,7 @@ def test_compose_query(testcase, db_session, compiler, use_deterministic_random)
         case DbType.BQ:
             assert sql.startswith(EXPECTED_PREAMBLE_BQ)
             sql = sql[len(EXPECTED_PREAMBLE_BQ) :]
-            # Remove the conservative backticks around Identifiers for comparisons
+            # Remove the conservative backticks around Identifiers for subsequent comparisons
             sql = sql.replace("`", "")
         case _:
             assert sql.startswith(EXPECTED_PREAMBLE)
@@ -535,7 +528,7 @@ def test_boolean_filter(testcase, db_session, compiler):
 
     # Then verify that the full query executes correctly.
     table = SampleNullableTable.get_table()
-    filters = create_filters(
+    filters = create_query_filters_from_spec(
         table,
         AudienceSpec(participant_type=table.name, filters=testcase.filters),
     )
@@ -578,7 +571,7 @@ def test_get_stats_on_integer_metric(db_session):
     """Test would fail on postgres and redshift without a cast to float for different reasons."""
     rows = get_stats_on_metrics(
         db_session,
-        get_sample_table(),
+        SampleTable.get_table(),
         [DesignSpecMetricRequest(field_name="int_col", metric_pct_change=0.1)],
         AudienceSpec(
             participant_type="ignored",
@@ -609,7 +602,7 @@ def test_get_stats_on_boolean_metric(db_session):
     """Test would fail on postgres and redshift without casting to int to float."""
     rows = get_stats_on_metrics(
         db_session,
-        get_sample_table(),
+        SampleTable.get_table(),
         [DesignSpecMetricRequest(field_name="bool_col", metric_pct_change=0.1)],
         AudienceSpec(
             participant_type="ignored",
@@ -637,7 +630,7 @@ def test_get_stats_on_boolean_metric(db_session):
 def test_get_stats_on_numeric_metric(db_session):
     rows = get_stats_on_metrics(
         db_session,
-        get_sample_table(),
+        SampleTable.get_table(),
         [DesignSpecMetricRequest(field_name="float_col", metric_pct_change=0.1)],
         AudienceSpec(
             participant_type="ignored",
