@@ -5,6 +5,7 @@ from sqlalchemy import (
     Float,
     Integer,
     Label,
+    and_,
     cast,
     or_,
     func,
@@ -150,8 +151,20 @@ def create_filter(
                     return col <= right
                 case (left, right):
                     return col.between(left, right)
+        case Relation.EXCLUDES if isinstance(col.type, sqlalchemy.Boolean):
+            return and_(*[
+                col.is_not(value) if value is not None else col.is_not(None)
+                for value in filter_.value
+            ])
         case Relation.EXCLUDES:
             return or_(col.is_(None), col.not_in(filter_.value))
+        case Relation.INCLUDES if isinstance(col.type, sqlalchemy.Boolean):
+            return or_(*[
+                col.is_(value) if value is not None else col.is_(None)
+                for value in filter_.value
+            ])
+        case Relation.INCLUDES:
+            return col.in_(filter_.value)
         case Relation.INCLUDES:
             return col.in_(filter_.value)
 

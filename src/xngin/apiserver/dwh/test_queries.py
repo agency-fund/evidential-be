@@ -4,7 +4,16 @@ import re
 from dataclasses import dataclass
 
 import pytest
-from sqlalchemy import Table, create_engine, Integer, Float, Boolean, String, event
+from sqlalchemy import (
+    Column,
+    Table,
+    create_engine,
+    Integer,
+    Float,
+    Boolean,
+    String,
+    event,
+)
 from sqlalchemy.orm import Session, DeclarativeBase, mapped_column
 
 from xngin.apiserver.api_types import (
@@ -18,6 +27,7 @@ from xngin.apiserver.api_types import (
 from xngin.apiserver.conftest import DbType, get_test_dwh_info
 from xngin.apiserver.dwh.queries import (
     compose_query,
+    create_filter,
     create_filters,
     get_stats_on_metrics,
     make_csv_regex,
@@ -26,7 +36,44 @@ from xngin.db_extensions.custom_functions import NumpyStddev
 
 
 class Base(DeclarativeBase):
-    pass
+    @classmethod
+    def get_table(cls) -> Table:
+        """Helper to return a sqlalchemy.schema.Table"""
+        table = Base.metadata.tables.get(cls.__tablename__)
+        assert table is not None
+        return table
+
+
+class SampleNullableTable(Base):
+    __tablename__ = "test_nullable_table"
+
+    id = mapped_column(Integer, primary_key=True, autoincrement=False)
+    bool_col = mapped_column(Boolean, nullable=True)
+
+
+@dataclass
+class NullableRow:
+    id: int
+    bool_col: bool | None
+
+
+ROW_10 = NullableRow(
+    id=10,
+    bool_col=None,
+)
+ROW_20 = NullableRow(
+    id=20,
+    bool_col=True,
+)
+ROW_30 = NullableRow(
+    id=30,
+    bool_col=False,
+)
+SAMPLE_NULLABLE_TABLE_ROWS = [
+    ROW_10,
+    ROW_20,
+    ROW_30,
+]
 
 
 class SampleTable(Base):
@@ -109,6 +156,8 @@ def fixture_db_session():
     session = Session(engine)
     for data in SAMPLE_TABLE_ROWS:
         session.add(SampleTable(**data.__dict__))
+    for data in SAMPLE_NULLABLE_TABLE_ROWS:
+        session.add(SampleNullableTable(**data.__dict__))
     session.commit()
 
     yield session
@@ -149,7 +198,7 @@ def test_compose_query_with_no_filters(compiler):
 @dataclass
 class Case:
     filters: list[AudienceSpecFilter]
-    where: str
+    where: str | dict[str | str]  # use the dict form to parameterize by dialect
     matches: list[Row]
     chosen_n: int = 3
 
@@ -391,7 +440,7 @@ def test_compose_query(testcase, db_session, compiler, use_deterministic_random)
                 "length": "length",
                 "regexp": "REGEXP",
                 "not_regexp": "NOT REGEXP",
-                "bool_filter": "IN (1)",
+                "bool_filter": "IS 1",
                 "randomize": "ORDER BY test_table.id",
                 "limit_offset": "LIMIT 3 OFFSET 0",
             }
@@ -401,11 +450,96 @@ def test_compose_query(testcase, db_session, compiler, use_deterministic_random)
                 "length": "char_length",
                 "regexp": "~",
                 "not_regexp": "!~",
-                "bool_filter": "IN (true)",
+                "bool_filter": "IS true",
                 "randomize": "ORDER BY test_table.id",
                 "limit_offset": " LIMIT 3",
             }
     assert sql == str.format(testcase.where, **subs)
+    query_results = db_session.execute(q).all()
+    assert list(sorted([r.id for r in query_results])) == list(
+        sorted(r.id for r in testcase.matches)
+    ), testcase
+
+
+@pytest.mark.parametrize(
+    "testcase",
+    [
+        # Test exlusions
+        Case(
+            filters=[
+                AudienceSpecFilter(
+                    field_name="bool_col", relation=Relation.EXCLUDES, value=[True]
+                )
+            ],
+            where={
+                DbType.SQLITE: "bool_col IS NOT 1",
+                DbType.BQ: "`bool_col` IS NOT true",
+                DbType.OTHER: "bool_col IS NOT true",
+            },
+            matches=[ROW_10, ROW_30],
+        ),
+        Case(
+            filters=[
+                AudienceSpecFilter(
+                    field_name="bool_col",
+                    relation=Relation.EXCLUDES,
+                    value=[False, None],
+                )
+            ],
+            where={
+                DbType.SQLITE: "bool_col IS NOT 0 AND bool_col IS NOT NULL",
+                DbType.BQ: "`bool_col` IS NOT false AND `bool_col` IS NOT NULL",
+                DbType.OTHER: "bool_col IS NOT false AND bool_col IS NOT NULL",
+            },
+            matches=[ROW_20],
+        ),
+        # Test inclusions
+        Case(
+            filters=[
+                AudienceSpecFilter(
+                    field_name="bool_col", relation=Relation.INCLUDES, value=[False]
+                )
+            ],
+            where={
+                DbType.SQLITE: "bool_col IS 0",
+                DbType.BQ: "`bool_col` IS false",
+                DbType.OTHER: "bool_col IS false",
+            },
+            matches=[ROW_30],
+        ),
+        Case(
+            filters=[
+                AudienceSpecFilter(
+                    field_name="bool_col",
+                    relation=Relation.INCLUDES,
+                    value=[True, None],
+                )
+            ],
+            where={
+                DbType.SQLITE: "bool_col IS 1 OR bool_col IS NULL",
+                DbType.BQ: "`bool_col` IS true OR `bool_col` IS NULL",
+                DbType.OTHER: "bool_col IS true OR bool_col IS NULL",
+            },
+            matches=[ROW_10, ROW_20],
+        ),
+    ],
+)
+def test_boolean_filter(testcase, db_session, compiler):
+    column = Column("bool_col", Boolean)
+    # First check the SQL for the where clause is generated correctly.
+    operators = create_filter(column, testcase.filters[0])
+    sql = compiler(operators)
+    _, db_type, _ = get_test_dwh_info()
+    db_type = db_type if db_type in testcase.where else DbType.OTHER
+    assert sql == testcase.where[db_type], db_type
+
+    # Then verify that the full query executes correctly.
+    table = SampleNullableTable.get_table()
+    filters = create_filters(
+        table,
+        AudienceSpec(participant_type=table.name, filters=testcase.filters),
+    )
+    q = compose_query(table, testcase.chosen_n, filters)
     query_results = db_session.execute(q).all()
     assert list(sorted([r.id for r in query_results])) == list(
         sorted(r.id for r in testcase.matches)
