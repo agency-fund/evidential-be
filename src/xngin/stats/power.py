@@ -50,7 +50,7 @@ def analyze_metric_power(
 
         if effect_size == 0.0:
             raise ValueError(
-                f"Cannot detect an effect-size of 0. Try changing your effect-size."
+                "Cannot detect an effect-size of 0. Try changing your effect-size."
             )
 
         power_analysis = sms.TTestIndPower()
