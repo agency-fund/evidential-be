@@ -8,6 +8,7 @@ from urllib.parse import urlparse
 
 import httpx
 import sqlalchemy
+from httpx import codes
 from pydantic import (
     BaseModel,
     PositiveInt,
@@ -20,6 +21,12 @@ from pydantic import (
 from sqlalchemy import Engine, event, text
 from sqlalchemy.exc import NoSuchTableError
 from sqlalchemy.orm import Session
+from tenacity import (
+    retry,
+    wait_random,
+    retry_if_not_exception_type,
+    stop_after_delay,
+)
 
 from xngin.apiserver.settings_secrets import replace_secrets
 from xngin.db_extensions import NumpyStddev
@@ -29,7 +36,15 @@ DEFAULT_SETTINGS_FILE = "xngin.settings.json"
 logger = logging.getLogger(__name__)
 
 
-class FailureFetchingSettingsError(Exception):
+class UnclassifiedRemoteSettingsError(Exception):
+    """Raised when we fail to fetch remote settings for an unclassified reason."""
+
+    pass
+
+
+class RemoteSettingsClientError(Exception):
+    """Raised when we fail to fetch remote settings due to our misconfiguration."""
+
     pass
 
 
@@ -37,28 +52,47 @@ class FailureFetchingSettingsError(Exception):
 def get_settings_for_server():
     """Constructs an XnginSettings for use by the API server."""
     settings_path = os.environ.get("XNGIN_SETTINGS", DEFAULT_SETTINGS_FILE)
-    logger.info("Loading XNGIN_SETTINGS: %s", settings_path)
 
-    # TODO: Retries, timeout, logging config summary, etc.
     if settings_path.startswith("https://"):
-        parsed = urlparse(settings_path)
-        headers: dict = {}
-        if auth := os.environ.get("XNGIN_SETTINGS_AUTHORIZATION"):
-            headers["Authorization"] = auth.strip()
-        if parsed.hostname == "api.github.com" and parsed.path.startswith("/repos"):
-            headers["Accept"] = "application/vnd.github.v3.raw"
-        with httpx.Client(headers=headers) as client:
-            response = client.get(settings_path)
-            if response.status_code != httpx.codes.OK:
-                raise FailureFetchingSettingsError(
-                    f"{response.status_code} {response.text}"
-                )
-            settings_raw = response.json()
+        settings_raw = get_remote_settings(settings_path)
     else:
+        logger.info("Loading XNGIN_SETTINGS from disk: %s", settings_path)
         with open(settings_path) as f:
             settings_raw = json.load(f)
     settings_raw = replace_secrets(settings_raw)
     return XnginSettings.model_validate(settings_raw)
+
+
+@retry(
+    reraise=True,
+    retry=retry_if_not_exception_type(RemoteSettingsClientError),
+    stop=stop_after_delay(15),
+    wait=wait_random(1, 3),
+)
+def get_remote_settings(url):
+    """Fetches the settings from a remote URL.
+
+    Retries: Requests that take more than 5 seconds, or that respond with a server error, will be retried. We do not
+    retry errors that look like misconfigurations on our side (e.g. 404s).
+    """
+    parsed = urlparse(url)
+    headers: dict = {}
+    if auth := os.environ.get("XNGIN_SETTINGS_AUTHORIZATION"):
+        headers["Authorization"] = auth.strip()
+    if parsed.hostname == "api.github.com" and parsed.path.startswith("/repos"):
+        headers["Accept"] = "application/vnd.github.v3.raw"
+    logger.info("Loading XNGIN_SETTINGS from URL: %s", url)
+    retrying_transport = httpx.HTTPTransport(retries=2)
+    with httpx.Client(
+        transport=retrying_transport, headers=headers, timeout=5
+    ) as client:
+        response = client.get(url)
+        status = response.status_code
+        if status == codes.OK:
+            return response.json()
+        if codes.is_client_error(status):
+            raise RemoteSettingsClientError(f"{status}: {url}")
+        raise UnclassifiedRemoteSettingsError(f"{status} {response.text}")
 
 
 class ConfigBaseModel(BaseModel):

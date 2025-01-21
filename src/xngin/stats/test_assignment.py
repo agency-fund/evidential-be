@@ -45,8 +45,11 @@ def sample_table():
 
 @pytest.fixture
 def sample_data():
+    return pd.DataFrame(make_sample_data_dict())
+
+
+def make_sample_data_dict(n=1000):
     np.random.seed(42)
-    n = 1000
     data = {
         "id": range(n),
         "age": np.round(np.random.normal(30, 5, n), 0),
@@ -54,12 +57,12 @@ def sample_data():
         "gender": np.random.choice(["M", "F"], n),
         "region": np.random.choice(["North", "South", "East", "West"], n),
         "skewed": np.random.permutation(
-            np.concatenate((np.repeat([1], 900), np.repeat([0], 100)))
+            np.concatenate((np.repeat([1], n * 0.9), np.repeat([0], n * 0.1)))
         ),
     }
     data["income_dec"] = [Decimal(i).quantize(Decimal("1")) for i in data["income"]]
     data["is_male"] = [g == "M" for g in data["gender"]]
-    return pd.DataFrame(data)
+    return data
 
 
 def test_assign_treatment(sample_table, sample_data):
@@ -72,17 +75,18 @@ def test_assign_treatment(sample_table, sample_data):
         id_col="id",
         arm_names=["control", "treatment"],
         experiment_id="b767716b-f388-4cd9-a18a-08c4916ce26f",
-        description="Test experiment",
         random_state=42,
     )
 
-    assert result.f_statistic == pytest.approx(0.006156735)
-    assert result.p_value == pytest.approx(0.99992466)
-    assert result.balance_ok
+    assert result.balance_check.f_statistic == pytest.approx(0.006156735)
+    assert result.balance_check.p_value == pytest.approx(0.99992466)
+    assert result.balance_check.balance_ok
     assert str(result.experiment_id) == "b767716b-f388-4cd9-a18a-08c4916ce26f"
-    assert result.description == "Test experiment"
     assert result.sample_size == len(sample_data)
-    assert result.sample_size == result.numerator_df + result.denominator_df + 1
+    assert (
+        result.sample_size
+        == result.balance_check.numerator_df + result.balance_check.denominator_df + 1
+    )
     assert result.id_col == "id"
     assert isinstance(result.assignments, list)
     assert len(set([x.participant_id for x in result.assignments])) == len(
@@ -115,7 +119,6 @@ def test_assign_treatment_multiple_arms(sample_table, sample_data):
         id_col="id",
         arm_names=["control", "treatment_a", "treatment_b"],
         experiment_id="b767716b-f388-4cd9-a18a-08c4916ce26f",
-        description="Test multi-arm experiment",
     )
 
     # Check that assignments is a list
@@ -148,7 +151,6 @@ def test_assign_treatment_reproducibility(sample_table, sample_data):
         id_col="id",
         arm_names=["control", "treatment"],
         experiment_id="b767716b-f388-4cd9-a18a-08c4916ce26f",
-        description="Test reproducibility",
         random_state=42,
     )
 
@@ -159,7 +161,6 @@ def test_assign_treatment_reproducibility(sample_table, sample_data):
         id_col="id",
         arm_names=["control", "treatment"],
         experiment_id="b767716b-f388-4cd9-a18a-08c4916ce26f",
-        description="Test reproducibility",
         random_state=42,
     )
 
@@ -188,7 +189,6 @@ def test_assign_treatment_with_missing_values(sample_table, sample_data):
         id_col="id",
         arm_names=["control", "treatment"],
         experiment_id="b767716b-f388-4cd9-a18a-08c4916ce26f",
-        description="Test with missing values",
     )
 
     assert result.sample_size == len(sample_data)
@@ -209,6 +209,7 @@ def test_assign_treatment_with_obj_columns_inferred(sample_table, sample_data):
         object3: Any
 
     n = len(sample_data)
+    # Test numeric types mistakenly typed as objects
     sample_data = sample_data.assign(
         object1=[2**32] * (n - 1) + [2],
         # If not converted, causes SyntaxError due to floating point numbers
@@ -226,13 +227,12 @@ def test_assign_treatment_with_obj_columns_inferred(sample_table, sample_data):
         id_col="id",
         arm_names=["control", "treatment"],
         experiment_id="b767716b-f388-4cd9-a18a-08c4916ce26f",
-        description="Test with numeric types mistakenly typed as objects",
     )
 
     assert result.sample_size == len(sample_data)
     assert result.id_col == "id"
-    assert pd.isna(result.p_value) is False
-    assert pd.isna(result.f_statistic) is False
+    assert pd.isna(result.balance_check.p_value) is False
+    assert pd.isna(result.balance_check.f_statistic) is False
     # Check that treatment assignments are not None or NaN
     assert all(
         participant.treatment_assignment is not None
@@ -255,15 +255,14 @@ def test_assign_treatment_with_integers_as_floats_for_unique_id(
             id_col="id",
             arm_names=["control", "treatment"],
             experiment_id="b767716b-f388-4cd9-a18a-08c4916ce26f",
-            description="Test integers_as_floats_for_unique_id",
             random_state=42,
         )
 
     # We should be able to handle Decimals (e.g. from psycopg2 with redshift numerics).
     sample_data["id"] = sample_data["id"].apply(Decimal)
     result = assign(sample_data)
-    assert result.f_statistic == pytest.approx(0.006156735)
-    assert result.p_value == pytest.approx(0.99992466)
+    assert result.balance_check.f_statistic == pytest.approx(0.006156735)
+    assert result.balance_check.p_value == pytest.approx(0.99992466)
     json = result.model_dump()
     assert json["assignments"][0]["participant_id"] == "0"
     assert json["assignments"][1]["participant_id"] == "1"
@@ -292,7 +291,6 @@ def test_decimal_and_bool_strata_are_rendered_correctly(sample_table, sample_dat
         id_col="id",
         arm_names=["control", "treatment"],
         experiment_id="b767716b-f388-4cd9-a18a-08c4916ce26f",
-        description="Test decimals",
         random_state=42,
     )
 
@@ -301,3 +299,32 @@ def test_decimal_and_bool_strata_are_rendered_correctly(sample_table, sample_dat
         # we rounded the Decimal to an int, so shouldn't see the decimal point
         assert "." not in json["strata"][0]["strata_value"], json
         assert json["strata"][1]["strata_value"] in ("True", "False"), json
+
+
+def test_with_nans_that_would_break_stochatreat_without_preprocessing(sample_table):
+    local_data = make_sample_data_dict(20)
+    # Replace entries with NaN such that the grouping into strata causes stochatreat to raise a
+    # ValueError as it internally uses df.groupby(..., dropna=True), causing the count of
+    # synthetic rows created to be off.
+    local_data["age"] = [None, 2] + [1, 2] * 9
+    local_data = pd.DataFrame(local_data)
+    rows = [Row(**row) for row in local_data.to_dict("records")]
+    result = assign_treatment(
+        sa_table=sample_table,
+        data=rows,
+        stratum_cols=["age"],
+        id_col="id",
+        arm_names=["control", "treatment"],
+        experiment_id="b767716b-f388-4cd9-a18a-08c4916ce26f",
+        random_state=42,
+    )
+    # But we still expect success since internally we'll preprocess the data to handle NaNs.
+    assert result.balance_check.f_statistic > 0
+    assert result.balance_check.p_value > 0
+    assert result.balance_check.balance_ok is False
+    assert result.sample_size == len(local_data)
+    assert (
+        result.sample_size
+        == result.balance_check.numerator_df + result.balance_check.denominator_df + 1
+    )
+    assert all(len(participant.strata) == 1 for participant in result.assignments)

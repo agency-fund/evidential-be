@@ -363,7 +363,6 @@ def assign_treatment_api(
         id_col=unique_id_col,
         arm_names=arm_names,
         experiment_id=str(body.design_spec.experiment_id),
-        description=body.design_spec.description,
         fstat_thresh=body.design_spec.fstat_thresh,
         random_state=random_state,
     )

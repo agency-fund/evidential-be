@@ -55,10 +55,9 @@ Datasource-ID: customer-test
             "metric_stddev": 0.62489267825032,
             "available_n": 100000
           },
-          "available_n": 100000,
           "target_n": 43168,
           "sufficient_n": true,
-          "needed_target": null,
+          "target_possible": null,
           "msg": {
             "type": "sufficient",
             "msg": "There are 100000 units available to run your experiment and 43168.0 units are needed to meet your experimental design specs. There are enough units available, you only need 43168.0 of the 100000 units to meet your experimental design specs.",
@@ -68,13 +67,14 @@ Datasource-ID: customer-test
     ]
   },
   "experiment_assignment": {
-    "f_statistic": 1.1153,
-    "numerator_df": 523,
-    "denominator_df": 476,
-    "p_value": 0.1121,
-    "balance_ok": false,
+    "balance_check": {
+      "f_statistic": 1.1153,
+      "numerator_df": 523,
+      "denominator_df": 476,
+      "p_value": 0.1121,
+      "balance_ok": false
+    },
     "experiment_id": "df6456bf-09c5-4d7f-82f1-75679db54477",
-    "description": "Sample experiment description.",
     "sample_size": 1000,
     "id_col": "groups_id",
     "assignments": [

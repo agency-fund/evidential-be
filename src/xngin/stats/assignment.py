@@ -11,9 +11,13 @@ from stochatreat import stochatreat
 from xngin.apiserver.api_types import (
     AssignResponse,
     Assignment,
+    BalanceCheck,
     Strata,
 )
-from xngin.stats.balance import check_balance
+from xngin.stats.balance import (
+    check_balance_of_preprocessed_df,
+    preprocess_for_balance_and_stratification,
+)
 
 
 class RowProtocol(Protocol):
@@ -30,7 +34,6 @@ def assign_treatment(
     id_col: str,
     arm_names: list[str],
     experiment_id: str,
-    description: str,
     fstat_thresh: float = 0.5,
     random_state: int | None = None,
 ) -> AssignResponse:
@@ -44,7 +47,6 @@ def assign_treatment(
         id_col: Name of column containing unit identifiers
         arm_names: Names of treatment arms
         experiment_id: Unique identifier for experiment
-        description: Description of experiment
         fstat_thresh: Threshold for F-statistic p-value
         random_state: Random seed for reproducibility
 
@@ -64,28 +66,40 @@ def assign_treatment(
     # Dedupe the strata names and then sort them for a stable output ordering
     stratum_cols = sorted(set(stratum_cols))
 
+    df_clean, exclude_cols_set = preprocess_for_balance_and_stratification(
+        data=df[[*stratum_cols]], exclude_cols=[id_col]
+    )
+    post_stratum_cols = df_clean.columns.to_list()
+    # Add back the id column for stochatreat
+    df_clean[id_col] = df[id_col]
+
     # Assign treatments
     n_arms = len(arm_names)
-    # TODO: when we support unequal arm assigments, be careful about ensuring the right treatment assignment id is
-    #       mapped to the right arm_name.
+    # TODO: when we support unequal arm assigments, be careful about ensuring the right treatment
+    # assignment id is mapped to the right arm_name.
     treatment_status = stochatreat(
-        data=df,
-        stratum_cols=stratum_cols,
+        data=df_clean,
+        idx_col=id_col,
+        stratum_cols=post_stratum_cols,
         treats=n_arms,
         probs=[1 / n_arms] * n_arms,
-        idx_col=id_col,
-        # internally uses np.random.RandomState which can take None
+        # internally uses legacy np.random.RandomState which can take None
         random_state=random_state,  # type: ignore[arg-type]
     ).drop(columns=["stratum_id"])
-    df = df.merge(treatment_status, on=id_col)
+    df_clean = df_clean.merge(treatment_status, on=id_col)
 
-    balance_check = check_balance(
-        df[[*stratum_cols, "treat"]], "treat", exclude_cols=[id_col], alpha=fstat_thresh
+    # Do balance check with treatment assignments as the dependent var using preprocessed data.
+    balance_check_cols = [*post_stratum_cols, "treat"]
+    balance_check = check_balance_of_preprocessed_df(
+        df_clean[balance_check_cols],
+        treatment_col="treat",
+        exclude_col_set=exclude_cols_set,
+        alpha=fstat_thresh,
     )
 
     # Prepare assignments for return along with the original data as a list of ExperimentParticipant objects.
     participants_list = []
-    for treatment_assignment, row in zip(df["treat"], data, strict=False):
+    for treatment_assignment, row in zip(df_clean["treat"], data, strict=False):
         # ExperimentStrata for each column
         row_dict = row._asdict()
         strata = [
@@ -110,14 +124,15 @@ def assign_treatment(
 
     # Return the ExperimentAssignment with the list of participants
     return AssignResponse(
-        f_statistic=np.round(balance_check.f_statistic, 9),
-        numerator_df=round(balance_check.numerator_df),
-        denominator_df=round(balance_check.denominator_df),
-        p_value=np.round(balance_check.f_pvalue, 9),
-        balance_ok=bool(balance_check.f_pvalue > fstat_thresh),
+        balance_check=BalanceCheck(
+            f_statistic=np.round(balance_check.f_statistic, 9),
+            numerator_df=round(balance_check.numerator_df),
+            denominator_df=round(balance_check.denominator_df),
+            p_value=np.round(balance_check.f_pvalue, 9),
+            balance_ok=bool(balance_check.f_pvalue > fstat_thresh),
+        ),
         experiment_id=UUID(experiment_id),
-        description=description,
-        sample_size=len(df),
+        sample_size=len(df_clean),
         id_col=id_col,
         assignments=participants_list,
     )

@@ -31,7 +31,7 @@ The following is a proposal of the main components of this service:
 4. API endpoints that provide a power analysis check and stratified random assignment of treatment
 5. A treatment assignment service that stores treatment assignments and provides an API endpoint to provide treatment
    status by ID
-6. Save experiment (inclusive of Audience) specifications
+6. Save experiment (inclusive of Audience) specifications. See [EXPERIMENTS.md](EXPERIMENTS.md) for more info.
 
 ## Prerequisites
 

@@ -454,7 +454,7 @@ def test_get_stats_on_boolean_metric(db_session):
         field_name="bool_col",
         metric_type=MetricType.BINARY,
         metric_baseline=0.6666666666666666,
-        metric_stddev=0.4714045207910317,
+        metric_stddev=None,
         available_n=3,
     )
     assert len(rows) == 1

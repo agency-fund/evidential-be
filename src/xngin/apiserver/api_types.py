@@ -21,37 +21,6 @@ VALID_SQL_COLUMN_REGEX = r"^[a-zA-Z_][a-zA-Z0-9_]*$"
 
 EXPERIMENT_IDS_SUFFIX = "experiment_ids"
 
-# An experiment is comprised of two primary components:
-# 1. An AudienceSpec which defines the pool of potential participants
-# 2. A DesignSpec specifying:
-#   a. the treatment arms
-#   b. outcome metrics,
-#   c. strata
-#   d. experiment meta data (start/end date, name, description)
-#   e. statistical parameters (power, significance, balance test threshold)
-
-# The goal is to produce an ExperimentAssignment from the AudienceSpec and DesignSpec.
-# We go through two steps to enable this:
-# 0. Baseline data retrieval -
-# 1. Power analysis - Given and AudienceSpec and DesignSpec we analyze the
-#    statistical power for each metric in the DesignSpec, along with the statistical
-#    parameters. This occurs as follows for each metric:
-#   a. If there is no baseline value (and std dev for numeric metrics), go to the
-#      data source to fetch these values.
-#   b. Use the declared metric_target or compute this target based on
-#      metric_pct_change and the baseline value.
-#   c. Use the number of arms, metric baseline and target, statistical parameters
-#      and the number of participants available using the Audience filter to determine
-#      if we're sufficiently powered. If we are not, compute the effect size needed to
-#      be powered. This power information can be added to the metrics in the DesignSpec.
-# 2. Assignment - the Power analysis computes the minimum number of participants needed
-#    to be statistically powered "n" which is left to the user to choose during assignment.
-#    Assignment takes the same inputs, the AudienceSpec and DesignSpec to generate a list
-#    of "n" users randomly assigned using the set of treatment arms and the strata. This
-#    should return a list of objects containing a participant id, treatment assignment,
-#    and strata values.
-# 3. Analysis - TBD
-
 
 def validate_can_be_used_as_column_name(value: str, info: ValidationInfo) -> str:
     """Validates value is usable as a SQL column name."""
@@ -308,10 +277,28 @@ class DesignSpecMetric(DesignSpecMetricBase):
     metric_type: Annotated[
         MetricType | None, Field(description="Inferred from dwh type.")
     ] = None
-    metric_baseline: float | None = None
-    # TODO(roboton): we should only set this value if metric_type is NUMERIC
-    metric_stddev: float | None = None
+    metric_baseline: Annotated[
+        float | None, Field(description="Mean of the tracked metric.")
+    ] = None
+    metric_stddev: Annotated[
+        float | None,
+        Field(
+            description="Standard deviation is set only for metric_type.NUMERIC metrics."
+        ),
+    ] = None
     available_n: int | None = None
+
+    @model_validator(mode="after")
+    def stddev_only_if_numeric(self):
+        """Enforce that metric_stddev is present for NUMERICs"""
+        if self.metric_type == MetricType.NUMERIC and self.metric_stddev is None:
+            raise ValueError("missing stddev")
+        if (
+            self.metric_type is not MetricType.NUMERIC
+            and self.metric_stddev is not None
+        ):
+            raise ValueError("should not have stddev")
+        return self
 
 
 class DesignSpecMetricRequest(DesignSpecMetricBase):
@@ -354,8 +341,8 @@ class Arm(ApiBaseModel):
     arm_description: str | None = None
 
 
-class DesignSpecBase(ApiBaseModel):
-    """Describes the experiment design parameters excluding metrics."""
+class DesignSpec(ApiBaseModel):
+    """Experiment design parameters for power calculations and treatment assignment."""
 
     experiment_id: uuid.UUID
     experiment_name: str
@@ -371,24 +358,6 @@ class DesignSpecBase(ApiBaseModel):
     #       field that takes a list of Stratum objects, akin to filters: and metrics:.
     strata_field_names: list[FieldName]
 
-    # stat parameters
-    power: Annotated[float, Field(0.8, ge=0, le=1)]
-    alpha: Annotated[float, Field(0.05, ge=0, le=1)]
-    fstat_thresh: Annotated[float, Field(0.6, ge=0, le=1)]
-
-    @field_serializer("start_date", "end_date", when_used="json")
-    def serialize_dt(self, dt: datetime, _info):
-        """Convert dates to iso strings in model_dump_json()/model_dump(mode='json')"""
-        return dt.isoformat()
-
-
-# TODO? Consider making this the one and only DesignSpec model, and if the user wants to store DesignSpecMetric details,
-# it should be done as part of storing PowerResponse in the CommitRequest, rather than assuming the user will fish out
-# the DesignSpecMetric details from the response just to put them back into the original DesignSpecForPower to create a
-# DesignSpec.
-class DesignSpecForPower(DesignSpecBase):
-    """Experiment design parameters for power calculations."""
-
     metrics: Annotated[
         list[DesignSpecMetricRequest],
         Field(
@@ -398,11 +367,39 @@ class DesignSpecForPower(DesignSpecBase):
         ),
     ]
 
+    # stat parameters
+    power: Annotated[
+        float,
+        Field(
+            0.8,
+            ge=0,
+            le=1,
+            description="The chance of detecting a real non-null effect, i.e. 1 - false negative rate.",
+        ),
+    ]
+    alpha: Annotated[
+        float,
+        Field(
+            0.05,
+            ge=0,
+            le=1,
+            description="The chance of a false positive, i.e. there is no real non-null effect, but we mistakenly think there is one.",
+        ),
+    ]
+    fstat_thresh: Annotated[
+        float,
+        Field(
+            0.6,
+            ge=0,
+            le=1,
+            description='Threshold on the p-value of joint significance in doing the omnibus balance check, above which we declare the data to be "balanced".',
+        ),
+    ]
 
-class DesignSpec(DesignSpecBase):
-    """Describes the experiment design parameters."""
-
-    metrics: Annotated[list[DesignSpecMetric], Field(..., min_length=1)]
+    @field_serializer("start_date", "end_date", when_used="json")
+    def serialize_dt(self, dt: datetime, _info):
+        """Convert dates to iso strings in model_dump_json()/model_dump(mode='json')"""
+        return dt.isoformat()
 
 
 class MetricAnalysisMessageType(enum.StrEnum):
@@ -425,8 +422,6 @@ class MetricAnalysis(ApiBaseModel):
 
     # Store the original request+baseline info here
     metric_spec: DesignSpecMetric
-    # TODO: Remove available_n as it's redundant with the metric_spec.
-    available_n: int
 
     # The initial result of the power calculation
     target_n: Annotated[
@@ -440,12 +435,18 @@ class MetricAnalysis(ApiBaseModel):
         ),
     ] = None
 
-    # If insufficient sample size, tell the user what metric value their n does let them possibly detect as an absolute
-    # value and % change from baseline.
-    # TODO? Rename target_possible and pct_change_possible
-    needed_target: float | None = None
-    # TODO: add compute the equivalent % change
-    # metric_pct_change_possible: float | None = None
+    target_possible: Annotated[
+        float | None,
+        Field(
+            description="If there is an insufficient sample size to meet the desired metric_target, we report what is possible given the available_n. This value is equivalent to the relative pct_change_possible. This is None when there is a sufficient sample size to detect the desired change."
+        ),
+    ] = None
+    pct_change_possible: Annotated[
+        float | None,
+        Field(
+            description="If there is an insufficient sample size to meet the desired metric_pct_change, we report what is possible given the available_n. This value is equivalent to the absolute target_possible. This is None when there is a sufficient sample size to detect the desired change."
+        ),
+    ] = None
 
     msg: Annotated[
         MetricAnalysisMessage | None,
@@ -496,7 +497,7 @@ class Assignment(ApiBaseModel):
 class BalanceCheck(ApiBaseModel):
     """Describes balance test results for treatment assignment."""
 
-    f_stat: float
+    f_statistic: float
     numerator_df: int
     denominator_df: int
     p_value: float
@@ -506,17 +507,9 @@ class BalanceCheck(ApiBaseModel):
 class AssignResponse(ApiBaseModel):
     """Describes assignments for all participants and balance test results."""
 
-    # TODO(roboton): remove next 5 fields in favor of BalanceCheck object
-    f_statistic: float
-    numerator_df: int
-    denominator_df: int
-    p_value: float
-    balance_ok: bool
+    balance_check: BalanceCheck
 
-    # TODO(roboton): should we include design_spec and audience_spec in this object
     experiment_id: uuid.UUID
-    # TODO(roboton): drop description since it will be in included design_spec
-    description: str
     sample_size: int
     id_col: str
     assignments: list[Assignment]
@@ -582,7 +575,7 @@ class AssignRequest(ApiBaseModel):
 
 
 class PowerRequest(ApiBaseModel):
-    design_spec: DesignSpecForPower
+    design_spec: DesignSpec
     audience_spec: AudienceSpec
 
 
