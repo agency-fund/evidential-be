@@ -410,6 +410,7 @@ class MetricAnalysisMessageType(enum.StrEnum):
 
     SUFFICIENT = "sufficient"
     INSUFFICIENT = "insufficient"
+    NO_BASELINE = "no baseline"
 
 
 class MetricAnalysisMessage(ApiBaseModel):
