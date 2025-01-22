@@ -4,6 +4,7 @@ import numpy as np
 import pandas as pd
 from pandas.api.types import is_numeric_dtype
 import statsmodels.formula.api as smf
+from xngin.stats.stats_errors import StatsBalanceError
 
 
 @dataclass(slots=True)
@@ -76,9 +77,11 @@ def preprocess_for_balance_and_stratification(
 
     exclude_set = set() if exclude_cols is None else set(exclude_cols)
 
-    # Exclude columns from the check that contain only the same value (including None).
-    single_value_cols = df_analysis.columns[df_analysis.nunique(dropna=False) <= 1]
-    exclude_set.union(single_value_cols)
+    # Exclude columns from the check that contain only the same value (excluding None).
+    # Note: pd.qcut() will return NaN for all objects if the non-None values are identical and we
+    # drop duplicate bin edges, and pd.get_dummies() would end up dropping it, so drop here.
+    single_value_cols = df_analysis.columns[df_analysis.nunique(dropna=True) <= 1]
+    exclude_set = exclude_set.union(single_value_cols)
     # TODO: check for is_unique columns
 
     # Handle missing values in numeric columns by converting to quartiles
@@ -103,6 +106,7 @@ def preprocess_for_balance_and_stratification(
         df_analysis[new_col] = pd.Series(
             np.nan_to_num(labels, nan=quantiles).astype("int8"), dtype="category"
         )
+        # TODO: stratification doesn't need dummies; a category is fine
         df_analysis = pd.get_dummies(
             df_analysis,
             columns=[new_col],
@@ -130,6 +134,9 @@ def check_balance_of_preprocessed_df(
     See check_balance(). Assumes the df and exclude_col_set came from
     preprocess_for_balance_and_stratification().
     """
+    if data[treatment_col].nunique() <= 1:
+        raise ValueError("Treatment column has insufficient arms.")
+
     # Convert all non-numeric columns into dummy vars
     non_numeric_columns = {c for c in data.columns if not is_numeric_dtype(data[c])}
     cols_to_dummies = list(non_numeric_columns - exclude_col_set)
@@ -147,6 +154,10 @@ def check_balance_of_preprocessed_df(
         for col in df_analysis.columns
         if col != treatment_col and col not in exclude_col_set
     ]
+    if len(covariates) == 0:
+        raise StatsBalanceError(
+            "No usable fields for performing a balance check found. Please check your metrics and fields used for stratification."
+        )
 
     # TODO(roboton): Run multi-class regression via MVLogit
     # df_analysis[treatment_col] = pd.Categorical(df_analysis[treatment_col])

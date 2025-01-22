@@ -1,7 +1,12 @@
 import pytest
 import pandas as pd
 import numpy as np
-from xngin.stats.balance import check_balance
+from xngin.stats.balance import (
+    check_balance,
+    check_balance_of_preprocessed_df,
+    preprocess_for_balance_and_stratification,
+)
+from xngin.stats.stats_errors import StatsBalanceError
 
 
 @pytest.fixture
@@ -85,7 +90,7 @@ def test_check_balance_with_column_exclusion_from_dummy_var_generation():
     assert result.model_summary is not None
 
 
-def test_check_balance_with_skewed_column():
+def test_check_balance_with_skewed_column_doesnt_raise_valueerror():
     """
     If pd.qcut() used labels, this triggers the ValueError:
       Bin labels must be one fewer than the number of bin edges
@@ -123,3 +128,85 @@ def test_check_balance_with_mostly_nulls_categorical():
     assert result.denominator_df > 0
     assert isinstance(result.is_balanced, bool)
     assert result.model_summary is not None
+
+
+def test_preprocessing():
+    """
+    Capture current behavior before further changes.
+    """
+    data = {
+        # Numeric
+        "ints": range(0, 10),
+        # Numeric w/ missing values -> quantized
+        "ints_na": [*range(0, 9), None],
+        # Non-numeric
+        "strs": ["a", "b", "c", "d", "e", "f", "g", "h", "i", "j"],
+        # Non-numeric with missing values -> backfilled
+        "strs_na": ["a", "b", "c", "d", "e", "f", "g", "h", "i", None],
+    }
+    missing_string = "_TEST_"
+    df, exclude = preprocess_for_balance_and_stratification(
+        pd.DataFrame(data), quantiles=4, missing_string=missing_string
+    )
+    print(df)
+    assert exclude == set()
+    assert df["ints"].nunique() == 10
+    assert df["strs"].nunique() == 10
+    assert df["strs_na"].nunique() == 10
+    assert df["strs_na"][9] == missing_string
+    # ints_na is replaced with dummy vars, one per quantile but dropping the first level
+    assert df["ints_na_1"].nunique() == 2
+    assert df["ints_na_2"].nunique() == 2
+    assert df["ints_na_3"].nunique() == 2
+    assert df["ints_na_4"].nunique() == 2
+    assert len(df.columns) == 7
+
+
+def test_preprocessing_with_exclusions():
+    """
+    Capture current behavior before further changes.
+    """
+    data = pd.DataFrame({
+        # This is explicitly excluded by caller
+        "skip": [2, 2, 3, 3],
+        # These are excluded to to all being the same value.
+        "same_int": [1.0] * 4,
+        "same_str": ["a"] * 4,
+        # Excluded since NA is dropped when testing for all identical values.
+        "same_value_na": [1, 1, None, None],
+    })
+    df, exclude = preprocess_for_balance_and_stratification(data, exclude_cols=["skip"])
+    print(data)
+    print(df)
+    assert exclude == {"skip", "same_int", "same_str", "same_value_na"}
+    assert set(df.columns) == {"skip", "same_int", "same_str", "same_value_na"}
+    assert df.compare(data).empty  # test that they're the same
+
+    # Lastly check that if we did try to assign but have no variability, we raise an error.
+    with pytest.raises(StatsBalanceError) as excinfo:
+        df["treat"] = [0, 1, 0, 1]
+        check_balance_of_preprocessed_df(df, exclude_col_set=exclude)
+    assert "No usable fields for performing a balance check found." in str(
+        excinfo.value
+    )
+
+
+def test_preprocessing_booleans():
+    """
+    TODO: Verify handling booleans directly categoricals is preferred, as otherwise a skewed
+    distribution could result in every value collapsing into one quantile.
+    """
+    data = {
+        # If treated as a numeric and quantized, this list would get mapped to only one interval:
+        # (-0.001, 1.0]. But right now, we skip quantization if there's no NA.
+        "bools": [True] * 8 + [False] * 2,
+        # However, a raw list of booleans + None is stored as dtype='object', so we luckily
+        # inadvertently handle this as a categorical.
+        "bools_na": [True] * 8 + [False] * 1 + [None],
+    }
+    df, _ = preprocess_for_balance_and_stratification(pd.DataFrame(data))
+    print(df.dtypes)
+    assert df["bools"].nunique() == 2
+    assert df["bools_na"].nunique() == 3
+    assert df["bools"].dtype == "bool"
+    assert df["bools_na"].dtype == "object"
