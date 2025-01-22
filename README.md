@@ -311,6 +311,22 @@ One way to manually query pg is using the `psql` terminal included with Postgres
 psql -h localhost -p 5432 -d xngin -U xnginwebserver -c "select count(*) from alt.test_participant_type"
 ```
 
+### How can I run the _unittests_ that use my pg/bq/... instance as the test DWH?
+
+Only a subset of our tests actually use this approach that bypasses settings via the
+`XNGIN_TEST_DWH_URI` var; see [test_queries.py](src/xngin/apiserver/dwh/test_queries.py), which gets
+this value via the `get_test_dwh_info()` dependency. Examples:
+
+```shell
+XNGIN_TEST_DWH_URI="postgresql+psycopg://xnginwebserver:$PASSWORD@localhost:5432/xngin" \
+  pytest src/xngin/apiserver/dwh/test_queries.py
+
+# Note that not all unnittests were written to pass on BQ:
+XNGIN_TEST_DWH_URI="bigquery://xngin-development-dc/ds" \
+  GOOGLE_APPLICATION_CREDENTIALS=credentials.json \
+  pytest src/xngin/apiserver/dwh/test_queries.py::test_boolean_filter
+```
+
 ### How do I run our Github Action smoke tests?
 
 You could run the individual component tests as defined in the various jobs

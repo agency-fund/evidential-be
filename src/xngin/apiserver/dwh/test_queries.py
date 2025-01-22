@@ -4,7 +4,16 @@ import re
 from dataclasses import dataclass
 
 import pytest
-from sqlalchemy import Table, create_engine, Integer, Float, Boolean, String, event
+from sqlalchemy import (
+    Column,
+    Table,
+    create_engine,
+    Integer,
+    Float,
+    Boolean,
+    String,
+    event,
+)
 from sqlalchemy.orm import Session, DeclarativeBase, mapped_column
 
 from xngin.apiserver.api_types import (
@@ -18,7 +27,8 @@ from xngin.apiserver.api_types import (
 from xngin.apiserver.conftest import DbType, get_test_dwh_info
 from xngin.apiserver.dwh.queries import (
     compose_query,
-    create_filters,
+    create_filter,
+    create_query_filters_from_spec,
     get_stats_on_metrics,
     make_csv_regex,
 )
@@ -26,7 +36,46 @@ from xngin.db_extensions.custom_functions import NumpyStddev
 
 
 class Base(DeclarativeBase):
-    pass
+    @classmethod
+    def get_table(cls) -> Table:
+        """Helper to return a sqlalchemy.schema.Table"""
+        # Also gets around mypy typing issues, e.g. get() can return none, and SampleTable.__table__
+        # is of type FromClause, but we know it's a Table and must exist.
+        table = Base.metadata.tables.get(cls.__tablename__)
+        assert table is not None
+        return table
+
+
+class SampleNullableTable(Base):
+    __tablename__ = "test_nullable_table"
+
+    id = mapped_column(Integer, primary_key=True, autoincrement=False)
+    bool_col = mapped_column(Boolean, nullable=True)
+
+
+@dataclass
+class NullableRow:
+    id: int
+    bool_col: bool | None
+
+
+ROW_10 = NullableRow(
+    id=10,
+    bool_col=None,
+)
+ROW_20 = NullableRow(
+    id=20,
+    bool_col=True,
+)
+ROW_30 = NullableRow(
+    id=30,
+    bool_col=False,
+)
+SAMPLE_NULLABLE_TABLE_ROWS = [
+    ROW_10,
+    ROW_20,
+    ROW_30,
+]
 
 
 class SampleTable(Base):
@@ -38,15 +87,6 @@ class SampleTable(Base):
     bool_col = mapped_column(Boolean, nullable=False)
     string_col = mapped_column(String, nullable=False)
     experiment_ids = mapped_column(String, nullable=False)
-
-
-def get_sample_table() -> Table:
-    """Helper to return a sqlalchemy.schema.Table for SampleTable"""
-    # Also gets around mypy typing issues, e.g. get() can return none, and SampleTable.__table__ is of type FromClause,
-    # but we know it's a Table and must exist.
-    table = Base.metadata.tables.get(SampleTable.__tablename__)
-    assert table is not None
-    return table
 
 
 @dataclass
@@ -109,6 +149,8 @@ def fixture_db_session():
     session = Session(engine)
     for data in SAMPLE_TABLE_ROWS:
         session.add(SampleTable(**data.__dict__))
+    for data in SAMPLE_NULLABLE_TABLE_ROWS:
+        session.add(SampleNullableTable(**data.__dict__))
     session.commit()
 
     yield session
@@ -132,7 +174,7 @@ def fixture_compiler(engine):
 
 
 def test_compose_query_with_no_filters(compiler):
-    sql = compiler(compose_query(get_sample_table(), 2, []))
+    sql = compiler(compose_query(SampleTable.get_table(), 2, []))
     # regex to accommodate pg and sqlite compilers
     match = re.match(
         re.escape(
@@ -149,7 +191,7 @@ def test_compose_query_with_no_filters(compiler):
 @dataclass
 class Case:
     filters: list[AudienceSpecFilter]
-    where: str
+    where: str | dict[str | str]  # use the dict form to parameterize by dialect
     matches: list[Row]
     chosen_n: int = 3
 
@@ -159,7 +201,14 @@ EXPECTED_PREAMBLE = (
     """FROM test_table """
     """WHERE """
 )
+EXPECTED_PREAMBLE_BQ = (
+    """SELECT `test_table`.`id`, `test_table`.`int_col`, `test_table`.`float_col`, """
+    """`test_table`.`bool_col`, `test_table`.`string_col`, `test_table`.`experiment_ids` """
+    """FROM `test_table` """
+    """WHERE """
+)
 
+# TODO: generalize better to also handle bq dialect's regexp notation.
 FILTER_GENERATION_SUBCASES = [
     # compound filters
     Case(
@@ -247,6 +296,21 @@ FILTER_GENERATION_SUBCASES = [
             """{randomize} {limit_offset}"""
         ),
         matches=[ROW_200],
+    ),
+    # bool_col
+    Case(
+        filters=[
+            AudienceSpecFilter(
+                field_name="bool_col",
+                relation=Relation.INCLUDES,
+                value=[True],
+            )
+        ],
+        where=(
+            """test_table.bool_col {bool_filter} """
+            """{randomize} {limit_offset}"""
+        ),
+        matches=[ROW_100, ROW_300],
     ),
     # regexp hacks
     Case(
@@ -343,23 +407,33 @@ def test_compose_query(testcase, db_session, compiler, use_deterministic_random)
         AudienceSpecFilter.model_validate(filt.model_dump())
         for filt in testcase.filters
     ]
-    filters = create_filters(
-        get_sample_table(),
+    filters = create_query_filters_from_spec(
+        SampleTable.get_table(),
         AudienceSpec(
             participant_type=SampleTable.__tablename__, filters=testcase.filters
         ),
     )
-    q = compose_query(get_sample_table(), testcase.chosen_n, filters)
+    q = compose_query(SampleTable.get_table(), testcase.chosen_n, filters)
     sql = compiler(q)
-    assert sql.startswith(EXPECTED_PREAMBLE)
-    sql = sql[len(EXPECTED_PREAMBLE) :]
+
     _, db_type, _ = get_test_dwh_info()
+    match db_type:
+        case DbType.BQ:
+            assert sql.startswith(EXPECTED_PREAMBLE_BQ)
+            sql = sql[len(EXPECTED_PREAMBLE_BQ) :]
+            # Remove the conservative backticks around Identifiers for subsequent comparisons
+            sql = sql.replace("`", "")
+        case _:
+            assert sql.startswith(EXPECTED_PREAMBLE)
+            sql = sql[len(EXPECTED_PREAMBLE) :]
+
     match db_type:
         case DbType.SQLITE:
             subs = {
                 "length": "length",
                 "regexp": "REGEXP",
                 "not_regexp": "NOT REGEXP",
+                "bool_filter": "IS 1",
                 "randomize": "ORDER BY test_table.id",
                 "limit_offset": "LIMIT 3 OFFSET 0",
             }
@@ -369,6 +443,7 @@ def test_compose_query(testcase, db_session, compiler, use_deterministic_random)
                 "length": "char_length",
                 "regexp": "~",
                 "not_regexp": "!~",
+                "bool_filter": "IS true",
                 "randomize": "ORDER BY test_table.id",
                 "limit_offset": " LIMIT 3",
             }
@@ -376,7 +451,118 @@ def test_compose_query(testcase, db_session, compiler, use_deterministic_random)
     query_results = db_session.execute(q).all()
     assert list(sorted([r.id for r in query_results])) == list(
         sorted(r.id for r in testcase.matches)
+    ), testcase
+
+
+@pytest.mark.parametrize(
+    "testcase",
+    [
+        # Test exlusions
+        Case(
+            filters=[
+                AudienceSpecFilter(
+                    field_name="bool_col", relation=Relation.EXCLUDES, value=[True]
+                )
+            ],
+            where={
+                DbType.SQLITE: "bool_col IS NOT 1",
+                DbType.BQ: "`bool_col` IS NOT true",
+                DbType.OTHER: "bool_col IS NOT true",
+            },
+            matches=[ROW_10, ROW_30],
+        ),
+        Case(
+            filters=[
+                AudienceSpecFilter(
+                    field_name="bool_col",
+                    relation=Relation.EXCLUDES,
+                    value=[False, None],
+                )
+            ],
+            where={
+                DbType.SQLITE: "bool_col IS NOT 0 AND bool_col IS NOT NULL",
+                DbType.BQ: "`bool_col` IS NOT false AND `bool_col` IS NOT NULL",
+                DbType.OTHER: "bool_col IS NOT false AND bool_col IS NOT NULL",
+            },
+            matches=[ROW_20],
+        ),
+        # Test inclusions
+        Case(
+            filters=[
+                AudienceSpecFilter(
+                    field_name="bool_col", relation=Relation.INCLUDES, value=[False]
+                )
+            ],
+            where={
+                DbType.SQLITE: "bool_col IS 0",
+                DbType.BQ: "`bool_col` IS false",
+                DbType.OTHER: "bool_col IS false",
+            },
+            matches=[ROW_30],
+        ),
+        Case(
+            filters=[
+                AudienceSpecFilter(
+                    field_name="bool_col",
+                    relation=Relation.INCLUDES,
+                    value=[True, None],
+                )
+            ],
+            where={
+                DbType.SQLITE: "bool_col IS 1 OR bool_col IS NULL",
+                DbType.BQ: "`bool_col` IS true OR `bool_col` IS NULL",
+                DbType.OTHER: "bool_col IS true OR bool_col IS NULL",
+            },
+            matches=[ROW_10, ROW_20],
+        ),
+    ],
+)
+def test_boolean_filter(testcase, db_session, compiler):
+    column = Column("bool_col", Boolean)
+    # First check the SQL for the where clause is generated correctly.
+    operators = create_filter(column, testcase.filters[0])
+    sql = compiler(operators)
+    _, db_type, _ = get_test_dwh_info()
+    db_type = db_type if db_type in testcase.where else DbType.OTHER
+    assert sql == testcase.where[db_type], db_type
+
+    # Then verify that the full query executes correctly.
+    table = SampleNullableTable.get_table()
+    filters = create_query_filters_from_spec(
+        table,
+        AudienceSpec(participant_type=table.name, filters=testcase.filters),
     )
+    q = compose_query(table, testcase.chosen_n, filters)
+    query_results = db_session.execute(q).all()
+    assert list(sorted([r.id for r in query_results])) == list(
+        sorted(r.id for r in testcase.matches)
+    ), testcase
+
+
+def test_boolean_filter_validation():
+    with pytest.raises(ValueError) as excinfo:
+        AudienceSpecFilter(
+            field_name="bool", relation=Relation.BETWEEN, value=[True, False]
+        )
+    assert "Values do not support BETWEEN." in str(excinfo.value)
+
+    with pytest.raises(ValueError) as excinfo:
+        AudienceSpecFilter(
+            field_name="bool", relation=Relation.INCLUDES, value=[True, True, True]
+        )
+    assert "Duplicate values" in str(excinfo.value)
+
+    with pytest.raises(ValueError) as excinfo:
+        AudienceSpecFilter(
+            field_name="bool", relation=Relation.INCLUDES, value=[True, False, None]
+        )
+    assert "allows all possible values" in str(excinfo.value)
+
+    with pytest.raises(ValueError) as excinfo:
+        AudienceSpecFilter(
+            field_name="bool", relation=Relation.EXCLUDES, value=[True, False, None]
+        )
+    assert "rejects all possible values" in str(excinfo.value)
 
 
 REGEX_TESTS = [
@@ -411,7 +597,7 @@ def test_get_stats_on_integer_metric(db_session):
     """Test would fail on postgres and redshift without a cast to float for different reasons."""
     rows = get_stats_on_metrics(
         db_session,
-        get_sample_table(),
+        SampleTable.get_table(),
         [DesignSpecMetricRequest(field_name="int_col", metric_pct_change=0.1)],
         AudienceSpec(
             participant_type="ignored",
@@ -442,7 +628,7 @@ def test_get_stats_on_boolean_metric(db_session):
     """Test would fail on postgres and redshift without casting to int to float."""
     rows = get_stats_on_metrics(
         db_session,
-        get_sample_table(),
+        SampleTable.get_table(),
         [DesignSpecMetricRequest(field_name="bool_col", metric_pct_change=0.1)],
         AudienceSpec(
             participant_type="ignored",
@@ -470,7 +656,7 @@ def test_get_stats_on_boolean_metric(db_session):
 def test_get_stats_on_numeric_metric(db_session):
     rows = get_stats_on_metrics(
         db_session,
-        get_sample_table(),
+        SampleTable.get_table(),
         [DesignSpecMetricRequest(field_name="float_col", metric_pct_change=0.1)],
         AudienceSpec(
             participant_type="ignored",

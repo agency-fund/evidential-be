@@ -180,6 +180,7 @@ class AudienceSpecFilter(ApiBaseModel):
         Sequence[Annotated[int, Field(strict=True)] | None]
         | Sequence[Annotated[float, Field(strict=True, allow_inf_nan=False)] | None]
         | Sequence[str | None]
+        | Sequence[bool | None]
     )
 
     @model_validator(mode="after")
@@ -227,6 +228,24 @@ class AudienceSpecFilter(ApiBaseModel):
         else:
             if not self.value:
                 raise ValueError("value must be a non-empty list")
+
+        return self
+
+    @model_validator(mode="after")
+    def ensure_sane_bool_list(self) -> "AudienceSpecFilter":
+        """Ensures that the `value` field does not include redundant or nonsencial items."""
+        n_values = len(self.value)
+        # First check if we're dealing with a list of more than one boolean:
+        if n_values > 1 and all([v is None or isinstance(v, bool) for v in self.value]):
+            # First two technically would also catch non-bool [None, None]
+            if self.relation == Relation.BETWEEN:
+                raise ValueError("Values do not support BETWEEN.")
+            if n_values != len(set(self.value)):
+                raise ValueError("Duplicate values detected.")
+            if n_values == 3 and self.relation == Relation.INCLUDES:
+                raise ValueError("Boolean filter allows all possible values.")
+            if n_values == 3 and self.relation == Relation.EXCLUDES:
+                raise ValueError("Boolean filter rejects all possible values.")
 
         return self
 
