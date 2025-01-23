@@ -130,6 +130,14 @@ SAMPLE_TABLE_ROWS = [
 ]
 
 
+@dataclass
+class Case:
+    filters: list[AudienceSpecFilter]
+    where: str | dict[str, str]  # use the dict form to parameterize by dialect
+    matches: list[Row | NullableRow]
+    chosen_n: int = 3
+
+
 @pytest.fixture(name="db_session")
 def fixture_db_session():
     """Creates an in-memory SQLite database with test data."""
@@ -186,14 +194,6 @@ def test_compose_query_with_no_filters(compiler):
         sql,
     )
     assert match is not None, sql
-
-
-@dataclass
-class Case:
-    filters: list[AudienceSpecFilter]
-    where: str | dict[str, str]  # use the dict form to parameterize by dialect
-    matches: list[Row]
-    chosen_n: int = 3
 
 
 EXPECTED_PREAMBLE = (
