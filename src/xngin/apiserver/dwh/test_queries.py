@@ -457,7 +457,7 @@ def test_compose_query(testcase, db_session, compiler, use_deterministic_random)
 @pytest.mark.parametrize(
     "testcase",
     [
-        # Test exlusions
+        # Test exclusions
         Case(
             filters=[
                 AudienceSpecFilter(
