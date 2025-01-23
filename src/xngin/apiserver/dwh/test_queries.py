@@ -191,7 +191,7 @@ def test_compose_query_with_no_filters(compiler):
 @dataclass
 class Case:
     filters: list[AudienceSpecFilter]
-    where: str | dict[str | str]  # use the dict form to parameterize by dialect
+    where: str | dict[str, str]  # use the dict form to parameterize by dialect
     matches: list[Row]
     chosen_n: int = 3
 
