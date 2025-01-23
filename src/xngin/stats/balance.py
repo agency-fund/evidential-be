@@ -44,12 +44,13 @@ def check_balance(
         exclude_cols = [treatment_col]
     else:
         exclude_cols.append(treatment_col)
-    df_analysis, exclude_set = preprocess_for_balance_and_stratification(
+    df_cleaned, exclude_set = preprocess_for_balance_and_stratification(
         data, exclude_cols, quantiles, missing_string
     )
 
     return check_balance_of_preprocessed_df(
-        data=df_analysis,
+        data=df_cleaned,
+        orig_data=data,
         treatment_col=treatment_col,
         exclude_col_set=exclude_set,
         alpha=alpha,
@@ -116,10 +117,10 @@ def preprocess_for_balance_and_stratification(
 
 def check_balance_of_preprocessed_df(
     data: pd.DataFrame,
+    orig_data: pd.DataFrame = None,
     treatment_col: str = "treat",
     exclude_col_set: set[str] | None = None,
     alpha: float = 0.5,
-    orig_data: pd.DataFrame = None,
 ) -> BalanceResult:
     """
     See check_balance(). Assumes the df and exclude_col_set came from
@@ -127,6 +128,17 @@ def check_balance_of_preprocessed_df(
     """
     if data[treatment_col].nunique() <= 1:
         raise ValueError("Treatment column has insufficient arms.")
+
+    # Put back all the original numeric columns that had no missing data, since the balance test
+    # will work better with the original continuous values.
+    if orig_data is not None:
+        numeric_columns = list(
+            set(orig_data.select_dtypes(include=["number"]).columns)
+            - set(orig_data.columns[orig_data.isnull().any()])
+            - exclude_col_set
+        )
+        if numeric_columns:
+            data = data.drop(columns=numeric_columns).join(orig_data[numeric_columns])
 
     # Convert all non-numeric columns into dummy vars
     non_numeric_columns = {c for c in data.columns if not is_numeric_dtype(data[c])}

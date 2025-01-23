@@ -66,8 +66,9 @@ def assign_treatment(
     # Dedupe the strata names and then sort them for a stable output ordering
     stratum_cols = sorted(set(stratum_cols))
 
+    orig_data_to_stratify = df[[*stratum_cols]]
     df_clean, exclude_cols_set = preprocess_for_balance_and_stratification(
-        data=df[[*stratum_cols]], exclude_cols=[id_col]
+        data=orig_data_to_stratify, exclude_cols=[id_col]
     )
     post_stratum_cols = df_clean.columns.to_list()
     # Add back the id column for stochatreat
@@ -92,6 +93,7 @@ def assign_treatment(
     balance_check_cols = [*post_stratum_cols, "treat"]
     balance_check = check_balance_of_preprocessed_df(
         df_clean[balance_check_cols],
+        orig_data=orig_data_to_stratify,
         treatment_col="treat",
         exclude_col_set=exclude_cols_set,
         alpha=fstat_thresh,

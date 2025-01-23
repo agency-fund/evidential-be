@@ -766,10 +766,10 @@ HTTP 200
   ],
   "balance_check": {
     "balance_ok": true,
-    "denominator_df": 32,
-    "f_statistic": 0.260725752,
-    "numerator_df": 7,
-    "p_value": 0.964656341
+    "denominator_df": 36,
+    "f_statistic": 0.679908047,
+    "numerator_df": 3,
+    "p_value": 0.57009598
   },
   "experiment_id": "0897bbd7-dacd-41b4-b164-7a1950fa61f2",
   "id_col": "id",

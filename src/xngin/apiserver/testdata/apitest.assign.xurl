@@ -603,11 +603,11 @@ HTTP 200
     }
   ],
   "balance_check": {
-    "balance_ok": true,
-    "denominator_df": 35,
-    "f_statistic": 0.262392901,
-    "numerator_df": 4,
-    "p_value": 0.900065193
+    "balance_ok": false,
+    "denominator_df": 37,
+    "f_statistic": 0.757124412,
+    "numerator_df": 2,
+    "p_value": 0.476140809
   },
   "experiment_id": "0897bbd7-dacd-41b4-b164-7a1950fa61f2",
   "id_col": "id",
