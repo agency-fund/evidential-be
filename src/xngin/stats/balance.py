@@ -1,6 +1,5 @@
 from dataclasses import dataclass
 
-import numpy as np
 import pandas as pd
 from pandas.api.types import is_numeric_dtype
 import statsmodels.formula.api as smf
@@ -41,6 +40,10 @@ def check_balance(
     Returns:
         BalanceResult object containing test results
     """
+    if exclude_cols is None:
+        exclude_cols = [treatment_col]
+    else:
+        exclude_cols.append(treatment_col)
     df_analysis, exclude_set = preprocess_for_balance_and_stratification(
         data, exclude_cols, quantiles, missing_string
     )
@@ -87,10 +90,8 @@ def preprocess_for_balance_and_stratification(
     # Handle missing values in numeric columns by converting to quartiles
     # TODO: handle is_bool_dtype() separately
     cols_with_missing_values = set(df_analysis.columns[df_analysis.isnull().any()])
-    numeric_columns_with_na = {
-        c for c in cols_with_missing_values if is_numeric_dtype(df_analysis[c])
-    }
-    for col in numeric_columns_with_na - exclude_set:
+    numeric_columns = set(df_analysis.select_dtypes(include=["number"]).columns)
+    for col in numeric_columns - exclude_set:
         labels = pd.qcut(
             df_analysis[col],
             q=quantiles,
@@ -99,26 +100,15 @@ def preprocess_for_balance_and_stratification(
             # Integer indicators starting at 0 will be returned instead.
             labels=False,
         )
-        new_col = f"{col}_quantile"
         # Since there are NaNs, labels will be dtype=float64. To avoid bugs later due to dummy var
-        # naming, first replace NaNs with an integer beyond the number of buckets, then *convert to
-        # int*, and finally a category.
-        df_analysis[new_col] = pd.Series(
-            np.nan_to_num(labels, nan=quantiles).astype("int8"), dtype="category"
-        )
-        # TODO: stratification doesn't need dummies; a category is fine
-        df_analysis = pd.get_dummies(
-            df_analysis,
-            columns=[new_col],
-            prefix=[col],
-            dummy_na=False,
-            drop_first=True,
-        )
-        df_analysis.drop(columns=[col], inplace=True)
+        # naming, we want integer categories, so first cast to nullable ints then category.
+        df_analysis[col] = pd.Series(labels).astype("Int8").astype("category")
 
-    # Handle missing values in non-numeric columns:
-    non_numeric_columns_with_na = cols_with_missing_values - numeric_columns_with_na
-    for col in non_numeric_columns_with_na - exclude_set:
+    # Now that we've converted numerics to categoricals, we can treat them the same as the original
+    # non-numeric columns when backfilling NAs:
+    for col in cols_with_missing_values - exclude_set:
+        if df_analysis[col].dtype == "category":
+            df_analysis[col] = df_analysis[col].cat.add_categories(missing_string)
         df_analysis.fillna({col: missing_string}, inplace=True)
 
     return df_analysis, exclude_set
@@ -129,6 +119,7 @@ def check_balance_of_preprocessed_df(
     treatment_col: str = "treat",
     exclude_col_set: set[str] | None = None,
     alpha: float = 0.5,
+    orig_data: pd.DataFrame = None,
 ) -> BalanceResult:
     """
     See check_balance(). Assumes the df and exclude_col_set came from

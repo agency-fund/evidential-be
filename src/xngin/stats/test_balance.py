@@ -1,6 +1,7 @@
 import pytest
 import pandas as pd
 import numpy as np
+from stochatreat import stochatreat
 from xngin.stats.balance import (
     check_balance,
     check_balance_of_preprocessed_df,
@@ -137,11 +138,11 @@ def test_preprocessing():
     data = {
         # Numeric
         "ints": range(0, 10),
-        # Numeric w/ missing values -> quantized
+        # Numeric w/ missing values
         "ints_na": [*range(0, 9), None],
         # Non-numeric
         "strs": ["a", "b", "c", "d", "e", "f", "g", "h", "i", "j"],
-        # Non-numeric with missing values -> backfilled
+        # Non-numeric with missing values
         "strs_na": ["a", "b", "c", "d", "e", "f", "g", "h", "i", None],
     }
     missing_string = "_TEST_"
@@ -150,16 +151,14 @@ def test_preprocessing():
     )
     print(df)
     assert exclude == set()
-    assert df["ints"].nunique() == 10
+    assert df["ints"].nunique() == 4
     assert df["strs"].nunique() == 10
     assert df["strs_na"].nunique() == 10
     assert df["strs_na"][9] == missing_string
-    # ints_na is replaced with dummy vars, one per quantile but dropping the first level
-    assert df["ints_na_1"].nunique() == 2
-    assert df["ints_na_2"].nunique() == 2
-    assert df["ints_na_3"].nunique() == 2
-    assert df["ints_na_4"].nunique() == 2
-    assert len(df.columns) == 7
+    assert df["ints_na"].nunique() == 5
+    assert df["ints_na"][9] == missing_string
+    # Same number of columns since we no longer create dummy vars here
+    assert len(df.columns) == 4
 
 
 def test_preprocessing_with_exclusions():
@@ -210,3 +209,23 @@ def test_preprocessing_booleans():
     assert df["bools_na"].nunique() == 3
     assert df["bools"].dtype == "bool"
     assert df["bools_na"].dtype == "object"
+
+
+def test_preprocessing_numerics_as_categories():
+    # Motivation: stochatreat doesn't preprocess numerics, so would end up creating 1 strata per
+    # unique value, effectively devolving into simple random sampling, which we don't want:
+    data = pd.DataFrame({"id": range(0, 100), "a": range(0, 100)})
+    status = stochatreat(data=data, idx_col="id", stratum_cols=["a"], treats=2)
+    assert status["stratum_id"].max() == 99
+
+    # So ensure that we construct quantiles for all numerics:
+    data = pd.DataFrame({
+        "ints": range(0, 100),
+        "ints_with_na": [*range(0, 99), None],
+        "floats": np.random.normal(30, 5, 100),
+    })
+    df, _ = preprocess_for_balance_and_stratification(data)
+
+    assert set(df["ints"]) == {0, 1, 2, 3}
+    assert set(df["ints_with_na"]) == {0, 1, 2, 3, "__NULL__"}
+    assert set(df["floats"]) == {0, 1, 2, 3}
