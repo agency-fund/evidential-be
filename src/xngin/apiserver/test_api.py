@@ -52,10 +52,7 @@ def trunc(s, n=4096):
 
 @pytest.fixture(name="update_api_tests_flag")
 def fixture_update_api_tests_flag(pytestconfig):
-    """Returns true iff the UPDATE_API_TESTS environment variable resembles a truthy value.
-
-    TODO: replace this with something less error-prone.
-    """
+    """Returns true iff the UPDATE_API_TESTS environment variable resembles a truthy value."""
     return os.environ.get("UPDATE_API_TESTS", "").lower() in ("true", "1")
 
 
