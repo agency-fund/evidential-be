@@ -150,11 +150,13 @@ class AudienceSpecFilter(ApiBaseModel):
 
     ## Examples
 
-    | Relation | Value      | Result                       |
-    |----------|------------|------------------------------|
-    | INCLUDES | ["a"]      | Match when `x IN ("a")`      |
-    | INCLUDES | ["a", "b"] | Match when `x IN ("a", "b")` |
-    | EXCLUDES | ["a","b"]  | Match `x NOT IN ("a", "b")`  |
+    | Relation | Value      | Result                         |
+    |----------|------------|--------------------------------|
+    | INCLUDES | ["a"]       | Match when `x IN ("a")`       |
+    | INCLUDES | ["a", "b"]  | Match when `x IN ("a", "b")`  |
+    | EXCLUDES | ["a", "b"]  | Match `x NOT IN ("a", "b")`   |
+    | BETWEEN  | ["a", "z"]  | Match `x BETWEEN "a" and "b"` |
+    | BETWEEN  | ["a", None] | Match `x >= "a"`              |
 
     String comparisons are case-sensitive.
 
@@ -172,7 +174,19 @@ class AudienceSpecFilter(ApiBaseModel):
     Note: The BETWEEN relation is not supported for comma-separated values.
 
     Note: CSV field comparisons are case-insensitive.
+
+    ## Handling of datetime and timestamp values
+
+    DATETIME or TIMESTAMP-type columns support only the BETWEEN relation.
+
+    Values must be expressed as ISO8601 datetime strings compatible with Python's datetime.fromisoformat()
+    (https://docs.python.org/3/library/datetime.html#datetime.datetime.fromisoformat).
+
+    If a timezone is provided, it must be UTC.
     """
+
+    # TODO: Add an explicit validator method to validate the filter values are consistent with the schema types, e.g.
+    # datetime fields must have ISO8601 values. Today, we only validate this at query time.
 
     field_name: FieldName
     relation: Relation
