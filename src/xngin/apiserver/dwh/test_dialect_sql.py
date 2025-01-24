@@ -6,6 +6,7 @@ engines and how SQLAlchemy translates intention into SQL and DDL.
 """
 
 import re
+from dataclasses import dataclass
 
 import pytest
 import sqlalchemy
@@ -38,50 +39,55 @@ class Datetimes(HelpfulBase):
     ts_col = mapped_column(TIMESTAMP(timezone=False), nullable=False)
 
 
+@dataclass
+class DialectExpectation:
+    dialect: sqlalchemy.engine.Dialect
+    ddl: str
+    sql: str
+
+
 DATETIME_SCENARIOS = [
-    (
+    DialectExpectation(
         sqlalchemy.dialects.sqlite.dialect(),
         "CREATE TABLE dtt ( id INTEGER NOT NULL, dt_col DATETIME NOT NULL, ts_col TIMESTAMP NOT NULL, PRIMARY KEY (id))",
         "SELECT dtt.id, dtt.dt_col, dtt.ts_col "
-        "FROM dtt WHERE dtt.ts_col >= '2024-01-01 00:00:00.000000' "
+        "FROM dtt WHERE dtt.ts_col >= '2020-01-01 00:00:00.000000' "
         "AND dtt.dt_col BETWEEN '2023-06-01 12:34:56.000000' AND '2024-01-01 00:00:00.000000' "
         "ORDER BY random() LIMIT 2 OFFSET 0",
     ),
-    (
+    DialectExpectation(
         sqlalchemy_bigquery.dialect(),
         "CREATE TABLE `dtt` ( `id` INT64 NOT NULL, `dt_col` DATETIME NOT NULL, `ts_col` TIMESTAMP NOT NULL)",
         "SELECT `dtt`.`id`, `dtt`.`dt_col`, `dtt`.`ts_col` "
         "FROM `dtt` "
-        "WHERE `dtt`.`ts_col` >= TIMESTAMP '2024-01-01 00:00:00' "
+        "WHERE `dtt`.`ts_col` >= TIMESTAMP '2020-01-01 00:00:00' "
         "AND `dtt`.`dt_col` BETWEEN DATETIME '2023-06-01 12:34:56' AND DATETIME '2024-01-01 00:00:00' "
         "ORDER BY rand() "
         "LIMIT 2",
     ),
-    (
+    DialectExpectation(
         psycopg2.dialect(),
         "CREATE TABLE dtt ( id INTEGER NOT NULL, dt_col TIMESTAMP WITHOUT TIME ZONE NOT NULL, ts_col TIMESTAMP WITHOUT TIME ZONE NOT NULL, PRIMARY KEY (id))",
         "SELECT dtt.id, dtt.dt_col, dtt.ts_col "
         "FROM dtt "
-        "WHERE dtt.ts_col >= '2024-01-01 00:00:00' "
+        "WHERE dtt.ts_col >= '2020-01-01 00:00:00' "
         "AND dtt.dt_col BETWEEN '2023-06-01 12:34:56' AND '2024-01-01 00:00:00' "
         "ORDER BY random()  LIMIT 2",
     ),
-    (
+    DialectExpectation(
         psycopg.dialect(),
         "CREATE TABLE dtt ( id INTEGER NOT NULL, dt_col TIMESTAMP WITHOUT TIME ZONE NOT NULL, ts_col TIMESTAMP WITHOUT TIME ZONE NOT NULL, PRIMARY KEY (id))",
         "SELECT dtt.id, dtt.dt_col, dtt.ts_col "
         "FROM dtt "
-        "WHERE dtt.ts_col >= '2024-01-01 00:00:00' "
+        "WHERE dtt.ts_col >= '2020-01-01 00:00:00' "
         "AND dtt.dt_col BETWEEN '2023-06-01 12:34:56' AND '2024-01-01 00:00:00' "
         "ORDER BY random()  LIMIT 2",
     ),
 ]
 
 
-@pytest.mark.parametrize(
-    "dialect,expected_ddl,expected_sql", DATETIME_SCENARIOS, ids=lambda s: type(s)
-)
-def test_datetimes(dialect, expected_ddl, expected_sql):
+@pytest.mark.parametrize("testcase", DATETIME_SCENARIOS)
+def test_datetimes(testcase: DialectExpectation):
     """Exercises various SQLAlchemy dialects handling of datetime and timestamp types."""
     sa_table = Datetimes.get_table()
     q = compose_query(
@@ -95,7 +101,7 @@ def test_datetimes(dialect, expected_ddl, expected_sql):
                     AudienceSpecFilter(
                         field_name="ts_col",
                         relation=Relation.BETWEEN,
-                        value=["2024-01-01 00:00:00", None],
+                        value=["2020-01-01 00:00:00", None],
                     ),
                     AudienceSpecFilter(
                         field_name="dt_col",
@@ -106,15 +112,15 @@ def test_datetimes(dialect, expected_ddl, expected_sql):
             ),
         ),
     )
-    ddl = str(CreateTable(sa_table).compile(dialect=dialect))
+    ddl = str(CreateTable(sa_table).compile(dialect=testcase.dialect))
     normalized_ddl = re.sub(r"\s+", " ", ddl.replace("\n", "").strip())
-    assert normalized_ddl == expected_ddl, f"DDL: {normalized_ddl}"
+    assert normalized_ddl == testcase.ddl, f"DDL: {normalized_ddl}"
     sql = str(
         q.compile(
-            dialect=dialect,
+            dialect=testcase.dialect,
             compile_kwargs={"literal_binds": True},
         )
     )
-    assert sql.replace("\n", "") == expected_sql, (
-        f"DIALECT {type(dialect)}\nSQL = {sql}"
+    assert sql.replace("\n", "") == testcase.sql, (
+        f"DIALECT {type(testcase.dialect)}\nSQL = {sql}"
     )
