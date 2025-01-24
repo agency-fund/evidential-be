@@ -51,15 +51,26 @@ jobs:
           openssl sha256 ~/.config/gspread/service_account.json
         env:
           GCLOUD_SERVICE_ACCOUNT_CREDENTIALS: ${{ secrets.GOOGLE_APPLICATION_CREDENTIALS_CONTENT }}
+      - name: apt install retry
+        if: startsWith(matrix.os, 'ubuntu-')
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends retry
       - name: pytest integration tests
         if: startsWith(matrix.os, 'ubuntu-')
         run: |
           # used by the sqlalchemy bigquery driver in some integration tests
           export GOOGLE_APPLICATION_CREDENTIALS=$HOME/.config/gspread/service_account.json
-          set -x
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends retry
           retry -t 3 -d 30 -- uv run pytest -m integration
+      - name: bq integration tests
+        if: false && startsWith(matrix.os, 'ubuntu-')
+        env:
+          ECHO_SQL: "1"
+        run: |
+          export GOOGLE_APPLICATION_CREDENTIALS=$HOME/.config/gspread/service_account.json
+          export XNGIN_TEST_DWH_URI="bigquery://xngin-development-dc/ds?credentials_base64=$(cat $GOOGLE_APPLICATION_CREDENTIALS | base64 -w 0)"
+          uv run --env-file .env.bqintegration pytest -m bqintegration
+          retry -t 3 -d 30 -- uv run pytest -m bq-integration
   docker-builds:
     timeout-minutes: 15
     runs-on: ubuntu-22.04
