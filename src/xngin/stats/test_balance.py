@@ -133,7 +133,7 @@ def test_check_balance_with_mostly_nulls_categorical():
 
 def test_preprocessing():
     """
-    Capture current behavior before further changes.
+    Capture basic behavior of different data types. (Booleans in another test.)
     """
     data = {
         # Numeric
@@ -141,9 +141,9 @@ def test_preprocessing():
         # Numeric w/ missing values
         "ints_na": [*range(0, 9), None],
         # Non-numeric
-        "strs": ["a", "b", "c", "d", "e", "f", "g", "h", "i", "j"],
+        "strs": ["a", "b"] * 5,
         # Non-numeric with missing values
-        "strs_na": ["a", "b", "c", "d", "e", "f", "g", "h", "i", None],
+        "strs_na": ["a", "b", "c", "d", "e", "f", "g", "h", "h", None],
     }
     missing_string = "_TEST_"
     df, exclude = preprocess_for_balance_and_stratification(
@@ -151,39 +151,56 @@ def test_preprocessing():
     )
 
     assert exclude == set()
+    # Our ints were converted into quantiles, and our missing string is a unique value:
     assert df["ints"].nunique() == 4
-    assert df["strs"].nunique() == 10
-    assert df["strs_na"].nunique() == 10
-    assert df["strs_na"][9] == missing_string
     assert df["ints_na"].nunique() == 5
     assert df["ints_na"][9] == missing_string
+    # non-numerics also have missing values converted:
+    assert df["strs"].nunique() == 2
+    assert df["strs_na"].nunique() == 9
+    assert df["strs_na"][9] == missing_string
     # Same number of columns since we no longer create dummy vars here
     assert len(df.columns) == 4
 
 
 def test_preprocessing_with_exclusions():
     """
-    Capture current behavior before further changes.
+    Verify we exclude certain columns from preprocessing for various reasons.
     """
     data = pd.DataFrame({
         # This is explicitly excluded by caller
         "skip": [2, 2, 3, 3],
         # These are excluded to to all being the same value.
         "same_int": [1.0] * 4,
+        "same_int_na": [1, 1, None, None],
         "same_str": ["a"] * 4,
+        # Only uniq_obj is excluded since our check for all uniques is for non-numerics
+        "uniq_int": range(0, 4),
+        "uniq_obj": pd.Series(range(0, 4), dtype="object"),
+        # uniq_obj_na is excluded when nones are ignored
+        "uniq_obj_na": ["a", "b", None, None],
         # Excluded since NA is dropped when testing for all identical values.
         "same_value_na": [1, 1, None, None],
     })
     df, exclude = preprocess_for_balance_and_stratification(data, exclude_cols=["skip"])
 
-    assert exclude == {"skip", "same_int", "same_str", "same_value_na"}
-    assert set(df.columns) == {"skip", "same_int", "same_str", "same_value_na"}
+    assert exclude == {
+        "skip",
+        "same_int",
+        "same_int_na",
+        "same_str",
+        "uniq_obj",
+        "uniq_obj_na",
+        "same_value_na",
+    }
+    assert set(df.columns) == set(data.columns)
     assert df.compare(data).empty  # test that they're the same
 
     # Lastly check that if we did try to assign but have no variability, we raise an error.
     with pytest.raises(StatsBalanceError) as excinfo:
-        df["treat"] = [0, 1, 0, 1]
-        check_balance_of_preprocessed_df(df, exclude_col_set=exclude)
+        df["treat"] = [0, 1, 0, 1]  # assignments needed for balance check
+        expect_excluded = exclude | {"uniq_int"}
+        check_balance_of_preprocessed_df(df, exclude_col_set=expect_excluded)
     assert "No usable fields for performing a balance check found." in str(
         excinfo.value
     )
