@@ -150,13 +150,13 @@ class AudienceSpecFilter(ApiBaseModel):
 
     ## Examples
 
-    | Relation | Value      | Result                         |
-    |----------|------------|--------------------------------|
-    | INCLUDES | ["a"]       | Match when `x IN ("a")`       |
-    | INCLUDES | ["a", "b"]  | Match when `x IN ("a", "b")`  |
-    | EXCLUDES | ["a", "b"]  | Match `x NOT IN ("a", "b")`   |
-    | BETWEEN  | ["a", "z"]  | Match `x BETWEEN "a" and "b"` |
-    | BETWEEN  | ["a", None] | Match `x >= "a"`              |
+    | Relation | Value       | Result                         |
+    |----------|-------------|--------------------------------|
+    | INCLUDES | ["a"]       | Match when `x IN ("a")`        |
+    | INCLUDES | ["a", "b"]  | Match when `x IN ("a", "b")`   |
+    | EXCLUDES | ["a", "b"]  | Match `x NOT IN ("a", "b")`    |
+    | BETWEEN  | ["a", "z"]  | Match `x BETWEEN "a" and "z"`  |
+    | BETWEEN  | ["a", None] | Match `x >= "a"`               |
 
     String comparisons are case-sensitive.
 
