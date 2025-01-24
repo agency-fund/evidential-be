@@ -1,4 +1,5 @@
 import re
+from datetime import datetime, timedelta
 
 import sqlalchemy
 from sqlalchemy import (
@@ -13,6 +14,7 @@ from sqlalchemy import (
     Table,
     not_,
     select,
+    DateTime,
 )
 from sqlalchemy.orm import Session
 
@@ -97,6 +99,8 @@ def create_query_filters_from_spec(
     """Converts an AudienceSpec into a list of SQLAlchemy filters."""
 
     def create_one_filter(filter_: AudienceSpecFilter, sa_table: sqlalchemy.Table):
+        if isinstance(sa_table.columns[filter_.field_name].type, DateTime):
+            return create_datetime_filter(sa_table.columns[filter_.field_name], filter_)
         if filter_.field_name.endswith(EXPERIMENT_IDS_SUFFIX):
             return create_special_experiment_id_filter(
                 sa_table.columns[filter_.field_name], filter_
@@ -137,6 +141,40 @@ def make_csv_regex(values):
         + r")"
     )
     return r"(^x$)|(^x,)|(,x$)|(,x,)".replace("x", value_regexp)
+
+
+def create_datetime_filter(
+    col: sqlalchemy.Column, filter_: AudienceSpecFilter
+) -> ColumnOperators:
+    """Converts a single AudienceSpecFilter for a DateTime-typed column into a sqlalchemy filter."""
+
+    def str_to_datetime(s: str | int | float | bool) -> datetime:
+        """Convert an ISO8601 string to a datetime."""
+        # TODO: consistent validation
+        if not isinstance(s, str):
+            raise TypeError("datetime-type filter values must be strings.")
+        # TODO: handle errors raised by fromisoformat
+        parsed = datetime.fromisoformat(s)
+        if not parsed.tzinfo:
+            return parsed
+        offset = parsed.tzinfo.utcoffset(parsed)
+        if offset == timedelta():  # 0 timedelta is equivalent to UTC
+            return parsed.replace(tzinfo=None)
+        raise ValueError(
+            f"datetime-type filter values must be in UTC or not be explicitly tagged with a timezone: {s}"
+        )
+
+    match filter_.relation:
+        case Relation.BETWEEN:
+            match filter_.value:
+                case (left, None):
+                    return col >= str_to_datetime(left)
+                case (None, right):
+                    return col <= str_to_datetime(right)
+                case (left, right):
+                    return col.between(str_to_datetime(left), str_to_datetime(right))
+        case _:
+            raise ValueError("The only valid Relation on a datetime field is BETWEEN.")
 
 
 def create_filter(
