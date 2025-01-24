@@ -27,7 +27,14 @@ def check_balance(
     missing_string="__NULL__",
 ) -> BalanceResult:
     """
+    DEPRECATED: use preprocess_for_balance_and_stratification(), restore_original_numeric_columns(),
+    and check_balance_of_preprocessed_df().
+
     Perform balance check on treatment assignment.
+
+    Originally called after stratified random assignment, we've now split this into a preprocessing
+    step shared by the random assignment, then steps for the actual balance check. Retained for
+    convenience doing unittests of the above.
 
     Args:
         data: DataFrame containing treatment assignments and covariates
@@ -44,13 +51,13 @@ def check_balance(
         exclude_cols = [treatment_col]
     else:
         exclude_cols.append(treatment_col)
+
     df_cleaned, exclude_cols_set = preprocess_for_balance_and_stratification(
         data, exclude_cols, quantiles, missing_string
     )
     df_cleaned = restore_original_numeric_columns(df_cleaned, data, exclude_cols_set)
     return check_balance_of_preprocessed_df(
         data=df_cleaned,
-        orig_data=data,
         treatment_col=treatment_col,
         exclude_col_set=exclude_cols_set,
         alpha=alpha,
@@ -138,15 +145,13 @@ def restore_original_numeric_columns(df_cleaned, df_orig, exclude_col_set):
         - exclude_col_set
     )
     if numeric_columns:
-        df_cleaned = df_cleaned.drop(columns=numeric_columns).join(
-            df_orig[numeric_columns]
-        )
+        df_cleaned = df_cleaned.copy()
+        df_cleaned[numeric_columns] = df_orig[numeric_columns]
     return df_cleaned
 
 
 def check_balance_of_preprocessed_df(
     data: pd.DataFrame,
-    orig_data: pd.DataFrame = None,
     treatment_col: str = "treat",
     exclude_col_set: set[str] | None = None,
     alpha: float = 0.5,
@@ -154,8 +159,6 @@ def check_balance_of_preprocessed_df(
     """
     See check_balance(). Assumes the df and exclude_col_set came from
     preprocess_for_balance_and_stratification().
-
-    orig_data: Provide the original dataframe you used with preprocess_for_balance_and_stratification() in order to use the original numeric columns (if they had no missing data) for the balance check.
     """
     if data[treatment_col].nunique() <= 1:
         raise ValueError("Treatment column has insufficient arms.")

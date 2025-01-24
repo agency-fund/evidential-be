@@ -65,14 +65,14 @@ def assign_treatment(
     df[decimal_columns] = df[decimal_columns].astype(float)
 
     # Dedupe the strata names and then sort them for a stable output ordering
-    stratum_cols = sorted(set(stratum_cols))
+    orig_stratum_cols = sorted(set(stratum_cols))
 
-    orig_data_to_stratify = df[[id_col, *stratum_cols]]
+    orig_data_to_stratify = df[[id_col, *orig_stratum_cols]]
     df_cleaned, exclude_cols_set = preprocess_for_balance_and_stratification(
         data=orig_data_to_stratify, exclude_cols=[id_col]
     )
     # Our original target of columns to stratify on may have gotten smaller:
-    post_stratum_cols = set(df_cleaned.columns) - exclude_cols_set
+    post_stratum_cols = sorted(set(orig_stratum_cols) - exclude_cols_set)
 
     # Assign treatments
     n_arms = len(arm_names)
@@ -81,7 +81,7 @@ def assign_treatment(
     treatment_status = stochatreat(
         data=df_cleaned,
         idx_col=id_col,
-        stratum_cols=list(post_stratum_cols),
+        stratum_cols=post_stratum_cols,
         treats=n_arms,
         probs=[1 / n_arms] * n_arms,
         # internally uses legacy np.random.RandomState which can take None
@@ -89,10 +89,11 @@ def assign_treatment(
     ).drop(columns=["stratum_id"])
     df_cleaned = df_cleaned.merge(treatment_status, on=id_col)
 
-    # Do balance check with treatment assignments as the dependent var using preprocessed data.
     df_cleaned = restore_original_numeric_columns(
         df_cleaned, orig_data_to_stratify, exclude_cols_set
     )
+
+    # Do balance check with treatment assignments as the dependent var using preprocessed data.
     balance_check_cols = [*post_stratum_cols, "treat"]
     balance_check = check_balance_of_preprocessed_df(
         df_cleaned[balance_check_cols],
@@ -113,7 +114,7 @@ def assign_treatment(
                     row_dict[column] if pd.notna(row_dict[column]) else "NA"
                 ),
             )
-            for column in stratum_cols
+            for column in orig_stratum_cols
         ]
 
         participant = Assignment(
