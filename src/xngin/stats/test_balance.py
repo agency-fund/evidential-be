@@ -149,7 +149,7 @@ def test_preprocessing():
     df, exclude = preprocess_for_balance_and_stratification(
         pd.DataFrame(data), quantiles=4, missing_string=missing_string
     )
-    print(df)
+
     assert exclude == set()
     assert df["ints"].nunique() == 4
     assert df["strs"].nunique() == 10
@@ -175,8 +175,7 @@ def test_preprocessing_with_exclusions():
         "same_value_na": [1, 1, None, None],
     })
     df, exclude = preprocess_for_balance_and_stratification(data, exclude_cols=["skip"])
-    print(data)
-    print(df)
+
     assert exclude == {"skip", "same_int", "same_str", "same_value_na"}
     assert set(df.columns) == {"skip", "same_int", "same_str", "same_value_na"}
     assert df.compare(data).empty  # test that they're the same
@@ -192,19 +191,18 @@ def test_preprocessing_with_exclusions():
 
 def test_preprocessing_booleans():
     """
-    TODO: Verify handling booleans directly categoricals is preferred, as otherwise a skewed
-    distribution could result in every value collapsing into one quantile.
+    Verify handling booleans avoids conversion to quantiles, as otherwise a skewed distribution
+    could result in every value collapsing into one quantile.
     """
     data = {
-        # If treated as a numeric and quantized, this list would get mapped to only one interval:
-        # (-0.001, 1.0]. But right now, we skip quantization if there's no NA.
+        # If treated as a numeric and quantiled, this list would get mapped to only one interval:
+        # (-0.001, 1.0], but we skip quantiling for booleans.
         "bools": [True] * 8 + [False] * 2,
-        # However, a raw list of booleans + None is stored as dtype='object', so we luckily
-        # inadvertently handle this as a categorical.
+        # However, a raw list of booleans + None is stored as dtype='object', so we handle this as a
+        # categorical.
         "bools_na": [True] * 8 + [False] * 1 + [None],
     }
     df, _ = preprocess_for_balance_and_stratification(pd.DataFrame(data))
-    print(df.dtypes)
     assert df["bools"].nunique() == 2
     assert df["bools_na"].nunique() == 3
     assert df["bools"].dtype == "bool"
