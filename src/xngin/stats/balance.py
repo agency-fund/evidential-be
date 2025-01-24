@@ -44,15 +44,15 @@ def check_balance(
         exclude_cols = [treatment_col]
     else:
         exclude_cols.append(treatment_col)
-    df_cleaned, exclude_set = preprocess_for_balance_and_stratification(
+    df_cleaned, exclude_cols_set = preprocess_for_balance_and_stratification(
         data, exclude_cols, quantiles, missing_string
     )
-
+    df_cleaned = restore_original_numeric_columns(df_cleaned, data, exclude_cols_set)
     return check_balance_of_preprocessed_df(
         data=df_cleaned,
         orig_data=data,
         treatment_col=treatment_col,
-        exclude_col_set=exclude_set,
+        exclude_col_set=exclude_cols_set,
         alpha=alpha,
     )
 
@@ -127,6 +127,23 @@ def preprocess_for_balance_and_stratification(
     return df_analysis, exclude_set
 
 
+def restore_original_numeric_columns(df_cleaned, df_orig, exclude_col_set):
+    """
+    Restore original numeric columns with no missing data to the preprocessed df for better balance
+    test results.
+    """
+    numeric_columns = list(
+        {c for c in df_orig.columns if is_any_real_numeric_dtype(df_orig[c])}
+        - set(df_orig.columns[df_orig.isnull().any()])
+        - exclude_col_set
+    )
+    if numeric_columns:
+        df_cleaned = df_cleaned.drop(columns=numeric_columns).join(
+            df_orig[numeric_columns]
+        )
+    return df_cleaned
+
+
 def check_balance_of_preprocessed_df(
     data: pd.DataFrame,
     orig_data: pd.DataFrame = None,
@@ -145,17 +162,6 @@ def check_balance_of_preprocessed_df(
 
     if exclude_col_set is None:
         exclude_col_set = set()
-
-    # Put back all the original numeric columns that had no missing data, since the balance test
-    # will work better with the original continuous values.
-    if orig_data is not None:
-        numeric_columns = list(
-            {c for c in orig_data.columns if is_any_real_numeric_dtype(orig_data[c])}
-            - set(orig_data.columns[orig_data.isnull().any()])
-            - exclude_col_set
-        )
-        if numeric_columns:
-            data = data.drop(columns=numeric_columns).join(orig_data[numeric_columns])
 
     # Convert all non-numeric columns into dummy vars, including booleans
     non_numeric_columns = {

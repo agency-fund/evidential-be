@@ -14,7 +14,7 @@ def assert_same(
     # https://docs.python.org/3/library/math.html#math.isclose.
     if deepdiff_kwargs is None:
         deepdiff_kwargs = dict()
-    diff = DeepDiff(actual, expected, math_epsilon=0, **deepdiff_kwargs)
+    diff = DeepDiff(expected, actual, math_epsilon=0, **deepdiff_kwargs)
     assert not diff, (
         f"Objects differ:\n{diff.pretty()}" + f"\n{extra}\n" if extra else ""
     )
