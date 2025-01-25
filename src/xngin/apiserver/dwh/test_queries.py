@@ -183,7 +183,7 @@ def fixture_compiler(engine):
     ).replace("\n", "")
 
 
-def test_compose_query_with_no_filters(compiler):
+def test_execute_query_without_filters(compiler):
     sql = compiler(compose_query(SampleTable.get_table(), 2, []))
     _, dbtype, _ = get_test_dwh_info()
     if dbtype == DbType.BQ:
