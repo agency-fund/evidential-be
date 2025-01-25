@@ -6,6 +6,13 @@ on:
   pull_request:
     branches: [main]
   workflow_dispatch:
+    inputs:
+      run-bq-integration:
+        type: boolean
+        required: false
+        default: false
+        description: "Run the BQ integration tests"
+
 
 permissions:
   contents: read
@@ -63,7 +70,7 @@ jobs:
   bq-integration:
     timeout-minutes: 15
     runs-on: ubuntu-22.04
-    if: contains(github.event.pull_request.body, 'run:bqintegration')
+    if: contains(github.event.pull_request.body, 'run:bqintegration') || inputs.run-bq-integration == 'true'
     env:
       DATASET_NAME: gha_${{ github.run_id }}_${{ github.run_attempt }}
     steps:
