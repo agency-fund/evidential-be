@@ -15,17 +15,6 @@
             }
           }
         ],
-        "webhook_config": {
-          "actions": {
-            "assignment_file": null,
-            "commit": null,
-            "update_description": null,
-            "update_timestamps": null
-          },
-          "common_headers": {
-            "authorization": null
-          }
-        },
         "dwh": {
           "dbname": "postgres",
           "driver": "postgresql+psycopg",

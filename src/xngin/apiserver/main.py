@@ -383,8 +383,9 @@ async def assignment_file(
     http_client: Annotated[httpx.AsyncClient, Depends(httpx_dependency)],
     config: Annotated[DatasourceConfig, Depends(datasource_config_required)],
 ) -> WebhookResponse:
-    # TODO: this will break on configs that don't have a webhook_config
     webhook_config = config.webhook_config
+    if webhook_config is None:
+        raise HTTPException(501, "Webhook not configured.")
     action = webhook_config.actions.assignment_file
     if action is None:
         # TODO: read from internal storage if webhooks are not defined.
@@ -410,8 +411,9 @@ async def commit_experiment(
     http_client: Annotated[httpx.AsyncClient, Depends(httpx_dependency)],
     config: Annotated[DatasourceConfig, Depends(datasource_config_required)],
 ) -> WebhookResponse:
-    # TODO: this will break on configs that don't have a webhook_config
     webhook_config = config.webhook_config
+    if webhook_config is None:
+        raise HTTPException(501, "Webhook not configured.")
     action = webhook_config.actions.commit
     if action is None:
         raise HTTPException(501, "Action 'commit' not configured.")
