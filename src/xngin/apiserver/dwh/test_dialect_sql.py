@@ -195,10 +195,10 @@ WHERE_TESTCASES = [
             )
         ],
         where={
-            DbType.SL: "tt.ts_col BETWEEN '2024-01-01 01:02:03.100000' AND '2024-01-02 00:00:00.000000' ORDER BY random() LIMIT 3 OFFSET 0",
-            DbType.RS: "tt.ts_col BETWEEN '2024-01-01 01:02:03.100000' AND '2024-01-02 00:00:00' ORDER BY random()  LIMIT 3",
-            DbType.PG: "tt.ts_col BETWEEN '2024-01-01 01:02:03.100000' AND '2024-01-02 00:00:00' ORDER BY random()  LIMIT 3",
-            DbType.BQ: "`tt`.`ts_col` BETWEEN TIMESTAMP '2024-01-01 01:02:03.100000' AND TIMESTAMP '2024-01-02 00:00:00' ORDER BY rand() LIMIT 3",
+            DbType.SL: "tt.ts_col BETWEEN '2024-01-01 01:02:03.000000' AND '2024-01-02 00:00:00.000000' ORDER BY random() LIMIT 3 OFFSET 0",
+            DbType.RS: "tt.ts_col BETWEEN '2024-01-01 01:02:03' AND '2024-01-02 00:00:00' ORDER BY random()  LIMIT 3",
+            DbType.PG: "tt.ts_col BETWEEN '2024-01-01 01:02:03' AND '2024-01-02 00:00:00' ORDER BY random()  LIMIT 3",
+            DbType.BQ: "`tt`.`ts_col` BETWEEN TIMESTAMP '2024-01-01 01:02:03' AND TIMESTAMP '2024-01-02 00:00:00' ORDER BY rand() LIMIT 3",
         },
     ),
     WhereTestCase(

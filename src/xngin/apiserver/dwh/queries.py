@@ -159,9 +159,14 @@ def create_datetime_filter(
     """Converts a single AudienceSpecFilter for a DateTime-typed column into a sqlalchemy filter."""
 
     def str_to_datetime(s: str | int | float | bool) -> datetime:
-        """Convert an ISO8601 string to a datetime."""
+        """Convert an ISO8601 string to a timezone-unaware datetime.
+
+        LateValidationError is raised if the ISO8601 string specifies a non-UTC timezone.
+
+        For maximum compatibility between backends, any microseconds value, if specified, is truncated to zero.
+        """
         try:
-            parsed = datetime.fromisoformat(s)
+            parsed = datetime.fromisoformat(s).replace(microsecond=0)
         except (ValueError, TypeError) as exc:
             raise LateValidationError(
                 "datetime-type filter values must be strings containing an ISO8601 formatted date."
