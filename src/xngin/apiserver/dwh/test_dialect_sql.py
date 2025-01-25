@@ -152,6 +152,7 @@ class WhereTable(HelpfulBase):
     string_col = mapped_column(String, nullable=False)
     experiment_ids = mapped_column(String, nullable=False)
     dt_col = mapped_column(DateTime, nullable=False)
+    ts_col = mapped_column(TIMESTAMP, nullable=False)
 
 
 WHERE_TESTCASES = [
@@ -168,6 +169,36 @@ WHERE_TESTCASES = [
             DbType.RS: "tt.dt_col BETWEEN '2024-01-01 00:00:00' AND '2024-01-02 00:00:00' ORDER BY random()  LIMIT 3",
             DbType.PG: "tt.dt_col BETWEEN '2024-01-01 00:00:00' AND '2024-01-02 00:00:00' ORDER BY random()  LIMIT 3",
             DbType.BQ: "`tt`.`dt_col` BETWEEN DATETIME '2024-01-01 00:00:00' AND DATETIME '2024-01-02 00:00:00' ORDER BY rand() LIMIT 3",
+        },
+    ),
+    WhereTestCase(
+        filters=[
+            AudienceSpecFilter(
+                field_name="ts_col",
+                relation=Relation.BETWEEN,
+                value=["2024-01-01", "2024-01-02"],
+            )
+        ],
+        where={
+            DbType.SL: "tt.ts_col BETWEEN '2024-01-01 00:00:00.000000' AND '2024-01-02 00:00:00.000000' ORDER BY random() LIMIT 3 OFFSET 0",
+            DbType.RS: "tt.ts_col BETWEEN '2024-01-01 00:00:00' AND '2024-01-02 00:00:00' ORDER BY random()  LIMIT 3",
+            DbType.PG: "tt.ts_col BETWEEN '2024-01-01 00:00:00' AND '2024-01-02 00:00:00' ORDER BY random()  LIMIT 3",
+            DbType.BQ: "`tt`.`ts_col` BETWEEN TIMESTAMP '2024-01-01 00:00:00' AND TIMESTAMP '2024-01-02 00:00:00' ORDER BY rand() LIMIT 3",
+        },
+    ),
+    WhereTestCase(
+        filters=[
+            AudienceSpecFilter(
+                field_name="ts_col",
+                relation=Relation.BETWEEN,
+                value=["2024-01-01 01:02:03.100000", "2024-01-02"],
+            )
+        ],
+        where={
+            DbType.SL: "tt.ts_col BETWEEN '2024-01-01 01:02:03.100000' AND '2024-01-02 00:00:00.000000' ORDER BY random() LIMIT 3 OFFSET 0",
+            DbType.RS: "tt.ts_col BETWEEN '2024-01-01 01:02:03.100000' AND '2024-01-02 00:00:00' ORDER BY random()  LIMIT 3",
+            DbType.PG: "tt.ts_col BETWEEN '2024-01-01 01:02:03.100000' AND '2024-01-02 00:00:00' ORDER BY random()  LIMIT 3",
+            DbType.BQ: "`tt`.`ts_col` BETWEEN TIMESTAMP '2024-01-01 01:02:03.100000' AND TIMESTAMP '2024-01-02 00:00:00' ORDER BY rand() LIMIT 3",
         },
     ),
     WhereTestCase(
