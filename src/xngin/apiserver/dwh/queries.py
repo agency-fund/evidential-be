@@ -158,13 +158,17 @@ def create_datetime_filter(
 ) -> ColumnOperators:
     """Converts a single AudienceSpecFilter for a DateTime-typed column into a sqlalchemy filter."""
 
-    def str_to_datetime(s: str | int | float | bool) -> datetime:
+    def str_to_datetime(s: int | float | str | None) -> datetime:
         """Convert an ISO8601 string to a timezone-unaware datetime.
 
         LateValidationError is raised if the ISO8601 string specifies a non-UTC timezone.
 
         For maximum compatibility between backends, any microseconds value, if specified, is truncated to zero.
         """
+        if not isinstance(s, str):
+            raise LateValidationError(
+                "datetime-type filter values must be strings containing an ISO8601 formatted date."
+            )
         try:
             parsed = datetime.fromisoformat(s).replace(microsecond=0)
         except (ValueError, TypeError) as exc:
@@ -180,19 +184,19 @@ def create_datetime_filter(
             f"datetime-type filter values must be in UTC, or not be tagged with an explicit timezone: {s}"
         )
 
-    match filter_.relation:
-        case Relation.BETWEEN:
-            match filter_.value:
-                case (left, None):
-                    return col >= str_to_datetime(left)
-                case (None, right):
-                    return col <= str_to_datetime(right)
-                case (left, right):
-                    return col.between(str_to_datetime(left), str_to_datetime(right))
-        case _:
-            raise LateValidationError(
-                "The only valid Relation on a datetime field is BETWEEN."
-            )
+    if filter_.relation != Relation.BETWEEN:
+        raise LateValidationError(
+            "The only valid Relation on a datetime field is BETWEEN."
+        )
+
+    match filter_.value:
+        case (left, None):
+            return col >= str_to_datetime(left)
+        case (None, right):
+            return col <= str_to_datetime(right)
+        case (left, right):
+            return col.between(str_to_datetime(left), str_to_datetime(right))
+    raise RuntimeError("Bug: invalid AudienceSpecFilter.")
 
 
 def create_filter(
@@ -224,6 +228,7 @@ def create_filter(
             return col.in_(filter_.value)
         case Relation.INCLUDES:
             return col.in_(filter_.value)
+    raise RuntimeError("Bug: invalid AudienceSpecFilter.")
 
 
 def compose_query(sa_table: Table, chosen_n: int, filters):
