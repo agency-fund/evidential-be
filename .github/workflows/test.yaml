@@ -62,15 +62,38 @@ jobs:
           # used by the sqlalchemy bigquery driver in some integration tests
           export GOOGLE_APPLICATION_CREDENTIALS=$HOME/.config/gspread/service_account.json
           retry -t 3 -d 30 -- uv run pytest -m integration
+  bq-integration:
+    timeout-minutes: 15
+    runs-on: ubuntu-22.04
+    if: contains(github.event.pull_request.body, 'run:bqintegration')
+    env:
+      DATASET_NAME: gha_${{ github.run_id }}_${{ github.run_attempt }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v4
+        with:
+          version: "0.5.12"
+          enable-cache: true
+      - run: uv sync --locked
+      - uses: google-github-actions/auth@v2
+        with:
+          credentials_json: '${{ secrets.GOOGLE_APPLICATION_CREDENTIALS_CONTENT }}'
+      - uses: google-github-actions/setup-gcloud@v2
+        with:
+          project_id: "xngin-development-dc"
+          install_components: "bq"
       - name: bq integration tests
-        if: false && startsWith(matrix.os, 'ubuntu-')
         env:
-          ECHO_SQL: "1"
+          GCLOUD_SERVICE_ACCOUNT_CREDENTIALS: ${{ secrets.GOOGLE_APPLICATION_CREDENTIALS_CONTENT }}
         run: |
+          bq --location=us-west1 mk --dataset --default_table_expiration=86400 xngin-development-dc:$DATASET_NAME
+          # TODO: add a step with `if: failure()||success()` to delete the dataset. This cannot be done with the CLI.
+
+          export ECHO_SQL="1"
+          mkdir -p ~/.config/gspread && echo "${GCLOUD_SERVICE_ACCOUNT_CREDENTIALS}" > ~/.config/gspread/service_account.json
           export GOOGLE_APPLICATION_CREDENTIALS=$HOME/.config/gspread/service_account.json
-          export XNGIN_TEST_DWH_URI="bigquery://xngin-development-dc/ds?credentials_base64=$(cat $GOOGLE_APPLICATION_CREDENTIALS | base64 -w 0)"
-          uv run --env-file .env.bqintegration pytest -m bqintegration
-          retry -t 3 -d 30 -- uv run pytest -m bq-integration
+          export XNGIN_TEST_DWH_URI="bigquery://xngin-development-dc/${DATASET_NAME}?credentials_base64=$(cat ${GOOGLE_APPLICATION_CREDENTIALS} | base64 -w 0)"
+          uv run pytest -rA src/xngin/apiserver/dwh/test_queries.py
   docker-builds:
     timeout-minutes: 15
     runs-on: ubuntu-22.04
