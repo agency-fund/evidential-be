@@ -306,13 +306,13 @@ def test_with_nans_that_would_break_stochatreat_without_preprocessing(sample_tab
     # Replace entries with NaN such that the grouping into strata causes stochatreat to raise a
     # ValueError as it internally uses df.groupby(..., dropna=True), causing the count of
     # synthetic rows created to be off.
-    local_data["age"] = [None, 2] + [1, 2] * 9
+    local_data["gender"] = [None, "F"] + ["M", "F"] * 9
     local_data = pd.DataFrame(local_data)
     rows = [Row(**row) for row in local_data.to_dict("records")]
     result = assign_treatment(
         sa_table=sample_table,
         data=rows,
-        stratum_cols=["age"],
+        stratum_cols=["gender"],
         id_col="id",
         arm_names=["control", "treatment"],
         experiment_id="b767716b-f388-4cd9-a18a-08c4916ce26f",
@@ -321,7 +321,7 @@ def test_with_nans_that_would_break_stochatreat_without_preprocessing(sample_tab
     # But we still expect success since internally we'll preprocess the data to handle NaNs.
     assert result.balance_check.f_statistic > 0
     assert result.balance_check.p_value > 0
-    assert result.balance_check.balance_ok is False
+    assert result.balance_check.balance_ok is True
     assert result.sample_size == len(local_data)
     assert (
         result.sample_size

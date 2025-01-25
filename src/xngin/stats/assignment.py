@@ -68,8 +68,10 @@ def assign_treatment(
     orig_stratum_cols = sorted(set(stratum_cols))
 
     orig_data_to_stratify = df[[id_col, *orig_stratum_cols]]
-    df_cleaned, exclude_cols_set = preprocess_for_balance_and_stratification(
-        data=orig_data_to_stratify, exclude_cols=[id_col]
+    df_cleaned, exclude_cols_set, numeric_notnull_set = (
+        preprocess_for_balance_and_stratification(
+            data=orig_data_to_stratify, exclude_cols=[id_col]
+        )
     )
     # Our original target of columns to stratify on may have gotten smaller:
     post_stratum_cols = sorted(set(orig_stratum_cols) - exclude_cols_set)
@@ -89,10 +91,12 @@ def assign_treatment(
     ).drop(columns=["stratum_id"])
     df_cleaned = df_cleaned.merge(treatment_status, on=id_col)
 
+    # Put back non-null numeric columns for a more robust balance check.
     df_cleaned = restore_original_numeric_columns(
-        df_cleaned, orig_data_to_stratify, exclude_cols_set
+        df_orig=orig_data_to_stratify,
+        df_cleaned=df_cleaned,
+        numeric_notnull_set=numeric_notnull_set,
     )
-
     # Do balance check with treatment assignments as the dependent var using preprocessed data.
     balance_check_cols = [*post_stratum_cols, "treat"]
     balance_check = check_balance_of_preprocessed_df(

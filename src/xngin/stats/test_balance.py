@@ -146,11 +146,12 @@ def test_preprocessing():
         "strs_na": ["a", "b", "c", "d", "e", "f", "g", "h", "h", None],
     }
     missing_string = "_TEST_"
-    df, exclude = preprocess_for_balance_and_stratification(
+    df, exclude, numeric_notnull_set = preprocess_for_balance_and_stratification(
         pd.DataFrame(data), quantiles=4, missing_string=missing_string
     )
 
     assert exclude == set()
+    assert numeric_notnull_set == {"ints"}
     # Our ints were converted into quantiles, and our missing string is a unique value:
     assert df["ints"].nunique() == 4
     assert df["ints_na"].nunique() == 5
@@ -182,7 +183,9 @@ def test_preprocessing_with_exclusions():
         # Excluded since NA is dropped when testing for all identical values.
         "same_value_na": [1, 1, None, None],
     })
-    df, exclude = preprocess_for_balance_and_stratification(data, exclude_cols=["skip"])
+    df, exclude, numeric_notnull_set = preprocess_for_balance_and_stratification(
+        data, exclude_cols=["skip"]
+    )
 
     assert exclude == {
         "skip",
@@ -193,14 +196,17 @@ def test_preprocessing_with_exclusions():
         "uniq_obj_na",
         "same_value_na",
     }
+    assert numeric_notnull_set == {"uniq_int"}
     assert set(df.columns) == set(data.columns)
-    assert df.compare(data).empty  # test that they're the same
+    # test that we didn't preprocess any columns since either they were skipped or didn't need it,
+    # i.e. uniq_int
+    assert df.compare(data).empty
 
     # Lastly check that if we did try to assign but have no variability, we raise an error.
     with pytest.raises(StatsBalanceError) as excinfo:
         df["treat"] = [0, 1, 0, 1]  # assignments needed for balance check
-        expect_excluded = exclude | {"uniq_int"}
-        check_balance_of_preprocessed_df(df, exclude_col_set=expect_excluded)
+        exclude_all = exclude | {"uniq_int"}
+        check_balance_of_preprocessed_df(df, exclude_col_set=exclude_all)
     assert "No usable fields for performing a balance check found." in str(
         excinfo.value
     )
@@ -219,7 +225,11 @@ def test_preprocessing_booleans():
         # categorical.
         "bools_na": [True] * 8 + [False] * 1 + [None],
     }
-    df, _ = preprocess_for_balance_and_stratification(pd.DataFrame(data))
+    df, exclude, numeric_notnull_set = preprocess_for_balance_and_stratification(
+        pd.DataFrame(data)
+    )
+    assert exclude == set()
+    assert numeric_notnull_set == set()
     assert df["bools"].nunique() == 2
     assert df["bools_na"].nunique() == 3
     assert df["bools"].dtype == "bool"
@@ -239,8 +249,10 @@ def test_preprocessing_numerics_as_categories():
         "ints_with_na": [*range(0, 99), None],
         "floats": np.random.normal(30, 5, 100),
     })
-    df, _ = preprocess_for_balance_and_stratification(data)
+    df, exclude, numeric_notnull_set = preprocess_for_balance_and_stratification(data)
 
+    assert exclude == set()
+    assert numeric_notnull_set == {"ints", "floats"}
     assert set(df["ints"]) == {0, 1, 2, 3}
     assert set(df["ints_with_na"]) == {0, 1, 2, 3, "__NULL__"}
     assert set(df["floats"]) == {0, 1, 2, 3}

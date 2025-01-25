@@ -52,10 +52,19 @@ def check_balance(
     else:
         exclude_cols.append(treatment_col)
 
-    df_cleaned, exclude_cols_set = preprocess_for_balance_and_stratification(
-        data, exclude_cols, quantiles, missing_string
+    df_cleaned, exclude_cols_set, numeric_notnull_set = (
+        preprocess_for_balance_and_stratification(
+            data=data,
+            exclude_cols=exclude_cols,
+            quantiles=quantiles,
+            missing_string=missing_string,
+        )
     )
-    df_cleaned = restore_original_numeric_columns(df_cleaned, data, exclude_cols_set)
+    df_cleaned = restore_original_numeric_columns(
+        df_orig=data,
+        df_cleaned=df_cleaned,
+        numeric_notnull_set=numeric_notnull_set,
+    )
     return check_balance_of_preprocessed_df(
         data=df_cleaned,
         treatment_col=treatment_col,
@@ -80,21 +89,24 @@ def preprocess_for_balance_and_stratification(
         missing_string: value used internally for replacing NAs in non-numeric columns
 
     Returns tuple:
-       df_analysis: processed df
-       exclude_set: column names to exclude from stratification and balance checks
+        df_analysis: processed df
+        exclude_set: Column names to exclude from stratification and balance checks.
+        numeric_notnull_set: Column names of numerics with no NaNs in the original data, to use with
+            restore_original_numeric_columns() if you wish to replace these columns with the
+            original values before balance checks.
     """
     # Create copy of data for analysis
     df_analysis = data.copy()
 
     exclude_set = set() if exclude_cols is None else set(exclude_cols)
-    working_set = set(df_analysis.columns) - exclude_set
 
     # Exclude columns from the check that contain only the same value or unique non-numeric values.
     # Note: pd.qcut() will return NaN for all objects if the non-None values are identical and we
     # drop duplicate bin edges; pd.get_dummies() will drop a column of all NaN, so drop here.
     single_value_cols = []
     unique_non_numeric_cols = []
-    for col in working_set:
+    working_list = []
+    for col in set(df_analysis.columns) - exclude_set:
         unique_count = df_analysis[col].nunique(dropna=True)
         if unique_count <= 1:
             single_value_cols.append(col)
@@ -103,13 +115,16 @@ def preprocess_for_balance_and_stratification(
             and df_analysis[col].dropna().is_unique
         ):
             unique_non_numeric_cols.append(col)
+        else:
+            working_list.append(col)
 
-    # Update our sets
+    # Also update our exclude_set to return.
     exclude_set = exclude_set.union(single_value_cols, unique_non_numeric_cols)
-    working_set = working_set - exclude_set
 
     # Handle numeric columns (can include NaNs) by converting to quartiles. Excludes booleans.
-    numeric_columns = {c for c in working_set if is_any_real_numeric_dtype(data[c])}
+    numeric_columns = [
+        c for c in working_list if is_any_real_numeric_dtype(df_analysis[c])
+    ]
     for col in numeric_columns:
         labels = pd.qcut(
             df_analysis[col],
@@ -125,28 +140,38 @@ def preprocess_for_balance_and_stratification(
 
     # Next backfill NaNs. Since we converted numerics to categoricals, we can treat them the same as
     # the original non-numeric columns.
-    cols_with_missing_values = set(df_analysis.columns[df_analysis.isnull().any()])
-    for col in cols_with_missing_values & working_set:
+    column_index = df_analysis[working_list].columns
+    isnull_columns = column_index[df_analysis[working_list].isnull().any()]
+    for col in isnull_columns:
         if df_analysis[col].dtype == "category":
             df_analysis[col] = df_analysis[col].cat.add_categories(missing_string)
         df_analysis.fillna({col: missing_string}, inplace=True)
 
-    return df_analysis, exclude_set
+    numeric_notnull_set = set(numeric_columns) - set(isnull_columns)
+    return df_analysis, exclude_set, numeric_notnull_set
 
 
-def restore_original_numeric_columns(df_cleaned, df_orig, exclude_col_set):
+def restore_original_numeric_columns(
+    df_orig: pd.DataFrame, df_cleaned: pd.DataFrame, numeric_notnull_set: set
+):
     """
-    Restore original numeric columns with no missing data to the preprocessed df for better balance
-    test results.
+    Restore columns named in numeric_notnull_set from df_orig to df_cleaned for better balance test
+    results.
+
+    df_orig should typically be the same input and df_cleaned and numeric_notnull_set the outputs of
+    preprocess_for_balance_and_stratification().
     """
-    numeric_columns = list(
-        {c for c in df_orig.columns if is_any_real_numeric_dtype(df_orig[c])}
-        - set(df_orig.columns[df_orig.isnull().any()])
-        - exclude_col_set
-    )
-    if numeric_columns:
+    if numeric_notnull_set:
+        columns = sorted(numeric_notnull_set)
+        for col in columns:
+            if col not in df_orig.columns or col not in df_cleaned.columns:
+                raise ValueError(
+                    f"Column {col} is missing from either df_orig or df_cleaned."
+                )
+
         df_cleaned = df_cleaned.copy()
-        df_cleaned[numeric_columns] = df_orig[numeric_columns]
+        df_cleaned[columns] = df_orig[columns]
+
     return df_cleaned
 
 
