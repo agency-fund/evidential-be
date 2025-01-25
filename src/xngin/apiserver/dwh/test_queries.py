@@ -185,17 +185,26 @@ def fixture_compiler(engine):
 
 def test_compose_query_with_no_filters(compiler):
     sql = compiler(compose_query(SampleTable.get_table(), 2, []))
-    # regex to accommodate pg and sqlite compilers
-    match = re.match(
-        re.escape(
-            "SELECT test_table.id, test_table.int_col, test_table.float_col,"
-            " test_table.bool_col, test_table.string_col, test_table.experiment_ids "
-            "FROM test_table ORDER BY random()"
+    _, dbtype, _ = get_test_dwh_info()
+    if dbtype == DbType.BQ:
+        expectation = (
+            "SELECT `test_table`.`id`, `test_table`.`int_col`, `test_table`.`float_col`, "
+            "`test_table`.`bool_col`, `test_table`.`string_col`, `test_table`.`experiment_ids` "
+            "FROM `test_table` ORDER BY rand() LIMIT 2"
         )
-        + r" +LIMIT 2(?: OFFSET 0){0,1}",
-        sql,
-    )
-    assert match is not None, sql
+        assert sql == expectation, sql
+    else:
+        # regex to accommodate pg and sqlite compilers
+        match = re.match(
+            re.escape(
+                "SELECT test_table.id, test_table.int_col, test_table.float_col,"
+                " test_table.bool_col, test_table.string_col, test_table.experiment_ids "
+                "FROM test_table ORDER BY random()"
+            )
+            + r" +LIMIT 2(?: OFFSET 0){0,1}",
+            sql,
+        )
+        assert match is not None, sql
 
 
 RELATION_CASES = [

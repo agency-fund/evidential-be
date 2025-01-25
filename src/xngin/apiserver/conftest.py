@@ -73,7 +73,7 @@ def get_test_dwh_info():
     return get_test_uri_info(connection_uri)
 
 
-def get_test_uri_info(connection_uri):
+def get_test_uri_info(connection_uri: str):
     """Returns a tuple of info about a test database given its connection_uri.
 
     Returns:
