@@ -151,9 +151,25 @@ class WhereTable(HelpfulBase):
     bool_col = mapped_column(Boolean, nullable=False)
     string_col = mapped_column(String, nullable=False)
     experiment_ids = mapped_column(String, nullable=False)
+    dt_col = mapped_column(DateTime, nullable=False)
 
 
 WHERE_TESTCASES = [
+    WhereTestCase(
+        filters=[
+            AudienceSpecFilter(
+                field_name="dt_col",
+                relation=Relation.BETWEEN,
+                value=["2024-01-01", "2024-01-02"],
+            )
+        ],
+        where={
+            DbType.SL: "tt.dt_col BETWEEN '2024-01-01 00:00:00.000000' AND '2024-01-02 00:00:00.000000' ORDER BY random() LIMIT 3 OFFSET 0",
+            DbType.RS: "tt.dt_col BETWEEN '2024-01-01 00:00:00' AND '2024-01-02 00:00:00' ORDER BY random()  LIMIT 3",
+            DbType.PG: "tt.dt_col BETWEEN '2024-01-01 00:00:00' AND '2024-01-02 00:00:00' ORDER BY random()  LIMIT 3",
+            DbType.BQ: "`tt`.`dt_col` BETWEEN DATETIME '2024-01-01 00:00:00' AND DATETIME '2024-01-02 00:00:00' ORDER BY rand() LIMIT 3",
+        },
+    ),
     WhereTestCase(
         filters=[
             AudienceSpecFilter(

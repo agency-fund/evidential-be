@@ -2,6 +2,7 @@
 
 import re
 from dataclasses import dataclass
+from datetime import datetime
 
 import pytest
 from sqlalchemy import (
@@ -12,6 +13,8 @@ from sqlalchemy import (
     Boolean,
     String,
     event,
+    Column,
+    DateTime,
 )
 from sqlalchemy.orm import Session, DeclarativeBase, mapped_column
 
@@ -29,6 +32,8 @@ from xngin.apiserver.dwh.queries import (
     create_query_filters_from_spec,
     get_stats_on_metrics,
     make_csv_regex,
+    create_datetime_filter,
+    LateValidationError,
 )
 from xngin.db_extensions.custom_functions import NumpyStddev
 
@@ -429,6 +434,111 @@ def test_booleans(testcase, db_session, compiler):
     ), testcase
 
 
+def test_datetime_filter_validation():
+    col = Column("x", DateTime)
+    with pytest.raises(LateValidationError) as exc:
+        create_datetime_filter(
+            col,
+            AudienceSpecFilter(
+                field_name="x", relation=Relation.EXCLUDES, value=[123, 456]
+            ),
+        )
+    assert "only valid Relation on a datetime field is BETWEEN" in str(exc)
+
+    with pytest.raises(LateValidationError) as exc:
+        create_datetime_filter(
+            col,
+            AudienceSpecFilter(
+                field_name="x", relation=Relation.INCLUDES, value=[123, 456]
+            ),
+        )
+    assert "only valid Relation on a datetime field is BETWEEN" in str(exc)
+
+    with pytest.raises(LateValidationError) as exc:
+        create_datetime_filter(
+            col,
+            AudienceSpecFilter(
+                field_name="x",
+                relation=Relation.BETWEEN,
+                value=["2024-01-01 00:00:00", "bark"],
+            ),
+        )
+    assert "ISO8601 formatted date" in str(exc)
+
+    with pytest.raises(LateValidationError) as exc:
+        create_datetime_filter(
+            col,
+            AudienceSpecFilter(
+                field_name="x",
+                relation=Relation.BETWEEN,
+                value=["2024-01-01 00:00:00", "2024-01-01 00:00:00+08:00"],
+            ),
+        )
+    assert "timezone" in str(exc)
+
+
+def test_allowed_datetime_filter_validation():
+    col = Column("x", DateTime)
+
+    # now without microseconds
+    now = datetime.now().replace(microsecond=0)
+    create_datetime_filter(
+        col,
+        AudienceSpecFilter(
+            field_name="x",
+            relation=Relation.BETWEEN,
+            value=[now.isoformat(), now.isoformat()],
+        ),
+    )
+
+    # zero offset is allowed
+    create_datetime_filter(
+        col,
+        AudienceSpecFilter(
+            field_name="x",
+            relation=Relation.BETWEEN,
+            value=[now.isoformat() + "Z", now.isoformat() + "-00:00"],
+        ),
+    )
+
+    # now with microseconds
+    now_with_microsecond = now.replace(microsecond=1)
+    create_datetime_filter(
+        col,
+        AudienceSpecFilter(
+            field_name="x",
+            relation=Relation.BETWEEN,
+            value=[now_with_microsecond.isoformat(), None],
+        ),
+    )
+
+    midnight = "2024-01-01 00:00:00"
+    create_datetime_filter(
+        col,
+        AudienceSpecFilter(
+            field_name="x", relation=Relation.BETWEEN, value=[None, midnight]
+        ),
+    )
+
+    midnight_with_delim = "2024-01-01T00:00:00"
+    create_datetime_filter(
+        col,
+        AudienceSpecFilter(
+            field_name="x", relation=Relation.BETWEEN, value=[None, midnight_with_delim]
+        ),
+    )
+
+    # bare dates are allowed
+    bare_date = "2024-01-01"
+    create_datetime_filter(
+        col,
+        AudienceSpecFilter(
+            field_name="x", relation=Relation.BETWEEN, value=[None, bare_date]
+        ),
+    )
+
+
+# TODO: move to api_types
 def test_boolean_filter_validation():
     with pytest.raises(ValueError) as excinfo:
         AudienceSpecFilter(

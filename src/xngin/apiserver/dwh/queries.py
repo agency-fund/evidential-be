@@ -30,6 +30,16 @@ from xngin.apiserver.api_types import (
 from xngin.db_extensions import custom_functions
 
 
+class LateValidationError(Exception):
+    """Raised by API request validation failures that can only occur late in processing.
+
+    Example: datetime value validations cannot happen until we know we are dealing with a datetime field, and that
+    information is not available until we have table reflection data.
+    """
+
+    pass
+
+
 def get_stats_on_metrics(
     session,
     sa_table: Table,
@@ -150,18 +160,19 @@ def create_datetime_filter(
 
     def str_to_datetime(s: str | int | float | bool) -> datetime:
         """Convert an ISO8601 string to a datetime."""
-        # TODO: consistent validation
-        if not isinstance(s, str):
-            raise TypeError("datetime-type filter values must be strings.")
-        # TODO: handle errors raised by fromisoformat
-        parsed = datetime.fromisoformat(s)
+        try:
+            parsed = datetime.fromisoformat(s)
+        except (ValueError, TypeError) as exc:
+            raise LateValidationError(
+                "datetime-type filter values must be strings containing an ISO8601 formatted date."
+            ) from exc
         if not parsed.tzinfo:
             return parsed
         offset = parsed.tzinfo.utcoffset(parsed)
         if offset == timedelta():  # 0 timedelta is equivalent to UTC
             return parsed.replace(tzinfo=None)
-        raise ValueError(
-            f"datetime-type filter values must be in UTC or not be explicitly tagged with a timezone: {s}"
+        raise LateValidationError(
+            f"datetime-type filter values must be in UTC, or not be tagged with an explicit timezone: {s}"
         )
 
     match filter_.relation:
@@ -174,7 +185,9 @@ def create_datetime_filter(
                 case (left, right):
                     return col.between(str_to_datetime(left), str_to_datetime(right))
         case _:
-            raise ValueError("The only valid Relation on a datetime field is BETWEEN.")
+            raise LateValidationError(
+                "The only valid Relation on a datetime field is BETWEEN."
+            )
 
 
 def create_filter(

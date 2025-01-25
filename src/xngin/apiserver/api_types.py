@@ -185,9 +185,6 @@ class AudienceSpecFilter(ApiBaseModel):
     If a timezone is provided, it must be UTC.
     """
 
-    # TODO: Add an explicit validator method to validate the filter values are consistent with the schema types, e.g.
-    # datetime fields must have ISO8601 values. Today, we only validate this at query time.
-
     field_name: FieldName
     relation: Relation
     value: (
