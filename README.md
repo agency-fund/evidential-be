@@ -274,6 +274,17 @@ can be updated more easily as things change by prefixing your pytest run with th
    pytest -m integration
    ```
 
+### How do I run the BigQuery integration tests on a PR?
+
+Use the GitHub CLI:
+
+```shell
+gh workflow run tests --ref your-branch-name -f run-bq-integration=true
+```
+
+`tests` refers to the name of the workflow containing the integration tests. `run-bq-integration` refers to the name
+of the workflow_dispatch input that determines if the BigQuery integration tests are run.
+
 ### How do I force-build the test sqlite database?
 
 Recommend deleting the `src/xngin/apiserver/testdata/testing_dwh.db` and let the unit tests rebuild it
