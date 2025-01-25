@@ -3,9 +3,10 @@ import pandas as pd
 import numpy as np
 from stochatreat import stochatreat
 from xngin.stats.balance import (
-    check_balance,
+    BalanceResult,
     check_balance_of_preprocessed_df,
     preprocess_for_balance_and_stratification,
+    restore_original_numeric_columns,
 )
 from xngin.stats.stats_errors import StatsBalanceError
 
@@ -22,6 +23,59 @@ def sample_data():
         "region": np.random.choice(["North", "South", "East", "West"], n),
     }
     return pd.DataFrame(data)
+
+
+def check_balance(
+    data: pd.DataFrame,
+    treatment_col: str = "treat",
+    exclude_cols: list[str] | None = None,
+    alpha: float = 0.5,
+    quantiles: int = 4,
+    missing_string="__NULL__",
+) -> BalanceResult:
+    """
+    Helper wrapper around our components: preprocess_for_balance_and_stratification(),
+    restore_original_numeric_columns(), and check_balance_of_preprocessed_df().
+
+    Originally called after stratified random assignment, we've split this into a preprocessing step
+    shared by the random assignment, then steps for the actual balance check. Retained for
+    convenience doing unittests of the above.
+
+    Args:
+        data: DataFrame containing treatment assignments and covariates
+        treatment_col: Name of treatment assignment column
+        exclude_cols: List of columns to exclude from balance check
+        alpha: Significance level for balance test
+        quantiles: Number of quantiles to bucket numeric columns with NAs
+        missing_string: value used internally for replacing NAs in non-numeric columns
+
+    Returns:
+        BalanceResult object containing test results
+    """
+    if exclude_cols is None:
+        exclude_cols = [treatment_col]
+    else:
+        exclude_cols.append(treatment_col)
+
+    df_cleaned, exclude_cols_set, numeric_notnull_set = (
+        preprocess_for_balance_and_stratification(
+            data=data,
+            exclude_cols=exclude_cols,
+            quantiles=quantiles,
+            missing_string=missing_string,
+        )
+    )
+    df_cleaned = restore_original_numeric_columns(
+        df_orig=data,
+        df_cleaned=df_cleaned,
+        numeric_notnull_set=numeric_notnull_set,
+    )
+    return check_balance_of_preprocessed_df(
+        data=df_cleaned,
+        treatment_col=treatment_col,
+        exclude_col_set=exclude_cols_set,
+        alpha=alpha,
+    )
 
 
 def test_check_balance(sample_data):
@@ -164,6 +218,30 @@ def test_preprocessing():
     assert len(df.columns) == 4
 
 
+def test_preprocessing_booleans():
+    """
+    Verify handling booleans avoids conversion to quantiles, as otherwise a skewed distribution
+    could result in every value collapsing into one quantile.
+    """
+    data = {
+        # If treated as a numeric and quantiled, this list would get mapped to only one interval:
+        # (-0.001, 1.0], but we skip quantiling for booleans.
+        "bools": [True] * 8 + [False] * 2,
+        # However, a raw list of booleans + None is stored as dtype='object', so we handle this as a
+        # categorical.
+        "bools_na": [True] * 8 + [False] * 1 + [None],
+    }
+    df, exclude, numeric_notnull_set = preprocess_for_balance_and_stratification(
+        pd.DataFrame(data)
+    )
+    assert exclude == set()
+    assert numeric_notnull_set == set()
+    assert df["bools"].nunique() == 2
+    assert df["bools_na"].nunique() == 3
+    assert df["bools"].dtype == "bool"
+    assert df["bools_na"].dtype == "object"
+
+
 def test_preprocessing_with_exclusions():
     """
     Verify we exclude certain columns from preprocessing for various reasons.
@@ -210,30 +288,6 @@ def test_preprocessing_with_exclusions():
     assert "No usable fields for performing a balance check found." in str(
         excinfo.value
     )
-
-
-def test_preprocessing_booleans():
-    """
-    Verify handling booleans avoids conversion to quantiles, as otherwise a skewed distribution
-    could result in every value collapsing into one quantile.
-    """
-    data = {
-        # If treated as a numeric and quantiled, this list would get mapped to only one interval:
-        # (-0.001, 1.0], but we skip quantiling for booleans.
-        "bools": [True] * 8 + [False] * 2,
-        # However, a raw list of booleans + None is stored as dtype='object', so we handle this as a
-        # categorical.
-        "bools_na": [True] * 8 + [False] * 1 + [None],
-    }
-    df, exclude, numeric_notnull_set = preprocess_for_balance_and_stratification(
-        pd.DataFrame(data)
-    )
-    assert exclude == set()
-    assert numeric_notnull_set == set()
-    assert df["bools"].nunique() == 2
-    assert df["bools_na"].nunique() == 3
-    assert df["bools"].dtype == "bool"
-    assert df["bools_na"].dtype == "object"
 
 
 def test_preprocessing_numerics_as_categories():

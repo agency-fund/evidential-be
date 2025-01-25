@@ -18,61 +18,6 @@ class BalanceResult:
     denominator_df: float
 
 
-def check_balance(
-    data: pd.DataFrame,
-    treatment_col: str = "treat",
-    exclude_cols: list[str] | None = None,
-    alpha: float = 0.5,
-    quantiles: int = 4,
-    missing_string="__NULL__",
-) -> BalanceResult:
-    """
-    DEPRECATED: use preprocess_for_balance_and_stratification(), restore_original_numeric_columns(),
-    and check_balance_of_preprocessed_df().
-
-    Perform balance check on treatment assignment.
-
-    Originally called after stratified random assignment, we've now split this into a preprocessing
-    step shared by the random assignment, then steps for the actual balance check. Retained for
-    convenience doing unittests of the above.
-
-    Args:
-        data: DataFrame containing treatment assignments and covariates
-        treatment_col: Name of treatment assignment column
-        exclude_cols: List of columns to exclude from balance check
-        alpha: Significance level for balance test
-        quantiles: Number of quantiles to bucket numeric columns with NAs
-        missing_string: value used internally for replacing NAs in non-numeric columns
-
-    Returns:
-        BalanceResult object containing test results
-    """
-    if exclude_cols is None:
-        exclude_cols = [treatment_col]
-    else:
-        exclude_cols.append(treatment_col)
-
-    df_cleaned, exclude_cols_set, numeric_notnull_set = (
-        preprocess_for_balance_and_stratification(
-            data=data,
-            exclude_cols=exclude_cols,
-            quantiles=quantiles,
-            missing_string=missing_string,
-        )
-    )
-    df_cleaned = restore_original_numeric_columns(
-        df_orig=data,
-        df_cleaned=df_cleaned,
-        numeric_notnull_set=numeric_notnull_set,
-    )
-    return check_balance_of_preprocessed_df(
-        data=df_cleaned,
-        treatment_col=treatment_col,
-        exclude_col_set=exclude_cols_set,
-        alpha=alpha,
-    )
-
-
 def preprocess_for_balance_and_stratification(
     data: pd.DataFrame,
     exclude_cols: list[str] | None = None,
@@ -182,8 +127,20 @@ def check_balance_of_preprocessed_df(
     alpha: float = 0.5,
 ) -> BalanceResult:
     """
-    See check_balance(). Assumes the df and exclude_col_set came from
-    preprocess_for_balance_and_stratification().
+    Perform a balance check on treatment assignment.  One should typically first use
+    preprocess_for_balance_and_stratification(), then restore_original_numeric_columns(), and
+    finally call this.
+
+    Args:
+        data: DataFrame containing preprocessed covariates and treatment assignments
+        treatment_col: Name of treatment assignment column
+        exclude_col_set: Columns to exclude from balance check. Typically should come from
+            preprocess_for_balance_and_stratification().
+        alpha: Significance level for balance test. If the test p-value is above this, we declare
+            the dataset as being sufficiently balanced.
+
+    Returns:
+        BalanceResult object containing test results
     """
     if data[treatment_col].nunique() <= 1:
         raise ValueError("Treatment column has insufficient arms.")
