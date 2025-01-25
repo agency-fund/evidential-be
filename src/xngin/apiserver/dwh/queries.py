@@ -48,7 +48,7 @@ def get_stats_on_metrics(
             cast_column = cast(col, Float)
         else:  # re: avg(boolean) doesn't work on pg-like backends
             cast_column = cast(cast(col, Integer), Float)
-        # TODO(roboton): consider whether mitigations for null are important
+        # TODO(roboton): https://github.com/agency-fund/xngin/issues/192
         select_columns.extend((
             func.avg(cast_column).label(f"{field_name}__mean"),
             custom_functions.stddev_pop(cast_column).label(f"{field_name}__stddev"),
