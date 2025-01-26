@@ -92,13 +92,19 @@ jobs:
           GCLOUD_SERVICE_ACCOUNT_CREDENTIALS: ${{ secrets.GOOGLE_APPLICATION_CREDENTIALS_CONTENT }}
         run: |
           bq --location=us-west1 mk --dataset --default_table_expiration=86400 xngin-development-dc:$DATASET_NAME
-          # TODO: add a step with `if: failure()||success()` to delete the dataset. This cannot be done with the CLI.
 
           export ECHO_SQL="1"
           mkdir -p ~/.config/gspread && echo "${GCLOUD_SERVICE_ACCOUNT_CREDENTIALS}" > ~/.config/gspread/service_account.json
           export GOOGLE_APPLICATION_CREDENTIALS=$HOME/.config/gspread/service_account.json
           export XNGIN_TEST_DWH_URI="bigquery://xngin-development-dc/${DATASET_NAME}?credentials_base64=$(cat ${GOOGLE_APPLICATION_CREDENTIALS} | base64 -w 0)"
           uv run pytest -rA src/xngin/apiserver/dwh/test_queries.py
+      - name: bq cleanup
+        if: failure() || success()
+        run: |
+          uv run xngin-cli bigquery-dataset-delete \
+            --project-id xngin-development-dc \
+            --dataset-id ${DATASET_NAME} \
+            || /bin/true
   docker-builds:
     timeout-minutes: 15
     runs-on: ubuntu-22.04
