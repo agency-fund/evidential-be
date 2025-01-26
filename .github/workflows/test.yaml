@@ -72,7 +72,7 @@ jobs:
     runs-on: ubuntu-22.04
     if: contains(github.event.pull_request.body, 'run:bqintegration') || inputs.run-bq-integration
     env:
-      DATASET_NAME: gha_${{ github.run_id }}_${{ github.run_attempt }}
+      DATASET_NAME: bqintegration_${{ github.run_id }}_${{ github.run_attempt }}
     steps:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v4
@@ -160,6 +160,8 @@ jobs:
   smoke-server-bq:
     runs-on: ubuntu-22.04
     timeout-minutes: 15
+    env:
+      XNGIN_CLI_TABLE_NAME: smoke_${{ github.run_id }}_${{ github.run_attempt }}
     steps:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v4
@@ -173,8 +175,7 @@ jobs:
         run: |
           mkdir -p ~/.config/gspread && echo "${GCLOUD_SERVICE_ACCOUNT_CREDENTIALS}" > service_account.json
           openssl sha256 service_account.json
-      - env:
-          XNGIN_CLI_TABLE_NAME: gha_${{ github.run_id }}_${{ github.run_attempt }}
+      - name: bq smoke tests
         run: |
           set -x
 
@@ -241,6 +242,14 @@ jobs:
               }
             }'
           kill %1
+      - name: bq cleanup
+        if: success() || failure()
+        run: |
+          export GOOGLE_APPLICATION_CREDENTIALS=service_account.json
+          uv run xngin-cli bigquery-table-delete \
+            --project-id xngin-development-dc \
+            --dataset-id ds \
+            --table-id ${XNGIN_CLI_TABLE_NAME} || /bin/true
   smoke-server:
     runs-on: ubuntu-22.04
     timeout-minutes: 15
