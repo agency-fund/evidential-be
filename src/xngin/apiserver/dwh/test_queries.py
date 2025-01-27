@@ -177,7 +177,7 @@ def fixture_engine(db_session):
 
 @pytest.fixture(name="compiler")
 def fixture_compiler(engine):
-    """Returns a helper method to compile a SQLAlchemy Select into a SQL string."""
+    """Returns a helper method to compile a sqlalchemy.Select into a SQL string."""
     return lambda query: str(
         query.compile(engine, compile_kwargs={"literal_binds": True})
     ).replace("\n", "")
