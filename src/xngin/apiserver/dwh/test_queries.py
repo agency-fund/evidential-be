@@ -369,7 +369,7 @@ RELATION_CASES = [
 
 
 @pytest.mark.parametrize("testcase", RELATION_CASES)
-def test_relations(testcase, db_session, compiler, use_deterministic_random):
+def test_relations(testcase, db_session, use_deterministic_random):
     testcase.filters = [
         AudienceSpecFilter.model_validate(filt.model_dump())
         for filt in testcase.filters
@@ -430,7 +430,7 @@ def test_relations(testcase, db_session, compiler, use_deterministic_random):
         ),
     ],
 )
-def test_booleans(testcase, db_session, compiler):
+def test_booleans(testcase, db_session):
     table = SampleNullableTable.get_table()
     filters = create_query_filters_from_spec(
         table,
