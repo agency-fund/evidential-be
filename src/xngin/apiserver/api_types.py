@@ -137,7 +137,7 @@ class Relation(enum.StrEnum):
     EXCLUDES matches when the value does not match any of the provided values. For CSV fields
     (i.e. experiment_ids), the match will fail if any of the provided values are present in the value.
 
-    BETWEEN matches when the value is between the two provided values. Not allowed for CSV fields.
+    BETWEEN matches when the value is between the two provided values (inclusive). Not allowed for CSV fields.
     """
 
     INCLUDES = "includes"
@@ -150,11 +150,13 @@ class AudienceSpecFilter(ApiBaseModel):
 
     ## Examples
 
-    | Relation | Value      | Result                       |
-    |----------|------------|------------------------------|
-    | INCLUDES | ["a"]      | Match when `x IN ("a")`      |
-    | INCLUDES | ["a", "b"] | Match when `x IN ("a", "b")` |
-    | EXCLUDES | ["a","b"]  | Match `x NOT IN ("a", "b")`  |
+    | Relation | Value       | Result                         |
+    |----------|-------------|--------------------------------|
+    | INCLUDES | ["a"]       | Match when `x IN ("a")`        |
+    | INCLUDES | ["a", "b"]  | Match when `x IN ("a", "b")`   |
+    | EXCLUDES | ["a", "b"]  | Match `x NOT IN ("a", "b")`    |
+    | BETWEEN  | ["a", "z"]  | Match `"a" <= x <= "z"`        |
+    | BETWEEN  | ["a", None] | Match `x >= "a"`               |
 
     String comparisons are case-sensitive.
 
@@ -172,6 +174,15 @@ class AudienceSpecFilter(ApiBaseModel):
     Note: The BETWEEN relation is not supported for comma-separated values.
 
     Note: CSV field comparisons are case-insensitive.
+
+    ## Handling of datetime and timestamp values
+
+    DATETIME or TIMESTAMP-type columns support only the BETWEEN relation.
+
+    Values must be expressed as ISO8601 datetime strings compatible with Python's datetime.fromisoformat()
+    (https://docs.python.org/3/library/datetime.html#datetime.datetime.fromisoformat).
+
+    If a timezone is provided, it must be UTC.
     """
 
     field_name: FieldName
