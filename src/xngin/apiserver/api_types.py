@@ -137,7 +137,7 @@ class Relation(enum.StrEnum):
     EXCLUDES matches when the value does not match any of the provided values. For CSV fields
     (i.e. experiment_ids), the match will fail if any of the provided values are present in the value.
 
-    BETWEEN matches when the value is between the two provided values. Not allowed for CSV fields.
+    BETWEEN matches when the value is between the two provided values (inclusive). Not allowed for CSV fields.
     """
 
     INCLUDES = "includes"
@@ -155,7 +155,7 @@ class AudienceSpecFilter(ApiBaseModel):
     | INCLUDES | ["a"]       | Match when `x IN ("a")`        |
     | INCLUDES | ["a", "b"]  | Match when `x IN ("a", "b")`   |
     | EXCLUDES | ["a", "b"]  | Match `x NOT IN ("a", "b")`    |
-    | BETWEEN  | ["a", "z"]  | Match `x BETWEEN "a" and "z"`  |
+    | BETWEEN  | ["a", "z"]  | Match `"a" <= x <= "z"`        |
     | BETWEEN  | ["a", None] | Match `x >= "a"`               |
 
     String comparisons are case-sensitive.
