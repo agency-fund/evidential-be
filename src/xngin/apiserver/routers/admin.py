@@ -73,7 +73,7 @@ class ApiKey(AdminApiBaseModel):
 
 
 class UpdateApiKeyRequest(AdminApiBaseModel):
-    datasource_ids: Annotated[list[str], Field(...)]
+    datasource_ids: Annotated[list[str], Field(..., min_length=1)]
 
 
 @router.get("/apikeys")
