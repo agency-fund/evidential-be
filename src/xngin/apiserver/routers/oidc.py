@@ -4,8 +4,7 @@ import asyncio
 import logging
 import os
 from contextlib import asynccontextmanager
-from typing import Annotated, Literal
-from urllib.parse import urlencode
+from typing import Annotated
 
 import httpx
 from fastapi import APIRouter, Query, FastAPI
@@ -24,7 +23,6 @@ DEFAULT_REDIRECT_URI = f"http://localhost:8000{constants.API_PREFIX_V1}/a/oidc" 
 REDIRECT_URI = os.environ.get(
     ENV_GOOGLE_OIDC_REDIRECT_URI, DEFAULT_REDIRECT_URI
 )  # used for testing UI only
-SCOPES = ["openid", "email", "profile"]
 oidc_google = OpenIdConnect(openIdConnectUrl=GOOGLE_DISCOVERY_URL)
 
 logger = logging.getLogger(__name__)
@@ -93,34 +91,6 @@ async def get_google_jwks():
 @router.get("/")
 def index():
     return FileResponse("static/pkcetest.html")
-
-
-@router.get("/login")
-async def login(
-    code_challenge: Annotated[str, Query(...)],
-    code_challenge_method: Annotated[
-        Literal["S256"],
-        Query(
-            ...,
-        ),
-    ],
-):
-    """Generates a login URL given a PKCE code challenge.
-
-    Only relevant for PKCE.
-    """
-    config = await get_google_configuration()
-
-    params = {
-        "client_id": CLIENT_ID,
-        "redirect_uri": REDIRECT_URI,
-        "response_type": "code",
-        "scope": " ".join(SCOPES),
-        "code_challenge": code_challenge,
-        "code_challenge_method": code_challenge_method,
-    }
-
-    return {"auth_url": f"{config['authorization_endpoint']}?{urlencode(params)}"}
 
 
 @router.get("/callback")
