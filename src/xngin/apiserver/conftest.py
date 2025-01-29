@@ -4,11 +4,15 @@ import enum
 import logging
 import os
 from pathlib import Path
+from typing import assert_never
 
 import pytest
 import sqlalchemy
+import sqlalchemy_bigquery
 from pydantic import TypeAdapter, ValidationError
 from sqlalchemy import StaticPool
+from sqlalchemy.dialects.postgresql import psycopg
+from sqlalchemy.engine.interfaces import Dialect
 from sqlalchemy.orm import sessionmaker
 
 from xngin.apiserver import database
@@ -27,11 +31,23 @@ class DeveloperErrorRunFromRootOfRepositoryPleaseError(Exception):
 
 
 class DbType(enum.StrEnum):
-    SQLITE = "sqlite"
-    REDSHIFT = "redshift"
+    SL = "sqlite"
+    RS = "redshift"
     PG = "postgres"
     BQ = "bigquery"
-    OTHER = "other"
+
+    def dialect(self) -> Dialect:
+        """Returns the SQLAlchemy dialect most appropriate for this DbType."""
+        match self:
+            case DbType.SL:
+                return sqlalchemy.dialects.sqlite.dialect()
+            case DbType.RS:
+                return sqlalchemy.dialects.postgresql.psycopg2.dialect()
+            case DbType.PG:
+                return psycopg.dialect()
+            case DbType.BQ:
+                return sqlalchemy_bigquery.dialect()
+        assert_never(self)
 
 
 def get_settings_for_test() -> XnginSettings:
@@ -57,7 +73,7 @@ def get_test_dwh_info():
     return get_test_uri_info(connection_uri)
 
 
-def get_test_uri_info(connection_uri):
+def get_test_uri_info(connection_uri: str):
     """Returns a tuple of info about a test database given its connection_uri.
 
     Returns:
@@ -65,17 +81,20 @@ def get_test_uri_info(connection_uri):
     - type of dwh backend derived from the uri
     - map of connection args for use with SQLAlchemy's create_engine()
     """
-    dbtype = DbType.OTHER
     connect_args = {}
     if connection_uri.startswith("sqlite"):
-        dbtype = DbType.SQLITE
+        dbtype = DbType.SL
         connect_args = {"check_same_thread": False}
     elif connection_uri.startswith("bigquery"):
         dbtype = DbType.BQ
     elif "redshift.amazonaws.com" in connection_uri:
-        dbtype = DbType.REDSHIFT
+        dbtype = DbType.RS
     elif connection_uri.startswith("postgres"):
         dbtype = DbType.PG
+    else:
+        raise ValueError(
+            f"connection_uri is not recognized as a SQLite, BigQuery, Redshift, or Postgres database: {connection_uri}"
+        )
     return connection_uri, dbtype, connect_args
 
 

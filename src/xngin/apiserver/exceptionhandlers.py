@@ -4,6 +4,7 @@ from starlette.requests import Request
 from starlette.responses import JSONResponse
 
 from xngin.apiserver.apikeys import ApiKeyError
+from xngin.apiserver.dwh.queries import LateValidationError
 from xngin.apiserver.settings import (
     CannotFindTableError,
     CannotFindParticipantsError,
@@ -61,3 +62,9 @@ def setup(app):
         return JSONResponse(
             status_code=500, content={"message": "Possible server misconfiguration."}
         )
+
+    @app.exception_handler(LateValidationError)
+    async def exception_handler_latevalidation(
+        _request: Request, exc: LateValidationError
+    ):
+        return JSONResponse(status_code=422, content={"message": str(exc)})

@@ -15,6 +15,8 @@ import pandas_gbq
 import psycopg2
 import sqlalchemy
 import typer
+from google.cloud.exceptions import NotFound
+
 from xngin.sheets.gsheets import GSheetsPermissionError
 import zstandard
 from gspread import GSpreadException
@@ -494,6 +496,47 @@ def bigquery_dataset_set_default_expiration(
         f"Updated dataset {dataset.project}.{dataset.dataset_id} with new default table "
         f"expiration {dataset.default_table_expiration_ms}"
     )
+
+
+@app.command()
+def bigquery_dataset_delete(
+    project_id: Annotated[
+        str,
+        typer.Option(..., help="The Google Cloud Project ID containing the dataset."),
+    ],
+    dataset_id: Annotated[str, typer.Option(..., help="The dataset name.")],
+):
+    """Deletes a BigQuery dataset."""
+    client = bigquery.Client()
+    dataset_ref = f"{project_id}.{dataset_id}"
+    try:
+        client.delete_dataset(dataset_ref, delete_contents=True)
+    except NotFound as exc:
+        print(f"Dataset {dataset_ref} does not exist.")
+        raise typer.Exit(1) from exc
+    else:
+        print(f"Dataset {dataset_ref} has been deleted.")
+
+
+@app.command()
+def bigquery_table_delete(
+    project_id: Annotated[
+        str,
+        typer.Option(..., help="The Google Cloud Project ID containing the dataset."),
+    ],
+    dataset_id: Annotated[str, typer.Option(..., help="The dataset name.")],
+    table_id: Annotated[str, typer.Option(..., help="The table name.")],
+):
+    """Deletes a BigQuery table."""
+    client = bigquery.Client()
+    table_ref = f"{project_id}.{dataset_id}.{table_id}"
+    try:
+        client.delete_table(table_ref)
+    except NotFound as exc:
+        print(f"Table {table_ref} does not exist.")
+        raise typer.Exit(1) from exc
+    else:
+        print(f"Table {table_ref} has been deleted.")
 
 
 if __name__ == "__main__":

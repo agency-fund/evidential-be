@@ -1,4 +1,5 @@
 import re
+from datetime import datetime, timedelta
 
 import sqlalchemy
 from sqlalchemy import (
@@ -13,6 +14,7 @@ from sqlalchemy import (
     Table,
     not_,
     select,
+    DateTime,
 )
 from sqlalchemy.orm import Session
 
@@ -26,6 +28,16 @@ from xngin.apiserver.api_types import (
     DesignSpecMetric,
 )
 from xngin.db_extensions import custom_functions
+
+
+class LateValidationError(Exception):
+    """Raised by API request validation failures that can only occur late in processing.
+
+    Example: datetime value validations cannot happen until we know we are dealing with a datetime field, and that
+    information is not available until we have table reflection data.
+    """
+
+    pass
 
 
 def get_stats_on_metrics(
@@ -97,6 +109,8 @@ def create_query_filters_from_spec(
     """Converts an AudienceSpec into a list of SQLAlchemy filters."""
 
     def create_one_filter(filter_: AudienceSpecFilter, sa_table: sqlalchemy.Table):
+        if isinstance(sa_table.columns[filter_.field_name].type, DateTime):
+            return create_datetime_filter(sa_table.columns[filter_.field_name], filter_)
         if filter_.field_name.endswith(EXPERIMENT_IDS_SUFFIX):
             return create_special_experiment_id_filter(
                 sa_table.columns[filter_.field_name], filter_
@@ -139,6 +153,52 @@ def make_csv_regex(values):
     return r"(^x$)|(^x,)|(,x$)|(,x,)".replace("x", value_regexp)
 
 
+def create_datetime_filter(
+    col: sqlalchemy.Column, filter_: AudienceSpecFilter
+) -> ColumnOperators:
+    """Converts a single AudienceSpecFilter for a DateTime-typed column into a sqlalchemy filter."""
+
+    def str_to_datetime(s: int | float | str | None) -> datetime:
+        """Convert an ISO8601 string to a timezone-unaware datetime.
+
+        LateValidationError is raised if the ISO8601 string specifies a non-UTC timezone.
+
+        For maximum compatibility between backends, any microseconds value, if specified, is truncated to zero.
+        """
+        if not isinstance(s, str):
+            raise LateValidationError(
+                "datetime-type filter values must be strings containing an ISO8601 formatted date."
+            )
+        try:
+            parsed = datetime.fromisoformat(s).replace(microsecond=0)
+        except (ValueError, TypeError) as exc:
+            raise LateValidationError(
+                "datetime-type filter values must be strings containing an ISO8601 formatted date."
+            ) from exc
+        if not parsed.tzinfo:
+            return parsed
+        offset = parsed.tzinfo.utcoffset(parsed)
+        if offset == timedelta():  # 0 timedelta is equivalent to UTC
+            return parsed.replace(tzinfo=None)
+        raise LateValidationError(
+            f"datetime-type filter values must be in UTC, or not be tagged with an explicit timezone: {s}"
+        )
+
+    if filter_.relation != Relation.BETWEEN:
+        raise LateValidationError(
+            "The only valid Relation on a datetime field is BETWEEN."
+        )
+
+    match filter_.value:
+        case (left, None):
+            return col >= str_to_datetime(left)
+        case (None, right):
+            return col <= str_to_datetime(right)
+        case (left, right):
+            return col.between(str_to_datetime(left), str_to_datetime(right))
+    raise RuntimeError("Bug: invalid AudienceSpecFilter.")
+
+
 def create_filter(
     col: sqlalchemy.Column, filter_: AudienceSpecFilter
 ) -> ColumnOperators:
@@ -168,6 +228,7 @@ def create_filter(
             return col.in_(filter_.value)
         case Relation.INCLUDES:
             return col.in_(filter_.value)
+    raise RuntimeError("Bug: invalid AudienceSpecFilter.")
 
 
 def compose_query(sa_table: Table, chosen_n: int, filters):
