@@ -7,13 +7,14 @@
     "builder": "DOCKERFILE",
     "dockerfilePath": "Dockerfile.railway",
     "watchPatterns": [
-      "/railway.json",
-      "/Dockerfile.railway",
-      "/pyproject.toml",
-      "/uv.lock",
-      "/.gitignore",
-      "/.dockerignore",
-      "/src/**"
+      ".dockerignore",
+      ".gitignore",
+      "Dockerfile.railway",
+      "atlas.hcl",
+      "pyproject.toml",
+      "railway.json",
+      "src/**",
+      "uv.lock"
     ]
   }
 }
