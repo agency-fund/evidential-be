@@ -1,5 +1,8 @@
 {
   "$schema": "https://railway.com/railway.schema.json",
+  "deploy": {
+    "preDeployCommand": "/bin/sh -c \"exec uv run --no-dev ./atlas migrate apply --env sa_postgres --postgres \\\"$DATABASE_URL\\\"\""
+  },
   "build": {
     "builder": "DOCKERFILE",
     "dockerfilePath": "Dockerfile.railway",
