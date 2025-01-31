@@ -11,6 +11,7 @@
       ".gitignore",
       "Dockerfile.railway",
       "atlas.hcl",
+      "migrations/**",
       "pyproject.toml",
       "railway.json",
       "src/**",
