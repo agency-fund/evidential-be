@@ -21,7 +21,6 @@
   - [OIDC](#oidc)
   - [API Keys](#api-keys)
   - [Schema Migration](#schema-migration)
-  - [Migrations in Local Development](#migrations-in-local-development)
 
 <!-- mdformat-toc end -->
 
@@ -634,7 +633,7 @@ The files will be created in migrations/sa_postgres. Commit any new files alongs
 Migrations in the Railway environments happen automatically upon deployment. See [railway.json](railway.json)
 and [Dockerfile.railway](Dockerfile.railway) for more information.
 
-## Migrations in Local Development<a name="migrations-in-local-development"></a>
+### Migrations in Local Development<a name="migrations-in-local-development"></a>
 
 If you are running a local Postgres instance (such as the one that `tools/localpy.py` can start for you), use:
 
