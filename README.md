@@ -5,20 +5,20 @@
 # xngin
 
 - [xngin](#xngin)
-  - [Prerequisites](#prerequisites)
-  - [Getting Started](#getting-started)
-  - [Settings](#settings)
-  - [Docker](#docker)
-  - [Testing](#testing)
-  - [The CLI](#the-cli)
-  - [Onboarding new Clients](#onboarding-new-clients)
-  - [Supported DWHs and DSN url format](#supported-dwhs-and-dsn-url-format)
-  - [FAQ](#faq)
-  - [Deployment on Railway](#deployment-on-railway)
-  - [Admin API](#admin-api)
-  - [OIDC](#oidc)
-  - [API Keys](#api-keys)
-  - [Schema Migration](#schema-migration)
+    - [Prerequisites](#prerequisites)
+    - [Getting Started](#getting-started)
+    - [Settings](#settings)
+    - [Docker](#docker)
+    - [Testing](#testing)
+    - [The CLI](#the-cli)
+    - [Onboarding new Clients](#onboarding-new-clients)
+    - [Supported DWHs and DSN url format](#supported-dwhs-and-dsn-url-format)
+    - [FAQ](#faq)
+    - [Deployment on Railway](#deployment-on-railway)
+    - [Admin API](#admin-api)
+    - [OIDC](#oidc)
+    - [API Keys](#api-keys)
+    - [Schema Migration](#schema-migration)
 
 Python version of [RL Experiments Engine](https://github.com/agency-fund/rl-experiments-engine).
 
@@ -46,6 +46,7 @@ curl -LsSf https://astral.sh/uv/0.5.14/install.sh | sh
 Follow the steps below to get a local development environment running.
 
 1. Update the project's environment, install dependencies, and create a virtual environment (.venv).
+
   ```shell
   uv sync
   ```
@@ -411,7 +412,8 @@ uv run xngin-cli --help
    experiment
    eligibility), and c) metrics to use as possible outcomes to track, and optionally d) features to stratify on.
 
-1. Generate the participant-level column metadata. This will ultimately be a google sheet that we as the service provider own, but we share with the user to configure.
+1. Generate the participant-level column metadata. This will ultimately be a google sheet that we as the service
+   provider own, but we share with the user to configure.
     1. First bootstrap column names and types from the dwh schema. There will be one row output per column in the target
        dwh table. See the command `uv run xngin-cli bootstrap-spreadsheet --help`
         1. If output as csv, import it to a new google spreadsheet that _we create and own_.
@@ -438,7 +440,6 @@ For more examples, see the `xngin.gha.settings.json` settings used for testing.
 * BigQuery (experimental) - `bigquery://some-project/some-dataset`
 * SQLite3 (for tests) - `sqlite:///file_path`
 
-
 ### BigQuery as the Customer's DWH Support
 
 BigQuery support is implemented but has not yet been fully tested.
@@ -452,12 +453,13 @@ See [.github/workflows/test.yaml](.github/workflows/test.yaml) for lifecycle tes
   `User does not have bigquery.jobs.create permission in project <project_name>` error.
 * All interactions with the customer's warehouse happen via the explicitly configured
   authentication in the _settings.json_ files, which should correspond to the service account noted
-  above.  See [xngin.gha.settings.json](xngin.gha.settings.json) for an example.
+  above. See [xngin.gha.settings.json](xngin.gha.settings.json) for an example.
 * ⚠️ _As the service provider_, we create and own the initial customer warehouse configuration
   spreadsheets for the customer and share access to them for further modification. All interactions
   with these spreadsheets happen with the
   environment variable `GOOGLE_APPLICATION_CREDENTIALS`, which should point to _our_ service account
-  that has access to the sheets we create. Do not confuse these credentials with the customers' service account in settings.json!
+  that has access to the sheets we create. Do not confuse these credentials with the customers' service account in
+  settings.json!
 
   Example:
   ```shell
@@ -485,7 +487,6 @@ These commands use Google's [Application Default Credentials]
 > Note: The GHA service account has permissions to access the xngin-development-dc.ds dataset.
 
 > Note: You do not need the gcloud CLI or related tooling installed.
-
 
 ## FAQ
 
@@ -608,22 +609,36 @@ curl --header "x-api-key: xat_..." \
 
 ## Schema Migration
 
-We are using [Atlas](https://atlasgo.io/) to manage database schema migrations.
+We are using [Atlas](https://atlasgo.io/) (non-Pro) to manage database schema migrations.
 
-To generate migrations:
+When you make a change to the SQLAlchemy tables in src/xngin/apiserver/models, run this command to generate migration
+files for Postgres:
 
 ```shell
 uv run atlas migrate diff --env sa_postgres
 ```
 
-To apply migrations to a local Postgres instance:
+The files will be created in migrations/sa_postgres. Commit any new files alongside your changes to the models.
+Migrations in the Railway environments happen automatically upon deployment. See [railway.json](railway.json)
+and [Dockerfile.railway](Dockerfile.railway) for more information.
+
+## Migrations in Local Development
+
+If you are running a local Postgres instance (such as the one that `tools/localpy.py` can start for you), use:
 
 ```shell
+uv run atlas migrate diff --env sa_postgres
 uv run atlas migrate apply --env sa_postgres --url 'postgresql://postgres:postgres@localhost:5499/postgres?sslmode=disable'
 ```
 
-To apply migrations to the main.dev.agencyfund.org instance:
+Local development environments using SQLite are managed similarly to local environments using Postgres except that
+you sometimes need to pass an additional flag:
 
 ```shell
-uv run atlas migrate apply --env sa_postgres --url 'postgresql://junction.proxy.rlwy.net:21126/railway?sslmode=require'
+# Generate the migration files to ensure that they are up to date
+uv run atlas migrate diff --env sa_sqlite
+# First migration: pass a --baseline flag.
+uv run atlas migrate apply --env sa_sqlite --url sqlite://xngin.db --baseline $(ls -t migrations/sa_sqlite | grep .sql | sort -n | cut -f1 -d. | head -1)
+# Subsequent migrations: do not pass --baseline flag.
+uv run atlas migrate apply --env sa_sqlite --url sqlite://xngin.db
 ```
