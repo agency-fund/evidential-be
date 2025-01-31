@@ -16,5 +16,6 @@ RUN --mount=type=cache,id=s/53dd800c-90e7-49cd-b7f6-549131ff038e-/root/.cache/uv
 COPY ./src /code/src
 RUN --mount=type=cache,id=s/53dd800c-90e7-49cd-b7f6-549131ff038e-/root/.cache/uv,target=/root/.cache/uv /bin/uv sync --frozen --no-dev
 # Atlas is invoked via Railway's preDeployCommand, configured in railway.json.
+COPY atlas.hcl .
 ADD --chmod=555 https://release.ariga.io/atlas/atlas-linux-amd64-latest ./atlas
 CMD ["/bin/uv", "run", "--no-dev", "fastapi", "run", "src/xngin/apiserver/main.py"]
