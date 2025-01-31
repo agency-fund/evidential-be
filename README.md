@@ -5,33 +5,33 @@
 # xngin
 
 - [xngin](#xngin)
-    - [Prerequisites](#prerequisites)
-    - [Getting Started](#getting-started)
-    - [Settings](#settings)
-    - [Docker](#docker)
-    - [Testing](#testing)
-    - [The CLI](#the-cli)
-    - [Onboarding new Clients](#onboarding-new-clients)
-    - [Supported DWHs and DSN url format](#supported-dwhs-and-dsn-url-format)
-    - [FAQ](#faq)
-    - [Deployment on Railway](#deployment-on-railway)
-    - [Admin API](#admin-api)
-    - [OIDC](#oidc)
-    - [API Keys](#api-keys)
-    - [Schema Migration](#schema-migration)
+  - [Prerequisites](#prerequisites)
+  - [Getting Started](#getting-started)
+  - [Settings](#settings)
+  - [Docker](#docker)
+  - [Testing](#testing)
+  - [The CLI](#the-cli)
+  - [Onboarding new Clients](#onboarding-new-clients)
+  - [Supported DWHs and DSN url format](#supported-dwhs-and-dsn-url-format)
+  - [FAQ](#faq)
+  - [Deployment on Railway](#deployment-on-railway)
+  - [Admin API](#admin-api)
+  - [OIDC](#oidc)
+  - [API Keys](#api-keys)
+  - [Schema Migration](#schema-migration)
 
 Python version of [RL Experiments Engine](https://github.com/agency-fund/rl-experiments-engine).
 
 The following is a proposal of the main components of this service:
 
 1. A ODBC/DBI-based interface module to connect to underlying data sources (one table per unit of analysis)
-2. A configuration module that draws from the table(s) specified in (1) into a Google Sheet that can be annotated with
+1. A configuration module that draws from the table(s) specified in (1) into a Google Sheet that can be annotated with
    filters, metrics and strata
-3. API endpoints that provide a list of fields and their values (/filters, /metrics, /strata)
-4. API endpoints that provide a power analysis check and stratified random assignment of treatment
-5. A treatment assignment service that stores treatment assignments and provides an API endpoint to provide treatment
+1. API endpoints that provide a list of fields and their values (/filters, /metrics, /strata)
+1. API endpoints that provide a power analysis check and stratified random assignment of treatment
+1. A treatment assignment service that stores treatment assignments and provides an API endpoint to provide treatment
    status by ID
-6. Save experiment (inclusive of Audience) specifications. See [EXPERIMENTS.md](EXPERIMENTS.md) for more info.
+1. Save experiment (inclusive of Audience) specifications. See [EXPERIMENTS.md](EXPERIMENTS.md) for more info.
 
 ## Prerequisites
 
@@ -47,17 +47,17 @@ Follow the steps below to get a local development environment running.
 
 1. Update the project's environment, install dependencies, and create a virtual environment (.venv).
 
-  ```shell
-  uv sync
-  ```
+```shell
+uv sync
+```
 
-2. For local development, use the testing settings file:
+1. For local development, use the testing settings file:
 
    ```shell
    export XNGIN_SETTINGS=src/xngin/apiserver/testdata/xngin.testing.settings.json
    ```
 
-3. Then run the unit tests:
+1. Then run the unit tests:
 
    ```shell
    uv run pytest
@@ -70,14 +70,15 @@ Follow the steps below to get a local development environment running.
    development
    server.
 
-4. Then start the dev server:
+1. Then start the dev server:
 
    ```shell
    uv run fastapi dev src/xngin/apiserver/main.py
    ```
+
    To change the port, add the flag `--port <myport>`.
 
-5. Send some test requests:
+1. Send some test requests:
 
    Each request should have an HTTP request header `Datasource-ID` set to the `id` value of a configuration entry in the
    [xngin.testing.settings.json](src/xngin/apiserver/testdata/xngin.testing.settings.json) settings file. For testing
@@ -91,9 +92,9 @@ Follow the steps below to get a local development environment running.
    Also see [apitest.strata.xurl](src/xngin/apiserver/testdata/apitest.strata.xurl) for a complete example of how to
    write an API test script.
 
-6. Visit the local interactive docs page: http://localhost:8000/docs
+1. Visit the local interactive docs page: http://localhost:8000/docs
 
-7. `uv` sets up a virtual environment by default. To avoid needing to use `uv run` before commands installed by our
+1. `uv` sets up a virtual environment by default. To avoid needing to use `uv run` before commands installed by our
    project, activate the environment with:
 
    ```shell
@@ -104,7 +105,7 @@ Follow the steps below to get a local development environment running.
 
    You can exit the virtual environment with `deactivate`.
 
-8. Now set up the pre-commit hooks in your local git with:
+1. Now set up the pre-commit hooks in your local git with:
 
    ```shell
    pre-commit install
@@ -117,27 +118,28 @@ Follow the steps below to get a local development environment running.
    pre-commit run -a
    ```
 
-9. To parse a proper Google Sheets config, you'll need a service worker token, whose json info should be placed in
+1. To parse a proper Google Sheets config, you'll need a service worker token, whose json info should be placed in
    `~/.config/gspread/service_account.json` by default.
-    - [Setup a service account in your GCP console](console.cloud.google.com) > select your project via dropdown at the
-      top > IAM & Admin > Service Accounts > + Create Service Account > give it a name, desc and create; *note the email
-      addr created* > After creation, click the email for that account > Keys tab > Create the json key file and put it
-      in the above location. Lastly, share the spreadsheet as Viewer-only with this special service account email
-      address.
-    - Ensure that
-      the [Google Sheets API](  https://console.developers.google.com/apis/api/sheets.googleapis.com/overview) is
-      enabled for your google cloud project.
+
+   - [Setup a service account in your GCP console](console.cloud.google.com) > select your project via dropdown at the
+     top > IAM & Admin > Service Accounts > + Create Service Account > give it a name, desc and create; *note the email
+     addr created* > After creation, click the email for that account > Keys tab > Create the json key file and put it
+     in the above location. Lastly, share the spreadsheet as Viewer-only with this special service account email
+     address.
+   - Ensure that
+     the [Google Sheets API](https://console.developers.google.com/apis/api/sheets.googleapis.com/overview) is
+     enabled for your google cloud project.
 
 ### Learn more
 
 Regarding some of the python libraries and features we use, see:
 
-* [Pydantic concepts](https://docs.pydantic.dev/2.8/concepts/models/) for defining model schemas with input parsing and
+- [Pydantic concepts](https://docs.pydantic.dev/2.8/concepts/models/) for defining model schemas with input parsing and
   coercion, [custom validation](https://docs.pydantic.dev/2.8/concepts/validators/) and
   custom [serialization](https://docs.pydantic.dev/2.8/concepts/serialization/) support as needed. Also be aware of its
   use of `Annotated` to add metadata that modify how types are validated, serialized,
-  etc. [[1](https://docs.pydantic.dev/2.8/concepts/fields/#using-annotated), [2](https://docs.pydantic.dev/2.8/concepts/types/#composing-types-via-annotated)].
-* [FastAPI Tutorial](https://fastapi.tiangolo.com/tutorial/first-steps/) - skim this for key concepts around defining "
+  etc. \[[1](https://docs.pydantic.dev/2.8/concepts/fields/#using-annotated), [2](https://docs.pydantic.dev/2.8/concepts/types/#composing-types-via-annotated)\].
+- [FastAPI Tutorial](https://fastapi.tiangolo.com/tutorial/first-steps/) - skim this for key concepts around defining "
   path operations" and [adding metadata using
   `Annotated`](https://fastapi.tiangolo.com/python-types/#type-hints-with-metadata-annotations) for key components (e.g.
   Query, Path, ...) to add extra documentation or do additional validation (internally using Pydantic). Also read up on
@@ -145,10 +147,10 @@ Regarding some of the python libraries and features we use, see:
   which we use (see [main.py](src/xngin/apiserver/main.py) and [dependencies.py](src/xngin/apiserver/dependencies.py)).
   FastAPI also generates OpenAPI documentation for us under the server's `/docs` endpoint, leveraging Pydantic data
   models to generate the schemas.
-* [SQLAlchemy 2.0](https://docs.sqlalchemy.org/en/20/tutorial/index.html) - is used to allow more uniform
+- [SQLAlchemy 2.0](https://docs.sqlalchemy.org/en/20/tutorial/index.html) - is used to allow more uniform
   interaction with a variety of database dialects via its DBAPI interface and ORM features. These include client data
   warehouses as well as our own application store (e.g. for caching client configuration of their tables).
-* Other dev tooling: [mypy](https://mypy-lang.org/) for static type checking (configured in
+- Other dev tooling: [mypy](https://mypy-lang.org/) for static type checking (configured in
   `pyproject.toml`), [ruff](https://github.com/astral-sh/ruff) for fast python linting and formatting (also see
   `pyproject.toml`), [pre-commit](https://pre-commit.com/) to automatically run a number of checks including ruff before
   your commit (see `.pre-commit-config.yaml`).
@@ -165,17 +167,17 @@ references will be replaced with a corresponding environment variable value.
 
 There are 3 levels of configuration behind Xngin:
 
-* **App-wide** settings as noted above use a schema defined in
+- **App-wide** settings as noted above use a schema defined in
   [`xngin.apiserver.settings:XnginSettings`](src/xngin/apiserver/settings.py). This includes per-client configuration
   allowing us to provide a multi-tenant service. It is retrieved in production via dependency injection (see
   [`settings.py:get_settings_for_server`](src/xngin/apiserver/settings.py)), which is overriden in tests (see
   [`conftest.py:get_settings_for_test`](src/xngin/apiserver/conftest.py)).
-* The above wraps **client-level** configuration whose schema is [`ClientConfig`](src/xngin/apiserver/settings.py),
+- The above wraps **client-level** configuration whose schema is [`ClientConfig`](src/xngin/apiserver/settings.py),
   which
   can be one of a fixed set of supported customer configurations (e.g. `RemoteDatabaseConfig`) that package up how to
   connect to the data warehouse (see `BaseDsn` and descendants) along with all the different `Participant` types (aka
   each type of unit of experimentation, e.g. a WhatsApp group, or individual phone numbers, hospitals, schools, ...).
-* **Participant type-level** configuration with schema
+- **Participant type-level** configuration with schema
   [`config_sheet.py:ConfigWorksheet`](src/xngin/sheets/config_sheet.py), including column and type info derived from the
   warehouse via introspection (see
   [`config_sheet.py:create_configworksheet_from_table`](src/xngin/sheets/config_sheet.py),
@@ -183,11 +185,11 @@ There are 3 levels of configuration behind Xngin:
   (is_strata/is_filter/is_metric). The extra metadata may come from CSV or in Google spreadsheets as filled out by the
   client. Both sources (dwh introspection, gsheets) are represented by the `ConfigWorksheet` model, although not all
   information may be supplied by either.
-    * This information is also cached in our app (system) db as specified in
-    * [`database.py`](src/xngin/apiserver/database.py). The db DSN can be overriden via the `XNGIN_DB` environment
-      variable to point to something other than the default sqlite database `xngin.db`, which otherwise is created at
-      this
-      root level.
+  - This information is also cached in our app (system) db as specified in
+  - [`database.py`](src/xngin/apiserver/database.py). The db DSN can be overriden via the `XNGIN_DB` environment
+    variable to point to something other than the default sqlite database `xngin.db`, which otherwise is created at
+    this
+    root level.
 
 ## Docker
 
@@ -257,23 +259,23 @@ uv run fastapi dev src/xngin/apiserver/main.py
 
 ## Testing
 
-Run unittests with [pytest](https://docs.pytest.org/en/stable/).  `test_api.py` tests that use `testdata/*.xurl` data
+Run unittests with [pytest](https://docs.pytest.org/en/stable/). `test_api.py` tests that use `testdata/*.xurl` data
 can be updated more easily as things change by prefixing your pytest run with the environment variable:
 `UPDATE_API_TESTS=1`.
 
 [Smoke tests](.github/workflows/test.yaml) are also run as part of our github action test workflow.
 
-* Some of our tests that rely on `conftest.py` will create a local sqlite db for testing in
+- Some of our tests that rely on `conftest.py` will create a local sqlite db for testing in
   `src/xngin/apiserver/testdata/testing_dwh.db` if it doesn't exist already using the zipped data
   dump in `testing_dwh.csv.zst`.
-* `testing_sheet.csv` is the corresponding spreadsheet that simulates a typical table configuration
+- `testing_sheet.csv` is the corresponding spreadsheet that simulates a typical table configuration
   for the participant type data above.
-* Our pytests have a test marked as 'integration' which is also only run as part of that workflow.
+- Our pytests have a test marked as 'integration' which is also only run as part of that workflow.
   To run, ensure you have the test credentials to access the gsheet (setting env var
   `GOOGLE_APPLICATION_CREDENTIALS` as necessary) then do:
-   ```shell
-   pytest -m integration
-   ```
+  ```shell
+  pytest -m integration
+  ```
 
 ### How do I run the BigQuery integration tests on a PR?
 
@@ -365,7 +367,7 @@ act -j unittests -s GOOGLE_APPLICATION_CREDENTIALS_CONTENT="$(< settings/service
 
 #### On Macs
 
-* You might see this error:
+- You might see this error:
 
 ```
 Error: failed to start container: Error response from daemon: error while creating mount source path '/host_mnt/Users/me/.docker/run/docker.sock': mkdir /host_mnt/Users/me/.docker/run/docker.sock: operation not supported
@@ -375,7 +377,7 @@ If so, you can resolve it by adding this line to a `~/.actrc` file as noted
 in [this issue](https://github.com/nektos/act/issues/2239#issuecomment-2189419148):
 `--container-daemon-socket=unix:///var/run/docker.sock`
 
-* When running `-j unittests`, you can ignore this error line, as `act` doesn't support a macos runner:
+- When running `-j unittests`, you can ignore this error line, as `act` doesn't support a macos runner:
 
 ```
 [tests/Python on macOS-2] 🚧  Skipping unsupported platform -- Try running with `-P macos-14=...`
@@ -386,7 +388,7 @@ to [use your localhost as the runner](https://github.com/nektos/act/issues/97#is
 experimental platform `-P macos-14=-self-hosted` flag, but that's not advisable as you may overwrite local files such as
 service_account.json.
 
-* [Run a particular matrix](https://github.com/nektos/act/pull/1675) configuration with e.g. `--matrix os:ubuntu-22.04`
+- [Run a particular matrix](https://github.com/nektos/act/pull/1675) configuration with e.g. `--matrix os:ubuntu-22.04`
   So a more complex command that also injects a secret from a file (which could also
   be [placed in your .actrc](https://nektosact.com/usage/index.html?highlight=secret#envsecrets-files-structure)) might
   look like:
@@ -414,12 +416,13 @@ uv run xngin-cli --help
 
 1. Generate the participant-level column metadata. This will ultimately be a google sheet that we as the service
    provider own, but we share with the user to configure.
-    1. First bootstrap column names and types from the dwh schema. There will be one row output per column in the target
-       dwh table. See the command `uv run xngin-cli bootstrap-spreadsheet --help`
-        1. If output as csv, import it to a new google spreadsheet that _we create and own_.
-        1. Share it with our gsheet service account.
-    1. Share it with the client to mark which columns are filters/metrics/strata and which to use as the unique_id.
-    1. Additional table columns can be added (or removed) from the spreadsheet by the client.
+
+   1. First bootstrap column names and types from the dwh schema. There will be one row output per column in the target
+      dwh table. See the command `uv run xngin-cli bootstrap-spreadsheet --help`
+      1. If output as csv, import it to a new google spreadsheet that _we create and own_.
+      1. Share it with our gsheet service account.
+   1. Share it with the client to mark which columns are filters/metrics/strata and which to use as the unique_id.
+   1. Additional table columns can be added (or removed) from the spreadsheet by the client.
 
 1. Generate the client's config block in `xngin.settings.json`. Give them a unique string `"id:"` that they will pass
    back to us with every API request, specify `"type: "remote"` as the general type of dwh (see `settings.py`), provide
@@ -435,10 +438,10 @@ For more examples, see the `xngin.gha.settings.json` settings used for testing.
 
 ## Supported DWHs and DSN url format
 
-* Redshift - `postgresql+psycopg2://username@host:port/databasename`
-* Postgres - `postgresql+psycopg://username@host:port/databasename`
-* BigQuery (experimental) - `bigquery://some-project/some-dataset`
-* SQLite3 (for tests) - `sqlite:///file_path`
+- Redshift - `postgresql+psycopg2://username@host:port/databasename`
+- Postgres - `postgresql+psycopg://username@host:port/databasename`
+- BigQuery (experimental) - `bigquery://some-project/some-dataset`
+- SQLite3 (for tests) - `sqlite:///file_path`
 
 ### BigQuery as the Customer's DWH Support
 
@@ -447,14 +450,17 @@ See [.github/workflows/test.yaml](.github/workflows/test.yaml) for lifecycle tes
 
 #### Authentication
 
-* To authenticate with the customer's bigquery, only service account authentication is supported.
-* _The customer_ should create a service account for us to access their warehouse with
+- To authenticate with the customer's bigquery, only service account authentication is supported.
+
+- _The customer_ should create a service account for us to access their warehouse with
   `BigQuery User` permissions to the client's Bigquery project, otherwise the server will get the
   `User does not have bigquery.jobs.create permission in project <project_name>` error.
-* All interactions with the customer's warehouse happen via the explicitly configured
+
+- All interactions with the customer's warehouse happen via the explicitly configured
   authentication in the _settings.json_ files, which should correspond to the service account noted
   above. See [xngin.gha.settings.json](xngin.gha.settings.json) for an example.
-* ⚠️ _As the service provider_, we create and own the initial customer warehouse configuration
+
+- ⚠️ _As the service provider_, we create and own the initial customer warehouse configuration
   spreadsheets for the customer and share access to them for further modification. All interactions
   with these spreadsheets happen with the
   environment variable `GOOGLE_APPLICATION_CREDENTIALS`, which should point to _our_ service account
@@ -462,6 +468,7 @@ See [.github/workflows/test.yaml](.github/workflows/test.yaml) for lifecycle tes
   settings.json!
 
   Example:
+
   ```shell
   GOOGLE_APPLICATION_CREDENTIALS=secrets/customer_service_account.json \
     xngin-cli bootstrap-spreadsheet \
@@ -509,16 +516,16 @@ ECHO_SQL=1 XNGIN_SETTINGS=xngin.settings.json \
    ```shell
    uv add httpx
    ```
-2. Install the new dependencies into your environment:
-    ```shell
-    uv lock
-    uv sync
-    ```
-3. Run the unit tests to ensure everything still works.
+1. Install the new dependencies into your environment:
+   ```shell
+   uv lock
+   uv sync
+   ```
+1. Run the unit tests to ensure everything still works.
    ```shell
    uv run pytest
    ```
-4. Commit the changed uv.lock and pyproject.toml files.
+1. Commit the changed uv.lock and pyproject.toml files.
 
 ### psycopg2 module does not install correctly.
 
@@ -533,8 +540,8 @@ The fix will depend on your specific environment.
 ### Linux
 
 1. If on Linux, try: `sudo apt install -y libpq-dev` and then re-install dependencies.
-2. See https://www.psycopg.org/docs/install.html.
-3. See https://www.psycopg.org/docs/faq.html.
+1. See https://www.psycopg.org/docs/install.html.
+1. See https://www.psycopg.org/docs/faq.html.
 
 ### OSX
 
@@ -546,9 +553,9 @@ The Railway deployment relies on [Dockerfile.railway](Dockerfile.railway), [rail
 environment variables:
 
 | Environment Variable         | Purpose                                                                                                                                                                                                    | Example                                                                                               |
-|------------------------------|------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|-------------------------------------------------------------------------------------------------------|
+| ---------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------- |
 | XNGIN_SETTINGS               | URL of the settings to fetch. This may be a private repository.                                                                                                                                            | https://api.github.com/repos/agency-fund/xngin-settings/contents/xngin.railway.settings.json?ref=main |
-| XNGIN_SETTINGS_AUTHORIZATION | The value of the "Authorization:" header sent on the request to fetch XNGIN_SETTINGS. For GitHub URLs, this token requires read access to the content of the repository and must be prefixed with `token`. | `token ghp_....`                                                                                      |                                                                             |
+| XNGIN_SETTINGS_AUTHORIZATION | The value of the "Authorization:" header sent on the request to fetch XNGIN_SETTINGS. For GitHub URLs, this token requires read access to the content of the repository and must be prefixed with `token`. | `token ghp_....`                                                                                      |
 | SENTRY_DSN                   | The Sentry ingestion endpoint. If unset, Sentry will not be configured for this instance. For TAF instances, see https://agency-fund.sentry.io/settings/projects/xngin/keys/.                              | https://...@...ingest.us.sentry.io/...                                                                |
 | ENVIRONMENT                  | Declares an "environment" label for the runtime environment. Used by Sentry.                                                                                                                               | xngin-main.railway.app                                                                                |
 
@@ -564,7 +571,7 @@ logins from Google Workspace accounts in the @agency.fund domain.
 The API is configured with environment variables:
 
 | Environment Variable | Purpose                                                                   | Example |
-|----------------------|---------------------------------------------------------------------------|---------|
+| -------------------- | ------------------------------------------------------------------------- | ------- |
 | ENABLE_OIDC          | Enables the OIDC endpoints. Must be `true` for the Admin API to function. | `true`  |
 | ENABLE_ADMIN         | Enables the Admin API.                                                    | `true`  |
 
@@ -576,7 +583,7 @@ Our OIDC implementation supports the popup-style OIDC flow (response_type=`id_to
 (response_type=`code`).
 
 | Environment Variable      | Purpose                                                                                                                                                                                                                                                           | Example                              |
-|---------------------------|-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|--------------------------------------|
+| ------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------ |
 | GOOGLE_OIDC_CLIENT_ID     | The Google-issued client ID.                                                                                                                                                                                                                                      | `2222-...apps.googleusercontent.com` |
 | GOOGLE_OIDC_CLIENT_SECRET | The Google-generated client secret. Only required for PKCE.                                                                                                                                                                                                       | `G....`                              |
 | GOOGLE_OIDC_REDIRECT_URI  | The URI that Google will redirect the user to after successfully authorizing. This should match the value configured in the Google Cloud console credential settings and the value embedded in the SPA. This is generally not used by the popup-style auth flows. | `http://localhost:8000/a/oidc`       |
