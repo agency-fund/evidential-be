@@ -2,7 +2,9 @@
 [![precommit](https://github.com/agency-fund/xngin/actions/workflows/precommit.yaml/badge.svg?branch=main)](https://github.com/agency-fund/xngin/actions/workflows/precommit.yaml)
 [![test](https://github.com/agency-fund/xngin/actions/workflows/test.yaml/badge.svg?branch=main)](https://github.com/agency-fund/xngin/actions/workflows/test.yaml)
 
-# xngin
+# xngin<a name="xngin"></a>
+
+<!-- mdformat-toc start --slug=github --maxlevel=2 --minlevel=1 -->
 
 - [xngin](#xngin)
   - [Prerequisites](#prerequisites)
@@ -19,6 +21,9 @@
   - [OIDC](#oidc)
   - [API Keys](#api-keys)
   - [Schema Migration](#schema-migration)
+  - [Migrations in Local Development](#migrations-in-local-development)
+
+<!-- mdformat-toc end -->
 
 Python version of [RL Experiments Engine](https://github.com/agency-fund/rl-experiments-engine).
 
@@ -33,7 +38,7 @@ The following is a proposal of the main components of this service:
    status by ID
 1. Save experiment (inclusive of Audience) specifications. See [EXPERIMENTS.md](EXPERIMENTS.md) for more info.
 
-## Prerequisites
+## Prerequisites<a name="prerequisites"></a>
 
 The commands below require you to have [uv](https://docs.astral.sh/uv/) installed:
 
@@ -41,7 +46,7 @@ The commands below require you to have [uv](https://docs.astral.sh/uv/) installe
 curl -LsSf https://astral.sh/uv/0.5.14/install.sh | sh
 ```
 
-## Getting Started
+## Getting Started<a name="getting-started"></a>
 
 Follow the steps below to get a local development environment running.
 
@@ -130,7 +135,7 @@ uv sync
      the [Google Sheets API](https://console.developers.google.com/apis/api/sheets.googleapis.com/overview) is
      enabled for your google cloud project.
 
-### Learn more
+### Learn more<a name="learn-more"></a>
 
 Regarding some of the python libraries and features we use, see:
 
@@ -155,7 +160,7 @@ Regarding some of the python libraries and features we use, see:
   `pyproject.toml`), [pre-commit](https://pre-commit.com/) to automatically run a number of checks including ruff before
   your commit (see `.pre-commit-config.yaml`).
 
-## Settings
+## Settings<a name="settings"></a>
 
 Values are read at startup from environment variables and from a JSON file specified by the `XNGIN_SETTINGS` environment
 variable. This defaults to [xngin.settings.json](xngin.settings.json), but you will use
@@ -191,9 +196,9 @@ There are 3 levels of configuration behind Xngin:
     this
     root level.
 
-## Docker
+## Docker<a name="docker"></a>
 
-### How do I build and run the Docker container locally?
+### How do I build and run the Docker container locally?<a name="how-do-i-build-and-run-the-docker-container-locally"></a>
 
 ```shell
 docker build -t xngin .
@@ -207,7 +212,7 @@ docker run \
    xngin:latest
 ```
 
-### How do I run the Docker images [built by the CI](https://github.com/agency-fund/xngin/pkgs/container/xngin)?
+### How do I run the Docker images [built by the CI](https://github.com/agency-fund/xngin/pkgs/container/xngin)?<a name="how-do-i-run-the-docker-images-built-by-the-ci"></a>
 
 ```shell
 # Authenticate your local Docker to the ghcr using a GitHub Personal Access Token (classic) that has at least the
@@ -233,11 +238,11 @@ GOOGLE_APPLICATION_CREDENTIALS; these are not part of the image. Also beware tha
 [includes double quotes in the value of your env variables](https://github.com/docker/compose/issues/3702)
 read in via --env-file.
 
-### How do I run the tests in the Docker container?
+### How do I run the tests in the Docker container?<a name="how-do-i-run-the-tests-in-the-docker-container"></a>
 
 See [.github/workflows/test.yaml](.github/workflows/test.yaml).
 
-### How do I run xngin against a local Postgres running in Docker?
+### How do I run xngin against a local Postgres running in Docker?<a name="how-do-i-run-xngin-against-a-local-postgres-running-in-docker"></a>
 
 Here's an example of how to run a local Postgres and have xngin use it as the system database:
 
@@ -257,7 +262,7 @@ export XNGIN_DB=postgresql://xnginwebserver:${PASSWORD}@localhost:5432/xngin
 uv run fastapi dev src/xngin/apiserver/main.py
 ```
 
-## Testing
+## Testing<a name="testing"></a>
 
 Run unittests with [pytest](https://docs.pytest.org/en/stable/). `test_api.py` tests that use `testdata/*.xurl` data
 can be updated more easily as things change by prefixing your pytest run with the environment variable:
@@ -277,7 +282,7 @@ can be updated more easily as things change by prefixing your pytest run with th
   pytest -m integration
   ```
 
-### How do I run the BigQuery integration tests on a PR?
+### How do I run the BigQuery integration tests on a PR?<a name="how-do-i-run-the-bigquery-integration-tests-on-a-pr"></a>
 
 Use the GitHub CLI:
 
@@ -288,7 +293,7 @@ gh workflow run tests --ref your-branch-name -f run-bq-integration=true
 `tests` refers to the name of the workflow containing the integration tests. `run-bq-integration` refers to the name
 of the workflow_dispatch input that determines if the BigQuery integration tests are run.
 
-### How do I force-build the test sqlite database?
+### How do I force-build the test sqlite database?<a name="how-do-i-force-build-the-test-sqlite-database"></a>
 
 Recommend deleting the `src/xngin/apiserver/testdata/testing_dwh.db` and let the unit tests rebuild it
 for you.
@@ -304,7 +309,7 @@ uv run xngin-cli create-testing-dwh \
 BUT the data types used in the create ddl will differ right now as the former relies on pandas to infer types while the
 latter uses our own mapping based on dataframe types.
 
-### How can I load test data into my pg instance with a different schema?
+### How can I load test data into my pg instance with a different schema?<a name="how-can-i-load-test-data-into-my-pg-instance-with-a-different-schema"></a>
 
 As with a sqlite db above, use the CLI command:
 
@@ -325,7 +330,7 @@ One way to manually query pg is using the `psql` terminal included with Postgres
 psql -h localhost -p 5432 -d xngin -U xnginwebserver -c "select count(*) from alt.test_participant_type"
 ```
 
-### How can I run the _unittests_ that use my pg/bq/... instance as the test DWH?
+### How can I run the _unittests_ that use my pg/bq/... instance as the test DWH?<a name="how-can-i-run-the-unittests-that-use-my-pgbq-instance-as-the-test-dwh"></a>
 
 Only a subset of our tests actually use this approach that bypasses settings via the
 `XNGIN_TEST_DWH_URI` var; see [test_queries.py](src/xngin/apiserver/dwh/test_queries.py), which gets
@@ -341,7 +346,7 @@ XNGIN_TEST_DWH_URI="bigquery://xngin-development-dc/ds" \
   pytest src/xngin/apiserver/dwh/test_queries.py::test_boolean_filter
 ```
 
-### How do I run our Github Action smoke tests?
+### How do I run our Github Action smoke tests?<a name="how-do-i-run-our-github-action-smoke-tests"></a>
 
 You could run the individual component tests as defined in the various jobs
 under [test.yaml](.github/workflows/test.yaml), but to best replicate the environment as used by our GHA, we recommend
@@ -365,7 +370,7 @@ unittests job successfully, do something like:
 act -j unittests -s GOOGLE_APPLICATION_CREDENTIALS_CONTENT="$(< settings/service_account.json)"
 ```
 
-#### On Macs
+#### On Macs<a name="on-macs"></a>
 
 - You might see this error:
 
@@ -397,7 +402,7 @@ service_account.json.
 act --matrix os:ubuntu-22.04 -j unittests -s GOOGLE_APPLICATION_CREDENTIALS_CONTENT="$(< ~/.config/gspread/service_account.json)"
 ```
 
-## The CLI
+## The CLI<a name="the-cli"></a>
 
 Helper tool to bootstap a new user and other operations such creating test data and validating configs. See the source
 in `src/xngin/cli/main.py` and run:
@@ -406,7 +411,7 @@ in `src/xngin/cli/main.py` and run:
 uv run xngin-cli --help
 ```
 
-## Onboarding new Clients
+## Onboarding new Clients<a name="onboarding-new-clients"></a>
 
 1. Get credentials to the client's data warehouse that has at least read-only access to the schemas/datasets
    containing the table(s) of interest. Each table will be a different "participant type" the user wishes to experiment
@@ -436,19 +441,19 @@ uv run xngin-cli --help
 
 For more examples, see the `xngin.gha.settings.json` settings used for testing.
 
-## Supported DWHs and DSN url format
+## Supported DWHs and DSN url format<a name="supported-dwhs-and-dsn-url-format"></a>
 
 - Redshift - `postgresql+psycopg2://username@host:port/databasename`
 - Postgres - `postgresql+psycopg://username@host:port/databasename`
 - BigQuery (experimental) - `bigquery://some-project/some-dataset`
 - SQLite3 (for tests) - `sqlite:///file_path`
 
-### BigQuery as the Customer's DWH Support
+### BigQuery as the Customer's DWH Support<a name="bigquery-as-the-customers-dwh-support"></a>
 
 BigQuery support is implemented but has not yet been fully tested.
 See [.github/workflows/test.yaml](.github/workflows/test.yaml) for lifecycle tests.
 
-#### Authentication
+#### Authentication<a name="authentication"></a>
 
 - To authenticate with the customer's bigquery, only service account authentication is supported.
 
@@ -475,7 +480,7 @@ See [.github/workflows/test.yaml](.github/workflows/test.yaml) for lifecycle tes
     bigquery://project/dataset res_users --unique-id-col user_id
   ```
 
-#### Testing environment for BigQuery as the Service Provider
+#### Testing environment for BigQuery as the Service Provider<a name="testing-environment-for-bigquery-as-the-service-provider"></a>
 
 You can create a test dataset on a project you've configured with bigquery
 using our xngin-cli tool:
@@ -495,12 +500,12 @@ These commands use Google's [Application Default Credentials]
 
 > Note: You do not need the gcloud CLI or related tooling installed.
 
-## FAQ
+## FAQ<a name="faq"></a>
 
 > Note: These flags change depending on runtime environment. If running under an orchestrator, omit the -it. To run in
 > the background, omit `-it` and add `-d`.
 
-### How do I see the sql commands being executed in my logs?
+### How do I see the sql commands being executed in my logs?<a name="how-do-i-see-the-sql-commands-being-executed-in-my-logs"></a>
 
 Set `ECHO_SQL=1` in your environment, e.g.:
 
@@ -509,7 +514,7 @@ ECHO_SQL=1 XNGIN_SETTINGS=xngin.settings.json \
    uv run fastapi dev src/xngin/apiserver/main.py --port 8144
 ```
 
-### How do I add a Python dependency?
+### How do I add a Python dependency?<a name="how-do-i-add-a-python-dependency"></a>
 
 1. Add the dependency to [pyproject.toml](pyproject.toml) (replace httpx with whatever dependency you are adding). Try
    to pin it to a narrow version range, if possible.
@@ -527,7 +532,7 @@ ECHO_SQL=1 XNGIN_SETTINGS=xngin.settings.json \
    ```
 1. Commit the changed uv.lock and pyproject.toml files.
 
-### psycopg2 module does not install correctly.
+### psycopg2 module does not install correctly.<a name="psycopg2-module-does-not-install-correctly"></a>
 
 You might see this error:
 
@@ -537,17 +542,17 @@ You might see this error:
 
 The fix will depend on your specific environment.
 
-### Linux
+### Linux<a name="linux"></a>
 
 1. If on Linux, try: `sudo apt install -y libpq-dev` and then re-install dependencies.
 1. See https://www.psycopg.org/docs/install.html.
 1. See https://www.psycopg.org/docs/faq.html.
 
-### OSX
+### OSX<a name="osx"></a>
 
 Run `brew install postgresql@14`.
 
-## Deployment on Railway
+## Deployment on Railway<a name="deployment-on-railway"></a>
 
 The Railway deployment relies on [Dockerfile.railway](Dockerfile.railway), [railway.json](railway.json), and some
 environment variables:
@@ -563,7 +568,7 @@ In addition, there are variables set in the Railway console corresponding to con
 the [xngin.railway.settings.json](https://github.com/agency-fund/xngin-settings/xngin.railway.settings.json) file in the
 limited-access https://github.com/agency-fund/xngin-settings repository.
 
-## Admin API
+## Admin API<a name="admin-api"></a>
 
 The Admin API allows API keys to be managed by users from a trusted domain. The API is protected by OIDC and allows
 logins from Google Workspace accounts in the @agency.fund domain.
@@ -577,7 +582,7 @@ The API is configured with environment variables:
 
 If the Admin API is enabled, OIDC must be configured with additional environment variables (see below).
 
-## OIDC
+## OIDC<a name="oidc"></a>
 
 Our OIDC implementation supports the popup-style OIDC flow (response_type=`id_token`) and PKCE exchanges
 (response_type=`code`).
@@ -588,7 +593,7 @@ Our OIDC implementation supports the popup-style OIDC flow (response_type=`id_to
 | GOOGLE_OIDC_CLIENT_SECRET | The Google-generated client secret. Only required for PKCE.                                                                                                                                                                                                       | `G....`                              |
 | GOOGLE_OIDC_REDIRECT_URI  | The URI that Google will redirect the user to after successfully authorizing. This should match the value configured in the Google Cloud console credential settings and the value embedded in the SPA. This is generally not used by the popup-style auth flows. | `http://localhost:8000/a/oidc`       |
 
-## API Keys
+## API Keys<a name="api-keys"></a>
 
 The datasources defined in settings can be protected with API keys. To require API keys for a specific datasource, set
 the `require_api_key` flag to true on the settings. Example:
@@ -614,7 +619,7 @@ curl --header "x-api-key: xat_..." \
   'http://localhost:8000/filters?participant_type=test_participant_type'
 ```
 
-## Schema Migration
+## Schema Migration<a name="schema-migration"></a>
 
 We are using [Atlas](https://atlasgo.io/) (non-Pro) to manage database schema migrations.
 
@@ -629,7 +634,7 @@ The files will be created in migrations/sa_postgres. Commit any new files alongs
 Migrations in the Railway environments happen automatically upon deployment. See [railway.json](railway.json)
 and [Dockerfile.railway](Dockerfile.railway) for more information.
 
-## Migrations in Local Development
+## Migrations in Local Development<a name="migrations-in-local-development"></a>
 
 If you are running a local Postgres instance (such as the one that `tools/localpy.py` can start for you), use:
 

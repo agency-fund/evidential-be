@@ -31,3 +31,4 @@ repos:
           - mdformat-gfm
           - mdformat-gfm-alerts
           - mdformat-ruff
+          - mdformat-toc
