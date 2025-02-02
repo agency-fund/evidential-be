@@ -1,4 +1,4 @@
-from sqlalchemy import ForeignKey, Integer, String
+from sqlalchemy import ForeignKey, Integer, String, JSON
 from sqlalchemy.orm import DeclarativeBase, mapped_column, Mapped, relationship
 
 
@@ -94,6 +94,7 @@ class Datasource(Base):
     organization_id: Mapped[int] = mapped_column(
         ForeignKey("organizations.id", ondelete="CASCADE")
     )
+    config: Mapped[dict] = mapped_column(JSON, nullable=False)
 
     # Relationships
     organization: Mapped["Organization"] = relationship(back_populates="datasources")

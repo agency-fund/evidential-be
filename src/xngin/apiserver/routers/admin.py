@@ -4,6 +4,7 @@ import logging
 import os
 from contextlib import asynccontextmanager
 from typing import Annotated
+import uuid
 
 from fastapi import APIRouter, FastAPI, Depends, Path, Body, HTTPException
 from pydantic import BaseModel, Field, ConfigDict
@@ -14,7 +15,11 @@ from xngin.apiserver.apikeys import make_key, hash_key
 from xngin.apiserver.models.tables import (
     ApiKeyTable,
     ApiKeyDatasourceTable,
+    User,
+    Organization,
+    Datasource,
 )
+from xngin.apiserver.settings import DatasourceConfig, RemoteDatabaseConfig
 from xngin.apiserver.dependencies import settings_dependency, xngin_db_session
 from xngin.apiserver.routers.oidc_dependencies import require_oidc_token
 from xngin.apiserver.settings import XnginSettings
@@ -76,6 +81,15 @@ class UpdateApiKeyRequest(AdminApiBaseModel):
     datasource_ids: Annotated[list[str], Field(..., min_length=1)]
 
 
+class CreateUserRequest(AdminApiBaseModel):
+    email: Annotated[str, Field(...)]
+
+
+class CreateDatasourceRequest(AdminApiBaseModel):
+    name: Annotated[str, Field(...)]
+    config: Annotated[RemoteDatabaseConfig, Field(...)]
+
+
 @router.get("/apikeys")
 async def apikeys_list(
     session: Annotated[Session, Depends(xngin_db_session)],
@@ -118,6 +132,45 @@ async def apikeys_delete(
     """Deletes the specified API key."""
     stmt = delete(ApiKeyTable).where(ApiKeyTable.id == api_key_id)
     session.execute(stmt)
+    session.commit()
+    return {"status": "success"}
+
+
+@router.post("/datasources/{organization_id}")
+async def datasources_create(
+    session: Annotated[Session, Depends(xngin_db_session)],
+    organization_id: Annotated[str, Path()],
+    body: Annotated[CreateDatasourceRequest, Body(...)],
+):
+    """Creates a new datasource for the specified organization."""
+    # Verify organization exists
+    org = session.get(Organization, organization_id)
+    if not org:
+        raise HTTPException(status_code=404, detail="Organization not found")
+
+    if body.config.webhook_config:
+        raise HTTPException(status_code=400, detail="Configuring webhooks is disallowed.")
+
+    datasource = Datasource(
+        id=str(uuid.uuid4()),
+        name=body.name,
+        organization_id=org.id,
+        config=body.config.model_dump(),
+    )
+    session.add(datasource)
+    session.commit()
+
+    return {"status": "success", "id": datasource.id}
+
+
+@router.post("/users/invites")
+async def user_create(
+    session: Annotated[Session, Depends(xngin_db_session)],
+    body: Annotated[CreateUserRequest, Body(...)],
+):
+    """Creates a new user in the system."""
+    stmt = User(email=body.email)
+    session.add(stmt)
     session.commit()
     return {"status": "success"}
 
