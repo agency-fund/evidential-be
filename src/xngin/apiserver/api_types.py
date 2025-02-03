@@ -600,9 +600,24 @@ class GetMetricsResponseElement(ApiBaseModel):
 
 
 type GetFiltersResponseElement = GetFiltersResponseNumeric | GetFiltersResponseDiscrete
-type GetFiltersResponse = list[GetFiltersResponseElement]
-type GetMetricsResponse = list[GetMetricsResponseElement]
-type GetStrataResponse = list[GetStrataResponseElement]
+
+
+class GetFiltersResponse(ApiBaseModel):
+    """Response model for the /filters endpoint."""
+
+    results: list[GetFiltersResponseElement]
+
+
+class GetMetricsResponse(ApiBaseModel):
+    """Response model for the /metrics endpoint."""
+
+    results: list[GetMetricsResponseElement]
+
+
+class GetStrataResponse(BaseModel):
+    """Response model for the /strata endpoint."""
+
+    results: list[GetStrataResponseElement]
 
 
 class AssignRequest(ApiBaseModel):
