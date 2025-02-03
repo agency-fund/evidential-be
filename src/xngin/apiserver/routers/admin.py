@@ -5,25 +5,24 @@ import logging
 import os
 from contextlib import asynccontextmanager
 from typing import Annotated
-import uuid
 
 from fastapi import APIRouter, FastAPI, Depends, Path, Body, HTTPException
-from starlette import status
 from pydantic import BaseModel, Field, ConfigDict
 from sqlalchemy import delete, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
+from starlette import status
 
 from xngin.apiserver.apikeys import make_key, hash_key
+from xngin.apiserver.dependencies import xngin_db_session
 from xngin.apiserver.models.tables import (
     ApiKeyTable,
     User,
     Organization,
     Datasource,
 )
-from xngin.apiserver.settings import RemoteDatabaseConfig
-from xngin.apiserver.dependencies import xngin_db_session
 from xngin.apiserver.routers.oidc_dependencies import require_oidc_token, TokenInfo
+from xngin.apiserver.settings import RemoteDatabaseConfig
 
 logger = logging.getLogger(__name__)
 
@@ -53,11 +52,12 @@ class AdminApiBaseModel(BaseModel):
 
 class DatasourceSummary(AdminApiBaseModel):
     """Summary information about a datasource."""
+
     id: str
     name: str
     driver: str
     type: str
-    organization_id: int
+    organization_id: str
     organization_name: str
 
 
@@ -70,17 +70,25 @@ class ListDatasourcesResponse(AdminApiBaseModel):
 class ApiKeySummary(AdminApiBaseModel):
     id: Annotated[str, Field(...)]
     datasource_id: Annotated[str, Field(...)]
-    organization_id: Annotated[int, Field(...)]
+    organization_id: Annotated[str, Field(...)]
     organization_name: Annotated[str, Field(...)]
 
 
 class ListApiKeysResponse(AdminApiBaseModel):
     """Response model for the /apikeys endpoint."""
+
     items: list[ApiKeySummary]
+
+
+class CreateApiKeyRequest(AdminApiBaseModel):
+    """Request model for creating a new API key."""
+
+    datasource_id: Annotated[str, Field(...)]
 
 
 class CreateApiKeyResponse(AdminApiBaseModel):
     """Response model for creating a new API key."""
+
     id: Annotated[str, Field(...)]
     datasource_id: Annotated[str, Field(...)]
     key: Annotated[str, Field(...)]
@@ -88,6 +96,31 @@ class CreateApiKeyResponse(AdminApiBaseModel):
 
 class CreateUserRequest(AdminApiBaseModel):
     email: Annotated[str, Field(...)]
+
+
+class CreateOrganizationRequest(AdminApiBaseModel):
+    """Request model for creating a new organization."""
+
+    name: Annotated[str, Field(...)]
+
+
+class CreateOrganizationResponse(AdminApiBaseModel):
+    """Response model for creating a new organization."""
+
+    id: Annotated[str, Field(...)]
+
+
+class OrganizationSummary(AdminApiBaseModel):
+    """Summary information about an organization."""
+
+    id: Annotated[str, Field(...)]
+    name: Annotated[str, Field(...)]
+
+
+class ListOrganizationsResponse(AdminApiBaseModel):
+    """Response model for the /organizations endpoint."""
+
+    items: list[OrganizationSummary]
 
 
 class CreateDatasourceRequest(AdminApiBaseModel):
@@ -98,6 +131,7 @@ class CreateDatasourceRequest(AdminApiBaseModel):
 
 class CreateDatasourceResponse(AdminApiBaseModel):
     """Response model for creating a new datasource."""
+
     id: Annotated[str, Field(...)]
 
 
@@ -156,7 +190,7 @@ async def datasources(
             driver=config.dwh.driver,
             type=config.type,
             organization_id=ds.organization_id,
-            organization_name=ds.organization.name
+            organization_name=ds.organization.name,
         )
 
     return ListDatasourcesResponse(
@@ -202,7 +236,7 @@ async def apikeys_list(
 async def apikeys_create(
     session: Annotated[Session, Depends(xngin_db_session)],
     user: Annotated[User, Depends(get_user_by_token)],
-    datasource_id: Annotated[str, Body(...)],
+    body: Annotated[CreateApiKeyRequest, Body(...)],
 ) -> CreateApiKeyResponse:
     """Creates an API key for the specified datasource.
 
@@ -216,22 +250,22 @@ async def apikeys_create(
         select(Datasource.id)
         .join(Organization)
         .join(Organization.users)
-        .where(Datasource.id == datasource_id, User.id == user.id)
+        .where(Datasource.id == body.datasource_id, User.id == user.id)
     )
     result = session.execute(stmt)
     if not result.first():
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail=f"You don't have access to datasource: {datasource_id}",
+            detail=f"You don't have access to datasource: {body.datasource_id}",
         )
 
     # Create the API key
     label, key = make_key()
     key_hash = hash_key(key)
-    api_key = ApiKeyTable(id=label, key=key_hash, datasource_id=datasource_id)
+    api_key = ApiKeyTable(id=label, key=key_hash, datasource_id=body.datasource_id)
     session.add(api_key)
     session.commit()
-    return CreateApiKeyResponse(id=label, datasource_id=datasource_id, key=key)
+    return CreateApiKeyResponse(id=label, datasource_id=body.datasource_id, key=key)
 
 
 @router.delete("/apikeys/{api_key_id}")
@@ -299,7 +333,6 @@ async def datasources_create(
         )
 
     datasource = Datasource(
-        id=str(uuid.uuid4()),
         name=body.name,
         organization_id=org.id,
         # TODO: for now, round-trip through model_dump_json() to persist SecretStr fields.
@@ -340,3 +373,51 @@ async def user_create(
             status_code=status.HTTP_409_CONFLICT, detail="User already exists."
         ) from ierr
     return {"status": "success"}
+
+
+@router.get("/organizations")
+async def organizations_list(
+    session: Annotated[Session, Depends(xngin_db_session)],
+    user: Annotated[User, Depends(get_user_by_token)],
+) -> ListOrganizationsResponse:
+    """Returns a list of organizations that the authenticated user is a member of."""
+    stmt = select(Organization).join(Organization.users).where(User.id == user.id)
+    result = session.execute(stmt)
+    organizations = result.scalars().all()
+
+    return ListOrganizationsResponse(
+        items=[
+            OrganizationSummary(
+                id=org.id,
+                name=org.name,
+            )
+            for org in organizations
+        ]
+    )
+
+
+@router.post("/organizations")
+async def organizations_create(
+    session: Annotated[Session, Depends(xngin_db_session)],
+    user: Annotated[User, Depends(get_user_by_token)],
+    body: Annotated[CreateOrganizationRequest, Body(...)],
+) -> CreateOrganizationResponse:
+    """Creates a new organization.
+
+    Only users with an agency.fund email address can create organizations.
+
+    Raises:
+        HTTPException: If the caller's email is not from agency.fund domain.
+    """
+    if not user.email.endswith("@agency.fund"):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only agency.fund users can create organizations",
+        )
+
+    organization = Organization(name=body.name)
+    session.add(organization)
+    organization.users.append(user)  # Add the creating user to the organization
+    session.commit()
+
+    return CreateOrganizationResponse(id=organization.id)

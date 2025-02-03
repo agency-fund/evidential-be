@@ -1,5 +1,12 @@
-from sqlalchemy import ForeignKey, Integer, String, JSON
+import secrets
+from sqlalchemy import ForeignKey, String, JSON
 from sqlalchemy.orm import DeclarativeBase, mapped_column, Mapped, relationship
+
+ALPHABET = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz"
+
+
+def newid():
+    return "".join([secrets.choice(ALPHABET) for _ in range(16)])
 
 
 class Base(DeclarativeBase):
@@ -29,7 +36,7 @@ class Organization(Base):
 
     __tablename__ = "organizations"
 
-    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    id: Mapped[str] = mapped_column(String, primary_key=True, default=newid)
     name: Mapped[str] = mapped_column(String(255), nullable=False)
 
     # Relationships
@@ -46,7 +53,7 @@ class User(Base):
 
     __tablename__ = "users"
 
-    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    id: Mapped[str] = mapped_column(String, primary_key=True, default=newid)
     email: Mapped[str] = mapped_column(String(255), unique=True, nullable=False)
     iss: Mapped[str | None] = mapped_column(String(255), nullable=True, default=None)
     sub: Mapped[str | None] = mapped_column(String(255), nullable=True, default=None)
@@ -58,14 +65,17 @@ class User(Base):
 
 
 class UserOrganization(Base):
-    """Association table for the many-to-many relationship between users and organizations."""
-
     __tablename__ = "user_organizations"
 
-    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), primary_key=True)
-    organization_id: Mapped[int] = mapped_column(
-        ForeignKey("organizations.id"), primary_key=True
+    user_id: Mapped[str] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), primary_key=True
     )
+    organization_id: Mapped[str] = mapped_column(
+        ForeignKey("organizations.id", ondelete="CASCADE"), primary_key=True
+    )
+
+    organization: Mapped["Organization"] = relationship()
+    user: Mapped["User"] = relationship()
 
 
 class Datasource(Base):
@@ -73,9 +83,9 @@ class Datasource(Base):
 
     __tablename__ = "datasources"
 
-    id: Mapped[str] = mapped_column(primary_key=True)
+    id: Mapped[str] = mapped_column(String, primary_key=True, default=newid)
     name: Mapped[str] = mapped_column(String(255), nullable=False)
-    organization_id: Mapped[int] = mapped_column(
+    organization_id: Mapped[str] = mapped_column(
         ForeignKey("organizations.id", ondelete="CASCADE")
     )
     config: Mapped[dict] = mapped_column(JSON, nullable=False)
