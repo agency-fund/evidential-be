@@ -27,7 +27,9 @@ class ApiKeyTable(Base):
 
     id: Mapped[str] = mapped_column(primary_key=True)
     key: Mapped[str] = mapped_column(unique=True)
-    datasource_id: Mapped[str] = mapped_column(ForeignKey("datasources.id"))
+    datasource_id: Mapped[str] = mapped_column(
+        ForeignKey("datasources.id", ondelete="CASCADE")
+    )
     datasource: Mapped["Datasource"] = relationship()
 
 
@@ -37,7 +39,7 @@ class Organization(Base):
     __tablename__ = "organizations"
 
     id: Mapped[str] = mapped_column(String, primary_key=True, default=newid)
-    name: Mapped[str] = mapped_column(String(255), nullable=False)
+    name: Mapped[str] = mapped_column(String(255))
 
     # Relationships
     users: Mapped[list["User"]] = relationship(
@@ -54,9 +56,10 @@ class User(Base):
     __tablename__ = "users"
 
     id: Mapped[str] = mapped_column(String, primary_key=True, default=newid)
-    email: Mapped[str] = mapped_column(String(255), unique=True, nullable=False)
-    iss: Mapped[str | None] = mapped_column(String(255), nullable=True, default=None)
-    sub: Mapped[str | None] = mapped_column(String(255), nullable=True, default=None)
+    email: Mapped[str] = mapped_column(String(255), unique=True)
+    # TODO: properly handle federated auth
+    iss: Mapped[str | None] = mapped_column(String(255), default=None)
+    sub: Mapped[str | None] = mapped_column(String(255), default=None)
 
     # Relationships
     organizations: Mapped[list["Organization"]] = relationship(
@@ -84,12 +87,14 @@ class Datasource(Base):
     __tablename__ = "datasources"
 
     id: Mapped[str] = mapped_column(String, primary_key=True, default=newid)
-    name: Mapped[str] = mapped_column(String(255), nullable=False)
+    name: Mapped[str] = mapped_column(String(255))
     organization_id: Mapped[str] = mapped_column(
         ForeignKey("organizations.id", ondelete="CASCADE")
     )
-    config: Mapped[dict] = mapped_column(JSON, nullable=False)
+    config: Mapped[dict] = mapped_column(JSON)
 
     # Relationships
     organization: Mapped["Organization"] = relationship(back_populates="datasources")
-    api_keys: Mapped[list["ApiKeyTable"]] = relationship(back_populates="datasource")
+    api_keys: Mapped[list["ApiKeyTable"]] = relationship(
+        back_populates="datasource", cascade="all, delete-orphan"
+    )
