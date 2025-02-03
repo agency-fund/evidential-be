@@ -1,4 +1,4 @@
-GET http://localhost:8000/strata?participant_type=test_participant_type
+GET http://localhost:8000/v1/strata?participant_type=test_participant_type
 Datasource-ID: testing
 HTTP 200
 ```json

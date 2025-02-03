@@ -28,6 +28,7 @@ logger = logging.getLogger(__name__)
 
 conftest.setup(app)
 client = TestClient(app)
+client.base_url = str(client.base_url) + constants.API_PREFIX_V1
 
 
 def mark_nondeterministic_tests(c):
