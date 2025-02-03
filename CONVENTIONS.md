@@ -25,6 +25,7 @@ In this repository, please follow these conventions:
    This makes them feel idempotent.
 4. Prefer putting the response type as a method return type using ->, and only use the FastAPI response_model= attribute
    if necessary.
+5. Prefer importing from FastAPI rather than Starlette.
 
 # Python Practices
 
