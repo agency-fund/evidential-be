@@ -41,9 +41,19 @@ app.include_router(
     experiments_api.router, prefix=constants.API_PREFIX_V1, tags=["Experiment Design"]
 )
 if oidc.is_enabled():
-    app.include_router(oidc.router, tags=["Auth"], include_in_schema=False)
+    app.include_router(
+        oidc.router,
+        prefix=constants.API_PREFIX_V1,
+        tags=["Auth"],
+        include_in_schema=False,
+    )
 if oidc.is_enabled() and admin.is_enabled():
-    app.include_router(admin.router, tags=["Admin"], include_in_schema=False)
+    app.include_router(
+        admin.router,
+        prefix=constants.API_PREFIX_V1,
+        tags=["Admin"],
+        include_in_schema=False,
+    )
 
 
 def custom_openapi():

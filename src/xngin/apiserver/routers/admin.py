@@ -24,7 +24,7 @@ logger = logging.getLogger(__name__)
 
 def is_enabled():
     """Feature flag: Returns true iff OIDC is enabled."""
-    return os.environ.get("ENABLE_ADMIN", "").lower() in ("true", 1)
+    return os.environ.get("ENABLE_ADMIN", "").lower() in ("true", "1")
 
 
 @asynccontextmanager
