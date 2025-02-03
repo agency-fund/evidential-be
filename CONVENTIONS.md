@@ -6,16 +6,19 @@ In this repository, please follow these conventions:
 2. All FastAPI requests and responses should use request and response wrapper types. For example, if the entity being
    operated on is called "Biscuit", the types should follow this pattern:
    ```
-   @get("/biscuit/{biscuit_id}")
+   @get("/biscuits")
+   async def biscuit_list() -> Biscuit:
+
+   @get("/biscuits/{id}")
    async def biscuit_get() -> Biscuit:
 
-   @post("/biscuit")
+   @post("/biscuits")
    async def biscuit_create(body: CreateBiscuitRequest) -> CreateBiscuitResponse:
 
-   @patch("/biscuit/{biscuit_id}")
+   @patch("/biscuits/{id}")
    async def biscuit_update(body: UpdateBiscuitRequest) -> UpdateBiscuitResponse:
 
-   @delete("/biscuit/{biscuit_id}")
+   @delete("/biscuits/{id}")
    async def biscuit_delete() -> DeleteBiscuitResponse:
    ```
 3. On DELETE calls, the response should be a 200 if the entity was deleted successfully OR if the entity doesn't exist.
