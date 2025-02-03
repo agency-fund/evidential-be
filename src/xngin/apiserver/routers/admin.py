@@ -96,6 +96,11 @@ class CreateDatasourceRequest(AdminApiBaseModel):
     config: Annotated[RemoteDatabaseConfig, Field(...)]
 
 
+class CreateDatasourceResponse(AdminApiBaseModel):
+    """Response model for creating a new datasource."""
+    id: Annotated[str, Field(...)]
+
+
 async def get_user_by_token(
     session: Annotated[Session, Depends(xngin_db_session)],
     token_info: Annotated[TokenInfo, Depends(require_oidc_token)],
@@ -259,7 +264,7 @@ async def datasources_create(
     session: Annotated[Session, Depends(xngin_db_session)],
     user: Annotated[User, Depends(get_user_by_token)],
     body: Annotated[CreateDatasourceRequest, Body(...)],
-):
+) -> CreateDatasourceResponse:
     """Creates a new datasource for the specified organization."""
     # Verify organization exists
     org = session.get(Organization, body.organization_id)
@@ -303,7 +308,7 @@ async def datasources_create(
     session.add(datasource)
     session.commit()
 
-    return {"status": "success", "id": datasource.id}
+    return CreateDatasourceResponse(id=datasource.id)
 
 
 @router.post("/users/invites")
