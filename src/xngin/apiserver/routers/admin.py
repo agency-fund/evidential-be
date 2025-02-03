@@ -1,4 +1,5 @@
 """Implements a basic Admin API."""
+
 import json
 import logging
 import os
@@ -11,20 +12,18 @@ from starlette import status
 from pydantic import BaseModel, Field, ConfigDict
 from sqlalchemy import delete, select
 from sqlalchemy.exc import IntegrityError
-from sqlalchemy.orm import Session, selectinload
+from sqlalchemy.orm import Session
 
 from xngin.apiserver.apikeys import make_key, hash_key
 from xngin.apiserver.models.tables import (
     ApiKeyTable,
-    ApiKeyDatasourceTable,
     User,
     Organization,
     Datasource,
 )
-from xngin.apiserver.settings import DatasourceConfig, RemoteDatabaseConfig
-from xngin.apiserver.dependencies import settings_dependency, xngin_db_session
+from xngin.apiserver.settings import RemoteDatabaseConfig
+from xngin.apiserver.dependencies import xngin_db_session
 from xngin.apiserver.routers.oidc_dependencies import require_oidc_token, TokenInfo
-from xngin.apiserver.settings import XnginSettings
 
 logger = logging.getLogger(__name__)
 
@@ -69,12 +68,8 @@ class ListDatasourcesResponse(AdminApiBaseModel):
 
 class ApiKey(AdminApiBaseModel):
     id: Annotated[str, Field(...)]
-    datasource_ids: Annotated[list[str], Field(...)]
+    datasource_id: Annotated[str, Field(...)]
     key: Annotated[str | None, Field(...)] = None
-
-
-class UpdateApiKeyRequest(AdminApiBaseModel):
-    datasource_ids: Annotated[list[str], Field(..., min_length=1)]
 
 
 class CreateUserRequest(AdminApiBaseModel):
@@ -111,7 +106,7 @@ async def get_user_by_token(
     return user
 
 
-@router.get("/caller-identity", response_model=TokenInfo)
+@router.get("/caller-identity")
 def caller_identity(
     token_info: Annotated[TokenInfo, Depends(require_oidc_token)],
 ) -> TokenInfo:
@@ -119,7 +114,7 @@ def caller_identity(
     return token_info
 
 
-@router.get("/datasources", response_model=ListDatasourcesResponse)
+@router.get("/datasources")
 async def datasources(
     session: Annotated[Session, Depends(xngin_db_session)],
     user: Annotated[User, Depends(get_user_by_token)],
@@ -161,20 +156,17 @@ async def apikeys_list(
     stmt = (
         select(ApiKeyTable)
         .distinct()
-        .join(ApiKeyTable.datasources)
-        .join(ApiKeyDatasourceTable.datasource)
+        .join(ApiKeyTable.datasource)
         .join(Organization)
         .join(Organization.users)
         .where(User.id == user.id)
-        .options(selectinload(ApiKeyTable.datasources))
     )
     result = session.execute(stmt)
     api_keys = result.scalars().all()
     return [
-        # TODO: link API Keys to a single org instead
         ApiKey(
             id=api_key.id,
-            datasource_ids=[ds.datasource_id for ds in api_key.datasources],
+            datasource_id=api_key.datasource_id,
             key=None,  # Omit key in list response
         )
         for api_key in api_keys
@@ -185,42 +177,36 @@ async def apikeys_list(
 async def apikeys_create(
     session: Annotated[Session, Depends(xngin_db_session)],
     user: Annotated[User, Depends(get_user_by_token)],
-    body: Annotated[UpdateApiKeyRequest, Body(...)],
+    datasource_id: Annotated[str, Body(...)],
 ) -> ApiKey:
-    """Creates an API key for the requested datasources.
+    """Creates an API key for the specified datasource.
 
-    The user must belong to the organizations that own all the requested datasources.
+    The user must belong to the organization that owns the requested datasource.
 
     Raises:
-        HTTPException: If the user doesn't have access to any of the requested datasources.
+        HTTPException: If the user doesn't have access to the requested datasource.
     """
-    # Verify user has access to all requested datasources
+    # Verify user has access to the requested datasource
     stmt = (
         select(Datasource.id)
         .join(Organization)
         .join(Organization.users)
-        .where(Datasource.id.in_(body.datasource_ids), User.id == user.id)
+        .where(Datasource.id == datasource_id, User.id == user.id)
     )
     result = session.execute(stmt)
-    accessible_ids = {row[0] for row in result}
-
-    invalid_ids = set(body.datasource_ids) - accessible_ids
-    if invalid_ids:
+    if not result.first():
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail=f"You don't have access to datasources: {sorted(invalid_ids)}",
+            detail=f"You don't have access to datasource: {datasource_id}",
         )
 
     # Create the API key
     label, key = make_key()
     key_hash = hash_key(key)
-    api_key = ApiKeyTable(id=label, key=key_hash)
-    api_key.datasources = [
-        ApiKeyDatasourceTable(datasource_id=ds_id) for ds_id in body.datasource_ids
-    ]
+    api_key = ApiKeyTable(id=label, key=key_hash, datasource_id=datasource_id)
     session.add(api_key)
     session.commit()
-    return ApiKey(id=label, datasource_ids=body.datasource_ids, key=key)
+    return ApiKey(id=label, datasource_id=datasource_id, key=key)
 
 
 @router.delete("/apikeys/{api_key_id}")
@@ -236,8 +222,7 @@ async def apikeys_delete(
         .where(
             ApiKeyTable.id.in_(
                 select(ApiKeyTable.id)
-                .join(ApiKeyTable.datasources)
-                .join(ApiKeyDatasourceTable.datasource)
+                .join(ApiKeyTable.datasource)
                 .join(Organization)
                 .join(Organization.users)
                 .where(User.id == user.id)
@@ -271,7 +256,7 @@ async def datasources_create(
     if not result.first():
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="You are not a member of this organization"
+            detail="You are not a member of this organization",
         )
 
     if body.config.webhook_config:
@@ -325,66 +310,8 @@ async def user_create(
     session.add(stmt)
     try:
         session.commit()
-    except IntegrityError:
+    except IntegrityError as ierr:
         raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail=f"User already exists."
-        )
+            status_code=status.HTTP_409_CONFLICT, detail="User already exists."
+        ) from ierr
     return {"status": "success"}
-
-
-@router.patch("/apikeys/{api_key_id}")
-async def apikeys_update(
-    session: Annotated[Session, Depends(xngin_db_session)],
-    user: Annotated[User, Depends(get_user_by_token)],
-    api_key_id: Annotated[str, Path(...)],
-    body: Annotated[UpdateApiKeyRequest, Body()],
-) -> ApiKey:
-    """Updates the list of datasources for the specified API key.
-
-    The user must have access to both:
-    1. The API key being modified (via their organization's datasources)
-    2. All the requested datasources in the update
-
-    Raises:
-        HTTPException: If the API key is not found or the user doesn't have required access.
-    """
-    # First verify the API key exists and user has access to it
-    stmt = (
-        select(ApiKeyTable)
-        .options(selectinload(ApiKeyTable.datasources))
-        .join(ApiKeyTable.datasources)
-        .join(ApiKeyDatasourceTable.datasource)
-        .join(Organization)
-        .join(Organization.users)
-        .where(ApiKeyTable.id == api_key_id)
-        .where(User.id == user.id)
-    )
-    result = session.execute(stmt)
-    api_key = result.scalar_one_or_none()
-    if not api_key:
-        raise HTTPException(
-            status_code=404, detail="API key not found or access denied"
-        )
-
-    # Then verify user has access to all requested datasources
-    accessible_ids = {
-        datasource.id
-        for org in user.organizations
-        for datasource in org.datasources
-        if datasource.id in body.datasource_ids
-    }
-
-    invalid_ids = set(body.datasource_ids) - accessible_ids
-    if invalid_ids:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail=f"You don't have access to datasources: {sorted(invalid_ids)}",
-        )
-
-    # Update the API key
-    api_key.datasources = [
-        ApiKeyDatasourceTable(datasource_id=ds_id) for ds_id in body.datasource_ids
-    ]
-    session.commit()
-    return ApiKey(id=api_key_id, datasource_ids=body.datasource_ids)

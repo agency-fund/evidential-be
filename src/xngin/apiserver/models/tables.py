@@ -14,32 +14,13 @@ class CacheTable(Base):
 
 
 class ApiKeyTable(Base):
-    """Stores API keys.
-
-    API keys have a 1:M relationship with datasources.
-    """
+    """Stores API keys. Each API key grants access to a single datasource."""
 
     __tablename__ = "apikeys"
 
     id: Mapped[str] = mapped_column(primary_key=True)
     key: Mapped[str] = mapped_column(unique=True)
-    datasources: Mapped[list["ApiKeyDatasourceTable"]] = relationship(
-        back_populates="apikey", cascade="all, delete-orphan"
-    )
-
-
-class ApiKeyDatasourceTable(Base):
-    """Stores the list of datasources that an API key has privileges on."""
-
-    __tablename__ = "apikey_datasources"
-
-    apikey_id: Mapped[str] = mapped_column(
-        ForeignKey("apikeys.id", ondelete="CASCADE"), primary_key=True
-    )
-    datasource_id: Mapped[str] = mapped_column(
-        ForeignKey("datasources.id"), primary_key=True
-    )
-    apikey: Mapped[ApiKeyTable] = relationship(back_populates="datasources")
+    datasource_id: Mapped[str] = mapped_column(ForeignKey("datasources.id"))
     datasource: Mapped["Datasource"] = relationship()
 
 
@@ -101,3 +82,4 @@ class Datasource(Base):
 
     # Relationships
     organization: Mapped["Organization"] = relationship(back_populates="datasources")
+    api_keys: Mapped[list["ApiKeyTable"]] = relationship(back_populates="datasource")
