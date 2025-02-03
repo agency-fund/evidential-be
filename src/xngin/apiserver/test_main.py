@@ -12,6 +12,7 @@ from xngin.apiserver.settings import (
 
 conftest.setup(app)
 client = TestClient(app)
+client.base_url = str(client.base_url) + constants.API_PREFIX_V1
 
 
 def test_get_settings_for_test():

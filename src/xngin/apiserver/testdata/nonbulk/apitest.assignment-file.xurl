@@ -1,4 +1,4 @@
-GET http://localhost:8000/assignment-file?experiment_id=foo1
+GET http://localhost:8000/v1/assignment-file?experiment_id=foo1
 Datasource-ID: customer-test
 HTTP 200
 ```json

@@ -1,4 +1,4 @@
-POST http://localhost:8000/assign?chosen_n=40&random_state=42
+POST http://localhost:8000/v1/assign?chosen_n=40&random_state=42
 Datasource-ID: testing
 ```json
 {

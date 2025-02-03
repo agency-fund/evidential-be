@@ -5,7 +5,7 @@ from typing import Annotated, Literal
 
 import httpx
 import sqlalchemy
-from fastapi import FastAPI, HTTPException, Depends, Path, Query, Response
+from fastapi import APIRouter, FastAPI, HTTPException, Depends, Path, Query, Response
 from fastapi import Request
 from fastapi.openapi.utils import get_openapi
 from pydantic import BaseModel
@@ -114,6 +114,13 @@ def custom_openapi():
 app.openapi = custom_openapi
 
 
+# TODO: extract everying below into its own module re: https://github.com/agency-fund/xngin/pull/188/
+router = APIRouter(
+    lifespan=lifespan,
+    prefix="",
+)
+
+
 class CommonQueryParams:
     """Describes query parameters common to the /strata, /filters, and /metrics APIs."""
 
@@ -133,7 +140,7 @@ class CommonQueryParams:
 
 
 # API Endpoints
-@app.get(
+@router.get(
     "/strata", summary="Get possible strata covariates.", tags=["Experiment Design"]
 )
 def get_strata(
@@ -172,7 +179,7 @@ def get_strata(
     )
 
 
-@app.get(
+@router.get(
     "/filters",
     summary="Get possible filters covariates for a given unit type.",
     tags=["Experiment Design"],
@@ -247,7 +254,7 @@ def get_filters(
         )
 
 
-@app.get(
+@router.get(
     "/metrics",
     summary="Get possible metric covariates for a given unit type.",
     tags=["Experiment Design"],
@@ -287,7 +294,7 @@ def get_metrics(
     )
 
 
-@app.post(
+@router.post(
     "/power",
     summary="Check power given an experiment and audience specification.",
     tags=["Experiment Design"],
@@ -321,7 +328,7 @@ def check_power_api(
         )
 
 
-@app.post(
+@router.post(
     "/assign",
     summary="Assign treatment given experiment and audience specification.",
     tags=["Experiment Design"],
@@ -374,7 +381,7 @@ def assign_treatment_api(
     )
 
 
-@app.get(
+@router.get(
     "/assignment-file",
     summary="Retrieve all participant assignments for the given experiment_id.",
     responses=STANDARD_WEBHOOK_RESPONSES,
@@ -404,7 +411,7 @@ async def assignment_file(
     return payload
 
 
-@app.post(
+@router.post(
     "/commit",
     summary="Commit an experiment to the database.",
     responses=STANDARD_WEBHOOK_RESPONSES,
@@ -438,7 +445,7 @@ async def commit_experiment(
     return payload
 
 
-@app.post(
+@router.post(
     "/update-commit",
     summary="Update an existing experiment's timestamps or description (experiment and arms)",
     responses=STANDARD_WEBHOOK_RESPONSES,
@@ -470,7 +477,7 @@ async def update_experiment(
     return payload
 
 
-@app.post(
+@router.post(
     "/experiment/{experiment_id}",
     summary="Update an existing experiment. (limited update capabilities)",
     responses=STANDARD_WEBHOOK_RESPONSES,
@@ -566,7 +573,7 @@ async def make_webhook_request_base(
         return status_code, webhook_response
 
 
-@app.get("/_settings", include_in_schema=False)
+@router.get("/_settings", include_in_schema=False)
 def debug_settings(
     request: Request,
     settings: Annotated[XnginSettings, Depends(settings_dependency)],
@@ -603,6 +610,9 @@ def generate_field_descriptors(table: sqlalchemy.Table, unique_id_col: str):
         c.field_name: c
         for c in create_configworksheet_from_table(table, unique_id_col).fields
     }
+
+
+app.include_router(router, prefix=constants.API_PREFIX_V1, tags=["Experiment Design"])
 
 
 def main():

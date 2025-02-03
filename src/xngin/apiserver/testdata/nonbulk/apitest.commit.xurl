@@ -1,4 +1,4 @@
-POST http://localhost:8000/commit?user_id=commituser
+POST http://localhost:8000/v1/commit?user_id=commituser
 Datasource-ID: customer-test
 ```json
 {
