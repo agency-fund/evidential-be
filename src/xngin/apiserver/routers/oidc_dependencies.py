@@ -26,6 +26,10 @@ class TokenInfo:
     email: str
     iss: str  # issuer
     sub: str  # subject identifier
+    hd: str  # hosted domain
+
+    def is_privileged(self):
+        return self.hd in ALLOWED_HOSTED_DOMAINS
 
 
 async def require_oidc_token(
@@ -85,4 +89,6 @@ async def require_oidc_token(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail=f"Invalid authentication credentials: {e}",
         ) from e
-    return TokenInfo(email=decoded["email"], iss=decoded["iss"], sub=decoded["sub"])
+    return TokenInfo(
+        email=decoded["email"], iss=decoded["iss"], sub=decoded["sub"], hd=decoded["hd"]
+    )

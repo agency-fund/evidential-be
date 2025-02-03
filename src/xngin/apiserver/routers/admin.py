@@ -135,7 +135,7 @@ class CreateDatasourceResponse(AdminApiBaseModel):
     id: Annotated[str, Field(...)]
 
 
-async def get_user_by_token(
+async def get_user_from_token(
     session: Annotated[Session, Depends(xngin_db_session)],
     token_info: Annotated[TokenInfo, Depends(require_oidc_token)],
 ) -> User:
@@ -147,7 +147,7 @@ async def get_user_by_token(
     user = session.query(User).filter(User.email == token_info.email).first()
     if not user:
         # TODO: use hd instead
-        if token_info.email.endswith("@agency.fund"):
+        if token_info.is_privileged():
             user = User(email=token_info.email)
             session.add(user)
             session.commit()
@@ -167,10 +167,58 @@ def caller_identity(
     return token_info
 
 
-@router.get("/datasources")
-async def datasources(
+@router.get("/organizations")
+async def organizations_list(
     session: Annotated[Session, Depends(xngin_db_session)],
-    user: Annotated[User, Depends(get_user_by_token)],
+    user: Annotated[User, Depends(get_user_from_token)],
+) -> ListOrganizationsResponse:
+    """Returns a list of organizations that the authenticated user is a member of."""
+    stmt = select(Organization).join(Organization.users).where(User.id == user.id)
+    result = session.execute(stmt)
+    organizations = result.scalars().all()
+
+    return ListOrganizationsResponse(
+        items=[
+            OrganizationSummary(
+                id=org.id,
+                name=org.name,
+            )
+            for org in organizations
+        ]
+    )
+
+
+@router.post("/organizations")
+async def organizations_create(
+    session: Annotated[Session, Depends(xngin_db_session)],
+    user: Annotated[User, Depends(get_user_from_token)],
+    body: Annotated[CreateOrganizationRequest, Body(...)],
+) -> CreateOrganizationResponse:
+    """Creates a new organization.
+
+    Only users with an agency.fund email address can create organizations.
+
+    Raises:
+        HTTPException: If the caller's email is not from agency.fund domain.
+    """
+    if not user.email.endswith("@agency.fund"):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only agency.fund users can create organizations",
+        )
+
+    organization = Organization(name=body.name)
+    session.add(organization)
+    organization.users.append(user)  # Add the creating user to the organization
+    session.commit()
+
+    return CreateOrganizationResponse(id=organization.id)
+
+
+@router.get("/datasources")
+async def datasources_list(
+    session: Annotated[Session, Depends(xngin_db_session)],
+    user: Annotated[User, Depends(get_user_from_token)],
 ) -> ListDatasourcesResponse:
     """Returns a list of datasources accessible to the authenticated user."""
     stmt = (
@@ -198,105 +246,10 @@ async def datasources(
     )
 
 
-@router.get("/apikeys")
-async def apikeys_list(
-    session: Annotated[Session, Depends(xngin_db_session)],
-    user: Annotated[User, Depends(get_user_by_token)],
-) -> ListApiKeysResponse:
-    """Returns API keys that the caller has access to via their organization memberships.
-
-    An API key is visible if the user belongs to the organization that owns any of the
-    datasources that the API key can access.
-    """
-    # Get API keys that have access to datasources owned by organizations the user belongs to
-    stmt = (
-        select(ApiKeyTable)
-        .distinct()
-        .join(ApiKeyTable.datasource)
-        .join(Organization)
-        .join(Organization.users)
-        .where(User.id == user.id)
-    )
-    result = session.execute(stmt)
-    api_keys = result.scalars().all()
-    return ListApiKeysResponse(
-        items=[
-            ApiKeySummary(
-                id=api_key.id,
-                datasource_id=api_key.datasource_id,
-                organization_id=api_key.datasource.organization_id,
-                organization_name=api_key.datasource.organization.name,
-            )
-            for api_key in api_keys
-        ]
-    )
-
-
-@router.post("/apikeys")
-async def apikeys_create(
-    session: Annotated[Session, Depends(xngin_db_session)],
-    user: Annotated[User, Depends(get_user_by_token)],
-    body: Annotated[CreateApiKeyRequest, Body(...)],
-) -> CreateApiKeyResponse:
-    """Creates an API key for the specified datasource.
-
-    The user must belong to the organization that owns the requested datasource.
-
-    Raises:
-        HTTPException: If the user doesn't have access to the requested datasource.
-    """
-    # Verify user has access to the requested datasource
-    stmt = (
-        select(Datasource.id)
-        .join(Organization)
-        .join(Organization.users)
-        .where(Datasource.id == body.datasource_id, User.id == user.id)
-    )
-    result = session.execute(stmt)
-    if not result.first():
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail=f"You don't have access to datasource: {body.datasource_id}",
-        )
-
-    # Create the API key
-    label, key = make_key()
-    key_hash = hash_key(key)
-    api_key = ApiKeyTable(id=label, key=key_hash, datasource_id=body.datasource_id)
-    session.add(api_key)
-    session.commit()
-    return CreateApiKeyResponse(id=label, datasource_id=body.datasource_id, key=key)
-
-
-@router.delete("/apikeys/{api_key_id}")
-async def apikeys_delete(
-    session: Annotated[Session, Depends(xngin_db_session)],
-    user: Annotated[User, Depends(get_user_by_token)],
-    api_key_id: Annotated[str, Path(...)],
-):
-    """Deletes the specified API key."""
-    stmt = (
-        delete(ApiKeyTable)
-        .where(ApiKeyTable.id == api_key_id)
-        .where(
-            ApiKeyTable.id.in_(
-                select(ApiKeyTable.id)
-                .join(ApiKeyTable.datasource)
-                .join(Organization)
-                .join(Organization.users)
-                .where(User.id == user.id)
-            )
-        )
-    )
-    session.execute(stmt)
-    session.commit()
-    return {"status": "success"}
-
-
 @router.post("/datasources")
 async def datasources_create(
     session: Annotated[Session, Depends(xngin_db_session)],
-    user: Annotated[User, Depends(get_user_by_token)],
+    user: Annotated[User, Depends(get_user_from_token)],
     body: Annotated[CreateDatasourceRequest, Body(...)],
 ) -> CreateDatasourceResponse:
     """Creates a new datasource for the specified organization."""
@@ -344,28 +297,121 @@ async def datasources_create(
     return CreateDatasourceResponse(id=datasource.id)
 
 
-@router.post("/users/invites")
-async def user_create(
+@router.get("/apikeys")
+async def apikeys_list(
     session: Annotated[Session, Depends(xngin_db_session)],
-    user: Annotated[User, Depends(get_user_by_token)],
+    user: Annotated[User, Depends(get_user_from_token)],
+) -> ListApiKeysResponse:
+    """Returns API keys that the caller has access to via their organization memberships.
+
+    An API key is visible if the user belongs to the organization that owns any of the
+    datasources that the API key can access.
+    """
+    # Get API keys that have access to datasources owned by organizations the user belongs to
+    stmt = (
+        select(ApiKeyTable)
+        .distinct()
+        .join(ApiKeyTable.datasource)
+        .join(Organization)
+        .join(Organization.users)
+        .where(User.id == user.id)
+    )
+    result = session.execute(stmt)
+    api_keys = result.scalars().all()
+    return ListApiKeysResponse(
+        items=[
+            ApiKeySummary(
+                id=api_key.id,
+                datasource_id=api_key.datasource_id,
+                organization_id=api_key.datasource.organization_id,
+                organization_name=api_key.datasource.organization.name,
+            )
+            for api_key in api_keys
+        ]
+    )
+
+
+@router.post("/apikeys")
+async def apikeys_create(
+    session: Annotated[Session, Depends(xngin_db_session)],
+    user: Annotated[User, Depends(get_user_from_token)],
+    body: Annotated[CreateApiKeyRequest, Body(...)],
+) -> CreateApiKeyResponse:
+    """Creates an API key for the specified datasource.
+
+    The user must belong to the organization that owns the requested datasource.
+
+    Raises:
+        HTTPException: If the user doesn't have access to the requested datasource.
+    """
+    # Verify user has access to the requested datasource
+    stmt = (
+        select(Datasource.id)
+        .join(Organization)
+        .join(Organization.users)
+        .where(Datasource.id == body.datasource_id, User.id == user.id)
+    )
+    result = session.execute(stmt)
+    if not result.first():
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=f"You don't have access to datasource: {body.datasource_id}",
+        )
+
+    # Create the API key
+    label, key = make_key()
+    key_hash = hash_key(key)
+    api_key = ApiKeyTable(id=label, key=key_hash, datasource_id=body.datasource_id)
+    session.add(api_key)
+    session.commit()
+    return CreateApiKeyResponse(id=label, datasource_id=body.datasource_id, key=key)
+
+
+@router.delete("/apikeys/{api_key_id}")
+async def apikeys_delete(
+    session: Annotated[Session, Depends(xngin_db_session)],
+    user: Annotated[User, Depends(get_user_from_token)],
+    api_key_id: Annotated[str, Path(...)],
+):
+    """Deletes the specified API key."""
+    stmt = (
+        delete(ApiKeyTable)
+        .where(ApiKeyTable.id == api_key_id)
+        .where(
+            ApiKeyTable.id.in_(
+                select(ApiKeyTable.id)
+                .join(ApiKeyTable.datasource)
+                .join(Organization)
+                .join(Organization.users)
+                .where(User.id == user.id)
+            )
+        )
+    )
+    session.execute(stmt)
+    session.commit()
+    return {"status": "success"}
+
+
+@router.post("/users/invites")
+async def user_invite_create(
+    session: Annotated[Session, Depends(xngin_db_session)],
     body: Annotated[CreateUserRequest, Body(...)],
+    token_info: Annotated[TokenInfo, Depends(require_oidc_token)],
 ):
     """Creates a new user in the system.
 
-    Only users with an agency.fund email address can create new users.
-
     Raises:
-        HTTPException: If the caller's email is not from agency.fund domain.
+        HTTPException: If the caller is not privileged.
     """
     # TODO: confirm with hd rather than email address
-    if not user.email.endswith("@agency.fund"):
+    if not token_info.is_privileged():
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="Only agency.fund users can create new users",
+            detail="Only privileged users can create new users",
         )
 
-    stmt = User(email=body.email)
-    session.add(stmt)
+    new_user = User(email=body.email)
+    session.add(new_user)
     try:
         session.commit()
     except IntegrityError as ierr:
@@ -373,51 +419,3 @@ async def user_create(
             status_code=status.HTTP_409_CONFLICT, detail="User already exists."
         ) from ierr
     return {"status": "success"}
-
-
-@router.get("/organizations")
-async def organizations_list(
-    session: Annotated[Session, Depends(xngin_db_session)],
-    user: Annotated[User, Depends(get_user_by_token)],
-) -> ListOrganizationsResponse:
-    """Returns a list of organizations that the authenticated user is a member of."""
-    stmt = select(Organization).join(Organization.users).where(User.id == user.id)
-    result = session.execute(stmt)
-    organizations = result.scalars().all()
-
-    return ListOrganizationsResponse(
-        items=[
-            OrganizationSummary(
-                id=org.id,
-                name=org.name,
-            )
-            for org in organizations
-        ]
-    )
-
-
-@router.post("/organizations")
-async def organizations_create(
-    session: Annotated[Session, Depends(xngin_db_session)],
-    user: Annotated[User, Depends(get_user_by_token)],
-    body: Annotated[CreateOrganizationRequest, Body(...)],
-) -> CreateOrganizationResponse:
-    """Creates a new organization.
-
-    Only users with an agency.fund email address can create organizations.
-
-    Raises:
-        HTTPException: If the caller's email is not from agency.fund domain.
-    """
-    if not user.email.endswith("@agency.fund"):
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Only agency.fund users can create organizations",
-        )
-
-    organization = Organization(name=body.name)
-    session.add(organization)
-    organization.users.append(user)  # Add the creating user to the organization
-    session.commit()
-
-    return CreateOrganizationResponse(id=organization.id)
