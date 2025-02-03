@@ -10,7 +10,7 @@ import httpx
 from fastapi import APIRouter, Query, FastAPI, HTTPException
 from fastapi.security import OpenIdConnect
 from pydantic import BaseModel, Field
-from starlette.responses import FileResponse
+from fastapi.responses import FileResponse
 from xngin.apiserver import constants
 
 ENV_GOOGLE_OIDC_CLIENT_ID = "GOOGLE_OIDC_CLIENT_ID"

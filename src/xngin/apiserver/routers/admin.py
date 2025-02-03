@@ -11,7 +11,8 @@ from pydantic import BaseModel, Field, ConfigDict
 from sqlalchemy import delete, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
-from starlette import status
+from fastapi import Response
+from fastapi import status
 
 from xngin.apiserver.apikeys import make_key, hash_key
 from xngin.apiserver.dependencies import xngin_db_session
@@ -24,7 +25,10 @@ from xngin.apiserver.models.tables import (
 from xngin.apiserver.routers.oidc_dependencies import require_oidc_token, TokenInfo
 from xngin.apiserver.settings import RemoteDatabaseConfig
 
+
 logger = logging.getLogger(__name__)
+
+GENERIC_SUCCESS = Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
 def is_enabled():
@@ -50,9 +54,24 @@ class AdminApiBaseModel(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
 
-class DatasourceSummary(AdminApiBaseModel):
-    """Summary information about a datasource."""
+class CreateOrganizationRequest(AdminApiBaseModel):
+    name: Annotated[str, Field(...)]
 
+
+class CreateOrganizationResponse(AdminApiBaseModel):
+    id: Annotated[str, Field(...)]
+
+
+class OrganizationSummary(AdminApiBaseModel):
+    id: Annotated[str, Field(...)]
+    name: Annotated[str, Field(...)]
+
+
+class ListOrganizationsResponse(AdminApiBaseModel):
+    items: list[OrganizationSummary]
+
+
+class DatasourceSummary(AdminApiBaseModel):
     id: str
     name: str
     driver: str
@@ -62,9 +81,17 @@ class DatasourceSummary(AdminApiBaseModel):
 
 
 class ListDatasourcesResponse(AdminApiBaseModel):
-    """Response model for the /datasources endpoint."""
-
     items: list[DatasourceSummary]
+
+
+class CreateDatasourceRequest(AdminApiBaseModel):
+    organization_id: Annotated[str, Field(...)]
+    name: Annotated[str, Field(...)]
+    config: Annotated[RemoteDatabaseConfig, Field(...)]
+
+
+class CreateDatasourceResponse(AdminApiBaseModel):
+    id: Annotated[str, Field(...)]
 
 
 class ApiKeySummary(AdminApiBaseModel):
@@ -75,20 +102,14 @@ class ApiKeySummary(AdminApiBaseModel):
 
 
 class ListApiKeysResponse(AdminApiBaseModel):
-    """Response model for the /apikeys endpoint."""
-
     items: list[ApiKeySummary]
 
 
 class CreateApiKeyRequest(AdminApiBaseModel):
-    """Request model for creating a new API key."""
-
     datasource_id: Annotated[str, Field(...)]
 
 
 class CreateApiKeyResponse(AdminApiBaseModel):
-    """Response model for creating a new API key."""
-
     id: Annotated[str, Field(...)]
     datasource_id: Annotated[str, Field(...)]
     key: Annotated[str, Field(...)]
@@ -96,43 +117,6 @@ class CreateApiKeyResponse(AdminApiBaseModel):
 
 class CreateUserRequest(AdminApiBaseModel):
     email: Annotated[str, Field(...)]
-
-
-class CreateOrganizationRequest(AdminApiBaseModel):
-    """Request model for creating a new organization."""
-
-    name: Annotated[str, Field(...)]
-
-
-class CreateOrganizationResponse(AdminApiBaseModel):
-    """Response model for creating a new organization."""
-
-    id: Annotated[str, Field(...)]
-
-
-class OrganizationSummary(AdminApiBaseModel):
-    """Summary information about an organization."""
-
-    id: Annotated[str, Field(...)]
-    name: Annotated[str, Field(...)]
-
-
-class ListOrganizationsResponse(AdminApiBaseModel):
-    """Response model for the /organizations endpoint."""
-
-    items: list[OrganizationSummary]
-
-
-class CreateDatasourceRequest(AdminApiBaseModel):
-    organization_id: Annotated[str, Field(...)]
-    name: Annotated[str, Field(...)]
-    config: Annotated[RemoteDatabaseConfig, Field(...)]
-
-
-class CreateDatasourceResponse(AdminApiBaseModel):
-    """Response model for creating a new datasource."""
-
-    id: Annotated[str, Field(...)]
 
 
 async def get_user_from_token(
@@ -146,7 +130,7 @@ async def get_user_from_token(
     """
     user = session.query(User).filter(User.email == token_info.email).first()
     if not user:
-        # TODO: use hd instead
+        # Privileged users will be created on the fly.
         if token_info.is_privileged():
             user = User(email=token_info.email)
             session.add(user)
@@ -297,6 +281,38 @@ async def datasources_create(
     return CreateDatasourceResponse(id=datasource.id)
 
 
+@router.delete("/datasources/{datasource_id}")
+async def datasources_delete(
+    session: Annotated[Session, Depends(xngin_db_session)],
+    user: Annotated[User, Depends(get_user_from_token)],
+    datasource_id: Annotated[str, Path(...)],
+):
+    """Deletes a datasource.
+
+    The user must be a member of the organization that owns the datasource.
+
+    Raises:
+        HTTPException: If the datasource doesn't exist or the user doesn't have access to it.
+    """
+    # Delete the datasource, but only if the user has access to it
+    stmt = (
+        delete(Datasource)
+        .where(Datasource.id == datasource_id)
+        .where(
+            Datasource.id.in_(
+                select(Datasource.id)
+                .join(Organization)
+                .join(Organization.users)
+                .where(User.id == user.id)
+            )
+        )
+    )
+    session.execute(stmt)
+    session.commit()
+
+    return GENERIC_SUCCESS
+
+
 @router.get("/apikeys")
 async def apikeys_list(
     session: Annotated[Session, Depends(xngin_db_session)],
@@ -389,7 +405,7 @@ async def apikeys_delete(
     )
     session.execute(stmt)
     session.commit()
-    return {"status": "success"}
+    return GENERIC_SUCCESS
 
 
 @router.post("/users/invites")
@@ -400,10 +416,8 @@ async def user_invite_create(
 ):
     """Creates a new user in the system.
 
-    Raises:
-        HTTPException: If the caller is not privileged.
+    Only privileged callers can invoke this method.
     """
-    # TODO: confirm with hd rather than email address
     if not token_info.is_privileged():
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
@@ -418,4 +432,4 @@ async def user_invite_create(
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT, detail="User already exists."
         ) from ierr
-    return {"status": "success"}
+    return GENERIC_SUCCESS

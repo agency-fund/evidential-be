@@ -1,7 +1,7 @@
 import psycopg.errors
 import sqlalchemy
-from starlette.requests import Request
-from starlette.responses import JSONResponse
+from fastapi import Request
+from fastapi.responses import JSONResponse
 
 from xngin.apiserver.apikeys import ApiKeyError
 from xngin.apiserver.dwh.queries import LateValidationError

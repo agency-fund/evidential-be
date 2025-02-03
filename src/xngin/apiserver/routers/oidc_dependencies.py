@@ -3,7 +3,7 @@ from typing import Annotated
 
 from fastapi import Depends, HTTPException
 from jose import jwt, JWTError
-from starlette import status
+from fastapi import status
 
 from xngin.apiserver.routers.oidc import (
     oidc_google,
