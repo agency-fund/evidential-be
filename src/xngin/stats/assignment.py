@@ -133,6 +133,6 @@ def assign_treatment(
         ),
         experiment_id=UUID(experiment_id),
         sample_size=len(df_clean),
-        id_col=id_col,
+        unique_id_field=id_col,
         assignments=participants_list,
     )

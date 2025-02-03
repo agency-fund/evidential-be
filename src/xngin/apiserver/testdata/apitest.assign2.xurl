@@ -772,7 +772,7 @@ HTTP 200
     "p_value": 0.107230543
   },
   "experiment_id": "0897bbd7-dacd-41b4-b164-7a1950fa61f2",
-  "id_col": "id",
+  "unique_id_field": "id",
   "sample_size": 40
 }
 ```

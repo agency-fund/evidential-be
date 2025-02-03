@@ -542,7 +542,12 @@ class AssignResponse(ApiBaseModel):
 
     experiment_id: uuid.UUID
     sample_size: int
-    id_col: str
+    unique_id_field: Annotated[
+        str,
+        Field(
+            description="Name of the datasource field used as the unique identifier for the participant_id value stored in each Assignment, as configured in the datasource settings. Included for frontend convenience."
+        ),
+    ]
     assignments: list[Assignment]
 
 
