@@ -15,6 +15,7 @@
       "pyproject.toml",
       "railway.json",
       "src/**",
+      "static/**",
       "uv.lock"
     ]
   }
