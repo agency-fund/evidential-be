@@ -2,36 +2,38 @@ GET http://localhost:8000/metrics?participant_type=test_participant_type
 Datasource-ID: testing
 HTTP 200
 ```json
-[
-  {
-    "field_name": "current_income",
-    "data_type": "double precision",
-    "description": "Current Income"
-  },
-  {
-    "field_name": "is_engaged",
-    "data_type": "integer",
-    "description": "Engaged?"
-  },
-  {
-    "field_name": "is_onboarded",
-    "data_type": "integer",
-    "description": "Onboarded?"
-  },
-  {
-    "field_name": "is_recruited",
-    "data_type": "integer",
-    "description": "Recruited?"
-  },
-  {
-    "field_name": "is_registered",
-    "data_type": "integer",
-    "description": "Registered?"
-  },
-  {
-    "field_name": "is_retained",
-    "data_type": "integer",
-    "description": "Retained?"
-  }
-]
+{
+  "results": [
+    {
+      "field_name": "current_income",
+      "data_type": "double precision",
+      "description": "Current Income"
+    },
+    {
+      "field_name": "is_engaged",
+      "data_type": "integer",
+      "description": "Engaged?"
+    },
+    {
+      "field_name": "is_onboarded",
+      "data_type": "integer",
+      "description": "Onboarded?"
+    },
+    {
+      "field_name": "is_recruited",
+      "data_type": "integer",
+      "description": "Recruited?"
+    },
+    {
+      "field_name": "is_registered",
+      "data_type": "integer",
+      "description": "Registered?"
+    },
+    {
+      "field_name": "is_retained",
+      "data_type": "integer",
+      "description": "Retained?"
+    }
+  ]
+}
 ```

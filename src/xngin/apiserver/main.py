@@ -154,19 +154,21 @@ def get_strata(
             sa_table, config_sheet.get_unique_id_field()
         )
 
-    return sorted(
-        [
-            GetStrataResponseElement(
-                data_type=db_schema.get(field_name).data_type,
-                field_name=field_name,
-                description=field_descriptor.description,
-                # For strata columns, we will echo back any extra annotations
-                extra=field_descriptor.extra,
-            )
-            for field_name, field_descriptor in strata_fields.items()
-            if db_schema.get(field_name)
-        ],
-        key=lambda item: item.field_name,
+    return GetStrataResponse(
+        results=sorted(
+            [
+                GetStrataResponseElement(
+                    data_type=db_schema.get(field_name).data_type,
+                    field_name=field_name,
+                    description=field_descriptor.description,
+                    # For strata columns, we will echo back any extra annotations
+                    extra=field_descriptor.extra,
+                )
+                for field_name, field_descriptor in strata_fields.items()
+                if db_schema.get(field_name)
+            ],
+            key=lambda item: item.field_name,
+        )
     )
 
 
@@ -233,13 +235,15 @@ def get_filters(
                 case _:
                     raise RuntimeError("unexpected filter class")
 
-        return sorted(
-            [
-                mapper(field_name, field_descriptor)
-                for field_name, field_descriptor in filter_fields.items()
-                if db_schema.get(field_name)
-            ],
-            key=lambda item: item.field_name,
+        return GetFiltersResponse(
+            results=sorted(
+                [
+                    mapper(field_name, field_descriptor)
+                    for field_name, field_descriptor in filter_fields.items()
+                    if db_schema.get(field_name)
+                ],
+                key=lambda item: item.field_name,
+            )
         )
 
 
@@ -267,17 +271,19 @@ def get_metrics(
         )
 
     # Merge data type info above with the columns to be used as metrics:
-    return sorted(
-        [
-            GetMetricsResponseElement(
-                data_type=db_schema.get(col_name).data_type,
-                field_name=col_name,
-                description=col_descriptor.description,
-            )
-            for col_name, col_descriptor in metric_cols.items()
-            if db_schema.get(col_name)
-        ],
-        key=lambda item: item.field_name,
+    return GetMetricsResponse(
+        results=sorted(
+            [
+                GetMetricsResponseElement(
+                    data_type=db_schema.get(col_name).data_type,
+                    field_name=col_name,
+                    description=col_descriptor.description,
+                )
+                for col_name, col_descriptor in metric_cols.items()
+                if db_schema.get(col_name)
+            ],
+            key=lambda item: item.field_name,
+        )
     )
 
 
