@@ -20,6 +20,8 @@ In this repository, please follow these conventions:
    ```
 3. On DELETE calls, the response should be a 200 if the entity was deleted successfully OR if the entity doesn't exist.
    This makes them feel idempotent.
+4. Prefer putting the response type as a method return type using ->, and only use the FastAPI response_model= attribute
+   if necessary.
 
 # Python Practices
 
