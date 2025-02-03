@@ -53,11 +53,12 @@ class AdminApiBaseModel(BaseModel):
 
 class DatasourceSummary(AdminApiBaseModel):
     """Summary information about a datasource."""
-
     id: str
     name: str
     driver: str
     type: str
+    organization_id: int
+    organization_name: str
 
 
 class ListDatasourcesResponse(AdminApiBaseModel):
@@ -66,10 +67,23 @@ class ListDatasourcesResponse(AdminApiBaseModel):
     items: list[DatasourceSummary]
 
 
-class ApiKey(AdminApiBaseModel):
+class ApiKeySummary(AdminApiBaseModel):
     id: Annotated[str, Field(...)]
     datasource_id: Annotated[str, Field(...)]
-    key: Annotated[str | None, Field(...)] = None
+    organization_id: Annotated[int, Field(...)]
+    organization_name: Annotated[str, Field(...)]
+
+
+class ListApiKeysResponse(AdminApiBaseModel):
+    """Response model for the /apikeys endpoint."""
+    items: list[ApiKeySummary]
+
+
+class CreateApiKeyResponse(AdminApiBaseModel):
+    """Response model for creating a new API key."""
+    id: Annotated[str, Field(...)]
+    datasource_id: Annotated[str, Field(...)]
+    key: Annotated[str, Field(...)]
 
 
 class CreateUserRequest(AdminApiBaseModel):
@@ -131,9 +145,13 @@ async def datasources(
 
     def convert_ds_to_summary(ds: Datasource) -> DatasourceSummary:
         config = RemoteDatabaseConfig.model_validate(ds.config)
-        # TODO: also return Org ID and Org Name
         return DatasourceSummary(
-            id=ds.id, name=ds.name, driver=config.dwh.driver, type=config.type
+            id=ds.id,
+            name=ds.name,
+            driver=config.dwh.driver,
+            type=config.type,
+            organization_id=ds.organization_id,
+            organization_name=ds.organization.name
         )
 
     return ListDatasourcesResponse(
@@ -141,12 +159,11 @@ async def datasources(
     )
 
 
-# TODO: use new ListApiKeysResponse type; items= and include org name and org id
 @router.get("/apikeys")
 async def apikeys_list(
     session: Annotated[Session, Depends(xngin_db_session)],
     user: Annotated[User, Depends(get_user_by_token)],
-) -> list[ApiKey]:
+) -> ListApiKeysResponse:
     """Returns API keys that the caller has access to via their organization memberships.
 
     An API key is visible if the user belongs to the organization that owns any of the
@@ -163,14 +180,17 @@ async def apikeys_list(
     )
     result = session.execute(stmt)
     api_keys = result.scalars().all()
-    return [
-        ApiKey(
-            id=api_key.id,
-            datasource_id=api_key.datasource_id,
-            key=None,  # Omit key in list response
-        )
-        for api_key in api_keys
-    ]
+    return ListApiKeysResponse(
+        items=[
+            ApiKeySummary(
+                id=api_key.id,
+                datasource_id=api_key.datasource_id,
+                organization_id=api_key.datasource.organization_id,
+                organization_name=api_key.datasource.organization.name,
+            )
+            for api_key in api_keys
+        ]
+    )
 
 
 @router.post("/apikeys")
@@ -178,7 +198,7 @@ async def apikeys_create(
     session: Annotated[Session, Depends(xngin_db_session)],
     user: Annotated[User, Depends(get_user_by_token)],
     datasource_id: Annotated[str, Body(...)],
-) -> ApiKey:
+) -> CreateApiKeyResponse:
     """Creates an API key for the specified datasource.
 
     The user must belong to the organization that owns the requested datasource.
@@ -206,7 +226,7 @@ async def apikeys_create(
     api_key = ApiKeyTable(id=label, key=key_hash, datasource_id=datasource_id)
     session.add(api_key)
     session.commit()
-    return ApiKey(id=label, datasource_id=datasource_id, key=key)
+    return CreateApiKeyResponse(id=label, datasource_id=datasource_id, key=key)
 
 
 @router.delete("/apikeys/{api_key_id}")
