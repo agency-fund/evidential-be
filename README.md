@@ -89,8 +89,8 @@ uv sync
    and local dev, use `testing`.
 
    ```shell
-   curl -H "Datasource-ID: testing" 'http://localhost:8000/filters?participant_type=test_participant_type'
-   curl -H "Datasource-ID: testing" 'http://localhost:8000/strata?participant_type=test_participant_type'
+   curl -H "Datasource-ID: testing" 'http://localhost:8000/v1/filters?participant_type=test_participant_type'
+   curl -H "Datasource-ID: testing" 'http://localhost:8000/v1/strata?participant_type=test_participant_type'
    ```
 
    Also see [apitest.strata.xurl](src/xngin/apiserver/testdata/apitest.strata.xurl) for a complete example of how to
@@ -615,7 +615,7 @@ Clients must send the API keys as the `x-api-key` header. Example:
 ```shell
 curl --header "x-api-key: xat_..." \
   --header "Datasource-ID: my-secure-config" \
-  'http://localhost:8000/filters?participant_type=test_participant_type'
+  'http://localhost:8000/v1/filters?participant_type=test_participant_type'
 ```
 
 ## Schema Migration<a name="schema-migration"></a>
