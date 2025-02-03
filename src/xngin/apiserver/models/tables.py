@@ -36,8 +36,11 @@ class ApiKeyDatasourceTable(Base):
     apikey_id: Mapped[str] = mapped_column(
         ForeignKey("apikeys.id", ondelete="CASCADE"), primary_key=True
     )
-    datasource_id: Mapped[str] = mapped_column(primary_key=True)
+    datasource_id: Mapped[str] = mapped_column(
+        ForeignKey("datasources.id"), primary_key=True
+    )
     apikey: Mapped[ApiKeyTable] = relationship(back_populates="datasources")
+    datasource: Mapped["Datasource"] = relationship()
 
 
 class Organization(Base):

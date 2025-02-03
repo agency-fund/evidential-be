@@ -1,3 +1,4 @@
+from dataclasses import dataclass
 from typing import Annotated
 
 from fastapi import Depends, HTTPException
@@ -18,12 +19,25 @@ ALLOWED_HOSTED_DOMAINS = ("agency.fund",)
 logger = logging.getLogger(__name__)
 
 
+@dataclass
+class TokenInfo:
+    """Information extracted from a validated OIDC token."""
+
+    email: str
+    iss: str  # issuer
+    sub: str  # subject identifier
+
+
 async def require_oidc_token(
     token: Annotated[str, Depends(oidc_google)],
     oidc_config: Annotated[dict, Depends(get_google_configuration)],
     jwks: Annotated[dict, Depends(get_google_jwks)],
-):
-    """Dependency for validating that the Authorization: header is a valid Google JWT."""
+) -> TokenInfo:
+    """Dependency for validating that the Authorization: header is a valid Google JWT.
+
+    Returns:
+        TokenInfo containing the validated token's claims.
+    """
     expected_prefix = "Bearer "
     if not token.startswith(expected_prefix):
         raise HTTPException(
@@ -71,4 +85,4 @@ async def require_oidc_token(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail=f"Invalid authentication credentials: {e}",
         ) from e
-    return decoded
+    return TokenInfo(email=decoded["email"], iss=decoded["iss"], sub=decoded["sub"])

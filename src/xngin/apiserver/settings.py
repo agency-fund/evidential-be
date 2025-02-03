@@ -1,3 +1,5 @@
+import base64
+import binascii
 import json
 import logging
 import os
@@ -232,6 +234,16 @@ class GcpServiceAccountInfo(ConfigBaseModel):
             description="The base64-encoded service account info in the canonical JSON form.",
         ),
     ]
+
+    @field_validator("content_base64")
+    @classmethod
+    def validate_base64(cls, value: str) -> str:
+        """Validates that content_base64 contains valid base64 data."""
+        try:
+            base64.b64decode(value, validate=True)
+        except binascii.Error as e:
+            raise ValueError("Invalid base64 content") from e
+        return value
 
 
 class GcpServiceAccountFile(ConfigBaseModel):
