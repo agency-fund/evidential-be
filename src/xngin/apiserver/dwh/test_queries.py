@@ -54,25 +54,30 @@ class SampleNullableTable(Base):
 
     id = mapped_column(Integer, primary_key=True, autoincrement=False)
     bool_col = mapped_column(Boolean, nullable=True)
+    int_col = mapped_column(Integer, nullable=True)
 
 
 @dataclass
 class NullableRow:
     id: int
     bool_col: bool | None
+    int_col: int | None
 
 
 ROW_10 = NullableRow(
     id=10,
     bool_col=None,
+    int_col=None,
 )
 ROW_20 = NullableRow(
     id=20,
     bool_col=True,
+    int_col=1,
 )
 ROW_30 = NullableRow(
     id=30,
     bool_col=False,
+    int_col=3,
 )
 SAMPLE_NULLABLE_TABLE_ROWS = [
     ROW_10,
@@ -619,15 +624,52 @@ def test_get_stats_on_integer_metric(db_session):
         metric_type=MetricType.NUMERIC,
         metric_baseline=41.666666666666664,
         metric_stddev=47.76563153100307,
+        available_nonnull_n=3,
         available_n=3,
     )
     assert len(rows) == 1
     actual = rows[0]
-    numeric_fields = {"metric_baseline", "metric_stddev", "available_n"}
+    numeric_fields = {
+        "metric_baseline",
+        "metric_stddev",
+        "available_nonnull_n",
+        "available_n",
+    }
     assert actual.field_name == expected.field_name
     assert actual.metric_type == expected.metric_type
     # PG: assertion would fail due to a float vs decimal.Decimal comparison.
     # RS: assertion would fail due to avg() on int types keeps them as integers.
+    assert actual.model_dump(include=numeric_fields) == pytest.approx(
+        expected.model_dump(include=numeric_fields)
+    )
+
+
+def test_get_stats_on_nullable_integer_metric(db_session):
+    rows = get_stats_on_metrics(
+        db_session,
+        SampleNullableTable.get_table(),
+        [DesignSpecMetricRequest(field_name="int_col", metric_pct_change=0.1)],
+        AudienceSpec(participant_type="ignored", filters=[]),
+    )
+
+    expected = DesignSpecMetric(
+        field_name="int_col",
+        metric_type=MetricType.NUMERIC,
+        metric_baseline=2.0,
+        metric_stddev=1.0,
+        available_nonnull_n=2,
+        available_n=3,
+    )
+    assert len(rows) == 1
+    actual = rows[0]
+    numeric_fields = {
+        "metric_baseline",
+        "metric_stddev",
+        "available_nonnull_n",
+        "available_n",
+    }
+    assert actual.field_name == expected.field_name
+    assert actual.metric_type == expected.metric_type
     assert actual.model_dump(include=numeric_fields) == pytest.approx(
         expected.model_dump(include=numeric_fields)
     )
@@ -650,11 +692,17 @@ def test_get_stats_on_boolean_metric(db_session):
         metric_type=MetricType.BINARY,
         metric_baseline=0.6666666666666666,
         metric_stddev=None,
+        available_nonnull_n=3,
         available_n=3,
     )
     assert len(rows) == 1
     actual = rows[0]
-    numeric_fields = {"metric_baseline", "metric_stddev", "available_n"}
+    numeric_fields = {
+        "metric_baseline",
+        "metric_stddev",
+        "available_nonnull_n",
+        "available_n",
+    }
     assert actual.field_name == expected.field_name
     assert actual.metric_type == expected.metric_type
     assert actual.model_dump(include=numeric_fields) == pytest.approx(
@@ -678,11 +726,17 @@ def test_get_stats_on_numeric_metric(db_session):
         metric_type=MetricType.NUMERIC,
         metric_baseline=2.492,
         metric_stddev=0.6415751449882287,
+        available_nonnull_n=3,
         available_n=3,
     )
     assert len(rows) == 1
     actual = rows[0]
-    numeric_fields = {"metric_baseline", "metric_stddev", "available_n"}
+    numeric_fields = {
+        "metric_baseline",
+        "metric_stddev",
+        "available_nonnull_n",
+        "available_n",
+    }
     assert actual.field_name == expected.field_name
     assert actual.metric_type == expected.metric_type
     # pytest.approx does a reasonable fuzzy comparison of floats for non-nested dictionaries.

@@ -316,7 +316,18 @@ class DesignSpecMetric(DesignSpecMetricBase):
             description="Standard deviation is set only for metric_type.NUMERIC metrics."
         ),
     ] = None
-    available_n: int | None = None
+    available_nonnull_n: Annotated[
+        int | None,
+        Field(
+            description="The number of participants meeting the filtering criteria with a *non-null* value for this metric."
+        ),
+    ] = None
+    available_n: Annotated[
+        int | None,
+        Field(
+            description="The number of participants meeting the filtering criteria regardless of whether or not this metric's value is NULL. NOTE: Assignments are made from the targeted_n population, so be sure you are ok with participants potentially having NULL if available_n != targeted_n."
+        ),
+    ] = None
 
     @model_validator(mode="after")
     def stddev_only_if_numeric(self):
@@ -444,7 +455,15 @@ class MetricAnalysisMessage(ApiBaseModel):
     """Describes interpretation of analysis results."""
 
     type: MetricAnalysisMessageType
-    msg: str
+    msg: Annotated[
+        str, Field(description="Main analysis result stated in human-friendly English.")
+    ]
+    source_msg: Annotated[
+        str,
+        Field(
+            description="Analysis result formatted as a template string with curly-braced {} named placeholders. Use with the dictionary of values to support localization of messages."
+        ),
+    ]
     values: dict[str, float | int] | None = None
 
 

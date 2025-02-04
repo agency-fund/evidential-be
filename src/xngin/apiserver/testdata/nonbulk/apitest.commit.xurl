@@ -53,15 +53,21 @@ Datasource-ID: customer-test
             "metric_type": "numeric",
             "metric_baseline": 0.168526751494711,
             "metric_stddev": 0.62489267825032,
-            "available_n": 100000
+            "available_n": 100000,
+            "available_nonnull_n": 100000
           },
           "target_n": 43168,
           "sufficient_n": true,
           "target_possible": null,
           "msg": {
             "type": "sufficient",
-            "msg": "There are 100000 units available to run your experiment and 43168.0 units are needed to meet your experimental design specs. There are enough units available, you only need 43168.0 of the 100000 units to meet your experimental design specs.",
-            "values": {}
+            "msg": "There are 100000 units available to run your experiment and a minimum of 43168 units are needed to meet your experimental design specs. There are enough units available. ",
+            "source_msg": "There are {available_n} units available to run your experiment and a minimum of {target_n} units are needed to meet your experimental design specs. There are enough units available. ",
+            "values": {
+              "available_n": 100000,
+              "available_nonnull_n": 100000,
+              "target_n": 43168
+            }
           }
         }
     ]
