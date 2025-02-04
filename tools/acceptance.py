@@ -7,16 +7,25 @@ from xngin.apiserver.testing.assertions import assert_same
 
 @pytest.fixture
 def pyhost(request):
+    """Python implementation."""
     return request.config.getoption("--p", "http://localhost:8000")
 
 
 @pytest.fixture
 def rhost(request):
+    """R implementation."""
     return request.config.getoption("--r", "http://localhost:8383")
 
 
 @pytest.fixture
-def alt_payload(request):
+def data_dir(request):
+    """R implementation."""
+    return request.config.getoption("--data-dir", "acceptance_data/")
+
+
+@pytest.fixture
+def alt_payload_path(request):
+    """Override the parameterized tests with this payload file path."""
     file = request.config.getoption("--req")
     if file == "":
         return ""
@@ -42,12 +51,12 @@ def get_test(
     rhost,
     endpoint,
     prefix,
-    payload_file: str | None = None,
-    alt_payload=None,
+    payload_path: str | None = None,
+    alt_payload_path: str | None = None,
 ):
-    body = alt_payload
-    if not body and payload_file:
-        with open(f"acceptance_data/{payload_file}") as f:
+    body = alt_payload_path
+    if not body and payload_path:
+        with open(payload_path) as f:
             body = json.load(f)
 
     def call(host, file_prefix):
@@ -55,9 +64,9 @@ def get_test(
             return None, None
 
         url = f"{host}/{endpoint}"
-        print(f"{url} file={payload_file}\n\t{body}")
+        print(f"{url} file={payload_path}\n\t{body}")
         resp = client.post(url=url, json=body) if body else client.get(url=url)
-        assert resp.status_code == 200
+        assert resp.status_code == 200, host
 
         with tempfile.NamedTemporaryFile(
             mode="w", delete=False, prefix=f"{file_prefix}.", suffix=".json"
@@ -91,33 +100,42 @@ def test_strata(client, pyhost, rhost):
 
 
 @pytest.mark.parametrize("payload_file", ["power1"])
-def test_power(client, pyhost, rhost, alt_payload, payload_file):
+def test_power(client, pyhost, rhost, data_dir, payload_file, alt_payload_path):
+    payload_path = f"{data_dir}{payload_file}"
     get_test(
-        client, pyhost, rhost, "power?refresh=false", "power", payload_file, alt_payload
+        client,
+        pyhost,
+        rhost,
+        "power?refresh=false",
+        "power",
+        payload_path,
+        alt_payload_path,
     )
 
 
 @pytest.mark.parametrize("payload_file", ["assign1", "assign2"])
-def test_assign(client, pyhost, rhost, alt_payload, payload_file):
+def test_assign(client, pyhost, rhost, data_dir, payload_file, alt_payload_path):
+    payload_path = f"{data_dir}{payload_file}"
     get_test(
         client,
         pyhost,
         rhost,
         "assign?chosen_n=100&random_state=0&refresh=false",
         "assign",
-        payload_file,
-        alt_payload,
+        payload_path,
+        alt_payload_path,
     )
 
 
 @pytest.mark.parametrize("payload_file", ["commit"])
-def test_commit(client, pyhost, rhost, alt_payload, payload_file):
+def test_commit(client, pyhost, rhost, data_dir, payload_file, alt_payload_path):
+    payload_path = f"{data_dir}{payload_file}"
     get_test(
         client,
         pyhost,
         rhost,
         "commit?user_id=commituser",
         "commit",
-        payload_file,
-        alt_payload,
+        payload_path,
+        alt_payload_path,
     )
