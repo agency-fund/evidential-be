@@ -1,3 +1,4 @@
+# ruff: noqa: PD011
 import pytest
 from xngin.apiserver.api_types import MetricAnalysisMessageType
 from xngin.stats.power import (
