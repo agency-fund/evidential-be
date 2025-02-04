@@ -17,6 +17,7 @@ from xngin.apiserver.api_types import (
 from xngin.stats.balance import (
     check_balance_of_preprocessed_df,
     preprocess_for_balance_and_stratification,
+    restore_original_numeric_columns,
 )
 
 
@@ -64,21 +65,23 @@ def assign_treatment(
     df[decimal_columns] = df[decimal_columns].astype(float)
 
     # Dedupe the strata names and then sort them for a stable output ordering
-    stratum_cols = sorted(set(stratum_cols))
+    orig_stratum_cols = sorted(set(stratum_cols))
 
-    df_clean, exclude_cols_set = preprocess_for_balance_and_stratification(
-        data=df[[*stratum_cols]], exclude_cols=[id_col]
+    orig_data_to_stratify = df[[id_col, *orig_stratum_cols]]
+    df_cleaned, exclude_cols_set, numeric_notnull_set = (
+        preprocess_for_balance_and_stratification(
+            data=orig_data_to_stratify, exclude_cols=[id_col]
+        )
     )
-    post_stratum_cols = df_clean.columns.to_list()
-    # Add back the id column for stochatreat
-    df_clean[id_col] = df[id_col]
+    # Our original target of columns to stratify on may have gotten smaller:
+    post_stratum_cols = sorted(set(orig_stratum_cols) - exclude_cols_set)
 
     # Assign treatments
     n_arms = len(arm_names)
     # TODO: when we support unequal arm assigments, be careful about ensuring the right treatment
     # assignment id is mapped to the right arm_name.
     treatment_status = stochatreat(
-        data=df_clean,
+        data=df_cleaned,
         idx_col=id_col,
         stratum_cols=post_stratum_cols,
         treats=n_arms,
@@ -86,12 +89,18 @@ def assign_treatment(
         # internally uses legacy np.random.RandomState which can take None
         random_state=random_state,  # type: ignore[arg-type]
     ).drop(columns=["stratum_id"])
-    df_clean = df_clean.merge(treatment_status, on=id_col)
+    df_cleaned = df_cleaned.merge(treatment_status, on=id_col)
 
+    # Put back non-null numeric columns for a more robust balance check.
+    df_cleaned = restore_original_numeric_columns(
+        df_orig=orig_data_to_stratify,
+        df_cleaned=df_cleaned,
+        numeric_notnull_set=numeric_notnull_set,
+    )
     # Do balance check with treatment assignments as the dependent var using preprocessed data.
     balance_check_cols = [*post_stratum_cols, "treat"]
     balance_check = check_balance_of_preprocessed_df(
-        df_clean[balance_check_cols],
+        df_cleaned[balance_check_cols],
         treatment_col="treat",
         exclude_col_set=exclude_cols_set,
         alpha=fstat_thresh,
@@ -99,7 +108,7 @@ def assign_treatment(
 
     # Prepare assignments for return along with the original data as a list of ExperimentParticipant objects.
     participants_list = []
-    for treatment_assignment, row in zip(df_clean["treat"], data, strict=False):
+    for treatment_assignment, row in zip(df_cleaned["treat"], data, strict=False):
         # ExperimentStrata for each column
         row_dict = row._asdict()
         strata = [
@@ -109,7 +118,7 @@ def assign_treatment(
                     row_dict[column] if pd.notna(row_dict[column]) else "NA"
                 ),
             )
-            for column in stratum_cols
+            for column in orig_stratum_cols
         ]
 
         participant = Assignment(
@@ -132,7 +141,7 @@ def assign_treatment(
             balance_ok=bool(balance_check.f_pvalue > fstat_thresh),
         ),
         experiment_id=UUID(experiment_id),
-        sample_size=len(df_clean),
+        sample_size=len(df_cleaned),
         unique_id_field=id_col,
         assignments=participants_list,
     )

@@ -1,9 +1,9 @@
 from dataclasses import dataclass
 
-import numpy as np
 import pandas as pd
-from pandas.api.types import is_numeric_dtype
+from pandas.api.types import is_any_real_numeric_dtype
 import statsmodels.formula.api as smf
+from xngin.stats.stats_errors import StatsBalanceError
 
 
 @dataclass(slots=True)
@@ -18,40 +18,6 @@ class BalanceResult:
     denominator_df: float
 
 
-def check_balance(
-    data: pd.DataFrame,
-    treatment_col: str = "treat",
-    exclude_cols: list[str] | None = None,
-    alpha: float = 0.5,
-    quantiles: int = 4,
-    missing_string="__NULL__",
-) -> BalanceResult:
-    """
-    Perform balance check on treatment assignment.
-
-    Args:
-        data: DataFrame containing treatment assignments and covariates
-        treatment_col: Name of treatment assignment column
-        exclude_cols: List of columns to exclude from balance check
-        alpha: Significance level for balance test
-        quantiles: Number of quantiles to bucket numeric columns with NAs
-        missing_string: value used internally for replacing NAs in non-numeric columns
-
-    Returns:
-        BalanceResult object containing test results
-    """
-    df_analysis, exclude_set = preprocess_for_balance_and_stratification(
-        data, exclude_cols, quantiles, missing_string
-    )
-
-    return check_balance_of_preprocessed_df(
-        data=df_analysis,
-        treatment_col=treatment_col,
-        exclude_col_set=exclude_set,
-        alpha=alpha,
-    )
-
-
 def preprocess_for_balance_and_stratification(
     data: pd.DataFrame,
     exclude_cols: list[str] | None = None,
@@ -63,31 +29,48 @@ def preprocess_for_balance_and_stratification(
 
     Args:
         data: DataFrame containing treatment assignments and covariates
-        exclude_cols: List of columns to exclude from balance check
-        quantiles: Number of quantiles to bucket numeric columns with NAs
+        exclude_cols: List of columns caller knows to exclude from balance check
+        quantiles: Number of quantiles to bucket numeric columns
         missing_string: value used internally for replacing NAs in non-numeric columns
 
     Returns tuple:
-       df_analysis: processed df
-       exclude_set: column names to exclude from stratification and balance checks
+        df_analysis: processed df
+        exclude_set: Column names to exclude from stratification and balance checks.
+        numeric_notnull_set: Column names of numerics with no NaNs in the original data, to use with
+            restore_original_numeric_columns() if you wish to replace these columns with the
+            original values before balance checks.
     """
     # Create copy of data for analysis
     df_analysis = data.copy()
 
     exclude_set = set() if exclude_cols is None else set(exclude_cols)
 
-    # Exclude columns from the check that contain only the same value (including None).
-    single_value_cols = df_analysis.columns[df_analysis.nunique(dropna=False) <= 1]
-    exclude_set.union(single_value_cols)
-    # TODO: check for is_unique columns
+    # Exclude columns from the check that contain only the same value or unique non-numeric values.
+    # Note: pd.qcut() will return NaN for all objects if the non-None values are identical and we
+    # drop duplicate bin edges; pd.get_dummies() will drop a column of all NaN, so drop here.
+    single_value_cols = []
+    unique_non_numeric_cols = []
+    working_list = []
+    for col in set(df_analysis.columns) - exclude_set:
+        unique_count = df_analysis[col].nunique(dropna=True)
+        if unique_count <= 1:
+            single_value_cols.append(col)
+        elif (
+            not is_any_real_numeric_dtype(df_analysis[col])
+            and df_analysis[col].dropna().is_unique
+        ):
+            unique_non_numeric_cols.append(col)
+        else:
+            working_list.append(col)
 
-    # Handle missing values in numeric columns by converting to quartiles
-    # TODO: handle is_bool_dtype() separately
-    cols_with_missing_values = set(df_analysis.columns[df_analysis.isnull().any()])
-    numeric_columns_with_na = {
-        c for c in cols_with_missing_values if is_numeric_dtype(df_analysis[c])
-    }
-    for col in numeric_columns_with_na - exclude_set:
+    # Also update our exclude_set to return.
+    exclude_set = exclude_set.union(single_value_cols, unique_non_numeric_cols)
+
+    # Handle numeric columns (can include NaNs) by converting to quartiles. Excludes booleans.
+    numeric_columns = [
+        c for c in working_list if is_any_real_numeric_dtype(df_analysis[c])
+    ]
+    for col in numeric_columns:
         labels = pd.qcut(
             df_analysis[col],
             q=quantiles,
@@ -96,28 +79,45 @@ def preprocess_for_balance_and_stratification(
             # Integer indicators starting at 0 will be returned instead.
             labels=False,
         )
-        new_col = f"{col}_quantile"
         # Since there are NaNs, labels will be dtype=float64. To avoid bugs later due to dummy var
-        # naming, first replace NaNs with an integer beyond the number of buckets, then *convert to
-        # int*, and finally a category.
-        df_analysis[new_col] = pd.Series(
-            np.nan_to_num(labels, nan=quantiles).astype("int8"), dtype="category"
-        )
-        df_analysis = pd.get_dummies(
-            df_analysis,
-            columns=[new_col],
-            prefix=[col],
-            dummy_na=False,
-            drop_first=True,
-        )
-        df_analysis.drop(columns=[col], inplace=True)
+        # naming, we want integer categories, so first cast to nullable ints then category.
+        df_analysis[col] = pd.Series(labels).astype("Int8").astype("category")
 
-    # Handle missing values in non-numeric columns:
-    non_numeric_columns_with_na = cols_with_missing_values - numeric_columns_with_na
-    for col in non_numeric_columns_with_na - exclude_set:
+    # Next backfill NaNs. Since we converted numerics to categoricals, we can treat them the same as
+    # the original non-numeric columns.
+    column_index = df_analysis[working_list].columns
+    isnull_columns = column_index[df_analysis[working_list].isnull().any()]
+    for col in isnull_columns:
+        if df_analysis[col].dtype == "category":
+            df_analysis[col] = df_analysis[col].cat.add_categories(missing_string)
         df_analysis.fillna({col: missing_string}, inplace=True)
 
-    return df_analysis, exclude_set
+    numeric_notnull_set = set(numeric_columns) - set(isnull_columns)
+    return df_analysis, exclude_set, numeric_notnull_set
+
+
+def restore_original_numeric_columns(
+    df_orig: pd.DataFrame, df_cleaned: pd.DataFrame, numeric_notnull_set: set
+):
+    """
+    Restore columns named in numeric_notnull_set from df_orig to df_cleaned for better balance test
+    results.
+
+    df_orig should typically be the same input and df_cleaned and numeric_notnull_set the outputs of
+    preprocess_for_balance_and_stratification().
+    """
+    if numeric_notnull_set:
+        columns = sorted(numeric_notnull_set)
+        for col in columns:
+            if col not in df_orig.columns or col not in df_cleaned.columns:
+                raise ValueError(
+                    f"Column {col} is missing from either df_orig or df_cleaned."
+                )
+
+        df_cleaned = df_cleaned.copy()
+        df_cleaned[columns] = df_orig[columns]
+
+    return df_cleaned
 
 
 def check_balance_of_preprocessed_df(
@@ -127,11 +127,31 @@ def check_balance_of_preprocessed_df(
     alpha: float = 0.5,
 ) -> BalanceResult:
     """
-    See check_balance(). Assumes the df and exclude_col_set came from
-    preprocess_for_balance_and_stratification().
+    Perform a balance check on treatment assignment.  One should typically first use
+    preprocess_for_balance_and_stratification(), then restore_original_numeric_columns(), and
+    finally call this.
+
+    Args:
+        data: DataFrame containing preprocessed covariates and treatment assignments
+        treatment_col: Name of treatment assignment column
+        exclude_col_set: Columns to exclude from balance check. Typically should come from
+            preprocess_for_balance_and_stratification().
+        alpha: Significance level for balance test. If the test p-value is above this, we declare
+            the dataset as being sufficiently balanced.
+
+    Returns:
+        BalanceResult object containing test results
     """
-    # Convert all non-numeric columns into dummy vars
-    non_numeric_columns = {c for c in data.columns if not is_numeric_dtype(data[c])}
+    if data[treatment_col].nunique() <= 1:
+        raise ValueError("Treatment column has insufficient arms.")
+
+    if exclude_col_set is None:
+        exclude_col_set = set()
+
+    # Convert all non-numeric columns into dummy vars, including booleans
+    non_numeric_columns = {
+        c for c in data.columns if not is_any_real_numeric_dtype(data[c])
+    }
     cols_to_dummies = list(non_numeric_columns - exclude_col_set)
     df_analysis = pd.get_dummies(
         data,
@@ -147,6 +167,10 @@ def check_balance_of_preprocessed_df(
         for col in df_analysis.columns
         if col != treatment_col and col not in exclude_col_set
     ]
+    if len(covariates) == 0:
+        raise StatsBalanceError(
+            "No usable fields for performing a balance check found. Please check your metrics and fields used for stratification."
+        )
 
     # TODO(roboton): Run multi-class regression via MVLogit
     # df_analysis[treatment_col] = pd.Categorical(df_analysis[treatment_col])
