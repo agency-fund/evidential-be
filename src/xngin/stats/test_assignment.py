@@ -87,7 +87,7 @@ def test_assign_treatment(sample_table, sample_data):
         result.sample_size
         == result.balance_check.numerator_df + result.balance_check.denominator_df + 1
     )
-    assert result.id_col == "id"
+    assert result.unique_id_field == "id"
     assert isinstance(result.assignments, list)
     assert len(set([x.participant_id for x in result.assignments])) == len(
         result.assignments
@@ -138,7 +138,7 @@ def test_assign_treatment_multiple_arms(sample_table, sample_data):
         == 3
     )
     assert result.sample_size == len(sample_data)
-    assert result.id_col == "id"
+    assert result.unique_id_field == "id"
 
 
 def test_assign_treatment_reproducibility(sample_table, sample_data):
@@ -166,7 +166,7 @@ def test_assign_treatment_reproducibility(sample_table, sample_data):
 
     # Check that both results have the same assignments
     assert len(result1.assignments) == len(result2.assignments)
-    assert result1.id_col == result2.id_col
+    assert result1.unique_id_field == result2.unique_id_field
 
     # Check that the treatment assignments are the same
     for p1, p2 in zip(result1.assignments, result2.assignments, strict=False):
@@ -192,7 +192,7 @@ def test_assign_treatment_with_missing_values(sample_table, sample_data):
     )
 
     assert result.sample_size == len(sample_data)
-    assert result.id_col == "id"
+    assert result.unique_id_field == "id"
     # Check that treatment assignments are not None or NaN
     assert all(
         participant.treatment_assignment is not None
@@ -230,7 +230,7 @@ def test_assign_treatment_with_obj_columns_inferred(sample_table, sample_data):
     )
 
     assert result.sample_size == len(sample_data)
-    assert result.id_col == "id"
+    assert result.unique_id_field == "id"
     assert pd.isna(result.balance_check.p_value) is False
     assert pd.isna(result.balance_check.f_statistic) is False
     # Check that treatment assignments are not None or NaN

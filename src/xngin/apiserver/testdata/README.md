@@ -9,7 +9,7 @@ Currently unused.
 ## Datasource-ID: testing
 
 | Filename            | Description                                                                                                                                                                           |
-|---------------------|---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| ------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | testing_dwh.csv.zst | zstd-compressed dump of a fake data warehouse.                                                                                                                                        |
 | dwh.configsheet.csv | configuration spreadsheet for that fake data warehouse. This is a CSV export of https://docs.google.com/spreadsheets/d/redacted/edit?gid=0#gid=0. |
 

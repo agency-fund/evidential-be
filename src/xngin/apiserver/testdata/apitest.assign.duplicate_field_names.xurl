@@ -1,4 +1,4 @@
-POST http://localhost:8000/assign?chosen_n=40&random_state=42
+POST http://localhost:8000/v1/assign?chosen_n=40&random_state=42
 Datasource-ID: testing
 ```json
 {
@@ -772,7 +772,7 @@ HTTP 200
     "p_value": 0.57009598
   },
   "experiment_id": "0897bbd7-dacd-41b4-b164-7a1950fa61f2",
-  "id_col": "id",
+  "unique_id_field": "id",
   "sample_size": 40
 }
 ```

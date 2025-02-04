@@ -11,6 +11,7 @@ import httpx
 from fastapi import APIRouter, Query, FastAPI
 from fastapi.security import OpenIdConnect
 from starlette.responses import FileResponse
+from xngin.apiserver import constants
 
 ENV_GOOGLE_OIDC_CLIENT_ID = "GOOGLE_OIDC_CLIENT_ID"
 ENV_GOOGLE_OIDC_CLIENT_SECRET = "GOOGLE_OIDC_CLIENT_SECRET"
@@ -19,7 +20,7 @@ ENV_GOOGLE_OIDC_REDIRECT_URI = "GOOGLE_OIDC_REDIRECT_URI"
 CLIENT_ID = os.environ.get(ENV_GOOGLE_OIDC_CLIENT_ID)
 CLIENT_SECRET = os.environ.get(ENV_GOOGLE_OIDC_CLIENT_SECRET)
 GOOGLE_DISCOVERY_URL = "https://accounts.google.com/.well-known/openid-configuration"
-DEFAULT_REDIRECT_URI = "http://localhost:8000/a/oidc"  # default value should match OIDC_BASE_URL in pkcetest.html
+DEFAULT_REDIRECT_URI = f"http://localhost:8000{constants.API_PREFIX_V1}/a/oidc"  # default value should match OIDC_BASE_URL in pkcetest.html
 REDIRECT_URI = os.environ.get(
     ENV_GOOGLE_OIDC_REDIRECT_URI, DEFAULT_REDIRECT_URI
 )  # used for testing UI only

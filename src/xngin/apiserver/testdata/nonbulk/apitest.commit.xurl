@@ -1,4 +1,4 @@
-POST http://localhost:8000/commit?user_id=commituser
+POST http://localhost:8000/v1/commit?user_id=commituser
 Datasource-ID: customer-test
 ```json
 {
@@ -76,7 +76,7 @@ Datasource-ID: customer-test
     },
     "experiment_id": "df6456bf-09c5-4d7f-82f1-75679db54477",
     "sample_size": 1000,
-    "id_col": "groups_id",
+    "unique_id_field": "groups_id",
     "assignments": [
       {
         "participant_id": "35634",

@@ -1,4 +1,4 @@
-POST http://localhost:8000/power?participant_type=test_participant_type
+POST http://localhost:8000/v1/power?participant_type=test_participant_type
 Datasource-ID: testing
 ```json
 {

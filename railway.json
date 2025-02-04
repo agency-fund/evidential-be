@@ -1,16 +1,22 @@
 {
   "$schema": "https://railway.com/railway.schema.json",
+  "deploy": {
+    "preDeployCommand": "/bin/sh -c \"exec uv run --no-dev ./atlas migrate apply --env sa_postgres --url \\\"$DATABASE_URL\\\"\""
+  },
   "build": {
     "builder": "DOCKERFILE",
     "dockerfilePath": "Dockerfile.railway",
     "watchPatterns": [
-      "/railway.json",
-      "/Dockerfile.railway",
-      "/pyproject.toml",
-      "/uv.lock",
-      "/.gitignore",
-      "/.dockerignore",
-      "/src/**"
+      ".dockerignore",
+      ".gitignore",
+      "Dockerfile.railway",
+      "atlas.hcl",
+      "migrations/**",
+      "pyproject.toml",
+      "railway.json",
+      "src/**",
+      "static/**",
+      "uv.lock"
     ]
   }
 }

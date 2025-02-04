@@ -185,3 +185,6 @@ config.csv
 
 # Local configuration files
 .env.bqintegration
+
+# Exclude the atlas binary.
+atlas
