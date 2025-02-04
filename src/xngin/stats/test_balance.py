@@ -249,17 +249,17 @@ def test_preprocessing_with_exclusions():
     data = pd.DataFrame({
         # This is explicitly excluded by caller
         "skip": [2, 2, 3, 3],
-        # These are excluded to to all being the same value.
-        "same_int": [1.0] * 4,
-        "same_int_na": [1, 1, None, None],
+        # These are excluded due to all being the same value.
+        "same_int": [1] * 4,
         "same_str": ["a"] * 4,
+        # Excluded since NA is dropped when testing for all identical values.
+        "same_float_na": [1.0, 1.0, None, None],
+        "same_bool_na": [True, True, None, None],
         # Only uniq_obj is excluded since our check for all uniques is for non-numerics
         "uniq_int": range(0, 4),
         "uniq_obj": pd.Series(range(0, 4), dtype="object"),
         # uniq_obj_na is excluded when nones are ignored
         "uniq_obj_na": ["a", "b", None, None],
-        # Excluded since NA is dropped when testing for all identical values.
-        "same_value_na": [1, 1, None, None],
     })
     df, exclude, numeric_notnull_set = preprocess_for_balance_and_stratification(
         data, exclude_cols=["skip"]
@@ -268,11 +268,11 @@ def test_preprocessing_with_exclusions():
     assert exclude == {
         "skip",
         "same_int",
-        "same_int_na",
         "same_str",
+        "same_float_na",
+        "same_bool_na",
         "uniq_obj",
         "uniq_obj_na",
-        "same_value_na",
     }
     assert numeric_notnull_set == {"uniq_int"}
     assert set(df.columns) == set(data.columns)
