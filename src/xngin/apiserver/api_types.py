@@ -325,7 +325,7 @@ class DesignSpecMetric(DesignSpecMetricBase):
     available_n: Annotated[
         int | None,
         Field(
-            description="The number of participants meeting the filtering criteria regardless of whether or not this metric's value is NULL. NOTE: Assignments are made from the targeted_n population, so be sure you are ok with participants potentially having NULL if available_n != targeted_n."
+            description="The number of participants meeting the filtering criteria regardless of whether or not this metric's value is NULL. NOTE: Assignments are made from the targeted aviailable_n population, so be sure you are ok with participants potentially having this value missing during assignment if available_n != available_nonnull_n."
         ),
     ] = None
 
