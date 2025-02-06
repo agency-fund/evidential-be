@@ -8,7 +8,7 @@ from xngin.apiserver.api_types import DataType
 from xngin.sheets.config_sheet import (
     create_configworksheet_from_table,
 )
-from xngin.schema.schema_types import FieldDescriptor, ParticipantSchema
+from xngin.schema.schema_types import FieldDescriptor, ParticipantsSchema
 from xngin.sheets.gsheets import google_app_credentials_file, read_sheet_df
 
 
@@ -28,7 +28,7 @@ def test_read_sheet():
 
 
 def test_config_worksheet_get_unique_id_col():
-    fake_worksheet = ParticipantSchema(
+    fake_worksheet = ParticipantsSchema(
         table_name="table_name",
         fields=[
             FieldDescriptor(

@@ -6,7 +6,7 @@ from sqlalchemy.exc import IntegrityError
 
 from xngin.apiserver.models.tables import CacheTable
 from xngin.apiserver.settings import SheetRef
-from xngin.schema.schema_types import ParticipantSchema
+from xngin.schema.schema_types import ParticipantsSchema
 
 
 class GSheetCache:
@@ -18,7 +18,7 @@ class GSheetCache:
     def get(
         self,
         key: SheetRef,
-        fetcher: Callable[[], ParticipantSchema],
+        fetcher: Callable[[], ParticipantsSchema],
         refresh=False,
     ):
         cache_key = f"{key.url}!{key.worksheet}"
@@ -40,4 +40,4 @@ class GSheetCache:
                     .values(value=entry.value)
                 )
                 self.session.commit()
-        return ParticipantSchema.model_validate_json(entry.value)
+        return ParticipantsSchema.model_validate_json(entry.value)

@@ -61,7 +61,7 @@ class FieldDescriptor(SchemaBaseModel):
         raise ValueError(f"Value '{value}' cannot be converted to a boolean.")
 
 
-class ParticipantSchema(SchemaBaseModel):
+class ParticipantsSchema(SchemaBaseModel):
     """Represents a single worksheet describing metadata about a type of Participant."""
 
     table_name: Annotated[
@@ -77,7 +77,7 @@ class ParticipantSchema(SchemaBaseModel):
         return next((i.field_name for i in self.fields if i.is_unique_id), None)
 
     @model_validator(mode="after")
-    def check_one_unique_id(self) -> "ParticipantSchema":
+    def check_one_unique_id(self) -> "ParticipantsSchema":
         uniques = [r.field_name for r in self.fields if r.is_unique_id]
         if len(uniques) == 0:
             raise ValueError("There are no columns marked as unique ID.")
@@ -89,7 +89,7 @@ class ParticipantSchema(SchemaBaseModel):
         return self
 
     @model_validator(mode="after")
-    def check_unique_fields(self) -> "ParticipantSchema":
+    def check_unique_fields(self) -> "ParticipantsSchema":
         counted = Counter([".".join(row.field_name) for row in self.fields])
         duplicates = [item for item, count in counted.items() if count > 1]
         if duplicates:
@@ -99,7 +99,7 @@ class ParticipantSchema(SchemaBaseModel):
         return self
 
     @model_validator(mode="after")
-    def check_non_empty_rows(self) -> "ParticipantSchema":
+    def check_non_empty_rows(self) -> "ParticipantsSchema":
         if len(self.fields) == 0:
             raise ValueError(
                 f"{self.__class__} must contain at least one FieldDescriptor."
