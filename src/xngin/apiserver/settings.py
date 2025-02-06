@@ -117,16 +117,16 @@ class BaseParticipantsRef(ConfigBaseModel):
 
 class SheetParticipantsRef(BaseParticipantsRef):
     type: Annotated[
-        Literal["sheet", None],
+        Literal["sheet"],
         Field(
             description="Indicates that the schema is determined by a remote Google Sheet."
         ),
-    ] = None  # TODO: remove None
+    ]
     table_name: str
     sheet: SheetRef
 
 
-class SchemaParticipantsRef(BaseParticipantsRef, ParticipantsSchema):
+class ParticipantsDef(BaseParticipantsRef, ParticipantsSchema):
     type: Annotated[
         Literal["schema"],
         Field(
@@ -135,14 +135,16 @@ class SchemaParticipantsRef(BaseParticipantsRef, ParticipantsSchema):
     ]
 
 
-type ParticipantsDef = SheetParticipantsRef | SchemaParticipantsRef
-
-
 class ParticipantsMixin(ConfigBaseModel):
     """ParticipantsMixin can be added to a config type to add standardized participant definitions."""
 
     participants: Annotated[
-        list[Annotated[ParticipantsDef, Field(discriminator="type")]], Field()
+        list[
+            Annotated[
+                SheetParticipantsRef | ParticipantsDef, Field(discriminator="type")
+            ]
+        ],
+        Field(),
     ]
 
     def find_participants(self, participant_type: str):
