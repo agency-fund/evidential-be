@@ -51,7 +51,9 @@ def get_stats_on_metrics(
         MetricType.from_python_type(sa_table.c[m.field_name].type.python_type)
         for m in metrics
     ]
-    select_columns: list[Label] = []
+    # Include in our list of stats a total count of rows targeted by the audience filters,
+    # whereas the individual aggregate functions per metric ignore NULLs by default.
+    select_columns: list[Label] = [func.count().label("rows__count")]
     for metric, metric_type in zip(metrics, metric_types, strict=False):
         field_name = metric.field_name
         col = sa_table.c[field_name]
@@ -60,7 +62,6 @@ def get_stats_on_metrics(
             cast_column = cast(col, Float)
         else:  # re: avg(boolean) doesn't work on pg-like backends
             cast_column = cast(cast(col, Integer), Float)
-        # TODO(roboton): https://github.com/agency-fund/xngin/issues/192
         select_columns.extend((
             func.avg(cast_column).label(f"{field_name}__mean"),
             custom_functions.stddev_pop(cast_column).label(f"{field_name}__stddev"),
@@ -84,7 +85,9 @@ def get_stats_on_metrics(
                 metric_stddev=stats[f"{field_name}__stddev"]
                 if metric_type is MetricType.NUMERIC
                 else None,
-                available_n=stats[f"{field_name}__count"],
+                available_nonnull_n=stats[f"{field_name}__count"],
+                # This value is the same across all metrics, but we replicate for convenience:
+                available_n=stats["rows__count"],
             )
         )
 

@@ -48,17 +48,27 @@ HTTP 200
     {
       "metric_spec": {
         "available_n": 39405,
-        "metric_baseline": 26333.628738429015,
+        "available_nonnull_n": 39405,
         "field_name": "current_income",
+        "metric_baseline": 26333.628738429015,
         "metric_pct_change": null,
         "metric_stddev": 6752.850516930193,
         "metric_target": 26500.0,
         "metric_type": "numeric"
       },
       "msg": {
-        "msg": "There are 39405 units available to run your experiment and 51726.0 units are needed to meet your experimental design specs. There are not enough units available, you need 12321.0 more units to meet your experimental design specifications. In order to meet your specification with the available 39405 units and a baseline metric value of 26333.6287, your metric target value needs to be 26524.2377 or further from the baseline; the current target is 26500.0000.",
+        "msg": "There are 39405 units available to run your experiment and a minimum of 51726 units are needed to meet your experimental design specs. There are not enough units available. You need 12321.0 more units to meet your experimental design specifications. In order to meet your specification with the available 39405 units and a metric baseline value of 26333.6287, your metric target value needs to be 26524.2377 or further from the baseline. Your current desired target is 26500.0. ",
+        "source_msg": "There are {available_n} units available to run your experiment and a minimum of {target_n} units are needed to meet your experimental design specs. There are not enough units available. You need {additional_n_needed} more units to meet your experimental design specifications. In order to meet your specification with the available {available_n} units and a metric baseline value of {metric_baseline}, your metric target value needs to be {target_possible} or further from the baseline. Your current desired target is {metric_target}. ",
         "type": "insufficient",
-        "values": {}
+        "values": {
+          "additional_n_needed": 12321.0,
+          "available_n": 39405,
+          "available_nonnull_n": 39405,
+          "metric_baseline": 26333.6287,
+          "metric_target": 26500.0,
+          "target_n": 51726,
+          "target_possible": 26524.2377
+        }
       },
       "pct_change_possible": 0.007238235162403184,
       "sufficient_n": false,

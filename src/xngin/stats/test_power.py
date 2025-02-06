@@ -1,4 +1,6 @@
+# ruff: noqa: PD011
 import pytest
+from xngin.apiserver.api_types import MetricAnalysisMessageType
 from xngin.stats.power import (
     DesignSpecMetric,
     MetricType,
@@ -15,6 +17,7 @@ def test_analyze_metric_power_numeric():
         metric_baseline=100,
         metric_target=110,
         metric_stddev=20,
+        available_nonnull_n=1000,
         available_n=1000,
     )
 
@@ -24,10 +27,18 @@ def test_analyze_metric_power_numeric():
     assert result.metric_spec.metric_type == MetricType.NUMERIC
     assert result.metric_spec.metric_baseline == 100
     assert result.metric_spec.metric_target == 110
+    assert result.metric_spec.available_nonnull_n == 1000
     assert result.metric_spec.available_n == 1000
     assert result.target_n == 128.0
     assert result.sufficient_n
     assert result.msg is not None
+    assert result.msg.type == MetricAnalysisMessageType.SUFFICIENT
+    assert result.msg.values == {
+        "available_n": 1000,
+        "available_nonnull_n": 1000,
+        "target_n": 128.0,
+    }
+    assert result.msg.msg == result.msg.source_msg.format_map(result.msg.values)
 
 
 def test_analyze_metric_power_binary():
@@ -36,6 +47,7 @@ def test_analyze_metric_power_binary():
         metric_type=MetricType.BINARY,
         metric_baseline=0.5,
         metric_target=0.55,
+        available_nonnull_n=1000,
         available_n=1000,
     )
 
@@ -50,6 +62,18 @@ def test_analyze_metric_power_binary():
     assert result.target_possible == pytest.approx(1 - 0.588163, abs=1e-4)
     assert result.pct_change_possible == pytest.approx(1 - 1.176327, abs=1e-4)
     assert not result.sufficient_n
+    assert result.msg is not None
+    assert result.msg.type == MetricAnalysisMessageType.INSUFFICIENT
+    assert result.msg.values == {
+        "available_n": 1000,
+        "available_nonnull_n": 1000,
+        "target_n": 3132,
+        "additional_n_needed": 3132 - 1000,
+        "metric_baseline": 0.5,
+        "target_possible": pytest.approx(1 - 0.588163, abs=1e-4),
+        "metric_target": 0.55,
+    }
+    assert result.msg.msg == result.msg.source_msg.format_map(result.msg.values)
 
 
 def test_check_power_multiple_metrics():
@@ -60,6 +84,7 @@ def test_check_power_multiple_metrics():
             metric_baseline=100,
             metric_target=110,
             metric_stddev=20,
+            available_nonnull_n=1000,
             available_n=1000,
         ),
         DesignSpecMetric(
@@ -67,6 +92,7 @@ def test_check_power_multiple_metrics():
             metric_type=MetricType.BINARY,
             metric_baseline=0.5,
             metric_target=0.55,
+            available_nonnull_n=1000,
             available_n=1000,
         ),
     ]
@@ -85,6 +111,7 @@ def test_check_power_effect_size_zero_raises_error():
             metric_type=MetricType.BINARY,
             metric_baseline=0.5,
             metric_target=0.55,
+            available_nonnull_n=1000,
             available_n=1000,
         ),
         DesignSpecMetric(
@@ -92,6 +119,7 @@ def test_check_power_effect_size_zero_raises_error():
             metric_type=MetricType.BINARY,
             metric_baseline=0.5,
             metric_target=0.5,
+            available_nonnull_n=1000,
             available_n=1000,
         ),
     ]
@@ -108,6 +136,7 @@ def test_check_missing_metric_type_raises_error():
             metric_baseline=0.5,
             metric_target=0.5,
             available_n=1000,
+            available_nonnull_n=1000,
         ),
     ]
 

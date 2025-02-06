@@ -1,3 +1,4 @@
+# ruff: noqa: RUF027
 import numpy as np
 import statsmodels.stats.api as sms
 
@@ -35,111 +36,138 @@ def analyze_metric_power(
 
     analysis = MetricAnalysis(metric_spec=metric)
 
-    # Case A: Both target and baseline defined - calculate required n
-    if metric.metric_target is not None and metric.metric_baseline is not None:
-        if metric.metric_type == MetricType.NUMERIC:
-            effect_size = (
-                metric.metric_target - metric.metric_baseline
-            ) / metric.metric_stddev
-        elif metric.metric_type == MetricType.BINARY:
-            effect_size = sms.proportion_effectsize(
-                metric.metric_baseline, metric.metric_target
-            )
-        else:
-            raise ValueError("metric_type must be NUMERIC or BINARY.")
-
-        if effect_size == 0.0:
-            raise ValueError(
-                "Cannot detect an effect-size of 0. Try changing your effect-size."
-            )
-
-        power_analysis = sms.TTestIndPower()
-        target_n = (
-            np.ceil(
-                power_analysis.solve_power(
-                    effect_size=effect_size,
-                    alpha=alpha,
-                    power=power,
-                    ratio=1,
-                )
-            )
-            * n_arms
-        )
-
-        analysis.target_n = int(target_n)
-        analysis.sufficient_n = bool(target_n <= metric.available_n)
-
-        if analysis.sufficient_n:
-            analysis.msg = MetricAnalysisMessage(
-                type=MetricAnalysisMessageType.SUFFICIENT,
-                msg=(
-                    f"There are {metric.available_n} units available to run your experiment and"
-                    f" {target_n} units are needed to meet your experimental design specs."
-                    f" There are enough units available, you only need {target_n}"
-                    f" of the {metric.available_n} units to meet your experimental design specs."
-                ),
-                values={},
-            )
-        else:
-            # Calculate needed target if insufficient sample
-            if metric.metric_type == MetricType.NUMERIC:
-                power_analysis = sms.TTestIndPower()
-                needed_delta = (
-                    power_analysis.solve_power(
-                        nobs1=metric.available_n // n_arms,
-                        effect_size=None,
-                        alpha=alpha,
-                        power=power,
-                    )
-                    * metric.metric_stddev
-                )
-                target_possible = needed_delta + metric.metric_baseline
-            else:  # BINARY
-                power_analysis = sms.NormalIndPower()
-                # Calculate minimum detectable effect size given sample size
-                min_effect_size = power_analysis.solve_power(
-                    nobs1=metric.available_n // n_arms,
-                    alpha=alpha,
-                    power=power,
-                    ratio=1,
-                )
-
-                # Convert Cohen's h back to proportion
-                # h = 2 * arcsin(sqrt(p1)) - 2 * arcsin(sqrt(p2))
-                # where p1 is baseline and p2 is target
-                p1 = metric.metric_baseline
-                arcsin_p2 = 2 * np.arcsin(np.sqrt(p1)) - min_effect_size
-                target_possible = np.sin(arcsin_p2 / 2) ** 2
-
-            analysis.target_possible = target_possible
-            analysis.pct_change_possible = (
-                target_possible / metric.metric_baseline - 1.0
-            )
-            # TODO(roboton): Consider adding another message for localization:
-            # # note: not an f-string
-            # source_msg="There are {available_n} units available... {target_n} units are needed... {target_n} ...",
-            # values = {"available_n": 123, "target_n": 456, ...}
-            # This allows the frontend to provide structured/enriched UX experiences based on the message type (e.g. SUFFICIENT) and the variables, and also allows translation to a local language.
-            analysis.msg = MetricAnalysisMessage(
-                type=MetricAnalysisMessageType.INSUFFICIENT,
-                msg=(
-                    f"There are {metric.available_n} units available to run your experiment and {target_n} units are needed to meet your experimental design specs."
-                    f" There are not enough units available, you need {target_n - metric.available_n} more units"
-                    f" to meet your experimental design specifications. In order to meet your specification with the available"
-                    f" {metric.available_n} units and a baseline metric value of {metric.metric_baseline:.4f}, your metric"
-                    f" target value needs to be {target_possible:.4f} or further from the baseline; the current target is {metric.metric_target:.4f}."
-                ),
-                values={},
-            )
-    # TODO? To support more general power calculation functionality, also implement Case B:
+    # Validate we have usable input to do the analysis.
+    # TODO? To support more general power calculation functionality by implementing Case B:
     # target is not defined (need to also relax request constraints), but baseline is
     # => calculate effect size. (Case A does this only when there's insufficient available_n.)
-    else:
+    if metric.metric_target is None or metric.metric_baseline is None:
+        msg_body = (
+            "Could not calculate metric baseline with given specification. "
+            "Provide a metric baseline or adjust filters."
+        )
         analysis.msg = MetricAnalysisMessage(
             type=MetricAnalysisMessageType.NO_BASELINE,
-            msg="Could not calculate metric baseline with given specification. Provide metric baseline or adjust filters.",
+            msg=msg_body,
+            source_msg=msg_body,
+        )
+        return analysis
+
+    # Case A: Both target and baseline defined - calculate required n
+    if metric.metric_type == MetricType.NUMERIC:
+        effect_size = (
+            metric.metric_target - metric.metric_baseline
+        ) / metric.metric_stddev
+    elif metric.metric_type == MetricType.BINARY:
+        effect_size = sms.proportion_effectsize(
+            metric.metric_baseline, metric.metric_target
+        )
+    else:
+        raise ValueError("metric_type must be NUMERIC or BINARY.")
+
+    if effect_size == 0.0:
+        raise ValueError(
+            "Cannot detect an effect-size of 0. Try changing your effect-size."
         )
 
+    power_analysis = sms.TTestIndPower()
+    target_n = (
+        np.ceil(
+            power_analysis.solve_power(
+                effect_size=effect_size,
+                alpha=alpha,
+                power=power,
+                ratio=1,
+            )
+        )
+        * n_arms
+    )
+
+    analysis.target_n = int(target_n)
+    analysis.sufficient_n = bool(target_n <= metric.available_n)
+
+    # Construct potential components of the MetricAnalysisMessage
+    has_nulls = metric.available_nonnull_n != metric.available_n
+    values_map = {
+        "available_n": metric.available_n,
+        "target_n": analysis.target_n,
+        "available_nonnull_n": metric.available_nonnull_n,
+    }
+
+    msg_base_stats = (
+        "There are {available_n} units available to run your experiment and a "
+        "minimum of {target_n} units are needed to meet your experimental design specs."
+    )
+    msg_null_warning = (
+        (
+            "WARNING: There are {available_nonnull_n} units with a non-null value out of the "
+            "{available_n} available.  The power calculation was done with only units with a "
+            "value present, but random assignment is performed over all available units "
+            "meeting your filters, including those with a missing value. If you do not want "
+            "that, add a filter on this metric to exclude nulls."
+        )
+        if has_nulls
+        else ""
+    )
+
+    if analysis.sufficient_n:
+        msg_type = MetricAnalysisMessageType.SUFFICIENT
+        msg_body = "There are enough units available."
+    else:
+        msg_type = MetricAnalysisMessageType.INSUFFICIENT
+        # Calculate needed target if insufficient sample
+        if metric.metric_type == MetricType.NUMERIC:
+            power_analysis = sms.TTestIndPower()
+            needed_delta = (
+                power_analysis.solve_power(
+                    nobs1=metric.available_n // n_arms,
+                    effect_size=None,
+                    alpha=alpha,
+                    power=power,
+                )
+                * metric.metric_stddev
+            )
+            target_possible = needed_delta + metric.metric_baseline
+        else:  # BINARY
+            power_analysis = sms.NormalIndPower()
+            # Calculate minimum detectable effect size given sample size
+            min_effect_size = power_analysis.solve_power(
+                nobs1=metric.available_n // n_arms,
+                alpha=alpha,
+                power=power,
+                ratio=1,
+            )
+
+            # Convert Cohen's h back to proportion
+            # h = 2 * arcsin(sqrt(p1)) - 2 * arcsin(sqrt(p2))
+            # where p1 is baseline and p2 is target
+            p1 = metric.metric_baseline
+            arcsin_p2 = 2 * np.arcsin(np.sqrt(p1)) - min_effect_size
+            target_possible = np.sin(arcsin_p2 / 2) ** 2
+
+        analysis.target_possible = target_possible
+        analysis.pct_change_possible = target_possible / metric.metric_baseline - 1.0
+
+        values_map["additional_n_needed"] = target_n - metric.available_n
+        values_map["metric_baseline"] = round(metric.metric_baseline, 4)
+        values_map["target_possible"] = round(target_possible, 4)
+        values_map["metric_target"] = round(metric.metric_target, 4)
+        msg_body = (
+            "There are not enough units available. "
+            "You need {additional_n_needed} more units to meet your experimental design "
+            "specifications. In order to meet your specification with the available "
+            "{available_n} units and a metric baseline value of {metric_baseline}, your metric "
+            "target value needs to be {target_possible} or further from the baseline. Your "
+            "current desired target is {metric_target}."
+        )
+
+    # Construct our response from the parts above
+    source_msg = " ".join([msg_base_stats, msg_body, msg_null_warning])
+    analysis.msg = MetricAnalysisMessage(
+        type=msg_type,
+        msg=source_msg.format_map(values_map),
+        source_msg=source_msg,
+        values=values_map,
+    )
     return analysis
 
 
