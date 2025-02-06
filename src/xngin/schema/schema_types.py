@@ -1,11 +1,15 @@
 from collections import Counter
 
-from pydantic import BaseModel, field_validator, model_validator
+from pydantic import BaseModel, field_validator, model_validator, ConfigDict
 
 from xngin.apiserver.api_types import DataType
 
 
-class FieldDescriptor(BaseModel):
+class SchemaBaseModel(BaseModel):
+    model_config = ConfigDict(strict=True, extra="forbid")
+
+
+class FieldDescriptor(SchemaBaseModel):
     field_name: str
     data_type: DataType
     description: str
@@ -14,11 +18,6 @@ class FieldDescriptor(BaseModel):
     is_filter: bool
     is_metric: bool
     extra: dict[str, str] | None = None
-
-    model_config = {
-        "strict": True,
-        "extra": "forbid",
-    }
 
     @field_validator("description", mode="before")
     @classmethod
@@ -47,7 +46,7 @@ class FieldDescriptor(BaseModel):
         raise ValueError(f"Value '{value}' cannot be converted to a boolean.")
 
 
-class ParticipantSchema(BaseModel):
+class ParticipantSchema(SchemaBaseModel):
     """Represents a single worksheet describing metadata about a type of Participant."""
 
     table_name: str
