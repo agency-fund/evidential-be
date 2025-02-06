@@ -1,4 +1,5 @@
 import csv
+from collections.abc import Generator
 
 import sqlalchemy
 from pydantic import BaseModel, ValidationError
@@ -45,7 +46,7 @@ class InvalidSheetError(Exception):
         return "\n".join(err.model_dump_json() for err in self.errors)
 
 
-def parse_csv(filename: str) -> list[dict[str, int | float | str]]:
+def parse_csv(filename: str) -> Generator[dict[str, int | float | str]]:
     with open(filename) as csvfile:
         reader = csv.DictReader(csvfile)
 
