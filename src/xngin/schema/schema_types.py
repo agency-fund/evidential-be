@@ -32,8 +32,8 @@ class FieldDescriptor(SchemaBaseModel):
     ]
     extra: Annotated[
         dict[str, str] | None,
-        Field(default=None, description="Additional field metadata"),
-    ]
+        Field(description="Additional field metadata"),
+    ] = None
 
     @field_validator("description", mode="before")
     @classmethod
