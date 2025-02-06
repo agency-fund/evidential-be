@@ -11,7 +11,7 @@ from xngin.apiserver.api_types import DataType
 from xngin.apiserver.models.tables import CacheTable
 from xngin.apiserver.gsheet_cache import GSheetCache
 from xngin.apiserver.settings import SheetRef
-from xngin.schema.sheet_types import FieldDescriptor, ParticipantSchema
+from xngin.schema.schema_types import FieldDescriptor, ParticipantSchema
 
 
 @pytest.fixture

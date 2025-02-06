@@ -6,7 +6,7 @@ from sqlalchemy.exc import IntegrityError
 
 from xngin.apiserver.models.tables import CacheTable
 from xngin.apiserver.settings import SheetRef
-from xngin.schema.sheet_types import ParticipantSchema
+from xngin.schema.schema_types import ParticipantSchema
 
 
 class GSheetCache:

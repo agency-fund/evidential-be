@@ -42,7 +42,7 @@ from xngin.sheets.config_sheet import (
     fetch_and_parse_sheet,
     create_configworksheet_from_table,
 )
-from xngin.schema.sheet_types import FieldDescriptor, ParticipantSchema
+from xngin.schema.schema_types import FieldDescriptor, ParticipantSchema
 import sqlalchemy.dialects.postgresql.psycopg2 as psycopg2sa
 
 REDSHIFT_HOSTNAME_SUFFIX = "redshift.amazonaws.com"

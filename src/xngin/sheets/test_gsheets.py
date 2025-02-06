@@ -8,7 +8,7 @@ from xngin.apiserver.api_types import DataType
 from xngin.sheets.config_sheet import (
     create_configworksheet_from_table,
 )
-from xngin.schema.sheet_types import FieldDescriptor, ParticipantSchema
+from xngin.schema.schema_types import FieldDescriptor, ParticipantSchema
 from xngin.sheets.gsheets import google_app_credentials_file, read_sheet_df
 
 
