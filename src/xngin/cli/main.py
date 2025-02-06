@@ -42,7 +42,7 @@ from xngin.sheets.config_sheet import (
     fetch_and_parse_sheet,
     create_configworksheet_from_table,
 )
-from xngin.sheets.sheet_types import FieldDescriptor, ConfigWorksheet
+from xngin.sheets.sheet_types import FieldDescriptor, ParticipantSchema
 import sqlalchemy.dialects.postgresql.psycopg2 as psycopg2sa
 
 REDSHIFT_HOSTNAME_SUFFIX = "redshift.amazonaws.com"
@@ -442,7 +442,7 @@ def export_json_schemas(output: Path = Path(".schemas")):
     """Generates JSON schemas for Xngin settings files."""
     if not output.exists():
         output.mkdir()
-    for model in (XnginSettings, ConfigWorksheet, Datasource):
+    for model in (XnginSettings, ParticipantSchema, Datasource):
         filename = output / (model.__name__ + ".schema.json")
         with open(filename, "w") as outf:
             outf.write(json.dumps(model.model_json_schema(), indent=2, sort_keys=True))

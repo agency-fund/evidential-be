@@ -47,7 +47,7 @@ class FieldDescriptor(BaseModel):
         raise ValueError(f"Value '{value}' cannot be converted to a boolean.")
 
 
-class ConfigWorksheet(BaseModel):
+class ParticipantSchema(BaseModel):
     """Represents a single worksheet describing metadata about a type of Participant."""
 
     table_name: str
@@ -63,7 +63,7 @@ class ConfigWorksheet(BaseModel):
         return next((i.field_name for i in self.fields if i.is_unique_id), None)
 
     @model_validator(mode="after")
-    def check_one_unique_id(self) -> "ConfigWorksheet":
+    def check_one_unique_id(self) -> "ParticipantSchema":
         uniques = [r.field_name for r in self.fields if r.is_unique_id]
         if len(uniques) == 0:
             raise ValueError("There are no columns marked as unique ID.")
@@ -75,7 +75,7 @@ class ConfigWorksheet(BaseModel):
         return self
 
     @model_validator(mode="after")
-    def check_unique_fields(self) -> "ConfigWorksheet":
+    def check_unique_fields(self) -> "ParticipantSchema":
         counted = Counter([".".join(row.field_name) for row in self.fields])
         duplicates = [item for item, count in counted.items() if count > 1]
         if duplicates:
@@ -85,7 +85,7 @@ class ConfigWorksheet(BaseModel):
         return self
 
     @model_validator(mode="after")
-    def check_non_empty_rows(self) -> "ConfigWorksheet":
+    def check_non_empty_rows(self) -> "ParticipantSchema":
         if len(self.fields) == 0:
             raise ValueError(
                 f"{self.__class__} must contain at least one FieldDescriptor."

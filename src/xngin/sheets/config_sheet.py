@@ -6,7 +6,7 @@ from pydantic import BaseModel, ValidationError
 from xngin.apiserver.settings import SheetRef
 from xngin.sheets.gsheets import read_sheet_from_gsheet
 from xngin.apiserver.api_types import DataType
-from xngin.sheets.sheet_types import FieldDescriptor, ConfigWorksheet
+from xngin.sheets.sheet_types import FieldDescriptor, ParticipantSchema
 
 GOOGLE_SHEET_PREFIX = "https://docs.google.com/spreadsheets/"
 
@@ -105,7 +105,7 @@ def fetch_and_parse_sheet(ref: SheetRef):
                 InvalidSheetDetails.from_pydantic_error(row=row_index + 1, pve=pve)
             )
     try:
-        parsed = ConfigWorksheet(table_name=ref.worksheet, fields=collector)
+        parsed = ParticipantSchema(table_name=ref.worksheet, fields=collector)
         # Parsing succeeded, but also raise if there were /any/ errors from above.
         if errors:
             raise InvalidSheetError(errors)
@@ -152,4 +152,4 @@ def create_configworksheet_from_table(
             r.field_name,
         ),
     )
-    return ConfigWorksheet(table_name=table.name, fields=rows)
+    return ParticipantSchema(table_name=table.name, fields=rows)
