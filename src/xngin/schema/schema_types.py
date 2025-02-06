@@ -1,6 +1,7 @@
 from collections import Counter
+from typing import Annotated
 
-from pydantic import BaseModel, field_validator, model_validator, ConfigDict
+from pydantic import BaseModel, Field, field_validator, model_validator, ConfigDict
 
 from xngin.apiserver.api_types import DataType
 
@@ -10,14 +11,29 @@ class SchemaBaseModel(BaseModel):
 
 
 class FieldDescriptor(SchemaBaseModel):
-    field_name: str
-    data_type: DataType
-    description: str
-    is_unique_id: bool
-    is_strata: bool
-    is_filter: bool
-    is_metric: bool
-    extra: dict[str, str] | None = None
+    field_name: Annotated[
+        str, Field(description="Name of the field in the data source")
+    ]
+    data_type: Annotated[DataType, Field(description="The data type of this field")]
+    description: Annotated[
+        str, Field(description="Human-readable description of the field")
+    ]
+    is_unique_id: Annotated[
+        bool, Field(description="Whether this field uniquely identifies records")
+    ]
+    is_strata: Annotated[
+        bool, Field(description="Whether this field should be used for stratification")
+    ]
+    is_filter: Annotated[
+        bool, Field(description="Whether this field can be used as a filter")
+    ]
+    is_metric: Annotated[
+        bool, Field(description="Whether this field can be used as a metric")
+    ]
+    extra: Annotated[
+        dict[str, str] | None,
+        Field(default=None, description="Additional field metadata"),
+    ]
 
     @field_validator("description", mode="before")
     @classmethod
@@ -49,8 +65,13 @@ class FieldDescriptor(SchemaBaseModel):
 class ParticipantSchema(SchemaBaseModel):
     """Represents a single worksheet describing metadata about a type of Participant."""
 
-    table_name: str
-    fields: list[FieldDescriptor]
+    table_name: Annotated[
+        str, Field(description="Name of the table in the data warehouse")
+    ]
+    fields: Annotated[
+        list[FieldDescriptor],
+        Field(description="List of fields available in this table"),
+    ]
 
     model_config = {
         "strict": True,
