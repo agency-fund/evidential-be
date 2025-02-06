@@ -40,10 +40,9 @@ from xngin.apiserver.testing import testing_dwh
 from xngin.sheets.config_sheet import (
     InvalidSheetError,
     fetch_and_parse_sheet,
-    FieldDescriptor,
     create_configworksheet_from_table,
-    ConfigWorksheet,
 )
+from xngin.sheets.sheet_types import FieldDescriptor, ConfigWorksheet
 import sqlalchemy.dialects.postgresql.psycopg2 as psycopg2sa
 
 REDSHIFT_HOSTNAME_SUFFIX = "redshift.amazonaws.com"

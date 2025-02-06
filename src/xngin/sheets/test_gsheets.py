@@ -6,10 +6,9 @@ import pytest
 from sqlalchemy import BigInteger, Column, Integer, MetaData, String, Table
 from xngin.apiserver.api_types import DataType
 from xngin.sheets.config_sheet import (
-    FieldDescriptor,
-    ConfigWorksheet,
     create_configworksheet_from_table,
 )
+from xngin.sheets.sheet_types import FieldDescriptor, ConfigWorksheet
 from xngin.sheets.gsheets import google_app_credentials_file, read_sheet_df
 
 
