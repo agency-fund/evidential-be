@@ -14,7 +14,6 @@ from pydantic import (
     PositiveInt,
     SecretStr,
     Field,
-    field_validator,
     ConfigDict,
     model_validator,
 )
@@ -174,20 +173,14 @@ class ParticipantsMixin(ConfigBaseModel):
         return self
 
 
+type HttpMethodTypes = Literal["GET", "POST", "PUT", "PATCH", "DELETE"]
+
+
 class WebhookUrl(ConfigBaseModel):
     """Represents a url and HTTP method to use with it."""
 
-    method: Literal["get", "post", "put", "patch"]
+    method: HttpMethodTypes
     url: str
-
-    # headers: dict[str, str]
-
-    @field_validator("method", mode="before")
-    @classmethod
-    def to_lower(cls, value):
-        """Force the http 'method' to be lowercase before validation."""
-
-        return str(value).lower().strip()
 
 
 class WebhookActions(ConfigBaseModel):

@@ -41,6 +41,7 @@ from xngin.apiserver.settings import (
     get_settings_for_server,
     infer_table,
     DatasourceConfig,
+    HttpMethodTypes,
 )
 from xngin.apiserver.utils import substitute_url
 from xngin.apiserver.webhook_types import (
@@ -484,7 +485,7 @@ async def make_webhook_request(
 async def make_webhook_request_base(
     http_client: httpx.AsyncClient,
     config: WebhookConfig,
-    method: Literal["get", "post", "put", "patch", "delete"],
+    method: HttpMethodTypes,
     url: str,
     data: BaseModel = None,
 ) -> tuple[int, WebhookResponse]:

@@ -163,7 +163,7 @@ def test_commit(mocker):
     # Assert that httpx.AsyncClient.post was called with the correct arguments
     mock_request.assert_called_once()
     _, kwargs = mock_request.call_args
-    assert kwargs["method"] == "post"
+    assert kwargs["method"] == "POST"
     assert (
         kwargs["url"]
         == "http://localhost:4001/dev/api/v1/experiment-commit/save-experiment-commit"
@@ -212,7 +212,7 @@ def test_commit_when_webhook_has_non_200_status(mocker):
     assert response.status_code == 502, response.text
     mock_request.assert_called_once()
     _, kwargs = mock_request.call_args
-    assert kwargs["method"] == "post"
+    assert kwargs["method"] == "POST"
     # And also verify that we are still passing back our WebhookResponse in the body, including the
     # upstream service's code.
     upstream_response = WebhookResponse.model_validate_json(response.text)
@@ -249,7 +249,7 @@ def test_update_experiment_timestamps(mocker):
     # Now check that the right action was used given our update_type
     mock_request.assert_called_once()
     _, kwargs = mock_request.call_args
-    assert kwargs["method"] == "put"
+    assert kwargs["method"] == "PUT"
     assert (
         kwargs["url"]
         == "http://localhost:4001/dev/api/v1/experiment-commit/update-timestamps-for-experiment"
@@ -297,7 +297,7 @@ def test_update_experiment_description(mocker):
     mock_request.assert_called_once()
     # Now check that the right action was used given our update_type
     _, kwargs = mock_request.call_args
-    assert kwargs["method"] == "put"
+    assert kwargs["method"] == "PUT"
     assert (
         kwargs["url"]
         == "http://localhost:4001/dev/api/v1/experiment-commit/update-experiment-commit"
@@ -337,7 +337,7 @@ def test_assignment_file(mocker):
     mock_request.assert_called_once()
     # Now check that the right action was used given our update_type
     _, kwargs = mock_request.call_args
-    assert kwargs["method"] == "get"
+    assert kwargs["method"] == "GET"
     assert (
         kwargs["url"]
         == "http://localhost:4001/dev/api/v1/experiment-commit/get-file-name-by-experiment-id/foo1"
