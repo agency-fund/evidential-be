@@ -6,7 +6,7 @@ from pydantic import BaseModel, ValidationError
 from xngin.apiserver.settings import SheetRef
 from xngin.sheets.gsheets import read_sheet_from_gsheet
 from xngin.apiserver.api_types import DataType
-from xngin.sheets.sheet_types import FieldDescriptor, ParticipantSchema
+from xngin.schema.sheet_types import FieldDescriptor, ParticipantSchema
 
 GOOGLE_SHEET_PREFIX = "https://docs.google.com/spreadsheets/"
 
