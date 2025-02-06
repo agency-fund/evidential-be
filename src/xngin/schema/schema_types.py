@@ -31,8 +31,7 @@ class FieldDescriptor(SchemaBaseModel):
         bool, Field(description="Whether this field can be used as a metric")
     ]
     extra: Annotated[
-        dict[str, str] | None,
-        Field(description="Additional field metadata"),
+        dict[str, str] | None, Field(description="Additional field metadata")
     ] = None
 
     @field_validator("description", mode="before")
@@ -72,11 +71,6 @@ class ParticipantSchema(SchemaBaseModel):
         list[FieldDescriptor],
         Field(description="List of fields available in this table"),
     ]
-
-    model_config = {
-        "strict": True,
-        "extra": "forbid",
-    }
 
     def get_unique_id_field(self):
         """Gets the name of the unique ID field."""
