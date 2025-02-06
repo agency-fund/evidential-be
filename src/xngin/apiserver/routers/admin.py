@@ -23,8 +23,7 @@ from xngin.apiserver.models.tables import (
     Datasource,
 )
 from xngin.apiserver.routers.oidc_dependencies import require_oidc_token, TokenInfo
-from xngin.apiserver.settings import RemoteDatabaseConfig
-
+from xngin.apiserver.settings import RemoteDatabaseConfig, SqliteLocalConfig
 
 logger = logging.getLogger(__name__)
 
@@ -87,7 +86,9 @@ class ListDatasourcesResponse(AdminApiBaseModel):
 class CreateDatasourceRequest(AdminApiBaseModel):
     organization_id: Annotated[str, Field(...)]
     name: Annotated[str, Field(...)]
-    config: Annotated[RemoteDatabaseConfig, Field(...)]
+    config: Annotated[
+        RemoteDatabaseConfig | SqliteLocalConfig, Field(discriminator="type")
+    ]
 
 
 class CreateDatasourceResponse(AdminApiBaseModel):
@@ -259,6 +260,9 @@ async def datasources_create(
         raise HTTPException(
             status_code=400, detail="Configuring webhooks is disallowed."
         )
+
+    if body.config.type != "remote":
+        raise HTTPException(400, detail='config.type must be "remote"')
 
     if (
         body.config.dwh.driver == "bigquery"

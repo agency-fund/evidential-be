@@ -30,7 +30,7 @@ class ApiKeyTable(Base):
     datasource_id: Mapped[str] = mapped_column(
         ForeignKey("datasources.id", ondelete="CASCADE")
     )
-    datasource: Mapped["Datasource"] = relationship()
+    datasource: Mapped["Datasource"] = relationship(back_populates="api_keys")
 
 
 class Organization(Base):
@@ -77,8 +77,8 @@ class UserOrganization(Base):
         ForeignKey("organizations.id", ondelete="CASCADE"), primary_key=True
     )
 
-    organization: Mapped["Organization"] = relationship()
-    user: Mapped["User"] = relationship()
+    organization: Mapped["Organization"] = relationship(overlaps="users")
+    user: Mapped["User"] = relationship(overlaps="organizations")
 
 
 class Datasource(Base):
