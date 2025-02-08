@@ -15,6 +15,7 @@ from xngin.apiserver.settings import (
     Datasource,
     DatasourceConfig,
 )
+from xngin.apiserver.models.tables import Datasource as DatasourceTable
 
 
 def settings_dependency():
@@ -48,7 +49,10 @@ def datasource_dependency(
     """Returns the configuration for the current request, as determined by the Datasource-ID HTTP request header."""
     if not datasource_id:
         return None
+    # Datasource configs can be in the static JSON settings or in the database.
     datasource = settings.get_datasource(datasource_id)
+    if datasource is None and (from_db := xngin_db.get(DatasourceTable, datasource_id)):
+        datasource = from_db.get_config()
     if datasource and datasource.require_api_key:
         require_valid_api_key(xngin_db, api_key, datasource_id)
     return datasource

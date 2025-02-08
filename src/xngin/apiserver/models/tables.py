@@ -1,6 +1,7 @@
 import secrets
 from sqlalchemy import ForeignKey, String, JSON
 from sqlalchemy.orm import DeclarativeBase, mapped_column, Mapped, relationship
+from xngin.apiserver.settings import Datasource as DatasourceModel
 
 ALPHABET = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz"
 
@@ -82,7 +83,10 @@ class UserOrganization(Base):
 
 
 class Datasource(Base):
-    """Represents a data source in the system."""
+    """Represents a data source in the system.
+
+    This contains a serialized settings.Datasource value.
+    """
 
     __tablename__ = "datasources"
 
@@ -91,10 +95,16 @@ class Datasource(Base):
     organization_id: Mapped[str] = mapped_column(
         ForeignKey("organizations.id", ondelete="CASCADE")
     )
-    config: Mapped[dict] = mapped_column(JSON)
+    config: Mapped[dict] = mapped_column(
+        JSON, comment="JSON serialized form of settings.Datasource"
+    )
 
     # Relationships
     organization: Mapped["Organization"] = relationship(back_populates="datasources")
     api_keys: Mapped[list["ApiKey"]] = relationship(
         back_populates="datasource", cascade="all, delete-orphan"
     )
+
+    def get_config(self):
+        """Parses the config field and returns the Datasource settings."""
+        return DatasourceModel.model_validate(self.config)
