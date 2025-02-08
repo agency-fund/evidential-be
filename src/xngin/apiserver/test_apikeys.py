@@ -26,7 +26,7 @@ def gen_session():
 
 
 @dataclasses.dataclass
-class TestSession:
+class SessionData:
     session: Session
     org: Organization
     ds: Datasource
@@ -50,7 +50,7 @@ def gen_datasource(gen_session):
     kt = ApiKey(id=key_id, key=hash_key(key), datasource_id=ds.id)
     gen_session.add(kt)
     gen_session.commit()
-    return TestSession(session=gen_session, org=org, ds=ds, key=key)
+    return SessionData(session=gen_session, org=org, ds=ds, key=key)
 
 
 def test_secured_requires_apikey():
