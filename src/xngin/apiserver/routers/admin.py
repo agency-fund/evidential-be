@@ -17,7 +17,7 @@ from fastapi import status
 from xngin.apiserver.apikeys import make_key, hash_key
 from xngin.apiserver.dependencies import xngin_db_session
 from xngin.apiserver.models.tables import (
-    ApiKeyTable,
+    ApiKey,
     User,
     Organization,
     Datasource,
@@ -329,9 +329,9 @@ async def apikeys_list(
     """
     # Get API keys that have access to datasources owned by organizations the user belongs to
     stmt = (
-        select(ApiKeyTable)
+        select(ApiKey)
         .distinct()
-        .join(ApiKeyTable.datasource)
+        .join(ApiKey.datasource)
         .join(Organization)
         .join(Organization.users)
         .where(User.id == user.id)
@@ -381,7 +381,7 @@ async def apikeys_create(
     # Create the API key
     label, key = make_key()
     key_hash = hash_key(key)
-    api_key = ApiKeyTable(id=label, key=key_hash, datasource_id=body.datasource_id)
+    api_key = ApiKey(id=label, key=key_hash, datasource_id=body.datasource_id)
     session.add(api_key)
     session.commit()
     return CreateApiKeyResponse(id=label, datasource_id=body.datasource_id, key=key)
@@ -395,12 +395,12 @@ async def apikeys_delete(
 ):
     """Deletes the specified API key."""
     stmt = (
-        delete(ApiKeyTable)
-        .where(ApiKeyTable.id == api_key_id)
+        delete(ApiKey)
+        .where(ApiKey.id == api_key_id)
         .where(
-            ApiKeyTable.id.in_(
-                select(ApiKeyTable.id)
-                .join(ApiKeyTable.datasource)
+            ApiKey.id.in_(
+                select(ApiKey.id)
+                .join(ApiKey.datasource)
                 .join(Organization)
                 .join(Organization.users)
                 .where(User.id == user.id)

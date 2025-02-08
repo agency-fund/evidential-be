@@ -7,7 +7,7 @@ from sqlalchemy.orm import Session
 
 from xngin.apiserver import conftest, constants
 from xngin.apiserver.apikeys import make_key, hash_key
-from xngin.apiserver.models.tables import ApiKeyTable, Datasource, Organization
+from xngin.apiserver.models.tables import ApiKey, Datasource, Organization
 from xngin.apiserver.dependencies import xngin_db_session
 from xngin.apiserver.main import app
 from xngin.apiserver.settings import SqliteLocalConfig
@@ -47,7 +47,7 @@ def gen_datasource(gen_session):
         organization_id=org.id,
     )
     key_id, key = make_key()
-    kt = ApiKeyTable(id=key_id, key=hash_key(key), datasource_id=ds.id)
+    kt = ApiKey(id=key_id, key=hash_key(key), datasource_id=ds.id)
     gen_session.add(kt)
     gen_session.commit()
     return TestSession(session=gen_session, org=org, ds=ds, key=key)

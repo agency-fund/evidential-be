@@ -20,7 +20,7 @@ class CacheTable(Base):
     value: Mapped[str]
 
 
-class ApiKeyTable(Base):
+class ApiKey(Base):
     """Stores API keys. Each API key grants access to a single datasource."""
 
     __tablename__ = "apikeys"
@@ -95,6 +95,6 @@ class Datasource(Base):
 
     # Relationships
     organization: Mapped["Organization"] = relationship(back_populates="datasources")
-    api_keys: Mapped[list["ApiKeyTable"]] = relationship(
+    api_keys: Mapped[list["ApiKey"]] = relationship(
         back_populates="datasource", cascade="all, delete-orphan"
     )
