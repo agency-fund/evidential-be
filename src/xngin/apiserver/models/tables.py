@@ -78,8 +78,8 @@ class UserOrganization(Base):
         ForeignKey("organizations.id", ondelete="CASCADE"), primary_key=True
     )
 
-    organization: Mapped["Organization"] = relationship(overlaps="users")
-    user: Mapped["User"] = relationship(overlaps="organizations")
+    organization: Mapped["Organization"] = relationship(viewonly=True)
+    user: Mapped["User"] = relationship(viewonly=True)
 
 
 class Datasource(Base):
