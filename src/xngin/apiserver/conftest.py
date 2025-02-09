@@ -109,9 +109,7 @@ def get_test_sessionmaker():
         echo=os.environ.get("ECHO_SQL", "").lower() in ("true", "1"),
     )
 
-    testing_session_local = sessionmaker(
-        autocommit=False, autoflush=False, bind=db_engine
-    )
+    testing_session_local = sessionmaker(autoflush=False, bind=db_engine)
     # Hack: Cause any direct access to production code from code to fail during tests.
     database.SessionLocal = None
     # Create all the ORM tables.
