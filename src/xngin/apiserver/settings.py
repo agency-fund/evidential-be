@@ -404,6 +404,13 @@ class SqliteLocalConfig(ParticipantsMixin, ConfigBaseModel):
     type: Literal["sqlite_local"]
     sqlite_filename: str
 
+    @field_validator("sqlite_filename")
+    @classmethod
+    def validate_sqlite_filename(cls, value):
+        if value.startswith("sqlite://"):
+            raise ValueError("sqlite_filename should not start with sqlite://")
+        return value
+
     def supports_reflection(self):
         return True
 
