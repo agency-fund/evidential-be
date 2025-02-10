@@ -5,7 +5,7 @@ import string
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from xngin.apiserver.models.tables import ApiKey
+from xngin.apiserver.models.tables import ApiKey, Datasource
 import logging
 
 logger = logging.getLogger(__name__)
@@ -61,7 +61,8 @@ def require_valid_api_key(session: Session, api_key: str | None, config_id: str)
     stmt = (
         select(True)
         .select_from(ApiKey)
-        .join(ApiKey.datasource_id, ApiKey.datasource_id == config_id)
+        .join(Datasource)
+        .where(ApiKey.datasource_id == config_id)
         .where(ApiKey.key == key_hash)
     )
     result = session.execute(stmt)
