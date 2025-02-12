@@ -21,6 +21,7 @@ from xngin.apiserver.models.tables import (
     User,
     Organization,
     Datasource,
+    UserOrganization,
 )
 from xngin.apiserver.routers.oidc_dependencies import require_oidc_token, TokenInfo
 from xngin.apiserver.settings import RemoteDatabaseConfig, SqliteLocalConfig
@@ -118,6 +119,7 @@ class CreateApiKeyResponse(AdminApiBaseModel):
 
 class CreateUserRequest(AdminApiBaseModel):
     email: Annotated[str, Field(...)]
+    organization_id: Annotated[str, Field(...)]
 
 
 async def get_user_from_token(
@@ -176,6 +178,7 @@ async def organizations_list(
 @router.post("/organizations")
 async def organizations_create(
     session: Annotated[Session, Depends(xngin_db_session)],
+    token_info: Annotated[TokenInfo, Depends(require_oidc_token)],
     user: Annotated[User, Depends(get_user_from_token)],
     body: Annotated[CreateOrganizationRequest, Body(...)],
 ) -> CreateOrganizationResponse:
@@ -186,10 +189,10 @@ async def organizations_create(
     Raises:
         HTTPException: If the caller's email is not from agency.fund domain.
     """
-    if not user.email.endswith("@agency.fund"):
+    if not token_info.is_privileged():
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="Only agency.fund users can create organizations",
+            detail="Only privileged users can create organizations",
         )
 
     organization = Organization(name=body.name)
@@ -241,16 +244,19 @@ async def datasources_create(
     # Verify organization exists
     org = session.get(Organization, body.organization_id)
     if not org:
-        raise HTTPException(status_code=404, detail="Organization not found")
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Organization not found"
+        )
 
     # Verify user is a member of this organization
     stmt = (
-        select(User)
-        .join(User.organizations)
-        .where(User.id == user.id, Organization.id == body.organization_id)
+        select(True)
+        .select_from(UserOrganization)
+        .where(UserOrganization.user_id == user.id)
+        .where(UserOrganization.organization_id == org.id)
     )
-    result = session.execute(stmt)
-    if not result.first():
+    allowed = session.execute(stmt).scalar_one_or_none()
+    if allowed is None:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="You are not a member of this organization",
@@ -430,6 +436,16 @@ async def user_invite_create(
 
     new_user = User(email=body.email)
     session.add(new_user)
+
+    if body.organization_id:
+        org = session.get(Organization, body.organization_id)
+        if not org:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND, detail="Organization not found"
+            )
+        org.users.append(new_user)
+        session.add(org)
+
     try:
         session.commit()
     except IntegrityError as ierr:
