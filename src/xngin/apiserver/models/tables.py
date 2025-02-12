@@ -1,8 +1,15 @@
 import json
 import secrets
+import datetime
+import enum
+from typing import ClassVar
+import uuid
 
 from pydantic import TypeAdapter
-from sqlalchemy import ForeignKey, String, JSON
+import sqlalchemy
+from sqlalchemy import ForeignKey, String
+from sqlalchemy.types import TypeEngine
+from sqlalchemy.dialects import postgresql
 from sqlalchemy.orm import DeclarativeBase, mapped_column, Mapped, relationship
 
 from xngin.apiserver.settings import DatasourceConfig
@@ -18,7 +25,19 @@ def unique_id_factory(prefix):
 
 
 class Base(DeclarativeBase):
-    pass
+    # See https://docs.sqlalchemy.org/en/20/orm/declarative_tables.html#customizing-the-type-map
+    type_annotation_map: ClassVar[dict[type, TypeEngine]] = {
+        # For pg specifically, use the binary form
+        sqlalchemy.JSON: sqlalchemy.JSON().with_variant(postgresql.JSONB, "postgresql"),
+        datetime.datetime: sqlalchemy.TIMESTAMP(timezone=True),
+        # uuid.UUID: sqlalchemy.Uuid().with_variant(sqlalchemy.Uuid(as_uuid=False), "sqlite"),
+    }
+
+    def to_dict(self):
+        """Quick and dirty dump to dict for debugging."""
+        return {
+            column.name: getattr(self, column.name) for column in self.__table__.columns
+        }
 
 
 class CacheTable(Base):
@@ -110,7 +129,7 @@ class Datasource(Base):
         ForeignKey("organizations.id", ondelete="CASCADE")
     )
     config: Mapped[dict] = mapped_column(
-        JSON, comment="JSON serialized form of DatasourceConfig"
+        sqlalchemy.JSON, comment="JSON serialized form of DatasourceConfig"
     )
 
     organization: Mapped["Organization"] = relationship(back_populates="datasources")
@@ -126,3 +145,78 @@ class Datasource(Base):
         """Sets the config field to the serialized DatasourceConfig."""
         # Round-trip via JSON to serialize SecretStr values correctly.
         self.config = json.loads(value.model_dump_json())
+
+
+class ExperimentState(enum.StrEnum):
+    """
+    Experiment lifecycle states.
+
+    note: [starting state], [[terminal state]]
+    [DESIGNING]->ASSIGNED->{[[ABANDONED]], COMMITTED}->[[ABORTED]]
+    """
+
+    DESIGNING = "designing"
+    ASSIGNED = "assigned"
+    ABANDONED = "abandoned"
+    COMMITTED = "committed"
+    # TODO: Consider adding two more states:
+    # Add an ACTIVE state that is only derived in a View when the state is COMMITTED and the query
+    # time is between experiment start and end.
+    # Add a COMPLETE state that is only derived in a View when the state is COMMITTED and query time
+    # is after experiment end.
+    ABORTED = "aborted"
+
+
+class ArmAssignment(Base):
+    """Stores experiment treatment assignments."""
+
+    __tablename__ = "arm_assignments"
+
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    experiment_id: Mapped[uuid.UUID] = mapped_column(
+        sqlalchemy.Uuid(), ForeignKey("experiments.id", ondelete="CASCADE")
+    )
+    participant_type: Mapped[str] = mapped_column(String(255))
+    participant_id: Mapped[str] = mapped_column(String(255))
+    arm_id: Mapped[uuid.UUID] = mapped_column(sqlalchemy.Uuid)
+    arm_name: Mapped[
+        str
+    ]  # for a user-friendly name of the arm. TODO: But storing here will make updates a pain...may have to explicitly model an Arm, too.
+    strata: Mapped[sqlalchemy.JSON]
+
+    experiment: Mapped["Experiment"] = relationship(back_populates="arm_assignments")
+
+    # A participant should only be assigned to one arm ever per experiment.
+    __table_args__ = (
+        sqlalchemy.UniqueConstraint(
+            "experiment_id", "participant_id", name="uniq_participant"
+        ),
+    )
+
+
+class Experiment(Base):
+    """Stores experiment metadata."""
+
+    __tablename__ = "experiments"
+
+    id: Mapped[uuid.UUID] = mapped_column(sqlalchemy.Uuid(), primary_key=True)
+    datasource_id: Mapped[str] = mapped_column(
+        String(255)
+    )  # TODO: setup a proper relation on Datasource
+    state: Mapped[ExperimentState]
+    # We presume updates to descriptions/names/times won't happen frequently.
+    # TODO: set up a GIN index if using postgres. Or, denormalize start_date/end_date/description/other editable fields. Build index on fields needed for pagination and filtering.
+    design_spec: Mapped[sqlalchemy.JSON]
+    audience_spec: Mapped[sqlalchemy.JSON]
+    # TODO: store power analysis json
+    assign_summary: Mapped[sqlalchemy.JSON]
+    created_at: Mapped[datetime.datetime] = mapped_column(
+        server_default=sqlalchemy.sql.func.now()
+    )
+    updated_at: Mapped[datetime.datetime] = mapped_column(
+        server_default=sqlalchemy.sql.func.now(), onupdate=sqlalchemy.sql.func.now()
+    )
+
+    arm_assignments: Mapped[list["ArmAssignment"]] = relationship(
+        back_populates="experiment", cascade="all, delete-orphan"
+    )

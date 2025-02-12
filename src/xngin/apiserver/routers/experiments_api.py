@@ -3,8 +3,15 @@ from contextlib import asynccontextmanager
 from typing import Annotated
 
 import sqlalchemy
-from fastapi import APIRouter, FastAPI, HTTPException, Depends, Query, Response
-from fastapi import Request
+from fastapi import (
+    APIRouter,
+    FastAPI,
+    HTTPException,
+    Depends,
+    Query,
+    Response,
+    Request,
+)
 from sqlalchemy import distinct
 from sqlalchemy.orm import Session
 
@@ -84,7 +91,7 @@ class CommonQueryParams:
         self.refresh = refresh
 
 
-def _get_participants_config_and_schema(
+def get_participants_config_and_schema(
     commons: CommonQueryParams,
     datasource_config: ParticipantsMixin,
     gsheets: GSheetCache,
@@ -112,14 +119,14 @@ def get_strata(
     config: Annotated[DatasourceConfig, Depends(datasource_config_required)],
 ) -> GetStrataResponse:
     """Get possible strata covariates for a given unit type."""
-    participants_cfg, schema = _get_participants_config_and_schema(
+    participants_cfg, schema = get_participants_config_and_schema(
         commons, config, gsheets
     )
     strata_fields = {c.field_name: c for c in schema.fields if c.is_strata}
 
-    with config.dbsession() as session:
+    with config.dbsession() as dwh_session:
         sa_table = infer_table(
-            session.get_bind(),
+            dwh_session.get_bind(),
             participants_cfg.table_name,
             config.supports_reflection(),
         )
@@ -153,14 +160,14 @@ def get_filters(
     gsheets: Annotated[GSheetCache, Depends(gsheet_cache)],
     config: Annotated[DatasourceConfig, Depends(datasource_config_required)],
 ) -> GetFiltersResponse:
-    participants_cfg, schema = _get_participants_config_and_schema(
+    participants_cfg, schema = get_participants_config_and_schema(
         commons, config, gsheets
     )
     filter_fields = {c.field_name: c for c in schema.fields if c.is_filter}
 
-    with config.dbsession() as session:
+    with config.dbsession() as dwh_session:
         sa_table = infer_table(
-            session.get_bind(),
+            dwh_session.get_bind(),
             participants_cfg.table_name,
             config.supports_reflection(),
         )
@@ -177,7 +184,7 @@ def get_filters(
                 case DataTypeClass.DISCRETE:
                     distinct_values = [
                         str(v)
-                        for v in session.execute(
+                        for v in dwh_session.execute(
                             sqlalchemy.select(distinct(sa_col))
                             .where(sa_col.is_not(None))
                             .order_by(sa_col)
@@ -191,7 +198,7 @@ def get_filters(
                         distinct_values=distinct_values,
                     )
                 case DataTypeClass.NUMERIC:
-                    min_, max_ = session.execute(
+                    min_, max_ = dwh_session.execute(
                         sqlalchemy.select(
                             sqlalchemy.func.min(sa_col), sqlalchemy.func.max(sa_col)
                         ).where(sa_col.is_not(None))
@@ -230,14 +237,14 @@ def get_metrics(
     config: Annotated[DatasourceConfig, Depends(datasource_config_required)],
 ) -> GetMetricsResponse:
     """Get possible metrics for a given unit type."""
-    participants_cfg, schema = _get_participants_config_and_schema(
+    participants_cfg, schema = get_participants_config_and_schema(
         commons, config, gsheets
     )
     metric_cols = {c.field_name: c for c in schema.fields if c.is_metric}
 
-    with config.dbsession() as session:
+    with config.dbsession() as dwh_session:
         sa_table = infer_table(
-            session.get_bind(),
+            dwh_session.get_bind(),
             participants_cfg.table_name,
             config.supports_reflection(),
         )
@@ -285,20 +292,20 @@ def powercheck(
     commons = CommonQueryParams(
         participant_type=body.audience_spec.participant_type, refresh=refresh
     )
-    participants_cfg, schema = _get_participants_config_and_schema(
+    participants_cfg, schema = get_participants_config_and_schema(
         commons, config, gsheets
     )
     _validate_schema_metrics(body.design_spec, schema)
 
-    with config.dbsession() as session:
+    with config.dbsession() as dwh_session:
         sa_table = infer_table(
-            session.get_bind(),
+            dwh_session.get_bind(),
             participants_cfg.table_name,
             config.supports_reflection(),
         )
 
         metric_stats = get_stats_on_metrics(
-            session,
+            dwh_session,
             sa_table,
             body.design_spec.metrics,
             body.audience_spec,
@@ -338,14 +345,14 @@ def assign_treatment(
     commons = CommonQueryParams(
         participant_type=body.audience_spec.participant_type, refresh=refresh
     )
-    participants_cfg, schema = _get_participants_config_and_schema(
+    participants_cfg, schema = get_participants_config_and_schema(
         commons, config, gsheets
     )
     _validate_schema_metrics(body.design_spec, schema)
 
-    with config.dbsession() as session:
-        return _do_assignment(
-            session=session,
+    with config.dbsession() as dwh_session:
+        return do_assignment(
+            session=dwh_session,
             participant=participants_cfg,
             supports_reflection=config.supports_reflection(),
             body=body,
@@ -355,7 +362,7 @@ def assign_treatment(
         )
 
 
-def _do_assignment(
+def do_assignment(
     session: Session,
     participant: ParticipantsConfig,
     supports_reflection: bool,

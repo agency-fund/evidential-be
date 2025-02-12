@@ -12,13 +12,15 @@ import pytest
 from fastapi.testclient import TestClient
 
 from xngin.apiserver import conftest, constants, flags
-from xngin.apiserver.api_types import CommitRequest
+from xngin.apiserver.api_types import (
+    CommitRequest,
+)
 from xngin.apiserver.dependencies import xngin_db_session
 from xngin.apiserver.gsheet_cache import GSheetCache
 from xngin.apiserver.main import app
 from xngin.apiserver.routers.experiments_api import (
     CommonQueryParams,
-    _get_participants_config_and_schema,
+    get_participants_config_and_schema,
 )
 from xngin.apiserver.settings import ParticipantsDef
 from xngin.apiserver.testing.assertions import assert_same
@@ -72,7 +74,7 @@ def fixture_db_session():
 def test_datasource_dependency_falls_back_to_xngin_db(db_session, testing_datasource):
     local_cache = GSheetCache(db_session)
 
-    participants_cfg_sheet, schema_sheet = _get_participants_config_and_schema(
+    participants_cfg_sheet, schema_sheet = get_participants_config_and_schema(
         commons=CommonQueryParams("test_participant_type"),
         datasource_config=conftest.get_settings_for_test()
         .get_datasource("testing-remote")
@@ -93,7 +95,7 @@ def test_datasource_dependency_falls_back_to_xngin_db(db_session, testing_dataso
     testing_datasource.ds.set_config(config)
     db_session.commit()
     # ...and verify we retrieve that correctly.
-    participants_cfg, schema = _get_participants_config_and_schema(
+    participants_cfg, schema = get_participants_config_and_schema(
         commons=CommonQueryParams("test_participant_type"),
         datasource_config=testing_datasource.ds.get_config(),
         gsheets=local_cache,
