@@ -11,7 +11,7 @@ from xngin.apiserver.api_types import DataType
 from xngin.apiserver.models.tables import CacheTable
 from xngin.apiserver.gsheet_cache import GSheetCache
 from xngin.apiserver.settings import SheetRef
-from xngin.sheets.config_sheet import ConfigWorksheet, FieldDescriptor
+from xngin.schema.schema_types import FieldDescriptor, ParticipantsSchema
 
 
 @pytest.fixture
@@ -26,7 +26,7 @@ def sheet_cache(mock_session):
 
 @pytest.fixture
 def mock_sheet_config():
-    return ConfigWorksheet(
+    return ParticipantsSchema(
         table_name="t",
         fields=[
             FieldDescriptor(
@@ -56,7 +56,7 @@ def test_get_cached_entry(sheet_cache, mock_session, mock_sheet_config):
 
     result = sheet_cache.get(key, fetcher)
 
-    assert isinstance(result, ConfigWorksheet)
+    assert isinstance(result, ParticipantsSchema)
     assert result.model_dump() == mock_sheet_config.model_dump()
     mock_session.get.assert_called_once_with(CacheTable, cache_key)
     fetcher.assert_not_called()
@@ -73,7 +73,7 @@ def test_get_new_entry(sheet_cache, mock_session, mock_sheet_config):
 
     result = sheet_cache.get(key, fetcher)
 
-    assert isinstance(result, ConfigWorksheet)
+    assert isinstance(result, ParticipantsSchema)
     assert result.model_dump() == mock_sheet_config.model_dump()
     mock_session.get.assert_called_once_with(CacheTable, cache_key)
     fetcher.assert_called_once()
@@ -88,7 +88,7 @@ def test_get_refresh(sheet_cache, mock_session, mock_sheet_config):
 
     result = sheet_cache.get(key, fetcher, refresh=True)
 
-    assert isinstance(result, ConfigWorksheet)
+    assert isinstance(result, ParticipantsSchema)
     assert result.model_dump() == mock_sheet_config.model_dump()
     mock_session.get.assert_not_called()
     fetcher.assert_called_once()
@@ -107,7 +107,7 @@ def test_get_refresh_with_integrityerror(sheet_cache, mock_session, mock_sheet_c
 
     result = sheet_cache.get(key, fetcher, refresh=True)
 
-    assert isinstance(result, ConfigWorksheet)
+    assert isinstance(result, ParticipantsSchema)
     assert result.model_dump() == mock_sheet_config.model_dump()
     mock_session.get.assert_not_called()
     fetcher.assert_called_once()
@@ -128,14 +128,14 @@ def test_get_cache_and_refresh(mock_sheet_config):
 
     # cache miss
     result = local_cache.get(key, fetcher)
-    assert isinstance(result, ConfigWorksheet)
+    assert isinstance(result, ParticipantsSchema)
     assert result.model_dump() == mock_sheet_config.model_dump()
     fetcher.assert_called_once()
 
     # cache hit
     fetcher = Mock(return_value=None)
     result = local_cache.get(key, fetcher)
-    assert isinstance(result, ConfigWorksheet)
+    assert isinstance(result, ParticipantsSchema)
     assert result.model_dump() == mock_sheet_config.model_dump()
     fetcher.assert_not_called()
 
@@ -143,7 +143,7 @@ def test_get_cache_and_refresh(mock_sheet_config):
     modified_sheet = mock_sheet_config.model_copy(update={"is_strata": True}, deep=True)
     fetcher = Mock(return_value=modified_sheet)
     result = local_cache.get(key, fetcher, refresh=True)
-    assert isinstance(result, ConfigWorksheet)
+    assert isinstance(result, ParticipantsSchema)
     assert result.model_dump() == modified_sheet.model_dump()
     fetcher.assert_called_once()
 

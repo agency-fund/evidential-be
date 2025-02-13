@@ -1,12 +1,13 @@
 import csv
-from collections import Counter
+from collections.abc import Generator
 
 import sqlalchemy
-from pydantic import BaseModel, ValidationError, field_validator, model_validator
+from pydantic import BaseModel, ValidationError
 
 from xngin.apiserver.settings import SheetRef
 from xngin.sheets.gsheets import read_sheet_from_gsheet
 from xngin.apiserver.api_types import DataType
+from xngin.schema.schema_types import FieldDescriptor, ParticipantsSchema
 
 GOOGLE_SHEET_PREFIX = "https://docs.google.com/spreadsheets/"
 
@@ -45,95 +46,7 @@ class InvalidSheetError(Exception):
         return "\n".join(err.model_dump_json() for err in self.errors)
 
 
-class FieldDescriptor(BaseModel):
-    field_name: str
-    data_type: DataType
-    description: str
-    is_unique_id: bool
-    is_strata: bool
-    is_filter: bool
-    is_metric: bool
-    extra: dict[str, str] | None = None
-
-    model_config = {
-        "strict": True,
-        "extra": "forbid",
-    }
-
-    @field_validator("description", mode="before")
-    @classmethod
-    def to_string_loose(cls, value) -> str:
-        if not isinstance(value, str):
-            return str(value)
-        return value
-
-    @field_validator("data_type", mode="before")
-    @classmethod
-    def to_data_type(cls, value) -> DataType:
-        return DataType(value.lower())
-
-    @field_validator(
-        "is_unique_id", "is_strata", "is_filter", "is_metric", mode="before"
-    )
-    @classmethod
-    def to_boolean(cls, value):
-        truthy = {"true", "t", "yes", "y", "1"}
-        falsy = {"false", "f", "no", "n", "0", ""}
-        normalized = str(value).lower().strip()
-        if normalized in truthy:
-            return True
-        if normalized in falsy:
-            return False
-        raise ValueError(f"Value '{value}' cannot be converted to a boolean.")
-
-
-class ConfigWorksheet(BaseModel):
-    """Represents a single worksheet describing metadata about a type of Participant."""
-
-    table_name: str
-    fields: list[FieldDescriptor]
-
-    model_config = {
-        "strict": True,
-        "extra": "forbid",
-    }
-
-    def get_unique_id_field(self):
-        """Gets the name of the unique ID field."""
-        return next((i.field_name for i in self.fields if i.is_unique_id), None)
-
-    @model_validator(mode="after")
-    def check_one_unique_id(self) -> "ConfigWorksheet":
-        uniques = [r.field_name for r in self.fields if r.is_unique_id]
-        if len(uniques) == 0:
-            raise ValueError("There are no columns marked as unique ID.")
-        if len(uniques) > 1:
-            raise ValueError(
-                f"There are {len(uniques)} columns marked as the unique ID, but there should "
-                f"only be one: {', '.join(sorted(uniques))}"
-            )
-        return self
-
-    @model_validator(mode="after")
-    def check_unique_fields(self) -> "ConfigWorksheet":
-        counted = Counter([".".join(row.field_name) for row in self.fields])
-        duplicates = [item for item, count in counted.items() if count > 1]
-        if duplicates:
-            raise ValueError(
-                f"Duplicate 'field_name' values found: {', '.join(duplicates)}."
-            )
-        return self
-
-    @model_validator(mode="after")
-    def check_non_empty_rows(self) -> "ConfigWorksheet":
-        if len(self.fields) == 0:
-            raise ValueError(
-                f"{self.__class__} must contain at least one FieldDescriptor."
-            )
-        return self
-
-
-def parse_csv(filename: str) -> list[dict[str, int | float | str]]:
+def parse_csv(filename: str) -> Generator[dict[str, int | float | str]]:
     with open(filename) as csvfile:
         reader = csv.DictReader(csvfile)
 
@@ -193,7 +106,7 @@ def fetch_and_parse_sheet(ref: SheetRef):
                 InvalidSheetDetails.from_pydantic_error(row=row_index + 1, pve=pve)
             )
     try:
-        parsed = ConfigWorksheet(table_name=ref.worksheet, fields=collector)
+        parsed = ParticipantsSchema(table_name=ref.worksheet, fields=collector)
         # Parsing succeeded, but also raise if there were /any/ errors from above.
         if errors:
             raise InvalidSheetError(errors)
@@ -240,4 +153,4 @@ def create_configworksheet_from_table(
             r.field_name,
         ),
     )
-    return ConfigWorksheet(table_name=table.name, fields=rows)
+    return ParticipantsSchema(table_name=table.name, fields=rows)

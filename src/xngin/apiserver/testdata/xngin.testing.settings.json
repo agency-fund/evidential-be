@@ -1,5 +1,7 @@
 {
-  "trusted_ips": ["testclient"],
+  "trusted_ips": [
+    "testclient"
+  ],
   "datasources": [
     {
       "id": "customer-test",
@@ -7,6 +9,7 @@
         "type": "remote",
         "participants": [
           {
+            "type": "sheet",
             "participant_type": "transforms",
             "sheet": {
               "url": "https://docs.google.com/spreadsheets/d/redacted/edit",
@@ -55,6 +58,7 @@
         "type": "remote",
         "participants": [
           {
+            "type": "sheet",
             "participant_type": "transforms",
             "sheet": {
               "url": "https://docs.google.com/spreadsheets/d/redacted/edit",
@@ -86,6 +90,7 @@
         "type": "sqlite_local",
         "participants": [
           {
+            "type": "sheet",
             "participant_type": "test_participant_type",
             "table_name": "test_participant_type",
             "sheet": {
@@ -104,6 +109,7 @@
         "type": "sqlite_local",
         "participants": [
           {
+            "type": "sheet",
             "participant_type": "test_participant_type",
             "table_name": "test_participant_type",
             "sheet": {

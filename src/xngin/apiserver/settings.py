@@ -14,7 +14,6 @@ from pydantic import (
     PositiveInt,
     SecretStr,
     Field,
-    field_validator,
     ConfigDict,
     model_validator,
 )
@@ -30,6 +29,7 @@ from tenacity import (
 
 from xngin.apiserver.settings_secrets import replace_secrets
 from xngin.db_extensions import NumpyStddev
+from xngin.schema.schema_types import ParticipantsSchema
 
 DEFAULT_SETTINGS_FILE = "xngin.settings.json"
 
@@ -105,21 +105,46 @@ class SheetRef(ConfigBaseModel):
     worksheet: str
 
 
-class ParticipantsRef(ConfigBaseModel):
+class BaseParticipantsRef(ConfigBaseModel):
     """Participants are a logical representation of a table in the data warehouse.
 
-    Participants are defined by a table_name and a configuration worksheet.
+    Participants are defined by a participant_type, table_name and a schema.
     """
 
     participant_type: str
+
+
+class SheetParticipantsRef(BaseParticipantsRef):
+    type: Annotated[
+        Literal["sheet"],
+        Field(
+            description="Indicates that the schema is determined by a remote Google Sheet."
+        ),
+    ]
     table_name: str
     sheet: SheetRef
+
+
+class ParticipantsDef(BaseParticipantsRef, ParticipantsSchema):
+    type: Annotated[
+        Literal["schema"],
+        Field(
+            description="Indicates that the schema is determined by an inline schema."
+        ),
+    ]
 
 
 class ParticipantsMixin(ConfigBaseModel):
     """ParticipantsMixin can be added to a config type to add standardized participant definitions."""
 
-    participants: list[ParticipantsRef]
+    participants: Annotated[
+        list[
+            Annotated[
+                SheetParticipantsRef | ParticipantsDef, Field(discriminator="type")
+            ]
+        ],
+        Field(),
+    ]
 
     def find_participants(self, participant_type: str):
         """Returns the participant matching participant_type or raises CannotFindParticipantsException."""
@@ -148,20 +173,14 @@ class ParticipantsMixin(ConfigBaseModel):
         return self
 
 
+type HttpMethodTypes = Literal["GET", "POST", "PUT", "PATCH", "DELETE"]
+
+
 class WebhookUrl(ConfigBaseModel):
     """Represents a url and HTTP method to use with it."""
 
-    method: Literal["get", "post", "put", "patch"]
+    method: HttpMethodTypes
     url: str
-
-    # headers: dict[str, str]
-
-    @field_validator("method", mode="before")
-    @classmethod
-    def to_lower(cls, value):
-        """Force the http 'method' to be lowercase before validation."""
-
-        return str(value).lower().strip()
 
 
 class WebhookActions(ConfigBaseModel):
