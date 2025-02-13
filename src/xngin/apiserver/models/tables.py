@@ -1,7 +1,10 @@
 import secrets
+
+from pydantic import TypeAdapter
 from sqlalchemy import ForeignKey, String, JSON
 from sqlalchemy.orm import DeclarativeBase, mapped_column, Mapped, relationship
-from xngin.apiserver.settings import Datasource as DatasourceModel
+
+from xngin.apiserver.settings import DatasourceConfig
 
 ALPHABET = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz"
 
@@ -105,6 +108,6 @@ class Datasource(Base):
         back_populates="datasource", cascade="all, delete-orphan"
     )
 
-    def get_config(self):
-        """Parses the config field and returns the Datasource settings."""
-        return DatasourceModel.model_validate(self.config)
+    def get_config(self) -> DatasourceConfig:
+        """Parses the config field and returns the Datasource.config."""
+        return TypeAdapter(DatasourceConfig).validate_python(self.config)

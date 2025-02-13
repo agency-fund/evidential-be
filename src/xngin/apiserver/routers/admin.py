@@ -26,7 +26,7 @@ from xngin.apiserver.routers.oidc_dependencies import require_oidc_token, TokenI
 from xngin.apiserver.settings import (
     RemoteDatabaseConfig,
     SqliteLocalConfig,
-    DatasourceConfigDiscriminated,
+    DatasourceConfig,
 )
 
 logger = logging.getLogger(__name__)
@@ -278,7 +278,7 @@ async def datasources_list(
     def convert_ds_to_summary(ds: Datasource) -> DatasourceSummary:
         # Under normal operation this is always a RemoteDatabaseConfig but in
         # unit tests it can also be a SqliteLocalConfig.
-        config = TypeAdapter(DatasourceConfigDiscriminated).validate_python(ds.config)
+        config = TypeAdapter(DatasourceConfig).validate_python(ds.config)
         return DatasourceSummary(
             id=ds.id,
             name=ds.name,

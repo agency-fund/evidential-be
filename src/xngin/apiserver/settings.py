@@ -18,6 +18,7 @@ from pydantic import (
     Field,
     ConfigDict,
     model_validator,
+    field_validator,
 )
 from sqlalchemy import Engine, event, text
 from sqlalchemy.exc import NoSuchTableError
@@ -440,17 +441,15 @@ class SqliteLocalConfig(ParticipantsMixin, ConfigBaseModel):
 
 # Warning: When relying on generated JSON Schema, referring to type aliases may
 # cause excessive nesting that break certain JSON schema validators.
-type DatasourceConfig = RemoteDatabaseConfig | SqliteLocalConfig
-type DatasourceConfigDiscriminated = Annotated[
-    DatasourceConfig, Field(discriminator="type")
-]
+type DatasourceConfigUnion = RemoteDatabaseConfig | SqliteLocalConfig
+type DatasourceConfig = Annotated[DatasourceConfigUnion, Field(discriminator="type")]
 
 
 class Datasource(ConfigBaseModel):
     """Datasource describes data warehouse configuration and policy."""
 
     id: str
-    config: DatasourceConfigDiscriminated
+    config: DatasourceConfig
     require_api_key: Annotated[bool | None, Field(...)] = None
 
 
