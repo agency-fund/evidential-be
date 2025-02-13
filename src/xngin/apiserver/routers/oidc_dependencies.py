@@ -12,6 +12,8 @@ from xngin.apiserver.routers.oidc import (
     get_google_configuration,
 )
 import logging
+import secrets
+
 
 # JWTs generated for domains other than @agency.fund are considered invalid.
 ALLOWED_HOSTED_DOMAINS = ("agency.fund",)
@@ -32,6 +34,26 @@ class TokenInfo:
         return self.hd in ALLOWED_HOSTED_DOMAINS
 
 
+# Set TESTING_TOKENS_ENABLED to allow statically-defined bearer tokens
+# to skip the JWT validation.
+PRIVILEGED_EMAIL = "testing@agency.fund"
+PRIVILEGED_TOKEN_FOR_TESTING = secrets.token_urlsafe(32)
+TESTING_TOKENS_ENABLED = False
+UNPRIVILEGED_EMAIL = "testing@agencyfund.org"
+UNPRIVILEGED_TOKEN_FOR_TESTING = secrets.token_urlsafe(32)
+TESTING_TOKENS = {
+    UNPRIVILEGED_TOKEN_FOR_TESTING: TokenInfo(
+        email=UNPRIVILEGED_EMAIL, iss="testing", sub="testing", hd="agencyfund.org"
+    ),
+    PRIVILEGED_TOKEN_FOR_TESTING: TokenInfo(
+        email=PRIVILEGED_EMAIL,
+        iss="testing",
+        sub="testing",
+        hd="agency.fund",
+    ),
+}
+
+
 async def require_oidc_token(
     token: Annotated[str, Depends(oidc_google)],
     oidc_config: Annotated[dict, Depends(get_google_configuration)],
@@ -49,6 +71,8 @@ async def require_oidc_token(
             detail=f'Authorization header must start with "{expected_prefix}".',
         )
     token = token[len(expected_prefix) :]
+    if TESTING_TOKENS_ENABLED and token in TESTING_TOKENS:
+        return TESTING_TOKENS[token]
     try:
         header = jwt.get_unverified_header(token)
     except JWTError as e:
