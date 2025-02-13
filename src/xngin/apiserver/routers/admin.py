@@ -7,12 +7,11 @@ from contextlib import asynccontextmanager
 from typing import Annotated
 
 from fastapi import APIRouter, FastAPI, Depends, Path, Body, HTTPException
-from pydantic import BaseModel, Field, ConfigDict
-from sqlalchemy import delete, select
-from sqlalchemy.exc import IntegrityError
-from sqlalchemy.orm import Session
 from fastapi import Response
 from fastapi import status
+from pydantic import BaseModel, Field, ConfigDict, TypeAdapter
+from sqlalchemy import delete, select
+from sqlalchemy.orm import Session
 
 from xngin.apiserver.apikeys import make_key, hash_key
 from xngin.apiserver.dependencies import xngin_db_session
@@ -24,7 +23,11 @@ from xngin.apiserver.models.tables import (
     UserOrganization,
 )
 from xngin.apiserver.routers.oidc_dependencies import require_oidc_token, TokenInfo
-from xngin.apiserver.settings import RemoteDatabaseConfig, SqliteLocalConfig
+from xngin.apiserver.settings import (
+    RemoteDatabaseConfig,
+    SqliteLocalConfig,
+    DatasourceConfigDiscriminated,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -71,6 +74,10 @@ class ListOrganizationsResponse(AdminApiBaseModel):
     items: list[OrganizationSummary]
 
 
+class AddMemberToOrganizationRequest(AdminApiBaseModel):
+    email: Annotated[str, Field(...)]
+
+
 class DatasourceSummary(AdminApiBaseModel):
     id: str
     name: str
@@ -87,8 +94,13 @@ class ListDatasourcesResponse(AdminApiBaseModel):
 class CreateDatasourceRequest(AdminApiBaseModel):
     organization_id: Annotated[str, Field(...)]
     name: Annotated[str, Field(...)]
+    # TODO: Disallow SqliteLocalConfig from API
     config: Annotated[
-        RemoteDatabaseConfig | SqliteLocalConfig, Field(discriminator="type")
+        RemoteDatabaseConfig | SqliteLocalConfig,
+        Field(
+            discriminator="type",
+            description="Details on the datasource configuration. The participants field must be set to empty array.",
+        ),
     ]
 
 
@@ -203,6 +215,51 @@ async def organizations_create(
     return CreateOrganizationResponse(id=organization.id)
 
 
+@router.post("/organization/{organization_id}/members")
+async def organizations_add_member(
+    organization_id: str,
+    session: Annotated[Session, Depends(xngin_db_session)],
+    token_info: Annotated[TokenInfo, Depends(require_oidc_token)],
+    user: Annotated[User, Depends(get_user_from_token)],
+    body: Annotated[AddMemberToOrganizationRequest, Body(...)],
+):
+    """Adds a new member to an organization.
+
+    The authenticated user must be part of the organization to add members.
+    """
+    # Check if the organization exists
+    org = session.get(Organization, organization_id)
+    if not org:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Organization not found"
+        )
+
+    if not token_info.is_privileged():
+        # Verify user belongs to the organization
+        stmt = (
+            select(True)
+            .select_from(UserOrganization)
+            .where(UserOrganization.user_id == user.id)
+            .where(UserOrganization.organization_id == organization_id)
+        )
+        is_member = session.execute(stmt).scalar_one_or_none()
+        if not is_member:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="You do not have permission to add members to this organization",
+            )
+
+    # Add the new member
+    new_user = session.query(User).filter(User.email == body.email).first()
+    if not new_user:
+        new_user = User(email=body.email)
+        session.add(new_user)
+
+    org.users.append(new_user)
+    session.commit()
+    return GENERIC_SUCCESS
+
+
 @router.get("/datasources")
 async def datasources_list(
     session: Annotated[Session, Depends(xngin_db_session)],
@@ -219,18 +276,24 @@ async def datasources_list(
     datasources = result.scalars().all()
 
     def convert_ds_to_summary(ds: Datasource) -> DatasourceSummary:
-        config = RemoteDatabaseConfig.model_validate(ds.config)
+        # Under normal operation this is always a RemoteDatabaseConfig but in
+        # unit tests it can also be a SqliteLocalConfig.
+        config = TypeAdapter(DatasourceConfigDiscriminated).validate_python(ds.config)
         return DatasourceSummary(
             id=ds.id,
             name=ds.name,
-            driver=config.dwh.driver,
+            driver="sqlite"
+            if isinstance(config, SqliteLocalConfig)
+            else config.dwh.driver,
             type=config.type,
             organization_id=ds.organization_id,
             organization_name=ds.organization.name,
         )
 
     return ListDatasourcesResponse(
-        items=[convert_ds_to_summary(ds) for ds in datasources]
+        items=[
+            convert_ds_to_summary(ds) for ds in sorted(datasources, key=lambda d: d.id)
+        ]
     )
 
 
@@ -282,7 +345,6 @@ async def datasources_create(
     datasource = Datasource(
         name=body.name,
         organization_id=org.id,
-        # TODO: for now, round-trip through model_dump_json() to persist SecretStr fields.
         config=json.loads(body.config.model_dump_json()),
     )
     session.add(datasource)
@@ -415,41 +477,4 @@ async def apikeys_delete(
     )
     session.execute(stmt)
     session.commit()
-    return GENERIC_SUCCESS
-
-
-@router.post("/users/invites")
-async def user_invite_create(
-    session: Annotated[Session, Depends(xngin_db_session)],
-    body: Annotated[CreateUserRequest, Body(...)],
-    token_info: Annotated[TokenInfo, Depends(require_oidc_token)],
-):
-    """Creates a new user in the system.
-
-    Only privileged callers can invoke this method.
-    """
-    if not token_info.is_privileged():
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Only privileged users can create new users",
-        )
-
-    new_user = User(email=body.email)
-    session.add(new_user)
-
-    if body.organization_id:
-        org = session.get(Organization, body.organization_id)
-        if not org:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND, detail="Organization not found"
-            )
-        org.users.append(new_user)
-        session.add(org)
-
-    try:
-        session.commit()
-    except IntegrityError as ierr:
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT, detail="User already exists."
-        ) from ierr
     return GENERIC_SUCCESS
