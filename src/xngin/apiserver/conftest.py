@@ -138,7 +138,7 @@ def ensure_correct_working_directory():
 
     This is important because the tests generate some temporary data on disk and we want the paths to be right.
     """
-    raise_unless_running_from_top_directory()
+    cwd_or_raise_unless_running_from_top_directory()
 
 
 @pytest.fixture(scope="session", autouse=True)
@@ -147,11 +147,30 @@ def ensure_dwh_sqlite_database_exists(ensure_correct_working_directory):
     testing_dwh.create_dwh_sqlite_database()
 
 
-def raise_unless_running_from_top_directory():
-    """Raises an exception unless the current working directory is the root of the project."""
-    pypt = Path(os.getcwd()) / "pyproject.toml"
-    if not pypt.exists():
-        raise DeveloperErrorRunFromRootOfRepositoryPleaseError()
+def cwd_or_raise_unless_running_from_top_directory():
+    """Helper to manage the current working directory of unit tests.
+
+    When the code is located under the home directory, this will automatically change the working directory to the root
+    of the repository. This is helpful for developers because they can now run the tests from any directory without
+    worrying about their working directory.
+
+    When the code is not under the home directory, this will raise an exception unless the current working directory
+    is the root of the repository. This is to avoid problems on CI or other automated runs that where it might not be
+    safe to traverse parents.
+    """
+    current_dir = Path.cwd()
+    operating_outside_homedir = Path.home() not in current_dir.parents
+    if operating_outside_homedir:
+        if not Path.exists(current_dir / "pyproject.toml"):
+            raise DeveloperErrorRunFromRootOfRepositoryPleaseError()
+    else:
+        while current_dir != Path.home():
+            if (current_dir / "pyproject.toml").exists():
+                os.chdir(current_dir)
+                return
+            current_dir = current_dir.parent
+
+    raise DeveloperErrorRunFromRootOfRepositoryPleaseError()
 
 
 @pytest.fixture(name="use_deterministic_random")
