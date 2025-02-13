@@ -47,7 +47,8 @@ def enable_oidc_api():
         oidc.router,
         prefix=constants.API_PREFIX_V1,
         tags=["Auth"],
-        include_in_schema=False,
+        include_in_schema=os.environ.get("XNGIN_PUBLISH_ALL_DOCS", "").lower()
+        in {"1", "true"},
     )
 
 
@@ -56,7 +57,8 @@ def enable_admin_api():
         admin.router,
         prefix=constants.API_PREFIX_V1,
         tags=["Admin"],
-        include_in_schema=False,
+        include_in_schema=os.environ.get("XNGIN_PUBLISH_ALL_DOCS", "").lower()
+        in {"1", "true"},
     )
 
 

@@ -137,15 +137,16 @@ class ParticipantsDef(BaseParticipantsRef, ParticipantsSchema):
     ]
 
 
+type ParticipantsConfig = Annotated[
+    SheetParticipantsRef | ParticipantsDef, Field(discriminator="type")
+]
+
+
 class ParticipantsMixin(ConfigBaseModel):
     """ParticipantsMixin can be added to a config type to add standardized participant definitions."""
 
     participants: Annotated[
-        list[
-            Annotated[
-                SheetParticipantsRef | ParticipantsDef, Field(discriminator="type")
-            ]
-        ],
+        list[ParticipantsConfig],
         Field(),
     ]
 
@@ -261,6 +262,16 @@ class GcpServiceAccountFile(ConfigBaseModel):
     ]
 
 
+type GcpCredentials = Annotated[
+    GcpServiceAccountInfo | GcpServiceAccountFile,
+    Field(
+        ...,
+        discriminator="type",
+        description="The Google Cloud Service Account credentials.",
+    ),
+]
+
+
 class BqDsn(ConfigBaseModel, BaseDsn):
     """Describes a BigQuery connection."""
 
@@ -273,14 +284,7 @@ class BqDsn(ConfigBaseModel, BaseDsn):
 
     # These two authentication modes are documented here:
     # https://googleapis.dev/python/google-api-core/latest/auth.html#service-accounts
-    credentials: Annotated[
-        GcpServiceAccountInfo | GcpServiceAccountFile,
-        Field(
-            ...,
-            discriminator="type",
-            description="The Google Cloud Service Account credentials.",
-        ),
-    ]
+    credentials: GcpCredentials
 
     def to_sqlalchemy_url(self) -> sqlalchemy.URL:
         qopts = {}
@@ -347,6 +351,9 @@ class DbapiArg(ConfigBaseModel):
     value: str
 
 
+type Dwh = Annotated[Dsn | BqDsn, Field(discriminator="driver")]
+
+
 class RemoteDatabaseConfig(ParticipantsMixin, ConfigBaseModel):
     """RemoteDatabaseConfig defines a configuration for a remote data warehouse."""
 
@@ -354,7 +361,7 @@ class RemoteDatabaseConfig(ParticipantsMixin, ConfigBaseModel):
 
     type: Literal["remote"]
 
-    dwh: Annotated[Dsn | BqDsn, Field(discriminator="driver")]
+    dwh: Dwh
 
     def supports_reflection(self):
         return self.dwh.supports_table_reflection()
