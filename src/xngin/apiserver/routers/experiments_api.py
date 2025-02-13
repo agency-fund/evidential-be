@@ -40,7 +40,7 @@ from xngin.apiserver.settings import (
     XnginSettings,
     get_settings_for_server,
     infer_table,
-    DatasourceConfigUnion,
+    DatasourceConfig,
     HttpMethodTypes,
 )
 from xngin.apiserver.utils import substitute_url
@@ -102,7 +102,7 @@ class CommonQueryParams:
 def get_strata(
     commons: Annotated[CommonQueryParams, Depends()],
     gsheets: Annotated[GSheetCache, Depends(gsheet_cache)],
-    config: Annotated[DatasourceConfigUnion, Depends(datasource_config_required)],
+    config: Annotated[DatasourceConfig, Depends(datasource_config_required)],
 ) -> GetStrataResponse:
     """Get possible strata covariates for a given unit type."""
     participants = config.find_participants(commons.participant_type)
@@ -143,7 +143,7 @@ def get_strata(
 def get_filters(
     commons: Annotated[CommonQueryParams, Depends()],
     gsheets: Annotated[GSheetCache, Depends(gsheet_cache)],
-    config: Annotated[DatasourceConfigUnion, Depends(datasource_config_required)],
+    config: Annotated[DatasourceConfig, Depends(datasource_config_required)],
 ) -> GetFiltersResponse:
     participants = config.find_participants(commons.participant_type)
     config_sheet = fetch_worksheet(commons, config, gsheets)
@@ -218,7 +218,7 @@ def get_filters(
 def get_metrics(
     commons: Annotated[CommonQueryParams, Depends()],
     gsheets: Annotated[GSheetCache, Depends(gsheet_cache)],
-    config: Annotated[DatasourceConfigUnion, Depends(datasource_config_required)],
+    config: Annotated[DatasourceConfig, Depends(datasource_config_required)],
 ) -> GetMetricsResponse:
     """Get possible metrics for a given unit type."""
     participants = config.find_participants(commons.participant_type)
@@ -257,7 +257,7 @@ def get_metrics(
 )
 def check_power_api(
     body: PowerRequest,
-    config: Annotated[DatasourceConfigUnion, Depends(datasource_config_required)],
+    config: Annotated[DatasourceConfig, Depends(datasource_config_required)],
 ) -> PowerResponse:
     """Calculates statistical power given the PowerRequest details."""
     participant = config.find_participants(body.audience_spec.participant_type)
@@ -295,7 +295,7 @@ def assign_treatment_api(
         int, Query(..., description="Number of participants to assign.")
     ],
     gsheets: Annotated[GSheetCache, Depends(gsheet_cache)],
-    config: Annotated[DatasourceConfigUnion, Depends(datasource_config_required)],
+    config: Annotated[DatasourceConfig, Depends(datasource_config_required)],
     refresh: Annotated[bool, Query(description="Refresh the cache.")] = False,
     random_state: Annotated[
         int | None,
@@ -350,7 +350,7 @@ async def assignment_file(
         Query(description="ID of the experiment whose assignments we wish to fetch."),
     ],
     http_client: Annotated[httpx.AsyncClient, Depends(httpx_dependency)],
-    config: Annotated[DatasourceConfigUnion, Depends(datasource_config_required)],
+    config: Annotated[DatasourceConfig, Depends(datasource_config_required)],
 ) -> WebhookResponse:
     webhook_config = config.webhook_config
     if webhook_config is None:
@@ -378,7 +378,7 @@ async def commit_experiment(
     body: CommitRequest,
     user_id: Annotated[str, Query(...)],
     http_client: Annotated[httpx.AsyncClient, Depends(httpx_dependency)],
-    config: Annotated[DatasourceConfigUnion, Depends(datasource_config_required)],
+    config: Annotated[DatasourceConfig, Depends(datasource_config_required)],
 ) -> WebhookResponse:
     webhook_config = config.webhook_config
     if webhook_config is None:
@@ -415,7 +415,7 @@ async def update_experiment(
         Query(description="The type of experiment metadata update to perform"),
     ],
     http_client: Annotated[httpx.AsyncClient, Depends(httpx_dependency)],
-    config: Annotated[DatasourceConfigUnion, Depends(datasource_config_required)],
+    config: Annotated[DatasourceConfig, Depends(datasource_config_required)],
 ) -> WebhookResponse:
     webhook_config = config.webhook_config
     if webhook_config is None:
@@ -447,7 +447,7 @@ async def alt_update_experiment(
         Path(description="The ID of the experiment to update.", alias="experiment_id"),
     ],
     http_client: Annotated[httpx.AsyncClient, Depends(httpx_dependency)],
-    config: Annotated[DatasourceConfigUnion, Depends(datasource_config_required)],
+    config: Annotated[DatasourceConfig, Depends(datasource_config_required)],
 ) -> WebhookResponse:
     webhook_config = config.webhook_config
     if webhook_config is None:

@@ -13,7 +13,7 @@ from xngin.apiserver.settings import (
     get_settings_for_server,
     XnginSettings,
     Datasource,
-    DatasourceConfigUnion,
+    DatasourceConfig,
 )
 from xngin.apiserver.models.tables import Datasource as DatasourceTable
 
@@ -66,7 +66,7 @@ def datasource_dependency(
 
 def datasource_config_required(
     ds: Annotated[Datasource, Depends(datasource_dependency)],
-) -> DatasourceConfigUnion:
+) -> DatasourceConfig:
     """Returns the connection-specific implementation for this datasource."""
     return ds.config
 

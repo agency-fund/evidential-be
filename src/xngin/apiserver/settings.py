@@ -439,10 +439,9 @@ class SqliteLocalConfig(ParticipantsMixin, ConfigBaseModel):
         return Session(engine)
 
 
-# Warning: When relying on generated JSON Schema, referring to type aliases may
-# cause excessive nesting that break certain JSON schema validators.
-type DatasourceConfigUnion = RemoteDatabaseConfig | SqliteLocalConfig
-type DatasourceConfig = Annotated[DatasourceConfigUnion, Field(discriminator="type")]
+type DatasourceConfig = Annotated[
+    RemoteDatabaseConfig | SqliteLocalConfig, Field(discriminator="type")
+]
 
 
 class Datasource(ConfigBaseModel):
