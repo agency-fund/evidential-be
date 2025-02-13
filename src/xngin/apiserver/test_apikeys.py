@@ -43,13 +43,13 @@ def test_secured_wrong_apikey():
 def test_secured_correct_apikey(secured_datasource):
     """Tests that a config with API keys allows valid API keys and rejects invalid keys."""
     response = client.get(
-        "/filters?participant_type=test_participant_type",
+        "/_authcheck",
         headers={
             constants.HEADER_CONFIG_ID: secured_datasource.ds.id,
             constants.HEADER_API_KEY: secured_datasource.key,
         },
     )
-    assert response.status_code == 200, response.content
+    assert response.status_code == 204, response.content
 
     for bad_key in (
         "",
@@ -58,7 +58,7 @@ def test_secured_correct_apikey(secured_datasource):
         secured_datasource.key.upper(),
     ):
         response = client.get(
-            "/filters?participant_type=test_participant_type",
+            "/_authcheck",
             headers={
                 constants.HEADER_CONFIG_ID: secured_datasource.ds.id,
                 constants.HEADER_API_KEY: bad_key,

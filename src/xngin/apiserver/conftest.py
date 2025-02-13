@@ -1,8 +1,11 @@
 """conftest configures FastAPI dependency injection for testing and also does some setup before tests in this module are run."""
 
+import dataclasses
 import enum
+import json
 import logging
 import os
+import secrets
 from pathlib import Path
 from typing import assert_never
 
@@ -16,8 +19,10 @@ from sqlalchemy.engine.interfaces import Dialect
 from sqlalchemy.orm import sessionmaker
 
 from xngin.apiserver import database, flags
+from xngin.apiserver.apikeys import make_key, hash_key
 from xngin.apiserver.dependencies import settings_dependency, xngin_db_session
 from xngin.apiserver.models import tables
+from xngin.apiserver.models.tables import Organization, Datasource, ApiKey
 from xngin.apiserver.settings import XnginSettings, SettingsForTesting
 from xngin.apiserver.testing import testing_dwh
 from xngin.db_extensions import custom_functions
@@ -184,3 +189,40 @@ def fixture_use_deterministic_random():
         yield
     finally:
         custom_functions.USE_DETERMINISTIC_RANDOM = original
+
+
+@pytest.fixture(scope="function")
+def secured_datasource(db_session):
+    """Creates a new test datasource with its associated organization."""
+    run_id = secrets.token_hex(8)
+    datasource_id = "ds" + run_id
+
+    # We derive a new test datasource from the standard static "testing" datasource by
+    # randomizing its unique ID and marking it as requiring an API key.
+    # TODO: replace this with a non-sqliteconfig value.
+    test_ds = get_settings_for_test().get_datasource("testing-remote").config
+
+    org = Organization(id="org" + run_id, name="test organization")
+
+    datasource = Datasource(
+        id=datasource_id, name="test ds", config=json.loads(test_ds.model_dump_json())
+    )
+    datasource.organization = org
+
+    key_id, key = make_key()
+    kt = ApiKey(id=key_id, key=hash_key(key))
+    kt.datasource = datasource
+
+    db_session.add_all([org, datasource, kt])
+    db_session.commit()
+    assert db_session.get(Datasource, datasource_id) is not None
+    return DatasourceMetadata(org=org, ds=datasource, key=key)
+
+
+@dataclasses.dataclass
+class DatasourceMetadata:
+    """Describes an ephemeral datasource, organization, and API key."""
+
+    org: Organization
+    ds: Datasource
+    key: str

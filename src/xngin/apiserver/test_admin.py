@@ -116,7 +116,10 @@ def test_lifecycle(secured_datasource):
     assert response.status_code == 200, response.content
     parsed = ListDatasourcesResponse.model_validate(response.json())
     assert len(parsed.items) == 2
-    assert {i.driver for i in parsed.items} == {"postgresql+psycopg", "sqlite"}
+    assert {i.driver for i in parsed.items} == {
+        "postgresql+psycopg2",
+        "postgresql+psycopg",
+    }
     assert parsed.items[0].organization_id == parsed.items[1].organization_id
 
     # Delete datasources

@@ -94,9 +94,8 @@ class ListDatasourcesResponse(AdminApiBaseModel):
 class CreateDatasourceRequest(AdminApiBaseModel):
     organization_id: Annotated[str, Field(...)]
     name: Annotated[str, Field(...)]
-    # TODO: Disallow SqliteLocalConfig from API
     config: Annotated[
-        RemoteDatabaseConfig | SqliteLocalConfig,
+        RemoteDatabaseConfig,
         Field(
             discriminator="type",
             description="Details on the datasource configuration. The participants field must be set to empty array.",

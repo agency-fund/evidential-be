@@ -529,6 +529,14 @@ async def make_webhook_request_base(
         return status_code, webhook_response
 
 
+@router.get("/_authcheck", include_in_schema=False)
+def authcheck(
+    _config: Annotated[DatasourceConfig, Depends(datasource_config_required)],
+):
+    """Returns 204 if the request is allowed to use the requested datasource."""
+    return Response(status_code=204)
+
+
 @router.get("/_settings", include_in_schema=False)
 def debug_settings(
     request: Request,
