@@ -2,7 +2,6 @@
 
 import json
 import logging
-import os
 from contextlib import asynccontextmanager
 from typing import Annotated
 
@@ -13,6 +12,7 @@ from pydantic import BaseModel, Field, ConfigDict, TypeAdapter
 from sqlalchemy import delete, select
 from sqlalchemy.orm import Session
 
+from xngin.apiserver import flags
 from xngin.apiserver.apikeys import make_key, hash_key
 from xngin.apiserver.dependencies import xngin_db_session
 from xngin.apiserver.models.tables import (
@@ -36,7 +36,7 @@ GENERIC_SUCCESS = Response(status_code=status.HTTP_204_NO_CONTENT)
 
 def is_enabled():
     """Feature flag: Returns true iff OIDC is enabled."""
-    return os.environ.get("ENABLE_ADMIN", "").lower() in ("true", "1")
+    return flags.ENABLE_ADMIN
 
 
 @asynccontextmanager

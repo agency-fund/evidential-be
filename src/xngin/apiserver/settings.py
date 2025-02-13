@@ -30,6 +30,7 @@ from tenacity import (
     stop_after_delay,
 )
 
+from xngin.apiserver import flags
 from xngin.apiserver.settings_secrets import replace_secrets
 from xngin.db_extensions import NumpyStddev
 from xngin.schema.schema_types import ParticipantsSchema
@@ -379,7 +380,7 @@ class RemoteDatabaseConfig(ParticipantsMixin, ConfigBaseModel):
         engine = sqlalchemy.create_engine(
             url,
             connect_args=connect_args,
-            echo=os.environ.get("ECHO_SQL", "").lower() in ("true", "1"),
+            echo=flags.ECHO_SQL,
         )
         self._extra_engine_setup(engine)
         return Session(engine)
@@ -436,7 +437,7 @@ class SqliteLocalConfig(ParticipantsMixin, ConfigBaseModel):
         engine = sqlalchemy.create_engine(
             url,
             connect_args={"timeout": 5},
-            echo=os.environ.get("ECHO_SQL", "").lower() in ("true", "1"),
+            echo=flags.ECHO_SQL,
         )
 
         @event.listens_for(engine, "connect")

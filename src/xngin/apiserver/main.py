@@ -6,6 +6,7 @@ from fastapi import FastAPI
 from fastapi.openapi.utils import get_openapi
 
 from xngin.apiserver import database, exceptionhandlers, middleware, constants
+from xngin.apiserver.flags import PUBLISH_ALL_DOCS
 from xngin.apiserver.routers import experiments_api, oidc, admin
 
 
@@ -47,8 +48,7 @@ def enable_oidc_api():
         oidc.router,
         prefix=constants.API_PREFIX_V1,
         tags=["Auth"],
-        include_in_schema=os.environ.get("XNGIN_PUBLISH_ALL_DOCS", "").lower()
-        in {"1", "true"},
+        include_in_schema=PUBLISH_ALL_DOCS,
     )
 
 
@@ -57,8 +57,7 @@ def enable_admin_api():
         admin.router,
         prefix=constants.API_PREFIX_V1,
         tags=["Admin"],
-        include_in_schema=os.environ.get("XNGIN_PUBLISH_ALL_DOCS", "").lower()
-        in {"1", "true"},
+        include_in_schema=PUBLISH_ALL_DOCS,
     )
 
 

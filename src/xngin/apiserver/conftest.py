@@ -15,7 +15,7 @@ from sqlalchemy.dialects.postgresql import psycopg
 from sqlalchemy.engine.interfaces import Dialect
 from sqlalchemy.orm import sessionmaker
 
-from xngin.apiserver import database
+from xngin.apiserver import database, flags
 from xngin.apiserver.dependencies import settings_dependency, xngin_db_session
 from xngin.apiserver.models import tables
 from xngin.apiserver.settings import XnginSettings, SettingsForTesting
@@ -106,7 +106,7 @@ def get_test_sessionmaker():
         connect_url,
         connect_args=connect_args,
         poolclass=StaticPool,
-        echo=os.environ.get("ECHO_SQL", "").lower() in ("true", "1"),
+        echo=flags.ECHO_SQL,
     )
 
     testing_session_local = sessionmaker(autoflush=False, bind=db_engine)

@@ -11,7 +11,7 @@ from fastapi import APIRouter, Query, FastAPI, HTTPException
 from fastapi.security import OpenIdConnect
 from pydantic import BaseModel, Field
 from fastapi.responses import FileResponse
-from xngin.apiserver import constants
+from xngin.apiserver import constants, flags
 
 ENV_GOOGLE_OIDC_CLIENT_ID = "GOOGLE_OIDC_CLIENT_ID"
 ENV_GOOGLE_OIDC_CLIENT_SECRET = "GOOGLE_OIDC_CLIENT_SECRET"
@@ -35,7 +35,7 @@ class OidcMisconfiguredError(Exception):
 
 def is_enabled():
     """Feature flag: Returns true iff OIDC is enabled."""
-    enabled = os.environ.get("ENABLE_OIDC", "").lower() in ("true", "1")
+    enabled = flags.ENABLE_OIDC
     if enabled:
         if not os.environ.get(ENV_GOOGLE_OIDC_CLIENT_ID):
             raise OidcMisconfiguredError(
