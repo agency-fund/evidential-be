@@ -40,20 +40,32 @@ middleware.setup(app)
 app.include_router(
     experiments_api.router, prefix=constants.API_PREFIX_V1, tags=["Experiment Design"]
 )
-if oidc.is_enabled():
+
+
+def enable_oidc_api():
     app.include_router(
         oidc.router,
         prefix=constants.API_PREFIX_V1,
         tags=["Auth"],
         include_in_schema=False,
     )
-if oidc.is_enabled() and admin.is_enabled():
+
+
+def enable_admin_api():
     app.include_router(
         admin.router,
         prefix=constants.API_PREFIX_V1,
         tags=["Admin"],
         include_in_schema=False,
     )
+
+
+if oidc.is_enabled():
+    enable_oidc_api()
+
+
+if oidc.is_enabled() and admin.is_enabled():
+    enable_admin_api()
 
 
 def custom_openapi():
