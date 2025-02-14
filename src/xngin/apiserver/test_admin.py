@@ -38,7 +38,7 @@ def db_session():
 
 
 @pytest.fixture(scope="module", autouse=True)
-def set_env_foo():
+def enable_apis_under_test():
     # TODO: Calling enable_*() has the minor side effect of enabling these APIs for all subsequent unit tests.
     main_module.enable_oidc_api()
     main_module.enable_admin_api()
