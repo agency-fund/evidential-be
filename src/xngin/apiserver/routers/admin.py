@@ -200,15 +200,11 @@ class CreateUserRequest(AdminApiBaseModel):
     organization_id: Annotated[str, Field(...)]
 
 
-async def get_user_from_token(
+def get_user_from_token(
     session: Annotated[Session, Depends(xngin_db_session)],
     token_info: Annotated[TokenInfo, Depends(require_oidc_token)],
 ) -> User:
-    """Returns the User record matching the authenticated user's email.
-
-    Raises:
-        HTTPException: If no user is found with the email from the token.
-    """
+    """Returns the User record matching the authenticated user's email."""
     user = session.query(User).filter(User.email == token_info.email).first()
     if not user:
         # Privileged users will be created on the fly.
@@ -233,7 +229,7 @@ def caller_identity(
 
 
 @router.get("/organizations")
-async def list_organizations(
+def list_organizations(
     session: Annotated[Session, Depends(xngin_db_session)],
     user: Annotated[User, Depends(get_user_from_token)],
 ) -> ListOrganizationsResponse:
@@ -254,7 +250,7 @@ async def list_organizations(
 
 
 @router.post("/organizations")
-async def create_organizations(
+def create_organizations(
     session: Annotated[Session, Depends(xngin_db_session)],
     token_info: Annotated[TokenInfo, Depends(require_oidc_token)],
     user: Annotated[User, Depends(get_user_from_token)],
@@ -279,7 +275,7 @@ async def create_organizations(
 
 
 @router.post("/organizations/{organization_id}/members")
-async def add_member_to_organization(
+def add_member_to_organization(
     organization_id: str,
     session: Annotated[Session, Depends(xngin_db_session)],
     token_info: Annotated[TokenInfo, Depends(require_oidc_token)],
@@ -300,8 +296,7 @@ async def add_member_to_organization(
     if not token_info.is_privileged():
         # Verify user belongs to the organization
         stmt = (
-            select(True)
-            .select_from(UserOrganization)
+            select(UserOrganization)
             .where(UserOrganization.user_id == user.id)
             .where(UserOrganization.organization_id == organization_id)
         )
@@ -324,7 +319,7 @@ async def add_member_to_organization(
 
 
 @router.get("/datasources")
-async def list_datasources(
+def list_datasources(
     session: Annotated[Session, Depends(xngin_db_session)],
     user: Annotated[User, Depends(get_user_from_token)],
 ) -> ListDatasourcesResponse:
@@ -359,7 +354,7 @@ async def list_datasources(
 
 
 @router.post("/datasources")
-async def create_datasource(
+def create_datasource(
     session: Annotated[Session, Depends(xngin_db_session)],
     user: Annotated[User, Depends(get_user_from_token)],
     body: Annotated[CreateDatasourceRequest, Body(...)],
@@ -403,7 +398,7 @@ async def create_datasource(
 
 
 @router.patch("/datasources/{datasource_id}")
-async def update_datasource(
+def update_datasource(
     datasource_id: str,
     body: UpdateDatasourceRequest,
     user: Annotated[User, Depends(get_user_from_token)],
@@ -421,7 +416,7 @@ async def update_datasource(
 
 
 @router.post("/datasources/{datasource_id}/inspect")
-async def inspect_datasource(
+def inspect_datasource(
     datasource_id: str,
     user: Annotated[User, Depends(get_user_from_token)],
     session: Annotated[Session, Depends(xngin_db_session)],
@@ -467,7 +462,7 @@ def create_inspect_table_response_from_table(table: sqlalchemy.Table):
 
 
 @router.post("/datasources/{datasource_id}/inspect/{table_name}")
-async def inspect_table_in_datasource(
+def inspect_table_in_datasource(
     datasource_id: str,
     table_name: str,
     user: Annotated[User, Depends(get_user_from_token)],
@@ -486,7 +481,7 @@ async def inspect_table_in_datasource(
 
 
 @router.delete("/datasources/{datasource_id}")
-async def delete_datasource(
+def delete_datasource(
     session: Annotated[Session, Depends(xngin_db_session)],
     user: Annotated[User, Depends(get_user_from_token)],
     datasource_id: Annotated[str, Path(...)],
@@ -515,7 +510,7 @@ async def delete_datasource(
 
 
 @router.get("/datasources/{datasource_id}/participants")
-async def list_participant_types(
+def list_participant_types(
     datasource_id: str,
     session: Annotated[Session, Depends(xngin_db_session)],
     user: Annotated[User, Depends(get_user_from_token)],
@@ -527,7 +522,7 @@ async def list_participant_types(
 
 
 @router.post("/datasources/{datasource_id}/participants")
-async def create_participant_type(
+def create_participant_type(
     datasource_id: str,
     session: Annotated[Session, Depends(xngin_db_session)],
     user: Annotated[User, Depends(get_user_from_token)],
@@ -551,7 +546,7 @@ async def create_participant_type(
 
 
 @router.get("/datasources/{datasource_id}/participants/{participant_id}")
-async def get_participant_types(
+def get_participant_types(
     datasource_id: str,
     participant_id: str,
     session: Annotated[Session, Depends(xngin_db_session)],
@@ -563,7 +558,7 @@ async def get_participant_types(
 
 
 @router.patch("/datasources/{datasource_id}/participants/{participant_id}")
-async def update_participant_type(
+def update_participant_type(
     datasource_id: str,
     participant_id: str,
     session: Annotated[Session, Depends(xngin_db_session)],
@@ -595,7 +590,7 @@ async def update_participant_type(
 
 
 @router.delete("/datasources/{datasource_id}/participants/{participant_id}")
-async def delete_participant(
+def delete_participant(
     datasource_id: str,
     participant_id: str,
     session: Annotated[Session, Depends(xngin_db_session)],
@@ -611,7 +606,7 @@ async def delete_participant(
 
 
 @router.get("/apikeys")
-async def list_api_keys(
+def list_api_keys(
     session: Annotated[Session, Depends(xngin_db_session)],
     user: Annotated[User, Depends(get_user_from_token)],
 ) -> ListApiKeysResponse:
@@ -645,7 +640,7 @@ async def list_api_keys(
 
 
 @router.post("/apikeys")
-async def create_api_key(
+def create_api_key(
     session: Annotated[Session, Depends(xngin_db_session)],
     user: Annotated[User, Depends(get_user_from_token)],
     body: Annotated[CreateApiKeyRequest, Body(...)],
@@ -653,9 +648,6 @@ async def create_api_key(
     """Creates an API key for the specified datasource.
 
     The user must belong to the organization that owns the requested datasource.
-
-    Raises:
-        HTTPException: If the user doesn't have access to the requested datasource.
     """
     ds = get_datasource_or_raise(session, user, body.datasource_id)
     label, key = make_key()
@@ -667,7 +659,7 @@ async def create_api_key(
 
 
 @router.delete("/apikeys/{api_key_id}")
-async def delete_api_key(
+def delete_api_key(
     session: Annotated[Session, Depends(xngin_db_session)],
     user: Annotated[User, Depends(get_user_from_token)],
     api_key_id: Annotated[str, Path(...)],
