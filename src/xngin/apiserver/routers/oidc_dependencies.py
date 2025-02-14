@@ -1,7 +1,7 @@
 from dataclasses import dataclass
 from typing import Annotated
 
-from fastapi import Depends, HTTPException
+from fastapi import Depends, HTTPException, Security
 from jose import jwt, JWTError
 from fastapi import status
 
@@ -54,7 +54,7 @@ TESTING_TOKENS = {
 
 
 async def require_oidc_token(
-    token: Annotated[str, Depends(oidc_google)],
+    token: Annotated[str, Security(oidc_google)],
     oidc_config: Annotated[dict, Depends(get_google_configuration)],
     jwks: Annotated[dict, Depends(get_google_jwks)],
 ) -> TokenInfo:
