@@ -1,18 +1,19 @@
 """Implements a basic Admin API."""
 
-import json
 import logging
 from contextlib import asynccontextmanager
 from typing import Annotated
 
+import sqlalchemy
 from fastapi import APIRouter, FastAPI, Depends, Path, Body, HTTPException
 from fastapi import Response
 from fastapi import status
-from pydantic import BaseModel, Field, ConfigDict, TypeAdapter
+from pydantic import BaseModel, Field, ConfigDict
 from sqlalchemy import delete, select
 from sqlalchemy.orm import Session
 
-from xngin.apiserver import flags
+from xngin.apiserver import flags, settings
+from xngin.apiserver.api_types import ApiBaseModel, DataType
 from xngin.apiserver.apikeys import make_key, hash_key
 from xngin.apiserver.dependencies import xngin_db_session
 from xngin.apiserver.models.tables import (
@@ -26,7 +27,7 @@ from xngin.apiserver.routers.oidc_dependencies import require_oidc_token, TokenI
 from xngin.apiserver.settings import (
     RemoteDatabaseConfig,
     SqliteLocalConfig,
-    DatasourceConfig,
+    Dwh,
 )
 
 logger = logging.getLogger(__name__)
@@ -94,17 +95,38 @@ class ListDatasourcesResponse(AdminApiBaseModel):
 class CreateDatasourceRequest(AdminApiBaseModel):
     organization_id: Annotated[str, Field(...)]
     name: Annotated[str, Field(...)]
-    config: Annotated[
-        RemoteDatabaseConfig,
-        Field(
-            discriminator="type",
-            description="Details on the datasource configuration. The participants field must be set to empty array.",
-        ),
-    ]
+    dwh: Dwh
+
+
+class UpdateDatasourceRequest(AdminApiBaseModel):
+    name: Annotated[str | None, Field()] = None
+    dwh: Annotated[Dwh | None, Field()] = None
 
 
 class CreateDatasourceResponse(AdminApiBaseModel):
     id: Annotated[str, Field(...)]
+
+
+class InspectDatasourceResponse(ApiBaseModel):
+    tables: list[str]
+
+
+class FieldDescription(ApiBaseModel):
+    """Concise summary of fields in the table."""
+
+    field_name: str
+    data_type: str
+    description: str | None = None
+
+
+class InspectDatasourceTableResponse(ApiBaseModel):
+    """Describes a table in the datasource."""
+
+    detected_unique_id_fields: Annotated[
+        list[str],
+        Field(description="Fields that are possibly candidates for unique IDs."),
+    ]
+    fields: Annotated[list[FieldDescription], Field(description="Fields in the table.")]
 
 
 class ApiKeySummary(AdminApiBaseModel):
@@ -275,9 +297,7 @@ async def datasources_list(
     datasources = result.scalars().all()
 
     def convert_ds_to_summary(ds: Datasource) -> DatasourceSummary:
-        # Under normal operation this is always a RemoteDatabaseConfig but in
-        # unit tests it can also be a SqliteLocalConfig.
-        config = TypeAdapter(DatasourceConfig).validate_python(ds.config)
+        config = ds.get_config()
         return DatasourceSummary(
             id=ds.id,
             name=ds.name,
@@ -324,32 +344,134 @@ async def datasources_create(
             detail="You are not a member of this organization",
         )
 
-    if body.config.webhook_config:
-        raise HTTPException(
-            status_code=400, detail="Configuring webhooks is disallowed."
-        )
-
-    if body.config.type != "remote":
-        raise HTTPException(400, detail='config.type must be "remote"')
-
     if (
-        body.config.dwh.driver == "bigquery"
-        and body.config.dwh.credentials.type != "serviceaccountinfo"
+        body.dwh.driver == "bigquery"
+        and body.dwh.credentials.type != "serviceaccountinfo"
     ):
         raise HTTPException(
             status_code=400,
             detail="BigQuery credentials must be specified using type=serviceaccountinfo",
         )
 
-    datasource = Datasource(
-        name=body.name,
-        organization_id=org.id,
-        config=json.loads(body.config.model_dump_json()),
-    )
+    config = RemoteDatabaseConfig(participants=[], type="remote", dwh=body.dwh)
+
+    datasource = Datasource(name=body.name, organization_id=org.id)
+    datasource.set_config(config)
     session.add(datasource)
     session.commit()
 
     return CreateDatasourceResponse(id=datasource.id)
+
+
+@router.patch("/datasources/{datasource_id}")
+async def datasources_update(
+    datasource_id: str,
+    body: UpdateDatasourceRequest,
+    user: Annotated[User, Depends(get_user_from_token)],
+    session: Annotated[Session, Depends(xngin_db_session)],
+):
+    stmt = (
+        select(Datasource)
+        .join(Organization)
+        .join(UserOrganization)
+        .where(UserOrganization.user_id == user.id, Datasource.id == datasource_id)
+    )
+    ds = session.execute(stmt).scalar_one_or_none()
+    if ds is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Datasource not found."
+        )
+    if body.name is not None:
+        ds.name = body.name
+    if body.dwh is not None:
+        cfg = ds.get_config()
+        cfg.dwh = body.dwh
+        ds.set_config(cfg)
+    session.commit()
+    return GENERIC_SUCCESS
+
+
+@router.post("/datasources/{datasource_id}/inspect")
+async def datasources_inspect(
+    datasource_id: str,
+    user: Annotated[User, Depends(get_user_from_token)],
+    session: Annotated[Session, Depends(xngin_db_session)],
+):
+    """Verifies connectivity to a datasource and returns a list of readable tables."""
+    stmt = (
+        select(Datasource)
+        .join(Organization)
+        .join(UserOrganization)
+        .where(UserOrganization.user_id == user.id, Datasource.id == datasource_id)
+    )
+    ds = session.execute(stmt).scalar_one_or_none()
+    if ds is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Datasource not found."
+        )
+
+    config = ds.get_config()
+    metadata = sqlalchemy.MetaData()
+    metadata.reflect(config.dbengine())
+    tables = list(metadata.tables.keys())
+    return InspectDatasourceResponse(tables=tables)
+
+
+def create_inspect_table_response_from_table(table: sqlalchemy.Table):
+    possible_id_columns = {
+        c.name for c in table.columns.values() if c.name.endswith("_id")
+    }
+    primary_key_columns = {c.name for c in table.columns.values() if c.primary_key}
+    if len(primary_key_columns) > 0:
+        # If there is more than one PK, it probably isn't usable for experiments.
+        primary_key_columns = set()
+    possible_id_columns |= primary_key_columns
+
+    collected = []
+    for column in table.columns.values():
+        type_hint = column.type
+        collected.append(
+            FieldDescription(
+                field_name=column.name,
+                data_type=DataType.match(type_hint),
+                description=column.comment,
+            )
+        )
+
+    return InspectDatasourceTableResponse(
+        detected_unique_id_fields=list(sorted(possible_id_columns)),
+        fields=list(sorted(collected, key=lambda f: f.field_name)),
+    )
+
+
+@router.post("/datasources/{datasource_id}/inspect/{table_name}")
+async def datasource_table_inspect(
+    datasource_id: str,
+    table_name: str,
+    user: Annotated[User, Depends(get_user_from_token)],
+    session: Annotated[Session, Depends(xngin_db_session)],
+):
+    """Inspects a single table in a datasource and returns a summary of its fields."""
+    stmt = (
+        select(Datasource)
+        .join(Organization)
+        .join(UserOrganization)
+        .where(UserOrganization.user_id == user.id, Datasource.id == datasource_id)
+    )
+    ds = session.execute(stmt).scalar_one_or_none()
+    if ds is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Datasource not found."
+        )
+
+    config = ds.get_config()
+    engine = config.dbengine()
+    # CannotFindTableError will be handled by exceptionhandlers.py.
+    try:
+        table = settings.infer_table(engine, table_name, use_reflection=False)
+    except sqlalchemy.exc.ProgrammingError:
+        table = settings.infer_table(engine, table_name, use_reflection=True)
+    return create_inspect_table_response_from_table(table)
 
 
 @router.delete("/datasources/{datasource_id}")
