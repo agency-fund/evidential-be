@@ -529,7 +529,7 @@ async def make_webhook_request_base(
         return status_code, webhook_response
 
 
-@router.get("/_authcheck", include_in_schema=False)
+@router.get("/_authcheck", include_in_schema=False, status_code=204)
 def authcheck(
     _config: Annotated[DatasourceConfig, Depends(datasource_config_required)],
 ):

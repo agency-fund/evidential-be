@@ -274,7 +274,9 @@ def create_organizations(
     return CreateOrganizationResponse(id=organization.id)
 
 
-@router.post("/organizations/{organization_id}/members")
+@router.post(
+    "/organizations/{organization_id}/members", status_code=status.HTTP_204_NO_CONTENT
+)
 def add_member_to_organization(
     organization_id: str,
     session: Annotated[Session, Depends(xngin_db_session)],
@@ -420,7 +422,7 @@ def inspect_datasource(
     datasource_id: str,
     user: Annotated[User, Depends(get_user_from_token)],
     session: Annotated[Session, Depends(xngin_db_session)],
-):
+) -> InspectDatasourceResponse:
     """Verifies connectivity to a datasource and returns a list of readable tables."""
     ds = get_datasource_or_raise(session, user, datasource_id)
     config = ds.get_config()
@@ -480,7 +482,7 @@ def inspect_table_in_datasource(
     return create_inspect_table_response_from_table(table)
 
 
-@router.delete("/datasources/{datasource_id}")
+@router.delete("/datasources/{datasource_id}", status_code=status.HTTP_204_NO_CONTENT)
 def delete_datasource(
     session: Annotated[Session, Depends(xngin_db_session)],
     user: Annotated[User, Depends(get_user_from_token)],
@@ -589,7 +591,10 @@ def update_participant_type(
     )
 
 
-@router.delete("/datasources/{datasource_id}/participants/{participant_id}")
+@router.delete(
+    "/datasources/{datasource_id}/participants/{participant_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+)
 def delete_participant(
     datasource_id: str,
     participant_id: str,
@@ -658,7 +663,7 @@ def create_api_key(
     return CreateApiKeyResponse(id=label, datasource_id=ds.id, key=key)
 
 
-@router.delete("/apikeys/{api_key_id}")
+@router.delete("/apikeys/{api_key_id}", status_code=status.HTTP_204_NO_CONTENT)
 def delete_api_key(
     session: Annotated[Session, Depends(xngin_db_session)],
     user: Annotated[User, Depends(get_user_from_token)],
