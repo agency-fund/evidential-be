@@ -113,7 +113,7 @@ def get_test_sessionmaker():
         echo=flags.ECHO_SQL,
     )
 
-    testing_session_local = sessionmaker(autoflush=False, bind=db_engine)
+    testing_session_local = sessionmaker(bind=db_engine)
     # Hack: Cause any direct access to production code from code to fail during tests.
     database.SessionLocal = None
     # Create all the ORM tables.
