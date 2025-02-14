@@ -1,11 +1,10 @@
 """conftest configures FastAPI dependency injection for testing and also does some setup before tests in this module are run."""
 
-import dataclasses
 import enum
-import json
 import logging
 import os
 import secrets
+from dataclasses import dataclass
 from pathlib import Path
 from typing import assert_never
 
@@ -197,16 +196,17 @@ def secured_datasource(db_session):
     run_id = secrets.token_hex(8)
     datasource_id = "ds" + run_id
 
-    # We derive a new test datasource from the standard static "testing" datasource by
+    # We derive a new test datasource from the standard static "testing-remote" datasource by
     # randomizing its unique ID and marking it as requiring an API key.
-    # TODO: replace this with a non-sqliteconfig value.
+    #
+    # Note: The datasource configured in this fixture represents a customer database. This is *different* than the
+    # xngin server-side database configured by conftest.setup().
     test_ds = get_settings_for_test().get_datasource("testing-remote").config
 
     org = Organization(id="org" + run_id, name="test organization")
 
-    datasource = Datasource(
-        id=datasource_id, name="test ds", config=json.loads(test_ds.model_dump_json())
-    )
+    datasource = Datasource(id=datasource_id, name="test ds")
+    datasource.set_config(test_ds)
     datasource.organization = org
 
     key_id, key = make_key()
@@ -216,13 +216,23 @@ def secured_datasource(db_session):
     db_session.add_all([org, datasource, kt])
     db_session.commit()
     assert db_session.get(Datasource, datasource_id) is not None
-    return DatasourceMetadata(org=org, ds=datasource, key=key)
+    return DatasourceMetadata(
+        ds=datasource,
+        dsn=datasource.get_config().dwh.to_sqlalchemy_url().render_as_string(False),
+        key=key,
+        org=org,
+    )
 
 
-@dataclasses.dataclass
+@dataclass
 class DatasourceMetadata:
     """Describes an ephemeral datasource, organization, and API key."""
 
     org: Organization
     ds: Datasource
+
+    # The SQLAlchemy DSN
+    dsn: str
+
+    # An API key suitable for use in the Authorization: header.
     key: str
