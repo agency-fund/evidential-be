@@ -119,12 +119,12 @@
         ],
         "dwh": {
           "driver": "postgresql+psycopg2",
-          "user": "user",
-          "port": 5439,
-          "host": "__example__.redshift.amazonaws.com",
-          "password": "password",
-          "dbname": "dbname",
-          "sslmode": "require"
+          "user": "postgres",
+          "port": 5499,
+          "host": "127.0.0.1",
+          "password": "postgres",
+          "dbname": "postgres",
+          "sslmode": "disable"
         }
       }
     },
