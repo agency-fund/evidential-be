@@ -83,7 +83,7 @@ def test_lifecycle(secured_datasource):
     """Exercises the admin API methods that can operate purely in-process w/o an external database."""
     # Add privileged user to existing organization
     response = client.post(
-        f"/v1/m/organization/{secured_datasource.org.id}/members",
+        f"/v1/m/organizations/{secured_datasource.org.id}/members",
         json={"email": PRIVILEGED_EMAIL},
         headers={"Authorization": f"Bearer {PRIVILEGED_TOKEN_FOR_TESTING}"},
     )
@@ -91,7 +91,7 @@ def test_lifecycle(secured_datasource):
 
     # Add unprivileged user to existing organization
     response = client.post(
-        f"/v1/m/organization/{secured_datasource.org.id}/members",
+        f"/v1/m/organizations/{secured_datasource.org.id}/members",
         json={"email": UNPRIVILEGED_EMAIL},
         headers={"Authorization": f"Bearer {PRIVILEGED_TOKEN_FOR_TESTING}"},
     )
@@ -324,7 +324,7 @@ def test_create_participants_type_invalid(secured_datasource):
         ).model_dump_json(),
     )
     assert response.status_code == 422, response.content
-    assert "no columns marked as unique ID." in response.json()["errors"][0]["msg"], (
+    assert "no columns marked as unique ID." in response.json()["detail"][0]["msg"], (
         response.content
     )
 
@@ -334,7 +334,7 @@ def test_lifecycle_with_pg(secured_datasource):
     """Exercises the admin API methods that require an external database."""
     # Add the privileged user to the organization.
     response = client.post(
-        f"/v1/m/organization/{secured_datasource.org.id}/members",
+        f"/v1/m/organizations/{secured_datasource.org.id}/members",
         json={"email": PRIVILEGED_EMAIL},
         headers={"Authorization": f"Bearer {PRIVILEGED_TOKEN_FOR_TESTING}"},
     )

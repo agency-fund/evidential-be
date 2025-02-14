@@ -233,7 +233,7 @@ def caller_identity(
 
 
 @router.get("/organizations")
-async def organizations_list(
+async def list_organizations(
     session: Annotated[Session, Depends(xngin_db_session)],
     user: Annotated[User, Depends(get_user_from_token)],
 ) -> ListOrganizationsResponse:
@@ -254,7 +254,7 @@ async def organizations_list(
 
 
 @router.post("/organizations")
-async def organizations_create(
+async def create_organizations(
     session: Annotated[Session, Depends(xngin_db_session)],
     token_info: Annotated[TokenInfo, Depends(require_oidc_token)],
     user: Annotated[User, Depends(get_user_from_token)],
@@ -281,8 +281,8 @@ async def organizations_create(
     return CreateOrganizationResponse(id=organization.id)
 
 
-@router.post("/organization/{organization_id}/members")
-async def organizations_add_member(
+@router.post("/organizations/{organization_id}/members")
+async def add_member_to_organization(
     organization_id: str,
     session: Annotated[Session, Depends(xngin_db_session)],
     token_info: Annotated[TokenInfo, Depends(require_oidc_token)],
@@ -327,7 +327,7 @@ async def organizations_add_member(
 
 
 @router.get("/datasources")
-async def datasources_list(
+async def list_datasources(
     session: Annotated[Session, Depends(xngin_db_session)],
     user: Annotated[User, Depends(get_user_from_token)],
 ) -> ListDatasourcesResponse:
@@ -362,7 +362,7 @@ async def datasources_list(
 
 
 @router.post("/datasources")
-async def datasources_create(
+async def create_datasource(
     session: Annotated[Session, Depends(xngin_db_session)],
     user: Annotated[User, Depends(get_user_from_token)],
     body: Annotated[CreateDatasourceRequest, Body(...)],
@@ -409,7 +409,7 @@ async def datasources_create(
 
 
 @router.patch("/datasources/{datasource_id}")
-async def datasources_update(
+async def update_datasource(
     datasource_id: str,
     body: UpdateDatasourceRequest,
     user: Annotated[User, Depends(get_user_from_token)],
@@ -427,7 +427,7 @@ async def datasources_update(
 
 
 @router.post("/datasources/{datasource_id}/inspect")
-async def datasources_inspect(
+async def inspect_datasource(
     datasource_id: str,
     user: Annotated[User, Depends(get_user_from_token)],
     session: Annotated[Session, Depends(xngin_db_session)],
@@ -469,7 +469,7 @@ def create_inspect_table_response_from_table(table: sqlalchemy.Table):
 
 
 @router.post("/datasources/{datasource_id}/inspect/{table_name}")
-async def datasource_table_inspect(
+async def inspect_table_in_datasource(
     datasource_id: str,
     table_name: str,
     user: Annotated[User, Depends(get_user_from_token)],
@@ -488,7 +488,7 @@ async def datasource_table_inspect(
 
 
 @router.delete("/datasources/{datasource_id}")
-async def datasources_delete(
+async def delete_datasource(
     session: Annotated[Session, Depends(xngin_db_session)],
     user: Annotated[User, Depends(get_user_from_token)],
     datasource_id: Annotated[str, Path(...)],
@@ -520,7 +520,7 @@ async def datasources_delete(
 
 
 @router.get("/datasources/{datasource_id}/participants")
-async def participants_list(
+async def list_participant_types(
     datasource_id: str,
     session: Annotated[Session, Depends(xngin_db_session)],
     user: Annotated[User, Depends(get_user_from_token)],
@@ -532,7 +532,7 @@ async def participants_list(
 
 
 @router.post("/datasources/{datasource_id}/participants")
-async def participants_create(
+async def create_participant_type(
     datasource_id: str,
     session: Annotated[Session, Depends(xngin_db_session)],
     user: Annotated[User, Depends(get_user_from_token)],
@@ -556,7 +556,7 @@ async def participants_create(
 
 
 @router.get("/datasources/{datasource_id}/participants/{participant_id}")
-async def participants_get(
+async def get_participant_types(
     datasource_id: str,
     participant_id: str,
     session: Annotated[Session, Depends(xngin_db_session)],
@@ -568,7 +568,7 @@ async def participants_get(
 
 
 @router.patch("/datasources/{datasource_id}/participants/{participant_id}")
-async def participants_update(
+async def update_participant_type(
     datasource_id: str,
     participant_id: str,
     session: Annotated[Session, Depends(xngin_db_session)],
@@ -600,7 +600,7 @@ async def participants_update(
 
 
 @router.delete("/datasources/{datasource_id}/participants/{participant_id}")
-async def participants_delete(
+async def delete_participant(
     datasource_id: str,
     participant_id: str,
     session: Annotated[Session, Depends(xngin_db_session)],
@@ -616,7 +616,7 @@ async def participants_delete(
 
 
 @router.get("/apikeys")
-async def apikeys_list(
+async def list_api_keys(
     session: Annotated[Session, Depends(xngin_db_session)],
     user: Annotated[User, Depends(get_user_from_token)],
 ) -> ListApiKeysResponse:
@@ -650,7 +650,7 @@ async def apikeys_list(
 
 
 @router.post("/apikeys")
-async def apikeys_create(
+async def create_api_key(
     session: Annotated[Session, Depends(xngin_db_session)],
     user: Annotated[User, Depends(get_user_from_token)],
     body: Annotated[CreateApiKeyRequest, Body(...)],
@@ -672,7 +672,7 @@ async def apikeys_create(
 
 
 @router.delete("/apikeys/{api_key_id}")
-async def apikeys_delete(
+async def delete_api_key(
     session: Annotated[Session, Depends(xngin_db_session)],
     user: Annotated[User, Depends(get_user_from_token)],
     api_key_id: Annotated[str, Path(...)],
