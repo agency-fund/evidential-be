@@ -1,3 +1,4 @@
+import json
 import secrets
 
 from pydantic import TypeAdapter
@@ -99,10 +100,9 @@ class Datasource(Base):
         ForeignKey("organizations.id", ondelete="CASCADE")
     )
     config: Mapped[dict] = mapped_column(
-        JSON, comment="JSON serialized form of settings.Datasource"
+        JSON, comment="JSON serialized form of DatasourceConfig"
     )
 
-    # Relationships
     organization: Mapped["Organization"] = relationship(back_populates="datasources")
     api_keys: Mapped[list["ApiKey"]] = relationship(
         back_populates="datasource", cascade="all, delete-orphan"
@@ -111,3 +111,8 @@ class Datasource(Base):
     def get_config(self) -> DatasourceConfig:
         """Parses the config field and returns the Datasource.config."""
         return TypeAdapter(DatasourceConfig).validate_python(self.config)
+
+    def set_config(self, value: DatasourceConfig):
+        """Sets the config field to the serialized form of the given Datasource.config."""
+        # Round-trip via JSON to serialize SecretStr values correctly.
+        self.config = json.loads(value.model_dump_json())
