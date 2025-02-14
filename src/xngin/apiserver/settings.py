@@ -378,6 +378,14 @@ class RemoteDatabaseConfig(ParticipantsMixin, ConfigBaseModel):
         Use this in a `with` block to ensure correct transaction handling. If you need the
         sqlalchemy Engine, call .get_bind().
         """
+        engine = self.dbengine()
+        return Session(engine)
+
+    def dbengine(self):
+        """Returns a SQLAlchemy Engine for the customer database.
+
+        Use this when reflecting. If you're doing any queries on the tables, prefer dbsession().
+        """
         url = self.dwh.to_sqlalchemy_url()
         connect_args: dict = {}
         if url.get_backend_name() == "postgres":
@@ -388,7 +396,7 @@ class RemoteDatabaseConfig(ParticipantsMixin, ConfigBaseModel):
             echo=flags.ECHO_SQL,
         )
         self._extra_engine_setup(engine)
-        return Session(engine)
+        return engine
 
     def _extra_engine_setup(self, engine: Engine):
         """Do any extra configuration if needed before a connection is made."""
@@ -434,6 +442,14 @@ class SqliteLocalConfig(ParticipantsMixin, ConfigBaseModel):
         Use this in a `with` block to ensure correct transaction handling. If you need the
         sqlalchemy Engine, call .get_bind().
         """
+        engine = self.dbengine()
+        return Session(engine)
+
+    def dbengine(self):
+        """Returns a SQLAlchemy Engine for the customer database.
+
+        Use this when reflecting. If you're doing any queries on the tables, prefer dbsession().
+        """
         url = sqlalchemy.URL.create(
             drivername="sqlite",
             database=self.sqlite_filename,
@@ -449,7 +465,7 @@ class SqliteLocalConfig(ParticipantsMixin, ConfigBaseModel):
         def register_sqlite_functions(dbapi_connection, _):
             NumpyStddev.register(dbapi_connection)
 
-        return Session(engine)
+        return engine
 
 
 type DatasourceConfig = Annotated[
