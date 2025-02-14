@@ -10,8 +10,11 @@ from xngin.apiserver.settings import DatasourceConfig
 ALPHABET = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz"
 
 
-def newid():
-    return "".join([secrets.choice(ALPHABET) for _ in range(16)])
+def unique_id_factory(prefix):
+    def generate():
+        return prefix + "_" + "".join([secrets.choice(ALPHABET) for _ in range(16)])
+
+    return generate
 
 
 class Base(DeclarativeBase):
@@ -43,7 +46,9 @@ class Organization(Base):
 
     __tablename__ = "organizations"
 
-    id: Mapped[str] = mapped_column(String, primary_key=True, default=newid)
+    id: Mapped[str] = mapped_column(
+        String, primary_key=True, default=unique_id_factory("o")
+    )
     name: Mapped[str] = mapped_column(String(255))
 
     # Relationships
@@ -60,7 +65,9 @@ class User(Base):
 
     __tablename__ = "users"
 
-    id: Mapped[str] = mapped_column(String, primary_key=True, default=newid)
+    id: Mapped[str] = mapped_column(
+        String, primary_key=True, default=unique_id_factory("u")
+    )
     email: Mapped[str] = mapped_column(String(255), unique=True)
     # TODO: properly handle federated auth
     iss: Mapped[str | None] = mapped_column(String(255), default=None)
@@ -94,7 +101,9 @@ class Datasource(Base):
 
     __tablename__ = "datasources"
 
-    id: Mapped[str] = mapped_column(String, primary_key=True, default=newid)
+    id: Mapped[str] = mapped_column(
+        String, primary_key=True, default=unique_id_factory("ds")
+    )
     name: Mapped[str] = mapped_column(String(255))
     organization_id: Mapped[str] = mapped_column(
         ForeignKey("organizations.id", ondelete="CASCADE")
