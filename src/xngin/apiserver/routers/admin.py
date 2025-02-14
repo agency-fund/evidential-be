@@ -57,6 +57,26 @@ router = APIRouter(
 )
 
 
+def user_from_token(
+    session: Annotated[Session, Depends(xngin_db_session)],
+    token_info: Annotated[TokenInfo, Depends(require_oidc_token)],
+) -> User:
+    """Dependency for fetching the User record matching the authenticated user's email."""
+    user = session.query(User).filter(User.email == token_info.email).first()
+    if not user:
+        # Privileged users will be created on the fly.
+        if token_info.is_privileged():
+            user = User(email=token_info.email)
+            session.add(user)
+            session.commit()
+        else:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=f"No user found with email: {token_info.email}",
+            )
+    return user
+
+
 def get_datasource_or_raise(session: Session, user: User, datasource_id: str):
     """Reads the requested datasource from the database. Raises if disallowed or not found."""
     stmt = (
@@ -200,26 +220,6 @@ class CreateUserRequest(AdminApiBaseModel):
     organization_id: Annotated[str, Field(...)]
 
 
-def get_user_from_token(
-    session: Annotated[Session, Depends(xngin_db_session)],
-    token_info: Annotated[TokenInfo, Depends(require_oidc_token)],
-) -> User:
-    """Returns the User record matching the authenticated user's email."""
-    user = session.query(User).filter(User.email == token_info.email).first()
-    if not user:
-        # Privileged users will be created on the fly.
-        if token_info.is_privileged():
-            user = User(email=token_info.email)
-            session.add(user)
-            session.commit()
-        else:
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail=f"No user found with email: {token_info.email}",
-            )
-    return user
-
-
 @router.get("/caller-identity")
 def caller_identity(
     token_info: Annotated[TokenInfo, Depends(require_oidc_token)],
@@ -231,7 +231,7 @@ def caller_identity(
 @router.get("/organizations")
 def list_organizations(
     session: Annotated[Session, Depends(xngin_db_session)],
-    user: Annotated[User, Depends(get_user_from_token)],
+    user: Annotated[User, Depends(user_from_token)],
 ) -> ListOrganizationsResponse:
     """Returns a list of organizations that the authenticated user is a member of."""
     stmt = select(Organization).join(Organization.users).where(User.id == user.id)
@@ -253,7 +253,7 @@ def list_organizations(
 def create_organizations(
     session: Annotated[Session, Depends(xngin_db_session)],
     token_info: Annotated[TokenInfo, Depends(require_oidc_token)],
-    user: Annotated[User, Depends(get_user_from_token)],
+    user: Annotated[User, Depends(user_from_token)],
     body: Annotated[CreateOrganizationRequest, Body(...)],
 ) -> CreateOrganizationResponse:
     """Creates a new organization.
@@ -281,7 +281,7 @@ def add_member_to_organization(
     organization_id: str,
     session: Annotated[Session, Depends(xngin_db_session)],
     token_info: Annotated[TokenInfo, Depends(require_oidc_token)],
-    user: Annotated[User, Depends(get_user_from_token)],
+    user: Annotated[User, Depends(user_from_token)],
     body: Annotated[AddMemberToOrganizationRequest, Body(...)],
 ):
     """Adds a new member to an organization.
@@ -323,7 +323,7 @@ def add_member_to_organization(
 @router.get("/datasources")
 def list_datasources(
     session: Annotated[Session, Depends(xngin_db_session)],
-    user: Annotated[User, Depends(get_user_from_token)],
+    user: Annotated[User, Depends(user_from_token)],
 ) -> ListDatasourcesResponse:
     """Returns a list of datasources accessible to the authenticated user."""
     stmt = (
@@ -358,7 +358,7 @@ def list_datasources(
 @router.post("/datasources")
 def create_datasource(
     session: Annotated[Session, Depends(xngin_db_session)],
-    user: Annotated[User, Depends(get_user_from_token)],
+    user: Annotated[User, Depends(user_from_token)],
     body: Annotated[CreateDatasourceRequest, Body(...)],
 ) -> CreateDatasourceResponse:
     """Creates a new datasource for the specified organization."""
@@ -403,7 +403,7 @@ def create_datasource(
 def update_datasource(
     datasource_id: str,
     body: UpdateDatasourceRequest,
-    user: Annotated[User, Depends(get_user_from_token)],
+    user: Annotated[User, Depends(user_from_token)],
     session: Annotated[Session, Depends(xngin_db_session)],
 ):
     ds = get_datasource_or_raise(session, user, datasource_id)
@@ -420,7 +420,7 @@ def update_datasource(
 @router.post("/datasources/{datasource_id}/inspect")
 def inspect_datasource(
     datasource_id: str,
-    user: Annotated[User, Depends(get_user_from_token)],
+    user: Annotated[User, Depends(user_from_token)],
     session: Annotated[Session, Depends(xngin_db_session)],
 ) -> InspectDatasourceResponse:
     """Verifies connectivity to a datasource and returns a list of readable tables."""
@@ -467,7 +467,7 @@ def create_inspect_table_response_from_table(table: sqlalchemy.Table):
 def inspect_table_in_datasource(
     datasource_id: str,
     table_name: str,
-    user: Annotated[User, Depends(get_user_from_token)],
+    user: Annotated[User, Depends(user_from_token)],
     session: Annotated[Session, Depends(xngin_db_session)],
 ):
     """Inspects a single table in a datasource and returns a summary of its fields."""
@@ -485,7 +485,7 @@ def inspect_table_in_datasource(
 @router.delete("/datasources/{datasource_id}", status_code=status.HTTP_204_NO_CONTENT)
 def delete_datasource(
     session: Annotated[Session, Depends(xngin_db_session)],
-    user: Annotated[User, Depends(get_user_from_token)],
+    user: Annotated[User, Depends(user_from_token)],
     datasource_id: Annotated[str, Path(...)],
 ):
     """Deletes a datasource.
@@ -515,7 +515,7 @@ def delete_datasource(
 def list_participant_types(
     datasource_id: str,
     session: Annotated[Session, Depends(xngin_db_session)],
-    user: Annotated[User, Depends(get_user_from_token)],
+    user: Annotated[User, Depends(user_from_token)],
 ):
     ds = get_datasource_or_raise(session, user, datasource_id)
     return ListParticipantsTypeResponse(
@@ -527,7 +527,7 @@ def list_participant_types(
 def create_participant_type(
     datasource_id: str,
     session: Annotated[Session, Depends(xngin_db_session)],
-    user: Annotated[User, Depends(get_user_from_token)],
+    user: Annotated[User, Depends(user_from_token)],
     body: CreateParticipantsTypeRequest,
 ):
     ds = get_datasource_or_raise(session, user, datasource_id)
@@ -552,7 +552,7 @@ def get_participant_types(
     datasource_id: str,
     participant_id: str,
     session: Annotated[Session, Depends(xngin_db_session)],
-    user: Annotated[User, Depends(get_user_from_token)],
+    user: Annotated[User, Depends(user_from_token)],
 ) -> ParticipantsConfig:
     ds = get_datasource_or_raise(session, user, datasource_id)
     # CannotFindParticipantsError will be handled by exceptionhandlers.
@@ -564,7 +564,7 @@ def update_participant_type(
     datasource_id: str,
     participant_id: str,
     session: Annotated[Session, Depends(xngin_db_session)],
-    user: Annotated[User, Depends(get_user_from_token)],
+    user: Annotated[User, Depends(user_from_token)],
     body: UpdateParticipantsTypeRequest,
 ):
     ds = get_datasource_or_raise(session, user, datasource_id)
@@ -599,7 +599,7 @@ def delete_participant(
     datasource_id: str,
     participant_id: str,
     session: Annotated[Session, Depends(xngin_db_session)],
-    user: Annotated[User, Depends(get_user_from_token)],
+    user: Annotated[User, Depends(user_from_token)],
 ):
     ds = get_datasource_or_raise(session, user, datasource_id)
     config = ds.get_config()
@@ -613,7 +613,7 @@ def delete_participant(
 @router.get("/apikeys")
 def list_api_keys(
     session: Annotated[Session, Depends(xngin_db_session)],
-    user: Annotated[User, Depends(get_user_from_token)],
+    user: Annotated[User, Depends(user_from_token)],
 ) -> ListApiKeysResponse:
     """Returns API keys that the caller has access to via their organization memberships.
 
@@ -647,7 +647,7 @@ def list_api_keys(
 @router.post("/apikeys")
 def create_api_key(
     session: Annotated[Session, Depends(xngin_db_session)],
-    user: Annotated[User, Depends(get_user_from_token)],
+    user: Annotated[User, Depends(user_from_token)],
     body: Annotated[CreateApiKeyRequest, Body(...)],
 ) -> CreateApiKeyResponse:
     """Creates an API key for the specified datasource.
@@ -666,7 +666,7 @@ def create_api_key(
 @router.delete("/apikeys/{api_key_id}", status_code=status.HTTP_204_NO_CONTENT)
 def delete_api_key(
     session: Annotated[Session, Depends(xngin_db_session)],
-    user: Annotated[User, Depends(get_user_from_token)],
+    user: Annotated[User, Depends(user_from_token)],
     api_key_id: Annotated[str, Path(...)],
 ):
     """Deletes the specified API key."""

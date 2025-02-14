@@ -34,8 +34,7 @@ class TokenInfo:
         return self.hd in ALLOWED_HOSTED_DOMAINS
 
 
-# Set TESTING_TOKENS_ENABLED to allow statically-defined bearer tokens
-# to skip the JWT validation.
+# Set TESTING_TOKENS_ENABLED to allow statically defined bearer tokens to skip the JWT validation.
 PRIVILEGED_EMAIL = "testing@agency.fund"
 PRIVILEGED_TOKEN_FOR_TESTING = secrets.token_urlsafe(32)
 TESTING_TOKENS_ENABLED = False
