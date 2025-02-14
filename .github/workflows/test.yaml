@@ -67,6 +67,29 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends retry
           retry -t 3 -d 30 -- uv run pytest -m integration
+  pg-integration:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 15
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_DB: postgres
+          POSTGRES_PASSWORD: postgres
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 5499:5432
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v4
+        with:
+          version: "0.5.12"
+          enable-cache: true
+      - run: uv run pytest -m pgintegration
   bq-integration:
     timeout-minutes: 15
     runs-on: ubuntu-22.04
