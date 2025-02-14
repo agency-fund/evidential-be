@@ -1,8 +1,10 @@
 import psycopg.errors
 import sqlalchemy
 from fastapi import Request
+from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 
+from xngin.apiserver import flags
 from xngin.apiserver.apikeys import ApiKeyError
 from xngin.apiserver.dwh.queries import LateValidationError
 from xngin.apiserver.settings import (
@@ -68,3 +70,22 @@ def setup(app):
         _request: Request, exc: LateValidationError
     ):
         return JSONResponse(status_code=422, content={"message": str(exc)})
+
+    @app.exception_handler(RequestValidationError)
+    async def exception_handler_fastapi_requestvalidationerror(
+        _request: Request, exc: RequestValidationError
+    ):
+        # Only return the validation input when we are running in DEBUG mode because the input can sometimes contain
+        # internal data we should not expose to clients.
+        body = {
+            "errors": [
+                {"loc": error["loc"], "msg": error["msg"], "type": error["type"]}
+                for error in exc.errors()
+            ]
+        }
+        if flags.DEBUG:
+            body["debug"] = str(exc)
+        return JSONResponse(
+            status_code=422,
+            content=body,
+        )
