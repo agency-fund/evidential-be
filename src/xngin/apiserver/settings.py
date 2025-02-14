@@ -19,6 +19,7 @@ from pydantic import (
     ConfigDict,
     model_validator,
     field_validator,
+    field_serializer,
 )
 from sqlalchemy import Engine, event, text
 from sqlalchemy.exc import NoSuchTableError
@@ -319,6 +320,10 @@ class Dsn(ConfigBaseModel, BaseDsn):
     ) = None
     # Specify the order in which schemas are searched if your dwh supports it.
     search_path: str | None = None
+
+    @field_serializer("password", when_used="json")
+    def reveal_password(self, v):
+        return v.get_secret_value()
 
     def is_redshift(self):
         return self.host.endswith("redshift.amazonaws.com")
