@@ -46,8 +46,13 @@ markers = [
     "nondeterministic: tests that are nondeterministic (but should be)"
     ]
 addopts = "-m 'not integration and not nondeterministic and not pgintegration'"
-filterwarnings = [  # format is: action:message:category:module
+# filtewarnings can be used to silence warnings during tests.
+# format is: action:message:category:module
+filterwarnings = [
+    # Workaround for a bug in FastAPI's OpenAPI schema generation.
     "ignore:`example` has been deprecated:DeprecationWarning:xngin.apiserver.dependencies",
+    # Performance optimization warning caused by: reflect(dbengine()).
+    "ignore:.+unnest will not make use of SQL compilation caching:sqlalchemy.exc.SAWarning:"
 ]
 env = [
     "SENTRY_DSX="  # Disable Sentry in unit tests.
