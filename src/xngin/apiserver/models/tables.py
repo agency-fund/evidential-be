@@ -22,6 +22,8 @@ class Base(DeclarativeBase):
 
 
 class CacheTable(Base):
+    """Stores cached values."""
+
     __tablename__ = "cache"
 
     key: Mapped[str] = mapped_column(primary_key=True)
@@ -42,7 +44,7 @@ class ApiKey(Base):
 
 
 class Organization(Base):
-    """Represents an organization that can own datasources."""
+    """Represents an organization that has users and can own datasources."""
 
     __tablename__ = "organizations"
 
@@ -61,7 +63,7 @@ class Organization(Base):
 
 
 class User(Base):
-    """Represents a user in the system."""
+    """Represents a user."""
 
     __tablename__ = "users"
 
@@ -80,6 +82,8 @@ class User(Base):
 
 
 class UserOrganization(Base):
+    """Maps a User to an Organization."""
+
     __tablename__ = "user_organizations"
 
     user_id: Mapped[str] = mapped_column(
@@ -94,10 +98,7 @@ class UserOrganization(Base):
 
 
 class Datasource(Base):
-    """Represents a data source in the system.
-
-    This contains a serialized settings.Datasource value.
-    """
+    """Stores a DatasourceConfig and maps it to an Organization."""
 
     __tablename__ = "datasources"
 
@@ -118,10 +119,10 @@ class Datasource(Base):
     )
 
     def get_config(self) -> DatasourceConfig:
-        """Parses the config field and returns the Datasource.config."""
+        """Deserializes the config field into a DatasourceConfig."""
         return TypeAdapter(DatasourceConfig).validate_python(self.config)
 
     def set_config(self, value: DatasourceConfig):
-        """Sets the config field to the serialized form of the given Datasource.config."""
+        """Sets the config field to the serialized DatasourceConfig."""
         # Round-trip via JSON to serialize SecretStr values correctly.
         self.config = json.loads(value.model_dump_json())
