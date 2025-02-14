@@ -130,7 +130,7 @@ class InspectDatasourceResponse(ApiBaseModel):
     tables: list[str]
 
 
-class FieldDescription(ApiBaseModel):
+class FieldMetadata(ApiBaseModel):
     """Concise summary of fields in the table."""
 
     field_name: str
@@ -145,7 +145,7 @@ class InspectDatasourceTableResponse(ApiBaseModel):
         list[str],
         Field(description="Fields that are possibly candidates for unique IDs."),
     ]
-    fields: Annotated[list[FieldDescription], Field(description="Fields in the table.")]
+    fields: Annotated[list[FieldMetadata], Field(description="Fields in the table.")]
 
 
 class ListParticipantsTypeResponse(ApiBaseModel):
@@ -262,10 +262,7 @@ async def create_organizations(
 ) -> CreateOrganizationResponse:
     """Creates a new organization.
 
-    Only users with an agency.fund email address can create organizations.
-
-    Raises:
-        HTTPException: If the caller's email is not from agency.fund domain.
+    Only users with an @agency.fund email address can create organizations.
     """
     if not token_info.is_privileged():
         raise HTTPException(
@@ -368,17 +365,14 @@ async def create_datasource(
     body: Annotated[CreateDatasourceRequest, Body(...)],
 ) -> CreateDatasourceResponse:
     """Creates a new datasource for the specified organization."""
-    # Verify organization exists
     org = session.get(Organization, body.organization_id)
     if not org:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail="Organization not found"
         )
 
-    # Verify user is a member of this organization
     stmt = (
-        select(True)
-        .select_from(UserOrganization)
+        select(UserOrganization)
         .where(UserOrganization.user_id == user.id)
         .where(UserOrganization.organization_id == org.id)
     )
@@ -442,6 +436,10 @@ async def inspect_datasource(
 
 
 def create_inspect_table_response_from_table(table: sqlalchemy.Table):
+    """Creates an InspectDatasourceTableResponse from a sqlalchemy.Table.
+
+    This is similar to config_sheet.create_configworksheet_from_table but tailored to use in the API.
+    """
     possible_id_columns = {
         c.name for c in table.columns.values() if c.name.endswith("_id")
     }
@@ -455,7 +453,7 @@ def create_inspect_table_response_from_table(table: sqlalchemy.Table):
     for column in table.columns.values():
         type_hint = column.type
         collected.append(
-            FieldDescription(
+            FieldMetadata(
                 field_name=column.name,
                 data_type=DataType.match(type_hint),
                 description=column.comment,
@@ -496,9 +494,6 @@ async def delete_datasource(
     """Deletes a datasource.
 
     The user must be a member of the organization that owns the datasource.
-
-    Raises:
-        HTTPException: If the datasource doesn't exist or the user doesn't have access to it.
     """
     # Delete the datasource, but only if the user has access to it
     stmt = (

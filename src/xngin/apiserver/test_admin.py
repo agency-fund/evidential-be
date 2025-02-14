@@ -16,7 +16,7 @@ from xngin.apiserver.routers.admin import (
     ListDatasourcesResponse,
     UpdateDatasourceRequest,
     InspectDatasourceTableResponse,
-    FieldDescription,
+    FieldMetadata,
     InspectDatasourceResponse,
     CreateParticipantsTypeRequest,
     CreateParticipantsTypeResponse,
@@ -362,47 +362,45 @@ def test_lifecycle_with_pg(secured_datasource):
     assert parsed == InspectDatasourceTableResponse(
         detected_unique_id_fields=[],
         fields=[
-            FieldDescription(
+            FieldMetadata(
                 field_name="baseline_income", data_type="numeric", description=None
             ),
-            FieldDescription(
+            FieldMetadata(
                 field_name="current_income", data_type="numeric", description=None
             ),
-            FieldDescription(
+            FieldMetadata(
                 field_name="ethnicity", data_type="character varying", description=None
             ),
-            FieldDescription(
+            FieldMetadata(
                 field_name="first_name", data_type="character varying", description=None
             ),
-            FieldDescription(
+            FieldMetadata(
                 field_name="gender", data_type="character varying", description=None
             ),
-            FieldDescription(field_name="id", data_type="integer", description=None),
-            FieldDescription(
-                field_name="income", data_type="numeric", description=None
-            ),
-            FieldDescription(
+            FieldMetadata(field_name="id", data_type="integer", description=None),
+            FieldMetadata(field_name="income", data_type="numeric", description=None),
+            FieldMetadata(
                 field_name="is_engaged", data_type="boolean", description=None
             ),
-            FieldDescription(
+            FieldMetadata(
                 field_name="is_onboarded", data_type="boolean", description=None
             ),
-            FieldDescription(
+            FieldMetadata(
                 field_name="is_recruited", data_type="boolean", description=None
             ),
-            FieldDescription(
+            FieldMetadata(
                 field_name="is_registered", data_type="boolean", description=None
             ),
-            FieldDescription(
+            FieldMetadata(
                 field_name="is_retained", data_type="boolean", description=None
             ),
-            FieldDescription(
+            FieldMetadata(
                 field_name="last_name", data_type="character varying", description=None
             ),
-            FieldDescription(
+            FieldMetadata(
                 field_name="potential_0", data_type="numeric", description=None
             ),
-            FieldDescription(
+            FieldMetadata(
                 field_name="potential_1", data_type="integer", description=None
             ),
         ],
