@@ -6,6 +6,7 @@ from pydantic import SecretStr
 
 from xngin.apiserver import conftest
 from xngin.apiserver import main as main_module
+from xngin.apiserver.api_types import DataType
 from xngin.apiserver.dependencies import xngin_db_session
 from xngin.apiserver.main import app
 from xngin.apiserver.routers import oidc_dependencies
@@ -17,6 +18,11 @@ from xngin.apiserver.routers.admin import (
     InspectDatasourceTableResponse,
     FieldDescription,
     InspectDatasourceResponse,
+    CreateParticipantsTypeRequest,
+    CreateParticipantsTypeResponse,
+    ListParticipantsTypeResponse,
+    UpdateParticipantsTypeRequest,
+    UpdateParticipantsTypeResponse,
 )
 from xngin.apiserver.routers.oidc_dependencies import (
     PRIVILEGED_TOKEN_FOR_TESTING,
@@ -24,8 +30,15 @@ from xngin.apiserver.routers.oidc_dependencies import (
     UNPRIVILEGED_EMAIL,
     UNPRIVILEGED_TOKEN_FOR_TESTING,
 )
-from xngin.apiserver.settings import Dsn, BqDsn, GcpServiceAccountInfo
+from xngin.apiserver.settings import (
+    Dsn,
+    BqDsn,
+    GcpServiceAccountInfo,
+    SheetParticipantsRef,
+    ParticipantsDef,
+)
 from xngin.cli.main import create_testing_dwh
+from xngin.schema.schema_types import ParticipantsSchema, FieldDescriptor
 
 conftest.setup(app)
 client = TestClient(app)
@@ -176,6 +189,109 @@ def test_lifecycle(secured_datasource):
     assert "bigquery" in {i["driver"] for i in response.json()["items"]}, (
         response.json()
     )
+
+    # Get participants (sheet version)
+    response = client.get(
+        f"/v1/m/datasources/{secured_datasource.ds.id}/participants/test_participant_type",
+        headers={"Authorization": f"Bearer {PRIVILEGED_TOKEN_FOR_TESTING}"},
+    )
+    assert response.status_code == 200, response.content
+    parsed = SheetParticipantsRef.model_validate(response.json())
+    assert parsed.participant_type == "test_participant_type"
+    assert parsed.sheet.worksheet == "Sheet1"
+
+    # Create participant
+    response = client.post(
+        f"/v1/m/datasources/{secured_datasource.ds.id}/participants",
+        headers={"Authorization": f"Bearer {PRIVILEGED_TOKEN_FOR_TESTING}"},
+        content=CreateParticipantsTypeRequest(
+            participant_type="newpt",
+            schema_def=ParticipantsSchema(
+                table_name="newps",
+                fields=[
+                    FieldDescriptor(
+                        field_name="newf",
+                        data_type=DataType.INTEGER,
+                        description="test",
+                        is_unique_id=True,
+                        is_strata=False,
+                        is_filter=False,
+                        is_metric=False,
+                    )
+                ],
+            ),
+        ).model_dump_json(),
+    )
+    assert response.status_code == 200, response.content
+    parsed = CreateParticipantsTypeResponse.model_validate(response.json())
+    assert parsed.participant_type == "newpt"
+
+    # List participants
+    response = client.get(
+        f"/v1/m/datasources/{secured_datasource.ds.id}/participants",
+        headers={"Authorization": f"Bearer {PRIVILEGED_TOKEN_FOR_TESTING}"},
+    )
+    assert response.status_code == 200, response.content
+    parsed = ListParticipantsTypeResponse.model_validate(response.json())
+    assert len(parsed.items) == 2, parsed
+
+    # Update participant
+    response = client.patch(
+        f"/v1/m/datasources/{secured_datasource.ds.id}/participants/newpt",
+        headers={"Authorization": f"Bearer {PRIVILEGED_TOKEN_FOR_TESTING}"},
+        content=UpdateParticipantsTypeRequest(
+            participant_type="renamedpt"
+        ).model_dump_json(),
+    )
+    assert response.status_code == 200
+    parsed = UpdateParticipantsTypeResponse.model_validate(response.json())
+    assert parsed.participant_type == "renamedpt"
+
+    # List participants (again)
+    response = client.get(
+        f"/v1/m/datasources/{secured_datasource.ds.id}/participants",
+        headers={"Authorization": f"Bearer {PRIVILEGED_TOKEN_FOR_TESTING}"},
+    )
+    assert response.status_code == 200, response.content
+    parsed = ListParticipantsTypeResponse.model_validate(response.json())
+    assert len(parsed.items) == 2, parsed
+
+    # Get the named participant type
+    response = client.get(
+        f"/v1/m/datasources/{secured_datasource.ds.id}/participants/renamedpt",
+        headers={"Authorization": f"Bearer {PRIVILEGED_TOKEN_FOR_TESTING}"},
+    )
+    assert response.status_code == 200, response.content
+    parsed = ParticipantsDef.model_validate(response.json())
+    assert parsed.participant_type == "renamedpt"
+
+    # Delete the renamed participant type.
+    response = client.delete(
+        f"/v1/m/datasources/{secured_datasource.ds.id}/participants/renamedpt",
+        headers={"Authorization": f"Bearer {PRIVILEGED_TOKEN_FOR_TESTING}"},
+    )
+    assert response.status_code == 204, response.content
+
+    # Get the named participant type after it has been deleted
+    response = client.get(
+        f"/v1/m/datasources/{secured_datasource.ds.id}/participants/renamedpt",
+        headers={"Authorization": f"Bearer {PRIVILEGED_TOKEN_FOR_TESTING}"},
+    )
+    assert response.status_code == 404, response.content
+
+    # Delete the testing participant type.
+    response = client.delete(
+        f"/v1/m/datasources/{secured_datasource.ds.id}/participants/test_participant_type",
+        headers={"Authorization": f"Bearer {PRIVILEGED_TOKEN_FOR_TESTING}"},
+    )
+    assert response.status_code == 204, response.content
+
+    # Delete the testing participant type a 2nd time.
+    response = client.delete(
+        f"/v1/m/datasources/{secured_datasource.ds.id}/participants/test_participant_type",
+        headers={"Authorization": f"Bearer {PRIVILEGED_TOKEN_FOR_TESTING}"},
+    )
+    assert response.status_code == 404, response.content
 
     # Delete datasources
     response = client.delete(

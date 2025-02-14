@@ -28,7 +28,10 @@ from xngin.apiserver.settings import (
     RemoteDatabaseConfig,
     SqliteLocalConfig,
     Dwh,
+    ParticipantsDef,
+    ParticipantsConfig,
 )
+from xngin.schema.schema_types import ParticipantsSchema, FieldDescriptor
 
 logger = logging.getLogger(__name__)
 
@@ -52,6 +55,22 @@ router = APIRouter(
         Depends(require_oidc_token)
     ],  # All routes in this router require authentication.
 )
+
+
+def get_datasource_or_raise(session: Session, user: User, datasource_id: str):
+    """Reads the requested datasource from the database. Raises if disallowed or not found."""
+    stmt = (
+        select(Datasource)
+        .join(Organization)
+        .join(UserOrganization)
+        .where(UserOrganization.user_id == user.id, Datasource.id == datasource_id)
+    )
+    ds = session.execute(stmt).scalar_one_or_none()
+    if ds is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Datasource not found."
+        )
+    return ds
 
 
 class AdminApiBaseModel(BaseModel):
@@ -127,6 +146,32 @@ class InspectDatasourceTableResponse(ApiBaseModel):
         Field(description="Fields that are possibly candidates for unique IDs."),
     ]
     fields: Annotated[list[FieldDescription], Field(description="Fields in the table.")]
+
+
+class ListParticipantsTypeResponse(ApiBaseModel):
+    items: list[ParticipantsConfig]
+
+
+class CreateParticipantsTypeRequest(ApiBaseModel):
+    participant_type: str
+    schema_def: Annotated[ParticipantsSchema, Field()]
+
+
+class CreateParticipantsTypeResponse(ApiBaseModel):
+    participant_type: str
+    schema_def: Annotated[ParticipantsSchema, Field()]
+
+
+class UpdateParticipantsTypeRequest(ApiBaseModel):
+    participant_type: str | None = None
+    table_name: str | None = None
+    fields: list[FieldDescriptor] | None = None
+
+
+class UpdateParticipantsTypeResponse(ApiBaseModel):
+    participant_type: str
+    table_name: str
+    fields: list[FieldDescriptor]
 
 
 class ApiKeySummary(AdminApiBaseModel):
@@ -370,17 +415,7 @@ async def datasources_update(
     user: Annotated[User, Depends(get_user_from_token)],
     session: Annotated[Session, Depends(xngin_db_session)],
 ):
-    stmt = (
-        select(Datasource)
-        .join(Organization)
-        .join(UserOrganization)
-        .where(UserOrganization.user_id == user.id, Datasource.id == datasource_id)
-    )
-    ds = session.execute(stmt).scalar_one_or_none()
-    if ds is None:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND, detail="Datasource not found."
-        )
+    ds = get_datasource_or_raise(session, user, datasource_id)
     if body.name is not None:
         ds.name = body.name
     if body.dwh is not None:
@@ -398,18 +433,7 @@ async def datasources_inspect(
     session: Annotated[Session, Depends(xngin_db_session)],
 ):
     """Verifies connectivity to a datasource and returns a list of readable tables."""
-    stmt = (
-        select(Datasource)
-        .join(Organization)
-        .join(UserOrganization)
-        .where(UserOrganization.user_id == user.id, Datasource.id == datasource_id)
-    )
-    ds = session.execute(stmt).scalar_one_or_none()
-    if ds is None:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND, detail="Datasource not found."
-        )
-
+    ds = get_datasource_or_raise(session, user, datasource_id)
     config = ds.get_config()
     metadata = sqlalchemy.MetaData()
     metadata.reflect(config.dbengine())
@@ -452,18 +476,7 @@ async def datasource_table_inspect(
     session: Annotated[Session, Depends(xngin_db_session)],
 ):
     """Inspects a single table in a datasource and returns a summary of its fields."""
-    stmt = (
-        select(Datasource)
-        .join(Organization)
-        .join(UserOrganization)
-        .where(UserOrganization.user_id == user.id, Datasource.id == datasource_id)
-    )
-    ds = session.execute(stmt).scalar_one_or_none()
-    if ds is None:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND, detail="Datasource not found."
-        )
-
+    ds = get_datasource_or_raise(session, user, datasource_id)
     config = ds.get_config()
     engine = config.dbengine()
     # CannotFindTableError will be handled by exceptionhandlers.py.
@@ -503,6 +516,102 @@ async def datasources_delete(
     session.execute(stmt)
     session.commit()
 
+    return GENERIC_SUCCESS
+
+
+@router.get("/datasources/{datasource_id}/participants")
+async def participants_list(
+    datasource_id: str,
+    session: Annotated[Session, Depends(xngin_db_session)],
+    user: Annotated[User, Depends(get_user_from_token)],
+):
+    ds = get_datasource_or_raise(session, user, datasource_id)
+    return ListParticipantsTypeResponse(
+        items=ds.get_config().participants,
+    )
+
+
+@router.post("/datasources/{datasource_id}/participants")
+async def participants_create(
+    datasource_id: str,
+    session: Annotated[Session, Depends(xngin_db_session)],
+    user: Annotated[User, Depends(get_user_from_token)],
+    body: CreateParticipantsTypeRequest,
+):
+    ds = get_datasource_or_raise(session, user, datasource_id)
+    participants_def = ParticipantsDef(
+        type="schema",
+        participant_type=body.participant_type,
+        table_name=body.schema_def.table_name,
+        fields=body.schema_def.fields,
+    )
+    config = ds.get_config()
+    config.participants.append(participants_def)
+    ds.set_config(config)
+    session.commit()
+    return CreateParticipantsTypeResponse(
+        participant_type=participants_def.participant_type,
+        schema_def=body.schema_def,
+    )
+
+
+@router.get("/datasources/{datasource_id}/participants/{participant_id}")
+async def participants_get(
+    datasource_id: str,
+    participant_id: str,
+    session: Annotated[Session, Depends(xngin_db_session)],
+    user: Annotated[User, Depends(get_user_from_token)],
+) -> ParticipantsConfig:
+    ds = get_datasource_or_raise(session, user, datasource_id)
+    # CannotFindParticipantsError will be handled by exceptionhandlers.
+    return ds.get_config().find_participants(participant_id)
+
+
+@router.patch("/datasources/{datasource_id}/participants/{participant_id}")
+async def participants_update(
+    datasource_id: str,
+    participant_id: str,
+    session: Annotated[Session, Depends(xngin_db_session)],
+    user: Annotated[User, Depends(get_user_from_token)],
+    body: UpdateParticipantsTypeRequest,
+):
+    ds = get_datasource_or_raise(session, user, datasource_id)
+    config = ds.get_config()
+    participant = config.find_participants(participant_id)
+    config.participants.remove(participant)
+    if not isinstance(participant, ParticipantsDef):
+        return Response(
+            status_code=405, content="Only schema participants can be updated"
+        )
+    if body.participant_type is not None:
+        participant.participant_type = body.participant_type
+    if body.table_name is not None:
+        participant.table_name = body.table_name
+    if body.fields is not None:
+        participant.fields = body.fields
+    config.participants.append(participant)
+    ds.set_config(config)
+    session.commit()
+    return UpdateParticipantsTypeResponse(
+        participant_type=participant.participant_type,
+        table_name=participant.table_name,
+        fields=participant.fields,
+    )
+
+
+@router.delete("/datasources/{datasource_id}/participants/{participant_id}")
+async def participants_delete(
+    datasource_id: str,
+    participant_id: str,
+    session: Annotated[Session, Depends(xngin_db_session)],
+    user: Annotated[User, Depends(get_user_from_token)],
+):
+    ds = get_datasource_or_raise(session, user, datasource_id)
+    config = ds.get_config()
+    participant = config.find_participants(participant_id)
+    config.participants.remove(participant)
+    ds.set_config(config)
+    session.commit()
     return GENERIC_SUCCESS
 
 
@@ -553,27 +662,13 @@ async def apikeys_create(
     Raises:
         HTTPException: If the user doesn't have access to the requested datasource.
     """
-    # Verify user has access to the requested datasource
-    stmt = (
-        select(Datasource.id)
-        .join(Organization)
-        .join(Organization.users)
-        .where(Datasource.id == body.datasource_id, User.id == user.id)
-    )
-    result = session.execute(stmt)
-    if not result.first():
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail=f"You don't have access to datasource: {body.datasource_id}",
-        )
-
-    # Create the API key
+    ds = get_datasource_or_raise(session, user, body.datasource_id)
     label, key = make_key()
     key_hash = hash_key(key)
-    api_key = ApiKey(id=label, key=key_hash, datasource_id=body.datasource_id)
+    api_key = ApiKey(id=label, key=key_hash, datasource_id=ds.id)
     session.add(api_key)
     session.commit()
-    return CreateApiKeyResponse(id=label, datasource_id=body.datasource_id, key=key)
+    return CreateApiKeyResponse(id=label, datasource_id=ds.id, key=key)
 
 
 @router.delete("/apikeys/{api_key_id}")
