@@ -301,6 +301,34 @@ def test_lifecycle(secured_datasource):
     assert response.status_code == 204, response.content
 
 
+def test_create_participants_type_invalid(secured_datasource):
+    response = client.post(
+        f"/v1/m/datasources/{secured_datasource.ds.id}/participants",
+        headers={"Authorization": f"Bearer {PRIVILEGED_TOKEN_FOR_TESTING}"},
+        content=CreateParticipantsTypeRequest.model_construct(
+            participant_type="newpt",
+            schema_def=ParticipantsSchema.model_construct(
+                table_name="newps",
+                fields=[
+                    FieldDescriptor(
+                        field_name="newf",
+                        data_type=DataType.INTEGER,
+                        description="test",
+                        is_unique_id=False,
+                        is_strata=False,
+                        is_filter=False,
+                        is_metric=False,
+                    )
+                ],
+            ),
+        ).model_dump_json(),
+    )
+    assert response.status_code == 422, response.content
+    assert "no columns marked as unique ID." in response.json()["errors"][0]["msg"], (
+        response.content
+    )
+
+
 @pytest.mark.pgintegration
 def test_lifecycle_with_pg(secured_datasource):
     """Exercises the admin API methods that require an external database."""
