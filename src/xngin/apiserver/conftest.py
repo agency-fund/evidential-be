@@ -191,8 +191,8 @@ def fixture_use_deterministic_random():
 
 
 @pytest.fixture(scope="function")
-def secured_datasource(db_session):
-    """Creates a new test datasource with its associated organization."""
+def testing_datasource(db_session):
+    """Generates a new Organization, Datasource, and API key for a test."""
     run_id = secrets.token_hex(8)
     datasource_id = "ds" + run_id
 
@@ -204,7 +204,6 @@ def secured_datasource(db_session):
     test_ds = get_settings_for_test().get_datasource("testing-remote").config
 
     org = Organization(id="org" + run_id, name="test organization")
-
     datasource = Datasource(id=datasource_id, name="test ds")
     datasource.set_config(test_ds)
     datasource.organization = org
@@ -215,7 +214,6 @@ def secured_datasource(db_session):
 
     db_session.add_all([org, datasource, kt])
     db_session.commit()
-    assert db_session.get(Datasource, datasource_id) is not None
     return DatasourceMetadata(
         ds=datasource,
         dsn=datasource.get_config().dwh.to_sqlalchemy_url().render_as_string(False),

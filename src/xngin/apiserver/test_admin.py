@@ -63,7 +63,7 @@ def test_list_orgs_unauthenticated():
     assert response.status_code == 403, response.content
 
 
-def test_list_orgs_privileged(secured_datasource):
+def test_list_orgs_privileged(testing_datasource):
     response = client.get(
         "/v1/m/organizations",
         headers={"Authorization": f"Bearer {PRIVILEGED_TOKEN_FOR_TESTING}"},
@@ -71,7 +71,7 @@ def test_list_orgs_privileged(secured_datasource):
     assert response.status_code == 200, response.content
 
 
-def test_list_orgs_unprivileged(secured_datasource):
+def test_list_orgs_unprivileged(testing_datasource):
     response = client.get(
         "/v1/m/organizations",
         headers={"Authorization": f"Bearer {UNPRIVILEGED_TOKEN_FOR_TESTING}"},
@@ -79,11 +79,11 @@ def test_list_orgs_unprivileged(secured_datasource):
     assert response.status_code == 403, response.content
 
 
-def test_lifecycle(secured_datasource):
+def test_lifecycle(testing_datasource):
     """Exercises the admin API methods that can operate purely in-process w/o an external database."""
     # Add privileged user to existing organization
     response = client.post(
-        f"/v1/m/organizations/{secured_datasource.org.id}/members",
+        f"/v1/m/organizations/{testing_datasource.org.id}/members",
         json={"email": PRIVILEGED_EMAIL},
         headers={"Authorization": f"Bearer {PRIVILEGED_TOKEN_FOR_TESTING}"},
     )
@@ -91,7 +91,7 @@ def test_lifecycle(secured_datasource):
 
     # Add unprivileged user to existing organization
     response = client.post(
-        f"/v1/m/organizations/{secured_datasource.org.id}/members",
+        f"/v1/m/organizations/{testing_datasource.org.id}/members",
         json={"email": UNPRIVILEGED_EMAIL},
         headers={"Authorization": f"Bearer {PRIVILEGED_TOKEN_FOR_TESTING}"},
     )
@@ -103,14 +103,14 @@ def test_lifecycle(secured_datasource):
         headers={"Authorization": f"Bearer {PRIVILEGED_TOKEN_FOR_TESTING}"},
     )
     assert response.status_code == 200, response.content
-    assert response.json()["items"][0]["id"] == secured_datasource.org.id
+    assert response.json()["items"][0]["id"] == testing_datasource.org.id
 
     # Create datasource
     response = client.post(
         "/v1/m/datasources",
         headers={"Authorization": f"Bearer {PRIVILEGED_TOKEN_FOR_TESTING}"},
         content=CreateDatasourceRequest(
-            organization_id=secured_datasource.org.id,
+            organization_id=testing_datasource.org.id,
             name="test remote ds",
             # These settings correspond to the Postgres spun up in GHA or via localpg.py.
             dwh=Dsn(
@@ -192,7 +192,7 @@ def test_lifecycle(secured_datasource):
 
     # Get participants (sheet version)
     response = client.get(
-        f"/v1/m/datasources/{secured_datasource.ds.id}/participants/test_participant_type",
+        f"/v1/m/datasources/{testing_datasource.ds.id}/participants/test_participant_type",
         headers={"Authorization": f"Bearer {PRIVILEGED_TOKEN_FOR_TESTING}"},
     )
     assert response.status_code == 200, response.content
@@ -202,7 +202,7 @@ def test_lifecycle(secured_datasource):
 
     # Create participant
     response = client.post(
-        f"/v1/m/datasources/{secured_datasource.ds.id}/participants",
+        f"/v1/m/datasources/{testing_datasource.ds.id}/participants",
         headers={"Authorization": f"Bearer {PRIVILEGED_TOKEN_FOR_TESTING}"},
         content=CreateParticipantsTypeRequest(
             participant_type="newpt",
@@ -228,7 +228,7 @@ def test_lifecycle(secured_datasource):
 
     # List participants
     response = client.get(
-        f"/v1/m/datasources/{secured_datasource.ds.id}/participants",
+        f"/v1/m/datasources/{testing_datasource.ds.id}/participants",
         headers={"Authorization": f"Bearer {PRIVILEGED_TOKEN_FOR_TESTING}"},
     )
     assert response.status_code == 200, response.content
@@ -237,7 +237,7 @@ def test_lifecycle(secured_datasource):
 
     # Update participant
     response = client.patch(
-        f"/v1/m/datasources/{secured_datasource.ds.id}/participants/newpt",
+        f"/v1/m/datasources/{testing_datasource.ds.id}/participants/newpt",
         headers={"Authorization": f"Bearer {PRIVILEGED_TOKEN_FOR_TESTING}"},
         content=UpdateParticipantsTypeRequest(
             participant_type="renamedpt"
@@ -249,7 +249,7 @@ def test_lifecycle(secured_datasource):
 
     # List participants (again)
     response = client.get(
-        f"/v1/m/datasources/{secured_datasource.ds.id}/participants",
+        f"/v1/m/datasources/{testing_datasource.ds.id}/participants",
         headers={"Authorization": f"Bearer {PRIVILEGED_TOKEN_FOR_TESTING}"},
     )
     assert response.status_code == 200, response.content
@@ -258,7 +258,7 @@ def test_lifecycle(secured_datasource):
 
     # Get the named participant type
     response = client.get(
-        f"/v1/m/datasources/{secured_datasource.ds.id}/participants/renamedpt",
+        f"/v1/m/datasources/{testing_datasource.ds.id}/participants/renamedpt",
         headers={"Authorization": f"Bearer {PRIVILEGED_TOKEN_FOR_TESTING}"},
     )
     assert response.status_code == 200, response.content
@@ -267,43 +267,43 @@ def test_lifecycle(secured_datasource):
 
     # Delete the renamed participant type.
     response = client.delete(
-        f"/v1/m/datasources/{secured_datasource.ds.id}/participants/renamedpt",
+        f"/v1/m/datasources/{testing_datasource.ds.id}/participants/renamedpt",
         headers={"Authorization": f"Bearer {PRIVILEGED_TOKEN_FOR_TESTING}"},
     )
     assert response.status_code == 204, response.content
 
     # Get the named participant type after it has been deleted
     response = client.get(
-        f"/v1/m/datasources/{secured_datasource.ds.id}/participants/renamedpt",
+        f"/v1/m/datasources/{testing_datasource.ds.id}/participants/renamedpt",
         headers={"Authorization": f"Bearer {PRIVILEGED_TOKEN_FOR_TESTING}"},
     )
     assert response.status_code == 404, response.content
 
     # Delete the testing participant type.
     response = client.delete(
-        f"/v1/m/datasources/{secured_datasource.ds.id}/participants/test_participant_type",
+        f"/v1/m/datasources/{testing_datasource.ds.id}/participants/test_participant_type",
         headers={"Authorization": f"Bearer {PRIVILEGED_TOKEN_FOR_TESTING}"},
     )
     assert response.status_code == 204, response.content
 
     # Delete the testing participant type a 2nd time.
     response = client.delete(
-        f"/v1/m/datasources/{secured_datasource.ds.id}/participants/test_participant_type",
+        f"/v1/m/datasources/{testing_datasource.ds.id}/participants/test_participant_type",
         headers={"Authorization": f"Bearer {PRIVILEGED_TOKEN_FOR_TESTING}"},
     )
     assert response.status_code == 404, response.content
 
     # Delete datasources
     response = client.delete(
-        f"/v1/m/datasources/{secured_datasource.ds.id}",
+        f"/v1/m/datasources/{testing_datasource.ds.id}",
         headers={"Authorization": f"Bearer {PRIVILEGED_TOKEN_FOR_TESTING}"},
     )
     assert response.status_code == 204, response.content
 
 
-def test_create_participants_type_invalid(secured_datasource):
+def test_create_participants_type_invalid(testing_datasource):
     response = client.post(
-        f"/v1/m/datasources/{secured_datasource.ds.id}/participants",
+        f"/v1/m/datasources/{testing_datasource.ds.id}/participants",
         headers={"Authorization": f"Bearer {PRIVILEGED_TOKEN_FOR_TESTING}"},
         content=CreateParticipantsTypeRequest.model_construct(
             participant_type="newpt",
@@ -330,22 +330,22 @@ def test_create_participants_type_invalid(secured_datasource):
 
 
 @pytest.mark.pgintegration
-def test_lifecycle_with_pg(secured_datasource):
+def test_lifecycle_with_pg(testing_datasource):
     """Exercises the admin API methods that require an external database."""
     # Add the privileged user to the organization.
     response = client.post(
-        f"/v1/m/organizations/{secured_datasource.org.id}/members",
+        f"/v1/m/organizations/{testing_datasource.org.id}/members",
         json={"email": PRIVILEGED_EMAIL},
         headers={"Authorization": f"Bearer {PRIVILEGED_TOKEN_FOR_TESTING}"},
     )
     assert response.status_code == 204, response.content
 
     # Populate the testing data warehouse.
-    create_testing_dwh(dsn=secured_datasource.dsn, nrows=100)
+    create_testing_dwh(dsn=testing_datasource.dsn, nrows=100)
 
     # Inspect the datasource.
     response = client.post(
-        f"/v1/m/datasources/{secured_datasource.ds.id}/inspect",
+        f"/v1/m/datasources/{testing_datasource.ds.id}/inspect",
         headers={"Authorization": f"Bearer {PRIVILEGED_TOKEN_FOR_TESTING}"},
     )
     assert response.status_code == 200, response.content
@@ -354,7 +354,7 @@ def test_lifecycle_with_pg(secured_datasource):
 
     # Inspect one table in the datasource.
     response = client.post(
-        f"/v1/m/datasources/{secured_datasource.ds.id}/inspect/dwh",
+        f"/v1/m/datasources/{testing_datasource.ds.id}/inspect/dwh",
         headers={"Authorization": f"Bearer {PRIVILEGED_TOKEN_FOR_TESTING}"},
     )
     assert response.status_code == 200, response.content
