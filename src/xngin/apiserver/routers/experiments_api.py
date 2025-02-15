@@ -56,7 +56,7 @@ from xngin.sheets.config_sheet import (
     fetch_and_parse_sheet,
     create_configworksheet_from_table,
 )
-from xngin.stats.assignment import assign_treatment
+from xngin.stats.assignment import assign_treatment as assign_treatment_actual
 from xngin.stats.power import check_power
 
 
@@ -255,7 +255,7 @@ def get_metrics(
     summary="Check power given an experiment and audience specification.",
     tags=["Experiment Design"],
 )
-def check_power_api(
+def powercheck(
     body: PowerRequest,
     config: Annotated[DatasourceConfig, Depends(datasource_config_required)],
 ) -> PowerResponse:
@@ -289,7 +289,7 @@ def check_power_api(
     summary="Assign treatment given experiment and audience specification.",
     tags=["Experiment Design"],
 )
-def assign_treatment_api(
+def assign_treatment(
     body: AssignRequest,
     chosen_n: Annotated[
         int, Query(..., description="Number of participants to assign.")
@@ -325,7 +325,7 @@ def assign_treatment_api(
 
     arm_names = [arm.arm_name for arm in body.design_spec.arms]
     metric_names = [m.field_name for m in body.design_spec.metrics]
-    return assign_treatment(
+    return assign_treatment_actual(
         sa_table=sa_table,
         data=participants,
         stratum_cols=body.design_spec.strata_field_names + metric_names,

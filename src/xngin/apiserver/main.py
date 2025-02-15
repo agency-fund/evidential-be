@@ -4,11 +4,11 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 from fastapi.openapi.utils import get_openapi
+from fastapi.routing import APIRoute
 
 from xngin.apiserver import database, exceptionhandlers, middleware, constants
 from xngin.apiserver.flags import PUBLISH_ALL_DOCS
 from xngin.apiserver.routers import experiments_api, oidc, admin
-
 
 logging.basicConfig(
     level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
@@ -64,7 +64,6 @@ def enable_admin_api():
 if oidc.is_enabled():
     enable_oidc_api()
 
-
 if oidc.is_enabled() and admin.is_enabled():
     enable_admin_api()
 
@@ -73,6 +72,15 @@ def custom_openapi():
     """Customizes the generated OpenAPI schema."""
     if app.openapi_schema:  # cache
         return app.openapi_schema
+
+    # Overrides the operationId values in the OpenAPI spec to generate humane names
+    # based on the method name. This avoids generating long, ugly names downstream.
+    # Note: ensure all API methods have names you'd like to appear in the generated APIs.
+    for route in app.routes:
+        if isinstance(route, APIRoute):
+            # uses the Python API method name
+            route.operation_id = route.name
+
     openapi_schema = get_openapi(
         title="xngin: Experiments API",
         version="0.9.0",

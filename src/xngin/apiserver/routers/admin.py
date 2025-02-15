@@ -8,6 +8,7 @@ import sqlalchemy
 from fastapi import APIRouter, FastAPI, Depends, Path, Body, HTTPException
 from fastapi import Response
 from fastapi import status
+import sqlalchemy.orm
 from pydantic import BaseModel, Field, ConfigDict
 from sqlalchemy import delete, select
 from sqlalchemy.orm import Session
@@ -30,6 +31,7 @@ from xngin.apiserver.settings import (
     Dwh,
     ParticipantsDef,
     ParticipantsConfig,
+    DatasourceConfig,
 )
 from xngin.schema.schema_types import ParticipantsSchema, FieldDescriptor
 
@@ -77,6 +79,22 @@ def user_from_token(
     return user
 
 
+def get_organization_or_raise(session: Session, user: User, organization_id: str):
+    """Reads the requested organization from the database. Raises if disallowed or not found."""
+    stmt = (
+        select(Organization)
+        .join(UserOrganization)
+        .where(Organization.id == organization_id)
+        .where(UserOrganization.user_id == user.id)
+    )
+    org = session.execute(stmt).scalar_one_or_none()
+    if org is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Datasource not found."
+        )
+    return org
+
+
 def get_datasource_or_raise(session: Session, user: User, datasource_id: str):
     """Reads the requested datasource from the database. Raises if disallowed or not found."""
     stmt = (
@@ -110,14 +128,6 @@ class OrganizationSummary(AdminApiBaseModel):
     name: Annotated[str, Field(...)]
 
 
-class ListOrganizationsResponse(AdminApiBaseModel):
-    items: list[OrganizationSummary]
-
-
-class AddMemberToOrganizationRequest(AdminApiBaseModel):
-    email: Annotated[str, Field(...)]
-
-
 class DatasourceSummary(AdminApiBaseModel):
     id: str
     name: str
@@ -125,6 +135,26 @@ class DatasourceSummary(AdminApiBaseModel):
     type: str
     organization_id: str
     organization_name: str
+
+
+class UserSummary(AdminApiBaseModel):
+    id: Annotated[str, Field(...)]
+    email: Annotated[str, Field(...)]
+
+
+class ListOrganizationsResponse(AdminApiBaseModel):
+    items: list[OrganizationSummary]
+
+
+class GetOrganizationResponse(AdminApiBaseModel):
+    id: Annotated[str, Field(...)]
+    name: Annotated[str, Field(...)]
+    users: list[UserSummary]
+    datasources: list[DatasourceSummary]
+
+
+class AddMemberToOrganizationRequest(AdminApiBaseModel):
+    email: Annotated[str, Field(...)]
 
 
 class ListDatasourcesResponse(AdminApiBaseModel):
@@ -146,6 +176,14 @@ class CreateDatasourceResponse(AdminApiBaseModel):
     id: Annotated[str, Field(...)]
 
 
+class GetDatasourceResponse(AdminApiBaseModel):
+    id: Annotated[str, Field(...)]
+    name: str
+    config: DatasourceConfig  # TODO: map this to a public type
+    organization_id: str
+    organization_name: str
+
+
 class InspectDatasourceResponse(ApiBaseModel):
     tables: list[str]
 
@@ -154,8 +192,8 @@ class FieldMetadata(ApiBaseModel):
     """Concise summary of fields in the table."""
 
     field_name: str
-    data_type: str
-    description: str | None = None
+    data_type: DataType
+    description: str
 
 
 class InspectDatasourceTableResponse(ApiBaseModel):
@@ -244,7 +282,7 @@ def list_organizations(
                 id=org.id,
                 name=org.name,
             )
-            for org in organizations
+            for org in sorted(organizations, key=lambda o: o.name)
         ]
     )
 
@@ -320,6 +358,90 @@ def add_member_to_organization(
     return GENERIC_SUCCESS
 
 
+@router.delete(
+    "/organizations/{organization_id}/members/{user_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+)
+def remove_member_from_organization(
+    organization_id: str,
+    user_id: str,
+    session: Annotated[Session, Depends(xngin_db_session)],
+    user: Annotated[User, Depends(user_from_token)],
+):
+    """Removes a member from an organization.
+
+    The authenticated user must be part of the organization to remove members.
+    """
+    get_organization_or_raise(session, user, organization_id)
+    stmt = delete(UserOrganization).where(
+        UserOrganization.organization_id == organization_id,
+        UserOrganization.user_id == user_id,
+    )
+    result = session.execute(stmt)
+    if result.rowcount == 0:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="User is not a member of this organization",
+        )
+
+    session.commit()
+    return GENERIC_SUCCESS
+
+
+@router.get("/organizations/{organization_id}")
+def get_organization(
+    organization_id: str,
+    session: Annotated[Session, Depends(xngin_db_session)],
+    user: Annotated[User, Depends(user_from_token)],
+) -> GetOrganizationResponse:
+    """Returns detailed information about a specific organization.
+
+    The authenticated user must be a member of the organization.
+    """
+    # First get the organization and verify user has access
+    org = get_organization_or_raise(session, user, organization_id)
+    if not org:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Organization not found"
+        )
+
+    # Get users and datasources separately
+    users = (
+        session.query(User)
+        .join(UserOrganization)
+        .filter(UserOrganization.organization_id == organization_id)
+        .all()
+    )
+    datasources = (
+        session.query(Datasource)
+        .filter(Datasource.organization_id == organization_id)
+        .all()
+    )
+
+    return GetOrganizationResponse(
+        id=org.id,
+        name=org.name,
+        users=[
+            UserSummary(id=u.id, email=u.email)
+            for u in sorted(users, key=lambda x: x.email)
+        ],
+        datasources=[
+            DatasourceSummary(
+                id=ds.id,
+                name=ds.name,
+                driver="sqlite"
+                if isinstance(ds.get_config(), SqliteLocalConfig)
+                else ds.get_config().dwh.driver,
+                type=ds.get_config().type,
+                # Nit: Redundant in this response
+                organization_id=ds.organization_id,
+                organization_name=org.name,
+            )
+            for ds in sorted(datasources, key=lambda x: x.name)
+        ],
+    )
+
+
 @router.get("/datasources")
 def list_datasources(
     session: Annotated[Session, Depends(xngin_db_session)],
@@ -350,7 +472,8 @@ def list_datasources(
 
     return ListDatasourcesResponse(
         items=[
-            convert_ds_to_summary(ds) for ds in sorted(datasources, key=lambda d: d.id)
+            convert_ds_to_summary(ds)
+            for ds in sorted(datasources, key=lambda d: d.name)
         ]
     )
 
@@ -417,7 +540,25 @@ def update_datasource(
     return GENERIC_SUCCESS
 
 
-@router.post("/datasources/{datasource_id}/inspect")
+@router.get("/datasources/{datasource_id}")
+def get_datasource(
+    datasource_id: str,
+    user: Annotated[User, Depends(user_from_token)],
+    session: Annotated[Session, Depends(xngin_db_session)],
+) -> GetDatasourceResponse:
+    """Returns detailed information about a specific datasource."""
+    ds = get_datasource_or_raise(session, user, datasource_id)
+    config = ds.get_config()
+    return GetDatasourceResponse(
+        id=ds.id,
+        name=ds.name,
+        config=config,
+        organization_id=ds.organization_id,
+        organization_name=ds.organization.name,
+    )
+
+
+@router.get("/datasources/{datasource_id}/inspect")
 def inspect_datasource(
     datasource_id: str,
     user: Annotated[User, Depends(user_from_token)],
@@ -438,7 +579,7 @@ def create_inspect_table_response_from_table(table: sqlalchemy.Table):
     This is similar to config_sheet.create_configworksheet_from_table but tailored to use in the API.
     """
     possible_id_columns = {
-        c.name for c in table.columns.values() if c.name.endswith("_id")
+        c.name for c in table.columns.values() if c.name.endswith("id")
     }
     primary_key_columns = {c.name for c in table.columns.values() if c.primary_key}
     if len(primary_key_columns) > 0:
@@ -453,7 +594,7 @@ def create_inspect_table_response_from_table(table: sqlalchemy.Table):
             FieldMetadata(
                 field_name=column.name,
                 data_type=DataType.match(type_hint),
-                description=column.comment,
+                description=column.comment if column.comment else "",
             )
         )
 
@@ -463,13 +604,13 @@ def create_inspect_table_response_from_table(table: sqlalchemy.Table):
     )
 
 
-@router.post("/datasources/{datasource_id}/inspect/{table_name}")
+@router.get("/datasources/{datasource_id}/inspect/{table_name}")
 def inspect_table_in_datasource(
     datasource_id: str,
     table_name: str,
     user: Annotated[User, Depends(user_from_token)],
     session: Annotated[Session, Depends(xngin_db_session)],
-):
+) -> InspectDatasourceTableResponse:
     """Inspects a single table in a datasource and returns a summary of its fields."""
     ds = get_datasource_or_raise(session, user, datasource_id)
     config = ds.get_config()
@@ -516,10 +657,12 @@ def list_participant_types(
     datasource_id: str,
     session: Annotated[Session, Depends(xngin_db_session)],
     user: Annotated[User, Depends(user_from_token)],
-):
+) -> ListParticipantsTypeResponse:
     ds = get_datasource_or_raise(session, user, datasource_id)
     return ListParticipantsTypeResponse(
-        items=ds.get_config().participants,
+        items=list(
+            sorted(ds.get_config().participants, key=lambda p: p.participant_type)
+        )
     )
 
 
@@ -529,7 +672,7 @@ def create_participant_type(
     session: Annotated[Session, Depends(xngin_db_session)],
     user: Annotated[User, Depends(user_from_token)],
     body: CreateParticipantsTypeRequest,
-):
+) -> CreateParticipantsTypeResponse:
     ds = get_datasource_or_raise(session, user, datasource_id)
     participants_def = ParticipantsDef(
         type="schema",
@@ -559,7 +702,10 @@ def get_participant_types(
     return ds.get_config().find_participants(participant_id)
 
 
-@router.patch("/datasources/{datasource_id}/participants/{participant_id}")
+@router.patch(
+    "/datasources/{datasource_id}/participants/{participant_id}",
+    response_model=UpdateParticipantsTypeResponse,
+)
 def update_participant_type(
     datasource_id: str,
     participant_id: str,
@@ -639,7 +785,7 @@ def list_api_keys(
                 organization_id=api_key.datasource.organization_id,
                 organization_name=api_key.datasource.organization.name,
             )
-            for api_key in api_keys
+            for api_key in sorted(api_keys, key=lambda a: a.id)
         ]
     )
 

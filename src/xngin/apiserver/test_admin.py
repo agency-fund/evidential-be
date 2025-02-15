@@ -325,58 +325,68 @@ def test_lifecycle_with_pg(testing_datasource):
     create_testing_dwh(dsn=testing_datasource.dsn, nrows=100)
 
     # Inspect the datasource.
-    response = ppost(f"/v1/m/datasources/{testing_datasource.ds.id}/inspect")
+    response = pget(f"/v1/m/datasources/{testing_datasource.ds.id}/inspect")
     assert response.status_code == 200, response.content
     parsed = InspectDatasourceResponse.model_validate(response.json())
     assert parsed.tables == ["dwh"], response.json()
 
     # Inspect one table in the datasource.
-    response = ppost(f"/v1/m/datasources/{testing_datasource.ds.id}/inspect/dwh")
+    response = pget(f"/v1/m/datasources/{testing_datasource.ds.id}/inspect/dwh")
     assert response.status_code == 200, response.content
     parsed = InspectDatasourceTableResponse.model_validate(response.json())
     assert parsed == InspectDatasourceTableResponse(
-        detected_unique_id_fields=[],
+        detected_unique_id_fields=["id"],
         fields=[
             FieldMetadata(
-                field_name="baseline_income", data_type="numeric", description=None
+                field_name="baseline_income", data_type=DataType.NUMERIC, description=""
             ),
             FieldMetadata(
-                field_name="current_income", data_type="numeric", description=None
+                field_name="current_income", data_type=DataType.NUMERIC, description=""
             ),
             FieldMetadata(
-                field_name="ethnicity", data_type="character varying", description=None
+                field_name="ethnicity",
+                data_type=DataType.CHARACTER_VARYING,
+                description="",
             ),
             FieldMetadata(
-                field_name="first_name", data_type="character varying", description=None
+                field_name="first_name",
+                data_type=DataType.CHARACTER_VARYING,
+                description="",
             ),
             FieldMetadata(
-                field_name="gender", data_type="character varying", description=None
+                field_name="gender",
+                data_type=DataType.CHARACTER_VARYING,
+                description="",
             ),
-            FieldMetadata(field_name="id", data_type="integer", description=None),
-            FieldMetadata(field_name="income", data_type="numeric", description=None),
+            FieldMetadata(field_name="id", data_type=DataType.INTEGER, description=""),
             FieldMetadata(
-                field_name="is_engaged", data_type="boolean", description=None
-            ),
-            FieldMetadata(
-                field_name="is_onboarded", data_type="boolean", description=None
+                field_name="income", data_type=DataType.NUMERIC, description=""
             ),
             FieldMetadata(
-                field_name="is_recruited", data_type="boolean", description=None
+                field_name="is_engaged", data_type=DataType.BOOLEAN, description=""
             ),
             FieldMetadata(
-                field_name="is_registered", data_type="boolean", description=None
+                field_name="is_onboarded", data_type=DataType.BOOLEAN, description=""
             ),
             FieldMetadata(
-                field_name="is_retained", data_type="boolean", description=None
+                field_name="is_recruited", data_type=DataType.BOOLEAN, description=""
             ),
             FieldMetadata(
-                field_name="last_name", data_type="character varying", description=None
+                field_name="is_registered", data_type=DataType.BOOLEAN, description=""
             ),
             FieldMetadata(
-                field_name="potential_0", data_type="numeric", description=None
+                field_name="is_retained", data_type=DataType.BOOLEAN, description=""
             ),
             FieldMetadata(
-                field_name="potential_1", data_type="integer", description=None
+                field_name="last_name",
+                data_type=DataType.CHARACTER_VARYING,
+                description="",
+            ),
+            FieldMetadata(
+                field_name="potential_0", data_type=DataType.NUMERIC, description=""
+            ),
+            FieldMetadata(
+                field_name="potential_1", data_type=DataType.INTEGER, description=""
             ),
         ],
     )
