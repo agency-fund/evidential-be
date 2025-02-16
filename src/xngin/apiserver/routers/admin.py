@@ -569,7 +569,7 @@ def inspect_datasource(
     config = ds.get_config()
     metadata = sqlalchemy.MetaData()
     metadata.reflect(config.dbengine())
-    tables = list(metadata.tables.keys())
+    tables = list(sorted(metadata.tables.keys()))
     return InspectDatasourceResponse(tables=tables)
 
 
