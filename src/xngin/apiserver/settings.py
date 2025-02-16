@@ -1,3 +1,5 @@
+import base64
+import binascii
 import json
 import logging
 import os
@@ -16,6 +18,8 @@ from pydantic import (
     Field,
     ConfigDict,
     model_validator,
+    field_validator,
+    field_serializer,
 )
 from sqlalchemy import Engine, event, text
 from sqlalchemy.exc import NoSuchTableError
@@ -27,6 +31,7 @@ from tenacity import (
     stop_after_delay,
 )
 
+from xngin.apiserver import flags
 from xngin.apiserver.settings_secrets import replace_secrets
 from xngin.db_extensions import NumpyStddev
 from xngin.schema.schema_types import ParticipantsSchema
@@ -134,15 +139,16 @@ class ParticipantsDef(BaseParticipantsRef, ParticipantsSchema):
     ]
 
 
+type ParticipantsConfig = Annotated[
+    SheetParticipantsRef | ParticipantsDef, Field(discriminator="type")
+]
+
+
 class ParticipantsMixin(ConfigBaseModel):
     """ParticipantsMixin can be added to a config type to add standardized participant definitions."""
 
     participants: Annotated[
-        list[
-            Annotated[
-                SheetParticipantsRef | ParticipantsDef, Field(discriminator="type")
-            ]
-        ],
+        list[ParticipantsConfig],
         Field(),
     ]
 
@@ -233,6 +239,16 @@ class GcpServiceAccountInfo(ConfigBaseModel):
         ),
     ]
 
+    @field_validator("content_base64")
+    @classmethod
+    def validate_base64(cls, value: str) -> str:
+        """Validates that content_base64 contains valid base64 data."""
+        try:
+            base64.b64decode(value, validate=True)
+        except binascii.Error as e:
+            raise ValueError("Invalid base64 content") from e
+        return value
+
 
 class GcpServiceAccountFile(ConfigBaseModel):
     """Describes a file path to a Google Cloud Service Account credential file."""
@@ -248,6 +264,16 @@ class GcpServiceAccountFile(ConfigBaseModel):
     ]
 
 
+type GcpCredentials = Annotated[
+    GcpServiceAccountInfo | GcpServiceAccountFile,
+    Field(
+        ...,
+        discriminator="type",
+        description="The Google Cloud Service Account credentials.",
+    ),
+]
+
+
 class BqDsn(ConfigBaseModel, BaseDsn):
     """Describes a BigQuery connection."""
 
@@ -260,14 +286,7 @@ class BqDsn(ConfigBaseModel, BaseDsn):
 
     # These two authentication modes are documented here:
     # https://googleapis.dev/python/google-api-core/latest/auth.html#service-accounts
-    credentials: Annotated[
-        GcpServiceAccountInfo | GcpServiceAccountFile,
-        Field(
-            ...,
-            discriminator="type",
-            description="The Google Cloud Service Account credentials.",
-        ),
-    ]
+    credentials: GcpCredentials
 
     def to_sqlalchemy_url(self) -> sqlalchemy.URL:
         qopts = {}
@@ -302,6 +321,10 @@ class Dsn(ConfigBaseModel, BaseDsn):
     # Specify the order in which schemas are searched if your dwh supports it.
     search_path: str | None = None
 
+    @field_serializer("password", when_used="json")
+    def reveal_password(self, v):
+        return v.get_secret_value()
+
     def is_redshift(self):
         return self.host.endswith("redshift.amazonaws.com")
 
@@ -334,6 +357,9 @@ class DbapiArg(ConfigBaseModel):
     value: str
 
 
+type Dwh = Annotated[Dsn | BqDsn, Field(discriminator="driver")]
+
+
 class RemoteDatabaseConfig(ParticipantsMixin, ConfigBaseModel):
     """RemoteDatabaseConfig defines a configuration for a remote data warehouse."""
 
@@ -341,7 +367,7 @@ class RemoteDatabaseConfig(ParticipantsMixin, ConfigBaseModel):
 
     type: Literal["remote"]
 
-    dwh: Annotated[Dsn | BqDsn, Field(discriminator="driver")]
+    dwh: Dwh
 
     def supports_reflection(self):
         return self.dwh.supports_table_reflection()
@@ -352,6 +378,14 @@ class RemoteDatabaseConfig(ParticipantsMixin, ConfigBaseModel):
         Use this in a `with` block to ensure correct transaction handling. If you need the
         sqlalchemy Engine, call .get_bind().
         """
+        engine = self.dbengine()
+        return Session(engine)
+
+    def dbengine(self):
+        """Returns a SQLAlchemy Engine for the customer database.
+
+        Use this when reflecting. If you're doing any queries on the tables, prefer dbsession().
+        """
         url = self.dwh.to_sqlalchemy_url()
         connect_args: dict = {}
         if url.get_backend_name() == "postgres":
@@ -359,10 +393,10 @@ class RemoteDatabaseConfig(ParticipantsMixin, ConfigBaseModel):
         engine = sqlalchemy.create_engine(
             url,
             connect_args=connect_args,
-            echo=os.environ.get("ECHO_SQL", "").lower() in ("true", "1"),
+            echo=flags.ECHO_SQL,
         )
         self._extra_engine_setup(engine)
-        return Session(engine)
+        return engine
 
     def _extra_engine_setup(self, engine: Engine):
         """Do any extra configuration if needed before a connection is made."""
@@ -392,6 +426,13 @@ class SqliteLocalConfig(ParticipantsMixin, ConfigBaseModel):
     type: Literal["sqlite_local"]
     sqlite_filename: str
 
+    @field_validator("sqlite_filename")
+    @classmethod
+    def validate_sqlite_filename(cls, value):
+        if value.startswith("sqlite://"):
+            raise ValueError("sqlite_filename should not start with sqlite://")
+        return value
+
     def supports_reflection(self):
         return True
 
@@ -401,6 +442,14 @@ class SqliteLocalConfig(ParticipantsMixin, ConfigBaseModel):
         Use this in a `with` block to ensure correct transaction handling. If you need the
         sqlalchemy Engine, call .get_bind().
         """
+        engine = self.dbengine()
+        return Session(engine)
+
+    def dbengine(self):
+        """Returns a SQLAlchemy Engine for the customer database.
+
+        Use this when reflecting. If you're doing any queries on the tables, prefer dbsession().
+        """
         url = sqlalchemy.URL.create(
             drivername="sqlite",
             database=self.sqlite_filename,
@@ -409,24 +458,26 @@ class SqliteLocalConfig(ParticipantsMixin, ConfigBaseModel):
         engine = sqlalchemy.create_engine(
             url,
             connect_args={"timeout": 5},
-            echo=os.environ.get("ECHO_SQL", "").lower() in ("true", "1"),
+            echo=flags.ECHO_SQL,
         )
 
         @event.listens_for(engine, "connect")
         def register_sqlite_functions(dbapi_connection, _):
             NumpyStddev.register(dbapi_connection)
 
-        return Session(engine)
+        return engine
 
 
-type DatasourceConfig = RemoteDatabaseConfig | SqliteLocalConfig
+type DatasourceConfig = Annotated[
+    RemoteDatabaseConfig | SqliteLocalConfig, Field(discriminator="type")
+]
 
 
 class Datasource(ConfigBaseModel):
     """Datasource describes data warehouse configuration and policy."""
 
     id: str
-    config: Annotated[DatasourceConfig, Field(discriminator="type")]
+    config: DatasourceConfig
     require_api_key: Annotated[bool | None, Field(...)] = None
 
 

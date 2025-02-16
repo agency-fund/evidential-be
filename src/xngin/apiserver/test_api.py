@@ -1,7 +1,6 @@
 import glob
 import json
 import logging
-import os
 import re
 import shutil
 import tempfile
@@ -12,7 +11,7 @@ from pathlib import Path
 import pytest
 from fastapi.testclient import TestClient
 
-from xngin.apiserver import conftest, constants
+from xngin.apiserver import conftest, constants, flags
 from xngin.apiserver.api_types import CommitRequest
 from xngin.apiserver.main import app
 from xngin.apiserver.testing.assertions import assert_same
@@ -54,7 +53,7 @@ def trunc(s, n=4096):
 @pytest.fixture(name="update_api_tests_flag")
 def fixture_update_api_tests_flag(pytestconfig):
     """Returns true iff the UPDATE_API_TESTS environment variable resembles a truthy value."""
-    return os.environ.get("UPDATE_API_TESTS", "").lower() in ("true", "1")
+    return flags.UPDATE_API_TESTS
 
 
 @pytest.mark.parametrize("script", API_TESTS)

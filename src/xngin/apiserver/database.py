@@ -6,6 +6,7 @@ from sqlalchemy import create_engine, event
 from sqlalchemy.engine.interfaces import DBAPIConnection
 from sqlalchemy.orm import sessionmaker
 
+from xngin.apiserver import flags
 from xngin.apiserver.models.tables import Base
 
 DEFAULT_POSTGRES_DIALECT = "postgresql+psycopg"
@@ -46,7 +47,7 @@ def get_connect_args():
 engine = create_engine(
     SQLALCHEMY_DATABASE_URL,
     connect_args=get_connect_args(),
-    echo=os.environ.get("ECHO_SQL", "").lower() in ("true", "1"),
+    echo=flags.ECHO_SQL,
 )
 
 
@@ -59,7 +60,7 @@ def set_sqlite_pragma(dbapi_connection: DBAPIConnection, _):
     cursor.close()
 
 
-SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+SessionLocal = sessionmaker(bind=engine)
 
 
 def setup():

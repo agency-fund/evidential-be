@@ -5,10 +5,7 @@ import string
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from xngin.apiserver.models.tables import (
-    ApiKeyTable,
-    ApiKeyDatasourceTable,
-)
+from xngin.apiserver.models.tables import ApiKey, Datasource
 import logging
 
 logger = logging.getLogger(__name__)
@@ -62,11 +59,10 @@ def require_valid_api_key(session: Session, api_key: str | None, config_id: str)
         raise InvalidApiKeyError()
     key_hash = hash_key(api_key)
     stmt = (
-        select(True)
-        .select_from(ApiKeyTable)
-        .join(ApiKeyDatasourceTable)
-        .where(ApiKeyTable.key == key_hash)
-        .where(ApiKeyDatasourceTable.datasource_id == config_id)
+        select(ApiKey.id)
+        .join(Datasource)
+        .where(ApiKey.datasource_id == config_id)
+        .where(ApiKey.key == key_hash)
     )
     result = session.execute(stmt)
     row = result.scalar_one_or_none()

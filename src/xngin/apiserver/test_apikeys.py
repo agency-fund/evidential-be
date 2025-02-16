@@ -1,18 +1,22 @@
+import pytest
 from fastapi.testclient import TestClient
-from sqlalchemy import delete
 
 from xngin.apiserver import conftest, constants
-from xngin.apiserver.apikeys import make_key, hash_key
-from xngin.apiserver.models.tables import ApiKeyTable, ApiKeyDatasourceTable
 from xngin.apiserver.dependencies import xngin_db_session
 from xngin.apiserver.main import app
 
+# CONFIG_ID_SECURED refers to a datasource defined in xngin.testing.settings.json
 CONFIG_ID_SECURED = "testing-secured"
-
 
 conftest.setup(app)
 client = TestClient(app)
 client.base_url = str(client.base_url) + constants.API_PREFIX_V1
+
+
+@pytest.fixture(scope="module")
+def db_session():
+    session = next(app.dependency_overrides[xngin_db_session]())
+    yield session
 
 
 def test_secured_requires_apikey():
@@ -36,36 +40,28 @@ def test_secured_wrong_apikey():
     assert response.status_code == 403, response.content
 
 
-def test_secured_correct_apikey():
+def test_secured_correct_apikey(testing_datasource):
     """Tests that a config with API keys allows valid API keys and rejects invalid keys."""
-    session = next(app.dependency_overrides[xngin_db_session]())  # hack
-    # emulates behavior of POST /m/apikeys
-    id_, key = make_key()
-    api_key = ApiKeyTable(id=id_, key=hash_key(key))
-    api_key.datasources = [ApiKeyDatasourceTable(datasource_id=CONFIG_ID_SECURED)]
-    session.add(api_key)
-    session.commit()
-    try:
+    response = client.get(
+        "/_authcheck",
+        headers={
+            constants.HEADER_CONFIG_ID: testing_datasource.ds.id,
+            constants.HEADER_API_KEY: testing_datasource.key,
+        },
+    )
+    assert response.status_code == 204, response.content
+
+    for bad_key in (
+        "",
+        testing_datasource.key + "suffix",
+        testing_datasource.key.lower(),
+        testing_datasource.key.upper(),
+    ):
         response = client.get(
-            "/filters?participant_type=test_participant_type",
+            "/_authcheck",
             headers={
-                constants.HEADER_CONFIG_ID: CONFIG_ID_SECURED,
-                constants.HEADER_API_KEY: key,
+                constants.HEADER_CONFIG_ID: testing_datasource.ds.id,
+                constants.HEADER_API_KEY: bad_key,
             },
         )
-        assert response.status_code == 200, response.content
-
-        for bad_key in ("", key + "suffix", key.lower(), key.upper()):
-            response = client.get(
-                "/filters?participant_type=test_participant_type",
-                headers={
-                    constants.HEADER_CONFIG_ID: CONFIG_ID_SECURED,
-                    constants.HEADER_API_KEY: bad_key,
-                },
-            )
-            assert response.status_code == 403, response.content
-    finally:
-        assert (
-            session.execute(delete(ApiKeyTable).where(ApiKeyTable.id == id_)).rowcount
-            == 1
-        )
+        assert response.status_code == 403, response.content

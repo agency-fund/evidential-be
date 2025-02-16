@@ -1,8 +1,9 @@
+from dataclasses import dataclass
 from typing import Annotated
 
-from fastapi import Depends, HTTPException
+from fastapi import Depends, HTTPException, Security
 from jose import jwt, JWTError
-from starlette import status
+from fastapi import status
 
 from xngin.apiserver.routers.oidc import (
     oidc_google,
@@ -11,6 +12,8 @@ from xngin.apiserver.routers.oidc import (
     get_google_configuration,
 )
 import logging
+import secrets
+
 
 # JWTs generated for domains other than @agency.fund are considered invalid.
 ALLOWED_HOSTED_DOMAINS = ("agency.fund",)
@@ -18,12 +21,48 @@ ALLOWED_HOSTED_DOMAINS = ("agency.fund",)
 logger = logging.getLogger(__name__)
 
 
+@dataclass
+class TokenInfo:
+    """Information extracted from a validated OIDC token."""
+
+    email: str
+    iss: str  # issuer
+    sub: str  # subject identifier
+    hd: str  # hosted domain
+
+    def is_privileged(self):
+        return self.hd in ALLOWED_HOSTED_DOMAINS
+
+
+# Set TESTING_TOKENS_ENABLED to allow statically defined bearer tokens to skip the JWT validation.
+PRIVILEGED_EMAIL = "testing@agency.fund"
+PRIVILEGED_TOKEN_FOR_TESTING = secrets.token_urlsafe(32)
+TESTING_TOKENS_ENABLED = False
+UNPRIVILEGED_EMAIL = "testing@agencyfund.org"
+UNPRIVILEGED_TOKEN_FOR_TESTING = secrets.token_urlsafe(32)
+TESTING_TOKENS = {
+    UNPRIVILEGED_TOKEN_FOR_TESTING: TokenInfo(
+        email=UNPRIVILEGED_EMAIL, iss="testing", sub="testing", hd="agencyfund.org"
+    ),
+    PRIVILEGED_TOKEN_FOR_TESTING: TokenInfo(
+        email=PRIVILEGED_EMAIL,
+        iss="testing",
+        sub="testing",
+        hd="agency.fund",
+    ),
+}
+
+
 async def require_oidc_token(
-    token: Annotated[str, Depends(oidc_google)],
+    token: Annotated[str, Security(oidc_google)],
     oidc_config: Annotated[dict, Depends(get_google_configuration)],
     jwks: Annotated[dict, Depends(get_google_jwks)],
-):
-    """Dependency for validating that the Authorization: header is a valid Google JWT."""
+) -> TokenInfo:
+    """Dependency for validating that the Authorization: header is a valid Google JWT.
+
+    Returns:
+        TokenInfo containing the validated token's claims.
+    """
     expected_prefix = "Bearer "
     if not token.startswith(expected_prefix):
         raise HTTPException(
@@ -31,6 +70,8 @@ async def require_oidc_token(
             detail=f'Authorization header must start with "{expected_prefix}".',
         )
     token = token[len(expected_prefix) :]
+    if TESTING_TOKENS_ENABLED and token in TESTING_TOKENS:
+        return TESTING_TOKENS[token]
     try:
         header = jwt.get_unverified_header(token)
     except JWTError as e:
@@ -71,4 +112,6 @@ async def require_oidc_token(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail=f"Invalid authentication credentials: {e}",
         ) from e
-    return decoded
+    return TokenInfo(
+        email=decoded["email"], iss=decoded["iss"], sub=decoded["sub"], hd=decoded["hd"]
+    )
