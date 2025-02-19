@@ -4,6 +4,7 @@ import logging
 from contextlib import asynccontextmanager
 from typing import Annotated
 
+import google.api_core.exceptions
 import sqlalchemy
 from fastapi import APIRouter, FastAPI, Depends, Path, Body, HTTPException
 from fastapi import Response
@@ -566,11 +567,17 @@ def inspect_datasource(
 ) -> InspectDatasourceResponse:
     """Verifies connectivity to a datasource and returns a list of readable tables."""
     ds = get_datasource_or_raise(session, user, datasource_id)
-    config = ds.get_config()
-    metadata = sqlalchemy.MetaData()
-    metadata.reflect(config.dbengine())
-    tables = list(sorted(metadata.tables.keys()))
-    return InspectDatasourceResponse(tables=tables)
+    try:
+        config = ds.get_config()
+        metadata = sqlalchemy.MetaData()
+        metadata.reflect(config.dbengine())
+        tables = list(sorted(metadata.tables.keys()))
+        return InspectDatasourceResponse(tables=tables)
+    except google.api_core.exceptions.NotFound as exc:
+        # Google returns a 404 when authentication succeeds but when the specified datasource does not exist.
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)
+        ) from exc
 
 
 def create_inspect_table_response_from_table(table: sqlalchemy.Table):
