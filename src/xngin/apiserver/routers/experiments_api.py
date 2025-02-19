@@ -8,6 +8,7 @@ from fastapi import APIRouter, FastAPI, HTTPException, Depends, Path, Query, Res
 from fastapi import Request
 from pydantic import BaseModel
 from sqlalchemy import distinct
+from sqlalchemy.orm import Session
 
 from xngin.apiserver import constants, database
 from xngin.apiserver.api_types import (
@@ -34,6 +35,7 @@ from xngin.apiserver.dependencies import (
 from xngin.apiserver.dwh.queries import get_stats_on_metrics, query_for_participants
 from xngin.apiserver.gsheet_cache import GSheetCache
 from xngin.apiserver.settings import (
+    ParticipantsConfig,
     ParticipantsMixin,
     WebhookConfig,
     WebhookUrl,
@@ -58,6 +60,7 @@ from xngin.sheets.config_sheet import (
 )
 from xngin.stats.assignment import assign_treatment as assign_treatment_actual
 from xngin.stats.power import check_power
+from xngin.schema.schema_types import ParticipantsSchema
 
 
 logger = logging.getLogger(__name__)
@@ -105,17 +108,18 @@ def get_strata(
     config: Annotated[DatasourceConfig, Depends(datasource_config_required)],
 ) -> GetStrataResponse:
     """Get possible strata covariates for a given unit type."""
-    participants = config.find_participants(commons.participant_type)
-    config_sheet = fetch_worksheet(commons, config, gsheets)
-    strata_fields = {c.field_name: c for c in config_sheet.fields if c.is_strata}
+    participants_cfg, schema = _get_participant_config_and_schema(
+        commons, config, gsheets
+    )
+    strata_fields = {c.field_name: c for c in schema.fields if c.is_strata}
 
     with config.dbsession() as session:
         sa_table = infer_table(
-            session.get_bind(), participants.table_name, config.supports_reflection()
+            session.get_bind(),
+            participants_cfg.table_name,
+            config.supports_reflection(),
         )
-        db_schema = generate_field_descriptors(
-            sa_table, config_sheet.get_unique_id_field()
-        )
+        db_schema = generate_field_descriptors(sa_table, schema.get_unique_id_field())
 
     return GetStrataResponse(
         results=sorted(
@@ -145,17 +149,18 @@ def get_filters(
     gsheets: Annotated[GSheetCache, Depends(gsheet_cache)],
     config: Annotated[DatasourceConfig, Depends(datasource_config_required)],
 ) -> GetFiltersResponse:
-    participants = config.find_participants(commons.participant_type)
-    config_sheet = fetch_worksheet(commons, config, gsheets)
-    filter_fields = {c.field_name: c for c in config_sheet.fields if c.is_filter}
+    participants_cfg, schema = _get_participant_config_and_schema(
+        commons, config, gsheets
+    )
+    filter_fields = {c.field_name: c for c in schema.fields if c.is_filter}
 
     with config.dbsession() as session:
         sa_table = infer_table(
-            session.get_bind(), participants.table_name, config.supports_reflection()
+            session.get_bind(),
+            participants_cfg.table_name,
+            config.supports_reflection(),
         )
-        db_schema = generate_field_descriptors(
-            sa_table, config_sheet.get_unique_id_field()
-        )
+        db_schema = generate_field_descriptors(sa_table, schema.get_unique_id_field())
 
         # TODO: implement caching, respecting commons.refresh
         def mapper(col_name, column_descriptor):
@@ -221,17 +226,18 @@ def get_metrics(
     config: Annotated[DatasourceConfig, Depends(datasource_config_required)],
 ) -> GetMetricsResponse:
     """Get possible metrics for a given unit type."""
-    participants = config.find_participants(commons.participant_type)
-    config_sheet = fetch_worksheet(commons, config, gsheets)
-    metric_cols = {c.field_name: c for c in config_sheet.fields if c.is_metric}
+    participants_cfg, schema = _get_participant_config_and_schema(
+        commons, config, gsheets
+    )
+    metric_cols = {c.field_name: c for c in schema.fields if c.is_metric}
 
     with config.dbsession() as session:
         sa_table = infer_table(
-            session.get_bind(), participants.table_name, config.supports_reflection()
+            session.get_bind(),
+            participants_cfg.table_name,
+            config.supports_reflection(),
         )
-        db_schema = generate_field_descriptors(
-            sa_table, config_sheet.get_unique_id_field()
-        )
+        db_schema = generate_field_descriptors(sa_table, schema.get_unique_id_field())
 
     # Merge data type info above with the columns to be used as metrics:
     return GetMetricsResponse(
@@ -284,6 +290,22 @@ def powercheck(
         )
 
 
+def _get_participant_config_and_schema(
+    commons: CommonQueryParams,
+    config: ParticipantsMixin,
+    gsheets: GSheetCache,
+) -> tuple[ParticipantsConfig, ParticipantsSchema, str]:
+    """Get common configuration info for various endpoints."""
+    participants_cfg = config.find_participants(commons.participant_type)
+    sheet_ref = participants_cfg.sheet
+    cached_schema = gsheets.get(
+        sheet_ref,
+        lambda: fetch_and_parse_sheet(sheet_ref),
+        refresh=commons.refresh,
+    )
+    return participants_cfg, cached_schema
+
+
 @router.post(
     "/assign",
     summary="Assign treatment given experiment and audience specification.",
@@ -305,23 +327,41 @@ def assign_treatment(
         ),
     ] = None,
 ) -> AssignResponse:
-    participant = config.find_participants(body.audience_spec.participant_type)
-    config_sheet = fetch_worksheet(
-        CommonQueryParams(
-            participant_type=participant.participant_type, refresh=refresh
-        ),
-        config,
-        gsheets,
+    commons = CommonQueryParams(
+        participant_type=body.audience_spec.participant_type, refresh=refresh
     )
-    unique_id_col = config_sheet.get_unique_id_field()
+    participants_cfg, schema = _get_participant_config_and_schema(
+        commons, config, gsheets
+    )
 
     with config.dbsession() as session:
-        sa_table = infer_table(
-            session.get_bind(), participant.table_name, config.supports_reflection()
+        return _do_assignment(
+            session=session,
+            participant=participants_cfg,
+            supports_reflection=config.supports_reflection(),
+            body=body,
+            chosen_n=chosen_n,
+            id_field=schema.get_unique_id_field(),
+            random_state=random_state,
         )
-        participants = query_for_participants(
-            session, sa_table, body.audience_spec, chosen_n
-        )
+
+
+def _do_assignment(
+    session: Session,
+    participant: ParticipantsConfig,
+    supports_reflection: bool,
+    body: AssignRequest,
+    chosen_n: int,
+    id_field: str,
+    random_state: int | None,
+) -> AssignResponse:
+    """Helper for assigning treatments."""
+    sa_table = infer_table(
+        session.get_bind(), participant.table_name, supports_reflection
+    )
+    participants = query_for_participants(
+        session, sa_table, body.audience_spec, chosen_n
+    )
 
     arm_names = [arm.arm_name for arm in body.design_spec.arms]
     metric_names = [m.field_name for m in body.design_spec.metrics]
@@ -329,7 +369,7 @@ def assign_treatment(
         sa_table=sa_table,
         data=participants,
         stratum_cols=body.design_spec.strata_field_names + metric_names,
-        id_col=unique_id_col,
+        id_col=id_field,
         arm_names=arm_names,
         experiment_id=str(body.design_spec.experiment_id),
         fstat_thresh=body.design_spec.fstat_thresh,
@@ -553,20 +593,8 @@ def debug_settings(
     return response
 
 
-def fetch_worksheet(
-    commons: CommonQueryParams, config: ParticipantsMixin, gsheets: GSheetCache
-):
-    """Fetches a worksheet from the cache, reading it from the source if refresh or if the cache doesn't have it."""
-    sheet = config.find_participants(commons.participant_type).sheet
-    return gsheets.get(
-        sheet,
-        lambda: fetch_and_parse_sheet(sheet),
-        refresh=commons.refresh,
-    )
-
-
 def generate_field_descriptors(table: sqlalchemy.Table, unique_id_col: str):
-    """Fetches a map of column name to ConfigWorksheet column metadata.
+    """Fetches a map of column name to schema metadata.
 
     Uniqueness of the values in the column unique_id_col is assumed, not verified!
     """
