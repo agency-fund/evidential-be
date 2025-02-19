@@ -8,7 +8,12 @@ from fastapi.routing import APIRoute
 
 from xngin.apiserver import database, exceptionhandlers, middleware, constants
 from xngin.apiserver.flags import PUBLISH_ALL_DOCS
-from xngin.apiserver.routers import experiments_api, oidc, admin
+from xngin.apiserver.routers import (
+    experiments_api,
+    experiments_proxy_mgmt_api,
+    oidc,
+    admin,
+)
 
 logging.basicConfig(
     level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
@@ -40,6 +45,12 @@ middleware.setup(app)
 
 app.include_router(
     experiments_api.router, prefix=constants.API_PREFIX_V1, tags=["Experiment Design"]
+)
+
+app.include_router(
+    experiments_proxy_mgmt_api.router,
+    prefix=constants.API_PREFIX_V1,
+    tags=["Experiment Management Webhooks"],
 )
 
 
