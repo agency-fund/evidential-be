@@ -546,7 +546,7 @@ class Assignment(ApiBaseModel):
             description="UUID of the arm this participant was assigned to. Same as Arm.arm_id."
         ),
     ]
-    treatment_assignment: Annotated[
+    arm_name: Annotated[
         str,
         Field(
             description="The arm this participant was assigned to. Same as Arm.arm_name."

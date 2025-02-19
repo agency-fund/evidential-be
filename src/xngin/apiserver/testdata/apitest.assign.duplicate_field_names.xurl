@@ -45,6 +45,7 @@ HTTP 200
   "assignments": [
     {
       "arm_id": "5bc829fb-ffa6-456c-9e54-d26ba8d1031d",
+      "arm_name": "Treatment",
       "participant_id": "122169",
       "strata": [
         {
@@ -59,11 +60,11 @@ HTTP 200
           "field_name": "potential_1",
           "strata_value": "10587"
         }
-      ],
-      "treatment_assignment": "Treatment"
+      ]
     },
     {
       "arm_id": "699a500b-41d6-4cba-b254-60b9493717cb",
+      "arm_name": "Control",
       "participant_id": "12955",
       "strata": [
         {
@@ -78,11 +79,11 @@ HTTP 200
           "field_name": "potential_1",
           "strata_value": "11063"
         }
-      ],
-      "treatment_assignment": "Control"
+      ]
     },
     {
       "arm_id": "699a500b-41d6-4cba-b254-60b9493717cb",
+      "arm_name": "Control",
       "participant_id": "154001",
       "strata": [
         {
@@ -97,11 +98,11 @@ HTTP 200
           "field_name": "potential_1",
           "strata_value": "12100"
         }
-      ],
-      "treatment_assignment": "Control"
+      ]
     },
     {
       "arm_id": "5bc829fb-ffa6-456c-9e54-d26ba8d1031d",
+      "arm_name": "Treatment",
       "participant_id": "155035",
       "strata": [
         {
@@ -116,11 +117,11 @@ HTTP 200
           "field_name": "potential_1",
           "strata_value": "10553"
         }
-      ],
-      "treatment_assignment": "Treatment"
+      ]
     },
     {
       "arm_id": "699a500b-41d6-4cba-b254-60b9493717cb",
+      "arm_name": "Control",
       "participant_id": "171643",
       "strata": [
         {
@@ -135,11 +136,11 @@ HTTP 200
           "field_name": "potential_1",
           "strata_value": "11022"
         }
-      ],
-      "treatment_assignment": "Control"
+      ]
     },
     {
       "arm_id": "699a500b-41d6-4cba-b254-60b9493717cb",
+      "arm_name": "Control",
       "participant_id": "179916",
       "strata": [
         {
@@ -154,11 +155,11 @@ HTTP 200
           "field_name": "potential_1",
           "strata_value": "12108"
         }
-      ],
-      "treatment_assignment": "Control"
+      ]
     },
     {
       "arm_id": "699a500b-41d6-4cba-b254-60b9493717cb",
+      "arm_name": "Control",
       "participant_id": "198781",
       "strata": [
         {
@@ -173,11 +174,11 @@ HTTP 200
           "field_name": "potential_1",
           "strata_value": "11898"
         }
-      ],
-      "treatment_assignment": "Control"
+      ]
     },
     {
       "arm_id": "5bc829fb-ffa6-456c-9e54-d26ba8d1031d",
+      "arm_name": "Treatment",
       "participant_id": "210073",
       "strata": [
         {
@@ -192,11 +193,11 @@ HTTP 200
           "field_name": "potential_1",
           "strata_value": "11523"
         }
-      ],
-      "treatment_assignment": "Treatment"
+      ]
     },
     {
       "arm_id": "699a500b-41d6-4cba-b254-60b9493717cb",
+      "arm_name": "Control",
       "participant_id": "23560",
       "strata": [
         {
@@ -211,11 +212,11 @@ HTTP 200
           "field_name": "potential_1",
           "strata_value": "12347"
         }
-      ],
-      "treatment_assignment": "Control"
+      ]
     },
     {
       "arm_id": "5bc829fb-ffa6-456c-9e54-d26ba8d1031d",
+      "arm_name": "Treatment",
       "participant_id": "237616",
       "strata": [
         {
@@ -230,11 +231,11 @@ HTTP 200
           "field_name": "potential_1",
           "strata_value": "11971"
         }
-      ],
-      "treatment_assignment": "Treatment"
+      ]
     },
     {
       "arm_id": "5bc829fb-ffa6-456c-9e54-d26ba8d1031d",
+      "arm_name": "Treatment",
       "participant_id": "248783",
       "strata": [
         {
@@ -249,11 +250,11 @@ HTTP 200
           "field_name": "potential_1",
           "strata_value": "10893"
         }
-      ],
-      "treatment_assignment": "Treatment"
+      ]
     },
     {
       "arm_id": "699a500b-41d6-4cba-b254-60b9493717cb",
+      "arm_name": "Control",
       "participant_id": "295539",
       "strata": [
         {
@@ -268,11 +269,11 @@ HTTP 200
           "field_name": "potential_1",
           "strata_value": "10567"
         }
-      ],
-      "treatment_assignment": "Control"
+      ]
     },
     {
       "arm_id": "5bc829fb-ffa6-456c-9e54-d26ba8d1031d",
+      "arm_name": "Treatment",
       "participant_id": "302146",
       "strata": [
         {
@@ -287,11 +288,11 @@ HTTP 200
           "field_name": "potential_1",
           "strata_value": "11254"
         }
-      ],
-      "treatment_assignment": "Treatment"
+      ]
     },
     {
       "arm_id": "5bc829fb-ffa6-456c-9e54-d26ba8d1031d",
+      "arm_name": "Treatment",
       "participant_id": "310074",
       "strata": [
         {
@@ -306,11 +307,11 @@ HTTP 200
           "field_name": "potential_1",
           "strata_value": "9940"
         }
-      ],
-      "treatment_assignment": "Treatment"
+      ]
     },
     {
       "arm_id": "699a500b-41d6-4cba-b254-60b9493717cb",
+      "arm_name": "Control",
       "participant_id": "33392",
       "strata": [
         {
@@ -325,11 +326,11 @@ HTTP 200
           "field_name": "potential_1",
           "strata_value": "11604"
         }
-      ],
-      "treatment_assignment": "Control"
+      ]
     },
     {
       "arm_id": "5bc829fb-ffa6-456c-9e54-d26ba8d1031d",
+      "arm_name": "Treatment",
       "participant_id": "35426",
       "strata": [
         {
@@ -344,11 +345,11 @@ HTTP 200
           "field_name": "potential_1",
           "strata_value": "11823"
         }
-      ],
-      "treatment_assignment": "Treatment"
+      ]
     },
     {
       "arm_id": "699a500b-41d6-4cba-b254-60b9493717cb",
+      "arm_name": "Control",
       "participant_id": "393637",
       "strata": [
         {
@@ -363,11 +364,11 @@ HTTP 200
           "field_name": "potential_1",
           "strata_value": "12155"
         }
-      ],
-      "treatment_assignment": "Control"
+      ]
     },
     {
       "arm_id": "5bc829fb-ffa6-456c-9e54-d26ba8d1031d",
+      "arm_name": "Treatment",
       "participant_id": "407190",
       "strata": [
         {
@@ -382,11 +383,11 @@ HTTP 200
           "field_name": "potential_1",
           "strata_value": "12463"
         }
-      ],
-      "treatment_assignment": "Treatment"
+      ]
     },
     {
       "arm_id": "699a500b-41d6-4cba-b254-60b9493717cb",
+      "arm_name": "Control",
       "participant_id": "410077",
       "strata": [
         {
@@ -401,11 +402,11 @@ HTTP 200
           "field_name": "potential_1",
           "strata_value": "11081"
         }
-      ],
-      "treatment_assignment": "Control"
+      ]
     },
     {
       "arm_id": "699a500b-41d6-4cba-b254-60b9493717cb",
+      "arm_name": "Control",
       "participant_id": "431735",
       "strata": [
         {
@@ -420,11 +421,11 @@ HTTP 200
           "field_name": "potential_1",
           "strata_value": "10241"
         }
-      ],
-      "treatment_assignment": "Control"
+      ]
     },
     {
       "arm_id": "699a500b-41d6-4cba-b254-60b9493717cb",
+      "arm_name": "Control",
       "participant_id": "440263",
       "strata": [
         {
@@ -439,11 +440,11 @@ HTTP 200
           "field_name": "potential_1",
           "strata_value": "11847"
         }
-      ],
-      "treatment_assignment": "Control"
+      ]
     },
     {
       "arm_id": "5bc829fb-ffa6-456c-9e54-d26ba8d1031d",
+      "arm_name": "Treatment",
       "participant_id": "469679",
       "strata": [
         {
@@ -458,11 +459,11 @@ HTTP 200
           "field_name": "potential_1",
           "strata_value": "12137"
         }
-      ],
-      "treatment_assignment": "Treatment"
+      ]
     },
     {
       "arm_id": "5bc829fb-ffa6-456c-9e54-d26ba8d1031d",
+      "arm_name": "Treatment",
       "participant_id": "484970",
       "strata": [
         {
@@ -477,11 +478,11 @@ HTTP 200
           "field_name": "potential_1",
           "strata_value": "11348"
         }
-      ],
-      "treatment_assignment": "Treatment"
+      ]
     },
     {
       "arm_id": "5bc829fb-ffa6-456c-9e54-d26ba8d1031d",
+      "arm_name": "Treatment",
       "participant_id": "486195",
       "strata": [
         {
@@ -496,11 +497,11 @@ HTTP 200
           "field_name": "potential_1",
           "strata_value": "10270"
         }
-      ],
-      "treatment_assignment": "Treatment"
+      ]
     },
     {
       "arm_id": "699a500b-41d6-4cba-b254-60b9493717cb",
+      "arm_name": "Control",
       "participant_id": "510222",
       "strata": [
         {
@@ -515,11 +516,11 @@ HTTP 200
           "field_name": "potential_1",
           "strata_value": "11893"
         }
-      ],
-      "treatment_assignment": "Control"
+      ]
     },
     {
       "arm_id": "699a500b-41d6-4cba-b254-60b9493717cb",
+      "arm_name": "Control",
       "participant_id": "552382",
       "strata": [
         {
@@ -534,11 +535,11 @@ HTTP 200
           "field_name": "potential_1",
           "strata_value": "10873"
         }
-      ],
-      "treatment_assignment": "Control"
+      ]
     },
     {
       "arm_id": "699a500b-41d6-4cba-b254-60b9493717cb",
+      "arm_name": "Control",
       "participant_id": "65425",
       "strata": [
         {
@@ -553,11 +554,11 @@ HTTP 200
           "field_name": "potential_1",
           "strata_value": "11744"
         }
-      ],
-      "treatment_assignment": "Control"
+      ]
     },
     {
       "arm_id": "5bc829fb-ffa6-456c-9e54-d26ba8d1031d",
+      "arm_name": "Treatment",
       "participant_id": "710929",
       "strata": [
         {
@@ -572,11 +573,11 @@ HTTP 200
           "field_name": "potential_1",
           "strata_value": "11860"
         }
-      ],
-      "treatment_assignment": "Treatment"
+      ]
     },
     {
       "arm_id": "699a500b-41d6-4cba-b254-60b9493717cb",
+      "arm_name": "Control",
       "participant_id": "730934",
       "strata": [
         {
@@ -591,11 +592,11 @@ HTTP 200
           "field_name": "potential_1",
           "strata_value": "10937"
         }
-      ],
-      "treatment_assignment": "Control"
+      ]
     },
     {
       "arm_id": "5bc829fb-ffa6-456c-9e54-d26ba8d1031d",
+      "arm_name": "Treatment",
       "participant_id": "76948",
       "strata": [
         {
@@ -610,11 +611,11 @@ HTTP 200
           "field_name": "potential_1",
           "strata_value": "11123"
         }
-      ],
-      "treatment_assignment": "Treatment"
+      ]
     },
     {
       "arm_id": "5bc829fb-ffa6-456c-9e54-d26ba8d1031d",
+      "arm_name": "Treatment",
       "participant_id": "773941",
       "strata": [
         {
@@ -629,11 +630,11 @@ HTTP 200
           "field_name": "potential_1",
           "strata_value": "11755"
         }
-      ],
-      "treatment_assignment": "Treatment"
+      ]
     },
     {
       "arm_id": "699a500b-41d6-4cba-b254-60b9493717cb",
+      "arm_name": "Control",
       "participant_id": "776353",
       "strata": [
         {
@@ -648,11 +649,11 @@ HTTP 200
           "field_name": "potential_1",
           "strata_value": "12145"
         }
-      ],
-      "treatment_assignment": "Control"
+      ]
     },
     {
       "arm_id": "5bc829fb-ffa6-456c-9e54-d26ba8d1031d",
+      "arm_name": "Treatment",
       "participant_id": "812175",
       "strata": [
         {
@@ -667,11 +668,11 @@ HTTP 200
           "field_name": "potential_1",
           "strata_value": "11582"
         }
-      ],
-      "treatment_assignment": "Treatment"
+      ]
     },
     {
       "arm_id": "699a500b-41d6-4cba-b254-60b9493717cb",
+      "arm_name": "Control",
       "participant_id": "830767",
       "strata": [
         {
@@ -686,11 +687,11 @@ HTTP 200
           "field_name": "potential_1",
           "strata_value": "10229"
         }
-      ],
-      "treatment_assignment": "Control"
+      ]
     },
     {
       "arm_id": "699a500b-41d6-4cba-b254-60b9493717cb",
+      "arm_name": "Control",
       "participant_id": "865084",
       "strata": [
         {
@@ -705,11 +706,11 @@ HTTP 200
           "field_name": "potential_1",
           "strata_value": "12568"
         }
-      ],
-      "treatment_assignment": "Control"
+      ]
     },
     {
       "arm_id": "699a500b-41d6-4cba-b254-60b9493717cb",
+      "arm_name": "Control",
       "participant_id": "866648",
       "strata": [
         {
@@ -724,11 +725,11 @@ HTTP 200
           "field_name": "potential_1",
           "strata_value": "12686"
         }
-      ],
-      "treatment_assignment": "Control"
+      ]
     },
     {
       "arm_id": "5bc829fb-ffa6-456c-9e54-d26ba8d1031d",
+      "arm_name": "Treatment",
       "participant_id": "895588",
       "strata": [
         {
@@ -743,11 +744,11 @@ HTTP 200
           "field_name": "potential_1",
           "strata_value": "12235"
         }
-      ],
-      "treatment_assignment": "Treatment"
+      ]
     },
     {
       "arm_id": "699a500b-41d6-4cba-b254-60b9493717cb",
+      "arm_name": "Control",
       "participant_id": "947098",
       "strata": [
         {
@@ -762,11 +763,11 @@ HTTP 200
           "field_name": "potential_1",
           "strata_value": "11477"
         }
-      ],
-      "treatment_assignment": "Control"
+      ]
     },
     {
       "arm_id": "5bc829fb-ffa6-456c-9e54-d26ba8d1031d",
+      "arm_name": "Treatment",
       "participant_id": "956625",
       "strata": [
         {
@@ -781,11 +782,11 @@ HTTP 200
           "field_name": "potential_1",
           "strata_value": "13021"
         }
-      ],
-      "treatment_assignment": "Treatment"
+      ]
     },
     {
       "arm_id": "699a500b-41d6-4cba-b254-60b9493717cb",
+      "arm_name": "Control",
       "participant_id": "996915",
       "strata": [
         {
@@ -800,8 +801,7 @@ HTTP 200
           "field_name": "potential_1",
           "strata_value": "12314"
         }
-      ],
-      "treatment_assignment": "Control"
+      ]
     }
   ],
   "balance_check": {

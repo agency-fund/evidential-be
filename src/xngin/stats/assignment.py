@@ -125,7 +125,7 @@ def assign_treatment(
         participant = Assignment(
             participant_id=str(row_dict[id_col]),
             arm_id=arms[treatment_assignment].arm_id,
-            treatment_assignment=arms[treatment_assignment].arm_name,
+            arm_name=arms[treatment_assignment].arm_name,
             strata=strata,
         )
         participants_list.append(participant)
