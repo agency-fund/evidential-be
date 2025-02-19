@@ -6,7 +6,7 @@ import pytest
 from sqlalchemy import BigInteger, Column, Integer, MetaData, String, Table
 from xngin.apiserver.api_types import DataType
 from xngin.sheets.config_sheet import (
-    create_configworksheet_from_table,
+    create_schema_from_table,
 )
 from xngin.schema.schema_types import FieldDescriptor, ParticipantsSchema
 from xngin.sheets.gsheets import google_app_credentials_file, read_sheet_df
@@ -58,7 +58,7 @@ def test_config_worksheet_get_unique_id_col():
     assert fake_worksheet.get_unique_id_field() is None
 
 
-def test_create_configworksheet_from_table_success():
+def test_create_schema_from_table_success():
     metadata_obj = MetaData()
     my_table = Table(
         "table_name",
@@ -69,7 +69,7 @@ def test_create_configworksheet_from_table_success():
     )
 
     # Explicit column found
-    worksheet = create_configworksheet_from_table(my_table, "name")
+    worksheet = create_schema_from_table(my_table, "name")
     assert worksheet.get_unique_id_field() == "name"
     assert len(worksheet.fields) == 3
     expected_type = {
@@ -83,7 +83,7 @@ def test_create_configworksheet_from_table_success():
         )
 
     # PK found
-    worksheet = create_configworksheet_from_table(my_table, None)
+    worksheet = create_schema_from_table(my_table, None)
     assert worksheet.get_unique_id_field() == "primary_id"
 
     # default id found
@@ -93,11 +93,11 @@ def test_create_configworksheet_from_table_success():
         Column("id", BigInteger),
         Column("name", String),
     )
-    worksheet = create_configworksheet_from_table(my_table, None)
+    worksheet = create_schema_from_table(my_table, None)
     assert worksheet.get_unique_id_field() == "id"
 
 
-def test_create_configworksheet_from_table_fails_if_no_unique_id():
+def test_create_schema_from_table_fails_if_no_unique_id():
     my_table = Table(
         "table_name",
         MetaData(),
@@ -107,8 +107,8 @@ def test_create_configworksheet_from_table_fails_if_no_unique_id():
 
     # Doesn't find the specified id
     with pytest.raises(ValidationError):
-        create_configworksheet_from_table(my_table, "id")
+        create_schema_from_table(my_table, "id")
 
     # Has no primary key or generic "id"
     with pytest.raises(ValidationError):
-        create_configworksheet_from_table(my_table, None)
+        create_schema_from_table(my_table, None)

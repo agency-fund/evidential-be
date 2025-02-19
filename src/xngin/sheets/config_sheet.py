@@ -73,7 +73,7 @@ def read_sheet_from_file(path):
 
 
 def fetch_and_parse_sheet(ref: SheetRef):
-    """Fetches a Google Spreadsheet and parses it into a ConfigWorksheet.
+    """Fetches a Google Spreadsheet and parses it into a schema.
 
     :raise InvalidSheetException if there are any problems with the sheet.
     """
@@ -117,9 +117,7 @@ def fetch_and_parse_sheet(ref: SheetRef):
     raise InvalidSheetError(errors)
 
 
-def create_configworksheet_from_table(
-    table: sqlalchemy.Table, unique_id_col: str | None = None
-):
+def create_schema_from_table(table: sqlalchemy.Table, unique_id_col: str | None = None):
     """Attempts to get name and type info from the database Table itself (formerly done via gsheets).
 
     If unique_id_col is explicitly set to None, we will look for a primary key else assume "id".

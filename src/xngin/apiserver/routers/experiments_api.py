@@ -56,7 +56,7 @@ from xngin.apiserver.webhook_types import (
 )
 from xngin.sheets.config_sheet import (
     fetch_and_parse_sheet,
-    create_configworksheet_from_table,
+    create_schema_from_table,
 )
 from xngin.stats.assignment import assign_treatment as assign_treatment_actual
 from xngin.stats.power import check_power
@@ -599,6 +599,5 @@ def generate_field_descriptors(table: sqlalchemy.Table, unique_id_col: str):
     Uniqueness of the values in the column unique_id_col is assumed, not verified!
     """
     return {
-        c.field_name: c
-        for c in create_configworksheet_from_table(table, unique_id_col).fields
+        c.field_name: c for c in create_schema_from_table(table, unique_id_col).fields
     }

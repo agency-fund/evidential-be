@@ -182,12 +182,12 @@ There are 3 levels of configuration behind Xngin:
   connect to the data warehouse (see `BaseDsn` and descendants) along with all the different `Participant` types (aka
   each type of unit of experimentation, e.g. a WhatsApp group, or individual phone numbers, hospitals, schools, ...).
 - **Participant type-level** configuration with schema
-  [`config_sheet.py:ConfigWorksheet`](src/xngin/sheets/config_sheet.py), including column and type info derived from the
+  [`schema_types.py:ParticipantsSchema`](src/xngin/schema/schema_types.py), including column and type info derived from the
   warehouse via introspection (see
-  [`config_sheet.py:create_configworksheet_from_table`](src/xngin/sheets/config_sheet.py),
+  [`config_sheet.py:create_schema_from_table`](src/xngin/sheets/config_sheet.py),
   [`main.py:get_sqlalchemy_table_from_engine`](src/xngin/apiserver/main.py)), as well as extra metadata about columns
   (is_strata/is_filter/is_metric). The extra metadata may come from CSV or in Google spreadsheets as filled out by the
-  client. Both sources (dwh introspection, gsheets) are represented by the `ConfigWorksheet` model, although not all
+  client. Both sources (dwh introspection, gsheets) are represented by the `ParticipantsSchema` model, although not all
   information may be supplied by either.
   - This information is also cached in our app (system) db as specified in
   - [`database.py`](src/xngin/apiserver/database.py). The db DSN can be overriden via the `XNGIN_DB` environment

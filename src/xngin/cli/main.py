@@ -40,7 +40,7 @@ from xngin.apiserver.testing import testing_dwh
 from xngin.sheets.config_sheet import (
     InvalidSheetError,
     fetch_and_parse_sheet,
-    create_configworksheet_from_table,
+    create_schema_from_table,
 )
 from xngin.schema.schema_types import FieldDescriptor, ParticipantsSchema
 import sqlalchemy.dialects.postgresql.psycopg2 as psycopg2sa
@@ -74,7 +74,7 @@ def infer_config_from_schema(
     except CannotFindTableError as cfte:
         err_console.print(cfte.message)
         raise typer.Exit(1) from cfte
-    return create_configworksheet_from_table(dwh, unique_id_col=unique_id_col)
+    return create_schema_from_table(dwh, unique_id_col=unique_id_col)
 
 
 def csv_to_ddl(
