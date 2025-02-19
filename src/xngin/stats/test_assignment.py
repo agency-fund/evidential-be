@@ -2,12 +2,13 @@ from dataclasses import dataclass
 import dataclasses
 from decimal import Decimal
 from typing import Any
+import uuid
 import pytest
 import pandas as pd
 import numpy as np
 from sqlalchemy import DECIMAL, Column, Float, Integer, MetaData, String, Table
 from xngin.stats.assignment import assign_treatment
-from xngin.apiserver.api_types import Assignment
+from xngin.apiserver.api_types import Assignment, Arm
 
 
 @dataclass
@@ -65,6 +66,10 @@ def make_sample_data_dict(n=1000):
     return data
 
 
+def make_arms(names: list[str]):
+    return [Arm(arm_id=uuid.uuid4(), arm_name=name) for name in names]
+
+
 def test_assign_treatment(sample_table, sample_data):
     rows = [Row(**row) for row in sample_data.to_dict("records")]
 
@@ -73,7 +78,7 @@ def test_assign_treatment(sample_table, sample_data):
         data=rows,
         stratum_cols=["gender", "region"],
         id_col="id",
-        arm_names=["control", "treatment"],
+        arms=make_arms(["control", "treatment"]),
         experiment_id="b767716b-f388-4cd9-a18a-08c4916ce26f",
         random_state=42,
     )
@@ -117,7 +122,7 @@ def test_assign_treatment_multiple_arms(sample_table, sample_data):
         data=rows,
         stratum_cols=["gender", "region"],
         id_col="id",
-        arm_names=["control", "treatment_a", "treatment_b"],
+        arms=make_arms(["control", "treatment_a", "treatment_b"]),
         experiment_id="b767716b-f388-4cd9-a18a-08c4916ce26f",
     )
 
@@ -149,7 +154,7 @@ def test_assign_treatment_reproducibility(sample_table, sample_data):
         data=rows,
         stratum_cols=["gender", "region"],
         id_col="id",
-        arm_names=["control", "treatment"],
+        arms=make_arms(["control", "treatment"]),
         experiment_id="b767716b-f388-4cd9-a18a-08c4916ce26f",
         random_state=42,
     )
@@ -159,7 +164,7 @@ def test_assign_treatment_reproducibility(sample_table, sample_data):
         data=rows,
         stratum_cols=["gender", "region"],
         id_col="id",
-        arm_names=["control", "treatment"],
+        arms=make_arms(["control", "treatment"]),
         experiment_id="b767716b-f388-4cd9-a18a-08c4916ce26f",
         random_state=42,
     )
@@ -187,7 +192,7 @@ def test_assign_treatment_with_missing_values(sample_table, sample_data):
         data=rows,
         stratum_cols=["gender", "region"],
         id_col="id",
-        arm_names=["control", "treatment"],
+        arms=make_arms(["control", "treatment"]),
         experiment_id="b767716b-f388-4cd9-a18a-08c4916ce26f",
     )
 
@@ -225,7 +230,7 @@ def test_assign_treatment_with_obj_columns_inferred(sample_table, sample_data):
         data=rows,
         stratum_cols=["gender", "region", "object2", "object3"],
         id_col="id",
-        arm_names=["control", "treatment"],
+        arms=make_arms(["control", "treatment"]),
         experiment_id="b767716b-f388-4cd9-a18a-08c4916ce26f",
     )
 
@@ -253,7 +258,7 @@ def test_assign_treatment_with_integers_as_floats_for_unique_id(
             data=rows,
             stratum_cols=["gender", "region"],
             id_col="id",
-            arm_names=["control", "treatment"],
+            arms=make_arms(["control", "treatment"]),
             experiment_id="b767716b-f388-4cd9-a18a-08c4916ce26f",
             random_state=42,
         )
@@ -289,7 +294,7 @@ def test_decimal_and_bool_strata_are_rendered_correctly(sample_table, sample_dat
         data=rows,
         stratum_cols=["income_dec", "is_male"],
         id_col="id",
-        arm_names=["control", "treatment"],
+        arms=make_arms(["control", "treatment"]),
         experiment_id="b767716b-f388-4cd9-a18a-08c4916ce26f",
         random_state=42,
     )
@@ -314,7 +319,7 @@ def test_with_nans_that_would_break_stochatreat_without_preprocessing(sample_tab
         data=rows,
         stratum_cols=["gender"],
         id_col="id",
-        arm_names=["control", "treatment"],
+        arms=make_arms(["control", "treatment"]),
         experiment_id="b767716b-f388-4cd9-a18a-08c4916ce26f",
         random_state=42,
     )

@@ -363,14 +363,13 @@ def _do_assignment(
         session, sa_table, body.audience_spec, chosen_n
     )
 
-    arm_names = [arm.arm_name for arm in body.design_spec.arms]
     metric_names = [m.field_name for m in body.design_spec.metrics]
     return assign_treatment_actual(
         sa_table=sa_table,
         data=participants,
         stratum_cols=body.design_spec.strata_field_names + metric_names,
         id_col=id_field,
-        arm_names=arm_names,
+        arms=body.design_spec.arms,
         experiment_id=str(body.design_spec.experiment_id),
         fstat_thresh=body.design_spec.fstat_thresh,
         random_state=random_state,

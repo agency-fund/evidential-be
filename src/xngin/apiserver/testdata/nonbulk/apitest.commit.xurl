@@ -86,6 +86,7 @@ Datasource-ID: customer-test
     "assignments": [
       {
         "participant_id": "35634",
+        "arm_id": "5bc829fb-ffa6-456c-9e54-d26ba8d1031d",
         "treatment_assignment": "Treatment1",
         "strata": [
           {

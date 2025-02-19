@@ -540,8 +540,24 @@ class Assignment(ApiBaseModel):
 
     # this references the field marked is_unique_id == TRUE in the configuration spreadsheet
     participant_id: str
-    treatment_assignment: str
-    strata: list[Strata]
+    arm_id: Annotated[
+        uuid.UUID,
+        Field(
+            description="UUID of the arm this participant was assigned to. Same as Arm.arm_id."
+        ),
+    ]
+    treatment_assignment: Annotated[
+        str,
+        Field(
+            description="The arm this participant was assigned to. Same as Arm.arm_name."
+        ),
+    ]
+    strata: Annotated[
+        list[Strata],
+        Field(
+            description="List of properties and their values for this participant used for stratification or tracking metrics."
+        ),
+    ]
 
 
 class BalanceCheck(ApiBaseModel):
