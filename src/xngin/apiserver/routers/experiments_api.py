@@ -92,7 +92,7 @@ def get_strata(
     config: Annotated[DatasourceConfig, Depends(datasource_config_required)],
 ) -> GetStrataResponse:
     """Get possible strata covariates for a given unit type."""
-    participants_cfg, schema = _get_participant_config_and_schema(
+    participants_cfg, schema = _get_participants_config_and_schema(
         commons, config, gsheets
     )
     strata_fields = {c.field_name: c for c in schema.fields if c.is_strata}
@@ -133,7 +133,7 @@ def get_filters(
     gsheets: Annotated[GSheetCache, Depends(gsheet_cache)],
     config: Annotated[DatasourceConfig, Depends(datasource_config_required)],
 ) -> GetFiltersResponse:
-    participants_cfg, schema = _get_participant_config_and_schema(
+    participants_cfg, schema = _get_participants_config_and_schema(
         commons, config, gsheets
     )
     filter_fields = {c.field_name: c for c in schema.fields if c.is_filter}
@@ -210,7 +210,7 @@ def get_metrics(
     config: Annotated[DatasourceConfig, Depends(datasource_config_required)],
 ) -> GetMetricsResponse:
     """Get possible metrics for a given unit type."""
-    participants_cfg, schema = _get_participant_config_and_schema(
+    participants_cfg, schema = _get_participants_config_and_schema(
         commons, config, gsheets
     )
     metric_cols = {c.field_name: c for c in schema.fields if c.is_metric}
@@ -274,11 +274,11 @@ def powercheck(
         )
 
 
-def _get_participant_config_and_schema(
+def _get_participants_config_and_schema(
     commons: CommonQueryParams,
     config: ParticipantsMixin,
     gsheets: GSheetCache,
-) -> tuple[ParticipantsConfig, ParticipantsSchema, str]:
+) -> tuple[ParticipantsConfig, ParticipantsSchema]:
     """Get common configuration info for various endpoints."""
     participants_cfg = config.find_participants(commons.participant_type)
     sheet_ref = participants_cfg.sheet
@@ -314,7 +314,7 @@ def assign_treatment(
     commons = CommonQueryParams(
         participant_type=body.audience_spec.participant_type, refresh=refresh
     )
-    participants_cfg, schema = _get_participant_config_and_schema(
+    participants_cfg, schema = _get_participants_config_and_schema(
         commons, config, gsheets
     )
 
