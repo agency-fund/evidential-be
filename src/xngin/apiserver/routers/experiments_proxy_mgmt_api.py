@@ -1,0 +1,199 @@
+import logging
+from contextlib import asynccontextmanager
+from typing import Annotated, Literal
+
+import httpx
+from fastapi import APIRouter, FastAPI, HTTPException, Depends, Query, Response
+from pydantic import BaseModel
+
+from xngin.apiserver.api_types import (
+    CommitRequest,
+)
+from xngin.apiserver.dependencies import (
+    httpx_dependency,
+    datasource_config_required,
+)
+from xngin.apiserver.settings import (
+    WebhookConfig,
+    WebhookUrl,
+    DatasourceConfig,
+    HttpMethodTypes,
+)
+from xngin.apiserver.utils import substitute_url
+from xngin.apiserver.webhook_types import (
+    STANDARD_WEBHOOK_RESPONSES,
+    WebhookCommitRequest,
+    WebhookResponse,
+    WebhookUpdateCommitRequest,
+)
+
+
+logger = logging.getLogger(__name__)
+
+
+@asynccontextmanager
+async def lifespan(_app: FastAPI):
+    yield
+
+
+router = APIRouter(
+    lifespan=lifespan,
+    prefix="",
+)
+
+
+@router.get(
+    "/assignment-file",
+    summary="Retrieve all participant assignments for the given experiment_id.",
+    responses=STANDARD_WEBHOOK_RESPONSES,
+)
+async def assignment_file(
+    response: Response,
+    experiment_id: Annotated[
+        str,
+        Query(description="ID of the experiment whose assignments we wish to fetch."),
+    ],
+    http_client: Annotated[httpx.AsyncClient, Depends(httpx_dependency)],
+    config: Annotated[DatasourceConfig, Depends(datasource_config_required)],
+) -> WebhookResponse:
+    webhook_config = config.webhook_config
+    if webhook_config is None:
+        raise HTTPException(501, "Webhook not configured.")
+    action = webhook_config.actions.assignment_file
+    if action is None:
+        # TODO: read from internal storage if webhooks are not defined.
+        raise HTTPException(501, "Action 'assignment_file' not configured.")
+
+    url = substitute_url(action.url, {"experiment_id": experiment_id})
+    response.status_code, payload = await make_webhook_request_base(
+        http_client, webhook_config, method=action.method, url=url
+    )
+    return payload
+
+
+@router.post(
+    "/commit",
+    summary="Commit an experiment to the database.",
+    responses=STANDARD_WEBHOOK_RESPONSES,
+    tags=["Experiment Management Webhooks"],
+)
+async def commit_experiment(
+    response: Response,
+    body: CommitRequest,
+    user_id: Annotated[str, Query(...)],
+    http_client: Annotated[httpx.AsyncClient, Depends(httpx_dependency)],
+    config: Annotated[DatasourceConfig, Depends(datasource_config_required)],
+) -> WebhookResponse:
+    webhook_config = config.webhook_config
+    if webhook_config is None:
+        raise HTTPException(501, "Webhook not configured.")
+    action = webhook_config.actions.commit
+    if action is None:
+        raise HTTPException(501, "Action 'commit' not configured.")
+
+    commit_payload = WebhookCommitRequest(
+        creator_user_id=user_id,
+        design_spec=body.design_spec,
+        audience_spec=body.audience_spec,
+        power_analyses=body.power_analyses,
+        experiment_assignment=body.experiment_assignment,
+    )
+
+    response.status_code, payload = await make_webhook_request(
+        http_client, webhook_config, action, commit_payload
+    )
+    return payload
+
+
+@router.post(
+    "/update-commit",
+    summary="Update an existing experiment's timestamps or description (experiment and arms)",
+    responses=STANDARD_WEBHOOK_RESPONSES,
+    tags=["Experiment Management Webhooks"],
+)
+async def update_experiment(
+    response: Response,
+    body: WebhookUpdateCommitRequest,
+    update_type: Annotated[
+        Literal["timestamps", "description"],
+        Query(description="The type of experiment metadata update to perform"),
+    ],
+    http_client: Annotated[httpx.AsyncClient, Depends(httpx_dependency)],
+    config: Annotated[DatasourceConfig, Depends(datasource_config_required)],
+) -> WebhookResponse:
+    webhook_config = config.webhook_config
+    if webhook_config is None:
+        raise HTTPException(501, "Webhook not configured.")
+    if update_type == "timestamps" and webhook_config.actions.update_timestamps:
+        action = webhook_config.actions.update_timestamps
+    elif update_type == "description" and webhook_config.actions.update_description:
+        action = webhook_config.actions.update_description
+    else:
+        raise HTTPException(501, f"Action '{update_type}' not configured.")
+    # Need to pull out the upstream server payload:
+    response.status_code, payload = await make_webhook_request(
+        http_client, webhook_config, action, body.update_json
+    )
+    return payload
+
+
+async def make_webhook_request(
+    http_client: httpx.AsyncClient,
+    config: WebhookConfig,
+    action: WebhookUrl,
+    data: BaseModel,
+) -> tuple[int, WebhookResponse]:
+    """Helper function to make webhook requests with common error handling.
+
+    Returns: tuple of (status_code, WebhookResponse to use as body)
+    """
+    return await make_webhook_request_base(
+        http_client, config, action.method, action.url, data
+    )
+
+
+async def make_webhook_request_base(
+    http_client: httpx.AsyncClient,
+    config: WebhookConfig,
+    method: HttpMethodTypes,
+    url: str,
+    data: BaseModel = None,
+) -> tuple[int, WebhookResponse]:
+    """Like make_webhook_request() but can directly take an http method and url.
+
+    Returns: tuple of (status_code, WebhookResponse to use as body)
+    """
+    headers = {}
+    auth_header_value = config.common_headers.authorization
+    if auth_header_value is not None:
+        headers["Authorization"] = auth_header_value.get_secret_value()
+    headers["Accept"] = "application/json"
+    # headers["Content-Type"] is set by httpx
+
+    try:
+        # Explicitly convert to a dict via pydantic since we use custom serializers
+        json_data = data.model_dump(mode="json") if data else None
+        upstream_response = await http_client.request(
+            method=method, url=url, headers=headers, json=json_data
+        )
+        webhook_response = WebhookResponse.from_httpx(upstream_response)
+        status_code = 200
+        # Stricter than response.raise_for_status(), we require HTTP 200:
+        if upstream_response.status_code != 200:
+            logger.error(
+                "ERROR response %s requesting webhook: %s",
+                upstream_response.status_code,
+                url,
+            )
+            status_code = 502
+    except httpx.ConnectError as e:
+        logger.exception("ERROR requesting webhook (ConnectError): %s", e.request.url)
+        raise HTTPException(
+            status_code=502, detail=f"Error connecting to {e.request.url}: {e}"
+        ) from e
+    except httpx.RequestError as e:
+        logger.exception("ERROR requesting webhook: %s", e.request.url)
+        raise HTTPException(status_code=500, detail="server error") from e
+    else:
+        # Always return a WebhookResponse in the body, even on non-200 responses.
+        return status_code, webhook_response

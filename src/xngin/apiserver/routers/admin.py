@@ -583,7 +583,7 @@ def inspect_datasource(
 def create_inspect_table_response_from_table(table: sqlalchemy.Table):
     """Creates an InspectDatasourceTableResponse from a sqlalchemy.Table.
 
-    This is similar to config_sheet.create_configworksheet_from_table but tailored to use in the API.
+    This is similar to config_sheet.create_schema_from_table but tailored to use in the API.
     """
     possible_id_columns = {
         c.name for c in table.columns.values() if c.name.endswith("id")

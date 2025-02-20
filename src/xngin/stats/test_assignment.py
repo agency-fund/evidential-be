@@ -2,12 +2,13 @@ from dataclasses import dataclass
 import dataclasses
 from decimal import Decimal
 from typing import Any
+import uuid
 import pytest
 import pandas as pd
 import numpy as np
 from sqlalchemy import DECIMAL, Column, Float, Integer, MetaData, String, Table
 from xngin.stats.assignment import assign_treatment
-from xngin.apiserver.api_types import Assignment
+from xngin.apiserver.api_types import Assignment, Arm
 
 
 @dataclass
@@ -65,6 +66,10 @@ def make_sample_data_dict(n=1000):
     return data
 
 
+def make_arms(names: list[str]):
+    return [Arm(arm_id=uuid.uuid4(), arm_name=name) for name in names]
+
+
 def test_assign_treatment(sample_table, sample_data):
     rows = [Row(**row) for row in sample_data.to_dict("records")]
 
@@ -73,7 +78,7 @@ def test_assign_treatment(sample_table, sample_data):
         data=rows,
         stratum_cols=["gender", "region"],
         id_col="id",
-        arm_names=["control", "treatment"],
+        arms=make_arms(["control", "treatment"]),
         experiment_id="b767716b-f388-4cd9-a18a-08c4916ce26f",
         random_state=42,
     )
@@ -94,19 +99,19 @@ def test_assign_treatment(sample_table, sample_data):
     )
     assert all(len(participant.strata) == 2 for participant in result.assignments)
     assert all(
-        participant.treatment_assignment in ["control", "treatment"]
+        participant.arm_name in ["control", "treatment"]
         for participant in result.assignments
     )
-    assert result.assignments[0].treatment_assignment == "control"
-    assert result.assignments[1].treatment_assignment == "control"
-    assert result.assignments[2].treatment_assignment == "treatment"
-    assert result.assignments[3].treatment_assignment == "control"
-    assert result.assignments[4].treatment_assignment == "treatment"
-    assert result.assignments[5].treatment_assignment == "control"
-    assert result.assignments[6].treatment_assignment == "treatment"
-    assert result.assignments[7].treatment_assignment == "treatment"
-    assert result.assignments[8].treatment_assignment == "treatment"
-    assert result.assignments[9].treatment_assignment == "treatment"
+    assert result.assignments[0].arm_name == "control"
+    assert result.assignments[1].arm_name == "control"
+    assert result.assignments[2].arm_name == "treatment"
+    assert result.assignments[3].arm_name == "control"
+    assert result.assignments[4].arm_name == "treatment"
+    assert result.assignments[5].arm_name == "control"
+    assert result.assignments[6].arm_name == "treatment"
+    assert result.assignments[7].arm_name == "treatment"
+    assert result.assignments[8].arm_name == "treatment"
+    assert result.assignments[9].arm_name == "treatment"
 
 
 def test_assign_treatment_multiple_arms(sample_table, sample_data):
@@ -117,7 +122,7 @@ def test_assign_treatment_multiple_arms(sample_table, sample_data):
         data=rows,
         stratum_cols=["gender", "region"],
         id_col="id",
-        arm_names=["control", "treatment_a", "treatment_b"],
+        arms=make_arms(["control", "treatment_a", "treatment_b"]),
         experiment_id="b767716b-f388-4cd9-a18a-08c4916ce26f",
     )
 
@@ -128,15 +133,9 @@ def test_assign_treatment_multiple_arms(sample_table, sample_data):
         isinstance(participant, Assignment) for participant in result.assignments
     )
     # Check that the treatment assignments are valid (not None or NaN)
-    assert all(
-        participant.treatment_assignment is not None
-        for participant in result.assignments
-    )
+    assert all(participant.arm_name is not None for participant in result.assignments)
     # Check that the treatment assignments are valid
-    assert (
-        len(set(participant.treatment_assignment for participant in result.assignments))
-        == 3
-    )
+    assert len(set(participant.arm_name for participant in result.assignments)) == 3
     assert result.sample_size == len(sample_data)
     assert result.unique_id_field == "id"
 
@@ -149,7 +148,7 @@ def test_assign_treatment_reproducibility(sample_table, sample_data):
         data=rows,
         stratum_cols=["gender", "region"],
         id_col="id",
-        arm_names=["control", "treatment"],
+        arms=make_arms(["control", "treatment"]),
         experiment_id="b767716b-f388-4cd9-a18a-08c4916ce26f",
         random_state=42,
     )
@@ -159,7 +158,7 @@ def test_assign_treatment_reproducibility(sample_table, sample_data):
         data=rows,
         stratum_cols=["gender", "region"],
         id_col="id",
-        arm_names=["control", "treatment"],
+        arms=make_arms(["control", "treatment"]),
         experiment_id="b767716b-f388-4cd9-a18a-08c4916ce26f",
         random_state=42,
     )
@@ -170,7 +169,7 @@ def test_assign_treatment_reproducibility(sample_table, sample_data):
 
     # Check that the treatment assignments are the same
     for p1, p2 in zip(result1.assignments, result2.assignments, strict=False):
-        assert p1.treatment_assignment == p2.treatment_assignment
+        assert p1.arm_name == p2.arm_name
         assert (
             p1.participant_id == p2.participant_id
         )  # Assuming id is a unique identifier for participants
@@ -187,17 +186,14 @@ def test_assign_treatment_with_missing_values(sample_table, sample_data):
         data=rows,
         stratum_cols=["gender", "region"],
         id_col="id",
-        arm_names=["control", "treatment"],
+        arms=make_arms(["control", "treatment"]),
         experiment_id="b767716b-f388-4cd9-a18a-08c4916ce26f",
     )
 
     assert result.sample_size == len(sample_data)
     assert result.unique_id_field == "id"
     # Check that treatment assignments are not None or NaN
-    assert all(
-        participant.treatment_assignment is not None
-        for participant in result.assignments
-    )
+    assert all(participant.arm_name is not None for participant in result.assignments)
 
 
 def test_assign_treatment_with_obj_columns_inferred(sample_table, sample_data):
@@ -225,7 +221,7 @@ def test_assign_treatment_with_obj_columns_inferred(sample_table, sample_data):
         data=rows,
         stratum_cols=["gender", "region", "object2", "object3"],
         id_col="id",
-        arm_names=["control", "treatment"],
+        arms=make_arms(["control", "treatment"]),
         experiment_id="b767716b-f388-4cd9-a18a-08c4916ce26f",
     )
 
@@ -234,10 +230,7 @@ def test_assign_treatment_with_obj_columns_inferred(sample_table, sample_data):
     assert pd.isna(result.balance_check.p_value) is False
     assert pd.isna(result.balance_check.f_statistic) is False
     # Check that treatment assignments are not None or NaN
-    assert all(
-        participant.treatment_assignment is not None
-        for participant in result.assignments
-    )
+    assert all(participant.arm_name is not None for participant in result.assignments)
 
 
 MAX_SAFE_INTEGER = (1 << 53) - 1  # 9007199254740991
@@ -253,7 +246,7 @@ def test_assign_treatment_with_integers_as_floats_for_unique_id(
             data=rows,
             stratum_cols=["gender", "region"],
             id_col="id",
-            arm_names=["control", "treatment"],
+            arms=make_arms(["control", "treatment"]),
             experiment_id="b767716b-f388-4cd9-a18a-08c4916ce26f",
             random_state=42,
         )
@@ -289,7 +282,7 @@ def test_decimal_and_bool_strata_are_rendered_correctly(sample_table, sample_dat
         data=rows,
         stratum_cols=["income_dec", "is_male"],
         id_col="id",
-        arm_names=["control", "treatment"],
+        arms=make_arms(["control", "treatment"]),
         experiment_id="b767716b-f388-4cd9-a18a-08c4916ce26f",
         random_state=42,
     )
@@ -314,7 +307,7 @@ def test_with_nans_that_would_break_stochatreat_without_preprocessing(sample_tab
         data=rows,
         stratum_cols=["gender"],
         id_col="id",
-        arm_names=["control", "treatment"],
+        arms=make_arms(["control", "treatment"]),
         experiment_id="b767716b-f388-4cd9-a18a-08c4916ce26f",
         random_state=42,
     )

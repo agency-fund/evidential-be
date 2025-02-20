@@ -9,6 +9,7 @@ import numpy as np
 from sqlalchemy import Table
 from stochatreat import stochatreat
 from xngin.apiserver.api_types import (
+    Arm,
     AssignResponse,
     Assignment,
     BalanceCheck,
@@ -33,7 +34,7 @@ def assign_treatment(
     data: Sequence[RowProtocol],
     stratum_cols: list[str],
     id_col: str,
-    arm_names: list[str],
+    arms: list[Arm],
     experiment_id: str,
     fstat_thresh: float = 0.5,
     random_state: int | None = None,
@@ -46,7 +47,7 @@ def assign_treatment(
         data: sqlalchemy result set of Rows representing units to be assigned
         stratum_cols: List of column names to stratify on
         id_col: Name of column containing unit identifiers
-        arm_names: Names of treatment arms
+        arms: Name & uuid of each treatment arm
         experiment_id: Unique identifier for experiment
         fstat_thresh: Threshold for F-statistic p-value
         random_state: Random seed for reproducibility
@@ -77,7 +78,7 @@ def assign_treatment(
     post_stratum_cols = sorted(set(orig_stratum_cols) - exclude_cols_set)
 
     # Assign treatments
-    n_arms = len(arm_names)
+    n_arms = len(arms)
     # TODO: when we support unequal arm assigments, be careful about ensuring the right treatment
     # assignment id is mapped to the right arm_name.
     treatment_status = stochatreat(
@@ -123,7 +124,8 @@ def assign_treatment(
 
         participant = Assignment(
             participant_id=str(row_dict[id_col]),
-            treatment_assignment=arm_names[treatment_assignment],
+            arm_id=arms[treatment_assignment].arm_id,
+            arm_name=arms[treatment_assignment].arm_name,
             strata=strata,
         )
         participants_list.append(participant)
