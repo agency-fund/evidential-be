@@ -1,4 +1,5 @@
 import base64
+import json
 from functools import partial
 
 import pytest
@@ -40,6 +41,20 @@ from xngin.apiserver.settings import (
 )
 from xngin.cli.main import create_testing_dwh
 from xngin.schema.schema_types import ParticipantsSchema, FieldDescriptor
+
+SAMPLE_GCLOUD_SERVICE_ACCOUNT_KEY = {
+    "auth_provider_x509_cert_url": "",
+    "auth_uri": "",
+    "client_email": "",
+    "client_id": "",
+    "client_x509_cert_url": "",
+    "private_key": "",
+    "private_key_id": "",
+    "project_id": "",
+    "token_uri": "",
+    "type": "service_account",
+    "universe_domain": "googleapis.com",
+}
 
 conftest.setup(app)
 client = TestClient(app)
@@ -174,7 +189,9 @@ def test_lifecycle(testing_datasource):
                 dataset_id="ds",
                 credentials=GcpServiceAccountInfo(
                     type="serviceaccountinfo",
-                    content_base64=base64.b64encode(b"key").decode(),
+                    content_base64=base64.b64encode(
+                        json.dumps(SAMPLE_GCLOUD_SERVICE_ACCOUNT_KEY).encode("utf-8")
+                    ).decode(),
                 ),
             )
         ).model_dump_json(),

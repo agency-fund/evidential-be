@@ -13,7 +13,9 @@ class GSheetsPermissionError(Exception):
 
 def google_app_credentials_file():
     return os.path.expanduser(
-        os.environ.get("GOOGLE_APPLICATION_CREDENTIALS", DEFAULT_GSPREAD_CREDENTIALS)
+        os.environ.get(
+            "GSHEET_GOOGLE_APPLICATION_CREDENTIALS", DEFAULT_GSPREAD_CREDENTIALS
+        )
     )
 
 
