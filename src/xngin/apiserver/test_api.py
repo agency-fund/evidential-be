@@ -106,9 +106,16 @@ def test_datasource_dependency_falls_back_to_xngin_db(db_session, testing_dataso
     )
 
 
-@pytest.mark.parametrize("script", API_TESTS)
-def test_api(script, update_api_tests_flag, use_deterministic_random):
-    """Runs all the API_TESTS test scripts.
+API_TESTS_X_DATASOURCE = zip(
+    API_TESTS * 2,
+    [None] * len(API_TESTS) + ["testing-inline-schema"] * len(API_TESTS),
+    strict=False,
+)
+
+
+@pytest.mark.parametrize("script,datasource_id", API_TESTS_X_DATASOURCE)
+def test_api(script, datasource_id, update_api_tests_flag, use_deterministic_random):
+    """Runs all the API_TESTS test scripts using the datasource specified in param or file if None.
 
     Test scripts may omit asserting equality of actual response and expected response on specific paths. For example:
 
@@ -144,12 +151,15 @@ def test_api(script, update_api_tests_flag, use_deterministic_random):
     with open(script, encoding="utf-8") as f:
         contents = f.read()
     xurl = Xurl.from_script(contents)
-    response = client.request(
-        xurl.method, xurl.url, headers=xurl.headers, content=xurl.body
-    )
+    headers = xurl.headers
+    # Override datasource-id header to also test inline schemas; should have the same responses.
+    if datasource_id is not None:
+        assert constants.HEADER_CONFIG_ID in headers
+        headers[constants.HEADER_CONFIG_ID] = datasource_id
+    response = client.request(xurl.method, xurl.url, headers=headers, content=xurl.body)
     temporary = tempfile.NamedTemporaryFile(delete=False, suffix=".xurl")  # noqa: SIM115
-    # Write the actual response to a temporary file. If an exception is thrown, we optionally replace the script we just
-    # executed with the new script.
+    # Write the actual response to a temporary file. If an exception is thrown, we optionally
+    # replace the script we just executed with the new script.
     with temporary as tmpf:
         actual = xurl.model_copy()
         actual.expected_status = response.status_code
