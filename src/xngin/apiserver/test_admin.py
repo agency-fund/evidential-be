@@ -111,7 +111,9 @@ def test_lifecycle(testing_datasource):
         "/v1/m/organizations",
     )
     assert response.status_code == 200, response.content
-    assert response.json()["items"][0]["id"] == testing_datasource.org.id
+    # user has their own org created upon account creation, and we created another for it.
+    assert len(response.json()["items"]) == 2
+    assert testing_datasource.org.id in {o["id"] for o in response.json()["items"]}
 
     # Create datasource
     response = ppost(

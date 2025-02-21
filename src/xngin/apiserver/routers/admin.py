@@ -67,10 +67,14 @@ def user_from_token(
     """Dependency for fetching the User record matching the authenticated user's email."""
     user = session.query(User).filter(User.email == token_info.email).first()
     if not user:
-        # Privileged users will be created on the fly.
+        # Privileged users will have a user and an organization created on the fly.
         if token_info.is_privileged():
             user = User(email=token_info.email)
             session.add(user)
+            organization = Organization(name="My Organization")
+            session.add(organization)
+            organization.users.append(user)
+
             session.commit()
         else:
             raise HTTPException(
@@ -122,6 +126,10 @@ class CreateOrganizationRequest(AdminApiBaseModel):
 
 class CreateOrganizationResponse(AdminApiBaseModel):
     id: Annotated[str, Field(...)]
+
+
+class UpdateOrganizationRequest(AdminApiBaseModel):
+    name: Annotated[str | None, Field()] = None
 
 
 class OrganizationSummary(AdminApiBaseModel):
@@ -384,6 +392,27 @@ def remove_member_from_organization(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="User is not a member of this organization",
         )
+
+    session.commit()
+    return GENERIC_SUCCESS
+
+
+@router.patch("/organizations/{organization_id}")
+def update_organization(
+    organization_id: str,
+    session: Annotated[Session, Depends(xngin_db_session)],
+    user: Annotated[User, Depends(user_from_token)],
+    body: Annotated[UpdateOrganizationRequest, Body(...)],
+):
+    """Updates an organization's properties.
+
+    The authenticated user must be a member of the organization.
+    Currently only supports updating the organization name.
+    """
+    org = get_organization_or_raise(session, user, organization_id)
+
+    if body.name is not None:
+        org.name = body.name
 
     session.commit()
     return GENERIC_SUCCESS
