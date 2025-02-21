@@ -10,7 +10,7 @@ import httpx
 from fastapi import APIRouter, Query, FastAPI, HTTPException
 from fastapi.security import OpenIdConnect
 from pydantic import BaseModel, Field
-from fastapi.responses import FileResponse
+
 from xngin.apiserver import constants, flags
 
 ENV_GOOGLE_OIDC_CLIENT_ID = "GOOGLE_OIDC_CLIENT_ID"
@@ -20,7 +20,7 @@ ENV_GOOGLE_OIDC_REDIRECT_URI = "GOOGLE_OIDC_REDIRECT_URI"
 CLIENT_ID = os.environ.get(ENV_GOOGLE_OIDC_CLIENT_ID)
 CLIENT_SECRET = os.environ.get(ENV_GOOGLE_OIDC_CLIENT_SECRET)
 GOOGLE_DISCOVERY_URL = "https://accounts.google.com/.well-known/openid-configuration"
-DEFAULT_REDIRECT_URI = f"http://localhost:8000{constants.API_PREFIX_V1}/a/oidc"  # default value should match OIDC_BASE_URL in pkcetest.html
+DEFAULT_REDIRECT_URI = f"http://localhost:8000{constants.API_PREFIX_V1}/a/oidc"
 REDIRECT_URI = os.environ.get(
     ENV_GOOGLE_OIDC_REDIRECT_URI, DEFAULT_REDIRECT_URI
 )  # used for testing UI only
@@ -88,12 +88,6 @@ async def get_google_jwks():
     return google_jwks
 
 
-# TODO: remove this once integration is confirmed to work
-@router.get("/")
-def index():
-    return FileResponse("static/pkcetest.html")
-
-
 class CallbackResponse(BaseModel):
     """The credentials returned to the SPA."""
 
@@ -132,7 +126,6 @@ async def auth_callback(
                 "grant_type": "authorization_code",
             },
         )
-        logger.info(f"token exchange response = {token_response.content}")
         token_response.raise_for_status()
         response = token_response.json()
         if type(response) is not dict or response.get("id_token") is None:
