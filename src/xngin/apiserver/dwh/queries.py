@@ -27,17 +27,8 @@ from xngin.apiserver.api_types import (
     EXPERIMENT_IDS_SUFFIX,
     DesignSpecMetric,
 )
+from xngin.apiserver.exceptions_common import LateValidationError
 from xngin.db_extensions import custom_functions
-
-
-class LateValidationError(Exception):
-    """Raised by API request validation failures that can only occur late in processing.
-
-    Example: datetime value validations cannot happen until we know we are dealing with a datetime field, and that
-    information is not available until we have table reflection data.
-    """
-
-    pass
 
 
 def get_stats_on_metrics(
@@ -46,6 +37,12 @@ def get_stats_on_metrics(
     metrics: list[DesignSpecMetricRequest],
     audience_spec: AudienceSpec,
 ) -> list[DesignSpecMetric]:
+    missing_metrics = {m.field_name for m in metrics if m.field_name not in sa_table.c}
+    if len(missing_metrics) > 0:
+        raise LateValidationError(
+            f"Missing metrics (check your Datsource configuration): {missing_metrics}"
+        )
+
     # build our query
     metric_types = [
         MetricType.from_python_type(sa_table.c[m.field_name].type.python_type)
