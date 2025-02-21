@@ -189,6 +189,7 @@ config.csv
 
 # Exclude the atlas binary.
 atlas
-.aider*
 
+# Ignore Aider data.
+.aider*
 CONVENTIONS.md
