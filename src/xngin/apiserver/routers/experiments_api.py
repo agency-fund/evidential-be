@@ -11,6 +11,7 @@ from sqlalchemy.orm import Session
 from xngin.apiserver import constants, database
 from xngin.apiserver.api_types import (
     DataTypeClass,
+    DesignSpec,
     GetFiltersResponseDiscrete,
     GetFiltersResponseNumeric,
     GetStrataResponseElement,
@@ -29,6 +30,7 @@ from xngin.apiserver.dependencies import (
     datasource_config_required,
 )
 from xngin.apiserver.dwh.queries import get_stats_on_metrics, query_for_participants
+from xngin.apiserver.exceptions_common import LateValidationError
 from xngin.apiserver.gsheet_cache import GSheetCache
 from xngin.apiserver.settings import (
     ParticipantsConfig,
@@ -80,6 +82,24 @@ class CommonQueryParams:
     ):
         self.participant_type = participant_type
         self.refresh = refresh
+
+
+def _get_participants_config_and_schema(
+    commons: CommonQueryParams,
+    datasource_config: ParticipantsMixin,
+    gsheets: GSheetCache,
+) -> tuple[ParticipantsConfig, ParticipantsSchema]:
+    """Get common configuration info for various endpoints."""
+    participants_cfg = datasource_config.find_participants(commons.participant_type)
+    cached_schema = participants_cfg  # assume type == "schema"
+    if participants_cfg.type == "sheet":
+        sheet_ref = participants_cfg.sheet
+        cached_schema = gsheets.get(
+            sheet_ref,
+            lambda: fetch_and_parse_sheet(sheet_ref),
+            refresh=commons.refresh,
+        )
+    return participants_cfg, cached_schema
 
 
 # API Endpoints
@@ -240,6 +260,16 @@ def get_metrics(
     )
 
 
+def _validate_schema_metrics(design_spec: DesignSpec, schema: ParticipantsSchema):
+    metric_fields = {m.field_name for m in schema.fields if m.is_metric}
+    metrics_requested = {m.field_name for m in design_spec.metrics}
+    invalid_metrics = metrics_requested - metric_fields
+    if len(invalid_metrics) > 0:
+        raise LateValidationError(
+            f"Invalid DesignSpec metrics (check your Datsource configuration): {invalid_metrics}"
+        )
+
+
 @router.post(
     "/power",
     summary="Check power given an experiment and audience specification.",
@@ -247,14 +277,24 @@ def get_metrics(
 )
 def powercheck(
     body: PowerRequest,
+    gsheets: Annotated[GSheetCache, Depends(gsheet_cache)],
     config: Annotated[DatasourceConfig, Depends(datasource_config_required)],
+    refresh: Annotated[bool, Query(description="Refresh the cache.")] = False,
 ) -> PowerResponse:
     """Calculates statistical power given the PowerRequest details."""
-    participant = config.find_participants(body.audience_spec.participant_type)
+    commons = CommonQueryParams(
+        participant_type=body.audience_spec.participant_type, refresh=refresh
+    )
+    participants_cfg, schema = _get_participants_config_and_schema(
+        commons, config, gsheets
+    )
+    _validate_schema_metrics(body.design_spec, schema)
 
     with config.dbsession() as session:
         sa_table = infer_table(
-            session.get_bind(), participant.table_name, config.supports_reflection()
+            session.get_bind(),
+            participants_cfg.table_name,
+            config.supports_reflection(),
         )
 
         metric_stats = get_stats_on_metrics(
@@ -272,22 +312,6 @@ def powercheck(
                 alpha=body.design_spec.alpha,
             )
         )
-
-
-def _get_participants_config_and_schema(
-    commons: CommonQueryParams,
-    config: ParticipantsMixin,
-    gsheets: GSheetCache,
-) -> tuple[ParticipantsConfig, ParticipantsSchema]:
-    """Get common configuration info for various endpoints."""
-    participants_cfg = config.find_participants(commons.participant_type)
-    sheet_ref = participants_cfg.sheet
-    cached_schema = gsheets.get(
-        sheet_ref,
-        lambda: fetch_and_parse_sheet(sheet_ref),
-        refresh=commons.refresh,
-    )
-    return participants_cfg, cached_schema
 
 
 @router.post(
@@ -317,6 +341,7 @@ def assign_treatment(
     participants_cfg, schema = _get_participants_config_and_schema(
         commons, config, gsheets
     )
+    _validate_schema_metrics(body.design_spec, schema)
 
     with config.dbsession() as session:
         return _do_assignment(

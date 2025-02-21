@@ -33,8 +33,8 @@ from xngin.apiserver.dwh.queries import (
     get_stats_on_metrics,
     make_csv_regex,
     create_datetime_filter,
-    LateValidationError,
 )
+from xngin.apiserver.exceptions_common import LateValidationError
 from xngin.db_extensions.custom_functions import NumpyStddev
 
 
@@ -604,6 +604,23 @@ def test_make_csv_regex(csv, values, expected):
     actual = matches is not None
     assert actual == expected, (
         f'Expression {r} is expected to {"match" if expected else "not match"} in "{csv}". Values = {values}. Matches = {matches}.'
+    )
+
+
+def test_get_stats_on_missing_metric_raises_error(db_session):
+    with pytest.raises(LateValidationError) as exc:
+        get_stats_on_metrics(
+            db_session,
+            SampleTable.get_table(),
+            [DesignSpecMetricRequest(field_name="missing_col", metric_pct_change=0.1)],
+            AudienceSpec(
+                participant_type="ignored",
+                filters=[],
+            ),
+        )
+    assert (
+        "Missing metrics (check your Datsource configuration): {'missing_col'}"
+        in str(exc)
     )
 
 

@@ -51,7 +51,7 @@ def make_key() -> tuple[str, str]:
     return id_, key
 
 
-def require_valid_api_key(session: Session, api_key: str | None, config_id: str):
+def require_valid_api_key(session: Session, api_key: str | None, datasource_id: str):
     """Queries the database for a matching API key with privileges on the config referenced by config_id."""
     if not api_key:
         raise ApiKeyRequiredError()
@@ -61,7 +61,7 @@ def require_valid_api_key(session: Session, api_key: str | None, config_id: str)
     stmt = (
         select(ApiKey.id)
         .join(Datasource)
-        .where(ApiKey.datasource_id == config_id)
+        .where(ApiKey.datasource_id == datasource_id)
         .where(ApiKey.key == key_hash)
     )
     result = session.execute(stmt)

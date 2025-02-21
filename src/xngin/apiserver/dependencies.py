@@ -54,8 +54,8 @@ def datasource_dependency(
 
     # Datasources from the database always require an API key.
     if from_json is None and (from_db := xngin_db.get(DatasourceTable, datasource_id)):
-        dsconfig = from_db.get_config()
         require_valid_api_key(xngin_db, api_key, datasource_id)
+        dsconfig = from_db.get_config()
         return Datasource(id=datasource_id, config=dsconfig)
 
     # Datasources from the static JSON settings optionally require an API key.

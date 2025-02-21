@@ -4,7 +4,7 @@ from fastapi import Request
 from fastapi.responses import JSONResponse
 
 from xngin.apiserver.apikeys import ApiKeyError
-from xngin.apiserver.dwh.queries import LateValidationError
+from xngin.apiserver.exceptions_common import LateValidationError
 from xngin.apiserver.settings import (
     CannotFindTableError,
     CannotFindParticipantsError,

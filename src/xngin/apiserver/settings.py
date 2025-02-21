@@ -153,7 +153,7 @@ class ParticipantsMixin(ConfigBaseModel):
     ]
 
     def find_participants(self, participant_type: str):
-        """Returns the participant matching participant_type or raises CannotFindParticipantsException."""
+        """Returns the ParticipantsConfig matching participant_type or raises CannotFindParticipantsException."""
         found = next(
             (
                 u
