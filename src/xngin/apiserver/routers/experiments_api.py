@@ -276,17 +276,19 @@ def powercheck(
 
 def _get_participants_config_and_schema(
     commons: CommonQueryParams,
-    config: ParticipantsMixin,
+    datasource_config: ParticipantsMixin,
     gsheets: GSheetCache,
 ) -> tuple[ParticipantsConfig, ParticipantsSchema]:
     """Get common configuration info for various endpoints."""
-    participants_cfg = config.find_participants(commons.participant_type)
-    sheet_ref = participants_cfg.sheet
-    cached_schema = gsheets.get(
-        sheet_ref,
-        lambda: fetch_and_parse_sheet(sheet_ref),
-        refresh=commons.refresh,
-    )
+    participants_cfg = datasource_config.find_participants(commons.participant_type)
+    cached_schema = participants_cfg  # assume type == "schema"
+    if participants_cfg.type == "sheet":
+        sheet_ref = participants_cfg.sheet
+        cached_schema = gsheets.get(
+            sheet_ref,
+            lambda: fetch_and_parse_sheet(sheet_ref),
+            refresh=commons.refresh,
+        )
     return participants_cfg, cached_schema
 
 

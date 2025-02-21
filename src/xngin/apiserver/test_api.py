@@ -13,7 +13,14 @@ from fastapi.testclient import TestClient
 
 from xngin.apiserver import conftest, constants, flags
 from xngin.apiserver.api_types import CommitRequest
+from xngin.apiserver.dependencies import xngin_db_session
+from xngin.apiserver.gsheet_cache import GSheetCache
 from xngin.apiserver.main import app
+from xngin.apiserver.routers.experiments_api import (
+    CommonQueryParams,
+    _get_participants_config_and_schema,
+)
+from xngin.apiserver.settings import ParticipantsDef
 from xngin.apiserver.testing.assertions import assert_same
 from xngin.apiserver.testing.xurl import Xurl
 from xngin.apiserver.webhook_types import (
@@ -56,6 +63,49 @@ def fixture_update_api_tests_flag(pytestconfig):
     return flags.UPDATE_API_TESTS
 
 
+@pytest.fixture(name="db_session")
+def fixture_db_session():
+    session = next(app.dependency_overrides[xngin_db_session]())
+    yield session
+
+
+def test_datasource_dependency_falls_back_to_xngin_db(db_session, testing_datasource):
+    local_cache = GSheetCache(db_session)
+
+    participants_cfg_sheet, schema_sheet = _get_participants_config_and_schema(
+        commons=CommonQueryParams("test_participant_type"),
+        datasource_config=conftest.get_settings_for_test()
+        .get_datasource("testing-remote")
+        .config,
+        gsheets=local_cache,
+    )
+    assert participants_cfg_sheet.type == "sheet"
+
+    # Now store a version that inlines the schema...
+    participants_def = ParticipantsDef(
+        type="schema",
+        participant_type=participants_cfg_sheet.participant_type,
+        table_name=schema_sheet.table_name,
+        fields=schema_sheet.fields,
+    )
+    config = testing_datasource.ds.get_config()
+    config.participants = [participants_def]
+    testing_datasource.ds.set_config(config)
+    db_session.commit()
+    # ...and verify we retrieve that correctly.
+    participants_cfg, schema = _get_participants_config_and_schema(
+        commons=CommonQueryParams("test_participant_type"),
+        datasource_config=testing_datasource.ds.get_config(),
+        gsheets=local_cache,
+    )
+    assert participants_cfg.type == "schema"
+    assert_same(
+        schema_sheet.model_dump(),
+        schema.model_dump(),
+        deepdiff_kwargs={"exclude_paths": ["participant_type", "type"]},
+    )
+
+
 @pytest.mark.parametrize("script", API_TESTS)
 def test_api(script, update_api_tests_flag, use_deterministic_random):
     """Runs all the API_TESTS test scripts.
@@ -91,7 +141,7 @@ def test_api(script, update_api_tests_flag, use_deterministic_random):
                 f"The script {script} contains an invalid JSON body in the [test_api] trailer: {e!s}"
             )
 
-    with open(script) as f:
+    with open(script, encoding="utf-8") as f:
         contents = f.read()
     xurl = Xurl.from_script(contents)
     response = client.request(
@@ -127,7 +177,7 @@ def load_mock_response_from_xurl(mocker, file):
     """Returns a tuple with the Xurl obj specified in file and a mock response."""
 
     # Set up the mock response - first load our test data.
-    data_file = str(Path(__file__).parent / "testdata/nonbulk" / file)
+    data_file = str(Path(__file__).parent / "testdata" / "nonbulk" / file)
     with open(data_file, encoding="utf-8") as f:
         contents = f.read()
     xurl = Xurl.from_script(contents)
