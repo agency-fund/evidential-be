@@ -244,7 +244,25 @@ class GcpServiceAccountInfo(ConfigBaseModel):
     def validate_base64(cls, value: str) -> str:
         """Validates that content_base64 contains valid base64 data."""
         try:
-            base64.b64decode(value, validate=True)
+            # Decode and validate the JSON structure matches Google Cloud Service Account format.
+            decoded = base64.b64decode(value, validate=True)
+            try:
+                creds = json.loads(decoded)
+                required_fields = {
+                    "type",
+                    "project_id",
+                    "private_key_id",
+                    "private_key",
+                    "client_email",
+                }
+                if not all(field in creds for field in required_fields):
+                    raise ValueError("Missing required fields in service account JSON")
+                if creds["type"] != "service_account":
+                    raise ValueError(
+                        'Service account JSON must have type="service_account"'
+                    )
+            except json.JSONDecodeError as e:
+                raise ValueError("Invalid JSON in service account credentials") from e
         except binascii.Error as e:
             raise ValueError("Invalid base64 content") from e
         return value

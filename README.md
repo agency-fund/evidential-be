@@ -206,7 +206,7 @@ docker run \
   --env-file secrets/.env \
   -v `pwd`/settings/:/settings \
   -e XNGIN_SETTINGS=/settings/xngin.settings.json \
-  -e GOOGLE_APPLICATION_CREDENTIALS=/settings/gs_service_account.json \
+  -e GSHEET_GOOGLE_APPLICATION_CREDENTIALS=/settings/gs_service_account.json \
   -p 8000:8000  \
    xngin:latest
 ```
@@ -233,7 +233,7 @@ docker run \
 
 This also means we can fetch prod settings from elsewhere on our host and mount the dir with it in the container.
 Don't forget to add other environment variables not set on the command line to a `.env` file such as
-GOOGLE_APPLICATION_CREDENTIALS; these are not part of the image. Also beware that Docker
+`GSHEET_GOOGLE_APPLICATION_CREDENTIALS`; these are not part of the image. Also beware that Docker
 [includes double quotes in the value of your env variables](https://github.com/docker/compose/issues/3702)
 read in via --env-file.
 
@@ -341,7 +341,7 @@ XNGIN_TEST_DWH_URI="postgresql+psycopg://xnginwebserver:$PASSWORD@localhost:5432
 
 # Note that not all unnittests were written to pass on BQ:
 XNGIN_TEST_DWH_URI="bigquery://xngin-development-dc/ds" \
-  GOOGLE_APPLICATION_CREDENTIALS=credentials.json \
+  GSHEET_GOOGLE_APPLICATION_CREDENTIALS=credentials.json \
   pytest src/xngin/apiserver/dwh/test_queries.py::test_boolean_filter
 ```
 
@@ -410,6 +410,8 @@ in `src/xngin/cli/main.py` and run:
 uv run xngin-cli --help
 ```
 
+> If you are invoking a command that requires access to Google Cloud, set the GOOGLE_APPLICATION_CREDENTIALS variable.
+
 ## Onboarding new Clients<a name="onboarding-new-clients"></a>
 
 1. Get credentials to the client's data warehouse that has at least read-only access to the schemas/datasets
@@ -467,14 +469,14 @@ See [.github/workflows/test.yaml](.github/workflows/test.yaml) for lifecycle tes
 - ⚠️ _As the service provider_, we create and own the initial customer warehouse configuration
   spreadsheets for the customer and share access to them for further modification. All interactions
   with these spreadsheets happen with the
-  environment variable `GOOGLE_APPLICATION_CREDENTIALS`, which should point to _our_ service account
+  environment variable `GSHEET_GOOGLE_APPLICATION_CREDENTIALS`, which should point to _our_ service account
   that has access to the sheets we create. Do not confuse these credentials with the customers' service account in
   settings.json!
 
   Example:
 
   ```shell
-  GOOGLE_APPLICATION_CREDENTIALS=secrets/customer_service_account.json \
+  GSHEET_GOOGLE_APPLICATION_CREDENTIALS=secrets/customer_service_account.json \
     xngin-cli bootstrap-spreadsheet \
     bigquery://project/dataset res_users --unique-id-col user_id
   ```
@@ -485,7 +487,7 @@ You can create a test dataset on a project you've configured with bigquery
 using our xngin-cli tool:
 
 ```shell
-export GOOGLE_APPLICATION_CREDENTIALS=~/.config/gspread/service_account.json
+export GSHEET_GOOGLE_APPLICATION_CREDENTIALS=~/.config/gspread/service_account.json
 xngin-cli create-testing-dwh --dsn 'bigquery://xngin-development-dc/ds'
 ```
 
