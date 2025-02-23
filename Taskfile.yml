@@ -1,0 +1,93 @@
+version: '3'
+output: prefixed
+env:
+  # Disable Atlas telemetry.
+  ATLAS_NO_ANON_TELEMETRY: "true"
+  DO_NOT_TRACK: "1"
+
+  # These are values used in the xngin.railway.settings.json and are present for when testing the Railway configs.
+  # (optional)
+  DWH_PGHOST: "127.0.0.1"
+  DWH_PGPASSWORD: "pgpass"
+  DWH_PGPORT: "5632"
+  DWH_PGUSER: "pguser"
+  CUSTOMER_API_TOKEN: ""
+  CUSTOMER_DWH_PASSWORD: ""
+
+  # Ask SQLAlchemy to print the generated SQL statements.
+  ECHO_SQL: "true"
+
+  # Generally useful settings.
+  XNGIN_PUBLISH_ALL_DOCS: "true"
+  XNGIN_SETTINGS: "src/xngin/apiserver/testdata/xngin.testing.settings.json"
+  XNGIN_DEBUG: "true"
+tasks:
+  start:
+    desc: "Starts apiserver locally with settings compatible with local dash dev server (using sqlite)."
+    interactive: true
+    dotenv:
+      # Populate BQ_SERVICE_ACCOUNT (optional) and GOOGLE_OIDC_CLIENT_SECRET (optional).
+      - .env
+    env:
+      # Admin API settings. These need to be set for interaction with the dash web UI.
+      # Also see instructions for .env above.
+      ENABLE_ADMIN: "true"
+      ENABLE_OIDC: "true"
+      GOOGLE_OIDC_CLIENT_ID: "222213100775-qa1ajcrk48il70itcbdcvgr9ib5t08uf.apps.googleusercontent.com"
+      GOOGLE_OIDC_REDIRECT_URI: "http://localhost:3000/"
+    cmds:
+      - uv run fastapi dev src/xngin/apiserver/main.py
+  start-with-local-pg:
+    desc: "Starts apiserver locally with settings compatible with local dash dev server (using PostgreSQL)"
+    interactive: true
+    dotenv:
+      # Populate BQ_SERVICE_ACCOUNT (optional) and GOOGLE_OIDC_CLIENT_SECRET (optional).
+      - .env
+    env:
+      XNGIN_DB: postgresql://postgres:postgres@localhost:5499/xngin?sslmode=disable
+
+      # Admin API settings. These need to be set for interaction with the dash web UI.
+      # Also see instructions for .env above.
+      ENABLE_ADMIN: "true"
+      ENABLE_OIDC: "true"
+      GOOGLE_OIDC_CLIENT_ID: "222213100775-qa1ajcrk48il70itcbdcvgr9ib5t08uf.apps.googleusercontent.com"
+      GOOGLE_OIDC_REDIRECT_URI: "http://localhost:3000/"
+    cmds:
+      - ./tools/localpg.py --allow-existing -d --wait --create-db xngin
+      - uv run fastapi dev src/xngin/apiserver/main.py
+  test:
+    desc: "Runs unit tests"
+    interactive: true
+    cmds:
+      - uv run pytest
+  update-api-tests:
+    desc: "Run the API tests and update the expected responses."
+    interactive: true
+    env:
+      UPDATE_API_TESTS: "1"
+    cmd: uv run pytest src/xngin/apiserver/test_api.py
+  test-pgintegration:
+    desc: "Runs unit tests w/local postgres support"
+    interactive: true
+    cmds:
+      - ./tools/localpg.py --allow-existing -d --wait
+      - uv run pytest -m 'pgintegration or not integration'
+  make-migrations:
+    desc: "Build Postgres migrations"
+    cmds:
+      - uv run atlas migrate diff --env sa_postgres && git add migrations
+  apply-migrations-pg:
+    desc: "Apply Postgres migrations locally (requires localpg instance to be running)"
+    cmds:
+      - uv run atlas migrate diff --env sa_postgres
+      - uv run atlas migrate apply --env sa_postgres --url 'postgresql://postgres:postgres@localhost:5499/postgres?sslmode=disable'
+  apply-migrations-sqlite:
+    desc: "Apply sqlite migrations locally"
+    cmd: |
+      # Generate the migration files to ensure that they are up to date
+      uv run atlas migrate diff --env sa_sqlite
+      # If the apiserver created the database, there will not be any migration data; therefore, we pass a --baseline
+      # flag to get that created.
+      sqlite3 xngin.db .tables | grep -q "atlas_schema_revisions" \
+        && uv run atlas migrate apply --env sa_sqlite --url sqlite://xngin.db \
+        || uv run atlas migrate apply --env sa_sqlite --url sqlite://xngin.db --baseline $(ls -t migrations/sa_sqlite | grep .sql | sort -n | cut -f1 -d. | head -1)

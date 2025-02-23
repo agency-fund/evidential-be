@@ -4,14 +4,19 @@
 # dependencies = [
 #     "typer==0.15.1",
 #     "rich==13.7.0",
+#     "psycopg==3.1.18",
 # ]
 # ///
 #
 # Note: this script generated mostly by Anthropic Claude.
 #
-import typer
 import subprocess
+import time
+
+import psycopg
+import typer
 from rich.console import Console
+from rich.progress import Progress, SpinnerColumn, TextColumn
 from rich.theme import Theme
 
 # Create a theme with colors that work well in both light and dark modes
@@ -114,11 +119,52 @@ def run(
         help="Name of the Docker container",
         envvar="LOCALPG_NAME",
     ),
+    allow_existing: bool = typer.Option(
+        False,
+        "--allow-existing",
+        help="Exit successfully if container already exists",
+        envvar="LOCALPG_ALLOW_EXISTING",
+    ),
+    wait: bool = typer.Option(
+        False,
+        "--wait",
+        help="Wait for port to be available (up to 30 seconds)",
+        envvar="LOCALPG_WAIT",
+    ),
+    create_db: str = typer.Option(
+        None,
+        "--create-db",
+        help="Create a new database with this name (requires -d/--daemon)",
+        envvar="LOCALPG_CREATE_DB",
+    ),
 ):
     """
     Start a local ephemeral PostgreSQL instance using Docker.
     """
     try:
+        # Check if container already exists
+        result = subprocess.run(
+            [
+                "docker",
+                "ps",
+                "-a",
+                "--filter",
+                f"name=^{name}$",
+                "--format",
+                "{{.Names}}",
+            ],
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+        if result.stdout.strip():
+            console.print(f"\n⚠️ [warning]Container named '{name}' already exists.[/]")
+            if allow_existing:
+                console.print("[info]Continuing due to --allow-existing flag[/]\n")
+                return
+            console.print(f"[command]Run 'docker kill {name}' to remove it first.[/]\n")
+            # ruff: noqa: TRY301
+            raise typer.Exit(3)
         cmd = build_docker_command(daemon, tmpfs, port, name)
 
         if not daemon:
@@ -129,6 +175,12 @@ def run(
         subprocess.run(cmd, check=True)
 
         if daemon:
+            if wait:
+                wait_for_postgres(port)
+
+            if create_db:
+                create_database(create_db, port)
+
             console.print("\n🚀 [info]Postgres started in daemon mode.[/]")
             console.print(
                 f"\n⚡ To stop the container, run:\n   [command]docker kill {name}[/]"
@@ -146,6 +198,39 @@ def run(
     except Exception as e:
         typer.echo(f"Unexpected error: {e}", err=True)
         raise typer.Exit(1) from e
+
+
+def create_database(dbname: str, port: int):
+    """Creates a new database using psycopg."""
+    conn_str = f"postgresql://postgres:postgres@localhost:{port}/postgres"
+    with psycopg.connect(conn_str, autocommit=True) as conn:
+        conn.execute(f"CREATE DATABASE {dbname}")
+        console.print(f"\n✨ [info]Created database '{dbname}'[/]")
+
+
+def wait_for_postgres(port):
+    """Wait for PostgreSQL to be ready to accept connections."""
+    conn_str = f"postgresql://postgres:postgres@localhost:{port}/postgres"
+
+    with Progress(
+        SpinnerColumn(),
+        TextColumn("[progress.description]{task.description}"),
+        console=console,
+    ) as progress:
+        task = progress.add_task("Waiting for PostgreSQL to be ready...", total=None)
+        start_time = time.time()
+        while time.time() - start_time < 30:  # 30 second timeout
+            try:
+                psycopg.connect(conn_str, connect_timeout=1).close()
+                progress.update(task, completed=True)
+                break
+            except psycopg.OperationalError:
+                time.sleep(0.25)  # 250ms between retries
+        else:
+            console.print(
+                "\n❌ [warning]Timed out waiting for PostgreSQL to start[/]\n"
+            )
+            raise typer.Exit(1)
 
 
 if __name__ == "__main__":

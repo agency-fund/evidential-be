@@ -10,17 +10,17 @@
   - [Prerequisites](#prerequisites)
   - [Getting Started](#getting-started)
   - [Settings](#settings)
-  - [Docker](#docker)
+  - [Docker Images](#docker-images)
   - [Testing](#testing)
   - [The CLI](#the-cli)
   - [Onboarding new Clients](#onboarding-new-clients)
   - [Supported DWHs and DSN url format](#supported-dwhs-and-dsn-url-format)
-  - [FAQ](#faq)
   - [Deployment on Railway](#deployment-on-railway)
   - [Admin API](#admin-api)
   - [OIDC](#oidc)
   - [API Keys](#api-keys)
   - [Schema Migration](#schema-migration)
+  - [FAQ](#faq)
 
 <!-- mdformat-toc end -->
 
@@ -39,11 +39,13 @@ The following is a proposal of the main components of this service:
 
 ## Prerequisites<a name="prerequisites"></a>
 
-The commands below require you to have [uv](https://docs.astral.sh/uv/) installed:
+1. The commands below require you to have [uv](https://docs.astral.sh/uv/) installed:
 
-```shell
-curl -LsSf https://astral.sh/uv/0.6.0/install.sh | sh
-```
+   ```shell
+   curl -LsSf https://astral.sh/uv/0.6.0/install.sh | sh
+   ```
+
+1. You will also want to install the task-runner tool [Task](https://taskfile.dev/) because it will simplify your development experience.
 
 ## Getting Started<a name="getting-started"></a>
 
@@ -51,17 +53,13 @@ Follow the steps below to get a local development environment running.
 
 1. Update the project's environment, install dependencies, and create a virtual environment (.venv).
 
-```shell
-uv sync
-```
-
-1. For local development, use the testing settings file:
-
    ```shell
-   export XNGIN_SETTINGS=src/xngin/apiserver/testdata/xngin.testing.settings.json
+   uv sync
    ```
 
-1. Then run the unit tests:
+1. If you are using an IDE, configure it to use the .venv directory as the virtual environment.
+
+1. Run the unit tests:
 
    ```shell
    uv run pytest
@@ -70,17 +68,32 @@ uv sync
    `pytest -rA` to print out _all_ stdout from your tests; `-rx` for just those failing. (See
    [docs](https://docs.pytest.org/en/latest/how-to/output.html#producing-a-detailed-summary-report) for more info.)
 
-   Running the unit tests will create the `testing_dwh.db` database. This database will be used by your local
-   development
-   server.
+   The tests will automatically create a fake data warehouse in `src/xngin/apiserver/testdata/testing_dwh.db`.
+
+1. If you're working with the xngin-dash UI, you should also set the OAuth Client Credentials appropriate for your
+   work in your .env:
+
+   ```shell
+   echo GOOGLE_OIDC_CLIENT_ID=... >> .env
+   echo GOOGLE_OIDC_CLIENT_SECRET=... >> .env
+   ```
+
+   You can use a shared set of credentials; ask a teammate for details.
+
+1. Get familiar with the task runner. Most of the commands you will run are defined in Taskfile.yml and using it helps
+   ensure all developers are running in consistent environments. Run:
+
+   ```shell
+   task --list
+   ```
 
 1. Then start the dev server:
 
    ```shell
-   uv run fastapi dev src/xngin/apiserver/main.py
+   task start
    ```
 
-   To change the port, add the flag `--port <myport>`.
+   This will start the server at http://localhost:8000. It stores its state in `xngin.db`.
 
 1. Send some test requests:
 
@@ -93,13 +106,12 @@ uv sync
    curl -H "Datasource-ID: testing" 'http://localhost:8000/v1/strata?participant_type=test_participant_type'
    ```
 
-   Also see [apitest.strata.xurl](src/xngin/apiserver/testdata/apitest.strata.xurl) for a complete example of how to
-   write an API test script.
+   Also see [apitest.strata.xurl](src/xngin/apiserver/testdata/apitest.strata.xurl) for a complete example of how to write an API test script.
 
 1. Visit the local interactive docs page: http://localhost:8000/docs
 
-1. `uv` sets up a virtual environment by default. To avoid needing to use `uv run` before commands installed by our
-   project, activate the environment with:
+1. (Optional) `uv` manages the virtual environment. If you wish to activate it so that you do not need to prefix all commands with
+   `uv run`, you can do so:
 
    ```shell
    source .venv/bin/activate
@@ -112,14 +124,14 @@ uv sync
 1. Now set up the pre-commit hooks in your local git with:
 
    ```shell
-   pre-commit install
+   uv run pre-commit install
    ```
 
    which will run the checks whenever you create or modify a commit. It only does checks against files that changed; to
    force it to check all files, you can run:
 
    ```
-   pre-commit run -a
+   uv run pre-commit run -a
    ```
 
 1. To parse a proper Google Sheets config, you'll need a service worker token, whose json info should be placed in
@@ -130,9 +142,7 @@ uv sync
      addr created* > After creation, click the email for that account > Keys tab > Create the json key file and put it
      in the above location. Lastly, share the spreadsheet as Viewer-only with this special service account email
      address.
-   - Ensure that
-     the [Google Sheets API](https://console.developers.google.com/apis/api/sheets.googleapis.com/overview) is
-     enabled for your google cloud project.
+   - Ensure that the [Google Sheets API](https://console.developers.google.com/apis/api/sheets.googleapis.com/overview) is enabled for your Google Cloud project.
 
 ### Learn more<a name="learn-more"></a>
 
@@ -190,26 +200,17 @@ There are 3 levels of configuration behind Xngin:
   client. Both sources (dwh introspection, gsheets) are represented by the `ParticipantsSchema` model, although not all
   information may be supplied by either.
   - This information is also cached in our app (system) db as specified in
-  - [`database.py`](src/xngin/apiserver/database.py). The db DSN can be overriden via the `XNGIN_DB` environment
+  - [`database.py`](src/xngin/apiserver/database.py). The db DSN can be overridden via the `XNGIN_DB` environment
     variable to point to something other than the default sqlite database `xngin.db`, which otherwise is created at
-    this
-    root level.
+    this root level.
 
-## Docker<a name="docker"></a>
+## Docker Images<a name="docker-images"></a>
 
-### How do I build and run the Docker container locally?<a name="how-do-i-build-and-run-the-docker-container-locally"></a>
+The Docker images are intended for deployment. Under normal development environments, you will be working directly in
+your source repository without any containers (except for PostgreSQL, which is optional).
 
-```shell
-docker build -t xngin .
-docker run \
-  -it \
-  --env-file secrets/.env \
-  -v `pwd`/settings/:/settings \
-  -e XNGIN_SETTINGS=/settings/xngin.settings.json \
-  -e GSHEET_GOOGLE_APPLICATION_CREDENTIALS=/settings/gs_service_account.json \
-  -p 8000:8000  \
-   xngin:latest
-```
+Docker Images are created automatically by CI whenever a commit is merged into the main branch. These are intended to
+be used by customers for deployments.
 
 ### How do I run the Docker images [built by the CI](https://github.com/agency-fund/xngin/pkgs/container/xngin)?<a name="how-do-i-run-the-docker-images-built-by-the-ci"></a>
 
@@ -237,28 +238,30 @@ Don't forget to add other environment variables not set on the command line to a
 [includes double quotes in the value of your env variables](https://github.com/docker/compose/issues/3702)
 read in via --env-file.
 
-### How do I run the tests in the Docker container?<a name="how-do-i-run-the-tests-in-the-docker-container"></a>
+### Running the Docker container locally
 
-See [.github/workflows/test.yaml](.github/workflows/test.yaml).
+You can also build the container locally (without relying on the CI pipeline).
+
+```shell
+docker build -t xngin .
+docker run \
+  -it \
+  --env-file secrets/.env \
+  -v `pwd`/settings/:/settings \
+  -e XNGIN_SETTINGS=/settings/xngin.settings.json \
+  -e GSHEET_GOOGLE_APPLICATION_CREDENTIALS=/settings/gs_service_account.json \
+  -p 8000:8000  \
+   xngin:latest
+```
+
+See [.github/workflows/test.yaml](.github/workflows/test.yaml) for an example of how to run tests locally within the Docker container.
 
 ### How do I run xngin against a local Postgres running in Docker?<a name="how-do-i-run-xngin-against-a-local-postgres-running-in-docker"></a>
 
-Here's an example of how to run a local Postgres and have xngin use it as the system database:
-
-> Note: This example creates a Postgres database for the /system/ database; this is used only for caching
-> configuration spreadsheets. If you want to test a customer database with postgres, you must edit the settings JSON.
+We have a task for that:
 
 ```shell
-PASSWORD="secret$(cat /dev/urandom | head -c128 | sha256sum | cut -b1-16)"
-docker run --rm -d --name xngin-postgres \
-  -e POSTGRES_USER=xnginwebserver \
-  -e POSTGRES_PASSWORD=${PASSWORD} \
-  -e POSTGRES_DB=xngin \
-  -p 5432:5432 \
-  -d postgres:17
-export XNGIN_SETTINGS=src/xngin/apiserver/testdata/xngin.testing.settings.json
-export XNGIN_DB=postgresql://xnginwebserver:${PASSWORD}@localhost:5432/xngin
-uv run fastapi dev src/xngin/apiserver/main.py
+task start-with-local-pg
 ```
 
 ## Testing<a name="testing"></a>
@@ -414,6 +417,9 @@ uv run xngin-cli --help
 
 ## Onboarding new Clients<a name="onboarding-new-clients"></a>
 
+> Note: This process can now be completed via the xngin-dash UI. The JSON files are only useful if you want to create
+> a configuration that doesn't require authentication.
+
 1. Get credentials to the client's data warehouse that has at least read-only access to the schemas/datasets
    containing the table(s) of interest. Each table will be a different "participant type" the user wishes to experiment
    over, and should contain a) a unique id column, b) features to filter the partipcants with (i.e. target for
@@ -501,58 +507,6 @@ These commands use Google's [Application Default Credentials]
 
 > Note: You do not need the gcloud CLI or related tooling installed.
 
-## FAQ<a name="faq"></a>
-
-> Note: These flags change depending on runtime environment. If running under an orchestrator, omit the -it. To run in
-> the background, omit `-it` and add `-d`.
-
-### How do I see the sql commands being executed in my logs?<a name="how-do-i-see-the-sql-commands-being-executed-in-my-logs"></a>
-
-Set `ECHO_SQL=1` in your environment, e.g.:
-
-```shell
-ECHO_SQL=1 XNGIN_SETTINGS=xngin.settings.json \
-   uv run fastapi dev src/xngin/apiserver/main.py --port 8144
-```
-
-### How do I add a Python dependency?<a name="how-do-i-add-a-python-dependency"></a>
-
-1. Add the dependency to [pyproject.toml](pyproject.toml) (replace httpx with whatever dependency you are adding). Try
-   to pin it to a narrow version range, if possible.
-   ```shell
-   uv add httpx
-   ```
-1. Install the new dependencies into your environment:
-   ```shell
-   uv lock
-   uv sync
-   ```
-1. Run the unit tests to ensure everything still works.
-   ```shell
-   uv run pytest
-   ```
-1. Commit the changed uv.lock and pyproject.toml files.
-
-### psycopg2 module does not install correctly.<a name="psycopg2-module-does-not-install-correctly"></a>
-
-You might see this error:
-
-> Error: pg_config executable not found.
->
-> pg_config is required to build psycopg2 from source.
-
-The fix will depend on your specific environment.
-
-### Linux<a name="linux"></a>
-
-1. If on Linux, try: `sudo apt install -y libpq-dev` and then re-install dependencies.
-1. See https://www.psycopg.org/docs/install.html.
-1. See https://www.psycopg.org/docs/faq.html.
-
-### OSX<a name="osx"></a>
-
-Run `brew install postgresql@14`.
-
 ## Deployment on Railway<a name="deployment-on-railway"></a>
 
 The Railway deployment relies on [Dockerfile.railway](Dockerfile.railway), [railway.json](railway.json), and some
@@ -571,10 +525,9 @@ limited-access https://github.com/agency-fund/xngin-settings repository.
 
 ## Admin API<a name="admin-api"></a>
 
-The Admin API allows API keys to be managed by users from a trusted domain. The API is protected by OIDC and allows
-logins from Google Workspace accounts in the @agency.fund domain.
+The Admin API supports the [xngin-dash](https://github.com/agency-fund/xngin-dash) frontend.
 
-The API is configured with environment variables:
+The API is enabled with these variables:
 
 | Environment Variable | Purpose                                                                   | Example |
 | -------------------- | ------------------------------------------------------------------------- | ------- |
@@ -584,9 +537,6 @@ The API is configured with environment variables:
 If the Admin API is enabled, OIDC must be configured with additional environment variables (see below).
 
 ## OIDC<a name="oidc"></a>
-
-Our OIDC implementation supports the popup-style OIDC flow (response_type=`id_token`) and PKCE exchanges
-(response_type=`code`).
 
 | Environment Variable      | Purpose                                                                                                                                                                                                                                                           | Example                              |
 | ------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------ |
@@ -628,7 +578,7 @@ When you make a change to the SQLAlchemy tables in src/xngin/apiserver/models, r
 files for Postgres:
 
 ```shell
-uv run atlas migrate diff --env sa_postgres
+task make-migrations
 ```
 
 The files will be created in migrations/sa_postgres. Commit any new files alongside your changes to the models.
@@ -640,18 +590,56 @@ and [Dockerfile.railway](Dockerfile.railway) for more information.
 If you are running a local Postgres instance (such as the one that `tools/localpy.py` can start for you), use:
 
 ```shell
-uv run atlas migrate diff --env sa_postgres
-uv run atlas migrate apply --env sa_postgres --url 'postgresql://postgres:postgres@localhost:5499/postgres?sslmode=disable'
+task apply-migrations-pg
 ```
 
 Local development environments using SQLite are managed similarly to local environments using Postgres except that
 you sometimes need to pass an additional flag:
 
 ```shell
-# Generate the migration files to ensure that they are up to date
-uv run atlas migrate diff --env sa_sqlite
-# First migration: pass a --baseline flag.
-uv run atlas migrate apply --env sa_sqlite --url sqlite://xngin.db --baseline $(ls -t migrations/sa_sqlite | grep .sql | sort -n | cut -f1 -d. | head -1)
-# Subsequent migrations: do not pass --baseline flag.
-uv run atlas migrate apply --env sa_sqlite --url sqlite://xngin.db
+task apply-migrations-sqlite
 ```
+
+## FAQ<a name="faq"></a>
+
+### How do I hide the generated SQL from the logs?
+
+Set the ECHO_SQL=0 environment variable, e.g.:
+
+```shell
+ECHO_SQL=0 XNGIN_SETTINGS=xngin.settings.json \
+   uv run fastapi dev src/xngin/apiserver/main.py --port 8144
+```
+
+### How do I add a Python dependency?
+
+1. Add the dependency to [pyproject.toml](pyproject.toml) (replace httpx with whatever dependency you are adding). Try
+   to pin it to a narrow version range, if possible.
+   ```shell
+   uv add httpx
+   ```
+1. Run the unit tests to ensure everything still works.
+   ```shell
+   uv run pytest
+   ```
+1. Commit the changed uv.lock and pyproject.toml files.
+
+### psycopg2 module does not install correctly.
+
+You might see this error:
+
+> Error: pg_config executable not found.
+>
+> pg_config is required to build psycopg2 from source.
+
+The fix will depend on your specific environment.
+
+#### Linux
+
+1. If on Linux, try: `sudo apt install -y libpq-dev` and then re-install dependencies.
+1. See https://www.psycopg.org/docs/install.html.
+1. See https://www.psycopg.org/docs/faq.html.
+
+#### OSX<a name="osx"></a>
+
+Run `brew install postgresql@14`.
