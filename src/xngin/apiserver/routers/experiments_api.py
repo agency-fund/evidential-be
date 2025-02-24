@@ -23,6 +23,7 @@ from xngin.apiserver.api_types import (
     PowerResponse,
     AssignRequest,
     AssignResponse,
+    GetFiltersResponseElement,
 )
 from xngin.apiserver.dependencies import (
     settings_dependency,
@@ -40,14 +41,13 @@ from xngin.apiserver.settings import (
     infer_table,
     DatasourceConfig,
 )
+from xngin.schema.schema_types import ParticipantsSchema, FieldDescriptor
 from xngin.sheets.config_sheet import (
     fetch_and_parse_sheet,
     create_schema_from_table,
 )
 from xngin.stats.assignment import assign_treatment as assign_treatment_actual
 from xngin.stats.power import check_power
-from xngin.schema.schema_types import ParticipantsSchema
-
 
 logger = logging.getLogger(__name__)
 
@@ -166,46 +166,7 @@ def get_filters(
         )
         db_schema = generate_field_descriptors(sa_table, schema.get_unique_id_field())
 
-        # TODO: implement caching, respecting commons.refresh
-        def mapper(col_name, column_descriptor):
-            db_col = db_schema.get(col_name)
-            filter_class = db_col.data_type.filter_class(col_name)
-
-            # Collect metadata on the values in the database.
-            sa_col = sa_table.columns[col_name]
-            match filter_class:
-                case DataTypeClass.DISCRETE:
-                    distinct_values = [
-                        str(v)
-                        for v in session.execute(
-                            sqlalchemy.select(distinct(sa_col))
-                            .where(sa_col.is_not(None))
-                            .order_by(sa_col)
-                        ).scalars()
-                    ]
-                    return GetFiltersResponseDiscrete(
-                        field_name=col_name,
-                        data_type=db_col.data_type,
-                        relations=filter_class.valid_relations(),
-                        description=column_descriptor.description,
-                        distinct_values=distinct_values,
-                    )
-                case DataTypeClass.NUMERIC:
-                    min_, max_ = session.execute(
-                        sqlalchemy.select(
-                            sqlalchemy.func.min(sa_col), sqlalchemy.func.max(sa_col)
-                        ).where(sa_col.is_not(None))
-                    ).first()
-                    return GetFiltersResponseNumeric(
-                        field_name=col_name,
-                        data_type=db_col.data_type,
-                        relations=filter_class.valid_relations(),
-                        description=column_descriptor.description,
-                        min=min_,
-                        max=max_,
-                    )
-                case _:
-                    raise RuntimeError("unexpected filter class")
+        mapper = create_col_to_filter_meta_mapper(db_schema, sa_table, session)
 
         return GetFiltersResponse(
             results=sorted(
@@ -217,6 +178,53 @@ def get_filters(
                 key=lambda item: item.field_name,
             )
         )
+
+
+def create_col_to_filter_meta_mapper(
+    db_schema: dict[str, FieldDescriptor], sa_table, session: Session
+):
+    # TODO: implement caching, respecting commons.refresh
+    def mapper(col_name, column_descriptor) -> GetFiltersResponseElement:
+        db_col = db_schema.get(col_name)
+        filter_class = db_col.data_type.filter_class(col_name)
+
+        # Collect metadata on the values in the database.
+        sa_col = sa_table.columns[col_name]
+        match filter_class:
+            case DataTypeClass.DISCRETE:
+                distinct_values = [
+                    str(v)
+                    for v in session.execute(
+                        sqlalchemy.select(distinct(sa_col))
+                        .where(sa_col.is_not(None))
+                        .order_by(sa_col)
+                    ).scalars()
+                ]
+                return GetFiltersResponseDiscrete(
+                    field_name=col_name,
+                    data_type=db_col.data_type,
+                    relations=filter_class.valid_relations(),
+                    description=column_descriptor.description,
+                    distinct_values=distinct_values,
+                )
+            case DataTypeClass.NUMERIC:
+                min_, max_ = session.execute(
+                    sqlalchemy.select(
+                        sqlalchemy.func.min(sa_col), sqlalchemy.func.max(sa_col)
+                    ).where(sa_col.is_not(None))
+                ).first()
+                return GetFiltersResponseNumeric(
+                    field_name=col_name,
+                    data_type=db_col.data_type,
+                    relations=filter_class.valid_relations(),
+                    description=column_descriptor.description,
+                    min=min_,
+                    max=max_,
+                )
+            case _:
+                raise RuntimeError("unexpected filter class")
+
+    return mapper
 
 
 @router.get(
