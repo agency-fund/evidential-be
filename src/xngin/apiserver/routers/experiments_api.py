@@ -12,9 +12,8 @@ from xngin.apiserver import constants, database
 from xngin.apiserver.api_types import (
     DataTypeClass,
     DesignSpec,
-    GetFiltersResponseDatetime,
     GetFiltersResponseDiscrete,
-    GetFiltersResponseNumeric,
+    GetFiltersResponseNumericOrDate,
     GetStrataResponseElement,
     GetMetricsResponseElement,
     GetStrataResponse,
@@ -214,21 +213,7 @@ def create_col_to_filter_meta_mapper(
                         sqlalchemy.func.min(sa_col), sqlalchemy.func.max(sa_col)
                     ).where(sa_col.is_not(None))
                 ).first()
-                return GetFiltersResponseNumeric(
-                    field_name=col_name,
-                    data_type=db_col.data_type,
-                    relations=filter_class.valid_relations(),
-                    description=column_descriptor.description,
-                    min=min_,
-                    max=max_,
-                )
-            case DataTypeClass.DATETIME:
-                min_, max_ = session.execute(
-                    sqlalchemy.select(
-                        sqlalchemy.func.min(sa_col), sqlalchemy.func.max(sa_col)
-                    ).where(sa_col.is_not(None))
-                ).first()
-                return GetFiltersResponseDatetime(
+                return GetFiltersResponseNumericOrDate(
                     field_name=col_name,
                     data_type=db_col.data_type,
                     relations=filter_class.valid_relations(),

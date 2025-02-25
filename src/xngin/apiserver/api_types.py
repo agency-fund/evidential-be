@@ -100,10 +100,9 @@ class DataType(enum.StrEnum):
                 return DataTypeClass.DISCRETE
             case DataType.BOOLEAN | DataType.CHARACTER_VARYING:
                 return DataTypeClass.DISCRETE
-            case DataType.DATE:
-                return DataTypeClass.DATETIME
             case (
-                DataType.TIMESTAMP_WITHOUT_TIMEZONE
+                DataType.DATE
+                | DataType.TIMESTAMP_WITHOUT_TIMEZONE
                 | DataType.INTEGER
                 | DataType.DOUBLE_PRECISION
                 | DataType.NUMERIC
@@ -117,7 +116,6 @@ class DataType(enum.StrEnum):
 class DataTypeClass(enum.StrEnum):
     DISCRETE = "discrete"
     NUMERIC = "numeric"
-    DATETIME = "datetime"
     UNKNOWN = "unknown"
 
     def valid_relations(self):
@@ -125,8 +123,6 @@ class DataTypeClass(enum.StrEnum):
         match self:
             case DataTypeClass.DISCRETE:
                 return [Relation.INCLUDES, Relation.EXCLUDES]
-            case DataTypeClass.DATETIME:
-                return [Relation.BETWEEN]
             case DataTypeClass.NUMERIC:
                 return [Relation.BETWEEN]
         raise ValueError(f"{self} has no valid defined relations.")
@@ -608,29 +604,16 @@ class GetFiltersResponseBase(ApiBaseModel):
     description: str
 
 
-class GetFiltersResponseNumeric(GetFiltersResponseBase):
-    """Describes a numeric filter variable."""
+class GetFiltersResponseNumericOrDate(GetFiltersResponseBase):
+    """Describes a numeric or date filter variable."""
 
-    min: float | int | None = Field(
+    min: datetime.datetime | datetime.date | float | int | None = Field(
         ...,
         description="The minimum observed value.",
     )
-    max: float | int | None = Field(
+    max: datetime.datetime | datetime.date | float | int | None = Field(
         ...,
         description="The maximum observed value.",
-    )
-
-
-class GetFiltersResponseDatetime(GetFiltersResponseBase):
-    """Describes a numeric filter variable."""
-
-    min: datetime.datetime | datetime.date | None = Field(
-        ...,
-        description="The minimum observed date.",
-    )
-    max: datetime.datetime | datetime.date | None = Field(
-        ...,
-        description="The maximum observed date.",
     )
 
 
@@ -652,7 +635,7 @@ class GetMetricsResponseElement(ApiBaseModel):
 
 
 type GetFiltersResponseElement = (
-    GetFiltersResponseNumeric | GetFiltersResponseDiscrete | GetFiltersResponseDatetime
+    GetFiltersResponseNumericOrDate | GetFiltersResponseDiscrete
 )
 
 
