@@ -2,7 +2,7 @@ import decimal
 import enum
 import re
 import uuid
-from datetime import datetime
+import datetime
 from typing import Annotated, Self
 from collections.abc import Sequence
 
@@ -100,12 +100,13 @@ class DataType(enum.StrEnum):
                 return DataTypeClass.DISCRETE
             case DataType.BOOLEAN | DataType.CHARACTER_VARYING:
                 return DataTypeClass.DISCRETE
+            case DataType.DATE:
+                return DataTypeClass.DATETIME
             case (
-                DataType.DATE
+                DataType.TIMESTAMP_WITHOUT_TIMEZONE
                 | DataType.INTEGER
                 | DataType.DOUBLE_PRECISION
                 | DataType.NUMERIC
-                | DataType.TIMESTAMP_WITHOUT_TIMEZONE
                 | DataType.BIGINT
             ):
                 return DataTypeClass.NUMERIC
@@ -116,6 +117,7 @@ class DataType(enum.StrEnum):
 class DataTypeClass(enum.StrEnum):
     DISCRETE = "discrete"
     NUMERIC = "numeric"
+    DATETIME = "datetime"
     UNKNOWN = "unknown"
 
     def valid_relations(self):
@@ -123,6 +125,8 @@ class DataTypeClass(enum.StrEnum):
         match self:
             case DataTypeClass.DISCRETE:
                 return [Relation.INCLUDES, Relation.EXCLUDES]
+            case DataTypeClass.DATETIME:
+                return [Relation.BETWEEN]
             case DataTypeClass.NUMERIC:
                 return [Relation.BETWEEN]
         raise ValueError(f"{self} has no valid defined relations.")
@@ -388,8 +392,8 @@ class DesignSpec(ApiBaseModel):
     experiment_id: uuid.UUID
     experiment_name: str
     description: str
-    start_date: datetime
-    end_date: datetime
+    start_date: datetime.datetime
+    end_date: datetime.datetime
 
     # arms (at least two)
     arms: Annotated[list[Arm], Field(..., min_length=2)]
@@ -438,7 +442,7 @@ class DesignSpec(ApiBaseModel):
     ]
 
     @field_serializer("start_date", "end_date", when_used="json")
-    def serialize_dt(self, dt: datetime, _info):
+    def serialize_dt(self, dt: datetime.datetime, _info):
         """Convert dates to iso strings in model_dump_json()/model_dump(mode='json')"""
         return dt.isoformat()
 
@@ -617,6 +621,19 @@ class GetFiltersResponseNumeric(GetFiltersResponseBase):
     )
 
 
+class GetFiltersResponseDatetime(GetFiltersResponseBase):
+    """Describes a numeric filter variable."""
+
+    min: datetime.datetime | datetime.date | None = Field(
+        ...,
+        description="The minimum observed date.",
+    )
+    max: datetime.datetime | datetime.date | None = Field(
+        ...,
+        description="The maximum observed date.",
+    )
+
+
 class GetFiltersResponseDiscrete(GetFiltersResponseBase):
     """Describes a discrete filter variable."""
 
@@ -634,7 +651,9 @@ class GetMetricsResponseElement(ApiBaseModel):
     description: str
 
 
-type GetFiltersResponseElement = GetFiltersResponseNumeric | GetFiltersResponseDiscrete
+type GetFiltersResponseElement = (
+    GetFiltersResponseNumeric | GetFiltersResponseDiscrete | GetFiltersResponseDatetime
+)
 
 
 class GetFiltersResponse(ApiBaseModel):
