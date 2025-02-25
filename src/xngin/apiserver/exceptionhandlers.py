@@ -52,7 +52,6 @@ def setup(app):
         if isinstance(cause, psycopg.errors.ConnectionTimeout):
             status = 504
         # Return a minimal error message
-        print(exc)
         return JSONResponse(
             status_code=status, content={"message": str(cause) or str(exc)}
         )

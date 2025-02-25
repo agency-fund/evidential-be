@@ -179,9 +179,6 @@ class ArmAssignment(Base):
     participant_type: Mapped[str] = mapped_column(String(255))
     participant_id: Mapped[str] = mapped_column(String(255))
     arm_id: Mapped[uuid.UUID] = mapped_column(sqlalchemy.Uuid)
-    arm_name: Mapped[
-        str
-    ]  # for a user-friendly name of the arm. TODO: But storing here will make updates a pain...may have to explicitly model an Arm, too.
     strata: Mapped[sqlalchemy.JSON]
 
     experiment: Mapped["Experiment"] = relationship(back_populates="arm_assignments")

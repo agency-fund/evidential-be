@@ -17,9 +17,11 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from xngin.apiserver.api_types import (
+    Assignment,
     AudienceSpec,
     BalanceCheck,
     DesignSpec,
+    Strata,
 )
 from xngin.apiserver.dependencies import (
     datasource_dependency,
@@ -63,6 +65,8 @@ class CreateExperimentRequest(ExperimentsBaseModel):
 
 
 class AssignSummary(ExperimentsBaseModel):
+    """Key pieces of an AssignResponse without the assignments."""
+
     balance_check: BalanceCheck
     sample_size: int
 
@@ -91,6 +95,16 @@ class GetExperimentResponse(ExperimentConfig):
 
 class ListExperimentsResponse(ExperimentsBaseModel):
     items: list[ExperimentConfig]
+
+
+class GetExperimentAssigmentsResponse(ExperimentsBaseModel):
+    """Describes assignments for all participants and balance test results."""
+
+    balance_check: BalanceCheck
+
+    experiment_id: uuid.UUID
+    sample_size: int
+    assignments: list[Assignment]
 
 
 @router.post(
@@ -161,8 +175,7 @@ def create_experiment_with_assignment(
                 participant_type=body.audience_spec.participant_type,
                 participant_id=assignment.participant_id,
                 arm_id=assignment.arm_id,
-                arm_name=assignment.arm_name,
-                strata=to_jsonable_python(assignment.strata),
+                strata=[s.model_dump() for s in assignment.strata],
             )
             xngin_session.add(db_assignment)
 
@@ -178,6 +191,21 @@ def create_experiment_with_assignment(
     )
 
 
+def get_experiment_or_raise(
+    xngin_session: Session, experiment_id: uuid.UUID, datasource_id: str
+):
+    experiment = xngin_session.scalars(
+        select(Experiment).where(
+            Experiment.id == experiment_id, Experiment.datasource_id == datasource_id
+        )
+    ).one_or_none()
+    if experiment is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Experiment not found"
+        )
+    return experiment
+
+
 @router.post(
     "/experiments/{experiment_id}/commit",
     summary="Marks any ASSIGNED experiment as COMMITTED.",
@@ -187,16 +215,7 @@ def commit_experiment(
     xngin_session: Annotated[Session, Depends(xngin_db_session)],
     experiment_id: uuid.UUID,
 ):
-    experiment = xngin_session.scalars(
-        select(Experiment).where(
-            Experiment.id == experiment_id, Experiment.datasource_id == datasource.id
-        )
-    ).one_or_none()
-
-    if not experiment:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND, detail="Experiment not found"
-        )
+    experiment = get_experiment_or_raise(xngin_session, experiment_id, datasource.id)
     if experiment.state not in {ExperimentState.ASSIGNED}:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
@@ -250,12 +269,7 @@ def get_experiment(
     xngin_session: Annotated[Session, Depends(xngin_db_session)],
     experiment_id: uuid.UUID,
 ) -> GetExperimentResponse:
-    experiment = xngin_session.get(Experiment, experiment_id)
-    if not experiment:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND, detail="Experiment not found"
-        )
-
+    experiment = get_experiment_or_raise(xngin_session, experiment_id, datasource.id)
     return ExperimentConfig(
         datasource_id=experiment.datasource_id,
         state=experiment.state,
@@ -265,7 +279,7 @@ def get_experiment(
     )
 
 
-# TODO: implement with an output=csv|json[default] query param
+# TODO: add a query param to include strata; default to false
 @router.get(
     "/experiments/{experiment_id}/assignments",
     summary="Fetch list of participant=>arm assignments for the given experiment id.",
@@ -273,11 +287,32 @@ def get_experiment(
 def get_experiment_assignments(
     datasource: Annotated[Datasource, Depends(datasource_dependency)],
     xngin_session: Annotated[Session, Depends(xngin_db_session)],
-    experiment_id: str,
-) -> GetExperimentResponse:
-    experiment = xngin_session.get(Experiment, experiment_id)
-    if not experiment:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND, detail="Experiment not found"
+    experiment_id: uuid.UUID,
+) -> GetExperimentAssigmentsResponse:
+    experiment = get_experiment_or_raise(xngin_session, experiment_id, datasource.id)
+
+    # Get sample size and and balance check from the assign_summary
+    assign_summary = experiment.assign_summary
+    balance_check = BalanceCheck.model_validate(assign_summary["balance_check"])
+
+    # Map arm IDs to names
+    design_spec = DesignSpec.model_validate(experiment.design_spec)
+    arm_id_to_name = {str(arm.arm_id): arm.arm_name for arm in design_spec.arms}
+
+    # Convert ArmAssignment models to Assignment API types
+    assignments = [
+        Assignment(
+            participant_id=arm_assignment.participant_id,
+            arm_id=arm_assignment.arm_id,
+            arm_name=arm_id_to_name[str(arm_assignment.arm_id)],
+            strata=[Strata.model_validate(s) for s in arm_assignment.strata],
         )
-    return Response(status_code=status.HTTP_204_NO_CONTENT)
+        for arm_assignment in experiment.arm_assignments
+    ]
+
+    return GetExperimentAssigmentsResponse(
+        balance_check=balance_check,
+        experiment_id=experiment.id,
+        sample_size=assign_summary["sample_size"],
+        assignments=assignments,
+    )
