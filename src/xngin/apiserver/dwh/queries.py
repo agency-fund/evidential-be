@@ -184,11 +184,17 @@ def create_datetime_filter(
             f"{col.name}: datetime-type filter values must be in UTC, or not be tagged with an explicit timezone: {s}"
         )
 
-    if filter_.relation != Relation.BETWEEN:
+    if filter_.relation not in {Relation.BETWEEN, Relation.IS}:
         raise LateValidationError(
-            f"{col.name}: The only valid Relation on a datetime field is BETWEEN."
+            f"{col.name}: The only valid Relations on a datetime field are BETWEEN and IS."
         )
 
+    if filter_.relation == Relation.IS:
+        if filter_.value is None:
+            return col.is_(sqlalchemy.null())
+        return col == filter_.value
+
+    # Else it's Relation.BETWEEN:
     match filter_.value:
         case (left, None):
             return col >= str_to_datetime(left)
@@ -228,6 +234,10 @@ def create_filter(
             return col.in_(filter_.value)
         case Relation.INCLUDES:
             return col.in_(filter_.value)
+        case Relation.IS:
+            if filter_.value is None:
+                return col.is_(sqlalchemy.null())
+            return col == filter_.value
     raise RuntimeError("Bug: invalid AudienceSpecFilter.")
 
 

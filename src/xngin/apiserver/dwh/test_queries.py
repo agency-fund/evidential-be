@@ -55,6 +55,7 @@ class SampleNullableTable(Base):
     id = mapped_column(Integer, primary_key=True, autoincrement=False)
     bool_col = mapped_column(Boolean, nullable=True)
     int_col = mapped_column(Integer, nullable=True)
+    float_col = mapped_column(Float, nullable=True)
 
 
 @dataclass
@@ -62,22 +63,26 @@ class NullableRow:
     id: int
     bool_col: bool | None
     int_col: int | None
+    float_col: float | None
 
 
 ROW_10 = NullableRow(
     id=10,
     bool_col=None,
     int_col=None,
+    float_col=1.01,
 )
 ROW_20 = NullableRow(
     id=20,
     bool_col=True,
     int_col=1,
+    float_col=2.02,
 )
 ROW_30 = NullableRow(
     id=30,
     bool_col=False,
     int_col=3,
+    float_col=None,
 )
 SAMPLE_NULLABLE_TABLE_ROWS = [
     ROW_10,
@@ -212,6 +217,49 @@ def test_execute_query_without_filters(compiler):
         assert match is not None, sql
 
 
+IS_NULLABLE_CASES = [
+    Case(
+        filters=[
+            AudienceSpecFilter(
+                field_name="int_col",
+                relation=Relation.IS,
+                value=None,
+            ),
+        ],
+        matches=[ROW_10],
+    ),
+    Case(
+        filters=[
+            AudienceSpecFilter(
+                field_name="float_col",
+                relation=Relation.IS,
+                value=None,
+            ),
+        ],
+        matches=[ROW_30],
+    ),
+]
+
+
+@pytest.mark.parametrize("testcase", IS_NULLABLE_CASES)
+def test_is_nullable(testcase, db_session, use_deterministic_random):
+    testcase.filters = [
+        AudienceSpecFilter.model_validate(filt.model_dump())
+        for filt in testcase.filters
+    ]
+    filters = create_query_filters_from_spec(
+        SampleNullableTable.get_table(),
+        AudienceSpec(
+            participant_type=SampleNullableTable.__tablename__, filters=testcase.filters
+        ),
+    )
+    q = compose_query(SampleNullableTable.get_table(), testcase.chosen_n, filters)
+    query_results = db_session.execute(q).all()
+    assert list(sorted([r.id for r in query_results])) == list(
+        sorted(r.id for r in testcase.matches)
+    ), testcase
+
+
 RELATION_CASES = [
     # compound filters
     Case(
@@ -249,6 +297,16 @@ RELATION_CASES = [
         filters=[
             AudienceSpecFilter(
                 field_name="int_col",
+                relation=Relation.IS,
+                value=ROW_100.int_col,
+            )
+        ],
+        matches=[ROW_100],
+    ),
+    Case(
+        filters=[
+            AudienceSpecFilter(
+                field_name="int_col",
                 relation=Relation.INCLUDES,
                 value=[ROW_100.int_col],
             )
@@ -274,6 +332,14 @@ RELATION_CASES = [
         matches=[ROW_200, ROW_300],
     ),
     # float_col
+    Case(
+        filters=[
+            AudienceSpecFilter(
+                field_name="float_col", relation=Relation.IS, value=ROW_200.float_col
+            )
+        ],
+        matches=[ROW_200],
+    ),
     Case(
         filters=[
             AudienceSpecFilter(
@@ -457,7 +523,7 @@ def test_datetime_filter_validation():
                 field_name="x", relation=Relation.EXCLUDES, value=[123, 456]
             ),
         )
-    assert "only valid Relation on a datetime field is BETWEEN" in str(exc)
+    assert "only valid Relations on a datetime field are BETWEEN and IS" in str(exc)
 
     with pytest.raises(LateValidationError) as exc:
         create_datetime_filter(
@@ -466,7 +532,7 @@ def test_datetime_filter_validation():
                 field_name="x", relation=Relation.INCLUDES, value=[123, 456]
             ),
         )
-    assert "only valid Relation on a datetime field is BETWEEN" in str(exc)
+    assert "only valid Relations on a datetime field are BETWEEN and IS" in str(exc)
 
     with pytest.raises(LateValidationError) as exc:
         create_datetime_filter(
@@ -493,6 +559,25 @@ def test_datetime_filter_validation():
 
 def test_allowed_datetime_filter_validation():
     col = Column("x", DateTime)
+
+    create_datetime_filter(
+        col,
+        AudienceSpecFilter(
+            field_name="x",
+            relation=Relation.IS,
+            value=None,
+        ),
+    )
+
+    solo_bare_date = "2024-01-01"
+    create_datetime_filter(
+        col,
+        AudienceSpecFilter(
+            field_name="x",
+            relation=Relation.IS,
+            value=solo_bare_date,
+        ),
+    )
 
     # now without microseconds
     now = datetime.now().replace(microsecond=0)

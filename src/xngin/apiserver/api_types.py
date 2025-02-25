@@ -124,7 +124,7 @@ class DataTypeClass(enum.StrEnum):
             case DataTypeClass.DISCRETE:
                 return [Relation.INCLUDES, Relation.EXCLUDES]
             case DataTypeClass.NUMERIC:
-                return [Relation.BETWEEN]
+                return [Relation.BETWEEN, Relation.IS]
         raise ValueError(f"{self} has no valid defined relations.")
 
 
@@ -138,11 +138,14 @@ class Relation(enum.StrEnum):
     (i.e. experiment_ids), the match will fail if any of the provided values are present in the value.
 
     BETWEEN matches when the value is between the two provided values (inclusive). Not allowed for CSV fields.
+
+    IS matches when the value is equal to the provided value, or IS NULL when provided None.
     """
 
     INCLUDES = "includes"
     EXCLUDES = "excludes"
     BETWEEN = "between"
+    IS = "is"
 
 
 class AudienceSpecFilter(ApiBaseModel):
@@ -157,6 +160,8 @@ class AudienceSpecFilter(ApiBaseModel):
     | EXCLUDES | ["a", "b"]  | Match `x NOT IN ("a", "b")`    |
     | BETWEEN  | ["a", "z"]  | Match `"a" <= x <= "z"`        |
     | BETWEEN  | ["a", None] | Match `x >= "a"`               |
+    | IS       | None        | Match when `x IS NULL`         |
+    | IS       | 1.1         | Match when `x = 1.1`           |
 
     String comparisons are case-sensitive.
 
@@ -192,6 +197,10 @@ class AudienceSpecFilter(ApiBaseModel):
         | Sequence[Annotated[float, Field(strict=True, allow_inf_nan=False)] | None]
         | Sequence[str | None]
         | Sequence[bool | None]
+        | str
+        | int
+        | float
+        | None
     )
 
     @model_validator(mode="after")
@@ -237,7 +246,7 @@ class AudienceSpecFilter(ApiBaseModel):
                     "BETWEEN relation requires same values to be of the same type"
                 )
         else:
-            if not self.value:
+            if not self.value and self.relation != Relation.IS:
                 raise ValueError("value must be a non-empty list")
 
         return self
@@ -245,7 +254,7 @@ class AudienceSpecFilter(ApiBaseModel):
     @model_validator(mode="after")
     def ensure_sane_bool_list(self) -> "AudienceSpecFilter":
         """Ensures that the `value` field does not include redundant or nonsencial items."""
-        n_values = len(self.value)
+        n_values = len(self.value) if isinstance(self.value, list) else -1
         # First check if we're dealing with a list of more than one boolean:
         if n_values > 1 and all([v is None or isinstance(v, bool) for v in self.value]):
             # First two technically would also catch non-bool [None, None]

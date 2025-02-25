@@ -158,6 +158,42 @@ class WhereTable(HelpfulBase):
 WHERE_TESTCASES = [
     WhereTestCase(
         filters=[
+            AudienceSpecFilter(field_name="int_col", relation=Relation.IS, value=1),
+            AudienceSpecFilter(
+                field_name="float_col",
+                relation=Relation.IS,
+                value=None,
+            ),
+        ],
+        where={
+            DbType.SL: "tt.int_col = 1 AND tt.float_col IS NULL ORDER BY random() LIMIT 3 OFFSET 0",
+            DbType.RS: "tt.int_col = 1 AND tt.float_col IS NULL ORDER BY random()  LIMIT 3",
+            DbType.PG: "tt.int_col = 1 AND tt.float_col IS NULL ORDER BY random()  LIMIT 3",
+            DbType.BQ: "`tt`.`int_col` = 1 AND `tt`.`float_col` IS NULL ORDER BY rand() LIMIT 3",
+        },
+    ),
+    WhereTestCase(
+        filters=[
+            AudienceSpecFilter(
+                field_name="dt_col",
+                relation=Relation.IS,
+                value="2024-01-01",
+            ),
+            AudienceSpecFilter(
+                field_name="ts_col",
+                relation=Relation.IS,
+                value=None,
+            ),
+        ],
+        where={
+            DbType.SL: "tt.dt_col = '2024-01-01' AND tt.ts_col IS NULL ORDER BY random() LIMIT 3 OFFSET 0",
+            DbType.RS: "tt.dt_col = '2024-01-01' AND tt.ts_col IS NULL ORDER BY random()  LIMIT 3",
+            DbType.PG: "tt.dt_col = '2024-01-01' AND tt.ts_col IS NULL ORDER BY random()  LIMIT 3",
+            DbType.BQ: "`tt`.`dt_col` = '2024-01-01' AND `tt`.`ts_col` IS NULL ORDER BY rand() LIMIT 3",
+        },
+    ),
+    WhereTestCase(
+        filters=[
             AudienceSpecFilter(
                 field_name="dt_col",
                 relation=Relation.BETWEEN,
