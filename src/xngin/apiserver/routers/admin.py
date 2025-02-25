@@ -6,16 +6,22 @@ from typing import Annotated
 
 import google.api_core.exceptions
 import sqlalchemy
+import sqlalchemy.orm
 from fastapi import APIRouter, FastAPI, Depends, Path, Body, HTTPException
 from fastapi import Response
 from fastapi import status
-import sqlalchemy.orm
 from pydantic import BaseModel, Field, ConfigDict
 from sqlalchemy import delete, select
 from sqlalchemy.orm import Session
 
 from xngin.apiserver import flags, settings
-from xngin.apiserver.api_types import ApiBaseModel, DataType
+from xngin.apiserver.api_types import (
+    ApiBaseModel,
+    DataType,
+    GetFiltersResponseElement,
+    GetStrataResponseElement,
+    GetMetricsResponseElement,
+)
 from xngin.apiserver.apikeys import make_key, hash_key
 from xngin.apiserver.dependencies import xngin_db_session
 from xngin.apiserver.models.tables import (
@@ -25,6 +31,10 @@ from xngin.apiserver.models.tables import (
     Datasource,
     UserOrganization,
 )
+from xngin.apiserver.routers.experiments_api import (
+    generate_field_descriptors,
+    create_col_to_filter_meta_mapper,
+)
 from xngin.apiserver.routers.oidc_dependencies import require_oidc_token, TokenInfo
 from xngin.apiserver.settings import (
     RemoteDatabaseConfig,
@@ -33,6 +43,7 @@ from xngin.apiserver.settings import (
     ParticipantsDef,
     ParticipantsConfig,
     DatasourceConfig,
+    infer_table,
 )
 from xngin.schema.schema_types import ParticipantsSchema, FieldDescriptor
 
@@ -213,6 +224,14 @@ class InspectDatasourceTableResponse(ApiBaseModel):
         Field(description="Fields that are possibly candidates for unique IDs."),
     ]
     fields: Annotated[list[FieldMetadata], Field(description="Fields in the table.")]
+
+
+class InspectParticipantTypesResponse(ApiBaseModel):
+    """Describes a participant type's strata, metrics, and filters (including exemplar values)."""
+
+    filters: Annotated[list[GetFiltersResponseElement], Field()]
+    metrics: Annotated[list[GetMetricsResponseElement], Field()]
+    strata: Annotated[list[GetStrataResponseElement], Field()]
 
 
 class ListParticipantsTypeResponse(ApiBaseModel):
@@ -723,6 +742,73 @@ def create_participant_type(
     return CreateParticipantsTypeResponse(
         participant_type=participants_def.participant_type,
         schema_def=body.schema_def,
+    )
+
+
+@router.get("/datasources/{datasource_id}/participants/{participant_id}/inspect")
+def inspect_participant_types(
+    datasource_id: str,
+    participant_id: str,
+    session: Annotated[Session, Depends(xngin_db_session)],
+    user: Annotated[User, Depends(user_from_token)],
+) -> InspectParticipantTypesResponse:
+    """Returns filter, strata, and metric field metadata for a participant type, including exemplars for filter fields."""
+    dsconfig = get_datasource_or_raise(session, user, datasource_id).get_config()
+    # CannotFindParticipantsError will be handled by exceptionhandlers.
+    pconfig = dsconfig.find_participants(participant_id)
+    if pconfig.type == "sheet":
+        raise HTTPException(
+            status_code=405, detail="Sheet schemas cannot be inspected."
+        )
+
+    with dsconfig.dbsession() as session:
+        sa_table = infer_table(
+            session.get_bind(),
+            pconfig.table_name,
+            dsconfig.supports_reflection(),
+        )
+    db_schema = generate_field_descriptors(sa_table, pconfig.get_unique_id_field())
+    mapper = create_col_to_filter_meta_mapper(db_schema, sa_table, session)
+
+    filter_fields = {c.field_name: c for c in pconfig.fields if c.is_filter}
+    strata_fields = {c.field_name: c for c in pconfig.fields if c.is_strata}
+    metric_cols = {c.field_name: c for c in pconfig.fields if c.is_metric}
+
+    return InspectParticipantTypesResponse(
+        metrics=sorted(
+            [
+                GetMetricsResponseElement(
+                    data_type=db_schema.get(col_name).data_type,
+                    field_name=col_name,
+                    description=col_descriptor.description,
+                )
+                for col_name, col_descriptor in metric_cols.items()
+                if db_schema.get(col_name)
+            ],
+            key=lambda item: item.field_name,
+        ),
+        strata=sorted(
+            [
+                GetStrataResponseElement(
+                    data_type=db_schema.get(field_name).data_type,
+                    field_name=field_name,
+                    description=field_descriptor.description,
+                    # For strata columns, we will echo back any extra annotations
+                    extra=field_descriptor.extra,
+                )
+                for field_name, field_descriptor in strata_fields.items()
+                if db_schema.get(field_name)
+            ],
+            key=lambda item: item.field_name,
+        ),
+        filters=sorted(
+            [
+                mapper(field_name, field_descriptor)
+                for field_name, field_descriptor in filter_fields.items()
+                if db_schema.get(field_name)
+            ],
+            key=lambda item: item.field_name,
+        ),
     )
 
 
