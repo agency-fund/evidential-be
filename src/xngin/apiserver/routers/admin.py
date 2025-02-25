@@ -2,12 +2,13 @@
 
 import logging
 from contextlib import asynccontextmanager
+from datetime import timedelta
 from typing import Annotated
 
 import google.api_core.exceptions
 import sqlalchemy
 import sqlalchemy.orm
-from fastapi import APIRouter, FastAPI, Depends, Path, Body, HTTPException
+from fastapi import APIRouter, FastAPI, Depends, Path, Body, HTTPException, Query
 from fastapi import Response
 from fastapi import status
 from pydantic import BaseModel, Field, ConfigDict
@@ -24,6 +25,7 @@ from xngin.apiserver.api_types import (
 )
 from xngin.apiserver.apikeys import make_key, hash_key
 from xngin.apiserver.dependencies import xngin_db_session
+from xngin.apiserver.lrucache import PydanticLRUCache
 from xngin.apiserver.models.tables import (
     ApiKey,
     User,
@@ -50,6 +52,7 @@ from xngin.schema.schema_types import ParticipantsSchema, FieldDescriptor
 logger = logging.getLogger(__name__)
 
 GENERIC_SUCCESS = Response(status_code=status.HTTP_204_NO_CONTENT)
+RESPONSE_CACHE_MAX_AGE_SECONDS = timedelta(minutes=15).seconds
 
 
 def is_enabled():
@@ -745,12 +748,18 @@ def create_participant_type(
     )
 
 
+INSPECT_PARTICIPANT_TYPE_CACHE = PydanticLRUCache(
+    max_size=100, max_age=RESPONSE_CACHE_MAX_AGE_SECONDS
+)
+
+
 @router.get("/datasources/{datasource_id}/participants/{participant_id}/inspect")
 def inspect_participant_types(
     datasource_id: str,
     participant_id: str,
     session: Annotated[Session, Depends(xngin_db_session)],
     user: Annotated[User, Depends(user_from_token)],
+    refresh: Annotated[bool, Query(description="Refresh the cache.")] = False,
 ) -> InspectParticipantTypesResponse:
     """Returns filter, strata, and metric field metadata for a participant type, including exemplars for filter fields."""
     dsconfig = get_datasource_or_raise(session, user, datasource_id).get_config()
@@ -761,54 +770,59 @@ def inspect_participant_types(
             status_code=405, detail="Sheet schemas cannot be inspected."
         )
 
-    with dsconfig.dbsession() as session:
-        sa_table = infer_table(
-            session.get_bind(),
-            pconfig.table_name,
-            dsconfig.supports_reflection(),
+    def inspect_participant_types_impl():
+        with dsconfig.dbsession() as dwh_session:
+            sa_table = infer_table(
+                dwh_session.get_bind(),
+                pconfig.table_name,
+                dsconfig.supports_reflection(),
+            )
+        db_schema = generate_field_descriptors(sa_table, pconfig.get_unique_id_field())
+        mapper = create_col_to_filter_meta_mapper(db_schema, sa_table, dwh_session)
+
+        filter_fields = {c.field_name: c for c in pconfig.fields if c.is_filter}
+        strata_fields = {c.field_name: c for c in pconfig.fields if c.is_strata}
+        metric_cols = {c.field_name: c for c in pconfig.fields if c.is_metric}
+
+        return InspectParticipantTypesResponse(
+            metrics=sorted(
+                [
+                    GetMetricsResponseElement(
+                        data_type=db_schema.get(col_name).data_type,
+                        field_name=col_name,
+                        description=col_descriptor.description,
+                    )
+                    for col_name, col_descriptor in metric_cols.items()
+                    if db_schema.get(col_name)
+                ],
+                key=lambda item: item.field_name,
+            ),
+            strata=sorted(
+                [
+                    GetStrataResponseElement(
+                        data_type=db_schema.get(field_name).data_type,
+                        field_name=field_name,
+                        description=field_descriptor.description,
+                        # For strata columns, we will echo back any extra annotations
+                        extra=field_descriptor.extra,
+                    )
+                    for field_name, field_descriptor in strata_fields.items()
+                    if db_schema.get(field_name)
+                ],
+                key=lambda item: item.field_name,
+            ),
+            filters=sorted(
+                [
+                    mapper(field_name, field_descriptor)
+                    for field_name, field_descriptor in filter_fields.items()
+                    if db_schema.get(field_name)
+                ],
+                key=lambda item: item.field_name,
+            ),
         )
-    db_schema = generate_field_descriptors(sa_table, pconfig.get_unique_id_field())
-    mapper = create_col_to_filter_meta_mapper(db_schema, sa_table, session)
 
-    filter_fields = {c.field_name: c for c in pconfig.fields if c.is_filter}
-    strata_fields = {c.field_name: c for c in pconfig.fields if c.is_strata}
-    metric_cols = {c.field_name: c for c in pconfig.fields if c.is_metric}
-
-    return InspectParticipantTypesResponse(
-        metrics=sorted(
-            [
-                GetMetricsResponseElement(
-                    data_type=db_schema.get(col_name).data_type,
-                    field_name=col_name,
-                    description=col_descriptor.description,
-                )
-                for col_name, col_descriptor in metric_cols.items()
-                if db_schema.get(col_name)
-            ],
-            key=lambda item: item.field_name,
-        ),
-        strata=sorted(
-            [
-                GetStrataResponseElement(
-                    data_type=db_schema.get(field_name).data_type,
-                    field_name=field_name,
-                    description=field_descriptor.description,
-                    # For strata columns, we will echo back any extra annotations
-                    extra=field_descriptor.extra,
-                )
-                for field_name, field_descriptor in strata_fields.items()
-                if db_schema.get(field_name)
-            ],
-            key=lambda item: item.field_name,
-        ),
-        filters=sorted(
-            [
-                mapper(field_name, field_descriptor)
-                for field_name, field_descriptor in filter_fields.items()
-                if db_schema.get(field_name)
-            ],
-            key=lambda item: item.field_name,
-        ),
+    return INSPECT_PARTICIPANT_TYPE_CACHE.get(
+        f"{datasource_id}_{participant_id}", inspect_participant_types_impl, refresh
     )
 
 
