@@ -146,6 +146,7 @@ class Relation(enum.StrEnum):
     EXCLUDES = "excludes"
     BETWEEN = "between"
     IS = "is"
+    # TODO: add IS_NOT
 
 
 class AudienceSpecFilter(ApiBaseModel):

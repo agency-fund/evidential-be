@@ -224,13 +224,24 @@ def create_filter(
                 for value in filter_.value
             ])
         case Relation.EXCLUDES:
-            return or_(col.is_(None), col.not_in(filter_.value))
+            if None in filter_.value:
+                non_null_list = [v for v in filter_.value if v is not None]
+                return and_(
+                    col.is_not(sqlalchemy.null()),
+                    col.not_in(non_null_list),
+                )
+            # Else if we didn't explicitly exclude NULL, explicitly include it now
+            return or_(
+                col.is_(None),
+                col.not_in(filter_.value),
+            )
         case Relation.INCLUDES if isinstance(col.type, sqlalchemy.Boolean):
             return or_(*[
                 col.is_(value) if value is not None else col.is_(None)
                 for value in filter_.value
             ])
         case Relation.INCLUDES:
+            # TODO: allow explicitly including None/NULL
             return col.in_(filter_.value)
         case Relation.INCLUDES:
             return col.in_(filter_.value)

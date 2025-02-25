@@ -56,6 +56,7 @@ class SampleNullableTable(Base):
     bool_col = mapped_column(Boolean, nullable=True)
     int_col = mapped_column(Integer, nullable=True)
     float_col = mapped_column(Float, nullable=True)
+    string_col = mapped_column(String, nullable=True)
 
 
 @dataclass
@@ -64,6 +65,7 @@ class NullableRow:
     bool_col: bool | None
     int_col: int | None
     float_col: float | None
+    string_col: str | None
 
 
 ROW_10 = NullableRow(
@@ -71,18 +73,21 @@ ROW_10 = NullableRow(
     bool_col=None,
     int_col=None,
     float_col=1.01,
+    string_col="10",
 )
 ROW_20 = NullableRow(
     id=20,
     bool_col=True,
     int_col=1,
     float_col=2.02,
+    string_col=None,
 )
 ROW_30 = NullableRow(
     id=30,
     bool_col=False,
     int_col=3,
     float_col=None,
+    string_col="30",
 )
 SAMPLE_NULLABLE_TABLE_ROWS = [
     ROW_10,
@@ -234,6 +239,16 @@ IS_NULLABLE_CASES = [
                 field_name="float_col",
                 relation=Relation.IS,
                 value=None,
+            ),
+        ],
+        matches=[ROW_30],
+    ),
+    Case(
+        filters=[
+            AudienceSpecFilter(
+                field_name="string_col",
+                relation=Relation.EXCLUDES,
+                value=[None, "10"],
             ),
         ],
         matches=[ROW_30],

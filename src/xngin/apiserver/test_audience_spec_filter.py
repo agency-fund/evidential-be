@@ -81,6 +81,7 @@ VALID_OTHER = [
     (Relation.INCLUDES, [1, 2, 3]),
     (Relation.INCLUDES, ["a"]),
     (Relation.EXCLUDES, [1.0, 2.0, 3.0]),
+    (Relation.EXCLUDES, [None, 1]),
     (Relation.INCLUDES, [1]),
     (Relation.IS, "2020-01-01"),
     (Relation.IS, 1),
