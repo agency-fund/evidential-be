@@ -2,7 +2,7 @@
 
 import logging
 from contextlib import asynccontextmanager
-from datetime import timedelta
+from datetime import timedelta, datetime
 from typing import Annotated
 
 import google.api_core.exceptions
@@ -11,27 +11,54 @@ import sqlalchemy.orm
 from fastapi import APIRouter, FastAPI, Depends, Path, Body, HTTPException, Query
 from fastapi import Response
 from fastapi import status
-from pydantic import BaseModel, Field, ConfigDict
 from sqlalchemy import delete, select
 from sqlalchemy.orm import Session
 
 from xngin.apiserver import flags, settings
 from xngin.apiserver.api_types import (
-    ApiBaseModel,
     DataType,
-    GetFiltersResponseElement,
     GetStrataResponseElement,
     GetMetricsResponseElement,
 )
 from xngin.apiserver.apikeys import make_key, hash_key
 from xngin.apiserver.dependencies import xngin_db_session
-from xngin.apiserver.lrucache import PydanticLRUCache
 from xngin.apiserver.models.tables import (
     ApiKey,
     User,
     Organization,
     Datasource,
     UserOrganization,
+    DatasourceTablesInspected,
+    ParticipantTypesInspected,
+)
+from xngin.apiserver.routers.admin_api_types import (
+    AddMemberToOrganizationRequest,
+    ApiKeySummary,
+    CreateApiKeyRequest,
+    CreateApiKeyResponse,
+    CreateDatasourceRequest,
+    CreateDatasourceResponse,
+    CreateOrganizationRequest,
+    CreateOrganizationResponse,
+    CreateParticipantsTypeRequest,
+    CreateParticipantsTypeResponse,
+    DatasourceSummary,
+    FieldMetadata,
+    GetDatasourceResponse,
+    GetOrganizationResponse,
+    InspectDatasourceResponse,
+    InspectDatasourceTableResponse,
+    InspectParticipantTypesResponse,
+    ListApiKeysResponse,
+    ListDatasourcesResponse,
+    ListOrganizationsResponse,
+    ListParticipantsTypeResponse,
+    OrganizationSummary,
+    UpdateDatasourceRequest,
+    UpdateOrganizationRequest,
+    UpdateParticipantsTypeRequest,
+    UpdateParticipantsTypeResponse,
+    UserSummary,
 )
 from xngin.apiserver.routers.experiments_api import (
     generate_field_descriptors,
@@ -41,13 +68,10 @@ from xngin.apiserver.routers.oidc_dependencies import require_oidc_token, TokenI
 from xngin.apiserver.settings import (
     RemoteDatabaseConfig,
     SqliteLocalConfig,
-    Dwh,
     ParticipantsDef,
     ParticipantsConfig,
-    DatasourceConfig,
     infer_table,
 )
-from xngin.schema.schema_types import ParticipantsSchema, FieldDescriptor
 
 logger = logging.getLogger(__name__)
 
@@ -58,6 +82,10 @@ RESPONSE_CACHE_MAX_AGE_SECONDS = timedelta(minutes=15).seconds
 def is_enabled():
     """Feature flag: Returns true iff OIDC is enabled."""
     return flags.ENABLE_ADMIN
+
+
+def cache_is_fresh(updated: datetime):
+    return updated and datetime.now() - updated < timedelta(minutes=5)
 
 
 @asynccontextmanager
@@ -128,165 +156,6 @@ def get_datasource_or_raise(session: Session, user: User, datasource_id: str):
             status_code=status.HTTP_404_NOT_FOUND, detail="Datasource not found."
         )
     return ds
-
-
-class AdminApiBaseModel(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-
-class CreateOrganizationRequest(AdminApiBaseModel):
-    name: Annotated[str, Field(...)]
-
-
-class CreateOrganizationResponse(AdminApiBaseModel):
-    id: Annotated[str, Field(...)]
-
-
-class UpdateOrganizationRequest(AdminApiBaseModel):
-    name: Annotated[str | None, Field()] = None
-
-
-class OrganizationSummary(AdminApiBaseModel):
-    id: Annotated[str, Field(...)]
-    name: Annotated[str, Field(...)]
-
-
-class DatasourceSummary(AdminApiBaseModel):
-    id: str
-    name: str
-    driver: str
-    type: str
-    organization_id: str
-    organization_name: str
-
-
-class UserSummary(AdminApiBaseModel):
-    id: Annotated[str, Field(...)]
-    email: Annotated[str, Field(...)]
-
-
-class ListOrganizationsResponse(AdminApiBaseModel):
-    items: list[OrganizationSummary]
-
-
-class GetOrganizationResponse(AdminApiBaseModel):
-    id: Annotated[str, Field(...)]
-    name: Annotated[str, Field(...)]
-    users: list[UserSummary]
-    datasources: list[DatasourceSummary]
-
-
-class AddMemberToOrganizationRequest(AdminApiBaseModel):
-    email: Annotated[str, Field(...)]
-
-
-class ListDatasourcesResponse(AdminApiBaseModel):
-    items: list[DatasourceSummary]
-
-
-class CreateDatasourceRequest(AdminApiBaseModel):
-    organization_id: Annotated[str, Field(...)]
-    name: Annotated[str, Field(...)]
-    dwh: Dwh
-
-
-class UpdateDatasourceRequest(AdminApiBaseModel):
-    name: Annotated[str | None, Field()] = None
-    dwh: Annotated[Dwh | None, Field()] = None
-
-
-class CreateDatasourceResponse(AdminApiBaseModel):
-    id: Annotated[str, Field(...)]
-
-
-class GetDatasourceResponse(AdminApiBaseModel):
-    id: Annotated[str, Field(...)]
-    name: str
-    config: DatasourceConfig  # TODO: map this to a public type
-    organization_id: str
-    organization_name: str
-
-
-class InspectDatasourceResponse(ApiBaseModel):
-    tables: list[str]
-
-
-class FieldMetadata(ApiBaseModel):
-    """Concise summary of fields in the table."""
-
-    field_name: str
-    data_type: DataType
-    description: str
-
-
-class InspectDatasourceTableResponse(ApiBaseModel):
-    """Describes a table in the datasource."""
-
-    detected_unique_id_fields: Annotated[
-        list[str],
-        Field(description="Fields that are possibly candidates for unique IDs."),
-    ]
-    fields: Annotated[list[FieldMetadata], Field(description="Fields in the table.")]
-
-
-class InspectParticipantTypesResponse(ApiBaseModel):
-    """Describes a participant type's strata, metrics, and filters (including exemplar values)."""
-
-    filters: Annotated[list[GetFiltersResponseElement], Field()]
-    metrics: Annotated[list[GetMetricsResponseElement], Field()]
-    strata: Annotated[list[GetStrataResponseElement], Field()]
-
-
-class ListParticipantsTypeResponse(ApiBaseModel):
-    items: list[ParticipantsConfig]
-
-
-class CreateParticipantsTypeRequest(ApiBaseModel):
-    participant_type: str
-    schema_def: Annotated[ParticipantsSchema, Field()]
-
-
-class CreateParticipantsTypeResponse(ApiBaseModel):
-    participant_type: str
-    schema_def: Annotated[ParticipantsSchema, Field()]
-
-
-class UpdateParticipantsTypeRequest(ApiBaseModel):
-    participant_type: str | None = None
-    table_name: str | None = None
-    fields: list[FieldDescriptor] | None = None
-
-
-class UpdateParticipantsTypeResponse(ApiBaseModel):
-    participant_type: str
-    table_name: str
-    fields: list[FieldDescriptor]
-
-
-class ApiKeySummary(AdminApiBaseModel):
-    id: Annotated[str, Field(...)]
-    datasource_id: Annotated[str, Field(...)]
-    organization_id: Annotated[str, Field(...)]
-    organization_name: Annotated[str, Field(...)]
-
-
-class ListApiKeysResponse(AdminApiBaseModel):
-    items: list[ApiKeySummary]
-
-
-class CreateApiKeyRequest(AdminApiBaseModel):
-    datasource_id: Annotated[str, Field(...)]
-
-
-class CreateApiKeyResponse(AdminApiBaseModel):
-    id: Annotated[str, Field(...)]
-    datasource_id: Annotated[str, Field(...)]
-    key: Annotated[str, Field(...)]
-
-
-class CreateUserRequest(AdminApiBaseModel):
-    email: Annotated[str, Field(...)]
-    organization_id: Annotated[str, Field(...)]
 
 
 @router.get("/caller-identity")
@@ -566,8 +435,7 @@ def create_datasource(
 
     config = RemoteDatabaseConfig(participants=[], type="remote", dwh=body.dwh)
 
-    datasource = Datasource(name=body.name, organization_id=org.id)
-    datasource.set_config(config)
+    datasource = Datasource(name=body.name, organization_id=org.id).set_config(config)
     session.add(datasource)
     session.commit()
 
@@ -587,7 +455,18 @@ def update_datasource(
     if body.dwh is not None:
         cfg = ds.get_config()
         cfg.dwh = body.dwh
+
+        # Invalidate cached inspections.
         ds.set_config(cfg)
+        ds.clear_table_list()
+        invalidate_inspect_tables = delete(DatasourceTablesInspected).where(
+            DatasourceTablesInspected.datasource_id == datasource_id
+        )
+        invalidate_inspect_ptype = delete(ParticipantTypesInspected).where(
+            ParticipantTypesInspected.datasource_id == datasource_id
+        )
+        session.execute(invalidate_inspect_tables)
+        session.execute(invalidate_inspect_ptype)
     session.commit()
     return GENERIC_SUCCESS
 
@@ -615,20 +494,31 @@ def inspect_datasource(
     datasource_id: str,
     user: Annotated[User, Depends(user_from_token)],
     session: Annotated[Session, Depends(xngin_db_session)],
+    refresh: Annotated[bool, Query(description="Refresh the cache.")] = False,
 ) -> InspectDatasourceResponse:
     """Verifies connectivity to a datasource and returns a list of readable tables."""
     ds = get_datasource_or_raise(session, user, datasource_id)
+    if not refresh and cache_is_fresh(ds.table_list_updated):
+        return InspectDatasourceResponse(tables=ds.table_list)
     try:
-        config = ds.get_config()
-        metadata = sqlalchemy.MetaData()
-        metadata.reflect(config.dbengine())
-        tables = list(sorted(metadata.tables.keys()))
-        return InspectDatasourceResponse(tables=tables)
-    except google.api_core.exceptions.NotFound as exc:
-        # Google returns a 404 when authentication succeeds but when the specified datasource does not exist.
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)
-        ) from exc
+        try:
+            config = ds.get_config()
+            inspected = sqlalchemy.inspect(config.dbengine())
+            tables = list(
+                sorted(inspected.get_table_names() + inspected.get_view_names())
+            )
+            ds.set_table_list(tables)
+            session.commit()
+            return InspectDatasourceResponse(tables=tables)
+        except google.api_core.exceptions.NotFound as exc:
+            # Google returns a 404 when authentication succeeds but when the specified datasource does not exist.
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)
+            ) from exc
+    except:
+        ds.clear_table_list()
+        session.commit()
+        raise
 
 
 def create_inspect_table_response_from_table(table: sqlalchemy.Table):
@@ -662,23 +552,56 @@ def create_inspect_table_response_from_table(table: sqlalchemy.Table):
     )
 
 
+def invalidate_inspect_table_cache(session, datasource_id):
+    """Invalidates all table inspection cache entries for a datasource."""
+    session.execute(
+        delete(DatasourceTablesInspected).where(
+            DatasourceTablesInspected.datasource_id == datasource_id
+        )
+    )
+
+
 @router.get("/datasources/{datasource_id}/inspect/{table_name}")
 def inspect_table_in_datasource(
     datasource_id: str,
     table_name: str,
     user: Annotated[User, Depends(user_from_token)],
     session: Annotated[Session, Depends(xngin_db_session)],
+    refresh: Annotated[bool, Query(description="Refresh the cache.")] = False,
 ) -> InspectDatasourceTableResponse:
     """Inspects a single table in a datasource and returns a summary of its fields."""
     ds = get_datasource_or_raise(session, user, datasource_id)
+    if (
+        not refresh
+        and (
+            cached := session.get(
+                DatasourceTablesInspected, (datasource_id, table_name)
+            )
+        )
+        and cache_is_fresh(cached.response_last_updated)
+    ):
+        return cached.get_response()
+
     config = ds.get_config()
+
+    invalidate_inspect_table_cache(session, datasource_id)
+    session.commit()
+
     engine = config.dbengine()
     # CannotFindTableError will be handled by exceptionhandlers.py.
-    try:
-        table = settings.infer_table(engine, table_name, use_reflection=False)
-    except sqlalchemy.exc.ProgrammingError:
-        table = settings.infer_table(engine, table_name, use_reflection=True)
-    return create_inspect_table_response_from_table(table)
+    table = settings.infer_table(
+        engine, table_name, use_reflection=config.supports_reflection()
+    )
+    response = create_inspect_table_response_from_table(table)
+
+    session.add(
+        DatasourceTablesInspected(
+            datasource_id=datasource_id, table_name=table_name
+        ).set_response(response)
+    )
+    session.commit()
+
+    return response
 
 
 @router.delete("/datasources/{datasource_id}", status_code=status.HTTP_204_NO_CONTENT)
@@ -748,11 +671,6 @@ def create_participant_type(
     )
 
 
-INSPECT_PARTICIPANT_TYPE_CACHE = PydanticLRUCache(
-    max_size=100, max_age=RESPONSE_CACHE_MAX_AGE_SECONDS
-)
-
-
 @router.get("/datasources/{datasource_id}/participants/{participant_id}/inspect")
 def inspect_participant_types(
     datasource_id: str,
@@ -769,6 +687,25 @@ def inspect_participant_types(
         raise HTTPException(
             status_code=405, detail="Sheet schemas cannot be inspected."
         )
+
+    if (
+        not refresh
+        and (
+            cached := session.get(
+                ParticipantTypesInspected, (datasource_id, participant_id)
+            )
+        )
+        and cache_is_fresh(cached.response_last_updated)
+    ):
+        return cached.get_response()
+
+    session.execute(
+        delete(ParticipantTypesInspected).where(
+            ParticipantTypesInspected.datasource_id == datasource_id,
+            ParticipantTypesInspected.participant_type == participant_id,
+        )
+    )
+    session.commit()
 
     def inspect_participant_types_impl():
         with dsconfig.dbsession() as dwh_session:
@@ -821,9 +758,16 @@ def inspect_participant_types(
             ),
         )
 
-    return INSPECT_PARTICIPANT_TYPE_CACHE.get(
-        f"{datasource_id}_{participant_id}", inspect_participant_types_impl, refresh
+    response = inspect_participant_types_impl()
+
+    session.add(
+        ParticipantTypesInspected(
+            datasource_id=datasource_id, participant_type=participant_id
+        ).set_response(response)
     )
+    session.commit()
+
+    return response
 
 
 @router.get("/datasources/{datasource_id}/participants/{participant_id}")
@@ -865,6 +809,15 @@ def update_participant_type(
         participant.fields = body.fields
     config.participants.append(participant)
     ds.set_config(config)
+
+    # Invalidate the participant types cached inspections because the configuration may have been updated and they may
+    # be stale.
+    session.execute(
+        delete(ParticipantTypesInspected).where(
+            ParticipantTypesInspected.datasource_id == datasource_id,
+            ParticipantTypesInspected.participant_type == participant_id,
+        )
+    )
     session.commit()
     return UpdateParticipantsTypeResponse(
         participant_type=participant.participant_type,
