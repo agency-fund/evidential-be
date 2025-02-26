@@ -478,6 +478,7 @@ class MetricAnalysis(ApiBaseModel):
         int | None,
         Field(description="Minimum sample size needed to meet the design specs."),
     ] = None
+
     sufficient_n: Annotated[
         bool | None,
         Field(
@@ -491,6 +492,7 @@ class MetricAnalysis(ApiBaseModel):
             description="If there is an insufficient sample size to meet the desired metric_target, we report what is possible given the available_n. This value is equivalent to the relative pct_change_possible. This is None when there is a sufficient sample size to detect the desired change."
         ),
     ] = None
+
     pct_change_possible: Annotated[
         float | None,
         Field(
@@ -559,6 +561,16 @@ class Assignment(ApiBaseModel):
         ),
     ]
 
+class ExperimentAnalysis(ApiBaseModel):
+    arm_ids: list[uuid.UUID]
+    coefficients: list[float]
+    pvalues: list[float]
+    tstats: list[float]
+
+class ParticipantOutcome(ApiBaseModel):
+    participant_id: str
+    metric_spec: DesignSpecMetric
+    metric_value: float
 
 class BalanceCheck(ApiBaseModel):
     """Describes balance test results for treatment assignment."""
@@ -584,7 +596,6 @@ class AssignResponse(ApiBaseModel):
         ),
     ]
     assignments: list[Assignment]
-
 
 class GetStrataResponseElement(ApiBaseModel):
     """Describes a stratification variable."""
