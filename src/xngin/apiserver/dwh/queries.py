@@ -206,22 +206,21 @@ def create_datetime_filter(
             return col.is_(sqlalchemy.null())
         return col == filter_.value
 
+    parsed_values = list(map(str_to_datetime, filter_.value))
     if filter_.relation == Relation.EXCLUDES:
-        parsed_values = list(map(str_to_datetime, filter_.value))
         return general_excludes_filter(col, parsed_values)
 
     if filter_.relation == Relation.INCLUDES:
-        parsed_values = list(map(str_to_datetime, filter_.value))
         return sqlalchemy.not_(general_excludes_filter(col, parsed_values))
 
     # Else it's Relation.BETWEEN:
-    match filter_.value:
+    match parsed_values:
         case (left, None):
-            return col >= str_to_datetime(left)
+            return col >= left
         case (None, right):
-            return col <= str_to_datetime(right)
+            return col <= right
         case (left, right):
-            return col.between(str_to_datetime(left), str_to_datetime(right))
+            return col.between(left, right)
     raise RuntimeError("Bug: invalid AudienceSpecFilter.")
 
 

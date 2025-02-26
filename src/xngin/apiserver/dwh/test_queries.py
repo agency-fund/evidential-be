@@ -258,6 +258,24 @@ IS_NULLABLE_CASES = [
     Case(
         filters=[
             AudienceSpecFilter(
+                field_name="bool_col", relation=Relation.EXCLUDES, value=[True]
+            )
+        ],
+        matches=[ROW_10, ROW_30],
+    ),
+    Case(
+        filters=[
+            AudienceSpecFilter(
+                field_name="bool_col",
+                relation=Relation.EXCLUDES,
+                value=[False, None],
+            )
+        ],
+        matches=[ROW_20],
+    ),
+    Case(
+        filters=[
+            AudienceSpecFilter(
                 field_name="int_col",
                 relation=Relation.EXCLUDES,
                 value=[None],
@@ -280,7 +298,7 @@ IS_NULLABLE_CASES = [
             AudienceSpecFilter(
                 field_name="string_col",
                 relation=Relation.EXCLUDES,
-                value=[None, "10"],
+                value=[None, ROW_10.string_col],
             ),
         ],
         matches=[ROW_30],
@@ -311,12 +329,30 @@ IS_NULLABLE_CASES = [
             AudienceSpecFilter(
                 field_name="float_col",
                 relation=Relation.EXCLUDES,
-                value=[1.01],
+                value=[ROW_10.float_col],
             ),
         ],
         matches=[ROW_20, ROW_30],
     ),
     # verify INCLUDES
+    Case(
+        filters=[
+            AudienceSpecFilter(
+                field_name="bool_col", relation=Relation.INCLUDES, value=[False]
+            )
+        ],
+        matches=[ROW_30],
+    ),
+    Case(
+        filters=[
+            AudienceSpecFilter(
+                field_name="bool_col",
+                relation=Relation.INCLUDES,
+                value=[True, None],
+            )
+        ],
+        matches=[ROW_10, ROW_20],
+    ),
     Case(
         filters=[
             AudienceSpecFilter(
@@ -342,7 +378,7 @@ IS_NULLABLE_CASES = [
             AudienceSpecFilter(
                 field_name="string_col",
                 relation=Relation.INCLUDES,
-                value=[None, "10"],
+                value=[None, ROW_10.string_col],
             ),
         ],
         matches=[ROW_10, ROW_20],
@@ -570,62 +606,6 @@ def test_relations(testcase, db_session, use_deterministic_random):
         ),
     )
     q = compose_query(SampleTable.get_table(), testcase.chosen_n, filters)
-    query_results = db_session.execute(q).all()
-    assert list(sorted([r.id for r in query_results])) == list(
-        sorted(r.id for r in testcase.matches)
-    ), testcase
-
-
-@pytest.mark.parametrize(
-    "testcase",
-    [
-        # Test exclusions
-        Case(
-            filters=[
-                AudienceSpecFilter(
-                    field_name="bool_col", relation=Relation.EXCLUDES, value=[True]
-                )
-            ],
-            matches=[ROW_10, ROW_30],
-        ),
-        Case(
-            filters=[
-                AudienceSpecFilter(
-                    field_name="bool_col",
-                    relation=Relation.EXCLUDES,
-                    value=[False, None],
-                )
-            ],
-            matches=[ROW_20],
-        ),
-        # Test inclusions
-        Case(
-            filters=[
-                AudienceSpecFilter(
-                    field_name="bool_col", relation=Relation.INCLUDES, value=[False]
-                )
-            ],
-            matches=[ROW_30],
-        ),
-        Case(
-            filters=[
-                AudienceSpecFilter(
-                    field_name="bool_col",
-                    relation=Relation.INCLUDES,
-                    value=[True, None],
-                )
-            ],
-            matches=[ROW_10, ROW_20],
-        ),
-    ],
-)
-def test_booleans(testcase, db_session):
-    table = SampleNullableTable.get_table()
-    filters = create_query_filters_from_spec(
-        table,
-        AudienceSpec(participant_type=table.name, filters=testcase.filters),
-    )
-    q = compose_query(table, testcase.chosen_n, filters)
     query_results = db_session.execute(q).all()
     assert list(sorted([r.id for r in query_results])) == list(
         sorted(r.id for r in testcase.matches)
