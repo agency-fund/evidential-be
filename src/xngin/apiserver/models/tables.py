@@ -12,6 +12,7 @@ from sqlalchemy.types import TypeEngine
 from sqlalchemy.dialects import postgresql
 from sqlalchemy.orm import DeclarativeBase, mapped_column, Mapped, relationship
 
+from xngin.apiserver.api_types import DesignSpec
 from xngin.apiserver.routers.admin_api_types import (
     InspectDatasourceTableResponse,
     InspectParticipantTypesResponse,
@@ -37,7 +38,6 @@ class Base(DeclarativeBase):
         # For pg specifically, use the binary form
         sqlalchemy.JSON: JSONBetter,
         datetime: sqlalchemy.TIMESTAMP(timezone=True),
-        # uuid.UUID: sqlalchemy.Uuid().with_variant(sqlalchemy.Uuid(as_uuid=False), "sqlite"),
     }
 
     def to_dict(self):
@@ -258,23 +258,19 @@ class ArmAssignment(Base):
 
     __tablename__ = "arm_assignments"
 
-    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
     experiment_id: Mapped[uuid.UUID] = mapped_column(
-        sqlalchemy.Uuid(), ForeignKey("experiments.id", ondelete="CASCADE")
+        sqlalchemy.Uuid(),
+        ForeignKey("experiments.id", ondelete="CASCADE"),
+        primary_key=True,
     )
+    participant_id: Mapped[str] = mapped_column(String(255), primary_key=True)
     participant_type: Mapped[str] = mapped_column(String(255))
-    participant_id: Mapped[str] = mapped_column(String(255))
     arm_id: Mapped[uuid.UUID] = mapped_column(sqlalchemy.Uuid())
-    strata: Mapped[sqlalchemy.JSON]
+    strata: Mapped[sqlalchemy.JSON] = mapped_column(
+        comment="JSON serialized form of a list of Strata objects (from Assignment.strata)."
+    )
 
     experiment: Mapped["Experiment"] = relationship(back_populates="arm_assignments")
-
-    # A participant should only be assigned to one arm ever per experiment.
-    __table_args__ = (
-        sqlalchemy.UniqueConstraint(
-            "experiment_id", "participant_id", name="uniq_participant"
-        ),
-    )
 
 
 class Experiment(Base):
@@ -287,12 +283,25 @@ class Experiment(Base):
         String(255)
     )  # TODO: setup a proper relation on Datasource
     state: Mapped[ExperimentState]
+    start_date: Mapped[datetime] = mapped_column(
+        comment="Target start date of the experiment. Denormalized from design_spec."
+    )
+    end_date: Mapped[datetime] = mapped_column(
+        comment="Target end date of the experiment. Denormalized from design_spec."
+    )
     # We presume updates to descriptions/names/times won't happen frequently.
-    # TODO: set up a GIN index if using postgres. Or, denormalize start_date/end_date/description/other editable fields. Build index on fields needed for pagination and filtering.
-    design_spec: Mapped[sqlalchemy.JSON]
-    audience_spec: Mapped[sqlalchemy.JSON]
-    # TODO: store power analysis json
-    assign_summary: Mapped[sqlalchemy.JSON]
+    design_spec: Mapped[sqlalchemy.JSON] = mapped_column(
+        comment="JSON serialized form of DesignSpec."
+    )
+    audience_spec: Mapped[sqlalchemy.JSON] = mapped_column(
+        comment="JSON serialized form of AudienceSpec."
+    )
+    power_analyses: Mapped[sqlalchemy.JSON | None] = mapped_column(
+        comment="JSON serialized form of a PowerResponse. Not required since some experiments may not have data to run power analyses."
+    )
+    assign_summary: Mapped[sqlalchemy.JSON] = mapped_column(
+        comment="JSON serialized form of AssignSummary."
+    )
     created_at: Mapped[datetime] = mapped_column(
         server_default=sqlalchemy.sql.func.now()
     )
@@ -303,3 +312,7 @@ class Experiment(Base):
     arm_assignments: Mapped[list["ArmAssignment"]] = relationship(
         back_populates="experiment", cascade="all, delete-orphan"
     )
+
+    def get_design_spec(self) -> DesignSpec:
+        """Deserializes design_spec into a DesignSpec."""
+        return TypeAdapter(DesignSpec).validate_python(self.design_spec)

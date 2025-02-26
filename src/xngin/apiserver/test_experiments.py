@@ -16,7 +16,13 @@ from xngin.apiserver.api_types import (
     AudienceSpec,
     BalanceCheck,
     DesignSpec,
+    DesignSpecMetric,
     DesignSpecMetricRequest,
+    MetricAnalysis,
+    MetricAnalysisMessage,
+    MetricAnalysisMessageType,
+    MetricType,
+    PowerResponse,
 )
 from xngin.apiserver.dependencies import xngin_db_session
 from xngin.apiserver.main import app
@@ -24,6 +30,7 @@ from xngin.apiserver.models.tables import ArmAssignment, Experiment, ExperimentS
 from xngin.apiserver.routers.experiments import (
     AssignSummary,
     CreateExperimentRequest,
+    ExperimentConfig,
     ListExperimentsResponse,
 )
 
@@ -109,8 +116,32 @@ def make_insert_experiment(state: ExperimentState, datasource_id="testing"):
         id=request.design_spec.experiment_id,
         datasource_id=datasource_id,
         state=state,
+        start_date=request.design_spec.start_date,
+        end_date=request.design_spec.end_date,
         design_spec=to_jsonable_python(request.design_spec),
         audience_spec=request.audience_spec.model_dump(),
+        power_analyses=PowerResponse(
+            analyses=[
+                MetricAnalysis(
+                    metric_spec=DesignSpecMetric(
+                        field_name="is_onboarded",
+                        metric_type=MetricType.BINARY,
+                        metric_baseline=0.5,
+                        metric_pct_change=0.1,
+                        available_nonnull_n=1000,
+                        available_n=1200,
+                    ),
+                    target_n=800,
+                    sufficient_n=True,
+                    msg=MetricAnalysisMessage(
+                        type=MetricAnalysisMessageType.SUFFICIENT,
+                        msg="Sample size is sufficient to detect the target effect",
+                        source_msg="Sample size of {available_n} is sufficient to detect {target} effect",
+                        values={"available_n": 1200, "target": 0.1},
+                    ),
+                )
+            ]
+        ).model_dump(),
         assign_summary=AssignSummary(
             sample_size=100,
             balance_check=BalanceCheck(
@@ -147,17 +178,22 @@ def test_create_experiment_with_assignment(
     assert assign_summary["balance_check"]["balance_ok"] is True, assign_summary[
         "balance_check"
     ]
+    # Check if the representations are equivalent
+    config = ExperimentConfig.model_validate(experiment_config)
+    assert config.design_spec == request.design_spec
+    assert config.audience_spec == request.audience_spec
+    assert config.power_analyses == request.power_analyses
 
+    experiment_id = config.design_spec.experiment_id
+    (arm1_id, arm2_id) = [arm.arm_id for arm in config.design_spec.arms]
     # Verify database state using the ids in the returned DesignSpec.
-    experiment_id = uuid.UUID(experiment_config["design_spec"]["experiment_id"])
-    (arm1_id, arm2_id) = [
-        uuid.UUID(arm["arm_id"]) for arm in experiment_config["design_spec"]["arms"]
-    ]
     experiment = db_session.scalars(
         select(Experiment).where(Experiment.id == experiment_id)
     ).one()
     assert experiment.state == ExperimentState.ASSIGNED
     assert experiment.datasource_id == "testing"
+    assert experiment.start_date == request.design_spec.start_date
+    assert experiment.end_date == request.design_spec.end_date
 
     assignments = db_session.scalars(
         select(ArmAssignment).where(ArmAssignment.experiment_id == experiment_id)
@@ -212,10 +248,6 @@ def test_commit_experiment(db_session: Session):
 
 
 def test_list_experiments(db_session: Session):
-    # Delete any existing experiments, since other tests may have inserted some.
-    db_session.query(Experiment).delete()
-    db_session.commit()
-
     experiment1 = make_insert_experiment(
         ExperimentState.ASSIGNED, datasource_id="testing"
     )

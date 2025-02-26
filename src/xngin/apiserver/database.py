@@ -2,7 +2,6 @@ import os
 import sqlite3
 from pathlib import Path
 
-import sqlalchemy
 from sqlalchemy import create_engine, event
 from sqlalchemy.engine.interfaces import DBAPIConnection
 from sqlalchemy.orm import sessionmaker
@@ -50,11 +49,6 @@ engine = create_engine(
     connect_args=get_connect_args(),
     echo=flags.ECHO_SQL,
 )
-inspector = sqlalchemy.inspect(engine)
-print(f"DATABASE: {SQLALCHEMY_DATABASE_URL} tables: {inspector.get_table_names()}")
-with engine.connect() as conn:
-    result = conn.execute(sqlalchemy.text("SELECT * FROM experiments LIMIT 1"))
-    print(f"experiments table: ({result.fetchall()})")
 
 
 @event.listens_for(engine, "connect")

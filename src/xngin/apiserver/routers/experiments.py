@@ -3,7 +3,6 @@ from typing import Annotated
 import uuid
 
 from pydantic import BaseModel, ConfigDict, Field
-from pydantic_core import to_jsonable_python
 from fastapi import (
     APIRouter,
     FastAPI,
@@ -21,6 +20,7 @@ from xngin.apiserver.api_types import (
     AudienceSpec,
     BalanceCheck,
     DesignSpec,
+    PowerResponse,
     Strata,
 )
 from xngin.apiserver.dependencies import (
@@ -62,6 +62,7 @@ class ExperimentsBaseModel(BaseModel):
 class CreateExperimentRequest(ExperimentsBaseModel):
     design_spec: DesignSpec
     audience_spec: AudienceSpec
+    power_analyses: PowerResponse | None = None
 
 
 class AssignSummary(ExperimentsBaseModel):
@@ -80,9 +81,8 @@ class ExperimentConfig(ExperimentsBaseModel):
     ]
     design_spec: DesignSpec
     audience_spec: AudienceSpec
+    power_analyses: PowerResponse | None
     assign_summary: AssignSummary
-    # created_at: datetime.datetime
-    # updated_at: datetime.datetime
 
 
 class CreateExperimentWithAssignmentResponse(ExperimentConfig):
@@ -160,11 +160,15 @@ def create_experiment_with_assignment(
             id=body.design_spec.experiment_id,
             datasource_id=datasource.id,
             state=ExperimentState.ASSIGNED,
-            # TODO? just use @field_serializer in design_spec always for uuids and datetimes?
-            design_spec=to_jsonable_python(body.design_spec),
-            audience_spec=body.audience_spec.model_dump(),
-            assign_summary=assign_summary.model_dump(),
-        )
+            start_date=body.design_spec.start_date,
+            end_date=body.design_spec.end_date,
+            design_spec=body.design_spec.model_dump(mode="json"),
+            audience_spec=body.audience_spec.model_dump(mode="json"),
+            power_analyses=body.power_analyses.model_dump(mode="json")
+            if body.power_analyses
+            else None,
+            assign_summary=assign_summary.model_dump(mode="json"),
+        )  # .set_design_spec(body.design_spec)
         xngin_session.add(experiment)
 
         # Create assignment records
@@ -175,18 +179,19 @@ def create_experiment_with_assignment(
                 participant_type=body.audience_spec.participant_type,
                 participant_id=assignment.participant_id,
                 arm_id=assignment.arm_id,
-                strata=[s.model_dump() for s in assignment.strata],
+                strata=[s.model_dump(mode="json") for s in assignment.strata],
             )
             xngin_session.add(db_assignment)
 
         xngin_session.commit()
 
-    # TODO: backfill server-side-generated uuids
+    # TODO: generate uuids here instead of trusting  the client request
     return CreateExperimentWithAssignmentResponse(
         datasource_id=datasource.id,
         state=experiment.state,
         design_spec=experiment.design_spec,
         audience_spec=experiment.audience_spec,
+        power_analyses=experiment.power_analyses,
         assign_summary=assign_summary,
     )
 
@@ -253,6 +258,7 @@ def list_experiments(
                 state=e.state,
                 design_spec=e.design_spec,
                 audience_spec=e.audience_spec,
+                power_analyses=e.power_analyses,
                 assign_summary=e.assign_summary,
             )
             for e in experiments
@@ -275,6 +281,7 @@ def get_experiment(
         state=experiment.state,
         design_spec=experiment.design_spec,
         audience_spec=experiment.audience_spec,
+        power_analyses=experiment.power_analyses,
         assign_summary=experiment.assign_summary,
     )
 
