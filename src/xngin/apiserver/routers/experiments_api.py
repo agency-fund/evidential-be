@@ -84,7 +84,7 @@ class CommonQueryParams:
         self.refresh = refresh
 
 
-def _get_participants_config_and_schema(
+def get_participants_config_and_schema(
     commons: CommonQueryParams,
     datasource_config: ParticipantsMixin,
     gsheets: GSheetCache,
@@ -112,7 +112,7 @@ def get_strata(
     config: Annotated[DatasourceConfig, Depends(datasource_config_required)],
 ) -> GetStrataResponse:
     """Get possible strata covariates for a given unit type."""
-    participants_cfg, schema = _get_participants_config_and_schema(
+    participants_cfg, schema = get_participants_config_and_schema(
         commons, config, gsheets
     )
     strata_fields = {c.field_name: c for c in schema.fields if c.is_strata}
@@ -153,7 +153,7 @@ def get_filters(
     gsheets: Annotated[GSheetCache, Depends(gsheet_cache)],
     config: Annotated[DatasourceConfig, Depends(datasource_config_required)],
 ) -> GetFiltersResponse:
-    participants_cfg, schema = _get_participants_config_and_schema(
+    participants_cfg, schema = get_participants_config_and_schema(
         commons, config, gsheets
     )
     filter_fields = {c.field_name: c for c in schema.fields if c.is_filter}
@@ -238,7 +238,7 @@ def get_metrics(
     config: Annotated[DatasourceConfig, Depends(datasource_config_required)],
 ) -> GetMetricsResponse:
     """Get possible metrics for a given unit type."""
-    participants_cfg, schema = _get_participants_config_and_schema(
+    participants_cfg, schema = get_participants_config_and_schema(
         commons, config, gsheets
     )
     metric_cols = {c.field_name: c for c in schema.fields if c.is_metric}
@@ -293,7 +293,7 @@ def powercheck(
     commons = CommonQueryParams(
         participant_type=body.audience_spec.participant_type, refresh=refresh
     )
-    participants_cfg, schema = _get_participants_config_and_schema(
+    participants_cfg, schema = get_participants_config_and_schema(
         commons, config, gsheets
     )
     _validate_schema_metrics(body.design_spec, schema)
@@ -346,13 +346,13 @@ def assign_treatment(
     commons = CommonQueryParams(
         participant_type=body.audience_spec.participant_type, refresh=refresh
     )
-    participants_cfg, schema = _get_participants_config_and_schema(
+    participants_cfg, schema = get_participants_config_and_schema(
         commons, config, gsheets
     )
     _validate_schema_metrics(body.design_spec, schema)
 
     with config.dbsession() as session:
-        return _do_assignment(
+        return do_assignment(
             session=session,
             participant=participants_cfg,
             supports_reflection=config.supports_reflection(),
@@ -363,7 +363,7 @@ def assign_treatment(
         )
 
 
-def _do_assignment(
+def do_assignment(
     session: Session,
     participant: ParticipantsConfig,
     supports_reflection: bool,
