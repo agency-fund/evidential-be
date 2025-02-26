@@ -234,31 +234,13 @@ def test_execute_query_without_filters(compiler):
 
 
 IS_NULLABLE_CASES = [
-    Case(
-        filters=[
-            AudienceSpecFilter(
-                field_name="int_col",
-                relation=Relation.IS,
-                value=None,
-            ),
-        ],
-        matches=[ROW_10],
-    ),
-    Case(
-        filters=[
-            AudienceSpecFilter(
-                field_name="float_col",
-                relation=Relation.IS,
-                value=None,
-            ),
-        ],
-        matches=[ROW_30],
-    ),
     # Verify EXCLUDES
     Case(
         filters=[
             AudienceSpecFilter(
-                field_name="bool_col", relation=Relation.EXCLUDES, value=[True]
+                field_name="bool_col",
+                relation=Relation.EXCLUDES,
+                value=[True],
             )
         ],
         matches=[ROW_10, ROW_30],
@@ -451,16 +433,6 @@ RELATION_CASES = [
         filters=[
             AudienceSpecFilter(
                 field_name="int_col",
-                relation=Relation.IS,
-                value=ROW_100.int_col,
-            )
-        ],
-        matches=[ROW_100],
-    ),
-    Case(
-        filters=[
-            AudienceSpecFilter(
-                field_name="int_col",
                 relation=Relation.INCLUDES,
                 value=[ROW_100.int_col],
             )
@@ -486,14 +458,6 @@ RELATION_CASES = [
         matches=[ROW_200, ROW_300],
     ),
     # float_col
-    Case(
-        filters=[
-            AudienceSpecFilter(
-                field_name="float_col", relation=Relation.IS, value=ROW_200.float_col
-            )
-        ],
-        matches=[ROW_200],
-    ),
     Case(
         filters=[
             AudienceSpecFilter(
@@ -649,25 +613,6 @@ def test_datetime_filter_validation():
 
 def test_allowed_datetime_filter_validation():
     col = Column("x", DateTime)
-
-    create_datetime_filter(
-        col,
-        AudienceSpecFilter(
-            field_name="x",
-            relation=Relation.IS,
-            value=None,
-        ),
-    )
-
-    solo_bare_date = "2024-01-01"
-    create_datetime_filter(
-        col,
-        AudienceSpecFilter(
-            field_name="x",
-            relation=Relation.IS,
-            value=solo_bare_date,
-        ),
-    )
 
     create_datetime_filter(
         col,

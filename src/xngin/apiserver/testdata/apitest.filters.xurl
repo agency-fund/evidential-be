@@ -12,7 +12,6 @@ HTTP 200
       "min": 9778.910653027706,
       "relations": [
         "between",
-        "is",
         "excludes",
         "includes"
       ]
@@ -25,7 +24,6 @@ HTTP 200
       "min": 8466.284540241537,
       "relations": [
         "between",
-        "is",
         "excludes",
         "includes"
       ]
@@ -68,7 +66,6 @@ HTTP 200
       "min": 0,
       "relations": [
         "between",
-        "is",
         "excludes",
         "includes"
       ]
@@ -81,7 +78,6 @@ HTTP 200
       "min": 0,
       "relations": [
         "between",
-        "is",
         "excludes",
         "includes"
       ]
@@ -94,7 +90,6 @@ HTTP 200
       "min": 1,
       "relations": [
         "between",
-        "is",
         "excludes",
         "includes"
       ]
@@ -107,7 +102,6 @@ HTTP 200
       "min": 0,
       "relations": [
         "between",
-        "is",
         "excludes",
         "includes"
       ]
@@ -120,7 +114,6 @@ HTTP 200
       "min": 0,
       "relations": [
         "between",
-        "is",
         "excludes",
         "includes"
       ]

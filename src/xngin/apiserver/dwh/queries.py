@@ -201,11 +201,6 @@ def create_datetime_filter(
             f"{col.name}: datetime-type filter values must be in UTC, or not be tagged with an explicit timezone: {s}"
         )
 
-    if filter_.relation == Relation.IS:
-        if filter_.value is None:
-            return col.is_(sqlalchemy.null())
-        return col == filter_.value
-
     parsed_values = list(map(str_to_datetime, filter_.value))
     if filter_.relation == Relation.EXCLUDES:
         return general_excludes_filter(col, parsed_values)
@@ -251,10 +246,6 @@ def create_filter(
             ])
         case Relation.INCLUDES:
             return sqlalchemy.not_(general_excludes_filter(col, filter_.value))
-        case Relation.IS:
-            if filter_.value is None:
-                return col.is_(sqlalchemy.null())
-            return col == filter_.value
     raise RuntimeError("Bug: invalid AudienceSpecFilter.")
 
 
