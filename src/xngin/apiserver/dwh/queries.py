@@ -157,6 +157,8 @@ def make_csv_regex(values):
 def general_excludes_filter(col: sqlalchemy.Column, value: list[FilterValueTypes]):
     if None in value:
         non_null_list = [v for v in value if v is not None]
+        if len(non_null_list) == 0:
+            return col.is_not(sqlalchemy.null())
         return and_(
             col.is_not(sqlalchemy.null()),
             col.not_in(non_null_list),

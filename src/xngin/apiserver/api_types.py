@@ -165,16 +165,17 @@ class AudienceSpecFilter(ApiBaseModel):
 
     ## Examples
 
-    | Relation | Value       | logical Result                                |
-    |----------|-------------|-----------------------------------------------|
-    | INCLUDES | [None]      | Match when `x IS NULL`                        |
-    | INCLUDES | ["a"]       | Match when `x IN ("a")`                       |
-    | INCLUDES | ["a", "b"]  | Match when `x IN ("a", "b")`                  |
-    | EXCLUDES | [None]      | Match `x IS NOT NULL`                         |
-    | EXCLUDES | ["a", None] | Match `x IS NOT NULL AND x NOT IN ("a", "b")` |
-    | EXCLUDES | ["a", "b"]  | Match `x IS NULL OR (x NOT IN ("a", "b"))`    |
-    | BETWEEN  | ["a", "z"]  | Match `"a" <= x <= "z"`                       |
-    | BETWEEN  | ["a", None] | Match `x >= "a"`                              |
+    | Relation | Value       | logical Result                                    |
+    |----------|-------------|---------------------------------------------------|
+    | INCLUDES | [None]      | Match when `x IS NULL`                            |
+    | INCLUDES | ["a"]       | Match when `x IN ("a")`                           |
+    | INCLUDES | ["a", None] | Match when `x IS NULL OR x IN ("a")`              |
+    | INCLUDES | ["a", "b"]  | Match when `x IN ("a", "b")`                      |
+    | EXCLUDES | [None]      | Match `x IS NOT NULL`                             |
+    | EXCLUDES | ["a", None] | Match `x IS NOT NULL AND x NOT IN ("a")`          |
+    | EXCLUDES | ["a", "b"]  | Match `x IS NULL OR (x NOT IN ("a", "b"))`        |
+    | BETWEEN  | ["a", "z"]  | Match `"a" <= x <= "z"`                           |
+    | BETWEEN  | ["a", None] | Match `x >= "a"`                                  |
 
     String comparisons are case-sensitive.
 

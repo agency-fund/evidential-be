@@ -174,6 +174,21 @@ WHERE_TESTCASES = [
             AudienceSpecFilter(
                 field_name="int_col",
                 relation=Relation.EXCLUDES,
+                value=[None],
+            )
+        ],
+        where={
+            DbType.SL: "tt.int_col IS NOT NULL ORDER BY random() LIMIT 3 OFFSET 0",
+            DbType.RS: "tt.int_col IS NOT NULL ORDER BY random()  LIMIT 3",
+            DbType.PG: "tt.int_col IS NOT NULL ORDER BY random()  LIMIT 3",
+            DbType.BQ: "`tt`.`int_col` IS NOT NULL ORDER BY rand() LIMIT 3",
+        },
+    ),
+    WhereTestCase(
+        filters=[
+            AudienceSpecFilter(
+                field_name="int_col",
+                relation=Relation.EXCLUDES,
                 value=[1],
             )
         ],
@@ -227,6 +242,21 @@ WHERE_TESTCASES = [
             DbType.RS: "tt.dt_col IS NOT NULL AND (tt.dt_col NOT IN ('2024-01-01 00:00:00')) ORDER BY random()  LIMIT 3",
             DbType.PG: "tt.dt_col IS NOT NULL AND (tt.dt_col NOT IN ('2024-01-01 00:00:00')) ORDER BY random()  LIMIT 3",
             DbType.BQ: "`tt`.`dt_col` IS NOT NULL AND (`tt`.`dt_col` NOT IN (DATETIME '2024-01-01 00:00:00')) ORDER BY rand() LIMIT 3",
+        },
+    ),
+    WhereTestCase(
+        filters=[
+            AudienceSpecFilter(
+                field_name="int_col",
+                relation=Relation.INCLUDES,
+                value=[None],
+            )
+        ],
+        where={
+            DbType.SL: "tt.int_col IS NULL ORDER BY random() LIMIT 3 OFFSET 0",
+            DbType.RS: "tt.int_col IS NULL ORDER BY random()  LIMIT 3",
+            DbType.PG: "tt.int_col IS NULL ORDER BY random()  LIMIT 3",
+            DbType.BQ: "`tt`.`int_col` IS NULL ORDER BY rand() LIMIT 3",
         },
     ),
     WhereTestCase(
