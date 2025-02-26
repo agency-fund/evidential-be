@@ -2,7 +2,7 @@ import decimal
 import enum
 import re
 import uuid
-from datetime import datetime
+import datetime
 from typing import Annotated, Self
 from collections.abc import Sequence
 
@@ -102,10 +102,10 @@ class DataType(enum.StrEnum):
                 return DataTypeClass.DISCRETE
             case (
                 DataType.DATE
+                | DataType.TIMESTAMP_WITHOUT_TIMEZONE
                 | DataType.INTEGER
                 | DataType.DOUBLE_PRECISION
                 | DataType.NUMERIC
-                | DataType.TIMESTAMP_WITHOUT_TIMEZONE
                 | DataType.BIGINT
             ):
                 return DataTypeClass.NUMERIC
@@ -388,8 +388,8 @@ class DesignSpec(ApiBaseModel):
     experiment_id: uuid.UUID
     experiment_name: str
     description: str
-    start_date: datetime
-    end_date: datetime
+    start_date: datetime.datetime
+    end_date: datetime.datetime
 
     # arms (at least two)
     arms: Annotated[list[Arm], Field(..., min_length=2)]
@@ -438,7 +438,7 @@ class DesignSpec(ApiBaseModel):
     ]
 
     @field_serializer("start_date", "end_date", when_used="json")
-    def serialize_dt(self, dt: datetime, _info):
+    def serialize_dt(self, dt: datetime.datetime, _info):
         """Convert dates to iso strings in model_dump_json()/model_dump(mode='json')"""
         return dt.isoformat()
 
@@ -604,14 +604,14 @@ class GetFiltersResponseBase(ApiBaseModel):
     description: str
 
 
-class GetFiltersResponseNumeric(GetFiltersResponseBase):
-    """Describes a numeric filter variable."""
+class GetFiltersResponseNumericOrDate(GetFiltersResponseBase):
+    """Describes a numeric or date filter variable."""
 
-    min: float | int | None = Field(
+    min: datetime.datetime | datetime.date | float | int | None = Field(
         ...,
         description="The minimum observed value.",
     )
-    max: float | int | None = Field(
+    max: datetime.datetime | datetime.date | float | int | None = Field(
         ...,
         description="The maximum observed value.",
     )
@@ -634,7 +634,9 @@ class GetMetricsResponseElement(ApiBaseModel):
     description: str
 
 
-type GetFiltersResponseElement = GetFiltersResponseNumeric | GetFiltersResponseDiscrete
+type GetFiltersResponseElement = (
+    GetFiltersResponseNumericOrDate | GetFiltersResponseDiscrete
+)
 
 
 class GetFiltersResponse(ApiBaseModel):
