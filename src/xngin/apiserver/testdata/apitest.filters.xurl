@@ -13,7 +13,8 @@ HTTP 200
       "relations": [
         "between",
         "is",
-        "excludes"
+        "excludes",
+        "includes"
       ]
     },
     {
@@ -25,7 +26,8 @@ HTTP 200
       "relations": [
         "between",
         "is",
-        "excludes"
+        "excludes",
+        "includes"
       ]
     },
     {
@@ -67,7 +69,8 @@ HTTP 200
       "relations": [
         "between",
         "is",
-        "excludes"
+        "excludes",
+        "includes"
       ]
     },
     {
@@ -79,7 +82,8 @@ HTTP 200
       "relations": [
         "between",
         "is",
-        "excludes"
+        "excludes",
+        "includes"
       ]
     },
     {
@@ -91,7 +95,8 @@ HTTP 200
       "relations": [
         "between",
         "is",
-        "excludes"
+        "excludes",
+        "includes"
       ]
     },
     {
@@ -103,7 +108,8 @@ HTTP 200
       "relations": [
         "between",
         "is",
-        "excludes"
+        "excludes",
+        "includes"
       ]
     },
     {
@@ -115,7 +121,8 @@ HTTP 200
       "relations": [
         "between",
         "is",
-        "excludes"
+        "excludes",
+        "includes"
       ]
     }
   ]

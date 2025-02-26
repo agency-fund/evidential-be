@@ -159,6 +159,11 @@ class Case:
     matches: list[Row | NullableRow]
     chosen_n: int = 3
 
+    def __str__(self):
+        return " and ".join([
+            f"{f.field_name} {f.relation.name} {f.value}" for f in self.filters
+        ])
+
 
 @pytest.fixture(name="db_session")
 def fixture_db_session():
@@ -249,6 +254,7 @@ IS_NULLABLE_CASES = [
         ],
         matches=[ROW_30],
     ),
+    # Verify EXCLUDES
     Case(
         filters=[
             AudienceSpecFilter(
@@ -310,22 +316,62 @@ IS_NULLABLE_CASES = [
         ],
         matches=[ROW_20, ROW_30],
     ),
+    # verify INCLUDES
+    Case(
+        filters=[
+            AudienceSpecFilter(
+                field_name="int_col",
+                relation=Relation.INCLUDES,
+                value=[None],
+            ),
+        ],
+        matches=[ROW_10],
+    ),
+    Case(
+        filters=[
+            AudienceSpecFilter(
+                field_name="float_col",
+                relation=Relation.INCLUDES,
+                value=[None],
+            ),
+        ],
+        matches=[ROW_30],
+    ),
+    Case(
+        filters=[
+            AudienceSpecFilter(
+                field_name="string_col",
+                relation=Relation.INCLUDES,
+                value=[None, "10"],
+            ),
+        ],
+        matches=[ROW_10, ROW_20],
+    ),
+    Case(
+        filters=[
+            AudienceSpecFilter(
+                field_name="date_col",
+                relation=Relation.INCLUDES,
+                value=[None, ROW_10.date_col.isoformat()],
+            ),
+        ],
+        matches=[ROW_10, ROW_30],
+    ),
 ]
 
 
-@pytest.mark.parametrize("testcase", IS_NULLABLE_CASES)
+@pytest.mark.parametrize("testcase", IS_NULLABLE_CASES, ids=lambda d: str(d))
 def test_is_nullable(testcase, db_session, use_deterministic_random):
     testcase.filters = [
         AudienceSpecFilter.model_validate(filt.model_dump())
         for filt in testcase.filters
     ]
+    table = SampleNullableTable.get_table()
     filters = create_query_filters_from_spec(
-        SampleNullableTable.get_table(),
-        AudienceSpec(
-            participant_type=SampleNullableTable.__tablename__, filters=testcase.filters
-        ),
+        table,
+        AudienceSpec(participant_type=table.name, filters=testcase.filters),
     )
-    q = compose_query(SampleNullableTable.get_table(), testcase.chosen_n, filters)
+    q = compose_query(table, testcase.chosen_n, filters)
     query_results = db_session.execute(q).all()
     assert list(sorted([r.id for r in query_results])) == list(
         sorted(r.id for r in testcase.matches)
@@ -596,7 +642,7 @@ def test_datetime_filter_validation():
                 field_name="x", relation=Relation.INCLUDES, value=[123, 456]
             ),
         )
-    assert "only valid Relations on a datetime field are" in str(exc)
+    assert "ISO8601 formatted date" in str(exc)
 
     with pytest.raises(LateValidationError) as exc:
         create_datetime_filter(
@@ -652,15 +698,14 @@ def test_allowed_datetime_filter_validation():
         ),
     )
 
-    # TODO:
-    # create_datetime_filter(
-    #     col,
-    #     AudienceSpecFilter(
-    #         field_name="x",
-    #         relation=Relation.INCLUDES,
-    #         value=[None],
-    #     ),
-    # )
+    create_datetime_filter(
+        col,
+        AudienceSpecFilter(
+            field_name="x",
+            relation=Relation.INCLUDES,
+            value=[None],
+        ),
+    )
 
     # now without microseconds
     now = datetime.now().replace(microsecond=0)

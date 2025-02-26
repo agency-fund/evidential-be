@@ -124,7 +124,12 @@ class DataTypeClass(enum.StrEnum):
             case DataTypeClass.DISCRETE:
                 return [Relation.INCLUDES, Relation.EXCLUDES]
             case DataTypeClass.NUMERIC:
-                return [Relation.BETWEEN, Relation.IS, Relation.EXCLUDES]
+                return [
+                    Relation.BETWEEN,
+                    Relation.IS,
+                    Relation.EXCLUDES,
+                    Relation.INCLUDES,
+                ]
         raise ValueError(f"{self} has no valid defined relations.")
 
 

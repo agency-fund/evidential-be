@@ -201,12 +201,6 @@ def create_datetime_filter(
             f"{col.name}: datetime-type filter values must be in UTC, or not be tagged with an explicit timezone: {s}"
         )
 
-    allowed_relations = {Relation.BETWEEN, Relation.IS, Relation.EXCLUDES}
-    if filter_.relation not in allowed_relations:
-        raise LateValidationError(
-            f"{col.name}: The only valid Relations on a datetime field are {[str(x) for x in allowed_relations]}."
-        )
-
     if filter_.relation == Relation.IS:
         if filter_.value is None:
             return col.is_(sqlalchemy.null())
@@ -215,6 +209,10 @@ def create_datetime_filter(
     if filter_.relation == Relation.EXCLUDES:
         parsed_values = list(map(str_to_datetime, filter_.value))
         return general_excludes_filter(col, parsed_values)
+
+    if filter_.relation == Relation.INCLUDES:
+        parsed_values = list(map(str_to_datetime, filter_.value))
+        return sqlalchemy.not_(general_excludes_filter(col, parsed_values))
 
     # Else it's Relation.BETWEEN:
     match filter_.value:
@@ -253,10 +251,7 @@ def create_filter(
                 for value in filter_.value
             ])
         case Relation.INCLUDES:
-            # TODO: allow explicitly including None/NULL
-            return col.in_(filter_.value)
-        case Relation.INCLUDES:
-            return col.in_(filter_.value)
+            return sqlalchemy.not_(general_excludes_filter(col, filter_.value))
         case Relation.IS:
             if filter_.value is None:
                 return col.is_(sqlalchemy.null())
