@@ -124,7 +124,7 @@ class DataTypeClass(enum.StrEnum):
             case DataTypeClass.DISCRETE:
                 return [Relation.INCLUDES, Relation.EXCLUDES]
             case DataTypeClass.NUMERIC:
-                return [Relation.BETWEEN, Relation.IS]
+                return [Relation.BETWEEN, Relation.IS, Relation.EXCLUDES]
         raise ValueError(f"{self} has no valid defined relations.")
 
 
@@ -147,6 +147,18 @@ class Relation(enum.StrEnum):
     BETWEEN = "between"
     IS = "is"
     # TODO: add IS_NOT
+
+
+type FilterValueTypes = (
+    Sequence[Annotated[int, Field(strict=True)] | None]
+    | Sequence[Annotated[float, Field(strict=True, allow_inf_nan=False)] | None]
+    | Sequence[str | None]
+    | Sequence[bool | None]
+    | str
+    | int
+    | float
+    | None
+)
 
 
 class AudienceSpecFilter(ApiBaseModel):
@@ -193,16 +205,7 @@ class AudienceSpecFilter(ApiBaseModel):
 
     field_name: FieldName
     relation: Relation
-    value: (
-        Sequence[Annotated[int, Field(strict=True)] | None]
-        | Sequence[Annotated[float, Field(strict=True, allow_inf_nan=False)] | None]
-        | Sequence[str | None]
-        | Sequence[bool | None]
-        | str
-        | int
-        | float
-        | None
-    )
+    value: FilterValueTypes
 
     @model_validator(mode="after")
     def ensure_experiment_ids_hack_compatible(self) -> "AudienceSpecFilter":

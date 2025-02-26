@@ -21,6 +21,7 @@ from sqlalchemy.orm import Session
 from xngin.apiserver.api_types import (
     AudienceSpec,
     DesignSpecMetricRequest,
+    FilterValueTypes,
     MetricType,
     Relation,
     AudienceSpecFilter,
@@ -153,18 +154,34 @@ def make_csv_regex(values):
     return r"(^x$)|(^x,)|(,x$)|(,x,)".replace("x", value_regexp)
 
 
+def general_excludes_filter(col: sqlalchemy.Column, value: list[FilterValueTypes]):
+    if None in value:
+        non_null_list = [v for v in value if v is not None]
+        return and_(
+            col.is_not(sqlalchemy.null()),
+            col.not_in(non_null_list),
+        )
+    # Else if we didn't explicitly exclude NULL, explicitly include it now
+    return or_(
+        col.is_(None),
+        col.not_in(value),
+    )
+
+
 def create_datetime_filter(
     col: sqlalchemy.Column, filter_: AudienceSpecFilter
 ) -> ColumnOperators:
     """Converts a single AudienceSpecFilter for a DateTime-typed column into a sqlalchemy filter."""
 
-    def str_to_datetime(s: int | float | str | None) -> datetime:
+    def str_to_datetime(s: int | float | str | None) -> datetime | None:
         """Convert an ISO8601 string to a timezone-unaware datetime.
 
         LateValidationError is raised if the ISO8601 string specifies a non-UTC timezone.
 
         For maximum compatibility between backends, any microseconds value, if specified, is truncated to zero.
         """
+        if s is None:
+            return None
         if not isinstance(s, str):
             raise LateValidationError(
                 "{col.name}: datetime-type filter values must be strings containing an ISO8601 formatted date."
@@ -184,15 +201,20 @@ def create_datetime_filter(
             f"{col.name}: datetime-type filter values must be in UTC, or not be tagged with an explicit timezone: {s}"
         )
 
-    if filter_.relation not in {Relation.BETWEEN, Relation.IS}:
+    allowed_relations = {Relation.BETWEEN, Relation.IS, Relation.EXCLUDES}
+    if filter_.relation not in allowed_relations:
         raise LateValidationError(
-            f"{col.name}: The only valid Relations on a datetime field are BETWEEN and IS."
+            f"{col.name}: The only valid Relations on a datetime field are {[str(x) for x in allowed_relations]}."
         )
 
     if filter_.relation == Relation.IS:
         if filter_.value is None:
             return col.is_(sqlalchemy.null())
         return col == filter_.value
+
+    if filter_.relation == Relation.EXCLUDES:
+        parsed_values = list(map(str_to_datetime, filter_.value))
+        return general_excludes_filter(col, parsed_values)
 
     # Else it's Relation.BETWEEN:
     match filter_.value:
@@ -224,17 +246,7 @@ def create_filter(
                 for value in filter_.value
             ])
         case Relation.EXCLUDES:
-            if None in filter_.value:
-                non_null_list = [v for v in filter_.value if v is not None]
-                return and_(
-                    col.is_not(sqlalchemy.null()),
-                    col.not_in(non_null_list),
-                )
-            # Else if we didn't explicitly exclude NULL, explicitly include it now
-            return or_(
-                col.is_(None),
-                col.not_in(filter_.value),
-            )
+            return general_excludes_filter(col, filter_.value)
         case Relation.INCLUDES if isinstance(col.type, sqlalchemy.Boolean):
             return or_(*[
                 col.is_(value) if value is not None else col.is_(None)

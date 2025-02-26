@@ -57,6 +57,7 @@ class SampleNullableTable(Base):
     int_col = mapped_column(Integer, nullable=True)
     float_col = mapped_column(Float, nullable=True)
     string_col = mapped_column(String, nullable=True)
+    date_col = mapped_column(DateTime, nullable=True)
 
 
 @dataclass
@@ -66,6 +67,7 @@ class NullableRow:
     int_col: int | None
     float_col: float | None
     string_col: str | None
+    date_col: datetime | None
 
 
 ROW_10 = NullableRow(
@@ -74,6 +76,7 @@ ROW_10 = NullableRow(
     int_col=None,
     float_col=1.01,
     string_col="10",
+    date_col=datetime(2025, 1, 1, 0, 0),
 )
 ROW_20 = NullableRow(
     id=20,
@@ -81,6 +84,7 @@ ROW_20 = NullableRow(
     int_col=1,
     float_col=2.02,
     string_col=None,
+    date_col=datetime.fromisoformat("2025-01-02"),
 )
 ROW_30 = NullableRow(
     id=30,
@@ -88,6 +92,7 @@ ROW_30 = NullableRow(
     int_col=3,
     float_col=None,
     string_col="30",
+    date_col=None,
 )
 SAMPLE_NULLABLE_TABLE_ROWS = [
     ROW_10,
@@ -176,6 +181,7 @@ def fixture_db_session():
         session.add(SampleTable(**data.__dict__))
     for data in SAMPLE_NULLABLE_TABLE_ROWS:
         session.add(SampleNullableTable(**data.__dict__))
+
     session.commit()
 
     yield session
@@ -246,12 +252,63 @@ IS_NULLABLE_CASES = [
     Case(
         filters=[
             AudienceSpecFilter(
+                field_name="int_col",
+                relation=Relation.EXCLUDES,
+                value=[None],
+            ),
+        ],
+        matches=[ROW_20, ROW_30],
+    ),
+    Case(
+        filters=[
+            AudienceSpecFilter(
+                field_name="float_col",
+                relation=Relation.EXCLUDES,
+                value=[None],
+            ),
+        ],
+        matches=[ROW_10, ROW_20],
+    ),
+    Case(
+        filters=[
+            AudienceSpecFilter(
                 field_name="string_col",
                 relation=Relation.EXCLUDES,
                 value=[None, "10"],
             ),
         ],
         matches=[ROW_30],
+    ),
+    Case(
+        filters=[
+            AudienceSpecFilter(
+                field_name="date_col",
+                relation=Relation.EXCLUDES,
+                value=[None, ROW_10.date_col.isoformat()],
+            ),
+        ],
+        matches=[ROW_20],
+    ),
+    # Excluding a single non-null value means NULL is also included.
+    Case(
+        filters=[
+            AudienceSpecFilter(
+                field_name="date_col",
+                relation=Relation.EXCLUDES,
+                value=["2025-01-01"],
+            ),
+        ],
+        matches=[ROW_20, ROW_30],
+    ),
+    Case(
+        filters=[
+            AudienceSpecFilter(
+                field_name="float_col",
+                relation=Relation.EXCLUDES,
+                value=[1.01],
+            ),
+        ],
+        matches=[ROW_20, ROW_30],
     ),
 ]
 
@@ -531,14 +588,6 @@ def test_booleans(testcase, db_session):
 
 def test_datetime_filter_validation():
     col = Column("x", DateTime)
-    with pytest.raises(LateValidationError) as exc:
-        create_datetime_filter(
-            col,
-            AudienceSpecFilter(
-                field_name="x", relation=Relation.EXCLUDES, value=[123, 456]
-            ),
-        )
-    assert "only valid Relations on a datetime field are BETWEEN and IS" in str(exc)
 
     with pytest.raises(LateValidationError) as exc:
         create_datetime_filter(
@@ -547,7 +596,7 @@ def test_datetime_filter_validation():
                 field_name="x", relation=Relation.INCLUDES, value=[123, 456]
             ),
         )
-    assert "only valid Relations on a datetime field are BETWEEN and IS" in str(exc)
+    assert "only valid Relations on a datetime field are" in str(exc)
 
     with pytest.raises(LateValidationError) as exc:
         create_datetime_filter(
@@ -593,6 +642,25 @@ def test_allowed_datetime_filter_validation():
             value=solo_bare_date,
         ),
     )
+
+    create_datetime_filter(
+        col,
+        AudienceSpecFilter(
+            field_name="x",
+            relation=Relation.EXCLUDES,
+            value=[None],
+        ),
+    )
+
+    # TODO:
+    # create_datetime_filter(
+    #     col,
+    #     AudienceSpecFilter(
+    #         field_name="x",
+    #         relation=Relation.INCLUDES,
+    #         value=[None],
+    #     ),
+    # )
 
     # now without microseconds
     now = datetime.now().replace(microsecond=0)

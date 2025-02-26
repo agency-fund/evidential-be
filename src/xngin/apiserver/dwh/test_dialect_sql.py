@@ -195,6 +195,66 @@ WHERE_TESTCASES = [
     WhereTestCase(
         filters=[
             AudienceSpecFilter(
+                field_name="int_col",
+                relation=Relation.EXCLUDES,
+                value=[1],
+            )
+        ],
+        where={
+            DbType.SL: "tt.int_col IS NULL OR (tt.int_col NOT IN (1)) ORDER BY random() LIMIT 3 OFFSET 0",
+            DbType.RS: "tt.int_col IS NULL OR (tt.int_col NOT IN (1)) ORDER BY random()  LIMIT 3",
+            DbType.PG: "tt.int_col IS NULL OR (tt.int_col NOT IN (1)) ORDER BY random()  LIMIT 3",
+            DbType.BQ: "`tt`.`int_col` IS NULL OR (`tt`.`int_col` NOT IN (1)) ORDER BY rand() LIMIT 3",
+        },
+    ),
+    WhereTestCase(
+        filters=[
+            AudienceSpecFilter(
+                field_name="int_col",
+                relation=Relation.EXCLUDES,
+                value=[None, 1],
+            )
+        ],
+        where={
+            DbType.SL: "tt.int_col IS NOT NULL AND (tt.int_col NOT IN (1)) ORDER BY random() LIMIT 3 OFFSET 0",
+            DbType.RS: "tt.int_col IS NOT NULL AND (tt.int_col NOT IN (1)) ORDER BY random()  LIMIT 3",
+            DbType.PG: "tt.int_col IS NOT NULL AND (tt.int_col NOT IN (1)) ORDER BY random()  LIMIT 3",
+            DbType.BQ: "`tt`.`int_col` IS NOT NULL AND (`tt`.`int_col` NOT IN (1)) ORDER BY rand() LIMIT 3",
+        },
+    ),
+    WhereTestCase(
+        filters=[
+            AudienceSpecFilter(
+                field_name="dt_col",
+                relation=Relation.EXCLUDES,
+                value=["2024-01-01"],
+            )
+        ],
+        where={
+            DbType.SL: "tt.dt_col IS NULL OR (tt.dt_col NOT IN ('2024-01-01 00:00:00.000000')) ORDER BY random() LIMIT 3 OFFSET 0",
+            DbType.RS: "tt.dt_col IS NULL OR (tt.dt_col NOT IN ('2024-01-01 00:00:00')) ORDER BY random()  LIMIT 3",
+            DbType.PG: "tt.dt_col IS NULL OR (tt.dt_col NOT IN ('2024-01-01 00:00:00')) ORDER BY random()  LIMIT 3",
+            DbType.BQ: "`tt`.`dt_col` IS NULL OR (`tt`.`dt_col` NOT IN (DATETIME '2024-01-01 00:00:00')) ORDER BY rand() LIMIT 3",
+        },
+    ),
+    WhereTestCase(
+        filters=[
+            AudienceSpecFilter(
+                field_name="dt_col",
+                relation=Relation.EXCLUDES,
+                value=["2024-01-01", None],
+            )
+        ],
+        where={
+            DbType.SL: "tt.dt_col IS NOT NULL AND (tt.dt_col NOT IN ('2024-01-01 00:00:00.000000')) ORDER BY random() LIMIT 3 OFFSET 0",
+            DbType.RS: "tt.dt_col IS NOT NULL AND (tt.dt_col NOT IN ('2024-01-01 00:00:00')) ORDER BY random()  LIMIT 3",
+            DbType.PG: "tt.dt_col IS NOT NULL AND (tt.dt_col NOT IN ('2024-01-01 00:00:00')) ORDER BY random()  LIMIT 3",
+            DbType.BQ: "`tt`.`dt_col` IS NOT NULL AND (`tt`.`dt_col` NOT IN (DATETIME '2024-01-01 00:00:00')) ORDER BY rand() LIMIT 3",
+        },
+    ),
+    WhereTestCase(
+        filters=[
+            AudienceSpecFilter(
                 field_name="dt_col",
                 relation=Relation.BETWEEN,
                 value=["2024-01-01", "2024-01-02"],
