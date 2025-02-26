@@ -1,11 +1,21 @@
 import json
 import secrets
+from datetime import datetime
+from typing import Self
 
 from pydantic import TypeAdapter
 from sqlalchemy import ForeignKey, String, JSON
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import DeclarativeBase, mapped_column, Mapped, relationship
 
+from xngin.apiserver.routers.admin_api_types import (
+    InspectDatasourceTableResponse,
+    InspectParticipantTypesResponse,
+)
 from xngin.apiserver.settings import DatasourceConfig
+
+# JSONBetter is JSON for most databases but JSONB for Postgres.
+JSONBetter = JSON().with_variant(JSONB(), "postgresql")
 
 ALPHABET = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz"
 
@@ -113,6 +123,13 @@ class Datasource(Base):
         JSON, comment="JSON serialized form of DatasourceConfig"
     )
 
+    table_list: Mapped[list[str] | None] = mapped_column(
+        type_=JSONBetter, comment="List of table names available in this datasource"
+    )
+    table_list_updated: Mapped[datetime | None] = mapped_column(
+        comment="Timestamp of the last update to `inspected_tables`"
+    )
+
     organization: Mapped["Organization"] = relationship(back_populates="datasources")
     api_keys: Mapped[list["ApiKey"]] = relationship(
         back_populates="datasource", cascade="all, delete-orphan"
@@ -122,7 +139,79 @@ class Datasource(Base):
         """Deserializes the config field into a DatasourceConfig."""
         return TypeAdapter(DatasourceConfig).validate_python(self.config)
 
-    def set_config(self, value: DatasourceConfig):
+    def set_config(self, value: DatasourceConfig) -> Self:
         """Sets the config field to the serialized DatasourceConfig."""
         # Round-trip via JSON to serialize SecretStr values correctly.
         self.config = json.loads(value.model_dump_json())
+        return self
+
+    def set_table_list(self, tables: list[str] | None) -> Self:
+        if tables is None:
+            self.table_list = None
+            self.table_list_updated = None
+        else:
+            self.table_list = tables
+            self.table_list_updated = datetime.now()
+        return self
+
+    def get_table_list(self) -> list[str] | None:
+        return self.table_list
+
+    def clear_table_list(self) -> Self:
+        return self.set_table_list(None)
+
+
+class DatasourceTablesInspected(Base):
+    """Stores details of the most recent listing of tables in a datasource."""
+
+    __tablename__ = "datasource_tables_inspected"
+
+    datasource_id: Mapped[str] = mapped_column(
+        ForeignKey("datasources.id", ondelete="CASCADE"), primary_key=True
+    )
+    table_name: Mapped[str] = mapped_column(primary_key=True)
+
+    response: Mapped[dict | None] = mapped_column(
+        type_=JSONBetter, comment="Serialized InspectDatasourceTablesResponse."
+    )
+    response_last_updated: Mapped[datetime | None] = mapped_column(
+        comment="Timestamp of the last update to `response`"
+    )
+
+    def get_response(self):
+        return InspectDatasourceTableResponse.model_validate(self.response)
+
+    def set_response(self, value: InspectDatasourceTableResponse) -> Self:
+        self.response = value.model_dump()
+        self.response_last_updated = datetime.now()
+        return self
+
+
+class ParticipantTypesInspected(Base):
+    """Stores details of the most recent participant type inspection (including exemplar values)."""
+
+    __tablename__ = "participant_types_inspected"
+
+    datasource_id: Mapped[str] = mapped_column(
+        ForeignKey("datasources.id", ondelete="CASCADE"), primary_key=True
+    )
+    participant_type: Mapped[str] = mapped_column(primary_key=True)
+
+    response: Mapped[dict | None] = mapped_column(
+        type_=JSONBetter, comment="Serialized InspectParticipantTypesResponse."
+    )
+    response_last_updated: Mapped[datetime | None] = mapped_column(
+        comment="Timestamp of the last update to `response`"
+    )
+
+    def get_response(self):
+        return InspectParticipantTypesResponse.model_validate(self.response)
+
+    def set_response(self, value: InspectParticipantTypesResponse) -> Self:
+        self.response = value.model_dump()
+        self.response_last_updated = datetime.now()
+        return self
+
+    def clear_response(self):
+        self.response = None
+        self.response_last_updated = None

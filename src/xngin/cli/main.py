@@ -1,6 +1,5 @@
 """Command line tool for various xngin-related operations."""
 
-from google.cloud import bigquery
 import csv
 import json
 import logging
@@ -14,11 +13,11 @@ import pandas as pd
 import pandas_gbq
 import psycopg2
 import sqlalchemy
+import sqlalchemy.dialects.postgresql.psycopg2 as psycopg2sa
 import typer
-from google.cloud.exceptions import NotFound
-
-from xngin.sheets.gsheets import GSheetsPermissionError
 import zstandard
+from google.cloud import bigquery
+from google.cloud.exceptions import NotFound
 from gspread import GSpreadException
 from gspread.worksheet import CellFormat
 from pandas import DataFrame
@@ -26,6 +25,7 @@ from pydantic import ValidationError
 from pydantic_core import from_json
 from rich.console import Console
 from sqlalchemy import create_engine, make_url
+from sqlalchemy.exc import OperationalError
 from sqlalchemy.sql.compiler import IdentifierPreparer
 
 from xngin.apiserver import settings
@@ -37,13 +37,13 @@ from xngin.apiserver.settings import (
     Datasource,
 )
 from xngin.apiserver.testing import testing_dwh
+from xngin.schema.schema_types import FieldDescriptor, ParticipantsSchema
 from xngin.sheets.config_sheet import (
     InvalidSheetError,
     fetch_and_parse_sheet,
     create_schema_from_table,
 )
-from xngin.schema.schema_types import FieldDescriptor, ParticipantsSchema
-import sqlalchemy.dialects.postgresql.psycopg2 as psycopg2sa
+from xngin.sheets.gsheets import GSheetsPermissionError
 
 REDSHIFT_HOSTNAME_SUFFIX = "redshift.amazonaws.com"
 
@@ -189,6 +189,29 @@ def create_testing_dwh(
     def read_csv():
         return pd.read_csv(src, nrows=nrows)
 
+    def create_engine_and_database(url: sqlalchemy.URL):
+        """Connects to a SQLAlchemy URL and creates the database if it doesn't exist.
+
+        Only implemented for psycopg/psycopg2.
+        """
+        try:
+            engine = create_engine(url)
+            with engine.connect():
+                print("Connected.")
+        except OperationalError as exc:
+            if "postgres" not in url.drivername or "does not exist" not in str(exc):
+                raise
+            print(f"Creating database {url.database}...")
+            engine = create_engine(url.set(database="postgres"))
+            with engine.connect().execution_options(
+                isolation_level="AUTOCOMMIT"
+            ) as conn:
+                conn.execute(sqlalchemy.text(f"CREATE DATABASE {url.database}"))
+            print("Reconnecting.")
+            return create_engine(url)
+        else:
+            return engine
+
     def drop_and_create(cur, create_table_ddl: str):
         cur.execute(drop_table_ddl)
         if schema_name is not None:
@@ -241,9 +264,16 @@ def create_testing_dwh(
             finally:
                 print("Deleting temporary file...")
                 s3.delete_object(Bucket=bucket, Key=key)
+    elif url.drivername == "bigquery":
+        df = read_csv()
+        destination_table = f"{url.database}.{table_name}"
+        print("Loading...")
+        pandas_gbq.to_gbq(
+            df, destination_table, project_id=url.host, if_exists="replace"
+        )
     elif url.drivername == "postgresql+psycopg":
         df = read_csv()
-        engine = create_engine(url)
+        engine = create_engine_and_database(url)
         with engine.connect() as conn, conn.begin():
             cursor = conn.connection.cursor()
             drop_and_create(
@@ -263,16 +293,9 @@ def create_testing_dwh(
                     while data := reader.read(1 << 20):
                         copy.write(data)
             count(cursor)
-    elif url.drivername == "bigquery":
-        df = read_csv()
-        destination_table = f"{url.database}.{table_name}"
-        print("Loading...")
-        pandas_gbq.to_gbq(
-            df, destination_table, project_id=url.host, if_exists="replace"
-        )
     else:
         df = read_csv()
-        engine = create_engine(url)
+        engine = create_engine_and_database(url)
         with engine.connect() as conn, conn.begin():
             cursor = conn.connection.cursor()
             drop_and_create(

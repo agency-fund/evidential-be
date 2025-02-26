@@ -57,6 +57,11 @@ tasks:
     cmds:
       - ./tools/localpg.py --allow-existing -d --wait --create-db xngin
       - uv run fastapi dev src/xngin/apiserver/main.py
+  bootstrap-dwh-local-pg:
+    desc: "Bootstraps the localpg server with a sample data warehouse."
+    interactive: true
+    cmds:
+      - uv run xngin-cli create-testing-dwh --dsn 'postgresql+psycopg://postgres:postgres@localhost:5499/dwh?sslmode=disable'
   test:
     desc: "Runs unit tests"
     interactive: true

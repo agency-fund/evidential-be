@@ -12,17 +12,17 @@ from xngin.apiserver.api_types import DataType
 from xngin.apiserver.dependencies import xngin_db_session
 from xngin.apiserver.main import app
 from xngin.apiserver.routers import oidc_dependencies
-from xngin.apiserver.routers.admin import (
+from xngin.apiserver.routers.admin_api_types import (
     CreateDatasourceRequest,
     CreateDatasourceResponse,
-    ListDatasourcesResponse,
-    UpdateDatasourceRequest,
-    InspectDatasourceTableResponse,
-    FieldMetadata,
-    InspectDatasourceResponse,
     CreateParticipantsTypeRequest,
     CreateParticipantsTypeResponse,
+    FieldMetadata,
+    InspectDatasourceResponse,
+    InspectDatasourceTableResponse,
+    ListDatasourcesResponse,
     ListParticipantsTypeResponse,
+    UpdateDatasourceRequest,
     UpdateParticipantsTypeRequest,
     UpdateParticipantsTypeResponse,
 )
