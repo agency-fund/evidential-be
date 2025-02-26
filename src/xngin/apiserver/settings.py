@@ -13,7 +13,6 @@ import sqlalchemy
 from httpx import codes
 from pydantic import (
     BaseModel,
-    PositiveInt,
     SecretStr,
     Field,
     ConfigDict,
@@ -328,7 +327,7 @@ class Dsn(ConfigBaseModel, BaseDsn):
         "postgresql+psycopg2",  # Use with: Redshift
     ]
     host: str
-    port: PositiveInt = 5432
+    port: Annotated[int, Field(ge=1024, le=65535)] = 5432
     user: str
     password: SecretStr
     dbname: str
