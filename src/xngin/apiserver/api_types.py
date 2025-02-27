@@ -124,18 +124,25 @@ class DataTypeClass(enum.StrEnum):
             case DataTypeClass.DISCRETE:
                 return [Relation.INCLUDES, Relation.EXCLUDES]
             case DataTypeClass.NUMERIC:
-                return [Relation.BETWEEN]
+                return [
+                    Relation.BETWEEN,
+                    Relation.EXCLUDES,
+                    Relation.INCLUDES,
+                ]
         raise ValueError(f"{self} has no valid defined relations.")
 
 
 class Relation(enum.StrEnum):
     """Defines operators for filtering values.
 
-    INCLUDES matches when the value matches any of the provided values. For CSV fields
-    (i.e. experiment_ids), any value in the CSV that matches the provided values will match.
+    INCLUDES matches when the value matches any of the provided values, including null if explicitly
+    specified. For CSV fields (i.e. experiment_ids), any value in the CSV that matches the provided
+    values will match, but nulls are unsupported. This is equivalent to NOT(EXCLUDES(values)).
 
-    EXCLUDES matches when the value does not match any of the provided values. For CSV fields
-    (i.e. experiment_ids), the match will fail if any of the provided values are present in the value.
+    EXCLUDES matches when the value does not match any of the provided values, including null if
+    explicitly specified. If null is not explicitly excluded, we include nulls in the result.  CSV
+    fields (i.e. experiment_ids), the match will fail if any of the provided values are present
+    in the value, but nulls are unsupported.
 
     BETWEEN matches when the value is between the two provided values (inclusive). Not allowed for CSV fields.
     """
@@ -145,18 +152,30 @@ class Relation(enum.StrEnum):
     BETWEEN = "between"
 
 
+type FilterValueTypes = (
+    Sequence[Annotated[int, Field(strict=True)] | None]
+    | Sequence[Annotated[float, Field(strict=True, allow_inf_nan=False)] | None]
+    | Sequence[str | None]
+    | Sequence[bool | None]
+)
+
+
 class AudienceSpecFilter(ApiBaseModel):
     """Defines criteria for filtering rows by value.
 
     ## Examples
 
-    | Relation | Value       | Result                         |
-    |----------|-------------|--------------------------------|
-    | INCLUDES | ["a"]       | Match when `x IN ("a")`        |
-    | INCLUDES | ["a", "b"]  | Match when `x IN ("a", "b")`   |
-    | EXCLUDES | ["a", "b"]  | Match `x NOT IN ("a", "b")`    |
-    | BETWEEN  | ["a", "z"]  | Match `"a" <= x <= "z"`        |
-    | BETWEEN  | ["a", None] | Match `x >= "a"`               |
+    | Relation | Value       | logical Result                                    |
+    |----------|-------------|---------------------------------------------------|
+    | INCLUDES | [None]      | Match when `x IS NULL`                            |
+    | INCLUDES | ["a"]       | Match when `x IN ("a")`                           |
+    | INCLUDES | ["a", None] | Match when `x IS NULL OR x IN ("a")`              |
+    | INCLUDES | ["a", "b"]  | Match when `x IN ("a", "b")`                      |
+    | EXCLUDES | [None]      | Match `x IS NOT NULL`                             |
+    | EXCLUDES | ["a", None] | Match `x IS NOT NULL AND x NOT IN ("a")`          |
+    | EXCLUDES | ["a", "b"]  | Match `x IS NULL OR (x NOT IN ("a", "b"))`        |
+    | BETWEEN  | ["a", "z"]  | Match `"a" <= x <= "z"`                           |
+    | BETWEEN  | ["a", None] | Match `x >= "a"`                                  |
 
     String comparisons are case-sensitive.
 
@@ -177,7 +196,7 @@ class AudienceSpecFilter(ApiBaseModel):
 
     ## Handling of datetime and timestamp values
 
-    DATETIME or TIMESTAMP-type columns support only the BETWEEN relation.
+    DATETIME or TIMESTAMP-type columns support INCLUDES/EXCLUDES/BETWEEN, similar to numerics.
 
     Values must be expressed as ISO8601 datetime strings compatible with Python's datetime.fromisoformat()
     (https://docs.python.org/3/library/datetime.html#datetime.datetime.fromisoformat).
@@ -187,12 +206,7 @@ class AudienceSpecFilter(ApiBaseModel):
 
     field_name: FieldName
     relation: Relation
-    value: (
-        Sequence[Annotated[int, Field(strict=True)] | None]
-        | Sequence[Annotated[float, Field(strict=True, allow_inf_nan=False)] | None]
-        | Sequence[str | None]
-        | Sequence[bool | None]
-    )
+    value: FilterValueTypes
 
     @model_validator(mode="after")
     def ensure_experiment_ids_hack_compatible(self) -> "AudienceSpecFilter":
@@ -236,9 +250,8 @@ class AudienceSpecFilter(ApiBaseModel):
                 raise ValueError(
                     "BETWEEN relation requires same values to be of the same type"
                 )
-        else:
-            if not self.value:
-                raise ValueError("value must be a non-empty list")
+        elif not self.value:
+            raise ValueError("value must be a non-empty list")
 
         return self
 

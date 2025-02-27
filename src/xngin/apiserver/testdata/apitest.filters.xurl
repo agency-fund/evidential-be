@@ -11,7 +11,9 @@ HTTP 200
       "max": 120621.36985115612,
       "min": 9778.910653027706,
       "relations": [
-        "between"
+        "between",
+        "excludes",
+        "includes"
       ]
     },
     {
@@ -21,7 +23,9 @@ HTTP 200
       "max": 96941.0,
       "min": 8466.284540241537,
       "relations": [
-        "between"
+        "between",
+        "excludes",
+        "includes"
       ]
     },
     {
@@ -61,7 +65,9 @@ HTTP 200
       "max": 1,
       "min": 0,
       "relations": [
-        "between"
+        "between",
+        "excludes",
+        "includes"
       ]
     },
     {
@@ -71,7 +77,9 @@ HTTP 200
       "max": 1,
       "min": 0,
       "relations": [
-        "between"
+        "between",
+        "excludes",
+        "includes"
       ]
     },
     {
@@ -81,7 +89,9 @@ HTTP 200
       "max": 1,
       "min": 1,
       "relations": [
-        "between"
+        "between",
+        "excludes",
+        "includes"
       ]
     },
     {
@@ -91,7 +101,9 @@ HTTP 200
       "max": 1,
       "min": 0,
       "relations": [
-        "between"
+        "between",
+        "excludes",
+        "includes"
       ]
     },
     {
@@ -101,7 +113,9 @@ HTTP 200
       "max": 1,
       "min": 0,
       "relations": [
-        "between"
+        "between",
+        "excludes",
+        "includes"
       ]
     }
   ]
