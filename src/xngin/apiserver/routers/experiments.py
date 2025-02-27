@@ -235,8 +235,6 @@ def commit_experiment(
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
-# TODO: support filters on state
-# TODO: support pagination, e.g. https://github.com/uriyyo/fastapi-pagination
 @router.get(
     "/experiments",
     summary="Fetch experiment meta data (design & assignment specs) for the given id.",
@@ -246,8 +244,9 @@ def list_experiments(
     xngin_session: Annotated[Session, Depends(xngin_db_session)],
 ) -> ListExperimentsResponse:
     stmt = (
-        select(Experiment).where(Experiment.datasource_id == datasource.id)
-        # TODO: order by start_date at least.
+        select(Experiment)
+        .where(Experiment.datasource_id == datasource.id)
+        .order_by(Experiment.created_at.desc())
     )
     result = xngin_session.execute(stmt)
     experiments = result.scalars().all()

@@ -257,6 +257,10 @@ def test_list_experiments(db_session: Session):
     experiment3 = make_insert_experiment(
         ExperimentState.ABORTED, datasource_id="testing-inline-schema"
     )
+    # Set the created_at time to test ordering
+    experiment1.created_at = datetime.now() - timedelta(days=1)
+    experiment2.created_at = datetime.now()
+    experiment3.created_at = datetime.now() + timedelta(days=1)
     db_session.add_all([experiment1, experiment2, experiment3])
     db_session.commit()
 
@@ -268,9 +272,10 @@ def test_list_experiments(db_session: Session):
     assert response.status_code == 200, response.content
 
     experiments = ListExperimentsResponse.model_validate(response.json())
+    # experiment3 excluded due to datasource mismatch
     assert len(experiments.items) == 2
-    actual1 = experiments.items[0]
-    actual2 = experiments.items[1]
+    actual1 = experiments.items[1]  # experiment1 is the second item as it's older
+    actual2 = experiments.items[0]
     assert actual1.state == ExperimentState.ASSIGNED
     diff = DeepDiff(to_jsonable_python(actual1.design_spec), experiment1.design_spec)
     assert not diff, f"Objects differ:\n{diff.pretty()}"
