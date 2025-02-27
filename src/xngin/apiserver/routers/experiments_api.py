@@ -335,6 +335,12 @@ def assign_treatment(
     gsheets: Annotated[GSheetCache, Depends(gsheet_cache)],
     config: Annotated[DatasourceConfig, Depends(datasource_config_required)],
     refresh: Annotated[bool, Query(description="Refresh the cache.")] = False,
+    quantiles: Annotated[
+        int,
+        Query(
+            description="Number of quantile buckets to use for stratification of numerics."
+        ),
+    ] = 4,
     random_state: Annotated[
         int | None,
         Query(
@@ -359,6 +365,7 @@ def assign_treatment(
             body=body,
             chosen_n=chosen_n,
             id_field=schema.get_unique_id_field(),
+            quantiles=quantiles,
             random_state=random_state,
         )
 
@@ -370,6 +377,7 @@ def do_assignment(
     body: AssignRequest,
     chosen_n: int,
     id_field: str,
+    quantiles: int,
     random_state: int | None,
 ) -> AssignResponse:
     """Helper for assigning treatments."""
@@ -389,6 +397,7 @@ def do_assignment(
         arms=body.design_spec.arms,
         experiment_id=str(body.design_spec.experiment_id),
         fstat_thresh=body.design_spec.fstat_thresh,
+        quantiles=quantiles,
         random_state=random_state,
     )
 

@@ -37,6 +37,7 @@ def assign_treatment(
     arms: list[Arm],
     experiment_id: str,
     fstat_thresh: float = 0.5,
+    quantiles: int = 4,
     random_state: int | None = None,
 ) -> AssignResponse:
     """
@@ -50,6 +51,7 @@ def assign_treatment(
         arms: Name & uuid of each treatment arm
         experiment_id: Unique identifier for experiment
         fstat_thresh: Threshold for F-statistic p-value
+        quantiles: number of buckets to use for stratification of numerics
         random_state: Random seed for reproducibility
 
     Returns:
@@ -71,7 +73,9 @@ def assign_treatment(
     orig_data_to_stratify = df[[id_col, *orig_stratum_cols]]
     df_cleaned, exclude_cols_set, numeric_notnull_set = (
         preprocess_for_balance_and_stratification(
-            data=orig_data_to_stratify, exclude_cols=[id_col]
+            data=orig_data_to_stratify,
+            exclude_cols=[id_col],
+            quantiles=quantiles,
         )
     )
     # Our original target of columns to stratify on may have gotten smaller:
