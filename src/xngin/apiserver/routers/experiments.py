@@ -28,6 +28,7 @@ from xngin.apiserver.dependencies import (
     gsheet_cache,
     xngin_db_session,
 )
+from xngin.apiserver.exceptions_common import LateValidationError
 from xngin.apiserver.gsheet_cache import GSheetCache
 from xngin.apiserver.routers.experiments_api import (
     CommonQueryParams,
@@ -90,7 +91,7 @@ class CreateExperimentWithAssignmentResponse(ExperimentConfig):
 
 
 class GetExperimentResponse(ExperimentConfig):
-    pass
+    """An experiment configuration capturing all info at design time when assignment was made."""
 
 
 class ListExperimentsResponse(ExperimentsBaseModel):
@@ -131,6 +132,9 @@ def create_experiment_with_assignment(
     ] = None,
 ) -> CreateExperimentWithAssignmentResponse:
     """Creates an experiment and saves its assignments to the database."""
+    if body.design_spec.uuids_are_present():
+        raise LateValidationError("Invalid DesignSpec: UUIDs must not be set.")
+
     config = datasource.config
     commons = CommonQueryParams(
         participant_type=body.audience_spec.participant_type, refresh=refresh
@@ -138,6 +142,12 @@ def create_experiment_with_assignment(
     participants_cfg, schema = get_participants_config_and_schema(
         commons, config, gsheets
     )
+
+    # First generate uuids for the experiment and arms, which do_assignment needs.
+    body.design_spec.experiment_id = uuid.uuid4()
+    for arm in body.design_spec.arms:
+        arm.arm_id = uuid.uuid4()
+
     with config.dbsession() as dwh_session:
         # TODO: directly create ArmAssignments from the pd dataframe instead
         assignment_response = do_assignment(
@@ -151,7 +161,6 @@ def create_experiment_with_assignment(
         )
 
         # Create experiment record
-        # TODO: generate the id ourselves. Enforce that it is not present in the request.
         assign_summary = AssignSummary(
             balance_check=assignment_response.balance_check,
             sample_size=assignment_response.sample_size,
@@ -185,7 +194,6 @@ def create_experiment_with_assignment(
 
         xngin_session.commit()
 
-    # TODO: generate uuids here instead of trusting  the client request
     return CreateExperimentWithAssignmentResponse(
         datasource_id=datasource.id,
         state=experiment.state,

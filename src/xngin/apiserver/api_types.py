@@ -376,16 +376,25 @@ class DesignSpecMetricRequest(DesignSpecMetricBase):
 class Arm(ApiBaseModel):
     """Describes an experiment treatment arm."""
 
-    # generally should not let users set this, auto-generated uuid by default
-    arm_id: uuid.UUID
-    arm_name: str
+    arm_id: Annotated[
+        uuid.UUID | None,
+        Field(
+            description="UUID of the arm. If using the /experiments/with-assignment endpoint, this is generated for you and available in the response; you should NOT set this. Only generate ids of your own if using the stateless Experiment Design API as you will do your own persistence."
+        ),
+    ]
+    arm_name: str  # TODO: add naming constraints
     arm_description: str | None = None
 
 
 class DesignSpec(ApiBaseModel):
     """Experiment design parameters for power calculations and treatment assignment."""
 
-    experiment_id: uuid.UUID
+    experiment_id: Annotated[
+        uuid.UUID | None,
+        Field(
+            description="UUID of the experiment. If using the /experiments/with-assignment endpoint, this is generated for you and available in the response; you should NOT set this. Only generate ids of your own if using the stateless Experiment Design API as you will do your own persistence."
+        ),
+    ]
     experiment_name: str
     description: str
     start_date: datetime.datetime
@@ -441,6 +450,12 @@ class DesignSpec(ApiBaseModel):
     def serialize_dt(self, dt: datetime.datetime, _info):
         """Convert dates to iso strings in model_dump_json()/model_dump(mode='json')"""
         return dt.isoformat()
+
+    def uuids_are_present(self) -> bool:
+        """True if the any UUIDs are present."""
+        return self.experiment_id is not None or any([
+            arm.arm_id is not None for arm in self.arms
+        ])
 
 
 class MetricAnalysisMessageType(enum.StrEnum):

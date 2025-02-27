@@ -68,11 +68,11 @@ def test_experiment_sql():
     assert "strata JSON NOT NULL" in sqlite_sql
 
 
-def make_create_experiment_request():
+def make_create_experiment_request(with_uuids: bool = True) -> CreateExperimentRequest:
     # TODO: generate ids in server
-    experiment_id = uuid.uuid4()
-    arm1_id = uuid.uuid4()
-    arm2_id = uuid.uuid4()
+    experiment_id = uuid.uuid4() if with_uuids else None
+    arm1_id = uuid.uuid4() if with_uuids else None
+    arm2_id = uuid.uuid4() if with_uuids else None
     # Construct request body
     return CreateExperimentRequest(
         design_spec=DesignSpec(
@@ -155,11 +155,27 @@ def make_insert_experiment(state: ExperimentState, datasource_id="testing"):
     )
 
 
+def test_create_experiment_with_assignment_invalid_design_spec(
+    db_session: Session,
+):
+    """Test creating an experiment and saving assignments to the database."""
+    request = make_create_experiment_request(with_uuids=True)
+
+    response = client.post(
+        "/experiments/with-assignment",
+        params={"chosen_n": 100, "random_state": 42},
+        headers={constants.HEADER_CONFIG_ID: "testing"},
+        content=request.model_dump_json(),
+    )
+    assert response.status_code == 422, request
+    assert "UUIDs must not be set" in response.json()["message"]
+
+
 def test_create_experiment_with_assignment(
     db_session: Session,
 ):
     """Test creating an experiment and saving assignments to the database."""
-    request = make_create_experiment_request()
+    request = make_create_experiment_request(with_uuids=False)
 
     response = client.post(
         "/experiments/with-assignment",
@@ -171,6 +187,9 @@ def test_create_experiment_with_assignment(
     # Verify basic response
     assert response.status_code == 200, request
     experiment_config = response.json()
+    assert experiment_config["design_spec"]["experiment_id"] is not None
+    assert experiment_config["design_spec"]["arms"][0]["arm_id"] is not None
+    assert experiment_config["design_spec"]["arms"][1]["arm_id"] is not None
     assert experiment_config["datasource_id"] == "testing"
     assert experiment_config["state"] == ExperimentState.ASSIGNED
     assign_summary = experiment_config["assign_summary"]
@@ -180,7 +199,12 @@ def test_create_experiment_with_assignment(
     ]
     # Check if the representations are equivalent
     config = ExperimentConfig.model_validate(experiment_config)
-    assert config.design_spec == request.design_spec
+    # scrub the uuids from the config for comparison
+    actual_design_spec = config.design_spec.model_copy(deep=True)
+    actual_design_spec.experiment_id = None
+    actual_design_spec.arms[0].arm_id = None
+    actual_design_spec.arms[1].arm_id = None
+    assert actual_design_spec == request.design_spec
     assert config.audience_spec == request.audience_spec
     assert config.power_analyses == request.power_analyses
 
