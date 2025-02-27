@@ -240,35 +240,45 @@ def test_create_experiment_with_assignment(
     assert abs(num_control - num_treat) <= 5  # Allow some wiggle room
 
 
-def test_commit_experiment(db_session: Session):
-    # Test 1) success case: First insert an experiment that can be updated.
-    new_experiment = make_insert_experiment(ExperimentState.ASSIGNED)
-    db_session.add(new_experiment)
+@pytest.mark.parametrize(
+    "endpoint,initial_state,expected_status,expected_detail",
+    [
+        ("commit", ExperimentState.ASSIGNED, 204, None),  # Success case
+        ("commit", ExperimentState.COMMITTED, 304, None),  # No-op
+        ("commit", ExperimentState.DESIGNING, 403, "Invalid state: designing"),
+        ("commit", ExperimentState.ABORTED, 403, "Invalid state: aborted"),
+        ("abandon", ExperimentState.DESIGNING, 204, None),  # Success case
+        ("abandon", ExperimentState.ASSIGNED, 204, None),  # Success case
+        ("abandon", ExperimentState.ABANDONED, 304, None),  # No-op
+        ("abandon", ExperimentState.COMMITTED, 403, "Invalid state: committed"),
+    ],
+)
+def test_experiment_state_setting(
+    db_session: Session, endpoint, initial_state, expected_status, expected_detail
+):
+    experiment = make_insert_experiment(initial_state)
+    db_session.add(experiment)
     db_session.commit()
+
     response = client.post(
-        f"/experiments/{new_experiment.id!s}/commit",
+        f"/experiments/{experiment.id!s}/{endpoint}",
         headers={constants.HEADER_CONFIG_ID: "testing"},
     )
 
-    # Verify basic response
-    assert response.status_code == 204
-    # Verify db by refreshing the object
-    db_session.refresh(new_experiment)
-    assert new_experiment.state == ExperimentState.COMMITTED
-
-    # Test 2) a failure case: insert an experiment with the wrong state.
-    invalid_experiment = make_insert_experiment(ExperimentState.ABANDONED)
-    db_session.add(invalid_experiment)
-    db_session.commit()
-
-    response = client.post(
-        f"/experiments/{invalid_experiment.id!s}/commit",
-        headers={constants.HEADER_CONFIG_ID: "testing"},
-    )
-
-    # Verify response
-    assert response.status_code == 403
-    assert response.json()["detail"] == "Invalid state: abandoned"
+    # Verify
+    assert response.status_code == expected_status
+    # If success case, verify state was updated
+    if expected_status == 204:
+        expected_state = (
+            ExperimentState.ABANDONED
+            if endpoint == "abandon"
+            else ExperimentState.COMMITTED
+        )
+        db_session.refresh(experiment)
+        assert experiment.state == expected_state
+    # If failure case, verify the error message
+    if expected_detail:
+        assert response.json()["detail"] == expected_detail
 
 
 def test_list_experiments(db_session: Session):

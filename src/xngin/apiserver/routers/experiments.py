@@ -229,15 +229,39 @@ def commit_experiment(
     experiment_id: uuid.UUID,
 ):
     experiment = get_experiment_or_raise(xngin_session, experiment_id, datasource.id)
+    if experiment.state == ExperimentState.COMMITTED:
+        return Response(status_code=status.HTTP_304_NOT_MODIFIED)
     if experiment.state not in {ExperimentState.ASSIGNED}:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail=f"Invalid state: {experiment.state}",
         )
-    if experiment.state == ExperimentState.COMMITTED:
-        return Response(status_code=status.HTTP_304_NOT_MODIFIED)
 
     experiment.state = ExperimentState.COMMITTED
+    xngin_session.commit()
+
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+@router.post(
+    "/experiments/{experiment_id}/abandon",
+    summary="Marks any DESIGNING or ASSIGNED experiment as ABANDONED.",
+)
+def abandon_experiment(
+    datasource: Annotated[Datasource, Depends(datasource_dependency)],
+    xngin_session: Annotated[Session, Depends(xngin_db_session)],
+    experiment_id: uuid.UUID,
+):
+    experiment = get_experiment_or_raise(xngin_session, experiment_id, datasource.id)
+    if experiment.state == ExperimentState.ABANDONED:
+        return Response(status_code=status.HTTP_304_NOT_MODIFIED)
+    if experiment.state not in {ExperimentState.DESIGNING, ExperimentState.ASSIGNED}:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=f"Invalid state: {experiment.state}",
+        )
+
+    experiment.state = ExperimentState.ABANDONED
     xngin_session.commit()
 
     return Response(status_code=status.HTTP_204_NO_CONTENT)

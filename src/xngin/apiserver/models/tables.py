@@ -238,7 +238,7 @@ class ExperimentState(enum.StrEnum):
     Experiment lifecycle states.
 
     note: [starting state], [[terminal state]]
-    [DESIGNING]->ASSIGNED->{[[ABANDONED]], COMMITTED}->[[ABORTED]]
+    [DESIGNING]->[ASSIGNED]->{[[ABANDONED]], COMMITTED}->[[ABORTED]]
     """
 
     DESIGNING = "designing"
