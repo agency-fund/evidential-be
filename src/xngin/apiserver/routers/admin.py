@@ -12,6 +12,7 @@ from fastapi import APIRouter, FastAPI, Depends, Path, Body, HTTPException, Quer
 from fastapi import Response
 from fastapi import status
 from sqlalchemy import delete, select
+from sqlalchemy.exc import OperationalError
 from sqlalchemy.orm import Session
 
 from xngin.apiserver import flags, settings
@@ -510,6 +511,12 @@ def inspect_datasource(
             ds.set_table_list(tables)
             session.commit()
             return InspectDatasourceResponse(tables=tables)
+        except OperationalError as exc:
+            if is_postgres_database_not_found_error(exc):
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)
+                ) from exc
+            raise
         except google.api_core.exceptions.NotFound as exc:
             # Google returns a 404 when authentication succeeds but when the specified datasource does not exist.
             raise HTTPException(
@@ -519,6 +526,15 @@ def inspect_datasource(
         ds.clear_table_list()
         session.commit()
         raise
+
+
+def is_postgres_database_not_found_error(exc):
+    return (
+        exc.args
+        and isinstance(exc.args[0], str)
+        and "FATAL:  database" in exc.args[0]
+        and "does not exist" in exc.args[0]
+    )
 
 
 def create_inspect_table_response_from_table(table: sqlalchemy.Table):
