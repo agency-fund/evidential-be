@@ -1,7 +1,9 @@
 import psycopg.errors
 import sqlalchemy
 from fastapi import Request
+from fastapi.encoders import jsonable_encoder
 from fastapi.responses import JSONResponse
+from pydantic import ValidationError
 
 from xngin.apiserver.apikeys import ApiKeyError
 from xngin.apiserver.dependencies import CannotFindDatasourceError
@@ -75,3 +77,14 @@ def setup(app):
         _request: Request, exc: LateValidationError
     ):
         return JSONResponse(status_code=422, content={"message": str(exc)})
+
+    @app.exception_handler(ValidationError)
+    async def exception_handler_pydantic_validationerror(
+        _request: Request, exc: ValidationError
+    ):
+        # This resembles FastAPI's request_validation_exception_handler but handles Pydantic ValidationErrors raised
+        # by the implementation of the handlers.
+        return JSONResponse(
+            status_code=422,
+            content={"detail": jsonable_encoder(exc.errors())},
+        )

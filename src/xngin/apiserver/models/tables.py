@@ -156,9 +156,18 @@ class Datasource(Base):
         return TypeAdapter(DatasourceConfig).validate_python(self.config)
 
     def set_config(self, value: DatasourceConfig) -> Self:
-        """Sets the config field to the serialized DatasourceConfig."""
-        # Round-trip via JSON to serialize SecretStr values correctly.
-        self.config = json.loads(value.model_dump_json())
+        """Sets the config field to the serialized DatasourceConfig.
+
+        Raises ValidationError if the config is invalid.
+        """
+        # Dump the model to JSON because this is how we can serialize the SecretStr values.
+        as_json = value.model_dump_json()
+
+        # Validate that we are persisting a valid DatasourceConfig because Pydantic only validates on model creation.
+        # This will raise if there is an error.
+        TypeAdapter(DatasourceConfig).validate_json(as_json)
+
+        self.config = json.loads(as_json)
         return self
 
     def set_table_list(self, tables: list[str] | None) -> Self:
