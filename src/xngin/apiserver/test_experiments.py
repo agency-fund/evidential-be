@@ -1,15 +1,15 @@
-from datetime import datetime, timedelta
 import uuid
-
-from deepdiff import DeepDiff
-from pydantic_core import to_jsonable_python
-from fastapi.testclient import TestClient
+from datetime import datetime, timedelta
 
 import pytest
+from deepdiff import DeepDiff
+from fastapi.testclient import TestClient
+from pydantic_core import to_jsonable_python
 from sqlalchemy import select
-from sqlalchemy.schema import CreateTable
 from sqlalchemy.dialects import sqlite, postgresql
 from sqlalchemy.orm import Session
+from sqlalchemy.schema import CreateTable
+
 from xngin.apiserver import conftest, constants
 from xngin.apiserver.api_types import (
     Arm,
@@ -26,10 +26,11 @@ from xngin.apiserver.api_types import (
 )
 from xngin.apiserver.dependencies import xngin_db_session
 from xngin.apiserver.main import app
-from xngin.apiserver.models.tables import ArmAssignment, Experiment, ExperimentState
-from xngin.apiserver.routers.experiments import (
-    AssignSummary,
+from xngin.apiserver.models.enums import ExperimentState
+from xngin.apiserver.models.tables import ArmAssignment, Experiment
+from xngin.apiserver.routers.experiments_api_types import (
     CreateExperimentRequest,
+    AssignSummary,
     ExperimentConfig,
     ListExperimentsResponse,
 )

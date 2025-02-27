@@ -23,6 +23,7 @@ from xngin.apiserver.api_types import (
 )
 from xngin.apiserver.apikeys import make_key, hash_key
 from xngin.apiserver.dependencies import xngin_db_session
+from xngin.apiserver.exceptions_common import LateValidationError
 from xngin.apiserver.models.tables import (
     ApiKey,
     User,
@@ -31,7 +32,9 @@ from xngin.apiserver.models.tables import (
     UserOrganization,
     DatasourceTablesInspected,
     ParticipantTypesInspected,
+    Experiment,
 )
+from xngin.apiserver.routers import experiments, experiments_api_types
 from xngin.apiserver.routers.admin_api_types import (
     AddMemberToOrganizationRequest,
     ApiKeySummary,
@@ -65,6 +68,7 @@ from xngin.apiserver.routers.experiments_api import (
     generate_field_descriptors,
     create_col_to_filter_meta_mapper,
 )
+from xngin.apiserver.routers.experiments_api_types import ExperimentConfig
 from xngin.apiserver.routers.oidc_dependencies import require_oidc_token, TokenInfo
 from xngin.apiserver.settings import (
     RemoteDatabaseConfig,
@@ -157,6 +161,25 @@ def get_datasource_or_raise(session: Session, user: User, datasource_id: str):
             status_code=status.HTTP_404_NOT_FOUND, detail="Datasource not found."
         )
     return ds
+
+
+def get_experiment_or_raise_auth(
+    session: Session, user: User, experiment_id: str
+) -> Experiment:
+    """Reads the requested experiment from the database. Raises if disallowed or not found."""
+    stmt = (
+        session.query(Experiment)
+        .join(Organization)
+        .join(UserOrganization)
+        .where(Experiment.id == experiment_id, UserOrganization.user_id == user.id)
+        .first()
+    )
+    exp = session.execute(stmt).scalar_one_or_none()
+    if exp is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Experiment not found."
+        )
+    return stmt
 
 
 @router.get("/caller-identity")
@@ -937,3 +960,102 @@ def delete_api_key(
     session.execute(stmt)
     session.commit()
     return GENERIC_SUCCESS
+
+
+@router.post("/experiments/{datasource_id}/with-assignment")
+def create_experiment_with_assignment(
+    datasource_id: str,
+    session: Annotated[Session, Depends(xngin_db_session)],
+    user: Annotated[User, Depends(user_from_token)],
+    body: experiments_api_types.CreateExperimentRequest,
+    chosen_n: Annotated[
+        int, Query(..., description="Number of participants to assign.")
+    ],
+    random_state: Annotated[
+        int | None,
+        Query(
+            description="Specify a random seed for reproducibility.",
+            include_in_schema=False,
+        ),
+    ] = None,
+) -> experiments_api_types.CreateExperimentWithAssignmentResponse:
+    ds = get_datasource_or_raise(session, user, datasource_id)
+    if body.design_spec.uuids_are_present():
+        raise LateValidationError("Invalid DesignSpec: UUIDs must not be set.")
+    config = ds.get_config()
+    if not isinstance(config, RemoteDatabaseConfig):
+        raise LateValidationError("Invalid RemoteDatabaseConfig.")
+    participants_cfg = config.find_participants(body.audience_spec.participant_type)
+    if not isinstance(participants_cfg, ParticipantsDef):
+        raise LateValidationError(
+            "Invalid ParticipantsConfig: Participants must be of type schema."
+        )
+    return experiments.create_experiment_with_assignment_impl(
+        session,
+        ds,
+        body,
+        participants_cfg,
+        config,
+        participants_cfg,
+        random_state,
+        chosen_n,
+    )
+
+
+@router.post("/experiments/{experiment_id}/commit")
+def commit_experiment(
+    experiment_id: str,
+    session: Annotated[Session, Depends(xngin_db_session)],
+    user: Annotated[User, Depends(user_from_token)],
+):
+    experiment = get_experiment_or_raise_auth(session, user, experiment_id)
+    return experiments.commit_experiment_impl(session, experiment)
+
+
+@router.post("/experiments/{experiment_id}/abandon")
+def abandon_experiment(
+    experiment_id: str,
+    session: Annotated[Session, Depends(xngin_db_session)],
+    user: Annotated[User, Depends(user_from_token)],
+):
+    experiment = get_experiment_or_raise_auth(session, user, experiment_id)
+    return experiments.abandon_experiment_impl(session, experiment)
+
+
+@router.get("/experiments/{datasource_id}")
+def list_experiments(
+    datasource_id: str,
+    session: Annotated[Session, Depends(xngin_db_session)],
+    user: Annotated[User, Depends(user_from_token)],
+) -> experiments_api_types.ListExperimentsResponse:
+    """Returns the list of experiments in the datasource."""
+    ds = get_datasource_or_raise(session, user, datasource_id)
+    return experiments.list_experiments_impl(session, ds)
+
+
+@router.get("/experiments/{experiment_id}")
+def get_experiment(
+    experiment_id: str,
+    session: Annotated[Session, Depends(xngin_db_session)],
+    user: Annotated[User, Depends(user_from_token)],
+) -> experiments_api_types.ExperimentConfig:
+    """Returns the experiment with the specified ID."""
+    experiment = get_experiment_or_raise_auth(session, user, experiment_id)
+    return ExperimentConfig(
+        datasource_id=experiment.datasource_id,
+        state=experiment.state,
+        design_spec=experiment.get_design_spec(),
+        audience_spec=experiment.get_audience_spec(),
+        power_analyses=experiment.get_power_analyses(),
+        assign_summary=experiment.get_assign_summary(),
+    )
+
+
+@router.get("/experiments/{experiment_id}/assignments")
+def get_experiment_assignments(
+    experiment_id: str,
+    session: Annotated[Session, Depends(xngin_db_session)],
+    user: Annotated[User, Depends(user_from_token)],
+) -> experiments_api_types.GetExperimentAssigmentsResponse:
+    experiment = get_experiment_or_raise_auth(session, user, experiment_id)
+    return experiments.get_experiment_assignments_impl(experiment)

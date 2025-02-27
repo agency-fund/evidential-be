@@ -1,22 +1,23 @@
 import json
 import secrets
-from datetime import datetime
-import enum
-from typing import ClassVar, Self
 import uuid
+from datetime import datetime
+from typing import ClassVar, Self
 
-from pydantic import TypeAdapter
 import sqlalchemy
+from pydantic import TypeAdapter
 from sqlalchemy import ForeignKey, String, JSON
-from sqlalchemy.types import TypeEngine
 from sqlalchemy.dialects import postgresql
 from sqlalchemy.orm import DeclarativeBase, mapped_column, Mapped, relationship
+from sqlalchemy.types import TypeEngine
 
-from xngin.apiserver.api_types import DesignSpec
+from xngin.apiserver.api_types import DesignSpec, PowerResponse, AudienceSpec
+from xngin.apiserver.models.enums import ExperimentState
 from xngin.apiserver.routers.admin_api_types import (
     InspectDatasourceTableResponse,
     InspectParticipantTypesResponse,
 )
+from xngin.apiserver.routers.experiments_api_types import AssignSummary
 from xngin.apiserver.settings import DatasourceConfig
 
 # JSONBetter is JSON for most databases but JSONB for Postgres.
@@ -150,6 +151,9 @@ class Datasource(Base):
     api_keys: Mapped[list["ApiKey"]] = relationship(
         back_populates="datasource", cascade="all, delete-orphan"
     )
+    experiments: Mapped[list["Experiment"]] = relationship(
+        back_populates="datasource", cascade="all, delete-orphan"
+    )
 
     def get_config(self) -> DatasourceConfig:
         """Deserializes the config field into a DatasourceConfig."""
@@ -242,26 +246,6 @@ class ParticipantTypesInspected(Base):
         self.response_last_updated = None
 
 
-class ExperimentState(enum.StrEnum):
-    """
-    Experiment lifecycle states.
-
-    note: [starting state], [[terminal state]]
-    [DESIGNING]->[ASSIGNED]->{[[ABANDONED]], COMMITTED}->[[ABORTED]]
-    """
-
-    DESIGNING = "designing"
-    ASSIGNED = "assigned"
-    ABANDONED = "abandoned"
-    COMMITTED = "committed"
-    # TODO: Consider adding two more states:
-    # Add an ACTIVE state that is only derived in a View when the state is COMMITTED and the query
-    # time is between experiment start and end.
-    # Add a COMPLETE state that is only derived in a View when the state is COMMITTED and query time
-    # is after experiment end.
-    ABORTED = "aborted"
-
-
 class ArmAssignment(Base):
     """Stores experiment treatment assignments."""
 
@@ -289,8 +273,8 @@ class Experiment(Base):
 
     id: Mapped[uuid.UUID] = mapped_column(sqlalchemy.Uuid(), primary_key=True)
     datasource_id: Mapped[str] = mapped_column(
-        String(255)
-    )  # TODO: setup a proper relation on Datasource
+        String(255), ForeignKey("datasources.id", ondelete="CASCADE")
+    )
     state: Mapped[ExperimentState]
     start_date: Mapped[datetime] = mapped_column(
         comment="Target start date of the experiment. Denormalized from design_spec."
@@ -322,6 +306,21 @@ class Experiment(Base):
         back_populates="experiment", cascade="all, delete-orphan"
     )
 
+    datasource: Mapped["Datasource"] = relationship(back_populates="experiments")
+
     def get_design_spec(self) -> DesignSpec:
         """Deserializes design_spec into a DesignSpec."""
         return TypeAdapter(DesignSpec).validate_python(self.design_spec)
+
+    def get_audience_spec(self) -> DesignSpec:
+        """Deserializes design_spec into a DesignSpec."""
+        return TypeAdapter(AudienceSpec).validate_python(self.audience_spec)
+
+    def get_power_analyses(self) -> PowerResponse | None:
+        if self.power_analyses is None:
+            return None
+        return TypeAdapter(PowerResponse).validate_python(self.power_analyses)
+
+    def get_assign_summary(self) -> "AssignSummary":
+        """Deserializes assign_summary into a dict."""
+        return TypeAdapter(AssignSummary).validate_python(self.assign_summary)

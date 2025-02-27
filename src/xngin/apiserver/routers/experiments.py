@@ -1,8 +1,7 @@
+import uuid
 from contextlib import asynccontextmanager
 from typing import Annotated
-import uuid
 
-from pydantic import BaseModel, ConfigDict, Field
 from fastapi import (
     APIRouter,
     FastAPI,
@@ -17,10 +16,8 @@ from sqlalchemy.orm import Session
 
 from xngin.apiserver.api_types import (
     Assignment,
-    AudienceSpec,
     BalanceCheck,
     DesignSpec,
-    PowerResponse,
     Strata,
 )
 from xngin.apiserver.dependencies import (
@@ -30,19 +27,31 @@ from xngin.apiserver.dependencies import (
 )
 from xngin.apiserver.exceptions_common import LateValidationError
 from xngin.apiserver.gsheet_cache import GSheetCache
+from xngin.apiserver.models.enums import ExperimentState
+from xngin.apiserver.models.tables import (
+    ArmAssignment,
+    Experiment,
+)
 from xngin.apiserver.routers.experiments_api import (
     CommonQueryParams,
     do_assignment,
     get_participants_config_and_schema,
 )
+from xngin.apiserver.routers.experiments_api_types import (
+    CreateExperimentRequest,
+    AssignSummary,
+    ExperimentConfig,
+    CreateExperimentWithAssignmentResponse,
+    GetExperimentResponse,
+    ListExperimentsResponse,
+    GetExperimentAssigmentsResponse,
+)
 from xngin.apiserver.settings import (
     Datasource,
+    DatasourceConfig,
+    ParticipantsConfig,
 )
-from xngin.apiserver.models.tables import (
-    Experiment,
-    ArmAssignment,
-    ExperimentState,
-)
+from xngin.schema.schema_types import ParticipantsSchema
 
 
 @asynccontextmanager
@@ -54,58 +63,6 @@ router = APIRouter(
     lifespan=lifespan,
     prefix="",
 )
-
-
-class ExperimentsBaseModel(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-
-class CreateExperimentRequest(ExperimentsBaseModel):
-    design_spec: DesignSpec
-    audience_spec: AudienceSpec
-    power_analyses: PowerResponse | None = None
-
-
-class AssignSummary(ExperimentsBaseModel):
-    """Key pieces of an AssignResponse without the assignments."""
-
-    balance_check: BalanceCheck
-    sample_size: int
-
-
-class ExperimentConfig(ExperimentsBaseModel):
-    """Representation of our stored Experiment information."""
-
-    datasource_id: str
-    state: Annotated[
-        ExperimentState, Field(description="Current state of this experiment.")
-    ]
-    design_spec: DesignSpec
-    audience_spec: AudienceSpec
-    power_analyses: PowerResponse | None
-    assign_summary: AssignSummary
-
-
-class CreateExperimentWithAssignmentResponse(ExperimentConfig):
-    """Same as the request but with uuids filled for the experiment and arms, and summary info on the assignment."""
-
-
-class GetExperimentResponse(ExperimentConfig):
-    """An experiment configuration capturing all info at design time when assignment was made."""
-
-
-class ListExperimentsResponse(ExperimentsBaseModel):
-    items: list[ExperimentConfig]
-
-
-class GetExperimentAssigmentsResponse(ExperimentsBaseModel):
-    """Describes assignments for all participants and balance test results."""
-
-    balance_check: BalanceCheck
-
-    experiment_id: uuid.UUID
-    sample_size: int
-    assignments: list[Assignment]
 
 
 @router.post(
@@ -143,6 +100,28 @@ def create_experiment_with_assignment(
         commons, config, gsheets
     )
 
+    return create_experiment_with_assignment_impl(
+        xngin_session,
+        datasource,
+        body,
+        participants_cfg,
+        config,
+        schema,
+        random_state,
+        chosen_n,
+    )
+
+
+def create_experiment_with_assignment_impl(
+    xngin_session: Session,
+    datasource: Datasource,
+    body: CreateExperimentRequest,
+    participants_cfg: ParticipantsConfig,
+    config: DatasourceConfig,
+    schema: ParticipantsSchema,
+    random_state: int | None,
+    chosen_n: int,
+):
     # First generate uuids for the experiment and arms, which do_assignment needs.
     body.design_spec.experiment_id = uuid.uuid4()
     for arm in body.design_spec.arms:
@@ -229,6 +208,10 @@ def commit_experiment(
     experiment_id: uuid.UUID,
 ):
     experiment = get_experiment_or_raise(xngin_session, experiment_id, datasource.id)
+    return commit_experiment_impl(xngin_session, experiment)
+
+
+def commit_experiment_impl(xngin_session: Session, experiment: Experiment):
     if experiment.state == ExperimentState.COMMITTED:
         return Response(status_code=status.HTTP_304_NOT_MODIFIED)
     if experiment.state not in {ExperimentState.ASSIGNED}:
@@ -253,6 +236,10 @@ def abandon_experiment(
     experiment_id: uuid.UUID,
 ):
     experiment = get_experiment_or_raise(xngin_session, experiment_id, datasource.id)
+    return abandon_experiment_impl(xngin_session, experiment)
+
+
+def abandon_experiment_impl(xngin_session: Session, experiment: Experiment):
     if experiment.state == ExperimentState.ABANDONED:
         return Response(status_code=status.HTTP_304_NOT_MODIFIED)
     if experiment.state not in {ExperimentState.DESIGNING, ExperimentState.ASSIGNED}:
@@ -275,6 +262,10 @@ def list_experiments(
     datasource: Annotated[Datasource, Depends(datasource_dependency)],
     xngin_session: Annotated[Session, Depends(xngin_db_session)],
 ) -> ListExperimentsResponse:
+    return list_experiments_impl(xngin_session, datasource)
+
+
+def list_experiments_impl(xngin_session: Session, datasource: Datasource):
     stmt = (
         select(Experiment)
         .where(Experiment.datasource_id == datasource.id)
@@ -287,10 +278,10 @@ def list_experiments(
             ExperimentConfig(
                 datasource_id=e.datasource_id,
                 state=e.state,
-                design_spec=e.design_spec,
-                audience_spec=e.audience_spec,
-                power_analyses=e.power_analyses,
-                assign_summary=e.assign_summary,
+                design_spec=e.get_design_spec(),
+                audience_spec=e.get_audience_spec(),
+                power_analyses=e.get_power_analyses(),
+                assign_summary=e.get_assign_summary(),
             )
             for e in experiments
         ]
@@ -310,10 +301,10 @@ def get_experiment(
     return ExperimentConfig(
         datasource_id=experiment.datasource_id,
         state=experiment.state,
-        design_spec=experiment.design_spec,
-        audience_spec=experiment.audience_spec,
-        power_analyses=experiment.power_analyses,
-        assign_summary=experiment.assign_summary,
+        design_spec=experiment.get_design_spec(),
+        audience_spec=experiment.get_audience_spec(),
+        power_analyses=experiment.get_power_analyses(),
+        assign_summary=experiment.get_assign_summary(),
     )
 
 
@@ -329,14 +320,16 @@ def get_experiment_assignments(
 ) -> GetExperimentAssigmentsResponse:
     experiment = get_experiment_or_raise(xngin_session, experiment_id, datasource.id)
 
-    # Get sample size and and balance check from the assign_summary
+    return get_experiment_assignments_impl(experiment)
+
+
+def get_experiment_assignments_impl(experiment: Experiment):
+    # Get sample size and balance check from the assign_summary
     assign_summary = experiment.assign_summary
     balance_check = BalanceCheck.model_validate(assign_summary["balance_check"])
-
     # Map arm IDs to names
     design_spec = DesignSpec.model_validate(experiment.design_spec)
     arm_id_to_name = {str(arm.arm_id): arm.arm_name for arm in design_spec.arms}
-
     # Convert ArmAssignment models to Assignment API types
     assignments = [
         Assignment(
@@ -347,7 +340,6 @@ def get_experiment_assignments(
         )
         for arm_assignment in experiment.arm_assignments
     ]
-
     return GetExperimentAssigmentsResponse(
         balance_check=balance_check,
         experiment_id=experiment.id,
