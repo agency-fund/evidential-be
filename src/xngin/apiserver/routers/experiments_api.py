@@ -3,8 +3,15 @@ from contextlib import asynccontextmanager
 from typing import Annotated
 
 import sqlalchemy
-from fastapi import APIRouter, FastAPI, HTTPException, Depends, Query, Response
-from fastapi import Request
+from fastapi import (
+    APIRouter,
+    FastAPI,
+    HTTPException,
+    Depends,
+    Query,
+    Response,
+    Request,
+)
 from sqlalchemy import distinct
 from sqlalchemy.orm import Session
 
@@ -117,9 +124,9 @@ def get_strata(
     )
     strata_fields = {c.field_name: c for c in schema.fields if c.is_strata}
 
-    with config.dbsession() as session:
+    with config.dbsession() as dwh_session:
         sa_table = infer_table(
-            session.get_bind(),
+            dwh_session.get_bind(),
             participants_cfg.table_name,
             config.supports_reflection(),
         )
@@ -158,15 +165,15 @@ def get_filters(
     )
     filter_fields = {c.field_name: c for c in schema.fields if c.is_filter}
 
-    with config.dbsession() as session:
+    with config.dbsession() as dwh_session:
         sa_table = infer_table(
-            session.get_bind(),
+            dwh_session.get_bind(),
             participants_cfg.table_name,
             config.supports_reflection(),
         )
         db_schema = generate_field_descriptors(sa_table, schema.get_unique_id_field())
 
-        mapper = create_col_to_filter_meta_mapper(db_schema, sa_table, session)
+        mapper = create_col_to_filter_meta_mapper(db_schema, sa_table, dwh_session)
 
         return GetFiltersResponse(
             results=sorted(
@@ -243,9 +250,9 @@ def get_metrics(
     )
     metric_cols = {c.field_name: c for c in schema.fields if c.is_metric}
 
-    with config.dbsession() as session:
+    with config.dbsession() as dwh_session:
         sa_table = infer_table(
-            session.get_bind(),
+            dwh_session.get_bind(),
             participants_cfg.table_name,
             config.supports_reflection(),
         )
@@ -298,15 +305,15 @@ def powercheck(
     )
     _validate_schema_metrics(body.design_spec, schema)
 
-    with config.dbsession() as session:
+    with config.dbsession() as dwh_session:
         sa_table = infer_table(
-            session.get_bind(),
+            dwh_session.get_bind(),
             participants_cfg.table_name,
             config.supports_reflection(),
         )
 
         metric_stats = get_stats_on_metrics(
-            session,
+            dwh_session,
             sa_table,
             body.design_spec.metrics,
             body.audience_spec,
@@ -351,9 +358,9 @@ def assign_treatment(
     )
     _validate_schema_metrics(body.design_spec, schema)
 
-    with config.dbsession() as session:
+    with config.dbsession() as dwh_session:
         return do_assignment(
-            session=session,
+            session=dwh_session,
             participant=participants_cfg,
             supports_reflection=config.supports_reflection(),
             body=body,

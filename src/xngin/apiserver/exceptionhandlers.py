@@ -6,6 +6,7 @@ from fastapi.responses import JSONResponse
 from pydantic import ValidationError
 
 from xngin.apiserver.apikeys import ApiKeyError
+from xngin.apiserver.dependencies import CannotFindDatasourceError
 from xngin.apiserver.exceptions_common import LateValidationError
 from xngin.apiserver.settings import (
     CannotFindTableError,
@@ -21,6 +22,12 @@ def setup(app):
     The general goal of these exception handlers should be to return stable API responses (including meaningful HTTP
     status codes) to exceptions we recognize, and ideally not reveal too much about internal implementation details.
     """
+
+    @app.exception_handler(CannotFindDatasourceError)
+    async def exception_handler_cannotfinddatasourceerror(
+        _request: Request, exc: CannotFindDatasourceError
+    ):
+        return JSONResponse(status_code=404, content={"message": str(exc)})
 
     @app.exception_handler(CannotFindTableError)
     async def exception_handler_cannotfindthetableerror(

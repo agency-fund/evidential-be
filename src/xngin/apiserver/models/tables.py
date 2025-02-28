@@ -1,21 +1,27 @@
 import json
 import secrets
+import uuid
 from datetime import datetime
-from typing import Self
+from typing import ClassVar, Self
 
+import sqlalchemy
 from pydantic import TypeAdapter
 from sqlalchemy import ForeignKey, String, JSON
-from sqlalchemy.dialects.postgresql import JSONB
+from sqlalchemy.dialects import postgresql
 from sqlalchemy.orm import DeclarativeBase, mapped_column, Mapped, relationship
+from sqlalchemy.types import TypeEngine
 
+from xngin.apiserver.api_types import DesignSpec, PowerResponse, AudienceSpec
+from xngin.apiserver.models.enums import ExperimentState
 from xngin.apiserver.routers.admin_api_types import (
     InspectDatasourceTableResponse,
     InspectParticipantTypesResponse,
 )
+from xngin.apiserver.routers.experiments_api_types import AssignSummary
 from xngin.apiserver.settings import DatasourceConfig
 
 # JSONBetter is JSON for most databases but JSONB for Postgres.
-JSONBetter = JSON().with_variant(JSONB(), "postgresql")
+JSONBetter = JSON().with_variant(postgresql.JSONB(), "postgresql")
 
 ALPHABET = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz"
 
@@ -28,7 +34,18 @@ def unique_id_factory(prefix):
 
 
 class Base(DeclarativeBase):
-    pass
+    # See https://docs.sqlalchemy.org/en/20/orm/declarative_tables.html#customizing-the-type-map
+    type_annotation_map: ClassVar[dict[type, TypeEngine]] = {
+        # For pg specifically, use the binary form
+        sqlalchemy.JSON: JSONBetter,
+        datetime: sqlalchemy.TIMESTAMP(timezone=True),
+    }
+
+    def to_dict(self):
+        """Quick and dirty dump to dict for debugging."""
+        return {
+            column.name: getattr(self, column.name) for column in self.__table__.columns
+        }
 
 
 class CacheTable(Base):
@@ -120,7 +137,7 @@ class Datasource(Base):
         ForeignKey("organizations.id", ondelete="CASCADE")
     )
     config: Mapped[dict] = mapped_column(
-        JSON, comment="JSON serialized form of DatasourceConfig"
+        sqlalchemy.JSON, comment="JSON serialized form of DatasourceConfig"
     )
 
     table_list: Mapped[list[str] | None] = mapped_column(
@@ -132,6 +149,9 @@ class Datasource(Base):
 
     organization: Mapped["Organization"] = relationship(back_populates="datasources")
     api_keys: Mapped[list["ApiKey"]] = relationship(
+        back_populates="datasource", cascade="all, delete-orphan"
+    )
+    experiments: Mapped[list["Experiment"]] = relationship(
         back_populates="datasource", cascade="all, delete-orphan"
     )
 
@@ -224,3 +244,83 @@ class ParticipantTypesInspected(Base):
     def clear_response(self):
         self.response = None
         self.response_last_updated = None
+
+
+class ArmAssignment(Base):
+    """Stores experiment treatment assignments."""
+
+    __tablename__ = "arm_assignments"
+
+    experiment_id: Mapped[uuid.UUID] = mapped_column(
+        sqlalchemy.Uuid(),
+        ForeignKey("experiments.id", ondelete="CASCADE"),
+        primary_key=True,
+    )
+    participant_id: Mapped[str] = mapped_column(String(255), primary_key=True)
+    participant_type: Mapped[str] = mapped_column(String(255))
+    arm_id: Mapped[uuid.UUID] = mapped_column(sqlalchemy.Uuid())
+    strata: Mapped[sqlalchemy.JSON] = mapped_column(
+        comment="JSON serialized form of a list of Strata objects (from Assignment.strata)."
+    )
+
+    experiment: Mapped["Experiment"] = relationship(back_populates="arm_assignments")
+
+
+class Experiment(Base):
+    """Stores experiment metadata."""
+
+    __tablename__ = "experiments"
+
+    id: Mapped[uuid.UUID] = mapped_column(sqlalchemy.Uuid(), primary_key=True)
+    datasource_id: Mapped[str] = mapped_column(
+        String(255), ForeignKey("datasources.id", ondelete="CASCADE")
+    )
+    state: Mapped[ExperimentState]
+    start_date: Mapped[datetime] = mapped_column(
+        comment="Target start date of the experiment. Denormalized from design_spec."
+    )
+    end_date: Mapped[datetime] = mapped_column(
+        comment="Target end date of the experiment. Denormalized from design_spec."
+    )
+    # We presume updates to descriptions/names/times won't happen frequently.
+    design_spec: Mapped[sqlalchemy.JSON] = mapped_column(
+        comment="JSON serialized form of DesignSpec."
+    )
+    audience_spec: Mapped[sqlalchemy.JSON] = mapped_column(
+        comment="JSON serialized form of AudienceSpec."
+    )
+    power_analyses: Mapped[sqlalchemy.JSON | None] = mapped_column(
+        comment="JSON serialized form of a PowerResponse. Not required since some experiments may not have data to run power analyses."
+    )
+    assign_summary: Mapped[sqlalchemy.JSON] = mapped_column(
+        comment="JSON serialized form of AssignSummary."
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        server_default=sqlalchemy.sql.func.now()
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        server_default=sqlalchemy.sql.func.now(), onupdate=sqlalchemy.sql.func.now()
+    )
+
+    arm_assignments: Mapped[list["ArmAssignment"]] = relationship(
+        back_populates="experiment", cascade="all, delete-orphan"
+    )
+
+    datasource: Mapped["Datasource"] = relationship(back_populates="experiments")
+
+    def get_design_spec(self) -> DesignSpec:
+        """Deserializes design_spec into a DesignSpec."""
+        return TypeAdapter(DesignSpec).validate_python(self.design_spec)
+
+    def get_audience_spec(self) -> DesignSpec:
+        """Deserializes design_spec into a DesignSpec."""
+        return TypeAdapter(AudienceSpec).validate_python(self.audience_spec)
+
+    def get_power_analyses(self) -> PowerResponse | None:
+        if self.power_analyses is None:
+            return None
+        return TypeAdapter(PowerResponse).validate_python(self.power_analyses)
+
+    def get_assign_summary(self) -> "AssignSummary":
+        """Deserializes assign_summary into a dict."""
+        return TypeAdapter(AssignSummary).validate_python(self.assign_summary)

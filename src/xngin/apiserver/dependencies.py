@@ -18,6 +18,10 @@ from xngin.apiserver.settings import (
 from xngin.apiserver.models.tables import Datasource as DatasourceTable
 
 
+class CannotFindDatasourceError(Exception):
+    """Error raised when an invalid Datasource-ID is provided in a request."""
+
+
 def settings_dependency():
     """Provides the settings for the server.
 
@@ -49,6 +53,7 @@ def datasource_dependency(
     """Returns the configuration for the current request, as determined by the Datasource-ID HTTP request header."""
     if not datasource_id:
         return None
+
     # Datasource configs can be in the static JSON settings or in the database.
     from_json = settings.get_datasource(datasource_id)
 
@@ -61,13 +66,19 @@ def datasource_dependency(
     # Datasources from the static JSON settings optionally require an API key.
     if from_json and from_json.require_api_key:
         require_valid_api_key(xngin_db, api_key, datasource_id)
+
+    if from_json is None:
+        raise CannotFindDatasourceError("Invalid datasource.")
+
     return from_json
 
 
 def datasource_config_required(
-    ds: Annotated[Datasource, Depends(datasource_dependency)],
+    ds: Annotated[Datasource | None, Depends(datasource_dependency)],
 ) -> DatasourceConfig:
     """Returns the connection-specific implementation for this datasource."""
+    if ds is None:
+        raise CannotFindDatasourceError("Invalid datasource.")
     return ds.config
 
 
