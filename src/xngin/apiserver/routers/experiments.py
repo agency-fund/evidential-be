@@ -69,7 +69,7 @@ router = APIRouter(
     "/experiments/with-assignment",
     summary="Create a pending experiment and save its assignments to the database. User will still need to /experiments/<id>/commit the experiment after reviewing assignment balance summary.",
 )
-def create_experiment_with_assignment(
+def create_experiment_with_assignment_sl(
     # TODO: add authorization support here and all other endpoints
     # user: Annotated[User, Depends(user_from_token)],
     body: CreateExperimentRequest,
@@ -202,7 +202,7 @@ def get_experiment_or_raise(
     "/experiments/{experiment_id}/commit",
     summary="Marks any ASSIGNED experiment as COMMITTED.",
 )
-def commit_experiment(
+def commit_experiment_sl(
     datasource: Annotated[Datasource, Depends(datasource_dependency)],
     xngin_session: Annotated[Session, Depends(xngin_db_session)],
     experiment_id: uuid.UUID,
@@ -230,7 +230,7 @@ def commit_experiment_impl(xngin_session: Session, experiment: Experiment):
     "/experiments/{experiment_id}/abandon",
     summary="Marks any DESIGNING or ASSIGNED experiment as ABANDONED.",
 )
-def abandon_experiment(
+def abandon_experiment_sl(
     datasource: Annotated[Datasource, Depends(datasource_dependency)],
     xngin_session: Annotated[Session, Depends(xngin_db_session)],
     experiment_id: uuid.UUID,
@@ -258,7 +258,7 @@ def abandon_experiment_impl(xngin_session: Session, experiment: Experiment):
     "/experiments",
     summary="Fetch experiment meta data (design & assignment specs) for the given id.",
 )
-def list_experiments(
+def list_experiments_sl(
     datasource: Annotated[Datasource, Depends(datasource_dependency)],
     xngin_session: Annotated[Session, Depends(xngin_db_session)],
 ) -> ListExperimentsResponse:
@@ -292,7 +292,7 @@ def list_experiments_impl(xngin_session: Session, datasource: Datasource):
     "/experiments/{experiment_id}",
     summary="Fetch experiment meta data (design & assignment specs) for the given id.",
 )
-def get_experiment(
+def get_experiment_sl(
     datasource: Annotated[Datasource, Depends(datasource_dependency)],
     xngin_session: Annotated[Session, Depends(xngin_db_session)],
     experiment_id: uuid.UUID,
@@ -313,7 +313,7 @@ def get_experiment(
     "/experiments/{experiment_id}/assignments",
     summary="Fetch list of participant=>arm assignments for the given experiment id.",
 )
-def get_experiment_assignments(
+def get_experiment_assignments_sl(
     datasource: Annotated[Datasource, Depends(datasource_dependency)],
     xngin_session: Annotated[Session, Depends(xngin_db_session)],
     experiment_id: uuid.UUID,
