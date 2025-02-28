@@ -29,6 +29,10 @@ class RowProtocol(Protocol):
         """https://docs.sqlalchemy.org/en/20/core/connections.html#sqlalchemy.engine.Row._asdict"""
 
 
+STOCHATREAT_STRATUM_ID_NAME = "stratum_id"
+STOCHATREAT_TREAT_NAME = "treat"
+
+
 def assign_treatment(
     sa_table: Table,
     data: Sequence[RowProtocol],
@@ -38,6 +42,7 @@ def assign_treatment(
     experiment_id: str,
     fstat_thresh: float = 0.5,
     quantiles: int = 4,
+    stratum_id_name: str | None = None,
     random_state: int | None = None,
 ) -> AssignResponse:
     """
@@ -52,6 +57,8 @@ def assign_treatment(
         experiment_id: Unique identifier for experiment
         fstat_thresh: Threshold for F-statistic p-value
         quantiles: number of buckets to use for stratification of numerics
+        stratum_id_name: If you want to output the strata group ids, provide a non-null name for
+                         the column to add to the assignment output as a Strata field.
         random_state: Random seed for reproducibility
 
     Returns:
@@ -93,27 +100,31 @@ def assign_treatment(
         probs=[1 / n_arms] * n_arms,
         # internally uses legacy np.random.RandomState which can take None
         random_state=random_state,  # type: ignore[arg-type]
-    ).drop(columns=["stratum_id"])
+    )
     df_cleaned = df_cleaned.merge(treatment_status, on=id_col)
+    stratum_ids = df_cleaned[STOCHATREAT_STRATUM_ID_NAME]
+    treatment_ids = df_cleaned[STOCHATREAT_TREAT_NAME]
 
     # Put back non-null numeric columns for a more robust balance check.
-    df_cleaned = restore_original_numeric_columns(
+    df_cleaned_for_balance_check = restore_original_numeric_columns(
         df_orig=orig_data_to_stratify,
-        df_cleaned=df_cleaned,
+        df_cleaned=df_cleaned.drop(columns=[STOCHATREAT_STRATUM_ID_NAME]),
         numeric_notnull_set=numeric_notnull_set,
     )
     # Do balance check with treatment assignments as the dependent var using preprocessed data.
-    balance_check_cols = [*post_stratum_cols, "treat"]
+    balance_check_cols = [*post_stratum_cols, STOCHATREAT_TREAT_NAME]
     balance_check = check_balance_of_preprocessed_df(
-        df_cleaned[balance_check_cols],
-        treatment_col="treat",
+        df_cleaned_for_balance_check[balance_check_cols],
+        treatment_col=STOCHATREAT_TREAT_NAME,
         exclude_col_set=exclude_cols_set,
         alpha=fstat_thresh,
     )
 
     # Prepare assignments for return along with the original data as a list of ExperimentParticipant objects.
     participants_list = []
-    for treatment_assignment, row in zip(df_cleaned["treat"], data, strict=False):
+    for stratum_id, treatment_assignment, row in zip(
+        stratum_ids, treatment_ids, data, strict=False
+    ):
         # ExperimentStrata for each column
         row_dict = row._asdict()
         strata = [
@@ -125,6 +136,10 @@ def assign_treatment(
             )
             for column in orig_stratum_cols
         ]
+        if stratum_id_name is not None:
+            strata.append(
+                Strata(field_name=stratum_id_name, strata_value=str(stratum_id))
+            )
 
         participant = Assignment(
             participant_id=str(row_dict[id_col]),
