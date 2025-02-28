@@ -172,17 +172,16 @@ def get_experiment_via_ds_or_raise(
 ) -> Experiment:
     """Reads the requested experiment (related to the given datasource) from the database. Raises if not found."""
     stmt = (
-        session.query(Experiment)
+        select(Experiment)
         .join(Datasource, Datasource.id == ds.id)
         .where(Experiment.id == experiment_id)
-        .first()
     )
     exp = session.execute(stmt).scalar_one_or_none()
     if exp is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail="Experiment not found."
         )
-    return stmt
+    return exp
 
 
 @router.get("/caller-identity")
