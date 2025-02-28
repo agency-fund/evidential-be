@@ -51,6 +51,7 @@ class DataType(enum.StrEnum):
 
     BOOLEAN = "boolean"
     CHARACTER_VARYING = "character varying"
+    UUID = "uuid"
     DATE = "date"
     INTEGER = "integer"
     DOUBLE_PRECISION = "double precision"
@@ -68,6 +69,8 @@ class DataType(enum.StrEnum):
             return DataType[value]
         if value is str:
             return DataType.CHARACTER_VARYING
+        if isinstance(value, sqlalchemy.sql.sqltypes.UUID):
+            return DataType.UUID
         if isinstance(value, sqlalchemy.sql.sqltypes.String):
             return DataType.CHARACTER_VARYING
         if isinstance(value, sqlalchemy.sql.sqltypes.Boolean):
@@ -90,7 +93,7 @@ class DataType(enum.StrEnum):
             return DataType.INTEGER
         if value is float:
             return DataType.DOUBLE_PRECISION
-        raise ValueError(f"Unmatched type: {value}.")
+        raise ValueError(f"Unmatched type: {type(value)}.")
 
     def filter_class(self, field_name):
         """Classifies a DataType into a filter class."""
@@ -98,7 +101,7 @@ class DataType(enum.StrEnum):
             # TODO: is this customer specific?
             case _ if field_name.lower().endswith("_id"):
                 return DataTypeClass.DISCRETE
-            case DataType.BOOLEAN | DataType.CHARACTER_VARYING:
+            case DataType.BOOLEAN | DataType.CHARACTER_VARYING | DataType.UUID:
                 return DataTypeClass.DISCRETE
             case (
                 DataType.DATE
