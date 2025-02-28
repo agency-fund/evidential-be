@@ -43,6 +43,6 @@ Datasource-ID: testing
 HTTP 422
 ```json
 {
-  "message": "Invalid DesignSpec metrics (check your Datsource configuration): {'ethnicity'}"
+  "message": "Invalid DesignSpec metrics (check your Datasource configuration): {'ethnicity'}"
 }
 ```

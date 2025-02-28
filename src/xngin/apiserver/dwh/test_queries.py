@@ -757,7 +757,7 @@ def test_get_stats_on_missing_metric_raises_error(db_session):
             ),
         )
     assert (
-        "Missing metrics (check your Datsource configuration): {'missing_col'}"
+        "Missing metrics (check your Datasource configuration): {'missing_col'}"
         in str(exc)
     )
 
