@@ -70,10 +70,12 @@ def test_experiment_sql():
 
 
 def make_create_experiment_request(with_uuids: bool = True) -> CreateExperimentRequest:
-    # TODO: generate ids in server
     experiment_id = uuid.uuid4() if with_uuids else None
     arm1_id = uuid.uuid4() if with_uuids else None
     arm2_id = uuid.uuid4() if with_uuids else None
+    # Use timestamps without timezone to be database agnostic
+    start_date = datetime(2025, 1, 1)
+    end_date = datetime(2025, 2, 1)
     # Construct request body
     return CreateExperimentRequest(
         design_spec=DesignSpec(
@@ -90,8 +92,8 @@ def make_create_experiment_request(with_uuids: bool = True) -> CreateExperimentR
                     arm_description="Treatment group",
                 ),
             ],
-            start_date=datetime.now(UTC),
-            end_date=datetime.now(UTC) + timedelta(days=30),
+            start_date=start_date,
+            end_date=end_date,
             strata_field_names=["gender"],
             metrics=[
                 DesignSpecMetricRequest(
