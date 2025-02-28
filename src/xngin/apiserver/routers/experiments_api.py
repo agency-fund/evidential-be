@@ -342,6 +342,18 @@ def assign_treatment(
     gsheets: Annotated[GSheetCache, Depends(gsheet_cache)],
     config: Annotated[DatasourceConfig, Depends(datasource_config_required)],
     refresh: Annotated[bool, Query(description="Refresh the cache.")] = False,
+    quantiles: Annotated[
+        int,
+        Query(
+            description="Number of quantile buckets to use for stratification of numerics."
+        ),
+    ] = 4,
+    stratum_id_name: Annotated[
+        str | None,
+        Query(
+            description="If you wish to also retain the stratum group id per participant, provide a non-null name to output this value as an extra Strata field.",
+        ),
+    ] = None,
     random_state: Annotated[
         int | None,
         Query(
@@ -366,6 +378,8 @@ def assign_treatment(
             body=body,
             chosen_n=chosen_n,
             id_field=schema.get_unique_id_field(),
+            quantiles=quantiles,
+            stratum_id_name=stratum_id_name,
             random_state=random_state,
         )
 
@@ -377,6 +391,8 @@ def do_assignment(
     body: AssignRequest,
     chosen_n: int,
     id_field: str,
+    quantiles: int,
+    stratum_id_name: str | None,
     random_state: int | None,
 ) -> AssignResponse:
     """Helper for assigning treatments."""
@@ -396,6 +412,8 @@ def do_assignment(
         arms=body.design_spec.arms,
         experiment_id=str(body.design_spec.experiment_id),
         fstat_thresh=body.design_spec.fstat_thresh,
+        quantiles=quantiles,
+        stratum_id_name=stratum_id_name,
         random_state=random_state,
     )
 
