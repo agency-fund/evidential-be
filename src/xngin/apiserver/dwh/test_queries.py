@@ -2,7 +2,7 @@
 
 import re
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, UTC
 
 import pytest
 from sqlalchemy import (
@@ -633,7 +633,7 @@ def test_allowed_datetime_filter_validation():
     )
 
     # now without microseconds
-    now = datetime.now().replace(microsecond=0)
+    now = datetime.now(UTC).replace(microsecond=0)
     create_datetime_filter(
         col,
         AudienceSpecFilter(
@@ -644,12 +644,15 @@ def test_allowed_datetime_filter_validation():
     )
 
     # zero offset is allowed
+    # We strip the tz info because in the test below we want to control the tz format;
+    # `now.isoformat()` by default will render with +00:00.
+    now_no_tz = now.replace(tzinfo=None)
     create_datetime_filter(
         col,
         AudienceSpecFilter(
             field_name="x",
             relation=Relation.BETWEEN,
-            value=[now.isoformat() + "Z", now.isoformat() + "-00:00"],
+            value=[now_no_tz.isoformat() + "Z", now_no_tz.isoformat() + "-00:00"],
         ),
     )
 

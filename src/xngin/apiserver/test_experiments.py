@@ -1,5 +1,5 @@
 import uuid
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, UTC
 
 import pytest
 from deepdiff import DeepDiff
@@ -70,10 +70,12 @@ def test_experiment_sql():
 
 
 def make_create_experiment_request(with_uuids: bool = True) -> CreateExperimentRequest:
-    # TODO: generate ids in server
     experiment_id = uuid.uuid4() if with_uuids else None
     arm1_id = uuid.uuid4() if with_uuids else None
     arm2_id = uuid.uuid4() if with_uuids else None
+    # Use timestamps without timezone to be database agnostic
+    start_date = datetime(2025, 1, 1)
+    end_date = datetime(2025, 2, 1)
     # Construct request body
     return CreateExperimentRequest(
         design_spec=DesignSpec(
@@ -90,8 +92,8 @@ def make_create_experiment_request(with_uuids: bool = True) -> CreateExperimentR
                     arm_description="Treatment group",
                 ),
             ],
-            start_date=datetime.now(),
-            end_date=datetime.now() + timedelta(days=30),
+            start_date=start_date,
+            end_date=end_date,
             strata_field_names=["gender"],
             metrics=[
                 DesignSpecMetricRequest(
@@ -293,9 +295,9 @@ def test_list_experiments(db_session: Session):
         ExperimentState.ABORTED, datasource_id="testing-inline-schema"
     )
     # Set the created_at time to test ordering
-    experiment1.created_at = datetime.now() - timedelta(days=1)
-    experiment2.created_at = datetime.now()
-    experiment3.created_at = datetime.now() + timedelta(days=1)
+    experiment1.created_at = datetime.now(UTC) - timedelta(days=1)
+    experiment2.created_at = datetime.now(UTC)
+    experiment3.created_at = datetime.now(UTC) + timedelta(days=1)
     db_session.add_all([experiment1, experiment2, experiment3])
     db_session.commit()
 

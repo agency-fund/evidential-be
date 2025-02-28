@@ -94,7 +94,7 @@ def is_enabled():
 
 
 def cache_is_fresh(updated: datetime):
-    return updated and datetime.now() - updated < timedelta(minutes=5)
+    return updated and datetime.now(datetime.UTC) - updated < timedelta(minutes=5)
 
 
 @asynccontextmanager

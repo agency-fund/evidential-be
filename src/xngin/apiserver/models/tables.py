@@ -1,7 +1,7 @@
 import json
 import secrets
 import uuid
-from datetime import datetime
+from datetime import datetime, UTC
 from typing import ClassVar, Self
 
 import sqlalchemy
@@ -180,7 +180,7 @@ class Datasource(Base):
             self.table_list_updated = None
         else:
             self.table_list = tables
-            self.table_list_updated = datetime.now()
+            self.table_list_updated = datetime.now(UTC)
         return self
 
     def get_table_list(self) -> list[str] | None:
@@ -212,7 +212,7 @@ class DatasourceTablesInspected(Base):
 
     def set_response(self, value: InspectDatasourceTableResponse) -> Self:
         self.response = value.model_dump()
-        self.response_last_updated = datetime.now()
+        self.response_last_updated = datetime.now(UTC)
         return self
 
 
@@ -238,7 +238,7 @@ class ParticipantTypesInspected(Base):
 
     def set_response(self, value: InspectParticipantTypesResponse) -> Self:
         self.response = value.model_dump()
-        self.response_last_updated = datetime.now()
+        self.response_last_updated = datetime.now(UTC)
         return self
 
     def clear_response(self):

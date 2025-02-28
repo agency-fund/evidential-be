@@ -1,6 +1,6 @@
 """This defines the various webhook request/response contracts as pydantic models."""
 
-from datetime import datetime
+from datetime import datetime, UTC
 from typing import Any, Literal, Self
 import uuid
 
@@ -52,7 +52,7 @@ class WebhookCommitRequest(WebhookBaseModel):
 
     experiment_commit_datetime: datetime = Field(
         description="timestamp when the experiment was committed",
-        default_factory=datetime.now,
+        default_factory=lambda: datetime.now(UTC),
     )
     experiment_commit_id: uuid.UUID = Field(
         description="unique identifier for this experiment commit",

@@ -77,6 +77,14 @@ def get_test_dwh_info():
     return get_test_uri_info(connection_uri)
 
 
+@pytest.fixture(scope="session", autouse=True)
+def setup_debug_logging():
+    print(
+        f"Running tests with XNGIN_TEST_APPDB_URI: {get_test_appdb_info()} "
+        f"and XNGIN_TEST_DWH_URI: {get_test_dwh_info()}"
+    )
+
+
 def get_test_uri_info(connection_uri: str):
     """Returns a tuple of info about a test database given its connection_uri.
 
