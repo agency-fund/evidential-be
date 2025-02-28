@@ -137,6 +137,8 @@ def create_experiment_with_assignment_impl(
             chosen_n=chosen_n,
             id_field=schema.get_unique_id_field(),
             random_state=random_state,
+            quantiles=4,  # TODO(qixotic)
+            stratum_id_name=None,
         )
 
         # Create experiment record
