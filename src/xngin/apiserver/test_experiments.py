@@ -1,5 +1,5 @@
 import uuid
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 import pytest
 from deepdiff import DeepDiff
@@ -90,8 +90,8 @@ def make_create_experiment_request(with_uuids: bool = True) -> CreateExperimentR
                     arm_description="Treatment group",
                 ),
             ],
-            start_date=datetime.now(),
-            end_date=datetime.now() + timedelta(days=30),
+            start_date=datetime.now(timezone.utc),
+            end_date=datetime.now(timezone.utc) + timedelta(days=30),
             strata_field_names=["gender"],
             metrics=[
                 DesignSpecMetricRequest(
@@ -293,9 +293,9 @@ def test_list_experiments(db_session: Session):
         ExperimentState.ABORTED, datasource_id="testing-inline-schema"
     )
     # Set the created_at time to test ordering
-    experiment1.created_at = datetime.now() - timedelta(days=1)
-    experiment2.created_at = datetime.now()
-    experiment3.created_at = datetime.now() + timedelta(days=1)
+    experiment1.created_at = datetime.now(timezone.utc) - timedelta(days=1)
+    experiment2.created_at = datetime.now(timezone.utc)
+    experiment3.created_at = datetime.now(timezone.utc) + timedelta(days=1)
     db_session.add_all([experiment1, experiment2, experiment3])
     db_session.commit()
 
