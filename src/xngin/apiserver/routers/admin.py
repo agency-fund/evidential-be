@@ -2,7 +2,7 @@
 
 import logging
 from contextlib import asynccontextmanager
-from datetime import timedelta, datetime, timezone
+from datetime import timedelta, datetime, UTC
 from typing import Annotated
 
 import google.api_core.exceptions
@@ -94,7 +94,7 @@ def is_enabled():
 
 
 def cache_is_fresh(updated: datetime):
-    return updated and datetime.now(timezone.utc) - updated < timedelta(minutes=5)
+    return updated and datetime.now(datetime.UTC) - updated < timedelta(minutes=5)
 
 
 @asynccontextmanager

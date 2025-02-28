@@ -2,7 +2,7 @@
 
 import re
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import datetime, timezone, UTC
 
 import pytest
 from sqlalchemy import (
@@ -633,7 +633,7 @@ def test_allowed_datetime_filter_validation():
     )
 
     # now without microseconds
-    now = datetime.now(timezone.utc).replace(microsecond=0)
+    now = datetime.now(UTC).replace(microsecond=0)
     create_datetime_filter(
         col,
         AudienceSpecFilter(
