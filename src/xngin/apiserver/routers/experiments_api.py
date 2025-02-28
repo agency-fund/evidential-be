@@ -275,13 +275,15 @@ def get_metrics(
     )
 
 
-def _validate_schema_metrics(design_spec: DesignSpec, schema: ParticipantsSchema):
+def validate_schema_metrics_or_raise(
+    design_spec: DesignSpec, schema: ParticipantsSchema
+):
     metric_fields = {m.field_name for m in schema.fields if m.is_metric}
     metrics_requested = {m.field_name for m in design_spec.metrics}
     invalid_metrics = metrics_requested - metric_fields
     if len(invalid_metrics) > 0:
         raise LateValidationError(
-            f"Invalid DesignSpec metrics (check your Datsource configuration): {invalid_metrics}"
+            f"Invalid DesignSpec metrics (check your Datasource configuration): {invalid_metrics}"
         )
 
 
@@ -303,8 +305,14 @@ def powercheck(
     participants_cfg, schema = get_participants_config_and_schema(
         commons, config, gsheets
     )
-    _validate_schema_metrics(body.design_spec, schema)
+    validate_schema_metrics_or_raise(body.design_spec, schema)
 
+    return power_check_impl(body, config, participants_cfg)
+
+
+def power_check_impl(
+    body: PowerRequest, config: DatasourceConfig, participants_cfg: ParticipantsConfig
+):
     with config.dbsession() as dwh_session:
         sa_table = infer_table(
             dwh_session.get_bind(),
@@ -368,7 +376,7 @@ def assign_treatment(
     participants_cfg, schema = get_participants_config_and_schema(
         commons, config, gsheets
     )
-    _validate_schema_metrics(body.design_spec, schema)
+    validate_schema_metrics_or_raise(body.design_spec, schema)
 
     with config.dbsession() as dwh_session:
         return do_assignment(

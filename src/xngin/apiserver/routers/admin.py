@@ -20,6 +20,8 @@ from xngin.apiserver.api_types import (
     DataType,
     GetStrataResponseElement,
     GetMetricsResponseElement,
+    PowerRequest,
+    PowerResponse,
 )
 from xngin.apiserver.apikeys import make_key, hash_key
 from xngin.apiserver.dependencies import xngin_db_session
@@ -67,6 +69,8 @@ from xngin.apiserver.routers.admin_api_types import (
 from xngin.apiserver.routers.experiments_api import (
     generate_field_descriptors,
     create_col_to_filter_meta_mapper,
+    validate_schema_metrics_or_raise,
+    power_check_impl,
 )
 from xngin.apiserver.routers.experiments_api_types import ExperimentConfig
 from xngin.apiserver.routers.oidc_dependencies import require_oidc_token, TokenInfo
@@ -1072,3 +1076,17 @@ def get_experiment_assignments(
     ds = get_datasource_or_raise(session, user, datasource_id)
     experiment = get_experiment_via_ds_or_raise(session, ds, experiment_id)
     return experiments.get_experiment_assignments_impl(experiment)
+
+
+@router.post("/datasources/{datasource_id}/power")
+def power_check(
+    datasource_id: str,
+    session: Annotated[Session, Depends(xngin_db_session)],
+    user: Annotated[User, Depends(user_from_token)],
+    body: PowerRequest,
+) -> PowerResponse:
+    ds = get_datasource_or_raise(session, user, datasource_id)
+    dsconfig = ds.get_config()
+    participants_cfg = dsconfig.find_participants(body.audience_spec.participant_type)
+    validate_schema_metrics_or_raise(body.design_spec, participants_cfg)
+    return power_check_impl(body, dsconfig, participants_cfg)
