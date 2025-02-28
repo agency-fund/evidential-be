@@ -163,15 +163,14 @@ def get_datasource_or_raise(session: Session, user: User, datasource_id: str):
     return ds
 
 
-def get_experiment_or_raise_auth(
-    session: Session, user: User, experiment_id: str
+def get_experiment_via_ds_or_raise(
+    session: Session, ds: Datasource, experiment_id: str
 ) -> Experiment:
-    """Reads the requested experiment from the database. Raises if disallowed or not found."""
+    """Reads the requested experiment (related to the given datasource) from the database. Raises if not found."""
     stmt = (
         session.query(Experiment)
-        .join(Organization)
-        .join(UserOrganization)
-        .where(Experiment.id == experiment_id, UserOrganization.user_id == user.id)
+        .join(Datasource, Datasource.id == ds.id)
+        .where(Experiment.id == experiment_id)
         .first()
     )
     exp = session.execute(stmt).scalar_one_or_none()
@@ -1002,27 +1001,31 @@ def create_experiment_with_assignment(
     )
 
 
-@router.post("/experiments/{experiment_id}/commit")
+@router.post("/datasources/{datasource_id}/experiments/{experiment_id}/commit")
 def commit_experiment(
+    datasource_id: str,
     experiment_id: str,
     session: Annotated[Session, Depends(xngin_db_session)],
     user: Annotated[User, Depends(user_from_token)],
 ):
-    experiment = get_experiment_or_raise_auth(session, user, experiment_id)
+    ds = get_datasource_or_raise(session, user, datasource_id)
+    experiment = get_experiment_via_ds_or_raise(session, ds, experiment_id)
     return experiments.commit_experiment_impl(session, experiment)
 
 
-@router.post("/experiments/{experiment_id}/abandon")
+@router.post("/datasources/{datasource_id}/experiments/{experiment_id}/abandon")
 def abandon_experiment(
+    datasource_id: str,
     experiment_id: str,
     session: Annotated[Session, Depends(xngin_db_session)],
     user: Annotated[User, Depends(user_from_token)],
 ):
-    experiment = get_experiment_or_raise_auth(session, user, experiment_id)
+    ds = get_datasource_or_raise(session, user, datasource_id)
+    experiment = get_experiment_via_ds_or_raise(session, ds, experiment_id)
     return experiments.abandon_experiment_impl(session, experiment)
 
 
-@router.get("/experiments/{datasource_id}")
+@router.get("/datasources/{datasource_id}/experiments")
 def list_experiments(
     datasource_id: str,
     session: Annotated[Session, Depends(xngin_db_session)],
@@ -1033,14 +1036,16 @@ def list_experiments(
     return experiments.list_experiments_impl(session, ds)
 
 
-@router.get("/experiments/{experiment_id}")
+@router.get("/datasources/{datasource_id}/experiments/{experiment_id}")
 def get_experiment(
+    datasource_id: str,
     experiment_id: str,
     session: Annotated[Session, Depends(xngin_db_session)],
     user: Annotated[User, Depends(user_from_token)],
 ) -> experiments_api_types.ExperimentConfig:
     """Returns the experiment with the specified ID."""
-    experiment = get_experiment_or_raise_auth(session, user, experiment_id)
+    ds = get_datasource_or_raise(session, user, datasource_id)
+    experiment = get_experiment_via_ds_or_raise(session, ds, experiment_id)
     return ExperimentConfig(
         datasource_id=experiment.datasource_id,
         state=experiment.state,
@@ -1051,11 +1056,13 @@ def get_experiment(
     )
 
 
-@router.get("/experiments/{experiment_id}/assignments")
+@router.get("/datasources/{datasource_id}/experiments/{experiment_id}/assignments")
 def get_experiment_assignments(
+    datasource_id: str,
     experiment_id: str,
     session: Annotated[Session, Depends(xngin_db_session)],
     user: Annotated[User, Depends(user_from_token)],
 ) -> experiments_api_types.GetExperimentAssigmentsResponse:
-    experiment = get_experiment_or_raise_auth(session, user, experiment_id)
+    ds = get_datasource_or_raise(session, user, datasource_id)
+    experiment = get_experiment_via_ds_or_raise(session, ds, experiment_id)
     return experiments.get_experiment_assignments_impl(experiment)
