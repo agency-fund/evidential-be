@@ -201,6 +201,7 @@ def get_experiment_or_raise(
 @router.post(
     "/experiments/{experiment_id}/commit",
     summary="Marks any ASSIGNED experiment as COMMITTED.",
+    status_code=status.HTTP_204_NO_CONTENT,
 )
 def commit_experiment_sl(
     datasource: Annotated[Datasource, Depends(datasource_dependency)],
@@ -229,6 +230,7 @@ def commit_experiment_impl(xngin_session: Session, experiment: Experiment):
 @router.post(
     "/experiments/{experiment_id}/abandon",
     summary="Marks any DESIGNING or ASSIGNED experiment as ABANDONED.",
+    status_code=status.HTTP_204_NO_CONTENT,
 )
 def abandon_experiment_sl(
     datasource: Annotated[Datasource, Depends(datasource_dependency)],

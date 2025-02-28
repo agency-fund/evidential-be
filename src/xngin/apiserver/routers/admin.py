@@ -1001,7 +1001,10 @@ def create_experiment_with_assignment(
     )
 
 
-@router.post("/datasources/{datasource_id}/experiments/{experiment_id}/commit")
+@router.post(
+    "/datasources/{datasource_id}/experiments/{experiment_id}/commit",
+    status_code=status.HTTP_204_NO_CONTENT,
+)
 def commit_experiment(
     datasource_id: str,
     experiment_id: str,
@@ -1013,7 +1016,10 @@ def commit_experiment(
     return experiments.commit_experiment_impl(session, experiment)
 
 
-@router.post("/datasources/{datasource_id}/experiments/{experiment_id}/abandon")
+@router.post(
+    "/datasources/{datasource_id}/experiments/{experiment_id}/abandon",
+    status_code=status.HTTP_204_NO_CONTENT,
+)
 def abandon_experiment(
     datasource_id: str,
     experiment_id: str,
