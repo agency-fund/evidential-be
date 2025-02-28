@@ -2,7 +2,7 @@
 
 import logging
 from contextlib import asynccontextmanager
-from datetime import timedelta, datetime, UTC
+from datetime import timedelta, datetime
 from typing import Annotated
 
 import google.api_core.exceptions

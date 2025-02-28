@@ -1,7 +1,7 @@
 import json
 import secrets
 import uuid
-from datetime import datetime, timezone, UTC
+from datetime import datetime, UTC
 from typing import ClassVar, Self
 
 import sqlalchemy
