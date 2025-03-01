@@ -6,7 +6,7 @@ from typing import ClassVar, Self
 
 import sqlalchemy
 from pydantic import TypeAdapter
-from sqlalchemy import ForeignKey, String, JSON
+from sqlalchemy import ForeignKey, String
 from sqlalchemy.dialects import postgresql
 from sqlalchemy.orm import DeclarativeBase, mapped_column, Mapped, relationship
 from sqlalchemy.types import TypeEngine
@@ -21,7 +21,7 @@ from xngin.apiserver.routers.experiments_api_types import AssignSummary
 from xngin.apiserver.settings import DatasourceConfig
 
 # JSONBetter is JSON for most databases but JSONB for Postgres.
-JSONBetter = JSON().with_variant(postgresql.JSONB(), "postgresql")
+JSONBetter = sqlalchemy.JSON().with_variant(postgresql.JSONB(), "postgresql")
 
 ALPHABET = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz"
 
@@ -137,7 +137,7 @@ class Datasource(Base):
         ForeignKey("organizations.id", ondelete="CASCADE")
     )
     config: Mapped[dict] = mapped_column(
-        sqlalchemy.JSON, comment="JSON serialized form of DatasourceConfig"
+        type_=JSONBetter, comment="JSON serialized form of DatasourceConfig"
     )
 
     table_list: Mapped[list[str] | None] = mapped_column(
