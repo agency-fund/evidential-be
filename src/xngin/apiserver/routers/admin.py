@@ -568,7 +568,9 @@ def create_inspect_table_response_from_table(table: sqlalchemy.Table):
     This is similar to config_sheet.create_schema_from_table but tailored to use in the API.
     """
     possible_id_columns = {
-        c.name for c in table.columns.values() if c.name.endswith("id")
+        c.name
+        for c in table.columns.values()
+        if c.name.endswith("id") or isinstance(c.type, sqlalchemy.sql.sqltypes.UUID)
     }
     primary_key_columns = {c.name for c in table.columns.values() if c.primary_key}
     if len(primary_key_columns) > 0:
