@@ -1079,6 +1079,24 @@ def get_experiment_assignments(
     return experiments.get_experiment_assignments_impl(experiment)
 
 
+@router.delete(
+    "/datasources/{datasource_id}/experiments/{experiment_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+)
+def delete_experiment(
+    datasource_id: str,
+    experiment_id: str,
+    session: Annotated[Session, Depends(xngin_db_session)],
+    user: Annotated[User, Depends(user_from_token)],
+):
+    """Deletes the experiment with the specified ID."""
+    ds = get_datasource_or_raise(session, user, datasource_id)
+    experiment = get_experiment_via_ds_or_raise(session, ds, experiment_id)
+    session.delete(experiment)
+    session.commit()
+    return GENERIC_SUCCESS
+
+
 @router.post("/datasources/{datasource_id}/power")
 def power_check(
     datasource_id: str,
