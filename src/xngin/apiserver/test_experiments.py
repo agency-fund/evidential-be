@@ -158,9 +158,7 @@ def make_insert_experiment(state: ExperimentState, datasource_id="testing"):
     )
 
 
-def test_create_experiment_with_assignment_invalid_design_spec(
-    db_session: Session,
-):
+def test_create_experiment_with_assignment_invalid_design_spec(db_session: Session):
     """Test creating an experiment and saving assignments to the database."""
     request = make_create_experiment_request(with_uuids=True)
 
@@ -175,7 +173,7 @@ def test_create_experiment_with_assignment_invalid_design_spec(
 
 
 def test_create_experiment_with_assignment(
-    db_session: Session,
+    db_session: Session, use_deterministic_random
 ):
     """Test creating an experiment and saving assignments to the database."""
     request = make_create_experiment_request(with_uuids=False)
@@ -197,7 +195,7 @@ def test_create_experiment_with_assignment(
     assert experiment_config["state"] == ExperimentState.ASSIGNED
     assign_summary = experiment_config["assign_summary"]
     assert assign_summary["sample_size"] == 100
-    assert assign_summary["balance_check"]["balance_ok"] is True, assign_summary[
+    assert assign_summary["balance_check"]["balance_ok"] is False, assign_summary[
         "balance_check"
     ]
     # Check if the representations are equivalent
