@@ -561,16 +561,19 @@ class Assignment(ApiBaseModel):
         ),
     ]
 
+
 class ExperimentAnalysis(ApiBaseModel):
     arm_ids: list[uuid.UUID]
     coefficients: list[float]
     pvalues: list[float]
     tstats: list[float]
 
+
 class ParticipantOutcome(ApiBaseModel):
     participant_id: str
-    metric_spec: DesignSpecMetric
+    # metric_spec: DesignSpecMetric
     metric_value: float
+
 
 class BalanceCheck(ApiBaseModel):
     """Describes balance test results for treatment assignment."""
@@ -596,6 +599,7 @@ class AssignResponse(ApiBaseModel):
         ),
     ]
     assignments: list[Assignment]
+
 
 class GetStrataResponseElement(ApiBaseModel):
     """Describes a stratification variable."""

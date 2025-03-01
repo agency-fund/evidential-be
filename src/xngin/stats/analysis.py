@@ -1,5 +1,4 @@
 import pandas as pd
-from pandas import DataFrame
 import numpy as np
 
 import statsmodels.formula.api as smf
@@ -12,27 +11,39 @@ from xngin.apiserver.api_types import (
 
 def analyze_experiment(
     treatmentAssignments: list[Assignment],
-    participantOutcomes: list[ParticipantOutcome]
+    participantOutcomes: list[ParticipantOutcome],
 ) -> ExperimentAnalysis:
     """
     Perform statistical analysis with DesignSpec metrics and their values
-    
+
     Args:
     treatmentAssignments: list of participant treatment assignments
     participantOutcomes: list of participant outcomes
     """
 
-    assignments_df = DataFrame([assignment._asdict() for assignment in treatmentAssignments])
-    outcomes_df = DataFrame([outcome._asdict() for outcome in participantOutcomes])
-    merged_df = pd.merge(assignments_df, outcomes_df, on='participant_id', how='left')
+    assignments_df = pd.DataFrame([
+        {
+            "participant_id": assignment.participant_id,
+            "arm_id": assignment.arm_id,
+            "arm_name": assignment.arm_name,
+        }
+        for assignment in treatmentAssignments
+    ])
 
-    model = smf.ols('metric_value ~ C(arm_id)', data=merged_df).fit()
+    outcomes_df = pd.DataFrame([
+        {"participant_id": outcome.participant_id, "metric_value": outcome.metric_value}
+        for outcome in participantOutcomes
+    ])
+
+    merged_df = pd.merge(assignments_df, outcomes_df, on="participant_id", how="left")
+
+    model = smf.ols("metric_value ~ C(arm_id)", data=merged_df).fit()
 
     results = ExperimentAnalysis(
-        arm_ids=list(set(merged_df['arm_id'])),
+        arm_ids=list(set(merged_df["arm_id"])),
         coefficients=model.params,
         pvalues=model.pvalues,
-        tstats=model.tvalues
+        tstats=model.tvalues,
     )
 
-    return(results)
+    return results
