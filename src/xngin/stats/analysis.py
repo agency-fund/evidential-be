@@ -1,5 +1,4 @@
 import pandas as pd
-import numpy as np
 
 import statsmodels.formula.api as smf
 from xngin.apiserver.api_types import (
@@ -10,15 +9,15 @@ from xngin.apiserver.api_types import (
 
 
 def analyze_experiment(
-    treatmentAssignments: list[Assignment],
-    participantOutcomes: list[ParticipantOutcome],
+    treatment_assignments: list[Assignment],
+    participant_outcomes: list[ParticipantOutcome],
 ) -> ExperimentAnalysis:
     """
     Perform statistical analysis with DesignSpec metrics and their values
 
     Args:
-    treatmentAssignments: list of participant treatment assignments
-    participantOutcomes: list of participant outcomes
+    treatment_assignments: list of participant treatment assignments
+    participanta_outcomes: list of participant outcomes
     """
 
     assignments_df = pd.DataFrame([
@@ -27,23 +26,21 @@ def analyze_experiment(
             "arm_id": assignment.arm_id,
             "arm_name": assignment.arm_name,
         }
-        for assignment in treatmentAssignments
+        for assignment in treatment_assignments
     ])
 
     outcomes_df = pd.DataFrame([
         {"participant_id": outcome.participant_id, "metric_value": outcome.metric_value}
-        for outcome in participantOutcomes
+        for outcome in participant_outcomes
     ])
 
-    merged_df = pd.merge(assignments_df, outcomes_df, on="participant_id", how="left")
+    merged_df = assignments_df.merge(outcomes_df, on="participant_id", how="left")
 
     model = smf.ols("metric_value ~ C(arm_id)", data=merged_df).fit()
 
-    results = ExperimentAnalysis(
+    return ExperimentAnalysis(
         arm_ids=list(set(merged_df["arm_id"])),
         coefficients=model.params,
         pvalues=model.pvalues,
         tstats=model.tvalues,
     )
-
-    return results
