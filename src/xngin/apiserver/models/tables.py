@@ -265,6 +265,12 @@ class ArmAssignment(Base):
 
     experiment: Mapped["Experiment"] = relationship(back_populates="arm_assignments")
 
+    def strata_names(self):
+        return [s["field_name"] for s in self.strata]
+
+    def strata_values(self):
+        return [s["strata_value"] for s in self.strata]
+
 
 class Experiment(Base):
     """Stores experiment metadata."""
@@ -307,6 +313,12 @@ class Experiment(Base):
     )
 
     datasource: Mapped["Datasource"] = relationship(back_populates="experiments")
+
+    def get_arm_ids(self) -> list[str]:
+        return [arm["arm_id"] for arm in self.design_spec["arms"]]
+
+    def get_arm_names(self) -> list[str]:
+        return [arm["arm_name"] for arm in self.design_spec["arms"]]
 
     def get_design_spec(self) -> DesignSpec:
         """Deserializes design_spec into a DesignSpec."""

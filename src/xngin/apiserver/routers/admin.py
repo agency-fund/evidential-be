@@ -5,6 +5,7 @@ from contextlib import asynccontextmanager
 from datetime import UTC, timedelta, datetime
 from typing import Annotated
 
+from fastapi.responses import StreamingResponse
 import google.api_core.exceptions
 import sqlalchemy
 import sqlalchemy.orm
@@ -1077,6 +1078,24 @@ def get_experiment_assignments(
     ds = get_datasource_or_raise(session, user, datasource_id)
     experiment = get_experiment_via_ds_or_raise(session, ds, experiment_id)
     return experiments.get_experiment_assignments_impl(experiment)
+
+
+@router.get(
+    "/datasources/{datasource_id}/experiments/{experiment_id}/assignments/csv",
+    summary=(
+        "Export experiment assignments as CSV file; BalanceCheck not included. "
+        "csv header form: participant_id,arm_id,arm_name,strata_name1,strata_name2,..."
+    ),
+)
+def get_experiment_assignments_as_csv(
+    datasource_id: str,
+    experiment_id: str,
+    session: Annotated[Session, Depends(xngin_db_session)],
+    user: Annotated[User, Depends(user_from_token)],
+) -> StreamingResponse:
+    ds = get_datasource_or_raise(session, user, datasource_id)
+    experiment = get_experiment_via_ds_or_raise(session, ds, experiment_id)
+    return experiments.get_experiment_assignments_as_csv_impl(experiment)
 
 
 @router.delete(
