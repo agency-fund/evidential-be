@@ -273,6 +273,9 @@ def list_experiments_impl(xngin_session: Session, datasource: Datasource):
     stmt = (
         select(Experiment)
         .where(Experiment.datasource_id == datasource.id)
+        .where(
+            Experiment.state.in_([ExperimentState.COMMITTED, ExperimentState.ASSIGNED])
+        )
         .order_by(Experiment.created_at.desc())
     )
     result = xngin_session.execute(stmt)
