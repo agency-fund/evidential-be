@@ -137,27 +137,7 @@ def get_participant_metrics(
     participant_filter = create_one_filter(participant_id_filter, sa_table)
     query = select(*select_columns).filter(participant_filter)
 
-    return session.execute(query).mappings().fetchone()
-
-    # finally backfill with the stats
-    # metrics_to_return = []
-    # for metric, metric_type in zip(metrics, metric_types, strict=False):
-    #     field_name = metric.field_name
-    #     metrics_to_return.append(
-    #         DesignSpecMetric(
-    #             field_name=metric.field_name,
-    #             metric_pct_change=metric.metric_pct_change,
-    #             metric_target=metric.metric_target,
-    #             metric_type=metric_type,
-    #             metric_baseline=stats[f"{field_name}__mean"],
-    #             metric_stddev=stats[f"{field_name}__stddev"]
-    #             if metric_type is MetricType.NUMERIC
-    #             else None,
-    #             available_nonnull_n=stats[f"{field_name}__count"],
-    #             # This value is the same across all metrics, but we replicate for convenience:
-    #             available_n=stats["rows__count"],
-    #         )
-    #     )
+    return session.execute(query).all()
 
 
 def query_for_participants(
