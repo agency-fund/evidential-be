@@ -237,7 +237,9 @@ class ParticipantTypesInspected(Base):
         return InspectParticipantTypesResponse.model_validate(self.response)
 
     def set_response(self, value: InspectParticipantTypesResponse) -> Self:
-        self.response = value.model_dump()
+        # This value may contain Python datetime objects. The default JSON serializer doesn't serialize them
+        # but the Pydantic serializer turns them into ISO8601 strings. This could be better.
+        self.response = json.loads(value.model_dump_json())
         self.response_last_updated = datetime.now(UTC)
         return self
 
