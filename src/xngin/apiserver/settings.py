@@ -411,6 +411,7 @@ class RemoteDatabaseConfig(ParticipantsMixin, ConfigBaseModel):
             url,
             connect_args=connect_args,
             echo=flags.ECHO_SQL,
+            poolclass=sqlalchemy.pool.NullPool,
         )
         self._extra_engine_setup(engine)
         return engine
