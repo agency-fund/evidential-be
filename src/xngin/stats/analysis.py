@@ -29,8 +29,12 @@ def analyze_experiment(
         for assignment in treatment_assignments
     ])
 
+    # TODO(roboton): support more than one metric
     outcomes_df = pd.DataFrame([
-        {"participant_id": outcome.participant_id, "metric_value": outcome.metric_value}
+        {
+            "participant_id": outcome.participant_id,
+            "metric_value": outcome.metric_values[0].metric_value,
+        }
         for outcome in participant_outcomes
     ])
 

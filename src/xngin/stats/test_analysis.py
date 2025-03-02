@@ -5,7 +5,7 @@ import uuid
 import pytest
 import numpy as np
 from xngin.stats.analysis import analyze_experiment
-from xngin.apiserver.api_types import Assignment, ParticipantOutcome
+from xngin.apiserver.api_types import Assignment, ParticipantOutcome, MetricValue
 
 
 @pytest.fixture
@@ -27,7 +27,14 @@ def test_assignments(n=1000, num_arms=3, seed=42):
 @pytest.fixture
 def test_outcomes(n=1000, seed=42):
     return [
-        ParticipantOutcome(participant_id=str(i), metric_value=np.random.choice([0, 1]))
+        ParticipantOutcome(
+            participant_id=str(i),
+            metric_values=[
+                MetricValue(
+                    metric_name="bool_field", metric_value=np.random.choice([0, 1])
+                )
+            ],
+        )
         for i in range(n)
     ]
 
