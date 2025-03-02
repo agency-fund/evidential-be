@@ -137,10 +137,20 @@ def run(
         help="Create a new database with this name (requires -d/--daemon)",
         envvar="LOCALPG_CREATE_DB",
     ),
+    if_created: str = typer.Option(
+        None,
+        "--if-created",
+        help="Shell command to run if the database specified by --create-db doesn't already exist",
+        envvar="LOCALPG_IF_CREATED",
+    ),
 ):
     """
     Start a local ephemeral PostgreSQL instance using Docker.
     """
+    if create_db and (not daemon or not wait):
+        console.print("[warning]--create-db requires --daemon and --wait[/]\n")
+        raise typer.Exit(3)
+
     try:
         # Check if container already exists
         result = subprocess.run(
@@ -179,7 +189,16 @@ def run(
                 wait_for_postgres(port)
 
             if create_db:
-                create_database(create_db, port)
+                db_created = create_database(create_db, port)
+                if db_created and if_created:
+                    console.print(f"\n🔄 [info]Running command: {if_created}[/]")
+                    try:
+                        subprocess.run(if_created, shell=True, check=True)
+                        console.print("✅ [info]Command completed successfully[/]")
+                    except subprocess.CalledProcessError as e:
+                        console.print(
+                            f"❌ [warning]Command failed with exit code {e.returncode}[/]"
+                        )
 
             console.print("\n🚀 [info]Postgres started in daemon mode.[/]")
             console.print(
@@ -200,12 +219,21 @@ def run(
         raise typer.Exit(1) from e
 
 
-def create_database(dbname: str, port: int):
-    """Creates a new database using psycopg."""
+def create_database(dbname: str, port: int) -> bool:
+    """Creates a new database using psycopg.
+
+    Returns:
+        bool: True if database was created, False if it already existed
+    """
     conn_str = f"postgresql://postgres:postgres@localhost:{port}/postgres"
-    with psycopg.connect(conn_str, autocommit=True) as conn:
-        conn.execute(f"CREATE DATABASE {dbname}")
-        console.print(f"\n✨ [info]Created database '{dbname}'[/]")
+    try:
+        with psycopg.connect(conn_str, autocommit=True) as conn:
+            conn.execute(f"CREATE DATABASE {dbname}")
+            console.print(f"\n✨ [info]Created database '{dbname}'[/]")
+            return True
+    except psycopg.errors.DuplicateDatabase:
+        console.print(f"\n📊 [info]Database '{dbname}' already exists[/]")
+        return False
 
 
 def wait_for_postgres(port):

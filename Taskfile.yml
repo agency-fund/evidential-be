@@ -1,5 +1,7 @@
 version: '3'
 output: prefixed
+vars:
+  XNGIN_LOCALDB_DSN: "postgresql://postgres:postgres@localhost:5499/xngin?sslmode=disable"
 env:
   # Disable Atlas telemetry.
   ATLAS_NO_ANON_TELEMETRY: "true"
@@ -46,7 +48,7 @@ tasks:
       # Populate BQ_SERVICE_ACCOUNT (optional) and GOOGLE_OIDC_CLIENT_SECRET (optional).
       - .env
     env:
-      XNGIN_DB: postgresql://postgres:postgres@localhost:5499/xngin?sslmode=disable
+      XNGIN_DB: "{{.XNGIN_LOCALDB_DSN}}"
 
       # Admin API settings. These need to be set for interaction with the dash web UI.
       # Also see instructions for .env above.
@@ -55,7 +57,10 @@ tasks:
       GOOGLE_OIDC_CLIENT_ID: "222213100775-qa1ajcrk48il70itcbdcvgr9ib5t08uf.apps.googleusercontent.com"
       GOOGLE_OIDC_REDIRECT_URI: "http://localhost:3000/"
     cmds:
-      - ./tools/localpg.py --allow-existing -d --wait --create-db xngin
+      # Ensure the localpg server is running and has an "xngin" database. If the database doesn't already exist,
+      # have Atlas create the tables so that subsequent table migrations behave as expected.
+      - ./tools/localpg.py --allow-existing -d --wait --create-db xngin --if-created "uv run task apply-migrations-pg"
+      - task bootstrap-dwh-local-pg || /bin/true
       - uv run fastapi dev src/xngin/apiserver/main.py
   bootstrap-dwh-local-pg:
     desc: "Bootstraps the localpg server with a sample data warehouse."
@@ -84,10 +89,10 @@ tasks:
     cmds:
       - uv run atlas migrate diff --env sa_postgres && git add migrations
   apply-migrations-pg:
-    desc: "Apply Postgres migrations locally (requires localpg instance to be running)"
+    desc: "Apply Postgres migrations locally (requires localpg instance to be running, to have an xngin database, and to have been previously migrated)"
     cmds:
       - uv run atlas migrate diff --env sa_postgres
-      - uv run atlas migrate apply --env sa_postgres --url 'postgresql://postgres:postgres@localhost:5499/postgres?sslmode=disable'
+      - uv run atlas migrate apply --env sa_postgres --url '{{.XNGIN_LOCALDB_DSN}}'
   apply-migrations-sqlite:
     desc: "Apply sqlite migrations locally"
     cmd: |

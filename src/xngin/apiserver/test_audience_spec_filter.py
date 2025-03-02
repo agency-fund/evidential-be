@@ -80,8 +80,14 @@ def test_between_relation_invalid(value, descr):
 VALID_OTHER = [
     (Relation.INCLUDES, [1, 2, 3]),
     (Relation.INCLUDES, ["a"]),
+    (Relation.INCLUDES, [1.0, 2.0, 3.0]),
+    (Relation.INCLUDES, [None, 1]),
+    (Relation.INCLUDES, ["2020-01-01", None]),
     (Relation.EXCLUDES, [1.0, 2.0, 3.0]),
-    (Relation.INCLUDES, [1]),
+    (Relation.EXCLUDES, ["b"]),
+    (Relation.EXCLUDES, [None, 1]),
+    (Relation.EXCLUDES, [None, 1.0]),
+    (Relation.EXCLUDES, ["2020-01-01", None]),
 ]
 
 

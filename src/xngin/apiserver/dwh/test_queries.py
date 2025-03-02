@@ -2,7 +2,7 @@
 
 import re
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, UTC
 
 import pytest
 from sqlalchemy import (
@@ -55,6 +55,9 @@ class SampleNullableTable(Base):
     id = mapped_column(Integer, primary_key=True, autoincrement=False)
     bool_col = mapped_column(Boolean, nullable=True)
     int_col = mapped_column(Integer, nullable=True)
+    float_col = mapped_column(Float, nullable=True)
+    string_col = mapped_column(String, nullable=True)
+    date_col = mapped_column(DateTime, nullable=True)
 
 
 @dataclass
@@ -62,22 +65,34 @@ class NullableRow:
     id: int
     bool_col: bool | None
     int_col: int | None
+    float_col: float | None
+    string_col: str | None
+    date_col: datetime | None
 
 
 ROW_10 = NullableRow(
     id=10,
     bool_col=None,
     int_col=None,
+    float_col=1.01,
+    string_col="10",
+    date_col=datetime(2025, 1, 1, 0, 0),
 )
 ROW_20 = NullableRow(
     id=20,
     bool_col=True,
     int_col=1,
+    float_col=2.02,
+    string_col=None,
+    date_col=datetime.fromisoformat("2025-01-02"),
 )
 ROW_30 = NullableRow(
     id=30,
     bool_col=False,
     int_col=3,
+    float_col=None,
+    string_col="30",
+    date_col=None,
 )
 SAMPLE_NULLABLE_TABLE_ROWS = [
     ROW_10,
@@ -144,6 +159,11 @@ class Case:
     matches: list[Row | NullableRow]
     chosen_n: int = 3
 
+    def __str__(self):
+        return " and ".join([
+            f"{f.field_name} {f.relation.name} {f.value}" for f in self.filters
+        ])
+
 
 @pytest.fixture(name="db_session")
 def fixture_db_session():
@@ -166,6 +186,7 @@ def fixture_db_session():
         session.add(SampleTable(**data.__dict__))
     for data in SAMPLE_NULLABLE_TABLE_ROWS:
         session.add(SampleNullableTable(**data.__dict__))
+
     session.commit()
 
     yield session
@@ -210,6 +231,169 @@ def test_execute_query_without_filters(compiler):
             sql,
         )
         assert match is not None, sql
+
+
+IS_NULLABLE_CASES = [
+    # Verify EXCLUDES
+    Case(
+        filters=[
+            AudienceSpecFilter(
+                field_name="bool_col",
+                relation=Relation.EXCLUDES,
+                value=[True],
+            )
+        ],
+        matches=[ROW_10, ROW_30],
+    ),
+    Case(
+        filters=[
+            AudienceSpecFilter(
+                field_name="bool_col",
+                relation=Relation.EXCLUDES,
+                value=[False, None],
+            )
+        ],
+        matches=[ROW_20],
+    ),
+    Case(
+        filters=[
+            AudienceSpecFilter(
+                field_name="int_col",
+                relation=Relation.EXCLUDES,
+                value=[None],
+            ),
+        ],
+        matches=[ROW_20, ROW_30],
+    ),
+    Case(
+        filters=[
+            AudienceSpecFilter(
+                field_name="float_col",
+                relation=Relation.EXCLUDES,
+                value=[None],
+            ),
+        ],
+        matches=[ROW_10, ROW_20],
+    ),
+    Case(
+        filters=[
+            AudienceSpecFilter(
+                field_name="string_col",
+                relation=Relation.EXCLUDES,
+                value=[None, ROW_10.string_col],
+            ),
+        ],
+        matches=[ROW_30],
+    ),
+    Case(
+        filters=[
+            AudienceSpecFilter(
+                field_name="date_col",
+                relation=Relation.EXCLUDES,
+                value=[None, ROW_10.date_col.isoformat()],
+            ),
+        ],
+        matches=[ROW_20],
+    ),
+    # Excluding a single non-null value means NULL is also included.
+    Case(
+        filters=[
+            AudienceSpecFilter(
+                field_name="date_col",
+                relation=Relation.EXCLUDES,
+                value=["2025-01-01"],
+            ),
+        ],
+        matches=[ROW_20, ROW_30],
+    ),
+    Case(
+        filters=[
+            AudienceSpecFilter(
+                field_name="float_col",
+                relation=Relation.EXCLUDES,
+                value=[ROW_10.float_col],
+            ),
+        ],
+        matches=[ROW_20, ROW_30],
+    ),
+    # verify INCLUDES
+    Case(
+        filters=[
+            AudienceSpecFilter(
+                field_name="bool_col", relation=Relation.INCLUDES, value=[False]
+            )
+        ],
+        matches=[ROW_30],
+    ),
+    Case(
+        filters=[
+            AudienceSpecFilter(
+                field_name="bool_col",
+                relation=Relation.INCLUDES,
+                value=[True, None],
+            )
+        ],
+        matches=[ROW_10, ROW_20],
+    ),
+    Case(
+        filters=[
+            AudienceSpecFilter(
+                field_name="int_col",
+                relation=Relation.INCLUDES,
+                value=[None],
+            ),
+        ],
+        matches=[ROW_10],
+    ),
+    Case(
+        filters=[
+            AudienceSpecFilter(
+                field_name="float_col",
+                relation=Relation.INCLUDES,
+                value=[None],
+            ),
+        ],
+        matches=[ROW_30],
+    ),
+    Case(
+        filters=[
+            AudienceSpecFilter(
+                field_name="string_col",
+                relation=Relation.INCLUDES,
+                value=[None, ROW_10.string_col],
+            ),
+        ],
+        matches=[ROW_10, ROW_20],
+    ),
+    Case(
+        filters=[
+            AudienceSpecFilter(
+                field_name="date_col",
+                relation=Relation.INCLUDES,
+                value=[None, ROW_10.date_col.isoformat()],
+            ),
+        ],
+        matches=[ROW_10, ROW_30],
+    ),
+]
+
+
+@pytest.mark.parametrize("testcase", IS_NULLABLE_CASES, ids=lambda d: str(d))
+def test_is_nullable(testcase, db_session, use_deterministic_random):
+    testcase.filters = [
+        AudienceSpecFilter.model_validate(filt.model_dump())
+        for filt in testcase.filters
+    ]
+    table = SampleNullableTable.get_table()
+    filters = create_query_filters_from_spec(
+        table,
+        AudienceSpec(participant_type=table.name, filters=testcase.filters),
+    )
+    q = compose_query(table, testcase.chosen_n, filters)
+    query_results = db_session.execute(q).all()
+    assert list(sorted([r.id for r in query_results])) == list(
+        sorted(r.id for r in testcase.matches)
+    ), testcase
 
 
 RELATION_CASES = [
@@ -392,72 +576,8 @@ def test_relations(testcase, db_session, use_deterministic_random):
     ), testcase
 
 
-@pytest.mark.parametrize(
-    "testcase",
-    [
-        # Test exclusions
-        Case(
-            filters=[
-                AudienceSpecFilter(
-                    field_name="bool_col", relation=Relation.EXCLUDES, value=[True]
-                )
-            ],
-            matches=[ROW_10, ROW_30],
-        ),
-        Case(
-            filters=[
-                AudienceSpecFilter(
-                    field_name="bool_col",
-                    relation=Relation.EXCLUDES,
-                    value=[False, None],
-                )
-            ],
-            matches=[ROW_20],
-        ),
-        # Test inclusions
-        Case(
-            filters=[
-                AudienceSpecFilter(
-                    field_name="bool_col", relation=Relation.INCLUDES, value=[False]
-                )
-            ],
-            matches=[ROW_30],
-        ),
-        Case(
-            filters=[
-                AudienceSpecFilter(
-                    field_name="bool_col",
-                    relation=Relation.INCLUDES,
-                    value=[True, None],
-                )
-            ],
-            matches=[ROW_10, ROW_20],
-        ),
-    ],
-)
-def test_booleans(testcase, db_session):
-    table = SampleNullableTable.get_table()
-    filters = create_query_filters_from_spec(
-        table,
-        AudienceSpec(participant_type=table.name, filters=testcase.filters),
-    )
-    q = compose_query(table, testcase.chosen_n, filters)
-    query_results = db_session.execute(q).all()
-    assert list(sorted([r.id for r in query_results])) == list(
-        sorted(r.id for r in testcase.matches)
-    ), testcase
-
-
 def test_datetime_filter_validation():
     col = Column("x", DateTime)
-    with pytest.raises(LateValidationError) as exc:
-        create_datetime_filter(
-            col,
-            AudienceSpecFilter(
-                field_name="x", relation=Relation.EXCLUDES, value=[123, 456]
-            ),
-        )
-    assert "only valid Relation on a datetime field is BETWEEN" in str(exc)
 
     with pytest.raises(LateValidationError) as exc:
         create_datetime_filter(
@@ -466,7 +586,7 @@ def test_datetime_filter_validation():
                 field_name="x", relation=Relation.INCLUDES, value=[123, 456]
             ),
         )
-    assert "only valid Relation on a datetime field is BETWEEN" in str(exc)
+    assert "ISO8601 formatted date" in str(exc)
 
     with pytest.raises(LateValidationError) as exc:
         create_datetime_filter(
@@ -494,8 +614,26 @@ def test_datetime_filter_validation():
 def test_allowed_datetime_filter_validation():
     col = Column("x", DateTime)
 
+    create_datetime_filter(
+        col,
+        AudienceSpecFilter(
+            field_name="x",
+            relation=Relation.EXCLUDES,
+            value=[None],
+        ),
+    )
+
+    create_datetime_filter(
+        col,
+        AudienceSpecFilter(
+            field_name="x",
+            relation=Relation.INCLUDES,
+            value=[None],
+        ),
+    )
+
     # now without microseconds
-    now = datetime.now().replace(microsecond=0)
+    now = datetime.now(UTC).replace(microsecond=0)
     create_datetime_filter(
         col,
         AudienceSpecFilter(
@@ -506,12 +644,15 @@ def test_allowed_datetime_filter_validation():
     )
 
     # zero offset is allowed
+    # We strip the tz info because in the test below we want to control the tz format;
+    # `now.isoformat()` by default will render with +00:00.
+    now_no_tz = now.replace(tzinfo=None)
     create_datetime_filter(
         col,
         AudienceSpecFilter(
             field_name="x",
             relation=Relation.BETWEEN,
-            value=[now.isoformat() + "Z", now.isoformat() + "-00:00"],
+            value=[now_no_tz.isoformat() + "Z", now_no_tz.isoformat() + "-00:00"],
         ),
     )
 
@@ -619,7 +760,7 @@ def test_get_stats_on_missing_metric_raises_error(db_session):
             ),
         )
     assert (
-        "Missing metrics (check your Datsource configuration): {'missing_col'}"
+        "Missing metrics (check your Datasource configuration): {'missing_col'}"
         in str(exc)
     )
 

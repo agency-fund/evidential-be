@@ -3,8 +3,15 @@ from contextlib import asynccontextmanager
 from typing import Annotated
 
 import sqlalchemy
-from fastapi import APIRouter, FastAPI, HTTPException, Depends, Query, Response
-from fastapi import Request
+from fastapi import (
+    APIRouter,
+    FastAPI,
+    HTTPException,
+    Depends,
+    Query,
+    Response,
+    Request,
+)
 from sqlalchemy import distinct
 from sqlalchemy.orm import Session
 
@@ -84,7 +91,7 @@ class CommonQueryParams:
         self.refresh = refresh
 
 
-def _get_participants_config_and_schema(
+def get_participants_config_and_schema(
     commons: CommonQueryParams,
     datasource_config: ParticipantsMixin,
     gsheets: GSheetCache,
@@ -112,14 +119,14 @@ def get_strata(
     config: Annotated[DatasourceConfig, Depends(datasource_config_required)],
 ) -> GetStrataResponse:
     """Get possible strata covariates for a given unit type."""
-    participants_cfg, schema = _get_participants_config_and_schema(
+    participants_cfg, schema = get_participants_config_and_schema(
         commons, config, gsheets
     )
     strata_fields = {c.field_name: c for c in schema.fields if c.is_strata}
 
-    with config.dbsession() as session:
+    with config.dbsession() as dwh_session:
         sa_table = infer_table(
-            session.get_bind(),
+            dwh_session.get_bind(),
             participants_cfg.table_name,
             config.supports_reflection(),
         )
@@ -153,20 +160,20 @@ def get_filters(
     gsheets: Annotated[GSheetCache, Depends(gsheet_cache)],
     config: Annotated[DatasourceConfig, Depends(datasource_config_required)],
 ) -> GetFiltersResponse:
-    participants_cfg, schema = _get_participants_config_and_schema(
+    participants_cfg, schema = get_participants_config_and_schema(
         commons, config, gsheets
     )
     filter_fields = {c.field_name: c for c in schema.fields if c.is_filter}
 
-    with config.dbsession() as session:
+    with config.dbsession() as dwh_session:
         sa_table = infer_table(
-            session.get_bind(),
+            dwh_session.get_bind(),
             participants_cfg.table_name,
             config.supports_reflection(),
         )
         db_schema = generate_field_descriptors(sa_table, schema.get_unique_id_field())
 
-        mapper = create_col_to_filter_meta_mapper(db_schema, sa_table, session)
+        mapper = create_col_to_filter_meta_mapper(db_schema, sa_table, dwh_session)
 
         return GetFiltersResponse(
             results=sorted(
@@ -238,14 +245,14 @@ def get_metrics(
     config: Annotated[DatasourceConfig, Depends(datasource_config_required)],
 ) -> GetMetricsResponse:
     """Get possible metrics for a given unit type."""
-    participants_cfg, schema = _get_participants_config_and_schema(
+    participants_cfg, schema = get_participants_config_and_schema(
         commons, config, gsheets
     )
     metric_cols = {c.field_name: c for c in schema.fields if c.is_metric}
 
-    with config.dbsession() as session:
+    with config.dbsession() as dwh_session:
         sa_table = infer_table(
-            session.get_bind(),
+            dwh_session.get_bind(),
             participants_cfg.table_name,
             config.supports_reflection(),
         )
@@ -268,13 +275,15 @@ def get_metrics(
     )
 
 
-def _validate_schema_metrics(design_spec: DesignSpec, schema: ParticipantsSchema):
+def validate_schema_metrics_or_raise(
+    design_spec: DesignSpec, schema: ParticipantsSchema
+):
     metric_fields = {m.field_name for m in schema.fields if m.is_metric}
     metrics_requested = {m.field_name for m in design_spec.metrics}
     invalid_metrics = metrics_requested - metric_fields
     if len(invalid_metrics) > 0:
         raise LateValidationError(
-            f"Invalid DesignSpec metrics (check your Datsource configuration): {invalid_metrics}"
+            f"Invalid DesignSpec metrics (check your Datasource configuration): {invalid_metrics}"
         )
 
 
@@ -293,20 +302,26 @@ def powercheck(
     commons = CommonQueryParams(
         participant_type=body.audience_spec.participant_type, refresh=refresh
     )
-    participants_cfg, schema = _get_participants_config_and_schema(
+    participants_cfg, schema = get_participants_config_and_schema(
         commons, config, gsheets
     )
-    _validate_schema_metrics(body.design_spec, schema)
+    validate_schema_metrics_or_raise(body.design_spec, schema)
 
-    with config.dbsession() as session:
+    return power_check_impl(body, config, participants_cfg)
+
+
+def power_check_impl(
+    body: PowerRequest, config: DatasourceConfig, participants_cfg: ParticipantsConfig
+):
+    with config.dbsession() as dwh_session:
         sa_table = infer_table(
-            session.get_bind(),
+            dwh_session.get_bind(),
             participants_cfg.table_name,
             config.supports_reflection(),
         )
 
         metric_stats = get_stats_on_metrics(
-            session,
+            dwh_session,
             sa_table,
             body.design_spec.metrics,
             body.audience_spec,
@@ -335,6 +350,18 @@ def assign_treatment(
     gsheets: Annotated[GSheetCache, Depends(gsheet_cache)],
     config: Annotated[DatasourceConfig, Depends(datasource_config_required)],
     refresh: Annotated[bool, Query(description="Refresh the cache.")] = False,
+    quantiles: Annotated[
+        int,
+        Query(
+            description="Number of quantile buckets to use for stratification of numerics."
+        ),
+    ] = 4,
+    stratum_id_name: Annotated[
+        str | None,
+        Query(
+            description="If you wish to also retain the stratum group id per participant, provide a non-null name to output this value as an extra Strata field.",
+        ),
+    ] = None,
     random_state: Annotated[
         int | None,
         Query(
@@ -346,30 +373,34 @@ def assign_treatment(
     commons = CommonQueryParams(
         participant_type=body.audience_spec.participant_type, refresh=refresh
     )
-    participants_cfg, schema = _get_participants_config_and_schema(
+    participants_cfg, schema = get_participants_config_and_schema(
         commons, config, gsheets
     )
-    _validate_schema_metrics(body.design_spec, schema)
+    validate_schema_metrics_or_raise(body.design_spec, schema)
 
-    with config.dbsession() as session:
-        return _do_assignment(
-            session=session,
+    with config.dbsession() as dwh_session:
+        return do_assignment(
+            session=dwh_session,
             participant=participants_cfg,
             supports_reflection=config.supports_reflection(),
             body=body,
             chosen_n=chosen_n,
             id_field=schema.get_unique_id_field(),
+            quantiles=quantiles,
+            stratum_id_name=stratum_id_name,
             random_state=random_state,
         )
 
 
-def _do_assignment(
+def do_assignment(
     session: Session,
     participant: ParticipantsConfig,
     supports_reflection: bool,
     body: AssignRequest,
     chosen_n: int,
     id_field: str,
+    quantiles: int,
+    stratum_id_name: str | None,
     random_state: int | None,
 ) -> AssignResponse:
     """Helper for assigning treatments."""
@@ -389,6 +420,8 @@ def _do_assignment(
         arms=body.design_spec.arms,
         experiment_id=str(body.design_spec.experiment_id),
         fstat_thresh=body.design_spec.fstat_thresh,
+        quantiles=quantiles,
+        stratum_id_name=stratum_id_name,
         random_state=random_state,
     )
 

@@ -9,6 +9,7 @@ from fastapi.routing import APIRoute
 from xngin.apiserver import database, exceptionhandlers, middleware, constants
 from xngin.apiserver.flags import PUBLISH_ALL_DOCS
 from xngin.apiserver.routers import (
+    experiments,
     experiments_api,
     experiments_proxy_mgmt_api,
     oidc,
@@ -64,6 +65,10 @@ middleware.setup(app)
 
 app.include_router(
     experiments_api.router, prefix=constants.API_PREFIX_V1, tags=["Experiment Design"]
+)
+
+app.include_router(
+    experiments.router, prefix=constants.API_PREFIX_V1, tags=["Experiment Management"]
 )
 
 app.include_router(
