@@ -24,13 +24,13 @@ assignments = data["assignments"]
 # Create header from first record.
 # May be less brittle if we use a pandas in case not all records have all strata
 strata = [s["field_name"] for s in assignments[0]["strata"]]
-headers = ["participant_id", "treatment_assignment", *strata]
+headers = ["participant_id", "arm_name", *strata]
 
 rows = []
 for assignment in assignments:
     row = {
         "participant_id": assignment["participant_id"],
-        "treatment_assignment": assignment["treatment_assignment"],
+        "arm_name": assignment["arm_name"],
     }
     for s in assignment["strata"]:
         row[s["field_name"]] = s["strata_value"]

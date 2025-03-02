@@ -2,7 +2,7 @@
 
 import logging
 from contextlib import asynccontextmanager
-from datetime import timedelta, datetime
+from datetime import UTC, timedelta, datetime
 from typing import Annotated
 
 import google.api_core.exceptions
@@ -12,6 +12,7 @@ from fastapi import APIRouter, FastAPI, Depends, Path, Body, HTTPException, Quer
 from fastapi import Response
 from fastapi import status
 from sqlalchemy import delete, select
+from sqlalchemy.exc import OperationalError
 from sqlalchemy.orm import Session
 
 from xngin.apiserver import flags, settings
@@ -19,9 +20,12 @@ from xngin.apiserver.api_types import (
     DataType,
     GetStrataResponseElement,
     GetMetricsResponseElement,
+    PowerRequest,
+    PowerResponse,
 )
 from xngin.apiserver.apikeys import make_key, hash_key
 from xngin.apiserver.dependencies import xngin_db_session
+from xngin.apiserver.exceptions_common import LateValidationError
 from xngin.apiserver.models.tables import (
     ApiKey,
     User,
@@ -30,7 +34,9 @@ from xngin.apiserver.models.tables import (
     UserOrganization,
     DatasourceTablesInspected,
     ParticipantTypesInspected,
+    Experiment,
 )
+from xngin.apiserver.routers import experiments, experiments_api_types
 from xngin.apiserver.routers.admin_api_types import (
     AddMemberToOrganizationRequest,
     ApiKeySummary,
@@ -63,7 +69,10 @@ from xngin.apiserver.routers.admin_api_types import (
 from xngin.apiserver.routers.experiments_api import (
     generate_field_descriptors,
     create_col_to_filter_meta_mapper,
+    validate_schema_metrics_or_raise,
+    power_check_impl,
 )
+from xngin.apiserver.routers.experiments_api_types import ExperimentConfig
 from xngin.apiserver.routers.oidc_dependencies import require_oidc_token, TokenInfo
 from xngin.apiserver.settings import (
     RemoteDatabaseConfig,
@@ -85,7 +94,7 @@ def is_enabled():
 
 
 def cache_is_fresh(updated: datetime):
-    return updated and datetime.now() - updated < timedelta(minutes=5)
+    return updated and datetime.now(UTC) - updated < timedelta(minutes=5)
 
 
 @asynccontextmanager
@@ -156,6 +165,23 @@ def get_datasource_or_raise(session: Session, user: User, datasource_id: str):
             status_code=status.HTTP_404_NOT_FOUND, detail="Datasource not found."
         )
     return ds
+
+
+def get_experiment_via_ds_or_raise(
+    session: Session, ds: Datasource, experiment_id: str
+) -> Experiment:
+    """Reads the requested experiment (related to the given datasource) from the database. Raises if not found."""
+    stmt = (
+        select(Experiment)
+        .join(Datasource, Datasource.id == ds.id)
+        .where(Experiment.id == experiment_id)
+    )
+    exp = session.execute(stmt).scalar_one_or_none()
+    if exp is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Experiment not found."
+        )
+    return exp
 
 
 @router.get("/caller-identity")
@@ -510,6 +536,12 @@ def inspect_datasource(
             ds.set_table_list(tables)
             session.commit()
             return InspectDatasourceResponse(tables=tables)
+        except OperationalError as exc:
+            if is_postgres_database_not_found_error(exc):
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)
+                ) from exc
+            raise
         except google.api_core.exceptions.NotFound as exc:
             # Google returns a 404 when authentication succeeds but when the specified datasource does not exist.
             raise HTTPException(
@@ -521,13 +553,24 @@ def inspect_datasource(
         raise
 
 
+def is_postgres_database_not_found_error(exc):
+    return (
+        exc.args
+        and isinstance(exc.args[0], str)
+        and "FATAL:  database" in exc.args[0]
+        and "does not exist" in exc.args[0]
+    )
+
+
 def create_inspect_table_response_from_table(table: sqlalchemy.Table):
     """Creates an InspectDatasourceTableResponse from a sqlalchemy.Table.
 
     This is similar to config_sheet.create_schema_from_table but tailored to use in the API.
     """
     possible_id_columns = {
-        c.name for c in table.columns.values() if c.name.endswith("id")
+        c.name
+        for c in table.columns.values()
+        if c.name.endswith("id") or isinstance(c.type, sqlalchemy.sql.sqltypes.UUID)
     }
     primary_key_columns = {c.name for c in table.columns.values() if c.primary_key}
     if len(primary_key_columns) > 0:
@@ -921,3 +964,148 @@ def delete_api_key(
     session.execute(stmt)
     session.commit()
     return GENERIC_SUCCESS
+
+
+@router.post("/experiments/{datasource_id}/with-assignment")
+def create_experiment_with_assignment(
+    datasource_id: str,
+    session: Annotated[Session, Depends(xngin_db_session)],
+    user: Annotated[User, Depends(user_from_token)],
+    body: experiments_api_types.CreateExperimentRequest,
+    chosen_n: Annotated[
+        int, Query(..., description="Number of participants to assign.")
+    ],
+    random_state: Annotated[
+        int | None,
+        Query(
+            description="Specify a random seed for reproducibility.",
+            include_in_schema=False,
+        ),
+    ] = None,
+) -> experiments_api_types.CreateExperimentWithAssignmentResponse:
+    ds = get_datasource_or_raise(session, user, datasource_id)
+    if body.design_spec.uuids_are_present():
+        raise LateValidationError("Invalid DesignSpec: UUIDs must not be set.")
+    config = ds.get_config()
+    if not isinstance(config, RemoteDatabaseConfig):
+        raise LateValidationError("Invalid RemoteDatabaseConfig.")
+    participants_cfg = config.find_participants(body.audience_spec.participant_type)
+    if not isinstance(participants_cfg, ParticipantsDef):
+        raise LateValidationError(
+            "Invalid ParticipantsConfig: Participants must be of type schema."
+        )
+    return experiments.create_experiment_with_assignment_impl(
+        session,
+        ds,
+        body,
+        participants_cfg,
+        config,
+        participants_cfg,
+        random_state,
+        chosen_n,
+    )
+
+
+@router.post(
+    "/datasources/{datasource_id}/experiments/{experiment_id}/commit",
+    status_code=status.HTTP_204_NO_CONTENT,
+)
+def commit_experiment(
+    datasource_id: str,
+    experiment_id: str,
+    session: Annotated[Session, Depends(xngin_db_session)],
+    user: Annotated[User, Depends(user_from_token)],
+):
+    ds = get_datasource_or_raise(session, user, datasource_id)
+    experiment = get_experiment_via_ds_or_raise(session, ds, experiment_id)
+    return experiments.commit_experiment_impl(session, experiment)
+
+
+@router.post(
+    "/datasources/{datasource_id}/experiments/{experiment_id}/abandon",
+    status_code=status.HTTP_204_NO_CONTENT,
+)
+def abandon_experiment(
+    datasource_id: str,
+    experiment_id: str,
+    session: Annotated[Session, Depends(xngin_db_session)],
+    user: Annotated[User, Depends(user_from_token)],
+):
+    ds = get_datasource_or_raise(session, user, datasource_id)
+    experiment = get_experiment_via_ds_or_raise(session, ds, experiment_id)
+    return experiments.abandon_experiment_impl(session, experiment)
+
+
+@router.get("/datasources/{datasource_id}/experiments")
+def list_experiments(
+    datasource_id: str,
+    session: Annotated[Session, Depends(xngin_db_session)],
+    user: Annotated[User, Depends(user_from_token)],
+) -> experiments_api_types.ListExperimentsResponse:
+    """Returns the list of experiments in the datasource."""
+    ds = get_datasource_or_raise(session, user, datasource_id)
+    return experiments.list_experiments_impl(session, ds)
+
+
+@router.get("/datasources/{datasource_id}/experiments/{experiment_id}")
+def get_experiment(
+    datasource_id: str,
+    experiment_id: str,
+    session: Annotated[Session, Depends(xngin_db_session)],
+    user: Annotated[User, Depends(user_from_token)],
+) -> experiments_api_types.ExperimentConfig:
+    """Returns the experiment with the specified ID."""
+    ds = get_datasource_or_raise(session, user, datasource_id)
+    experiment = get_experiment_via_ds_or_raise(session, ds, experiment_id)
+    return ExperimentConfig(
+        datasource_id=experiment.datasource_id,
+        state=experiment.state,
+        design_spec=experiment.get_design_spec(),
+        audience_spec=experiment.get_audience_spec(),
+        power_analyses=experiment.get_power_analyses(),
+        assign_summary=experiment.get_assign_summary(),
+    )
+
+
+@router.get("/datasources/{datasource_id}/experiments/{experiment_id}/assignments")
+def get_experiment_assignments(
+    datasource_id: str,
+    experiment_id: str,
+    session: Annotated[Session, Depends(xngin_db_session)],
+    user: Annotated[User, Depends(user_from_token)],
+) -> experiments_api_types.GetExperimentAssigmentsResponse:
+    ds = get_datasource_or_raise(session, user, datasource_id)
+    experiment = get_experiment_via_ds_or_raise(session, ds, experiment_id)
+    return experiments.get_experiment_assignments_impl(experiment)
+
+
+@router.delete(
+    "/datasources/{datasource_id}/experiments/{experiment_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+)
+def delete_experiment(
+    datasource_id: str,
+    experiment_id: str,
+    session: Annotated[Session, Depends(xngin_db_session)],
+    user: Annotated[User, Depends(user_from_token)],
+):
+    """Deletes the experiment with the specified ID."""
+    ds = get_datasource_or_raise(session, user, datasource_id)
+    experiment = get_experiment_via_ds_or_raise(session, ds, experiment_id)
+    session.delete(experiment)
+    session.commit()
+    return GENERIC_SUCCESS
+
+
+@router.post("/datasources/{datasource_id}/power")
+def power_check(
+    datasource_id: str,
+    session: Annotated[Session, Depends(xngin_db_session)],
+    user: Annotated[User, Depends(user_from_token)],
+    body: PowerRequest,
+) -> PowerResponse:
+    ds = get_datasource_or_raise(session, user, datasource_id)
+    dsconfig = ds.get_config()
+    participants_cfg = dsconfig.find_participants(body.audience_spec.participant_type)
+    validate_schema_metrics_or_raise(body.design_spec, participants_cfg)
+    return power_check_impl(body, dsconfig, participants_cfg)

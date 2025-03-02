@@ -1,3 +1,4 @@
+from collections import defaultdict
 from dataclasses import dataclass
 import dataclasses
 from decimal import Decimal
@@ -76,11 +77,12 @@ def test_assign_treatment(sample_table, sample_data):
     result = assign_treatment(
         sa_table=sample_table,
         data=rows,
-        stratum_cols=["gender", "region"],
+        stratum_cols=["region", "gender"],
         id_col="id",
         arms=make_arms(["control", "treatment"]),
         experiment_id="b767716b-f388-4cd9-a18a-08c4916ce26f",
         random_state=42,
+        stratum_id_name="stratum_id",
     )
 
     assert result.balance_check.f_statistic == pytest.approx(0.006156735)
@@ -97,7 +99,7 @@ def test_assign_treatment(sample_table, sample_data):
     assert len(set([x.participant_id for x in result.assignments])) == len(
         result.assignments
     )
-    assert all(len(participant.strata) == 2 for participant in result.assignments)
+    assert all(len(participant.strata) == 3 for participant in result.assignments)
     assert all(
         participant.arm_name in ["control", "treatment"]
         for participant in result.assignments
@@ -112,6 +114,22 @@ def test_assign_treatment(sample_table, sample_data):
     assert result.assignments[7].arm_name == "treatment"
     assert result.assignments[8].arm_name == "treatment"
     assert result.assignments[9].arm_name == "treatment"
+    # Verify strata sorted in order
+    assert [s.field_name for s in result.assignments[0].strata] == [
+        "gender",
+        "region",
+        "stratum_id",
+    ]
+    # There should only be 8 distinct stratum_ids (gender x region)
+    assert {int(s.strata[2].strata_value) for s in result.assignments} == set(range(8))
+    # Count occurrences of each unique strata tuple
+    strata_counts = defaultdict(int)
+    for participant in result.assignments:
+        stratum = tuple(s.strata_value for s in participant.strata)
+        strata_counts[stratum] += 1
+    assert len(strata_counts) == 8, strata_counts
+    # Verify that each stratum has at least one participant
+    assert all(count > 0 for count in strata_counts.values())
 
 
 def test_assign_treatment_multiple_arms(sample_table, sample_data):

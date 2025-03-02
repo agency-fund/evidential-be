@@ -13,7 +13,6 @@ import sqlalchemy
 from httpx import codes
 from pydantic import (
     BaseModel,
-    PositiveInt,
     SecretStr,
     Field,
     ConfigDict,
@@ -328,7 +327,7 @@ class Dsn(ConfigBaseModel, BaseDsn):
         "postgresql+psycopg2",  # Use with: Redshift
     ]
     host: str
-    port: PositiveInt = 5432
+    port: Annotated[int, Field(ge=1024, le=65535)] = 5432
     user: str
     password: SecretStr
     dbname: str
@@ -536,9 +535,11 @@ class CannotFindParticipantsError(Exception):
 
     def __init__(self, participant_type):
         self.participant_type = participant_type
-        self.message = f"""The participant type '{participant_type}' does not exist.
-            (Possible typo in request, or server settings for your dwh may be
-            misconfigured.)"""
+        self.message = (
+            f"The participant type '{participant_type}' does not exist."
+            "(Possible typo in request, or server settings for your dwh may be"
+            "misconfigured.)"
+        )
 
     def __str__(self):
         return self.message
