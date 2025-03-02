@@ -204,6 +204,7 @@ def create_col_to_filter_meta_mapper(
                     for v in session.execute(
                         sqlalchemy.select(distinct(sa_col))
                         .where(sa_col.is_not(None))
+                        .limit(1000)
                         .order_by(sa_col)
                     ).scalars()
                 ]
