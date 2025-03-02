@@ -158,6 +158,12 @@ def create_testing_dwh(
     password: Annotated[
         str | None, typer.Option(envvar="PGPASSWORD", help="The database password.")
     ] = None,
+    hacks: Annotated[
+        bool,
+        typer.Option(
+            help="Hack: temporary table modifications for query builder testing"
+        ),
+    ] = False,
 ):
     """Loads the testing data warehouse CSV into a database.
 
@@ -293,6 +299,22 @@ def create_testing_dwh(
                     while data := reader.read(1 << 20):
                         copy.write(data)
             count(cursor)
+
+            if hacks:
+                print("Applying hacks.")
+                mods = [
+                    (
+                        # Add some new data types to the sample data warehouse.
+                        "alter table public.dwh add sample_id uuid default gen_random_uuid(), "
+                        "add sample_date date default NOW() + (random() * (interval '90 days')) + '30 days', "
+                        "add sample_timestamp timestamp default NOW() - (random() * (interval '90 days')) + '30 days';"
+                    ),
+                ]
+                mods = [" ".join(mods)]
+                for mod in mods:
+                    print(f"Running: {mod}")
+                    cursor.execute(mod)
+
     else:
         df = read_csv()
         engine = create_engine_and_database(url)
