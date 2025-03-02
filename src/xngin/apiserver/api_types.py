@@ -600,10 +600,14 @@ class ExperimentAnalysis(ApiBaseModel):
     tstats: list[float]
 
 
+class MetricValue(ApiBaseModel):
+    metric_name: str
+    metric_value: float
+
+
 class ParticipantOutcome(ApiBaseModel):
     participant_id: str
-    # metric_spec: DesignSpecMetric
-    metric_value: float
+    metric_values: list[MetricValue]
 
 
 class BalanceCheck(ApiBaseModel):

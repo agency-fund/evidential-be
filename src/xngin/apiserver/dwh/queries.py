@@ -5,6 +5,7 @@ import sqlalchemy
 from sqlalchemy import (
     Float,
     Integer,
+    String,
     Label,
     and_,
     cast,
@@ -26,6 +27,7 @@ from xngin.apiserver.api_types import (
     EXPERIMENT_IDS_SUFFIX,
     FilterValueTypes,
     MetricType,
+    MetricValue,
     ParticipantOutcome,
     Relation,
 )
@@ -116,18 +118,23 @@ def get_participant_metrics(
     # select_columns: list[Label] = [func.count().label("rows__count")]
 
     # select participant_id field
-    select_columns: list[Label] = [sa_table.c[unique_id_field]]
+    select_columns: list[Label] = [
+        cast(sa_table.c[unique_id_field].label("participant_id"), String)
+    ]
 
+    field_names = ["participant_id"]
     # add metrics from the experiment design
     for metric, metric_type in zip(metrics, metric_types, strict=False):
         field_name = metric.field_name
+        field_names.append(field_name)
         col = sa_table.c[field_name]
         # Coerce everything to Float to avoid Decimal/Integer/Boolean issues across backends.
         if metric_type is MetricType.NUMERIC:
             cast_column = cast(col, Float)
         else:  # re: avg(boolean) doesn't work on pg-like backends
             cast_column = cast(cast(col, Integer), Float)
-        select_columns.extend(cast_column)
+        # select_columns.extend(cast_column)
+        select_columns.append(cast_column)
 
     # create a single filter, filtering on the unique_id_field using
     # participant_ids from the treatment assignment.
@@ -136,8 +143,25 @@ def get_participant_metrics(
     )
     participant_filter = create_one_filter(participant_id_filter, sa_table)
     query = select(*select_columns).filter(participant_filter)
+    results = session.execute(query).all()
 
-    return session.execute(query).all()
+    participant_outcomes: list[ParticipantOutcome] = []
+    for result in results:
+        metric_values: list[MetricValue] = []
+        for i in range(len(result)):
+            field_name = field_names[i]
+            if field_name == "participant_id":
+                participant_id = result[0]
+            else:
+                metric_values.append(
+                    MetricValue(metric_name=field_name, metric_value=result[i])
+                )
+        participant_outcomes.append(
+            ParticipantOutcome(
+                participant_id=participant_id, metric_values=metric_values
+            )
+        )
+    return participant_outcomes
 
 
 def query_for_participants(
