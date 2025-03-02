@@ -20,12 +20,13 @@ from sqlalchemy.orm import Session
 
 from xngin.apiserver.api_types import (
     AudienceSpec,
-    DesignSpecMetricRequest,
-    MetricType,
-    Relation,
     AudienceSpecFilter,
-    EXPERIMENT_IDS_SUFFIX,
     DesignSpecMetric,
+    DesignSpecMetricRequest,
+    EXPERIMENT_IDS_SUFFIX,
+    MetricType,
+    ParticipantOutcome,
+    Relation,
 )
 from xngin.apiserver.exceptions_common import LateValidationError
 from xngin.db_extensions import custom_functions
@@ -40,7 +41,7 @@ def get_stats_on_metrics(
     missing_metrics = {m.field_name for m in metrics if m.field_name not in sa_table.c}
     if len(missing_metrics) > 0:
         raise LateValidationError(
-            f"Missing metrics (check your Datsource configuration): {missing_metrics}"
+            f"Missing metrics (check your Datasource configuration): {missing_metrics}"
         )
 
     # build our query
@@ -91,6 +92,73 @@ def get_stats_on_metrics(
     return metrics_to_return
 
 
+def get_participant_metrics(
+    session,
+    sa_table: Table,
+    metrics: list[DesignSpecMetricRequest],
+    unique_id_field: str,
+    participant_ids: list[str],
+) -> list[ParticipantOutcome]:
+    missing_metrics = {m.field_name for m in metrics if m.field_name not in sa_table.c}
+    if len(missing_metrics) > 0:
+        raise LateValidationError(
+            f"Missing metrics (check your Datsource configuration): {missing_metrics}"
+        )
+
+    # build our query
+    metric_types = [
+        MetricType.from_python_type(sa_table.c[m.field_name].type.python_type)
+        for m in metrics
+    ]
+    # Include in our list of stats a total count of rows targeted by the audience filters,
+    # whereas the individual aggregate functions per metric ignore NULLs by default.
+    # select_columns: list[Label] = [func.count().label("rows__count")]
+
+    # select participant_id field
+    select_columns: list[Label] = [sa_table.c[unique_id_field]]
+
+    # add metrics from the experiment design
+    for metric, metric_type in zip(metrics, metric_types, strict=False):
+        field_name = metric.field_name
+        col = sa_table.c[field_name]
+        # Coerce everything to Float to avoid Decimal/Integer/Boolean issues across backends.
+        if metric_type is MetricType.NUMERIC:
+            cast_column = cast(col, Float)
+        else:  # re: avg(boolean) doesn't work on pg-like backends
+            cast_column = cast(cast(col, Integer), Float)
+        select_columns.extend(cast_column)
+
+    # create a single filter, filtering on the unique_id_field using
+    # participant_ids from the treatment assignment.
+    participant_id_filter = AudienceSpecFilter(
+        field_name=unique_id_field, relation=Relation.INCLUDES, value=participant_ids
+    )
+    participant_filter = create_one_filter(participant_id_filter, sa_table)
+    query = select(*select_columns).filter(participant_filter)
+
+    return session.execute(query).mappings().fetchone()
+
+    # finally backfill with the stats
+    # metrics_to_return = []
+    # for metric, metric_type in zip(metrics, metric_types, strict=False):
+    #     field_name = metric.field_name
+    #     metrics_to_return.append(
+    #         DesignSpecMetric(
+    #             field_name=metric.field_name,
+    #             metric_pct_change=metric.metric_pct_change,
+    #             metric_target=metric.metric_target,
+    #             metric_type=metric_type,
+    #             metric_baseline=stats[f"{field_name}__mean"],
+    #             metric_stddev=stats[f"{field_name}__stddev"]
+    #             if metric_type is MetricType.NUMERIC
+    #             else None,
+    #             available_nonnull_n=stats[f"{field_name}__count"],
+    #             # This value is the same across all metrics, but we replicate for convenience:
+    #             available_n=stats["rows__count"],
+    #         )
+    #     )
+
+
 def query_for_participants(
     session: Session,
     sa_table: Table,
@@ -103,19 +171,21 @@ def query_for_participants(
     return session.execute(query).all()
 
 
+def create_one_filter(filter_: AudienceSpecFilter, sa_table: sqlalchemy.Table):
+    """Converts an AudienceSpecFilter into a SQLAlchemy filter."""
+    if isinstance(sa_table.columns[filter_.field_name].type, DateTime):
+        return create_datetime_filter(sa_table.columns[filter_.field_name], filter_)
+    if filter_.field_name.endswith(EXPERIMENT_IDS_SUFFIX):
+        return create_special_experiment_id_filter(
+            sa_table.columns[filter_.field_name], filter_
+        )
+    return create_filter(sa_table.columns[filter_.field_name], filter_)
+
+
 def create_query_filters_from_spec(
     sa_table: sqlalchemy.Table, audience_spec: AudienceSpec
 ):
     """Converts an AudienceSpec into a list of SQLAlchemy filters."""
-
-    def create_one_filter(filter_: AudienceSpecFilter, sa_table: sqlalchemy.Table):
-        if isinstance(sa_table.columns[filter_.field_name].type, DateTime):
-            return create_datetime_filter(sa_table.columns[filter_.field_name], filter_)
-        if filter_.field_name.endswith(EXPERIMENT_IDS_SUFFIX):
-            return create_special_experiment_id_filter(
-                sa_table.columns[filter_.field_name], filter_
-            )
-        return create_filter(sa_table.columns[filter_.field_name], filter_)
 
     return [create_one_filter(filter_, sa_table) for filter_ in audience_spec.filters]
 
