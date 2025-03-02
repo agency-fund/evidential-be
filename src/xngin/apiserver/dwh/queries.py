@@ -113,9 +113,6 @@ def get_participant_metrics(
         MetricType.from_python_type(sa_table.c[m.field_name].type.python_type)
         for m in metrics
     ]
-    # Include in our list of stats a total count of rows targeted by the audience filters,
-    # whereas the individual aggregate functions per metric ignore NULLs by default.
-    # select_columns: list[Label] = [func.count().label("rows__count")]
 
     # select participant_id field
     select_columns: list[Label] = [
@@ -133,7 +130,6 @@ def get_participant_metrics(
             cast_column = cast(col, Float)
         else:  # re: avg(boolean) doesn't work on pg-like backends
             cast_column = cast(cast(col, Integer), Float)
-        # select_columns.extend(cast_column)
         select_columns.append(cast_column)
 
     # create a single filter, filtering on the unique_id_field using
