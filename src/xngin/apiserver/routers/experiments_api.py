@@ -19,6 +19,7 @@ from xngin.apiserver import constants, database
 from xngin.apiserver.api_types import (
     DataTypeClass,
     DesignSpec,
+    ExperimentAnalysis,
     GetFiltersResponseDiscrete,
     GetFiltersResponseNumericOrDate,
     GetStrataResponseElement,
@@ -55,6 +56,7 @@ from xngin.sheets.config_sheet import (
 )
 from xngin.stats.assignment import assign_treatment as assign_treatment_actual
 from xngin.stats.power import check_power
+from xngin.apiserver.dwh.queries import get_participant_metrics
 
 logger = logging.getLogger(__name__)
 
@@ -335,6 +337,44 @@ def power_check_impl(
                 alpha=body.design_spec.alpha,
             )
         )
+
+
+@router.post(
+    "/analyze",
+    summary="Analyze experiment from an AssignResponse and ExperimentDesign.",
+    tags=["Experiment Analysis"],
+)
+def analyze_experiment(
+    assignments: AssignResponse,
+    design: DesignSpec,
+    gsheets: Annotated[GSheetCache, Depends(gsheet_cache)],
+    config: Annotated[DatasourceConfig, Depends(datasource_config_required)],
+    refresh: Annotated[bool, Query(description="Refresh the cache.")] = False,
+) -> list[ExperimentAnalysis]:
+    commons = CommonQueryParams(
+        participant_type=design.audience_spec.participant_type, refresh=refresh
+    )
+    participants_cfg, schema = get_participants_config_and_schema(
+        commons, config, gsheets
+    )
+    validate_schema_metrics_or_raise(design.design_spec, schema)
+
+    with config.dbsession() as dwh_session:
+        sa_table = infer_table(
+            dwh_session.get_bind(),
+            participants_cfg.table_name,
+            config.supports_reflection(),
+        )
+
+        participant_outcomes = get_participant_metrics(
+            dwh_session,
+            sa_table,
+            design.metrics,
+            schema.get_unique_id_field(),
+            [assignment.participant_id for assignment in assignments.assignments],
+        )
+
+    return analyze_experiment(assignments.assignments, participant_outcomes)
 
 
 @router.post(

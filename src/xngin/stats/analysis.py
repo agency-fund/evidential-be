@@ -11,7 +11,7 @@ from xngin.apiserver.api_types import (
 def analyze_experiment(
     treatment_assignments: list[Assignment],
     participant_outcomes: list[ParticipantOutcome],
-) -> ExperimentAnalysis:
+) -> list[ExperimentAnalysis]:
     """
     Perform statistical analysis with DesignSpec metrics and their values
 
@@ -30,21 +30,27 @@ def analyze_experiment(
     ])
 
     # TODO(roboton): support more than one metric
-    outcomes_df = pd.DataFrame([
-        {
-            "participant_id": outcome.participant_id,
-            "metric_value": outcome.metric_values[0].metric_value,
-        }
-        for outcome in participant_outcomes
-    ])
+    analyses = []
 
-    merged_df = assignments_df.merge(outcomes_df, on="participant_id", how="left")
+    for i in range(len(participant_outcomes[0].metric_values)):
+        metric_name = participant_outcomes[0].metric_values[i].metric_name
+        outcomes_df = pd.DataFrame([
+            {
+                "participant_id": outcome.participant_id,
+                "metric_value": outcome.metric_values[i].metric_value,
+            }
+            for outcome in participant_outcomes
+        ])
+        outcomes_df = outcomes_df.rename(columns={"metric_value": metric_name})
+        merged_df = assignments_df.merge(outcomes_df, on="participant_id", how="left")
+        model = smf.ols(f"{metric_name} ~ C(arm_id)", data=merged_df).fit()
+        analyses.append(
+            ExperimentAnalysis(
+                arm_ids=list(set(merged_df["arm_id"])),
+                coefficients=model.params,
+                pvalues=model.pvalues,
+                tstats=model.tvalues,
+            )
+        )
 
-    model = smf.ols("metric_value ~ C(arm_id)", data=merged_df).fit()
-
-    return ExperimentAnalysis(
-        arm_ids=list(set(merged_df["arm_id"])),
-        coefficients=model.params,
-        pvalues=model.pvalues,
-        tstats=model.tvalues,
-    )
+    return analyses
