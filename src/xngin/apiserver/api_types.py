@@ -1,10 +1,10 @@
-import datetime
 import decimal
 import enum
 import re
 import uuid
-from collections.abc import Sequence
+import datetime
 from typing import Annotated, Self
+from collections.abc import Sequence
 
 import sqlalchemy.sql.sqltypes
 from pydantic import (
@@ -155,14 +155,12 @@ class Relation(enum.StrEnum):
     BETWEEN = "between"
 
 
-type IntArray = Sequence[Annotated[int, Field(strict=True)] | None]
-type FloatArray = Sequence[
-    Annotated[float, Field(strict=True, allow_inf_nan=False)] | None
-]
-type StringArray = Sequence[Annotated[str | None, Field(strict=True)]]
-type BoolArray = Sequence[Annotated[bool | None, Field(strict=True)]]
-
-type FilterValueTypes = IntArray | FloatArray | StringArray | BoolArray
+type FilterValueTypes = (
+    Sequence[Annotated[int, Field(strict=True)] | None]
+    | Sequence[Annotated[float, Field(strict=True, allow_inf_nan=False)] | None]
+    | Sequence[str | None]
+    | Sequence[bool | None]
+)
 
 
 class AudienceSpecFilter(ApiBaseModel):
