@@ -453,7 +453,7 @@ def make_experiment_with_assignments(db_session):
             arm_id=arm2_id,
             strata=[
                 {"field_name": "gender", "strata_value": "M"},
-                {"field_name": "score", "strata_value": "NA"},
+                {"field_name": "score", "strata_value": "esc,aped"},
             ],
         ),
     ]
@@ -467,11 +467,12 @@ def test_experiment_assignments_to_csv_generator(db_session: Session):
 
     (arm1_id, arm2_id) = experiment.get_arm_ids()
     (arm1_name, arm2_name) = experiment.get_arm_names()
-    rows = list(experiment_assignments_to_csv_generator(experiment)())
-    assert len(rows) == 3
+    batches = list(experiment_assignments_to_csv_generator(experiment)())
+    assert len(batches) == 1
+    rows = batches[0].splitlines(keepends=True)
     assert rows[0] == "participant_id,arm_id,arm_name,gender,score\r\n"
     assert rows[1] == f"p1,{arm1_id},{arm1_name},F,1.1\r\n"
-    assert rows[2] == f"p2,{arm2_id},{arm2_name},M,NA\r\n"
+    assert rows[2] == f'p2,{arm2_id},{arm2_name},M,"esc,aped"\r\n'
 
 
 def test_get_experiment_assignments_as_csv(db_session: Session):
@@ -493,4 +494,4 @@ def test_get_experiment_assignments_as_csv(db_session: Session):
     assert len(rows) == 3
     assert rows[0] == "participant_id,arm_id,arm_name,gender,score\r\n"
     assert rows[1] == f"p1,{arm1_id},{arm1_name},F,1.1\r\n"
-    assert rows[2] == f"p2,{arm2_id},{arm2_name},M,NA\r\n"
+    assert rows[2] == f'p2,{arm2_id},{arm2_name},M,"esc,aped"\r\n'

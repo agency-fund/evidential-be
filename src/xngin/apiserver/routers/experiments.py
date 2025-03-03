@@ -1,3 +1,4 @@
+from itertools import batched
 import uuid
 from contextlib import asynccontextmanager
 from typing import Annotated
@@ -19,7 +20,6 @@ from sqlalchemy.orm import Session
 
 from xngin.apiserver.api_types import (
     Assignment,
-    BalanceCheck,
     DesignSpec,
     Strata,
 )
@@ -331,9 +331,6 @@ def get_experiment_assignments_sl(
 
 
 def get_experiment_assignments_impl(experiment: Experiment):
-    # Get sample size and balance check from the assign_summary
-    assign_summary = experiment.assign_summary
-    balance_check = BalanceCheck.model_validate(assign_summary["balance_check"])
     # Map arm IDs to names
     design_spec = DesignSpec.model_validate(experiment.design_spec)
     arm_id_to_name = {str(arm.arm_id): arm.arm_name for arm in design_spec.arms}
@@ -348,9 +345,9 @@ def get_experiment_assignments_impl(experiment: Experiment):
         for arm_assignment in experiment.arm_assignments
     ]
     return GetExperimentAssigmentsResponse(
-        balance_check=balance_check,
+        balance_check=experiment.get_balance_check(),
         experiment_id=experiment.id,
-        sample_size=assign_summary["sample_size"],
+        sample_size=experiment.assign_summary["sample_size"],
         assignments=assignments,
     )
 
@@ -358,7 +355,7 @@ def get_experiment_assignments_impl(experiment: Experiment):
 def experiment_assignments_to_csv_generator(experiment: Experiment):
     """Generator function to yield CSV rows of experiment assignments as strings"""
     # Map arm IDs to names
-    design_spec = DesignSpec.model_validate(experiment.design_spec)
+    design_spec = experiment.get_design_spec()
     arm_id_to_name = {str(arm.arm_id): arm.arm_name for arm in design_spec.arms}
 
     # Get strata field names from the first assignment
@@ -369,7 +366,7 @@ def experiment_assignments_to_csv_generator(experiment: Experiment):
     # Create CSV header
     header = ["participant_id", "arm_id", "arm_name", *strata_field_names]
 
-    def generate_csv():
+    def generate_csv(batch_size=100):
         # Use csv.writer with StringIO to format a single row at a time
         output = io.StringIO()
         writer = csv.writer(output)
@@ -377,22 +374,23 @@ def experiment_assignments_to_csv_generator(experiment: Experiment):
         try:
             # First write out our header
             writer.writerow(header)
-            yield output.getvalue()
 
-            # Write out each participant row
-            for participant in experiment.arm_assignments:
-                # First clear the buffer
+            # Write out each participant row in batches
+            for batch in batched(experiment.arm_assignments, batch_size):
+                for participant in batch:
+                    row = [
+                        participant.participant_id,
+                        str(participant.arm_id),
+                        arm_id_to_name[str(participant.arm_id)],
+                        *["" if v is None else v for v in participant.strata_values()],
+                    ]
+                    writer.writerow(row)
+
+                # Return the batch as string for streaming to the user
+                yield output.getvalue()
+                # Clear the string buffer for the next batch
                 output.seek(0)
                 output.truncate(0)
-                # Prep our values to write out
-                row = [
-                    participant.participant_id,
-                    str(participant.arm_id),
-                    arm_id_to_name[str(participant.arm_id)],
-                    *["" if v is None else v for v in participant.strata_values()],
-                ]
-                writer.writerow(row)
-                yield output.getvalue()
         finally:
             output.close()
 
