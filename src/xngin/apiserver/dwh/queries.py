@@ -15,6 +15,7 @@ from sqlalchemy import (
     not_,
     select,
     DateTime,
+    Date,
 )
 from sqlalchemy.orm import Session
 
@@ -110,7 +111,7 @@ def create_query_filters_from_spec(
     """Converts an AudienceSpec into a list of SQLAlchemy filters."""
 
     def create_one_filter(filter_: AudienceSpecFilter, sa_table: sqlalchemy.Table):
-        if isinstance(sa_table.columns[filter_.field_name].type, DateTime):
+        if isinstance(sa_table.columns[filter_.field_name].type, DateTime | Date):
             return create_datetime_filter(sa_table.columns[filter_.field_name], filter_)
         if filter_.field_name.endswith(EXPERIMENT_IDS_SUFFIX):
             return create_special_experiment_id_filter(
