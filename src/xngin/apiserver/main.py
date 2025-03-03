@@ -14,6 +14,7 @@ from xngin.apiserver.routers import (
     experiments_proxy_mgmt_api,
     oidc,
     admin,
+    oidc_dependencies,
 )
 
 logging.basicConfig(
@@ -101,6 +102,8 @@ if oidc.is_enabled():
 
 if oidc.is_enabled() and admin.is_enabled():
     enable_admin_api()
+
+oidc_dependencies.setup(app)
 
 
 def custom_openapi():

@@ -1,6 +1,9 @@
+from itertools import batched
 import uuid
 from contextlib import asynccontextmanager
 from typing import Annotated
+import csv
+import io
 
 from fastapi import (
     APIRouter,
@@ -11,12 +14,12 @@ from fastapi import (
     Response,
     status,
 )
+from fastapi.responses import StreamingResponse
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from xngin.apiserver.api_types import (
     Assignment,
-    BalanceCheck,
     DesignSpec,
     Strata,
 )
@@ -331,9 +334,6 @@ def get_experiment_assignments_sl(
 
 
 def get_experiment_assignments_impl(experiment: Experiment):
-    # Get sample size and balance check from the assign_summary
-    assign_summary = experiment.assign_summary
-    balance_check = BalanceCheck.model_validate(assign_summary["balance_check"])
     # Map arm IDs to names
     design_spec = DesignSpec.model_validate(experiment.design_spec)
     arm_id_to_name = {str(arm.arm_id): arm.arm_name for arm in design_spec.arms}
@@ -348,8 +348,80 @@ def get_experiment_assignments_impl(experiment: Experiment):
         for arm_assignment in experiment.arm_assignments
     ]
     return GetExperimentAssigmentsResponse(
-        balance_check=balance_check,
+        balance_check=experiment.get_balance_check(),
         experiment_id=experiment.id,
-        sample_size=assign_summary["sample_size"],
+        sample_size=experiment.assign_summary["sample_size"],
         assignments=assignments,
     )
+
+
+def experiment_assignments_to_csv_generator(experiment: Experiment):
+    """Generator function to yield CSV rows of experiment assignments as strings"""
+    # Map arm IDs to names
+    design_spec = experiment.get_design_spec()
+    arm_id_to_name = {str(arm.arm_id): arm.arm_name for arm in design_spec.arms}
+
+    # Get strata field names from the first assignment
+    strata_field_names = []
+    if len(experiment.arm_assignments) > 0:
+        strata_field_names = experiment.arm_assignments[0].strata_names()
+
+    # Create CSV header
+    header = ["participant_id", "arm_id", "arm_name", *strata_field_names]
+
+    def generate_csv(batch_size=100):
+        # Use csv.writer with StringIO to format a single row at a time
+        output = io.StringIO()
+        writer = csv.writer(output)
+
+        try:
+            # First write out our header
+            writer.writerow(header)
+
+            # Write out each participant row in batches
+            for batch in batched(experiment.arm_assignments, batch_size):
+                for participant in batch:
+                    row = [
+                        participant.participant_id,
+                        str(participant.arm_id),
+                        arm_id_to_name[str(participant.arm_id)],
+                        *["" if v is None else v for v in participant.strata_values()],
+                    ]
+                    writer.writerow(row)
+
+                # Return the batch as string for streaming to the user
+                yield output.getvalue()
+                # Clear the string buffer for the next batch
+                output.seek(0)
+                output.truncate(0)
+        finally:
+            output.close()
+
+    return generate_csv
+
+
+def get_experiment_assignments_as_csv_impl(experiment: Experiment):
+    csv_generator = experiment_assignments_to_csv_generator(experiment)
+    filename = f"experiment_{experiment.id}_assignments.csv"
+    return StreamingResponse(
+        csv_generator(),
+        media_type="text/csv",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
+@router.get(
+    "/experiments/{experiment_id}/assignments/csv",
+    summary="Export experiment assignments as CSV file.",
+)
+def get_experiment_assignments_as_csv_sl(
+    datasource: Annotated[Datasource, Depends(datasource_dependency)],
+    xngin_session: Annotated[Session, Depends(xngin_db_session)],
+    experiment_id: uuid.UUID,
+) -> StreamingResponse:
+    """Exports the assignments info with header row as CSV. BalanceCheck not included.
+
+    csv header form: participant_id,arm_id,arm_name,strata_name1,strata_name2,...
+    """
+    experiment = get_experiment_or_raise(xngin_session, experiment_id, datasource.id)
+    return get_experiment_assignments_as_csv_impl(experiment)

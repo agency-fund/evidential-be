@@ -33,6 +33,10 @@ class OidcMisconfiguredError(Exception):
     pass
 
 
+class ServerAppearsOfflineError(Exception):
+    pass
+
+
 def is_enabled():
     """Feature flag: Returns true iff OIDC is enabled."""
     enabled = flags.ENABLE_OIDC
@@ -69,10 +73,14 @@ async def get_google_configuration():
     """Fetch and cache Google's OpenID configuration"""
     global google_config
     if google_config is None:
-        async with httpx.AsyncClient() as client:
-            response = await client.get(GOOGLE_DISCOVERY_URL)
-            response.raise_for_status()
-            google_config = response.json()
+        try:
+            async with httpx.AsyncClient() as client:
+                response = await client.get(GOOGLE_DISCOVERY_URL)
+                response.raise_for_status()
+                google_config = response.json()
+        except httpx.ConnectError as exc:
+            raise ServerAppearsOfflineError("We appear to be offline.") from exc
+
     return google_config
 
 

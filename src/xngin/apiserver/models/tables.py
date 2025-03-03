@@ -11,7 +11,12 @@ from sqlalchemy.dialects import postgresql
 from sqlalchemy.orm import DeclarativeBase, mapped_column, Mapped, relationship
 from sqlalchemy.types import TypeEngine
 
-from xngin.apiserver.api_types import DesignSpec, PowerResponse, AudienceSpec
+from xngin.apiserver.api_types import (
+    BalanceCheck,
+    DesignSpec,
+    PowerResponse,
+    AudienceSpec,
+)
 from xngin.apiserver.models.enums import ExperimentState
 from xngin.apiserver.routers.admin_api_types import (
     InspectDatasourceTableResponse,
@@ -267,6 +272,12 @@ class ArmAssignment(Base):
 
     experiment: Mapped["Experiment"] = relationship(back_populates="arm_assignments")
 
+    def strata_names(self):
+        return [s["field_name"] for s in self.strata]
+
+    def strata_values(self):
+        return [s["strata_value"] for s in self.strata]
+
 
 class Experiment(Base):
     """Stores experiment metadata."""
@@ -310,12 +321,16 @@ class Experiment(Base):
 
     datasource: Mapped["Datasource"] = relationship(back_populates="experiments")
 
+    def get_arm_ids(self) -> list[str]:
+        return [arm["arm_id"] for arm in self.design_spec["arms"]]
+
+    def get_arm_names(self) -> list[str]:
+        return [arm["arm_name"] for arm in self.design_spec["arms"]]
+
     def get_design_spec(self) -> DesignSpec:
-        """Deserializes design_spec into a DesignSpec."""
         return TypeAdapter(DesignSpec).validate_python(self.design_spec)
 
-    def get_audience_spec(self) -> DesignSpec:
-        """Deserializes design_spec into a DesignSpec."""
+    def get_audience_spec(self) -> AudienceSpec:
         return TypeAdapter(AudienceSpec).validate_python(self.audience_spec)
 
     def get_power_analyses(self) -> PowerResponse | None:
@@ -323,6 +338,10 @@ class Experiment(Base):
             return None
         return TypeAdapter(PowerResponse).validate_python(self.power_analyses)
 
-    def get_assign_summary(self) -> "AssignSummary":
-        """Deserializes assign_summary into a dict."""
+    def get_assign_summary(self) -> AssignSummary:
         return TypeAdapter(AssignSummary).validate_python(self.assign_summary)
+
+    def get_balance_check(self) -> BalanceCheck:
+        return TypeAdapter(BalanceCheck).validate_python(
+            self.assign_summary["balance_check"]
+        )
