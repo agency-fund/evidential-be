@@ -31,7 +31,7 @@ def analyze_metric_power(
     if metric.metric_type is None:
         raise ValueError("Unknown metric_type.")
 
-    if metric.metric_target is None:
+    if metric.metric_target is None and metric.metric_baseline is not None:
         metric.metric_target = metric.metric_baseline * (1 + metric.metric_pct_change)
 
     analysis = MetricAnalysis(metric_spec=metric)
