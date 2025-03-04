@@ -29,7 +29,6 @@ def analyze_experiment(
         for assignment in treatment_assignments
     ])
 
-    # TODO(roboton): support more than one metric
     analyses = []
 
     for i in range(len(participant_outcomes[0].metric_values)):
