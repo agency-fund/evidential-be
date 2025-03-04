@@ -66,7 +66,7 @@ tasks:
     desc: "Bootstraps the localpg server with a sample data warehouse."
     interactive: true
     cmds:
-      - uv run xngin-cli create-testing-dwh --dsn 'postgresql+psycopg://postgres:postgres@localhost:5499/dwh?sslmode=disable'
+      - uv run xngin-cli create-testing-dwh --dsn 'postgresql+psycopg://postgres:postgres@localhost:5499/dwh?sslmode=disable' --hacks
   test:
     desc: "Runs unit tests"
     interactive: true

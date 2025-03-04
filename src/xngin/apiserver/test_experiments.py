@@ -28,6 +28,7 @@ from xngin.apiserver.dependencies import xngin_db_session
 from xngin.apiserver.main import app
 from xngin.apiserver.models.enums import ExperimentState
 from xngin.apiserver.models.tables import ArmAssignment, Experiment
+from xngin.apiserver.routers.experiments import experiment_assignments_to_csv_generator
 from xngin.apiserver.routers.experiments_api_types import (
     CreateExperimentRequest,
     AssignSummary,
@@ -54,6 +55,7 @@ def fixture_teardown(db_session: Session):
     db_session.query(Experiment).delete()
     db_session.query(ArmAssignment).delete()
     db_session.commit()
+    db_session.close()
 
 
 def test_experiment_sql():
@@ -424,3 +426,72 @@ def test_get_experiment_assignments_wrong_datasource(db_session: Session):
     )
     assert response.status_code == 404
     assert response.json()["detail"] == "Experiment not found"
+
+
+def make_experiment_with_assignments(db_session):
+    # First insert an experiment with assignments
+    experiment = make_insert_experiment(ExperimentState.COMMITTED)
+    db_session.add(experiment)
+
+    arm1_id = uuid.UUID(experiment.design_spec["arms"][0]["arm_id"])
+    arm2_id = uuid.UUID(experiment.design_spec["arms"][1]["arm_id"])
+    assignments = [
+        ArmAssignment(
+            experiment_id=experiment.id,
+            participant_type="test_participant_type",
+            participant_id="p1",
+            arm_id=arm1_id,
+            strata=[
+                {"field_name": "gender", "strata_value": "F"},
+                {"field_name": "score", "strata_value": "1.1"},
+            ],
+        ),
+        ArmAssignment(
+            experiment_id=experiment.id,
+            participant_type="test_participant_type",
+            participant_id="p2",
+            arm_id=arm2_id,
+            strata=[
+                {"field_name": "gender", "strata_value": "M"},
+                {"field_name": "score", "strata_value": "esc,aped"},
+            ],
+        ),
+    ]
+    db_session.add_all(assignments)
+    db_session.commit()
+    return experiment
+
+
+def test_experiment_assignments_to_csv_generator(db_session: Session):
+    experiment = make_experiment_with_assignments(db_session)
+
+    (arm1_id, arm2_id) = experiment.get_arm_ids()
+    (arm1_name, arm2_name) = experiment.get_arm_names()
+    batches = list(experiment_assignments_to_csv_generator(experiment)())
+    assert len(batches) == 1
+    rows = batches[0].splitlines(keepends=True)
+    assert rows[0] == "participant_id,arm_id,arm_name,gender,score\r\n"
+    assert rows[1] == f"p1,{arm1_id},{arm1_name},F,1.1\r\n"
+    assert rows[2] == f'p2,{arm2_id},{arm2_name},M,"esc,aped"\r\n'
+
+
+def test_get_experiment_assignments_as_csv(db_session: Session):
+    experiment = make_experiment_with_assignments(db_session)
+
+    response = client.get(
+        f"/experiments/{experiment.id!s}/assignments/csv",
+        headers={constants.HEADER_CONFIG_ID: "testing"},
+    )
+    assert response.status_code == 200
+    assert (
+        f"experiment_{experiment.id}_assignments.csv"
+        in response.headers["Content-Disposition"]
+    )
+    # Now verify the contents
+    rows = response.text.splitlines(keepends=True)
+    (arm1_id, arm2_id) = experiment.get_arm_ids()
+    (arm1_name, arm2_name) = experiment.get_arm_names()
+    assert len(rows) == 3
+    assert rows[0] == "participant_id,arm_id,arm_name,gender,score\r\n"
+    assert rows[1] == f"p1,{arm1_id},{arm1_name},F,1.1\r\n"
+    assert rows[2] == f'p2,{arm2_id},{arm2_name},M,"esc,aped"\r\n'

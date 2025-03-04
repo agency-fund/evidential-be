@@ -1,4 +1,5 @@
 from dataclasses import dataclass
+import os
 from typing import Annotated
 
 from fastapi import Depends, HTTPException, Security
@@ -51,6 +52,25 @@ TESTING_TOKENS = {
         hd="agency.fund",
     ),
 }
+
+
+def setup(app):
+    if os.environ.get("ENABLE_TEST_PRIVILEGED_USER", "").lower() not in {"true", "1"}:
+        return
+
+    logger.warning("*****USING TEST USER*****")
+
+    """Configures FastAPI dependencies to skip OIDC flows and use fake users."""
+
+    def noop():
+        pass
+
+    def get_privileged_token():
+        return TESTING_TOKENS[PRIVILEGED_TOKEN_FOR_TESTING]
+
+    app.dependency_overrides[get_google_configuration] = noop
+    app.dependency_overrides[get_google_jwks] = noop
+    app.dependency_overrides[require_oidc_token] = get_privileged_token
 
 
 async def require_oidc_token(
