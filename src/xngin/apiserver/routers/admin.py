@@ -1035,7 +1035,7 @@ def analyze_experiment(
 
     metrics = experiment.get_design_spec().metrics
 
-    assignments = experiments.get_experiment_assignments_impl(experiment)
+    assignments = experiment.arm_assignments
     participant_ids = [assignment.participant_id for assignment in assignments]
     participant_outcomes = get_participant_metrics(
         session,
