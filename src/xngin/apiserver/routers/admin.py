@@ -19,6 +19,7 @@ from sqlalchemy.orm import Session
 from xngin.apiserver import flags, settings
 from xngin.apiserver.api_types import (
     DataType,
+    ExperimentAnalysis,
     GetStrataResponseElement,
     GetMetricsResponseElement,
     PowerRequest,
@@ -26,6 +27,7 @@ from xngin.apiserver.api_types import (
 )
 from xngin.apiserver.apikeys import make_key, hash_key
 from xngin.apiserver.dependencies import xngin_db_session
+from xngin.apiserver.dwh.queries import get_participant_metrics
 from xngin.apiserver.exceptions_common import LateValidationError
 from xngin.apiserver.models.tables import (
     ApiKey,
@@ -82,6 +84,7 @@ from xngin.apiserver.settings import (
     ParticipantsConfig,
     infer_table,
 )
+from xngin.stats.analysis import analyze_experiment as analyze_experiment_impl
 
 logger = logging.getLogger(__name__)
 
@@ -1026,6 +1029,44 @@ def create_experiment_with_assignment(
         random_state,
         chosen_n,
     )
+
+
+@router.get("/datasources/{datasource_id}/experiments/{experiment_id}/analyze")
+def analyze_experiment(
+    datasource_id: str,
+    experiment_id: str,
+    session: Annotated[Session, Depends(xngin_db_session)],
+    user: Annotated[User, Depends(user_from_token)],
+) -> list[ExperimentAnalysis]:
+    ds = get_datasource_or_raise(session, user, datasource_id)
+    config = ds.get_config()
+    if not isinstance(config, RemoteDatabaseConfig):
+        raise LateValidationError("Invalid RemoteDatabaseConfig.")
+
+    experiment = get_experiment_via_ds_or_raise(session, ds, experiment_id)
+
+    participants_cfg = config.find_participants(
+        experiment.get_audience_spec().participant_type
+    )
+    if not isinstance(participants_cfg, ParticipantsDef):
+        raise LateValidationError(
+            "Invalid ParticipantsConfig: Participants must be of type schema."
+        )
+    unique_id_field = participants_cfg.get_unique_id_field()
+
+    metrics = experiment.get_design_spec().metrics
+
+    assignments = experiment.arm_assignments
+    participant_ids = [assignment.participant_id for assignment in assignments]
+    participant_outcomes = get_participant_metrics(
+        session,
+        participants_cfg.get_table(),
+        metrics,
+        unique_id_field,
+        participant_ids,
+    )
+
+    return analyze_experiment_impl(assignments, participant_outcomes)
 
 
 @router.post(

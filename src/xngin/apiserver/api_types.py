@@ -520,6 +520,7 @@ class MetricAnalysis(ApiBaseModel):
         int | None,
         Field(description="Minimum sample size needed to meet the design specs."),
     ] = None
+
     sufficient_n: Annotated[
         bool | None,
         Field(
@@ -533,6 +534,7 @@ class MetricAnalysis(ApiBaseModel):
             description="If there is an insufficient sample size to meet the desired metric_target, we report what is possible given the available_n. This value is equivalent to the relative pct_change_possible. This is None when there is a sufficient sample size to detect the desired change."
         ),
     ] = None
+
     pct_change_possible: Annotated[
         float | None,
         Field(
@@ -602,6 +604,57 @@ class Assignment(ApiBaseModel):
     ]
 
 
+class ExperimentAnalysis(ApiBaseModel):
+    metric_name: Annotated[
+        str,
+        Field(
+            description="The field_name from the datasource which this analysis models as the dependent variable (y)."
+        ),
+    ]
+    arm_ids: list[uuid.UUID]
+    coefficients: Annotated[
+        list[float],
+        Field(
+            description="Estimates for each arm in the model, the first element is the baseline estimate (intercept) of the first arm_id, the latter two are coefficients estimated against that baseline."
+        ),
+    ]
+    pvalues: Annotated[
+        list[float],
+        Field(
+            description="P-values corresponding to each coefficient estimate for arm_ids, starting with the intercept (arm_ids[0])."
+        ),
+    ]
+    tstats: Annotated[
+        list[float],
+        Field(
+            description="Corresponding t-stats for the pvalues and coefficients for each arm_id."
+        ),
+    ]
+    std_errors: Annotated[
+        list[float],
+        Field(
+            description="Corresponding standard errors for the pvalues and coefficients for each arm_id."
+        ),
+    ]
+
+
+class MetricValue(ApiBaseModel):
+    metric_name: Annotated[
+        str,
+        Field(
+            description="The field_name from the datasource which this analysis models as the dependent variable (y)."
+        ),
+    ]
+    metric_value: Annotated[
+        float, Field(description="The queried value for this field_name.")
+    ]
+
+
+class ParticipantOutcome(ApiBaseModel):
+    participant_id: str
+    metric_values: list[MetricValue]
+
+
 class BalanceCheck(ApiBaseModel):
     """Describes balance test results for treatment assignment."""
 
@@ -626,6 +679,11 @@ class AssignResponse(ApiBaseModel):
         ),
     ]
     assignments: list[Assignment]
+
+
+class AnalysisRequest(ApiBaseModel):
+    design: DesignSpec
+    assignment: AssignResponse
 
 
 class GetStrataResponseElement(ApiBaseModel):

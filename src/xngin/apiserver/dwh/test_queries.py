@@ -23,14 +23,17 @@ from xngin.apiserver.api_types import (
     DesignSpecMetric,
     DesignSpecMetricRequest,
     Relation,
+    ParticipantOutcome,
     AudienceSpecFilter,
     MetricType,
+    MetricValue,
 )
 from xngin.apiserver.conftest import DbType, get_test_dwh_info
 from xngin.apiserver.dwh.queries import (
     compose_query,
     create_query_filters_from_spec,
     get_stats_on_metrics,
+    get_participant_metrics,
     make_csv_regex,
     create_datetime_filter,
 )
@@ -901,3 +904,41 @@ def test_get_stats_on_numeric_metric(db_session):
     assert actual.model_dump(include=numeric_fields) == pytest.approx(
         expected.model_dump(include=numeric_fields)
     )
+
+
+def test_get_participant_metrics(db_session):
+    participant_ids = ["100", "200"]
+    rows = get_participant_metrics(
+        db_session,
+        SampleTable.get_table(),
+        [DesignSpecMetricRequest(field_name="float_col", metric_pct_change=0.1)],
+        unique_id_field="id",
+        participant_ids=participant_ids,
+    )
+
+    expected = [
+        ParticipantOutcome(
+            participant_id="100",
+            metric_values=[
+                MetricValue(
+                    metric_name="float_col",
+                    metric_value=3.14,  # Example expected value
+                )
+            ],
+        ),
+        ParticipantOutcome(
+            participant_id="200",
+            metric_values=[
+                MetricValue(
+                    metric_name="float_col",
+                    metric_value=2.718,  # Example expected value
+                )
+            ],
+        ),
+    ]
+
+    assert len(rows) == len(expected)
+    for actual, exp in zip(rows, expected, strict=False):
+        assert actual.participant_id == exp.participant_id
+        assert actual.metric_values[0].metric_name == exp.metric_values[0].metric_name
+        assert actual.metric_values[0].metric_value == exp.metric_values[0].metric_value
