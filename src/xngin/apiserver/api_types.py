@@ -619,6 +619,12 @@ class ExperimentAnalysis(ApiBaseModel):
             description="Corresponding t-stats for the pvalues and coefficients for each arm_id."
         ),
     ]
+    std_errors: Annotated[
+        list[float],
+        Field(
+            description="Corresponding standard errors for the pvalues and coefficients for each arm_id."
+        ),
+    ]
 
 
 class MetricValue(ApiBaseModel):

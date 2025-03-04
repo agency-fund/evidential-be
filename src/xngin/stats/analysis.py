@@ -1,6 +1,6 @@
 import pandas as pd
-
 import statsmodels.formula.api as smf
+from patsy import EvalFactor
 from xngin.apiserver.api_types import (
     Assignment,
     ExperimentAnalysis,
@@ -42,14 +42,19 @@ def analyze_experiment(
         ])
         outcomes_df = outcomes_df.rename(columns={"metric_value": metric_name})
         merged_df = assignments_df.merge(outcomes_df, on="participant_id", how="left")
-        model = smf.ols(f"{metric_name} ~ C(arm_id)", data=merged_df).fit()
+        model = smf.ols(f"{metric_name} ~ arm_id", data=merged_df).fit()
+        arm_names = model.model.data.design_info.factor_infos[
+            EvalFactor("arm_id")
+        ].categories
+
         analyses.append(
             ExperimentAnalysis(
                 metric_name=metric_name,
-                arm_ids=list(set(merged_df["arm_id"])),
+                arm_ids=arm_names,
                 coefficients=model.params,
                 pvalues=model.pvalues,
                 tstats=model.tvalues,
+                std_errors=list(model.bse),
             )
         )
 
