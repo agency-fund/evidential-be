@@ -30,6 +30,15 @@ class AssignSummary(ExperimentsBaseModel):
     sample_size: int
 
 
+class ExperimentAnalysis(ExperimentsBaseModel):
+    """Result of an analysis on a single metric from an Experiment."""
+
+    arm_ids: list[uuid.UUID]
+    coefficients: list[float]
+    pvalues: list[float]
+    tstats: list[float]
+
+
 class ExperimentConfig(ExperimentsBaseModel):
     """Representation of our stored Experiment information."""
 
