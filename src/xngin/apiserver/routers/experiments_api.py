@@ -379,6 +379,7 @@ def do_analyze_experiment(
             ],
         )
 
+    # TODO: implement a version that can work with Assignment objects
     return analyze_experiment(request.assignment.assignments, participant_outcomes)
 
 

@@ -4,8 +4,9 @@
 import uuid
 import pytest
 import numpy as np
+from xngin.apiserver.models.tables import ArmAssignment
 from xngin.stats.analysis import analyze_experiment
-from xngin.apiserver.api_types import Assignment, ParticipantOutcome, MetricValue
+from xngin.apiserver.api_types import ParticipantOutcome, MetricValue
 
 
 @pytest.fixture
@@ -15,11 +16,9 @@ def test_assignments(n=1000, num_arms=3, seed=42):
     assignments = []
     for i in range(n):
         arm_id = np.random.choice(arm_ids, size=1, replace=True)[0]
-        arm_name = "arm" + str(arm_ids.index(arm_id))
         assignments.append(
-            Assignment(
-                participant_id=str(i), arm_id=arm_id, arm_name=arm_name, strata=[]
-            )
+            # TODO: test Assignment for old stateless api
+            ArmAssignment(participant_id=str(i), arm_id=arm_id, strata=[])
         )
     return assignments
 

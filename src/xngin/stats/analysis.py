@@ -2,14 +2,14 @@ import pandas as pd
 import statsmodels.formula.api as smf
 from patsy import EvalFactor
 from xngin.apiserver.api_types import (
-    Assignment,
     ExperimentAnalysis,
     ParticipantOutcome,
 )
+from xngin.apiserver.models.tables import ArmAssignment
 
 
 def analyze_experiment(
-    treatment_assignments: list[Assignment],
+    treatment_assignments: list[ArmAssignment],
     participant_outcomes: list[ParticipantOutcome],
 ) -> list[ExperimentAnalysis]:
     """
@@ -24,7 +24,6 @@ def analyze_experiment(
         {
             "participant_id": assignment.participant_id,
             "arm_id": assignment.arm_id,
-            "arm_name": assignment.arm_name,
         }
         for assignment in treatment_assignments
     ])
@@ -43,14 +42,14 @@ def analyze_experiment(
         outcomes_df = outcomes_df.rename(columns={"metric_value": metric_name})
         merged_df = assignments_df.merge(outcomes_df, on="participant_id", how="left")
         model = smf.ols(f"{metric_name} ~ arm_id", data=merged_df).fit()
-        arm_names = model.model.data.design_info.factor_infos[
+        arm_ids = model.model.data.design_info.factor_infos[
             EvalFactor("arm_id")
         ].categories
 
         analyses.append(
             ExperimentAnalysis(
                 metric_name=metric_name,
-                arm_ids=arm_names,
+                arm_ids=arm_ids,
                 coefficients=model.params,
                 pvalues=model.pvalues,
                 tstats=model.tvalues,

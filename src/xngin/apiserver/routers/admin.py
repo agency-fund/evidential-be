@@ -1035,17 +1035,17 @@ def create_experiment_with_assignment(
 def analyze_experiment(
     datasource_id: str,
     experiment_id: str,
-    session: Annotated[Session, Depends(xngin_db_session)],
+    xngin_session: Annotated[Session, Depends(xngin_db_session)],
     user: Annotated[User, Depends(user_from_token)],
 ) -> list[ExperimentAnalysis]:
-    ds = get_datasource_or_raise(session, user, datasource_id)
-    config = ds.get_config()
-    if not isinstance(config, RemoteDatabaseConfig):
+    ds = get_datasource_or_raise(xngin_session, user, datasource_id)
+    dsconfig = ds.get_config()
+    if not isinstance(dsconfig, RemoteDatabaseConfig):
         raise LateValidationError("Invalid RemoteDatabaseConfig.")
 
-    experiment = get_experiment_via_ds_or_raise(session, ds, experiment_id)
+    experiment = get_experiment_via_ds_or_raise(xngin_session, ds, experiment_id)
 
-    participants_cfg = config.find_participants(
+    participants_cfg = dsconfig.find_participants(
         experiment.get_audience_spec().participant_type
     )
     if not isinstance(participants_cfg, ParticipantsDef):
@@ -1054,17 +1054,23 @@ def analyze_experiment(
         )
     unique_id_field = participants_cfg.get_unique_id_field()
 
-    metrics = experiment.get_design_spec().metrics
+    with dsconfig.dbsession() as dwh_session:
+        sa_table = infer_table(
+            dwh_session.get_bind(),
+            participants_cfg.table_name,
+            dsconfig.supports_reflection(),
+        )
 
-    assignments = experiment.arm_assignments
-    participant_ids = [assignment.participant_id for assignment in assignments]
-    participant_outcomes = get_participant_metrics(
-        session,
-        participants_cfg.get_table(),
-        metrics,
-        unique_id_field,
-        participant_ids,
-    )
+        metrics = experiment.get_design_spec().metrics
+        assignments = experiment.arm_assignments
+        participant_ids = [assignment.participant_id for assignment in assignments]
+        participant_outcomes = get_participant_metrics(
+            dwh_session,
+            sa_table,
+            metrics,
+            unique_id_field,
+            participant_ids,
+        )
 
     return analyze_experiment_impl(assignments, participant_outcomes)
 
