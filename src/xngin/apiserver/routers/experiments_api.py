@@ -17,6 +17,7 @@ from sqlalchemy.orm import Session
 
 from xngin.apiserver import constants, database
 from xngin.apiserver.api_types import (
+    AnalysisRequest,
     DataTypeClass,
     DesignSpec,
     ExperimentAnalysis,
@@ -346,19 +347,18 @@ def power_check_impl(
     tags=["Experiment Analysis"],
 )
 def do_analyze_experiment(
-    assignments: AssignResponse,
-    design: DesignSpec,
+    request: AnalysisRequest,
     gsheets: Annotated[GSheetCache, Depends(gsheet_cache)],
     config: Annotated[DatasourceConfig, Depends(datasource_config_required)],
     refresh: Annotated[bool, Query(description="Refresh the cache.")] = False,
 ) -> list[ExperimentAnalysis]:
     commons = CommonQueryParams(
-        participant_type=design.audience_spec.participant_type, refresh=refresh
+        participant_type=request.design.audience_spec.participant_type, refresh=refresh
     )
     participants_cfg, schema = get_participants_config_and_schema(
         commons, config, gsheets
     )
-    validate_schema_metrics_or_raise(design.design_spec, schema)
+    validate_schema_metrics_or_raise(request.design.design_spec, schema)
 
     with config.dbsession() as dwh_session:
         sa_table = infer_table(
@@ -370,12 +370,15 @@ def do_analyze_experiment(
         participant_outcomes = get_participant_metrics(
             dwh_session,
             sa_table,
-            design.metrics,
+            request.design.metrics,
             schema.get_unique_id_field(),
-            [assignment.participant_id for assignment in assignments.assignments],
+            [
+                assignment.participant_id
+                for assignment in request.assignment.assignments
+            ],
         )
 
-    return analyze_experiment(assignments.assignments, participant_outcomes)
+    return analyze_experiment(request.assignment.assignments, participant_outcomes)
 
 
 @router.post(

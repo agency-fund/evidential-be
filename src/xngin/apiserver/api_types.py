@@ -636,6 +636,11 @@ class AssignResponse(ApiBaseModel):
     assignments: list[Assignment]
 
 
+class AnalysisRequest(ApiBaseModel):
+    design: DesignSpec
+    assignment: AssignResponse
+
+
 class GetStrataResponseElement(ApiBaseModel):
     """Describes a stratification variable."""
 
