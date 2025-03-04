@@ -61,9 +61,9 @@ class DataType(enum.StrEnum):
     NUMERIC = "numeric"
     TIMESTAMP_WITHOUT_TIMEZONE = "timestamp without time zone"
     BIGINT = "bigint"
-    JSONB = "UNSUPPORTED"
-    JSON = "UNSUPPORTED"
-    UNKNOWN = "UNSUPPORTED"
+    JSONB = "unsupported"
+    JSON = "unsupported"
+    UNKNOWN = "unsupported"
 
     @classmethod
     def match(cls, value):
