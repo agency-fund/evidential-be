@@ -5,13 +5,13 @@ from contextlib import asynccontextmanager
 from datetime import UTC, timedelta, datetime
 from typing import Annotated
 
-from fastapi.responses import StreamingResponse
 import google.api_core.exceptions
 import sqlalchemy
 import sqlalchemy.orm
 from fastapi import APIRouter, FastAPI, Depends, Path, Body, HTTPException, Query
 from fastapi import Response
 from fastapi import status
+from fastapi.responses import StreamingResponse
 from sqlalchemy import delete, select
 from sqlalchemy.exc import OperationalError
 from sqlalchemy.orm import Session
@@ -414,7 +414,7 @@ def list_datasources(
 
 def list_datasources_impl(
     session: Session,
-    user_id: User,
+    user_id: str,
     organization_id: str | None,
 ) -> ListDatasourcesResponse:
     stmt = (
