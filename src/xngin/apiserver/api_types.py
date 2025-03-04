@@ -594,15 +594,43 @@ class Assignment(ApiBaseModel):
 
 
 class ExperimentAnalysis(ApiBaseModel):
+    metric_name: Annotated[
+        str,
+        Field(
+            description="The field_name from the datasource which this analysis models as the dependent variable (y)."
+        ),
+    ]
     arm_ids: list[uuid.UUID]
-    coefficients: list[float]
-    pvalues: list[float]
-    tstats: list[float]
+    coefficients: Annotated[
+        list[float],
+        Field(
+            description="Estimates for each arm in the model, the first element is the baseline estimate (intercept) of the first arm_id, the latter two are coefficients estimated against that baseline."
+        ),
+    ]
+    pvalues: Annotated[
+        list[float],
+        Field(
+            description="P-values corresponding to each coefficient estimate for arm_ids, starting with the intercept (arm_ids[0])."
+        ),
+    ]
+    tstats: Annotated[
+        list[float],
+        Field(
+            description="Corresponding t-stats for the pvalues and coefficients for each arm_id."
+        ),
+    ]
 
 
 class MetricValue(ApiBaseModel):
-    metric_name: str
-    metric_value: float
+    metric_name: Annotated[
+        str,
+        Field(
+            description="The field_name from the datasource which this analysis models as the dependent variable (y)."
+        ),
+    ]
+    metric_value: Annotated[
+        float, Field(description="The queried value for this field_name.")
+    ]
 
 
 class ParticipantOutcome(ApiBaseModel):

@@ -46,6 +46,7 @@ def analyze_experiment(
         model = smf.ols(f"{metric_name} ~ C(arm_id)", data=merged_df).fit()
         analyses.append(
             ExperimentAnalysis(
+                metric_name=metric_name,
                 arm_ids=list(set(merged_df["arm_id"])),
                 coefficients=model.params,
                 pvalues=model.pvalues,

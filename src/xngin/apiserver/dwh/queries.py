@@ -105,7 +105,7 @@ def get_participant_metrics(
     missing_metrics = {m.field_name for m in metrics if m.field_name not in sa_table.c}
     if len(missing_metrics) > 0:
         raise LateValidationError(
-            f"Missing metrics (check your Datsource configuration): {missing_metrics}"
+            f"Missing metrics (check your Datasource configuration): {missing_metrics}"
         )
 
     # build our query
