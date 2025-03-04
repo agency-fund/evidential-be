@@ -41,9 +41,9 @@ def test_outcomes(n=1000, seed=42):
 
 def test_analysis(test_assignments, test_outcomes):
     result = analyze_experiment(test_assignments, test_outcomes)
-    assert len(result.arm_ids) == 3
-    assert len(result.pvalues) == 3
-    assert len(result.tstats) == 3
-    assert result.pvalues[0] < 0.01
-    assert result.pvalues[1] > 0.01
-    assert result.pvalues[2] > 0.01
+    assert len(result[0].arm_ids) == 3
+    assert len(result[0].pvalues) == 3
+    assert len(result[0].tstats) == 3
+    assert result[0].pvalues[0] < 0.01
+    assert result[0].pvalues[1] > 0.01
+    assert result[0].pvalues[2] > 0.01

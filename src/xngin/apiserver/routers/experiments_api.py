@@ -54,6 +54,7 @@ from xngin.sheets.config_sheet import (
     fetch_and_parse_sheet,
     create_schema_from_table,
 )
+from xngin.stats.analysis import analyze_experiment
 from xngin.stats.assignment import assign_treatment as assign_treatment_actual
 from xngin.stats.power import check_power
 from xngin.apiserver.dwh.queries import get_participant_metrics
@@ -344,7 +345,7 @@ def power_check_impl(
     summary="Analyze experiment from an AssignResponse and ExperimentDesign.",
     tags=["Experiment Analysis"],
 )
-def analyze_experiment(
+def do_analyze_experiment(
     assignments: AssignResponse,
     design: DesignSpec,
     gsheets: Annotated[GSheetCache, Depends(gsheet_cache)],
