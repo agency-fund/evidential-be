@@ -17,7 +17,7 @@ def analyze_experiment(
 
     Args:
     treatment_assignments: list of participant treatment assignments
-    participanta_outcomes: list of participant outcomes
+    participant_outcomes: list of participant outcomes
     """
 
     assignments_df = pd.DataFrame([
