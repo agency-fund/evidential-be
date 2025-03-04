@@ -83,7 +83,6 @@ from xngin.apiserver.settings import (
     ParticipantsConfig,
     infer_table,
 )
-
 from xngin.stats.analysis import analyze_experiment as analyze_experiment_impl
 
 logger = logging.getLogger(__name__)
