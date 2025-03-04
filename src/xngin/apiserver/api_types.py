@@ -1,5 +1,6 @@
 import decimal
 import enum
+import logging
 import re
 import uuid
 import datetime
@@ -20,6 +21,8 @@ from pydantic_core.core_schema import ValidationInfo
 VALID_SQL_COLUMN_REGEX = r"^[a-zA-Z_][a-zA-Z0-9_]*$"
 
 EXPERIMENT_IDS_SUFFIX = "experiment_ids"
+
+logger = logging.getLogger(__name__)
 
 
 def validate_can_be_used_as_column_name(value: str, info: ValidationInfo) -> str:
@@ -58,6 +61,9 @@ class DataType(enum.StrEnum):
     NUMERIC = "numeric"
     TIMESTAMP_WITHOUT_TIMEZONE = "timestamp without time zone"
     BIGINT = "bigint"
+    JSONB = "UNSUPPORTED"
+    JSON = "UNSUPPORTED"
+    UNKNOWN = "UNSUPPORTED"
 
     @classmethod
     def match(cls, value):
@@ -89,11 +95,16 @@ class DataType(enum.StrEnum):
             return DataType.DATE
         if isinstance(value, sqlalchemy.sql.sqltypes.DateTime):
             return DataType.TIMESTAMP_WITHOUT_TIMEZONE
+        if isinstance(value, sqlalchemy.dialects.postgresql.json.JSONB):
+            return DataType.JSONB
+        if isinstance(value, sqlalchemy.dialects.postgresql.json.JSON):
+            return DataType.JSON
         if value is int:
             return DataType.INTEGER
         if value is float:
             return DataType.DOUBLE_PRECISION
-        raise ValueError(f"Unmatched type: {type(value)}.")
+        logger.warning(f"Unmatched type: {type(value)}.")
+        return DataType.UNKNOWN
 
     def filter_class(self, field_name):
         """Classifies a DataType into a filter class."""

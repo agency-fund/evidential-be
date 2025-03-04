@@ -390,18 +390,39 @@ def get_organization(
     )
 
 
+@router.get("/organizations/{organization_id}/datasources")
+def list_organization_datasources(
+    organization_id: str,
+    session: Annotated[Session, Depends(xngin_db_session)],
+    user: Annotated[User, Depends(user_from_token)],
+) -> ListDatasourcesResponse:
+    """Returns a list of datasources accessible to the authenticated user for an org."""
+    return list_datasources_impl(session, user.id, organization_id)
+
+
 @router.get("/datasources")
 def list_datasources(
     session: Annotated[Session, Depends(xngin_db_session)],
     user: Annotated[User, Depends(user_from_token)],
 ) -> ListDatasourcesResponse:
     """Returns a list of datasources accessible to the authenticated user."""
+    return list_datasources_impl(session, user.id, organization_id=None)
+
+
+def list_datasources_impl(
+    session: Session,
+    user_id: User,
+    organization_id: str | None,
+) -> ListDatasourcesResponse:
     stmt = (
         select(Datasource)
         .join(Organization)
         .join(Organization.users)
-        .where(User.id == user.id)
+        .where(User.id == user_id)
     )
+    if organization_id is not None:
+        stmt = stmt.where(Organization.id == organization_id)
+
     result = session.execute(stmt)
     datasources = result.scalars().all()
 
