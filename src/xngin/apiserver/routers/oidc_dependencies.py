@@ -15,8 +15,8 @@ from xngin.apiserver.routers.oidc import (
     get_google_configuration,
 )
 
-# JWTs generated for domains other than @agency.fund are considered invalid.
-ALLOWED_HOSTED_DOMAINS = ("agency.fund",)
+# JWTs generated for domains other than @agency.fund are considered untrusted.
+PRIVILEGED_DOMAINS = ("agency.fund",)
 
 logger = logging.getLogger(__name__)
 
@@ -31,7 +31,7 @@ class TokenInfo:
     hd: str  # hosted domain
 
     def is_privileged(self):
-        return self.hd in ALLOWED_HOSTED_DOMAINS
+        return self.hd in PRIVILEGED_DOMAINS
 
 
 # Set TESTING_TOKENS_ENABLED to allow statically defined bearer tokens to skip the JWT validation.
