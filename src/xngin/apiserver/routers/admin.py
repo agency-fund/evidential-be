@@ -307,7 +307,7 @@ def remove_member_from_organization(
     if user_id == user.id:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="You cannot remove yourself from an organization"
+            detail="You cannot remove yourself from an organization",
         )
     stmt = delete(UserOrganization).where(
         UserOrganization.organization_id == organization_id,
