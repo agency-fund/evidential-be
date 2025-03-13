@@ -40,6 +40,18 @@ def analyze_metric_power(
     # TODO? To support more general power calculation functionality by implementing Case B:
     # target is not defined (need to also relax request constraints), but baseline is
     # => calculate effect size. (Case A does this only when there's insufficient available_n.)
+    if metric.available_n <= 0:
+        msg_body = (
+            "You have no available units to run your experiment. "
+            "Adjust your filters to target more units."
+        )
+        analysis.msg = MetricAnalysisMessage(
+            type=MetricAnalysisMessageType.NO_AVAILABLE_N,
+            msg=msg_body,
+            source_msg=msg_body,
+        )
+        return analysis
+
     if metric.metric_target is None or metric.metric_baseline is None:
         msg_body = (
             "Could not calculate metric baseline with given specification. "

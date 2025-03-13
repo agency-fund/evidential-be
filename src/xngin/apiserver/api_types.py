@@ -340,7 +340,7 @@ class DesignSpecMetric(DesignSpecMetricBase):
     metric_stddev: Annotated[
         float | None,
         Field(
-            description="Standard deviation is set only for metric_type.NUMERIC metrics."
+            description="Standard deviation is set only for metric_type.NUMERIC metrics. Must be set for numeric metrics when available_n > 0."
         ),
     ] = None
     available_nonnull_n: Annotated[
@@ -359,7 +359,11 @@ class DesignSpecMetric(DesignSpecMetricBase):
     @model_validator(mode="after")
     def stddev_only_if_numeric(self):
         """Enforce that metric_stddev is present for NUMERICs"""
-        if self.metric_type == MetricType.NUMERIC and self.metric_stddev is None:
+        if (
+            self.metric_type == MetricType.NUMERIC
+            and self.available_n > 0
+            and self.metric_stddev is None
+        ):
             raise ValueError("missing stddev")
         if (
             self.metric_type is not MetricType.NUMERIC
@@ -491,6 +495,7 @@ class MetricAnalysisMessageType(enum.StrEnum):
     SUFFICIENT = "sufficient"
     INSUFFICIENT = "insufficient"
     NO_BASELINE = "no baseline"
+    NO_AVAILABLE_N = "no available n"
 
 
 class MetricAnalysisMessage(ApiBaseModel):

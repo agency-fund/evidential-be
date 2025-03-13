@@ -145,13 +145,29 @@ def test_check_missing_metric_type_raises_error():
     assert "Unknown metric_type" in str(excinfo.value)
 
 
+def test_analyze_metric_with_no_available_n_returns_error():
+    metric = DesignSpecMetric(
+        field_name="no_available_n",
+        metric_type=MetricType.BINARY,
+        metric_baseline=None,
+        metric_target=None,
+        available_n=0,
+        available_nonnull_n=0,
+    )
+
+    result = analyze_metric_power(metric, n_arms=2)
+
+    assert result.msg.type == MetricAnalysisMessageType.NO_AVAILABLE_N
+    assert "Adjust your filters to target more units." in result.msg.msg
+
+
 def test_analyze_metric_missing_baseline_returns_error():
     metric = DesignSpecMetric(
         field_name="missing_baseline",
         metric_type=MetricType.BINARY,
         metric_baseline=None,
         metric_target=None,
-        available_n=0,
+        available_n=1000,
         available_nonnull_n=0,
     )
 
