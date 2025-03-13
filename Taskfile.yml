@@ -7,6 +7,20 @@ env:
   ATLAS_NO_ANON_TELEMETRY: "true"
   DO_NOT_TRACK: "1"
 
+  # Google will redirect to this URL upon successful authentication. This URL is served by the frontend application
+  # and the GoogleAuthProvider component will intercept the query arguments and handle them.
+  GOOGLE_OIDC_REDIRECT_URI: "http://localhost:3000/"
+
+  # These values are configured in the xngin-development-dc project and should be used in development environments:
+  # https://console.cloud.google.com/apis/credentials?organizationId=256829878972&project=xngin-development-dc.
+  GOOGLE_OIDC_CLIENT_ID: "222213100775-qa1ajcrk48il70itcbdcvgr9ib5t08uf.apps.googleusercontent.com"
+
+  # These values are configured in the evidential-live project and should only be used when validating the
+  # production environments:
+  # https://console.cloud.google.com/auth/clients?project=evidential-live
+  #GOOGLE_OIDC_CLIENT_ID: "314428509782-j8fgiq5dvoic01432s2bcu3isinc9kam.apps.googleusercontent.com"
+  #GOOGLE_OIDC_REDIRECT_URI: "http://localhost:3000/"
+
   # These are values used in the xngin.railway.settings.json and are present for when testing the Railway configs.
   # (optional)
   DWH_PGHOST: "127.0.0.1"
@@ -37,8 +51,7 @@ tasks:
       # Also see instructions for .env above.
       ENABLE_ADMIN: "true"
       ENABLE_OIDC: "true"
-      GOOGLE_OIDC_CLIENT_ID: "222213100775-qa1ajcrk48il70itcbdcvgr9ib5t08uf.apps.googleusercontent.com"
-      GOOGLE_OIDC_REDIRECT_URI: "http://localhost:3000/"
+
     cmds:
       - uv run fastapi dev src/xngin/apiserver/main.py
   start-with-local-pg:
@@ -54,8 +67,6 @@ tasks:
       # Also see instructions for .env above.
       ENABLE_ADMIN: "true"
       ENABLE_OIDC: "true"
-      GOOGLE_OIDC_CLIENT_ID: "222213100775-qa1ajcrk48il70itcbdcvgr9ib5t08uf.apps.googleusercontent.com"
-      GOOGLE_OIDC_REDIRECT_URI: "http://localhost:3000/"
     cmds:
       # Ensure the localpg server is running and has an "xngin" database. If the database doesn't already exist,
       # have Atlas create the tables so that subsequent table migrations behave as expected.
