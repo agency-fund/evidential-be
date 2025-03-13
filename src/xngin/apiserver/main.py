@@ -76,7 +76,7 @@ app.include_router(
 app.include_router(
     experiments_proxy_mgmt_api.router,
     prefix=constants.API_PREFIX_V1,
-    tags=["Experiment Management Webhooks"],
+    tags=["Experiment Management"],
 )
 
 
@@ -142,13 +142,6 @@ def custom_openapi():
             },
         ),
         TagDocumentation(
-            visible=True,
-            definition={
-                "name": "Experiment Management Webhooks",
-                "description": "Methods for integrating experiments into other tools.",
-            },
-        ),
-        TagDocumentation(
             visible=PUBLISH_ALL_DOCS,
             definition={"name": "Auth", "description": "Methods for handling SSO."},
         ),
@@ -157,13 +150,6 @@ def custom_openapi():
             definition={
                 "name": "Admin",
                 "description": "Methods supporting the Evidential UI.",
-            },
-        ),
-        TagDocumentation(
-            visible=PUBLISH_ALL_DOCS,
-            definition={
-                "name": "Experiment Analysis",
-                "description": "Methods for managing and running experiments.",
             },
         ),
     ]
