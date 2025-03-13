@@ -177,7 +177,11 @@ def custom_openapi():
         },
         summary="",
         description="",
-        tags=[tag.definition for tag in visible_tags if tag.visible],
+        tags=[
+            tag.definition
+            for tag in sorted(visible_tags, key=lambda t: t.definition["name"])
+            if tag.visible
+        ],
         routes=app.routes,
     )
     app.openapi_schema = openapi_schema
