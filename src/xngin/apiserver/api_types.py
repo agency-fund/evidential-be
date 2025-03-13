@@ -340,7 +340,7 @@ class DesignSpecMetric(DesignSpecMetricBase):
     metric_stddev: Annotated[
         float | None,
         Field(
-            description="Standard deviation is set only for metric_type.NUMERIC metrics."
+            description="Standard deviation is set only for metric_type.NUMERIC metrics. Must be set for numeric metrics when available_n > 0."
         ),
     ] = None
     available_nonnull_n: Annotated[
