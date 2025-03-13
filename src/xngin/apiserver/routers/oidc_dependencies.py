@@ -1,10 +1,12 @@
-from dataclasses import dataclass
+import logging
 import os
+import secrets
+from dataclasses import dataclass
 from typing import Annotated
 
 from fastapi import Depends, HTTPException, Security
-from jose import jwt, JWTError
 from fastapi import status
+from jose import jwt, JWTError
 
 from xngin.apiserver.routers.oidc import (
     oidc_google,
@@ -12,12 +14,9 @@ from xngin.apiserver.routers.oidc import (
     CLIENT_ID,
     get_google_configuration,
 )
-import logging
-import secrets
 
-
-# JWTs generated for domains other than @agency.fund are considered invalid.
-ALLOWED_HOSTED_DOMAINS = ("agency.fund",)
+# JWTs generated for domains other than @agency.fund are considered untrusted.
+PRIVILEGED_DOMAINS = ("agency.fund",)
 
 logger = logging.getLogger(__name__)
 
@@ -32,7 +31,7 @@ class TokenInfo:
     hd: str  # hosted domain
 
     def is_privileged(self):
-        return self.hd in ALLOWED_HOSTED_DOMAINS
+        return self.hd in PRIVILEGED_DOMAINS
 
 
 # Set TESTING_TOKENS_ENABLED to allow statically defined bearer tokens to skip the JWT validation.
@@ -120,12 +119,11 @@ async def require_oidc_token(
                 "verify_at_hash": False,  # PKCE flow sends at_hash but we don't need to verify it.
             },
         )
-        if (
-            decoded["hd"] not in ALLOWED_HOSTED_DOMAINS
-            or decoded["azp"] != decoded["aud"]
-        ):
+        # Confirming that authorized party (azp) and audience (aud) match is not strictly necessary but if Google ever
+        # issues a token where azp an aud don't match then we would like to know about it.
+        if decoded["azp"] != decoded["aud"]:
             raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid hd"
+                status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid azp/aud"
             )
     except JWTError as e:
         raise HTTPException(
@@ -133,5 +131,8 @@ async def require_oidc_token(
             detail=f"Invalid authentication credentials: {e}",
         ) from e
     return TokenInfo(
-        email=decoded["email"], iss=decoded["iss"], sub=decoded["sub"], hd=decoded["hd"]
+        email=decoded["email"],
+        iss=decoded["iss"],
+        sub=decoded["sub"],
+        hd=decoded.get("hd", ""),
     )
