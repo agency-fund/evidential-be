@@ -123,7 +123,7 @@ def get_strata(
     gsheets: Annotated[GSheetCache, Depends(gsheet_cache)],
     config: Annotated[DatasourceConfig, Depends(datasource_config_required)],
 ) -> GetStrataResponse:
-    """Get possible strata covariates for a given unit type."""
+    """Get possible strata covariates for a given participant type."""
     participants_cfg, schema = get_participants_config_and_schema(
         commons, config, gsheets
     )
@@ -156,7 +156,7 @@ def get_strata(
 
 
 @router.get(
-    "/filters", summary="Get possible filters covariates for a given unit type."
+    "/filters", summary="Get possible filters covariates for a given participant type."
 )
 def get_filters(
     commons: Annotated[CommonQueryParams, Depends()],
@@ -238,13 +238,15 @@ def create_col_to_filter_meta_mapper(
     return mapper
 
 
-@router.get("/metrics", summary="Get possible metric covariates for a given unit type.")
+@router.get(
+    "/metrics", summary="Get possible metric covariates for a given participant type."
+)
 def get_metrics(
     commons: Annotated[CommonQueryParams, Depends()],
     gsheets: Annotated[GSheetCache, Depends(gsheet_cache)],
     config: Annotated[DatasourceConfig, Depends(datasource_config_required)],
 ) -> GetMetricsResponse:
-    """Get possible metrics for a given unit type."""
+    """Get possible metrics for a given participant type."""
     participants_cfg, schema = get_participants_config_and_schema(
         commons, config, gsheets
     )
