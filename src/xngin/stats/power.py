@@ -13,6 +13,19 @@ from xngin.apiserver.api_types import (
 from xngin.stats.stats_errors import StatsPowerError
 
 
+def _analysis_error(
+    metric: DesignSpecMetric, msg_type: MetricAnalysisMessageType, msg_body: str
+):
+    return MetricAnalysis(
+        metric_spec=metric,
+        msg=MetricAnalysisMessage(
+            type=msg_type,
+            msg=msg_body,
+            source_msg=msg_body,
+        ),
+    )
+
+
 def analyze_metric_power(
     metric: DesignSpecMetric, n_arms: int, power: float = 0.8, alpha: float = 0.05
 ) -> MetricAnalysis:
@@ -34,35 +47,29 @@ def analyze_metric_power(
     if metric.metric_target is None and metric.metric_baseline is not None:
         metric.metric_target = metric.metric_baseline * (1 + metric.metric_pct_change)
 
-    analysis = MetricAnalysis(metric_spec=metric)
-
     # Validate we have usable input to do the analysis.
     # TODO? To support more general power calculation functionality by implementing Case B:
     # target is not defined (need to also relax request constraints), but baseline is
     # => calculate effect size. (Case A does this only when there's insufficient available_n.)
     if metric.available_n <= 0:
-        msg_body = (
-            "You have no available units to run your experiment. "
-            "Adjust your filters to target more units."
+        return _analysis_error(
+            metric,
+            MetricAnalysisMessageType.NO_AVAILABLE_N,
+            (
+                "You have no available units to run your experiment. "
+                "Adjust your filters to target more units."
+            ),
         )
-        analysis.msg = MetricAnalysisMessage(
-            type=MetricAnalysisMessageType.NO_AVAILABLE_N,
-            msg=msg_body,
-            source_msg=msg_body,
-        )
-        return analysis
 
     if metric.metric_target is None or metric.metric_baseline is None:
-        msg_body = (
-            "Could not calculate metric baseline with given specification. "
-            "Provide a metric baseline or adjust filters."
+        return _analysis_error(
+            metric,
+            MetricAnalysisMessageType.NO_BASELINE,
+            (
+                "Could not calculate metric baseline with given specification. "
+                "Provide a metric baseline or adjust filters."
+            ),
         )
-        analysis.msg = MetricAnalysisMessage(
-            type=MetricAnalysisMessageType.NO_BASELINE,
-            msg=msg_body,
-            source_msg=msg_body,
-        )
-        return analysis
 
     # Case A: Both target and baseline defined - calculate required n
     if metric.metric_type == MetricType.NUMERIC:
@@ -77,8 +84,10 @@ def analyze_metric_power(
         raise ValueError("metric_type must be NUMERIC or BINARY.")
 
     if effect_size == 0.0:
-        raise ValueError(
-            "Cannot detect an effect-size of 0. Try changing your effect-size."
+        return _analysis_error(
+            metric,
+            MetricAnalysisMessageType.ZERO_EFFECT_SIZE,
+            ("Cannot detect an effect-size of 0. Try changing your effect-size."),
         )
 
     power_analysis = sms.TTestIndPower()
@@ -94,6 +103,7 @@ def analyze_metric_power(
         * n_arms
     )
 
+    analysis = MetricAnalysis(metric_spec=metric)
     analysis.target_n = int(target_n)
     analysis.sufficient_n = bool(target_n <= metric.available_n)
 

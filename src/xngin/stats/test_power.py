@@ -104,31 +104,6 @@ def test_check_power_multiple_metrics():
     assert results[1].metric_spec.field_name == "metric2"
 
 
-def test_check_power_effect_size_zero_raises_error():
-    metrics = [
-        DesignSpecMetric(
-            field_name="test_metric",
-            metric_type=MetricType.BINARY,
-            metric_baseline=0.5,
-            metric_target=0.55,
-            available_nonnull_n=1000,
-            available_n=1000,
-        ),
-        DesignSpecMetric(
-            field_name="bad_metric",
-            metric_type=MetricType.BINARY,
-            metric_baseline=0.5,
-            metric_target=0.5,
-            available_nonnull_n=1000,
-            available_n=1000,
-        ),
-    ]
-
-    with pytest.raises(StatsPowerError) as excinfo:
-        check_power(metrics, n_arms=2)
-    assert "bad_metric" in str(excinfo.value)
-
-
 def test_check_missing_metric_type_raises_error():
     metrics = [
         DesignSpecMetric(
@@ -145,7 +120,7 @@ def test_check_missing_metric_type_raises_error():
     assert "Unknown metric_type" in str(excinfo.value)
 
 
-def test_analyze_metric_with_no_available_n_returns_error():
+def test_analyze_metric_with_no_available_n_returns_friendly_error():
     metric = DesignSpecMetric(
         field_name="no_available_n",
         metric_type=MetricType.BINARY,
@@ -161,7 +136,7 @@ def test_analyze_metric_with_no_available_n_returns_error():
     assert "Adjust your filters to target more units." in result.msg.msg
 
 
-def test_analyze_metric_missing_baseline_returns_error():
+def test_analyze_metric_missing_baseline_returns_friendly_error():
     metric = DesignSpecMetric(
         field_name="missing_baseline",
         metric_type=MetricType.BINARY,
@@ -175,3 +150,19 @@ def test_analyze_metric_missing_baseline_returns_error():
 
     assert result.msg.type == MetricAnalysisMessageType.NO_BASELINE
     assert "Could not calculate metric baseline" in result.msg.msg
+
+
+def test_analyze_metric_zero_effect_size_returns_friendly_error():
+    metric = DesignSpecMetric(
+        field_name="zero_effect_size",
+        metric_type=MetricType.BINARY,
+        metric_baseline=0.5,
+        metric_target=0.5,
+        available_n=1000,
+        available_nonnull_n=1000,
+    )
+
+    result = analyze_metric_power(metric, n_arms=2)
+
+    assert result.msg.type == MetricAnalysisMessageType.ZERO_EFFECT_SIZE
+    assert "Cannot detect an effect-size of 0" in result.msg.msg
