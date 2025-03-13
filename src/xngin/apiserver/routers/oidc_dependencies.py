@@ -131,5 +131,8 @@ async def require_oidc_token(
             detail=f"Invalid authentication credentials: {e}",
         ) from e
     return TokenInfo(
-        email=decoded["email"], iss=decoded["iss"], sub=decoded["sub"], hd=decoded["hd"]
+        email=decoded["email"],
+        iss=decoded["iss"],
+        sub=decoded["sub"],
+        hd=decoded.get("hd", ""),
     )
