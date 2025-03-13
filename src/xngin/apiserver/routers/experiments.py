@@ -1,9 +1,9 @@
-from itertools import batched
-import uuid
-from contextlib import asynccontextmanager
-from typing import Annotated
 import csv
 import io
+import uuid
+from contextlib import asynccontextmanager
+from itertools import batched
+from typing import Annotated
 
 from fastapi import (
     APIRouter,
@@ -73,8 +73,6 @@ router = APIRouter(
     summary="Create a pending experiment and save its assignments to the database. User will still need to /experiments/<id>/commit the experiment after reviewing assignment balance summary.",
 )
 def create_experiment_with_assignment_sl(
-    # TODO: add authorization support here and all other endpoints
-    # user: Annotated[User, Depends(user_from_token)],
     body: CreateExperimentRequest,
     chosen_n: Annotated[
         int, Query(..., description="Number of participants to assign.")
