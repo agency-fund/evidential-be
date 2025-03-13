@@ -9,7 +9,7 @@ class StatsPowerError(StatsError):
     """Errors that arose while doing a power calculation for a metric.
 
     Examples:
-    - Cannot detect an effect-size of 0. Try changing your effect-size.
+    - metric_type must be NUMERIC or BINARY.
     """
 
     def __init__(self, verr: ValueError, metric: DesignSpecMetric):
