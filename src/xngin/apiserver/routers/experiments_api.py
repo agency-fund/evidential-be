@@ -338,7 +338,6 @@ def power_check_impl(
 @router.post(
     "/analyze",
     summary="Analyze experiment from an AssignResponse and ExperimentDesign.",
-    tags=["Experiment Analysis"],
 )
 def do_analyze_experiment(
     request: AnalysisRequest,

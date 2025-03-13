@@ -27,7 +27,6 @@ from xngin.apiserver.webhook_types import (
     WebhookUpdateCommitRequest,
 )
 
-
 logger = logging.getLogger(__name__)
 
 
@@ -75,9 +74,8 @@ async def assignment_file(
     "/commit",
     summary="Commit an experiment to the database.",
     responses=STANDARD_WEBHOOK_RESPONSES,
-    tags=["Experiment Management Webhooks"],
 )
-async def commit_experiment(
+async def commit_experiment_wh(
     response: Response,
     body: CommitRequest,
     user_id: Annotated[str, Query(...)],
@@ -109,7 +107,6 @@ async def commit_experiment(
     "/update-commit",
     summary="Update an existing experiment's timestamps or description (experiment and arms)",
     responses=STANDARD_WEBHOOK_RESPONSES,
-    tags=["Experiment Management Webhooks"],
 )
 async def update_experiment(
     response: Response,
