@@ -64,8 +64,23 @@ def assign_treatment(
     Returns:
         AssignmentResult containing assignments and balance check results
     """
-    # Create copy for analysis while attempting to convert any numeric "object" types that pandas didn't originally
-    # recognize when creating the dataframe. This does NOT handle Decimal types!
+    if len(stratum_cols) == 0:
+        # No stratification, so use simple random assignment
+        treatment_ids = simple_random_assignment(data, arms, random_state)
+        return _make_assign_response(
+            data=data,
+            orig_stratum_cols=[],
+            id_col=id_col,
+            arms=arms,
+            experiment_id=experiment_id,
+            balance_check=None,
+            treatment_ids=treatment_ids,
+            stratum_ids=[0] * len(treatment_ids),
+            stratum_id_name=None,
+        )
+
+    # Create copy for analysis while attempting to convert any numeric "object" types that pandas
+    # didn't originally recognize when creating the dataframe. This does NOT handle Decimal types!
     df = DataFrame(data).infer_objects()
 
     # Now convert any Decimal types to float (possible if the Table was created with reflection instead of cursor).
@@ -88,7 +103,23 @@ def assign_treatment(
     # Our original target of columns to stratify on may have gotten smaller:
     post_stratum_cols = sorted(set(orig_stratum_cols) - exclude_cols_set)
 
-    # Assign treatments
+    if len(post_stratum_cols) == 0:
+        # No stratification, so use simple random assignment while still outputting strata, even
+        # though they're either all the same value or all unique values.
+        treatment_ids = simple_random_assignment(data, arms, random_state)
+        return _make_assign_response(
+            data=data,
+            orig_stratum_cols=orig_stratum_cols,
+            id_col=id_col,
+            arms=arms,
+            experiment_id=experiment_id,
+            balance_check=None,
+            treatment_ids=treatment_ids,
+            stratum_ids=[0] * len(treatment_ids),
+            stratum_id_name=None,
+        )
+
+    # Do stratified random assignment
     n_arms = len(arms)
     # TODO: when we support unequal arm assigments, be careful about ensuring the right treatment
     # assignment id is mapped to the right arm_name.
@@ -131,7 +162,8 @@ def assign_treatment(
         p_value=np.round(balance_result.f_pvalue, 9),
         balance_ok=bool(balance_result.f_pvalue > fstat_thresh),
     )
-    return _make_assignments(
+
+    return _make_assign_response(
         data=data,
         orig_stratum_cols=orig_stratum_cols,
         id_col=id_col,
@@ -144,7 +176,32 @@ def assign_treatment(
     )
 
 
-def _make_assignments(
+def simple_random_assignment(
+    data: Sequence[RowProtocol],
+    arms: list[Arm],
+    random_state: int | None = None,
+) -> list[int]:
+    """
+    Perform simple random assignment of data into the given arms.
+
+    Args:
+        data: sqlalchemy result set of Rows representing units to be assigned
+        arms: Name & uuid of each treatment arm
+        random_state: Random seed for reproducibility
+
+    Returns:
+        List of treatment ids
+    """
+    rng = np.random.default_rng(random_state)
+    n_arms = len(arms)
+    # Create an equal number of treatment ids for each arm and shuffle to ensure arms are as balanced as possible.
+    treatment_ids = list(range(n_arms))
+    treatment_mask = np.repeat(treatment_ids, np.ceil(len(data) / n_arms))
+    rng.shuffle(treatment_mask)
+    return treatment_mask[: len(data)].tolist()
+
+
+def _make_assign_response(
     data: Sequence[RowProtocol],
     orig_stratum_cols: list[str],
     id_col: str,
@@ -161,9 +218,9 @@ def _make_assignments(
         stratum_ids, treatment_ids, data, strict=False
     ):
         strata = None
+        row_dict = row._asdict()
         if orig_stratum_cols:
             # Output the participant's strata values as seen at this time of assignment.
-            row_dict = row._asdict()
             strata = [
                 Strata(
                     field_name=column,

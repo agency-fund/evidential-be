@@ -674,7 +674,12 @@ class BalanceCheck(ApiBaseModel):
 class AssignResponse(ApiBaseModel):
     """Describes assignments for all participants and balance test results."""
 
-    balance_check: BalanceCheck
+    balance_check: Annotated[
+        BalanceCheck | None,
+        Field(
+            description="Result of checking that the arms are balanced, but only present if stratified random assignment is performed. (Fields used for stratification must be supported data types whose values are NOT all unique or all the same)."
+        ),
+    ] = None
 
     experiment_id: uuid.UUID
     sample_size: int

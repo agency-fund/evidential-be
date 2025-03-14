@@ -7,9 +7,9 @@ import uuid
 import pytest
 import pandas as pd
 import numpy as np
-from sqlalchemy import DECIMAL, Column, Float, Integer, MetaData, String, Table
-from xngin.stats.assignment import assign_treatment
-from xngin.apiserver.api_types import Assignment, Arm
+from sqlalchemy import DECIMAL, Boolean, Column, Float, Integer, MetaData, String, Table
+from xngin.stats.assignment import assign_treatment, simple_random_assignment
+from xngin.apiserver.api_types import Assignment, Arm, Strata
 
 
 @dataclass
@@ -24,6 +24,7 @@ class Row:
     skewed: int
     income_dec: Decimal
     is_male: bool
+    single_value: int
 
     def _asdict(self) -> dict[str, Any]:
         return dataclasses.asdict(self)
@@ -42,6 +43,8 @@ def sample_table():
         Column("region", String),
         Column("skewed", Float),
         Column("income_dec", DECIMAL),
+        Column("is_male", Boolean),
+        Column("single_value", Integer),
     )
 
 
@@ -64,6 +67,7 @@ def make_sample_data_dict(n=1000):
     }
     data["income_dec"] = [Decimal(i).quantize(Decimal("1")) for i in data["income"]]
     data["is_male"] = [g == "M" for g in data["gender"]]
+    data["single_value"] = [1] * n
     return data
 
 
@@ -339,3 +343,65 @@ def test_with_nans_that_would_break_stochatreat_without_preprocessing(sample_tab
         == result.balance_check.numerator_df + result.balance_check.denominator_df + 1
     )
     assert all(len(participant.strata) == 1 for participant in result.assignments)
+
+
+def test_simple_random_assignment(sample_data):
+    rows = [Row(**row) for row in sample_data.to_dict("records")]
+    n = len(sample_data)
+    assignments = simple_random_assignment(rows, make_arms(["A", "B"]), random_state=42)
+    assert assignments.count(0) == n // 2
+    assert assignments.count(1) == n // 2
+
+    assignments = simple_random_assignment(
+        rows, make_arms(["A", "B", "C"]), random_state=42
+    )
+    assert assignments.count(0) in (n // 3, n // 3 + 1)
+    assert assignments.count(1) in (n // 3, n // 3 + 1)
+    assert assignments.count(2) in (n // 3, n // 3 + 1)
+
+
+def test_assign_treatment_with_no_stratification(sample_table, sample_data):
+    rows = [Row(**row) for row in sample_data.to_dict("records")]
+    result = assign_treatment(
+        sa_table=sample_table,
+        data=rows,
+        stratum_cols=[],
+        id_col="id",
+        arms=make_arms(["control", "treatment"]),
+        experiment_id="b767716b-f388-4cd9-a18a-08c4916ce26f",
+        random_state=42,
+    )
+    assert result.balance_check is None
+    arm_counts = defaultdict(int)
+    # There should be no strata
+    for participant in result.assignments:
+        arm_counts[participant.arm_name] += 1
+        assert participant.strata is None
+    # The number of assignments per arm should be equal
+    assert arm_counts["control"] == arm_counts["treatment"]
+    assert arm_counts["control"] == len(result.assignments) // 2
+
+
+def test_assign_treatment_with_no_valid_strata(sample_table, sample_data):
+    rows = [Row(**row) for row in sample_data.to_dict("records")]
+    result = assign_treatment(
+        sa_table=sample_table,
+        data=rows,
+        stratum_cols=["single_value"],
+        id_col="id",
+        arms=make_arms(["control", "treatment"]),
+        experiment_id="b767716b-f388-4cd9-a18a-08c4916ce26f",
+        random_state=42,
+        stratum_id_name="stratum_id",
+    )
+    assert result.balance_check is None
+    # In this case, we still output the strata column, even though it's all the same value.
+    arm_counts = defaultdict(int)
+    for participant in result.assignments:
+        arm_counts[participant.arm_name] += 1
+        assert participant.strata == [
+            Strata(field_name="single_value", strata_value="1")
+        ]
+    # And since we used our simple random assignment, the arm lengths should be equal.
+    assert arm_counts["control"] == arm_counts["treatment"]
+    assert arm_counts["control"] == len(result.assignments) // 2
