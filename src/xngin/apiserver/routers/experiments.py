@@ -1,3 +1,4 @@
+from collections.abc import Sequence
 import csv
 import io
 import uuid
@@ -15,7 +16,7 @@ from fastapi import (
     status,
 )
 from fastapi.responses import StreamingResponse
-from sqlalchemy import select
+from sqlalchemy import Table, select
 from sqlalchemy.orm import Session
 
 from xngin.apiserver.api_types import (
@@ -28,6 +29,7 @@ from xngin.apiserver.dependencies import (
     gsheet_cache,
     xngin_db_session,
 )
+from xngin.apiserver.dwh.queries import query_for_participants
 from xngin.apiserver.exceptions_common import LateValidationError
 from xngin.apiserver.gsheet_cache import GSheetCache
 from xngin.apiserver.models.enums import ExperimentState
@@ -37,7 +39,6 @@ from xngin.apiserver.models.tables import (
 )
 from xngin.apiserver.routers.experiments_api import (
     CommonQueryParams,
-    do_assignment,
     get_participants_config_and_schema,
 )
 from xngin.apiserver.routers.experiments_api_types import (
@@ -51,10 +52,9 @@ from xngin.apiserver.routers.experiments_api_types import (
 )
 from xngin.apiserver.settings import (
     Datasource,
-    DatasourceConfig,
-    ParticipantsConfig,
+    infer_table,
 )
-from xngin.schema.schema_types import ParticipantsSchema
+from xngin.stats.assignment import RowProtocol, assign_treatment
 
 
 @asynccontextmanager
@@ -97,91 +97,102 @@ def create_experiment_with_assignment_sl(
     if body.design_spec.uuids_are_present():
         raise LateValidationError("Invalid DesignSpec: UUIDs must not be set.")
 
-    config = datasource.config
+    ds_config = datasource.config
     commons = CommonQueryParams(
         participant_type=body.audience_spec.participant_type, refresh=refresh
     )
     participants_cfg, schema = get_participants_config_and_schema(
-        commons, config, gsheets
+        commons, ds_config, gsheets
     )
 
+    # Get participants and their schema info from the client dwh
+    with ds_config.dbsession() as dwh_session:
+        sa_table = infer_table(
+            dwh_session.get_bind(),
+            participants_cfg.table_name,
+            ds_config.supports_reflection(),
+        )
+        participants = query_for_participants(
+            dwh_session, sa_table, body.audience_spec, chosen_n
+        )
+
+    # Persist the experiment and assignments in the xngin database
     return create_experiment_with_assignment_impl(
-        xngin_session,
-        datasource,
-        body,
-        participants_cfg,
-        config,
-        schema,
-        random_state,
-        chosen_n,
+        request=body,
+        datasource_id=datasource.id,
+        participant_unique_id_field=schema.get_unique_id_field(),
+        dwh_sa_table=sa_table,
+        dwh_participants=participants,
+        random_state=random_state,
+        xngin_session=xngin_session,
     )
 
 
 def create_experiment_with_assignment_impl(
-    xngin_session: Session,
-    datasource: Datasource,
-    body: CreateExperimentRequest,
-    participants_cfg: ParticipantsConfig,
-    config: DatasourceConfig,
-    schema: ParticipantsSchema,
+    request: CreateExperimentRequest,
+    datasource_id: str,
+    participant_unique_id_field: str,
+    dwh_sa_table: Table,
+    dwh_participants: Sequence[RowProtocol],
     random_state: int | None,
-    chosen_n: int,
-):
+    xngin_session: Session,
+) -> CreateExperimentWithAssignmentResponse:
     # First generate uuids for the experiment and arms, which do_assignment needs.
-    body.design_spec.experiment_id = uuid.uuid4()
-    for arm in body.design_spec.arms:
+    request.design_spec.experiment_id = uuid.uuid4()
+    for arm in request.design_spec.arms:
         arm.arm_id = uuid.uuid4()
 
-    with config.dbsession() as dwh_session:
-        # TODO: directly create ArmAssignments from the pd dataframe instead
-        assignment_response = do_assignment(
-            session=dwh_session,
-            participant=participants_cfg,
-            supports_reflection=config.supports_reflection(),
-            body=body,
-            chosen_n=chosen_n,
-            id_field=schema.get_unique_id_field(),
-            random_state=random_state,
-            quantiles=4,  # TODO(qixotic)
-            stratum_id_name=None,
+    metric_names = [m.field_name for m in request.design_spec.metrics]
+    # TODO: directly create ArmAssignments from the pd dataframe instead
+    assignment_response = assign_treatment(
+        sa_table=dwh_sa_table,
+        data=dwh_participants,
+        stratum_cols=request.design_spec.strata_field_names + metric_names,
+        id_col=participant_unique_id_field,
+        arms=request.design_spec.arms,
+        experiment_id=str(request.design_spec.experiment_id),
+        fstat_thresh=request.design_spec.fstat_thresh,
+        quantiles=4,  # TODO(qixotic): make this configurable
+        stratum_id_name=None,
+        random_state=random_state,
+    )
+
+    # Create experiment record
+    assign_summary = AssignSummary(
+        balance_check=assignment_response.balance_check,
+        sample_size=assignment_response.sample_size,
+    )
+    experiment = Experiment(
+        id=request.design_spec.experiment_id,
+        datasource_id=datasource_id,
+        state=ExperimentState.ASSIGNED,
+        start_date=request.design_spec.start_date,
+        end_date=request.design_spec.end_date,
+        design_spec=request.design_spec.model_dump(mode="json"),
+        audience_spec=request.audience_spec.model_dump(mode="json"),
+        power_analyses=request.power_analyses.model_dump(mode="json")
+        if request.power_analyses
+        else None,
+        assign_summary=assign_summary.model_dump(mode="json"),
+    )  # .set_design_spec(body.design_spec)
+    xngin_session.add(experiment)
+
+    # Create assignment records
+    for assignment in assignment_response.assignments:
+        # TODO: bulk insert https://docs.sqlalchemy.org/en/20/orm/queryguide/dml.html#orm-queryguide-bulk-insert {"dml_strategy": "raw"}
+        db_assignment = ArmAssignment(
+            experiment_id=experiment.id,
+            participant_type=request.audience_spec.participant_type,
+            participant_id=assignment.participant_id,
+            arm_id=assignment.arm_id,
+            strata=[s.model_dump(mode="json") for s in assignment.strata],
         )
+        xngin_session.add(db_assignment)
 
-        # Create experiment record
-        assign_summary = AssignSummary(
-            balance_check=assignment_response.balance_check,
-            sample_size=assignment_response.sample_size,
-        )
-        experiment = Experiment(
-            id=body.design_spec.experiment_id,
-            datasource_id=datasource.id,
-            state=ExperimentState.ASSIGNED,
-            start_date=body.design_spec.start_date,
-            end_date=body.design_spec.end_date,
-            design_spec=body.design_spec.model_dump(mode="json"),
-            audience_spec=body.audience_spec.model_dump(mode="json"),
-            power_analyses=body.power_analyses.model_dump(mode="json")
-            if body.power_analyses
-            else None,
-            assign_summary=assign_summary.model_dump(mode="json"),
-        )  # .set_design_spec(body.design_spec)
-        xngin_session.add(experiment)
-
-        # Create assignment records
-        for assignment in assignment_response.assignments:
-            # TODO: bulk insert https://docs.sqlalchemy.org/en/20/orm/queryguide/dml.html#orm-queryguide-bulk-insert {"dml_strategy": "raw"}
-            db_assignment = ArmAssignment(
-                experiment_id=experiment.id,
-                participant_type=body.audience_spec.participant_type,
-                participant_id=assignment.participant_id,
-                arm_id=assignment.arm_id,
-                strata=[s.model_dump(mode="json") for s in assignment.strata],
-            )
-            xngin_session.add(db_assignment)
-
-        xngin_session.commit()
+    xngin_session.commit()
 
     return CreateExperimentWithAssignmentResponse(
-        datasource_id=datasource.id,
+        datasource_id=datasource_id,
         state=experiment.state,
         design_spec=experiment.design_spec,
         audience_spec=experiment.audience_spec,
@@ -271,13 +282,13 @@ def list_experiments_sl(
     datasource: Annotated[Datasource, Depends(datasource_dependency)],
     xngin_session: Annotated[Session, Depends(xngin_db_session)],
 ) -> ListExperimentsResponse:
-    return list_experiments_impl(xngin_session, datasource)
+    return list_experiments_impl(xngin_session, datasource.id)
 
 
-def list_experiments_impl(xngin_session: Session, datasource: Datasource):
+def list_experiments_impl(xngin_session: Session, datasource_id: str):
     stmt = (
         select(Experiment)
-        .where(Experiment.datasource_id == datasource.id)
+        .where(Experiment.datasource_id == datasource_id)
         .where(
             Experiment.state.in_([ExperimentState.COMMITTED, ExperimentState.ASSIGNED])
         )

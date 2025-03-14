@@ -417,44 +417,21 @@ def assign_treatment(
     validate_schema_metrics_or_raise(body.design_spec, schema)
 
     with config.dbsession() as dwh_session:
-        return do_assignment(
-            session=dwh_session,
-            participant=participants_cfg,
-            supports_reflection=config.supports_reflection(),
-            body=body,
-            chosen_n=chosen_n,
-            id_field=schema.get_unique_id_field(),
-            quantiles=quantiles,
-            stratum_id_name=stratum_id_name,
-            random_state=random_state,
+        sa_table = infer_table(
+            dwh_session.get_bind(),
+            participants_cfg.table_name,
+            config.supports_reflection(),
         )
-
-
-def do_assignment(
-    session: Session,
-    participant: ParticipantsConfig,
-    supports_reflection: bool,
-    body: AssignRequest,
-    chosen_n: int,
-    id_field: str,
-    quantiles: int,
-    stratum_id_name: str | None,
-    random_state: int | None,
-) -> AssignResponse:
-    """Helper for assigning treatments."""
-    sa_table = infer_table(
-        session.get_bind(), participant.table_name, supports_reflection
-    )
-    participants = query_for_participants(
-        session, sa_table, body.audience_spec, chosen_n
-    )
+        participants = query_for_participants(
+            dwh_session, sa_table, body.audience_spec, chosen_n
+        )
 
     metric_names = [m.field_name for m in body.design_spec.metrics]
     return assign_treatment_actual(
         sa_table=sa_table,
         data=participants,
         stratum_cols=body.design_spec.strata_field_names + metric_names,
-        id_col=id_field,
+        id_col=schema.get_unique_id_field(),
         arms=body.design_spec.arms,
         experiment_id=str(body.design_spec.experiment_id),
         fstat_thresh=body.design_spec.fstat_thresh,

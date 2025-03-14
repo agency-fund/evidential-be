@@ -1,11 +1,15 @@
 import uuid
 from datetime import datetime, timedelta, UTC
+import dataclasses
+from dataclasses import dataclass
+from typing import Any
 
 import pytest
+import numpy as np
 from deepdiff import DeepDiff
 from fastapi.testclient import TestClient
 from pydantic_core import to_jsonable_python
-from sqlalchemy import select
+from sqlalchemy import select, Boolean, Column, MetaData, String, Table
 from sqlalchemy.dialects import sqlite, postgresql
 from sqlalchemy.orm import Session
 from sqlalchemy.schema import CreateTable
@@ -28,7 +32,10 @@ from xngin.apiserver.dependencies import xngin_db_session
 from xngin.apiserver.main import app
 from xngin.apiserver.models.enums import ExperimentState
 from xngin.apiserver.models.tables import ArmAssignment, Experiment
-from xngin.apiserver.routers.experiments import experiment_assignments_to_csv_generator
+from xngin.apiserver.routers.experiments import (
+    experiment_assignments_to_csv_generator,
+    create_experiment_with_assignment_impl,
+)
 from xngin.apiserver.routers.experiments_api_types import (
     CreateExperimentRequest,
     AssignSummary,
@@ -56,19 +63,6 @@ def fixture_teardown(db_session: Session):
     db_session.query(ArmAssignment).delete()
     db_session.commit()
     db_session.close()
-
-
-def test_experiment_sql():
-    pg_sql = str(
-        CreateTable(ArmAssignment.__table__).compile(dialect=postgresql.dialect())
-    )
-    assert "arm_id UUID NOT NULL" in pg_sql
-    assert "strata JSONB NOT NULL" in pg_sql
-    sqlite_sql = str(
-        CreateTable(ArmAssignment.__table__).compile(dialect=sqlite.dialect())
-    )
-    assert "arm_id CHAR(32) NOT NULL" in sqlite_sql
-    assert "strata JSON NOT NULL" in sqlite_sql
 
 
 def make_create_experiment_request(with_uuids: bool = True) -> CreateExperimentRequest:
@@ -160,6 +154,180 @@ def make_insert_experiment(state: ExperimentState, datasource_id="testing"):
     )
 
 
+@dataclass
+class MockRow:
+    """Simulate the bits of a sqlalchemy Row that we need here."""
+
+    participant_id: str
+    gender: str
+    is_onboarded: bool
+    region: str = "North"  # Default value for backward compatibility
+
+    def _asdict(self) -> dict[str, Any]:
+        return dataclasses.asdict(self)
+
+
+@pytest.fixture
+def sample_table():
+    """Create a mock SQLAlchemy table that works with make_create_experiment_request()"""
+    metadata_obj = MetaData()
+    return Table(
+        "participants",
+        metadata_obj,
+        Column("participant_id", String, primary_key=True),
+        Column("gender", String),
+        Column("is_onboarded", Boolean),
+    )
+
+
+def make_sample_data(n=100):
+    """Create mock participant data that works with our sample_table"""
+    np.random.seed(42)
+    return [
+        MockRow(
+            participant_id=f"p{i}",
+            gender=np.random.choice(["M", "F"]),
+            is_onboarded=bool(np.random.choice([True, False], p=[0.5, 0.5])),
+        )
+        for i in range(n)
+    ]
+
+
+def test_create_experiment_with_assignment_impl(
+    db_session: Session, sample_table, use_deterministic_random
+):
+    """Test implementation of creating an experiment with assignment."""
+    participants = make_sample_data(n=100)
+    request = make_create_experiment_request(with_uuids=False)
+    # Add a partial mock PowerResponse just to verify storage
+    request.power_analyses = PowerResponse(
+        analyses=[
+            MetricAnalysis(
+                metric_spec=DesignSpecMetric(
+                    field_name="is_onboarded", metric_type=MetricType.BINARY
+                )
+            )
+        ]
+    )
+
+    # Test!
+    response = create_experiment_with_assignment_impl(
+        request=request.model_copy(
+            deep=True
+        ),  # we'll use the original request for assertions
+        datasource_id="testing",
+        participant_unique_id_field="participant_id",
+        dwh_sa_table=sample_table,
+        dwh_participants=participants,
+        random_state=42,
+        xngin_session=db_session,
+    )
+
+    # Verify response
+    assert response.datasource_id == "testing"
+    assert response.state == ExperimentState.ASSIGNED
+    # Verify design_spec
+    assert response.design_spec.experiment_id is not None
+    assert response.design_spec.arms[0].arm_id is not None
+    assert response.design_spec.arms[1].arm_id is not None
+    assert response.design_spec.experiment_name == request.design_spec.experiment_name
+    assert response.design_spec.description == request.design_spec.description
+    assert response.design_spec.start_date == request.design_spec.start_date
+    assert response.design_spec.end_date == request.design_spec.end_date
+    # Verify audience_spec and power_analyses were stored correctly
+    assert response.audience_spec == request.audience_spec
+    assert response.power_analyses == request.power_analyses
+    # Verify assign_summary
+    assert response.assign_summary.sample_size == len(participants)
+    assert response.assign_summary.balance_check.balance_ok is True
+
+    # Verify database state using the ids in the returned DesignSpec.
+    experiment = db_session.scalars(
+        select(Experiment).where(Experiment.id == response.design_spec.experiment_id)
+    ).one()
+    assert experiment.state == ExperimentState.ASSIGNED
+    assert experiment.datasource_id == "testing"
+    assert experiment.start_date == request.design_spec.start_date
+    assert experiment.end_date == request.design_spec.end_date
+    # Verify design_spec and audience_spec were stored correctly
+    stored_design_spec = experiment.get_design_spec()
+    assert stored_design_spec == response.design_spec
+    stored_audience_spec = experiment.get_audience_spec()
+    assert stored_audience_spec == response.audience_spec
+    stored_power_analyses = experiment.get_power_analyses()
+    assert stored_power_analyses == response.power_analyses
+    # Verify assignments were created
+    assignments = db_session.scalars(
+        select(ArmAssignment).where(ArmAssignment.experiment_id == experiment.id)
+    ).all()
+    assert len(assignments) == len(participants)
+    # Verify all participant IDs in the db are the participants in the request
+    assignment_participant_ids = {a.participant_id for a in assignments}
+    assert assignment_participant_ids == {p.participant_id for p in participants}
+    assert len(assignment_participant_ids) == len(participants)
+
+    # Check one assignment to see if it looks roughly right
+    sample_assignment = assignments[0]
+    assert sample_assignment.participant_type == "test_participant_type"
+    assert sample_assignment.experiment_id == experiment.id
+    assert sample_assignment.arm_id in (arm.arm_id for arm in response.design_spec.arms)
+    # Verify strata information
+    assert (
+        len(sample_assignment.strata) == 2
+    )  # our metric by default and strata_field_names
+    assert sample_assignment.strata[0]["field_name"] == "gender"
+    assert sample_assignment.strata[1]["field_name"] == "is_onboarded"
+
+    # Check for approximate balance in arm assignments
+    arm1_id = response.design_spec.arms[0].arm_id
+    arm2_id = response.design_spec.arms[1].arm_id
+    num_control = sum(1 for a in assignments if a.arm_id == arm1_id)
+    num_treat = sum(1 for a in assignments if a.arm_id == arm2_id)
+    assert abs(num_control - num_treat) <= 1
+
+
+def test_create_experiment_with_assignment_impl_overwrites_uuids(
+    db_session: Session, sample_table, use_deterministic_random
+):
+    """
+    Test that the function overwrites requests with preset UUIDs
+    (which would otherwise be caught in the route handler).
+    """
+    participants = make_sample_data(n=100)
+    request = make_create_experiment_request(with_uuids=True)
+    original_experiment_id = request.design_spec.experiment_id
+    original_arm_ids = [arm.arm_id for arm in request.design_spec.arms]
+
+    # Call the function under test
+    response = create_experiment_with_assignment_impl(
+        request=request,
+        datasource_id="testing",
+        participant_unique_id_field="participant_id",
+        dwh_sa_table=sample_table,
+        dwh_participants=participants,
+        random_state=42,
+        xngin_session=db_session,
+    )
+
+    # Verify that new UUIDs were generated
+    assert response.design_spec.experiment_id != original_experiment_id
+    new_arm_ids = [arm.arm_id for arm in response.design_spec.arms]
+    assert set(new_arm_ids) != set(original_arm_ids)
+
+    # Verify database state
+    experiment = db_session.scalars(
+        select(Experiment).where(Experiment.id == response.design_spec.experiment_id)
+    ).one()
+    assert experiment.state == ExperimentState.ASSIGNED
+    # Verify assignments were created with the new UUIDs
+    assignments = db_session.scalars(
+        select(ArmAssignment).where(ArmAssignment.experiment_id == experiment.id)
+    ).all()
+    # Verify all assignments use the new arm IDs
+    assignment_arm_ids = {a.arm_id for a in assignments}
+    assert assignment_arm_ids == set(new_arm_ids)
+
+
 def test_create_experiment_with_assignment_invalid_design_spec(db_session: Session):
     """Test creating an experiment and saving assignments to the database."""
     request = make_create_experiment_request(with_uuids=True)
@@ -221,7 +389,7 @@ def test_create_experiment_with_assignment(
     assert experiment.datasource_id == "testing"
     assert experiment.start_date == request.design_spec.start_date
     assert experiment.end_date == request.design_spec.end_date
-
+    # Verify assignments were created
     assignments = db_session.scalars(
         select(ArmAssignment).where(ArmAssignment.experiment_id == experiment_id)
     ).all()
@@ -495,3 +663,16 @@ def test_get_experiment_assignments_as_csv(db_session: Session):
     assert rows[0] == "participant_id,arm_id,arm_name,gender,score\r\n"
     assert rows[1] == f"p1,{arm1_id},{arm1_name},F,1.1\r\n"
     assert rows[2] == f'p2,{arm2_id},{arm2_name},M,"esc,aped"\r\n'
+
+
+def test_experiment_sql():
+    pg_sql = str(
+        CreateTable(ArmAssignment.__table__).compile(dialect=postgresql.dialect())
+    )
+    assert "arm_id UUID NOT NULL" in pg_sql
+    assert "strata JSONB NOT NULL" in pg_sql
+    sqlite_sql = str(
+        CreateTable(ArmAssignment.__table__).compile(dialect=sqlite.dialect())
+    )
+    assert "arm_id CHAR(32) NOT NULL" in sqlite_sql
+    assert "strata JSON NOT NULL" in sqlite_sql
