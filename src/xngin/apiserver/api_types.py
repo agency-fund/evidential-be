@@ -361,7 +361,7 @@ class DesignSpecMetric(DesignSpecMetricBase):
         """Enforce that metric_stddev is present for NUMERICs"""
         if (
             self.metric_type == MetricType.NUMERIC
-            and self.available_n > 0
+            and self.available_n
             and self.metric_stddev is None
         ):
             raise ValueError("missing stddev")

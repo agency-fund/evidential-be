@@ -75,7 +75,7 @@ def assign_treatment(
             experiment_id=experiment_id,
             balance_check=None,
             treatment_ids=treatment_ids,
-            stratum_ids=[0] * len(treatment_ids),
+            stratum_ids=None,
             stratum_id_name=None,
         )
 
@@ -115,7 +115,7 @@ def assign_treatment(
             experiment_id=experiment_id,
             balance_check=None,
             treatment_ids=treatment_ids,
-            stratum_ids=[0] * len(treatment_ids),
+            stratum_ids=None,
             stratum_id_name=None,
         )
 
@@ -207,13 +207,14 @@ def _make_assign_response(
     id_col: str,
     arms: list[Arm],
     experiment_id: str,
-    balance_check: BalanceCheck,
+    balance_check: BalanceCheck | None,
     treatment_ids: list[int],
-    stratum_ids: list[int],
+    stratum_ids: list[int] | None,
     stratum_id_name: str | None = None,
-) -> list[Assignment]:
+) -> AssignResponse:
     """Prepare assignments for return along with the original data as a list of ExperimentParticipant objects."""
     participants_list = []
+    stratum_ids = [0] * len(treatment_ids) if stratum_ids is None else stratum_ids
     for stratum_id, treatment_assignment, row in zip(
         stratum_ids, treatment_ids, data, strict=False
     ):
