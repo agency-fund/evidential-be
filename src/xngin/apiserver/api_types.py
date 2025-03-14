@@ -603,11 +603,11 @@ class Assignment(ApiBaseModel):
         ),
     ]
     strata: Annotated[
-        list[Strata],
+        list[Strata] | None,
         Field(
-            description="List of properties and their values for this participant used for stratification or tracking metrics."
+            description="List of properties and their values for this participant used for stratification or tracking metrics. If stratification is not used, this will be None."
         ),
-    ]
+    ] = None
 
 
 class ExperimentAnalysis(ApiBaseModel):
