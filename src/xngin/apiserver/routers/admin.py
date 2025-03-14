@@ -1006,6 +1006,10 @@ def create_experiment_with_assignment(
     chosen_n: Annotated[
         int, Query(..., description="Number of participants to assign.")
     ],
+    stratify_on_metrics: Annotated[
+        bool,
+        Query(description="Whether to also stratify on metrics during assignment."),
+    ] = False,
     random_state: Annotated[
         int | None,
         Query(
@@ -1045,6 +1049,7 @@ def create_experiment_with_assignment(
         dwh_participants=participants,
         random_state=random_state,
         xngin_session=session,
+        stratify_on_metrics=stratify_on_metrics,
     )
 
 

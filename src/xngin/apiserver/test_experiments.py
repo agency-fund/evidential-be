@@ -221,6 +221,7 @@ def test_create_experiment_with_assignment_impl(
         dwh_participants=participants,
         random_state=42,
         xngin_session=db_session,
+        stratify_on_metrics=True,
     )
 
     # Verify response
@@ -234,7 +235,9 @@ def test_create_experiment_with_assignment_impl(
     assert response.design_spec.description == request.design_spec.description
     assert response.design_spec.start_date == request.design_spec.start_date
     assert response.design_spec.end_date == request.design_spec.end_date
-    # Verify audience_spec and power_analyses were stored correctly
+    # although we stratify on target metrics as well in this test, note that the
+    # original strata_field_names are not augmented with the metric names.
+    assert response.design_spec.strata_field_names == ["gender"]
     assert response.audience_spec == request.audience_spec
     assert response.power_analyses == request.power_analyses
     # Verify assign_summary
@@ -307,6 +310,7 @@ def test_create_experiment_with_assignment_impl_overwrites_uuids(
         dwh_participants=participants,
         random_state=42,
         xngin_session=db_session,
+        stratify_on_metrics=True,
     )
 
     # Verify that new UUIDs were generated
@@ -326,6 +330,56 @@ def test_create_experiment_with_assignment_impl_overwrites_uuids(
     # Verify all assignments use the new arm IDs
     assignment_arm_ids = {a.arm_id for a in assignments}
     assert assignment_arm_ids == set(new_arm_ids)
+
+
+def test_create_experiment_with_assignment_impl_no_metric_stratification(
+    db_session: Session, sample_table, use_deterministic_random
+):
+    """Test implementation of creating an experiment without stratifying on metrics."""
+    participants = make_sample_data(n=100)
+    request = make_create_experiment_request(with_uuids=False)
+
+    # Test with stratify_on_metrics=False
+    response = create_experiment_with_assignment_impl(
+        request=request.model_copy(deep=True),
+        datasource_id="testing",
+        participant_unique_id_field="participant_id",
+        dwh_sa_table=sample_table,
+        dwh_participants=participants,
+        random_state=42,
+        xngin_session=db_session,
+        stratify_on_metrics=False,
+    )
+
+    # Verify basic response
+    assert response.datasource_id == "testing"
+    assert response.state == ExperimentState.ASSIGNED
+    assert response.design_spec.experiment_id is not None
+    assert response.design_spec.arms[0].arm_id is not None
+    # Same as in the stratify_on_metrics=True test. Only the output assignments will also store a snapshot of the metric values as strata.
+    assert response.design_spec.strata_field_names == ["gender"]
+
+    # Verify database state
+    experiment = db_session.scalars(
+        select(Experiment).where(Experiment.id == response.design_spec.experiment_id)
+    ).one()
+    # Verify assignments were created
+    assignments = db_session.scalars(
+        select(ArmAssignment).where(ArmAssignment.experiment_id == experiment.id)
+    ).all()
+    assert len(assignments) == len(participants)
+    # Check strata information only has gender, not is_onboarded
+    sample_assignment = assignments[0]
+    assert len(sample_assignment.strata) == 1
+    assert sample_assignment.strata[0]["field_name"] == "gender"
+    assert not any(s["field_name"] == "is_onboarded" for s in sample_assignment.strata)
+
+    # Check for approximate balance in arm assignments
+    arm1_id = response.design_spec.arms[0].arm_id
+    arm2_id = response.design_spec.arms[1].arm_id
+    num_control = sum(1 for a in assignments if a.arm_id == arm1_id)
+    num_treat = sum(1 for a in assignments if a.arm_id == arm2_id)
+    assert abs(num_control - num_treat) <= 1
 
 
 def test_create_experiment_with_assignment_invalid_design_spec(db_session: Session):

@@ -125,6 +125,7 @@ def create_experiment_with_assignment_sl(
         dwh_participants=participants,
         random_state=random_state,
         xngin_session=xngin_session,
+        stratify_on_metrics=True,
     )
 
 
@@ -136,6 +137,7 @@ def create_experiment_with_assignment_impl(
     dwh_participants: Sequence[RowProtocol],
     random_state: int | None,
     xngin_session: Session,
+    stratify_on_metrics: bool,
 ) -> CreateExperimentWithAssignmentResponse:
     # First generate uuids for the experiment and arms, which do_assignment needs.
     request.design_spec.experiment_id = uuid.uuid4()
@@ -143,11 +145,16 @@ def create_experiment_with_assignment_impl(
         arm.arm_id = uuid.uuid4()
 
     metric_names = [m.field_name for m in request.design_spec.metrics]
+    if stratify_on_metrics:
+        stratum_cols = request.design_spec.strata_field_names + metric_names
+    else:
+        stratum_cols = request.design_spec.strata_field_names
+
     # TODO: directly create ArmAssignments from the pd dataframe instead
     assignment_response = assign_treatment(
         sa_table=dwh_sa_table,
         data=dwh_participants,
-        stratum_cols=request.design_spec.strata_field_names + metric_names,
+        stratum_cols=stratum_cols,
         id_col=participant_unique_id_field,
         arms=request.design_spec.arms,
         experiment_id=str(request.design_spec.experiment_id),
