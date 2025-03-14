@@ -1,9 +1,9 @@
-from itertools import batched
-import uuid
-from contextlib import asynccontextmanager
-from typing import Annotated
 import csv
 import io
+import uuid
+from contextlib import asynccontextmanager
+from itertools import batched
+from typing import Annotated
 
 from fastapi import (
     APIRouter,
@@ -70,11 +70,13 @@ router = APIRouter(
 
 @router.post(
     "/experiments/with-assignment",
-    summary="Create a pending experiment and save its assignments to the database. User will still need to /experiments/<id>/commit the experiment after reviewing assignment balance summary.",
+    summary="Create an experiment and save its assignments to the database.",
+    description=(
+        "The newly created experiment will be in the ASSIGNED state. "
+        "To move them to the COMMITTED state, call the /experiments/<id>/commit API."
+    ),
 )
 def create_experiment_with_assignment_sl(
-    # TODO: add authorization support here and all other endpoints
-    # user: Annotated[User, Depends(user_from_token)],
     body: CreateExperimentRequest,
     chosen_n: Annotated[
         int, Query(..., description="Number of participants to assign.")
@@ -263,7 +265,7 @@ def abandon_experiment_impl(xngin_session: Session, experiment: Experiment):
 
 @router.get(
     "/experiments",
-    summary="Fetch experiment meta data (design & assignment specs) for the given id.",
+    summary="List experiments on the datasource.",
 )
 def list_experiments_sl(
     datasource: Annotated[Datasource, Depends(datasource_dependency)],
@@ -300,7 +302,7 @@ def list_experiments_impl(xngin_session: Session, datasource: Datasource):
 
 @router.get(
     "/experiments/{experiment_id}",
-    summary="Fetch experiment meta data (design & assignment specs) for the given id.",
+    summary="Get experiment metadata (design & assignment specs) for a single experiment.",
 )
 def get_experiment_sl(
     datasource: Annotated[Datasource, Depends(datasource_dependency)],

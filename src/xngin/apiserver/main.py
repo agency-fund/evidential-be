@@ -1,3 +1,4 @@
+import dataclasses
 import logging
 import os
 from contextlib import asynccontextmanager
@@ -75,7 +76,7 @@ app.include_router(
 app.include_router(
     experiments_proxy_mgmt_api.router,
     prefix=constants.API_PREFIX_V1,
-    tags=["Experiment Management Webhooks"],
+    tags=["Experiment Management"],
 )
 
 
@@ -106,6 +107,12 @@ if oidc.is_enabled() and admin.is_enabled():
 oidc_dependencies.setup(app)
 
 
+@dataclasses.dataclass
+class TagDocumentation:
+    visible: bool
+    definition: dict[str, str]
+
+
 def custom_openapi():
     """Customizes the generated OpenAPI schema."""
     if app.openapi_schema:  # cache
@@ -119,11 +126,48 @@ def custom_openapi():
             # uses the Python API method name
             route.operation_id = route.name
 
+    visible_tags = [
+        TagDocumentation(
+            visible=True,
+            definition={
+                "name": "Experiment Design",
+                "description": "Methods for designing experiments.",
+            },
+        ),
+        TagDocumentation(
+            visible=True,
+            definition={
+                "name": "Experiment Management",
+                "description": "Methods for managing and running experiments.",
+            },
+        ),
+        TagDocumentation(
+            visible=PUBLISH_ALL_DOCS,
+            definition={"name": "Auth", "description": "Methods for handling SSO."},
+        ),
+        TagDocumentation(
+            visible=PUBLISH_ALL_DOCS,
+            definition={
+                "name": "Admin",
+                "description": "Methods supporting the Evidential UI.",
+            },
+        ),
+    ]
     openapi_schema = get_openapi(
         title="xngin: Experiments API",
         version="0.9.0",
+        contact={
+            "name": "Agency Fund",
+            "url": "https://www.agency.fund",
+            "email": "evidential-support@agency.fund",
+        },
         summary="",
         description="",
+        tags=[
+            tag.definition
+            for tag in sorted(visible_tags, key=lambda t: t.definition["name"])
+            if tag.visible
+        ],
         routes=app.routes,
     )
     app.openapi_schema = openapi_schema

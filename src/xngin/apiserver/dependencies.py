@@ -9,13 +9,13 @@ from xngin.apiserver import constants
 from xngin.apiserver.apikeys import require_valid_api_key
 from xngin.apiserver.database import SessionLocal
 from xngin.apiserver.gsheet_cache import GSheetCache
+from xngin.apiserver.models.tables import Datasource as DatasourceTable
 from xngin.apiserver.settings import (
     get_settings_for_server,
     XnginSettings,
     Datasource,
     DatasourceConfig,
 )
-from xngin.apiserver.models.tables import Datasource as DatasourceTable
 
 
 class CannotFindDatasourceError(Exception):
@@ -42,7 +42,12 @@ def xngin_db_session():
 def datasource_dependency(
     settings: Annotated[XnginSettings, Depends(settings_dependency)],
     datasource_id: Annotated[
-        str, Header(example="testing", alias=constants.HEADER_CONFIG_ID)
+        str,
+        Header(
+            example="testing",
+            alias=constants.HEADER_CONFIG_ID,
+            description="The ID of the datasource to operate on.",
+        ),
     ],
     xngin_db: Annotated[Session, Depends(xngin_db_session)],
     api_key: Annotated[

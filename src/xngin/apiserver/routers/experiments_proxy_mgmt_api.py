@@ -27,7 +27,6 @@ from xngin.apiserver.webhook_types import (
     WebhookUpdateCommitRequest,
 )
 
-
 logger = logging.getLogger(__name__)
 
 
@@ -44,7 +43,7 @@ router = APIRouter(
 
 @router.get(
     "/assignment-file",
-    summary="Retrieve all participant assignments for the given experiment_id.",
+    summary="Retrieve all participant assignments for the given experiment_id from a remote database.",
     responses=STANDARD_WEBHOOK_RESPONSES,
 )
 async def assignment_file(
@@ -73,11 +72,10 @@ async def assignment_file(
 
 @router.post(
     "/commit",
-    summary="Commit an experiment to the database.",
+    summary="Commit an experiment to a remote database.",
     responses=STANDARD_WEBHOOK_RESPONSES,
-    tags=["Experiment Management Webhooks"],
 )
-async def commit_experiment(
+async def commit_experiment_wh(
     response: Response,
     body: CommitRequest,
     user_id: Annotated[str, Query(...)],
@@ -107,9 +105,8 @@ async def commit_experiment(
 
 @router.post(
     "/update-commit",
-    summary="Update an existing experiment's timestamps or description (experiment and arms)",
+    summary="Update an existing experiment's timestamps or description (experiment and arms) in a remote database.",
     responses=STANDARD_WEBHOOK_RESPONSES,
-    tags=["Experiment Management Webhooks"],
 )
 async def update_experiment(
     response: Response,

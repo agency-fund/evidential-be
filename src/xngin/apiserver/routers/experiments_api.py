@@ -39,6 +39,7 @@ from xngin.apiserver.dependencies import (
     gsheet_cache,
     datasource_config_required,
 )
+from xngin.apiserver.dwh.queries import get_participant_metrics
 from xngin.apiserver.dwh.queries import get_stats_on_metrics, query_for_participants
 from xngin.apiserver.exceptions_common import LateValidationError
 from xngin.apiserver.gsheet_cache import GSheetCache
@@ -58,7 +59,6 @@ from xngin.sheets.config_sheet import (
 from xngin.stats.analysis import analyze_experiment
 from xngin.stats.assignment import assign_treatment as assign_treatment_actual
 from xngin.stats.power import check_power
-from xngin.apiserver.dwh.queries import get_participant_metrics
 
 logger = logging.getLogger(__name__)
 
@@ -115,14 +115,15 @@ def get_participants_config_and_schema(
 
 # API Endpoints
 @router.get(
-    "/strata", summary="Get possible strata covariates.", tags=["Experiment Design"]
+    "/strata",
+    summary="Get possible strata covariates.",
 )
 def get_strata(
     commons: Annotated[CommonQueryParams, Depends()],
     gsheets: Annotated[GSheetCache, Depends(gsheet_cache)],
     config: Annotated[DatasourceConfig, Depends(datasource_config_required)],
 ) -> GetStrataResponse:
-    """Get possible strata covariates for a given unit type."""
+    """Get possible strata covariates for a given participant type."""
     participants_cfg, schema = get_participants_config_and_schema(
         commons, config, gsheets
     )
@@ -155,9 +156,7 @@ def get_strata(
 
 
 @router.get(
-    "/filters",
-    summary="Get possible filters covariates for a given unit type.",
-    tags=["Experiment Design"],
+    "/filters", summary="Get possible filters covariates for a given participant type."
 )
 def get_filters(
     commons: Annotated[CommonQueryParams, Depends()],
@@ -240,16 +239,14 @@ def create_col_to_filter_meta_mapper(
 
 
 @router.get(
-    "/metrics",
-    summary="Get possible metric covariates for a given unit type.",
-    tags=["Experiment Design"],
+    "/metrics", summary="Get possible metric covariates for a given participant type."
 )
 def get_metrics(
     commons: Annotated[CommonQueryParams, Depends()],
     gsheets: Annotated[GSheetCache, Depends(gsheet_cache)],
     config: Annotated[DatasourceConfig, Depends(datasource_config_required)],
 ) -> GetMetricsResponse:
-    """Get possible metrics for a given unit type."""
+    """Get possible metrics for a given participant type."""
     participants_cfg, schema = get_participants_config_and_schema(
         commons, config, gsheets
     )
@@ -293,9 +290,7 @@ def validate_schema_metrics_or_raise(
 
 
 @router.post(
-    "/power",
-    summary="Check power given an experiment and audience specification.",
-    tags=["Experiment Design"],
+    "/power", summary="Check power given an experiment and audience specification."
 )
 def powercheck(
     body: PowerRequest,
@@ -345,7 +340,6 @@ def power_check_impl(
 @router.post(
     "/analyze",
     summary="Analyze experiment from an AssignResponse and ExperimentDesign.",
-    tags=["Experiment Analysis"],
 )
 def do_analyze_experiment(
     request: AnalysisRequest,
@@ -384,9 +378,7 @@ def do_analyze_experiment(
 
 
 @router.post(
-    "/assign",
-    summary="Assign treatment given experiment and audience specification.",
-    tags=["Experiment Design"],
+    "/assign", summary="Assign treatment given experiment and audience specification."
 )
 def assign_treatment(
     body: AssignRequest,
