@@ -412,7 +412,7 @@ class Arm(ApiBaseModel):
         Field(
             description="UUID of the arm. If using the /experiments/with-assignment endpoint, this is generated for you and available in the response; you should NOT set this. Only generate ids of your own if using the stateless Experiment Design API as you will do your own persistence."
         ),
-    ]
+    ] = None
     arm_name: str  # TODO: add naming constraints
     arm_description: str | None = None
 
@@ -425,7 +425,7 @@ class DesignSpec(ApiBaseModel):
         Field(
             description="UUID of the experiment. If using the /experiments/with-assignment endpoint, this is generated for you and available in the response; you should NOT set this. Only generate ids of your own if using the stateless Experiment Design API as you will do your own persistence."
         ),
-    ]
+    ] = None
     experiment_name: str
     description: str
     start_date: datetime.datetime
@@ -434,10 +434,17 @@ class DesignSpec(ApiBaseModel):
     # arms (at least two)
     arms: Annotated[list[Arm], Field(..., min_length=2)]
 
-    # strata as strings
-    # TODO? If we ever need to accept other metadata about strata, migrate to a new "strata:"
-    #       field that takes a list of Stratum objects, akin to filters: and metrics:.
-    strata_field_names: list[FieldName]
+    # TODO migrate to a new "strata_spec:" field that holds experiment-wide stratification rules
+    # such as # of buckets to use during quantilization and the name to use for reporting the
+    # stratum_group_id, along with a "strata_field_names:" field or "strata:" objects that lists
+    # variables to use.
+    strata_field_names: Annotated[
+        list[FieldName],
+        Field(
+            ...,
+            description="List of participant_type variables to use for stratification.",
+        ),
+    ]
 
     metrics: Annotated[
         list[DesignSpecMetricRequest],
@@ -677,7 +684,7 @@ class AssignResponse(ApiBaseModel):
     balance_check: Annotated[
         BalanceCheck | None,
         Field(
-            description="Result of checking that the arms are balanced, but only present if stratified random assignment is performed. (Fields used for stratification must be supported data types whose values are NOT all unique or all the same)."
+            description="Result of checking that the arms are balanced. May not be present if we are not able to stratify on any design metrics or other fields specified for stratification. (Fields used must be supported data types whose values are NOT all unique or all the same)."
         ),
     ] = None
 

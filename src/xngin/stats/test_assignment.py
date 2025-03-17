@@ -361,6 +361,7 @@ def test_simple_random_assignment(sample_rows):
 
 
 def test_assign_treatment_with_no_stratification(sample_table, sample_rows):
+    # random_state=None since the counts of each arm should always be equal regardless.
     result = assign_treatment(
         sa_table=sample_table,
         data=sample_rows,
@@ -368,7 +369,7 @@ def test_assign_treatment_with_no_stratification(sample_table, sample_rows):
         id_col="id",
         arms=make_arms(["control", "treatment"]),
         experiment_id="b767716b-f388-4cd9-a18a-08c4916ce26f",
-        random_state=42,
+        random_state=None,
     )
     assert result.balance_check is None
     arm_counts = defaultdict(int)

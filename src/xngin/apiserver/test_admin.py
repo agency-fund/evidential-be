@@ -42,6 +42,7 @@ from xngin.apiserver.settings import (
 from xngin.cli.main import create_testing_dwh
 from xngin.schema.schema_types import ParticipantsSchema, FieldDescriptor
 
+
 SAMPLE_GCLOUD_SERVICE_ACCOUNT_KEY = {
     "auth_provider_x509_cert_url": "",
     "auth_uri": "",
@@ -88,6 +89,17 @@ def enable_apis_under_test():
     main_module.enable_oidc_api()
     main_module.enable_admin_api()
     oidc_dependencies.TESTING_TOKENS_ENABLED = True
+
+
+@pytest.fixture(scope="function")
+def testing_datasource_with_user_added(testing_datasource):
+    """Add the privileged user to the test ds's organization so we can access the ds."""
+    response = ppost(
+        f"/v1/m/organizations/{testing_datasource.org.id}/members",
+        json={"email": PRIVILEGED_EMAIL},
+    )
+    assert response.status_code == 204, response.content
+    return testing_datasource
 
 
 def test_list_orgs_unauthenticated():
@@ -409,3 +421,73 @@ def test_lifecycle_with_pg(testing_datasource):
             ),
         ],
     )
+
+
+def test_create_experiment_with_assignment_validation_errors(
+    db_session, testing_datasource_with_user_added
+):
+    """Test LateValidationError cases in create_experiment_with_assignment."""
+    testing_datasource = testing_datasource_with_user_added
+
+    # Create a basic experiment request
+    base_request = {
+        "design_spec": {
+            "experiment_name": "test",
+            "description": "test",
+            "start_date": "2024-01-01T00:00:00",
+            "end_date": "2024-01-02T00:00:00",
+            "arms": [
+                {"arm_name": "control", "arm_description": "control"},
+                {"arm_name": "treatment", "arm_description": "treatment"},
+            ],
+            "strata_field_names": [],
+            "metrics": [
+                {
+                    "field_name": "metric1",
+                    "metric_pct_change": 0.1,
+                }
+            ],
+        },
+        "audience_spec": {
+            "participant_type": "test_participant_type",
+            "filters": [],
+        },
+    }
+
+    # Test 1: UUIDs present in design spec trigger LateValidationError
+    request_with_uuids = json.loads(json.dumps(base_request))
+    request_with_uuids["design_spec"]["experiment_id"] = (
+        "123e4567-e89b-12d3-a456-426614174000"
+    )
+    response = ppost(
+        f"/v1/m/experiments/{testing_datasource.ds.id}/with-assignment",
+        params={"chosen_n": 100},
+        json=request_with_uuids,
+    )
+    assert response.status_code == 422, response.content
+    assert "UUIDs must not be set" in response.json()["message"]
+
+    # Test 2: Invalid participants config (sheet instead of schema)
+    # Our testing_datasource is loaded with a "remote" config from xngin.testing.settings.json, but
+    # the associated participants config is of type "sheet".
+    response = ppost(
+        f"/v1/m/experiments/{testing_datasource.ds.id}/with-assignment",
+        params={"chosen_n": 100},
+        json=base_request,
+    )
+    assert response.status_code == 422, response.content
+    assert "Participants must be of type schema" in response.json()["message"]
+
+    # Test 3: Invalid datasource config
+    # First override the testing_datasource with a "sqlite_local" config.
+    testing_ds_config = conftest.get_settings_datasource("testing").config
+    testing_datasource.ds.set_config(testing_ds_config)
+    db_session.commit()
+
+    response = ppost(
+        f"/v1/m/experiments/{testing_datasource.ds.id}/with-assignment",
+        params={"chosen_n": 100},
+        json=base_request,
+    )
+    assert response.status_code == 422, response.content
+    assert "Invalid RemoteDatabaseConfig" in response.json()["message"]
