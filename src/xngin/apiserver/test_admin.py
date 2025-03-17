@@ -26,6 +26,10 @@ from xngin.apiserver.routers.admin_api_types import (
     UpdateParticipantsTypeRequest,
     UpdateParticipantsTypeResponse,
 )
+from xngin.apiserver.routers.experiments_api_types import (
+    CreateExperimentWithAssignmentResponse,
+    ListExperimentsResponse,
+)
 from xngin.apiserver.routers.oidc_dependencies import (
     PRIVILEGED_TOKEN_FOR_TESTING,
     PRIVILEGED_EMAIL,
@@ -100,6 +104,33 @@ def testing_datasource_with_user_added(testing_datasource):
     )
     assert response.status_code == 204, response.content
     return testing_datasource
+
+
+def make_createexperimentrequest_json(participant_type: str = "test_participant_type"):
+    """Create an experiment on the test ds."""
+    return {
+        "design_spec": {
+            "experiment_name": "test",
+            "description": "test",
+            "start_date": "2024-01-01T00:00:00",
+            "end_date": "2024-01-02T00:00:00",
+            "arms": [
+                {"arm_name": "control", "arm_description": "control"},
+                {"arm_name": "treatment", "arm_description": "treatment"},
+            ],
+            "strata_field_names": [],
+            "metrics": [
+                {
+                    "field_name": "current_income",
+                    "metric_pct_change": 0.1,
+                }
+            ],
+        },
+        "audience_spec": {
+            "participant_type": participant_type,
+            "filters": [],
+        },
+    }
 
 
 def test_list_orgs_unauthenticated():
@@ -422,6 +453,60 @@ def test_lifecycle_with_pg(testing_datasource):
         ],
     )
 
+    # Create participant
+    participant_type = "participant_type_dwh"
+    response = ppost(
+        f"/v1/m/datasources/{testing_datasource.ds.id}/participants",
+        content=CreateParticipantsTypeRequest(
+            participant_type=participant_type,
+            schema_def=ParticipantsSchema(
+                table_name="dwh",
+                fields=[
+                    FieldDescriptor(
+                        field_name="id",
+                        data_type=DataType.INTEGER,
+                        description="test",
+                        is_unique_id=True,
+                        is_strata=False,
+                        is_filter=False,
+                        is_metric=False,
+                    ),
+                    FieldDescriptor(
+                        field_name="current_income",
+                        data_type=DataType.NUMERIC,
+                        description="test",
+                        is_unique_id=False,
+                        is_strata=False,
+                        is_filter=False,
+                        is_metric=True,
+                    ),
+                ],
+            ),
+        ).model_dump_json(),
+    )
+    assert response.status_code == 200, response.content
+    parsed = CreateParticipantsTypeResponse.model_validate(response.json())
+    assert parsed.participant_type == participant_type
+
+    # Create experiment using that participant type.
+    response = ppost(
+        f"/v1/m/experiments/{testing_datasource.ds.id}/with-assignment",
+        params={"chosen_n": 100},
+        json=make_createexperimentrequest_json(participant_type),
+    )
+    assert response.status_code == 200, response.content
+    parsed = CreateExperimentWithAssignmentResponse.model_validate(response.json())
+    parsed_experiment_id = parsed.design_spec.experiment_id
+    assert parsed_experiment_id is not None
+
+    # List experiments
+    response = pget(f"/v1/m/datasources/{testing_datasource.ds.id}/experiments")
+    assert response.status_code == 200, response.content
+    parsed = ListExperimentsResponse.model_validate(response.json())
+    assert len(parsed.items) == 1, parsed
+    parsed_experiment_config = parsed.items[0]
+    assert parsed_experiment_config.design_spec.experiment_id == parsed_experiment_id
+
 
 def test_create_experiment_with_assignment_validation_errors(
     db_session, testing_datasource_with_user_added
@@ -430,39 +515,15 @@ def test_create_experiment_with_assignment_validation_errors(
     testing_datasource = testing_datasource_with_user_added
 
     # Create a basic experiment request
-    base_request = {
-        "design_spec": {
-            "experiment_name": "test",
-            "description": "test",
-            "start_date": "2024-01-01T00:00:00",
-            "end_date": "2024-01-02T00:00:00",
-            "arms": [
-                {"arm_name": "control", "arm_description": "control"},
-                {"arm_name": "treatment", "arm_description": "treatment"},
-            ],
-            "strata_field_names": [],
-            "metrics": [
-                {
-                    "field_name": "metric1",
-                    "metric_pct_change": 0.1,
-                }
-            ],
-        },
-        "audience_spec": {
-            "participant_type": "test_participant_type",
-            "filters": [],
-        },
-    }
-
     # Test 1: UUIDs present in design spec trigger LateValidationError
-    request_with_uuids = json.loads(json.dumps(base_request))
-    request_with_uuids["design_spec"]["experiment_id"] = (
+    base_request = make_createexperimentrequest_json("test_participant_type")
+    base_request["design_spec"]["experiment_id"] = (
         "123e4567-e89b-12d3-a456-426614174000"
     )
     response = ppost(
         f"/v1/m/experiments/{testing_datasource.ds.id}/with-assignment",
         params={"chosen_n": 100},
-        json=request_with_uuids,
+        json=base_request,
     )
     assert response.status_code == 422, response.content
     assert "UUIDs must not be set" in response.json()["message"]
@@ -473,7 +534,7 @@ def test_create_experiment_with_assignment_validation_errors(
     response = ppost(
         f"/v1/m/experiments/{testing_datasource.ds.id}/with-assignment",
         params={"chosen_n": 100},
-        json=base_request,
+        json=make_createexperimentrequest_json(),
     )
     assert response.status_code == 422, response.content
     assert "Participants must be of type schema" in response.json()["message"]
@@ -487,7 +548,7 @@ def test_create_experiment_with_assignment_validation_errors(
     response = ppost(
         f"/v1/m/experiments/{testing_datasource.ds.id}/with-assignment",
         params={"chosen_n": 100},
-        json=base_request,
+        json=make_createexperimentrequest_json(),
     )
     assert response.status_code == 422, response.content
     assert "Invalid RemoteDatabaseConfig" in response.json()["message"]
