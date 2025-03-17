@@ -1009,7 +1009,7 @@ def create_experiment_with_assignment(
     stratify_on_metrics: Annotated[
         bool,
         Query(description="Whether to also stratify on metrics during assignment."),
-    ] = False,
+    ] = True,
     random_state: Annotated[
         int | None,
         Query(
