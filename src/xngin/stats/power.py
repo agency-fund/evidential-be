@@ -5,7 +5,6 @@ import statsmodels.stats.api as sms
 from xngin.apiserver.api_types import (
     DesignSpecMetric,
     MetricType,
-    PowerResponse,
     MetricAnalysis,
     MetricAnalysisMessage,
     MetricAnalysisMessageType,
@@ -15,7 +14,7 @@ from xngin.stats.stats_errors import StatsPowerError
 
 def _analysis_error(
     metric: DesignSpecMetric, msg_type: MetricAnalysisMessageType, msg_body: str
-):
+) -> MetricAnalysis:
     return MetricAnalysis(
         metric_spec=metric,
         msg=MetricAnalysisMessage(
@@ -44,14 +43,18 @@ def analyze_metric_power(
     if metric.metric_type is None:
         raise ValueError("Unknown metric_type.")
 
-    if metric.metric_target is None and metric.metric_baseline is not None:
+    if (
+        metric.metric_target is None
+        and metric.metric_baseline is not None
+        and metric.metric_pct_change is not None
+    ):
         metric.metric_target = metric.metric_baseline * (1 + metric.metric_pct_change)
 
     # Validate we have usable input to do the analysis.
     # TODO? To support more general power calculation functionality by implementing Case B:
     # target is not defined (need to also relax request constraints), but baseline is
     # => calculate effect size. (Case A does this only when there's insufficient available_n.)
-    if metric.available_n <= 0:
+    if metric.available_n is None or metric.available_n <= 0:
         return _analysis_error(
             metric,
             MetricAnalysisMessageType.NO_AVAILABLE_N,
@@ -73,9 +76,9 @@ def analyze_metric_power(
 
     # Case A: Both target and baseline defined - calculate required n
     if metric.metric_type == MetricType.NUMERIC:
-        effect_size = (
+        effect_size = (  # type:ignore[operator]
             metric.metric_target - metric.metric_baseline
-        ) / metric.metric_stddev
+        ) / metric.metric_stddev  # metric_stddev not None via validation
     elif metric.metric_type == MetricType.BINARY:
         effect_size = sms.proportion_effectsize(
             metric.metric_baseline, metric.metric_target
@@ -109,7 +112,7 @@ def analyze_metric_power(
 
     # Construct potential components of the MetricAnalysisMessage
     has_nulls = metric.available_nonnull_n != metric.available_n
-    values_map = {
+    values_map: dict[str, float | int] = {
         "available_n": metric.available_n,
         "target_n": analysis.target_n,
         "available_nonnull_n": metric.available_nonnull_n,
@@ -198,7 +201,7 @@ def check_power(
     n_arms: int,
     power: float = 0.8,
     alpha: float = 0.05,
-) -> PowerResponse:
+) -> list[MetricAnalysis]:
     """
     Check power for multiple metrics.
 

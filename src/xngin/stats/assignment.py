@@ -64,8 +64,23 @@ def assign_treatment(
     Returns:
         AssignmentResult containing assignments and balance check results
     """
-    # Create copy for analysis while attempting to convert any numeric "object" types that pandas didn't originally
-    # recognize when creating the dataframe. This does NOT handle Decimal types!
+    if len(stratum_cols) == 0:
+        # No stratification, so use simple random assignment
+        treatment_ids = simple_random_assignment(data, arms, random_state)
+        return _make_assign_response(
+            data=data,
+            orig_stratum_cols=[],
+            id_col=id_col,
+            arms=arms,
+            experiment_id=experiment_id,
+            balance_check=None,
+            treatment_ids=treatment_ids,
+            stratum_ids=None,
+            stratum_id_name=None,
+        )
+
+    # Create copy for analysis while attempting to convert any numeric "object" types that pandas
+    # didn't originally recognize when creating the dataframe. This does NOT handle Decimal types!
     df = DataFrame(data).infer_objects()
 
     # Now convert any Decimal types to float (possible if the Table was created with reflection instead of cursor).
@@ -88,7 +103,23 @@ def assign_treatment(
     # Our original target of columns to stratify on may have gotten smaller:
     post_stratum_cols = sorted(set(orig_stratum_cols) - exclude_cols_set)
 
-    # Assign treatments
+    if len(post_stratum_cols) == 0:
+        # No stratification, so use simple random assignment while still outputting strata, even
+        # though they're either all the same value or all unique values.
+        treatment_ids = simple_random_assignment(data, arms, random_state)
+        return _make_assign_response(
+            data=data,
+            orig_stratum_cols=orig_stratum_cols,
+            id_col=id_col,
+            arms=arms,
+            experiment_id=experiment_id,
+            balance_check=None,
+            treatment_ids=treatment_ids,
+            stratum_ids=None,
+            stratum_id_name=None,
+        )
+
+    # Do stratified random assignment
     n_arms = len(arms)
     # TODO: when we support unequal arm assigments, be careful about ensuring the right treatment
     # assignment id is mapped to the right arm_name.
@@ -106,40 +137,104 @@ def assign_treatment(
     treatment_ids = df_cleaned[STOCHATREAT_TREAT_NAME]
 
     # Put back non-null numeric columns for a more robust balance check.
+    df_cleaned.drop(columns=[STOCHATREAT_STRATUM_ID_NAME], inplace=True)
     df_cleaned_for_balance_check = restore_original_numeric_columns(
         df_orig=orig_data_to_stratify,
-        df_cleaned=df_cleaned.drop(columns=[STOCHATREAT_STRATUM_ID_NAME]),
+        df_cleaned=df_cleaned,
         numeric_notnull_set=numeric_notnull_set,
     )
+    # Explicitly delete to avoid accidental reuse and free memory. Could gc.collect() if needed.
+    del orig_data_to_stratify
+    del df_cleaned
     # Do balance check with treatment assignments as the dependent var using preprocessed data.
     balance_check_cols = [*post_stratum_cols, STOCHATREAT_TREAT_NAME]
-    balance_check = check_balance_of_preprocessed_df(
+    balance_result = check_balance_of_preprocessed_df(
         df_cleaned_for_balance_check[balance_check_cols],
         treatment_col=STOCHATREAT_TREAT_NAME,
         exclude_col_set=exclude_cols_set,
         alpha=fstat_thresh,
     )
+    del df_cleaned_for_balance_check
+    balance_check = BalanceCheck(
+        f_statistic=np.round(balance_result.f_statistic, 9),
+        numerator_df=round(balance_result.numerator_df),
+        denominator_df=round(balance_result.denominator_df),
+        p_value=np.round(balance_result.f_pvalue, 9),
+        balance_ok=bool(balance_result.f_pvalue > fstat_thresh),
+    )
 
-    # Prepare assignments for return along with the original data as a list of ExperimentParticipant objects.
+    return _make_assign_response(
+        data=data,
+        orig_stratum_cols=orig_stratum_cols,
+        id_col=id_col,
+        arms=arms,
+        experiment_id=experiment_id,
+        balance_check=balance_check,
+        treatment_ids=treatment_ids,
+        stratum_ids=stratum_ids,
+        stratum_id_name=stratum_id_name,
+    )
+
+
+def simple_random_assignment(
+    data: Sequence[RowProtocol],
+    arms: list[Arm],
+    random_state: int | None = None,
+) -> list[int]:
+    """
+    Perform simple random assignment of data into the given arms.
+
+    Args:
+        data: sqlalchemy result set of Rows representing units to be assigned
+        arms: Name & uuid of each treatment arm
+        random_state: Random seed for reproducibility
+
+    Returns:
+        List of treatment ids
+    """
+    rng = np.random.default_rng(random_state)
+    n_arms = len(arms)
+    # Create an equal number of treatment ids for each arm and shuffle to ensure arms are as balanced as possible.
+    treatment_ids = list(range(n_arms))
+    treatment_mask = np.repeat(treatment_ids, np.ceil(len(data) / n_arms))
+    rng.shuffle(treatment_mask)
+    return treatment_mask[: len(data)].tolist()
+
+
+def _make_assign_response(
+    data: Sequence[RowProtocol],
+    orig_stratum_cols: list[str],
+    id_col: str,
+    arms: list[Arm],
+    experiment_id: str,
+    balance_check: BalanceCheck | None,
+    treatment_ids: list[int],
+    stratum_ids: list[int] | None,
+    stratum_id_name: str | None = None,
+) -> AssignResponse:
+    """Prepare assignments for return along with the original data as a list of ExperimentParticipant objects."""
     participants_list = []
+    stratum_ids = [0] * len(treatment_ids) if stratum_ids is None else stratum_ids
     for stratum_id, treatment_assignment, row in zip(
         stratum_ids, treatment_ids, data, strict=False
     ):
-        # ExperimentStrata for each column
+        strata = None
         row_dict = row._asdict()
-        strata = [
-            Strata(
-                field_name=column,
-                strata_value=str(
-                    row_dict[column] if pd.notna(row_dict[column]) else "NA"
-                ),
-            )
-            for column in orig_stratum_cols
-        ]
-        if stratum_id_name is not None:
-            strata.append(
-                Strata(field_name=stratum_id_name, strata_value=str(stratum_id))
-            )
+        if orig_stratum_cols:
+            # Output the participant's strata values as seen at this time of assignment.
+            strata = [
+                Strata(
+                    field_name=column,
+                    strata_value=str(
+                        row_dict[column] if pd.notna(row_dict[column]) else "NA"
+                    ),
+                )
+                for column in orig_stratum_cols
+            ]
+            if stratum_id_name is not None:
+                strata.append(
+                    Strata(field_name=stratum_id_name, strata_value=str(stratum_id))
+                )
 
         participant = Assignment(
             participant_id=str(row_dict[id_col]),
@@ -154,15 +249,9 @@ def assign_treatment(
 
     # Return the ExperimentAssignment with the list of participants
     return AssignResponse(
-        balance_check=BalanceCheck(
-            f_statistic=np.round(balance_check.f_statistic, 9),
-            numerator_df=round(balance_check.numerator_df),
-            denominator_df=round(balance_check.denominator_df),
-            p_value=np.round(balance_check.f_pvalue, 9),
-            balance_ok=bool(balance_check.f_pvalue > fstat_thresh),
-        ),
+        balance_check=balance_check,
         experiment_id=UUID(experiment_id),
-        sample_size=len(df_cleaned),
+        sample_size=len(treatment_ids),
         unique_id_field=id_col,
         assignments=participants_list,
     )

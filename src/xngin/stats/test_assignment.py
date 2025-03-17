@@ -7,9 +7,9 @@ import uuid
 import pytest
 import pandas as pd
 import numpy as np
-from sqlalchemy import DECIMAL, Column, Float, Integer, MetaData, String, Table
-from xngin.stats.assignment import assign_treatment
-from xngin.apiserver.api_types import Assignment, Arm
+from sqlalchemy import DECIMAL, Boolean, Column, Float, Integer, MetaData, String, Table
+from xngin.stats.assignment import assign_treatment, simple_random_assignment
+from xngin.apiserver.api_types import Assignment, Arm, Strata
 
 
 @dataclass
@@ -24,6 +24,7 @@ class Row:
     skewed: int
     income_dec: Decimal
     is_male: bool
+    single_value: int
 
     def _asdict(self) -> dict[str, Any]:
         return dataclasses.asdict(self)
@@ -42,12 +43,9 @@ def sample_table():
         Column("region", String),
         Column("skewed", Float),
         Column("income_dec", DECIMAL),
+        Column("is_male", Boolean),
+        Column("single_value", Integer),
     )
-
-
-@pytest.fixture
-def sample_data():
-    return pd.DataFrame(make_sample_data_dict())
 
 
 def make_sample_data_dict(n=1000):
@@ -64,19 +62,30 @@ def make_sample_data_dict(n=1000):
     }
     data["income_dec"] = [Decimal(i).quantize(Decimal("1")) for i in data["income"]]
     data["is_male"] = [g == "M" for g in data["gender"]]
+    data["single_value"] = [1] * n
     return data
+
+
+@pytest.fixture
+def sample_data():
+    """Helper that turns a python dict into a pandas DataFrame."""
+    return pd.DataFrame(make_sample_data_dict())
+
+
+@pytest.fixture
+def sample_rows(sample_data):
+    """Helper that turns a pandas DataFrame into a list of SQLAlchemy-like Row objects."""
+    return [Row(**row) for row in sample_data.to_dict("records")]
 
 
 def make_arms(names: list[str]):
     return [Arm(arm_id=uuid.uuid4(), arm_name=name) for name in names]
 
 
-def test_assign_treatment(sample_table, sample_data):
-    rows = [Row(**row) for row in sample_data.to_dict("records")]
-
+def test_assign_treatment(sample_table, sample_rows):
     result = assign_treatment(
         sa_table=sample_table,
-        data=rows,
+        data=sample_rows,
         stratum_cols=["region", "gender"],
         id_col="id",
         arms=make_arms(["control", "treatment"]),
@@ -89,7 +98,7 @@ def test_assign_treatment(sample_table, sample_data):
     assert result.balance_check.p_value == pytest.approx(0.99992466)
     assert result.balance_check.balance_ok
     assert str(result.experiment_id) == "b767716b-f388-4cd9-a18a-08c4916ce26f"
-    assert result.sample_size == len(sample_data)
+    assert result.sample_size == len(sample_rows)
     assert (
         result.sample_size
         == result.balance_check.numerator_df + result.balance_check.denominator_df + 1
@@ -132,12 +141,10 @@ def test_assign_treatment(sample_table, sample_data):
     assert all(count > 0 for count in strata_counts.values())
 
 
-def test_assign_treatment_multiple_arms(sample_table, sample_data):
-    rows = [Row(**row) for row in sample_data.to_dict("records")]
-
+def test_assign_treatment_multiple_arms(sample_table, sample_rows):
     result = assign_treatment(
         sa_table=sample_table,
-        data=rows,
+        data=sample_rows,
         stratum_cols=["gender", "region"],
         id_col="id",
         arms=make_arms(["control", "treatment_a", "treatment_b"]),
@@ -154,16 +161,14 @@ def test_assign_treatment_multiple_arms(sample_table, sample_data):
     assert all(participant.arm_name is not None for participant in result.assignments)
     # Check that the treatment assignments are valid
     assert len(set(participant.arm_name for participant in result.assignments)) == 3
-    assert result.sample_size == len(sample_data)
+    assert result.sample_size == len(sample_rows)
     assert result.unique_id_field == "id"
 
 
-def test_assign_treatment_reproducibility(sample_table, sample_data):
-    rows = [Row(**row) for row in sample_data.to_dict("records")]
-
+def test_assign_treatment_reproducibility(sample_table, sample_rows):
     result1 = assign_treatment(
         sa_table=sample_table,
-        data=rows,
+        data=sample_rows,
         stratum_cols=["gender", "region"],
         id_col="id",
         arms=make_arms(["control", "treatment"]),
@@ -173,7 +178,7 @@ def test_assign_treatment_reproducibility(sample_table, sample_data):
 
     result2 = assign_treatment(
         sa_table=sample_table,
-        data=rows,
+        data=sample_rows,
         stratum_cols=["gender", "region"],
         id_col="id",
         arms=make_arms(["control", "treatment"]),
@@ -292,12 +297,10 @@ def test_assign_treatment_with_integers_as_floats_for_unique_id(
     assert json["assignments"][0]["participant_id"] == "-9007199254740993"
 
 
-def test_decimal_and_bool_strata_are_rendered_correctly(sample_table, sample_data):
-    rows = [Row(**row) for row in sample_data.to_dict("records")]
-
+def test_decimal_and_bool_strata_are_rendered_correctly(sample_table, sample_rows):
     result = assign_treatment(
         sa_table=sample_table,
-        data=rows,
+        data=sample_rows,
         stratum_cols=["income_dec", "is_male"],
         id_col="id",
         arms=make_arms(["control", "treatment"]),
@@ -339,3 +342,65 @@ def test_with_nans_that_would_break_stochatreat_without_preprocessing(sample_tab
         == result.balance_check.numerator_df + result.balance_check.denominator_df + 1
     )
     assert all(len(participant.strata) == 1 for participant in result.assignments)
+
+
+def test_simple_random_assignment(sample_rows):
+    n = len(sample_rows)
+    assignments = simple_random_assignment(
+        sample_rows, make_arms(["A", "B"]), random_state=42
+    )
+    assert assignments.count(0) == n // 2
+    assert assignments.count(1) == n // 2
+
+    assignments = simple_random_assignment(
+        sample_rows, make_arms(["A", "B", "C"]), random_state=42
+    )
+    assert assignments.count(0) in (n // 3, n // 3 + 1)
+    assert assignments.count(1) in (n // 3, n // 3 + 1)
+    assert assignments.count(2) in (n // 3, n // 3 + 1)
+
+
+def test_assign_treatment_with_no_stratification(sample_table, sample_rows):
+    # random_state=None since the counts of each arm should always be equal regardless.
+    result = assign_treatment(
+        sa_table=sample_table,
+        data=sample_rows,
+        stratum_cols=[],
+        id_col="id",
+        arms=make_arms(["control", "treatment"]),
+        experiment_id="b767716b-f388-4cd9-a18a-08c4916ce26f",
+        random_state=None,
+    )
+    assert result.balance_check is None
+    arm_counts = defaultdict(int)
+    # There should be no strata
+    for participant in result.assignments:
+        arm_counts[participant.arm_name] += 1
+        assert participant.strata is None
+    # The number of assignments per arm should be equal
+    assert arm_counts["control"] == arm_counts["treatment"]
+    assert arm_counts["control"] == len(result.assignments) // 2
+
+
+def test_assign_treatment_with_no_valid_strata(sample_table, sample_rows):
+    result = assign_treatment(
+        sa_table=sample_table,
+        data=sample_rows,
+        stratum_cols=["single_value"],
+        id_col="id",
+        arms=make_arms(["control", "treatment"]),
+        experiment_id="b767716b-f388-4cd9-a18a-08c4916ce26f",
+        random_state=42,
+        stratum_id_name="stratum_id",
+    )
+    assert result.balance_check is None
+    # In this case, we still output the strata column, even though it's all the same value.
+    arm_counts = defaultdict(int)
+    for participant in result.assignments:
+        arm_counts[participant.arm_name] += 1
+        assert participant.strata == [
+            Strata(field_name="single_value", strata_value="1")
+        ]
+    # And since we used our simple random assignment, the arm lengths should be equal.
+    assert arm_counts["control"] == arm_counts["treatment"]
+    assert arm_counts["control"] == len(result.assignments) // 2

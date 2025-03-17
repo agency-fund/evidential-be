@@ -198,8 +198,27 @@ def fixture_use_deterministic_random():
         custom_functions.USE_DETERMINISTIC_RANDOM = original
 
 
-@pytest.fixture(scope="function")
-def testing_datasource(db_session):
+def get_settings_datasource(datasource_id: str):
+    """Pull a datasource from the xngin.testing.settings.json file."""
+    return get_settings_for_test().get_datasource(datasource_id)
+
+
+@dataclass
+class DatasourceMetadata:
+    """Describes an ephemeral datasource, organization, and API key."""
+
+    org: Organization
+    ds: Datasource
+
+    # The SQLAlchemy DSN
+    dsn: str
+
+    # An API key suitable for use in the Authorization: header.
+    key: str
+
+
+@pytest.fixture(name="testing_datasource", scope="function")
+def fixture_testing_datasource(db_session) -> DatasourceMetadata:
     """Generates a new Organization, Datasource, and API key for a test."""
     run_id = secrets.token_hex(8)
     datasource_id = "ds" + run_id
@@ -209,7 +228,7 @@ def testing_datasource(db_session):
     #
     # Note: The datasource configured in this fixture represents a customer database. This is *different* than the
     # xngin server-side database configured by conftest.setup().
-    test_ds = get_settings_for_test().get_datasource("testing-remote").config
+    test_ds = get_settings_datasource("testing-remote").config
 
     org = Organization(id="org" + run_id, name="test organization")
     datasource = Datasource(id=datasource_id, name="test ds")

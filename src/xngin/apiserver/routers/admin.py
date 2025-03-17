@@ -27,7 +27,7 @@ from xngin.apiserver.api_types import (
 )
 from xngin.apiserver.apikeys import make_key, hash_key
 from xngin.apiserver.dependencies import xngin_db_session
-from xngin.apiserver.dwh.queries import get_participant_metrics
+from xngin.apiserver.dwh.queries import get_participant_metrics, query_for_participants
 from xngin.apiserver.exceptions_common import LateValidationError
 from xngin.apiserver.models.tables import (
     ApiKey,
@@ -1006,6 +1006,10 @@ def create_experiment_with_assignment(
     chosen_n: Annotated[
         int, Query(..., description="Number of participants to assign.")
     ],
+    stratify_on_metrics: Annotated[
+        bool,
+        Query(description="Whether to also stratify on metrics during assignment."),
+    ] = True,
     random_state: Annotated[
         int | None,
         Query(
@@ -1014,26 +1018,38 @@ def create_experiment_with_assignment(
         ),
     ] = None,
 ) -> experiments_api_types.CreateExperimentWithAssignmentResponse:
-    ds = get_datasource_or_raise(session, user, datasource_id)
+    datasource = get_datasource_or_raise(session, user, datasource_id)
     if body.design_spec.uuids_are_present():
         raise LateValidationError("Invalid DesignSpec: UUIDs must not be set.")
-    config = ds.get_config()
-    if not isinstance(config, RemoteDatabaseConfig):
+    ds_config = datasource.get_config()
+    if not isinstance(ds_config, RemoteDatabaseConfig):
         raise LateValidationError("Invalid RemoteDatabaseConfig.")
-    participants_cfg = config.find_participants(body.audience_spec.participant_type)
+    participants_cfg = ds_config.find_participants(body.audience_spec.participant_type)
     if not isinstance(participants_cfg, ParticipantsDef):
         raise LateValidationError(
             "Invalid ParticipantsConfig: Participants must be of type schema."
         )
+
+    # Get participants and their schema info from the client dwh
+    with ds_config.dbsession() as dwh_session:
+        sa_table = infer_table(
+            dwh_session.get_bind(),
+            participants_cfg.table_name,
+            ds_config.supports_reflection(),
+        )
+        participants = query_for_participants(
+            dwh_session, sa_table, body.audience_spec, chosen_n
+        )
+
     return experiments.create_experiment_with_assignment_impl(
-        session,
-        ds,
-        body,
-        participants_cfg,
-        config,
-        participants_cfg,
-        random_state,
-        chosen_n,
+        request=body,
+        datasource_id=datasource.id,
+        participant_unique_id_field=participants_cfg.get_unique_id_field(),
+        dwh_sa_table=sa_table,
+        dwh_participants=participants,
+        random_state=random_state,
+        xngin_session=session,
+        stratify_on_metrics=stratify_on_metrics,
     )
 
 
