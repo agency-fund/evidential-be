@@ -1135,7 +1135,7 @@ def list_experiments(
 ) -> experiments_api_types.ListExperimentsResponse:
     """Returns the list of experiments in the datasource."""
     ds = get_datasource_or_raise(session, user, datasource_id)
-    return experiments.list_experiments_impl(session, ds)
+    return experiments.list_experiments_impl(session, ds.id)
 
 
 @router.get("/datasources/{datasource_id}/experiments/{experiment_id}")
