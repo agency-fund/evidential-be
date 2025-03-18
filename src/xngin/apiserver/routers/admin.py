@@ -425,7 +425,6 @@ def get_organization(
     )
 
 
-# @router.get("/organizations/{organization_id}/datasources")
 @router.get("/organizations/{organization_id}/datasources")
 def list_organization_datasources(
     organization_id: str,
