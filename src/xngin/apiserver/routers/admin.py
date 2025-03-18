@@ -96,6 +96,11 @@ class HTTPExceptionError(BaseModel):
     detail: str
 
 
+# This defines the response codes we can expect our API to return in the normal course of operation and would be
+# useful for our developers to think about.
+#
+# FastAPI will add a case for 422 (method argument or pydantic validation errors) automatically. 500s are
+# intentionally omitted here as they (ideally) should never happen.
 STANDARD_ADMIN_RESPONSES = {
     # We return 400 when the client's request is invalid.
     "400": {"model": HTTPExceptionError, "description": "The request is invalid."},
@@ -104,9 +109,9 @@ STANDARD_ADMIN_RESPONSES = {
         "model": HTTPExceptionError,
         "description": "Authentication credentials are invalid.",
     },
-    # 403s are returned by FastAPI (incorrectly?) when the Authorization: header is missing. This is implemented in
-    # their OpenIdConnect helper class. 403s are also returned by our code when the authenticated user doesn't have
-    # permission to perform the requested action.
+    # 403s are returned by FastAPI's OpenIdConnect helper class when the Authorization: header is missing.
+    # 403s are also returned by our code when the authenticated user doesn't have permission to perform the requested
+    # action.
     "403": {
         "model": HTTPExceptionError,
         "description": "Requester does not have sufficient privileges to perform this operation or is not authenticated.",
