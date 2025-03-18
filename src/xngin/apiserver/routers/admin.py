@@ -12,6 +12,7 @@ from fastapi import APIRouter, FastAPI, Depends, Path, Body, HTTPException, Quer
 from fastapi import Response
 from fastapi import status
 from fastapi.responses import StreamingResponse
+from pydantic import BaseModel
 from sqlalchemy import delete, select
 from sqlalchemy.exc import OperationalError
 from sqlalchemy.orm import Session
@@ -92,6 +93,42 @@ GENERIC_SUCCESS = Response(status_code=status.HTTP_204_NO_CONTENT)
 RESPONSE_CACHE_MAX_AGE_SECONDS = timedelta(minutes=15).seconds
 
 
+class HTTPExceptionError(BaseModel):
+    detail: str
+
+
+STANDARD_ADMIN_RESPONSES = {
+    # We return 400 when the client's request is invalid.
+    "400": {"model": HTTPExceptionError, "description": "The request is invalid."},
+    # We return 401 when the user presents an Authorization: header but it is not valid.
+    "401": {
+        "model": HTTPExceptionError,
+        "description": "Authentication credentials are invalid.",
+    },
+    # 403s are returned by FastAPI (incorrectly?) when the Authorization: header is missing. This is implemented in
+    # their OpenIdConnect helper class. 403s are also returned by our code when the authenticated user doesn't have
+    # permission to perform the requested action.
+    "403": {
+        "model": HTTPExceptionError,
+        "description": "Requester does not have sufficient privileges to perform this operation or is not authenticated.",
+    },
+    # We return a 404 when a requested resource is not found. Authenticated users that do not have permission to know
+    # whether a requested resource exists or not may also see a 404.
+    "404": {
+        "model": HTTPExceptionError,
+        "description": "Requested content was not found.",
+    },
+}
+
+
+def responses_factory(*codes):
+    return {
+        code: config
+        for code, config in STANDARD_ADMIN_RESPONSES.items()
+        if code in {str(c) for c in codes}
+    }
+
+
 def is_enabled():
     """Feature flag: Returns true iff OIDC is enabled."""
     return flags.ENABLE_ADMIN
@@ -109,6 +146,7 @@ async def lifespan(_app: FastAPI):
 router = APIRouter(
     lifespan=lifespan,
     prefix="/m",
+    responses=STANDARD_ADMIN_RESPONSES,
     dependencies=[
         Depends(require_oidc_token)
     ],  # All routes in this router require authentication.
@@ -119,7 +157,10 @@ def user_from_token(
     session: Annotated[Session, Depends(xngin_db_session)],
     token_info: Annotated[TokenInfo, Depends(require_oidc_token)],
 ) -> User:
-    """Dependency for fetching the User record matching the authenticated user's email."""
+    """Dependency for fetching the User record matching the authenticated user's email.
+
+    This may raise a 400, 401, or 403.
+    """
     user = session.query(User).filter(User.email == token_info.email).first()
     if not user:
         # Privileged users will have a user and an organization created on the fly.
@@ -150,13 +191,13 @@ def get_organization_or_raise(session: Session, user: User, organization_id: str
     org = session.execute(stmt).scalar_one_or_none()
     if org is None:
         raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND, detail="Datasource not found."
+            status_code=status.HTTP_404_NOT_FOUND, detail="Organization not found."
         )
     return org
 
 
 def get_datasource_or_raise(session: Session, user: User, datasource_id: str):
-    """Reads the requested datasource from the database. Raises if disallowed or not found."""
+    """Reads the requested datasource from the database. Raises 404 if disallowed or not found."""
     stmt = (
         select(Datasource)
         .join(Organization)
@@ -174,7 +215,7 @@ def get_datasource_or_raise(session: Session, user: User, datasource_id: str):
 def get_experiment_via_ds_or_raise(
     session: Session, ds: Datasource, experiment_id: str
 ) -> Experiment:
-    """Reads the requested experiment (related to the given datasource) from the database. Raises if not found."""
+    """Reads the requested experiment (related to the given datasource) from the database. Raises 404 if not found."""
     stmt = (
         select(Experiment)
         .join(Datasource, Datasource.id == ds.id)
@@ -264,18 +305,8 @@ def add_member_to_organization(
         )
 
     if not token_info.is_privileged():
-        # Verify user belongs to the organization
-        stmt = (
-            select(UserOrganization)
-            .where(UserOrganization.user_id == user.id)
-            .where(UserOrganization.organization_id == organization_id)
-        )
-        is_member = session.execute(stmt).scalar_one_or_none()
-        if not is_member:
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="You do not have permission to add members to this organization",
-            )
+        # Verify user is a member of the organization
+        _authz_check = get_organization_or_raise(session, user, organization_id)
 
     # Add the new member
     new_user = session.query(User).filter(User.email == body.email).first()
@@ -395,6 +426,7 @@ def get_organization(
     )
 
 
+# @router.get("/organizations/{organization_id}/datasources")
 @router.get("/organizations/{organization_id}/datasources")
 def list_organization_datasources(
     organization_id: str,
