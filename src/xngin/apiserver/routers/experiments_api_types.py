@@ -28,8 +28,15 @@ class AssignSummary(ExperimentsBaseModel):
     """Key pieces of an AssignResponse without the assignments."""
 
     balance_check: BalanceCheck
-    sample_size: int
-    arm_sizes: list[ArmSizes]
+    sample_size: Annotated[
+        int, Field(description="The number of participants across all arms in total.")
+    ]
+    arm_sizes: Annotated[
+        list[ArmSizes] | None,
+        Field(
+            description="For each arm, the number of participants assigned. May be None if unknown or invalid."
+        ),
+    ] = None
 
 
 class ExperimentConfig(ExperimentsBaseModel):
