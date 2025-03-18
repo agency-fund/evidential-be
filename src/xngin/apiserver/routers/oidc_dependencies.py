@@ -79,9 +79,13 @@ async def require_oidc_token(
 ) -> TokenInfo:
     """Dependency for validating that the Authorization: header is a valid Google JWT.
 
+    This method may raise a 400 or 401, and the oidc_google dependency may raise a 403.
+
     Returns:
         TokenInfo containing the validated token's claims.
     """
+    # FastAPI's OpenIDConnect helper only checks that the header exists. It does not verify that the header has the
+    # expected prefix.
     expected_prefix = "Bearer "
     if not token.startswith(expected_prefix):
         raise HTTPException(
