@@ -140,7 +140,7 @@ def user_from_token(
 
 
 def get_organization_or_raise(session: Session, user: User, organization_id: str):
-    """Reads the requested organization from the database. Raises if disallowed or not found."""
+    """Reads the requested organization from the database. Raises 404 if disallowed or not found."""
     stmt = (
         select(Organization)
         .join(UserOrganization)
@@ -302,7 +302,7 @@ def remove_member_from_organization(
 
     The authenticated user must be part of the organization to remove members.
     """
-    get_organization_or_raise(session, user, organization_id)
+    _authz_check = get_organization_or_raise(session, user, organization_id)
     # Prevent users from removing themselves from an organization
     if user_id == user.id:
         raise HTTPException(
@@ -357,10 +357,6 @@ def get_organization(
     """
     # First get the organization and verify user has access
     org = get_organization_or_raise(session, user, organization_id)
-    if not org:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND, detail="Organization not found"
-        )
 
     # Get users and datasources separately
     users = (
@@ -406,28 +402,12 @@ def list_organization_datasources(
     user: Annotated[User, Depends(user_from_token)],
 ) -> ListDatasourcesResponse:
     """Returns a list of datasources accessible to the authenticated user for an org."""
-    return list_datasources_impl(session, user.id, organization_id)
-
-
-@router.get("/datasources")
-def list_datasources(
-    session: Annotated[Session, Depends(xngin_db_session)],
-    user: Annotated[User, Depends(user_from_token)],
-) -> ListDatasourcesResponse:
-    """Returns a list of datasources accessible to the authenticated user."""
-    return list_datasources_impl(session, user.id, organization_id=None)
-
-
-def list_datasources_impl(
-    session: Session,
-    user_id: str,
-    organization_id: str | None,
-) -> ListDatasourcesResponse:
+    _authz_check = get_organization_or_raise(session, user, organization_id)
     stmt = (
         select(Datasource)
         .join(Organization)
         .join(Organization.users)
-        .where(User.id == user_id)
+        .where(User.id == user.id)
     )
     if organization_id is not None:
         stmt = stmt.where(Organization.id == organization_id)
