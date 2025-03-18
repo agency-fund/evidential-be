@@ -911,7 +911,10 @@ def test_get_participant_metrics(db_session):
     rows = get_participant_metrics(
         db_session,
         SampleTable.get_table(),
-        [DesignSpecMetricRequest(field_name="float_col", metric_pct_change=0.1)],
+        [
+            DesignSpecMetricRequest(field_name="float_col", metric_pct_change=0.1),
+            DesignSpecMetricRequest(field_name="bool_col", metric_pct_change=0.1),
+        ],
         unique_id_field="id",
         participant_ids=participant_ids,
     )
@@ -923,7 +926,11 @@ def test_get_participant_metrics(db_session):
                 MetricValue(
                     metric_name="float_col",
                     metric_value=3.14,  # Example expected value
-                )
+                ),
+                MetricValue(
+                    metric_name="bool_col",
+                    metric_value=True,  # Example expected value
+                ),
             ],
         ),
         ParticipantOutcome(
@@ -932,7 +939,11 @@ def test_get_participant_metrics(db_session):
                 MetricValue(
                     metric_name="float_col",
                     metric_value=2.718,  # Example expected value
-                )
+                ),
+                MetricValue(
+                    metric_name="bool_col",
+                    metric_value=False,  # Example expected value
+                ),
             ],
         ),
     ]

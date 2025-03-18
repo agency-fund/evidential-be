@@ -417,6 +417,23 @@ class Arm(ApiBaseModel):
     arm_description: str | None = None
 
 
+# TODO: Consider extending Arm
+class ArmAnalysis(ApiBaseModel):
+    arm_id: Annotated[
+        uuid.UUID | None,
+        Field(
+            description="UUID of the arm. If using the /experiments/with-assignment endpoint, this is generated for you and available in the response; you should NOT set this. Only generate ids of your own if using the stateless Experiment Design API as you will do your own persistence."
+        ),
+    ] = None
+    arm_name: str | None = None
+    arm_description: str | None = None
+    is_baseline: bool
+    estimate: float
+    p_value: float
+    t_stat: float
+    std_error: float
+
+
 class DesignSpec(ApiBaseModel):
     """Experiment design parameters for power calculations and treatment assignment."""
 
@@ -496,8 +513,8 @@ class DesignSpec(ApiBaseModel):
         ])
 
 
-class MetricAnalysisMessageType(enum.StrEnum):
-    """Classifies metric analysis results."""
+class MetricPowerAnalysisMessageType(enum.StrEnum):
+    """Classifies metric power analysis results."""
 
     SUFFICIENT = "sufficient"
     INSUFFICIENT = "insufficient"
@@ -506,23 +523,26 @@ class MetricAnalysisMessageType(enum.StrEnum):
     ZERO_EFFECT_SIZE = "zero effect size"
 
 
-class MetricAnalysisMessage(ApiBaseModel):
-    """Describes interpretation of analysis results."""
+class MetricPowerAnalysisMessage(ApiBaseModel):
+    """Describes interpretation of power analysis results."""
 
-    type: MetricAnalysisMessageType
+    type: MetricPowerAnalysisMessageType
     msg: Annotated[
-        str, Field(description="Main analysis result stated in human-friendly English.")
+        str,
+        Field(
+            description="Main power analysis result stated in human-friendly English."
+        ),
     ]
     source_msg: Annotated[
         str,
         Field(
-            description="Analysis result formatted as a template string with curly-braced {} named placeholders. Use with the dictionary of values to support localization of messages."
+            description="Power analysis result formatted as a template string with curly-braced {} named placeholders. Use with the dictionary of values to support localization of messages."
         ),
     ]
     values: dict[str, float | int] | None = None
 
 
-class MetricAnalysis(ApiBaseModel):
+class MetricPowerAnalysis(ApiBaseModel):
     """Describes analysis results of a single metric."""
 
     # Store the original request+baseline info here
@@ -556,9 +576,28 @@ class MetricAnalysis(ApiBaseModel):
     ] = None
 
     msg: Annotated[
-        MetricAnalysisMessage | None,
+        MetricPowerAnalysisMessage | None,
         Field(description="Human friendly message about the above results."),
     ] = None
+
+
+class MetricPowerAnalysisMessage(ApiBaseModel):
+    """Describes interpretation of power analysis results."""
+
+    type: MetricPowerAnalysisMessageType
+    msg: Annotated[
+        str,
+        Field(
+            description="Main power analysis result stated in human-friendly English."
+        ),
+    ]
+    source_msg: Annotated[
+        str,
+        Field(
+            description="Power analysis result formatted as a template string with curly-braced {} named placeholders. Use with the dictionary of values to support localization of messages."
+        ),
+    ]
+    values: dict[str, float | int] | None = None
 
 
 class StrataType(enum.StrEnum):
@@ -786,7 +825,7 @@ class PowerRequest(ApiBaseModel):
 
 
 class PowerResponse(ApiBaseModel):
-    analyses: list[MetricAnalysis]
+    analyses: list[MetricPowerAnalysis]
 
 
 class CommitRequest(ApiBaseModel):

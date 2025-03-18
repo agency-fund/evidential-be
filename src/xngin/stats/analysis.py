@@ -2,6 +2,7 @@ import pandas as pd
 import statsmodels.formula.api as smf
 from patsy import EvalFactor
 from xngin.apiserver.api_types import (
+    ArmAnalysis,
     ExperimentAnalysis,
     ParticipantOutcome,
 )
@@ -11,7 +12,7 @@ from xngin.apiserver.models.tables import ArmAssignment
 def analyze_experiment(
     treatment_assignments: list[ArmAssignment],
     participant_outcomes: list[ParticipantOutcome],
-) -> list[ExperimentAnalysis]:
+) -> list[list[ArmAnalysis]]:
     """
     Perform statistical analysis with DesignSpec metrics and their values
 
@@ -28,33 +29,38 @@ def analyze_experiment(
         for assignment in treatment_assignments
     ])
 
-    analyses = []
+    outcomes_df = pd.DataFrame()
+    rows = []
+    for outcome in participant_outcomes:
+        data_row = {"participant_id": outcome.participant_id}
+        for metric_value in outcome.metric_values:
+            data_row[metric_value.metric_name] = metric_value.metric_value
+        rows.append(data_row)
+    outcomes_df = pd.DataFrame(rows)
 
-    for i in range(len(participant_outcomes[0].metric_values)):
-        metric_name = participant_outcomes[0].metric_values[i].metric_name
-        outcomes_df = pd.DataFrame([
-            {
-                "participant_id": outcome.participant_id,
-                "metric_value": outcome.metric_values[i].metric_value,
-            }
-            for outcome in participant_outcomes
-        ])
-        outcomes_df = outcomes_df.rename(columns={"metric_value": metric_name})
-        merged_df = assignments_df.merge(outcomes_df, on="participant_id", how="left")
+    merged_df = assignments_df.merge(outcomes_df, on="participant_id", how="left")
+
+    metric_analyses = []
+    for metric_name in merged_df.columns:
+        if metric_name in ("arm_id", "participant_id"):
+            continue
         model = smf.ols(f"{metric_name} ~ arm_id", data=merged_df).fit()
         arm_ids = model.model.data.design_info.factor_infos[
             EvalFactor("arm_id")
         ].categories
-
-        analyses.append(
-            ExperimentAnalysis(
-                metric_name=metric_name,
-                arm_ids=arm_ids,
-                coefficients=model.params,
-                pvalues=model.pvalues,
-                tstats=model.tvalues,
-                std_errors=list(model.bse),
+        arm_analyses = []
+        for i in range(len(arm_ids)):
+            arm_analyses.append(
+                ArmAnalysis(
+                    is_baseline=i == 0,
+                    arm_id=arm_ids[i],
+                    estimate=model.params[i],
+                    p_value=model.pvalues[i],
+                    t_stat=model.tvalues[i],
+                    std_error=list(model.bse)[i],
+                )
             )
+        metric_analyses.append(
+            MetricAnalysis(metric_name=metric_name, arm_analyses=arm_analyses)
         )
-
-    return analyses
+    return ExperimentAnalysis(metric_analyses=metric_analyses)

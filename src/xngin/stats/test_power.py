@@ -1,6 +1,6 @@
 # ruff: noqa: PD011
 import pytest
-from xngin.apiserver.api_types import MetricAnalysisMessageType
+from xngin.apiserver.api_types import MetricPowerAnalysisMessageType
 from xngin.stats.power import (
     DesignSpecMetric,
     MetricType,
@@ -32,7 +32,7 @@ def test_analyze_metric_power_numeric():
     assert result.target_n == 128.0
     assert result.sufficient_n
     assert result.msg is not None
-    assert result.msg.type == MetricAnalysisMessageType.SUFFICIENT
+    assert result.msg.type == MetricPowerAnalysisMessageType.SUFFICIENT
     assert result.msg.values == {
         "available_n": 1000,
         "available_nonnull_n": 1000,
@@ -63,7 +63,7 @@ def test_analyze_metric_power_binary():
     assert result.pct_change_possible == pytest.approx(1 - 1.176327, abs=1e-4)
     assert not result.sufficient_n
     assert result.msg is not None
-    assert result.msg.type == MetricAnalysisMessageType.INSUFFICIENT
+    assert result.msg.type == MetricPowerAnalysisMessageType.INSUFFICIENT
     assert result.msg.values == {
         "available_n": 1000,
         "available_nonnull_n": 1000,
@@ -132,7 +132,7 @@ def test_analyze_metric_with_no_available_n_returns_friendly_error():
 
     result = analyze_metric_power(metric, n_arms=2)
 
-    assert result.msg.type == MetricAnalysisMessageType.NO_AVAILABLE_N
+    assert result.msg.type == MetricPowerAnalysisMessageType.NO_AVAILABLE_N
     assert "Adjust your filters to target more units." in result.msg.msg
 
 
@@ -148,7 +148,7 @@ def test_analyze_metric_missing_baseline_returns_friendly_error():
 
     result = analyze_metric_power(metric, n_arms=2)
 
-    assert result.msg.type == MetricAnalysisMessageType.NO_BASELINE
+    assert result.msg.type == MetricPowerAnalysisMessageType.NO_BASELINE
     assert "Could not calculate metric baseline" in result.msg.msg
 
 
@@ -164,5 +164,5 @@ def test_analyze_metric_zero_effect_size_returns_friendly_error():
 
     result = analyze_metric_power(metric, n_arms=2)
 
-    assert result.msg.type == MetricAnalysisMessageType.ZERO_EFFECT_SIZE
+    assert result.msg.type == MetricPowerAnalysisMessageType.ZERO_EFFECT_SIZE
     assert "Cannot detect an effect-size of 0" in result.msg.msg

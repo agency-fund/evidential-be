@@ -22,9 +22,9 @@ from xngin.apiserver.api_types import (
     DesignSpec,
     DesignSpecMetric,
     DesignSpecMetricRequest,
-    MetricAnalysis,
-    MetricAnalysisMessage,
-    MetricAnalysisMessageType,
+    MetricPowerAnalysis,
+    MetricPowerAnalysisMessage,
+    MetricPowerAnalysisMessageType,
     MetricType,
     PowerResponse,
 )
@@ -121,7 +121,7 @@ def make_insert_experiment(state: ExperimentState, datasource_id="testing"):
         audience_spec=request.audience_spec.model_dump(),
         power_analyses=PowerResponse(
             analyses=[
-                MetricAnalysis(
+                MetricPowerAnalysis(
                     metric_spec=DesignSpecMetric(
                         field_name="is_onboarded",
                         metric_type=MetricType.BINARY,
@@ -132,8 +132,8 @@ def make_insert_experiment(state: ExperimentState, datasource_id="testing"):
                     ),
                     target_n=800,
                     sufficient_n=True,
-                    msg=MetricAnalysisMessage(
-                        type=MetricAnalysisMessageType.SUFFICIENT,
+                    msg=MetricPowerAnalysisMessage(
+                        type=MetricPowerAnalysisMessageType.SUFFICIENT,
                         msg="Sample size is sufficient to detect the target effect",
                         source_msg="Sample size of {available_n} is sufficient to detect {target} effect",
                         values={"available_n": 1200, "target": 0.1},
@@ -202,7 +202,7 @@ def test_create_experiment_with_assignment_impl(
     # Add a partial mock PowerResponse just to verify storage
     request.power_analyses = PowerResponse(
         analyses=[
-            MetricAnalysis(
+            MetricPowerAnalysis(
                 metric_spec=DesignSpecMetric(
                     field_name="is_onboarded", metric_type=MetricType.BINARY
                 )

@@ -5,19 +5,19 @@ import statsmodels.stats.api as sms
 from xngin.apiserver.api_types import (
     DesignSpecMetric,
     MetricType,
-    MetricAnalysis,
-    MetricAnalysisMessage,
-    MetricAnalysisMessageType,
+    MetricPowerAnalysis,
+    MetricPowerAnalysisMessage,
+    MetricPowerAnalysisMessageType,
 )
 from xngin.stats.stats_errors import StatsPowerError
 
 
-def _analysis_error(
-    metric: DesignSpecMetric, msg_type: MetricAnalysisMessageType, msg_body: str
-) -> MetricAnalysis:
-    return MetricAnalysis(
+def _power_analysis_error(
+    metric: DesignSpecMetric, msg_type: MetricPowerAnalysisMessageType, msg_body: str
+) -> MetricPowerAnalysis:
+    return MetricPowerAnalysis(
         metric_spec=metric,
-        msg=MetricAnalysisMessage(
+        msg=MetricPowerAnalysisMessage(
             type=msg_type,
             msg=msg_body,
             source_msg=msg_body,
@@ -27,7 +27,7 @@ def _analysis_error(
 
 def analyze_metric_power(
     metric: DesignSpecMetric, n_arms: int, power: float = 0.8, alpha: float = 0.05
-) -> MetricAnalysis:
+) -> MetricPowerAnalysis:
     """
     Analyze power for a single metric.
 
@@ -38,7 +38,7 @@ def analyze_metric_power(
         alpha: Significance level
 
     Returns:
-        MetricAnalysis containing power analysis results
+        MetricPowerAnalysis containing power analysis results
     """
     if metric.metric_type is None:
         raise ValueError("Unknown metric_type.")
@@ -55,9 +55,9 @@ def analyze_metric_power(
     # target is not defined (need to also relax request constraints), but baseline is
     # => calculate effect size. (Case A does this only when there's insufficient available_n.)
     if metric.available_n is None or metric.available_n <= 0:
-        return _analysis_error(
+        return _power_analysis_error(
             metric,
-            MetricAnalysisMessageType.NO_AVAILABLE_N,
+            MetricPowerAnalysisMessageType.NO_AVAILABLE_N,
             (
                 "You have no available units to run your experiment. "
                 "Adjust your filters to target more units."
@@ -65,9 +65,9 @@ def analyze_metric_power(
         )
 
     if metric.metric_target is None or metric.metric_baseline is None:
-        return _analysis_error(
+        return _power_analysis_error(
             metric,
-            MetricAnalysisMessageType.NO_BASELINE,
+            MetricPowerAnalysisMessageType.NO_BASELINE,
             (
                 "Could not calculate metric baseline with given specification. "
                 "Provide a metric baseline or adjust filters."
@@ -87,9 +87,9 @@ def analyze_metric_power(
         raise ValueError("metric_type must be NUMERIC or BINARY.")
 
     if effect_size == 0.0:
-        return _analysis_error(
+        return _power_analysis_error(
             metric,
-            MetricAnalysisMessageType.ZERO_EFFECT_SIZE,
+            MetricPowerAnalysisMessageType.ZERO_EFFECT_SIZE,
             ("Cannot detect an effect-size of 0. Try changing your effect-size."),
         )
 
@@ -106,11 +106,11 @@ def analyze_metric_power(
         * n_arms
     )
 
-    analysis = MetricAnalysis(metric_spec=metric)
+    analysis = MetricPowerAnalysis(metric_spec=metric)
     analysis.target_n = int(target_n)
     analysis.sufficient_n = bool(target_n <= metric.available_n)
 
-    # Construct potential components of the MetricAnalysisMessage
+    # Construct potential components of the MetricPowerAnalysisMessage
     has_nulls = metric.available_nonnull_n != metric.available_n
     values_map: dict[str, float | int] = {
         "available_n": metric.available_n,
@@ -135,10 +135,10 @@ def analyze_metric_power(
     )
 
     if analysis.sufficient_n:
-        msg_type = MetricAnalysisMessageType.SUFFICIENT
+        msg_type = MetricPowerAnalysisMessageType.SUFFICIENT
         msg_body = "There are enough units available."
     else:
-        msg_type = MetricAnalysisMessageType.INSUFFICIENT
+        msg_type = MetricPowerAnalysisMessageType.INSUFFICIENT
         # Calculate needed target if insufficient sample
         if metric.metric_type == MetricType.NUMERIC:
             power_analysis = sms.TTestIndPower()
@@ -187,7 +187,7 @@ def analyze_metric_power(
 
     # Construct our response from the parts above
     source_msg = " ".join([msg_base_stats, msg_body, msg_null_warning])
-    analysis.msg = MetricAnalysisMessage(
+    analysis.msg = MetricPowerAnalysisMessage(
         type=msg_type,
         msg=source_msg.format_map(values_map),
         source_msg=source_msg,
@@ -201,7 +201,7 @@ def check_power(
     n_arms: int,
     power: float = 0.8,
     alpha: float = 0.05,
-) -> list[MetricAnalysis]:
+) -> list[MetricPowerAnalysis]:
     """
     Check power for multiple metrics.
 
@@ -212,7 +212,7 @@ def check_power(
         alpha: Significance level
 
     Returns:
-        List of MetricAnalysis results
+        List of MetricPowerAnalysis results
     """
     analyses = []
     for metric in metrics:
