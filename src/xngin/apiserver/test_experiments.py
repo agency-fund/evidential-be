@@ -17,6 +17,7 @@ from sqlalchemy.schema import CreateTable
 from xngin.apiserver import conftest, constants
 from xngin.apiserver.api_types import (
     Arm,
+    ArmSizes,
     AudienceSpec,
     BalanceCheck,
     DesignSpec,
@@ -111,13 +112,15 @@ def make_create_experiment_request(with_uuids: bool = True) -> CreateExperimentR
 # Insert an experiment with a valid state.
 def make_insert_experiment(state: ExperimentState, datasource_id="testing"):
     request = make_create_experiment_request()
+    arm0 = request.design_spec.arms[0]
+    arm1 = request.design_spec.arms[1]
     return Experiment(
         id=request.design_spec.experiment_id,
         datasource_id=datasource_id,
         state=state,
         start_date=request.design_spec.start_date,
         end_date=request.design_spec.end_date,
-        design_spec=to_jsonable_python(request.design_spec),
+        design_spec=request.design_spec.model_dump(mode="json"),
         audience_spec=request.audience_spec.model_dump(),
         power_analyses=PowerResponse(
             analyses=[
@@ -143,6 +146,10 @@ def make_insert_experiment(state: ExperimentState, datasource_id="testing"):
         ).model_dump(),
         assign_summary=AssignSummary(
             sample_size=100,
+            arm_sizes=[
+                ArmSizes(arm=arm0, size=50),
+                ArmSizes(arm=arm1, size=50),
+            ],
             balance_check=BalanceCheck(
                 f_statistic=0.088004147,
                 numerator_df=2,
@@ -150,7 +157,7 @@ def make_insert_experiment(state: ExperimentState, datasource_id="testing"):
                 p_value=0.91583011,
                 balance_ok=True,
             ),
-        ).model_dump(),
+        ).model_dump(mode="json"),
     )
 
 

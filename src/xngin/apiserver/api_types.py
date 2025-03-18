@@ -678,6 +678,13 @@ class BalanceCheck(ApiBaseModel):
     balance_ok: bool
 
 
+class ArmSizes(ApiBaseModel):
+    """Describes the number of participants assigned to each arm."""
+
+    arm: Arm
+    size: int
+
+
 class AssignResponse(ApiBaseModel):
     """Describes assignments for all participants and balance test results."""
 
@@ -689,14 +696,20 @@ class AssignResponse(ApiBaseModel):
     ] = None
 
     experiment_id: uuid.UUID
-    sample_size: int
+    sample_size: Annotated[
+        int,
+        Field(description="The number of participants across all arms in total."),
+    ]
     unique_id_field: Annotated[
         str,
         Field(
             description="Name of the datasource field used as the unique identifier for the participant_id value stored in each Assignment, as configured in the datasource settings. Included for frontend convenience."
         ),
     ]
+    # TODO(qixotic): Consider lifting up Assignment.arm_id & arm_name to the AssignResponse level
+    # and organize assignments into lists by arm. Be less bulky and arm sizes come naturally.
     assignments: list[Assignment]
+    arm_sizes: list[ArmSizes]
 
 
 class AnalysisRequest(ApiBaseModel):

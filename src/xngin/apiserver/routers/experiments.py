@@ -168,6 +168,7 @@ def create_experiment_with_assignment_impl(
     assign_summary = AssignSummary(
         balance_check=assignment_response.balance_check,
         sample_size=assignment_response.sample_size,
+        arm_sizes=assignment_response.arm_sizes,
     )
     experiment = Experiment(
         id=request.design_spec.experiment_id,

@@ -4,6 +4,7 @@ from typing import Annotated
 from pydantic import BaseModel, ConfigDict, Field
 
 from xngin.apiserver.api_types import (
+    ArmSizes,
     DesignSpec,
     AudienceSpec,
     PowerResponse,
@@ -28,6 +29,7 @@ class AssignSummary(ExperimentsBaseModel):
 
     balance_check: BalanceCheck
     sample_size: int
+    arm_sizes: list[ArmSizes]
 
 
 class ExperimentConfig(ExperimentsBaseModel):

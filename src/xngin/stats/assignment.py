@@ -1,3 +1,4 @@
+from collections import defaultdict
 import decimal
 from collections.abc import Sequence
 from typing import Any, Protocol
@@ -10,6 +11,7 @@ from sqlalchemy import Table
 from stochatreat import stochatreat
 from xngin.apiserver.api_types import (
     Arm,
+    ArmSizes,
     AssignResponse,
     Assignment,
     BalanceCheck,
@@ -214,12 +216,15 @@ def _make_assign_response(
 ) -> AssignResponse:
     """Prepare assignments for return along with the original data as a list of ExperimentParticipant objects."""
     participants_list = []
+    arm_sizes_by_treatment_id = defaultdict(int)
+
     stratum_ids = [0] * len(treatment_ids) if stratum_ids is None else stratum_ids
     for stratum_id, treatment_assignment, row in zip(
         stratum_ids, treatment_ids, data, strict=False
     ):
         strata = None
         row_dict = row._asdict()
+
         if orig_stratum_cols:
             # Output the participant's strata values as seen at this time of assignment.
             strata = [
@@ -236,6 +241,7 @@ def _make_assign_response(
                     Strata(field_name=stratum_id_name, strata_value=str(stratum_id))
                 )
 
+        arm_sizes_by_treatment_id[treatment_assignment] += 1
         participant = Assignment(
             participant_id=str(row_dict[id_col]),
             arm_id=arms[treatment_assignment].arm_id,
@@ -254,4 +260,8 @@ def _make_assign_response(
         sample_size=len(treatment_ids),
         unique_id_field=id_col,
         assignments=participants_list,
+        arm_sizes=[
+            ArmSizes(arm=arms[treatment_id], size=size)
+            for treatment_id, size in sorted(arm_sizes_by_treatment_id.items())
+        ],
     )
