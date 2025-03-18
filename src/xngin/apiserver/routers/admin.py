@@ -44,7 +44,6 @@ from xngin.apiserver.routers import experiments, experiments_api_types
 from xngin.apiserver.routers.admin_api_types import (
     AddMemberToOrganizationRequest,
     ApiKeySummary,
-    CreateApiKeyRequest,
     CreateApiKeyResponse,
     CreateDatasourceRequest,
     CreateDatasourceResponse,
@@ -931,27 +930,14 @@ def delete_participant(
     return GENERIC_SUCCESS
 
 
-@router.get("/apikeys")
+@router.get("/datasources/{datasource_id}/apikeys")
 def list_api_keys(
+    datasource_id: str,
     session: Annotated[Session, Depends(xngin_db_session)],
     user: Annotated[User, Depends(user_from_token)],
 ) -> ListApiKeysResponse:
-    """Returns API keys that the caller has access to via their organization memberships.
-
-    An API key is visible if the user belongs to the organization that owns any of the
-    datasources that the API key can access.
-    """
-    # Get API keys that have access to datasources owned by organizations the user belongs to
-    stmt = (
-        select(ApiKey)
-        .distinct()
-        .join(ApiKey.datasource)
-        .join(Organization)
-        .join(Organization.users)
-        .where(User.id == user.id)
-    )
-    result = session.execute(stmt)
-    api_keys = result.scalars().all()
+    """Returns API keys that have access to the datasource."""
+    ds = get_datasource_or_raise(session, user, datasource_id)
     return ListApiKeysResponse(
         items=[
             ApiKeySummary(
@@ -960,22 +946,22 @@ def list_api_keys(
                 organization_id=api_key.datasource.organization_id,
                 organization_name=api_key.datasource.organization.name,
             )
-            for api_key in sorted(api_keys, key=lambda a: a.id)
+            for api_key in sorted(ds.api_keys, key=lambda a: a.id)
         ]
     )
 
 
-@router.post("/apikeys")
+@router.post("/datasources/{datasource_id}/apikeys")
 def create_api_key(
+    datasource_id: str,
     session: Annotated[Session, Depends(xngin_db_session)],
     user: Annotated[User, Depends(user_from_token)],
-    body: Annotated[CreateApiKeyRequest, Body(...)],
 ) -> CreateApiKeyResponse:
     """Creates an API key for the specified datasource.
 
     The user must belong to the organization that owns the requested datasource.
     """
-    ds = get_datasource_or_raise(session, user, body.datasource_id)
+    ds = get_datasource_or_raise(session, user, datasource_id)
     label, key = make_key()
     key_hash = hash_key(key)
     api_key = ApiKey(id=label, key=key_hash, datasource_id=ds.id)
@@ -984,27 +970,20 @@ def create_api_key(
     return CreateApiKeyResponse(id=label, datasource_id=ds.id, key=key)
 
 
-@router.delete("/apikeys/{api_key_id}", status_code=status.HTTP_204_NO_CONTENT)
+@router.delete(
+    "/datasources/{datasource_id}/apikeys/{api_key_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+)
 def delete_api_key(
+    datasource_id: str,
     session: Annotated[Session, Depends(xngin_db_session)],
     user: Annotated[User, Depends(user_from_token)],
     api_key_id: Annotated[str, Path(...)],
 ):
     """Deletes the specified API key."""
-    stmt = (
-        delete(ApiKey)
-        .where(ApiKey.id == api_key_id)
-        .where(
-            ApiKey.id.in_(
-                select(ApiKey.id)
-                .join(ApiKey.datasource)
-                .join(Organization)
-                .join(Organization.users)
-                .where(User.id == user.id)
-            )
-        )
-    )
-    session.execute(stmt)
+    ds = get_datasource_or_raise(session, user, datasource_id)
+    ds.api_keys = [a for a in ds.api_keys if a.id != api_key_id]
+    session.add(ds)
     session.commit()
     return GENERIC_SUCCESS
 
