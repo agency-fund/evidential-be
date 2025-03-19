@@ -18,10 +18,12 @@ from sqlalchemy.orm import Session
 
 from xngin.apiserver import flags, settings
 from xngin.apiserver.api_types import (
+    ArmAnalysis,
     DataType,
     ExperimentAnalysis,
     GetStrataResponseElement,
     GetMetricsResponseElement,
+    MetricAnalysis,
     PowerRequest,
     PowerResponse,
 )
@@ -1060,6 +1062,7 @@ def analyze_experiment(
     xngin_session: Annotated[Session, Depends(xngin_db_session)],
     user: Annotated[User, Depends(user_from_token)],
 ) -> list[ExperimentAnalysis]:
+    print("hi")
     ds = get_datasource_or_raise(xngin_session, user, datasource_id)
     dsconfig = ds.get_config()
     if not isinstance(dsconfig, RemoteDatabaseConfig):
@@ -1094,7 +1097,27 @@ def analyze_experiment(
             participant_ids,
         )
 
-    return analyze_experiment_impl(assignments, participant_outcomes)
+    analyze_results = analyze_experiment_impl(assignments, participant_outcomes)
+    metric_analyses = []
+    for metric in experiment.get_design_spec().metrics:
+        metric_name = metric.field_name
+        arm_analyses = []
+        for arm in experiment.get_arms():
+            arm_id = arm["arm_id"]
+            arm_data = analyze_results[metric_name][arm_id]
+            arm_analyses.append(
+                ArmAnalysis(
+                    arm=arm,
+                    is_baseline=arm_data["is_baseline"],
+                    p_value=arm_data["p_value"],
+                    t_stat=arm_data["t_stat"],
+                    std_error=arm_data["std_error"],
+                )
+            )
+        metric_analyses.append(MetricAnalysis(metric=metric, arm_analyses=arm_analyses))
+    return ExperimentAnalysis(
+        experiment_id=experiment.id, metric_analyses=metric_analyses
+    )
 
 
 @router.post(

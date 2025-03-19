@@ -435,8 +435,8 @@ class ArmAnalysis(ApiBaseModel):
 
 
 class MetricAnalysis(ApiBaseModel):
-    # metric: DesignSpecMetric | None = None
-    metric_name: str
+    metric_name: str | None = None
+    metric: DesignSpecMetric | None = None
     arm_analyses: Annotated[
         list[ArmAnalysis],
         Field(
@@ -446,6 +446,10 @@ class MetricAnalysis(ApiBaseModel):
 
 
 class ExperimentAnalysis(ApiBaseModel):
+    experiment_id: Annotated[
+        uuid.UUID | None,
+        Field(description="UUID of the experiment."),
+    ] = None
     metric_analyses: list[MetricAnalysis]
 
 

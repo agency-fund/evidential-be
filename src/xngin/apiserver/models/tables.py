@@ -321,6 +321,9 @@ class Experiment(Base):
 
     datasource: Mapped["Datasource"] = relationship(back_populates="experiments")
 
+    def get_arms(self) -> list[str]:
+        return self.design_spec["arms"]
+
     def get_arm_ids(self) -> list[str]:
         return [arm["arm_id"] for arm in self.design_spec["arms"]]
 

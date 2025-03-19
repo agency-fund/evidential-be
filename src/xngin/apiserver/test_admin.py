@@ -10,7 +10,6 @@ from xngin.apiserver import conftest
 from xngin.apiserver import main as main_module
 from xngin.apiserver.api_types import DataType
 from xngin.apiserver.dependencies import xngin_db_session
-from xngin.apiserver.main import app
 from xngin.apiserver.routers import oidc_dependencies
 from xngin.apiserver.routers.admin_api_types import (
     CreateDatasourceRequest,
@@ -45,6 +44,7 @@ from xngin.apiserver.settings import (
 )
 from xngin.cli.main import create_testing_dwh
 from xngin.schema.schema_types import ParticipantsSchema, FieldDescriptor
+from xngin.apiserver.test_main import app
 
 
 SAMPLE_GCLOUD_SERVICE_ACCOUNT_KEY = {
@@ -506,6 +506,12 @@ def test_lifecycle_with_pg(testing_datasource):
     assert len(parsed.items) == 1, parsed
     parsed_experiment_config = parsed.items[0]
     assert parsed_experiment_config.design_spec.experiment_id == parsed_experiment_id
+
+    # Analyze experiment
+    response = pget(
+        f"/m/datasources/{testing_datasource.ds.id}/experiments/{parsed.design_spec.experiment_id}/analyze"
+    )
+    assert response.status_code == 200, response.content
 
 
 def test_create_experiment_with_assignment_validation_errors(

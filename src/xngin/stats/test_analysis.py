@@ -12,7 +12,12 @@ from xngin.apiserver.api_types import ParticipantOutcome, MetricValue
 @pytest.fixture
 def test_assignments(n=1000, num_arms=3, seed=42):
     np.random.seed(seed)
-    arm_ids = [uuid.uuid4() for _ in range(num_arms)]
+    # Use fixed UUIDs instead of randomly generated ones
+    arm_ids = [
+        uuid.UUID("0ffe0995-6404-4622-934a-0d5cccfe3a59"),
+        uuid.UUID("b1d90769-6e6e-4973-a7eb-d9da1c6ddcd5"),
+        uuid.UUID("df84e3ae-f5df-4dc8-9ba6-fa0743e1c895"),
+    ]
     assignments = []
     for i in range(n):
         arm_id = np.random.choice(arm_ids, size=1, replace=True)[0]
@@ -25,6 +30,7 @@ def test_assignments(n=1000, num_arms=3, seed=42):
 
 @pytest.fixture
 def test_outcomes(n=1000, seed=42):
+    np.random.seed(seed)
     return [
         ParticipantOutcome(
             participant_id=str(i),
@@ -40,15 +46,55 @@ def test_outcomes(n=1000, seed=42):
 
 def test_analysis(test_assignments, test_outcomes):
     result = analyze_experiment(test_assignments, test_outcomes)
-    assert len(result.metric_analyses) == 1
-    assert len(result.metric_analyses[0].arm_analyses) == 3
-    # assert set(assignment.arm_id for assignment in test_assignments) == set(
-    #     result[0].arm_ids
-    # )
-    # assert len(result[0].arm_ids) == 3
-    # assert len(result[0].pvalues) == 3
-    # assert len(result[0].tstats) == 3
-    # assert len(result[0].std_errors) == 3
-    # assert result[0].pvalues[0] < 0.01
-    # assert result[0].pvalues[1] > 0.01
-    # assert result[0].pvalues[2] > 0.01
+    assert len(result.keys()) == 1  # One metric
+    assert len(next(iter(result.values())).keys()) == 3  # Three arms
+
+    bool_field_results = result["bool_field"]
+    # Test using the fixed UUIDs
+    assert (
+        bool_field_results[uuid.UUID("0ffe0995-6404-4622-934a-0d5cccfe3a59")][
+            "is_baseline"
+        ]
+        is True
+    )
+    assert (
+        bool_field_results[uuid.UUID("b1d90769-6e6e-4973-a7eb-d9da1c6ddcd5")][
+            "is_baseline"
+        ]
+        is False
+    )
+    assert (
+        bool_field_results[uuid.UUID("df84e3ae-f5df-4dc8-9ba6-fa0743e1c895")][
+            "is_baseline"
+        ]
+        is False
+    )
+
+    # Test approximate values since floating point math may have small variations
+    assert (
+        pytest.approx(
+            bool_field_results[uuid.UUID("0ffe0995-6404-4622-934a-0d5cccfe3a59")][
+                "estimate"
+            ],
+            abs=1e-4,
+        )
+        == 0.4986
+    )
+    assert (
+        pytest.approx(
+            bool_field_results[uuid.UUID("b1d90769-6e6e-4973-a7eb-d9da1c6ddcd5")][
+                "estimate"
+            ],
+            abs=1e-4,
+        )
+        == 0.0321
+    )
+    assert (
+        pytest.approx(
+            bool_field_results[uuid.UUID("df84e3ae-f5df-4dc8-9ba6-fa0743e1c895")][
+                "estimate"
+            ],
+            abs=1e-4,
+        )
+        == 0.0030
+    )

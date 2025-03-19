@@ -2,9 +2,6 @@ import pandas as pd
 import statsmodels.formula.api as smf
 from patsy import EvalFactor
 from xngin.apiserver.api_types import (
-    ArmAnalysis,
-    ExperimentAnalysis,
-    MetricAnalysis,
     ParticipantOutcome,
 )
 from xngin.apiserver.models.tables import ArmAssignment
@@ -13,7 +10,7 @@ from xngin.apiserver.models.tables import ArmAssignment
 def analyze_experiment(
     treatment_assignments: list[ArmAssignment],
     participant_outcomes: list[ParticipantOutcome],
-) -> list[list[ArmAnalysis]]:
+) -> dict[dict]:
     """
     Perform statistical analysis with DesignSpec metrics and their values
 
@@ -41,7 +38,7 @@ def analyze_experiment(
 
     merged_df = assignments_df.merge(outcomes_df, on="participant_id", how="left")
 
-    metric_analyses = []
+    metric_analyses = {}
     for metric_name in merged_df.columns:
         if metric_name in ("arm_id", "participant_id"):
             continue
@@ -49,19 +46,14 @@ def analyze_experiment(
         arm_ids = model.model.data.design_info.factor_infos[
             EvalFactor("arm_id")
         ].categories
-        arm_analyses = []
+        arm_analyses = {}
         for i in range(len(arm_ids)):
-            arm_analyses.append(
-                ArmAnalysis(
-                    is_baseline=i == 0,
-                    arm_id=arm_ids[i],
-                    estimate=model.params.iloc[i],
-                    p_value=model.pvalues.iloc[i],
-                    t_stat=model.tvalues.iloc[i],
-                    std_error=list(model.bse)[i],
-                )
-            )
-        metric_analyses.append(
-            MetricAnalysis(metric_name=metric_name, arm_analyses=arm_analyses)
-        )
-    return ExperimentAnalysis(metric_analyses=metric_analyses)
+            arm_analyses[arm_ids[i]] = {
+                "is_baseline": i == 0,
+                "estimate": model.params.iloc[i],
+                "p_value": model.pvalues.iloc[i],
+                "t_stat": model.tvalues.iloc[i],
+                "std_error": list(model.bse)[i],
+            }
+        metric_analyses[metric_name] = arm_analyses
+    return metric_analyses
