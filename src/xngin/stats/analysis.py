@@ -55,9 +55,9 @@ def analyze_experiment(
                 ArmAnalysis(
                     is_baseline=i == 0,
                     arm_id=arm_ids[i],
-                    estimate=model.params[i],
-                    p_value=model.pvalues[i],
-                    t_stat=model.tvalues[i],
+                    estimate=model.params.iloc[i],
+                    p_value=model.pvalues.iloc[i],
+                    t_stat=model.tvalues.iloc[i],
                     std_error=list(model.bse)[i],
                 )
             )
