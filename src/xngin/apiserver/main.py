@@ -18,9 +18,6 @@ from xngin.apiserver.routers import (
     oidc_dependencies,
 )
 
-logging.basicConfig(
-    level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
-)
 logger = logging.getLogger(__name__)
 
 if sentry_dsn := os.environ.get("SENTRY_DSN"):
