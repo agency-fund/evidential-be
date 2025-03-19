@@ -4,6 +4,7 @@ import logging
 from contextlib import asynccontextmanager
 from datetime import UTC, timedelta, datetime
 from typing import Annotated
+import uuid
 
 import google.api_core.exceptions
 import sqlalchemy
@@ -177,10 +178,11 @@ def get_experiment_via_ds_or_raise(
     session: Session, ds: Datasource, experiment_id: str
 ) -> Experiment:
     """Reads the requested experiment (related to the given datasource) from the database. Raises if not found."""
+    experiment_uuid = uuid.UUID(experiment_id)
     stmt = (
         select(Experiment)
         .join(Datasource, Datasource.id == ds.id)
-        .where(Experiment.id == experiment_id)
+        .where(Experiment.id == experiment_uuid)
     )
     exp = session.execute(stmt).scalar_one_or_none()
     if exp is None:
@@ -1062,7 +1064,6 @@ def analyze_experiment(
     xngin_session: Annotated[Session, Depends(xngin_db_session)],
     user: Annotated[User, Depends(user_from_token)],
 ) -> list[ExperimentAnalysis]:
-    print("hi")
     ds = get_datasource_or_raise(xngin_session, user, datasource_id)
     dsconfig = ds.get_config()
     if not isinstance(dsconfig, RemoteDatabaseConfig):

@@ -49,6 +49,7 @@ def analyze_experiment(
         arm_analyses = {}
         for i in range(len(arm_ids)):
             arm_analyses[arm_ids[i]] = {
+                # TODO(roboton): Fix this once we implement #299
                 "is_baseline": i == 0,
                 "estimate": model.params.iloc[i],
                 "p_value": model.pvalues.iloc[i],
