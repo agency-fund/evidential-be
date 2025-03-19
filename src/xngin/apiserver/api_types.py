@@ -671,11 +671,36 @@ class ParticipantOutcome(ApiBaseModel):
 class BalanceCheck(ApiBaseModel):
     """Describes balance test results for treatment assignment."""
 
-    f_statistic: float
-    numerator_df: int
-    denominator_df: int
-    p_value: float
-    balance_ok: bool
+    f_statistic: Annotated[
+        float,
+        Field(
+            description="F-statistic testing the overall significance of the model predicting treatment assignment."
+        ),
+    ]
+    numerator_df: Annotated[
+        int,
+        Field(
+            description="The numerator degrees of freedom for the f-statistic related to number of dependent variables."
+        ),
+    ]
+    denominator_df: Annotated[
+        int,
+        Field(
+            description="Denominator degrees of freedom related to the number of observations."
+        ),
+    ]
+    p_value: Annotated[
+        float,
+        Field(
+            description="Probablity of observing these data if strata do not predict treatment assignment, i.e. our randomization is balanced."
+        ),
+    ]
+    balance_ok: Annotated[
+        bool,
+        Field(
+            description="Whether the p-value for our observed f_statistic is greater than the f-stat threshold specified in our design specification. (See DesignSpec.fstat_thresh)"
+        ),
+    ]
 
 
 class AssignResponse(ApiBaseModel):
