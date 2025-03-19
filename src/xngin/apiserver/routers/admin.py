@@ -13,7 +13,7 @@ from fastapi import Response
 from fastapi import status
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
-from sqlalchemy import delete, select
+from sqlalchemy import delete, select, text
 from sqlalchemy.exc import OperationalError
 from sqlalchemy.orm import Session
 
@@ -575,10 +575,24 @@ def inspect_datasource(
     try:
         try:
             config = ds.get_config()
-            inspected = sqlalchemy.inspect(config.dbengine())
-            tables = list(
-                sorted(inspected.get_table_names() + inspected.get_view_names())
-            )
+
+            # Hack for redshift's lack of reflection support.
+            if config.dwh.is_redshift():
+                query = text(
+                    "SELECT table_name FROM information_schema.tables "
+                    "WHERE table_schema IN (:search_path) ORDER BY table_name"
+                )
+                with config.dbsession() as dwh_session:
+                    result = dwh_session.execute(
+                        query, {"search_path": config.dwh.search_path}
+                    )
+                    tables = result.scalars().all()
+            else:
+                inspected = sqlalchemy.inspect(config.dbengine())
+                tables = list(
+                    sorted(inspected.get_table_names() + inspected.get_view_names())
+                )
+
             ds.set_table_list(tables)
             session.commit()
             return InspectDatasourceResponse(tables=tables)
