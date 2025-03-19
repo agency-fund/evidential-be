@@ -17,7 +17,7 @@ from sqlalchemy.schema import CreateTable
 from xngin.apiserver import conftest, constants
 from xngin.apiserver.api_types import (
     Arm,
-    ArmSizes,
+    ArmSize,
     AudienceSpec,
     BalanceCheck,
     DesignSpec,
@@ -147,8 +147,8 @@ def make_insert_experiment(state: ExperimentState, datasource_id="testing"):
         assign_summary=AssignSummary(
             sample_size=100,
             arm_sizes=[
-                ArmSizes(arm=arm0, size=50),
-                ArmSizes(arm=arm1, size=50),
+                ArmSize(arm=arm0, size=50),
+                ArmSize(arm=arm1, size=50),
             ],
             balance_check=BalanceCheck(
                 f_statistic=0.088004147,

@@ -11,7 +11,7 @@ from sqlalchemy import Table
 from stochatreat import stochatreat
 from xngin.apiserver.api_types import (
     Arm,
-    ArmSizes,
+    ArmSize,
     AssignResponse,
     Assignment,
     BalanceCheck,
@@ -261,7 +261,7 @@ def _make_assign_response(
         unique_id_field=id_col,
         assignments=participants_list,
         arm_sizes=[
-            ArmSizes(arm=arms[treatment_id], size=size)
+            ArmSize(arm=arms[treatment_id], size=size)
             for treatment_id, size in sorted(arm_sizes_by_treatment_id.items())
         ],
     )

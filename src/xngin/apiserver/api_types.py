@@ -678,11 +678,11 @@ class BalanceCheck(ApiBaseModel):
     balance_ok: bool
 
 
-class ArmSizes(ApiBaseModel):
+class ArmSize(ApiBaseModel):
     """Describes the number of participants assigned to each arm."""
 
     arm: Arm
-    size: int
+    size: int = 0
 
 
 class AssignResponse(ApiBaseModel):
@@ -709,7 +709,7 @@ class AssignResponse(ApiBaseModel):
     # TODO(qixotic): Consider lifting up Assignment.arm_id & arm_name to the AssignResponse level
     # and organize assignments into lists by arm. Be less bulky and arm sizes come naturally.
     assignments: list[Assignment]
-    arm_sizes: list[ArmSizes]
+    arm_sizes: list[ArmSize]
 
 
 class AnalysisRequest(ApiBaseModel):

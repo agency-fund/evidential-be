@@ -4,7 +4,7 @@ from typing import Annotated
 from pydantic import BaseModel, ConfigDict, Field
 
 from xngin.apiserver.api_types import (
-    ArmSizes,
+    ArmSize,
     DesignSpec,
     AudienceSpec,
     PowerResponse,
@@ -32,9 +32,10 @@ class AssignSummary(ExperimentsBaseModel):
         int, Field(description="The number of participants across all arms in total.")
     ]
     arm_sizes: Annotated[
-        list[ArmSizes] | None,
+        list[ArmSize] | None,
         Field(
-            description="For each arm, the number of participants assigned. May be None if unknown or invalid."
+            description="For each arm, the number of participants assigned. "
+            "TODO: make required once development has stabilized. May be None if unknown due to persisting prior versions of an AssignSummary."
         ),
     ] = None
 
