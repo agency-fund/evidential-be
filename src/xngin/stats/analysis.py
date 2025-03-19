@@ -1,6 +1,7 @@
 import pandas as pd
 import statsmodels.formula.api as smf
 from patsy import EvalFactor
+from uuid import UUID
 from xngin.apiserver.api_types import (
     ParticipantOutcome,
 )
@@ -48,7 +49,8 @@ def analyze_experiment(
         ].categories
         arm_analyses = {}
         for i in range(len(arm_ids)):
-            arm_analyses[arm_ids[i]] = {
+            arm_uuid = UUID(arm_ids[i])
+            arm_analyses[arm_uuid] = {
                 # TODO(roboton): Fix this once we implement #299
                 "is_baseline": i == 0,
                 "estimate": model.params.iloc[i],
