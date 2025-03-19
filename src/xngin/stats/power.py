@@ -18,9 +18,7 @@ def _power_analysis_error(
     return MetricPowerAnalysis(
         metric_spec=metric,
         msg=MetricPowerAnalysisMessage(
-            type=msg_type,
-            msg=msg_body,
-            source_msg=msg_body,
+            type=msg_type, msg=msg_body, source_msg=msg_body, values=None
         ),
     )
 

@@ -4,6 +4,7 @@ from patsy import EvalFactor
 from xngin.apiserver.api_types import (
     ArmAnalysis,
     ExperimentAnalysis,
+    MetricAnalysis,
     ParticipantOutcome,
 )
 from xngin.apiserver.models.tables import ArmAssignment

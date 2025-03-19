@@ -434,6 +434,21 @@ class ArmAnalysis(ApiBaseModel):
     std_error: float
 
 
+class MetricAnalysis(ApiBaseModel):
+    # metric: DesignSpecMetric | None = None
+    metric_name: str
+    arm_analyses: Annotated[
+        list[ArmAnalysis],
+        Field(
+            description="The results of the analysis for each arm (coefficient) for this specific metric."
+        ),
+    ]
+
+
+class ExperimentAnalysis(ApiBaseModel):
+    metric_analyses: list[MetricAnalysis]
+
+
 class DesignSpec(ApiBaseModel):
     """Experiment design parameters for power calculations and treatment assignment."""
 
@@ -581,25 +596,6 @@ class MetricPowerAnalysis(ApiBaseModel):
     ] = None
 
 
-class MetricPowerAnalysisMessage(ApiBaseModel):
-    """Describes interpretation of power analysis results."""
-
-    type: MetricPowerAnalysisMessageType
-    msg: Annotated[
-        str,
-        Field(
-            description="Main power analysis result stated in human-friendly English."
-        ),
-    ]
-    source_msg: Annotated[
-        str,
-        Field(
-            description="Power analysis result formatted as a template string with curly-braced {} named placeholders. Use with the dictionary of values to support localization of messages."
-        ),
-    ]
-    values: dict[str, float | int] | None = None
-
-
 class StrataType(enum.StrEnum):
     """Classifies strata by their value type."""
 
@@ -654,40 +650,6 @@ class Assignment(ApiBaseModel):
             description="List of properties and their values for this participant used for stratification or tracking metrics. If stratification is not used, this will be None."
         ),
     ] = None
-
-
-class ExperimentAnalysis(ApiBaseModel):
-    metric_name: Annotated[
-        str,
-        Field(
-            description="The field_name from the datasource which this analysis models as the dependent variable (y)."
-        ),
-    ]
-    arm_ids: list[uuid.UUID]
-    coefficients: Annotated[
-        list[float],
-        Field(
-            description="Estimates for each arm in the model, the first element is the baseline estimate (intercept) of the first arm_id, the latter two are coefficients estimated against that baseline."
-        ),
-    ]
-    pvalues: Annotated[
-        list[float],
-        Field(
-            description="P-values corresponding to each coefficient estimate for arm_ids, starting with the intercept (arm_ids[0])."
-        ),
-    ]
-    tstats: Annotated[
-        list[float],
-        Field(
-            description="Corresponding t-stats for the pvalues and coefficients for each arm_id."
-        ),
-    ]
-    std_errors: Annotated[
-        list[float],
-        Field(
-            description="Corresponding standard errors for the pvalues and coefficients for each arm_id."
-        ),
-    ]
 
 
 class MetricValue(ApiBaseModel):
