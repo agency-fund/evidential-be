@@ -187,8 +187,9 @@ def fixture_db_session():
     connect_url, db_type, connect_args = get_test_dwh_info()
     default_url = make_url(connect_url)._replace(database=None)
     temporary_database_name = None
+    use_temporary_database = db_type in (DbType.PG,)
 
-    if db_type in (DbType.PG,):
+    if use_temporary_database:
         temporary_database_name = f"fixture_db_session_{secrets.token_hex(16)}"
         default_engine = create_engine(
             default_url,
@@ -214,7 +215,6 @@ def fixture_db_session():
         connect_url,
         connect_args=connect_args,
         echo=flags.ECHO_SQL,
-        poolclass=sqlalchemy.pool.NullPool,
     )
 
     # TODO: consider trying to consolidate dwh-conditional config with that in settings.py
@@ -238,10 +238,10 @@ def fixture_db_session():
     yield session
 
     session.close()
+    engine.dispose()
 
-    if db_type not in (DbType.PG,):
+    if not use_temporary_database:
         Base.metadata.drop_all(engine)
-        engine.dispose()
     else:
         default_engine = create_engine(
             default_url,
