@@ -170,7 +170,7 @@ def create_experiment_with_assignment_impl(
         sample_size=assignment_response.sample_size,
     )
     experiment = Experiment(
-        id=request.design_spec.experiment_id,
+        id=str(request.design_spec.experiment_id),
         datasource_id=datasource_id,
         state=ExperimentState.ASSIGNED,
         start_date=request.design_spec.start_date,
@@ -188,10 +188,10 @@ def create_experiment_with_assignment_impl(
     for assignment in assignment_response.assignments:
         # TODO: bulk insert https://docs.sqlalchemy.org/en/20/orm/queryguide/dml.html#orm-queryguide-bulk-insert {"dml_strategy": "raw"}
         db_assignment = ArmAssignment(
-            experiment_id=experiment.id,
+            experiment_id=str(experiment.id),
             participant_type=request.audience_spec.participant_type,
             participant_id=assignment.participant_id,
-            arm_id=assignment.arm_id,
+            arm_id=str(assignment.arm_id),
             strata=[s.model_dump(mode="json") for s in assignment.strata],
         )
         xngin_session.add(db_assignment)
@@ -213,7 +213,8 @@ def get_experiment_or_raise(
 ):
     experiment = xngin_session.scalars(
         select(Experiment).where(
-            Experiment.id == experiment_id, Experiment.datasource_id == datasource_id
+            Experiment.id == str(experiment_id),
+            Experiment.datasource_id == datasource_id,
         )
     ).one_or_none()
     if experiment is None:

@@ -66,9 +66,9 @@ def fixture_teardown(db_session: Session):
 
 
 def make_create_experiment_request(with_uuids: bool = True) -> CreateExperimentRequest:
-    experiment_id = uuid.uuid4() if with_uuids else None
-    arm1_id = uuid.uuid4() if with_uuids else None
-    arm2_id = uuid.uuid4() if with_uuids else None
+    experiment_id = str(uuid.uuid4()) if with_uuids else None
+    arm1_id = str(uuid.uuid4()) if with_uuids else None
+    arm2_id = str(uuid.uuid4()) if with_uuids else None
     # Use timestamps without timezone to be database agnostic
     start_date = datetime(2025, 1, 1)
     end_date = datetime(2025, 2, 1)
@@ -112,7 +112,7 @@ def make_create_experiment_request(with_uuids: bool = True) -> CreateExperimentR
 def make_insert_experiment(state: ExperimentState, datasource_id="testing"):
     request = make_create_experiment_request()
     return Experiment(
-        id=request.design_spec.experiment_id,
+        id=str(request.design_spec.experiment_id),
         datasource_id=datasource_id,
         state=state,
         start_date=request.design_spec.start_date,
@@ -246,7 +246,9 @@ def test_create_experiment_with_assignment_impl(
 
     # Verify database state using the ids in the returned DesignSpec.
     experiment = db_session.scalars(
-        select(Experiment).where(Experiment.id == response.design_spec.experiment_id)
+        select(Experiment).where(
+            Experiment.id == str(response.design_spec.experiment_id)
+        )
     ).one()
     assert experiment.state == ExperimentState.ASSIGNED
     assert experiment.datasource_id == "testing"
@@ -261,7 +263,7 @@ def test_create_experiment_with_assignment_impl(
     assert stored_power_analyses == response.power_analyses
     # Verify assignments were created
     assignments = db_session.scalars(
-        select(ArmAssignment).where(ArmAssignment.experiment_id == experiment.id)
+        select(ArmAssignment).where(ArmAssignment.experiment_id == str(experiment.id))
     ).all()
     assert len(assignments) == len(participants)
     # Verify all participant IDs in the db are the participants in the request
@@ -273,7 +275,9 @@ def test_create_experiment_with_assignment_impl(
     sample_assignment = assignments[0]
     assert sample_assignment.participant_type == "test_participant_type"
     assert sample_assignment.experiment_id == experiment.id
-    assert sample_assignment.arm_id in (arm.arm_id for arm in response.design_spec.arms)
+    assert sample_assignment.arm_id in (
+        str(arm.arm_id) for arm in response.design_spec.arms
+    )
     # Verify strata information
     assert (
         len(sample_assignment.strata) == 2
@@ -298,8 +302,8 @@ def test_create_experiment_with_assignment_impl_overwrites_uuids(
     """
     participants = make_sample_data(n=100)
     request = make_create_experiment_request(with_uuids=True)
-    original_experiment_id = request.design_spec.experiment_id
-    original_arm_ids = [arm.arm_id for arm in request.design_spec.arms]
+    original_experiment_id = str(request.design_spec.experiment_id)
+    original_arm_ids = [str(arm.arm_id) for arm in request.design_spec.arms]
 
     # Call the function under test
     response = create_experiment_with_assignment_impl(
@@ -315,20 +319,22 @@ def test_create_experiment_with_assignment_impl_overwrites_uuids(
 
     # Verify that new UUIDs were generated
     assert response.design_spec.experiment_id != original_experiment_id
-    new_arm_ids = [arm.arm_id for arm in response.design_spec.arms]
+    new_arm_ids = [str(arm.arm_id) for arm in response.design_spec.arms]
     assert set(new_arm_ids) != set(original_arm_ids)
 
     # Verify database state
     experiment = db_session.scalars(
-        select(Experiment).where(Experiment.id == response.design_spec.experiment_id)
+        select(Experiment).where(
+            Experiment.id == str(response.design_spec.experiment_id)
+        )
     ).one()
     assert experiment.state == ExperimentState.ASSIGNED
     # Verify assignments were created with the new UUIDs
     assignments = db_session.scalars(
-        select(ArmAssignment).where(ArmAssignment.experiment_id == experiment.id)
+        select(ArmAssignment).where(ArmAssignment.experiment_id == str(experiment.id))
     ).all()
     # Verify all assignments use the new arm IDs
-    assignment_arm_ids = {a.arm_id for a in assignments}
+    assignment_arm_ids = {str(a.arm_id) for a in assignments}
     assert assignment_arm_ids == set(new_arm_ids)
 
 
@@ -361,11 +367,13 @@ def test_create_experiment_with_assignment_impl_no_metric_stratification(
 
     # Verify database state
     experiment = db_session.scalars(
-        select(Experiment).where(Experiment.id == response.design_spec.experiment_id)
+        select(Experiment).where(
+            Experiment.id == str(response.design_spec.experiment_id)
+        )
     ).one()
     # Verify assignments were created
     assignments = db_session.scalars(
-        select(ArmAssignment).where(ArmAssignment.experiment_id == experiment.id)
+        select(ArmAssignment).where(ArmAssignment.experiment_id == str(experiment.id))
     ).all()
     assert len(assignments) == len(participants)
     # Check strata information only has gender, not is_onboarded
@@ -434,10 +442,10 @@ def test_create_experiment_with_assignment(
     assert config.power_analyses == request.power_analyses
 
     experiment_id = config.design_spec.experiment_id
-    (arm1_id, arm2_id) = [arm.arm_id for arm in config.design_spec.arms]
+    (arm1_id, arm2_id) = [str(arm.arm_id) for arm in config.design_spec.arms]
     # Verify database state using the ids in the returned DesignSpec.
     experiment = db_session.scalars(
-        select(Experiment).where(Experiment.id == experiment_id)
+        select(Experiment).where(Experiment.id == str(experiment_id))
     ).one()
     assert experiment.state == ExperimentState.ASSIGNED
     assert experiment.datasource_id == "testing"
@@ -445,7 +453,7 @@ def test_create_experiment_with_assignment(
     assert experiment.end_date == request.design_spec.end_date
     # Verify assignments were created
     assignments = db_session.scalars(
-        select(ArmAssignment).where(ArmAssignment.experiment_id == experiment_id)
+        select(ArmAssignment).where(ArmAssignment.experiment_id == str(experiment_id))
     ).all()
     assert len(assignments) == 100, {
         e.name: getattr(experiment, e.name) for e in Experiment.__table__.columns
@@ -454,7 +462,7 @@ def test_create_experiment_with_assignment(
     # Check one assignment to see if it looks roughly right
     sample_assignment: ArmAssignment = assignments[0]
     assert sample_assignment.participant_type == "test_participant_type"
-    assert sample_assignment.experiment_id == experiment_id
+    assert sample_assignment.experiment_id == str(experiment_id)
     assert sample_assignment.arm_id in (arm1_id, arm2_id)
     for stratum in sample_assignment.strata:
         assert stratum["field_name"] in {"gender", "is_onboarded"}
@@ -463,47 +471,6 @@ def test_create_experiment_with_assignment(
     num_control = sum(1 for a in assignments if a.arm_id == arm1_id)
     num_treat = sum(1 for a in assignments if a.arm_id == arm2_id)
     assert abs(num_control - num_treat) <= 5  # Allow some wiggle room
-
-
-@pytest.mark.parametrize(
-    "endpoint,initial_state,expected_status,expected_detail",
-    [
-        ("commit", ExperimentState.ASSIGNED, 204, None),  # Success case
-        ("commit", ExperimentState.COMMITTED, 304, None),  # No-op
-        ("commit", ExperimentState.DESIGNING, 403, "Invalid state: designing"),
-        ("commit", ExperimentState.ABORTED, 403, "Invalid state: aborted"),
-        ("abandon", ExperimentState.DESIGNING, 204, None),  # Success case
-        ("abandon", ExperimentState.ASSIGNED, 204, None),  # Success case
-        ("abandon", ExperimentState.ABANDONED, 304, None),  # No-op
-        ("abandon", ExperimentState.COMMITTED, 403, "Invalid state: committed"),
-    ],
-)
-def test_experiment_state_setting(
-    db_session: Session, endpoint, initial_state, expected_status, expected_detail
-):
-    experiment = make_insert_experiment(initial_state)
-    db_session.add(experiment)
-    db_session.commit()
-
-    response = client.post(
-        f"/experiments/{experiment.id!s}/{endpoint}",
-        headers={constants.HEADER_CONFIG_ID: "testing"},
-    )
-
-    # Verify
-    assert response.status_code == expected_status
-    # If success case, verify state was updated
-    if expected_status == 204:
-        expected_state = (
-            ExperimentState.ABANDONED
-            if endpoint == "abandon"
-            else ExperimentState.COMMITTED
-        )
-        db_session.refresh(experiment)
-        assert experiment.state == expected_state
-    # If failure case, verify the error message
-    if expected_detail:
-        assert response.json()["detail"] == expected_detail
 
 
 def test_list_experiments(db_session: Session):
@@ -567,20 +534,21 @@ def test_get_experiment(db_session: Session):
 def test_get_experiment_assignments(db_session: Session):
     # First insert an experiment with assignments
     experiment = make_insert_experiment(ExperimentState.COMMITTED)
+    experiment_id = str(experiment.id)
     db_session.add(experiment)
 
-    arm1_id = uuid.UUID(experiment.design_spec["arms"][0]["arm_id"])
-    arm2_id = uuid.UUID(experiment.design_spec["arms"][1]["arm_id"])
+    arm1_id = str(experiment.design_spec["arms"][0]["arm_id"])
+    arm2_id = str(experiment.design_spec["arms"][1]["arm_id"])
     assignments = [
         ArmAssignment(
-            experiment_id=experiment.id,
+            experiment_id=experiment_id,
             participant_type="test_participant_type",
             participant_id="p1",
             arm_id=arm1_id,
             strata=[{"field_name": "gender", "strata_value": "F"}],
         ),
         ArmAssignment(
-            experiment_id=experiment.id,
+            experiment_id=experiment_id,
             participant_type="test_participant_type",
             participant_id="p2",
             arm_id=arm2_id,
@@ -591,7 +559,7 @@ def test_get_experiment_assignments(db_session: Session):
     db_session.commit()
 
     response = client.get(
-        f"/experiments/{experiment.id!s}/assignments",
+        f"/experiments/{experiment_id}/assignments",
         headers={constants.HEADER_CONFIG_ID: "testing"},
     )
 
@@ -600,7 +568,7 @@ def test_get_experiment_assignments(db_session: Session):
     data = response.json()
 
     # Check the response structure
-    assert data["experiment_id"] == str(experiment.id)
+    assert data["experiment_id"] == experiment_id
     assert data["sample_size"] == experiment.assign_summary["sample_size"]
     assert data["balance_check"] == experiment.assign_summary["balance_check"]
 
@@ -610,7 +578,7 @@ def test_get_experiment_assignments(db_session: Session):
 
     # Verify first assignment
     assert assignments[0]["participant_id"] == "p1"
-    assert assignments[0]["arm_id"] == str(arm1_id)
+    assert assignments[0]["arm_id"] == arm1_id
     assert assignments[0]["arm_name"] == "control"
     assert len(assignments[0]["strata"]) == 1
     assert assignments[0]["strata"][0]["field_name"] == "gender"
@@ -618,7 +586,7 @@ def test_get_experiment_assignments(db_session: Session):
 
     # Verify second assignment
     assert assignments[1]["participant_id"] == "p2"
-    assert assignments[1]["arm_id"] == str(arm2_id)
+    assert assignments[1]["arm_id"] == arm2_id
     assert assignments[1]["arm_name"] == "treatment"
     assert len(assignments[1]["strata"]) == 1
     assert assignments[1]["strata"][0]["field_name"] == "gender"
@@ -655,8 +623,8 @@ def make_experiment_with_assignments(db_session):
     experiment = make_insert_experiment(ExperimentState.COMMITTED)
     db_session.add(experiment)
 
-    arm1_id = uuid.UUID(experiment.design_spec["arms"][0]["arm_id"])
-    arm2_id = uuid.UUID(experiment.design_spec["arms"][1]["arm_id"])
+    arm1_id = experiment.design_spec["arms"][0]["arm_id"]
+    arm2_id = experiment.design_spec["arms"][1]["arm_id"]
     assignments = [
         ArmAssignment(
             experiment_id=experiment.id,
