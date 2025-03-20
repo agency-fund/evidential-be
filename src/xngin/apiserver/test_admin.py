@@ -46,7 +46,6 @@ from xngin.apiserver.settings import (
 from xngin.cli.main import create_testing_dwh
 from xngin.schema.schema_types import ParticipantsSchema, FieldDescriptor
 
-
 SAMPLE_GCLOUD_SERVICE_ACCOUNT_KEY = {
     "auth_provider_x509_cert_url": "",
     "auth_uri": "",
@@ -196,7 +195,7 @@ def test_lifecycle(testing_datasource):
     datasource_id = parsed.id
 
     # List datasources
-    response = pget("/v1/m/datasources")
+    response = pget(f"/v1/m/organizations/{testing_datasource.org.id}/datasources")
     assert response.status_code == 200, response.content
     parsed = ListDatasourcesResponse.model_validate(response.json())
     assert len(parsed.items) == 2
@@ -216,7 +215,7 @@ def test_lifecycle(testing_datasource):
     assert response.status_code == 204, response.content
 
     # List datasources to confirm update
-    response = pget("/v1/m/datasources")
+    response = pget(f"/v1/m/organizations/{testing_datasource.org.id}/datasources")
     assert response.status_code == 200, response.content
     assert "updated name" in {i["name"] for i in response.json()["items"]}, (
         response.json()
@@ -243,7 +242,7 @@ def test_lifecycle(testing_datasource):
 
     # List datasources to confirm update
     response = pget(
-        "/v1/m/datasources",
+        f"/v1/m/organizations/{testing_datasource.org.id}/datasources",
     )
     assert response.status_code == 200, response.content
     assert "bigquery" in {i["driver"] for i in response.json()["items"]}, (

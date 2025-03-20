@@ -12,6 +12,7 @@ from fastapi import APIRouter, FastAPI, Depends, Path, Body, HTTPException, Quer
 from fastapi import Response
 from fastapi import status
 from fastapi.responses import StreamingResponse
+from pydantic import BaseModel
 from sqlalchemy import delete, select, text
 from sqlalchemy.exc import OperationalError
 from sqlalchemy.orm import Session
@@ -43,7 +44,6 @@ from xngin.apiserver.routers import experiments, experiments_api_types
 from xngin.apiserver.routers.admin_api_types import (
     AddMemberToOrganizationRequest,
     ApiKeySummary,
-    CreateApiKeyRequest,
     CreateApiKeyResponse,
     CreateDatasourceRequest,
     CreateDatasourceResponse,
@@ -92,6 +92,47 @@ GENERIC_SUCCESS = Response(status_code=status.HTTP_204_NO_CONTENT)
 RESPONSE_CACHE_MAX_AGE_SECONDS = timedelta(minutes=15).seconds
 
 
+class HTTPExceptionError(BaseModel):
+    detail: str
+
+
+# This defines the response codes we can expect our API to return in the normal course of operation and would be
+# useful for our developers to think about.
+#
+# FastAPI will add a case for 422 (method argument or pydantic validation errors) automatically. 500s are
+# intentionally omitted here as they (ideally) should never happen.
+STANDARD_ADMIN_RESPONSES = {
+    # We return 400 when the client's request is invalid.
+    "400": {"model": HTTPExceptionError, "description": "The request is invalid."},
+    # We return 401 when the user presents an Authorization: header but it is not valid.
+    "401": {
+        "model": HTTPExceptionError,
+        "description": "Authentication credentials are invalid.",
+    },
+    # 403s are returned by FastAPI's OpenIdConnect helper class when the Authorization: header is missing.
+    # 403s are also returned by our code when the authenticated user doesn't have permission to perform the requested
+    # action.
+    "403": {
+        "model": HTTPExceptionError,
+        "description": "Requester does not have sufficient privileges to perform this operation or is not authenticated.",
+    },
+    # We return a 404 when a requested resource is not found. Authenticated users that do not have permission to know
+    # whether a requested resource exists or not may also see a 404.
+    "404": {
+        "model": HTTPExceptionError,
+        "description": "Requested content was not found.",
+    },
+}
+
+
+def responses_factory(*codes):
+    return {
+        code: config
+        for code, config in STANDARD_ADMIN_RESPONSES.items()
+        if code in {str(c) for c in codes}
+    }
+
+
 def is_enabled():
     """Feature flag: Returns true iff OIDC is enabled."""
     return flags.ENABLE_ADMIN
@@ -109,6 +150,7 @@ async def lifespan(_app: FastAPI):
 router = APIRouter(
     lifespan=lifespan,
     prefix="/m",
+    responses=STANDARD_ADMIN_RESPONSES,
     dependencies=[
         Depends(require_oidc_token)
     ],  # All routes in this router require authentication.
@@ -119,7 +161,10 @@ def user_from_token(
     session: Annotated[Session, Depends(xngin_db_session)],
     token_info: Annotated[TokenInfo, Depends(require_oidc_token)],
 ) -> User:
-    """Dependency for fetching the User record matching the authenticated user's email."""
+    """Dependency for fetching the User record matching the authenticated user's email.
+
+    This may raise a 400, 401, or 403.
+    """
     user = session.query(User).filter(User.email == token_info.email).first()
     if not user:
         # Privileged users will have a user and an organization created on the fly.
@@ -140,7 +185,7 @@ def user_from_token(
 
 
 def get_organization_or_raise(session: Session, user: User, organization_id: str):
-    """Reads the requested organization from the database. Raises if disallowed or not found."""
+    """Reads the requested organization from the database. Raises 404 if disallowed or not found."""
     stmt = (
         select(Organization)
         .join(UserOrganization)
@@ -150,13 +195,13 @@ def get_organization_or_raise(session: Session, user: User, organization_id: str
     org = session.execute(stmt).scalar_one_or_none()
     if org is None:
         raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND, detail="Datasource not found."
+            status_code=status.HTTP_404_NOT_FOUND, detail="Organization not found."
         )
     return org
 
 
 def get_datasource_or_raise(session: Session, user: User, datasource_id: str):
-    """Reads the requested datasource from the database. Raises if disallowed or not found."""
+    """Reads the requested datasource from the database. Raises 404 if disallowed or not found."""
     stmt = (
         select(Datasource)
         .join(Organization)
@@ -174,7 +219,7 @@ def get_datasource_or_raise(session: Session, user: User, datasource_id: str):
 def get_experiment_via_ds_or_raise(
     session: Session, ds: Datasource, experiment_id: str
 ) -> Experiment:
-    """Reads the requested experiment (related to the given datasource) from the database. Raises if not found."""
+    """Reads the requested experiment (related to the given datasource) from the database. Raises 404 if not found."""
     stmt = (
         select(Experiment)
         .join(Datasource, Datasource.id == ds.id)
@@ -264,18 +309,8 @@ def add_member_to_organization(
         )
 
     if not token_info.is_privileged():
-        # Verify user belongs to the organization
-        stmt = (
-            select(UserOrganization)
-            .where(UserOrganization.user_id == user.id)
-            .where(UserOrganization.organization_id == organization_id)
-        )
-        is_member = session.execute(stmt).scalar_one_or_none()
-        if not is_member:
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="You do not have permission to add members to this organization",
-            )
+        # Verify user is a member of the organization
+        _authz_check = get_organization_or_raise(session, user, organization_id)
 
     # Add the new member
     new_user = session.query(User).filter(User.email == body.email).first()
@@ -302,7 +337,7 @@ def remove_member_from_organization(
 
     The authenticated user must be part of the organization to remove members.
     """
-    get_organization_or_raise(session, user, organization_id)
+    _authz_check = get_organization_or_raise(session, user, organization_id)
     # Prevent users from removing themselves from an organization
     if user_id == user.id:
         raise HTTPException(
@@ -357,10 +392,6 @@ def get_organization(
     """
     # First get the organization and verify user has access
     org = get_organization_or_raise(session, user, organization_id)
-    if not org:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND, detail="Organization not found"
-        )
 
     # Get users and datasources separately
     users = (
@@ -406,28 +437,12 @@ def list_organization_datasources(
     user: Annotated[User, Depends(user_from_token)],
 ) -> ListDatasourcesResponse:
     """Returns a list of datasources accessible to the authenticated user for an org."""
-    return list_datasources_impl(session, user.id, organization_id)
-
-
-@router.get("/datasources")
-def list_datasources(
-    session: Annotated[Session, Depends(xngin_db_session)],
-    user: Annotated[User, Depends(user_from_token)],
-) -> ListDatasourcesResponse:
-    """Returns a list of datasources accessible to the authenticated user."""
-    return list_datasources_impl(session, user.id, organization_id=None)
-
-
-def list_datasources_impl(
-    session: Session,
-    user_id: str,
-    organization_id: str | None,
-) -> ListDatasourcesResponse:
+    _authz_check = get_organization_or_raise(session, user, organization_id)
     stmt = (
         select(Datasource)
         .join(Organization)
         .join(Organization.users)
-        .where(User.id == user_id)
+        .where(User.id == user.id)
     )
     if organization_id is not None:
         stmt = stmt.where(Organization.id == organization_id)
@@ -933,27 +948,14 @@ def delete_participant(
     return GENERIC_SUCCESS
 
 
-@router.get("/apikeys")
+@router.get("/datasources/{datasource_id}/apikeys")
 def list_api_keys(
+    datasource_id: str,
     session: Annotated[Session, Depends(xngin_db_session)],
     user: Annotated[User, Depends(user_from_token)],
 ) -> ListApiKeysResponse:
-    """Returns API keys that the caller has access to via their organization memberships.
-
-    An API key is visible if the user belongs to the organization that owns any of the
-    datasources that the API key can access.
-    """
-    # Get API keys that have access to datasources owned by organizations the user belongs to
-    stmt = (
-        select(ApiKey)
-        .distinct()
-        .join(ApiKey.datasource)
-        .join(Organization)
-        .join(Organization.users)
-        .where(User.id == user.id)
-    )
-    result = session.execute(stmt)
-    api_keys = result.scalars().all()
+    """Returns API keys that have access to the datasource."""
+    ds = get_datasource_or_raise(session, user, datasource_id)
     return ListApiKeysResponse(
         items=[
             ApiKeySummary(
@@ -962,22 +964,22 @@ def list_api_keys(
                 organization_id=api_key.datasource.organization_id,
                 organization_name=api_key.datasource.organization.name,
             )
-            for api_key in sorted(api_keys, key=lambda a: a.id)
+            for api_key in sorted(ds.api_keys, key=lambda a: a.id)
         ]
     )
 
 
-@router.post("/apikeys")
+@router.post("/datasources/{datasource_id}/apikeys")
 def create_api_key(
+    datasource_id: str,
     session: Annotated[Session, Depends(xngin_db_session)],
     user: Annotated[User, Depends(user_from_token)],
-    body: Annotated[CreateApiKeyRequest, Body(...)],
 ) -> CreateApiKeyResponse:
     """Creates an API key for the specified datasource.
 
     The user must belong to the organization that owns the requested datasource.
     """
-    ds = get_datasource_or_raise(session, user, body.datasource_id)
+    ds = get_datasource_or_raise(session, user, datasource_id)
     label, key = make_key()
     key_hash = hash_key(key)
     api_key = ApiKey(id=label, key=key_hash, datasource_id=ds.id)
@@ -986,27 +988,20 @@ def create_api_key(
     return CreateApiKeyResponse(id=label, datasource_id=ds.id, key=key)
 
 
-@router.delete("/apikeys/{api_key_id}", status_code=status.HTTP_204_NO_CONTENT)
+@router.delete(
+    "/datasources/{datasource_id}/apikeys/{api_key_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+)
 def delete_api_key(
+    datasource_id: str,
     session: Annotated[Session, Depends(xngin_db_session)],
     user: Annotated[User, Depends(user_from_token)],
     api_key_id: Annotated[str, Path(...)],
 ):
     """Deletes the specified API key."""
-    stmt = (
-        delete(ApiKey)
-        .where(ApiKey.id == api_key_id)
-        .where(
-            ApiKey.id.in_(
-                select(ApiKey.id)
-                .join(ApiKey.datasource)
-                .join(Organization)
-                .join(Organization.users)
-                .where(User.id == user.id)
-            )
-        )
-    )
-    session.execute(stmt)
+    ds = get_datasource_or_raise(session, user, datasource_id)
+    ds.api_keys = [a for a in ds.api_keys if a.id != api_key_id]
+    session.add(ds)
     session.commit()
     return GENERIC_SUCCESS
 
