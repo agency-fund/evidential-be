@@ -1092,7 +1092,8 @@ def analyze_experiment(
             dsconfig.supports_reflection(),
         )
 
-        metrics = experiment.get_design_spec().metrics
+        design_spec = experiment.get_design_spec()
+        metrics = design_spec.metrics
         assignments = experiment.arm_assignments
         participant_ids = [assignment.participant_id for assignment in assignments]
         participant_outcomes = get_participant_metrics(
