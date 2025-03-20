@@ -1,10 +1,12 @@
 """Stand-alone test cases for basic dynamic query generation."""
 
 import re
+import secrets
 from dataclasses import dataclass
 from datetime import datetime, UTC
 
 import pytest
+import sqlalchemy
 from sqlalchemy import (
     Table,
     create_engine,
@@ -15,9 +17,11 @@ from sqlalchemy import (
     event,
     Column,
     DateTime,
+    make_url,
 )
 from sqlalchemy.orm import Session, DeclarativeBase, mapped_column
 
+from xngin.apiserver import flags
 from xngin.apiserver.api_types import (
     AudienceSpec,
     DesignSpecMetric,
@@ -170,9 +174,48 @@ class Case:
 
 @pytest.fixture(name="db_session")
 def fixture_db_session():
-    """Creates an in-memory SQLite database with test data."""
+    """Yields a session that tests can use to operate on a testing database.
+
+    Usually we are working with a SQLite database (simple!) but it might be overridden by the XNGIN_TEST_DWH_URI
+    environment variable (see get_test_dwh_info()).
+
+    On Postgres databases: a new database will be created and deleted for each use of this fixture.
+
+    SampleTable and SampleNullableTable are created and populated on each invocation, and destroyed after the yield
+    completes.
+    """
     connect_url, db_type, connect_args = get_test_dwh_info()
-    engine = create_engine(connect_url, connect_args=connect_args, echo=False)
+    default_url = make_url(connect_url)._replace(database=None)
+    temporary_database_name = None
+
+    if db_type in (DbType.PG,):
+        temporary_database_name = f"fixture_db_session_{secrets.token_hex(16)}"
+        default_engine = create_engine(
+            default_url,
+            connect_args=connect_args,
+            echo=flags.ECHO_SQL,
+            poolclass=sqlalchemy.pool.NullPool,
+        )
+        conn = default_engine.raw_connection()
+        with conn.cursor() as cursor:
+            for stmt in (
+                f"DROP DATABASE IF EXISTS {temporary_database_name}",
+                f"CREATE DATABASE {temporary_database_name}",
+            ):
+                cursor.execute("COMMIT")
+                cursor.execute(stmt)
+        conn.close()
+        default_engine.dispose()
+        # Override the connect_url with our new database name.
+        connect_url = connect_url.set(database=temporary_database_name)
+
+    # Now we can connect to the target database
+    engine = create_engine(
+        connect_url,
+        connect_args=connect_args,
+        echo=flags.ECHO_SQL,
+        poolclass=sqlalchemy.pool.NullPool,
+    )
 
     # TODO: consider trying to consolidate dwh-conditional config with that in settings.py
     if db_type is DbType.RS and hasattr(engine.dialect, "_set_backslash_escapes"):
@@ -195,7 +238,22 @@ def fixture_db_session():
     yield session
 
     session.close()
-    Base.metadata.drop_all(engine)
+
+    if db_type not in (DbType.PG,):
+        Base.metadata.drop_all(engine)
+        engine.dispose()
+    else:
+        default_engine = create_engine(
+            default_url,
+            connect_args=connect_args,
+            echo=flags.ECHO_SQL,
+            poolclass=sqlalchemy.pool.NullPool,
+        )
+        conn = default_engine.raw_connection()
+        with conn.cursor() as cursor:
+            cursor.execute("COMMIT")
+            cursor.execute(f"DROP DATABASE {temporary_database_name}")
+        conn.close()
 
 
 @pytest.fixture(name="engine")
