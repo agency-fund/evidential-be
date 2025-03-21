@@ -219,7 +219,11 @@ class DatasourceMetadata:
 
 @pytest.fixture(name="testing_datasource", scope="function")
 def fixture_testing_datasource(db_session) -> DatasourceMetadata:
-    """Generates a new Organization, Datasource, and API key for a test."""
+    """
+    Generates a new Organization, Datasource, and API key for a test.
+
+    This is NOT the same as the default Org+Datasource auto-generated for privileged users (i.e. cases where we use PRIVILEGED_TOKEN_FOR_TESTING+PRIVILEGED_EMAIL).
+    """
     run_id = secrets.token_hex(8)
     datasource_id = "ds" + run_id
 

@@ -7,6 +7,7 @@ import uuid
 import pytest
 from fastapi.testclient import TestClient
 from pydantic import SecretStr
+from sqlalchemy.orm import Session
 
 from xngin.apiserver import conftest
 from xngin.apiserver import main as main_module
@@ -14,7 +15,7 @@ from xngin.apiserver.api_types import DataType
 from xngin.apiserver.dependencies import xngin_db_session
 from xngin.apiserver.main import app
 from xngin.apiserver.models.enums import ExperimentState
-from xngin.apiserver.models.tables import Experiment
+from xngin.apiserver.models.tables import Experiment, Organization, User
 from xngin.apiserver.routers import oidc_dependencies
 from xngin.apiserver.routers.admin_api_types import (
     CreateDatasourceRequest,
@@ -88,6 +89,19 @@ uget = partial(
 def db_session():
     session = next(app.dependency_overrides[xngin_db_session]())
     yield session
+
+
+@pytest.fixture(autouse=True, scope="function")
+def fixture_teardown(db_session: Session):
+    # setup here
+    yield
+    # teardown here
+
+    # Clean up objects created in each test by truncating tables and leveraging cascade.
+    db_session.query(Organization).delete()
+    db_session.query(User).delete()
+    db_session.commit()
+    db_session.close()
 
 
 @pytest.fixture(scope="module", autouse=True)
