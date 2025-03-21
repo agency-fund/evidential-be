@@ -9,7 +9,6 @@ import pytest
 import numpy as np
 from deepdiff import DeepDiff
 from fastapi.testclient import TestClient
-from pydantic_core import to_jsonable_python
 from sqlalchemy import select, Boolean, Column, MetaData, String, Table
 from sqlalchemy.dialects import sqlite, postgresql
 from sqlalchemy.orm import Session
@@ -123,7 +122,7 @@ def make_insertable_experiment(state: ExperimentState, datasource_id="testing"):
         state=state,
         start_date=request.design_spec.start_date,
         end_date=request.design_spec.end_date,
-        design_spec=to_jsonable_python(request.design_spec),
+        design_spec=request.design_spec.model_dump(mode="json"),
         audience_spec=request.audience_spec.model_dump(),
         power_analyses=PowerResponse(
             analyses=[
@@ -696,7 +695,7 @@ def test_get_experiment(db_session, testing_datasource):
     assert not diff, f"Objects differ:\n{diff.pretty()}"
 
 
-def test_get_experiment_assignments_impl(db_session: Session, testing_datasource):
+def test_get_experiment_assignments_impl(db_session, testing_datasource):
     # First insert an experiment with assignments
     experiment = make_insertable_experiment(
         ExperimentState.COMMITTED, testing_datasource.ds.id
@@ -754,7 +753,10 @@ def test_get_experiment_assignments_impl(db_session: Session, testing_datasource
 
 
 def test_get_experiment_assignments_not_found():
-    """Test getting assignments for a non-existent experiment."""
+    """Test getting assignments for a non-existent experiment.
+
+    TODO: deprecate this in favor of an admin.py version when ready.
+    """
     response = client.get(
         f"/experiments/{uuid.uuid4()}/assignments",
         headers={constants.HEADER_CONFIG_ID: "testing"},
@@ -763,9 +765,15 @@ def test_get_experiment_assignments_not_found():
     assert response.json()["detail"] == "Experiment not found"
 
 
-def test_get_experiment_assignments_wrong_datasource(db_session: Session):
+def test_get_experiment_assignments_wrong_datasource(db_session, testing_datasource):
+    """Test getting assignments for an experiment from a different datasource.
+
+    TODO: deprecate this in favor of an admin.py version when ready.
+    """
     # Create experiment in one datasource
-    experiment = make_insertable_experiment(ExperimentState.COMMITTED)
+    experiment = make_insertable_experiment(
+        ExperimentState.COMMITTED, testing_datasource.ds.id
+    )
     db_session.add(experiment)
     db_session.commit()
 
@@ -778,9 +786,10 @@ def test_get_experiment_assignments_wrong_datasource(db_session: Session):
     assert response.json()["detail"] == "Experiment not found"
 
 
-def make_experiment_with_assignments(db_session):
+def make_experiment_with_assignments(db_session, datasource_id="testing"):
+    """Helper function for the tests below."""
     # First insert an experiment with assignments
-    experiment = make_insertable_experiment(ExperimentState.COMMITTED)
+    experiment = make_insertable_experiment(ExperimentState.COMMITTED, datasource_id)
     db_session.add(experiment)
 
     arm1_id = experiment.design_spec["arms"][0]["arm_id"]
@@ -812,8 +821,8 @@ def make_experiment_with_assignments(db_session):
     return experiment
 
 
-def test_experiment_assignments_to_csv_generator(db_session: Session):
-    experiment = make_experiment_with_assignments(db_session)
+def test_experiment_assignments_to_csv_generator(db_session, testing_datasource):
+    experiment = make_experiment_with_assignments(db_session, testing_datasource.ds.id)
 
     (arm1_id, arm2_id) = experiment.get_arm_ids()
     (arm1_name, arm2_name) = experiment.get_arm_names()
@@ -825,12 +834,15 @@ def test_experiment_assignments_to_csv_generator(db_session: Session):
     assert rows[2] == f'p2,{arm2_id},{arm2_name},M,"esc,aped"\r\n'
 
 
-def test_get_experiment_assignments_as_csv(db_session: Session):
-    experiment = make_experiment_with_assignments(db_session)
+def test_get_experiment_assignments_as_csv(db_session, testing_datasource):
+    experiment = make_experiment_with_assignments(db_session, testing_datasource.ds.id)
 
     response = client.get(
         f"/experiments/{experiment.id!s}/assignments/csv",
-        headers={constants.HEADER_CONFIG_ID: "testing"},
+        headers={
+            constants.HEADER_CONFIG_ID: testing_datasource.ds.id,
+            constants.HEADER_API_KEY: testing_datasource.key,
+        },
     )
     assert response.status_code == 200
     assert (
