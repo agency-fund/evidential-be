@@ -111,8 +111,11 @@ def get_test_uri_info(connection_uri: str):
 
 
 def get_test_sessionmaker():
-    """Returns a Session generator backed by an ephemeral db for use in tests as our app db."""
-    # We use an in-memory ephemeral database for the xngindb during tests.
+    """
+    Returns a function to create a Session generator for use in tests as our app db.
+
+    The backing db is configured by XNGIN_TEST_APPDB_URI, defaulting to an in-memory ephemeral db.
+    """
     connect_url, _, connect_args = get_test_appdb_info()
     db_engine = sqlalchemy.create_engine(
         connect_url,
