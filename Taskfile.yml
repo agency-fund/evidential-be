@@ -2,6 +2,7 @@ version: '3'
 output: prefixed
 vars:
   XNGIN_LOCALDB_DSN: "postgresql://postgres:postgres@localhost:5499/xngin?sslmode=disable"
+  XNGIN_LOCALTESTDB_DSN: "postgresql://postgres:postgres@localhost:5499/testing?sslmode=disable"
 env:
   # Disable Atlas telemetry.
   ATLAS_NO_ANON_TELEMETRY: "true"
@@ -91,6 +92,8 @@ tasks:
     cmd: uv run pytest src/xngin/apiserver/test_api.py
   test-pgintegration:
     desc: "Runs unit tests w/local postgres support"
+    env:
+      XNGIN_TEST_DWH_URI: "{{.XNGIN_LOCALTESTDB_DSN}}"
     interactive: true
     cmds:
       - ./tools/localpg.py --allow-existing -d --wait
