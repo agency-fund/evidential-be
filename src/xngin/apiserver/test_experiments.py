@@ -75,8 +75,8 @@ def make_create_experiment_request(with_uuids: bool = True) -> CreateExperimentR
     arm1_id = str(uuid.uuid4()) if with_uuids else None
     arm2_id = str(uuid.uuid4()) if with_uuids else None
     # Use timestamps without timezone to be database agnostic
-    start_date = datetime(2025, 1, 1)
-    end_date = datetime(2025, 2, 1)
+    start_date = datetime(2025, 1, 1, tzinfo=UTC)
+    end_date = datetime(2025, 2, 1, tzinfo=UTC)
     # Construct request body
     return CreateExperimentRequest(
         design_spec=DesignSpec(
@@ -198,8 +198,15 @@ def make_sample_data(n=100):
     ]
 
 
+def dates_equal(db_date: datetime, request_date: datetime):
+    """Compare dates with or without timezone info, honoring the db_date's timezone."""
+    if db_date.tzinfo is None:
+        return db_date == request_date.replace(tzinfo=None)
+    return db_date == request_date
+
+
 def test_create_experiment_with_assignment_impl(
-    db_session: Session, sample_table, use_deterministic_random
+    db_session, testing_datasource, sample_table, use_deterministic_random
 ):
     """Test implementation of creating an experiment with assignment."""
     participants = make_sample_data(n=100)
@@ -220,7 +227,7 @@ def test_create_experiment_with_assignment_impl(
         request=request.model_copy(
             deep=True
         ),  # we'll use the original request for assertions
-        datasource_id="testing",
+        datasource_id=testing_datasource.ds.id,
         participant_unique_id_field="participant_id",
         dwh_sa_table=sample_table,
         dwh_participants=participants,
@@ -230,7 +237,7 @@ def test_create_experiment_with_assignment_impl(
     )
 
     # Verify response
-    assert response.datasource_id == "testing"
+    assert response.datasource_id == testing_datasource.ds.id
     assert response.state == ExperimentState.ASSIGNED
     # Verify design_spec
     assert response.design_spec.experiment_id is not None
@@ -250,15 +257,16 @@ def test_create_experiment_with_assignment_impl(
     assert response.assign_summary.balance_check.balance_ok is True
 
     # Verify database state using the ids in the returned DesignSpec.
-    experiment = db_session.scalars(
+    experiment: Experiment = db_session.scalars(
         select(Experiment).where(
             Experiment.id == str(response.design_spec.experiment_id)
         )
     ).one()
     assert experiment.state == ExperimentState.ASSIGNED
-    assert experiment.datasource_id == "testing"
-    assert experiment.start_date == request.design_spec.start_date
-    assert experiment.end_date == request.design_spec.end_date
+    assert experiment.datasource_id == testing_datasource.ds.id
+    # This comparison is dependent on whether the db can store tz or not (sqlite does not).
+    assert dates_equal(experiment.start_date, request.design_spec.start_date)
+    assert dates_equal(experiment.end_date, request.design_spec.end_date)
     # Verify design_spec and audience_spec were stored correctly
     stored_design_spec = experiment.get_design_spec()
     assert stored_design_spec == response.design_spec
@@ -299,7 +307,7 @@ def test_create_experiment_with_assignment_impl(
 
 
 def test_create_experiment_with_assignment_impl_overwrites_uuids(
-    db_session: Session, sample_table, use_deterministic_random
+    db_session, testing_datasource, sample_table, use_deterministic_random
 ):
     """
     Test that the function overwrites requests with preset UUIDs
@@ -313,7 +321,7 @@ def test_create_experiment_with_assignment_impl_overwrites_uuids(
     # Call the function under test
     response = create_experiment_with_assignment_impl(
         request=request,
-        datasource_id="testing",
+        datasource_id=testing_datasource.ds.id,
         participant_unique_id_field="participant_id",
         dwh_sa_table=sample_table,
         dwh_participants=participants,
@@ -344,7 +352,7 @@ def test_create_experiment_with_assignment_impl_overwrites_uuids(
 
 
 def test_create_experiment_with_assignment_impl_no_metric_stratification(
-    db_session: Session, sample_table, use_deterministic_random
+    db_session, testing_datasource, sample_table, use_deterministic_random
 ):
     """Test implementation of creating an experiment without stratifying on metrics."""
     participants = make_sample_data(n=100)
@@ -353,7 +361,7 @@ def test_create_experiment_with_assignment_impl_no_metric_stratification(
     # Test with stratify_on_metrics=False
     response = create_experiment_with_assignment_impl(
         request=request.model_copy(deep=True),
-        datasource_id="testing",
+        datasource_id=testing_datasource.ds.id,
         participant_unique_id_field="participant_id",
         dwh_sa_table=sample_table,
         dwh_participants=participants,
@@ -363,7 +371,7 @@ def test_create_experiment_with_assignment_impl_no_metric_stratification(
     )
 
     # Verify basic response
-    assert response.datasource_id == "testing"
+    assert response.datasource_id == testing_datasource.ds.id
     assert response.state == ExperimentState.ASSIGNED
     assert response.design_spec.experiment_id is not None
     assert response.design_spec.arms[0].arm_id is not None
@@ -395,7 +403,7 @@ def test_create_experiment_with_assignment_impl_no_metric_stratification(
     assert abs(num_control - num_treat) <= 1
 
 
-def test_create_experiment_with_assignment_invalid_design_spec(db_session: Session):
+def test_create_experiment_with_assignment_invalid_design_spec(db_session):
     """Test creating an experiment and saving assignments to the database."""
     request = make_create_experiment_request(with_uuids=True)
 
@@ -410,15 +418,20 @@ def test_create_experiment_with_assignment_invalid_design_spec(db_session: Sessi
 
 
 def test_create_experiment_with_assignment(
-    db_session: Session, use_deterministic_random
+    db_session, sample_table, use_deterministic_random
 ):
     """Test creating an experiment and saving assignments to the database."""
+    # First create a datasource to maintain proper referential integrity, but with a local config so we know we can read our dwh data.
+    ds_metadata = conftest.make_datasource_metadata(db_session, datasource_id="testing")
     request = make_create_experiment_request(with_uuids=False)
 
     response = client.post(
         "/experiments/with-assignment",
         params={"chosen_n": 100, "random_state": 42},
-        headers={constants.HEADER_CONFIG_ID: "testing"},
+        headers={
+            constants.HEADER_CONFIG_ID: ds_metadata.ds.id,
+            constants.HEADER_API_KEY: ds_metadata.key,
+        },
         content=request.model_dump_json(),
     )
 
@@ -428,7 +441,7 @@ def test_create_experiment_with_assignment(
     assert experiment_config["design_spec"]["experiment_id"] is not None
     assert experiment_config["design_spec"]["arms"][0]["arm_id"] is not None
     assert experiment_config["design_spec"]["arms"][1]["arm_id"] is not None
-    assert experiment_config["datasource_id"] == "testing"
+    assert experiment_config["datasource_id"] == ds_metadata.ds.id
     assert experiment_config["state"] == ExperimentState.ASSIGNED
     assign_summary = experiment_config["assign_summary"]
     assert assign_summary["sample_size"] == 100
@@ -453,9 +466,9 @@ def test_create_experiment_with_assignment(
         select(Experiment).where(Experiment.id == str(experiment_id))
     ).one()
     assert experiment.state == ExperimentState.ASSIGNED
-    assert experiment.datasource_id == "testing"
-    assert experiment.start_date == request.design_spec.start_date
-    assert experiment.end_date == request.design_spec.end_date
+    assert experiment.datasource_id == ds_metadata.ds.id
+    assert dates_equal(experiment.start_date, request.design_spec.start_date)
+    assert dates_equal(experiment.end_date, request.design_spec.end_date)
     # Verify assignments were created
     assignments = db_session.scalars(
         select(ArmAssignment).where(ArmAssignment.experiment_id == str(experiment_id))

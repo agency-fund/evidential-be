@@ -234,7 +234,10 @@ def fixture_testing_datasource(db_session) -> DatasourceMetadata:
 
 
 def make_datasource_metadata(
-    db_session: Session, datasource_id: str | None = None, name="test ds"
+    db_session: Session,
+    datasource_id: str | None = None,
+    name="test ds",
+    datasource_id_for_config="testing-remote",
 ):
     """Generates a new Organization, Datasource, and API key in the database for testing.
 
@@ -245,7 +248,7 @@ def make_datasource_metadata(
 
     # We derive a new test datasource from the standard static "testing-remote" datasource by
     # randomizing its unique ID and marking it as requiring an API key.
-    test_ds = get_settings_datasource("testing-remote").config
+    test_ds = get_settings_datasource(datasource_id_for_config).config
 
     org = Organization(id="org" + run_id, name="test organization")
     datasource = Datasource(id=datasource_id, name=name)
