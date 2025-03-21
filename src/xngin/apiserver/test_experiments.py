@@ -38,12 +38,14 @@ from xngin.apiserver.routers.experiments import (
     commit_experiment_impl,
     experiment_assignments_to_csv_generator,
     create_experiment_with_assignment_impl,
+    get_experiment_assignments_impl,
     list_experiments_impl,
 )
 from xngin.apiserver.routers.experiments_api_types import (
     CreateExperimentRequest,
     AssignSummary,
     ExperimentConfig,
+    GetExperimentAssigmentsResponse,
     ListExperimentsResponse,
 )
 
@@ -668,6 +670,7 @@ def test_list_experiments_impl(db_session, testing_datasource):
 
 
 def test_get_experiment(db_session, testing_datasource):
+    """TODO: deprecate in favor of admin.py version when ready."""
     new_experiment = make_insertable_experiment(
         ExperimentState.DESIGNING, testing_datasource.ds.id
     )
@@ -693,14 +696,16 @@ def test_get_experiment(db_session, testing_datasource):
     assert not diff, f"Objects differ:\n{diff.pretty()}"
 
 
-def test_get_experiment_assignments(db_session: Session):
+def test_get_experiment_assignments_impl(db_session: Session, testing_datasource):
     # First insert an experiment with assignments
-    experiment = make_insertable_experiment(ExperimentState.COMMITTED)
-    experiment_id = str(experiment.id)
+    experiment = make_insertable_experiment(
+        ExperimentState.COMMITTED, testing_datasource.ds.id
+    )
+    experiment_id = experiment.id
     db_session.add(experiment)
 
-    arm1_id = str(experiment.design_spec["arms"][0]["arm_id"])
-    arm2_id = str(experiment.design_spec["arms"][1]["arm_id"])
+    arm1_id = experiment.design_spec["arms"][0]["arm_id"]
+    arm2_id = experiment.design_spec["arms"][1]["arm_id"]
     assignments = [
         ArmAssignment(
             experiment_id=experiment_id,
@@ -720,39 +725,32 @@ def test_get_experiment_assignments(db_session: Session):
     db_session.add_all(assignments)
     db_session.commit()
 
-    response = client.get(
-        f"/experiments/{experiment_id}/assignments",
-        headers={constants.HEADER_CONFIG_ID: "testing"},
-    )
+    data: GetExperimentAssigmentsResponse = get_experiment_assignments_impl(experiment)
 
-    # Verify response
-    assert response.status_code == 200
-    data = response.json()
-
-    # Check the response structure
-    assert data["experiment_id"] == experiment_id
-    assert data["sample_size"] == experiment.assign_summary["sample_size"]
-    assert data["balance_check"] == experiment.assign_summary["balance_check"]
+    # Check the response structure; lhs is a UUID and rhs is a string when accessed using sqlite.
+    assert str(data.experiment_id) == experiment.id
+    assert data.sample_size == experiment.assign_summary["sample_size"]
+    assert data.balance_check == experiment.get_balance_check()
 
     # Check assignments
-    assignments = data["assignments"]
+    assignments = data.assignments
     assert len(assignments) == 2
 
     # Verify first assignment
-    assert assignments[0]["participant_id"] == "p1"
-    assert assignments[0]["arm_id"] == arm1_id
-    assert assignments[0]["arm_name"] == "control"
-    assert len(assignments[0]["strata"]) == 1
-    assert assignments[0]["strata"][0]["field_name"] == "gender"
-    assert assignments[0]["strata"][0]["strata_value"] == "F"
+    assert assignments[0].participant_id == "p1"
+    assert str(assignments[0].arm_id) == arm1_id
+    assert assignments[0].arm_name == "control"
+    assert len(assignments[0].strata) == 1
+    assert assignments[0].strata[0].field_name == "gender"
+    assert assignments[0].strata[0].strata_value == "F"
 
     # Verify second assignment
-    assert assignments[1]["participant_id"] == "p2"
-    assert assignments[1]["arm_id"] == arm2_id
-    assert assignments[1]["arm_name"] == "treatment"
-    assert len(assignments[1]["strata"]) == 1
-    assert assignments[1]["strata"][0]["field_name"] == "gender"
-    assert assignments[1]["strata"][0]["strata_value"] == "M"
+    assert assignments[1].participant_id == "p2"
+    assert str(assignments[1].arm_id) == arm2_id
+    assert assignments[1].arm_name == "treatment"
+    assert len(assignments[1].strata) == 1
+    assert assignments[1].strata[0].field_name == "gender"
+    assert assignments[1].strata[0].strata_value == "M"
 
 
 def test_get_experiment_assignments_not_found():
