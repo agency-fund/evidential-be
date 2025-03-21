@@ -4,6 +4,7 @@ import dataclasses
 from dataclasses import dataclass
 from typing import Any
 
+from fastapi import HTTPException
 import pytest
 import numpy as np
 from deepdiff import DeepDiff
@@ -33,6 +34,8 @@ from xngin.apiserver.main import app
 from xngin.apiserver.models.enums import ExperimentState
 from xngin.apiserver.models.tables import ArmAssignment, Experiment
 from xngin.apiserver.routers.experiments import (
+    abandon_experiment_impl,
+    commit_experiment_impl,
     experiment_assignments_to_csv_generator,
     create_experiment_with_assignment_impl,
 )
@@ -109,7 +112,7 @@ def make_create_experiment_request(with_uuids: bool = True) -> CreateExperimentR
 
 
 # Insert an experiment with a valid state.
-def make_insert_experiment(state: ExperimentState, datasource_id="testing"):
+def make_insertable_experiment(state: ExperimentState, datasource_id="testing"):
     request = make_create_experiment_request()
     return Experiment(
         id=str(request.design_spec.experiment_id),
@@ -473,14 +476,104 @@ def test_create_experiment_with_assignment(
     assert abs(num_control - num_treat) <= 5  # Allow some wiggle room
 
 
+@pytest.mark.parametrize(
+    "method_under_test,initial_state,expected_state,expected_status,expected_detail",
+    [
+        # Success case
+        (
+            commit_experiment_impl,
+            ExperimentState.ASSIGNED,
+            ExperimentState.COMMITTED,
+            204,
+            None,
+        ),
+        # No-op
+        (
+            commit_experiment_impl,
+            ExperimentState.COMMITTED,
+            ExperimentState.COMMITTED,
+            304,
+            None,
+        ),
+        # Failure cases
+        (
+            commit_experiment_impl,
+            ExperimentState.DESIGNING,
+            ExperimentState.DESIGNING,
+            403,
+            "Invalid state: designing",
+        ),
+        (
+            commit_experiment_impl,
+            ExperimentState.ABORTED,
+            ExperimentState.ABORTED,
+            403,
+            "Invalid state: aborted",
+        ),
+        # Success cases
+        (
+            abandon_experiment_impl,
+            ExperimentState.DESIGNING,
+            ExperimentState.ABANDONED,
+            204,
+            None,
+        ),
+        (
+            abandon_experiment_impl,
+            ExperimentState.ASSIGNED,
+            ExperimentState.ABANDONED,
+            204,
+            None,
+        ),
+        # No-op
+        (
+            abandon_experiment_impl,
+            ExperimentState.ABANDONED,
+            ExperimentState.ABANDONED,
+            304,
+            None,
+        ),
+        # Failure case
+        (
+            abandon_experiment_impl,
+            ExperimentState.COMMITTED,
+            ExperimentState.COMMITTED,
+            403,
+            "Invalid state: committed",
+        ),
+    ],
+)
+def test_state_setting_experiment_impl(
+    db_session,
+    method_under_test,
+    initial_state,
+    expected_state,
+    expected_status,
+    expected_detail,
+):
+    # Initialize our state with an existing experiment who's state we want to modify.
+    experiment = make_insertable_experiment(initial_state)
+    db_session.add(experiment)
+    db_session.commit()
+
+    try:
+        response = method_under_test(db_session, experiment)
+    except HTTPException as e:
+        assert e.status_code == expected_status
+        assert e.detail == expected_detail
+    else:
+        assert response.status_code == expected_status
+        assert experiment.state == expected_state
+
+
 def test_list_experiments(db_session: Session):
-    experiment1 = make_insert_experiment(
+    experiment1 = make_insertable_experiment(
         ExperimentState.ASSIGNED, datasource_id="testing"
     )
-    experiment2 = make_insert_experiment(
+    experiment2 = make_insertable_experiment(
         ExperimentState.COMMITTED, datasource_id="testing"
     )
-    experiment3 = make_insert_experiment(
+    experiment3 = make_insertable_experiment(
         ExperimentState.ABORTED, datasource_id="testing-inline-schema"
     )
     # Set the created_at time to test ordering
@@ -511,7 +604,7 @@ def test_list_experiments(db_session: Session):
 
 
 def test_get_experiment(db_session: Session):
-    new_experiment = make_insert_experiment(ExperimentState.DESIGNING)
+    new_experiment = make_insertable_experiment(ExperimentState.DESIGNING)
     db_session.add(new_experiment)
     db_session.commit()
 
@@ -533,7 +626,7 @@ def test_get_experiment(db_session: Session):
 
 def test_get_experiment_assignments(db_session: Session):
     # First insert an experiment with assignments
-    experiment = make_insert_experiment(ExperimentState.COMMITTED)
+    experiment = make_insertable_experiment(ExperimentState.COMMITTED)
     experiment_id = str(experiment.id)
     db_session.add(experiment)
 
@@ -605,7 +698,7 @@ def test_get_experiment_assignments_not_found():
 
 def test_get_experiment_assignments_wrong_datasource(db_session: Session):
     # Create experiment in one datasource
-    experiment = make_insert_experiment(ExperimentState.COMMITTED)
+    experiment = make_insertable_experiment(ExperimentState.COMMITTED)
     db_session.add(experiment)
     db_session.commit()
 
@@ -620,7 +713,7 @@ def test_get_experiment_assignments_wrong_datasource(db_session: Session):
 
 def make_experiment_with_assignments(db_session):
     # First insert an experiment with assignments
-    experiment = make_insert_experiment(ExperimentState.COMMITTED)
+    experiment = make_insertable_experiment(ExperimentState.COMMITTED)
     db_session.add(experiment)
 
     arm1_id = experiment.design_spec["arms"][0]["arm_id"]
