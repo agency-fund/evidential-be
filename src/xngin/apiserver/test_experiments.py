@@ -74,7 +74,7 @@ def make_create_experiment_request(with_uuids: bool = True) -> CreateExperimentR
     experiment_id = str(uuid.uuid4()) if with_uuids else None
     arm1_id = str(uuid.uuid4()) if with_uuids else None
     arm2_id = str(uuid.uuid4()) if with_uuids else None
-    # Use timestamps without timezone to be database agnostic
+    # Attach UTC tz, but use dates_equal() to compare to respect db storage support
     start_date = datetime(2025, 1, 1, tzinfo=UTC)
     end_date = datetime(2025, 2, 1, tzinfo=UTC)
     # Construct request body
