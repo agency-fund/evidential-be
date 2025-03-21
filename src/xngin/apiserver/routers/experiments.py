@@ -298,7 +298,11 @@ def list_experiments_impl(xngin_session: Session, datasource_id: str):
         select(Experiment)
         .where(Experiment.datasource_id == datasource_id)
         .where(
-            Experiment.state.in_([ExperimentState.COMMITTED, ExperimentState.ASSIGNED])
+            Experiment.state.in_([
+                ExperimentState.DESIGNING,
+                ExperimentState.COMMITTED,
+                ExperimentState.ASSIGNED,
+            ])
         )
         .order_by(Experiment.created_at.desc())
     )

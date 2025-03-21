@@ -618,7 +618,7 @@ def test_list_experiments_sl_with_api_key(db_session, testing_datasource):
 
 
 def test_list_experiments_impl(db_session, testing_datasource):
-    """Test that we only get ASSIGNED and COMMITTED experiments for the specified datasource."""
+    """Test that we only get experiments in a valid state for the specified datasource."""
     experiment1 = make_insertable_experiment(
         ExperimentState.ASSIGNED, testing_datasource.ds.id
     )
@@ -626,31 +626,44 @@ def test_list_experiments_impl(db_session, testing_datasource):
         ExperimentState.COMMITTED, testing_datasource.ds.id
     )
     experiment3 = make_insertable_experiment(
+        ExperimentState.DESIGNING, testing_datasource.ds.id
+    )
+    experiment4 = make_insertable_experiment(
         ExperimentState.ABORTED, testing_datasource.ds.id
     )
     # One more experiment associated with a *different* datasource.
-    experiment4_metadata = conftest.make_datasource_metadata(db_session)
-    experiment4 = make_insertable_experiment(
-        ExperimentState.ASSIGNED, datasource_id=experiment4_metadata.ds.id
+    experiment5_metadata = conftest.make_datasource_metadata(db_session)
+    experiment5 = make_insertable_experiment(
+        ExperimentState.ASSIGNED, datasource_id=experiment5_metadata.ds.id
     )
     # Set the created_at time to test ordering
     experiment1.created_at = datetime.now(UTC) - timedelta(days=1)
     experiment2.created_at = datetime.now(UTC)
     experiment3.created_at = datetime.now(UTC) + timedelta(days=1)
-    db_session.add_all([experiment1, experiment2, experiment3, experiment4])
+    db_session.add_all([
+        experiment1,
+        experiment2,
+        experiment3,
+        experiment4,
+        experiment5,
+    ])
     db_session.commit()
 
     experiments = list_experiments_impl(db_session, testing_datasource.ds.id)
 
-    # experiment3 excluded due to datasource mismatch
-    assert len(experiments.items) == 2
-    actual1 = experiments.items[1]  # experiment1 is the second item as it's older
-    actual2 = experiments.items[0]
+    # experiment5 excluded due to datasource mismatch
+    assert len(experiments.items) == 3
+    actual1 = experiments.items[2]  # experiment1 is last as it's oldest
+    actual2 = experiments.items[1]
+    actual3 = experiments.items[0]
     assert actual1.state == ExperimentState.ASSIGNED
-    diff = DeepDiff(to_jsonable_python(actual1.design_spec), experiment1.design_spec)
+    diff = DeepDiff(actual1.design_spec, experiment1.get_design_spec())
     assert not diff, f"Objects differ:\n{diff.pretty()}"
     assert actual2.state == ExperimentState.COMMITTED
-    diff = DeepDiff(to_jsonable_python(actual2.design_spec), experiment2.design_spec)
+    diff = DeepDiff(actual2.design_spec, experiment2.get_design_spec())
+    assert not diff, f"Objects differ:\n{diff.pretty()}"
+    assert actual3.state == ExperimentState.DESIGNING
+    diff = DeepDiff(actual3.design_spec, experiment3.get_design_spec())
     assert not diff, f"Objects differ:\n{diff.pretty()}"
 
 
