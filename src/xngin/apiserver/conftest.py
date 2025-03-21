@@ -12,7 +12,7 @@ import pytest
 import sqlalchemy
 import sqlalchemy_bigquery
 from pydantic import TypeAdapter, ValidationError
-from sqlalchemy import StaticPool
+from sqlalchemy import StaticPool, make_url
 from sqlalchemy.dialects.postgresql import psycopg
 from sqlalchemy.engine.interfaces import Dialect
 from sqlalchemy.orm import sessionmaker
@@ -107,7 +107,7 @@ def get_test_uri_info(connection_uri: str):
         raise ValueError(
             f"connection_uri is not recognized as a SQLite, BigQuery, Redshift, or Postgres database: {connection_uri}"
         )
-    return connection_uri, dbtype, connect_args
+    return make_url(connection_uri), dbtype, connect_args
 
 
 def get_test_sessionmaker():

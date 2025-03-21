@@ -157,10 +157,6 @@ class ListApiKeysResponse(AdminApiBaseModel):
     items: list[ApiKeySummary]
 
 
-class CreateApiKeyRequest(AdminApiBaseModel):
-    datasource_id: Annotated[str, Field(...)]
-
-
 class CreateApiKeyResponse(AdminApiBaseModel):
     id: Annotated[str, Field(...)]
     datasource_id: Annotated[str, Field(...)]

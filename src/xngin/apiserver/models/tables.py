@@ -259,13 +259,13 @@ class ArmAssignment(Base):
     __tablename__ = "arm_assignments"
 
     experiment_id: Mapped[uuid.UUID] = mapped_column(
-        sqlalchemy.Uuid(),
+        sqlalchemy.Uuid(as_uuid=False),
         ForeignKey("experiments.id", ondelete="CASCADE"),
         primary_key=True,
     )
     participant_id: Mapped[str] = mapped_column(String(255), primary_key=True)
     participant_type: Mapped[str] = mapped_column(String(255))
-    arm_id: Mapped[uuid.UUID] = mapped_column(sqlalchemy.Uuid())
+    arm_id: Mapped[uuid.UUID] = mapped_column(sqlalchemy.Uuid(as_uuid=False))
     strata: Mapped[sqlalchemy.JSON] = mapped_column(
         comment="JSON serialized form of a list of Strata objects (from Assignment.strata)."
     )
@@ -284,7 +284,9 @@ class Experiment(Base):
 
     __tablename__ = "experiments"
 
-    id: Mapped[uuid.UUID] = mapped_column(sqlalchemy.Uuid(), primary_key=True)
+    id: Mapped[uuid.UUID] = mapped_column(
+        sqlalchemy.Uuid(as_uuid=False), primary_key=True
+    )
     datasource_id: Mapped[str] = mapped_column(
         String(255), ForeignKey("datasources.id", ondelete="CASCADE")
     )

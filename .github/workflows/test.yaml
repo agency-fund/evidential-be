@@ -83,13 +83,15 @@ jobs:
           --health-retries 5
         ports:
           - 5499:5432
+    env:
+      XNGIN_TEST_DWH_URI: "postgresql://postgres:postgres@localhost:5499/testing?sslmode=disable"
     steps:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v4
         with:
           version: "0.6.0"
           enable-cache: true
-      - run: uv run pytest -m pgintegration
+      - run: uv run pytest -m 'pgintegration or not integration'
   bq-integration:
     timeout-minutes: 15
     runs-on: ubuntu-22.04
