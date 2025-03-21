@@ -566,6 +566,12 @@ def test_lifecycle_with_pg(testing_datasource):
     assert {arm.arm_name for arm in parsed.assignments} == {"control", "treatment"}
     assert {arm.arm_id for arm in parsed.assignments} == parsed_arm_ids
 
+    # Delete the experiment.
+    response = pdelete(
+        f"/v1/m/datasources/{testing_datasource.ds.id}/experiments/{parsed_experiment_id}"
+    )
+    assert response.status_code == 204, response.content
+
 
 def test_create_experiment_with_assignment_validation_errors(
     db_session, testing_datasource_with_user_added
