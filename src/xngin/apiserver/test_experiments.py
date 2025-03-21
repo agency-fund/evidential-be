@@ -38,6 +38,7 @@ from xngin.apiserver.routers.experiments import (
     commit_experiment_impl,
     experiment_assignments_to_csv_generator,
     create_experiment_with_assignment_impl,
+    list_experiments_impl,
 )
 from xngin.apiserver.routers.experiments_api_types import (
     CreateExperimentRequest,
@@ -545,6 +546,7 @@ def test_create_experiment_with_assignment(
 )
 def test_state_setting_experiment_impl(
     db_session,
+    testing_datasource,
     method_under_test,
     initial_state,
     expected_state,
@@ -552,7 +554,7 @@ def test_state_setting_experiment_impl(
     expected_detail,
 ):
     # Initialize our state with an existing experiment who's state we want to modify.
-    experiment = make_insertable_experiment(initial_state)
+    experiment = make_insertable_experiment(initial_state, testing_datasource.ds.id)
     db_session.add(experiment)
     db_session.commit()
 
@@ -566,31 +568,80 @@ def test_state_setting_experiment_impl(
         assert experiment.state == expected_state
 
 
-def test_list_experiments(db_session: Session):
+def test_list_experiments_sl_without_api_key(db_session, testing_datasource):
+    """Tests that listing experiments tied to a db datasource requires an API key.
+
+    TODO: This indirectly tests that the datasource_dependency (i.e. sheets-based config) enforces
+    authentication, although is not used by any client. Likely we will deprecate this method of auth
+    used by routes in experiments.py to keep just the pure stateless and admin.py APIs."""
+    experiment = make_insertable_experiment(
+        ExperimentState.ASSIGNED, testing_datasource.ds.id
+    )
+    db_session.add(experiment)
+    db_session.commit()
+
+    response = client.get(
+        "/experiments",
+        headers={constants.HEADER_CONFIG_ID: testing_datasource.ds.id},
+    )
+    assert response.status_code == 403
+    assert response.json()["message"] == "API key missing or invalid."
+
+
+def test_list_experiments_sl_with_api_key(db_session, testing_datasource):
+    """Tests that listing experiments tied to a db datasource with an API key works.
+
+    TODO: deprecate/remove when we can officially move off sheets-based configuration.
+    """
+
+    expected_experiment = make_insertable_experiment(
+        ExperimentState.ASSIGNED, testing_datasource.ds.id
+    )
+    db_session.add(expected_experiment)
+    db_session.commit()
+
+    response = client.get(
+        "/experiments",
+        headers={
+            constants.HEADER_CONFIG_ID: testing_datasource.ds.id,
+            constants.HEADER_API_KEY: testing_datasource.key,
+        },
+    )
+    assert response.status_code == 200
+    experiments = ListExperimentsResponse.model_validate(response.json())
+    assert len(experiments.items) == 1
+    assert experiments.items[0].state == ExperimentState.ASSIGNED
+    diff = DeepDiff(
+        expected_experiment.get_design_spec(), experiments.items[0].design_spec
+    )
+    assert not diff, f"Objects differ:\n{diff.pretty()}"
+
+
+def test_list_experiments_impl(db_session, testing_datasource):
+    """Test that we only get ASSIGNED and COMMITTED experiments for the specified datasource."""
     experiment1 = make_insertable_experiment(
-        ExperimentState.ASSIGNED, datasource_id="testing"
+        ExperimentState.ASSIGNED, testing_datasource.ds.id
     )
     experiment2 = make_insertable_experiment(
-        ExperimentState.COMMITTED, datasource_id="testing"
+        ExperimentState.COMMITTED, testing_datasource.ds.id
     )
     experiment3 = make_insertable_experiment(
-        ExperimentState.ABORTED, datasource_id="testing-inline-schema"
+        ExperimentState.ABORTED, testing_datasource.ds.id
+    )
+    # One more experiment associated with a *different* datasource.
+    experiment4_metadata = conftest.make_datasource_metadata(db_session)
+    experiment4 = make_insertable_experiment(
+        ExperimentState.ASSIGNED, datasource_id=experiment4_metadata.ds.id
     )
     # Set the created_at time to test ordering
     experiment1.created_at = datetime.now(UTC) - timedelta(days=1)
     experiment2.created_at = datetime.now(UTC)
     experiment3.created_at = datetime.now(UTC) + timedelta(days=1)
-    db_session.add_all([experiment1, experiment2, experiment3])
+    db_session.add_all([experiment1, experiment2, experiment3, experiment4])
     db_session.commit()
 
-    response = client.get(
-        "/experiments",
-        headers={constants.HEADER_CONFIG_ID: "testing"},
-    )
+    experiments = list_experiments_impl(db_session, testing_datasource.ds.id)
 
-    assert response.status_code == 200, response.content
-
-    experiments = ListExperimentsResponse.model_validate(response.json())
     # experiment3 excluded due to datasource mismatch
     assert len(experiments.items) == 2
     actual1 = experiments.items[1]  # experiment1 is the second item as it's older
