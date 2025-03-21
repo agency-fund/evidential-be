@@ -667,14 +667,19 @@ def test_list_experiments_impl(db_session, testing_datasource):
     assert not diff, f"Objects differ:\n{diff.pretty()}"
 
 
-def test_get_experiment(db_session: Session):
-    new_experiment = make_insertable_experiment(ExperimentState.DESIGNING)
+def test_get_experiment(db_session, testing_datasource):
+    new_experiment = make_insertable_experiment(
+        ExperimentState.DESIGNING, testing_datasource.ds.id
+    )
     db_session.add(new_experiment)
     db_session.commit()
 
     response = client.get(
         f"/experiments/{new_experiment.id!s}",
-        headers={constants.HEADER_CONFIG_ID: "testing"},
+        headers={
+            constants.HEADER_CONFIG_ID: testing_datasource.ds.id,
+            constants.HEADER_API_KEY: testing_datasource.key,
+        },
     )
 
     assert response.status_code == 200, response.content

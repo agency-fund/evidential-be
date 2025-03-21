@@ -33,6 +33,7 @@ from xngin.apiserver.routers.admin_api_types import (
 )
 from xngin.apiserver.routers.experiments_api_types import (
     CreateExperimentWithAssignmentResponse,
+    ExperimentConfig,
     ListExperimentsResponse,
 )
 from xngin.apiserver.routers.oidc_dependencies import (
@@ -533,7 +534,15 @@ def test_lifecycle_with_pg(testing_datasource):
     parsed_experiment_id = parsed.design_spec.experiment_id
     assert parsed_experiment_id is not None
 
-    # List experiments
+    # Get that experiment.
+    response = pget(
+        f"/v1/m/datasources/{testing_datasource.ds.id}/experiments/{parsed_experiment_id}"
+    )
+    assert response.status_code == 200, response.content
+    parsed = ExperimentConfig.model_validate(response.json())
+    assert parsed.design_spec.experiment_id == parsed_experiment_id
+
+    # List experiments.
     response = pget(f"/v1/m/datasources/{testing_datasource.ds.id}/experiments")
     assert response.status_code == 200, response.content
     parsed = ListExperimentsResponse.model_validate(response.json())
