@@ -137,6 +137,8 @@ class DataType(enum.StrEnum):
 
 
 class FilterClass(enum.StrEnum):
+    """Internal helper for grouping our supported data types by what filter relations they can use."""
+
     DISCRETE = "discrete"
     NUMERIC = "numeric"
     UNKNOWN = "unknown"
