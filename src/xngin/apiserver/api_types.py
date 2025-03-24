@@ -120,9 +120,9 @@ class DataType(enum.StrEnum):
         match self:
             # TODO: is this customer specific?
             case _ if field_name.lower().endswith("_id"):
-                return DataTypeClass.DISCRETE
+                return FilterClass.DISCRETE
             case DataType.BOOLEAN | DataType.CHARACTER_VARYING | DataType.UUID:
-                return DataTypeClass.DISCRETE
+                return FilterClass.DISCRETE
             case (
                 DataType.DATE
                 | DataType.TIMESTAMP_WITHOUT_TIMEZONE
@@ -131,12 +131,12 @@ class DataType(enum.StrEnum):
                 | DataType.NUMERIC
                 | DataType.BIGINT
             ):
-                return DataTypeClass.NUMERIC
+                return FilterClass.NUMERIC
             case _:
-                return DataTypeClass.UNKNOWN
+                return FilterClass.UNKNOWN
 
 
-class DataTypeClass(enum.StrEnum):
+class FilterClass(enum.StrEnum):
     DISCRETE = "discrete"
     NUMERIC = "numeric"
     UNKNOWN = "unknown"
@@ -144,9 +144,9 @@ class DataTypeClass(enum.StrEnum):
     def valid_relations(self):
         """Gets the valid relation operators for this data type class."""
         match self:
-            case DataTypeClass.DISCRETE:
+            case FilterClass.DISCRETE:
                 return [Relation.INCLUDES, Relation.EXCLUDES]
-            case DataTypeClass.NUMERIC:
+            case FilterClass.NUMERIC:
                 return [
                     Relation.BETWEEN,
                     Relation.EXCLUDES,
