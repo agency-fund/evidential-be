@@ -1117,6 +1117,7 @@ def analyze_experiment(
                 ArmAnalysis(
                     arm=arm,
                     is_baseline=arm_data["is_baseline"],
+                    estimate=arm_data["estimate"],
                     p_value=arm_data["p_value"],
                     t_stat=arm_data["t_stat"],
                     std_error=arm_data["std_error"],

@@ -425,8 +425,7 @@ class ArmAnalysis(ApiBaseModel):
             description="UUID of the arm. If using the /experiments/with-assignment endpoint, this is generated for you and available in the response; you should NOT set this. Only generate ids of your own if using the stateless Experiment Design API as you will do your own persistence."
         ),
     ] = None
-    arm_name: str | None = None
-    arm_description: str | None = None
+    arm: Arm
     is_baseline: bool
     estimate: float
     p_value: float
@@ -436,7 +435,7 @@ class ArmAnalysis(ApiBaseModel):
 
 class MetricAnalysis(ApiBaseModel):
     metric_name: str | None = None
-    metric: DesignSpecMetric | None = None
+    metric: DesignSpecMetricRequest | None = None
     arm_analyses: Annotated[
         list[ArmAnalysis],
         Field(
