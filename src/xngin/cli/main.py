@@ -297,7 +297,7 @@ def create_testing_dwh(
     elif url.drivername == "postgresql+psycopg":
         df = read_csv()
         engine = create_engine_and_database(url)
-        with engine.connect() as conn, conn.begin():
+        with engine.begin() as conn:
             cursor = conn.connection.cursor()
             drop_and_create(
                 cursor,
@@ -335,7 +335,7 @@ def create_testing_dwh(
     else:
         df = read_csv()
         engine = create_engine_and_database(url)
-        with engine.connect() as conn, conn.begin():
+        with engine.begin() as conn:
             cursor = conn.connection.cursor()
             drop_and_create(
                 cursor,
