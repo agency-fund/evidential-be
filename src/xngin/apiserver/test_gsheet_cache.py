@@ -43,6 +43,24 @@ def mock_sheet_config():
     )
 
 
+@pytest.fixture(scope="module")
+def db_session():
+    """Alternate way to get a real db session without the fastapi app object."""
+    make_session = conftest.get_test_sessionmaker()
+    yield next(make_session())
+
+
+@pytest.fixture(autouse=True, scope="function")
+def fixture_teardown(db_session: Session):
+    # setup here
+    yield
+    # teardown here
+    # Clean the cache after each test.
+    db_session.query(CacheTable).delete()
+    db_session.commit()
+    db_session.close()
+
+
 def test_get_cached_entry(sheet_cache, mock_session, mock_sheet_config):
     key = SheetRef(url="https://example.com", worksheet="Sheet1")
     cache_key = f"{key.url}!{key.worksheet}"
@@ -118,10 +136,9 @@ def test_get_refresh_with_integrityerror(sheet_cache, mock_session, mock_sheet_c
     mock_session.commit.assert_called_once()
 
 
-def test_get_cache_and_refresh(mock_sheet_config):
+def test_get_cache_and_refresh(mock_sheet_config, db_session):
     """Tests the full cycle against a real in-mem db."""
-    make_session = conftest.get_test_sessionmaker()
-    local_cache = GSheetCache(next(make_session()))
+    local_cache = GSheetCache(db_session)
 
     key = SheetRef(url="https://example.com", worksheet="Sheet1")
     fetcher = Mock(return_value=mock_sheet_config)

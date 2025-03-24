@@ -9,7 +9,6 @@ import pytest
 import numpy as np
 from deepdiff import DeepDiff
 from fastapi.testclient import TestClient
-from pydantic_core import to_jsonable_python
 from sqlalchemy import select, Boolean, Column, MetaData, String, Table
 from sqlalchemy.dialects import sqlite, postgresql
 from sqlalchemy.orm import Session
@@ -18,6 +17,7 @@ from sqlalchemy.schema import CreateTable
 from xngin.apiserver import conftest, constants
 from xngin.apiserver.api_types import (
     Arm,
+    ArmSize,
     AudienceSpec,
     BalanceCheck,
     DesignSpec,
@@ -38,11 +38,14 @@ from xngin.apiserver.routers.experiments import (
     commit_experiment_impl,
     experiment_assignments_to_csv_generator,
     create_experiment_with_assignment_impl,
+    get_experiment_assignments_impl,
+    list_experiments_impl,
 )
 from xngin.apiserver.routers.experiments_api_types import (
     CreateExperimentRequest,
     AssignSummary,
     ExperimentConfig,
+    GetExperimentAssigmentsResponse,
     ListExperimentsResponse,
 )
 
@@ -72,9 +75,9 @@ def make_create_experiment_request(with_uuids: bool = True) -> CreateExperimentR
     experiment_id = str(uuid.uuid4()) if with_uuids else None
     arm1_id = str(uuid.uuid4()) if with_uuids else None
     arm2_id = str(uuid.uuid4()) if with_uuids else None
-    # Use timestamps without timezone to be database agnostic
-    start_date = datetime(2025, 1, 1)
-    end_date = datetime(2025, 2, 1)
+    # Attach UTC tz, but use dates_equal() to compare to respect db storage support
+    start_date = datetime(2025, 1, 1, tzinfo=UTC)
+    end_date = datetime(2025, 2, 1, tzinfo=UTC)
     # Construct request body
     return CreateExperimentRequest(
         design_spec=DesignSpec(
@@ -114,13 +117,15 @@ def make_create_experiment_request(with_uuids: bool = True) -> CreateExperimentR
 # Insert an experiment with a valid state.
 def make_insertable_experiment(state: ExperimentState, datasource_id="testing"):
     request = make_create_experiment_request()
+    arm0 = request.design_spec.arms[0]
+    arm1 = request.design_spec.arms[1]
     return Experiment(
         id=str(request.design_spec.experiment_id),
         datasource_id=datasource_id,
         state=state,
         start_date=request.design_spec.start_date,
         end_date=request.design_spec.end_date,
-        design_spec=to_jsonable_python(request.design_spec),
+        design_spec=request.design_spec.model_dump(mode="json"),
         audience_spec=request.audience_spec.model_dump(),
         power_analyses=PowerResponse(
             analyses=[
@@ -146,6 +151,10 @@ def make_insertable_experiment(state: ExperimentState, datasource_id="testing"):
         ).model_dump(),
         assign_summary=AssignSummary(
             sample_size=100,
+            arm_sizes=[
+                ArmSize(arm=arm0, size=50),
+                ArmSize(arm=arm1, size=50),
+            ],
             balance_check=BalanceCheck(
                 f_statistic=0.088004147,
                 numerator_df=2,
@@ -153,7 +162,7 @@ def make_insertable_experiment(state: ExperimentState, datasource_id="testing"):
                 p_value=0.91583011,
                 balance_ok=True,
             ),
-        ).model_dump(),
+        ).model_dump(mode="json"),
     )
 
 
@@ -196,8 +205,15 @@ def make_sample_data(n=100):
     ]
 
 
+def dates_equal(db_date: datetime, request_date: datetime):
+    """Compare dates with or without timezone info, honoring the db_date's timezone."""
+    if db_date.tzinfo is None:
+        return db_date == request_date.replace(tzinfo=None)
+    return db_date == request_date
+
+
 def test_create_experiment_with_assignment_impl(
-    db_session: Session, sample_table, use_deterministic_random
+    db_session, testing_datasource, sample_table, use_deterministic_random
 ):
     """Test implementation of creating an experiment with assignment."""
     participants = make_sample_data(n=100)
@@ -218,7 +234,7 @@ def test_create_experiment_with_assignment_impl(
         request=request.model_copy(
             deep=True
         ),  # we'll use the original request for assertions
-        datasource_id="testing",
+        datasource_id=testing_datasource.ds.id,
         participant_unique_id_field="participant_id",
         dwh_sa_table=sample_table,
         dwh_participants=participants,
@@ -228,7 +244,7 @@ def test_create_experiment_with_assignment_impl(
     )
 
     # Verify response
-    assert response.datasource_id == "testing"
+    assert response.datasource_id == testing_datasource.ds.id
     assert response.state == ExperimentState.ASSIGNED
     # Verify design_spec
     assert response.design_spec.experiment_id is not None
@@ -248,15 +264,16 @@ def test_create_experiment_with_assignment_impl(
     assert response.assign_summary.balance_check.balance_ok is True
 
     # Verify database state using the ids in the returned DesignSpec.
-    experiment = db_session.scalars(
+    experiment: Experiment = db_session.scalars(
         select(Experiment).where(
             Experiment.id == str(response.design_spec.experiment_id)
         )
     ).one()
     assert experiment.state == ExperimentState.ASSIGNED
-    assert experiment.datasource_id == "testing"
-    assert experiment.start_date == request.design_spec.start_date
-    assert experiment.end_date == request.design_spec.end_date
+    assert experiment.datasource_id == testing_datasource.ds.id
+    # This comparison is dependent on whether the db can store tz or not (sqlite does not).
+    assert dates_equal(experiment.start_date, request.design_spec.start_date)
+    assert dates_equal(experiment.end_date, request.design_spec.end_date)
     # Verify design_spec and audience_spec were stored correctly
     stored_design_spec = experiment.get_design_spec()
     assert stored_design_spec == response.design_spec
@@ -297,7 +314,7 @@ def test_create_experiment_with_assignment_impl(
 
 
 def test_create_experiment_with_assignment_impl_overwrites_uuids(
-    db_session: Session, sample_table, use_deterministic_random
+    db_session, testing_datasource, sample_table, use_deterministic_random
 ):
     """
     Test that the function overwrites requests with preset UUIDs
@@ -311,7 +328,7 @@ def test_create_experiment_with_assignment_impl_overwrites_uuids(
     # Call the function under test
     response = create_experiment_with_assignment_impl(
         request=request,
-        datasource_id="testing",
+        datasource_id=testing_datasource.ds.id,
         participant_unique_id_field="participant_id",
         dwh_sa_table=sample_table,
         dwh_participants=participants,
@@ -342,7 +359,7 @@ def test_create_experiment_with_assignment_impl_overwrites_uuids(
 
 
 def test_create_experiment_with_assignment_impl_no_metric_stratification(
-    db_session: Session, sample_table, use_deterministic_random
+    db_session, testing_datasource, sample_table, use_deterministic_random
 ):
     """Test implementation of creating an experiment without stratifying on metrics."""
     participants = make_sample_data(n=100)
@@ -351,7 +368,7 @@ def test_create_experiment_with_assignment_impl_no_metric_stratification(
     # Test with stratify_on_metrics=False
     response = create_experiment_with_assignment_impl(
         request=request.model_copy(deep=True),
-        datasource_id="testing",
+        datasource_id=testing_datasource.ds.id,
         participant_unique_id_field="participant_id",
         dwh_sa_table=sample_table,
         dwh_participants=participants,
@@ -361,7 +378,7 @@ def test_create_experiment_with_assignment_impl_no_metric_stratification(
     )
 
     # Verify basic response
-    assert response.datasource_id == "testing"
+    assert response.datasource_id == testing_datasource.ds.id
     assert response.state == ExperimentState.ASSIGNED
     assert response.design_spec.experiment_id is not None
     assert response.design_spec.arms[0].arm_id is not None
@@ -393,7 +410,7 @@ def test_create_experiment_with_assignment_impl_no_metric_stratification(
     assert abs(num_control - num_treat) <= 1
 
 
-def test_create_experiment_with_assignment_invalid_design_spec(db_session: Session):
+def test_create_experiment_with_assignment_invalid_design_spec(db_session):
     """Test creating an experiment and saving assignments to the database."""
     request = make_create_experiment_request(with_uuids=True)
 
@@ -408,15 +425,20 @@ def test_create_experiment_with_assignment_invalid_design_spec(db_session: Sessi
 
 
 def test_create_experiment_with_assignment(
-    db_session: Session, use_deterministic_random
+    db_session, sample_table, use_deterministic_random
 ):
     """Test creating an experiment and saving assignments to the database."""
+    # First create a datasource to maintain proper referential integrity, but with a local config so we know we can read our dwh data.
+    ds_metadata = conftest.make_datasource_metadata(db_session, datasource_id="testing")
     request = make_create_experiment_request(with_uuids=False)
 
     response = client.post(
         "/experiments/with-assignment",
         params={"chosen_n": 100, "random_state": 42},
-        headers={constants.HEADER_CONFIG_ID: "testing"},
+        headers={
+            constants.HEADER_CONFIG_ID: ds_metadata.ds.id,
+            constants.HEADER_API_KEY: ds_metadata.key,
+        },
         content=request.model_dump_json(),
     )
 
@@ -426,7 +448,7 @@ def test_create_experiment_with_assignment(
     assert experiment_config["design_spec"]["experiment_id"] is not None
     assert experiment_config["design_spec"]["arms"][0]["arm_id"] is not None
     assert experiment_config["design_spec"]["arms"][1]["arm_id"] is not None
-    assert experiment_config["datasource_id"] == "testing"
+    assert experiment_config["datasource_id"] == ds_metadata.ds.id
     assert experiment_config["state"] == ExperimentState.ASSIGNED
     assign_summary = experiment_config["assign_summary"]
     assert assign_summary["sample_size"] == 100
@@ -451,9 +473,9 @@ def test_create_experiment_with_assignment(
         select(Experiment).where(Experiment.id == str(experiment_id))
     ).one()
     assert experiment.state == ExperimentState.ASSIGNED
-    assert experiment.datasource_id == "testing"
-    assert experiment.start_date == request.design_spec.start_date
-    assert experiment.end_date == request.design_spec.end_date
+    assert experiment.datasource_id == ds_metadata.ds.id
+    assert dates_equal(experiment.start_date, request.design_spec.start_date)
+    assert dates_equal(experiment.end_date, request.design_spec.end_date)
     # Verify assignments were created
     assignments = db_session.scalars(
         select(ArmAssignment).where(ArmAssignment.experiment_id == str(experiment_id))
@@ -545,6 +567,7 @@ def test_create_experiment_with_assignment(
 )
 def test_state_setting_experiment_impl(
     db_session,
+    testing_datasource,
     method_under_test,
     initial_state,
     expected_state,
@@ -552,7 +575,7 @@ def test_state_setting_experiment_impl(
     expected_detail,
 ):
     # Initialize our state with an existing experiment who's state we want to modify.
-    experiment = make_insertable_experiment(initial_state)
+    experiment = make_insertable_experiment(initial_state, testing_datasource.ds.id)
     db_session.add(experiment)
     db_session.commit()
 
@@ -566,51 +589,119 @@ def test_state_setting_experiment_impl(
         assert experiment.state == expected_state
 
 
-def test_list_experiments(db_session: Session):
+def test_list_experiments_sl_without_api_key(db_session, testing_datasource):
+    """Tests that listing experiments tied to a db datasource requires an API key.
+
+    TODO: This indirectly tests that the datasource_dependency (i.e. sheets-based config) enforces
+    authentication, although is not used by any client. Likely we will deprecate this method of auth
+    used by routes in experiments.py to keep just the pure stateless and admin.py APIs."""
+    experiment = make_insertable_experiment(
+        ExperimentState.ASSIGNED, testing_datasource.ds.id
+    )
+    db_session.add(experiment)
+    db_session.commit()
+
+    response = client.get(
+        "/experiments",
+        headers={constants.HEADER_CONFIG_ID: testing_datasource.ds.id},
+    )
+    assert response.status_code == 403
+    assert response.json()["message"] == "API key missing or invalid."
+
+
+def test_list_experiments_sl_with_api_key(db_session, testing_datasource):
+    """Tests that listing experiments tied to a db datasource with an API key works.
+
+    TODO: deprecate/remove when we can officially move off sheets-based configuration.
+    """
+
+    expected_experiment = make_insertable_experiment(
+        ExperimentState.ASSIGNED, testing_datasource.ds.id
+    )
+    db_session.add(expected_experiment)
+    db_session.commit()
+
+    response = client.get(
+        "/experiments",
+        headers={
+            constants.HEADER_CONFIG_ID: testing_datasource.ds.id,
+            constants.HEADER_API_KEY: testing_datasource.key,
+        },
+    )
+    assert response.status_code == 200
+    experiments = ListExperimentsResponse.model_validate(response.json())
+    assert len(experiments.items) == 1
+    assert experiments.items[0].state == ExperimentState.ASSIGNED
+    diff = DeepDiff(
+        expected_experiment.get_design_spec(), experiments.items[0].design_spec
+    )
+    assert not diff, f"Objects differ:\n{diff.pretty()}"
+
+
+def test_list_experiments_impl(db_session, testing_datasource):
+    """Test that we only get experiments in a valid state for the specified datasource."""
     experiment1 = make_insertable_experiment(
-        ExperimentState.ASSIGNED, datasource_id="testing"
+        ExperimentState.ASSIGNED, testing_datasource.ds.id
     )
     experiment2 = make_insertable_experiment(
-        ExperimentState.COMMITTED, datasource_id="testing"
+        ExperimentState.COMMITTED, testing_datasource.ds.id
     )
     experiment3 = make_insertable_experiment(
-        ExperimentState.ABORTED, datasource_id="testing-inline-schema"
+        ExperimentState.DESIGNING, testing_datasource.ds.id
+    )
+    experiment4 = make_insertable_experiment(
+        ExperimentState.ABORTED, testing_datasource.ds.id
+    )
+    # One more experiment associated with a *different* datasource.
+    experiment5_metadata = conftest.make_datasource_metadata(db_session)
+    experiment5 = make_insertable_experiment(
+        ExperimentState.ASSIGNED, datasource_id=experiment5_metadata.ds.id
     )
     # Set the created_at time to test ordering
     experiment1.created_at = datetime.now(UTC) - timedelta(days=1)
     experiment2.created_at = datetime.now(UTC)
     experiment3.created_at = datetime.now(UTC) + timedelta(days=1)
-    db_session.add_all([experiment1, experiment2, experiment3])
+    db_session.add_all([
+        experiment1,
+        experiment2,
+        experiment3,
+        experiment4,
+        experiment5,
+    ])
     db_session.commit()
 
-    response = client.get(
-        "/experiments",
-        headers={constants.HEADER_CONFIG_ID: "testing"},
-    )
+    experiments = list_experiments_impl(db_session, testing_datasource.ds.id)
 
-    assert response.status_code == 200, response.content
-
-    experiments = ListExperimentsResponse.model_validate(response.json())
-    # experiment3 excluded due to datasource mismatch
-    assert len(experiments.items) == 2
-    actual1 = experiments.items[1]  # experiment1 is the second item as it's older
-    actual2 = experiments.items[0]
+    # experiment5 excluded due to datasource mismatch
+    assert len(experiments.items) == 3
+    actual1 = experiments.items[2]  # experiment1 is last as it's oldest
+    actual2 = experiments.items[1]
+    actual3 = experiments.items[0]
     assert actual1.state == ExperimentState.ASSIGNED
-    diff = DeepDiff(to_jsonable_python(actual1.design_spec), experiment1.design_spec)
+    diff = DeepDiff(actual1.design_spec, experiment1.get_design_spec())
     assert not diff, f"Objects differ:\n{diff.pretty()}"
     assert actual2.state == ExperimentState.COMMITTED
-    diff = DeepDiff(to_jsonable_python(actual2.design_spec), experiment2.design_spec)
+    diff = DeepDiff(actual2.design_spec, experiment2.get_design_spec())
+    assert not diff, f"Objects differ:\n{diff.pretty()}"
+    assert actual3.state == ExperimentState.DESIGNING
+    diff = DeepDiff(actual3.design_spec, experiment3.get_design_spec())
     assert not diff, f"Objects differ:\n{diff.pretty()}"
 
 
-def test_get_experiment(db_session: Session):
-    new_experiment = make_insertable_experiment(ExperimentState.DESIGNING)
+def test_get_experiment(db_session, testing_datasource):
+    """TODO: deprecate in favor of admin.py version when ready."""
+    new_experiment = make_insertable_experiment(
+        ExperimentState.DESIGNING, testing_datasource.ds.id
+    )
     db_session.add(new_experiment)
     db_session.commit()
 
     response = client.get(
         f"/experiments/{new_experiment.id!s}",
-        headers={constants.HEADER_CONFIG_ID: "testing"},
+        headers={
+            constants.HEADER_CONFIG_ID: testing_datasource.ds.id,
+            constants.HEADER_API_KEY: testing_datasource.key,
+        },
     )
 
     assert response.status_code == 200, response.content
@@ -624,14 +715,16 @@ def test_get_experiment(db_session: Session):
     assert not diff, f"Objects differ:\n{diff.pretty()}"
 
 
-def test_get_experiment_assignments(db_session: Session):
+def test_get_experiment_assignments_impl(db_session, testing_datasource):
     # First insert an experiment with assignments
-    experiment = make_insertable_experiment(ExperimentState.COMMITTED)
-    experiment_id = str(experiment.id)
+    experiment = make_insertable_experiment(
+        ExperimentState.COMMITTED, testing_datasource.ds.id
+    )
+    experiment_id = experiment.id
     db_session.add(experiment)
 
-    arm1_id = str(experiment.design_spec["arms"][0]["arm_id"])
-    arm2_id = str(experiment.design_spec["arms"][1]["arm_id"])
+    arm1_id = experiment.design_spec["arms"][0]["arm_id"]
+    arm2_id = experiment.design_spec["arms"][1]["arm_id"]
     assignments = [
         ArmAssignment(
             experiment_id=experiment_id,
@@ -651,43 +744,39 @@ def test_get_experiment_assignments(db_session: Session):
     db_session.add_all(assignments)
     db_session.commit()
 
-    response = client.get(
-        f"/experiments/{experiment_id}/assignments",
-        headers={constants.HEADER_CONFIG_ID: "testing"},
-    )
+    data: GetExperimentAssigmentsResponse = get_experiment_assignments_impl(experiment)
 
-    # Verify response
-    assert response.status_code == 200
-    data = response.json()
-
-    # Check the response structure
-    assert data["experiment_id"] == experiment_id
-    assert data["sample_size"] == experiment.assign_summary["sample_size"]
-    assert data["balance_check"] == experiment.assign_summary["balance_check"]
+    # Check the response structure; lhs is a UUID and rhs is a string when accessed using sqlite.
+    assert str(data.experiment_id) == experiment.id
+    assert data.sample_size == experiment.assign_summary["sample_size"]
+    assert data.balance_check == experiment.get_balance_check()
 
     # Check assignments
-    assignments = data["assignments"]
+    assignments = data.assignments
     assert len(assignments) == 2
 
     # Verify first assignment
-    assert assignments[0]["participant_id"] == "p1"
-    assert assignments[0]["arm_id"] == arm1_id
-    assert assignments[0]["arm_name"] == "control"
-    assert len(assignments[0]["strata"]) == 1
-    assert assignments[0]["strata"][0]["field_name"] == "gender"
-    assert assignments[0]["strata"][0]["strata_value"] == "F"
+    assert assignments[0].participant_id == "p1"
+    assert str(assignments[0].arm_id) == arm1_id
+    assert assignments[0].arm_name == "control"
+    assert len(assignments[0].strata) == 1
+    assert assignments[0].strata[0].field_name == "gender"
+    assert assignments[0].strata[0].strata_value == "F"
 
     # Verify second assignment
-    assert assignments[1]["participant_id"] == "p2"
-    assert assignments[1]["arm_id"] == arm2_id
-    assert assignments[1]["arm_name"] == "treatment"
-    assert len(assignments[1]["strata"]) == 1
-    assert assignments[1]["strata"][0]["field_name"] == "gender"
-    assert assignments[1]["strata"][0]["strata_value"] == "M"
+    assert assignments[1].participant_id == "p2"
+    assert str(assignments[1].arm_id) == arm2_id
+    assert assignments[1].arm_name == "treatment"
+    assert len(assignments[1].strata) == 1
+    assert assignments[1].strata[0].field_name == "gender"
+    assert assignments[1].strata[0].strata_value == "M"
 
 
 def test_get_experiment_assignments_not_found():
-    """Test getting assignments for a non-existent experiment."""
+    """Test getting assignments for a non-existent experiment.
+
+    TODO: deprecate this in favor of an admin.py version when ready.
+    """
     response = client.get(
         f"/experiments/{uuid.uuid4()}/assignments",
         headers={constants.HEADER_CONFIG_ID: "testing"},
@@ -696,9 +785,15 @@ def test_get_experiment_assignments_not_found():
     assert response.json()["detail"] == "Experiment not found"
 
 
-def test_get_experiment_assignments_wrong_datasource(db_session: Session):
+def test_get_experiment_assignments_wrong_datasource(db_session, testing_datasource):
+    """Test getting assignments for an experiment from a different datasource.
+
+    TODO: deprecate this in favor of an admin.py version when ready.
+    """
     # Create experiment in one datasource
-    experiment = make_insertable_experiment(ExperimentState.COMMITTED)
+    experiment = make_insertable_experiment(
+        ExperimentState.COMMITTED, testing_datasource.ds.id
+    )
     db_session.add(experiment)
     db_session.commit()
 
@@ -711,9 +806,10 @@ def test_get_experiment_assignments_wrong_datasource(db_session: Session):
     assert response.json()["detail"] == "Experiment not found"
 
 
-def make_experiment_with_assignments(db_session):
+def make_experiment_with_assignments(db_session, datasource_id="testing"):
+    """Helper function for the tests below."""
     # First insert an experiment with assignments
-    experiment = make_insertable_experiment(ExperimentState.COMMITTED)
+    experiment = make_insertable_experiment(ExperimentState.COMMITTED, datasource_id)
     db_session.add(experiment)
 
     arm1_id = experiment.design_spec["arms"][0]["arm_id"]
@@ -745,8 +841,8 @@ def make_experiment_with_assignments(db_session):
     return experiment
 
 
-def test_experiment_assignments_to_csv_generator(db_session: Session):
-    experiment = make_experiment_with_assignments(db_session)
+def test_experiment_assignments_to_csv_generator(db_session, testing_datasource):
+    experiment = make_experiment_with_assignments(db_session, testing_datasource.ds.id)
 
     (arm1_id, arm2_id) = experiment.get_arm_ids()
     (arm1_name, arm2_name) = experiment.get_arm_names()
@@ -758,12 +854,15 @@ def test_experiment_assignments_to_csv_generator(db_session: Session):
     assert rows[2] == f'p2,{arm2_id},{arm2_name},M,"esc,aped"\r\n'
 
 
-def test_get_experiment_assignments_as_csv(db_session: Session):
-    experiment = make_experiment_with_assignments(db_session)
+def test_get_experiment_assignments_as_csv(db_session, testing_datasource):
+    experiment = make_experiment_with_assignments(db_session, testing_datasource.ds.id)
 
     response = client.get(
         f"/experiments/{experiment.id!s}/assignments/csv",
-        headers={constants.HEADER_CONFIG_ID: "testing"},
+        headers={
+            constants.HEADER_CONFIG_ID: testing_datasource.ds.id,
+            constants.HEADER_API_KEY: testing_datasource.key,
+        },
     )
     assert response.status_code == 200
     assert (
