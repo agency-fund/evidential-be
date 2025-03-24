@@ -433,7 +433,8 @@ def test_lifecycle_with_pg(testing_datasource):
     assert response.status_code == 200, response.content
     parsed = InspectDatasourceTableResponse.model_validate(response.json())
     assert parsed == InspectDatasourceTableResponse(
-        detected_unique_id_fields=["id"],
+        # Note: create_inspect_table_response_from_table() doesn't explicitly check for uniqueness.
+        detected_unique_id_fields=["id", "uuid_filter"],
         fields=[
             FieldMetadata(
                 field_name="baseline_income", data_type=DataType.NUMERIC, description=""
@@ -485,6 +486,9 @@ def test_lifecycle_with_pg(testing_datasource):
             ),
             FieldMetadata(
                 field_name="potential_1", data_type=DataType.INTEGER, description=""
+            ),
+            FieldMetadata(
+                field_name="uuid_filter", data_type=DataType.UUID, description=""
             ),
         ],
     )
