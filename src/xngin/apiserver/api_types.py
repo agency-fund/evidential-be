@@ -61,8 +61,8 @@ class DataType(enum.StrEnum):
     NUMERIC = "numeric"
     TIMESTAMP_WITHOUT_TIMEZONE = "timestamp without time zone"
     BIGINT = "bigint"
-    JSONB = "unsupported"
-    JSON = "unsupported"
+    JSONB = "jsonb (unsupported)"
+    JSON = "json (unsupported)"
     UNKNOWN = "unsupported"
 
     @classmethod
@@ -103,8 +103,17 @@ class DataType(enum.StrEnum):
             return DataType.INTEGER
         if value is float:
             return DataType.DOUBLE_PRECISION
-        logger.warning(f"Unmatched type: {type(value)}.")
+        logger.warning("Unmatched type: %s", type(value))
         return DataType.UNKNOWN
+
+    @classmethod
+    def is_supported_type(cls, data_type: Self):
+        """Returns True if the type is supported as a strata, filter, and/or metric."""
+        return data_type not in (DataType.JSONB, DataType.JSON, DataType.UNKNOWN)
+
+    def is_supported(self):
+        """Returns True if the type is supported as a strata, filter, and/or metric."""
+        return DataType.is_supported_type(self)
 
     def filter_class(self, field_name):
         """Classifies a DataType into a filter class."""

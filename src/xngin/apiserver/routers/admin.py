@@ -641,13 +641,15 @@ def create_inspect_table_response_from_table(table: sqlalchemy.Table):
     collected = []
     for column in table.columns.values():
         type_hint = column.type
-        collected.append(
-            FieldMetadata(
-                field_name=column.name,
-                data_type=DataType.match(type_hint),
-                description=column.comment if column.comment else "",
+        data_type = DataType.match(type_hint)
+        if data_type.is_supported():
+            collected.append(
+                FieldMetadata(
+                    field_name=column.name,
+                    data_type=data_type,
+                    description=column.comment if column.comment else "",
+                )
             )
-        )
 
     return InspectDatasourceTableResponse(
         detected_unique_id_fields=list(sorted(possible_id_columns)),
