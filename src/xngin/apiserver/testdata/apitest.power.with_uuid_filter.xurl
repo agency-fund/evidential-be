@@ -1,0 +1,141 @@
+POST http://localhost:8000/v1/power?participant_type=test_participant_type
+Datasource-ID: testing
+```json
+{
+ "design_spec": {
+    "experiment_id": "0897bbd7-dacd-41b4-b164-7a1950fa61f2",
+    "experiment_name": "Sample experiment name.",
+    "description": "Same as apitest.power.xurl but with a uuid filter cutting available units approximately in half.",
+    "arms": [
+      {
+        "arm_name": "Control",
+        "arm_id": "699a500b-41d6-4cba-b254-60b9493717cb"
+      },
+      {
+        "arm_name": "Treatment",
+        "arm_id": "5bc829fb-ffa6-456c-9e54-d26ba8d1031d"
+      }
+    ],
+    "start_date": "2024-11-06",
+    "end_date": "2024-11-20",
+    "strata_field_names": [
+      "is_onboarded"
+    ],
+    "power": 0.8,
+    "alpha": 0.05,
+    "fstat_thresh": 0.5,
+    "metrics": [
+      {
+        "field_name": "current_income",
+        "metric_pct_change": 0.1
+      },
+      {
+        "field_name": "income",
+        "metric_pct_change": 0.1
+      },
+      {
+        "field_name": "is_engaged",
+        "metric_pct_change": 0.1
+      }
+    ]
+  },
+  "audience_spec": {
+    "participant_type": "test_participant_type",
+    "filters": [{
+      "field_name": "ethnicity",
+      "relation": "includes",
+      "value": ["Asian"]
+    },
+    {
+      "field_name": "uuid_filter",
+      "relation": "includes",
+      "value": ["1731e17b-88b4-4021-b8c5-77929d53ab9a"]
+    }]
+  }
+}
+```
+HTTP 200
+```json
+{
+  "analyses": [
+    {
+      "metric_spec": {
+        "available_n": 19623,
+        "available_nonnull_n": 19623,
+        "field_name": "current_income",
+        "metric_baseline": 26338.399197267274,
+        "metric_pct_change": 0.1,
+        "metric_stddev": 6742.196276434995,
+        "metric_target": 28972.239116994002,
+        "metric_type": "numeric"
+      },
+      "msg": {
+        "msg": "There are 19623 units available to run your experiment and a minimum of 208 units are needed to meet your experimental design specs. There are enough units available. ",
+        "source_msg": "There are {available_n} units available to run your experiment and a minimum of {target_n} units are needed to meet your experimental design specs. There are enough units available. ",
+        "type": "sufficient",
+        "values": {
+          "available_n": 19623,
+          "available_nonnull_n": 19623,
+          "target_n": 208
+        }
+      },
+      "pct_change_possible": null,
+      "sufficient_n": true,
+      "target_n": 208,
+      "target_possible": null
+    },
+    {
+      "metric_spec": {
+        "available_n": 19623,
+        "available_nonnull_n": 19623,
+        "field_name": "income",
+        "metric_baseline": 30902.046254715307,
+        "metric_pct_change": 0.1,
+        "metric_stddev": 8431.713137849685,
+        "metric_target": 33992.25088018684,
+        "metric_type": "numeric"
+      },
+      "msg": {
+        "msg": "There are 19623 units available to run your experiment and a minimum of 236 units are needed to meet your experimental design specs. There are enough units available. ",
+        "source_msg": "There are {available_n} units available to run your experiment and a minimum of {target_n} units are needed to meet your experimental design specs. There are enough units available. ",
+        "type": "sufficient",
+        "values": {
+          "available_n": 19623,
+          "available_nonnull_n": 19623,
+          "target_n": 236
+        }
+      },
+      "pct_change_possible": null,
+      "sufficient_n": true,
+      "target_n": 236,
+      "target_possible": null
+    },
+    {
+      "metric_spec": {
+        "available_n": 19623,
+        "available_nonnull_n": 19623,
+        "field_name": "is_engaged",
+        "metric_baseline": 0.20802119961269938,
+        "metric_pct_change": 0.1,
+        "metric_stddev": 0.4058920794058352,
+        "metric_target": 0.22882331957396934,
+        "metric_type": "numeric"
+      },
+      "msg": {
+        "msg": "There are 19623 units available to run your experiment and a minimum of 11956 units are needed to meet your experimental design specs. There are enough units available. ",
+        "source_msg": "There are {available_n} units available to run your experiment and a minimum of {target_n} units are needed to meet your experimental design specs. There are enough units available. ",
+        "type": "sufficient",
+        "values": {
+          "available_n": 19623,
+          "available_nonnull_n": 19623,
+          "target_n": 11956
+        }
+      },
+      "pct_change_possible": null,
+      "sufficient_n": true,
+      "target_n": 11956,
+      "target_possible": null
+    }
+  ]
+}
+```
