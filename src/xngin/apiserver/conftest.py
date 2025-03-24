@@ -15,7 +15,7 @@ from pydantic import TypeAdapter, ValidationError
 from sqlalchemy import StaticPool, make_url
 from sqlalchemy.dialects.postgresql import psycopg
 from sqlalchemy.engine.interfaces import Dialect
-from sqlalchemy.orm import sessionmaker
+from sqlalchemy.orm import sessionmaker, Session
 
 from xngin.apiserver import database, flags
 from xngin.apiserver.apikeys import make_key, hash_key
@@ -111,8 +111,11 @@ def get_test_uri_info(connection_uri: str):
 
 
 def get_test_sessionmaker():
-    """Returns a Session generator backed by an ephemeral db for use in tests as our app db."""
-    # We use an in-memory ephemeral database for the xngindb during tests.
+    """
+    Returns a function to create a Session generator for use in tests as our app db.
+
+    The backing db is configured by XNGIN_TEST_APPDB_URI, defaulting to an in-memory ephemeral db.
+    """
     connect_url, _, connect_args = get_test_appdb_info()
     db_engine = sqlalchemy.create_engine(
         connect_url,
@@ -219,19 +222,36 @@ class DatasourceMetadata:
 
 @pytest.fixture(name="testing_datasource", scope="function")
 def fixture_testing_datasource(db_session) -> DatasourceMetadata:
-    """Generates a new Organization, Datasource, and API key for a test."""
+    """
+    Generates a new Organization, Datasource, and API key for a test.
+
+    This is NOT the same as the default Org+Datasource auto-generated for privileged users (i.e. cases where we use PRIVILEGED_TOKEN_FOR_TESTING+PRIVILEGED_EMAIL).
+
+    Note: The datasource configured in this fixture represents a customer database. This is
+    *different* than the xngin server-side database configured by conftest.setup().
+    """
+    return make_datasource_metadata(db_session)
+
+
+def make_datasource_metadata(
+    db_session: Session,
+    datasource_id: str | None = None,
+    name="test ds",
+    datasource_id_for_config="testing-remote",
+):
+    """Generates a new Organization, Datasource, and API key in the database for testing.
+
+    If datasource_id is not provided, it will be randomly generated.
+    """
     run_id = secrets.token_hex(8)
-    datasource_id = "ds" + run_id
+    datasource_id = datasource_id or "ds" + run_id
 
     # We derive a new test datasource from the standard static "testing-remote" datasource by
     # randomizing its unique ID and marking it as requiring an API key.
-    #
-    # Note: The datasource configured in this fixture represents a customer database. This is *different* than the
-    # xngin server-side database configured by conftest.setup().
-    test_ds = get_settings_datasource("testing-remote").config
+    test_ds = get_settings_datasource(datasource_id_for_config).config
 
     org = Organization(id="org" + run_id, name="test organization")
-    datasource = Datasource(id=datasource_id, name="test ds")
+    datasource = Datasource(id=datasource_id, name=name)
     datasource.set_config(test_ds)
     datasource.organization = org
 

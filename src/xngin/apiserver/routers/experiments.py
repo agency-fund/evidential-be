@@ -168,6 +168,7 @@ def create_experiment_with_assignment_impl(
     assign_summary = AssignSummary(
         balance_check=assignment_response.balance_check,
         sample_size=assignment_response.sample_size,
+        arm_sizes=assignment_response.arm_sizes,
     )
     experiment = Experiment(
         id=str(request.design_spec.experiment_id),
@@ -298,7 +299,11 @@ def list_experiments_impl(xngin_session: Session, datasource_id: str):
         select(Experiment)
         .where(Experiment.datasource_id == datasource_id)
         .where(
-            Experiment.state.in_([ExperimentState.COMMITTED, ExperimentState.ASSIGNED])
+            Experiment.state.in_([
+                ExperimentState.DESIGNING,
+                ExperimentState.COMMITTED,
+                ExperimentState.ASSIGNED,
+            ])
         )
         .order_by(Experiment.created_at.desc())
     )

@@ -7,6 +7,7 @@ import uuid
 import pytest
 from fastapi.testclient import TestClient
 from pydantic import SecretStr
+from sqlalchemy.orm import Session
 
 from xngin.apiserver import conftest
 from xngin.apiserver import main as main_module
@@ -14,7 +15,7 @@ from xngin.apiserver.api_types import DataType
 from xngin.apiserver.dependencies import xngin_db_session
 from xngin.apiserver.main import app
 from xngin.apiserver.models.enums import ExperimentState
-from xngin.apiserver.models.tables import Experiment
+from xngin.apiserver.models.tables import Experiment, Organization, User
 from xngin.apiserver.routers import oidc_dependencies
 from xngin.apiserver.routers.admin_api_types import (
     CreateDatasourceRequest,
@@ -32,6 +33,8 @@ from xngin.apiserver.routers.admin_api_types import (
 )
 from xngin.apiserver.routers.experiments_api_types import (
     CreateExperimentWithAssignmentResponse,
+    ExperimentConfig,
+    GetExperimentAssigmentsResponse,
     ListExperimentsResponse,
 )
 from xngin.apiserver.routers.oidc_dependencies import (
@@ -88,6 +91,19 @@ uget = partial(
 def db_session():
     session = next(app.dependency_overrides[xngin_db_session]())
     yield session
+
+
+@pytest.fixture(autouse=True, scope="function")
+def fixture_teardown(db_session: Session):
+    # setup here
+    yield
+    # teardown here
+
+    # Clean up objects created in each test by truncating tables and leveraging cascade.
+    db_session.query(Organization).delete()
+    db_session.query(User).delete()
+    db_session.commit()
+    db_session.close()
 
 
 @pytest.fixture(scope="module", autouse=True)
@@ -517,9 +533,19 @@ def test_lifecycle_with_pg(testing_datasource):
     assert response.status_code == 200, response.content
     parsed = CreateExperimentWithAssignmentResponse.model_validate(response.json())
     parsed_experiment_id = parsed.design_spec.experiment_id
+    parsed_arm_ids = {arm.arm_id for arm in parsed.design_spec.arms}
     assert parsed_experiment_id is not None
+    assert len(parsed_arm_ids) == 2
 
-    # List experiments
+    # Get that experiment.
+    response = pget(
+        f"/v1/m/datasources/{testing_datasource.ds.id}/experiments/{parsed_experiment_id}"
+    )
+    assert response.status_code == 200, response.content
+    parsed = ExperimentConfig.model_validate(response.json())
+    assert parsed.design_spec.experiment_id == parsed_experiment_id
+
+    # List experiments.
     response = pget(f"/v1/m/datasources/{testing_datasource.ds.id}/experiments")
     assert response.status_code == 200, response.content
     parsed = ListExperimentsResponse.model_validate(response.json())
@@ -532,6 +558,25 @@ def test_lifecycle_with_pg(testing_datasource):
         f"/v1/m/datasources/{testing_datasource.ds.id}/experiments/{parsed_experiment_id}/analyze"
     )
     assert response.status_code == 200, response.content
+
+    # Get assignments for the experiment.
+    response = pget(
+        f"/v1/m/datasources/{testing_datasource.ds.id}/experiments/{parsed_experiment_id}/assignments"
+    )
+    assert response.status_code == 200, response.content
+    parsed = GetExperimentAssigmentsResponse.model_validate(response.json())
+    assert parsed.experiment_id == parsed_experiment_id
+    assert parsed.sample_size == 100
+    assert parsed.balance_check is not None
+    assert len(parsed.assignments) == 100
+    assert {arm.arm_name for arm in parsed.assignments} == {"control", "treatment"}
+    assert {arm.arm_id for arm in parsed.assignments} == parsed_arm_ids
+
+    # Delete the experiment.
+    response = pdelete(
+        f"/v1/m/datasources/{testing_datasource.ds.id}/experiments/{parsed_experiment_id}"
+    )
+    assert response.status_code == 204, response.content
 
 
 def test_create_experiment_with_assignment_validation_errors(

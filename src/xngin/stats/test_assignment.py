@@ -83,12 +83,13 @@ def make_arms(names: list[str]):
 
 
 def test_assign_treatment(sample_table, sample_rows):
+    arms = make_arms(["control", "treatment"])
     result = assign_treatment(
         sa_table=sample_table,
         data=sample_rows,
         stratum_cols=["region", "gender"],
         id_col="id",
-        arms=make_arms(["control", "treatment"]),
+        arms=arms,
         experiment_id="b767716b-f388-4cd9-a18a-08c4916ce26f",
         random_state=42,
         stratum_id_name="stratum_id",
@@ -103,6 +104,17 @@ def test_assign_treatment(sample_table, sample_rows):
         result.sample_size
         == result.balance_check.numerator_df + result.balance_check.denominator_df + 1
     )
+    control_arm = arms[0]
+    treatment_arm = arms[1]
+    actual_control_arm = result.arm_sizes[0]
+    actual_treatment_arm = result.arm_sizes[1]
+    assert actual_control_arm.arm.arm_id == control_arm.arm_id
+    assert actual_control_arm.arm.arm_name == control_arm.arm_name
+    assert actual_control_arm.size == len(sample_rows) // 2
+    assert actual_treatment_arm.arm.arm_id == treatment_arm.arm_id
+    assert actual_treatment_arm.arm.arm_name == treatment_arm.arm_name
+    assert actual_treatment_arm.size == len(sample_rows) // 2
+    assert sum(arm.size for arm in result.arm_sizes) == len(sample_rows)
     assert result.unique_id_field == "id"
     assert isinstance(result.assignments, list)
     assert len(set([x.participant_id for x in result.assignments])) == len(
@@ -142,13 +154,15 @@ def test_assign_treatment(sample_table, sample_rows):
 
 
 def test_assign_treatment_multiple_arms(sample_table, sample_rows):
+    arms = make_arms(["control", "treatment_a", "treatment_b"])
     result = assign_treatment(
         sa_table=sample_table,
         data=sample_rows,
         stratum_cols=["gender", "region"],
         id_col="id",
-        arms=make_arms(["control", "treatment_a", "treatment_b"]),
+        arms=arms,
         experiment_id="b767716b-f388-4cd9-a18a-08c4916ce26f",
+        random_state=42,
     )
 
     # Check that assignments is a list
@@ -163,6 +177,22 @@ def test_assign_treatment_multiple_arms(sample_table, sample_rows):
     assert len(set(participant.arm_name for participant in result.assignments)) == 3
     assert result.sample_size == len(sample_rows)
     assert result.unique_id_field == "id"
+    arm0 = arms[0]
+    arm1 = arms[1]
+    arm2 = arms[2]
+    actual_arm0 = result.arm_sizes[0]
+    actual_arm1 = result.arm_sizes[1]
+    actual_arm2 = result.arm_sizes[2]
+    assert actual_arm0.arm.arm_id == arm0.arm_id
+    assert actual_arm0.arm.arm_name == arm0.arm_name
+    assert actual_arm0.size == pytest.approx(len(sample_rows) // 3, abs=1)
+    assert actual_arm1.arm.arm_id == arm1.arm_id
+    assert actual_arm1.arm.arm_name == arm1.arm_name
+    assert actual_arm1.size == pytest.approx(len(sample_rows) // 3, abs=1)
+    assert actual_arm2.arm.arm_id == arm2.arm_id
+    assert actual_arm2.arm.arm_name == arm2.arm_name
+    assert actual_arm2.size == pytest.approx(len(sample_rows) // 3, abs=1)
+    assert sum(arm.size for arm in result.arm_sizes) == len(sample_rows)
 
 
 def test_assign_treatment_reproducibility(sample_table, sample_rows):
@@ -349,12 +379,14 @@ def test_simple_random_assignment(sample_rows):
     assignments = simple_random_assignment(
         sample_rows, make_arms(["A", "B"]), random_state=42
     )
+    assert len(assignments) == n
     assert assignments.count(0) == n // 2
     assert assignments.count(1) == n // 2
 
     assignments = simple_random_assignment(
         sample_rows, make_arms(["A", "B", "C"]), random_state=42
     )
+    assert len(assignments) == n
     assert assignments.count(0) in (n // 3, n // 3 + 1)
     assert assignments.count(1) in (n // 3, n // 3 + 1)
     assert assignments.count(2) in (n // 3, n // 3 + 1)
