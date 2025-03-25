@@ -61,8 +61,8 @@ class DataType(enum.StrEnum):
     NUMERIC = "numeric"
     TIMESTAMP_WITHOUT_TIMEZONE = "timestamp without time zone"
     BIGINT = "bigint"
-    JSONB = "unsupported"
-    JSON = "unsupported"
+    JSONB = "jsonb (unsupported)"
+    JSON = "json (unsupported)"
     UNKNOWN = "unsupported"
 
     @classmethod
@@ -103,17 +103,26 @@ class DataType(enum.StrEnum):
             return DataType.INTEGER
         if value is float:
             return DataType.DOUBLE_PRECISION
-        logger.warning(f"Unmatched type: {type(value)}.")
+        logger.warning("Unmatched type: %s", type(value))
         return DataType.UNKNOWN
+
+    @classmethod
+    def is_supported_type(cls, data_type: Self):
+        """Returns True if the type is supported as a strata, filter, and/or metric."""
+        return data_type not in (DataType.JSONB, DataType.JSON, DataType.UNKNOWN)
+
+    def is_supported(self):
+        """Returns True if the type is supported as a strata, filter, and/or metric."""
+        return DataType.is_supported_type(self)
 
     def filter_class(self, field_name):
         """Classifies a DataType into a filter class."""
         match self:
             # TODO: is this customer specific?
             case _ if field_name.lower().endswith("_id"):
-                return DataTypeClass.DISCRETE
+                return FilterClass.DISCRETE
             case DataType.BOOLEAN | DataType.CHARACTER_VARYING | DataType.UUID:
-                return DataTypeClass.DISCRETE
+                return FilterClass.DISCRETE
             case (
                 DataType.DATE
                 | DataType.TIMESTAMP_WITHOUT_TIMEZONE
@@ -122,12 +131,14 @@ class DataType(enum.StrEnum):
                 | DataType.NUMERIC
                 | DataType.BIGINT
             ):
-                return DataTypeClass.NUMERIC
+                return FilterClass.NUMERIC
             case _:
-                return DataTypeClass.UNKNOWN
+                return FilterClass.UNKNOWN
 
 
-class DataTypeClass(enum.StrEnum):
+class FilterClass(enum.StrEnum):
+    """Internal helper for grouping our supported data types by what filter relations they can use."""
+
     DISCRETE = "discrete"
     NUMERIC = "numeric"
     UNKNOWN = "unknown"
@@ -135,9 +146,9 @@ class DataTypeClass(enum.StrEnum):
     def valid_relations(self):
         """Gets the valid relation operators for this data type class."""
         match self:
-            case DataTypeClass.DISCRETE:
+            case FilterClass.DISCRETE:
                 return [Relation.INCLUDES, Relation.EXCLUDES]
-            case DataTypeClass.NUMERIC:
+            case FilterClass.NUMERIC:
                 return [
                     Relation.BETWEEN,
                     Relation.EXCLUDES,
