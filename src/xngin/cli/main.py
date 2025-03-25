@@ -109,9 +109,12 @@ def df_to_ddl(
     # Check for UUID columns by trying to parse the first non-null value of string columns as UUID
     df_dtypes = {col: dtype for col, dtype in df.dtypes.items()}
     for col, dtype in df_dtypes.items():
-        if dtype not in type_map:
+        if dtype.name not in type_map:
             logging.warning(
-                f"Column '{col}' has unknown SQL type for Pandas dtype '{dtype}'. Using default: {default_sql_type}"
+                "Column '%s' has unknown SQL type for Pandas dtype '%s'. Using default: %s",
+                col,
+                dtype,
+                default_sql_type,
             )
         if dtype == "object":
             nonnulls = df[col].dropna()
