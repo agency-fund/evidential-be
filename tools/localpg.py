@@ -198,6 +198,7 @@ def run(
                 )
                 console.print(
                     f"\n🪓 To view the logs, run:\n   [command]docker logs --follow {name}[/]"
+                    f"\n🔌 Default connection string:\n   [url]postgresql://postgres:postgres@localhost:{port}/postgres?sslmode=disable[/]"
                 )
 
         # Create the database if requested even if the container was already running.

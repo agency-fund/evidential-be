@@ -110,7 +110,6 @@ tasks:
     interactive: true
     cmds:
       - ./tools/localpg.py --allow-existing -d --wait --create-db test_xngin
-      - ./tools/localpg.py --allow-existing -d --wait --create-db test_dwh
       - uv run pytest -m 'pgintegration or not integration'
   make-migrations:
     desc: "Build Postgres migrations"
