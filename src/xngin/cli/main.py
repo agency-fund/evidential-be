@@ -250,6 +250,12 @@ def create_testing_dwh(
         ct = cur.fetchone()[0]
         print(f"Loaded {ct} rows into {full_table_name}.")
 
+    if hacks and url.drivername != "postgresql+psycopg":
+        logging.warning(
+            "--hacks are only supported using postgresql+psycopg; "
+            "ignoring for non-psycopg connections."
+        )
+
     if url.host and url.host.endswith(REDSHIFT_HOSTNAME_SUFFIX):
         if not bucket:
             print("--bucket is required when importing into Redshift.")
