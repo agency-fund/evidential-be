@@ -554,7 +554,7 @@ def infer_table_from_cursor(
     columns = []
     metadata = sqlalchemy.MetaData()
     try:
-        with engine.connect() as connection:
+        with engine.begin() as connection:
             safe_table = sqlalchemy.quoted_name(table_name, quote=True)
             # Create a select statement - this is safe from SQL injection
             query = sqlalchemy.select(text("*")).select_from(text(safe_table)).limit(0)

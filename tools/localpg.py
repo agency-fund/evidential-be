@@ -168,49 +168,55 @@ def run(
             check=True,
         )
         if result.stdout.strip():
-            console.print(f"\n⚠️ [warning]Container named '{name}' already exists.[/]")
+            console.print(f"⚠️ [warning]Container named '{name}' already exists.[/]")
             if allow_existing:
-                console.print("[info]Continuing due to --allow-existing flag[/]\n")
-                return
-            console.print(f"[command]Run 'docker kill {name}' to remove it first.[/]\n")
-            # ruff: noqa: TRY301
-            raise typer.Exit(3)
-        cmd = build_docker_command(daemon, tmpfs, port, name)
+                console.print("[info]Continuing due to --allow-existing flag[/]")
+            else:
+                console.print(
+                    f"[command]Run 'docker kill {name}' to remove it first.[/]\n"
+                )
+                # ruff: noqa: TRY301
+                raise typer.Exit(3)
+        else:
+            cmd = build_docker_command(daemon, tmpfs, port, name)
+            console.print(f"\n🔄 [info]Running command: {' '.join(cmd)}[/]")
 
-        if not daemon:
+            if not daemon:
+                console.print(
+                    "\n💡 [info]Press Ctrl+C to stop the container when done[/]\n"
+                )
+
+            subprocess.run(cmd, check=True)
+
+            if daemon:
+                if wait:
+                    wait_for_postgres(port)
+
+                console.print("🚀 [info]Postgres started in daemon mode.[/]")
+                console.print(
+                    f"\n⚡ To stop the container, run:\n   [command]docker kill {name}[/]"
+                )
+                console.print(
+                    f"\n🪓 To view the logs, run:\n   [command]docker logs --follow {name}[/]"
+                    f"\n🔌 Default connection string:\n   [url]postgresql://postgres:postgres@localhost:{port}/postgres?sslmode=disable[/]"
+                )
+
+        # Create the database if requested even if the container was already running.
+        if daemon and create_db:
+            db_created = create_database(create_db, port)
+            if db_created and if_created:
+                console.print(f"\n🔄 [info]Running command: {if_created}[/]")
+                try:
+                    subprocess.run(if_created, shell=True, check=True)
+                    console.print("✅ [info]Command completed successfully[/]")
+                except subprocess.CalledProcessError as e:
+                    console.print(
+                        f"❌ [warning]Command failed with exit code {e.returncode}[/]"
+                    )
             console.print(
-                "\n💡 [info]Press Ctrl+C to stop the container when done[/]\n"
+                f"🔌 Connection string:\n   [url]postgresql://postgres:postgres@localhost:{port}/{create_db}?sslmode=disable[/]"
             )
-
-        subprocess.run(cmd, check=True)
-
-        if daemon:
-            if wait:
-                wait_for_postgres(port)
-
-            if create_db:
-                db_created = create_database(create_db, port)
-                if db_created and if_created:
-                    console.print(f"\n🔄 [info]Running command: {if_created}[/]")
-                    try:
-                        subprocess.run(if_created, shell=True, check=True)
-                        console.print("✅ [info]Command completed successfully[/]")
-                    except subprocess.CalledProcessError as e:
-                        console.print(
-                            f"❌ [warning]Command failed with exit code {e.returncode}[/]"
-                        )
-
-            console.print("\n🚀 [info]Postgres started in daemon mode.[/]")
-            console.print(
-                f"\n⚡ To stop the container, run:\n   [command]docker kill {name}[/]"
-            )
-            console.print(
-                f"\n🪓 To view the logs, run:\n   [command]docker logs --follow {name}[/]"
-            )
-            console.print(
-                f"\n🔌 Connection string:\n   [url]postgresql://postgres:postgres@localhost:{port}/postgres?sslmode=disable[/]"
-            )
-            console.print("")
+        console.print("")
     except subprocess.CalledProcessError as e:
         typer.echo(f"Error running Docker command: {e}", err=True)
         raise typer.Exit(1) from e
@@ -225,6 +231,7 @@ def create_database(dbname: str, port: int) -> bool:
     Returns:
         bool: True if database was created, False if it already existed
     """
+    # Connect to the default postgres database to create all our custom databases.
     conn_str = f"postgresql://postgres:postgres@localhost:{port}/postgres"
     try:
         with psycopg.connect(conn_str, autocommit=True) as conn:
@@ -232,7 +239,7 @@ def create_database(dbname: str, port: int) -> bool:
             console.print(f"\n✨ [info]Created database '{dbname}'[/]")
             return True
     except psycopg.errors.DuplicateDatabase:
-        console.print(f"\n📊 [info]Database '{dbname}' already exists[/]")
+        console.print(f"📊 [info]Database '{dbname}' already exists[/]")
         return False
 
 

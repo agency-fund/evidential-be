@@ -14,6 +14,7 @@ from xngin.apiserver import conftest, constants, flags
 from xngin.apiserver.dependencies import xngin_db_session
 from xngin.apiserver.gsheet_cache import GSheetCache
 from xngin.apiserver.main import app
+from xngin.apiserver.models.tables import CacheTable
 from xngin.apiserver.routers.experiments_api import (
     CommonQueryParams,
     get_participants_config_and_schema,
@@ -55,9 +56,13 @@ def fixture_update_api_tests_flag(pytestconfig):
     return flags.UPDATE_API_TESTS
 
 
-@pytest.fixture(name="db_session")
+@pytest.fixture(name="db_session", autouse=True)
 def fixture_db_session():
     session = next(app.dependency_overrides[xngin_db_session]())
+    # Ensure we're not using stale cache settings (possible if not using an ephemeral app db).
+    session.query(CacheTable).delete()
+    session.commit()
+
     yield session
 
 
@@ -106,7 +111,9 @@ API_TESTS_X_DATASOURCE = zip(
 
 
 @pytest.mark.parametrize("script,datasource_id", API_TESTS_X_DATASOURCE)
-def test_api(script, datasource_id, update_api_tests_flag, use_deterministic_random):
+def test_api(
+    db_session, script, datasource_id, update_api_tests_flag, use_deterministic_random
+):
     """Runs all the API_TESTS test scripts using the datasource specified in param or file if None.
 
     Test scripts may omit asserting equality of actual response and expected response on specific paths. For example:
@@ -144,7 +151,8 @@ def test_api(script, datasource_id, update_api_tests_flag, use_deterministic_ran
         contents = f.read()
     xurl = Xurl.from_script(contents)
     headers = xurl.headers
-    # Override datasource-id header to also test inline schemas; should have the same responses.
+    # Override datasource-id header to also test inline schemas; should have the same responses as
+    # using the old settings.json configuration approach.
     if datasource_id is not None:
         assert constants.HEADER_CONFIG_ID in headers
         headers[constants.HEADER_CONFIG_ID] = datasource_id

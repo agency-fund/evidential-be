@@ -6,6 +6,7 @@ import logging
 import sys
 from pathlib import Path
 from typing import Annotated
+import uuid
 
 import boto3
 import gspread
@@ -96,7 +97,6 @@ def df_to_ddl(
 ):
     """Helper to transform a DataFrame into a CREATE TABLE statement."""
     # TODO: replace these types with more generic/widely supported defaults.
-    # TODO: warn/fail if Pandas type does not map onto a known SQL type
     default_sql_type = "VARCHAR(255)"
     type_map = {
         "int64": "INTEGER",
@@ -104,10 +104,30 @@ def df_to_ddl(
         "object": "VARCHAR(255)",
         "datetime64[ns]": "TIMESTAMP",
         "bool": "BOOLEAN",
+        "uuid": "UUID",  # Special case for UUIDs; not a real Pandas type.
     }
+    # Check for UUID columns by trying to parse the first non-null value of string columns as UUID
+    df_dtypes = {col: dtype for col, dtype in df.dtypes.items()}
+    for col, dtype in df_dtypes.items():
+        if dtype.name not in type_map:
+            logging.warning(
+                "Column '%s' has unknown SQL type for Pandas dtype '%s'. Using default: %s",
+                col,
+                dtype,
+                default_sql_type,
+            )
+        if dtype == "object":
+            nonnulls = df[col].dropna()
+            first_val = nonnulls.iloc[0] if not nonnulls.empty else None
+            try:
+                uuid.UUID(first_val)
+                df_dtypes[col] = "uuid"  # override with our special case
+            except (ValueError, AttributeError, TypeError):
+                pass  # Not a UUID
+    # Now generate the DDL.
     columns = [
         f"{quoter.quote(col)} {type_map.get(str(dtype), default_sql_type)}"
-        for col, dtype in df.dtypes.items()
+        for col, dtype in df_dtypes.items()
     ]
     return f"""CREATE TABLE {table_name} ({",\n    ".join(columns)});"""
 
@@ -280,7 +300,7 @@ def create_testing_dwh(
     elif url.drivername == "postgresql+psycopg":
         df = read_csv()
         engine = create_engine_and_database(url)
-        with engine.connect() as conn, conn.begin():
+        with engine.begin() as conn:
             cursor = conn.connection.cursor()
             drop_and_create(
                 cursor,
@@ -318,7 +338,7 @@ def create_testing_dwh(
     else:
         df = read_csv()
         engine = create_engine_and_database(url)
-        with engine.connect() as conn, conn.begin():
+        with engine.begin() as conn:
             cursor = conn.connection.cursor()
             drop_and_create(
                 cursor,

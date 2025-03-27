@@ -121,8 +121,8 @@ def test_numpy_stddev_for_sqlite_extension():
     custom_functions.NumpyStddev.register(engine.raw_connection())
 
     # Create a test table and insert some values
-    with engine.connect() as conn:
-        conn.execute(text("CREATE TABLE test_stddev(int_col INTEGER)"))
+    with engine.begin() as conn:
+        conn.execute(text("CREATE TEMPORARY TABLE test_stddev(int_col INTEGER)"))
         conn.execute(
             text("INSERT INTO test_stddev (int_col) VALUES (1), (2), (3), (4), (5)")
         )
@@ -131,6 +131,7 @@ def test_numpy_stddev_for_sqlite_extension():
             custom_functions.stddev_pop(text("test_stddev.int_col"))
         ).select_from(text("test_stddev"))
         result = conn.execute(query).scalar()
+        conn.rollback()
 
     # Calculate the expected standard deviation using numpy
     expected_stddev = float(np.std([1.0, 2.0, 3.0, 4.0, 5.0], ddof=0))

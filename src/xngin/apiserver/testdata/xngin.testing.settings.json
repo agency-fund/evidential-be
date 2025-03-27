@@ -352,6 +352,19 @@
                   "column_group": "",
                   "Extra Ad-Hoc Field": ""
                 }
+              },
+              {
+                "field_name": "uuid_filter",
+                "data_type": "uuid",
+                "description": "uuid used as filter",
+                "is_unique_id": false,
+                "is_strata": false,
+                "is_filter": true,
+                "is_metric": false,
+                "extra": {
+                  "column_group": "",
+                  "Extra Ad-Hoc Field": ""
+                }
               }
             ]
           }
