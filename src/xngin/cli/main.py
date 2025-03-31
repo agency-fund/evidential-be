@@ -184,6 +184,12 @@ def create_testing_dwh(
             help="Hack: temporary table modifications for query builder testing"
         ),
     ] = False,
+    allow_existing: Annotated[
+        bool,
+        typer.Option(
+            help="True if you only want to create the table if it does not exist."
+        ),
+    ] = False,
 ):
     """Loads the testing data warehouse CSV into a database.
 
@@ -246,15 +252,33 @@ def create_testing_dwh(
         cur.execute(create_table_ddl)
 
     def count(cur):
-        cur.execute(f"SELECT COUNT(*) FROM {full_table_name}")
+        if url.drivername == "bigquery":
+            cur.execute(f"SELECT COUNT(*) FROM `{url.database}.{table_name}`")
+        else:
+            cur.execute(f"SELECT COUNT(*) FROM {full_table_name}")
         ct = cur.fetchone()[0]
-        print(f"Loaded {ct} rows into {full_table_name}.")
+        print(f"{full_table_name} has {ct} rows.")
+        return ct
 
     if hacks and url.drivername != "postgresql+psycopg":
         logging.warning(
             "--hacks are only supported using postgresql+psycopg; "
             "ignoring for non-psycopg connections."
         )
+
+    if allow_existing:
+        engine = create_engine(url)
+        conn = engine.raw_connection()
+        with conn.cursor() as cur:
+            try:
+                count(cur)
+            except sqlalchemy.exc.OperationalError:
+                print("🛠️ Table does not exist; creating...\n")
+            else:
+                print("📣 Table already exists; nothing to do.\n")
+                return
+        conn.close()
+        engine.dispose()
 
     if url.host and url.host.endswith(REDSHIFT_HOSTNAME_SUFFIX):
         if not bucket:

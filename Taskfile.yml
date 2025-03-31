@@ -84,13 +84,17 @@ tasks:
       - >
         ./tools/localpg.py --allow-existing -d --wait --create-db {{.XNGIN_DEVAPPDB_NAME}}
         --if-created "uv run task apply-migrations-pg"
-      - task bootstrap-dwh-local-pg || /bin/true
+      - task bootstrap-dwh-local-pg ALLOW_EXISTING="1" || /bin/true
       - uv run fastapi dev src/xngin/apiserver/main.py
   bootstrap-dwh-local-pg:
     desc: "Bootstraps the localpg server with a sample data warehouse."
     interactive: true
+    vars:
+      ALLOW_EXISTING: '{{.ALLOW_EXISTING | default ""}}'
     cmds:
-      - uv run xngin-cli create-testing-dwh --dsn '{{.XNGIN_DEVDWH_DSN}}' --hacks
+      - >
+        uv run xngin-cli create-testing-dwh --dsn '{{.XNGIN_DEVDWH_DSN}}' --hacks
+        {{if eq .ALLOW_EXISTING "1"}} --allow-existing {{end}}
   test:
     desc: "Runs unit tests"
     interactive: true
