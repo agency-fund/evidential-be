@@ -17,6 +17,7 @@ from pydantic import (
     BeforeValidator,
 )
 from pydantic_core.core_schema import ValidationInfo
+from xngin.apiserver.exceptions_common import LateValidationError
 
 VALID_SQL_COLUMN_REGEX = r"^[a-zA-Z_][a-zA-Z0-9_]*$"
 
@@ -105,6 +106,16 @@ class DataType(enum.StrEnum):
             return DataType.DOUBLE_PRECISION
         logger.warning("Unmatched type: %s", type(value))
         return DataType.UNKNOWN
+
+    @classmethod
+    def supported_participant_id_types(cls) -> list[Self]:
+        """Returns the list of data types that are supported as participant IDs."""
+        return [
+            DataType.INTEGER,
+            DataType.BIGINT,
+            DataType.UUID,
+            DataType.CHARACTER_VARYING,
+        ]
 
     @classmethod
     def is_supported_type(cls, data_type: Self):
@@ -232,6 +243,25 @@ class AudienceSpecFilter(ApiBaseModel):
     field_name: FieldName
     relation: Relation
     value: FilterValueTypes
+
+    @classmethod
+    def cast_participant_id(
+        cls, pid: str, column_type: sqlalchemy.sql.sqltypes.TypeEngine
+    ) -> FilterValueTypes:
+        """Casts a participant ID string to an appropriate type based on the column type.
+
+        Only supports INTEGER, BIGINT, UUID and STRING types as defined in DataType.supported_participant_id_types().
+        """
+        if isinstance(
+            column_type,
+            (sqlalchemy.sql.sqltypes.Integer, sqlalchemy.sql.sqltypes.BigInteger),
+        ):
+            return int(pid)
+        if isinstance(
+            column_type, (sqlalchemy.sql.sqltypes.UUID, sqlalchemy.sql.sqltypes.String)
+        ):
+            return pid
+        raise LateValidationError(f"Unsupported participant ID type: {column_type}")
 
     @model_validator(mode="after")
     def ensure_experiment_ids_hack_compatible(self) -> "AudienceSpecFilter":
