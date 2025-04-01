@@ -18,12 +18,12 @@ from pydantic import (
 )
 from pydantic_core.core_schema import ValidationInfo
 from xngin.apiserver.limits import (
-    LIMIT_MAX_LENGTH_OF_DESCRIPTION,
-    LIMIT_MAX_LENGTH_OF_NAME,
-    LIMIT_MAX_LENGTH_OF_PARTICIPANT_ID_FIELD,
-    LIMIT_MAX_NUMBER_OF_ARMS,
-    LIMIT_MAX_NUMBER_OF_FIELDS,
-    LIMIT_MAX_NUMBER_OF_FILTERS,
+    MAX_LENGTH_OF_DESCRIPTION_VALUE,
+    MAX_LENGTH_OF_NAME_VALUE,
+    MAX_LENGTH_OF_PARTICIPANT_ID_VALUE,
+    MAX_NUMBER_OF_ARMS,
+    MAX_NUMBER_OF_FIELDS,
+    MAX_NUMBER_OF_FILTERS,
 )
 
 VALID_SQL_COLUMN_REGEX = r"^[a-zA-Z_][a-zA-Z0-9_]*$"
@@ -310,8 +310,8 @@ class AudienceSpecFilter(ApiBaseModel):
 class AudienceSpec(ApiBaseModel):
     """Defines target participants for an experiment using filters."""
 
-    participant_type: str
-    filters: list[AudienceSpecFilter]
+    participant_type: Annotated[str, Field(max_length=MAX_LENGTH_OF_NAME_VALUE)]
+    filters: Annotated[list[AudienceSpecFilter], Field(max_length=MAX_NUMBER_OF_FILTERS)]
 
 
 class MetricType(enum.StrEnum):
@@ -433,10 +433,10 @@ class Arm(ApiBaseModel):
         ),
     ] = None
     arm_name: Annotated[
-        str, Field(max_length=LIMIT_MAX_LENGTH_OF_NAME)
-    ]  # TODO: add naming constraints
+        str, Field(max_length=MAX_LENGTH_OF_NAME_VALUE)
+    ]
     arm_description: Annotated[
-        str | None, Field(max_length=LIMIT_MAX_LENGTH_OF_DESCRIPTION)
+        str | None, Field(max_length=MAX_LENGTH_OF_DESCRIPTION_VALUE)
     ] = None
 
 
@@ -449,14 +449,14 @@ class DesignSpec(ApiBaseModel):
             description="UUID of the experiment. If using the /experiments/with-assignment endpoint, this is generated for you and available in the response; you should NOT set this. Only generate ids of your own if using the stateless Experiment Design API as you will do your own persistence."
         ),
     ] = None
-    experiment_name: Annotated[str, Field(max_length=LIMIT_MAX_LENGTH_OF_NAME)]
-    description: Annotated[str, Field(max_length=LIMIT_MAX_LENGTH_OF_DESCRIPTION)]
+    experiment_name: Annotated[str, Field(max_length=MAX_LENGTH_OF_NAME_VALUE)]
+    description: Annotated[str, Field(max_length=MAX_LENGTH_OF_DESCRIPTION_VALUE)]
     start_date: datetime.datetime
     end_date: datetime.datetime
 
     # arms (at least two)
     arms: Annotated[
-        list[Arm], Field(..., min_length=2, max_length=LIMIT_MAX_NUMBER_OF_ARMS)
+        list[Arm], Field(..., min_length=2, max_length=MAX_NUMBER_OF_ARMS)
     ]
 
     # TODO migrate to a new "strata_spec:" field that holds experiment-wide stratification rules
@@ -468,7 +468,7 @@ class DesignSpec(ApiBaseModel):
         Field(
             ...,
             description="List of participant_type variables to use for stratification.",
-            max_length=LIMIT_MAX_NUMBER_OF_FIELDS,
+            max_length=MAX_NUMBER_OF_FIELDS,
         ),
     ]
 
@@ -478,7 +478,7 @@ class DesignSpec(ApiBaseModel):
             ...,
             description="Primary and optional secondary metrics to target.",
             min_length=1,
-            max_length=LIMIT_MAX_NUMBER_OF_FIELDS,
+            max_length=MAX_NUMBER_OF_FIELDS,
         ),
     ]
 
@@ -624,7 +624,7 @@ class Assignment(ApiBaseModel):
 
     # this references the field marked is_unique_id == TRUE in the configuration spreadsheet
     participant_id: Annotated[
-        str, Field(max_length=LIMIT_MAX_LENGTH_OF_PARTICIPANT_ID_FIELD)
+        str, Field(max_length=MAX_LENGTH_OF_PARTICIPANT_ID_VALUE)
     ]
     arm_id: Annotated[
         uuid.UUID,
@@ -635,14 +635,15 @@ class Assignment(ApiBaseModel):
     arm_name: Annotated[
         str,
         Field(
-            description="The arm this participant was assigned to. Same as Arm.arm_name."
+            description="The arm this participant was assigned to. Same as Arm.arm_name.",
+            max_length=MAX_LENGTH_OF_NAME_VALUE
         ),
     ]
     strata: Annotated[
         list[Strata] | None,
         Field(
             description="List of properties and their values for this participant used for stratification or tracking metrics. If stratification is not used, this will be None.",
-            max_length=LIMIT_MAX_NUMBER_OF_FIELDS,
+            max_length=MAX_NUMBER_OF_FIELDS,
         ),
     ] = None
 
@@ -654,33 +655,33 @@ class ExperimentAnalysis(ApiBaseModel):
             description="The field_name from the datasource which this analysis models as the dependent variable (y)."
         ),
     ]
-    arm_ids: Annotated[list[uuid.UUID], Field(max_length=LIMIT_MAX_NUMBER_OF_ARMS)]
+    arm_ids: Annotated[list[uuid.UUID], Field(max_length=MAX_NUMBER_OF_ARMS)]
     coefficients: Annotated[
         list[float],
         Field(
             description="Estimates for each arm in the model, the first element is the baseline estimate (intercept) of the first arm_id, the latter two are coefficients estimated against that baseline.",
-            max_length=LIMIT_MAX_NUMBER_OF_ARMS,
+            max_length=MAX_NUMBER_OF_ARMS,
         ),
     ]
     pvalues: Annotated[
         list[float],
         Field(
             description="P-values corresponding to each coefficient estimate for arm_ids, starting with the intercept (arm_ids[0]).",
-            max_length=LIMIT_MAX_NUMBER_OF_ARMS,
+            max_length=MAX_NUMBER_OF_ARMS,
         ),
     ]
     tstats: Annotated[
         list[float],
         Field(
             description="Corresponding t-stats for the pvalues and coefficients for each arm_id.",
-            max_length=LIMIT_MAX_NUMBER_OF_ARMS,
+            max_length=MAX_NUMBER_OF_ARMS,
         ),
     ]
     std_errors: Annotated[
         list[float],
         Field(
             description="Corresponding standard errors for the pvalues and coefficients for each arm_id.",
-            max_length=LIMIT_MAX_NUMBER_OF_ARMS,
+            max_length=MAX_NUMBER_OF_ARMS,
         ),
     ]
 
@@ -699,10 +700,10 @@ class MetricValue(ApiBaseModel):
 
 class ParticipantOutcome(ApiBaseModel):
     participant_id: Annotated[
-        str, Field(max_length=LIMIT_MAX_LENGTH_OF_PARTICIPANT_ID_FIELD)
+        str, Field(max_length=MAX_LENGTH_OF_PARTICIPANT_ID_VALUE)
     ]
     metric_values: Annotated[
-        list[MetricValue], Field(max_length=LIMIT_MAX_NUMBER_OF_FIELDS)
+        list[MetricValue], Field(max_length=MAX_NUMBER_OF_FIELDS)
     ]
 
 
@@ -772,7 +773,7 @@ class AssignResponse(ApiBaseModel):
     # TODO(qixotic): Consider lifting up Assignment.arm_id & arm_name to the AssignResponse level
     # and organize assignments into lists by arm. Be less bulky and arm sizes come naturally.
     assignments: Annotated[list[Assignment], Field()]
-    arm_sizes: Annotated[list[ArmSize], Field(max_length=LIMIT_MAX_NUMBER_OF_ARMS)]
+    arm_sizes: Annotated[list[ArmSize], Field(max_length=MAX_NUMBER_OF_ARMS)]
 
 
 class AnalysisRequest(ApiBaseModel):
@@ -795,9 +796,9 @@ class GetFiltersResponseBase(ApiBaseModel):
     field_name: Annotated[FieldName, Field(..., description="Name of the field.")]
     data_type: DataType
     relations: Annotated[
-        list[Relation], Field(..., min_length=1, max_length=LIMIT_MAX_NUMBER_OF_FILTERS)
+        list[Relation], Field(..., min_length=1, max_length=MAX_NUMBER_OF_FILTERS)
     ]
-    description: Annotated[str, Field(max_length=LIMIT_MAX_LENGTH_OF_DESCRIPTION)]
+    description: Annotated[str, Field(max_length=MAX_LENGTH_OF_DESCRIPTION_VALUE)]
 
 
 class GetFiltersResponseNumericOrDate(GetFiltersResponseBase):
@@ -826,7 +827,7 @@ class GetMetricsResponseElement(ApiBaseModel):
 
     field_name: FieldName
     data_type: DataType
-    description: Annotated[str, Field(max_length=LIMIT_MAX_LENGTH_OF_DESCRIPTION)]
+    description: Annotated[str, Field(max_length=MAX_LENGTH_OF_DESCRIPTION_VALUE)]
 
 
 type GetFiltersResponseElement = (
@@ -864,7 +865,7 @@ class PowerRequest(ApiBaseModel):
 
 class PowerResponse(ApiBaseModel):
     analyses: Annotated[
-        list[MetricAnalysis], Field(max_length=LIMIT_MAX_NUMBER_OF_FIELDS)
+        list[MetricAnalysis], Field(max_length=MAX_NUMBER_OF_FIELDS)
     ]
 
 

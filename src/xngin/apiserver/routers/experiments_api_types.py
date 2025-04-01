@@ -10,7 +10,7 @@ from xngin.apiserver.api_types import (
     DesignSpec,
     PowerResponse,
 )
-from xngin.apiserver.limits import LIMIT_MAX_NUMBER_OF_ARMS
+from xngin.apiserver.limits import MAX_NUMBER_OF_ARMS
 from xngin.apiserver.models.enums import ExperimentState
 
 
@@ -36,7 +36,7 @@ class AssignSummary(ExperimentsBaseModel):
         Field(
             description="For each arm, the number of participants assigned. "
             "TODO: make required once development has stabilized. May be None if unknown due to persisting prior versions of an AssignSummary.",
-            max_length=LIMIT_MAX_NUMBER_OF_ARMS,
+            max_length=MAX_NUMBER_OF_ARMS,
         ),
     ] = None
 
