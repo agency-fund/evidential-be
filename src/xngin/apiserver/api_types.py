@@ -311,7 +311,9 @@ class AudienceSpec(ApiBaseModel):
     """Defines target participants for an experiment using filters."""
 
     participant_type: Annotated[str, Field(max_length=MAX_LENGTH_OF_NAME_VALUE)]
-    filters: Annotated[list[AudienceSpecFilter], Field(max_length=MAX_NUMBER_OF_FILTERS)]
+    filters: Annotated[
+        list[AudienceSpecFilter], Field(max_length=MAX_NUMBER_OF_FILTERS)
+    ]
 
 
 class MetricType(enum.StrEnum):
@@ -432,9 +434,7 @@ class Arm(ApiBaseModel):
             description="UUID of the arm. If using the /experiments/with-assignment endpoint, this is generated for you and available in the response; you should NOT set this. Only generate ids of your own if using the stateless Experiment Design API as you will do your own persistence."
         ),
     ] = None
-    arm_name: Annotated[
-        str, Field(max_length=MAX_LENGTH_OF_NAME_VALUE)
-    ]
+    arm_name: Annotated[str, Field(max_length=MAX_LENGTH_OF_NAME_VALUE)]
     arm_description: Annotated[
         str | None, Field(max_length=MAX_LENGTH_OF_DESCRIPTION_VALUE)
     ] = None
@@ -455,9 +455,7 @@ class DesignSpec(ApiBaseModel):
     end_date: datetime.datetime
 
     # arms (at least two)
-    arms: Annotated[
-        list[Arm], Field(..., min_length=2, max_length=MAX_NUMBER_OF_ARMS)
-    ]
+    arms: Annotated[list[Arm], Field(..., min_length=2, max_length=MAX_NUMBER_OF_ARMS)]
 
     # TODO migrate to a new "strata_spec:" field that holds experiment-wide stratification rules
     # such as # of buckets to use during quantilization and the name to use for reporting the
@@ -623,9 +621,7 @@ class Assignment(ApiBaseModel):
     """Describes treatment assignment for an experiment participant."""
 
     # this references the field marked is_unique_id == TRUE in the configuration spreadsheet
-    participant_id: Annotated[
-        str, Field(max_length=MAX_LENGTH_OF_PARTICIPANT_ID_VALUE)
-    ]
+    participant_id: Annotated[str, Field(max_length=MAX_LENGTH_OF_PARTICIPANT_ID_VALUE)]
     arm_id: Annotated[
         uuid.UUID,
         Field(
@@ -636,7 +632,7 @@ class Assignment(ApiBaseModel):
         str,
         Field(
             description="The arm this participant was assigned to. Same as Arm.arm_name.",
-            max_length=MAX_LENGTH_OF_NAME_VALUE
+            max_length=MAX_LENGTH_OF_NAME_VALUE,
         ),
     ]
     strata: Annotated[
@@ -699,12 +695,8 @@ class MetricValue(ApiBaseModel):
 
 
 class ParticipantOutcome(ApiBaseModel):
-    participant_id: Annotated[
-        str, Field(max_length=MAX_LENGTH_OF_PARTICIPANT_ID_VALUE)
-    ]
-    metric_values: Annotated[
-        list[MetricValue], Field(max_length=MAX_NUMBER_OF_FIELDS)
-    ]
+    participant_id: Annotated[str, Field(max_length=MAX_LENGTH_OF_PARTICIPANT_ID_VALUE)]
+    metric_values: Annotated[list[MetricValue], Field(max_length=MAX_NUMBER_OF_FIELDS)]
 
 
 class BalanceCheck(ApiBaseModel):
@@ -731,7 +723,7 @@ class BalanceCheck(ApiBaseModel):
     p_value: Annotated[
         float,
         Field(
-            description="Probablity of observing these data if strata do not predict treatment assignment, i.e. our randomization is balanced."
+            description="Probability of observing these data if strata do not predict treatment assignment, i.e. our randomization is balanced."
         ),
     ]
     balance_ok: Annotated[
@@ -864,9 +856,7 @@ class PowerRequest(ApiBaseModel):
 
 
 class PowerResponse(ApiBaseModel):
-    analyses: Annotated[
-        list[MetricAnalysis], Field(max_length=MAX_NUMBER_OF_FIELDS)
-    ]
+    analyses: Annotated[list[MetricAnalysis], Field(max_length=MAX_NUMBER_OF_FIELDS)]
 
 
 class CommitRequest(ApiBaseModel):
