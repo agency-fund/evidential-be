@@ -1,19 +1,19 @@
-from collections import defaultdict
 import decimal
+from collections import defaultdict
 from collections.abc import Sequence
 from typing import Any, Protocol
 from uuid import UUID
 
+import numpy as np
 import pandas as pd
 from pandas import DataFrame
-import numpy as np
 from sqlalchemy import Table
 from stochatreat import stochatreat
 from xngin.apiserver.api_types import (
     Arm,
     ArmSize,
-    AssignResponse,
     Assignment,
+    AssignResponse,
     BalanceCheck,
     Strata,
 )
@@ -123,7 +123,7 @@ def assign_treatment(
 
     # Do stratified random assignment
     n_arms = len(arms)
-    # TODO: when we support unequal arm assigments, be careful about ensuring the right treatment
+    # TODO: when we support unequal arm assignments, be careful about ensuring the right treatment
     # assignment id is mapped to the right arm_name.
     treatment_status = stochatreat(
         data=df_cleaned,
