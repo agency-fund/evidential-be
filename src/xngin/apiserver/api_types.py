@@ -649,7 +649,7 @@ class Assignment(ApiBaseModel):
 
 class ExperimentAnalysis(ApiBaseModel):
     metric_name: Annotated[
-        str,
+        FieldName,
         Field(
             description="The field_name from the datasource which this analysis models as the dependent variable (y)."
         ),
@@ -687,7 +687,7 @@ class ExperimentAnalysis(ApiBaseModel):
 
 class MetricValue(ApiBaseModel):
     metric_name: Annotated[
-        str,
+        FieldName,
         Field(
             description="The field_name from the datasource which this analysis models as the dependent variable (y)."
         ),
