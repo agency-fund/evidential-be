@@ -10,13 +10,21 @@ from typing import Annotated, Self
 import sqlalchemy.sql.sqltypes
 from pydantic import (
     BaseModel,
-    Field,
-    model_validator,
-    field_serializer,
-    ConfigDict,
     BeforeValidator,
+    ConfigDict,
+    Field,
+    field_serializer,
+    model_validator,
 )
 from pydantic_core.core_schema import ValidationInfo
+from xngin.apiserver.limits import (
+    LIMIT_MAX_LENGTH_OF_DESCRIPTION,
+    LIMIT_MAX_LENGTH_OF_NAME,
+    LIMIT_MAX_LENGTH_OF_PARTICIPANT_ID_FIELD,
+    LIMIT_MAX_NUMBER_OF_ARMS,
+    LIMIT_MAX_NUMBER_OF_FIELDS,
+    LIMIT_MAX_NUMBER_OF_FILTERS,
+)
 
 VALID_SQL_COLUMN_REGEX = r"^[a-zA-Z_][a-zA-Z0-9_]*$"
 
@@ -424,8 +432,12 @@ class Arm(ApiBaseModel):
             description="UUID of the arm. If using the /experiments/with-assignment endpoint, this is generated for you and available in the response; you should NOT set this. Only generate ids of your own if using the stateless Experiment Design API as you will do your own persistence."
         ),
     ] = None
-    arm_name: str  # TODO: add naming constraints
-    arm_description: str | None = None
+    arm_name: Annotated[
+        str, Field(max_length=LIMIT_MAX_LENGTH_OF_NAME)
+    ]  # TODO: add naming constraints
+    arm_description: Annotated[
+        str | None, Field(max_length=LIMIT_MAX_LENGTH_OF_DESCRIPTION)
+    ] = None
 
 
 class DesignSpec(ApiBaseModel):
@@ -437,13 +449,15 @@ class DesignSpec(ApiBaseModel):
             description="UUID of the experiment. If using the /experiments/with-assignment endpoint, this is generated for you and available in the response; you should NOT set this. Only generate ids of your own if using the stateless Experiment Design API as you will do your own persistence."
         ),
     ] = None
-    experiment_name: str
-    description: str
+    experiment_name: Annotated[str, Field(max_length=LIMIT_MAX_LENGTH_OF_NAME)]
+    description: Annotated[str, Field(max_length=LIMIT_MAX_LENGTH_OF_DESCRIPTION)]
     start_date: datetime.datetime
     end_date: datetime.datetime
 
     # arms (at least two)
-    arms: Annotated[list[Arm], Field(..., min_length=2)]
+    arms: Annotated[
+        list[Arm], Field(..., min_length=2, max_length=LIMIT_MAX_NUMBER_OF_ARMS)
+    ]
 
     # TODO migrate to a new "strata_spec:" field that holds experiment-wide stratification rules
     # such as # of buckets to use during quantilization and the name to use for reporting the
@@ -454,6 +468,7 @@ class DesignSpec(ApiBaseModel):
         Field(
             ...,
             description="List of participant_type variables to use for stratification.",
+            max_length=LIMIT_MAX_NUMBER_OF_FIELDS,
         ),
     ]
 
@@ -463,6 +478,7 @@ class DesignSpec(ApiBaseModel):
             ...,
             description="Primary and optional secondary metrics to target.",
             min_length=1,
+            max_length=LIMIT_MAX_NUMBER_OF_FIELDS,
         ),
     ]
 
@@ -607,7 +623,9 @@ class Assignment(ApiBaseModel):
     """Describes treatment assignment for an experiment participant."""
 
     # this references the field marked is_unique_id == TRUE in the configuration spreadsheet
-    participant_id: str
+    participant_id: Annotated[
+        str, Field(max_length=LIMIT_MAX_LENGTH_OF_PARTICIPANT_ID_FIELD)
+    ]
     arm_id: Annotated[
         uuid.UUID,
         Field(
@@ -623,7 +641,8 @@ class Assignment(ApiBaseModel):
     strata: Annotated[
         list[Strata] | None,
         Field(
-            description="List of properties and their values for this participant used for stratification or tracking metrics. If stratification is not used, this will be None."
+            description="List of properties and their values for this participant used for stratification or tracking metrics. If stratification is not used, this will be None.",
+            max_length=LIMIT_MAX_NUMBER_OF_FIELDS,
         ),
     ] = None
 
@@ -635,29 +654,33 @@ class ExperimentAnalysis(ApiBaseModel):
             description="The field_name from the datasource which this analysis models as the dependent variable (y)."
         ),
     ]
-    arm_ids: list[uuid.UUID]
+    arm_ids: Annotated[list[uuid.UUID], Field(max_length=LIMIT_MAX_NUMBER_OF_ARMS)]
     coefficients: Annotated[
         list[float],
         Field(
-            description="Estimates for each arm in the model, the first element is the baseline estimate (intercept) of the first arm_id, the latter two are coefficients estimated against that baseline."
+            description="Estimates for each arm in the model, the first element is the baseline estimate (intercept) of the first arm_id, the latter two are coefficients estimated against that baseline.",
+            max_length=LIMIT_MAX_NUMBER_OF_ARMS,
         ),
     ]
     pvalues: Annotated[
         list[float],
         Field(
-            description="P-values corresponding to each coefficient estimate for arm_ids, starting with the intercept (arm_ids[0])."
+            description="P-values corresponding to each coefficient estimate for arm_ids, starting with the intercept (arm_ids[0]).",
+            max_length=LIMIT_MAX_NUMBER_OF_ARMS,
         ),
     ]
     tstats: Annotated[
         list[float],
         Field(
-            description="Corresponding t-stats for the pvalues and coefficients for each arm_id."
+            description="Corresponding t-stats for the pvalues and coefficients for each arm_id.",
+            max_length=LIMIT_MAX_NUMBER_OF_ARMS,
         ),
     ]
     std_errors: Annotated[
         list[float],
         Field(
-            description="Corresponding standard errors for the pvalues and coefficients for each arm_id."
+            description="Corresponding standard errors for the pvalues and coefficients for each arm_id.",
+            max_length=LIMIT_MAX_NUMBER_OF_ARMS,
         ),
     ]
 
@@ -675,8 +698,12 @@ class MetricValue(ApiBaseModel):
 
 
 class ParticipantOutcome(ApiBaseModel):
-    participant_id: str
-    metric_values: list[MetricValue]
+    participant_id: Annotated[
+        str, Field(max_length=LIMIT_MAX_LENGTH_OF_PARTICIPANT_ID_FIELD)
+    ]
+    metric_values: Annotated[
+        list[MetricValue], Field(max_length=LIMIT_MAX_NUMBER_OF_FIELDS)
+    ]
 
 
 class BalanceCheck(ApiBaseModel):
@@ -744,8 +771,8 @@ class AssignResponse(ApiBaseModel):
     ]
     # TODO(qixotic): Consider lifting up Assignment.arm_id & arm_name to the AssignResponse level
     # and organize assignments into lists by arm. Be less bulky and arm sizes come naturally.
-    assignments: list[Assignment]
-    arm_sizes: list[ArmSize]
+    assignments: Annotated[list[Assignment], Field()]
+    arm_sizes: Annotated[list[ArmSize], Field(max_length=LIMIT_MAX_NUMBER_OF_ARMS)]
 
 
 class AnalysisRequest(ApiBaseModel):
@@ -758,17 +785,19 @@ class GetStrataResponseElement(ApiBaseModel):
 
     data_type: DataType
     field_name: FieldName
-    description: str
+    description: Annotated[str, Field()]
     # Extra fields will be stored here in case a user configured their worksheet with extra metadata for their own
     # downstream use, e.g. to group strata with a friendly identifier.
-    extra: dict[str, str] | None = None
+    extra: Annotated[dict[str, str] | None, Field()] = None
 
 
 class GetFiltersResponseBase(ApiBaseModel):
     field_name: Annotated[FieldName, Field(..., description="Name of the field.")]
     data_type: DataType
-    relations: list[Relation] = Field(..., min_length=1)
-    description: str
+    relations: Annotated[
+        list[Relation], Field(..., min_length=1, max_length=LIMIT_MAX_NUMBER_OF_FILTERS)
+    ]
+    description: Annotated[str, Field(max_length=LIMIT_MAX_LENGTH_OF_DESCRIPTION)]
 
 
 class GetFiltersResponseNumericOrDate(GetFiltersResponseBase):
@@ -787,10 +816,9 @@ class GetFiltersResponseNumericOrDate(GetFiltersResponseBase):
 class GetFiltersResponseDiscrete(GetFiltersResponseBase):
     """Describes a discrete filter variable."""
 
-    distinct_values: list[str] | None = Field(
-        ...,
-        description="Sorted list of unique values.",
-    )
+    distinct_values: Annotated[
+        list[str] | None, Field(..., description="Sorted list of unique values.")
+    ]
 
 
 class GetMetricsResponseElement(ApiBaseModel):
@@ -798,7 +826,7 @@ class GetMetricsResponseElement(ApiBaseModel):
 
     field_name: FieldName
     data_type: DataType
-    description: str
+    description: Annotated[str, Field(max_length=LIMIT_MAX_LENGTH_OF_DESCRIPTION)]
 
 
 type GetFiltersResponseElement = (
@@ -815,13 +843,13 @@ class GetFiltersResponse(ApiBaseModel):
 class GetMetricsResponse(ApiBaseModel):
     """Response model for the /metrics endpoint."""
 
-    results: list[GetMetricsResponseElement]
+    results: Annotated[list[GetMetricsResponseElement], Field()]
 
 
 class GetStrataResponse(BaseModel):
     """Response model for the /strata endpoint."""
 
-    results: list[GetStrataResponseElement]
+    results: Annotated[list[GetStrataResponseElement], Field()]
 
 
 class AssignRequest(ApiBaseModel):
@@ -835,7 +863,9 @@ class PowerRequest(ApiBaseModel):
 
 
 class PowerResponse(ApiBaseModel):
-    analyses: list[MetricAnalysis]
+    analyses: Annotated[
+        list[MetricAnalysis], Field(max_length=LIMIT_MAX_NUMBER_OF_FIELDS)
+    ]
 
 
 class CommitRequest(ApiBaseModel):

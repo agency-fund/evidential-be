@@ -2,15 +2,15 @@ import uuid
 from typing import Annotated
 
 from pydantic import BaseModel, ConfigDict, Field
-
 from xngin.apiserver.api_types import (
     ArmSize,
-    DesignSpec,
-    AudienceSpec,
-    PowerResponse,
-    BalanceCheck,
     Assignment,
+    AudienceSpec,
+    BalanceCheck,
+    DesignSpec,
+    PowerResponse,
 )
+from xngin.apiserver.limits import LIMIT_MAX_NUMBER_OF_ARMS
 from xngin.apiserver.models.enums import ExperimentState
 
 
@@ -35,7 +35,8 @@ class AssignSummary(ExperimentsBaseModel):
         list[ArmSize] | None,
         Field(
             description="For each arm, the number of participants assigned. "
-            "TODO: make required once development has stabilized. May be None if unknown due to persisting prior versions of an AssignSummary."
+            "TODO: make required once development has stabilized. May be None if unknown due to persisting prior versions of an AssignSummary.",
+            max_length=LIMIT_MAX_NUMBER_OF_ARMS
         ),
     ] = None
 
