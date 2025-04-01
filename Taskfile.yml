@@ -4,12 +4,17 @@ vars:
   # App database for the local dev environment (see tasks start-with-local-pg, apply-migrations-pg)
   XNGIN_DEVAPPDB_NAME: "xngin"
   XNGIN_DEVAPP_DSN: "postgresql://postgres:postgres@localhost:5499/{{.XNGIN_DEVAPPDB_NAME}}?sslmode=disable"
-  # Data warehouse for the local dev environment (see task bootstrap-dwh-local-pg)
+
+  # Data warehouse available for use by the local dev environment (see task bootstrap-dwh-local-pg). It is bootstrapped
+  # with the testing datawarehouse when `task start-with-local-pg` is used. We explicitly specify +psycopg because
+  # we want to use an optimized path for CSV loading.
   XNGIN_DEVDWH_NAME: "dwh"
-  XNGIN_DEVDWH_DSN: "postgresql://postgres:postgres@localhost:5499/{{.XNGIN_DEVDWH_NAME}}?sslmode=disable"
+  XNGIN_DEVDWH_DSN: "postgresql+psycopg://postgres:postgres@localhost:5499/{{.XNGIN_DEVDWH_NAME}}?sslmode=disable"
+
   # Datasource for tests of the xngin app database that use the xngin_db_session dependency.
   XNGIN_TESTAPP_DSN: "postgresql://postgres:postgres@localhost:5499/test_xngin?sslmode=disable"
-  # Datasource for tests of a remote data warehouse.
+
+  # Datasource for the Postgres integration tests run by `task test-pgintegration`.
   # Note: test_queries.py creates a random database name adapting this dsn for each test using its
   # fixture_db_session.
   XNGIN_TESTDWH_DSN: "postgresql://postgres:postgres@localhost:5499/test_dwh?sslmode=disable"

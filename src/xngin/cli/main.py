@@ -4,9 +4,9 @@ import csv
 import json
 import logging
 import sys
+import uuid
 from pathlib import Path
 from typing import Annotated
-import uuid
 
 import boto3
 import gspread
@@ -28,21 +28,20 @@ from rich.console import Console
 from sqlalchemy import create_engine, make_url
 from sqlalchemy.exc import OperationalError
 from sqlalchemy.sql.compiler import IdentifierPreparer
-
 from xngin.apiserver import settings
 from xngin.apiserver.api_types import DataType
 from xngin.apiserver.settings import (
-    SheetRef,
-    XnginSettings,
     CannotFindTableError,
     Datasource,
+    SheetRef,
+    XnginSettings,
 )
 from xngin.apiserver.testing import testing_dwh
 from xngin.schema.schema_types import FieldDescriptor, ParticipantsSchema
 from xngin.sheets.config_sheet import (
     InvalidSheetError,
-    fetch_and_parse_sheet,
     create_schema_from_table,
+    fetch_and_parse_sheet,
 )
 from xngin.sheets.gsheets import GSheetsPermissionError
 
@@ -209,6 +208,10 @@ def create_testing_dwh(
     is_compressed = src.suffix == ".zst"
 
     url = make_url(dsn)
+    print(f"Backend Name: {url.get_backend_name()}")
+    print(f"Driver Name: {url.get_driver_name()}")
+    print(f"Dialect: {url.get_dialect()}")
+
     if password is not None and url.username is not None:
         url = url.set(password=password)
 
@@ -253,7 +256,7 @@ def create_testing_dwh(
     if hacks and url.drivername != "postgresql+psycopg":
         logging.warning(
             "--hacks are only supported using postgresql+psycopg; "
-            "ignoring for non-psycopg connections."
+            f"ignoring for non-psycopg connections. (Using: {url.drivername})"
         )
 
     if url.host and url.host.endswith(REDSHIFT_HOSTNAME_SUFFIX):
@@ -303,7 +306,7 @@ def create_testing_dwh(
         pandas_gbq.to_gbq(
             df, destination_table, project_id=url.host, if_exists="replace"
         )
-    elif url.drivername == "postgresql+psycopg":
+    elif url.get_driver_name() == "psycopg":
         df = read_csv()
         engine = create_engine_and_database(url)
         with engine.begin() as conn:
@@ -317,7 +320,7 @@ def create_testing_dwh(
                 ),
             )
             opener = (lambda x: zstandard.open(x, "r")) if is_compressed else open
-            print("Loading...")
+            print("Loading via COPY FROM STDIN...")
             with opener(src) as reader:
                 cols = [h.strip() for h in reader.readline().split(",")]
                 sql = f"COPY {full_table_name} ({', '.join(cols)}) FROM STDIN (FORMAT CSV, DELIMITER ',')"
@@ -341,7 +344,7 @@ def create_testing_dwh(
                     print(f"Running: {mod}")
                     cursor.execute(mod)
 
-    else:
+    elif url.get_driver_name() == "pyscopg2":
         df = read_csv()
         engine = create_engine_and_database(url)
         with engine.begin() as conn:
