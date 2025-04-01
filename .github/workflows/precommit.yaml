@@ -35,5 +35,5 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ~/.cache/pre-commit
-          key: pre-commit-3|${{ env.PYTHON_DIR }}|${{ hashFiles('.pre-commit-config.yaml') }}|${{ hashFiles('pyproject.toml') }}
+          key: pre-commit-4|${{ env.PYTHON_DIR }}|${{ hashFiles('.pre-commit-config.yaml') }}|${{ hashFiles('pyproject.toml') }}
       - run: uv run pre-commit run --show-diff-on-failure --color=always --all-files
