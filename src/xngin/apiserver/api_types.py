@@ -290,7 +290,7 @@ class AudienceSpecFilter(ApiBaseModel):
 
     @model_validator(mode="after")
     def ensure_sane_bool_list(self) -> "AudienceSpecFilter":
-        """Ensures that the `value` field does not include redundant or nonsencial items."""
+        """Ensures that the `value` field does not include redundant or nonsensical items."""
         n_values = len(self.value)
         # First check if we're dealing with a list of more than one boolean:
         if n_values > 1 and all([v is None or isinstance(v, bool) for v in self.value]):
