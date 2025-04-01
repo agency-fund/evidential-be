@@ -2,7 +2,6 @@ import datetime
 import decimal
 import enum
 import logging
-import re
 import uuid
 from collections.abc import Sequence
 from typing import Annotated, Self
@@ -10,13 +9,12 @@ from typing import Annotated, Self
 import sqlalchemy.sql.sqltypes
 from pydantic import (
     BaseModel,
-    BeforeValidator,
     ConfigDict,
     Field,
     field_serializer,
     model_validator,
 )
-from pydantic_core.core_schema import ValidationInfo
+from xngin.apiserver.common_field_types import FieldName
 from xngin.apiserver.limits import (
     MAX_LENGTH_OF_DESCRIPTION_VALUE,
     MAX_LENGTH_OF_NAME_VALUE,
@@ -26,31 +24,9 @@ from xngin.apiserver.limits import (
     MAX_NUMBER_OF_FILTERS,
 )
 
-VALID_SQL_COLUMN_REGEX = r"^[a-zA-Z_][a-zA-Z0-9_]*$"
-
 EXPERIMENT_IDS_SUFFIX = "experiment_ids"
 
 logger = logging.getLogger(__name__)
-
-
-def validate_can_be_used_as_column_name(value: str, info: ValidationInfo) -> str:
-    """Validates value is usable as a SQL column name."""
-    if not isinstance(value, str):
-        raise ValueError(f"{info.field_name} must be a string")  # noqa: TRY004
-    if not re.match(VALID_SQL_COLUMN_REGEX, value):
-        raise ValueError(
-            f"{info.field_name} must start with letter/underscore and contain only letters, numbers, underscores"
-        )
-    return value
-
-
-FieldName = Annotated[
-    str,
-    BeforeValidator(validate_can_be_used_as_column_name),
-    Field(
-        json_schema_extra={"pattern": VALID_SQL_COLUMN_REGEX}, examples=["field_name"]
-    ),
-]
 
 
 class ApiBaseModel(BaseModel):

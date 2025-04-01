@@ -1,6 +1,9 @@
 # Maximum length of fields that describe a value in human readable, free-form text.
 MAX_LENGTH_OF_DESCRIPTION_VALUE = 2000
 
+# Maximum length of an email address.
+MAX_LENGTH_OF_EMAIL_VALUE = 64
+
 # Maximum length of fields that contain identifiers such as primary keys, UUIDs, etc.
 MAX_LENGTH_OF_ID_VALUE = 64
 
