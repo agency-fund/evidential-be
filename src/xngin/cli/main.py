@@ -178,10 +178,16 @@ def create_testing_dwh(
     password: Annotated[
         str | None, typer.Option(envvar="PGPASSWORD", help="The database password.")
     ] = None,
+    allow_existing: Annotated[
+        bool,
+        typer.Option(
+            help="True if you only want to create the table if it does not exist."
+        ),
+    ] = False,
 ):
     """Loads the testing data warehouse CSV into a database.
 
-    Any existing table will be replaced.
+    Any existing table will be replaced unless --allow-existing is used.
 
     For Redshift and Postgres (psycopg or psycopg2) connections, the table DDL will be read from a
     .{postgres|redshift}.ddl file in the same directory as the source CSV, or inferred via Pandas if that file does
@@ -264,9 +270,27 @@ def create_testing_dwh(
         return ddl
 
     def count(cur):
-        cur.execute(f"SELECT COUNT(*) FROM {full_table_name}")
+        if url.drivername == "bigquery":
+            cur.execute(f"SELECT COUNT(*) FROM `{url.database}.{table_name}`")
+        else:
+            cur.execute(f"SELECT COUNT(*) FROM {full_table_name}")
         ct = cur.fetchone()[0]
-        print(f"Loaded {ct} rows into {full_table_name}.")
+        print(f"{full_table_name} has {ct} rows.")
+        return ct
+
+    if allow_existing:
+        engine = create_engine(url)
+        conn = engine.raw_connection()
+        with conn.cursor() as cur:
+            try:
+                count(cur)
+            except sqlalchemy.exc.OperationalError:
+                print("🛠️ Table does not exist; creating...\n")
+            else:
+                print("📣 Table already exists; nothing to do.\n")
+                return
+        conn.close()
+        engine.dispose()
 
     if url.host and url.host.endswith(REDSHIFT_HOSTNAME_SUFFIX):
         if not bucket:
