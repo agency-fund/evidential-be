@@ -95,11 +95,14 @@ jobs:
         with:
           version: "0.6.0"
           enable-cache: true
-      - run: uv run pytest -m 'pgintegration or not integration'
-      - env:
+      - name: Run all pytest tests
+        run: uv run pytest -m 'pgintegration or not integration'
+      - name: Run smoke tests
+        env:
           PGPASSWORD: postgres
         run: |
           set -x
+          
           # These imports correspond to entries in xngin.gha.settings.json.
           uv run xngin-cli create-testing-dwh --dsn postgresql+${{ matrix.driver }}://postgres@127.0.0.1:5499/postgres
           uv run xngin-cli create-testing-dwh --dsn postgresql+${{ matrix.driver }}://postgres@127.0.0.1:5499/postgres \
@@ -181,8 +184,6 @@ jobs:
           version: "0.6.0"
           enable-cache: true
       - name: xngin-cli smoke tests
-        env:
-          PGPASSWORD: postgres
         run: |
           set -x
           uv run xngin-cli --help
@@ -199,10 +200,6 @@ jobs:
           # This next bootstrap is a more appropriate testing config
           uv run xngin-cli bootstrap-spreadsheet sqlite:///smoke.db test_participant_type | tee config.csv
           uv run xngin-cli parse-config-spreadsheet file://./config.csv test_participant_type
-
-          # Verify create-testing-dwh executes against both Postgres drivers.
-          uv run xngin-cli create-testing-dwh --dsn postgresql+psycopg://postgres@127.0.0.1:5499/postgres --nrows 100
-          uv run xngin-cli create-testing-dwh --dsn postgresql+psycopg2://postgres@127.0.0.1:5499/postgres --schema-name alt --table-name=alt_table --nrows 100
   smoke-server-bq:
     runs-on: ubuntu-22.04
     timeout-minutes: 15
