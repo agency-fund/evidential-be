@@ -314,25 +314,23 @@ def create_testing_dwh(
         with engine.begin() as conn:
             cursor = conn.connection.cursor()
             drop_and_create(cursor, ddl)
+            opener = (lambda x: zstandard.open(x, "r")) if is_compressed else open
             if url.get_driver_name() == "psycopg":
-                opener = (lambda x: zstandard.open(x, "r")) if is_compressed else open
-                print("Loading via COPY FROM STDIN...")
+                print("Loading via psycopg3 COPY FROM STDIN...")
                 with opener(src) as reader:
                     cols = [h.strip() for h in reader.readline().split(",")]
                     sql = f"COPY {full_table_name} ({', '.join(cols)}) FROM STDIN (FORMAT CSV, DELIMITER ',')"
+                    print(f"SQL: {sql}")
                     with cursor.copy(sql) as copy:
                         while data := reader.read(1 << 20):
                             copy.write(data)
             else:
-                opener = (lambda x: zstandard.open(x, "r")) if is_compressed else open
-                print("Loading via copy_expert...")
+                print("Loading via psycopg2 copy_expert...")
                 with opener(src) as reader:
                     cols = [h.strip() for h in reader.readline().split(",")]
-                    print(f"Columns: {'|'.join(cols)}")
-                    cursor.copy_expert(
-                        f"COPY {full_table_name} ({', '.join(cols)}) FROM STDIN (FORMAT CSV, DELIMITER ',')",
-                        reader,
-                    )
+                    sql = f"COPY {full_table_name} ({', '.join(cols)}) FROM STDIN (FORMAT CSV, DELIMITER ',')"
+                    print(f"SQL: {sql}")
+                    cursor.copy_expert(sql, reader)
 
             count(cursor)
 
