@@ -156,8 +156,7 @@ jobs:
     runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@v4
-      - run: docker build -t xngin .
-      - run: docker build -t xngin-railway -f Dockerfile.railway .
+      - run: docker buildx bake
   smoke-cli:
     runs-on: ubuntu-22.04
     timeout-minutes: 15
