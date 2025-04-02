@@ -143,7 +143,8 @@ def create_testing_dwh(
     nrows: Annotated[
         int | None,
         typer.Option(
-            help="Limit to the number of rows to load from the CSV. Does not apply to Redshift or Postgres connections."
+            help="Limit to the number of rows to load from the CSV. Does not apply the data load of Redshift or "
+            "Postgres connections, but will be applied to schema inference."
         ),
     ] = None,
     schema_name: Annotated[
@@ -334,6 +335,22 @@ def create_testing_dwh(
 
             count(cursor)
 
+    elif url.get_backend_name() == "sqlite":
+        df = read_csv()
+        engine = create_engine_and_database(url)
+        with engine.begin() as conn:
+            cursor = conn.connection.cursor()
+            ddl = get_ddl_magic(engine.dialect.identifier_preparer, "sqlite")
+            drop_and_create(cursor, ddl)
+            print("Loading using Pandas to_sql (sloowww)...")
+            df.to_sql(
+                table_name,
+                conn,
+                schema=schema_name,
+                if_exists="append",
+                index=False,
+            )
+            count(cursor)
     else:
         err_console.print("Unrecognized database driver.")
         raise typer.Exit(2)
