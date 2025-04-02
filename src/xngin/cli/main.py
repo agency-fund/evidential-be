@@ -183,9 +183,9 @@ def create_testing_dwh(
 
     Any existing table will be replaced.
 
-    For Redshift and Postgres (psycopg or psycopg2) connections, the table DDL will be inferred using Pandas or it
-    will be read from a .{postgres|redshift}.ddl file in the same directory as the source CSV.  The CSV file is parsed
-    using their native server-side CSV parsers.
+    For Redshift and Postgres (psycopg or psycopg2) connections, the table DDL will be read from a
+    .{postgres|redshift}.ddl file in the same directory as the source CSV, or inferred via Pandas if that file does
+    not exist.  The CSV file is parsed using their native server-side CSV parsers.
 
     Postgres connections may be specified with postgresql://, postgresql+psycopg://, or postgresql+psycopg2:// prefixes.
 
@@ -193,8 +193,8 @@ def create_testing_dwh(
 
     On BigQuery: CSV is parsed by Pandas. Table DDL is derived by pandas-gbq and written via to_gbq().
 
-    On all other databases: CSV is parsed by Pandas. Table DDL is derived from Pandas read_csv and written via
-    SQLAlchemy and Pandas to_sql().
+    On SQLite databases: CSV is parsed by Pandas. Table DDL will be read from a .sqlite.ddl file or derived from Pandas
+    read_csv, and written via SQLAlchemy and Pandas to_sql().
 
     Due to variations in all of the above, the loaded data may vary in small ways when loaded with different data
     stores. E.g. floats may not roundtrip.
