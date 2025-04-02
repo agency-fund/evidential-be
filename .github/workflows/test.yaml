@@ -70,6 +70,9 @@ jobs:
   pg-integration:
     runs-on: ubuntu-22.04
     timeout-minutes: 15
+    strategy:
+      matrix:
+        driver: ["psycopg", "psycopg2"]
     services:
       postgres:
         image: postgres:17
@@ -84,7 +87,7 @@ jobs:
         ports:
           - 5499:5432
     env:
-      XNGIN_TEST_DWH_URI: "postgresql://postgres:postgres@localhost:5499/testing?sslmode=disable"
+      XNGIN_TEST_DWH_URI: "postgresql+${{ matrix.driver }}://postgres:postgres@localhost:5499/testing?sslmode=disable"
     steps:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v4
