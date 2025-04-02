@@ -1,4 +1,4 @@
-n// This file defines Docker build targets that can be built with:
+// This file defines Docker build targets that can be built with:
 // docker buildx bake [target]
 
 // Default target when running `docker buildx bake`
