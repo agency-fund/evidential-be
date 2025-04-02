@@ -1070,7 +1070,7 @@ def analyze_experiment(
     experiment_id: str,
     xngin_session: Annotated[Session, Depends(xngin_db_session)],
     user: Annotated[User, Depends(user_from_token)],
-) -> list[ExperimentAnalysis]:
+) -> ExperimentAnalysis:
     ds = get_datasource_or_raise(xngin_session, user, datasource_id)
     dsconfig = ds.get_config()
     if not isinstance(dsconfig, RemoteDatabaseConfig):
@@ -1124,7 +1124,11 @@ def analyze_experiment(
                     std_error=arm_data["std_error"],
                 )
             )
-        metric_analyses.append(MetricAnalysis(metric=metric, arm_analyses=arm_analyses))
+        metric_analyses.append(
+            MetricAnalysis(
+                metric_name=metric_name, metric=metric, arm_analyses=arm_analyses
+            )
+        )
     return ExperimentAnalysis(
         experiment_id=experiment.id, metric_analyses=metric_analyses
     )
