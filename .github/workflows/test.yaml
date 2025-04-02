@@ -71,6 +71,7 @@ jobs:
     runs-on: ubuntu-22.04
     timeout-minutes: 15
     strategy:
+      fail-fast: false
       matrix:
         driver: ["psycopg", "psycopg2"]
     services:
