@@ -95,7 +95,7 @@ tasks:
     desc: "Bootstraps the localpg server with a sample data warehouse."
     interactive: true
     cmds:
-      - uv run xngin-cli create-testing-dwh --dsn '{{.XNGIN_DEVDWH_DSN}}' --hacks
+      - uv run xngin-cli create-testing-dwh --dsn '{{.XNGIN_DEVDWH_DSN}}'
   test:
     desc: "Runs unit tests"
     interactive: true
