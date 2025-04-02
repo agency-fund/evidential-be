@@ -29,7 +29,6 @@ env:
 jobs:
   unittests:
     timeout-minutes: 15
-    name: Python on ${{ startsWith(matrix.os, 'macos-') && 'macOS' || 'Linux' }}
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
