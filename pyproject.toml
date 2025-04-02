@@ -88,7 +88,6 @@ ignore = [
     "PD002", # `inplace=True` should be avoided; it has inconsistent behavior
     "PD101", # Using `series.nunique()` for checking that a series is constant is inefficient
     "PD901", # Avoid using the generic variable name `df` for DataFrames
-    "UP038", # isinstance rule is deprecated and will be removed in a future release.
 ]
 
 [tool.uv]

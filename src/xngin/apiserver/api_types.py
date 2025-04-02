@@ -108,7 +108,7 @@ class DataType(enum.StrEnum):
         return DataType.UNKNOWN
 
     @classmethod
-    def supported_participant_id_types(cls) -> list[Self]:
+    def supported_participant_id_types(cls) -> list["DataType"]:
         """Returns the list of data types that are supported as participant IDs."""
         return [
             DataType.INTEGER,
@@ -247,18 +247,18 @@ class AudienceSpecFilter(ApiBaseModel):
     @classmethod
     def cast_participant_id(
         cls, pid: str, column_type: sqlalchemy.sql.sqltypes.TypeEngine
-    ) -> FilterValueTypes:
+    ) -> int | uuid.UUID | str:
         """Casts a participant ID string to an appropriate type based on the column type.
 
         Only supports INTEGER, BIGINT, UUID and STRING types as defined in DataType.supported_participant_id_types().
         """
         if isinstance(
             column_type,
-            (sqlalchemy.sql.sqltypes.Integer, sqlalchemy.sql.sqltypes.BigInteger),
+            sqlalchemy.sql.sqltypes.Integer | sqlalchemy.sql.sqltypes.BigInteger,
         ):
             return int(pid)
         if isinstance(
-            column_type, (sqlalchemy.sql.sqltypes.UUID, sqlalchemy.sql.sqltypes.String)
+            column_type, sqlalchemy.sql.sqltypes.UUID | sqlalchemy.sql.sqltypes.String
         ):
             return pid
         raise LateValidationError(f"Unsupported participant ID type: {column_type}")

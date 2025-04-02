@@ -155,6 +155,7 @@ def get_participant_metrics(
     participant_outcomes: list[ParticipantOutcome] = []
     for result in results:
         metric_values: list[MetricValue] = []
+        participant_id = None
         for i, field_name in enumerate(field_names):
             if field_name == "participant_id":
                 participant_id = result[i]
@@ -162,9 +163,12 @@ def get_participant_metrics(
                 metric_values.append(
                     MetricValue(metric_name=field_name, metric_value=result[i])
                 )
+        if participant_id is None:
+            # Should never happen as we filter on the participant_id field.
+            raise LateValidationError("Participant ID is required.")
         participant_outcomes.append(
             ParticipantOutcome(
-                participant_id=participant_id, metric_values=metric_values
+                participant_id=str(participant_id), metric_values=metric_values
             )
         )
     return participant_outcomes
