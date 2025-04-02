@@ -996,6 +996,8 @@ def test_get_participant_metrics(db_session):
     ]
 
     assert len(rows) == len(expected)
+    # Sort the rows by participant_id to make the test deterministic.
+    rows = sorted(rows, key=lambda r: r.participant_id)
     for actual, exp in zip(rows, expected, strict=False):
         assert actual.participant_id == exp.participant_id
         assert actual.metric_values[0].metric_name == exp.metric_values[0].metric_name

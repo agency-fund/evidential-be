@@ -115,8 +115,14 @@ def get_participant_metrics(
     ]
 
     # select participant_id field
+    if unique_id_field not in sa_table.columns:
+        raise LateValidationError(
+            f"Unique ID field {unique_id_field} not found in table."
+        )
+    participant_id_column = sa_table.c[unique_id_field]
+    # We always store participant_id as a string, so select it back as such.
     select_columns: list[Label] = [
-        cast(sa_table.c[unique_id_field].label("participant_id"), String)
+        cast(participant_id_column.label("participant_id"), String)
     ]
 
     field_names = ["participant_id"]
@@ -135,7 +141,12 @@ def get_participant_metrics(
     # create a single filter, filtering on the unique_id_field using
     # participant_ids from the treatment assignment.
     participant_id_filter = AudienceSpecFilter(
-        field_name=unique_id_field, relation=Relation.INCLUDES, value=participant_ids
+        field_name=unique_id_field,
+        relation=Relation.INCLUDES,
+        value=[
+            AudienceSpecFilter.cast_participant_id(pid, participant_id_column.type)
+            for pid in participant_ids
+        ],
     )
     participant_filter = create_one_filter(participant_id_filter, sa_table)
     query = select(*select_columns).filter(participant_filter)
@@ -144,17 +155,20 @@ def get_participant_metrics(
     participant_outcomes: list[ParticipantOutcome] = []
     for result in results:
         metric_values: list[MetricValue] = []
-        for i in range(len(result)):
-            field_name = field_names[i]
+        participant_id = None
+        for i, field_name in enumerate(field_names):
             if field_name == "participant_id":
-                participant_id = result[0]
+                participant_id = result[i]
             else:
                 metric_values.append(
                     MetricValue(metric_name=field_name, metric_value=result[i])
                 )
+        if participant_id is None:
+            # Should never happen as we filter on the participant_id field.
+            raise LateValidationError("Participant ID is required.")
         participant_outcomes.append(
             ParticipantOutcome(
-                participant_id=participant_id, metric_values=metric_values
+                participant_id=str(participant_id), metric_values=metric_values
             )
         )
     return participant_outcomes
