@@ -42,7 +42,7 @@ The following is a proposal of the main components of this service:
 1. The commands below require you to have [uv](https://docs.astral.sh/uv/) installed:
 
    ```shell
-   curl -LsSf https://astral.sh/uv/0.6.0/install.sh | sh
+   curl -LsSf https://astral.sh/uv/0.6.1/install.sh | sh
    ```
 
 1. You will also want to install the task-runner tool [Task](https://taskfile.dev/) because it will simplify your development experience.
