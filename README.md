@@ -264,12 +264,6 @@ Then, apply them to your local Postgres instance:
 task apply-migrations-pg
 ```
 
-Or, if you are using sqlite and want to keep your existing data, you can apply them to sqlite too:
-
-```shell
-task apply-migrations-sqlite
-```
-
 ### How do I hide the generated SQL from the logs?
 
 Set the ECHO_SQL=0 environment variable, e.g.:
