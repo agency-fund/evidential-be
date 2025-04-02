@@ -1,14 +1,13 @@
 import base64
 import datetime
 import json
-from functools import partial
 import uuid
+from functools import partial
 
 import pytest
 from fastapi.testclient import TestClient
 from pydantic import SecretStr
 from sqlalchemy.orm import Session
-
 from xngin.apiserver import conftest
 from xngin.apiserver import main as main_module
 from xngin.apiserver.api_types import DataType
@@ -38,20 +37,20 @@ from xngin.apiserver.routers.experiments_api_types import (
     ListExperimentsResponse,
 )
 from xngin.apiserver.routers.oidc_dependencies import (
-    PRIVILEGED_TOKEN_FOR_TESTING,
     PRIVILEGED_EMAIL,
+    PRIVILEGED_TOKEN_FOR_TESTING,
     UNPRIVILEGED_EMAIL,
     UNPRIVILEGED_TOKEN_FOR_TESTING,
 )
 from xngin.apiserver.settings import (
-    Dsn,
     BqDsn,
+    Dsn,
     GcpServiceAccountInfo,
-    SheetParticipantsRef,
     ParticipantsDef,
+    SheetParticipantsRef,
 )
 from xngin.cli.main import create_testing_dwh
-from xngin.schema.schema_types import ParticipantsSchema, FieldDescriptor
+from xngin.schema.schema_types import FieldDescriptor, ParticipantsSchema
 
 SAMPLE_GCLOUD_SERVICE_ACCOUNT_KEY = {
     "auth_provider_x509_cert_url": "",
@@ -457,7 +456,7 @@ def test_lifecycle_with_pg(testing_datasource):
                 data_type=DataType.CHARACTER_VARYING,
                 description="",
             ),
-            FieldMetadata(field_name="id", data_type=DataType.INTEGER, description=""),
+            FieldMetadata(field_name="id", data_type=DataType.BIGINT, description=""),
             FieldMetadata(
                 field_name="income", data_type=DataType.NUMERIC, description=""
             ),
@@ -485,7 +484,16 @@ def test_lifecycle_with_pg(testing_datasource):
                 field_name="potential_0", data_type=DataType.NUMERIC, description=""
             ),
             FieldMetadata(
-                field_name="potential_1", data_type=DataType.INTEGER, description=""
+                field_name="potential_1", data_type=DataType.BIGINT, description=""
+            ),
+            FieldMetadata(
+                field_name="sample_date", data_type=DataType.DATE, description=""
+            ),
+            # TODO: timestamptz
+            FieldMetadata(
+                field_name="sample_timestamp",
+                data_type=DataType.TIMESTAMP_WITHOUT_TIMEZONE,
+                description="",
             ),
             FieldMetadata(
                 field_name="uuid_filter", data_type=DataType.UUID, description=""
