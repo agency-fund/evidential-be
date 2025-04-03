@@ -417,20 +417,31 @@ class Arm(ApiBaseModel):
     arm_description: str | None = None
 
 
-# TODO: Consider extending Arm
-class ArmAnalysis(ApiBaseModel):
-    arm_id: Annotated[
-        uuid.UUID | None,
+class ArmAnalysis(Arm):
+    is_baseline: Annotated[
+        bool,
         Field(
-            description="UUID of the arm. If using the /experiments/with-assignment endpoint, this is generated for you and available in the response; you should NOT set this. Only generate ids of your own if using the stateless Experiment Design API as you will do your own persistence."
+            description="Whether this arm is the baseline/control arm for comparison."
         ),
-    ] = None
-    arm: Arm
-    is_baseline: bool
-    estimate: float
-    p_value: float
-    t_stat: float
-    std_error: float
+    ]
+    estimate: Annotated[
+        float,
+        Field(
+            description="The estimated treatment effect relative to the baseline arm."
+        ),
+    ]
+    p_value: Annotated[
+        float,
+        Field(
+            description="The p-value indicating statistical significance of the treatment effect."
+        ),
+    ]
+    t_stat: Annotated[
+        float, Field(description="The t-statistic from the statistical test.")
+    ]
+    std_error: Annotated[
+        float, Field(description="The standard error of the treatment effect estimate.")
+    ]
 
 
 class MetricAnalysis(ApiBaseModel):
@@ -446,7 +457,7 @@ class MetricAnalysis(ApiBaseModel):
 
 class ExperimentAnalysis(ApiBaseModel):
     experiment_id: Annotated[
-        uuid.UUID | None,
+        uuid.UUID,
         Field(description="UUID of the experiment."),
     ] = None
     metric_analyses: list[MetricAnalysis]

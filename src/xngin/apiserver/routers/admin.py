@@ -1116,7 +1116,7 @@ def analyze_experiment(
             arm_data = analyze_results[metric_name][arm_id]
             arm_analyses.append(
                 ArmAnalysis(
-                    arm=arm,
+                    **arm,
                     is_baseline=arm_data["is_baseline"],
                     estimate=arm_data["estimate"],
                     p_value=arm_data["p_value"],

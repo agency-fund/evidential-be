@@ -27,7 +27,6 @@ def analyze_experiment(
         for assignment in treatment_assignments
     ])
 
-    outcomes_df = pd.DataFrame()
     rows = []
     for outcome in participant_outcomes:
         data_row = {"participant_id": outcome.participant_id}
@@ -51,10 +50,10 @@ def analyze_experiment(
             arm_analyses[arm_ids[i]] = {
                 # TODO(roboton): Fix this once we implement #299
                 "is_baseline": i == 0,
-                "estimate": model.params.iloc[i],
-                "p_value": model.pvalues.iloc[i],
-                "t_stat": model.tvalues.iloc[i],
-                "std_error": list(model.bse)[i],
+                "estimate": float(model.params.iloc[i]),
+                "p_value": float(model.pvalues.iloc[i]),
+                "t_stat": float(model.tvalues.iloc[i]),
+                "std_error": float(list(model.bse)[i]),
             }
         metric_analyses[metric_name] = arm_analyses
     return metric_analyses

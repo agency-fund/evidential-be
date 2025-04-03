@@ -346,7 +346,7 @@ def do_analyze_experiment(
     gsheets: Annotated[GSheetCache, Depends(gsheet_cache)],
     config: Annotated[DatasourceConfig, Depends(datasource_config_required)],
     refresh: Annotated[bool, Query(description="Refresh the cache.")] = False,
-) -> list[ExperimentAnalysis]:
+) -> ExperimentAnalysis:
     commons = CommonQueryParams(
         participant_type=request.design.audience_spec.participant_type, refresh=refresh
     )

@@ -557,6 +557,7 @@ def test_lifecycle_with_pg(testing_datasource):
     response = pget(
         f"/v1/m/datasources/{testing_datasource.ds.id}/experiments/{parsed_experiment_id}/analyze"
     )
+    print(response.content)
     assert response.status_code == 200, response.content
 
     # Get assignments for the experiment.
