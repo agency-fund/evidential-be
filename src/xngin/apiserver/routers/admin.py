@@ -2,43 +2,50 @@
 
 import logging
 from contextlib import asynccontextmanager
-from datetime import UTC, timedelta, datetime
+from datetime import UTC, datetime, timedelta
 from typing import Annotated
 
 import google.api_core.exceptions
 import sqlalchemy
 import sqlalchemy.orm
-from fastapi import APIRouter, FastAPI, Depends, Path, Body, HTTPException, Query
-from fastapi import Response
-from fastapi import status
+from fastapi import (
+    APIRouter,
+    Body,
+    Depends,
+    FastAPI,
+    HTTPException,
+    Path,
+    Query,
+    Response,
+    status,
+)
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from sqlalchemy import delete, select, text
 from sqlalchemy.exc import OperationalError
 from sqlalchemy.orm import Session
-
 from xngin.apiserver import flags, settings
 from xngin.apiserver.api_types import (
     DataType,
     ExperimentAnalysis,
-    GetStrataResponseElement,
     GetMetricsResponseElement,
+    GetStrataResponseElement,
     PowerRequest,
     PowerResponse,
 )
-from xngin.apiserver.apikeys import make_key, hash_key
+from xngin.apiserver.apikeys import hash_key, make_key
 from xngin.apiserver.dependencies import xngin_db_session
 from xngin.apiserver.dwh.queries import get_participant_metrics, query_for_participants
 from xngin.apiserver.exceptions_common import LateValidationError
 from xngin.apiserver.models.tables import (
     ApiKey,
-    User,
-    Organization,
     Datasource,
-    UserOrganization,
     DatasourceTablesInspected,
-    ParticipantTypesInspected,
     Experiment,
+    Organization,
+    ParticipantTypesInspected,
+    User,
+    UserOrganization,
 )
 from xngin.apiserver.routers import experiments, experiments_api_types
 from xngin.apiserver.routers.admin_api_types import (
@@ -70,18 +77,18 @@ from xngin.apiserver.routers.admin_api_types import (
     UserSummary,
 )
 from xngin.apiserver.routers.experiments_api import (
-    generate_field_descriptors,
     create_col_to_filter_meta_mapper,
-    validate_schema_metrics_or_raise,
+    generate_field_descriptors,
     power_check_impl,
+    validate_schema_metrics_or_raise,
 )
 from xngin.apiserver.routers.experiments_api_types import ExperimentConfig
-from xngin.apiserver.routers.oidc_dependencies import require_oidc_token, TokenInfo
+from xngin.apiserver.routers.oidc_dependencies import TokenInfo, require_oidc_token
 from xngin.apiserver.settings import (
+    ParticipantsConfig,
+    ParticipantsDef,
     RemoteDatabaseConfig,
     SqliteLocalConfig,
-    ParticipantsDef,
-    ParticipantsConfig,
     infer_table,
 )
 from xngin.stats.analysis import analyze_experiment as analyze_experiment_impl
@@ -1176,7 +1183,7 @@ def get_experiment_assignments(
     experiment_id: str,
     session: Annotated[Session, Depends(xngin_db_session)],
     user: Annotated[User, Depends(user_from_token)],
-) -> experiments_api_types.GetExperimentAssigmentsResponse:
+) -> experiments_api_types.GetExperimentAssignmentsResponse:
     ds = get_datasource_or_raise(session, user, datasource_id)
     experiment = get_experiment_via_ds_or_raise(session, ds, experiment_id)
     return experiments.get_experiment_assignments_impl(experiment)

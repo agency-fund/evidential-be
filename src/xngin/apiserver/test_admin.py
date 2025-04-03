@@ -33,7 +33,7 @@ from xngin.apiserver.routers.admin_api_types import (
 from xngin.apiserver.routers.experiments_api_types import (
     CreateExperimentWithAssignmentResponse,
     ExperimentConfig,
-    GetExperimentAssigmentsResponse,
+    GetExperimentAssignmentsResponse,
     ListExperimentsResponse,
 )
 from xngin.apiserver.routers.oidc_dependencies import (
@@ -570,7 +570,7 @@ def test_lifecycle_with_pg(testing_datasource):
         f"/v1/m/datasources/{testing_datasource.ds.id}/experiments/{parsed_experiment_id}/assignments"
     )
     assert response.status_code == 200, response.content
-    parsed = GetExperimentAssigmentsResponse.model_validate(response.json())
+    parsed = GetExperimentAssignmentsResponse.model_validate(response.json())
     assert parsed.experiment_id == parsed_experiment_id
     assert parsed.sample_size == 100
     assert parsed.balance_check is not None

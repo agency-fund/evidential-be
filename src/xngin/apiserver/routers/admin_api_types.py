@@ -1,7 +1,6 @@
 from typing import Annotated
 
 from pydantic import BaseModel, ConfigDict, Field
-
 from xngin.apiserver.api_types import (
     ApiBaseModel,
     DataType,
@@ -9,8 +8,16 @@ from xngin.apiserver.api_types import (
     GetMetricsResponseElement,
     GetStrataResponseElement,
 )
-from xngin.apiserver.settings import Dwh, DatasourceConfig, ParticipantsConfig
-from xngin.schema.schema_types import ParticipantsSchema, FieldDescriptor
+from xngin.apiserver.common_field_types import FieldName
+from xngin.apiserver.limits import (
+    MAX_LENGTH_OF_DESCRIPTION_VALUE,
+    MAX_LENGTH_OF_EMAIL_VALUE,
+    MAX_LENGTH_OF_ID_VALUE,
+    MAX_LENGTH_OF_NAME_VALUE,
+    MAX_NUMBER_OF_FIELDS,
+)
+from xngin.apiserver.settings import DatasourceConfig, Dwh, ParticipantsConfig
+from xngin.schema.schema_types import FieldDescriptor, ParticipantsSchema
 
 
 class AdminApiBaseModel(BaseModel):
@@ -18,34 +25,34 @@ class AdminApiBaseModel(BaseModel):
 
 
 class CreateOrganizationRequest(AdminApiBaseModel):
-    name: Annotated[str, Field(...)]
+    name: Annotated[str, Field(max_length=MAX_LENGTH_OF_NAME_VALUE)]
 
 
 class CreateOrganizationResponse(AdminApiBaseModel):
-    id: Annotated[str, Field(...)]
+    id: Annotated[str, Field(max_length=MAX_LENGTH_OF_ID_VALUE)]
 
 
 class UpdateOrganizationRequest(AdminApiBaseModel):
-    name: Annotated[str | None, Field()] = None
+    name: Annotated[str | None, Field(max_length=MAX_LENGTH_OF_NAME_VALUE)] = None
 
 
 class OrganizationSummary(AdminApiBaseModel):
-    id: Annotated[str, Field(...)]
-    name: Annotated[str, Field(...)]
+    id: Annotated[str, Field(max_length=MAX_LENGTH_OF_ID_VALUE)]
+    name: Annotated[str, Field(max_length=MAX_LENGTH_OF_NAME_VALUE)]
 
 
 class DatasourceSummary(AdminApiBaseModel):
-    id: str
-    name: str
+    id: Annotated[str, Field(max_length=MAX_LENGTH_OF_ID_VALUE)]
+    name: Annotated[str, Field(max_length=MAX_LENGTH_OF_NAME_VALUE)]
     driver: str
     type: str
-    organization_id: str
-    organization_name: str
+    organization_id: Annotated[str, Field(max_length=MAX_LENGTH_OF_ID_VALUE)]
+    organization_name: Annotated[str, Field(max_length=MAX_LENGTH_OF_NAME_VALUE)]
 
 
 class UserSummary(AdminApiBaseModel):
-    id: Annotated[str, Field(...)]
-    email: Annotated[str, Field(...)]
+    id: Annotated[str, Field(max_length=MAX_LENGTH_OF_ID_VALUE)]
+    email: Annotated[str, Field(max_length=MAX_LENGTH_OF_EMAIL_VALUE)]
 
 
 class ListOrganizationsResponse(AdminApiBaseModel):
@@ -53,8 +60,8 @@ class ListOrganizationsResponse(AdminApiBaseModel):
 
 
 class GetOrganizationResponse(AdminApiBaseModel):
-    id: Annotated[str, Field(...)]
-    name: Annotated[str, Field(...)]
+    id: Annotated[str, Field(max_length=MAX_LENGTH_OF_ID_VALUE)]
+    name: Annotated[str, Field(max_length=MAX_LENGTH_OF_NAME_VALUE)]
     users: list[UserSummary]
     datasources: list[DatasourceSummary]
 
@@ -68,26 +75,26 @@ class ListDatasourcesResponse(AdminApiBaseModel):
 
 
 class CreateDatasourceRequest(AdminApiBaseModel):
-    organization_id: Annotated[str, Field(...)]
+    organization_id: Annotated[str, Field(max_length=MAX_LENGTH_OF_ID_VALUE)]
     name: Annotated[str, Field(...)]
     dwh: Dwh
 
 
 class UpdateDatasourceRequest(AdminApiBaseModel):
-    name: Annotated[str | None, Field()] = None
+    name: Annotated[str | None, Field(max_length=MAX_LENGTH_OF_NAME_VALUE)] = None
     dwh: Annotated[Dwh | None, Field()] = None
 
 
 class CreateDatasourceResponse(AdminApiBaseModel):
-    id: Annotated[str, Field(...)]
+    id: Annotated[str, Field(max_length=MAX_LENGTH_OF_ID_VALUE)]
 
 
 class GetDatasourceResponse(AdminApiBaseModel):
-    id: Annotated[str, Field(...)]
-    name: str
+    id: Annotated[str, Field(max_length=MAX_LENGTH_OF_ID_VALUE)]
+    name: Annotated[str, Field(max_length=MAX_LENGTH_OF_NAME_VALUE)]
     config: DatasourceConfig  # TODO: map this to a public type
-    organization_id: str
-    organization_name: str
+    organization_id: Annotated[str, Field(max_length=MAX_LENGTH_OF_ID_VALUE)]
+    organization_name: Annotated[str, Field(max_length=MAX_LENGTH_OF_NAME_VALUE)]
 
 
 class InspectDatasourceResponse(ApiBaseModel):
@@ -97,9 +104,9 @@ class InspectDatasourceResponse(ApiBaseModel):
 class FieldMetadata(ApiBaseModel):
     """Concise summary of fields in the table."""
 
-    field_name: str
+    field_name: FieldName
     data_type: DataType
-    description: str
+    description: Annotated[str, Field(max_length=MAX_LENGTH_OF_DESCRIPTION_VALUE)]
 
 
 class InspectDatasourceTableResponse(ApiBaseModel):
@@ -125,32 +132,36 @@ class ListParticipantsTypeResponse(ApiBaseModel):
 
 
 class CreateParticipantsTypeRequest(ApiBaseModel):
-    participant_type: str
+    participant_type: Annotated[str, Field(max_length=MAX_LENGTH_OF_NAME_VALUE)]
     schema_def: Annotated[ParticipantsSchema, Field()]
 
 
 class CreateParticipantsTypeResponse(ApiBaseModel):
-    participant_type: str
+    participant_type: Annotated[str, Field(max_length=MAX_LENGTH_OF_NAME_VALUE)]
     schema_def: Annotated[ParticipantsSchema, Field()]
 
 
 class UpdateParticipantsTypeRequest(ApiBaseModel):
-    participant_type: str | None = None
-    table_name: str | None = None
-    fields: list[FieldDescriptor] | None = None
+    participant_type: Annotated[str, Field(max_length=MAX_LENGTH_OF_NAME_VALUE)]
+    table_name: Annotated[FieldName | None, Field()] = None
+    fields: Annotated[
+        list[FieldDescriptor] | None, Field(max_length=MAX_NUMBER_OF_FIELDS)
+    ] = None
 
 
 class UpdateParticipantsTypeResponse(ApiBaseModel):
-    participant_type: str
-    table_name: str
-    fields: list[FieldDescriptor]
+    participant_type: Annotated[str, Field(max_length=MAX_LENGTH_OF_NAME_VALUE)]
+    table_name: Annotated[FieldName | None, Field()] = None
+    fields: Annotated[
+        list[FieldDescriptor] | None, Field(max_length=MAX_NUMBER_OF_FIELDS)
+    ] = None
 
 
 class ApiKeySummary(AdminApiBaseModel):
-    id: Annotated[str, Field(...)]
-    datasource_id: Annotated[str, Field(...)]
-    organization_id: Annotated[str, Field(...)]
-    organization_name: Annotated[str, Field(...)]
+    id: Annotated[str, Field(max_length=MAX_LENGTH_OF_ID_VALUE)]
+    datasource_id: Annotated[str, Field(max_length=MAX_LENGTH_OF_ID_VALUE)]
+    organization_id: Annotated[str, Field(max_length=MAX_LENGTH_OF_ID_VALUE)]
+    organization_name: Annotated[str, Field(max_length=MAX_LENGTH_OF_NAME_VALUE)]
 
 
 class ListApiKeysResponse(AdminApiBaseModel):
@@ -158,11 +169,11 @@ class ListApiKeysResponse(AdminApiBaseModel):
 
 
 class CreateApiKeyResponse(AdminApiBaseModel):
-    id: Annotated[str, Field(...)]
+    id: Annotated[str, Field(max_length=MAX_LENGTH_OF_ID_VALUE)]
     datasource_id: Annotated[str, Field(...)]
     key: Annotated[str, Field(...)]
 
 
 class CreateUserRequest(AdminApiBaseModel):
-    email: Annotated[str, Field(...)]
-    organization_id: Annotated[str, Field(...)]
+    email: Annotated[str, Field(max_length=MAX_LENGTH_OF_EMAIL_VALUE)]
+    organization_id: Annotated[str, Field(max_length=MAX_LENGTH_OF_ID_VALUE)]

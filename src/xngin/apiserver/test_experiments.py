@@ -1,19 +1,18 @@
-import uuid
-from datetime import datetime, timedelta, UTC
 import dataclasses
+import uuid
 from dataclasses import dataclass
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
-from fastapi import HTTPException
-import pytest
 import numpy as np
+import pytest
 from deepdiff import DeepDiff
+from fastapi import HTTPException
 from fastapi.testclient import TestClient
-from sqlalchemy import select, Boolean, Column, MetaData, String, Table
-from sqlalchemy.dialects import sqlite, postgresql
+from sqlalchemy import Boolean, Column, MetaData, String, Table, select
+from sqlalchemy.dialects import postgresql, sqlite
 from sqlalchemy.orm import Session
 from sqlalchemy.schema import CreateTable
-
 from xngin.apiserver import conftest, constants
 from xngin.apiserver.api_types import (
     Arm,
@@ -36,16 +35,16 @@ from xngin.apiserver.models.tables import ArmAssignment, Experiment
 from xngin.apiserver.routers.experiments import (
     abandon_experiment_impl,
     commit_experiment_impl,
-    experiment_assignments_to_csv_generator,
     create_experiment_with_assignment_impl,
+    experiment_assignments_to_csv_generator,
     get_experiment_assignments_impl,
     list_experiments_impl,
 )
 from xngin.apiserver.routers.experiments_api_types import (
-    CreateExperimentRequest,
     AssignSummary,
+    CreateExperimentRequest,
     ExperimentConfig,
-    GetExperimentAssigmentsResponse,
+    GetExperimentAssignmentsResponse,
     ListExperimentsResponse,
 )
 
@@ -744,7 +743,7 @@ def test_get_experiment_assignments_impl(db_session, testing_datasource):
     db_session.add_all(assignments)
     db_session.commit()
 
-    data: GetExperimentAssigmentsResponse = get_experiment_assignments_impl(experiment)
+    data: GetExperimentAssignmentsResponse = get_experiment_assignments_impl(experiment)
 
     # Check the response structure; lhs is a UUID and rhs is a string when accessed using sqlite.
     assert str(data.experiment_id) == experiment.id
