@@ -142,7 +142,9 @@ class CreateParticipantsTypeResponse(ApiBaseModel):
 
 
 class UpdateParticipantsTypeRequest(ApiBaseModel):
-    participant_type: Annotated[str, Field(max_length=MAX_LENGTH_OF_NAME_VALUE)]
+    participant_type: Annotated[
+        str | None, Field(max_length=MAX_LENGTH_OF_NAME_VALUE)
+    ] = None
     table_name: Annotated[FieldName | None, Field()] = None
     fields: Annotated[
         list[FieldDescriptor] | None, Field(max_length=MAX_NUMBER_OF_FIELDS)
