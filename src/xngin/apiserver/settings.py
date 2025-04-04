@@ -30,6 +30,7 @@ from tenacity import (
     wait_random,
 )
 from xngin.apiserver import flags
+from xngin.apiserver.certs.certs import PATH_TO_AMAZON_TRUST_CA_BUNDLE
 from xngin.apiserver.dns.safe_resolve import safe_resolve
 from xngin.apiserver.settings_secrets import replace_secrets
 from xngin.db_extensions import NumpyStddev
@@ -374,6 +375,11 @@ class Dsn(ConfigBaseModel, BaseDsn):
                 # re: redshift issue https://github.com/psycopg/psycopg/issues/122#issuecomment-985742751
                 "client_encoding": "utf-8",
             })
+            if self.is_redshift():
+                query.update({
+                    "sslmode": "verify-full",
+                    "sslrootcert": PATH_TO_AMAZON_TRUST_CA_BUNDLE,
+                })
             url = url.set(query=query)
         return url
 
