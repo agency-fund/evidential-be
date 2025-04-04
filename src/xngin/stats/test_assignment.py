@@ -122,7 +122,7 @@ def test_assign_treatment(sample_table, sample_rows):
     )
     assert all(len(participant.strata) == 3 for participant in result.assignments)
     assert all(
-        participant.arm_name in ["control", "treatment"]
+        participant.arm_name in {"control", "treatment"}
         for participant in result.assignments
     )
     assert result.assignments[0].arm_name == "control"
@@ -342,7 +342,7 @@ def test_decimal_and_bool_strata_are_rendered_correctly(sample_table, sample_row
         json = p.model_dump()
         # we rounded the Decimal to an int, so shouldn't see the decimal point
         assert "." not in json["strata"][0]["strata_value"], json
-        assert json["strata"][1]["strata_value"] in ("True", "False"), json
+        assert json["strata"][1]["strata_value"] in {"True", "False"}, json
 
 
 def test_with_nans_that_would_break_stochatreat_without_preprocessing(sample_table):
@@ -387,9 +387,9 @@ def test_simple_random_assignment(sample_rows):
         sample_rows, make_arms(["A", "B", "C"]), random_state=42
     )
     assert len(assignments) == n
-    assert assignments.count(0) in (n // 3, n // 3 + 1)
-    assert assignments.count(1) in (n // 3, n // 3 + 1)
-    assert assignments.count(2) in (n // 3, n // 3 + 1)
+    assert assignments.count(0) in {n // 3, n // 3 + 1}
+    assert assignments.count(1) in {n // 3, n // 3 + 1}
+    assert assignments.count(2) in {n // 3, n // 3 + 1}
 
 
 def test_assign_treatment_with_no_stratification(sample_table, sample_rows):

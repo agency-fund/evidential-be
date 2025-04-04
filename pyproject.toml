@@ -72,12 +72,13 @@ select = [
     "F",
     "N",
     "PD",
+    "PLR",
     "FAST",
     "RET",
     "RUF",
     "SIM",
     "TRY",
-    "UP"
+    "UP",
 ]
 ignore = [
     "RUF029",
@@ -88,6 +89,15 @@ ignore = [
     "PD002", # `inplace=True` should be avoided; it has inconsistent behavior
     "PD101", # Using `series.nunique()` for checking that a series is constant is inefficient
     "PD901", # Avoid using the generic variable name `df` for DataFrames
+    "PLR0911", # too many return statements
+    "PLR0912", # too many branches
+    "PLR0913", # too many positional arguments
+    "PLR0914", # too many local variables
+    "PLR0915", # too many statements
+    "PLR0917", # too many positional arguments
+    "PLR1702", # too many nested blocks
+    "PLR2004", # magic value,
+    "PLR6301", # method could be a function, class method, or static method
 ]
 
 [tool.uv]

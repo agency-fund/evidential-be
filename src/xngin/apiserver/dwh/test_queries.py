@@ -188,7 +188,9 @@ def fixture_db_session():
     connect_url, db_type, connect_args = get_test_dwh_info()
     default_url = make_url(connect_url)._replace(database=None)
     temporary_database_name = None
-    use_temporary_database = db_type in (DbType.PG,)
+    use_temporary_database = db_type in {
+        DbType.PG,
+    }
 
     if use_temporary_database:
         temporary_database_name = f"fixture_db_session_{secrets.token_hex(16)}"

@@ -333,7 +333,7 @@ def create_testing_dwh(
         pandas_gbq.to_gbq(
             df, destination_table, project_id=url.host, if_exists="replace"
         )
-    elif url.get_driver_name() in ("psycopg", "psycopg2"):
+    elif url.get_driver_name() in {"psycopg", "psycopg2"}:
         engine = create_engine_and_database(url)
         ddl = get_ddl_magic(engine.dialect.identifier_preparer, "postgres")
         with engine.begin() as conn:

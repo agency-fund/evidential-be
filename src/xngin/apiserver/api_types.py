@@ -106,7 +106,7 @@ class DataType(enum.StrEnum):
     @classmethod
     def is_supported_type(cls, data_type: Self):
         """Returns True if the type is supported as a strata, filter, and/or metric."""
-        return data_type not in (DataType.JSONB, DataType.JSON, DataType.UNKNOWN)
+        return data_type not in {DataType.JSONB, DataType.JSON, DataType.UNKNOWN}
 
     def is_supported(self):
         """Returns True if the type is supported as a strata, filter, and/or metric."""
@@ -334,7 +334,7 @@ class MetricType(enum.StrEnum):
     def from_python_type(cls, python_type: type) -> "MetricType":
         """Maps Python types to metric types."""
 
-        if python_type in (int, float, decimal.Decimal):
+        if python_type in {int, float, decimal.Decimal}:
             return MetricType.NUMERIC
         if python_type is bool:
             return MetricType.BINARY
@@ -605,7 +605,7 @@ class StrataType(enum.StrEnum):
     def from_python_type(cls, python_type: type):
         """ "Maps Python types to strata types."""
 
-        if python_type in (int, float):
+        if python_type in {int, float}:
             return StrataType.NUMERIC
         if python_type is bool:
             return StrataType.BINARY
