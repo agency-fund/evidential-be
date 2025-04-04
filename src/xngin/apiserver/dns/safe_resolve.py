@@ -34,11 +34,12 @@ def is_safe_ip(ip):
         parsed = ipaddress.ip_address(ip)
         if SAFE_RESOLVE_TOLERANT:
             return True
-        return (
-            parsed.is_global and (parsed.version == 4 and parsed.packed[0] != 192)
-        ) or (
-            parsed.version == 6
-            and parsed.exploded.split(":")[0] not in {"2001", "2620", "64"}
+        return parsed.is_global and (
+            (parsed.version == 4 and parsed.packed[0] != 192)
+            or (
+                parsed.version == 6
+                and parsed.exploded.split(":")[0] not in {"2001", "2620", "64"}
+            )
         )
     except ValueError:
         return False
