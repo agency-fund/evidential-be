@@ -5,7 +5,7 @@ import logging
 import os
 from collections import Counter
 from functools import lru_cache
-from typing import Literal, Annotated, Protocol
+from typing import Annotated, Literal, Protocol
 from urllib.parse import urlparse
 
 import httpx
@@ -13,23 +13,22 @@ import sqlalchemy
 from httpx import codes
 from pydantic import (
     BaseModel,
-    SecretStr,
-    Field,
     ConfigDict,
-    model_validator,
-    field_validator,
+    Field,
+    SecretStr,
     field_serializer,
+    field_validator,
+    model_validator,
 )
 from sqlalchemy import Engine, event, text
 from sqlalchemy.exc import NoSuchTableError
 from sqlalchemy.orm import Session
 from tenacity import (
     retry,
-    wait_random,
     retry_if_not_exception_type,
     stop_after_delay,
+    wait_random,
 )
-
 from xngin.apiserver import flags
 from xngin.apiserver.settings_secrets import replace_secrets
 from xngin.db_extensions import NumpyStddev
@@ -231,6 +230,8 @@ class GcpServiceAccountInfo(ConfigBaseModel):
         Field(
             ...,
             description="The base64-encoded service account info in the canonical JSON form.",
+            min_length=4,
+            max_length=8000,
         ),
     ]
 
@@ -293,9 +294,24 @@ class BqDsn(ConfigBaseModel, BaseDsn):
     driver: Literal["bigquery"]
     project_id: Annotated[
         str,
-        Field(..., description="The Google Cloud Project ID containing the dataset."),
+        Field(
+            ...,
+            description="The Google Cloud Project ID containing the dataset.",
+            min_length=6,
+            max_length=30,
+            pattern=r"^[a-z0-9-]+$",
+        ),
     ]
-    dataset_id: Annotated[str, Field(..., description="The dataset name.")]
+    dataset_id: Annotated[
+        str,
+        Field(
+            ...,
+            description="The dataset name.",
+            min_length=1,
+            max_length=1024,
+            pattern=r"^[a-zA-Z0-9_]+$",
+        ),
+    ]
 
     # These two authentication modes are documented here:
     # https://googleapis.dev/python/google-api-core/latest/auth.html#service-accounts
