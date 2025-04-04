@@ -22,8 +22,8 @@ env:
   ATLAS_NO_ANON_TELEMETRY: "true"
   DO_NOT_TRACK: "1"
 
-  # Allow unsafe DNS queries in local development.
-  SAFE_RESOLVE_TOLERANT: "1"
+  # Allow connecting to data warehouses residing in private IP ranges.
+  ALLOW_CONNECTING_TO_PRIVATE_IPS: "1"
 
   # Google will redirect to this URL upon successful authentication. This URL is served by the frontend application
   # and the GoogleAuthProvider component will intercept the query arguments and handle them.

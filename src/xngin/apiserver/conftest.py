@@ -15,14 +15,14 @@ from pydantic import TypeAdapter, ValidationError
 from sqlalchemy import StaticPool, make_url
 from sqlalchemy.dialects.postgresql import psycopg
 from sqlalchemy.engine.interfaces import Dialect
-from sqlalchemy.orm import sessionmaker, Session
-
+from sqlalchemy.orm import Session, sessionmaker
 from xngin.apiserver import database, flags
-from xngin.apiserver.apikeys import make_key, hash_key
+from xngin.apiserver.apikeys import hash_key, make_key
 from xngin.apiserver.dependencies import settings_dependency, xngin_db_session
+from xngin.apiserver.dns import safe_resolve
 from xngin.apiserver.models import tables
-from xngin.apiserver.models.tables import Organization, Datasource, ApiKey
-from xngin.apiserver.settings import XnginSettings, SettingsForTesting
+from xngin.apiserver.models.tables import ApiKey, Datasource, Organization
+from xngin.apiserver.settings import SettingsForTesting, XnginSettings
 from xngin.apiserver.testing import testing_dwh
 from xngin.db_extensions import custom_functions
 
@@ -83,6 +83,11 @@ def setup_debug_logging():
         f"Running tests with XNGIN_TEST_APPDB_URI: {get_test_appdb_info()} "
         f"and XNGIN_TEST_DWH_URI: {get_test_dwh_info()}"
     )
+
+
+@pytest.fixture(scope="session", autouse=True)
+def allow_connecting_to_private_ips():
+    safe_resolve.ALLOW_CONNECTING_TO_PRIVATE_IPS = True
 
 
 def get_test_uri_info(connection_uri: str):

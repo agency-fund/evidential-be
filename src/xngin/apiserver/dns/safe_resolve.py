@@ -2,7 +2,7 @@ import ipaddress
 
 import dns.resolver
 from dns.resolver import resolve
-from xngin.apiserver.flags import SAFE_RESOLVE_TOLERANT
+from xngin.apiserver.flags import ALLOW_CONNECTING_TO_PRIVATE_IPS
 
 DNS_TIMEOUT_SECS = 5
 
@@ -27,12 +27,12 @@ def lookup_v4(host: str) -> list[str] | None:
 def is_safe_ip(ip):
     """Returns true iff the ip is safe to try to connect to.
 
-    If flags.SAFE_RESOLVE_TOLERANT is enabled, we will validate the IP address but not check whether it is globally
-    routable.
+    If ALLOW_CONNECTING_TO_PRIVATE_IPS is enabled, we will validate the IP address but not check whether it is
+    globally routable.
     """
     try:
         parsed = ipaddress.ip_address(ip)
-        if SAFE_RESOLVE_TOLERANT:
+        if ALLOW_CONNECTING_TO_PRIVATE_IPS:
             return True
         return parsed.is_global and (
             (parsed.version == 4 and parsed.packed[0] != 192)
