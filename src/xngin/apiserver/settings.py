@@ -30,6 +30,7 @@ from tenacity import (
     wait_random,
 )
 from xngin.apiserver import flags
+from xngin.apiserver.dns.safe_resolve import safe_resolve
 from xngin.apiserver.settings_secrets import replace_secrets
 from xngin.db_extensions import NumpyStddev
 from xngin.schema.schema_types import ParticipantsSchema
@@ -376,6 +377,13 @@ class Dsn(ConfigBaseModel, BaseDsn):
             url = url.set(query=query)
         return url
 
+    @model_validator(mode="after")
+    def check_redshift_safe(self):
+        if self.is_redshift() and self.driver != "postgresql+psycopg2":
+            raise ValueError("Redshift connections must use postgresql+psycopg2 driver")
+        # TODO: check TLS settings
+        return self
+
 
 class DbapiArg(ConfigBaseModel):
     """Describes a DBAPI connect() argument.
@@ -419,6 +427,12 @@ class RemoteDatabaseConfig(ParticipantsMixin, ConfigBaseModel):
         connect_args: dict = {}
         if url.get_backend_name() == "postgres":
             connect_args["connect_timeout"] = 5
+            # Replace the Postgres' client default DNS lookup with one that applies security checks first; this prevents
+            # us from connecting to addresses like 127.0.0.1 or addresses that are on our hosting provider's internal
+            # network.
+            # https://www.postgresql.org/docs/current/libpq-connect.html#LIBPQ-PARAMKEYWORDS
+            connect_args["hostaddr"] = safe_resolve(url.host)
+
         engine = sqlalchemy.create_engine(
             url,
             connect_args=connect_args,

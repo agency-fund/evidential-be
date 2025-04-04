@@ -35,6 +35,7 @@ from xngin.apiserver.api_types import (
 )
 from xngin.apiserver.apikeys import hash_key, make_key
 from xngin.apiserver.dependencies import xngin_db_session
+from xngin.apiserver.dns.safe_resolve import safe_resolve
 from xngin.apiserver.dwh.queries import get_participant_metrics, query_for_participants
 from xngin.apiserver.exceptions_common import LateValidationError
 from xngin.apiserver.models.tables import (
@@ -495,6 +496,8 @@ def create_datasource(
             status_code=400,
             detail="BigQuery credentials must be specified using type=serviceaccountinfo",
         )
+    if body.dwh.driver in {"postgresql+psycopg", "postgresql+psycopg2"}:
+        safe_resolve(body.dwh.host)  # TODO: handle this exception more gracefully
 
     config = RemoteDatabaseConfig(participants=[], type="remote", dwh=body.dwh)
 
