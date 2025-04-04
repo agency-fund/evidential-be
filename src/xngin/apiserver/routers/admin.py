@@ -1107,21 +1107,22 @@ def analyze_experiment(
         )
 
     analyze_results = analyze_experiment_impl(assignments, participant_outcomes)
+
     metric_analyses = []
     for metric in experiment.get_design_spec().metrics:
         metric_name = metric.field_name
         arm_analyses = []
         for arm in experiment.get_arms():
-            arm_id = arm["arm_id"]
-            arm_data = analyze_results[metric_name][arm_id]
+            arm_id = str(arm.arm_id)
+            arm_result = analyze_results[metric_name][arm_id]
             arm_analyses.append(
                 ArmAnalysis(
-                    **arm,
-                    is_baseline=arm_data["is_baseline"],
-                    estimate=arm_data["estimate"],
-                    p_value=arm_data["p_value"],
-                    t_stat=arm_data["t_stat"],
-                    std_error=arm_data["std_error"],
+                    **arm.model_dump(),
+                    is_baseline=arm_result.is_baseline,
+                    estimate=arm_result.estimate,
+                    p_value=arm_result.p_value,
+                    t_stat=arm_result.t_stat,
+                    std_error=arm_result.std_error,
                 )
             )
         metric_analyses.append(

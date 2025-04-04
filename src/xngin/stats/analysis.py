@@ -1,5 +1,7 @@
+import dataclasses
 import pandas as pd
 import statsmodels.formula.api as smf
+
 from patsy.eval import EvalFactor
 from xngin.apiserver.api_types import (
     ParticipantOutcome,
@@ -7,10 +9,19 @@ from xngin.apiserver.api_types import (
 from xngin.apiserver.models.tables import ArmAssignment
 
 
+@dataclasses.dataclass(slots=True)  # slots=True for performance
+class ArmAnalysisResult:
+    is_baseline: bool
+    estimate: float
+    p_value: float
+    t_stat: float
+    std_error: float
+
+
 def analyze_experiment(
     treatment_assignments: list[ArmAssignment],
     participant_outcomes: list[ParticipantOutcome],
-) -> dict[dict]:
+) -> dict[dict[str, ArmAnalysisResult]]:
     """
     Perform statistical analysis with DesignSpec metrics and their values
 
@@ -46,14 +57,13 @@ def analyze_experiment(
             EvalFactor("arm_id")
         ].categories
         arm_analyses = {}
-        for i in range(len(arm_ids)):
-            arm_analyses[arm_ids[i]] = {
-                # TODO(roboton): Fix this once we implement #299
-                "is_baseline": i == 0,
-                "estimate": float(model.params.iloc[i]),
-                "p_value": float(model.pvalues.iloc[i]),
-                "t_stat": float(model.tvalues.iloc[i]),
-                "std_error": float(list(model.bse)[i]),
-            }
+        for i, arm_id in enumerate(arm_ids):
+            arm_analyses[arm_id] = ArmAnalysisResult(
+                is_baseline=i == 0,
+                estimate=float(model.params.iloc[i]),
+                p_value=float(model.pvalues.iloc[i]),
+                t_stat=float(model.tvalues.iloc[i]),
+                std_error=float(list(model.bse)[i]),
+            )
         metric_analyses[metric_name] = arm_analyses
     return metric_analyses
