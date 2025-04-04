@@ -324,13 +324,14 @@ class Experiment(Base):
     datasource: Mapped["Datasource"] = relationship(back_populates="experiments")
 
     def get_arms(self) -> list[str]:
-        return self.design_spec["arms"]
+        ds = self.get_design_spec()
+        return ds.arms
 
     def get_arm_ids(self) -> list[str]:
-        return [arm["arm_id"] for arm in self.design_spec["arms"]]
+        return [arm.arm_id for arm in self.get_arms()]
 
     def get_arm_names(self) -> list[str]:
-        return [arm["arm_name"] for arm in self.design_spec["arms"]]
+        return [arm.arm_name for arm in self.get_arms()]
 
     def get_design_spec(self) -> DesignSpec:
         return TypeAdapter(DesignSpec).validate_python(self.design_spec)
