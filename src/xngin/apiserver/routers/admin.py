@@ -485,23 +485,7 @@ def create_datasource(
     body: Annotated[CreateDatasourceRequest, Body(...)],
 ) -> CreateDatasourceResponse:
     """Creates a new datasource for the specified organization."""
-    org = session.get(Organization, body.organization_id)
-    if not org:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND, detail="Organization not found"
-        )
-
-    stmt = (
-        select(UserOrganization)
-        .where(UserOrganization.user_id == user.id)
-        .where(UserOrganization.organization_id == org.id)
-    )
-    allowed = session.execute(stmt).scalar_one_or_none()
-    if allowed is None:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="You are not a member of this organization",
-        )
+    org = get_organization_or_raise(session, user, body.organization_id)
 
     if (
         body.dwh.driver == "bigquery"
