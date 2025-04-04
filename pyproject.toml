@@ -69,8 +69,8 @@ select = [
     "ASYNC",
     "B",
     "E",
-    "W",
     "F",
+    "FAST",
     "FURB",
     "N",
     "PD",
@@ -78,23 +78,21 @@ select = [
     "PLE",
     "PLR",
     "PLW1508",
-    "FAST",
     "RET",
     "RUF",
     "SIM",
     "TRY",
     "UP",
+    "W",
 ]
 ignore = [
-    "RUF029",
-    "TRY003",
-    "E501", # redundant line length warnings
     "E266", # Too many leading `#` before block comment
-    "FURB103", # `open` and `write` should be replaced by `Path(filename)....`
+    "E501", # redundant line length warnings
     "FURB101", # `open` and `read` should be replaced by `Path(file).read_text()`
+    "FURB103", # `open` and `write` should be replaced by `Path(filename)....`
     "FURB152", # replace values that resemble mathemematical constants with constants (e.g. 3.14 => math.pi)
-    "PD003", # `.isna` is preferred to `.isnull`; functionality is equivalent"
     "PD002", # `inplace=True` should be avoided; it has inconsistent behavior
+    "PD003", # `.isna` is preferred to `.isnull`; functionality is equivalent"
     "PD101", # Using `series.nunique()` for checking that a series is constant is inefficient
     "PD901", # Avoid using the generic variable name `df` for DataFrames
     "PLC1901", # x == "" can be simplified to not x
@@ -107,6 +105,8 @@ ignore = [
     "PLR1702", # too many nested blocks
     "PLR2004", # magic value,
     "PLR6301", # method could be a function, class method, or static method
+    "RUF029",
+    "TRY003",
 ]
 
 [tool.uv]
