@@ -44,7 +44,7 @@ markers = [
     "integration: integration tests that rely on remote resources",
     "pgintegration: integration tests that rely on a local postgres instance",
     "nondeterministic: tests that are nondeterministic (but should be)"
-    ]
+]
 addopts = "-m 'not integration and not nondeterministic and not pgintegration'"
 # filtewarnings can be used to silence warnings during tests.
 # format is: action:message:category:module
@@ -63,6 +63,7 @@ preview = true
 exclude = ["*.ipynb"]
 
 [tool.ruff.lint]
+# Rules: https://docs.astral.sh/ruff/rules/
 select = [
     "A",
     "ASYNC",
@@ -70,6 +71,7 @@ select = [
     "E",
     "W",
     "F",
+    "FURB",
     "N",
     "PD",
     "PLC",
@@ -88,6 +90,9 @@ ignore = [
     "TRY003",
     "E501", # redundant line length warnings
     "E266", # Too many leading `#` before block comment
+    "FURB103", # `open` and `write` should be replaced by `Path(filename)....`
+    "FURB101", # `open` and `read` should be replaced by `Path(file).read_text()`
+    "FURB152", # replace values that resemble mathemematical constants with constants (e.g. 3.14 => math.pi)
     "PD003", # `.isna` is preferred to `.isnull`; functionality is equivalent"
     "PD002", # `inplace=True` should be avoided; it has inconsistent behavior
     "PD101", # Using `series.nunique()` for checking that a series is constant is inefficient

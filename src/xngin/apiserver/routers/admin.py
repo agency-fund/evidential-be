@@ -654,7 +654,7 @@ def create_inspect_table_response_from_table(table: sqlalchemy.Table):
                 FieldMetadata(
                     field_name=column.name,
                     data_type=data_type,
-                    description=column.comment if column.comment else "",
+                    description=column.comment or "",
                 )
             )
 

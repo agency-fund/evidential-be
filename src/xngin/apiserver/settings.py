@@ -357,7 +357,7 @@ class Dsn(ConfigBaseModel, BaseDsn):
         if self.driver.startswith("postgresql"):
             query = dict(url.query)
             query.update({
-                "sslmode": self.sslmode if self.sslmode else "verify-full",
+                "sslmode": self.sslmode or "verify-full",
                 # re: redshift issue https://github.com/psycopg/psycopg/issues/122#issuecomment-985742751
                 "client_encoding": "utf-8",
             })

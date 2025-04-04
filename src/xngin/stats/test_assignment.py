@@ -60,7 +60,7 @@ def make_sample_data_dict(n=1000):
             np.concatenate((np.repeat([1], n * 0.9), np.repeat([0], n * 0.1)))
         ),
     }
-    data["income_dec"] = [Decimal(i).quantize(Decimal("1")) for i in data["income"]]
+    data["income_dec"] = [Decimal(i).quantize(Decimal(1)) for i in data["income"]]
     data["is_male"] = [g == "M" for g in data["gender"]]
     data["single_value"] = [1] * n
     return data
