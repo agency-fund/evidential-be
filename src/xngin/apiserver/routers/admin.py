@@ -497,7 +497,13 @@ def create_datasource(
             detail="BigQuery credentials must be specified using type=serviceaccountinfo",
         )
     if body.dwh.driver in {"postgresql+psycopg", "postgresql+psycopg2"}:
-        safe_resolve(body.dwh.host)  # TODO: handle this exception more gracefully
+        _ = safe_resolve(body.dwh.host)  # TODO: handle this exception more gracefully
+        allowed_modes = {"disable", "require", "verify-ca", "verify-full"}
+        if body.dwh.sslmode not in allowed_modes:
+            raise HTTPException(
+                status_code=400,
+                detail=f"sslmode must be one of: {', '.join(allowed_modes)}",
+            )
 
     config = RemoteDatabaseConfig(participants=[], type="remote", dwh=body.dwh)
 
