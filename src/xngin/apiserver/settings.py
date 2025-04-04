@@ -43,13 +43,9 @@ logger = logging.getLogger(__name__)
 class UnclassifiedRemoteSettingsError(Exception):
     """Raised when we fail to fetch remote settings for an unclassified reason."""
 
-    pass
-
 
 class RemoteSettingsClientError(Exception):
     """Raised when we fail to fetch remote settings due to our misconfiguration."""
-
-    pass
 
 
 @lru_cache
