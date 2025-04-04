@@ -54,7 +54,7 @@ def safe_resolve(host: str):
         return host
 
     answers = lookup_v4(host)
-    if answers is None:
+    if not answers:
         raise DnsLookupError(host)
     safe = is_safe_ipset(set(answers))
     if not safe:
