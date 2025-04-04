@@ -1,6 +1,6 @@
 import pandas as pd
 import statsmodels.formula.api as smf
-from patsy import EvalFactor
+from patsy.eval import EvalFactor
 from xngin.apiserver.api_types import (
     ParticipantOutcome,
 )
