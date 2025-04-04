@@ -385,9 +385,13 @@ class Dsn(ConfigBaseModel, BaseDsn):
 
     @model_validator(mode="after")
     def check_redshift_safe(self):
-        if self.is_redshift() and self.driver != "postgresql+psycopg2":
-            raise ValueError("Redshift connections must use postgresql+psycopg2 driver")
-        # TODO: check TLS settings
+        if self.is_redshift():
+            if self.driver != "postgresql+psycopg2":
+                raise ValueError(
+                    "Redshift connections must use postgresql+psycopg2 driver"
+                )
+            if self.sslmode != "verify-full":
+                raise ValueError("Redshift connections must use sslmode=verify_full")
         return self
 
 
