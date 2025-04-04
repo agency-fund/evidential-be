@@ -43,13 +43,9 @@ logger = logging.getLogger(__name__)
 class UnclassifiedRemoteSettingsError(Exception):
     """Raised when we fail to fetch remote settings for an unclassified reason."""
 
-    pass
-
 
 class RemoteSettingsClientError(Exception):
     """Raised when we fail to fetch remote settings due to our misconfiguration."""
-
-    pass
 
 
 @lru_cache
@@ -357,7 +353,7 @@ class Dsn(ConfigBaseModel, BaseDsn):
         if self.driver.startswith("postgresql"):
             query = dict(url.query)
             query.update({
-                "sslmode": self.sslmode if self.sslmode else "verify-full",
+                "sslmode": self.sslmode or "verify-full",
                 # re: redshift issue https://github.com/psycopg/psycopg/issues/122#issuecomment-985742751
                 "client_encoding": "utf-8",
             })

@@ -3,18 +3,18 @@ import logging
 import os
 from contextlib import asynccontextmanager
 
+import uvicorn
 from fastapi import FastAPI
 from fastapi.openapi.utils import get_openapi
 from fastapi.routing import APIRoute
-
-from xngin.apiserver import database, exceptionhandlers, middleware, constants
+from xngin.apiserver import constants, database, exceptionhandlers, middleware
 from xngin.apiserver.flags import PUBLISH_ALL_DOCS
 from xngin.apiserver.routers import (
+    admin,
     experiments,
     experiments_api,
     experiments_proxy_mgmt_api,
     oidc,
-    admin,
     oidc_dependencies,
 )
 
@@ -177,10 +177,8 @@ app.openapi = custom_openapi
 def main():
     database.setup()
 
-    import uvicorn
-
     # Handy for debugging in your IDE
-    uvicorn.run(app, host="0.0.0.0", port=int(os.environ.get("UVICORN_PORT", 8000)))
+    uvicorn.run(app, host="0.0.0.0", port=int(os.environ.get("UVICORN_PORT", "8000")))
 
 
 if __name__ == "__main__":

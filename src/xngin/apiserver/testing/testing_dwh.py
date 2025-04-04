@@ -19,8 +19,6 @@ TESTING_DWH_RAW_DATA = Path(__file__).parent.parent / "testdata/testing_dwh.csv.
 class FailedSettingVersionError(Exception):
     """Raised when setting schema version on the test database fails."""
 
-    pass
-
 
 def import_csv_to_sqlite(
     source_csv: Path,

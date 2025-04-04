@@ -487,7 +487,7 @@ def test_create_experiment_with_assignment(
     sample_assignment: ArmAssignment = assignments[0]
     assert sample_assignment.participant_type == "test_participant_type"
     assert sample_assignment.experiment_id == str(experiment_id)
-    assert sample_assignment.arm_id in (arm1_id, arm2_id)
+    assert sample_assignment.arm_id in {arm1_id, arm2_id}
     for stratum in sample_assignment.strata:
         assert stratum["field_name"] in {"gender", "is_onboarded"}
 

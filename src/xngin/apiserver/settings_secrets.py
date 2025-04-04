@@ -58,7 +58,7 @@ def _resolve_secrets(variables):
     # We only want to resolve secrets. Since we only support environment variables for now, we also allow the env:
     # prefix so that we can have non-secret variable substitution.
     variables = [
-        v for v in variables if v[0] in (NAMESPACE_FOR_SECRETS, NAMESPACE_FOR_ENVVARS)
+        v for v in variables if v[0] in {NAMESPACE_FOR_SECRETS, NAMESPACE_FOR_ENVVARS}
     ]
     # We only support environment variables for secrets; in the future, this might be AWS Secrets Manager, files,
     # BitWarden, etc.

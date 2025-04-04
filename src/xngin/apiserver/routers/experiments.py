@@ -241,7 +241,7 @@ def commit_experiment_sl(
 def commit_experiment_impl(xngin_session: Session, experiment: Experiment):
     if experiment.state == ExperimentState.COMMITTED:
         return Response(status_code=status.HTTP_304_NOT_MODIFIED)
-    if experiment.state not in {ExperimentState.ASSIGNED}:
+    if experiment.state != ExperimentState.ASSIGNED:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail=f"Invalid state: {experiment.state}",
