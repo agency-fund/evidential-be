@@ -15,7 +15,6 @@ import pandas as pd
 import pandas_gbq
 import psycopg2
 import sqlalchemy
-import sqlalchemy.dialects.postgresql.psycopg2 as psycopg2sa
 import typer
 import zstandard
 from google.cloud import bigquery
@@ -299,6 +298,10 @@ def create_testing_dwh(
         if not iam_role:
             print("--iam-role is required when importing into Redshift.")
             raise typer.Exit(2)
+        # Workaround: Despite using a direct psycopg2 connection for Redshift, we use SQLAlchemy's quoter.
+        engine = create_engine(url)
+        quoter = engine.dialect.identifier_preparer
+        engine.dispose()
         with (
             psycopg2.connect(
                 database=url.database,
@@ -309,7 +312,7 @@ def create_testing_dwh(
             ) as conn,
             conn.cursor() as cur,
         ):
-            ddl = get_ddl_magic(psycopg2sa.dialect.identifier_preparer, "redshift")
+            ddl = get_ddl_magic(quoter, "redshift")
             drop_and_create(cur, ddl)
             key = src.name
             print(f"Uploading to s3://{bucket}/{key}...")
