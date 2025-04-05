@@ -1,6 +1,5 @@
 import json
 import secrets
-import uuid
 from datetime import datetime, UTC
 from typing import ClassVar, Self
 
@@ -10,8 +9,10 @@ from sqlalchemy import ForeignKey, String
 from sqlalchemy.dialects import postgresql
 from sqlalchemy.orm import DeclarativeBase, mapped_column, Mapped, relationship
 from sqlalchemy.types import TypeEngine
+from uuid import UUID
 
 from xngin.apiserver.api_types import (
+    Arm,
     BalanceCheck,
     DesignSpec,
     PowerResponse,
@@ -258,14 +259,14 @@ class ArmAssignment(Base):
 
     __tablename__ = "arm_assignments"
 
-    experiment_id: Mapped[uuid.UUID] = mapped_column(
+    experiment_id: Mapped[UUID] = mapped_column(
         sqlalchemy.Uuid(as_uuid=False),
         ForeignKey("experiments.id", ondelete="CASCADE"),
         primary_key=True,
     )
     participant_id: Mapped[str] = mapped_column(String(255), primary_key=True)
     participant_type: Mapped[str] = mapped_column(String(255))
-    arm_id: Mapped[uuid.UUID] = mapped_column(sqlalchemy.Uuid(as_uuid=False))
+    arm_id: Mapped[UUID] = mapped_column(sqlalchemy.Uuid(as_uuid=False))
     strata: Mapped[sqlalchemy.JSON] = mapped_column(
         comment="JSON serialized form of a list of Strata objects (from Assignment.strata)."
     )
@@ -284,9 +285,7 @@ class Experiment(Base):
 
     __tablename__ = "experiments"
 
-    id: Mapped[uuid.UUID] = mapped_column(
-        sqlalchemy.Uuid(as_uuid=False), primary_key=True
-    )
+    id: Mapped[UUID] = mapped_column(sqlalchemy.Uuid(as_uuid=False), primary_key=True)
     datasource_id: Mapped[str] = mapped_column(
         String(255), ForeignKey("datasources.id", ondelete="CASCADE")
     )
@@ -323,11 +322,11 @@ class Experiment(Base):
 
     datasource: Mapped["Datasource"] = relationship(back_populates="experiments")
 
-    def get_arms(self) -> list[str]:
+    def get_arms(self) -> list[Arm]:
         ds = self.get_design_spec()
         return ds.arms
 
-    def get_arm_ids(self) -> list[str]:
+    def get_arm_ids(self) -> list[UUID]:
         return [arm.arm_id for arm in self.get_arms()]
 
     def get_arm_names(self) -> list[str]:
