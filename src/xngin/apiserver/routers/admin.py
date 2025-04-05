@@ -584,7 +584,7 @@ def inspect_datasource(
                 )
                 with config.dbsession() as dwh_session:
                     result = dwh_session.execute(
-                        query, {"search_path": config.dwh.search_path}
+                        query, {"search_path": config.dwh.search_path or "public"}
                     )
                     tables = result.scalars().all()
             else:
