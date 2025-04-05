@@ -22,6 +22,9 @@ concurrency:
   cancel-in-progress: true
 
 env:
+  # Relax hostname checks.
+  ALLOW_CONNECTING_TO_PRIVATE_IPS: "1"
+
   DEBIAN_FRONTEND: noninteractive
   FORCE_COLOR: "1"
   PYTHONUNBUFFERED: "1"
