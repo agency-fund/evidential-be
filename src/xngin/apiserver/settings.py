@@ -37,6 +37,7 @@ from xngin.db_extensions import NumpyStddev
 from xngin.schema.schema_types import ParticipantsSchema
 
 DEFAULT_SETTINGS_FILE = "xngin.settings.json"
+TIMEOUT_SECS_FOR_CUSTOMER_POSTGRES = 10
 
 logger = logging.getLogger(__name__)
 
@@ -435,14 +436,18 @@ class RemoteDatabaseConfig(ParticipantsMixin, ConfigBaseModel):
         """
         url = self.dwh.to_sqlalchemy_url()
         connect_args: dict = {}
-        if url.get_backend_name() == "postgres":
-            connect_args["connect_timeout"] = 5
+        if url.get_backend_name() == "postgresql":
+            connect_args["connect_timeout"] = TIMEOUT_SECS_FOR_CUSTOMER_POSTGRES
             # Replace the Postgres' client default DNS lookup with one that applies security checks first; this prevents
             # us from connecting to addresses like 127.0.0.1 or addresses that are on our hosting provider's internal
             # network.
             # https://www.postgresql.org/docs/current/libpq-connect.html#LIBPQ-PARAMKEYWORDS
             connect_args["hostaddr"] = safe_resolve(url.host)
 
+        logger.warning(
+            f"Connecting to customer dwh: url={url}, "
+            f"backend={url.get_backend_name()}, connect_args={connect_args}"
+        )
         engine = sqlalchemy.create_engine(
             url,
             connect_args=connect_args,
