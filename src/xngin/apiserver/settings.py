@@ -391,7 +391,7 @@ class Dsn(ConfigBaseModel, BaseDsn):
                     "Redshift connections must use postgresql+psycopg2 driver"
                 )
             if self.sslmode != "verify-full":
-                raise ValueError("Redshift connections must use sslmode=verify_full")
+                raise ValueError("Redshift connections must use sslmode=verify-full")
         return self
 
 
