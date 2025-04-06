@@ -38,10 +38,9 @@ We run unittests with [pytest](https://docs.pytest.org/en/stable/).
 
 [Various tests](../.github/workflows/test.yaml) are also run as part of our github action test workflow.
 
-Most of our tests that rely on `conftest.py` for fixtures and the management of a local ephemeral sqlite database. will
-create a local sqlite db for testing in
-`src/xngin/apiserver/testdata/testing_dwh.db` if it doesn't exist already using the zipped data
-dump in `testing_dwh.csv.zst`.
+Most of our tests that rely on `conftest.py` for fixtures and the management of a local ephemeral
+sqlite database will create a local sqlite db for testing if it doesn't exist already in
+`src/xngin/apiserver/testdata/testing_dwh.db` using the zipped data dump in `testing_dwh.csv.zst`.
 
 `testing_sheet.csv` is the corresponding spreadsheet that simulates a typical table configuration for the participant
 type data above.
@@ -82,6 +81,8 @@ Method 2: Trigger via GitHub UI
 1. Select the PR's branch name
 1. Tick the "bq integration" box.
 
+You can also trigger the BigQuery integration tests to run in GHA by putting `run:bqintegration` in your PR comment.
+
 ## Showing additional test output<a name="showing-additional-test-output"></a>
 
 `pytest -rA` to print out _all_ stdout from your tests; `-rx` for just those failing. (See
@@ -94,8 +95,9 @@ API test script. We use a small custom
 file format called [Xurl](../src/xngin/apiserver/testing/xurl.py).
 
 `test_api.py` tests that use `testdata/*.xurl` data can be automatically updated with the actual server results by
-prefixing your pytest run with the environment variable:
-`UPDATE_API_TESTS=1`.
+prefixing your pytest run with the environment variable: `UPDATE_API_TESTS=1`.
+
+Or just run `task update-api-tests`.
 
 ## How do I force-build the test sqlite database?<a name="how-do-i-force-build-the-test-sqlite-database"></a>
 
@@ -143,8 +145,6 @@ XNGIN_TEST_DWH_URI="bigquery://xngin-development-dc/ds" \
   GSHEET_GOOGLE_APPLICATION_CREDENTIALS=credentials.json \
   pytest src/xngin/apiserver/dwh/test_queries.py::test_boolean_filter
 ```
-
-You can also trigger the BigQuery integration tests to run in GHA by putting `run:bqintegration` in your PR comment.
 
 ## Testing environment for BigQuery as the Service Provider<a name="testing-environment-for-bigquery-as-the-service-provider"></a>
 

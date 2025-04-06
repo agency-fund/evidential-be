@@ -143,8 +143,8 @@ def create_testing_dwh(
     nrows: Annotated[
         int | None,
         typer.Option(
-            help="Limit to the number of rows to load from the CSV. Does not apply the data load of Redshift or "
-            "Postgres connections, but will be applied to schema inference."
+            help="Limits the number of rows to load from the CSV. Does not apply to the data load "
+            "of Redshift or Postgres connections, but will be applied to schema inference."
         ),
     ] = None,
     schema_name: Annotated[
@@ -189,9 +189,9 @@ def create_testing_dwh(
 
     Any existing table will be replaced unless --allow-existing is used.
 
-    For Redshift and Postgres (psycopg or psycopg2) connections, the table DDL will be read from a
-    .{postgres|redshift}.ddl file in the same directory as the source CSV, or inferred via Pandas if that file does
-    not exist.  The CSV file is parsed using their native server-side CSV parsers.
+    For Postgres and Redshift (psycopg or psycopg2) connections, the table DDL will be read from a
+    .{postgres|redshift}.ddl file in the same directory as the source CSV, or inferred via Pandas if
+    that file does not exist.  The CSV file is parsed using their native server-side CSV parsers.
 
     Postgres connections may be specified with postgresql://, postgresql+psycopg://, or postgresql+psycopg2:// prefixes.
 
