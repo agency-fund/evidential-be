@@ -30,7 +30,7 @@ from tenacity import (
     wait_random,
 )
 from xngin.apiserver import flags
-from xngin.apiserver.certs.certs import PATH_TO_AMAZON_TRUST_CA_BUNDLE
+from xngin.apiserver.certs import get_amazon_trust_ca_bundle_path
 from xngin.apiserver.dns.safe_resolve import safe_resolve
 from xngin.apiserver.settings_secrets import replace_secrets
 from xngin.db_extensions import NumpyStddev
@@ -379,7 +379,7 @@ class Dsn(ConfigBaseModel, BaseDsn):
             if self.is_redshift():
                 query.update({
                     "sslmode": "verify-full",
-                    "sslrootcert": PATH_TO_AMAZON_TRUST_CA_BUNDLE,
+                    "sslrootcert": get_amazon_trust_ca_bundle_path(),
                 })
             url = url.set(query=query)
         return url
