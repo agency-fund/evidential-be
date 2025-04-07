@@ -10,8 +10,8 @@ from xngin.apiserver.api_types import ParticipantOutcome, MetricValue
 
 
 @pytest.fixture
-def test_assignments(n=1000, num_arms=3, seed=42):
-    np.random.seed(seed)
+def test_assignments(n=1000, seed=42):
+    rng = np.random.default_rng(seed)
     # Use fixed UUIDs instead of randomly generated ones
     arm_ids = [
         uuid.UUID("0ffe0995-6404-4622-934a-0d5cccfe3a59"),
@@ -20,7 +20,7 @@ def test_assignments(n=1000, num_arms=3, seed=42):
     ]
     assignments = []
     for i in range(n):
-        arm_id = np.random.choice(arm_ids, size=1, replace=True)[0]
+        arm_id = rng.choice(arm_ids, size=1, replace=True)[0]
         assignments.append(
             # TODO: test Assignment for old stateless api
             ArmAssignment(participant_id=str(i), arm_id=arm_id, strata=[])
@@ -29,15 +29,13 @@ def test_assignments(n=1000, num_arms=3, seed=42):
 
 
 @pytest.fixture
-def test_outcomes(n=1000, seed=42):
-    np.random.seed(seed)
+def test_outcomes(n=1000, seed=43):
+    rng = np.random.default_rng(seed)
     return [
         ParticipantOutcome(
             participant_id=str(i),
             metric_values=[
-                MetricValue(
-                    metric_name="bool_field", metric_value=np.random.choice([0, 1])
-                )
+                MetricValue(metric_name="bool_field", metric_value=rng.choice([0, 1]))
             ],
         )
         for i in range(n)
@@ -78,7 +76,7 @@ def test_analysis(test_assignments, test_outcomes):
             ].estimate,
             abs=1e-4,
         )
-        == 0.4986
+        == 0.5120
     )
     assert (
         pytest.approx(
@@ -87,7 +85,7 @@ def test_analysis(test_assignments, test_outcomes):
             ].estimate,
             abs=1e-4,
         )
-        == 0.0321
+        == -0.0302
     )
     assert (
         pytest.approx(
@@ -96,5 +94,5 @@ def test_analysis(test_assignments, test_outcomes):
             ].estimate,
             abs=1e-4,
         )
-        == 0.0030
+        == 0.0059
     )
