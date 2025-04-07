@@ -68,7 +68,7 @@ def build_docker_command(daemon: bool, tmpfs: bool, port: int, name: str) -> lis
         "--name",
         name,
         "-p",
-        f"{port}:5432",
+        f"127.0.0.1:{port}:5432",
         "-e",
         "POSTGRES_PASSWORD=postgres",
         "-e",
