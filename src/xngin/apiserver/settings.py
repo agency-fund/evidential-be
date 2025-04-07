@@ -113,7 +113,13 @@ class BaseParticipantsRef(ConfigBaseModel):
     Participants are defined by a participant_type, table_name and a schema.
     """
 
-    participant_type: str
+    participant_type: Annotated[
+        str,
+        Field(
+            description="The name of the set of participants defined by the filters. This name must be unique "
+            "within a datasource."
+        ),
+    ]
 
 
 class SheetParticipantsRef(BaseParticipantsRef):
@@ -171,7 +177,7 @@ class ParticipantsMixin(ConfigBaseModel):
         duplicates = [item for item, count in counted.items() if count > 1]
         if duplicates:
             raise ValueError(
-                f"Participants with conflicting identifiers found: {', '.join(duplicates)}."
+                f"Participant types with conflicting names found: {', '.join(duplicates)}."
             )
         return self
 

@@ -48,8 +48,11 @@ env:
   CUSTOMER_API_TOKEN: ""
   CUSTOMER_DWH_PASSWORD: ""
 
-  # Ask SQLAlchemy to print the generated SQL statements.
+  # Ask SQLAlchemy to log the generated SQL statements used on customer DWH.
   ECHO_SQL: "true"
+
+  # Ask SQLAlchemy to log the generated SQL statements used on xngin app database.
+  ECHO_SQL_APPDB: "false"
 
   # Publish the OpenAPI spec for the admin and OIDC APIs
   XNGIN_PUBLISH_ALL_DOCS: "true"

@@ -175,6 +175,10 @@ app.openapi = custom_openapi
 
 
 def main():
+    """Entrypoint for running in production (e.g. invoked by Dockerfile).
+
+    In development, the FastAPI dev server uses module-level app variable.
+    """
     database.setup()
 
     # Handy for debugging in your IDE

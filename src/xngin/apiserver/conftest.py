@@ -126,7 +126,7 @@ def get_test_sessionmaker():
         connect_url,
         connect_args=connect_args,
         poolclass=StaticPool,
-        echo=flags.ECHO_SQL,
+        echo=flags.ECHO_SQL_APP_DB,
     )
 
     testing_session_local = sessionmaker(bind=db_engine)

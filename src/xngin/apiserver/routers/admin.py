@@ -146,7 +146,7 @@ def is_enabled():
     return flags.ENABLE_ADMIN
 
 
-def cache_is_fresh(updated: datetime):
+def cache_is_fresh(updated: datetime | None):
     return updated and datetime.now(UTC) - updated < timedelta(minutes=5)
 
 
