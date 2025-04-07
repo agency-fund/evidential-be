@@ -3,7 +3,7 @@ CREATE TABLE {{table_name}} (
   ethnicity VARCHAR(255),
   first_name VARCHAR(255),
   last_name VARCHAR(255),
-  id BIGINT,
+  id BIGINT PRIMARY KEY,
   income DECIMAL,
   potential_0 DECIMAL,
   potential_1 BIGINT,
