@@ -2,6 +2,7 @@ import json
 import secrets
 from datetime import datetime, UTC
 from typing import ClassVar, Self
+from uuid import UUID
 
 import sqlalchemy
 from pydantic import TypeAdapter
@@ -9,7 +10,6 @@ from sqlalchemy import ForeignKey, String
 from sqlalchemy.dialects import postgresql
 from sqlalchemy.orm import DeclarativeBase, mapped_column, Mapped, relationship
 from sqlalchemy.types import TypeEngine
-from uuid import UUID
 
 from xngin.apiserver.api_types import (
     Arm,

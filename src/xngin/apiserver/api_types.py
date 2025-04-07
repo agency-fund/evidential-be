@@ -476,6 +476,8 @@ class ArmAnalysis(Arm):
 
 
 class MetricAnalysis(ApiBaseModel):
+    """Describes the change in a single metric for each arm of an experiment."""
+
     metric_name: str | None = None
     metric: DesignSpecMetricRequest | None = None
     arm_analyses: Annotated[
@@ -487,11 +489,18 @@ class MetricAnalysis(ApiBaseModel):
 
 
 class ExperimentAnalysis(ApiBaseModel):
+    """Describes the change if any in metrics targeted by an experiment."""
+
     experiment_id: Annotated[
         uuid.UUID,
         Field(description="UUID of the experiment."),
-    ] = None
-    metric_analyses: list[MetricAnalysis]
+    ]
+    metric_analyses: Annotated[
+        list[MetricAnalysis],
+        Field(
+            description="Contains one analysis per metric targeted by the experiment."
+        ),
+    ]
 
 
 class DesignSpec(ApiBaseModel):
