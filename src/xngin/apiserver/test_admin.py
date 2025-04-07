@@ -263,7 +263,7 @@ def test_lifecycle(testing_datasource):
         content=UpdateDatasourceRequest(
             dwh=BqDsn(
                 driver="bigquery",
-                project_id="1234",
+                project_id="123456",
                 dataset_id="ds",
                 credentials=GcpServiceAccountInfo(
                     type="serviceaccountinfo",

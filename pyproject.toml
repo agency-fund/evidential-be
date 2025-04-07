@@ -5,6 +5,7 @@ dependencies = [
     "atlas-provider-sqlalchemy>=0.2.4,<3",
     "boto3>=1.35,<1.36",
     "deepdiff>=8.0.1,<8.1",
+    "dnspython>=2.7.0",
     "fastapi[standard]>=0.115.6,<0.116.0",
     "gspread>=6.1.2,<6.2.0",
     "httpx>=0.27.0,<0.28.0",

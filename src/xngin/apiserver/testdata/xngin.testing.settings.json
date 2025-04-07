@@ -48,7 +48,7 @@
           "host": "__example__.redshift.amazonaws.com",
           "password": "password",
           "dbname": "dbname",
-          "sslmode": "require"
+          "sslmode": "verify-full"
         }
       }
     },
@@ -80,7 +80,7 @@
           "host": "__example__.redshift.amazonaws.com",
           "password": "password",
           "dbname": "dbname",
-          "sslmode": "require"
+          "sslmode": "verify-full"
         }
       }
     },

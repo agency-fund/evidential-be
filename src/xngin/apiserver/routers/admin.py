@@ -35,6 +35,7 @@ from xngin.apiserver.api_types import (
 )
 from xngin.apiserver.apikeys import hash_key, make_key
 from xngin.apiserver.dependencies import xngin_db_session
+from xngin.apiserver.dns.safe_resolve import safe_resolve
 from xngin.apiserver.dwh.queries import get_participant_metrics, query_for_participants
 from xngin.apiserver.exceptions_common import LateValidationError
 from xngin.apiserver.models.tables import (
@@ -485,23 +486,7 @@ def create_datasource(
     body: Annotated[CreateDatasourceRequest, Body(...)],
 ) -> CreateDatasourceResponse:
     """Creates a new datasource for the specified organization."""
-    org = session.get(Organization, body.organization_id)
-    if not org:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND, detail="Organization not found"
-        )
-
-    stmt = (
-        select(UserOrganization)
-        .where(UserOrganization.user_id == user.id)
-        .where(UserOrganization.organization_id == org.id)
-    )
-    allowed = session.execute(stmt).scalar_one_or_none()
-    if allowed is None:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="You are not a member of this organization",
-        )
+    org = get_organization_or_raise(session, user, body.organization_id)
 
     if (
         body.dwh.driver == "bigquery"
@@ -511,6 +496,14 @@ def create_datasource(
             status_code=400,
             detail="BigQuery credentials must be specified using type=serviceaccountinfo",
         )
+    if body.dwh.driver in {"postgresql+psycopg", "postgresql+psycopg2"}:
+        _ = safe_resolve(body.dwh.host)  # TODO: handle this exception more gracefully
+        allowed_modes = {"disable", "require", "verify-ca", "verify-full"}
+        if body.dwh.sslmode not in allowed_modes:
+            raise HTTPException(
+                status_code=400,
+                detail=f"sslmode must be one of: {', '.join(allowed_modes)}",
+            )
 
     config = RemoteDatabaseConfig(participants=[], type="remote", dwh=body.dwh)
 
@@ -591,7 +584,7 @@ def inspect_datasource(
                 )
                 with config.dbsession() as dwh_session:
                     result = dwh_session.execute(
-                        query, {"search_path": config.dwh.search_path}
+                        query, {"search_path": config.dwh.search_path or "public"}
                     )
                     tables = result.scalars().all()
             else:
