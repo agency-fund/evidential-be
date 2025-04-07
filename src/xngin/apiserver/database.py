@@ -5,7 +5,6 @@ from pathlib import Path
 from sqlalchemy import create_engine, event
 from sqlalchemy.engine.interfaces import DBAPIConnection
 from sqlalchemy.orm import sessionmaker
-
 from xngin.apiserver import flags
 from xngin.apiserver.models.tables import Base
 
@@ -47,7 +46,7 @@ def get_connect_args():
 engine = create_engine(
     SQLALCHEMY_DATABASE_URL,
     connect_args=get_connect_args(),
-    echo=flags.ECHO_SQL,
+    echo=flags.ECHO_SQL_APP_DB,
 )
 
 

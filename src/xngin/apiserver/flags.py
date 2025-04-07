@@ -8,6 +8,7 @@ def truthy_env(env_var: str):
 
 ALLOW_CONNECTING_TO_PRIVATE_IPS = truthy_env("ALLOW_CONNECTING_TO_PRIVATE_IPS")
 ECHO_SQL = truthy_env("ECHO_SQL")
+ECHO_SQL_APP_DB = truthy_env("ECHO_SQL_APP_DB")
 ENABLE_ADMIN = truthy_env("ENABLE_ADMIN")
 ENABLE_OIDC = truthy_env("ENABLE_OIDC")
 PUBLISH_ALL_DOCS = truthy_env("XNGIN_PUBLISH_ALL_DOCS")
