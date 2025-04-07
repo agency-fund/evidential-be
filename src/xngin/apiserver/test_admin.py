@@ -1,14 +1,13 @@
 import base64
 import datetime
 import json
-from functools import partial
 import uuid
+from functools import partial
 
 import pytest
 from fastapi.testclient import TestClient
 from pydantic import SecretStr
 from sqlalchemy.orm import Session
-
 from xngin.apiserver import conftest
 from xngin.apiserver import main as main_module
 from xngin.apiserver.api_types import DataType
@@ -34,24 +33,24 @@ from xngin.apiserver.routers.admin_api_types import (
 from xngin.apiserver.routers.experiments_api_types import (
     CreateExperimentWithAssignmentResponse,
     ExperimentConfig,
-    GetExperimentAssigmentsResponse,
+    GetExperimentAssignmentsResponse,
     ListExperimentsResponse,
 )
 from xngin.apiserver.routers.oidc_dependencies import (
-    PRIVILEGED_TOKEN_FOR_TESTING,
     PRIVILEGED_EMAIL,
+    PRIVILEGED_TOKEN_FOR_TESTING,
     UNPRIVILEGED_EMAIL,
     UNPRIVILEGED_TOKEN_FOR_TESTING,
 )
 from xngin.apiserver.settings import (
-    Dsn,
     BqDsn,
+    Dsn,
     GcpServiceAccountInfo,
-    SheetParticipantsRef,
     ParticipantsDef,
+    SheetParticipantsRef,
 )
 from xngin.cli.main import create_testing_dwh
-from xngin.schema.schema_types import ParticipantsSchema, FieldDescriptor
+from xngin.schema.schema_types import FieldDescriptor, ParticipantsSchema
 
 SAMPLE_GCLOUD_SERVICE_ACCOUNT_KEY = {
     "auth_provider_x509_cert_url": "",
@@ -264,7 +263,7 @@ def test_lifecycle(testing_datasource):
         content=UpdateDatasourceRequest(
             dwh=BqDsn(
                 driver="bigquery",
-                project_id="1234",
+                project_id="123456",
                 dataset_id="ds",
                 credentials=GcpServiceAccountInfo(
                     type="serviceaccountinfo",
@@ -433,7 +432,8 @@ def test_lifecycle_with_pg(testing_datasource):
     assert response.status_code == 200, response.content
     parsed = InspectDatasourceTableResponse.model_validate(response.json())
     assert parsed == InspectDatasourceTableResponse(
-        detected_unique_id_fields=["id"],
+        # Note: create_inspect_table_response_from_table() doesn't explicitly check for uniqueness.
+        detected_unique_id_fields=["id", "uuid_filter"],
         fields=[
             FieldMetadata(
                 field_name="baseline_income", data_type=DataType.NUMERIC, description=""
@@ -456,7 +456,7 @@ def test_lifecycle_with_pg(testing_datasource):
                 data_type=DataType.CHARACTER_VARYING,
                 description="",
             ),
-            FieldMetadata(field_name="id", data_type=DataType.INTEGER, description=""),
+            FieldMetadata(field_name="id", data_type=DataType.BIGINT, description=""),
             FieldMetadata(
                 field_name="income", data_type=DataType.NUMERIC, description=""
             ),
@@ -484,7 +484,19 @@ def test_lifecycle_with_pg(testing_datasource):
                 field_name="potential_0", data_type=DataType.NUMERIC, description=""
             ),
             FieldMetadata(
-                field_name="potential_1", data_type=DataType.INTEGER, description=""
+                field_name="potential_1", data_type=DataType.BIGINT, description=""
+            ),
+            FieldMetadata(
+                field_name="sample_date", data_type=DataType.DATE, description=""
+            ),
+            # TODO: timestamptz
+            FieldMetadata(
+                field_name="sample_timestamp",
+                data_type=DataType.TIMESTAMP_WITHOUT_TIMEZONE,
+                description="",
+            ),
+            FieldMetadata(
+                field_name="uuid_filter", data_type=DataType.UUID, description=""
             ),
         ],
     )
@@ -565,7 +577,7 @@ def test_lifecycle_with_pg(testing_datasource):
         f"/v1/m/datasources/{testing_datasource.ds.id}/experiments/{parsed_experiment_id}/assignments"
     )
     assert response.status_code == 200, response.content
-    parsed = GetExperimentAssigmentsResponse.model_validate(response.json())
+    parsed = GetExperimentAssignmentsResponse.model_validate(response.json())
     assert parsed.experiment_id == parsed_experiment_id
     assert parsed.sample_size == 100
     assert parsed.balance_check is not None

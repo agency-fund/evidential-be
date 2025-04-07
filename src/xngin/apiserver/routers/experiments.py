@@ -1,16 +1,16 @@
-from collections.abc import Sequence
 import csv
 import io
 import uuid
+from collections.abc import Sequence
 from contextlib import asynccontextmanager
 from itertools import batched
 from typing import Annotated
 
 from fastapi import (
     APIRouter,
+    Depends,
     FastAPI,
     HTTPException,
-    Depends,
     Query,
     Response,
     status,
@@ -18,7 +18,6 @@ from fastapi import (
 from fastapi.responses import StreamingResponse
 from sqlalchemy import Table, select
 from sqlalchemy.orm import Session
-
 from xngin.apiserver.api_types import (
     Assignment,
     DesignSpec,
@@ -42,13 +41,13 @@ from xngin.apiserver.routers.experiments_api import (
     get_participants_config_and_schema,
 )
 from xngin.apiserver.routers.experiments_api_types import (
-    CreateExperimentRequest,
     AssignSummary,
-    ExperimentConfig,
+    CreateExperimentRequest,
     CreateExperimentWithAssignmentResponse,
+    ExperimentConfig,
+    GetExperimentAssignmentsResponse,
     GetExperimentResponse,
     ListExperimentsResponse,
-    GetExperimentAssigmentsResponse,
 )
 from xngin.apiserver.settings import (
     Datasource,
@@ -242,7 +241,7 @@ def commit_experiment_sl(
 def commit_experiment_impl(xngin_session: Session, experiment: Experiment):
     if experiment.state == ExperimentState.COMMITTED:
         return Response(status_code=status.HTTP_304_NOT_MODIFIED)
-    if experiment.state not in {ExperimentState.ASSIGNED}:
+    if experiment.state != ExperimentState.ASSIGNED:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail=f"Invalid state: {experiment.state}",
@@ -353,7 +352,7 @@ def get_experiment_assignments_sl(
     datasource: Annotated[Datasource, Depends(datasource_dependency)],
     xngin_session: Annotated[Session, Depends(xngin_db_session)],
     experiment_id: uuid.UUID,
-) -> GetExperimentAssigmentsResponse:
+) -> GetExperimentAssignmentsResponse:
     experiment = get_experiment_or_raise(xngin_session, experiment_id, datasource.id)
 
     return get_experiment_assignments_impl(experiment)
@@ -373,7 +372,7 @@ def get_experiment_assignments_impl(experiment: Experiment):
         )
         for arm_assignment in experiment.arm_assignments
     ]
-    return GetExperimentAssigmentsResponse(
+    return GetExperimentAssignmentsResponse(
         balance_check=experiment.get_balance_check(),
         experiment_id=experiment.id,
         sample_size=experiment.assign_summary["sample_size"],

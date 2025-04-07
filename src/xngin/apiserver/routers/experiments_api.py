@@ -18,8 +18,8 @@ from sqlalchemy.orm import Session
 
 from xngin.apiserver import constants, database
 from xngin.apiserver.api_types import (
-    DataTypeClass,
     DesignSpec,
+    FilterClass,
     GetFiltersResponseDiscrete,
     GetFiltersResponseNumericOrDate,
     GetStrataResponseElement,
@@ -198,7 +198,7 @@ def create_col_to_filter_meta_mapper(
         # Collect metadata on the values in the database.
         sa_col = sa_table.columns[col_name]
         match filter_class:
-            case DataTypeClass.DISCRETE:
+            case FilterClass.DISCRETE:
                 distinct_values = [
                     str(v)
                     for v in session.execute(
@@ -215,7 +215,7 @@ def create_col_to_filter_meta_mapper(
                     description=column_descriptor.description,
                     distinct_values=distinct_values,
                 )
-            case DataTypeClass.NUMERIC:
+            case FilterClass.NUMERIC:
                 min_, max_ = session.execute(
                     sqlalchemy.select(
                         sqlalchemy.func.min(sa_col), sqlalchemy.func.max(sa_col)

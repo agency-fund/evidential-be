@@ -76,7 +76,7 @@ class Xurl(BaseModel):
                 )
                 << whitespace.optional()
             )
-            trailer = yield regex("(?s).*").map(lambda v: v if v else None)
+            trailer = yield regex("(?s).*").map(lambda v: v or None)
 
             return Xurl(  # noqa: B901
                 method=method,

@@ -1,12 +1,29 @@
 version: '3'
 output: prefixed
 vars:
-  XNGIN_LOCALDB_DSN: "postgresql://postgres:postgres@localhost:5499/xngin?sslmode=disable"
-  XNGIN_LOCALTESTDB_DSN: "postgresql://postgres:postgres@localhost:5499/testing?sslmode=disable"
+  # App database for the local dev environment (see tasks start-with-local-pg, apply-migrations-pg)
+  XNGIN_DEVAPPDB_NAME: "xngin"
+  XNGIN_DEVAPP_DSN: "postgresql://postgres:postgres@localhost:5499/{{.XNGIN_DEVAPPDB_NAME}}?sslmode=disable"
+
+  # Data warehouse available for use by the local dev environment (see task bootstrap-dwh-local-pg). It is bootstrapped
+  # with the testing datawarehouse when `task start-with-local-pg` is used.
+  XNGIN_DEVDWH_NAME: "dwh"
+  XNGIN_DEVDWH_DSN: "postgresql://postgres:postgres@localhost:5499/{{.XNGIN_DEVDWH_NAME}}?sslmode=disable"
+
+  # Datasource for tests of the xngin app database that use the xngin_db_session dependency.
+  XNGIN_TESTAPP_DSN: "postgresql://postgres:postgres@localhost:5499/test_xngin?sslmode=disable"
+
+  # Datasource for the Postgres integration tests run by `task test-pgintegration`.
+  # Note: test_queries.py creates a random database name adapting this dsn for each test using its
+  # fixture_db_session.
+  XNGIN_TESTDWH_DSN: "postgresql://postgres:postgres@localhost:5499/test_dwh?sslmode=disable"
 env:
   # Disable Atlas telemetry.
   ATLAS_NO_ANON_TELEMETRY: "true"
   DO_NOT_TRACK: "1"
+
+  # Allow connecting to data warehouses residing in private IP ranges.
+  ALLOW_CONNECTING_TO_PRIVATE_IPS: "1"
 
   # Google will redirect to this URL upon successful authentication. This URL is served by the frontend application
   # and the GoogleAuthProvider component will intercept the query arguments and handle them.
@@ -31,8 +48,11 @@ env:
   CUSTOMER_API_TOKEN: ""
   CUSTOMER_DWH_PASSWORD: ""
 
-  # Ask SQLAlchemy to print the generated SQL statements.
+  # Ask SQLAlchemy to log the generated SQL statements used on customer DWH.
   ECHO_SQL: "true"
+
+  # Ask SQLAlchemy to log the generated SQL statements used on xngin app database.
+  ECHO_SQL_APPDB: "false"
 
   # Publish the OpenAPI spec for the admin and OIDC APIs
   XNGIN_PUBLISH_ALL_DOCS: "true"
@@ -62,7 +82,7 @@ tasks:
       # Populate BQ_SERVICE_ACCOUNT (optional) and GOOGLE_OIDC_CLIENT_SECRET (optional).
       - .env
     env:
-      XNGIN_DB: "{{.XNGIN_LOCALDB_DSN}}"
+      XNGIN_DB: "{{.XNGIN_DEVAPP_DSN}}"
 
       # Admin API settings. These need to be set for interaction with the dash web UI.
       # Also see instructions for .env above.
@@ -71,14 +91,20 @@ tasks:
     cmds:
       # Ensure the localpg server is running and has an "xngin" database. If the database doesn't already exist,
       # have Atlas create the tables so that subsequent table migrations behave as expected.
-      - ./tools/localpg.py --allow-existing -d --wait --create-db xngin --if-created "uv run task apply-migrations-pg"
-      - task bootstrap-dwh-local-pg || /bin/true
+      - >
+        ./tools/localpg.py --allow-existing -d --wait --create-db {{.XNGIN_DEVAPPDB_NAME}}
+        --if-created "uv run task apply-migrations-pg"
+      - task bootstrap-dwh-local-pg ALLOW_EXISTING="1" || /bin/true
       - uv run fastapi dev src/xngin/apiserver/main.py
   bootstrap-dwh-local-pg:
     desc: "Bootstraps the localpg server with a sample data warehouse."
     interactive: true
+    vars:
+      ALLOW_EXISTING: '{{.ALLOW_EXISTING | default ""}}'
     cmds:
-      - uv run xngin-cli create-testing-dwh --dsn 'postgresql+psycopg://postgres:postgres@localhost:5499/dwh?sslmode=disable' --hacks
+      - >
+        uv run xngin-cli create-testing-dwh --dsn '{{.XNGIN_DEVDWH_DSN}}'
+        {{if eq .ALLOW_EXISTING "1"}} --allow-existing {{end}}
   test:
     desc: "Runs unit tests"
     interactive: true
@@ -93,10 +119,11 @@ tasks:
   test-pgintegration:
     desc: "Runs unit tests w/local postgres support"
     env:
-      XNGIN_TEST_DWH_URI: "{{.XNGIN_LOCALTESTDB_DSN}}"
+      XNGIN_TEST_APPDB_URI: "{{.XNGIN_TESTAPP_DSN}}"
+      XNGIN_TEST_DWH_URI: "{{.XNGIN_TESTDWH_DSN}}"
     interactive: true
     cmds:
-      - ./tools/localpg.py --allow-existing -d --wait
+      - ./tools/localpg.py --allow-existing -d --wait --create-db test_xngin
       - uv run pytest -m 'pgintegration or not integration'
   make-migrations:
     desc: "Build Postgres migrations"
@@ -106,7 +133,7 @@ tasks:
     desc: "Apply Postgres migrations locally (requires localpg instance to be running, to have an xngin database, and to have been previously migrated)"
     cmds:
       - uv run atlas migrate diff --env sa_postgres
-      - uv run atlas migrate apply --env sa_postgres --url '{{.XNGIN_LOCALDB_DSN}}'
+      - uv run atlas migrate apply --env sa_postgres --url '{{.XNGIN_DEVAPP_DSN}}'
   apply-migrations-sqlite:
     desc: "Apply sqlite migrations locally"
     cmd: |

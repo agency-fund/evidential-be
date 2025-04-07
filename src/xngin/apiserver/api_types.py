@@ -2,7 +2,6 @@ import datetime
 import decimal
 import enum
 import logging
-import re
 import uuid
 from collections.abc import Sequence
 from typing import Annotated, Self
@@ -10,39 +9,27 @@ from typing import Annotated, Self
 import sqlalchemy.sql.sqltypes
 from pydantic import (
     BaseModel,
-    Field,
-    model_validator,
-    field_serializer,
     ConfigDict,
-    BeforeValidator,
+    Field,
+    field_serializer,
+    model_validator,
 )
-from pydantic_core.core_schema import ValidationInfo
+from xngin.apiserver.common_field_types import FieldName
+from xngin.apiserver.exceptions_common import LateValidationError
+from xngin.apiserver.limits import (
+    MAX_LENGTH_OF_DESCRIPTION_VALUE,
+    MAX_LENGTH_OF_NAME_VALUE,
+    MAX_LENGTH_OF_PARTICIPANT_ID_VALUE,
+    MAX_NUMBER_OF_ARMS,
+    MAX_NUMBER_OF_FIELDS,
+    MAX_NUMBER_OF_FILTERS,
+)
 
 VALID_SQL_COLUMN_REGEX = r"^[a-zA-Z_][a-zA-Z0-9_]*$"
 
 EXPERIMENT_IDS_SUFFIX = "experiment_ids"
 
 logger = logging.getLogger(__name__)
-
-
-def validate_can_be_used_as_column_name(value: str, info: ValidationInfo) -> str:
-    """Validates value is usable as a SQL column name."""
-    if not isinstance(value, str):
-        raise ValueError(f"{info.field_name} must be a string")  # noqa: TRY004
-    if not re.match(VALID_SQL_COLUMN_REGEX, value):
-        raise ValueError(
-            f"{info.field_name} must start with letter/underscore and contain only letters, numbers, underscores"
-        )
-    return value
-
-
-FieldName = Annotated[
-    str,
-    BeforeValidator(validate_can_be_used_as_column_name),
-    Field(
-        json_schema_extra={"pattern": VALID_SQL_COLUMN_REGEX}, examples=["field_name"]
-    ),
-]
 
 
 class ApiBaseModel(BaseModel):
@@ -61,8 +48,8 @@ class DataType(enum.StrEnum):
     NUMERIC = "numeric"
     TIMESTAMP_WITHOUT_TIMEZONE = "timestamp without time zone"
     BIGINT = "bigint"
-    JSONB = "unsupported"
-    JSON = "unsupported"
+    JSONB = "jsonb (unsupported)"
+    JSON = "json (unsupported)"
     UNKNOWN = "unsupported"
 
     @classmethod
@@ -103,17 +90,36 @@ class DataType(enum.StrEnum):
             return DataType.INTEGER
         if value is float:
             return DataType.DOUBLE_PRECISION
-        logger.warning(f"Unmatched type: {type(value)}.")
+        logger.warning("Unmatched type: %s", type(value))
         return DataType.UNKNOWN
+
+    @classmethod
+    def supported_participant_id_types(cls) -> list["DataType"]:
+        """Returns the list of data types that are supported as participant IDs."""
+        return [
+            DataType.INTEGER,
+            DataType.BIGINT,
+            DataType.UUID,
+            DataType.CHARACTER_VARYING,
+        ]
+
+    @classmethod
+    def is_supported_type(cls, data_type: Self):
+        """Returns True if the type is supported as a strata, filter, and/or metric."""
+        return data_type not in {DataType.JSONB, DataType.JSON, DataType.UNKNOWN}
+
+    def is_supported(self):
+        """Returns True if the type is supported as a strata, filter, and/or metric."""
+        return DataType.is_supported_type(self)
 
     def filter_class(self, field_name):
         """Classifies a DataType into a filter class."""
         match self:
             # TODO: is this customer specific?
             case _ if field_name.lower().endswith("_id"):
-                return DataTypeClass.DISCRETE
+                return FilterClass.DISCRETE
             case DataType.BOOLEAN | DataType.CHARACTER_VARYING | DataType.UUID:
-                return DataTypeClass.DISCRETE
+                return FilterClass.DISCRETE
             case (
                 DataType.DATE
                 | DataType.TIMESTAMP_WITHOUT_TIMEZONE
@@ -122,12 +128,14 @@ class DataType(enum.StrEnum):
                 | DataType.NUMERIC
                 | DataType.BIGINT
             ):
-                return DataTypeClass.NUMERIC
+                return FilterClass.NUMERIC
             case _:
-                return DataTypeClass.UNKNOWN
+                return FilterClass.UNKNOWN
 
 
-class DataTypeClass(enum.StrEnum):
+class FilterClass(enum.StrEnum):
+    """Internal helper for grouping our supported data types by what filter relations they can use."""
+
     DISCRETE = "discrete"
     NUMERIC = "numeric"
     UNKNOWN = "unknown"
@@ -135,9 +143,9 @@ class DataTypeClass(enum.StrEnum):
     def valid_relations(self):
         """Gets the valid relation operators for this data type class."""
         match self:
-            case DataTypeClass.DISCRETE:
+            case FilterClass.DISCRETE:
                 return [Relation.INCLUDES, Relation.EXCLUDES]
-            case DataTypeClass.NUMERIC:
+            case FilterClass.NUMERIC:
                 return [
                     Relation.BETWEEN,
                     Relation.EXCLUDES,
@@ -222,6 +230,25 @@ class AudienceSpecFilter(ApiBaseModel):
     relation: Relation
     value: FilterValueTypes
 
+    @classmethod
+    def cast_participant_id(
+        cls, pid: str, column_type: sqlalchemy.sql.sqltypes.TypeEngine
+    ) -> int | uuid.UUID | str:
+        """Casts a participant ID string to an appropriate type based on the column type.
+
+        Only supports INTEGER, BIGINT, UUID and STRING types as defined in DataType.supported_participant_id_types().
+        """
+        if isinstance(
+            column_type,
+            sqlalchemy.sql.sqltypes.Integer | sqlalchemy.sql.sqltypes.BigInteger,
+        ):
+            return int(pid)
+        if isinstance(
+            column_type, sqlalchemy.sql.sqltypes.UUID | sqlalchemy.sql.sqltypes.String
+        ):
+            return pid
+        raise LateValidationError(f"Unsupported participant ID type: {column_type}")
+
     @model_validator(mode="after")
     def ensure_experiment_ids_hack_compatible(self) -> "AudienceSpecFilter":
         """Ensures that the filter is compatible with the "experiment_ids" hack."""
@@ -271,7 +298,7 @@ class AudienceSpecFilter(ApiBaseModel):
 
     @model_validator(mode="after")
     def ensure_sane_bool_list(self) -> "AudienceSpecFilter":
-        """Ensures that the `value` field does not include redundant or nonsencial items."""
+        """Ensures that the `value` field does not include redundant or nonsensical items."""
         n_values = len(self.value)
         # First check if we're dealing with a list of more than one boolean:
         if n_values > 1 and all([v is None or isinstance(v, bool) for v in self.value]):
@@ -291,8 +318,10 @@ class AudienceSpecFilter(ApiBaseModel):
 class AudienceSpec(ApiBaseModel):
     """Defines target participants for an experiment using filters."""
 
-    participant_type: str
-    filters: list[AudienceSpecFilter]
+    participant_type: Annotated[str, Field(max_length=MAX_LENGTH_OF_NAME_VALUE)]
+    filters: Annotated[
+        list[AudienceSpecFilter], Field(max_length=MAX_NUMBER_OF_FILTERS)
+    ]
 
 
 class MetricType(enum.StrEnum):
@@ -305,7 +334,7 @@ class MetricType(enum.StrEnum):
     def from_python_type(cls, python_type: type) -> "MetricType":
         """Maps Python types to metric types."""
 
-        if python_type in (int, float, decimal.Decimal):
+        if python_type in {int, float, decimal.Decimal}:
             return MetricType.NUMERIC
         if python_type is bool:
             return MetricType.BINARY
@@ -413,8 +442,10 @@ class Arm(ApiBaseModel):
             description="UUID of the arm. If using the /experiments/with-assignment endpoint, this is generated for you and available in the response; you should NOT set this. Only generate ids of your own if using the stateless Experiment Design API as you will do your own persistence."
         ),
     ] = None
-    arm_name: str  # TODO: add naming constraints
-    arm_description: str | None = None
+    arm_name: Annotated[str, Field(max_length=MAX_LENGTH_OF_NAME_VALUE)]
+    arm_description: Annotated[
+        str | None, Field(max_length=MAX_LENGTH_OF_DESCRIPTION_VALUE)
+    ] = None
 
 
 class ArmAnalysis(Arm):
@@ -472,13 +503,13 @@ class DesignSpec(ApiBaseModel):
             description="UUID of the experiment. If using the /experiments/with-assignment endpoint, this is generated for you and available in the response; you should NOT set this. Only generate ids of your own if using the stateless Experiment Design API as you will do your own persistence."
         ),
     ] = None
-    experiment_name: str
-    description: str
+    experiment_name: Annotated[str, Field(max_length=MAX_LENGTH_OF_NAME_VALUE)]
+    description: Annotated[str, Field(max_length=MAX_LENGTH_OF_DESCRIPTION_VALUE)]
     start_date: datetime.datetime
     end_date: datetime.datetime
 
     # arms (at least two)
-    arms: Annotated[list[Arm], Field(..., min_length=2)]
+    arms: Annotated[list[Arm], Field(..., min_length=2, max_length=MAX_NUMBER_OF_ARMS)]
 
     # TODO migrate to a new "strata_spec:" field that holds experiment-wide stratification rules
     # such as # of buckets to use during quantilization and the name to use for reporting the
@@ -489,6 +520,7 @@ class DesignSpec(ApiBaseModel):
         Field(
             ...,
             description="List of participant_type variables to use for stratification.",
+            max_length=MAX_NUMBER_OF_FIELDS,
         ),
     ]
 
@@ -498,6 +530,7 @@ class DesignSpec(ApiBaseModel):
             ...,
             description="Primary and optional secondary metrics to target.",
             min_length=1,
+            max_length=MAX_NUMBER_OF_FIELDS,
         ),
     ]
 
@@ -621,7 +654,7 @@ class StrataType(enum.StrEnum):
     def from_python_type(cls, python_type: type):
         """ "Maps Python types to strata types."""
 
-        if python_type in (int, float):
+        if python_type in {int, float}:
             return StrataType.NUMERIC
         if python_type is bool:
             return StrataType.BINARY
@@ -645,7 +678,7 @@ class Assignment(ApiBaseModel):
     """Describes treatment assignment for an experiment participant."""
 
     # this references the field marked is_unique_id == TRUE in the configuration spreadsheet
-    participant_id: str
+    participant_id: Annotated[str, Field(max_length=MAX_LENGTH_OF_PARTICIPANT_ID_VALUE)]
     arm_id: Annotated[
         uuid.UUID,
         Field(
@@ -655,20 +688,22 @@ class Assignment(ApiBaseModel):
     arm_name: Annotated[
         str,
         Field(
-            description="The arm this participant was assigned to. Same as Arm.arm_name."
+            description="The arm this participant was assigned to. Same as Arm.arm_name.",
+            max_length=MAX_LENGTH_OF_NAME_VALUE,
         ),
     ]
     strata: Annotated[
         list[Strata] | None,
         Field(
-            description="List of properties and their values for this participant used for stratification or tracking metrics. If stratification is not used, this will be None."
+            description="List of properties and their values for this participant used for stratification or tracking metrics. If stratification is not used, this will be None.",
+            max_length=MAX_NUMBER_OF_FIELDS,
         ),
     ] = None
 
 
 class MetricValue(ApiBaseModel):
     metric_name: Annotated[
-        str,
+        FieldName,
         Field(
             description="The field_name from the datasource which this analysis models as the dependent variable (y)."
         ),
@@ -679,8 +714,8 @@ class MetricValue(ApiBaseModel):
 
 
 class ParticipantOutcome(ApiBaseModel):
-    participant_id: str
-    metric_values: list[MetricValue]
+    participant_id: Annotated[str, Field(max_length=MAX_LENGTH_OF_PARTICIPANT_ID_VALUE)]
+    metric_values: Annotated[list[MetricValue], Field(max_length=MAX_NUMBER_OF_FIELDS)]
 
 
 class BalanceCheck(ApiBaseModel):
@@ -707,7 +742,7 @@ class BalanceCheck(ApiBaseModel):
     p_value: Annotated[
         float,
         Field(
-            description="Probablity of observing these data if strata do not predict treatment assignment, i.e. our randomization is balanced."
+            description="Probability of observing these data if strata do not predict treatment assignment, i.e. our randomization is balanced."
         ),
     ]
     balance_ok: Annotated[
@@ -748,8 +783,8 @@ class AssignResponse(ApiBaseModel):
     ]
     # TODO(qixotic): Consider lifting up Assignment.arm_id & arm_name to the AssignResponse level
     # and organize assignments into lists by arm. Be less bulky and arm sizes come naturally.
-    assignments: list[Assignment]
-    arm_sizes: list[ArmSize]
+    assignments: Annotated[list[Assignment], Field()]
+    arm_sizes: Annotated[list[ArmSize], Field(max_length=MAX_NUMBER_OF_ARMS)]
 
 
 class AnalysisRequest(ApiBaseModel):
@@ -762,17 +797,21 @@ class GetStrataResponseElement(ApiBaseModel):
 
     data_type: DataType
     field_name: FieldName
-    description: str
+    description: Annotated[str, Field(max_length=MAX_LENGTH_OF_DESCRIPTION_VALUE)]
     # Extra fields will be stored here in case a user configured their worksheet with extra metadata for their own
     # downstream use, e.g. to group strata with a friendly identifier.
-    extra: dict[str, str] | None = None
+    extra: Annotated[dict[str, str] | None, Field(max_length=MAX_NUMBER_OF_FIELDS)] = (
+        None
+    )
 
 
 class GetFiltersResponseBase(ApiBaseModel):
     field_name: Annotated[FieldName, Field(..., description="Name of the field.")]
     data_type: DataType
-    relations: list[Relation] = Field(..., min_length=1)
-    description: str
+    relations: Annotated[
+        list[Relation], Field(..., min_length=1, max_length=MAX_NUMBER_OF_FILTERS)
+    ]
+    description: Annotated[str, Field(max_length=MAX_LENGTH_OF_DESCRIPTION_VALUE)]
 
 
 class GetFiltersResponseNumericOrDate(GetFiltersResponseBase):
@@ -791,10 +830,9 @@ class GetFiltersResponseNumericOrDate(GetFiltersResponseBase):
 class GetFiltersResponseDiscrete(GetFiltersResponseBase):
     """Describes a discrete filter variable."""
 
-    distinct_values: list[str] | None = Field(
-        ...,
-        description="Sorted list of unique values.",
-    )
+    distinct_values: Annotated[
+        list[str] | None, Field(..., description="Sorted list of unique values.")
+    ]
 
 
 class GetMetricsResponseElement(ApiBaseModel):
@@ -802,7 +840,7 @@ class GetMetricsResponseElement(ApiBaseModel):
 
     field_name: FieldName
     data_type: DataType
-    description: str
+    description: Annotated[str, Field(max_length=MAX_LENGTH_OF_DESCRIPTION_VALUE)]
 
 
 type GetFiltersResponseElement = (
@@ -819,13 +857,13 @@ class GetFiltersResponse(ApiBaseModel):
 class GetMetricsResponse(ApiBaseModel):
     """Response model for the /metrics endpoint."""
 
-    results: list[GetMetricsResponseElement]
+    results: Annotated[list[GetMetricsResponseElement], Field()]
 
 
 class GetStrataResponse(BaseModel):
     """Response model for the /strata endpoint."""
 
-    results: list[GetStrataResponseElement]
+    results: Annotated[list[GetStrataResponseElement], Field()]
 
 
 class AssignRequest(ApiBaseModel):
@@ -839,7 +877,9 @@ class PowerRequest(ApiBaseModel):
 
 
 class PowerResponse(ApiBaseModel):
-    analyses: list[MetricPowerAnalysis]
+    analyses: Annotated[
+        list[MetricPowerAnalysis], Field(max_length=MAX_NUMBER_OF_FIELDS)
+    ]
 
 
 class CommitRequest(ApiBaseModel):

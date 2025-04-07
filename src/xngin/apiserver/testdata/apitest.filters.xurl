@@ -117,6 +117,19 @@ HTTP 200
         "excludes",
         "includes"
       ]
+    },
+    {
+      "data_type": "character varying",
+      "description": "uuid used as filter",
+      "distinct_values": [
+        "1731e17b-88b4-4021-b8c5-77929d53ab9a",
+        "ae5929e2-2f5c-463e-a24a-bfadc56f1692"
+      ],
+      "field_name": "uuid_filter",
+      "relations": [
+        "includes",
+        "excludes"
+      ]
     }
   ]
 }

@@ -5,7 +5,7 @@ import logging
 import os
 from collections import Counter
 from functools import lru_cache
-from typing import Literal, Annotated, Protocol
+from typing import Annotated, Literal, Protocol
 from urllib.parse import urlparse
 
 import httpx
@@ -13,29 +13,31 @@ import sqlalchemy
 from httpx import codes
 from pydantic import (
     BaseModel,
-    SecretStr,
-    Field,
     ConfigDict,
-    model_validator,
-    field_validator,
+    Field,
+    SecretStr,
     field_serializer,
+    field_validator,
+    model_validator,
 )
 from sqlalchemy import Engine, event, text
 from sqlalchemy.exc import NoSuchTableError
 from sqlalchemy.orm import Session
 from tenacity import (
     retry,
-    wait_random,
     retry_if_not_exception_type,
     stop_after_delay,
+    wait_random,
 )
-
 from xngin.apiserver import flags
+from xngin.apiserver.certs import get_amazon_trust_ca_bundle_path
+from xngin.apiserver.dns.safe_resolve import safe_resolve
 from xngin.apiserver.settings_secrets import replace_secrets
 from xngin.db_extensions import NumpyStddev
 from xngin.schema.schema_types import ParticipantsSchema
 
 DEFAULT_SETTINGS_FILE = "xngin.settings.json"
+TIMEOUT_SECS_FOR_CUSTOMER_POSTGRES = 10
 
 logger = logging.getLogger(__name__)
 
@@ -43,13 +45,9 @@ logger = logging.getLogger(__name__)
 class UnclassifiedRemoteSettingsError(Exception):
     """Raised when we fail to fetch remote settings for an unclassified reason."""
 
-    pass
-
 
 class RemoteSettingsClientError(Exception):
     """Raised when we fail to fetch remote settings due to our misconfiguration."""
-
-    pass
 
 
 @lru_cache
@@ -115,7 +113,13 @@ class BaseParticipantsRef(ConfigBaseModel):
     Participants are defined by a participant_type, table_name and a schema.
     """
 
-    participant_type: str
+    participant_type: Annotated[
+        str,
+        Field(
+            description="The name of the set of participants defined by the filters. This name must be unique "
+            "within a datasource."
+        ),
+    ]
 
 
 class SheetParticipantsRef(BaseParticipantsRef):
@@ -173,7 +177,7 @@ class ParticipantsMixin(ConfigBaseModel):
         duplicates = [item for item, count in counted.items() if count > 1]
         if duplicates:
             raise ValueError(
-                f"Participants with conflicting identifiers found: {', '.join(duplicates)}."
+                f"Participant types with conflicting names found: {', '.join(duplicates)}."
             )
         return self
 
@@ -235,6 +239,8 @@ class GcpServiceAccountInfo(ConfigBaseModel):
         Field(
             ...,
             description="The base64-encoded service account info in the canonical JSON form.",
+            min_length=4,
+            max_length=8000,
         ),
     ]
 
@@ -297,9 +303,24 @@ class BqDsn(ConfigBaseModel, BaseDsn):
     driver: Literal["bigquery"]
     project_id: Annotated[
         str,
-        Field(..., description="The Google Cloud Project ID containing the dataset."),
+        Field(
+            ...,
+            description="The Google Cloud Project ID containing the dataset.",
+            min_length=6,
+            max_length=30,
+            pattern=r"^[a-z0-9-]+$",
+        ),
     ]
-    dataset_id: Annotated[str, Field(..., description="The dataset name.")]
+    dataset_id: Annotated[
+        str,
+        Field(
+            ...,
+            description="The dataset name.",
+            min_length=1,
+            max_length=1024,
+            pattern=r"^[a-zA-Z0-9_]+$",
+        ),
+    ]
 
     # These two authentication modes are documented here:
     # https://googleapis.dev/python/google-api-core/latest/auth.html#service-accounts
@@ -357,12 +378,28 @@ class Dsn(ConfigBaseModel, BaseDsn):
         if self.driver.startswith("postgresql"):
             query = dict(url.query)
             query.update({
-                "sslmode": self.sslmode if self.sslmode else "verify-full",
+                "sslmode": self.sslmode or "verify-full",
                 # re: redshift issue https://github.com/psycopg/psycopg/issues/122#issuecomment-985742751
                 "client_encoding": "utf-8",
             })
+            if self.is_redshift():
+                query.update({
+                    "sslmode": "verify-full",
+                    "sslrootcert": get_amazon_trust_ca_bundle_path(),
+                })
             url = url.set(query=query)
         return url
+
+    @model_validator(mode="after")
+    def check_redshift_safe(self):
+        if self.is_redshift():
+            if self.driver != "postgresql+psycopg2":
+                raise ValueError(
+                    "Redshift connections must use postgresql+psycopg2 driver"
+                )
+            if self.sslmode != "verify-full":
+                raise ValueError("Redshift connections must use sslmode=verify-full")
+        return self
 
 
 class DbapiArg(ConfigBaseModel):
@@ -405,8 +442,18 @@ class RemoteDatabaseConfig(ParticipantsMixin, ConfigBaseModel):
         """
         url = self.dwh.to_sqlalchemy_url()
         connect_args: dict = {}
-        if url.get_backend_name() == "postgres":
-            connect_args["connect_timeout"] = 5
+        if url.get_backend_name() == "postgresql":
+            connect_args["connect_timeout"] = TIMEOUT_SECS_FOR_CUSTOMER_POSTGRES
+            # Replace the Postgres' client default DNS lookup with one that applies security checks first; this prevents
+            # us from connecting to addresses like 127.0.0.1 or addresses that are on our hosting provider's internal
+            # network.
+            # https://www.postgresql.org/docs/current/libpq-connect.html#LIBPQ-PARAMKEYWORDS
+            connect_args["hostaddr"] = safe_resolve(url.host)
+
+        logger.warning(
+            f"Connecting to customer dwh: url={url}, "
+            f"backend={url.get_backend_name()}, connect_args={connect_args}"
+        )
         engine = sqlalchemy.create_engine(
             url,
             connect_args=connect_args,
@@ -554,7 +601,7 @@ def infer_table_from_cursor(
     columns = []
     metadata = sqlalchemy.MetaData()
     try:
-        with engine.connect() as connection:
+        with engine.begin() as connection:
             safe_table = sqlalchemy.quoted_name(table_name, quote=True)
             # Create a select statement - this is safe from SQL injection
             query = sqlalchemy.select(text("*")).select_from(text(safe_table)).limit(0)

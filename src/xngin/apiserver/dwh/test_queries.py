@@ -18,6 +18,7 @@ from sqlalchemy import (
     Column,
     DateTime,
     make_url,
+    text,
 )
 from sqlalchemy.orm import Session, DeclarativeBase, mapped_column
 
@@ -187,7 +188,7 @@ def fixture_db_session():
     connect_url, db_type, connect_args = get_test_dwh_info()
     default_url = make_url(connect_url)._replace(database=None)
     temporary_database_name = None
-    use_temporary_database = db_type in (DbType.PG,)
+    use_temporary_database = db_type == DbType.PG
 
     if use_temporary_database:
         temporary_database_name = f"fixture_db_session_{secrets.token_hex(16)}"
@@ -197,15 +198,15 @@ def fixture_db_session():
             echo=flags.ECHO_SQL,
             poolclass=sqlalchemy.pool.NullPool,
         )
-        conn = default_engine.raw_connection()
-        with conn.cursor() as cursor:
+        # re: DROP and CREATE DATABASE cannot be executed inside a transaction block
+        with default_engine.connect().execution_options(
+            isolation_level="AUTOCOMMIT"
+        ) as conn:
             for stmt in (
                 f"DROP DATABASE IF EXISTS {temporary_database_name}",
                 f"CREATE DATABASE {temporary_database_name}",
             ):
-                cursor.execute("COMMIT")
-                cursor.execute(stmt)
-        conn.close()
+                conn.execute(text(stmt))
         default_engine.dispose()
         # Override the connect_url with our new database name.
         connect_url = connect_url.set(database=temporary_database_name)
@@ -249,11 +250,10 @@ def fixture_db_session():
             echo=flags.ECHO_SQL,
             poolclass=sqlalchemy.pool.NullPool,
         )
-        conn = default_engine.raw_connection()
-        with conn.cursor() as cursor:
-            cursor.execute("COMMIT")
-            cursor.execute(f"DROP DATABASE {temporary_database_name}")
-        conn.close()
+        with default_engine.connect().execution_options(
+            isolation_level="AUTOCOMMIT"
+        ) as conn:
+            conn.execute(text(f"DROP DATABASE {temporary_database_name}"))
 
 
 @pytest.fixture(name="engine")
@@ -1007,6 +1007,8 @@ def test_get_participant_metrics(db_session):
     ]
 
     assert len(rows) == len(expected)
+    # Sort the rows by participant_id to make the test deterministic.
+    rows = sorted(rows, key=lambda r: r.participant_id)
     for actual, exp in zip(rows, expected, strict=False):
         assert actual.participant_id == exp.participant_id
         assert actual.metric_values[0].metric_name == exp.metric_values[0].metric_name

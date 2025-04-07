@@ -48,7 +48,7 @@
           "host": "__example__.redshift.amazonaws.com",
           "password": "password",
           "dbname": "dbname",
-          "sslmode": "require"
+          "sslmode": "verify-full"
         }
       }
     },
@@ -80,7 +80,7 @@
           "host": "__example__.redshift.amazonaws.com",
           "password": "password",
           "dbname": "dbname",
-          "sslmode": "require"
+          "sslmode": "verify-full"
         }
       }
     },
@@ -348,6 +348,19 @@
                 "is_strata": true,
                 "is_filter": true,
                 "is_metric": true,
+                "extra": {
+                  "column_group": "",
+                  "Extra Ad-Hoc Field": ""
+                }
+              },
+              {
+                "field_name": "uuid_filter",
+                "data_type": "uuid",
+                "description": "uuid used as filter",
+                "is_unique_id": false,
+                "is_strata": false,
+                "is_filter": true,
+                "is_metric": false,
                 "extra": {
                   "column_group": "",
                   "Extra Ad-Hoc Field": ""

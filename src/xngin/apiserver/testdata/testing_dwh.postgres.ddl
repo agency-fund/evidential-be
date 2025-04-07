@@ -1,0 +1,20 @@
+CREATE TABLE {{table_name}} (
+  gender VARCHAR(255),
+  ethnicity VARCHAR(255),
+  first_name VARCHAR(255),
+  last_name VARCHAR(255),
+  id BIGINT PRIMARY KEY,
+  income DECIMAL,
+  potential_0 DECIMAL,
+  potential_1 BIGINT,
+  is_recruited BOOLEAN,
+  is_registered BOOLEAN,
+  is_onboarded BOOLEAN,
+  is_engaged BOOLEAN,
+  is_retained BOOLEAN,
+  baseline_income DECIMAL,
+  current_income DECIMAL,
+  uuid_filter UUID,
+  sample_date DATE,
+  sample_timestamp TIMESTAMP
+);

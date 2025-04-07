@@ -3,7 +3,9 @@
 import csv
 import json
 import logging
+import re
 import sys
+import uuid
 from pathlib import Path
 from typing import Annotated
 
@@ -11,9 +13,9 @@ import boto3
 import gspread
 import pandas as pd
 import pandas_gbq
+import psycopg
 import psycopg2
 import sqlalchemy
-import sqlalchemy.dialects.postgresql.psycopg2 as psycopg2sa
 import typer
 import zstandard
 from google.cloud import bigquery
@@ -27,21 +29,20 @@ from rich.console import Console
 from sqlalchemy import create_engine, make_url
 from sqlalchemy.exc import OperationalError
 from sqlalchemy.sql.compiler import IdentifierPreparer
-
 from xngin.apiserver import settings
 from xngin.apiserver.api_types import DataType
 from xngin.apiserver.settings import (
-    SheetRef,
-    XnginSettings,
     CannotFindTableError,
     Datasource,
+    SheetRef,
+    XnginSettings,
 )
 from xngin.apiserver.testing import testing_dwh
 from xngin.schema.schema_types import FieldDescriptor, ParticipantsSchema
 from xngin.sheets.config_sheet import (
     InvalidSheetError,
-    fetch_and_parse_sheet,
     create_schema_from_table,
+    fetch_and_parse_sheet,
 )
 from xngin.sheets.gsheets import GSheetsPermissionError
 
@@ -77,17 +78,6 @@ def infer_config_from_schema(
     return create_schema_from_table(dwh, unique_id_col=unique_id_col)
 
 
-def csv_to_ddl(
-    csv_path: Path,
-    *,
-    table_name: str,
-    quoter: IdentifierPreparer,
-) -> str:
-    """Helper to transform a CSV with Pandas-inferred schema into a CREATE TABLE statement."""
-    df = pd.read_csv(csv_path)
-    return df_to_ddl(df, table_name=table_name, quoter=quoter)
-
-
 def df_to_ddl(
     df: DataFrame,
     *,
@@ -96,7 +86,6 @@ def df_to_ddl(
 ):
     """Helper to transform a DataFrame into a CREATE TABLE statement."""
     # TODO: replace these types with more generic/widely supported defaults.
-    # TODO: warn/fail if Pandas type does not map onto a known SQL type
     default_sql_type = "VARCHAR(255)"
     type_map = {
         "int64": "INTEGER",
@@ -104,12 +93,40 @@ def df_to_ddl(
         "object": "VARCHAR(255)",
         "datetime64[ns]": "TIMESTAMP",
         "bool": "BOOLEAN",
+        "uuid": "UUID",  # Special case for UUIDs; not a real Pandas type.
     }
+    # Check for UUID columns by trying to parse the first non-null value of string columns as UUID
+    df_dtypes = {col: dtype for col, dtype in df.dtypes.items()}
+    for col, dtype in df_dtypes.items():
+        if dtype.name not in type_map:
+            logging.warning(
+                "Column '%s' has unknown SQL type for Pandas dtype '%s'. Using default: %s",
+                col,
+                dtype,
+                default_sql_type,
+            )
+        if dtype == "object":
+            nonnulls = df[col].dropna()
+            first_val = nonnulls.iloc[0] if not nonnulls.empty else None
+            try:
+                uuid.UUID(first_val)
+                df_dtypes[col] = "uuid"  # override with our special case
+            except (ValueError, AttributeError, TypeError):
+                pass  # Not a UUID
+    # Now generate the DDL.
     columns = [
         f"{quoter.quote(col)} {type_map.get(str(dtype), default_sql_type)}"
-        for col, dtype in df.dtypes.items()
+        for col, dtype in df_dtypes.items()
     ]
     return f"""CREATE TABLE {table_name} ({",\n    ".join(columns)});"""
+
+
+def validate_create_testing_dwh_src(v: Path):
+    allowed_extensions = (".csv", ".csv.zst")
+    for ext in allowed_extensions:
+        if str(v).endswith(ext):
+            return v
+    raise typer.BadParameter("--src must end in .csv or .csv.zst")
 
 
 @app.command()
@@ -118,13 +135,16 @@ def create_testing_dwh(
     src: Annotated[
         Path,
         typer.Option(
-            help="Local path to the testing data warehouse CSV. This may be zstd-compressed."
+            help="Local path to the testing data warehouse CSV. This may be zstd-compressed and "
+            "must end in .csv or .csv.zst.",
+            callback=validate_create_testing_dwh_src,
         ),
     ] = testing_dwh.TESTING_DWH_RAW_DATA,
     nrows: Annotated[
         int | None,
         typer.Option(
-            help="Limit to the number of rows to load from the CSV. Does not apply to Redshift or postgresql+psycopg."
+            help="Limits the number of rows to load from the CSV. Does not apply to the data load "
+            "of Redshift or Postgres connections, but will be applied to schema inference."
         ),
     ] = None,
     schema_name: Annotated[
@@ -158,25 +178,29 @@ def create_testing_dwh(
     password: Annotated[
         str | None, typer.Option(envvar="PGPASSWORD", help="The database password.")
     ] = None,
-    hacks: Annotated[
+    allow_existing: Annotated[
         bool,
         typer.Option(
-            help="Hack: temporary table modifications for query builder testing"
+            help="True if you only want to create the table if it does not exist."
         ),
     ] = False,
 ):
     """Loads the testing data warehouse CSV into a database.
 
-    Any existing table will be replaced.
+    Any existing table will be replaced unless --allow-existing is used.
 
-    On Redshift Clusters: CSV is parsed by Redshift's native CSV parser. Table DDL is derived from Pandas read_csv.
+    For Postgres and Redshift (psycopg or psycopg2) connections, the table DDL will be read from a
+    .{postgres|redshift}.ddl file in the same directory as the source CSV, or inferred via Pandas if
+    that file does not exist.  The CSV file is parsed using their native server-side CSV parsers.
 
-    On postgres+psycopg connections: CSV is parsed with Postgres' CSV parser. Table DDL is derived from Pandas read_csv.
+    Postgres connections may be specified with postgresql://, postgresql+psycopg://, or postgresql+psycopg2:// prefixes.
+
+    Redshift connections must be specified with postgresql+psycopg2:// prefix.
 
     On BigQuery: CSV is parsed by Pandas. Table DDL is derived by pandas-gbq and written via to_gbq().
 
-    On all other databases: CSV is parsed by Pandas. Table DDL is derived from Pandas read_csv and written via
-    SQLAlchemy and Pandas to_sql().
+    On SQLite databases: CSV is parsed by Pandas. Table DDL will be read from a .sqlite.ddl file or derived from Pandas
+    read_csv, and written via SQLAlchemy and Pandas to_sql().
 
     Due to variations in all of the above, the loaded data may vary in small ways when loaded with different data
     stores. E.g. floats may not roundtrip.
@@ -189,6 +213,10 @@ def create_testing_dwh(
     is_compressed = src.suffix == ".zst"
 
     url = make_url(dsn)
+    print(f"Backend Name: {url.get_backend_name()}")
+    print(f"Driver Name: {url.get_driver_name()}")
+    print(f"Dialect: {url.get_dialect()}")
+
     if password is not None and url.username is not None:
         url = url.set(password=password)
 
@@ -225,10 +253,48 @@ def create_testing_dwh(
         print(f"Creating table:\n{create_table_ddl}")
         cur.execute(create_table_ddl)
 
+    def get_ddl_magic(quoter: IdentifierPreparer, flavor: str):
+        """Gets the hard-coded DDL if available, or infers it using Pandas."""
+        ddl_file = re.sub(r"[.]csv([.]zst)?$", f".{flavor}.ddl", str(src))
+        if Path(ddl_file).exists():
+            print(f"Using provided DDL from {ddl_file}")
+            with open(ddl_file) as inp:
+                ddl = inp.read().replace("{{table_name}}", full_table_name)
+        else:
+            print("Using inferred DDL (warning: may lose fidelity!)")
+            ddl = df_to_ddl(
+                read_csv(),
+                table_name=full_table_name,
+                quoter=quoter,
+            )
+        return ddl
+
     def count(cur):
-        cur.execute(f"SELECT COUNT(*) FROM {full_table_name}")
+        if url.drivername == "bigquery":
+            cur.execute(f"SELECT COUNT(*) FROM `{url.database}.{table_name}`")
+        else:
+            cur.execute(f"SELECT COUNT(*) FROM {full_table_name}")
         ct = cur.fetchone()[0]
-        print(f"Loaded {ct} rows into {full_table_name}.")
+        print(f"{full_table_name} has {ct} rows.")
+        return ct
+
+    if allow_existing:
+        engine = create_engine(url)
+        conn = engine.raw_connection()
+        with conn.cursor() as cur:
+            try:
+                count(cur)
+            except (
+                psycopg.errors.UndefinedTable,
+                psycopg2.errors.UndefinedTable,
+                sqlalchemy.exc.OperationalError,
+            ):
+                print("🛠️ Table does not exist; creating...\n")
+            else:
+                print("📣 Table already exists; nothing to do.\n")
+                return
+        conn.close()
+        engine.dispose()
 
     if url.host and url.host.endswith(REDSHIFT_HOSTNAME_SUFFIX):
         if not bucket:
@@ -237,6 +303,10 @@ def create_testing_dwh(
         if not iam_role:
             print("--iam-role is required when importing into Redshift.")
             raise typer.Exit(2)
+        # Workaround: Despite using a direct psycopg2 connection for Redshift, we use SQLAlchemy's quoter.
+        engine = create_engine(url)
+        quoter = engine.dialect.identifier_preparer
+        engine.dispose()
         with (
             psycopg2.connect(
                 database=url.database,
@@ -247,14 +317,8 @@ def create_testing_dwh(
             ) as conn,
             conn.cursor() as cur,
         ):
-            drop_and_create(
-                cur,
-                csv_to_ddl(
-                    src,
-                    table_name=full_table_name,
-                    quoter=psycopg2sa.dialect.identifier_preparer,
-                ),
-            )
+            ddl = get_ddl_magic(quoter, "redshift")
+            drop_and_create(cur, ddl)
             key = src.name
             print(f"Uploading to s3://{bucket}/{key}...")
             s3 = boto3.client("s3")
@@ -273,62 +337,44 @@ def create_testing_dwh(
     elif url.drivername == "bigquery":
         df = read_csv()
         destination_table = f"{url.database}.{table_name}"
-        print("Loading...")
+        print("Loading using an inferred schema (warning: may lose fidelity!)...")
         pandas_gbq.to_gbq(
             df, destination_table, project_id=url.host, if_exists="replace"
         )
-    elif url.drivername == "postgresql+psycopg":
-        df = read_csv()
+    elif url.get_driver_name() in {"psycopg", "psycopg2"}:
         engine = create_engine_and_database(url)
-        with engine.connect() as conn, conn.begin():
+        ddl = get_ddl_magic(engine.dialect.identifier_preparer, "postgres")
+        with engine.begin() as conn:
             cursor = conn.connection.cursor()
-            drop_and_create(
-                cursor,
-                df_to_ddl(
-                    df,
-                    table_name=full_table_name,
-                    quoter=engine.dialect.identifier_preparer,
-                ),
-            )
+            drop_and_create(cursor, ddl)
             opener = (lambda x: zstandard.open(x, "r")) if is_compressed else open
-            print("Loading...")
-            with opener(src) as reader:
-                cols = [h.strip() for h in reader.readline().split(",")]
-                sql = f"COPY {full_table_name} ({', '.join(cols)}) FROM STDIN (FORMAT CSV, DELIMITER ',')"
-                with cursor.copy(sql) as copy:
-                    while data := reader.read(1 << 20):
-                        copy.write(data)
+            if url.get_driver_name() == "psycopg":
+                print("Loading via psycopg3 COPY FROM STDIN...")
+                with opener(src) as reader:
+                    cols = [h.strip() for h in reader.readline().split(",")]
+                    sql = f"COPY {full_table_name} ({', '.join(cols)}) FROM STDIN (FORMAT CSV, DELIMITER ',')"
+                    print(f"SQL: {sql}")
+                    with cursor.copy(sql) as copy:
+                        while data := reader.read(1 << 20):
+                            copy.write(data)
+            else:
+                print("Loading via psycopg2 copy_expert...")
+                with opener(src) as reader:
+                    cols = [h.strip() for h in reader.readline().split(",")]
+                    sql = f"COPY {full_table_name} ({', '.join(cols)}) FROM STDIN (FORMAT CSV, DELIMITER ',')"
+                    print(f"SQL: {sql}")
+                    cursor.copy_expert(sql, reader)
+
             count(cursor)
 
-            if hacks:
-                print("Applying hacks.")
-                mods = [
-                    (
-                        # Add some new data types to the sample data warehouse.
-                        "alter table public.dwh add sample_id uuid default gen_random_uuid(), "
-                        "add sample_date date default NOW() + (random() * (interval '90 days')) + '30 days', "
-                        "add sample_timestamp timestamp default NOW() - (random() * (interval '90 days')) + '30 days';"
-                    ),
-                ]
-                mods = [" ".join(mods)]
-                for mod in mods:
-                    print(f"Running: {mod}")
-                    cursor.execute(mod)
-
-    else:
+    elif url.get_backend_name() == "sqlite":
         df = read_csv()
         engine = create_engine_and_database(url)
-        with engine.connect() as conn, conn.begin():
+        with engine.begin() as conn:
             cursor = conn.connection.cursor()
-            drop_and_create(
-                cursor,
-                df_to_ddl(
-                    df,
-                    table_name=full_table_name,
-                    quoter=engine.dialect.identifier_preparer,
-                ),
-            )
-            print("Loading...")
+            ddl = get_ddl_magic(engine.dialect.identifier_preparer, "sqlite")
+            drop_and_create(cursor, ddl)
+            print("Loading using Pandas to_sql (sloowww)...")
             df.to_sql(
                 table_name,
                 conn,
@@ -337,6 +383,9 @@ def create_testing_dwh(
                 index=False,
             )
             count(cursor)
+    else:
+        err_console.print("Unrecognized database driver.")
+        raise typer.Exit(2)
 
 
 @app.command()

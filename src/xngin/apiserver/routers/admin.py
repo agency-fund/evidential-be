@@ -2,45 +2,53 @@
 
 import logging
 from contextlib import asynccontextmanager
-from datetime import UTC, timedelta, datetime
+from datetime import UTC, datetime, timedelta
 from typing import Annotated
 
 import google.api_core.exceptions
 import sqlalchemy
 import sqlalchemy.orm
-from fastapi import APIRouter, FastAPI, Depends, Path, Body, HTTPException, Query
-from fastapi import Response
-from fastapi import status
+from fastapi import (
+    APIRouter,
+    Body,
+    Depends,
+    FastAPI,
+    HTTPException,
+    Path,
+    Query,
+    Response,
+    status,
+)
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from sqlalchemy import delete, select, text
 from sqlalchemy.exc import OperationalError
 from sqlalchemy.orm import Session
-
 from xngin.apiserver import flags, settings
 from xngin.apiserver.api_types import (
     ArmAnalysis,
     DataType,
     ExperimentAnalysis,
-    GetStrataResponseElement,
     GetMetricsResponseElement,
+    GetStrataResponseElement,
     MetricAnalysis,
     PowerRequest,
     PowerResponse,
 )
-from xngin.apiserver.apikeys import make_key, hash_key
+from xngin.apiserver.apikeys import hash_key, make_key
 from xngin.apiserver.dependencies import xngin_db_session
+from xngin.apiserver.dns.safe_resolve import safe_resolve
 from xngin.apiserver.dwh.queries import get_participant_metrics, query_for_participants
 from xngin.apiserver.exceptions_common import LateValidationError
 from xngin.apiserver.models.tables import (
     ApiKey,
-    User,
-    Organization,
     Datasource,
-    UserOrganization,
     DatasourceTablesInspected,
-    ParticipantTypesInspected,
     Experiment,
+    Organization,
+    ParticipantTypesInspected,
+    User,
+    UserOrganization,
 )
 from xngin.apiserver.routers import experiments, experiments_api_types
 from xngin.apiserver.routers.admin_api_types import (
@@ -72,18 +80,18 @@ from xngin.apiserver.routers.admin_api_types import (
     UserSummary,
 )
 from xngin.apiserver.routers.experiments_api import (
-    generate_field_descriptors,
     create_col_to_filter_meta_mapper,
-    validate_schema_metrics_or_raise,
+    generate_field_descriptors,
     power_check_impl,
+    validate_schema_metrics_or_raise,
 )
 from xngin.apiserver.routers.experiments_api_types import ExperimentConfig
-from xngin.apiserver.routers.oidc_dependencies import require_oidc_token, TokenInfo
+from xngin.apiserver.routers.oidc_dependencies import TokenInfo, require_oidc_token
 from xngin.apiserver.settings import (
+    ParticipantsConfig,
+    ParticipantsDef,
     RemoteDatabaseConfig,
     SqliteLocalConfig,
-    ParticipantsDef,
-    ParticipantsConfig,
     infer_table,
 )
 from xngin.stats.analysis import analyze_experiment as analyze_experiment_impl
@@ -140,7 +148,7 @@ def is_enabled():
     return flags.ENABLE_ADMIN
 
 
-def cache_is_fresh(updated: datetime):
+def cache_is_fresh(updated: datetime | None):
     return updated and datetime.now(UTC) - updated < timedelta(minutes=5)
 
 
@@ -480,23 +488,7 @@ def create_datasource(
     body: Annotated[CreateDatasourceRequest, Body(...)],
 ) -> CreateDatasourceResponse:
     """Creates a new datasource for the specified organization."""
-    org = session.get(Organization, body.organization_id)
-    if not org:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND, detail="Organization not found"
-        )
-
-    stmt = (
-        select(UserOrganization)
-        .where(UserOrganization.user_id == user.id)
-        .where(UserOrganization.organization_id == org.id)
-    )
-    allowed = session.execute(stmt).scalar_one_or_none()
-    if allowed is None:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="You are not a member of this organization",
-        )
+    org = get_organization_or_raise(session, user, body.organization_id)
 
     if (
         body.dwh.driver == "bigquery"
@@ -506,6 +498,14 @@ def create_datasource(
             status_code=400,
             detail="BigQuery credentials must be specified using type=serviceaccountinfo",
         )
+    if body.dwh.driver in {"postgresql+psycopg", "postgresql+psycopg2"}:
+        _ = safe_resolve(body.dwh.host)  # TODO: handle this exception more gracefully
+        allowed_modes = {"disable", "require", "verify-ca", "verify-full"}
+        if body.dwh.sslmode not in allowed_modes:
+            raise HTTPException(
+                status_code=400,
+                detail=f"sslmode must be one of: {', '.join(allowed_modes)}",
+            )
 
     config = RemoteDatabaseConfig(participants=[], type="remote", dwh=body.dwh)
 
@@ -586,7 +586,7 @@ def inspect_datasource(
                 )
                 with config.dbsession() as dwh_session:
                     result = dwh_session.execute(
-                        query, {"search_path": config.dwh.search_path}
+                        query, {"search_path": config.dwh.search_path or "public"}
                     )
                     tables = result.scalars().all()
             else:
@@ -635,7 +635,7 @@ def create_inspect_table_response_from_table(table: sqlalchemy.Table):
         if c.name.endswith("id") or isinstance(c.type, sqlalchemy.sql.sqltypes.UUID)
     }
     primary_key_columns = {c.name for c in table.columns.values() if c.primary_key}
-    if len(primary_key_columns) > 0:
+    if len(primary_key_columns) > 1:
         # If there is more than one PK, it probably isn't usable for experiments.
         primary_key_columns = set()
     possible_id_columns |= primary_key_columns
@@ -643,13 +643,15 @@ def create_inspect_table_response_from_table(table: sqlalchemy.Table):
     collected = []
     for column in table.columns.values():
         type_hint = column.type
-        collected.append(
-            FieldMetadata(
-                field_name=column.name,
-                data_type=DataType.match(type_hint),
-                description=column.comment if column.comment else "",
+        data_type = DataType.match(type_hint)
+        if data_type.is_supported():
+            collected.append(
+                FieldMetadata(
+                    field_name=column.name,
+                    data_type=data_type,
+                    description=column.comment or "",
+                )
             )
-        )
 
     return InspectDatasourceTableResponse(
         detected_unique_id_fields=list(sorted(possible_id_columns)),
@@ -1202,7 +1204,7 @@ def get_experiment_assignments(
     experiment_id: str,
     session: Annotated[Session, Depends(xngin_db_session)],
     user: Annotated[User, Depends(user_from_token)],
-) -> experiments_api_types.GetExperimentAssigmentsResponse:
+) -> experiments_api_types.GetExperimentAssignmentsResponse:
     ds = get_datasource_or_raise(session, user, datasource_id)
     experiment = get_experiment_via_ds_or_raise(session, ds, experiment_id)
     return experiments.get_experiment_assignments_impl(experiment)
