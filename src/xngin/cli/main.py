@@ -13,6 +13,7 @@ import boto3
 import gspread
 import pandas as pd
 import pandas_gbq
+import psycopg
 import psycopg2
 import sqlalchemy
 import typer
@@ -283,7 +284,11 @@ def create_testing_dwh(
         with conn.cursor() as cur:
             try:
                 count(cur)
-            except sqlalchemy.exc.OperationalError:
+            except (
+                psycopg.errors.UndefinedTable,
+                psycopg2.errors.UndefinedTable,
+                sqlalchemy.exc.OperationalError,
+            ):
                 print("🛠️ Table does not exist; creating...\n")
             else:
                 print("📣 Table already exists; nothing to do.\n")
