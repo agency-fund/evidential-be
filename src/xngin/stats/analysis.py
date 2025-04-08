@@ -35,7 +35,7 @@ def analyze_experiment(
     assignments_df = pd.DataFrame([
         {
             "participant_id": assignment.participant_id,
-            "arm_id": assignment.arm_id,
+            "arm_id": assignment.arm_id,  # a UUID object type!
         }
         for assignment in treatment_assignments
     ])
@@ -60,7 +60,7 @@ def analyze_experiment(
         ].categories
         arm_analyses: dict[str, ArmAnalysisResult] = {}
         for i, arm_id in enumerate(arm_ids):
-            arm_analyses[arm_id] = ArmAnalysisResult(
+            arm_analyses[str(arm_id)] = ArmAnalysisResult(
                 is_baseline=i == 0,
                 estimate=float(model.params.iloc[i]),
                 p_value=float(model.pvalues.iloc[i]),

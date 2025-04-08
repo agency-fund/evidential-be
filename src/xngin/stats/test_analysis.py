@@ -1,9 +1,6 @@
-# import dataclasses
-# from decimal import Decimal
-# from typing import Any
+import random
 import uuid
 import pytest
-import numpy as np
 from xngin.apiserver.models.tables import ArmAssignment
 from xngin.stats.analysis import analyze_experiment
 from xngin.apiserver.api_types import ParticipantOutcome, MetricValue
@@ -11,7 +8,7 @@ from xngin.apiserver.api_types import ParticipantOutcome, MetricValue
 
 @pytest.fixture
 def test_assignments(n=1000, seed=42):
-    rng = np.random.default_rng(seed)
+    random.seed(seed)  # Set seed for Python's random module
     # Use fixed UUIDs instead of randomly generated ones
     arm_ids = [
         uuid.UUID("0ffe0995-6404-4622-934a-0d5cccfe3a59"),
@@ -20,7 +17,7 @@ def test_assignments(n=1000, seed=42):
     ]
     assignments = []
     for i in range(n):
-        arm_id = rng.choice(arm_ids, size=1, replace=True)[0]
+        arm_id = random.choice(arm_ids)
         assignments.append(
             # TODO: test Assignment for old stateless api
             ArmAssignment(participant_id=str(i), arm_id=arm_id, strata=[])
@@ -30,12 +27,14 @@ def test_assignments(n=1000, seed=42):
 
 @pytest.fixture
 def test_outcomes(n=1000, seed=43):
-    rng = np.random.default_rng(seed)
+    random.seed(seed)
     return [
         ParticipantOutcome(
             participant_id=str(i),
             metric_values=[
-                MetricValue(metric_name="bool_field", metric_value=rng.choice([0, 1]))
+                MetricValue(
+                    metric_name="bool_field", metric_value=random.choice([0, 1])
+                )
             ],
         )
         for i in range(n)
@@ -50,49 +49,34 @@ def test_analysis(test_assignments, test_outcomes):
     bool_field_results = result["bool_field"]
     # Test using the fixed UUIDs
     assert (
-        bool_field_results[
-            uuid.UUID("0ffe0995-6404-4622-934a-0d5cccfe3a59")
-        ].is_baseline
-        is True
+        bool_field_results["0ffe0995-6404-4622-934a-0d5cccfe3a59"].is_baseline is True
     )
     assert (
-        bool_field_results[
-            uuid.UUID("b1d90769-6e6e-4973-a7eb-d9da1c6ddcd5")
-        ].is_baseline
-        is False
+        bool_field_results["b1d90769-6e6e-4973-a7eb-d9da1c6ddcd5"].is_baseline is False
     )
     assert (
-        bool_field_results[
-            uuid.UUID("df84e3ae-f5df-4dc8-9ba6-fa0743e1c895")
-        ].is_baseline
-        is False
+        bool_field_results["df84e3ae-f5df-4dc8-9ba6-fa0743e1c895"].is_baseline is False
     )
 
     # Test approximate values since floating point math may have small variations
     assert (
         pytest.approx(
-            bool_field_results[
-                uuid.UUID("0ffe0995-6404-4622-934a-0d5cccfe3a59")
-            ].estimate,
+            bool_field_results["0ffe0995-6404-4622-934a-0d5cccfe3a59"].estimate,
             abs=1e-4,
         )
-        == 0.5120
+        == 0.4793
     )
     assert (
         pytest.approx(
-            bool_field_results[
-                uuid.UUID("b1d90769-6e6e-4973-a7eb-d9da1c6ddcd5")
-            ].estimate,
+            bool_field_results["b1d90769-6e6e-4973-a7eb-d9da1c6ddcd5"].estimate,
             abs=1e-4,
         )
-        == -0.0302
+        == 0.0222
     )
     assert (
         pytest.approx(
-            bool_field_results[
-                uuid.UUID("df84e3ae-f5df-4dc8-9ba6-fa0743e1c895")
-            ].estimate,
+            bool_field_results["df84e3ae-f5df-4dc8-9ba6-fa0743e1c895"].estimate,
             abs=1e-4,
         )
-        == 0.0059
+        == 0.0431
     )
