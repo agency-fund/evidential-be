@@ -448,6 +448,61 @@ class Arm(ApiBaseModel):
     ] = None
 
 
+class ArmAnalysis(Arm):
+    is_baseline: Annotated[
+        bool,
+        Field(
+            description="Whether this arm is the baseline/control arm for comparison."
+        ),
+    ]
+    estimate: Annotated[
+        float,
+        Field(
+            description="The estimated treatment effect relative to the baseline arm."
+        ),
+    ]
+    p_value: Annotated[
+        float,
+        Field(
+            description="The p-value indicating statistical significance of the treatment effect."
+        ),
+    ]
+    t_stat: Annotated[
+        float, Field(description="The t-statistic from the statistical test.")
+    ]
+    std_error: Annotated[
+        float, Field(description="The standard error of the treatment effect estimate.")
+    ]
+
+
+class MetricAnalysis(ApiBaseModel):
+    """Describes the change in a single metric for each arm of an experiment."""
+
+    metric_name: str | None = None
+    metric: DesignSpecMetricRequest | None = None
+    arm_analyses: Annotated[
+        list[ArmAnalysis],
+        Field(
+            description="The results of the analysis for each arm (coefficient) for this specific metric."
+        ),
+    ]
+
+
+class ExperimentAnalysis(ApiBaseModel):
+    """Describes the change if any in metrics targeted by an experiment."""
+
+    experiment_id: Annotated[
+        uuid.UUID,
+        Field(description="UUID of the experiment."),
+    ]
+    metric_analyses: Annotated[
+        list[MetricAnalysis],
+        Field(
+            description="Contains one analysis per metric targeted by the experiment."
+        ),
+    ]
+
+
 class DesignSpec(ApiBaseModel):
     """Experiment design parameters for power calculations and treatment assignment."""
 
@@ -529,8 +584,8 @@ class DesignSpec(ApiBaseModel):
         ])
 
 
-class MetricAnalysisMessageType(enum.StrEnum):
-    """Classifies metric analysis results."""
+class MetricPowerAnalysisMessageType(enum.StrEnum):
+    """Classifies metric power analysis results."""
 
     SUFFICIENT = "sufficient"
     INSUFFICIENT = "insufficient"
@@ -539,23 +594,26 @@ class MetricAnalysisMessageType(enum.StrEnum):
     ZERO_EFFECT_SIZE = "zero effect size"
 
 
-class MetricAnalysisMessage(ApiBaseModel):
-    """Describes interpretation of analysis results."""
+class MetricPowerAnalysisMessage(ApiBaseModel):
+    """Describes interpretation of power analysis results."""
 
-    type: MetricAnalysisMessageType
+    type: MetricPowerAnalysisMessageType
     msg: Annotated[
-        str, Field(description="Main analysis result stated in human-friendly English.")
+        str,
+        Field(
+            description="Main power analysis result stated in human-friendly English."
+        ),
     ]
     source_msg: Annotated[
         str,
         Field(
-            description="Analysis result formatted as a template string with curly-braced {} named placeholders. Use with the dictionary of values to support localization of messages."
+            description="Power analysis result formatted as a template string with curly-braced {} named placeholders. Use with the dictionary of values to support localization of messages."
         ),
     ]
     values: dict[str, float | int] | None = None
 
 
-class MetricAnalysis(ApiBaseModel):
+class MetricPowerAnalysis(ApiBaseModel):
     """Describes analysis results of a single metric."""
 
     # Store the original request+baseline info here
@@ -589,7 +647,7 @@ class MetricAnalysis(ApiBaseModel):
     ] = None
 
     msg: Annotated[
-        MetricAnalysisMessage | None,
+        MetricPowerAnalysisMessage | None,
         Field(description="Human friendly message about the above results."),
     ] = None
 
@@ -650,44 +708,6 @@ class Assignment(ApiBaseModel):
             max_length=MAX_NUMBER_OF_FIELDS,
         ),
     ] = None
-
-
-class ExperimentAnalysis(ApiBaseModel):
-    metric_name: Annotated[
-        FieldName,
-        Field(
-            description="The field_name from the datasource which this analysis models as the dependent variable (y)."
-        ),
-    ]
-    arm_ids: Annotated[list[uuid.UUID], Field(max_length=MAX_NUMBER_OF_ARMS)]
-    coefficients: Annotated[
-        list[float],
-        Field(
-            description="Estimates for each arm in the model, the first element is the baseline estimate (intercept) of the first arm_id, the latter two are coefficients estimated against that baseline.",
-            max_length=MAX_NUMBER_OF_ARMS,
-        ),
-    ]
-    pvalues: Annotated[
-        list[float],
-        Field(
-            description="P-values corresponding to each coefficient estimate for arm_ids, starting with the intercept (arm_ids[0]).",
-            max_length=MAX_NUMBER_OF_ARMS,
-        ),
-    ]
-    tstats: Annotated[
-        list[float],
-        Field(
-            description="Corresponding t-stats for the pvalues and coefficients for each arm_id.",
-            max_length=MAX_NUMBER_OF_ARMS,
-        ),
-    ]
-    std_errors: Annotated[
-        list[float],
-        Field(
-            description="Corresponding standard errors for the pvalues and coefficients for each arm_id.",
-            max_length=MAX_NUMBER_OF_ARMS,
-        ),
-    ]
 
 
 class MetricValue(ApiBaseModel):
@@ -866,7 +886,9 @@ class PowerRequest(ApiBaseModel):
 
 
 class PowerResponse(ApiBaseModel):
-    analyses: Annotated[list[MetricAnalysis], Field(max_length=MAX_NUMBER_OF_FIELDS)]
+    analyses: Annotated[
+        list[MetricPowerAnalysis], Field(max_length=MAX_NUMBER_OF_FIELDS)
+    ]
 
 
 class CommitRequest(ApiBaseModel):

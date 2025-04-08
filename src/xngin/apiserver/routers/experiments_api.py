@@ -15,12 +15,11 @@ from fastapi import (
 from sqlalchemy import distinct
 from sqlalchemy.orm import Session
 
+
 from xngin.apiserver import constants, database
 from xngin.apiserver.api_types import (
-    AnalysisRequest,
-    FilterClass,
     DesignSpec,
-    ExperimentAnalysis,
+    FilterClass,
     GetFiltersResponseDiscrete,
     GetFiltersResponseNumericOrDate,
     GetStrataResponseElement,
@@ -39,7 +38,6 @@ from xngin.apiserver.dependencies import (
     gsheet_cache,
     datasource_config_required,
 )
-from xngin.apiserver.dwh.queries import get_participant_metrics
 from xngin.apiserver.dwh.queries import get_stats_on_metrics, query_for_participants
 from xngin.apiserver.exceptions_common import LateValidationError
 from xngin.apiserver.gsheet_cache import GSheetCache
@@ -56,7 +54,6 @@ from xngin.sheets.config_sheet import (
     fetch_and_parse_sheet,
     create_schema_from_table,
 )
-from xngin.stats.analysis import analyze_experiment
 from xngin.stats.assignment import assign_treatment as assign_treatment_actual
 from xngin.stats.power import check_power
 
@@ -335,46 +332,6 @@ def power_check_impl(
                 alpha=body.design_spec.alpha,
             )
         )
-
-
-@router.post(
-    "/analyze",
-    summary="Analyze experiment from an AssignResponse and ExperimentDesign.",
-)
-def do_analyze_experiment(
-    request: AnalysisRequest,
-    gsheets: Annotated[GSheetCache, Depends(gsheet_cache)],
-    config: Annotated[DatasourceConfig, Depends(datasource_config_required)],
-    refresh: Annotated[bool, Query(description="Refresh the cache.")] = False,
-) -> list[ExperimentAnalysis]:
-    commons = CommonQueryParams(
-        participant_type=request.design.audience_spec.participant_type, refresh=refresh
-    )
-    participants_cfg, schema = get_participants_config_and_schema(
-        commons, config, gsheets
-    )
-    validate_schema_metrics_or_raise(request.design.design_spec, schema)
-
-    with config.dbsession() as dwh_session:
-        sa_table = infer_table(
-            dwh_session.get_bind(),
-            participants_cfg.table_name,
-            config.supports_reflection(),
-        )
-
-        participant_outcomes = get_participant_metrics(
-            dwh_session,
-            sa_table,
-            request.design.metrics,
-            schema.get_unique_id_field(),
-            [
-                assignment.participant_id
-                for assignment in request.assignment.assignments
-            ],
-        )
-
-    # TODO: implement a version that can work with Assignment objects
-    return analyze_experiment(request.assignment.assignments, participant_outcomes)
 
 
 @router.post(

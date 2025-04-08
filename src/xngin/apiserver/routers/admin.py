@@ -26,10 +26,12 @@ from sqlalchemy.exc import OperationalError
 from sqlalchemy.orm import Session
 from xngin.apiserver import flags, settings
 from xngin.apiserver.api_types import (
+    ArmAnalysis,
     DataType,
     ExperimentAnalysis,
     GetMetricsResponseElement,
     GetStrataResponseElement,
+    MetricAnalysis,
     PowerRequest,
     PowerResponse,
 )
@@ -1070,7 +1072,7 @@ def analyze_experiment(
     experiment_id: str,
     xngin_session: Annotated[Session, Depends(xngin_db_session)],
     user: Annotated[User, Depends(user_from_token)],
-) -> list[ExperimentAnalysis]:
+) -> ExperimentAnalysis:
     ds = get_datasource_or_raise(xngin_session, user, datasource_id)
     dsconfig = ds.get_config()
     if not isinstance(dsconfig, RemoteDatabaseConfig):
@@ -1106,7 +1108,33 @@ def analyze_experiment(
             participant_ids,
         )
 
-    return analyze_experiment_impl(assignments, participant_outcomes)
+    analyze_results = analyze_experiment_impl(assignments, participant_outcomes)
+
+    metric_analyses = []
+    for metric in experiment.get_design_spec().metrics:
+        metric_name = metric.field_name
+        arm_analyses = []
+        for arm in experiment.get_arms():
+            arm_id = str(arm.arm_id)
+            arm_result = analyze_results[metric_name][arm_id]
+            arm_analyses.append(
+                ArmAnalysis(
+                    **arm.model_dump(),
+                    is_baseline=arm_result.is_baseline,
+                    estimate=arm_result.estimate,
+                    p_value=arm_result.p_value,
+                    t_stat=arm_result.t_stat,
+                    std_error=arm_result.std_error,
+                )
+            )
+        metric_analyses.append(
+            MetricAnalysis(
+                metric_name=metric_name, metric=metric, arm_analyses=arm_analyses
+            )
+        )
+    return ExperimentAnalysis(
+        experiment_id=experiment.id, metric_analyses=metric_analyses
+    )
 
 
 @router.post(
