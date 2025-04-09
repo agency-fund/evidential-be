@@ -1072,6 +1072,12 @@ def analyze_experiment(
     experiment_id: str,
     xngin_session: Annotated[Session, Depends(xngin_db_session)],
     user: Annotated[User, Depends(user_from_token)],
+    baseline_arm_id: Annotated[
+        str | None,
+        Query(
+            description="UUID of the baseline arm. If None, the first design spec arm is used.",
+        ),
+    ] = None,
 ) -> ExperimentAnalysis:
     ds = get_datasource_or_raise(xngin_session, user, datasource_id)
     dsconfig = ds.get_config()
@@ -1108,7 +1114,11 @@ def analyze_experiment(
             participant_ids,
         )
 
-    analyze_results = analyze_experiment_impl(assignments, participant_outcomes)
+    # Always assume the first arm is the baseline; UI can override this.
+    baseline_arm_id = baseline_arm_id or str(design_spec.arms[0].arm_id)
+    analyze_results = analyze_experiment_impl(
+        assignments, participant_outcomes, baseline_arm_id
+    )
 
     metric_analyses = []
     for metric in experiment.get_design_spec().metrics:

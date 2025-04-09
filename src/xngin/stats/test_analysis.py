@@ -20,7 +20,9 @@ def test_assignments(n=1000, seed=42):
         arm_id = random.choice(arm_ids)
         assignments.append(
             # TODO: test Assignment for old stateless api
-            ArmAssignment(participant_id=str(i), arm_id=arm_id, strata=[])
+            # re: https://github.com/agency-fund/xngin/pull/306 since arm_id is a
+            #  sqlalchemy.Uuid(as_uuid=False), must assign to it with a string
+            ArmAssignment(participant_id=str(i), arm_id=str(arm_id), strata=[])
         )
     return assignments
 
@@ -86,7 +88,7 @@ def test_analysis_with_custom_baseline(test_assignments, test_outcomes):
     result = analyze_experiment(
         test_assignments,
         test_outcomes,
-        baseline_arm_id=uuid.UUID("b1d90769-6e6e-4973-a7eb-d9da1c6ddcd5"),
+        baseline_arm_id="b1d90769-6e6e-4973-a7eb-d9da1c6ddcd5",
     )
     assert len(result.keys()) == 1  # One metric
     assert len(next(iter(result.values())).keys()) == 3  # Three arms

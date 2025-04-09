@@ -1,5 +1,4 @@
 import dataclasses
-from uuid import UUID
 import pandas as pd
 import statsmodels.formula.api as smf
 
@@ -22,7 +21,7 @@ class ArmAnalysisResult:
 def analyze_experiment(
     treatment_assignments: list[ArmAssignment],
     participant_outcomes: list[ParticipantOutcome],
-    baseline_arm_id: UUID | None = None,
+    baseline_arm_id: str | None = None,
 ) -> dict[str, dict[str, ArmAnalysisResult]]:
     """
     Perform statistical analysis with DesignSpec metrics and their values
@@ -38,7 +37,7 @@ def analyze_experiment(
     assignments_df = pd.DataFrame([
         {
             "participant_id": assignment.participant_id,
-            "arm_id": assignment.arm_id,  # a UUID object type!
+            "arm_id": assignment.arm_id,
         }
         for assignment in treatment_assignments
     ])
@@ -66,17 +65,12 @@ def analyze_experiment(
         if metric_name in {"arm_id", "participant_id"}:
             continue
         model = smf.ols(f"{metric_name} ~ arm_id", data=merged_df).fit()
-        print(f"model.model.formula: {model.model.formula}")
-        print(f"categories: {merged_df['arm_id'].cat.categories}")
-        print(
-            f"model.model.data.design_info.factor_infos: {model.model.data.design_info.factor_infos}"
-        )
         arm_ids = model.model.data.design_info.factor_infos[
             EvalFactor("arm_id")
         ].categories
         arm_analyses: dict[str, ArmAnalysisResult] = {}
         for i, arm_id in enumerate(arm_ids):
-            arm_analyses[str(arm_id)] = ArmAnalysisResult(
+            arm_analyses[arm_id] = ArmAnalysisResult(
                 is_baseline=i == 0
                 if baseline_arm_id is None
                 else arm_id == baseline_arm_id,
