@@ -20,7 +20,7 @@ from pydantic import (
     field_validator,
     model_validator,
 )
-from sqlalchemy import Engine, event, text
+from sqlalchemy import Engine, event, make_url, text
 from sqlalchemy.exc import NoSuchTableError
 from sqlalchemy.orm import Session
 from tenacity import (
@@ -358,6 +358,25 @@ class Dsn(ConfigBaseModel, BaseDsn):
     ) = None
     # Specify the order in which schemas are searched if your dwh supports it.
     search_path: str | None = None
+
+    @staticmethod
+    def from_url(url: str):
+        """Constructs a Dsn from a SQLAlchemy-compatible URL (Postgres only). Use only in trusted code paths."""
+        if not url.startswith("postgresql"):
+            raise NotImplementedError(
+                "Dsn.from_url() only supports postgres databases."
+            )
+        url = make_url(url)
+        return Dsn(
+            driver=f"postgresql+{url.get_driver_name()}",
+            host=url.host,
+            port=url.port,
+            user=url.username,
+            password=url.password,
+            dbname=url.database,
+            sslmode=url.query.get("sslmode", "verify-ca"),
+            search_path=url.query.get("search_path", None),
+        )
 
     @field_serializer("password", when_used="json")
     def reveal_password(self, v):
