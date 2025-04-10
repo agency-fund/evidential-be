@@ -352,10 +352,7 @@ class Dsn(ConfigBaseModel, BaseDsn):
     user: str
     password: SecretStr
     dbname: str
-    sslmode: (
-        Literal["disable", "allow", "prefer", "require", "verify-ca", "verify-full"]
-        | None
-    ) = None
+    sslmode: Literal["disable", "require", "verify-ca", "verify-full"] | None = None
     # Specify the order in which schemas are searched if your dwh supports it.
     search_path: str | None = None
 
