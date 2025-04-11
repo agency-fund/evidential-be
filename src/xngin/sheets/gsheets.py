@@ -1,10 +1,10 @@
-import logging
 import os
+
 import gspread
 import pandas
+from loguru import logger
 
 DEFAULT_GSPREAD_CREDENTIALS = "~/.config/gspread/service_account.json"
-logger = logging.getLogger(__name__)
 
 
 class GSheetsPermissionError(Exception):

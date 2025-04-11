@@ -1,11 +1,12 @@
-import logging
 import os
 import secrets
 from dataclasses import dataclass
 from typing import Annotated
 
-from fastapi import Depends, HTTPException, Security, status
-from jose import JWTError, jwt
+from fastapi import Depends, HTTPException, Security
+from fastapi import status
+from jose import jwt, JWTError
+from loguru import logger
 from xngin.apiserver.routers.oidc import (
     CLIENT_ID,
     get_google_configuration,
@@ -15,8 +16,6 @@ from xngin.apiserver.routers.oidc import (
 
 # JWTs generated for domains other than @agency.fund are considered untrusted.
 PRIVILEGED_DOMAINS = ("agency.fund",)
-
-logger = logging.getLogger(__name__)
 
 
 @dataclass

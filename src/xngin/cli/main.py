@@ -68,7 +68,10 @@ def infer_config_from_schema(
     """
     try:
         dwh = settings.infer_table(
-            sqlalchemy.create_engine(sqlalchemy.engine.make_url(dsn)),
+            sqlalchemy.create_engine(
+                sqlalchemy.engine.make_url(dsn),
+                logging_name="xngin_dwh",
+            ),
             table,
             use_reflection=use_reflection,
         )
@@ -229,20 +232,26 @@ def create_testing_dwh(
         Only implemented for psycopg/psycopg2.
         """
         try:
-            engine = create_engine(url)
+            engine = create_engine(url, logging_name="xngin_dwh")
             with engine.connect():
                 print("Connected.")
         except OperationalError as exc:
             if "postgres" not in url.drivername or "does not exist" not in str(exc):
                 raise
             print(f"Creating database {url.database}...")
-            engine = create_engine(url.set(database="postgres"))
+            engine = create_engine(
+                url.set(database="postgres"),
+                logging_name="xngin_dwh",
+            )
             with engine.connect().execution_options(
                 isolation_level="AUTOCOMMIT"
             ) as conn:
                 conn.execute(sqlalchemy.text(f"CREATE DATABASE {url.database}"))
             print("Reconnecting.")
-            return create_engine(url)
+            return create_engine(
+                url,
+                logging_name="xngin_dwh",
+            )
         else:
             return engine
 
@@ -279,7 +288,7 @@ def create_testing_dwh(
         return ct
 
     if allow_existing:
-        engine = create_engine(url)
+        engine = create_engine(url, logging_name="xngin_dwh")
         conn = engine.raw_connection()
         with conn.cursor() as cur:
             try:
@@ -304,7 +313,7 @@ def create_testing_dwh(
             print("--iam-role is required when importing into Redshift.")
             raise typer.Exit(2)
         # Workaround: Despite using a direct psycopg2 connection for Redshift, we use SQLAlchemy's quoter.
-        engine = create_engine(url)
+        engine = create_engine(url, logging_name="xngin_dwh")
         quoter = engine.dialect.identifier_preparer
         engine.dispose()
         with (

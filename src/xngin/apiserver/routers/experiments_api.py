@@ -1,63 +1,58 @@
-import logging
 from contextlib import asynccontextmanager
 from typing import Annotated
 
 import sqlalchemy
 from fastapi import (
     APIRouter,
+    Depends,
     FastAPI,
     HTTPException,
-    Depends,
     Query,
-    Response,
     Request,
+    Response,
 )
 from sqlalchemy import distinct
 from sqlalchemy.orm import Session
-
-
 from xngin.apiserver import constants, database
 from xngin.apiserver.api_types import (
-    DesignSpec,
-    FilterClass,
-    GetFiltersResponseDiscrete,
-    GetFiltersResponseNumericOrDate,
-    GetStrataResponseElement,
-    GetMetricsResponseElement,
-    GetStrataResponse,
-    GetFiltersResponse,
-    GetMetricsResponse,
-    PowerRequest,
-    PowerResponse,
     AssignRequest,
     AssignResponse,
+    DesignSpec,
+    FilterClass,
+    GetFiltersResponse,
+    GetFiltersResponseDiscrete,
     GetFiltersResponseElement,
+    GetFiltersResponseNumericOrDate,
+    GetMetricsResponse,
+    GetMetricsResponseElement,
+    GetStrataResponse,
+    GetStrataResponseElement,
+    PowerRequest,
+    PowerResponse,
 )
 from xngin.apiserver.dependencies import (
-    settings_dependency,
-    gsheet_cache,
     datasource_config_required,
+    gsheet_cache,
+    settings_dependency,
 )
 from xngin.apiserver.dwh.queries import get_stats_on_metrics, query_for_participants
 from xngin.apiserver.exceptions_common import LateValidationError
 from xngin.apiserver.gsheet_cache import GSheetCache
 from xngin.apiserver.settings import (
+    DatasourceConfig,
     ParticipantsConfig,
     ParticipantsMixin,
     XnginSettings,
     get_settings_for_server,
     infer_table,
-    DatasourceConfig,
 )
-from xngin.schema.schema_types import ParticipantsSchema, FieldDescriptor
+from xngin.schema.schema_types import FieldDescriptor, ParticipantsSchema
 from xngin.sheets.config_sheet import (
-    fetch_and_parse_sheet,
     create_schema_from_table,
+    fetch_and_parse_sheet,
 )
 from xngin.stats.assignment import assign_treatment as assign_treatment_actual
 from xngin.stats.power import check_power
-
-logger = logging.getLogger(__name__)
 
 
 # TODO: move into its own module re: https://github.com/agency-fund/xngin/pull/188/

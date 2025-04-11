@@ -46,6 +46,8 @@ def get_connect_args():
 engine = create_engine(
     SQLALCHEMY_DATABASE_URL,
     connect_args=get_connect_args(),
+    execution_options={"logging_token": "app"},
+    logging_name="xngin_app",
     echo=flags.ECHO_SQL_APP_DB,
 )
 

@@ -1,6 +1,5 @@
 import glob
 import json
-import logging
 import re
 import shutil
 import tempfile
@@ -9,7 +8,7 @@ from pathlib import Path
 
 import pytest
 from fastapi.testclient import TestClient
-
+from loguru import logger
 from xngin.apiserver import conftest, constants, flags
 from xngin.apiserver.dependencies import xngin_db_session
 from xngin.apiserver.gsheet_cache import GSheetCache
@@ -22,8 +21,6 @@ from xngin.apiserver.routers.experiments_api import (
 from xngin.apiserver.settings import ParticipantsDef
 from xngin.apiserver.testing.assertions import assert_same
 from xngin.apiserver.testing.xurl import Xurl
-
-logger = logging.getLogger(__name__)
 
 conftest.setup(app)
 client = TestClient(app)

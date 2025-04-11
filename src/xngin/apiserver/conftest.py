@@ -1,7 +1,6 @@
 """conftest configures FastAPI dependency injection for testing and also does some setup before tests in this module are run."""
 
 import enum
-import logging
 import os
 import secrets
 from dataclasses import dataclass
@@ -25,8 +24,6 @@ from xngin.apiserver.models.tables import ApiKey, Datasource, Organization
 from xngin.apiserver.settings import SettingsForTesting, XnginSettings
 from xngin.apiserver.testing import testing_dwh
 from xngin.db_extensions import custom_functions
-
-logger = logging.getLogger(__name__)
 
 
 class DeveloperErrorRunFromRootOfRepositoryPleaseError(Exception):
@@ -124,6 +121,8 @@ def get_test_sessionmaker():
     connect_url, _, connect_args = get_test_appdb_info()
     db_engine = sqlalchemy.create_engine(
         connect_url,
+        logging_name="xngin_app",
+        execution_options={"logging_token": "app"},
         connect_args=connect_args,
         poolclass=StaticPool,
         echo=flags.ECHO_SQL_APP_DB,

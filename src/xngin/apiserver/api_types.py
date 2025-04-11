@@ -1,12 +1,12 @@
 import datetime
 import decimal
 import enum
-import logging
 import uuid
 from collections.abc import Sequence
 from typing import Annotated, Self
 
 import sqlalchemy.sql.sqltypes
+from loguru import logger
 from pydantic import (
     BaseModel,
     ConfigDict,
@@ -28,8 +28,6 @@ from xngin.apiserver.limits import (
 VALID_SQL_COLUMN_REGEX = r"^[a-zA-Z_][a-zA-Z0-9_]*$"
 
 EXPERIMENT_IDS_SUFFIX = "experiment_ids"
-
-logger = logging.getLogger(__name__)
 
 
 class ApiBaseModel(BaseModel):
@@ -90,7 +88,7 @@ class DataType(enum.StrEnum):
             return DataType.INTEGER
         if value is float:
             return DataType.DOUBLE_PRECISION
-        logger.warning("Unmatched type: %s", type(value))
+        logger.warning("Unmatched type: {}", type(value))
         return DataType.UNKNOWN
 
     @classmethod

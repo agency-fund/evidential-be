@@ -1,6 +1,5 @@
 """Implements a basic Admin API."""
 
-import logging
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime, timedelta
 from typing import Annotated
@@ -96,8 +95,6 @@ from xngin.apiserver.settings import (
     infer_table,
 )
 from xngin.stats.analysis import analyze_experiment as analyze_experiment_impl
-
-logger = logging.getLogger(__name__)
 
 GENERIC_SUCCESS = Response(status_code=status.HTTP_204_NO_CONTENT)
 RESPONSE_CACHE_MAX_AGE_SECONDS = timedelta(minutes=15).seconds
