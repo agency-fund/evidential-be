@@ -62,7 +62,11 @@ env:
   XNGIN_DEBUG: "true"
 tasks:
   start:
-    desc: "Starts apiserver locally with settings compatible with local dash dev server (using sqlite)."
+    desc: "Starts apiserver locally with settings compatible with local dash dev server (using PostgreSQL)"
+    cmd:
+      task: start-with-local-pg
+  start-with-sqlite:
+    desc: "Starts apiserver locally with settings compatible with local dash dev server (using SQLite)."
     interactive: true
     dotenv:
       # Populate BQ_SERVICE_ACCOUNT (optional) and GOOGLE_OIDC_CLIENT_SECRET (optional).
