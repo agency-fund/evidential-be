@@ -54,7 +54,7 @@ from xngin.apiserver.settings import (
     Datasource,
     infer_table,
 )
-from xngin.events.event_created import ExperimentCreated
+from xngin.events.experiment_created import ExperimentCreated
 from xngin.stats.assignment import RowProtocol, assign_treatment
 
 

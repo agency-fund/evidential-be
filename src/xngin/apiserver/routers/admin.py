@@ -149,15 +149,7 @@ def is_enabled():
 
 
 def cache_is_fresh(updated: datetime | None):
-    assert_tz_aware(updated)
-    now = datetime.now(UTC)
-    assert_tz_aware(now)
-    return updated and now - updated < timedelta(minutes=5)
-
-
-def assert_tz_aware(updated):
-    if updated is not None:
-        assert updated.tzname(), f"updated is missing tzinfo {updated}"
+    return updated and datetime.now(UTC) - updated < timedelta(minutes=5)
 
 
 @asynccontextmanager
