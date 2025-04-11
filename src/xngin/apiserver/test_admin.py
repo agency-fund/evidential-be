@@ -10,7 +10,7 @@ from pydantic import SecretStr
 from sqlalchemy.orm import Session
 from xngin.apiserver import conftest
 from xngin.apiserver import main as main_module
-from xngin.apiserver.api_types import DataType
+from xngin.apiserver.api_types import DataType, ExperimentAnalysis
 from xngin.apiserver.dependencies import xngin_db_session
 from xngin.apiserver.main import app
 from xngin.apiserver.models.enums import ExperimentState
@@ -424,14 +424,14 @@ def test_lifecycle_with_pg(testing_datasource):
     # Inspect the datasource.
     response = pget(f"/v1/m/datasources/{testing_datasource.ds.id}/inspect")
     assert response.status_code == 200, response.content
-    parsed = InspectDatasourceResponse.model_validate(response.json())
-    assert parsed.tables == ["dwh"], response.json()
+    datasource_inspection = InspectDatasourceResponse.model_validate(response.json())
+    assert datasource_inspection.tables == ["dwh"], response.json()
 
     # Inspect one table in the datasource.
     response = pget(f"/v1/m/datasources/{testing_datasource.ds.id}/inspect/dwh")
     assert response.status_code == 200, response.content
-    parsed = InspectDatasourceTableResponse.model_validate(response.json())
-    assert parsed == InspectDatasourceTableResponse(
+    table_inspection = InspectDatasourceTableResponse.model_validate(response.json())
+    assert table_inspection == InspectDatasourceTableResponse(
         # Note: create_inspect_table_response_from_table() doesn't explicitly check for uniqueness.
         detected_unique_id_fields=["id", "uuid_filter"],
         fields=[
@@ -533,8 +533,10 @@ def test_lifecycle_with_pg(testing_datasource):
         ).model_dump_json(),
     )
     assert response.status_code == 200, response.content
-    parsed = CreateParticipantsTypeResponse.model_validate(response.json())
-    assert parsed.participant_type == participant_type
+    created_participant_type = CreateParticipantsTypeResponse.model_validate(
+        response.json()
+    )
+    assert created_participant_type.participant_type == participant_type
 
     # Create experiment using that participant type.
     response = ppost(
@@ -543,9 +545,13 @@ def test_lifecycle_with_pg(testing_datasource):
         json=make_createexperimentrequest_json(participant_type),
     )
     assert response.status_code == 200, response.content
-    parsed = CreateExperimentWithAssignmentResponse.model_validate(response.json())
-    parsed_experiment_id = parsed.design_spec.experiment_id
-    parsed_arm_ids = {arm.arm_id for arm in parsed.design_spec.arms}
+    created_experiment = CreateExperimentWithAssignmentResponse.model_validate(
+        response.json()
+    )
+    # Verify that no arms are marked as baseline by default for analysis test later.
+    assert all(arm.is_baseline is None for arm in created_experiment.design_spec.arms)
+    parsed_experiment_id = created_experiment.design_spec.experiment_id
+    parsed_arm_ids = {arm.arm_id for arm in created_experiment.design_spec.arms}
     assert parsed_experiment_id is not None
     assert len(parsed_arm_ids) == 2
 
@@ -554,42 +560,65 @@ def test_lifecycle_with_pg(testing_datasource):
         f"/v1/m/datasources/{testing_datasource.ds.id}/experiments/{parsed_experiment_id}"
     )
     assert response.status_code == 200, response.content
-    parsed = ExperimentConfig.model_validate(response.json())
-    assert parsed.design_spec.experiment_id == parsed_experiment_id
+    experiment_config = ExperimentConfig.model_validate(response.json())
+    assert experiment_config.design_spec.experiment_id == parsed_experiment_id
 
     # List experiments.
     response = pget(f"/v1/m/datasources/{testing_datasource.ds.id}/experiments")
     assert response.status_code == 200, response.content
-    parsed = ListExperimentsResponse.model_validate(response.json())
-    assert len(parsed.items) == 1, parsed
-    parsed_experiment_config = parsed.items[0]
-    assert parsed_experiment_config.design_spec.experiment_id == parsed_experiment_id
+    experiment_list = ListExperimentsResponse.model_validate(response.json())
+    assert len(experiment_list.items) == 1, experiment_list
+    experiment_config = experiment_list.items[0]
+    assert experiment_config.design_spec.experiment_id == parsed_experiment_id
 
     # Analyze experiment
     response = pget(
         f"/v1/m/datasources/{testing_datasource.ds.id}/experiments/{parsed_experiment_id}/analyze"
     )
-    print(response.content)
     assert response.status_code == 200, response.content
+    experiment_analysis = ExperimentAnalysis.model_validate(response.json())
+    assert experiment_analysis.experiment_id == parsed_experiment_id
+    assert len(experiment_analysis.metric_analyses) == 1
+    # Verify that only the first arm is marked as baseline by default
+    metric_analysis = experiment_analysis.metric_analyses[0]
+    baseline_arms = [arm for arm in metric_analysis.arm_analyses if arm.is_baseline]
+    assert len(baseline_arms) == 1
+    assert baseline_arms[0].is_baseline
 
     # Get assignments for the experiment.
     response = pget(
         f"/v1/m/datasources/{testing_datasource.ds.id}/experiments/{parsed_experiment_id}/assignments"
     )
     assert response.status_code == 200, response.content
-    parsed = GetExperimentAssignmentsResponse.model_validate(response.json())
-    assert parsed.experiment_id == parsed_experiment_id
-    assert parsed.sample_size == 100
-    assert parsed.balance_check is not None
-    assert len(parsed.assignments) == 100
-    assert {arm.arm_name for arm in parsed.assignments} == {"control", "treatment"}
-    assert {arm.arm_id for arm in parsed.assignments} == parsed_arm_ids
+    assignments = GetExperimentAssignmentsResponse.model_validate(response.json())
+    assert assignments.experiment_id == parsed_experiment_id
+    assert assignments.sample_size == 100
+    assert assignments.balance_check is not None
+    assert len(assignments.assignments) == 100
+    assert {arm.arm_name for arm in assignments.assignments} == {"control", "treatment"}
+    assert {arm.arm_id for arm in assignments.assignments} == parsed_arm_ids
 
     # Delete the experiment.
     response = pdelete(
         f"/v1/m/datasources/{testing_datasource.ds.id}/experiments/{parsed_experiment_id}"
     )
     assert response.status_code == 204, response.content
+
+
+def test_create_experiment_validation_errors(testing_datasource_with_user_added):
+    # Test: More than one baseline arm
+    base_request = make_createexperimentrequest_json("test_participant_type")
+    base_request["design_spec"]["arms"][0]["is_baseline"] = True
+    base_request["design_spec"]["arms"][1]["is_baseline"] = True
+    response = ppost(
+        f"/v1/m/experiments/{testing_datasource_with_user_added.ds.id}/with-assignment",
+        params={"chosen_n": 100},
+        json=base_request,
+    )
+    assert response.status_code == 422, response.content
+    assert (
+        "At most one arm can be marked baseline" in response.json()["detail"][0]["msg"]
+    )
 
 
 def test_create_experiment_with_assignment_validation_errors(

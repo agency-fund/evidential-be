@@ -446,9 +446,16 @@ class Arm(ApiBaseModel):
     arm_description: Annotated[
         str | None, Field(max_length=MAX_LENGTH_OF_DESCRIPTION_VALUE)
     ] = None
+    is_baseline: Annotated[
+        bool | None,
+        Field(
+            description="Whether this arm is the baseline/control arm for comparison."
+        ),
+    ] = None
 
 
 class ArmAnalysis(Arm):
+    # Override the superclass field to add stricter validation
     is_baseline: Annotated[
         bool,
         Field(
@@ -486,6 +493,16 @@ class MetricAnalysis(ApiBaseModel):
             description="The results of the analysis for each arm (coefficient) for this specific metric."
         ),
     ]
+
+    @model_validator(mode="after")
+    def validate_single_baseline(self) -> Self:
+        """Ensure that if is_baseline is set to True, it is the only baseline arm."""
+        baseline_arms = [arm for arm in self.arm_analyses if arm.is_baseline]
+        if len(baseline_arms) != 1:
+            raise ValueError(
+                f"Exactly one arm must be designated as the baseline arm. Found {len(baseline_arms)} baseline arms."
+            )
+        return self
 
 
 class ExperimentAnalysis(ApiBaseModel):
@@ -576,6 +593,16 @@ class DesignSpec(ApiBaseModel):
     def serialize_dt(self, dt: datetime.datetime, _info):
         """Convert dates to iso strings in model_dump_json()/model_dump(mode='json')"""
         return dt.isoformat()
+
+    @model_validator(mode="after")
+    def validate_single_baseline(self) -> Self:
+        """Ensure that if is_baseline is set to True, it is the only baseline arm."""
+        baseline_arms = [arm for arm in self.arms if arm.is_baseline]
+        if len(baseline_arms) > 1:
+            raise ValueError(
+                f"At most one arm can be marked baseline. Found arms: {baseline_arms}."
+            )
+        return self
 
     def uuids_are_present(self) -> bool:
         """True if the any UUIDs are present."""
