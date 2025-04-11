@@ -174,20 +174,3 @@ def custom_openapi():
 
 
 app.openapi = custom_openapi
-
-#
-# def main():
-#     """Entrypoint for running in production (e.g. invoked by Dockerfile).
-#
-#     In development, the FastAPI dev server uses module-level app variable.
-#     """
-#     database.setup()
-#
-#     # Handy for debugging in your IDE
-#     uvicorn.run(app, host="0.0.0.0", port=int(os.environ.get("UVICORN_PORT", "8000")),
-#                 log_level=None,
-#                 log_config=None)
-#
-#
-# if __name__ == "__main__":
-#     main()
