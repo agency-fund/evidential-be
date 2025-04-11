@@ -1,7 +1,6 @@
 """Implements a basic Admin API."""
 
 import logging
-import os
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime, timedelta
 from typing import Annotated
@@ -186,7 +185,7 @@ def user_from_token(
             organization = Organization(name="My Organization")
             session.add(organization)
             organization.users.append(user)
-            if dev_dsn := os.environ.get("XNGIN_DEVDWH_DSN", ""):
+            if dev_dsn := flags.XNGIN_DEVDWH_DSN:
                 # TODO: Also add a default participant type.
                 config = RemoteDatabaseConfig(
                     participants=[], type="remote", dwh=Dsn.from_url(dev_dsn)
