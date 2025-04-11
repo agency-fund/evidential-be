@@ -88,6 +88,7 @@ from xngin.apiserver.routers.experiments_api import (
 from xngin.apiserver.routers.experiments_api_types import ExperimentConfig
 from xngin.apiserver.routers.oidc_dependencies import TokenInfo, require_oidc_token
 from xngin.apiserver.settings import (
+    Dsn,
     ParticipantsConfig,
     ParticipantsDef,
     RemoteDatabaseConfig,
@@ -184,7 +185,15 @@ def user_from_token(
             organization = Organization(name="My Organization")
             session.add(organization)
             organization.users.append(user)
-
+            if dev_dsn := flags.XNGIN_DEVDWH_DSN:
+                # TODO: Also add a default participant type.
+                config = RemoteDatabaseConfig(
+                    participants=[], type="remote", dwh=Dsn.from_url(dev_dsn)
+                )
+                datasource = Datasource(
+                    name="Local DWH", organization=organization
+                ).set_config(config)
+                session.add(datasource)
             session.commit()
         else:
             raise HTTPException(

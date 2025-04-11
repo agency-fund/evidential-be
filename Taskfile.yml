@@ -5,11 +5,6 @@ vars:
   XNGIN_DEVAPPDB_NAME: "xngin"
   XNGIN_DEVAPP_DSN: "postgresql://postgres:postgres@localhost:5499/{{.XNGIN_DEVAPPDB_NAME}}?sslmode=disable"
 
-  # Data warehouse available for use by the local dev environment (see task bootstrap-dwh-local-pg). It is bootstrapped
-  # with the testing datawarehouse when `task start-with-local-pg` is used.
-  XNGIN_DEVDWH_NAME: "dwh"
-  XNGIN_DEVDWH_DSN: "postgresql://postgres:postgres@localhost:5499/{{.XNGIN_DEVDWH_NAME}}?sslmode=disable"
-
   # Datasource for tests of the xngin app database that use the xngin_db_session dependency.
   XNGIN_TESTAPP_DSN: "postgresql://postgres:postgres@localhost:5499/test_xngin?sslmode=disable"
 
@@ -60,6 +55,11 @@ env:
   # Generally useful settings.
   XNGIN_SETTINGS: "src/xngin/apiserver/testdata/xngin.testing.settings.json"
   XNGIN_DEBUG: "true"
+
+  # Data warehouse available for use by the local dev environment (see task bootstrap-dwh-local-pg). It is bootstrapped
+  # with the testing datawarehouse when `task start-with-local-pg` is used.
+  XNGIN_DEVDWH_NAME: "dwh"
+  XNGIN_DEVDWH_DSN: "postgresql://postgres:postgres@localhost:5499/dwh?sslmode=disable"
 tasks:
   start:
     desc: "Starts apiserver locally with settings compatible with local dash dev server (using PostgreSQL)"
@@ -104,7 +104,7 @@ tasks:
     desc: "Bootstraps the localpg server with a sample data warehouse."
     interactive: true
     cmds:
-      - uv run xngin-cli create-testing-dwh --dsn '{{.XNGIN_DEVDWH_DSN}}'
+      - uv run xngin-cli create-testing-dwh --dsn "$XNGIN_DEVDWH_DSN"
   test:
     desc: "Runs unit tests"
     interactive: true
