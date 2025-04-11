@@ -13,7 +13,7 @@ from fastapi import (
 )
 from sqlalchemy import distinct
 from sqlalchemy.orm import Session
-from xngin.apiserver import constants, database
+from xngin.apiserver import constants
 from xngin.apiserver.api_types import (
     AssignRequest,
     AssignResponse,
@@ -59,7 +59,6 @@ from xngin.stats.power import check_power
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
     get_settings_for_server()
-    database.setup()
     yield
 
 
