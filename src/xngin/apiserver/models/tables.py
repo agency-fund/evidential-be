@@ -1,22 +1,21 @@
 import json
 import secrets
-from datetime import datetime, UTC
+from datetime import UTC, datetime
 from typing import ClassVar, Self
 from uuid import UUID
 
 import sqlalchemy
 from pydantic import TypeAdapter
-from sqlalchemy import ForeignKey, String
+from sqlalchemy import ForeignKey, Index, String
 from sqlalchemy.dialects import postgresql
-from sqlalchemy.orm import DeclarativeBase, mapped_column, Mapped, relationship
+from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 from sqlalchemy.types import TypeEngine
-
 from xngin.apiserver.api_types import (
     Arm,
+    AudienceSpec,
     BalanceCheck,
     DesignSpec,
     PowerResponse,
-    AudienceSpec,
 )
 from xngin.apiserver.models.enums import ExperimentState
 from xngin.apiserver.routers.admin_api_types import (
@@ -93,6 +92,32 @@ class Organization(Base):
     datasources: Mapped[list["Datasource"]] = relationship(
         back_populates="organization", cascade="all, delete-orphan"
     )
+    events: Mapped[list["Event"]] = relationship(
+        back_populates="organization", cascade="all, delete-orphan"
+    )
+
+
+class Event(Base):
+    """Represents events that occur in an organization."""
+
+    __tablename__ = "events"
+
+    id: Mapped[str] = mapped_column(primary_key=True, default=unique_id_factory("evt"))
+    created_at: Mapped[datetime] = mapped_column(
+        server_default=sqlalchemy.sql.func.now()
+    )
+    type: Mapped[str] = mapped_column(
+        comment="The type of event. E.g. `experiment.created`"
+    )
+    data: Mapped[dict] = mapped_column(
+        type_=JSONBetter,
+        comment="The event payload. This will always be a JSON object with a `type` field.",
+    )
+
+    organization_id: Mapped[str] = mapped_column(ForeignKey("organizations.id"))
+    organization: Mapped["Organization"] = relationship(back_populates="events")
+
+    __table_args__ = (Index("event_stream", "organization_id", created_at),)
 
 
 class User(Base):

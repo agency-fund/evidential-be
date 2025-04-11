@@ -34,6 +34,7 @@ from xngin.apiserver.gsheet_cache import GSheetCache
 from xngin.apiserver.models.enums import ExperimentState
 from xngin.apiserver.models.tables import (
     ArmAssignment,
+    Event,
     Experiment,
 )
 from xngin.apiserver.routers.experiments_api import (
@@ -53,6 +54,7 @@ from xngin.apiserver.settings import (
     Datasource,
     infer_table,
 )
+from xngin.events.event_created import ExperimentCreated
 from xngin.stats.assignment import RowProtocol, assign_treatment
 
 
@@ -248,6 +250,12 @@ def commit_experiment_impl(xngin_session: Session, experiment: Experiment):
         )
 
     experiment.state = ExperimentState.COMMITTED
+    event = Event(
+        organization=experiment.datasource.organization,
+        type="experiment.created",
+        data=ExperimentCreated.create(str(experiment.id)).model_dump(),
+    )
+    xngin_session.add(event)
     xngin_session.commit()
 
     return Response(status_code=status.HTTP_204_NO_CONTENT)

@@ -149,7 +149,15 @@ def is_enabled():
 
 
 def cache_is_fresh(updated: datetime | None):
-    return updated and datetime.now(UTC) - updated < timedelta(minutes=5)
+    assert_tz_aware(updated)
+    now = datetime.now(UTC)
+    assert_tz_aware(now)
+    return updated and now - updated < timedelta(minutes=5)
+
+
+def assert_tz_aware(updated):
+    if updated is not None:
+        assert updated.tzname(), f"updated is missing tzinfo {updated}"
 
 
 @asynccontextmanager
@@ -249,6 +257,16 @@ def caller_identity(
 ) -> TokenInfo:
     """Returns basic metadata about the authenticated caller of this method."""
     return token_info
+
+
+@router.get("/organizations/events")
+def list_events(
+    session: Annotated[Session, Depends(xngin_db_session)],
+    user: Annotated[User, Depends(user_from_token)],
+    since: Annotated[datetime, Query(description="Start list of events at this date.")],
+):
+    # TODO
+    pass
 
 
 @router.get("/organizations")
