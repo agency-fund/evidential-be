@@ -66,7 +66,7 @@ Follow the steps below to get a local development environment running.
 1. Then start the dev server:
 
    ```shell
-   task start-with-local-pg
+   task start
    ```
 
    This will start the server at http://localhost:8000. It stores its state in a local Postgres instance, running in
