@@ -16,5 +16,6 @@ CREATE TABLE {{table_name}} (
   current_income DECIMAL,
   uuid_filter CHAR(36),
   sample_date DATE,
-  sample_timestamp TIMESTAMP
+  sample_timestamp TIMESTAMP,
+  timestamp_with_tz TIMESTAMPTZ NOT NULL
 );

@@ -489,9 +489,14 @@ def test_lifecycle_with_pg(testing_datasource):
             FieldMetadata(
                 field_name="sample_date", data_type=DataType.DATE, description=""
             ),
-            # TODO: timestamptz
             FieldMetadata(
                 field_name="sample_timestamp",
+                data_type=DataType.TIMESTAMP_WITHOUT_TIMEZONE,
+                description="",
+            ),
+            # TODO: https://github.com/agency-fund/xngin/issues/337
+            FieldMetadata(
+                field_name="timestamp_with_tz",
                 data_type=DataType.TIMESTAMP_WITHOUT_TIMEZONE,
                 description="",
             ),
