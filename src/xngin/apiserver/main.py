@@ -10,6 +10,7 @@ from xngin.apiserver import (
     customlogging,
     exceptionhandlers,
     middleware,
+    database,
 )
 from xngin.apiserver.flags import PUBLISH_ALL_DOCS
 from xngin.apiserver.routers import (
@@ -55,6 +56,7 @@ async def lifespan(_app: FastAPI):
             "Please unset GOOGLE_APPLICATION_CREDENTIALS and try again."
         )
     else:
+        database.setup()
         yield
 
 
