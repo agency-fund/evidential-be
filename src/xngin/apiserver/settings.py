@@ -352,10 +352,7 @@ class Dsn(ConfigBaseModel, BaseDsn):
     user: str
     password: SecretStr
     dbname: str
-    sslmode: (
-        Literal["disable", "allow", "prefer", "require", "verify-ca", "verify-full"]
-        | None
-    ) = None
+    sslmode: Literal["disable", "require", "verify-ca", "verify-full"]
     # Specify the order in which schemas are searched if your dwh supports it.
     search_path: str | None = None
 
@@ -397,7 +394,7 @@ class Dsn(ConfigBaseModel, BaseDsn):
         if self.driver.startswith("postgresql"):
             query = dict(url.query)
             query.update({
-                "sslmode": self.sslmode or "verify-full",
+                "sslmode": self.sslmode,
                 # re: redshift issue https://github.com/psycopg/psycopg/issues/122#issuecomment-985742751
                 "client_encoding": "utf-8",
             })
