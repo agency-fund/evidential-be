@@ -46,6 +46,8 @@ from xngin.sheets.config_sheet import (
 )
 from xngin.sheets.gsheets import GSheetsPermissionError
 
+SA_LOGGER_NAME_FOR_CLI = "cli_dwh"
+
 REDSHIFT_HOSTNAME_SUFFIX = "redshift.amazonaws.com"
 
 err_console = Console(stderr=True)
@@ -70,7 +72,7 @@ def infer_config_from_schema(
         dwh = settings.infer_table(
             sqlalchemy.create_engine(
                 sqlalchemy.engine.make_url(dsn),
-                logging_name="xngin_dwh",
+                logging_name=SA_LOGGER_NAME_FOR_CLI,
             ),
             table,
             use_reflection=use_reflection,
@@ -232,7 +234,7 @@ def create_testing_dwh(
         Only implemented for psycopg/psycopg2.
         """
         try:
-            engine = create_engine(url, logging_name="xngin_dwh")
+            engine = create_engine(url, logging_name=SA_LOGGER_NAME_FOR_CLI)
             with engine.connect():
                 print("Connected.")
         except OperationalError as exc:
@@ -241,7 +243,7 @@ def create_testing_dwh(
             print(f"Creating database {url.database}...")
             engine = create_engine(
                 url.set(database="postgres"),
-                logging_name="xngin_dwh",
+                logging_name=SA_LOGGER_NAME_FOR_CLI,
             )
             with engine.connect().execution_options(
                 isolation_level="AUTOCOMMIT"
@@ -250,7 +252,7 @@ def create_testing_dwh(
             print("Reconnecting.")
             return create_engine(
                 url,
-                logging_name="xngin_dwh",
+                logging_name=SA_LOGGER_NAME_FOR_CLI,
             )
         else:
             return engine
@@ -288,7 +290,7 @@ def create_testing_dwh(
         return ct
 
     if allow_existing:
-        engine = create_engine(url, logging_name="xngin_dwh")
+        engine = create_engine(url, logging_name=SA_LOGGER_NAME_FOR_CLI)
         conn = engine.raw_connection()
         with conn.cursor() as cur:
             try:
@@ -313,7 +315,7 @@ def create_testing_dwh(
             print("--iam-role is required when importing into Redshift.")
             raise typer.Exit(2)
         # Workaround: Despite using a direct psycopg2 connection for Redshift, we use SQLAlchemy's quoter.
-        engine = create_engine(url, logging_name="xngin_dwh")
+        engine = create_engine(url, logging_name=SA_LOGGER_NAME_FOR_CLI)
         quoter = engine.dialect.identifier_preparer
         engine.dispose()
         with (

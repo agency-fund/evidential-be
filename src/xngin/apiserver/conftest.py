@@ -25,6 +25,10 @@ from xngin.apiserver.settings import SettingsForTesting, XnginSettings
 from xngin.apiserver.testing import testing_dwh
 from xngin.db_extensions import custom_functions
 
+# SQLAlchemy's logger will append this to the name of its loggers used for the application database; e.g.
+# sqlalchemy.engine.Engine.xngin_app.
+SA_LOGGER_NAME_FOR_APP = "xngin_app"
+
 
 class DeveloperErrorRunFromRootOfRepositoryPleaseError(Exception):
     def __init__(self):
@@ -121,7 +125,7 @@ def get_test_sessionmaker():
     connect_url, _, connect_args = get_test_appdb_info()
     db_engine = sqlalchemy.create_engine(
         connect_url,
-        logging_name="xngin_app",
+        logging_name=SA_LOGGER_NAME_FOR_APP,
         execution_options={"logging_token": "app"},
         connect_args=connect_args,
         poolclass=StaticPool,

@@ -37,6 +37,7 @@ from xngin.db_extensions import NumpyStddev
 from xngin.schema.schema_types import ParticipantsSchema
 
 DEFAULT_SETTINGS_FILE = "xngin.settings.json"
+SA_LOGGER_NAME_FOR_DWH = "xngin_dwh"
 TIMEOUT_SECS_FOR_CUSTOMER_POSTGRES = 10
 
 
@@ -474,7 +475,7 @@ class RemoteDatabaseConfig(ParticipantsMixin, ConfigBaseModel):
         engine = sqlalchemy.create_engine(
             url,
             connect_args=connect_args,
-            logging_name="xngin_dwh",
+            logging_name=SA_LOGGER_NAME_FOR_DWH,
             execution_options={"logging_token": "dwh"},
             echo=flags.ECHO_SQL,
             poolclass=sqlalchemy.pool.NullPool,
@@ -543,7 +544,7 @@ class SqliteLocalConfig(ParticipantsMixin, ConfigBaseModel):
             url,
             connect_args={"timeout": 5},
             execution_options={"logging_token": "dwh"},
-            logging_name="xngin_dwh",
+            logging_name=SA_LOGGER_NAME_FOR_DWH,
             echo=flags.ECHO_SQL,
         )
 
