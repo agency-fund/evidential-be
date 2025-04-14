@@ -129,6 +129,8 @@ tasks:
     desc: "Build Postgres migrations"
     cmds:
       - uv run atlas migrate diff --env sa_postgres && git add migrations
+      # If you modify the migration file afterwards, you should re-hash it:
+      # uv run atlas migrate hash --env sa_postgres
   apply-migrations-pg:
     desc: "Apply Postgres migrations locally (requires localpg instance to be running, to have an xngin database, and to have been previously migrated)"
     cmds:

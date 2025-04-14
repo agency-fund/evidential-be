@@ -2,7 +2,6 @@ import json
 import secrets
 from datetime import datetime, UTC
 from typing import ClassVar, Self
-from uuid import UUID
 
 import sqlalchemy
 from pydantic import TypeAdapter
@@ -259,14 +258,14 @@ class ArmAssignment(Base):
 
     __tablename__ = "arm_assignments"
 
-    experiment_id: Mapped[UUID] = mapped_column(
-        sqlalchemy.Uuid(as_uuid=False),
+    experiment_id: Mapped[str] = mapped_column(
+        String(length=36),
         ForeignKey("experiments.id", ondelete="CASCADE"),
         primary_key=True,
     )
     participant_id: Mapped[str] = mapped_column(String(255), primary_key=True)
     participant_type: Mapped[str] = mapped_column(String(255))
-    arm_id: Mapped[UUID] = mapped_column(sqlalchemy.Uuid(as_uuid=False))
+    arm_id: Mapped[str] = mapped_column(String(36))
     strata: Mapped[dict] = mapped_column(
         type_=JSONBetter,
         comment="JSON serialized form of a list of Strata objects (from Assignment.strata).",
@@ -286,7 +285,7 @@ class Experiment(Base):
 
     __tablename__ = "experiments"
 
-    id: Mapped[UUID] = mapped_column(sqlalchemy.Uuid(as_uuid=False), primary_key=True)
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
     datasource_id: Mapped[str] = mapped_column(
         String(255), ForeignKey("datasources.id", ondelete="CASCADE")
     )
@@ -328,7 +327,7 @@ class Experiment(Base):
         ds = self.get_design_spec()
         return ds.arms
 
-    def get_arm_ids(self) -> list[UUID]:
+    def get_arm_ids(self) -> list[str]:
         return [arm.arm_id for arm in self.get_arms()]
 
     def get_arm_names(self) -> list[str]:
