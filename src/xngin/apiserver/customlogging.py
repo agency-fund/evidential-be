@@ -68,7 +68,7 @@ def setup():
                 level, record.getMessage()
             )
 
-    logging.basicConfig(handlers=[InterceptHandler()], level=0, force=True)
+    logging.basicConfig(handlers=[InterceptHandler()], level=logging.NOTSET, force=True)
 
     loggers = sorted([
         logging.getLogger(name).name for name in logging.root.manager.loggerDict
