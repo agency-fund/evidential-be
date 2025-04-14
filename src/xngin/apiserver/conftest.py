@@ -5,6 +5,7 @@ import logging
 import os
 import secrets
 from dataclasses import dataclass
+from datetime import datetime
 from pathlib import Path
 from typing import assert_never
 
@@ -278,21 +279,14 @@ def make_datasource_metadata(
     db_session.commit()
     return DatasourceMetadata(
         ds=datasource,
-        dsn=datasource.get_config().dwh.to_sqlalchemy_url().render_as_string(False),
+        dsn=datasource.get_config().to_sqlalchemy_url().render_as_string(False),
         key=key,
         org=org,
     )
 
 
-@dataclass
-class DatasourceMetadata:
-    """Describes an ephemeral datasource, organization, and API key."""
-
-    org: Organization
-    ds: Datasource
-
-    # The SQLAlchemy DSN
-    dsn: str
-
-    # An API key suitable for use in the Authorization: header.
-    key: str
+def dates_equal(db_date: datetime, request_date: datetime):
+    """Compare dates with or without timezone info, honoring the db_date's timezone."""
+    if db_date.tzinfo is None:
+        return db_date == request_date.replace(tzinfo=None)
+    return db_date == request_date

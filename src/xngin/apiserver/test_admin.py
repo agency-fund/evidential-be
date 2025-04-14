@@ -7,6 +7,7 @@ from functools import partial
 import pytest
 from fastapi.testclient import TestClient
 from pydantic import SecretStr
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 from xngin.apiserver import conftest
 from xngin.apiserver import main as main_module
@@ -36,6 +37,7 @@ from xngin.apiserver.routers.admin_api_types import (
     UpdateParticipantsTypeResponse,
 )
 from xngin.apiserver.routers.experiments_api_types import (
+    CreateExperimentRequest,
     CreateExperimentWithAssignmentResponse,
     ExperimentConfig,
     GetExperimentAssignmentsResponse,
@@ -91,8 +93,8 @@ uget = partial(
 )
 
 
-@pytest.fixture(scope="module")
-def db_session():
+@pytest.fixture(name="db_session", scope="module")
+def fixture_db_session():
     session = next(app.dependency_overrides[xngin_db_session]())
     yield session
 
@@ -118,9 +120,9 @@ def enable_apis_under_test():
     oidc_dependencies.TESTING_TOKENS_ENABLED = True
 
 
-@pytest.fixture
-def testing_datasource_with_participants(db_session):
-    """Create a fake remote datasource with a custom participants config."""
+@pytest.fixture(name="testing_datasource_with_inline_schema")
+def fixture_testing_datasource_with_inline_schema(db_session):
+    """Create a fake remote datasource using an inline schema for the participants config."""
     # First create a datasource to maintain proper referential integrity, but with a local config
     # so we know we can read our dwh data. Also populate with an inline schema to test admin.
     ds_with_inlined_shema = conftest.get_settings_datasource(
@@ -128,23 +130,24 @@ def testing_datasource_with_participants(db_session):
     ).config
     return conftest.make_datasource_metadata(
         db_session,
+        datasource_id_for_config="testing",
         participants_def_list=[ds_with_inlined_shema.participants[0]],
     )
 
 
-@pytest.fixture
-def testing_datasource_with_user_added(testing_datasource_with_participants):
+@pytest.fixture(name="testing_datasource_with_user_added")
+def fixture_testing_datasource_with_user_added(testing_datasource_with_inline_schema):
     """Add the privileged user to the test ds's organization so we can access the ds."""
     response = ppost(
-        f"/v1/m/organizations/{testing_datasource_with_participants.org.id}/members",
+        f"/v1/m/organizations/{testing_datasource_with_inline_schema.org.id}/members",
         json={"email": PRIVILEGED_EMAIL},
     )
     assert response.status_code == 204, response.content
-    return testing_datasource_with_participants
+    return testing_datasource_with_inline_schema
 
 
-@pytest.fixture
-def testing_sheet_datasource_with_user_added(testing_datasource):
+@pytest.fixture(name="testing_sheet_datasource_with_user_added")
+def fixture_testing_sheet_datasource_with_user_added(testing_datasource):
     """
     Add the privileged user to the test ds's organization so we can access the ds.
     This uses a sheet participant type; most tests should use testing_datasource_with_user_added.
@@ -163,13 +166,14 @@ def make_createexperimentrequest_json(participant_type: str = "test_participant_
         "design_spec": {
             "experiment_name": "test",
             "description": "test",
-            "start_date": "2024-01-01T00:00:00",
-            "end_date": "2024-01-02T00:00:00",
+            # Attach UTC tz, but use dates_equal() to compare to respect db storage support
+            "start_date": "2024-01-01T00:00:00+00:00",
+            "end_date": "2024-01-02T00:00:00+00:00",
             "arms": [
                 {"arm_name": "control", "arm_description": "control"},
                 {"arm_name": "treatment", "arm_description": "treatment"},
             ],
-            "strata_field_names": [],
+            "strata_field_names": ["gender"],
             "metrics": [
                 {
                     "field_name": "current_income",
@@ -201,9 +205,9 @@ def make_insertable_experiment(state: ExperimentState, datasource_id="testing"):
     )
 
 
-@pytest.fixture
-def testing_experiment(db_session, testing_datasource_with_user_added):
-    """Create an experiment on the test datasource with proper user permissions."""
+@pytest.fixture(name="testing_experiment")
+def fixture_testing_experiment(db_session, testing_datasource_with_user_added):
+    """Create an experiment on a test inline schema datasource with proper user permissions."""
     experiment = make_insertable_experiment(
         ExperimentState.COMMITTED,
         datasource_id=testing_datasource_with_user_added.ds.id,
@@ -658,7 +662,6 @@ def test_lifecycle_with_pg(testing_datasource):
 
 
 def test_create_experiment_with_assignment_validation_errors(
-    db_session,
     testing_datasource_with_user_added,
     testing_sheet_datasource_with_user_added,
 ):
@@ -690,19 +693,82 @@ def test_create_experiment_with_assignment_validation_errors(
     assert response.status_code == 422, response.content
     assert "Participants must be of type schema" in response.json()["message"]
 
-    # Test 3: Invalid datasource config
-    # First override the testing_datasource with a "sqlite_local" config.
-    testing_ds_config = conftest.get_settings_datasource("testing").config
-    testing_datasource.ds.set_config(testing_ds_config)
-    db_session.commit()
+
+def test_create_experiment_with_assignment_using_inline_schema_ds(
+    db_session, testing_datasource_with_user_added, use_deterministic_random
+):
+    datasource_id = testing_datasource_with_user_added.ds.id
+    base_request_json = make_createexperimentrequest_json("test_participant_type")
+    base_request = CreateExperimentRequest.model_validate(base_request_json)
 
     response = ppost(
-        f"/v1/m/experiments/{testing_datasource.ds.id}/with-assignment",
+        f"/v1/m/experiments/{datasource_id}/with-assignment",
         params={"chosen_n": 100},
-        json=make_createexperimentrequest_json(),
+        json=base_request_json,
     )
-    assert response.status_code == 422, response.content
-    assert "Invalid RemoteDatabaseConfig" in response.json()["message"]
+    assert response.status_code == 200, response.content
+    created_experiment = CreateExperimentWithAssignmentResponse.model_validate(
+        response.json()
+    )
+    parsed_experiment_id = created_experiment.design_spec.experiment_id
+    assert parsed_experiment_id is not None
+    parsed_arm_ids = {arm.arm_id for arm in created_experiment.design_spec.arms}
+    assert len(parsed_arm_ids) == 2
+
+    # Verify basic response
+    assert created_experiment.design_spec.experiment_id is not None
+    assert created_experiment.design_spec.arms[0].arm_id is not None
+    assert created_experiment.design_spec.arms[1].arm_id is not None
+    assert created_experiment.state == ExperimentState.ASSIGNED
+    assign_summary = created_experiment.assign_summary
+    assert assign_summary.sample_size == 100
+    assert assign_summary.balance_check.balance_ok is True
+
+    # Check if the representations are equivalent
+    # scrub the uuids from the config for comparison
+    actual_design_spec = created_experiment.design_spec.model_copy(deep=True)
+    actual_design_spec.experiment_id = None
+    actual_design_spec.arms[0].arm_id = None
+    actual_design_spec.arms[1].arm_id = None
+    assert actual_design_spec == base_request.design_spec
+    assert created_experiment.audience_spec == base_request.audience_spec
+    assert created_experiment.power_analyses == base_request.power_analyses
+
+    experiment_id = created_experiment.design_spec.experiment_id
+    (arm1_id, arm2_id) = [
+        str(arm.arm_id) for arm in created_experiment.design_spec.arms
+    ]
+
+    # Verify database state using the ids in the returned DesignSpec.
+    experiment = db_session.scalars(
+        select(Experiment).where(Experiment.id == str(experiment_id))
+    ).one()
+    assert experiment.state == ExperimentState.ASSIGNED
+    assert experiment.datasource_id == datasource_id
+    assert conftest.dates_equal(
+        experiment.start_date, base_request.design_spec.start_date
+    )
+    assert conftest.dates_equal(experiment.end_date, base_request.design_spec.end_date)
+    # Verify assignments were created
+    assignments = db_session.scalars(
+        select(ArmAssignment).where(ArmAssignment.experiment_id == str(experiment_id))
+    ).all()
+    assert len(assignments) == 100, {
+        e.name: getattr(experiment, e.name) for e in Experiment.__table__.columns
+    }
+
+    # Check one assignment to see if it looks roughly right
+    sample_assignment: ArmAssignment = assignments[0]
+    assert sample_assignment.participant_type == "test_participant_type"
+    assert sample_assignment.experiment_id == str(experiment_id)
+    assert sample_assignment.arm_id in {arm1_id, arm2_id}
+    for stratum in sample_assignment.strata:
+        assert stratum["field_name"] in {"current_income", "gender"}
+
+    # Check for approximate balance in arm assignment
+    num_control = sum(1 for a in assignments if a.arm_id == arm1_id)
+    num_treat = sum(1 for a in assignments if a.arm_id == arm2_id)
+    assert abs(num_control - num_treat) <= 5  # Allow some wiggle room
 
 
 def test_experiments_analyze(testing_experiment):
