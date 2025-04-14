@@ -487,6 +487,16 @@ class MetricAnalysis(ApiBaseModel):
         ),
     ]
 
+    @model_validator(mode="after")
+    def validate_single_baseline(self) -> Self:
+        """Ensure that if is_baseline is set to True, it is the only baseline arm."""
+        baseline_arms = [arm for arm in self.arm_analyses if arm.is_baseline]
+        if len(baseline_arms) != 1:
+            raise ValueError(
+                f"Exactly one arm must be designated as the baseline arm. Found {len(baseline_arms)} baseline arms."
+            )
+        return self
+
 
 class ExperimentAnalysis(ApiBaseModel):
     """Describes the change if any in metrics targeted by an experiment."""

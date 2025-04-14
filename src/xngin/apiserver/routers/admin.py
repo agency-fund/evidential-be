@@ -1038,8 +1038,6 @@ def create_experiment_with_assignment(
     if body.design_spec.uuids_are_present():
         raise LateValidationError("Invalid DesignSpec: UUIDs must not be set.")
     ds_config = datasource.get_config()
-    if not isinstance(ds_config, RemoteDatabaseConfig):
-        raise LateValidationError("Invalid RemoteDatabaseConfig.")
     participants_cfg = ds_config.find_participants(body.audience_spec.participant_type)
     if not isinstance(participants_cfg, ParticipantsDef):
         raise LateValidationError(
@@ -1084,8 +1082,6 @@ def analyze_experiment(
 ) -> ExperimentAnalysis:
     ds = get_datasource_or_raise(xngin_session, user, datasource_id)
     dsconfig = ds.get_config()
-    if not isinstance(dsconfig, RemoteDatabaseConfig):
-        raise LateValidationError("Invalid RemoteDatabaseConfig.")
 
     experiment = get_experiment_via_ds_or_raise(xngin_session, ds, experiment_id)
 
@@ -1132,7 +1128,9 @@ def analyze_experiment(
             arm_result = analyze_results[metric_name][arm_id]
             arm_analyses.append(
                 ArmAnalysis(
-                    **arm.model_dump(),
+                    arm_id=arm_id,
+                    arm_name=arm.arm_name,
+                    arm_description=arm.arm_description,
                     is_baseline=arm_result.is_baseline,
                     estimate=arm_result.estimate,
                     p_value=arm_result.p_value,

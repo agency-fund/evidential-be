@@ -92,7 +92,7 @@
           {
             "type": "sheet",
             "participant_type": "test_participant_type",
-            "table_name": "test_participant_type",
+            "table_name": "dwh",
             "sheet": {
               "url": "file://src/xngin/apiserver/testdata/testing_sheet.csv",
               "worksheet": "Sheet1"
@@ -110,7 +110,7 @@
           {
             "type": "sheet",
             "participant_type": "test_participant_type",
-            "table_name": "test_participant_type",
+            "table_name": "dwh",
             "sheet": {
               "url": "file://src/xngin/apiserver/testdata/testing_sheet.csv",
               "worksheet": "Sheet1"
@@ -137,7 +137,7 @@
           {
             "type": "sheet",
             "participant_type": "test_participant_type",
-            "table_name": "test_participant_type",
+            "table_name": "dwh",
             "sheet": {
               "url": "file://src/xngin/apiserver/testdata/testing_sheet.csv",
               "worksheet": "Sheet1"
@@ -156,7 +156,7 @@
           {
             "type": "schema",
             "participant_type": "test_participant_type",
-            "table_name": "test_participant_type",
+            "table_name": "dwh",
             "fields": [
               {
                 "field_name": "gender",

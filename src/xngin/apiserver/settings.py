@@ -439,6 +439,9 @@ class RemoteDatabaseConfig(ParticipantsMixin, ConfigBaseModel):
 
     dwh: Dwh
 
+    def to_sqlalchemy_url(self):
+        return self.dwh.to_sqlalchemy_url()
+
     def supports_reflection(self):
         return self.dwh.supports_table_reflection()
 
@@ -514,6 +517,13 @@ class SqliteLocalConfig(ParticipantsMixin, ConfigBaseModel):
             raise ValueError("sqlite_filename should not start with sqlite://")
         return value
 
+    def to_sqlalchemy_url(self):
+        return sqlalchemy.URL.create(
+            drivername="sqlite",
+            database=self.sqlite_filename,
+            query={"mode": "ro"},
+        )
+
     def supports_reflection(self):
         return True
 
@@ -531,11 +541,7 @@ class SqliteLocalConfig(ParticipantsMixin, ConfigBaseModel):
 
         Use this when reflecting. If you're doing any queries on the tables, prefer dbsession().
         """
-        url = sqlalchemy.URL.create(
-            drivername="sqlite",
-            database=self.sqlite_filename,
-            query={"mode": "ro"},
-        )
+        url = self.to_sqlalchemy_url()
         engine = sqlalchemy.create_engine(
             url,
             connect_args={"timeout": 5},

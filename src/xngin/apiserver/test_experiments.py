@@ -204,13 +204,6 @@ def make_sample_data(n=100):
     ]
 
 
-def dates_equal(db_date: datetime, request_date: datetime):
-    """Compare dates with or without timezone info, honoring the db_date's timezone."""
-    if db_date.tzinfo is None:
-        return db_date == request_date.replace(tzinfo=None)
-    return db_date == request_date
-
-
 def test_create_experiment_with_assignment_impl(
     db_session, testing_datasource, sample_table, use_deterministic_random
 ):
@@ -271,8 +264,8 @@ def test_create_experiment_with_assignment_impl(
     assert experiment.state == ExperimentState.ASSIGNED
     assert experiment.datasource_id == testing_datasource.ds.id
     # This comparison is dependent on whether the db can store tz or not (sqlite does not).
-    assert dates_equal(experiment.start_date, request.design_spec.start_date)
-    assert dates_equal(experiment.end_date, request.design_spec.end_date)
+    assert conftest.dates_equal(experiment.start_date, request.design_spec.start_date)
+    assert conftest.dates_equal(experiment.end_date, request.design_spec.end_date)
     # Verify design_spec and audience_spec were stored correctly
     stored_design_spec = experiment.get_design_spec()
     assert stored_design_spec == response.design_spec
@@ -381,7 +374,8 @@ def test_create_experiment_with_assignment_impl_no_metric_stratification(
     assert response.state == ExperimentState.ASSIGNED
     assert response.design_spec.experiment_id is not None
     assert response.design_spec.arms[0].arm_id is not None
-    # Same as in the stratify_on_metrics=True test. Only the output assignments will also store a snapshot of the metric values as strata.
+    # Same as in the stratify_on_metrics=True test.
+    # Only the output assignments will also store a snapshot of the metric values as strata.
     assert response.design_spec.strata_field_names == ["gender"]
 
     # Verify database state
@@ -423,7 +417,7 @@ def test_create_experiment_with_assignment_invalid_design_spec(db_session):
     assert "UUIDs must not be set" in response.json()["message"]
 
 
-def test_create_experiment_with_assignment(
+def test_create_experiment_with_assignment_sl(
     db_session, sample_table, use_deterministic_random
 ):
     """Test creating an experiment and saving assignments to the database."""
@@ -473,8 +467,8 @@ def test_create_experiment_with_assignment(
     ).one()
     assert experiment.state == ExperimentState.ASSIGNED
     assert experiment.datasource_id == ds_metadata.ds.id
-    assert dates_equal(experiment.start_date, request.design_spec.start_date)
-    assert dates_equal(experiment.end_date, request.design_spec.end_date)
+    assert conftest.dates_equal(experiment.start_date, request.design_spec.start_date)
+    assert conftest.dates_equal(experiment.end_date, request.design_spec.end_date)
     # Verify assignments were created
     assignments = db_session.scalars(
         select(ArmAssignment).where(ArmAssignment.experiment_id == str(experiment_id))
@@ -724,7 +718,7 @@ def test_get_experiment_assignments_impl(db_session, testing_datasource):
 
     arm1_id = experiment.design_spec["arms"][0]["arm_id"]
     arm2_id = experiment.design_spec["arms"][1]["arm_id"]
-    assignments = [
+    arm_assignments = [
         ArmAssignment(
             experiment_id=experiment_id,
             participant_type="test_participant_type",
@@ -740,7 +734,7 @@ def test_get_experiment_assignments_impl(db_session, testing_datasource):
             strata=[{"field_name": "gender", "strata_value": "M"}],
         ),
     ]
-    db_session.add_all(assignments)
+    db_session.add_all(arm_assignments)
     db_session.commit()
 
     data: GetExperimentAssignmentsResponse = get_experiment_assignments_impl(experiment)
@@ -758,7 +752,7 @@ def test_get_experiment_assignments_impl(db_session, testing_datasource):
     assert assignments[0].participant_id == "p1"
     assert str(assignments[0].arm_id) == arm1_id
     assert assignments[0].arm_name == "control"
-    assert len(assignments[0].strata) == 1
+    assert assignments[0].strata is not None and len(assignments[0].strata) == 1
     assert assignments[0].strata[0].field_name == "gender"
     assert assignments[0].strata[0].strata_value == "F"
 
@@ -766,7 +760,7 @@ def test_get_experiment_assignments_impl(db_session, testing_datasource):
     assert assignments[1].participant_id == "p2"
     assert str(assignments[1].arm_id) == arm2_id
     assert assignments[1].arm_name == "treatment"
-    assert len(assignments[1].strata) == 1
+    assert assignments[1].strata is not None and len(assignments[1].strata) == 1
     assert assignments[1].strata[0].field_name == "gender"
     assert assignments[1].strata[0].strata_value == "M"
 
