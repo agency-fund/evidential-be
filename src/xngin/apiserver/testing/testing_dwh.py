@@ -53,8 +53,10 @@ def read_user_version_from_sqlite(db_path: Path):
 
 def compact_hash(path: Path):
     """Computes a hash of the input CSV so that we can determine whether to re-create the test warehouse."""
+    h = hashlib.blake2b(digest_size=2)
     with open(path, "rb") as source:
-        h = hashlib.blake2b(digest_size=2)
+        h.update(source.read())
+    with open(__file__, "rb") as source:
         h.update(source.read())
     return int.from_bytes(h.digest())
 
