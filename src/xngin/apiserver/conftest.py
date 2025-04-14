@@ -4,6 +4,7 @@ import enum
 import os
 import secrets
 from dataclasses import dataclass
+from datetime import datetime
 from pathlib import Path
 from typing import assert_never
 
@@ -21,7 +22,7 @@ from xngin.apiserver.dependencies import settings_dependency, xngin_db_session
 from xngin.apiserver.dns import safe_resolve
 from xngin.apiserver.models import tables
 from xngin.apiserver.models.tables import ApiKey, Datasource, Organization
-from xngin.apiserver.settings import SettingsForTesting, XnginSettings
+from xngin.apiserver.settings import ParticipantsDef, SettingsForTesting, XnginSettings
 from xngin.apiserver.testing import testing_dwh
 from xngin.db_extensions import custom_functions
 
@@ -246,10 +247,18 @@ def make_datasource_metadata(
     datasource_id: str | None = None,
     name="test ds",
     datasource_id_for_config="testing-remote",
-):
+    participants_def_list: list[ParticipantsDef] | None = None,
+) -> DatasourceMetadata:
     """Generates a new Organization, Datasource, and API key in the database for testing.
 
-    If datasource_id is not provided, it will be randomly generated.
+    Args:
+    db_session - the database session to use for adding our objects to the database.
+    datasource_id - the unique ID of the datasource. If not provided, it will be randomly generated.
+    name - the friendly name of the datasource.
+    datasource_id_for_config - the unique ID of the datasource **from our test settings json**
+        to use for the DatasourceConfig.
+    participants_def_list - set to override the top-level datasource_id_for_config's `participants`
+        list of participant types, to allow for testing with simulated inline schemas.
     """
     run_id = secrets.token_hex(8)
     datasource_id = datasource_id or "ds" + run_id
@@ -257,6 +266,8 @@ def make_datasource_metadata(
     # We derive a new test datasource from the standard static "testing-remote" datasource by
     # randomizing its unique ID and marking it as requiring an API key.
     test_ds = get_settings_datasource(datasource_id_for_config).config
+    if participants_def_list:
+        test_ds.participants = participants_def_list
 
     org = Organization(id="org" + run_id, name="test organization")
     datasource = Datasource(id=datasource_id, name=name)
@@ -271,21 +282,14 @@ def make_datasource_metadata(
     db_session.commit()
     return DatasourceMetadata(
         ds=datasource,
-        dsn=datasource.get_config().dwh.to_sqlalchemy_url().render_as_string(False),
+        dsn=datasource.get_config().to_sqlalchemy_url().render_as_string(False),
         key=key,
         org=org,
     )
 
 
-@dataclass
-class DatasourceMetadata:
-    """Describes an ephemeral datasource, organization, and API key."""
-
-    org: Organization
-    ds: Datasource
-
-    # The SQLAlchemy DSN
-    dsn: str
-
-    # An API key suitable for use in the Authorization: header.
-    key: str
+def dates_equal(db_date: datetime, request_date: datetime):
+    """Compare dates with or without timezone info, honoring the db_date's timezone."""
+    if db_date.tzinfo is None:
+        return db_date == request_date.replace(tzinfo=None)
+    return db_date == request_date

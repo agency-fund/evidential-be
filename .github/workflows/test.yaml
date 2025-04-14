@@ -110,7 +110,7 @@ jobs:
           uv run xngin-cli create-testing-dwh --dsn postgresql+${{ matrix.driver }}://postgres@127.0.0.1:5499/postgres \
             --schema-name alt --table-name=alt_table
 
-          XNGIN_SETTINGS=src/xngin/apiserver/testdata/xngin.gha.settings.json uv run fastapi dev \
+          XNGIN_SETTINGS=src/xngin/apiserver/testdata/xngin.gha.settings.json uv run fastapi run \
             src/xngin/apiserver/main.py &
           sleep 10
           curl -v --fail-with-body http://localhost:8000/v1/_settings
@@ -241,7 +241,7 @@ jobs:
           unset GOOGLE_APPLICATION_CREDENTIALS
 
           # Start a server using the gha-bq profile.
-          XNGIN_SETTINGS=src/xngin/apiserver/testdata/xngin.gha.settings.json uv run fastapi dev \
+          XNGIN_SETTINGS=src/xngin/apiserver/testdata/xngin.gha.settings.json uv run fastapi run \
             src/xngin/apiserver/main.py &
           sleep 10
           curl -v --fail-with-body http://localhost:8000/v1/_settings
