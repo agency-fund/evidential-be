@@ -31,7 +31,12 @@ from xngin.apiserver.api_types import (
 from xngin.apiserver.dependencies import xngin_db_session
 from xngin.apiserver.main import app
 from xngin.apiserver.models.enums import ExperimentState
-from xngin.apiserver.models.tables import ArmAssignment, Experiment
+from xngin.apiserver.models.tables import (
+    ArmAssignment,
+    ArmTable,
+    Datasource,
+    Experiment,
+)
 from xngin.apiserver.routers.experiments import (
     abandon_experiment_impl,
     commit_experiment_impl,
@@ -66,8 +71,8 @@ def fixture_teardown(db_session: Session):
     # teardown here
     # Rollback any pending transactions that may have been hanging due to an exception.
     db_session.rollback()
-    db_session.query(Experiment).delete()
-    db_session.query(ArmAssignment).delete()
+    # Clean up objects created in each test by truncating tables and leveraging cascade.
+    db_session.query(Datasource).delete()
     db_session.commit()
     db_session.close()
 
@@ -165,6 +170,19 @@ def make_insertable_experiment(state: ExperimentState, datasource_id="testing"):
             ),
         ).model_dump(mode="json"),
     )
+
+
+def make_arms_from_experiment(experiment: Experiment, organization_id: str):
+    return [
+        ArmTable(
+            id=arm["arm_id"],
+            experiment_id=experiment.id,
+            name=arm["arm_name"],
+            description=arm["arm_description"],
+            organization_id=organization_id,
+        )
+        for arm in experiment.design_spec["arms"]
+    ]
 
 
 @dataclass
@@ -571,6 +589,7 @@ def test_state_setting_experiment_impl(
 ):
     # Initialize our state with an existing experiment who's state we want to modify.
     experiment = make_insertable_experiment(initial_state, testing_datasource.ds.id)
+    # Create ArmTable instances for each arm in the experiment
     db_session.add(experiment)
     db_session.commit()
 
@@ -717,6 +736,10 @@ def test_get_experiment_assignments_impl(db_session, testing_datasource):
     )
     experiment_id = experiment.id
     db_session.add(experiment)
+    db_arms = make_arms_from_experiment(
+        experiment, testing_datasource.ds.organization_id
+    )
+    db_session.add_all(db_arms)
 
     arm1_id = experiment.design_spec["arms"][0]["arm_id"]
     arm2_id = experiment.design_spec["arms"][1]["arm_id"]
@@ -801,12 +824,13 @@ def test_get_experiment_assignments_wrong_datasource(db_session, testing_datasou
     assert response.json()["detail"] == "Experiment not found"
 
 
-def make_experiment_with_assignments(db_session, datasource_id="testing"):
+def make_experiment_with_assignments(db_session, datasource: Datasource):
     """Helper function for the tests below."""
     # First insert an experiment with assignments
-    experiment = make_insertable_experiment(ExperimentState.COMMITTED, datasource_id)
+    experiment = make_insertable_experiment(ExperimentState.COMMITTED, datasource.id)
     db_session.add(experiment)
-
+    arms = make_arms_from_experiment(experiment, datasource.organization_id)
+    db_session.add_all(arms)
     arm1_id = experiment.design_spec["arms"][0]["arm_id"]
     arm2_id = experiment.design_spec["arms"][1]["arm_id"]
     assignments = [
@@ -837,7 +861,7 @@ def make_experiment_with_assignments(db_session, datasource_id="testing"):
 
 
 def test_experiment_assignments_to_csv_generator(db_session, testing_datasource):
-    experiment = make_experiment_with_assignments(db_session, testing_datasource.ds.id)
+    experiment = make_experiment_with_assignments(db_session, testing_datasource.ds)
 
     (arm1_id, arm2_id) = experiment.get_arm_ids()
     (arm1_name, arm2_name) = experiment.get_arm_names()
@@ -850,7 +874,7 @@ def test_experiment_assignments_to_csv_generator(db_session, testing_datasource)
 
 
 def test_get_experiment_assignments_as_csv(db_session, testing_datasource):
-    experiment = make_experiment_with_assignments(db_session, testing_datasource.ds.id)
+    experiment = make_experiment_with_assignments(db_session, testing_datasource.ds)
 
     response = client.get(
         f"/experiments/{experiment.id!s}/assignments/csv",
