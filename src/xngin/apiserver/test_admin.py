@@ -703,7 +703,7 @@ def test_create_experiment_with_assignment_using_inline_schema_ds(
 
     response = ppost(
         f"/v1/m/experiments/{datasource_id}/with-assignment",
-        params={"chosen_n": 100},
+        params={"chosen_n": 100, "random_state": 42},
         json=base_request_json,
     )
     assert response.status_code == 200, response.content
