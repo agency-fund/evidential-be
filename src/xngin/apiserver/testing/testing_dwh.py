@@ -24,7 +24,7 @@ def import_csv_to_sqlite(
     source_csv: Path,
     src_version: int,
     db_path: Path,
-    table_name="test_participant_type",
+    table_name="dwh",
 ):
     """Imports a CSV file to a SQLite database.
 

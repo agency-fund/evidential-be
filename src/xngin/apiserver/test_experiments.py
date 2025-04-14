@@ -724,7 +724,7 @@ def test_get_experiment_assignments_impl(db_session, testing_datasource):
 
     arm1_id = experiment.design_spec["arms"][0]["arm_id"]
     arm2_id = experiment.design_spec["arms"][1]["arm_id"]
-    assignments = [
+    arm_assignments = [
         ArmAssignment(
             experiment_id=experiment_id,
             participant_type="test_participant_type",
@@ -740,7 +740,7 @@ def test_get_experiment_assignments_impl(db_session, testing_datasource):
             strata=[{"field_name": "gender", "strata_value": "M"}],
         ),
     ]
-    db_session.add_all(assignments)
+    db_session.add_all(arm_assignments)
     db_session.commit()
 
     data: GetExperimentAssignmentsResponse = get_experiment_assignments_impl(experiment)
@@ -758,7 +758,7 @@ def test_get_experiment_assignments_impl(db_session, testing_datasource):
     assert assignments[0].participant_id == "p1"
     assert str(assignments[0].arm_id) == arm1_id
     assert assignments[0].arm_name == "control"
-    assert len(assignments[0].strata) == 1
+    assert assignments[0].strata is not None and len(assignments[0].strata) == 1
     assert assignments[0].strata[0].field_name == "gender"
     assert assignments[0].strata[0].strata_value == "F"
 
@@ -766,7 +766,7 @@ def test_get_experiment_assignments_impl(db_session, testing_datasource):
     assert assignments[1].participant_id == "p2"
     assert str(assignments[1].arm_id) == arm2_id
     assert assignments[1].arm_name == "treatment"
-    assert len(assignments[1].strata) == 1
+    assert assignments[1].strata is not None and len(assignments[1].strata) == 1
     assert assignments[1].strata[0].field_name == "gender"
     assert assignments[1].strata[0].strata_value == "M"
 

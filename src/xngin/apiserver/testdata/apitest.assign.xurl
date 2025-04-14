@@ -45,8 +45,7 @@ HTTP 200
       "arm": {
         "arm_description": null,
         "arm_id": "699a500b-41d6-4cba-b254-60b9493717cb",
-        "arm_name": "Control",
-        "is_baseline": null
+        "arm_name": "Control"
       },
       "size": 22
     },
@@ -54,8 +53,7 @@ HTTP 200
       "arm": {
         "arm_description": null,
         "arm_id": "5bc829fb-ffa6-456c-9e54-d26ba8d1031d",
-        "arm_name": "Treatment",
-        "is_baseline": null
+        "arm_name": "Treatment"
       },
       "size": 18
     }

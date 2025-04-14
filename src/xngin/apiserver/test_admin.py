@@ -14,7 +14,12 @@ from xngin.apiserver.api_types import DataType, ExperimentAnalysis
 from xngin.apiserver.dependencies import xngin_db_session
 from xngin.apiserver.main import app
 from xngin.apiserver.models.enums import ExperimentState
-from xngin.apiserver.models.tables import Experiment, Organization, User
+from xngin.apiserver.models.tables import (
+    ArmAssignment,
+    Experiment,
+    Organization,
+    User,
+)
 from xngin.apiserver.routers import oidc_dependencies
 from xngin.apiserver.routers.admin_api_types import (
     CreateDatasourceRequest,
@@ -113,9 +118,37 @@ def enable_apis_under_test():
     oidc_dependencies.TESTING_TOKENS_ENABLED = True
 
 
-@pytest.fixture(scope="function")
-def testing_datasource_with_user_added(testing_datasource):
+@pytest.fixture
+def testing_datasource_with_participants(db_session):
+    """Create a fake remote datasource with a custom participants config."""
+    # First create a datasource to maintain proper referential integrity, but with a local config
+    # so we know we can read our dwh data. Also populate with an inline schema to test admin.
+    ds_with_inlined_shema = conftest.get_settings_datasource(
+        "testing-inline-schema"
+    ).config
+    return conftest.make_datasource_metadata(
+        db_session,
+        participants_def_list=[ds_with_inlined_shema.participants[0]],
+    )
+
+
+@pytest.fixture
+def testing_datasource_with_user_added(testing_datasource_with_participants):
     """Add the privileged user to the test ds's organization so we can access the ds."""
+    response = ppost(
+        f"/v1/m/organizations/{testing_datasource_with_participants.org.id}/members",
+        json={"email": PRIVILEGED_EMAIL},
+    )
+    assert response.status_code == 204, response.content
+    return testing_datasource_with_participants
+
+
+@pytest.fixture
+def testing_sheet_datasource_with_user_added(testing_datasource):
+    """
+    Add the privileged user to the test ds's organization so we can access the ds.
+    This uses a sheet participant type; most tests should use testing_datasource_with_user_added.
+    """
     response = ppost(
         f"/v1/m/organizations/{testing_datasource.org.id}/members",
         json={"email": PRIVILEGED_EMAIL},
@@ -166,6 +199,33 @@ def make_insertable_experiment(state: ExperimentState, datasource_id="testing"):
         power_analyses=None,
         assign_summary=None,
     )
+
+
+@pytest.fixture
+def testing_experiment(db_session, testing_datasource_with_user_added):
+    """Create an experiment on the test datasource with proper user permissions."""
+    experiment = make_insertable_experiment(
+        ExperimentState.COMMITTED,
+        datasource_id=testing_datasource_with_user_added.ds.id,
+    )
+    # Fake arm_ids in the design_spec since we're not using the admin API to create the experiment.
+    for arm in experiment.design_spec["arms"]:
+        if "arm_id" not in arm:
+            arm["arm_id"] = str(uuid.uuid4())
+    db_session.add(experiment)
+    # Add fake assignments for each arm for real participant ids in our test data.
+    arm_ids = [arm["arm_id"] for arm in experiment.design_spec["arms"]]
+    for i in range(10):
+        assignment = ArmAssignment(
+            experiment_id=str(experiment.id),
+            participant_id=str(i),
+            participant_type=experiment.get_audience_spec().participant_type,
+            arm_id=arm_ids[i % 2],  # Alternate between the two arms
+            strata={},
+        )
+        db_session.add(assignment)
+    db_session.commit()
+    return experiment
 
 
 def test_list_orgs_unauthenticated():
@@ -548,11 +608,9 @@ def test_lifecycle_with_pg(testing_datasource):
     created_experiment = CreateExperimentWithAssignmentResponse.model_validate(
         response.json()
     )
-    # Verify that no arms are marked as baseline by default for analysis test later.
-    assert all(arm.is_baseline is None for arm in created_experiment.design_spec.arms)
     parsed_experiment_id = created_experiment.design_spec.experiment_id
-    parsed_arm_ids = {arm.arm_id for arm in created_experiment.design_spec.arms}
     assert parsed_experiment_id is not None
+    parsed_arm_ids = {arm.arm_id for arm in created_experiment.design_spec.arms}
     assert len(parsed_arm_ids) == 2
 
     # Get that experiment.
@@ -578,12 +636,6 @@ def test_lifecycle_with_pg(testing_datasource):
     assert response.status_code == 200, response.content
     experiment_analysis = ExperimentAnalysis.model_validate(response.json())
     assert experiment_analysis.experiment_id == parsed_experiment_id
-    assert len(experiment_analysis.metric_analyses) == 1
-    # Verify that only the first arm is marked as baseline by default
-    metric_analysis = experiment_analysis.metric_analyses[0]
-    baseline_arms = [arm for arm in metric_analysis.arm_analyses if arm.is_baseline]
-    assert len(baseline_arms) == 1
-    assert baseline_arms[0].is_baseline
 
     # Get assignments for the experiment.
     response = pget(
@@ -605,24 +657,10 @@ def test_lifecycle_with_pg(testing_datasource):
     assert response.status_code == 204, response.content
 
 
-def test_create_experiment_validation_errors(testing_datasource_with_user_added):
-    # Test: More than one baseline arm
-    base_request = make_createexperimentrequest_json("test_participant_type")
-    base_request["design_spec"]["arms"][0]["is_baseline"] = True
-    base_request["design_spec"]["arms"][1]["is_baseline"] = True
-    response = ppost(
-        f"/v1/m/experiments/{testing_datasource_with_user_added.ds.id}/with-assignment",
-        params={"chosen_n": 100},
-        json=base_request,
-    )
-    assert response.status_code == 422, response.content
-    assert (
-        "At most one arm can be marked baseline" in response.json()["detail"][0]["msg"]
-    )
-
-
 def test_create_experiment_with_assignment_validation_errors(
-    db_session, testing_datasource_with_user_added
+    db_session,
+    testing_datasource_with_user_added,
+    testing_sheet_datasource_with_user_added,
 ):
     """Test LateValidationError cases in create_experiment_with_assignment."""
     testing_datasource = testing_datasource_with_user_added
@@ -642,10 +680,10 @@ def test_create_experiment_with_assignment_validation_errors(
     assert "UUIDs must not be set" in response.json()["message"]
 
     # Test 2: Invalid participants config (sheet instead of schema)
-    # Our testing_datasource is loaded with a "remote" config from xngin.testing.settings.json, but
+    # This datasource is loaded with a "remote" config from xngin.testing.settings.json, but
     # the associated participants config is of type "sheet".
     response = ppost(
-        f"/v1/m/experiments/{testing_datasource.ds.id}/with-assignment",
+        f"/v1/m/experiments/{testing_sheet_datasource_with_user_added.ds.id}/with-assignment",
         params={"chosen_n": 100},
         json=make_createexperimentrequest_json(),
     )
@@ -665,6 +703,32 @@ def test_create_experiment_with_assignment_validation_errors(
     )
     assert response.status_code == 422, response.content
     assert "Invalid RemoteDatabaseConfig" in response.json()["message"]
+
+
+def test_experiments_analyze(testing_experiment):
+    datasource_id = testing_experiment.datasource_id
+    experiment_id = testing_experiment.id
+
+    response = pget(
+        f"/v1/m/datasources/{datasource_id}/experiments/{experiment_id}/analyze"
+    )
+
+    assert response.status_code == 200, response.content
+    experiment_analysis = ExperimentAnalysis.model_validate(response.json())
+    # ExperimentAnalysis uses real native uuids, whereas the returned database model are actually
+    # treated as strings by sqlalchemy given our table definition, so compare as strings.
+    assert str(experiment_analysis.experiment_id) == str(experiment_id)
+    assert len(experiment_analysis.metric_analyses) == 1
+    # Verify that only the first arm is marked as baseline by default
+    metric_analysis = experiment_analysis.metric_analyses[0]
+    baseline_arms = [arm for arm in metric_analysis.arm_analyses if arm.is_baseline]
+    assert len(baseline_arms) == 1
+    assert baseline_arms[0].is_baseline
+    for analysis in experiment_analysis.metric_analyses:
+        # Verify arm_ids match the database model.
+        assert {str(arm.arm_id) for arm in analysis.arm_analyses} == {
+            str(arm.arm_id) for arm in testing_experiment.get_arms()
+        }
 
 
 @pytest.mark.parametrize(
