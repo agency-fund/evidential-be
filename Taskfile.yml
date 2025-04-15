@@ -92,6 +92,15 @@ tasks:
 
     cmds:
       - uv run fastapi dev src/xngin/apiserver/main.py
+  bootstrap-app-db:
+    internal: true
+    desc: |
+      Ensure the localpg server is running and has an "xngin" database. If the database doesn't already exist, it will
+      be created, and Atlas will create the tables so that subsequent table migrations behave as expected.
+    cmds:
+      - >
+        ./tools/localpg.py --allow-existing -d --wait --create-db {{.XNGIN_DEVAPPDB_NAME}}
+        --if-created "uv run task apply-migrations-pg"
   start-with-local-pg:
     desc: "Starts apiserver locally with settings compatible with local dash dev server (using PostgreSQL)"
     interactive: true
@@ -105,12 +114,9 @@ tasks:
       # Also see instructions for .env above.
       ENABLE_ADMIN: "true"
       ENABLE_OIDC: "true"
+    deps:
+      - bootstrap-app-db
     cmds:
-      # Ensure the localpg server is running and has an "xngin" database. If the database doesn't already exist,
-      # have Atlas create the tables so that subsequent table migrations behave as expected.
-      - >
-        ./tools/localpg.py --allow-existing -d --wait --create-db {{.XNGIN_DEVAPPDB_NAME}}
-        --if-created "uv run task apply-migrations-pg"
       - task bootstrap-dwh-local-pg || /bin/true
       - uv run fastapi dev src/xngin/apiserver/main.py
   bootstrap-dwh-local-pg:
@@ -159,3 +165,16 @@ tasks:
       sqlite3 xngin.db .tables | grep -q "atlas_schema_revisions" \
         && uv run atlas migrate apply --env sa_sqlite --url sqlite://xngin.db \
         || uv run atlas migrate apply --env sa_sqlite --url sqlite://xngin.db --baseline $(ls -t migrations/sa_sqlite | grep .sql | sort -n | cut -f1 -d. | head -1)
+  create-user:
+    desc: "Create a user: task create-user -- username@example.com"
+    interactive: true
+    deps:
+      - bootstrap-app-db
+    env:
+      XNGIN_DEVAPP_DSN: "{{.XNGIN_DEVAPP_DSN}}"
+    cmd: |
+      if [ "{{.CLI_ARGS}}" == "" ]; then
+        echo Email address must be passed as argument after "--". Example: task create-user -- email@example.com
+        exit 1
+      fi
+      uv run xngin-cli add-user --email "{{.CLI_ARGS}}" --privileged
