@@ -2,7 +2,6 @@ import json
 import secrets
 from datetime import datetime, UTC
 from typing import ClassVar, Self
-from uuid import UUID
 
 import sqlalchemy
 from pydantic import TypeAdapter
@@ -259,16 +258,17 @@ class ArmAssignment(Base):
 
     __tablename__ = "arm_assignments"
 
-    experiment_id: Mapped[UUID] = mapped_column(
-        sqlalchemy.Uuid(as_uuid=False),
+    experiment_id: Mapped[str] = mapped_column(
+        String(length=36),
         ForeignKey("experiments.id", ondelete="CASCADE"),
         primary_key=True,
     )
     participant_id: Mapped[str] = mapped_column(String(255), primary_key=True)
     participant_type: Mapped[str] = mapped_column(String(255))
-    arm_id: Mapped[UUID] = mapped_column(sqlalchemy.Uuid(as_uuid=False))
-    strata: Mapped[sqlalchemy.JSON] = mapped_column(
-        comment="JSON serialized form of a list of Strata objects (from Assignment.strata)."
+    arm_id: Mapped[str] = mapped_column(String(36))
+    strata: Mapped[dict] = mapped_column(
+        type_=JSONBetter,
+        comment="JSON serialized form of a list of Strata objects (from Assignment.strata).",
     )
 
     experiment: Mapped["Experiment"] = relationship(back_populates="arm_assignments")
@@ -285,7 +285,7 @@ class Experiment(Base):
 
     __tablename__ = "experiments"
 
-    id: Mapped[UUID] = mapped_column(sqlalchemy.Uuid(as_uuid=False), primary_key=True)
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
     datasource_id: Mapped[str] = mapped_column(
         String(255), ForeignKey("datasources.id", ondelete="CASCADE")
     )
@@ -297,17 +297,18 @@ class Experiment(Base):
         comment="Target end date of the experiment. Denormalized from design_spec."
     )
     # We presume updates to descriptions/names/times won't happen frequently.
-    design_spec: Mapped[sqlalchemy.JSON] = mapped_column(
-        comment="JSON serialized form of DesignSpec."
+    design_spec: Mapped[dict] = mapped_column(
+        type_=JSONBetter, comment="JSON serialized form of DesignSpec."
     )
-    audience_spec: Mapped[sqlalchemy.JSON] = mapped_column(
-        comment="JSON serialized form of AudienceSpec."
+    audience_spec: Mapped[dict] = mapped_column(
+        type_=JSONBetter, comment="JSON serialized form of AudienceSpec."
     )
-    power_analyses: Mapped[sqlalchemy.JSON | None] = mapped_column(
-        comment="JSON serialized form of a PowerResponse. Not required since some experiments may not have data to run power analyses."
+    power_analyses: Mapped[dict | None] = mapped_column(
+        type_=JSONBetter,
+        comment="JSON serialized form of a PowerResponse. Not required since some experiments may not have data to run power analyses.",
     )
-    assign_summary: Mapped[sqlalchemy.JSON] = mapped_column(
-        comment="JSON serialized form of AssignSummary."
+    assign_summary: Mapped[dict] = mapped_column(
+        type_=JSONBetter, comment="JSON serialized form of AssignSummary."
     )
     created_at: Mapped[datetime] = mapped_column(
         server_default=sqlalchemy.sql.func.now()
@@ -326,7 +327,7 @@ class Experiment(Base):
         ds = self.get_design_spec()
         return ds.arms
 
-    def get_arm_ids(self) -> list[UUID]:
+    def get_arm_ids(self) -> list[str]:
         return [arm.arm_id for arm in self.get_arms()]
 
     def get_arm_names(self) -> list[str]:

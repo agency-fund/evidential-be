@@ -64,6 +64,8 @@ def fixture_teardown(db_session: Session):
     # setup here
     yield
     # teardown here
+    # Rollback any pending transactions that may have been hanging due to an exception.
+    db_session.rollback()
     db_session.query(Experiment).delete()
     db_session.query(ArmAssignment).delete()
     db_session.commit()
@@ -876,10 +878,10 @@ def test_experiment_sql():
     pg_sql = str(
         CreateTable(ArmAssignment.__table__).compile(dialect=postgresql.dialect())
     )
-    assert "arm_id UUID NOT NULL" in pg_sql
-    assert "strata JSONB NOT NULL" in pg_sql
+    assert "arm_id VARCHAR(36) NOT NULL," in pg_sql
+    assert "strata JSONB NOT NULL," in pg_sql
     sqlite_sql = str(
         CreateTable(ArmAssignment.__table__).compile(dialect=sqlite.dialect())
     )
-    assert "arm_id CHAR(32) NOT NULL" in sqlite_sql
-    assert "strata JSON NOT NULL" in sqlite_sql
+    assert "arm_id VARCHAR(36) NOT NULL," in sqlite_sql
+    assert "strata JSON NOT NULL," in sqlite_sql
