@@ -1,21 +1,20 @@
 import json
 import secrets
-from datetime import datetime, UTC
+from datetime import UTC, datetime
 from typing import ClassVar, Self
 
 import sqlalchemy
 from pydantic import TypeAdapter
 from sqlalchemy import ForeignKey, String
 from sqlalchemy.dialects import postgresql
-from sqlalchemy.orm import DeclarativeBase, mapped_column, Mapped, relationship
+from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 from sqlalchemy.types import TypeEngine
-
 from xngin.apiserver.api_types import (
     Arm,
+    AudienceSpec,
     BalanceCheck,
     DesignSpec,
     PowerResponse,
-    AudienceSpec,
 )
 from xngin.apiserver.models.enums import ExperimentState
 from xngin.apiserver.routers.admin_api_types import (
@@ -106,6 +105,11 @@ class User(Base):
     # TODO: properly handle federated auth
     iss: Mapped[str | None] = mapped_column(String(255), default=None)
     sub: Mapped[str | None] = mapped_column(String(255), default=None)
+
+    is_privileged: Mapped[bool] = mapped_column(
+        server_default=sqlalchemy.sql.false(),
+        comment="True when this user is considered to be privileged.",
+    )
 
     # Relationships
     organizations: Mapped[list["Organization"]] = relationship(
