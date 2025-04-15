@@ -27,6 +27,7 @@ dependencies = [
     "typer>=0.12.5,<0.13.0",
     "uvicorn[standard]>=0.32.0",
     "zstandard>=0.23.0,<0.24",
+    "loguru>=0.7.3",
 ]
 requires-python = ">=3.12,<3.13"
 

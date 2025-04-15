@@ -1,16 +1,15 @@
 """Implements a basic Google OIDC RP."""
 
 import asyncio
-import logging
 import os
 from contextlib import asynccontextmanager
 from typing import Annotated
 
 import httpx
-from fastapi import APIRouter, Query, FastAPI, HTTPException
+from fastapi import APIRouter, FastAPI, HTTPException, Query
 from fastapi.security import OpenIdConnect
+from loguru import logger
 from pydantic import BaseModel, Field
-
 from xngin.apiserver import constants, flags
 
 ENV_GOOGLE_OIDC_CLIENT_ID = "GOOGLE_OIDC_CLIENT_ID"
@@ -25,8 +24,6 @@ REDIRECT_URI = os.environ.get(
     ENV_GOOGLE_OIDC_REDIRECT_URI, DEFAULT_REDIRECT_URI
 )  # used for testing UI only
 oidc_google = OpenIdConnect(openIdConnectUrl=GOOGLE_DISCOVERY_URL)
-
-logger = logging.getLogger(__name__)
 
 
 class OidcMisconfiguredError(Exception):
