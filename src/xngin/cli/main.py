@@ -18,6 +18,7 @@ import psycopg2
 import sqlalchemy
 import typer
 import zstandard
+from email_validator import EmailNotValidError, validate_email
 from google.cloud import bigquery
 from google.cloud.exceptions import NotFound
 from gspread import GSpreadException
@@ -27,13 +28,17 @@ from pydantic import ValidationError
 from pydantic_core import from_json
 from rich.console import Console
 from sqlalchemy import create_engine, make_url
-from sqlalchemy.exc import OperationalError
+from sqlalchemy.exc import IntegrityError, OperationalError
+from sqlalchemy.orm import Session
 from sqlalchemy.sql.compiler import IdentifierPreparer
 from xngin.apiserver import settings
 from xngin.apiserver.api_types import DataType
+from xngin.apiserver.models import tables
 from xngin.apiserver.settings import (
     CannotFindTableError,
     Datasource,
+    Dsn,
+    RemoteDatabaseConfig,
     SheetRef,
     XnginSettings,
 )
@@ -51,6 +56,7 @@ SA_LOGGER_NAME_FOR_CLI = "cli_dwh"
 REDSHIFT_HOSTNAME_SUFFIX = "redshift.amazonaws.com"
 
 err_console = Console(stderr=True)
+console = Console(stderr=False)
 app = typer.Typer(help=__doc__)
 
 logging.basicConfig(
@@ -641,6 +647,83 @@ def bigquery_table_delete(
         raise typer.Exit(1) from exc
     else:
         print(f"Table {table_ref} has been deleted.")
+
+
+def validate_arg_is_email(email: str):
+    try:
+        return validate_email(email, check_deliverability=False).normalized
+    except EmailNotValidError as err:
+        raise typer.BadParameter(str(err)) from err
+
+
+@app.command()
+def add_user(
+    dsn: Annotated[
+        str,
+        typer.Option(
+            help="The SQLAlchemy DSN of the database where the user should be added.",
+            envvar="XNGIN_DEVAPP_DSN",
+        ),
+    ],
+    email: Annotated[
+        str,
+        typer.Option(
+            help="Email address of the user to add.",
+            callback=validate_arg_is_email,
+        ),
+    ],
+    privileged: Annotated[
+        bool, typer.Option(help="Whether the user should have privileged access.")
+    ] = False,
+    dwh: Annotated[
+        str | None,
+        typer.Option(
+            help="The SQLAlchmey DSN of a DWH to be added to the user's organization.",
+            envvar="XNGIN_DEVDWH_DSN",
+        ),
+    ] = None,
+):
+    """Adds a new user to the database.
+
+    This command connects to the specified database and adds a new user with the given email address.
+    If the --privileged flag is set, the user will be granted privileged access.
+    """
+    console.print(f"DSN: [cyan]{dsn}[/cyan]")
+    console.print(f"DWH: [cyan]{dwh}[/cyan]")
+
+    engine = create_engine(dsn)
+    with Session(engine) as session:
+        try:
+            user = tables.User(email=email, is_privileged=privileged)
+            session.add(user)
+            organization = tables.Organization(name="My Organization")
+            session.add(organization)
+            organization.users.append(user)
+            datasource = None
+            if dev_dsn := dwh:
+                # TODO: Also add a default participant type.
+                config = RemoteDatabaseConfig(
+                    participants=[], type="remote", dwh=Dsn.from_url(dev_dsn)
+                )
+                datasource = tables.Datasource(
+                    name="Local DWH", organization=organization
+                ).set_config(config)
+                session.add(datasource)
+
+            session.commit()
+            console.print("\n[bold green]User added successfully:[/bold green]")
+            console.print(f"User ID: [cyan]{user.id}[/cyan]")
+            console.print(f"Email: [cyan]{user.email}[/cyan]")
+            console.print(f"Privileged: [cyan]{user.is_privileged}[/cyan]")
+            if datasource:
+                console.print(f"Datasource ID: [cyan]{datasource.id}[/cyan]")
+
+        except IntegrityError as err:
+            session.rollback()
+            err_console.print(
+                f"[bold red]Error:[/bold red] User with email '{email}' already exists."
+            )
+            raise typer.Exit(1) from err
 
 
 if __name__ == "__main__":
