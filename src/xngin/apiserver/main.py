@@ -1,13 +1,17 @@
 import dataclasses
-import logging
 import os
 from contextlib import asynccontextmanager
 
-import uvicorn
 from fastapi import FastAPI
 from fastapi.openapi.utils import get_openapi
 from fastapi.routing import APIRoute
-from xngin.apiserver import constants, database, exceptionhandlers, middleware
+from xngin.apiserver import (
+    constants,
+    customlogging,
+    exceptionhandlers,
+    middleware,
+    database,
+)
 from xngin.apiserver.flags import PUBLISH_ALL_DOCS
 from xngin.apiserver.routers import (
     admin,
@@ -17,8 +21,6 @@ from xngin.apiserver.routers import (
     oidc,
     oidc_dependencies,
 )
-
-logger = logging.getLogger(__name__)
 
 if sentry_dsn := os.environ.get("SENTRY_DSN"):
     import sentry_sdk
@@ -54,6 +56,7 @@ async def lifespan(_app: FastAPI):
             "Please unset GOOGLE_APPLICATION_CREDENTIALS and try again."
         )
     else:
+        database.setup()
         yield
 
 
@@ -61,6 +64,7 @@ async def lifespan(_app: FastAPI):
 app = FastAPI(lifespan=lifespan)
 exceptionhandlers.setup(app)
 middleware.setup(app)
+customlogging.setup()
 
 app.include_router(
     experiments_api.router, prefix=constants.API_PREFIX_V1, tags=["Experiment Design"]
@@ -172,18 +176,3 @@ def custom_openapi():
 
 
 app.openapi = custom_openapi
-
-
-def main():
-    """Entrypoint for running in production (e.g. invoked by Dockerfile).
-
-    In development, the FastAPI dev server uses module-level app variable.
-    """
-    database.setup()
-
-    # Handy for debugging in your IDE
-    uvicorn.run(app, host="0.0.0.0", port=int(os.environ.get("UVICORN_PORT", "8000")))
-
-
-if __name__ == "__main__":
-    main()

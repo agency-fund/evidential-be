@@ -1,7 +1,6 @@
 import base64
 import binascii
 import json
-import logging
 import os
 from collections import Counter
 from functools import lru_cache
@@ -11,6 +10,7 @@ from urllib.parse import urlparse
 import httpx
 import sqlalchemy
 from httpx import codes
+from loguru import logger
 from pydantic import (
     BaseModel,
     ConfigDict,
@@ -37,9 +37,8 @@ from xngin.db_extensions import NumpyStddev
 from xngin.schema.schema_types import ParticipantsSchema
 
 DEFAULT_SETTINGS_FILE = "xngin.settings.json"
+SA_LOGGER_NAME_FOR_DWH = "xngin_dwh"
 TIMEOUT_SECS_FOR_CUSTOMER_POSTGRES = 10
-
-logger = logging.getLogger(__name__)
 
 
 class UnclassifiedRemoteSettingsError(Exception):
@@ -58,7 +57,7 @@ def get_settings_for_server():
     if settings_path.startswith("https://"):
         settings_raw = get_remote_settings(settings_path)
     else:
-        logger.info("Loading XNGIN_SETTINGS from disk: %s", settings_path)
+        logger.info("Loading XNGIN_SETTINGS from disk: {}", settings_path)
         with open(settings_path) as f:
             settings_raw = json.load(f)
     settings_raw = replace_secrets(settings_raw)
@@ -83,7 +82,7 @@ def get_remote_settings(url):
         headers["Authorization"] = auth.strip()
     if parsed.hostname == "api.github.com" and parsed.path.startswith("/repos"):
         headers["Accept"] = "application/vnd.github.v3.raw"
-    logger.info("Loading XNGIN_SETTINGS from URL: %s", url)
+    logger.info("Loading XNGIN_SETTINGS from URL: {}", url)
     retrying_transport = httpx.HTTPTransport(retries=2)
     with httpx.Client(
         transport=retrying_transport, headers=headers, timeout=5
@@ -476,6 +475,8 @@ class RemoteDatabaseConfig(ParticipantsMixin, ConfigBaseModel):
         engine = sqlalchemy.create_engine(
             url,
             connect_args=connect_args,
+            logging_name=SA_LOGGER_NAME_FOR_DWH,
+            execution_options={"logging_token": "dwh"},
             echo=flags.ECHO_SQL,
             poolclass=sqlalchemy.pool.NullPool,
         )
@@ -545,6 +546,8 @@ class SqliteLocalConfig(ParticipantsMixin, ConfigBaseModel):
         engine = sqlalchemy.create_engine(
             url,
             connect_args={"timeout": 5},
+            execution_options={"logging_token": "dwh"},
+            logging_name=SA_LOGGER_NAME_FOR_DWH,
             echo=flags.ECHO_SQL,
         )
 
@@ -693,7 +696,7 @@ def infer_table(engine: sqlalchemy.engine.Engine, table_name: str, use_reflectio
         # This method of introspection should only be used if the db dialect doesn't support Sqlalchemy2 reflection.
         return infer_table_from_cursor(engine, table_name)
     except sqlalchemy.exc.ProgrammingError:
-        logger.exception("Failed to create a Table! use_reflection: %s", use_reflection)
+        logger.exception("Failed to create a Table! use_reflection: {}", use_reflection)
         raise
     except NoSuchTableError as nste:
         metadata.reflect(engine)

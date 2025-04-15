@@ -4,13 +4,12 @@ This corresponds to the "testing" config specified in xngin.testing.settings.jso
 """
 
 import hashlib
-import logging
 import sqlite3
 from contextlib import closing
 from pathlib import Path
-import pandas as pd
 
-logger = logging.getLogger(__name__)
+import pandas as pd
+from loguru import logger
 
 TESTING_DWH_SQLITE_PATH = Path(__file__).parent.parent / "testdata/testing_dwh.db"
 TESTING_DWH_RAW_DATA = Path(__file__).parent.parent / "testdata/testing_dwh.csv.zst"

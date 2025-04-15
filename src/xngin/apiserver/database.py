@@ -8,6 +8,10 @@ from sqlalchemy.orm import sessionmaker
 from xngin.apiserver import flags
 from xngin.apiserver.models.tables import Base
 
+# SQLAlchemy's logger will append this to the name of its loggers used for the application database; e.g.
+# sqlalchemy.engine.Engine.xngin_app.
+SA_LOGGER_NAME_FOR_APP = "xngin_app"
+
 DEFAULT_POSTGRES_DIALECT = "postgresql+psycopg"
 
 # TODO: replace with something that looks upwards until it finds pyproject.toml.
@@ -46,6 +50,8 @@ def get_connect_args():
 engine = create_engine(
     SQLALCHEMY_DATABASE_URL,
     connect_args=get_connect_args(),
+    execution_options={"logging_token": "app"},
+    logging_name=SA_LOGGER_NAME_FOR_APP,
     echo=flags.ECHO_SQL_APP_DB,
 )
 

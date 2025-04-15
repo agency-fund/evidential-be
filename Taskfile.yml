@@ -43,11 +43,24 @@ env:
   CUSTOMER_API_TOKEN: ""
   CUSTOMER_DWH_PASSWORD: ""
 
-  # Ask SQLAlchemy to log the generated SQL statements used on customer DWH.
-  ECHO_SQL: "true"
+  # Configure SQLAlchemy to log the generated SQL statements used on customer DWH via its own logger.
+  ECHO_SQL: "false"
 
-  # Ask SQLAlchemy to log the generated SQL statements used on xngin app database.
+  # Configure SQLAlchemy to log the generated SQL statements used on xngin app database via its own logger.
   ECHO_SQL_APPDB: "false"
+
+  # Use a concise log line formatter for improved readability in the terminal.
+  FRIENDLY_DEV_LOGGING: "true"
+
+  # Set DEBUG_LOGGING to true to display detailed information about logging configuration to stdout. Only set this to
+  # true if you are debugging issues with logs.
+  DEBUG_LOGGING: "false"
+
+  # Configure customlogging.py to log dwh SQL to the custom log.
+  LOG_SQL: "true"
+
+  # Configure customlogging.py to log app SQL to the custom log.
+  LOG_SQL_APPDB: "false"
 
   # Publish the OpenAPI spec for the admin and OIDC APIs
   XNGIN_PUBLISH_ALL_DOCS: "true"
