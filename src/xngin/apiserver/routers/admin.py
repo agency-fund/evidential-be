@@ -177,7 +177,7 @@ def user_from_token(
     if not user:
         # Privileged users will have a user and an organization created on the fly.
         if token_info.is_privileged():
-            user = User(email=token_info.email)
+            user = User(email=token_info.email, is_privileged=True)
             session.add(user)
             organization = Organization(name="My Organization")
             session.add(organization)
@@ -281,7 +281,6 @@ def list_organizations(
 @router.post("/organizations")
 def create_organizations(
     session: Annotated[Session, Depends(xngin_db_session)],
-    token_info: Annotated[TokenInfo, Depends(require_oidc_token)],
     user: Annotated[User, Depends(user_from_token)],
     body: Annotated[CreateOrganizationRequest, Body(...)],
 ) -> CreateOrganizationResponse:
@@ -289,7 +288,7 @@ def create_organizations(
 
     Only users with an @agency.fund email address can create organizations.
     """
-    if not token_info.is_privileged():
+    if not user.is_privileged:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Only privileged users can create organizations",
@@ -309,7 +308,6 @@ def create_organizations(
 def add_member_to_organization(
     organization_id: str,
     session: Annotated[Session, Depends(xngin_db_session)],
-    token_info: Annotated[TokenInfo, Depends(require_oidc_token)],
     user: Annotated[User, Depends(user_from_token)],
     body: Annotated[AddMemberToOrganizationRequest, Body(...)],
 ):
@@ -324,7 +322,7 @@ def add_member_to_organization(
             status_code=status.HTTP_404_NOT_FOUND, detail="Organization not found"
         )
 
-    if not token_info.is_privileged():
+    if not user.is_privileged:
         # Verify user is a member of the organization
         _authz_check = get_organization_or_raise(session, user, organization_id)
 
