@@ -146,6 +146,10 @@ tasks:
     desc: "Rehash your migration file (see atlas.sum) if you had to modify the generated migration file afterwards, e.g. to add a custom backfill."
     cmds:
       - uv run atlas migrate hash --env sa_postgres
+  migration-status:
+    desc: "Provides in-depth information about the migration status of the connected database. Useful for debugging migration issues."
+    cmds:
+      - uv run atlas migrate status --env sa_postgres --url '{{.XNGIN_DEVAPP_DSN}}'
   apply-migrations-pg:
     desc: "Apply Postgres migrations locally (requires localpg instance to be running, to have an xngin database, and to have been previously migrated)"
     cmds:
