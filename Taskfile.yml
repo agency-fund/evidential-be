@@ -145,3 +145,7 @@ tasks:
     env:
       DATABASE_URL: "{{.XNGIN_DEVAPP_DSN}}"
     cmd: uv run xngin-tq
+  psql:
+    desc: "Start interactive psql"
+    interactive: true
+    cmd: psql "{{.XNGIN_DEVAPP_DSN}}"
