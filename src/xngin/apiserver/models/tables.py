@@ -137,6 +137,10 @@ class Task(Base):
     task_type: Mapped[str] = mapped_column(
         comment="The type of task. E.g. `event.created`"
     )
+    status: Mapped[str] = mapped_column(
+        server_default="pending",
+        comment="Status of the task: 'pending', 'running', 'success', or 'dead'."
+    )
     embargo_until: Mapped[datetime | None] = mapped_column(
         comment="If set, the task will not be processed until after this time."
     )

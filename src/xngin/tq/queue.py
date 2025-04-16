@@ -14,16 +14,17 @@ from psycopg.rows import dict_row
 @dataclass
 class Task:
     """Represents a task in the queue."""
-    
+
     id: str
     created_at: datetime
     updated_at: datetime
     task_type: str
     retry_count: int
+    status: str
     embargo_until: Optional[datetime] = None
     payload: Optional[Dict[str, Any]] = None
     event_id: Optional[str] = None
-    
+
     def __repr__(self) -> str:
         """Return a string representation of the task."""
         return f"Task(id={self.id}, type={self.task_type}, retry_count={self.retry_count})"
@@ -116,19 +117,27 @@ class TaskQueue:
         """
         now = datetime.now(UTC)
         with conn.cursor(row_factory=dict_row) as cur:
-            # Use FOR UPDATE SKIP LOCKED to avoid race conditions
+            # Use UPDATE with FOR UPDATE SKIP LOCKED to claim a task atomically
             cur.execute(
                 """
-                SELECT * FROM tasks
-                WHERE (embargo_until IS NULL OR embargo_until <= %s) AND retry_count <= %s
-                ORDER BY created_at
-                LIMIT 1
-                FOR UPDATE SKIP LOCKED
+                UPDATE tasks
+                SET status = 'running', updated_at = %s
+                WHERE id IN (
+                    SELECT id FROM tasks
+                    WHERE status = 'pending'
+                    AND (embargo_until IS NULL OR embargo_until <= %s)
+                    AND retry_count <= %s
+                    ORDER BY created_at
+                    LIMIT 1
+                    FOR UPDATE SKIP LOCKED
+                )
+                RETURNING *
                 """,
-                (now, self.max_retries),
+                (now, now, self.max_retries),
             )
             row = cur.fetchone()
             if row:
+                conn.commit()  # Commit the status update
                 return Task(**row)
             return None
 
@@ -162,16 +171,23 @@ class TaskQueue:
             on_failure(e)
 
     def _mark_task_completed(self, conn: psycopg.Connection, task: Task) -> None:
-        """Mark a task as completed by deleting it.
+        """Mark a task as completed by setting its status to 'success'.
 
         Args:
             conn: Database connection.
             task: The task to mark as completed.
         """
         with conn.cursor() as cur:
-            cur.execute("DELETE FROM tasks WHERE id = %s", (task.id,))
+            cur.execute(
+                """
+                UPDATE tasks
+                SET status = 'success', updated_at = NOW()
+                WHERE id = %s
+                """,
+                (task.id,)
+            )
             conn.commit()
-            logger.info(f"Task {task.id} completed and removed from queue")
+            logger.info(f"Task {task.id} completed and marked as successful")
 
     def _mark_task_failed(self, conn: psycopg.Connection, task: Task, exc: Exception) -> None:
         """Mark a task as failed.
@@ -182,16 +198,33 @@ class TaskQueue:
             exc: The exception that caused the failure.
         """
         with conn.cursor() as cur:
-            cur.execute(
-                """
-                UPDATE tasks
-                SET retry_count = retry_count + 1,
-                    updated_at = NOW()
-                WHERE id = %s
-                """,
-                (task.id,),
-            )
-            logger.info(f"Task {task.id} failed, retry count now {task.retry_count + 1}")
+            # Check if we've reached max retries
+            if task.retry_count >= self.max_retries - 1:  # -1 because we're about to increment
+                # Mark as dead if max retries reached
+                cur.execute(
+                    """
+                    UPDATE tasks
+                    SET status = 'dead',
+                        retry_count = retry_count + 1,
+                        updated_at = NOW()
+                    WHERE id = %s
+                    """,
+                    (task.id,),
+                )
+                logger.warning(f"Task {task.id} failed and reached max retries, marked as dead")
+            else:
+                # Reset to pending for retry
+                cur.execute(
+                    """
+                    UPDATE tasks
+                    SET status = 'pending',
+                        retry_count = retry_count + 1,
+                        updated_at = NOW()
+                    WHERE id = %s
+                    """,
+                    (task.id,),
+                )
+                logger.info(f"Task {task.id} failed, retry count now {task.retry_count + 1}")
             conn.commit()
 
     def run(self) -> None:
@@ -268,8 +301,8 @@ class TaskQueue:
                 cur.execute(
                     """
                     INSERT INTO tasks (
-                        task_type, payload, event_id, embargo_until
-                    ) VALUES (%s, %s, %s, %s)
+                        task_type, status, payload, event_id, embargo_until
+                    ) VALUES (%s, 'pending', %s, %s, %s)
                     RETURNING id
                     """,
                     (
