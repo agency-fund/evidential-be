@@ -115,17 +115,16 @@ class TaskQueue:
         Returns:
             A task if one is available, None otherwise.
         """
-        now = datetime.now(UTC)
         with conn.cursor(row_factory=dict_row) as cur:
             # Use UPDATE with FOR UPDATE SKIP LOCKED to claim a task atomically
             cur.execute(
                 """
                 UPDATE tasks
-                SET status = 'running', updated_at = %s
+                SET status = 'running', updated_at = NOW()
                 WHERE id IN (
                     SELECT id FROM tasks
                     WHERE status = 'pending'
-                    AND embargo_until <= %s
+                    AND embargo_until <= NOW()
                     AND retry_count <= %s
                     ORDER BY created_at
                     LIMIT 1
@@ -133,7 +132,7 @@ class TaskQueue:
                 )
                 RETURNING *
                 """,
-                (now, now, self.max_retries),
+                (self.max_retries,),
             )
             row = cur.fetchone()
             if row:
@@ -189,19 +188,6 @@ class TaskQueue:
             conn.commit()
             logger.info(f"Task {task.id} completed and marked as successful")
 
-    def _calculate_backoff(self, retry_count: int) -> timedelta:
-        """Calculate exponential backoff time based on retry count.
-
-        Args:
-            retry_count: Current retry count
-
-        Returns:
-            Timedelta representing the backoff duration
-        """
-        # Start with 1 minute, double each time, max out at 15 minutes
-        # retry_count is 0-based, so add 1 for the calculation
-        minutes = min(2 ** retry_count, 15)
-        return timedelta(minutes=minutes)
 
     def _mark_task_failed(self, conn: psycopg.Connection, task: Task, exc: Exception) -> None:
         """Mark a task as failed.
@@ -211,8 +197,6 @@ class TaskQueue:
             task: The task to mark as failed.
             exc: The exception that caused the failure.
         """
-        now = datetime.now(UTC)
-
         with conn.cursor() as cur:
             # Check if we've reached max retries
             if task.retry_count >= self.max_retries - 1:  # -1 because we're about to increment
@@ -222,30 +206,29 @@ class TaskQueue:
                     UPDATE tasks
                     SET status = 'dead',
                         retry_count = retry_count + 1,
-                        updated_at = %s
+                        updated_at = NOW()
                     WHERE id = %s
                     """,
-                    (now, task.id),
+                    (task.id,),
                 )
                 logger.warning(f"Task {task.id} failed and reached max retries, marked as dead")
             else:
                 # Calculate backoff time for next retry
-                backoff = self._calculate_backoff(task.retry_count)
-                embargo_until = now + backoff
-
-                # Reset to pending for retry with embargo
+                backoff_minutes = min(2 ** task.retry_count, 15)
+                
+                # Reset to pending for retry with embargo using Postgres interval
                 cur.execute(
                     """
                     UPDATE tasks
                     SET status = 'pending',
                         retry_count = retry_count + 1,
-                        updated_at = %s,
-                        embargo_until = %s
+                        updated_at = NOW(),
+                        embargo_until = NOW() + INTERVAL '%s minutes'
                     WHERE id = %s
                     """,
-                    (now, embargo_until, task.id),
+                    (backoff_minutes, task.id),
                 )
-                logger.info(f"Task {task.id} failed, retry count now {task.retry_count + 1}, next attempt after {embargo_until} (backoff: {backoff})")
+                logger.info(f"Task {task.id} failed, retry count now {task.retry_count + 1}, next attempt after {backoff_minutes} minutes")
             conn.commit()
 
     def run(self) -> None:
@@ -318,20 +301,37 @@ class TaskQueue:
         """
         with psycopg.connect(self.dsn) as conn:
             with conn.cursor() as cur:
-                cur.execute(
-                    """
-                    INSERT INTO tasks (
-                        task_type, status, payload, event_id, embargo_until
-                    ) VALUES (%s, 'pending', %s, %s, COALESCE(%s, NOW()))
-                    RETURNING id
-                    """,
-                    (
-                        task_type,
-                        json.dumps(payload) if payload else None,
-                        event_id,
-                        embargo_until,
-                    ),
-                )
+                if embargo_until:
+                    # Format the datetime in ISO format for Postgres
+                    embargo_str = embargo_until.isoformat()
+                    cur.execute(
+                        """
+                        INSERT INTO tasks (
+                            task_type, status, payload, event_id, embargo_until
+                        ) VALUES (%s, 'pending', %s, %s, %s::timestamptz)
+                        RETURNING id
+                        """,
+                        (
+                            task_type,
+                            json.dumps(payload) if payload else None,
+                            event_id,
+                            embargo_str,
+                        ),
+                    )
+                else:
+                    cur.execute(
+                        """
+                        INSERT INTO tasks (
+                            task_type, status, payload, event_id, embargo_until
+                        ) VALUES (%s, 'pending', %s, %s, NOW())
+                        RETURNING id
+                        """,
+                        (
+                            task_type,
+                            json.dumps(payload) if payload else None,
+                            event_id,
+                        ),
+                    )
                 task_id = cur.fetchone()[0]
                 conn.commit()
                 logger.info(f"Enqueued task {task_id} of type {task_type}")
