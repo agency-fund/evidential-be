@@ -141,8 +141,9 @@ class Task(Base):
         server_default="pending",
         comment="Status of the task: 'pending', 'running', 'success', or 'dead'."
     )
-    embargo_until: Mapped[datetime | None] = mapped_column(
-        comment="If set, the task will not be processed until after this time."
+    embargo_until: Mapped[datetime] = mapped_column(
+        server_default=sqlalchemy.sql.func.now(),
+        comment="Time until which the task should not be processed. Defaults to created_at."
     )
     retry_count: Mapped[int] = mapped_column(
         server_default="0",

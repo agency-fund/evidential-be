@@ -14,14 +14,14 @@ from psycopg.rows import dict_row
 @dataclass
 class Task:
     """Represents a task in the queue."""
-
+    
     id: str
     created_at: datetime
     updated_at: datetime
     task_type: str
     retry_count: int
     status: str
-    embargo_until: Optional[datetime] = None
+    embargo_until: datetime
     payload: Optional[Dict[str, Any]] = None
     event_id: Optional[str] = None
 
@@ -125,7 +125,7 @@ class TaskQueue:
                 WHERE id IN (
                     SELECT id FROM tasks
                     WHERE status = 'pending'
-                    AND (embargo_until IS NULL OR embargo_until <= %s)
+                    AND embargo_until <= %s
                     AND retry_count <= %s
                     ORDER BY created_at
                     LIMIT 1
@@ -322,7 +322,7 @@ class TaskQueue:
                     """
                     INSERT INTO tasks (
                         task_type, status, payload, event_id, embargo_until
-                    ) VALUES (%s, 'pending', %s, %s, %s)
+                    ) VALUES (%s, 'pending', %s, %s, COALESCE(%s, NOW()))
                     RETURNING id
                     """,
                     (
