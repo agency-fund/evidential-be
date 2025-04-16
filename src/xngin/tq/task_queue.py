@@ -3,7 +3,8 @@
 import time
 from dataclasses import dataclass
 from datetime import datetime
-from typing import Any, Callable, Dict, Optional, Protocol
+from typing import Any, Protocol
+from collections.abc import Callable
 
 import psycopg
 from loguru import logger
@@ -21,19 +22,24 @@ class Task:
     retry_count: int
     status: str
     embargo_until: datetime
-    payload: Optional[Dict[str, Any]] = None
-    event_id: Optional[str] = None
+    payload: dict[str, Any] | None = None
+    event_id: str | None = None
 
     def __repr__(self) -> str:
         """Return a string representation of the task."""
-        return f"Task(id={self.id}, type={self.task_type}, retry_count={self.retry_count})"
+        return (
+            f"Task(id={self.id}, type={self.task_type}, retry_count={self.retry_count})"
+        )
 
 
 class TaskHandler(Protocol):
     """Protocol for task handlers."""
 
     def __call__(
-        self, task: Task, on_success: Callable[[], None], on_failure: Callable[[Exception], None]
+        self,
+        task: Task,
+        on_success: Callable[[], None],
+        on_failure: Callable[[Exception], None],
     ) -> None:
         """Handle a task.
 
@@ -48,7 +54,7 @@ class TaskHandler(Protocol):
 class TaskQueue:
     """Task queue implementation using Postgres."""
 
-    def __init__(self, dsn: str, max_retries: int = 3, poll_interval: int = 60*5):
+    def __init__(self, dsn: str, max_retries: int = 3, poll_interval: int = 60 * 5):
         """Initialize the task queue.
 
         Args:
@@ -59,7 +65,7 @@ class TaskQueue:
         self.dsn = dsn
         self.max_retries = max_retries
         self.poll_interval = poll_interval
-        self.handlers: Dict[str, TaskHandler] = {}
+        self.handlers: dict[str, TaskHandler] = {}
         self.running = False
 
     def register_handler(self, task_type: str, handler: TaskHandler) -> None:
@@ -105,7 +111,7 @@ class TaskQueue:
             conn.commit()
             logger.info("Set up notifications for task queue")
 
-    def _fetch_task(self, conn: psycopg.Connection) -> Optional[Task]:
+    def _fetch_task(self, conn: psycopg.Connection) -> Task | None:
         """Fetch a task from the queue.
 
         Args:
@@ -150,7 +156,9 @@ class TaskQueue:
 
         if task.task_type not in self.handlers:
             logger.error(f"No handler registered for task type: {task.task_type}")
-            self._mark_task_failed(conn, task, Exception(f"No handler for task type: {task.task_type}"))
+            self._mark_task_failed(
+                conn, task, Exception(f"No handler for task type: {task.task_type}")
+            )
             return
 
         handler = self.handlers[task.task_type]
@@ -182,13 +190,14 @@ class TaskQueue:
                 SET status = 'success', updated_at = NOW()
                 WHERE id = %s
                 """,
-                (task.id,)
+                (task.id,),
             )
             conn.commit()
             logger.info(f"Task {task.id} completed and marked as successful")
 
-
-    def _mark_task_failed(self, conn: psycopg.Connection, task: Task, exc: Exception) -> None:
+    def _mark_task_failed(
+        self, conn: psycopg.Connection, task: Task, exc: Exception
+    ) -> None:
         """Mark a task as failed.
 
         Args:
@@ -198,7 +207,9 @@ class TaskQueue:
         """
         with conn.cursor() as cur:
             # Check if we've reached max retries
-            if task.retry_count >= self.max_retries - 1:  # -1 because we're about to increment
+            if (
+                task.retry_count >= self.max_retries - 1
+            ):  # -1 because we're about to increment
                 # Mark as dead if max retries reached
                 cur.execute(
                     """
@@ -210,10 +221,12 @@ class TaskQueue:
                     """,
                     (task.id,),
                 )
-                logger.warning(f"Task {task.id} failed and reached max retries, marked as dead")
+                logger.warning(
+                    f"Task {task.id} failed and reached max retries, marked as dead"
+                )
             else:
                 # Calculate backoff time for next retry
-                backoff_minutes = min(2 ** task.retry_count, 15)
+                backoff_minutes = min(2**task.retry_count, 15)
 
                 # Reset to pending for retry with embargo using Postgres interval
                 cur.execute(
@@ -227,7 +240,9 @@ class TaskQueue:
                     """,
                     (backoff_minutes, task.id),
                 )
-                logger.info(f"Task {task.id} failed, retry count now {task.retry_count + 1}, next attempt after {backoff_minutes} minutes")
+                logger.info(
+                    f"Task {task.id} failed, retry count now {task.retry_count + 1}, next attempt after {backoff_minutes} minutes"
+                )
             conn.commit()
 
     def run(self) -> None:
@@ -267,13 +282,14 @@ class TaskQueue:
                             gen.close()
 
                         # No notifications received, poll again
-                        logger.debug(f"No notifications received in {self.poll_interval}s, polling again")
+                        logger.debug(
+                            f"No notifications received in {self.poll_interval}s, polling again"
+                        )
 
             except psycopg.OperationalError as e:
                 logger.error(f"Database connection error: {e}")
                 logger.info("Reconnecting in 5 seconds...")
                 time.sleep(5)
-
 
     def stop(self) -> None:
         """Stop the task queue processor."""

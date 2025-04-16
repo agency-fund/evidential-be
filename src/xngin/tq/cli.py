@@ -8,7 +8,7 @@ from typing import Annotated
 import typer
 from loguru import logger
 from xngin.tq.handlers import event_created_handler
-from xngin.tq.queue import TaskQueue
+from xngin.tq.task_queue import TaskQueue
 
 DEFAULT_MAX_RETRIES = 10
 

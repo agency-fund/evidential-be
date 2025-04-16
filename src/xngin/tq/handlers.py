@@ -1,12 +1,10 @@
 """Task handlers for the task queue."""
 
-import json
-from typing import Callable
+from collections.abc import Callable
 
 import httpx
 from loguru import logger
-
-from xngin.tq.queue import Task
+from xngin.tq.task_queue import Task
 
 
 def event_created_handler(
@@ -22,12 +20,12 @@ def event_created_handler(
         on_failure: Callback to call when the task handling fails.
     """
     logger.info(f"Handling event.created task: {task.id}")
-    
+
     if not task.payload:
         logger.error("Task payload is empty")
         on_failure(ValueError("Task payload is empty"))
         return
-    
+
     try:
         # Send the event data to httpbin.org/post
         response = httpx.post(
@@ -36,11 +34,13 @@ def event_created_handler(
             timeout=10.0,
         )
         response.raise_for_status()
-        
+
         # Log the response
-        logger.info(f"Successfully sent event data to httpbin.org: {response.status_code}")
+        logger.info(
+            f"Successfully sent event data to httpbin.org: {response.status_code}"
+        )
         logger.debug(f"Response: {response.json()}")
-        
+
         # Mark the task as completed
         on_success()
     except Exception as e:
