@@ -366,10 +366,12 @@ class ArmTable(Base):
     """Representation of arms of an experiment."""
 
     __tablename__ = "arms"
-    # Ensure arm names are unique within an organization
-    __table_args__ = (
-        sqlalchemy.UniqueConstraint("name", "organization_id", name="uix_arm_name_org"),
-    )
+    # TODO: Ensure arm names are unique within an organization
+    #       Do this as part of Issue #278; will need to backfill in such a way that old arms are
+    #       made unique e.g. suffixing with a part of the experiment id.
+    # __table_args__ = (
+    #     sqlalchemy.UniqueConstraint("name", "organization_id", name="uix_arm_name_org"),
+    # )
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True)
     name: Mapped[str] = mapped_column(String(255))
