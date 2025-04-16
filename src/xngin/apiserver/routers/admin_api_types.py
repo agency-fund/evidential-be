@@ -65,6 +65,8 @@ class EventSummary(AdminApiBaseModel):
     id: str
     created_at: datetime
     type: str
+    summary: str
+    link: str | None
 
 
 class ListOrganizationEventsResponse(AdminApiBaseModel):

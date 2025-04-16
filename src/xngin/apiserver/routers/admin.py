@@ -45,6 +45,7 @@ from xngin.apiserver.models.tables import (
     ApiKey,
     Datasource,
     DatasourceTablesInspected,
+    Event,
     Experiment,
     Organization,
     ParticipantTypesInspected,
@@ -66,6 +67,7 @@ from xngin.apiserver.routers.admin_api_types import (
     CreateParticipantsTypeRequest,
     CreateParticipantsTypeResponse,
     DatasourceSummary,
+    EventSummary,
     FieldMetadata,
     GetDatasourceResponse,
     GetOrganizationResponse,
@@ -99,6 +101,7 @@ from xngin.apiserver.settings import (
     SqliteLocalConfig,
     infer_table,
 )
+from xngin.events.experiment_created import ExperimentCreated, WebhookSent
 from xngin.stats.analysis import analyze_experiment as analyze_experiment_impl
 
 logger = logging.getLogger(__name__)
@@ -349,7 +352,7 @@ def delete_webhook_from_organization(
     stmt = (
         delete(Webhook)
         .where(Webhook.id == webhook_id)
-        .where(Webhook.organization_id == organization_id)
+        .where(Webhook.organization_id == org.id)
     )
     result = session.execute(stmt)
 
@@ -366,8 +369,50 @@ def delete_webhook_from_organization(
 @router.get("/organizations/{organization_id}/events")
 def list_organization_events(
     organization_id: str,
-) -> list[ListOrganizationEventsResponse]:
+    session: Annotated[Session, Depends(xngin_db_session)],
+    user: Annotated[User, Depends(user_from_token)],
+) -> ListOrganizationEventsResponse:
     """Returns the most recent 200 events in an organization."""
+    # Verify user has access to the organization
+    org = get_organization_or_raise(session, user, organization_id)
+
+    # Query for the most recent 200 events
+    stmt = (
+        select(Event)
+        .where(Event.organization_id == org.id)
+        .order_by(Event.created_at.desc())
+        .limit(200)
+    )
+
+    result = session.execute(stmt)
+    events = result.scalars().all()
+
+    # Convert events to EventSummary objects
+    event_summaries = []
+    for event in events:
+        link = None
+
+        if event.type == "experiment.created":
+            experiment_id = ExperimentCreated.model_validate(event.data).experiment_id
+            summary = f"Created experiment {experiment_id}"
+            link = f"/experiments/view/{experiment_id}"
+        elif event.type == "webhook.sent":
+            sent_details = WebhookSent.model_validate(event.data)
+            summary = sent_details.summarize()
+        else:
+            summary = f"External event."
+
+        event_summaries.append(
+            EventSummary(
+                id=event.id,
+                created_at=event.created_at,
+                type=event.type,
+                summary=summary,
+                link=link
+            )
+        )
+
+    return ListOrganizationEventsResponse(items=event_summaries)
 
 
 @router.post(
