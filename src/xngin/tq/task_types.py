@@ -9,4 +9,5 @@ class WebhookOutboundTask(BaseModel):
     url: str
     payload: dict = dict()
     headers: dict[str, str] = dict()
+    organization_id: str
     method: Literal["POST", "GET"] = "POST"

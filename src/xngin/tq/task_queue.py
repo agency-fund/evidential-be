@@ -4,7 +4,6 @@ import time
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Any, Protocol
-from collections.abc import Callable
 
 import psycopg
 from loguru import logger
@@ -38,14 +37,11 @@ class TaskHandler(Protocol):
     def __call__(
         self,
         task: Task,
-    ) -> bool:
+    ):
         """Handle a task.
 
         Args:
             task: The task to handle.
-
-        Returns:
-            True if the task was handled successfully.
 
         Raises:
             Exception: If the task handling fails.

@@ -35,10 +35,11 @@ from xngin.apiserver.models.enums import ExperimentState
 from xngin.apiserver.models.tables import (
     ArmAssignment,
     ArmTable,
+    Event,
     Experiment,
     Task,
 )
-from xngin.apiserver.models.tables import Datasource as DatasourceTable, Event
+from xngin.apiserver.models.tables import Datasource as DatasourceTable
 from xngin.apiserver.routers.experiments_api import (
     CommonQueryParams,
     get_participants_config_and_schema,
@@ -287,6 +288,7 @@ def commit_experiment_impl(xngin_session: Session, experiment: Experiment):
             task = Task(
                 task_type="webhook.outbound",
                 payload=WebhookOutboundTask(
+                    organization_id=experiment.datasource.organization_id,
                     url=webhook.url,
                     payload={"experiment_id": experiment_id},
                     headers={"Authorization": webhook.auth_token}
@@ -294,7 +296,6 @@ def commit_experiment_impl(xngin_session: Session, experiment: Experiment):
                     else {},
                 ).model_dump(),
             )
-            task.event = event
             xngin_session.add(task)
     xngin_session.commit()
 

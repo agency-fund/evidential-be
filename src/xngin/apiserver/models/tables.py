@@ -138,9 +138,6 @@ class Event(Base):
 
     organization_id: Mapped[str] = mapped_column(ForeignKey("organizations.id"))
     organization: Mapped["Organization"] = relationship(back_populates="events")
-    tasks: Mapped[list["Task"]] = relationship(
-        back_populates="event", cascade="all, delete-orphan"
-    )
 
     __table_args__ = (Index("event_stream", "organization_id", created_at),)
 
@@ -176,17 +173,8 @@ class Task(Base):
         type_=JSONBetter,
         comment="The task payload. This will be a JSON object with task-specific data.",
     )
-    event_id: Mapped[str | None] = mapped_column(
-        ForeignKey("events.id", ondelete="CASCADE"),
-        comment="Optional reference to an event that triggered this task.",
-    )
 
-    event: Mapped["Event | None"] = relationship(back_populates="tasks")
-
-    __table_args__ = (
-        Index("idx_tasks_embargo", "embargo_until"),
-        Index("idx_tasks_type", "task_type"),
-    )
+    __table_args__ = (Index("idx_tasks_embargo", "embargo_until"),)
 
 
 class User(Base):

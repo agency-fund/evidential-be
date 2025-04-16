@@ -75,6 +75,7 @@ def run(
     # Register handlers
     queue.register_handler("webhook.outbound", webhook_outbound_handler)
     queue.register_handler("webhook.status", webhook_status_handler)
+
     # Handle SIGINT and SIGTERM
     def signal_handler(sig, frame):
         logger.info(f"Received signal {sig}, shutting down...")
