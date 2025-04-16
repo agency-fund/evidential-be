@@ -1,9 +1,8 @@
 """Task queue implementation using Postgres."""
 
-import json
 import time
 from dataclasses import dataclass
-from datetime import UTC, datetime, timedelta
+from datetime import datetime
 from typing import Any, Callable, Dict, Optional, Protocol
 
 import psycopg
@@ -14,7 +13,7 @@ from psycopg.rows import dict_row
 @dataclass
 class Task:
     """Represents a task in the queue."""
-    
+
     id: str
     created_at: datetime
     updated_at: datetime
@@ -215,7 +214,7 @@ class TaskQueue:
             else:
                 # Calculate backoff time for next retry
                 backoff_minutes = min(2 ** task.retry_count, 15)
-                
+
                 # Reset to pending for retry with embargo using Postgres interval
                 cur.execute(
                     """
@@ -280,59 +279,3 @@ class TaskQueue:
         """Stop the task queue processor."""
         logger.info("Stopping task queue")
         self.running = False
-
-    def enqueue(
-        self,
-        task_type: str,
-        payload: Optional[Dict[str, Any]] = None,
-        event_id: Optional[str] = None,
-        embargo_until: Optional[datetime] = None,
-    ) -> str:
-        """Enqueue a new task.
-
-        Args:
-            task_type: The type of task.
-            payload: Optional payload for the task.
-            event_id: Optional ID of an event associated with this task.
-            embargo_until: Optional time until which the task should not be processed.
-
-        Returns:
-            The ID of the newly created task.
-        """
-        with psycopg.connect(self.dsn) as conn:
-            with conn.cursor() as cur:
-                if embargo_until:
-                    # Format the datetime in ISO format for Postgres
-                    embargo_str = embargo_until.isoformat()
-                    cur.execute(
-                        """
-                        INSERT INTO tasks (
-                            task_type, status, payload, event_id, embargo_until
-                        ) VALUES (%s, 'pending', %s, %s, %s::timestamptz)
-                        RETURNING id
-                        """,
-                        (
-                            task_type,
-                            json.dumps(payload) if payload else None,
-                            event_id,
-                            embargo_str,
-                        ),
-                    )
-                else:
-                    cur.execute(
-                        """
-                        INSERT INTO tasks (
-                            task_type, status, payload, event_id, embargo_until
-                        ) VALUES (%s, 'pending', %s, %s, NOW())
-                        RETURNING id
-                        """,
-                        (
-                            task_type,
-                            json.dumps(payload) if payload else None,
-                            event_id,
-                        ),
-                    )
-                task_id = cur.fetchone()[0]
-                conn.commit()
-                logger.info(f"Enqueued task {task_id} of type {task_type}")
-                return task_id
