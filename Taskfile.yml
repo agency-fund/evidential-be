@@ -92,6 +92,15 @@ tasks:
 
     cmds:
       - uv run fastapi dev src/xngin/apiserver/main.py
+  bootstrap-app-db:
+    internal: true
+    desc: |
+      Ensure the localpg server is running and has an "xngin" database. If the database doesn't already exist, it will
+      be created, and Atlas will create the tables so that subsequent table migrations behave as expected.
+    cmds:
+      - >
+        ./tools/localpg.py --allow-existing -d --wait --create-db {{.XNGIN_DEVAPPDB_NAME}}
+        --if-created "uv run task apply-migrations-pg"
   start-with-local-pg:
     desc: "Starts apiserver locally with settings compatible with local dash dev server (using PostgreSQL)"
     interactive: true
@@ -105,12 +114,9 @@ tasks:
       # Also see instructions for .env above.
       ENABLE_ADMIN: "true"
       ENABLE_OIDC: "true"
+    deps:
+      - bootstrap-app-db
     cmds:
-      # Ensure the localpg server is running and has an "xngin" database. If the database doesn't already exist,
-      # have Atlas create the tables so that subsequent table migrations behave as expected.
-      - >
-        ./tools/localpg.py --allow-existing -d --wait --create-db {{.XNGIN_DEVAPPDB_NAME}}
-        --if-created "uv run task apply-migrations-pg"
       - task bootstrap-dwh-local-pg || /bin/true
       - uv run fastapi dev src/xngin/apiserver/main.py
   bootstrap-dwh-local-pg:
@@ -142,6 +148,8 @@ tasks:
     desc: "Build Postgres migrations"
     cmds:
       - uv run atlas migrate diff --env sa_postgres && git add migrations
+      # If you modify the migration file afterwards, you should re-hash it:
+      # uv run atlas migrate hash --env sa_postgres
   hash-migrations:
     desc: "Rehash your migration file (see atlas.sum) if you had to modify the generated migration file afterwards, e.g. to add a custom backfill."
     cmds:
@@ -150,15 +158,20 @@ tasks:
     desc: "Provides in-depth information about the migration status of the connected database. Useful for debugging migration issues."
     cmds:
       - uv run atlas migrate status --env sa_postgres --url '{{.XNGIN_DEVAPP_DSN}}'
+  make-manual-migration:
+    desc: "Create and edit a new migration file manually. Use this to manually adjust values in the database."
+    interactive: true
+    cmds:
+      - uv run atlas migrate new --env sa_postgres --edit
+  down-migration:
+    desc: "Go back a version in the migration history. Note that it include pre-migration checks to ensure data isn't deleted and tables are empty, so you may have to manually do some prep for the reversion. See https://atlasgo.io/versioned/down"
+    cmds:
+      - uv run atlas migrate down --env sa_postgres --url '{{.XNGIN_DEVAPP_DSN}}'
   apply-migrations-pg:
     desc: "Apply Postgres migrations locally (requires localpg instance to be running, to have an xngin database, and to have been previously migrated)"
     cmds:
       - uv run atlas migrate diff --env sa_postgres
       - uv run atlas migrate apply --env sa_postgres --url '{{.XNGIN_DEVAPP_DSN}}'
-  down-migration:
-    desc: "Go back a version in the migration history. Note that it include pre-migration checks to ensure data isn't deleted and tables are empty, so you may have to manually do some prep for the reversion. See https://atlasgo.io/versioned/down"
-    cmds:
-      - uv run atlas migrate down --env sa_postgres --url '{{.XNGIN_DEVAPP_DSN}}'
   apply-migrations-sqlite:
     desc: "Apply sqlite migrations locally"
     cmd: |
@@ -169,3 +182,16 @@ tasks:
       sqlite3 xngin.db .tables | grep -q "atlas_schema_revisions" \
         && uv run atlas migrate apply --env sa_sqlite --url sqlite://xngin.db \
         || uv run atlas migrate apply --env sa_sqlite --url sqlite://xngin.db --baseline $(ls -t migrations/sa_sqlite | grep .sql | sort -n | cut -f1 -d. | head -1)
+  create-user:
+    desc: "Create a user: task create-user -- username@example.com"
+    interactive: true
+    deps:
+      - bootstrap-app-db
+    env:
+      XNGIN_DEVAPP_DSN: "{{.XNGIN_DEVAPP_DSN}}"
+    cmd: |
+      if [ "{{.CLI_ARGS}}" == "" ]; then
+        echo Email address must be passed as argument after "--". Example: task create-user -- email@example.com
+        exit 1
+      fi
+      uv run xngin-cli add-user --email "{{.CLI_ARGS}}" --privileged
