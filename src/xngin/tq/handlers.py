@@ -5,9 +5,19 @@ from collections.abc import Callable
 import httpx
 from loguru import logger
 from xngin.tq.task_queue import Task
+from xngin.tq.task_types import WebhookOutboundTask
 
 
-def event_created_handler(
+def webhook_status_handler(
+        task: Task,
+        on_success: Callable[[], None], on_failure: Callable[[Exception], None]
+) -> None:
+    """Handle webhook.status task."""
+    logger.info(f"Received webhook.status task {task}")
+    on_success()
+
+
+def webhook_outbound_handler(
     task: Task, on_success: Callable[[], None], on_failure: Callable[[Exception], None]
 ) -> None:
     """Handle an event.created task.
@@ -26,23 +36,28 @@ def event_created_handler(
         on_failure(ValueError("Task payload is empty"))
         return
 
+    payload = WebhookOutboundTask.model_validate(task.payload)
+    logger.info(f"Processing {payload}")
+
     try:
         # Send the event data to httpbin.org/post
-        response = httpx.post(
-            "https://httpbin.org/post",
-            json=task.payload,
+        response = httpx.request(
+            payload.method,
+            payload.url,
+            json=payload.payload,
             timeout=10.0,
+            headers=payload.headers,
         )
-        response.raise_for_status()
-
-        # Log the response
-        logger.info(
-            f"Successfully sent event data to httpbin.org: {response.status_code}"
-        )
-        logger.debug(f"Response: {response.json()}")
-
-        # Mark the task as completed
-        on_success()
+        logger.debug(f"Response: {response.content}")
+        if response.status_code >= 200 and response.status_code < 300 :
+            logger.info(
+                f"Successfully sent event data to {payload.url}: {response.status_code}"
+            )
+            logger.debug(f"Response: {response.json()}")
+            on_success()
+        else:
+            logger.info(f"Outbound webhook failed")
+            response.raise_for_status()
     except Exception as e:
         logger.exception(f"Failed to send event data to httpbin.org: {e}")
         on_failure(e)

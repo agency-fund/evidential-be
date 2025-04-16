@@ -7,7 +7,7 @@ from typing import Annotated
 
 import typer
 from loguru import logger
-from xngin.tq.handlers import event_created_handler
+from xngin.tq.handlers import webhook_outbound_handler, webhook_status_handler
 from xngin.tq.task_queue import TaskQueue
 
 DEFAULT_MAX_RETRIES = 10
@@ -73,8 +73,8 @@ def run(
     queue = TaskQueue(dsn=dsn, max_retries=max_retries, poll_interval=poll_interval)
 
     # Register handlers
-    queue.register_handler("event.created", event_created_handler)
-
+    queue.register_handler("webhook.outbound", webhook_outbound_handler)
+    queue.register_handler("webhook.status", webhook_status_handler)
     # Handle SIGINT and SIGTERM
     def signal_handler(sig, frame):
         logger.info(f"Received signal {sig}, shutting down...")
