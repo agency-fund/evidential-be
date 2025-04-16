@@ -2,41 +2,28 @@
 
 import json
 import time
+from dataclasses import dataclass
 from datetime import UTC, datetime
-from typing import Any, Callable, Dict, Optional, Protocol, TypedDict, cast
+from typing import Any, Callable, Dict, Optional, Protocol
 
 import psycopg
 from loguru import logger
 from psycopg.rows import dict_row
 
 
-class TaskData(TypedDict, total=False):
-    """Type for task data stored in the database."""
-
+@dataclass
+class Task:
+    """Represents a task in the queue."""
+    
     id: str
     created_at: datetime
     updated_at: datetime
     task_type: str
-    embargo_until: Optional[datetime]
     retry_count: int
-    payload: Optional[Dict[str, Any]]
-    event_id: Optional[str]
-
-
-class Task:
-    """Represents a task in the queue."""
-
-    def __init__(self, data: TaskData):
-        """Initialize a task from database data."""
-        self.id = data["id"]
-        self.created_at = data["created_at"]
-        self.updated_at = data["updated_at"]
-        self.task_type = data["task_type"]
-        self.embargo_until = data["embargo_until"]
-        self.retry_count = data["retry_count"]
-        self.payload = data["payload"]
-        self.event_id = data["event_id"]
-
+    embargo_until: Optional[datetime] = None
+    payload: Optional[Dict[str, Any]] = None
+    event_id: Optional[str] = None
+    
     def __repr__(self) -> str:
         """Return a string representation of the task."""
         return f"Task(id={self.id}, type={self.task_type}, retry_count={self.retry_count})"
@@ -104,27 +91,14 @@ class TaskQueue:
                 """
             )
 
-            # Check if the trigger exists
             cur.execute(
                 """
-                SELECT EXISTS (
-                    SELECT 1 FROM pg_trigger 
-                    WHERE tgname = 'task_queue_notify_trigger'
-                );
+                CREATE OR REPLACE TRIGGER task_queue_notify_trigger
+                AFTER INSERT ON tasks
+                FOR EACH ROW
+                EXECUTE FUNCTION notify_task_queue();
                 """
             )
-            trigger_exists = cur.fetchone()[0]
-
-            # Create the trigger if it doesn't exist
-            if not trigger_exists:
-                cur.execute(
-                    """
-                    CREATE TRIGGER task_queue_notify_trigger
-                    AFTER INSERT ON tasks
-                    FOR EACH ROW
-                    EXECUTE FUNCTION notify_task_queue();
-                    """
-                )
 
             # Listen for notifications
             cur.execute("LISTEN task_queue;")
@@ -155,7 +129,7 @@ class TaskQueue:
             )
             row = cur.fetchone()
             if row:
-                return Task(cast(TaskData, row))
+                return Task(**row)
             return None
 
     def _handle_task(self, conn: psycopg.Connection, task: Task) -> None:
@@ -208,21 +182,16 @@ class TaskQueue:
             exc: The exception that caused the failure.
         """
         with conn.cursor() as cur:
-            if task.retry_count >= self.max_retries:
-                # If we've reached max retries, delete the task
-                logger.warning(f"Task {task.id} failed and reached max retries")
-            else:
-                # Otherwise, increment retry count and update updated_at
-                cur.execute(
-                    """
-                    UPDATE tasks
-                    SET retry_count = retry_count + 1,
-                        updated_at = NOW()
-                    WHERE id = %s
-                    """,
-                    (task.id,),
-                )
-                logger.info(f"Task {task.id} failed, retry count now {task.retry_count + 1}")
+            cur.execute(
+                """
+                UPDATE tasks
+                SET retry_count = retry_count + 1,
+                    updated_at = NOW()
+                WHERE id = %s
+                """,
+                (task.id,),
+            )
+            logger.info(f"Task {task.id} failed, retry count now {task.retry_count + 1}")
             conn.commit()
 
     def run(self) -> None:
@@ -269,10 +238,7 @@ class TaskQueue:
                 logger.error(f"Database connection error: {e}")
                 logger.info("Reconnecting in 5 seconds...")
                 time.sleep(5)
-            except Exception as e:
-                logger.exception(f"Unexpected error in task queue: {e}")
-                logger.info("Continuing in 5 seconds...")
-                time.sleep(5)
+
 
     def stop(self) -> None:
         """Stop the task queue processor."""
