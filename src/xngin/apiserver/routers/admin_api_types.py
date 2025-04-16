@@ -62,11 +62,12 @@ class ListOrganizationsResponse(AdminApiBaseModel):
 
 
 class EventSummary(AdminApiBaseModel):
-    id: str
-    created_at: datetime
-    type: str
-    summary: str
-    link: str | None
+    """Describes an event."""
+    id: Annotated[str, Field(description="The ID of the event.")]
+    created_at: Annotated[datetime, Field(description="The time the event was created.")]
+    type: Annotated[str, Field(description="The type of event.")]
+    summary: Annotated[str, Field(description="Human-readable summary of the event.")]
+    link: Annotated[str | None, Field(description="A navigable link to related information.")] = None
 
 
 class ListOrganizationEventsResponse(AdminApiBaseModel):
@@ -94,11 +95,21 @@ class AddWebhookToOrganizationRequest(AdminApiBaseModel):
 
 
 class AddWebhookToOrganizationResponse(AdminApiBaseModel):
-    id: str
-    type: str
-    url: str
-    auth_token: str
+    """Information on the successfully created webhook."""
+    id: Annotated[str, Field(description="The ID of the newly created webhook.")]
+    type: Annotated[str, Field(description="The type of webhook; e.g. experiment.created")]
+    url: Annotated[str, Field(description="The URL to notify.")]
+    auth_token: Annotated[str | None, Field(description="The value of the Authorization: header that will be sent with the request to the configured URL.")]
 
+class WebhookSummary(AdminApiBaseModel):
+    """Summarizes a Webhook configuration for an organization."""
+    id: Annotated[str, Field(description="The ID of the webhook.")]
+    type: Annotated[str, Field(description="The type of webhook; e.g. experiment.created")]
+    url: Annotated[str, Field(description="The URL to notify.")]
+    auth_token: Annotated[str | None, Field(description="The value of the Authorization: header that will be sent with the request to the configured URL.")]
+
+class ListWebhooksResponse(AdminApiBaseModel):
+    items: list[WebhookSummary]
 
 class CreateDatasourceRequest(AdminApiBaseModel):
     organization_id: Annotated[str, Field(max_length=MAX_LENGTH_OF_ID_VALUE)]

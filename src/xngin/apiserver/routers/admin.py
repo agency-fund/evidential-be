@@ -79,12 +79,14 @@ from xngin.apiserver.routers.admin_api_types import (
     ListOrganizationEventsResponse,
     ListOrganizationsResponse,
     ListParticipantsTypeResponse,
+    ListWebhooksResponse,
     OrganizationSummary,
     UpdateDatasourceRequest,
     UpdateOrganizationRequest,
     UpdateParticipantsTypeRequest,
     UpdateParticipantsTypeResponse,
     UserSummary,
+    WebhookSummary,
 )
 from xngin.apiserver.routers.experiments_api import (
     create_col_to_filter_meta_mapper,
@@ -335,6 +337,38 @@ def add_webhook_to_organization(
         url=webhook.url,
         auth_token=auth_token
     )
+
+@router.get("/organizations/{organization_id}/webhooks")
+def list_organization_webhooks(
+    organization_id: str,
+    session: Annotated[Session, Depends(xngin_db_session)],
+    user: Annotated[User, Depends(user_from_token)],
+) -> ListWebhooksResponse:
+    """Lists all the webhooks for an organization."""
+    # Verify user has access to the organization
+    org = get_organization_or_raise(session, user, organization_id)
+    
+    # Query for webhooks
+    stmt = (
+        select(Webhook)
+        .where(Webhook.organization_id == org.id)
+    )
+    
+    result = session.execute(stmt)
+    webhooks = result.scalars().all()
+    
+    # Convert webhooks to WebhookSummary objects
+    webhook_summaries = [
+        WebhookSummary(
+            id=webhook.id,
+            type=webhook.type,
+            url=webhook.url,
+            auth_token=webhook.auth_token
+        )
+        for webhook in webhooks
+    ]
+    
+    return ListWebhooksResponse(items=webhook_summaries)
 
 
 @router.delete("/organizations/{organization_id}/webhooks/{webhook_id}", status_code=status.HTTP_204_NO_CONTENT)
