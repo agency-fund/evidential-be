@@ -143,5 +143,5 @@ tasks:
   start-tq:
     desc: "Start the task queue."
     env:
-      XNGIN_TQ_DSN: "{{.XNGIN_DEVAPP_DSN}}"
+      DATABASE_URL: "{{.XNGIN_DEVAPP_DSN}}"
     cmd: uv run xngin-tq

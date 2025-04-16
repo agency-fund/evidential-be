@@ -23,7 +23,7 @@ def run(
         typer.Option(
             "--dsn",
             help="Database connection string",
-            envvar="XNGIN_TQ_DSN",
+            envvar="DATABASE_URL",
         ),
     ],
     max_retries: Annotated[
