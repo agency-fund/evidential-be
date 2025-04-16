@@ -95,6 +95,26 @@ class Organization(Base):
     events: Mapped[list["Event"]] = relationship(
         back_populates="organization", cascade="all, delete-orphan"
     )
+    webhooks: Mapped[list["Webhook"]] = relationship(
+        back_populates="organization", cascade="all, delete-orphan"
+    )
+
+
+class Webhook(Base):
+    """Represents an API webhook."""
+
+    __tablename__ = "webhooks"
+
+    id: Mapped[str] = mapped_column(primary_key=True, default=unique_id_factory("wh"))
+    type: Mapped[str] = mapped_column(
+        comment="The type of webhook; e.g. experiment.created"
+    )
+
+    url: Mapped[str] = mapped_column(comment="The URL to post the event to.")
+    auth_token: Mapped[str | None] = mapped_column(comment="The authorization token.")
+
+    organization_id: Mapped[str] = mapped_column(ForeignKey("organizations.id"))
+    organization: Mapped["Organization"] = relationship(back_populates="webhooks")
 
 
 class Event(Base):
@@ -116,7 +136,9 @@ class Event(Base):
 
     organization_id: Mapped[str] = mapped_column(ForeignKey("organizations.id"))
     organization: Mapped["Organization"] = relationship(back_populates="events")
-    tasks: Mapped[list["Task"]] = relationship(back_populates="event", cascade="all, delete-orphan")
+    tasks: Mapped[list["Task"]] = relationship(
+        back_populates="event", cascade="all, delete-orphan"
+    )
 
     __table_args__ = (Index("event_stream", "organization_id", created_at),)
 
@@ -139,15 +161,14 @@ class Task(Base):
     )
     status: Mapped[str] = mapped_column(
         server_default="pending",
-        comment="Status of the task: 'pending', 'running', 'success', or 'dead'."
+        comment="Status of the task: 'pending', 'running', 'success', or 'dead'.",
     )
     embargo_until: Mapped[datetime] = mapped_column(
         server_default=sqlalchemy.sql.func.now(),
-        comment="Time until which the task should not be processed. Defaults to created_at."
+        comment="Time until which the task should not be processed. Defaults to created_at.",
     )
     retry_count: Mapped[int] = mapped_column(
-        server_default="0",
-        comment="Number of times this task has been retried."
+        server_default="0", comment="Number of times this task has been retried."
     )
     payload: Mapped[dict | None] = mapped_column(
         type_=JSONBetter,
@@ -155,7 +176,7 @@ class Task(Base):
     )
     event_id: Mapped[str | None] = mapped_column(
         ForeignKey("events.id", ondelete="CASCADE"),
-        comment="Optional reference to an event that triggered this task."
+        comment="Optional reference to an event that triggered this task.",
     )
 
     event: Mapped["Event | None"] = relationship(back_populates="tasks")
