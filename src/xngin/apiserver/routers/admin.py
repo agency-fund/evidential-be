@@ -256,16 +256,6 @@ def caller_identity(
     return token_info
 
 
-@router.get("/organizations/events")
-def list_events(
-    session: Annotated[Session, Depends(xngin_db_session)],
-    user: Annotated[User, Depends(user_from_token)],
-    since: Annotated[datetime, Query(description="Start list of events at this date.")],
-):
-    # TODO
-    pass
-
-
 @router.get("/organizations")
 def list_organizations(
     session: Annotated[Session, Depends(xngin_db_session)],
@@ -354,7 +344,7 @@ def delete_webhook_from_organization(
     """Removes a Webhook from an organization."""
     # Verify user has access to the organization
     org = get_organization_or_raise(session, user, organization_id)
-    
+
     # Find and delete the webhook
     stmt = (
         delete(Webhook)
@@ -362,13 +352,13 @@ def delete_webhook_from_organization(
         .where(Webhook.organization_id == organization_id)
     )
     result = session.execute(stmt)
-    
+
     if result.rowcount == 0:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Webhook not found"
         )
-    
+
     session.commit()
     return GENERIC_SUCCESS
 
