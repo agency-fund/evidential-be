@@ -150,11 +150,23 @@ tasks:
       - uv run atlas migrate diff --env sa_postgres && git add migrations
       # If you modify the migration file afterwards, you should re-hash it:
       # uv run atlas migrate hash --env sa_postgres
+  hash-migrations:
+    desc: "Rehash your migration file (see atlas.sum) if you had to modify the generated migration file afterwards, e.g. to add a custom backfill."
+    cmds:
+      - uv run atlas migrate hash --env sa_postgres
+  migration-status:
+    desc: "Provides in-depth information about the migration status of the connected database. Useful for debugging migration issues."
+    cmds:
+      - uv run atlas migrate status --env sa_postgres --url '{{.XNGIN_DEVAPP_DSN}}'
   make-manual-migration:
     desc: "Create and edit a new migration file manually. Use this to manually adjust values in the database."
     interactive: true
     cmds:
       - uv run atlas migrate new --env sa_postgres --edit
+  down-migration:
+    desc: "Go back a version in the migration history. Note that it include pre-migration checks to ensure data isn't deleted and tables are empty, so you may have to manually do some prep for the reversion. See https://atlasgo.io/versioned/down"
+    cmds:
+      - uv run atlas migrate down --env sa_postgres --url '{{.XNGIN_DEVAPP_DSN}}'
   apply-migrations-pg:
     desc: "Apply Postgres migrations locally (requires localpg instance to be running, to have an xngin database, and to have been previously migrated)"
     cmds:

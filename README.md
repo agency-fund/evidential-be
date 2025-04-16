@@ -264,6 +264,16 @@ Then, apply them to your local Postgres instance:
 task apply-migrations-pg
 ```
 
+If you tweak a migration file by hand because atlas's generated SQL was unable to fully handle it,
+or because you created a custom one from scratch (`atlas migrate new <name> --env sa_postgres`),
+you'll also need to recompute migration hashes in our `atlas.sum` file with:
+
+```shell
+task hash-migrations
+```
+
+⚠️ _Please create a separate follow-on migration file to the atlas-generated one for custom changes whenever possible._
+
 ### How do I hide the generated SQL from the logs?
 
 Set the ECHO_SQL=0 environment variable, e.g.:

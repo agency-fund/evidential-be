@@ -34,6 +34,8 @@ from xngin.apiserver.gsheet_cache import GSheetCache
 from xngin.apiserver.models.enums import ExperimentState
 from xngin.apiserver.models.tables import (
     ArmAssignment,
+    ArmTable,
+    Datasource as DatasourceTable,
     Experiment,
 )
 from xngin.apiserver.routers.experiments_api import (
@@ -138,6 +140,15 @@ def create_experiment_with_assignment_impl(
     xngin_session: Session,
     stratify_on_metrics: bool,
 ) -> CreateExperimentWithAssignmentResponse:
+    # Get the organization_id from the database
+    db_datasource = xngin_session.get(DatasourceTable, datasource_id)
+    if not db_datasource:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Datasource {datasource_id} not found in database",
+        )
+    organization_id = db_datasource.organization_id
+
     # First generate uuids for the experiment and arms, which do_assignment needs.
     request.design_spec.experiment_id = uuid.uuid4()
     for arm in request.design_spec.arms:
@@ -183,6 +194,17 @@ def create_experiment_with_assignment_impl(
         assign_summary=assign_summary.model_dump(mode="json"),
     )  # .set_design_spec(body.design_spec)
     xngin_session.add(experiment)
+
+    # Create arm records
+    for arm in request.design_spec.arms:
+        db_arm = ArmTable(
+            id=str(arm.arm_id),
+            name=arm.arm_name,
+            description=arm.arm_description,
+            experiment_id=str(experiment.id),
+            organization_id=organization_id,
+        )
+        xngin_session.add(db_arm)
 
     # Create assignment records
     for assignment in assignment_response.assignments:
@@ -293,7 +315,9 @@ def list_experiments_sl(
     return list_experiments_impl(xngin_session, datasource.id)
 
 
-def list_experiments_impl(xngin_session: Session, datasource_id: str):
+def list_experiments_impl(
+    xngin_session: Session, datasource_id: str
+) -> ListExperimentsResponse:
     stmt = (
         select(Experiment)
         .where(Experiment.datasource_id == datasource_id)

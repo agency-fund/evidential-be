@@ -91,6 +91,9 @@ class Organization(Base):
     datasources: Mapped[list["Datasource"]] = relationship(
         back_populates="organization", cascade="all, delete-orphan"
     )
+    arms: Mapped[list["ArmTable"]] = relationship(
+        back_populates="organization", cascade="all, delete-orphan"
+    )
 
 
 class User(Base):
@@ -269,13 +272,17 @@ class ArmAssignment(Base):
     )
     participant_id: Mapped[str] = mapped_column(String(255), primary_key=True)
     participant_type: Mapped[str] = mapped_column(String(255))
-    arm_id: Mapped[str] = mapped_column(String(36))
+    arm_id: Mapped[str] = mapped_column(
+        String(36),
+        ForeignKey("arms.id", ondelete="CASCADE"),
+    )
     strata: Mapped[dict] = mapped_column(
         type_=JSONBetter,
         comment="JSON serialized form of a list of Strata objects (from Assignment.strata).",
     )
 
     experiment: Mapped["Experiment"] = relationship(back_populates="arm_assignments")
+    arm: Mapped["ArmTable"] = relationship(back_populates="arm_assignments")
 
     def strata_names(self):
         return [s["field_name"] for s in self.strata]
@@ -324,7 +331,9 @@ class Experiment(Base):
     arm_assignments: Mapped[list["ArmAssignment"]] = relationship(
         back_populates="experiment", cascade="all, delete-orphan"
     )
-
+    arms: Mapped[list["ArmTable"]] = relationship(
+        back_populates="experiment", cascade="all, delete-orphan"
+    )
     datasource: Mapped["Datasource"] = relationship(back_populates="experiments")
 
     def get_arms(self) -> list[Arm]:
@@ -355,3 +364,37 @@ class Experiment(Base):
         return TypeAdapter(BalanceCheck).validate_python(
             self.assign_summary["balance_check"]
         )
+
+
+class ArmTable(Base):
+    """Representation of arms of an experiment."""
+
+    __tablename__ = "arms"
+    # TODO: Ensure arm names are unique within an organization
+    #       Do this as part of Issue #278; will need to backfill in such a way that old arms are
+    #       made unique e.g. suffixing with a part of the experiment id.
+    # __table_args__ = (
+    #     sqlalchemy.UniqueConstraint("name", "organization_id", name="uix_arm_name_org"),
+    # )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    name: Mapped[str] = mapped_column(String(255))
+    description: Mapped[str] = mapped_column(String(2000))
+    experiment_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("experiments.id", ondelete="CASCADE")
+    )
+    organization_id: Mapped[str] = mapped_column(
+        ForeignKey("organizations.id", ondelete="CASCADE")
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        server_default=sqlalchemy.sql.func.now()
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        server_default=sqlalchemy.sql.func.now(), onupdate=sqlalchemy.sql.func.now()
+    )
+
+    organization: Mapped["Organization"] = relationship(back_populates="arms")
+    experiment: Mapped["Experiment"] = relationship(back_populates="arms")
+    arm_assignments: Mapped[list["ArmAssignment"]] = relationship(
+        back_populates="arm", cascade="all, delete-orphan"
+    )
