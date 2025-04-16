@@ -344,16 +344,33 @@ def add_webhook_to_organization(
     )
 
 
-@router.delete("/organizations/{organization_id}/webhooks/{webhook_id}")
+@router.delete("/organizations/{organization_id}/webhooks/{webhook_id}", status_code=status.HTTP_204_NO_CONTENT)
 def delete_webhook_from_organization(
     organization_id: str,
     webhook_id: str,
     session: Annotated[Session, Depends(xngin_db_session)],
-    token_info: Annotated[TokenInfo, Depends(require_oidc_token)],
     user: Annotated[User, Depends(user_from_token)],
 ):
     """Removes a Webhook from an organization."""
-    # TODO
+    # Verify user has access to the organization
+    org = get_organization_or_raise(session, user, organization_id)
+    
+    # Find and delete the webhook
+    stmt = (
+        delete(Webhook)
+        .where(Webhook.id == webhook_id)
+        .where(Webhook.organization_id == organization_id)
+    )
+    result = session.execute(stmt)
+    
+    if result.rowcount == 0:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Webhook not found"
+        )
+    
+    session.commit()
+    return GENERIC_SUCCESS
 
 
 @router.get("/organizations/{organization_id}/events")
