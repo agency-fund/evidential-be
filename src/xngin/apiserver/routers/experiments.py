@@ -34,10 +34,11 @@ from xngin.apiserver.gsheet_cache import GSheetCache
 from xngin.apiserver.models.enums import ExperimentState
 from xngin.apiserver.models.tables import (
     ArmAssignment,
-    Event,
+    ArmTable,
     Experiment,
     Task,
 )
+from xngin.apiserver.models.tables import Datasource as DatasourceTable, Event
 from xngin.apiserver.routers.experiments_api import (
     CommonQueryParams,
     get_participants_config_and_schema,
@@ -142,6 +143,15 @@ def create_experiment_with_assignment_impl(
     xngin_session: Session,
     stratify_on_metrics: bool,
 ) -> CreateExperimentWithAssignmentResponse:
+    # Get the organization_id from the database
+    db_datasource = xngin_session.get(DatasourceTable, datasource_id)
+    if not db_datasource:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Datasource {datasource_id} not found in database",
+        )
+    organization_id = db_datasource.organization_id
+
     # First generate uuids for the experiment and arms, which do_assignment needs.
     request.design_spec.experiment_id = uuid.uuid4()
     for arm in request.design_spec.arms:
@@ -188,6 +198,17 @@ def create_experiment_with_assignment_impl(
     )  # .set_design_spec(body.design_spec)
     xngin_session.add(experiment)
 
+    # Create arm records
+    for arm in request.design_spec.arms:
+        db_arm = ArmTable(
+            id=str(arm.arm_id),
+            name=arm.arm_name,
+            description=arm.arm_description,
+            experiment_id=str(experiment.id),
+            organization_id=organization_id,
+        )
+        xngin_session.add(db_arm)
+
     # Create assignment records
     for assignment in assignment_response.assignments:
         # TODO: bulk insert https://docs.sqlalchemy.org/en/20/orm/queryguide/dml.html#orm-queryguide-bulk-insert {"dml_strategy": "raw"}
@@ -205,19 +226,19 @@ def create_experiment_with_assignment_impl(
     return CreateExperimentWithAssignmentResponse(
         datasource_id=datasource_id,
         state=experiment.state,
-        design_spec=experiment.design_spec,
-        audience_spec=experiment.audience_spec,
-        power_analyses=experiment.power_analyses,
+        design_spec=experiment.get_design_spec(),
+        audience_spec=experiment.get_audience_spec(),
+        power_analyses=experiment.get_power_analyses(),
         assign_summary=assign_summary,
     )
 
 
 def get_experiment_or_raise(
-    xngin_session: Session, experiment_id: uuid.UUID, datasource_id: str
+    xngin_session: Session, experiment_id: str, datasource_id: str
 ):
     experiment = xngin_session.scalars(
         select(Experiment).where(
-            Experiment.id == str(experiment_id),
+            Experiment.id == experiment_id,
             Experiment.datasource_id == datasource_id,
         )
     ).one_or_none()
@@ -236,7 +257,7 @@ def get_experiment_or_raise(
 def commit_experiment_sl(
     datasource: Annotated[Datasource, Depends(datasource_dependency)],
     xngin_session: Annotated[Session, Depends(xngin_db_session)],
-    experiment_id: uuid.UUID,
+    experiment_id: str,
 ):
     experiment = get_experiment_or_raise(xngin_session, experiment_id, datasource.id)
     return commit_experiment_impl(xngin_session, experiment)
@@ -288,7 +309,7 @@ def commit_experiment_impl(xngin_session: Session, experiment: Experiment):
 def abandon_experiment_sl(
     datasource: Annotated[Datasource, Depends(datasource_dependency)],
     xngin_session: Annotated[Session, Depends(xngin_db_session)],
-    experiment_id: uuid.UUID,
+    experiment_id: str,
 ):
     experiment = get_experiment_or_raise(xngin_session, experiment_id, datasource.id)
     return abandon_experiment_impl(xngin_session, experiment)
@@ -320,7 +341,9 @@ def list_experiments_sl(
     return list_experiments_impl(xngin_session, datasource.id)
 
 
-def list_experiments_impl(xngin_session: Session, datasource_id: str):
+def list_experiments_impl(
+    xngin_session: Session, datasource_id: str
+) -> ListExperimentsResponse:
     stmt = (
         select(Experiment)
         .where(Experiment.datasource_id == datasource_id)
@@ -357,10 +380,10 @@ def list_experiments_impl(xngin_session: Session, datasource_id: str):
 def get_experiment_sl(
     datasource: Annotated[Datasource, Depends(datasource_dependency)],
     xngin_session: Annotated[Session, Depends(xngin_db_session)],
-    experiment_id: uuid.UUID,
+    experiment_id: str,
 ) -> GetExperimentResponse:
     experiment = get_experiment_or_raise(xngin_session, experiment_id, datasource.id)
-    return ExperimentConfig(
+    return GetExperimentResponse(
         datasource_id=experiment.datasource_id,
         state=experiment.state,
         design_spec=experiment.get_design_spec(),
@@ -378,14 +401,16 @@ def get_experiment_sl(
 def get_experiment_assignments_sl(
     datasource: Annotated[Datasource, Depends(datasource_dependency)],
     xngin_session: Annotated[Session, Depends(xngin_db_session)],
-    experiment_id: uuid.UUID,
+    experiment_id: str,
 ) -> GetExperimentAssignmentsResponse:
     experiment = get_experiment_or_raise(xngin_session, experiment_id, datasource.id)
 
     return get_experiment_assignments_impl(experiment)
 
 
-def get_experiment_assignments_impl(experiment: Experiment):
+def get_experiment_assignments_impl(
+    experiment: Experiment,
+) -> GetExperimentAssignmentsResponse:
     # Map arm IDs to names
     design_spec = DesignSpec.model_validate(experiment.design_spec)
     arm_id_to_name = {str(arm.arm_id): arm.arm_name for arm in design_spec.arms}
@@ -393,7 +418,7 @@ def get_experiment_assignments_impl(experiment: Experiment):
     assignments = [
         Assignment(
             participant_id=arm_assignment.participant_id,
-            arm_id=arm_assignment.arm_id,
+            arm_id=uuid.UUID(arm_assignment.arm_id),
             arm_name=arm_id_to_name[str(arm_assignment.arm_id)],
             strata=[Strata.model_validate(s) for s in arm_assignment.strata],
         )
@@ -401,7 +426,7 @@ def get_experiment_assignments_impl(experiment: Experiment):
     ]
     return GetExperimentAssignmentsResponse(
         balance_check=experiment.get_balance_check(),
-        experiment_id=experiment.id,
+        experiment_id=uuid.UUID(experiment.id),
         sample_size=experiment.assign_summary["sample_size"],
         assignments=assignments,
     )
@@ -452,7 +477,7 @@ def experiment_assignments_to_csv_generator(experiment: Experiment):
     return generate_csv
 
 
-def get_experiment_assignments_as_csv_impl(experiment: Experiment):
+def get_experiment_assignments_as_csv_impl(experiment: Experiment) -> StreamingResponse:
     csv_generator = experiment_assignments_to_csv_generator(experiment)
     filename = f"experiment_{experiment.id}_assignments.csv"
     return StreamingResponse(
@@ -469,7 +494,7 @@ def get_experiment_assignments_as_csv_impl(experiment: Experiment):
 def get_experiment_assignments_as_csv_sl(
     datasource: Annotated[Datasource, Depends(datasource_dependency)],
     xngin_session: Annotated[Session, Depends(xngin_db_session)],
-    experiment_id: uuid.UUID,
+    experiment_id: str,
 ) -> StreamingResponse:
     """Exports the assignments info with header row as CSV. BalanceCheck not included.
 

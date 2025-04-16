@@ -1,4 +1,3 @@
-import logging
 import os
 import secrets
 from dataclasses import dataclass
@@ -7,18 +6,16 @@ from typing import Annotated
 from fastapi import Depends, HTTPException, Security
 from fastapi import status
 from jose import jwt, JWTError
-
+from loguru import logger
 from xngin.apiserver.routers.oidc import (
-    oidc_google,
-    get_google_jwks,
     CLIENT_ID,
     get_google_configuration,
+    get_google_jwks,
+    oidc_google,
 )
 
 # JWTs generated for domains other than @agency.fund are considered untrusted.
 PRIVILEGED_DOMAINS = ("agency.fund",)
-
-logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -54,12 +51,13 @@ TESTING_TOKENS = {
 
 
 def setup(app):
+    """Configures FastAPI dependencies to skip OIDC flows and use fake users."""
+
+    # TODO: this is never set anywhere; can we remove it?
     if os.environ.get("ENABLE_TEST_PRIVILEGED_USER", "").lower() not in {"true", "1"}:
         return
 
-    logger.warning("*****USING TEST USER*****")
-
-    """Configures FastAPI dependencies to skip OIDC flows and use fake users."""
+    logger.warning("ENABLE_TEST_PRIVILEGED_USER is set -- ")
 
     def noop():
         pass

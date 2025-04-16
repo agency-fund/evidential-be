@@ -1,7 +1,6 @@
 import base64
 import binascii
 import json
-import logging
 import os
 from collections import Counter
 from functools import lru_cache
@@ -11,6 +10,7 @@ from urllib.parse import urlparse
 import httpx
 import sqlalchemy
 from httpx import codes
+from loguru import logger
 from pydantic import (
     BaseModel,
     ConfigDict,
@@ -20,7 +20,7 @@ from pydantic import (
     field_validator,
     model_validator,
 )
-from sqlalchemy import Engine, event, text
+from sqlalchemy import Engine, event, make_url, text
 from sqlalchemy.exc import NoSuchTableError
 from sqlalchemy.orm import Session
 from tenacity import (
@@ -37,9 +37,8 @@ from xngin.db_extensions import NumpyStddev
 from xngin.schema.schema_types import ParticipantsSchema
 
 DEFAULT_SETTINGS_FILE = "xngin.settings.json"
+SA_LOGGER_NAME_FOR_DWH = "xngin_dwh"
 TIMEOUT_SECS_FOR_CUSTOMER_POSTGRES = 10
-
-logger = logging.getLogger(__name__)
 
 
 class UnclassifiedRemoteSettingsError(Exception):
@@ -58,7 +57,7 @@ def get_settings_for_server():
     if settings_path.startswith("https://"):
         settings_raw = get_remote_settings(settings_path)
     else:
-        logger.info("Loading XNGIN_SETTINGS from disk: %s", settings_path)
+        logger.info("Loading XNGIN_SETTINGS from disk: {}", settings_path)
         with open(settings_path) as f:
             settings_raw = json.load(f)
     settings_raw = replace_secrets(settings_raw)
@@ -83,7 +82,7 @@ def get_remote_settings(url):
         headers["Authorization"] = auth.strip()
     if parsed.hostname == "api.github.com" and parsed.path.startswith("/repos"):
         headers["Accept"] = "application/vnd.github.v3.raw"
-    logger.info("Loading XNGIN_SETTINGS from URL: %s", url)
+    logger.info("Loading XNGIN_SETTINGS from URL: {}", url)
     retrying_transport = httpx.HTTPTransport(retries=2)
     with httpx.Client(
         transport=retrying_transport, headers=headers, timeout=5
@@ -352,12 +351,28 @@ class Dsn(ConfigBaseModel, BaseDsn):
     user: str
     password: SecretStr
     dbname: str
-    sslmode: (
-        Literal["disable", "allow", "prefer", "require", "verify-ca", "verify-full"]
-        | None
-    ) = None
+    sslmode: Literal["disable", "require", "verify-ca", "verify-full"]
     # Specify the order in which schemas are searched if your dwh supports it.
     search_path: str | None = None
+
+    @staticmethod
+    def from_url(url: str):
+        """Constructs a Dsn from a SQLAlchemy-compatible URL (Postgres only). Use only in trusted code paths."""
+        if not url.startswith("postgresql"):
+            raise NotImplementedError(
+                "Dsn.from_url() only supports postgres databases."
+            )
+        url = make_url(url)
+        return Dsn(
+            driver=f"postgresql+{url.get_driver_name()}",
+            host=url.host,
+            port=url.port,
+            user=url.username,
+            password=url.password,
+            dbname=url.database,
+            sslmode=url.query.get("sslmode", "verify-ca"),
+            search_path=url.query.get("search_path", None),
+        )
 
     @field_serializer("password", when_used="json")
     def reveal_password(self, v):
@@ -378,7 +393,7 @@ class Dsn(ConfigBaseModel, BaseDsn):
         if self.driver.startswith("postgresql"):
             query = dict(url.query)
             query.update({
-                "sslmode": self.sslmode or "verify-full",
+                "sslmode": self.sslmode,
                 # re: redshift issue https://github.com/psycopg/psycopg/issues/122#issuecomment-985742751
                 "client_encoding": "utf-8",
             })
@@ -423,6 +438,9 @@ class RemoteDatabaseConfig(ParticipantsMixin, ConfigBaseModel):
 
     dwh: Dwh
 
+    def to_sqlalchemy_url(self):
+        return self.dwh.to_sqlalchemy_url()
+
     def supports_reflection(self):
         return self.dwh.supports_table_reflection()
 
@@ -457,6 +475,8 @@ class RemoteDatabaseConfig(ParticipantsMixin, ConfigBaseModel):
         engine = sqlalchemy.create_engine(
             url,
             connect_args=connect_args,
+            logging_name=SA_LOGGER_NAME_FOR_DWH,
+            execution_options={"logging_token": "dwh"},
             echo=flags.ECHO_SQL,
             poolclass=sqlalchemy.pool.NullPool,
         )
@@ -498,6 +518,13 @@ class SqliteLocalConfig(ParticipantsMixin, ConfigBaseModel):
             raise ValueError("sqlite_filename should not start with sqlite://")
         return value
 
+    def to_sqlalchemy_url(self):
+        return sqlalchemy.URL.create(
+            drivername="sqlite",
+            database=self.sqlite_filename,
+            query={"mode": "ro"},
+        )
+
     def supports_reflection(self):
         return True
 
@@ -515,14 +542,12 @@ class SqliteLocalConfig(ParticipantsMixin, ConfigBaseModel):
 
         Use this when reflecting. If you're doing any queries on the tables, prefer dbsession().
         """
-        url = sqlalchemy.URL.create(
-            drivername="sqlite",
-            database=self.sqlite_filename,
-            query={"mode": "ro"},
-        )
+        url = self.to_sqlalchemy_url()
         engine = sqlalchemy.create_engine(
             url,
             connect_args={"timeout": 5},
+            execution_options={"logging_token": "dwh"},
+            logging_name=SA_LOGGER_NAME_FOR_DWH,
             echo=flags.ECHO_SQL,
         )
 
@@ -671,7 +696,7 @@ def infer_table(engine: sqlalchemy.engine.Engine, table_name: str, use_reflectio
         # This method of introspection should only be used if the db dialect doesn't support Sqlalchemy2 reflection.
         return infer_table_from_cursor(engine, table_name)
     except sqlalchemy.exc.ProgrammingError:
-        logger.exception("Failed to create a Table! use_reflection: %s", use_reflection)
+        logger.exception("Failed to create a Table! use_reflection: {}", use_reflection)
         raise
     except NoSuchTableError as nste:
         metadata.reflect(engine)

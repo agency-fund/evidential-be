@@ -1,6 +1,5 @@
 """Implements a basic Admin API."""
 
-import logging
 import secrets
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime, timedelta
@@ -97,6 +96,7 @@ from xngin.apiserver.routers.experiments_api import (
 from xngin.apiserver.routers.experiments_api_types import ExperimentConfig
 from xngin.apiserver.routers.oidc_dependencies import TokenInfo, require_oidc_token
 from xngin.apiserver.settings import (
+    Dsn,
     ParticipantsConfig,
     ParticipantsDef,
     RemoteDatabaseConfig,
@@ -105,8 +105,6 @@ from xngin.apiserver.settings import (
 )
 from xngin.events.experiment_created import ExperimentCreated, WebhookSent
 from xngin.stats.analysis import analyze_experiment as analyze_experiment_impl
-
-logger = logging.getLogger(__name__)
 
 GENERIC_SUCCESS = Response(status_code=status.HTTP_204_NO_CONTENT)
 RESPONSE_CACHE_MAX_AGE_SECONDS = timedelta(minutes=15).seconds
@@ -189,12 +187,20 @@ def user_from_token(
     if not user:
         # Privileged users will have a user and an organization created on the fly.
         if token_info.is_privileged():
-            user = User(email=token_info.email)
+            user = User(email=token_info.email, is_privileged=True)
             session.add(user)
             organization = Organization(name="My Organization")
             session.add(organization)
             organization.users.append(user)
-
+            if dev_dsn := flags.XNGIN_DEVDWH_DSN:
+                # TODO: Also add a default participant type.
+                config = RemoteDatabaseConfig(
+                    participants=[], type="remote", dwh=Dsn.from_url(dev_dsn)
+                )
+                datasource = Datasource(
+                    name="Local DWH", organization=organization
+                ).set_config(config)
+                session.add(datasource)
             session.commit()
         else:
             raise HTTPException(
@@ -285,7 +291,6 @@ def list_organizations(
 @router.post("/organizations")
 def create_organizations(
     session: Annotated[Session, Depends(xngin_db_session)],
-    token_info: Annotated[TokenInfo, Depends(require_oidc_token)],
     user: Annotated[User, Depends(user_from_token)],
     body: Annotated[CreateOrganizationRequest, Body(...)],
 ) -> CreateOrganizationResponse:
@@ -293,7 +298,7 @@ def create_organizations(
 
     Only users with an @agency.fund email address can create organizations.
     """
-    if not token_info.is_privileged():
+    if not user.is_privileged:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Only privileged users can create organizations",
@@ -323,20 +328,15 @@ def add_webhook_to_organization(
 
     # Create and save the webhook
     webhook = Webhook(
-        type=body.type,
-        url=body.url,
-        auth_token=auth_token,
-        organization_id=org.id
+        type=body.type, url=body.url, auth_token=auth_token, organization_id=org.id
     )
     session.add(webhook)
     session.commit()
 
     return AddWebhookToOrganizationResponse(
-        id=webhook.id,
-        type=webhook.type,
-        url=webhook.url,
-        auth_token=auth_token
+        id=webhook.id, type=webhook.type, url=webhook.url, auth_token=auth_token
     )
+
 
 @router.get("/organizations/{organization_id}/webhooks")
 def list_organization_webhooks(
@@ -347,31 +347,31 @@ def list_organization_webhooks(
     """Lists all the webhooks for an organization."""
     # Verify user has access to the organization
     org = get_organization_or_raise(session, user, organization_id)
-    
+
     # Query for webhooks
-    stmt = (
-        select(Webhook)
-        .where(Webhook.organization_id == org.id)
-    )
-    
+    stmt = select(Webhook).where(Webhook.organization_id == org.id)
+
     result = session.execute(stmt)
     webhooks = result.scalars().all()
-    
+
     # Convert webhooks to WebhookSummary objects
     webhook_summaries = [
         WebhookSummary(
             id=webhook.id,
             type=webhook.type,
             url=webhook.url,
-            auth_token=webhook.auth_token
+            auth_token=webhook.auth_token,
         )
         for webhook in webhooks
     ]
-    
+
     return ListWebhooksResponse(items=webhook_summaries)
 
 
-@router.delete("/organizations/{organization_id}/webhooks/{webhook_id}", status_code=status.HTTP_204_NO_CONTENT)
+@router.delete(
+    "/organizations/{organization_id}/webhooks/{webhook_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+)
 def delete_webhook_from_organization(
     organization_id: str,
     webhook_id: str,
@@ -392,8 +392,7 @@ def delete_webhook_from_organization(
 
     if result.rowcount == 0:
         raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Webhook not found"
+            status_code=status.HTTP_404_NOT_FOUND, detail="Webhook not found"
         )
 
     session.commit()
@@ -434,7 +433,7 @@ def list_organization_events(
             sent_details = WebhookSent.model_validate(event.data)
             summary = sent_details.summarize()
         else:
-            summary = f"External event."
+            summary = "External event."
 
         event_summaries.append(
             EventSummary(
@@ -442,7 +441,7 @@ def list_organization_events(
                 created_at=event.created_at,
                 type=event.type,
                 summary=summary,
-                link=link
+                link=link,
             )
         )
 
@@ -455,7 +454,6 @@ def list_organization_events(
 def add_member_to_organization(
     organization_id: str,
     session: Annotated[Session, Depends(xngin_db_session)],
-    token_info: Annotated[TokenInfo, Depends(require_oidc_token)],
     user: Annotated[User, Depends(user_from_token)],
     body: Annotated[AddMemberToOrganizationRequest, Body(...)],
 ):
@@ -470,7 +468,7 @@ def add_member_to_organization(
             status_code=status.HTTP_404_NOT_FOUND, detail="Organization not found"
         )
 
-    if not token_info.is_privileged():
+    if not user.is_privileged:
         # Verify user is a member of the organization
         _authz_check = get_organization_or_raise(session, user, organization_id)
 
@@ -652,12 +650,6 @@ def create_datasource(
         )
     if body.dwh.driver in {"postgresql+psycopg", "postgresql+psycopg2"}:
         _ = safe_resolve(body.dwh.host)  # TODO: handle this exception more gracefully
-        allowed_modes = {"disable", "require", "verify-ca", "verify-full"}
-        if body.dwh.sslmode not in allowed_modes:
-            raise HTTPException(
-                status_code=400,
-                detail=f"sslmode must be one of: {', '.join(allowed_modes)}",
-            )
 
     config = RemoteDatabaseConfig(participants=[], type="remote", dwh=body.dwh)
 
@@ -1187,8 +1179,6 @@ def create_experiment_with_assignment(
     if body.design_spec.uuids_are_present():
         raise LateValidationError("Invalid DesignSpec: UUIDs must not be set.")
     ds_config = datasource.get_config()
-    if not isinstance(ds_config, RemoteDatabaseConfig):
-        raise LateValidationError("Invalid RemoteDatabaseConfig.")
     participants_cfg = ds_config.find_participants(body.audience_spec.participant_type)
     if not isinstance(participants_cfg, ParticipantsDef):
         raise LateValidationError(
@@ -1233,8 +1223,6 @@ def analyze_experiment(
 ) -> ExperimentAnalysis:
     ds = get_datasource_or_raise(xngin_session, user, datasource_id)
     dsconfig = ds.get_config()
-    if not isinstance(dsconfig, RemoteDatabaseConfig):
-        raise LateValidationError("Invalid RemoteDatabaseConfig.")
 
     experiment = get_experiment_via_ds_or_raise(xngin_session, ds, experiment_id)
 
@@ -1281,7 +1269,9 @@ def analyze_experiment(
             arm_result = analyze_results[metric_name][arm_id]
             arm_analyses.append(
                 ArmAnalysis(
-                    **arm.model_dump(),
+                    arm_id=arm_id,
+                    arm_name=arm.arm_name,
+                    arm_description=arm.arm_description,
                     is_baseline=arm_result.is_baseline,
                     estimate=arm_result.estimate,
                     p_value=arm_result.p_value,

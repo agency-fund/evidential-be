@@ -4,11 +4,7 @@ import string
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
-
 from xngin.apiserver.models.tables import ApiKey, Datasource
-import logging
-
-logger = logging.getLogger(__name__)
 
 API_KEY_PREFIX = "xat"
 HASH_PURPOSE = b"xnginapikey1"

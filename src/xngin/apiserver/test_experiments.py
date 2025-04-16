@@ -31,7 +31,12 @@ from xngin.apiserver.api_types import (
 from xngin.apiserver.dependencies import xngin_db_session
 from xngin.apiserver.main import app
 from xngin.apiserver.models.enums import ExperimentState
-from xngin.apiserver.models.tables import ArmAssignment, Experiment
+from xngin.apiserver.models.tables import (
+    ArmAssignment,
+    ArmTable,
+    Datasource,
+    Experiment,
+)
 from xngin.apiserver.routers.experiments import (
     abandon_experiment_impl,
     commit_experiment_impl,
@@ -64,8 +69,10 @@ def fixture_teardown(db_session: Session):
     # setup here
     yield
     # teardown here
-    db_session.query(Experiment).delete()
-    db_session.query(ArmAssignment).delete()
+    # Rollback any pending transactions that may have been hanging due to an exception.
+    db_session.rollback()
+    # Clean up objects created in each test by truncating tables and leveraging cascade.
+    db_session.query(Datasource).delete()
     db_session.commit()
     db_session.close()
 
@@ -165,6 +172,19 @@ def make_insertable_experiment(state: ExperimentState, datasource_id="testing"):
     )
 
 
+def make_arms_from_experiment(experiment: Experiment, organization_id: str):
+    return [
+        ArmTable(
+            id=arm["arm_id"],
+            experiment_id=experiment.id,
+            name=arm["arm_name"],
+            description=arm["arm_description"],
+            organization_id=organization_id,
+        )
+        for arm in experiment.design_spec["arms"]
+    ]
+
+
 @dataclass
 class MockRow:
     """Simulate the bits of a sqlalchemy Row that we need here."""
@@ -202,13 +222,6 @@ def make_sample_data(n=100):
         )
         for i in range(n)
     ]
-
-
-def dates_equal(db_date: datetime, request_date: datetime):
-    """Compare dates with or without timezone info, honoring the db_date's timezone."""
-    if db_date.tzinfo is None:
-        return db_date == request_date.replace(tzinfo=None)
-    return db_date == request_date
 
 
 def test_create_experiment_with_assignment_impl(
@@ -271,8 +284,8 @@ def test_create_experiment_with_assignment_impl(
     assert experiment.state == ExperimentState.ASSIGNED
     assert experiment.datasource_id == testing_datasource.ds.id
     # This comparison is dependent on whether the db can store tz or not (sqlite does not).
-    assert dates_equal(experiment.start_date, request.design_spec.start_date)
-    assert dates_equal(experiment.end_date, request.design_spec.end_date)
+    assert conftest.dates_equal(experiment.start_date, request.design_spec.start_date)
+    assert conftest.dates_equal(experiment.end_date, request.design_spec.end_date)
     # Verify design_spec and audience_spec were stored correctly
     stored_design_spec = experiment.get_design_spec()
     assert stored_design_spec == response.design_spec
@@ -381,7 +394,8 @@ def test_create_experiment_with_assignment_impl_no_metric_stratification(
     assert response.state == ExperimentState.ASSIGNED
     assert response.design_spec.experiment_id is not None
     assert response.design_spec.arms[0].arm_id is not None
-    # Same as in the stratify_on_metrics=True test. Only the output assignments will also store a snapshot of the metric values as strata.
+    # Same as in the stratify_on_metrics=True test.
+    # Only the output assignments will also store a snapshot of the metric values as strata.
     assert response.design_spec.strata_field_names == ["gender"]
 
     # Verify database state
@@ -423,7 +437,7 @@ def test_create_experiment_with_assignment_invalid_design_spec(db_session):
     assert "UUIDs must not be set" in response.json()["message"]
 
 
-def test_create_experiment_with_assignment(
+def test_create_experiment_with_assignment_sl(
     db_session, sample_table, use_deterministic_random
 ):
     """Test creating an experiment and saving assignments to the database."""
@@ -473,8 +487,8 @@ def test_create_experiment_with_assignment(
     ).one()
     assert experiment.state == ExperimentState.ASSIGNED
     assert experiment.datasource_id == ds_metadata.ds.id
-    assert dates_equal(experiment.start_date, request.design_spec.start_date)
-    assert dates_equal(experiment.end_date, request.design_spec.end_date)
+    assert conftest.dates_equal(experiment.start_date, request.design_spec.start_date)
+    assert conftest.dates_equal(experiment.end_date, request.design_spec.end_date)
     # Verify assignments were created
     assignments = db_session.scalars(
         select(ArmAssignment).where(ArmAssignment.experiment_id == str(experiment_id))
@@ -721,10 +735,14 @@ def test_get_experiment_assignments_impl(db_session, testing_datasource):
     )
     experiment_id = experiment.id
     db_session.add(experiment)
+    db_arms = make_arms_from_experiment(
+        experiment, testing_datasource.ds.organization_id
+    )
+    db_session.add_all(db_arms)
 
     arm1_id = experiment.design_spec["arms"][0]["arm_id"]
     arm2_id = experiment.design_spec["arms"][1]["arm_id"]
-    assignments = [
+    arm_assignments = [
         ArmAssignment(
             experiment_id=experiment_id,
             participant_type="test_participant_type",
@@ -740,7 +758,7 @@ def test_get_experiment_assignments_impl(db_session, testing_datasource):
             strata=[{"field_name": "gender", "strata_value": "M"}],
         ),
     ]
-    db_session.add_all(assignments)
+    db_session.add_all(arm_assignments)
     db_session.commit()
 
     data: GetExperimentAssignmentsResponse = get_experiment_assignments_impl(experiment)
@@ -758,7 +776,7 @@ def test_get_experiment_assignments_impl(db_session, testing_datasource):
     assert assignments[0].participant_id == "p1"
     assert str(assignments[0].arm_id) == arm1_id
     assert assignments[0].arm_name == "control"
-    assert len(assignments[0].strata) == 1
+    assert assignments[0].strata is not None and len(assignments[0].strata) == 1
     assert assignments[0].strata[0].field_name == "gender"
     assert assignments[0].strata[0].strata_value == "F"
 
@@ -766,7 +784,7 @@ def test_get_experiment_assignments_impl(db_session, testing_datasource):
     assert assignments[1].participant_id == "p2"
     assert str(assignments[1].arm_id) == arm2_id
     assert assignments[1].arm_name == "treatment"
-    assert len(assignments[1].strata) == 1
+    assert assignments[1].strata is not None and len(assignments[1].strata) == 1
     assert assignments[1].strata[0].field_name == "gender"
     assert assignments[1].strata[0].strata_value == "M"
 
@@ -805,12 +823,13 @@ def test_get_experiment_assignments_wrong_datasource(db_session, testing_datasou
     assert response.json()["detail"] == "Experiment not found"
 
 
-def make_experiment_with_assignments(db_session, datasource_id="testing"):
+def make_experiment_with_assignments(db_session, datasource: Datasource):
     """Helper function for the tests below."""
     # First insert an experiment with assignments
-    experiment = make_insertable_experiment(ExperimentState.COMMITTED, datasource_id)
+    experiment = make_insertable_experiment(ExperimentState.COMMITTED, datasource.id)
     db_session.add(experiment)
-
+    arms = make_arms_from_experiment(experiment, datasource.organization_id)
+    db_session.add_all(arms)
     arm1_id = experiment.design_spec["arms"][0]["arm_id"]
     arm2_id = experiment.design_spec["arms"][1]["arm_id"]
     assignments = [
@@ -841,7 +860,7 @@ def make_experiment_with_assignments(db_session, datasource_id="testing"):
 
 
 def test_experiment_assignments_to_csv_generator(db_session, testing_datasource):
-    experiment = make_experiment_with_assignments(db_session, testing_datasource.ds.id)
+    experiment = make_experiment_with_assignments(db_session, testing_datasource.ds)
 
     (arm1_id, arm2_id) = experiment.get_arm_ids()
     (arm1_name, arm2_name) = experiment.get_arm_names()
@@ -854,7 +873,7 @@ def test_experiment_assignments_to_csv_generator(db_session, testing_datasource)
 
 
 def test_get_experiment_assignments_as_csv(db_session, testing_datasource):
-    experiment = make_experiment_with_assignments(db_session, testing_datasource.ds.id)
+    experiment = make_experiment_with_assignments(db_session, testing_datasource.ds)
 
     response = client.get(
         f"/experiments/{experiment.id!s}/assignments/csv",
@@ -882,10 +901,10 @@ def test_experiment_sql():
     pg_sql = str(
         CreateTable(ArmAssignment.__table__).compile(dialect=postgresql.dialect())
     )
-    assert "arm_id UUID NOT NULL" in pg_sql
-    assert "strata JSONB NOT NULL" in pg_sql
+    assert "arm_id VARCHAR(36) NOT NULL," in pg_sql
+    assert "strata JSONB NOT NULL," in pg_sql
     sqlite_sql = str(
         CreateTable(ArmAssignment.__table__).compile(dialect=sqlite.dialect())
     )
-    assert "arm_id CHAR(32) NOT NULL" in sqlite_sql
-    assert "strata JSON NOT NULL" in sqlite_sql
+    assert "arm_id VARCHAR(36) NOT NULL," in sqlite_sql
+    assert "strata JSON NOT NULL," in sqlite_sql

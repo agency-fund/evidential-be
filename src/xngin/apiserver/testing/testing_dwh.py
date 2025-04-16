@@ -4,13 +4,12 @@ This corresponds to the "testing" config specified in xngin.testing.settings.jso
 """
 
 import hashlib
-import logging
 import sqlite3
 from contextlib import closing
 from pathlib import Path
-import pandas as pd
 
-logger = logging.getLogger(__name__)
+import pandas as pd
+from loguru import logger
 
 TESTING_DWH_SQLITE_PATH = Path(__file__).parent.parent / "testdata/testing_dwh.db"
 TESTING_DWH_RAW_DATA = Path(__file__).parent.parent / "testdata/testing_dwh.csv.zst"
@@ -24,7 +23,7 @@ def import_csv_to_sqlite(
     source_csv: Path,
     src_version: int,
     db_path: Path,
-    table_name="test_participant_type",
+    table_name="dwh",
 ):
     """Imports a CSV file to a SQLite database.
 
@@ -54,8 +53,10 @@ def read_user_version_from_sqlite(db_path: Path):
 
 def compact_hash(path: Path):
     """Computes a hash of the input CSV so that we can determine whether to re-create the test warehouse."""
+    h = hashlib.blake2b(digest_size=2)
     with open(path, "rb") as source:
-        h = hashlib.blake2b(digest_size=2)
+        h.update(source.read())
+    with open(__file__, "rb") as source:
         h.update(source.read())
     return int.from_bytes(h.digest())
 

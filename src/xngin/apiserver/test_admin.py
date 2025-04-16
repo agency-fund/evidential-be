@@ -7,14 +7,21 @@ from functools import partial
 import pytest
 from fastapi.testclient import TestClient
 from pydantic import SecretStr
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 from xngin.apiserver import conftest
 from xngin.apiserver import main as main_module
-from xngin.apiserver.api_types import DataType
+from xngin.apiserver.api_types import DataType, ExperimentAnalysis
 from xngin.apiserver.dependencies import xngin_db_session
 from xngin.apiserver.main import app
 from xngin.apiserver.models.enums import ExperimentState
-from xngin.apiserver.models.tables import Experiment, Organization, User
+from xngin.apiserver.models.tables import (
+    ArmAssignment,
+    ArmTable,
+    Experiment,
+    Organization,
+    User,
+)
 from xngin.apiserver.routers import oidc_dependencies
 from xngin.apiserver.routers.admin_api_types import (
     CreateDatasourceRequest,
@@ -31,6 +38,7 @@ from xngin.apiserver.routers.admin_api_types import (
     UpdateParticipantsTypeResponse,
 )
 from xngin.apiserver.routers.experiments_api_types import (
+    CreateExperimentRequest,
     CreateExperimentWithAssignmentResponse,
     ExperimentConfig,
     GetExperimentAssignmentsResponse,
@@ -86,8 +94,8 @@ uget = partial(
 )
 
 
-@pytest.fixture(scope="module")
-def db_session():
+@pytest.fixture(name="db_session", scope="module")
+def fixture_db_session():
     session = next(app.dependency_overrides[xngin_db_session]())
     yield session
 
@@ -97,7 +105,8 @@ def fixture_teardown(db_session: Session):
     # setup here
     yield
     # teardown here
-
+    # Rollback any pending transactions that may have been hanging due to an exception.
+    db_session.rollback()
     # Clean up objects created in each test by truncating tables and leveraging cascade.
     db_session.query(Organization).delete()
     db_session.query(User).delete()
@@ -113,9 +122,38 @@ def enable_apis_under_test():
     oidc_dependencies.TESTING_TOKENS_ENABLED = True
 
 
-@pytest.fixture(scope="function")
-def testing_datasource_with_user_added(testing_datasource):
+@pytest.fixture(name="testing_datasource_with_inline_schema")
+def fixture_testing_datasource_with_inline_schema(db_session):
+    """Create a fake remote datasource using an inline schema for the participants config."""
+    # First create a datasource to maintain proper referential integrity, but with a local config
+    # so we know we can read our dwh data. Also populate with an inline schema to test admin.
+    ds_with_inlined_shema = conftest.get_settings_datasource(
+        "testing-inline-schema"
+    ).config
+    return conftest.make_datasource_metadata(
+        db_session,
+        datasource_id_for_config="testing",
+        participants_def_list=[ds_with_inlined_shema.participants[0]],
+    )
+
+
+@pytest.fixture(name="testing_datasource_with_user_added")
+def fixture_testing_datasource_with_user_added(testing_datasource_with_inline_schema):
     """Add the privileged user to the test ds's organization so we can access the ds."""
+    response = ppost(
+        f"/v1/m/organizations/{testing_datasource_with_inline_schema.org.id}/members",
+        json={"email": PRIVILEGED_EMAIL},
+    )
+    assert response.status_code == 204, response.content
+    return testing_datasource_with_inline_schema
+
+
+@pytest.fixture(name="testing_sheet_datasource_with_user_added")
+def fixture_testing_sheet_datasource_with_user_added(testing_datasource):
+    """
+    Add the privileged user to the test ds's organization so we can access the ds.
+    This uses a sheet participant type; most tests should use testing_datasource_with_user_added.
+    """
     response = ppost(
         f"/v1/m/organizations/{testing_datasource.org.id}/members",
         json={"email": PRIVILEGED_EMAIL},
@@ -130,13 +168,14 @@ def make_createexperimentrequest_json(participant_type: str = "test_participant_
         "design_spec": {
             "experiment_name": "test",
             "description": "test",
-            "start_date": "2024-01-01T00:00:00",
-            "end_date": "2024-01-02T00:00:00",
+            # Attach UTC tz, but use dates_equal() to compare to respect db storage support
+            "start_date": "2024-01-01T00:00:00+00:00",
+            "end_date": "2024-01-02T00:00:00+00:00",
             "arms": [
                 {"arm_name": "control", "arm_description": "control"},
                 {"arm_name": "treatment", "arm_description": "treatment"},
             ],
-            "strata_field_names": [],
+            "strata_field_names": ["gender"],
             "metrics": [
                 {
                     "field_name": "current_income",
@@ -166,6 +205,51 @@ def make_insertable_experiment(state: ExperimentState, datasource_id="testing"):
         power_analyses=None,
         assign_summary=None,
     )
+
+
+def make_arms_from_experiment(experiment: Experiment, organization_id: str):
+    return [
+        ArmTable(
+            id=arm["arm_id"],
+            experiment_id=experiment.id,
+            name=arm["arm_name"],
+            description=arm["arm_description"],
+            organization_id=organization_id,
+        )
+        for arm in experiment.design_spec["arms"]
+    ]
+
+
+@pytest.fixture(name="testing_experiment")
+def fixture_testing_experiment(db_session, testing_datasource_with_user_added):
+    """Create an experiment on a test inline schema datasource with proper user permissions."""
+    datasource = testing_datasource_with_user_added.ds
+
+    experiment = make_insertable_experiment(
+        ExperimentState.COMMITTED,
+        datasource_id=datasource.id,
+    )
+    # Fake arm_ids in the design_spec since we're not using the admin API to create the experiment.
+    for arm in experiment.design_spec["arms"]:
+        if "arm_id" not in arm:
+            arm["arm_id"] = str(uuid.uuid4())
+    db_session.add(experiment)
+    # Create ArmTable instances for each arm in the experiment
+    db_arms = make_arms_from_experiment(experiment, datasource.organization_id)
+    db_session.add_all(db_arms)
+    # Add fake assignments for each arm for real participant ids in our test data.
+    arm_ids = [arm["arm_id"] for arm in experiment.design_spec["arms"]]
+    for i in range(10):
+        assignment = ArmAssignment(
+            experiment_id=str(experiment.id),
+            participant_id=str(i),
+            participant_type=experiment.get_audience_spec().participant_type,
+            arm_id=arm_ids[i % 2],  # Alternate between the two arms
+            strata={},
+        )
+        db_session.add(assignment)
+    db_session.commit()
+    return experiment
 
 
 def test_list_orgs_unauthenticated():
@@ -424,14 +508,14 @@ def test_lifecycle_with_pg(testing_datasource):
     # Inspect the datasource.
     response = pget(f"/v1/m/datasources/{testing_datasource.ds.id}/inspect")
     assert response.status_code == 200, response.content
-    parsed = InspectDatasourceResponse.model_validate(response.json())
-    assert parsed.tables == ["dwh"], response.json()
+    datasource_inspection = InspectDatasourceResponse.model_validate(response.json())
+    assert datasource_inspection.tables == ["dwh"], response.json()
 
     # Inspect one table in the datasource.
     response = pget(f"/v1/m/datasources/{testing_datasource.ds.id}/inspect/dwh")
     assert response.status_code == 200, response.content
-    parsed = InspectDatasourceTableResponse.model_validate(response.json())
-    assert parsed == InspectDatasourceTableResponse(
+    table_inspection = InspectDatasourceTableResponse.model_validate(response.json())
+    assert table_inspection == InspectDatasourceTableResponse(
         # Note: create_inspect_table_response_from_table() doesn't explicitly check for uniqueness.
         detected_unique_id_fields=["id", "uuid_filter"],
         fields=[
@@ -489,9 +573,14 @@ def test_lifecycle_with_pg(testing_datasource):
             FieldMetadata(
                 field_name="sample_date", data_type=DataType.DATE, description=""
             ),
-            # TODO: timestamptz
             FieldMetadata(
                 field_name="sample_timestamp",
+                data_type=DataType.TIMESTAMP_WITHOUT_TIMEZONE,
+                description="",
+            ),
+            # TODO: https://github.com/agency-fund/xngin/issues/337
+            FieldMetadata(
+                field_name="timestamp_with_tz",
                 data_type=DataType.TIMESTAMP_WITHOUT_TIMEZONE,
                 description="",
             ),
@@ -533,8 +622,10 @@ def test_lifecycle_with_pg(testing_datasource):
         ).model_dump_json(),
     )
     assert response.status_code == 200, response.content
-    parsed = CreateParticipantsTypeResponse.model_validate(response.json())
-    assert parsed.participant_type == participant_type
+    created_participant_type = CreateParticipantsTypeResponse.model_validate(
+        response.json()
+    )
+    assert created_participant_type.participant_type == participant_type
 
     # Create experiment using that participant type.
     response = ppost(
@@ -543,10 +634,12 @@ def test_lifecycle_with_pg(testing_datasource):
         json=make_createexperimentrequest_json(participant_type),
     )
     assert response.status_code == 200, response.content
-    parsed = CreateExperimentWithAssignmentResponse.model_validate(response.json())
-    parsed_experiment_id = parsed.design_spec.experiment_id
-    parsed_arm_ids = {arm.arm_id for arm in parsed.design_spec.arms}
+    created_experiment = CreateExperimentWithAssignmentResponse.model_validate(
+        response.json()
+    )
+    parsed_experiment_id = created_experiment.design_spec.experiment_id
     assert parsed_experiment_id is not None
+    parsed_arm_ids = {arm.arm_id for arm in created_experiment.design_spec.arms}
     assert len(parsed_arm_ids) == 2
 
     # Get that experiment.
@@ -554,36 +647,37 @@ def test_lifecycle_with_pg(testing_datasource):
         f"/v1/m/datasources/{testing_datasource.ds.id}/experiments/{parsed_experiment_id}"
     )
     assert response.status_code == 200, response.content
-    parsed = ExperimentConfig.model_validate(response.json())
-    assert parsed.design_spec.experiment_id == parsed_experiment_id
+    experiment_config = ExperimentConfig.model_validate(response.json())
+    assert experiment_config.design_spec.experiment_id == parsed_experiment_id
 
     # List experiments.
     response = pget(f"/v1/m/datasources/{testing_datasource.ds.id}/experiments")
     assert response.status_code == 200, response.content
-    parsed = ListExperimentsResponse.model_validate(response.json())
-    assert len(parsed.items) == 1, parsed
-    parsed_experiment_config = parsed.items[0]
-    assert parsed_experiment_config.design_spec.experiment_id == parsed_experiment_id
+    experiment_list = ListExperimentsResponse.model_validate(response.json())
+    assert len(experiment_list.items) == 1, experiment_list
+    experiment_config = experiment_list.items[0]
+    assert experiment_config.design_spec.experiment_id == parsed_experiment_id
 
     # Analyze experiment
     response = pget(
         f"/v1/m/datasources/{testing_datasource.ds.id}/experiments/{parsed_experiment_id}/analyze"
     )
-    print(response.content)
     assert response.status_code == 200, response.content
+    experiment_analysis = ExperimentAnalysis.model_validate(response.json())
+    assert experiment_analysis.experiment_id == parsed_experiment_id
 
     # Get assignments for the experiment.
     response = pget(
         f"/v1/m/datasources/{testing_datasource.ds.id}/experiments/{parsed_experiment_id}/assignments"
     )
     assert response.status_code == 200, response.content
-    parsed = GetExperimentAssignmentsResponse.model_validate(response.json())
-    assert parsed.experiment_id == parsed_experiment_id
-    assert parsed.sample_size == 100
-    assert parsed.balance_check is not None
-    assert len(parsed.assignments) == 100
-    assert {arm.arm_name for arm in parsed.assignments} == {"control", "treatment"}
-    assert {arm.arm_id for arm in parsed.assignments} == parsed_arm_ids
+    assignments = GetExperimentAssignmentsResponse.model_validate(response.json())
+    assert assignments.experiment_id == parsed_experiment_id
+    assert assignments.sample_size == 100
+    assert assignments.balance_check is not None
+    assert len(assignments.assignments) == 100
+    assert {arm.arm_name for arm in assignments.assignments} == {"control", "treatment"}
+    assert {arm.arm_id for arm in assignments.assignments} == parsed_arm_ids
 
     # Delete the experiment.
     response = pdelete(
@@ -593,7 +687,8 @@ def test_lifecycle_with_pg(testing_datasource):
 
 
 def test_create_experiment_with_assignment_validation_errors(
-    db_session, testing_datasource_with_user_added
+    testing_datasource_with_user_added,
+    testing_sheet_datasource_with_user_added,
 ):
     """Test LateValidationError cases in create_experiment_with_assignment."""
     testing_datasource = testing_datasource_with_user_added
@@ -613,29 +708,118 @@ def test_create_experiment_with_assignment_validation_errors(
     assert "UUIDs must not be set" in response.json()["message"]
 
     # Test 2: Invalid participants config (sheet instead of schema)
-    # Our testing_datasource is loaded with a "remote" config from xngin.testing.settings.json, but
+    # This datasource is loaded with a "remote" config from xngin.testing.settings.json, but
     # the associated participants config is of type "sheet".
     response = ppost(
-        f"/v1/m/experiments/{testing_datasource.ds.id}/with-assignment",
+        f"/v1/m/experiments/{testing_sheet_datasource_with_user_added.ds.id}/with-assignment",
         params={"chosen_n": 100},
         json=make_createexperimentrequest_json(),
     )
     assert response.status_code == 422, response.content
     assert "Participants must be of type schema" in response.json()["message"]
 
-    # Test 3: Invalid datasource config
-    # First override the testing_datasource with a "sqlite_local" config.
-    testing_ds_config = conftest.get_settings_datasource("testing").config
-    testing_datasource.ds.set_config(testing_ds_config)
-    db_session.commit()
+
+def test_create_experiment_with_assignment_using_inline_schema_ds(
+    db_session, testing_datasource_with_user_added, use_deterministic_random
+):
+    datasource_id = testing_datasource_with_user_added.ds.id
+    base_request_json = make_createexperimentrequest_json("test_participant_type")
+    base_request = CreateExperimentRequest.model_validate(base_request_json)
 
     response = ppost(
-        f"/v1/m/experiments/{testing_datasource.ds.id}/with-assignment",
-        params={"chosen_n": 100},
-        json=make_createexperimentrequest_json(),
+        f"/v1/m/experiments/{datasource_id}/with-assignment",
+        params={"chosen_n": 100, "random_state": 42},
+        json=base_request_json,
     )
-    assert response.status_code == 422, response.content
-    assert "Invalid RemoteDatabaseConfig" in response.json()["message"]
+    assert response.status_code == 200, response.content
+    created_experiment = CreateExperimentWithAssignmentResponse.model_validate(
+        response.json()
+    )
+    parsed_experiment_id = created_experiment.design_spec.experiment_id
+    assert parsed_experiment_id is not None
+    parsed_arm_ids = {arm.arm_id for arm in created_experiment.design_spec.arms}
+    assert len(parsed_arm_ids) == 2
+
+    # Verify basic response
+    assert created_experiment.design_spec.experiment_id is not None
+    assert created_experiment.design_spec.arms[0].arm_id is not None
+    assert created_experiment.design_spec.arms[1].arm_id is not None
+    assert created_experiment.state == ExperimentState.ASSIGNED
+    assign_summary = created_experiment.assign_summary
+    assert assign_summary.sample_size == 100
+    assert assign_summary.balance_check.balance_ok is True
+
+    # Check if the representations are equivalent
+    # scrub the uuids from the config for comparison
+    actual_design_spec = created_experiment.design_spec.model_copy(deep=True)
+    actual_design_spec.experiment_id = None
+    actual_design_spec.arms[0].arm_id = None
+    actual_design_spec.arms[1].arm_id = None
+    assert actual_design_spec == base_request.design_spec
+    assert created_experiment.audience_spec == base_request.audience_spec
+    assert created_experiment.power_analyses == base_request.power_analyses
+
+    experiment_id = created_experiment.design_spec.experiment_id
+    (arm1_id, arm2_id) = [
+        str(arm.arm_id) for arm in created_experiment.design_spec.arms
+    ]
+
+    # Verify database state using the ids in the returned DesignSpec.
+    experiment = db_session.scalars(
+        select(Experiment).where(Experiment.id == str(experiment_id))
+    ).one()
+    assert experiment.state == ExperimentState.ASSIGNED
+    assert experiment.datasource_id == datasource_id
+    assert conftest.dates_equal(
+        experiment.start_date, base_request.design_spec.start_date
+    )
+    assert conftest.dates_equal(experiment.end_date, base_request.design_spec.end_date)
+    # Verify assignments were created
+    assignments = db_session.scalars(
+        select(ArmAssignment).where(ArmAssignment.experiment_id == str(experiment_id))
+    ).all()
+    assert len(assignments) == 100, {
+        e.name: getattr(experiment, e.name) for e in Experiment.__table__.columns
+    }
+
+    # Check one assignment to see if it looks roughly right
+    sample_assignment: ArmAssignment = assignments[0]
+    assert sample_assignment.participant_type == "test_participant_type"
+    assert sample_assignment.experiment_id == str(experiment_id)
+    assert sample_assignment.arm_id in {arm1_id, arm2_id}
+    for stratum in sample_assignment.strata:
+        assert stratum["field_name"] in {"current_income", "gender"}
+
+    # Check for approximate balance in arm assignment
+    num_control = sum(1 for a in assignments if a.arm_id == arm1_id)
+    num_treat = sum(1 for a in assignments if a.arm_id == arm2_id)
+    assert abs(num_control - num_treat) <= 5  # Allow some wiggle room
+
+
+def test_experiments_analyze(testing_experiment):
+    datasource_id = testing_experiment.datasource_id
+    experiment_id = testing_experiment.id
+
+    response = pget(
+        f"/v1/m/datasources/{datasource_id}/experiments/{experiment_id}/analyze"
+    )
+
+    assert response.status_code == 200, response.content
+    experiment_analysis = ExperimentAnalysis.model_validate(response.json())
+    # ExperimentAnalysis uses real native uuids, whereas the returned database model are actually
+    # treated as strings by sqlalchemy given our table definition, so compare as strings.
+    assert str(experiment_analysis.experiment_id) == str(experiment_id)
+    assert len(experiment_analysis.metric_analyses) == 1
+    # Verify that only the first arm is marked as baseline by default
+    metric_analysis = experiment_analysis.metric_analyses[0]
+    baseline_arms = [arm for arm in metric_analysis.arm_analyses if arm.is_baseline]
+    assert len(baseline_arms) == 1
+    assert baseline_arms[0].is_baseline
+    for analysis in experiment_analysis.metric_analyses:
+        # Verify arm_ids match the database model.
+        assert {str(arm.arm_id) for arm in analysis.arm_analyses} == {
+            str(arm.arm_id) for arm in testing_experiment.get_arms()
+        }
 
 
 @pytest.mark.parametrize(

@@ -95,6 +95,7 @@ def test_assign_treatment(sample_table, sample_rows):
         stratum_id_name="stratum_id",
     )
 
+    assert result.balance_check is not None
     assert result.balance_check.f_statistic == pytest.approx(0.006156735)
     assert result.balance_check.p_value == pytest.approx(0.99992466)
     assert result.balance_check.balance_ok
@@ -144,8 +145,9 @@ def test_assign_treatment(sample_table, sample_rows):
     # There should only be 8 distinct stratum_ids (gender x region)
     assert {int(s.strata[2].strata_value) for s in result.assignments} == set(range(8))
     # Count occurrences of each unique strata tuple
-    strata_counts = defaultdict(int)
+    strata_counts: defaultdict[tuple, int] = defaultdict(int)
     for participant in result.assignments:
+        assert participant.strata is not None
         stratum = tuple(s.strata_value for s in participant.strata)
         strata_counts[stratum] += 1
     assert len(strata_counts) == 8, strata_counts
@@ -280,6 +282,7 @@ def test_assign_treatment_with_obj_columns_inferred(sample_table, sample_data):
 
     assert result.sample_size == len(sample_data)
     assert result.unique_id_field == "id"
+    assert result.balance_check is not None
     assert pd.isna(result.balance_check.p_value) is False
     assert pd.isna(result.balance_check.f_statistic) is False
     # Check that treatment assignments are not None or NaN
@@ -363,6 +366,7 @@ def test_with_nans_that_would_break_stochatreat_without_preprocessing(sample_tab
         random_state=42,
     )
     # But we still expect success since internally we'll preprocess the data to handle NaNs.
+    assert result.balance_check is not None
     assert result.balance_check.f_statistic > 0
     assert result.balance_check.p_value > 0
     assert result.balance_check.balance_ok is True
@@ -404,7 +408,7 @@ def test_assign_treatment_with_no_stratification(sample_table, sample_rows):
         random_state=None,
     )
     assert result.balance_check is None
-    arm_counts = defaultdict(int)
+    arm_counts: defaultdict[str, int] = defaultdict(int)
     # There should be no strata
     for participant in result.assignments:
         arm_counts[participant.arm_name] += 1
@@ -427,7 +431,7 @@ def test_assign_treatment_with_no_valid_strata(sample_table, sample_rows):
     )
     assert result.balance_check is None
     # In this case, we still output the strata column, even though it's all the same value.
-    arm_counts = defaultdict(int)
+    arm_counts: defaultdict[str, int] = defaultdict(int)
     for participant in result.assignments:
         arm_counts[participant.arm_name] += 1
         assert participant.strata == [

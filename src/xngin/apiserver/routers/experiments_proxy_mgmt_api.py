@@ -1,23 +1,22 @@
-import logging
 from contextlib import asynccontextmanager
 from typing import Annotated, Literal
 
 import httpx
-from fastapi import APIRouter, FastAPI, HTTPException, Depends, Query, Response
+from fastapi import APIRouter, Depends, FastAPI, HTTPException, Query, Response
+from loguru import logger
 from pydantic import BaseModel
-
 from xngin.apiserver.api_types import (
     CommitRequest,
 )
 from xngin.apiserver.dependencies import (
-    httpx_dependency,
     datasource_config_required,
+    httpx_dependency,
 )
 from xngin.apiserver.settings import (
-    WebhookConfig,
-    WebhookUrl,
     DatasourceConfig,
     HttpMethodTypes,
+    WebhookConfig,
+    WebhookUrl,
 )
 from xngin.apiserver.utils import substitute_url
 from xngin.apiserver.webhook_types import (
@@ -26,8 +25,6 @@ from xngin.apiserver.webhook_types import (
     WebhookResponse,
     WebhookUpdateCommitRequest,
 )
-
-logger = logging.getLogger(__name__)
 
 
 @asynccontextmanager
@@ -184,12 +181,12 @@ async def make_webhook_request_base(
             )
             status_code = 502
     except httpx.ConnectError as e:
-        logger.exception("ERROR requesting webhook (ConnectError): %s", e.request.url)
+        logger.exception("ERROR requesting webhook (ConnectError): {}", e.request.url)
         raise HTTPException(
             status_code=502, detail=f"Error connecting to {e.request.url}: {e}"
         ) from e
     except httpx.RequestError as e:
-        logger.exception("ERROR requesting webhook: %s", e.request.url)
+        logger.exception("ERROR requesting webhook: {}", e.request.url)
         raise HTTPException(status_code=500, detail="server error") from e
     else:
         # Always return a WebhookResponse in the body, even on non-200 responses.

@@ -3,47 +3,49 @@
 import re
 import secrets
 from dataclasses import dataclass
-from datetime import datetime, UTC
+from datetime import UTC, datetime
 
 import pytest
 import sqlalchemy
 from sqlalchemy import (
-    Table,
-    create_engine,
-    Integer,
-    Float,
     Boolean,
-    String,
-    event,
     Column,
     DateTime,
+    Float,
+    Integer,
+    String,
+    Table,
+    create_engine,
+    event,
     make_url,
     text,
 )
-from sqlalchemy.orm import Session, DeclarativeBase, mapped_column
-
+from sqlalchemy.orm import DeclarativeBase, Session, mapped_column
 from xngin.apiserver import flags
 from xngin.apiserver.api_types import (
     AudienceSpec,
+    AudienceSpecFilter,
     DesignSpecMetric,
     DesignSpecMetricRequest,
-    Relation,
-    ParticipantOutcome,
-    AudienceSpecFilter,
     MetricType,
     MetricValue,
+    ParticipantOutcome,
+    Relation,
 )
 from xngin.apiserver.conftest import DbType, get_test_dwh_info
 from xngin.apiserver.dwh.queries import (
     compose_query,
-    create_query_filters_from_spec,
-    get_stats_on_metrics,
-    get_participant_metrics,
-    make_csv_regex,
     create_datetime_filter,
+    create_query_filters_from_spec,
+    get_participant_metrics,
+    get_stats_on_metrics,
+    make_csv_regex,
 )
 from xngin.apiserver.exceptions_common import LateValidationError
 from xngin.db_extensions.custom_functions import NumpyStddev
+
+SA_LOGGER_NAME_FOR_DWH = "xngin_dwh"
+SA_LOGGING_PREFIX_FOR_DWH = "dwh"
 
 
 class Base(DeclarativeBase):
@@ -196,7 +198,9 @@ def fixture_db_session():
             default_url,
             connect_args=connect_args,
             echo=flags.ECHO_SQL,
+            logging_name=SA_LOGGER_NAME_FOR_DWH,
             poolclass=sqlalchemy.pool.NullPool,
+            execution_options={"logging_token": SA_LOGGING_PREFIX_FOR_DWH},
         )
         # re: DROP and CREATE DATABASE cannot be executed inside a transaction block
         with default_engine.connect().execution_options(
@@ -214,8 +218,10 @@ def fixture_db_session():
     # Now we can connect to the target database
     engine = create_engine(
         connect_url,
+        logging_name=SA_LOGGER_NAME_FOR_DWH,
         connect_args=connect_args,
         echo=flags.ECHO_SQL,
+        execution_options={"logging_token": SA_LOGGING_PREFIX_FOR_DWH},
     )
 
     # TODO: consider trying to consolidate dwh-conditional config with that in settings.py
@@ -246,6 +252,8 @@ def fixture_db_session():
     else:
         default_engine = create_engine(
             default_url,
+            logging_name=SA_LOGGER_NAME_FOR_DWH,
+            execution_options={"logging_token": SA_LOGGING_PREFIX_FOR_DWH},
             connect_args=connect_args,
             echo=flags.ECHO_SQL,
             poolclass=sqlalchemy.pool.NullPool,
