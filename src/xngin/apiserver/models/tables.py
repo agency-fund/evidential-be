@@ -116,8 +116,49 @@ class Event(Base):
 
     organization_id: Mapped[str] = mapped_column(ForeignKey("organizations.id"))
     organization: Mapped["Organization"] = relationship(back_populates="events")
+    tasks: Mapped[list["Task"]] = relationship(back_populates="event", cascade="all, delete-orphan")
 
     __table_args__ = (Index("event_stream", "organization_id", created_at),)
+
+
+class Task(Base):
+    """Represents a task in the task queue."""
+
+    __tablename__ = "tasks"
+
+    id: Mapped[str] = mapped_column(primary_key=True, default=unique_id_factory("task"))
+    created_at: Mapped[datetime] = mapped_column(
+        server_default=sqlalchemy.sql.func.now()
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        server_default=sqlalchemy.sql.func.now(),
+        onupdate=sqlalchemy.sql.func.now(),
+    )
+    task_type: Mapped[str] = mapped_column(
+        comment="The type of task. E.g. `event.created`"
+    )
+    embargo_until: Mapped[datetime | None] = mapped_column(
+        comment="If set, the task will not be processed until after this time."
+    )
+    retry_count: Mapped[int] = mapped_column(
+        server_default="0",
+        comment="Number of times this task has been retried."
+    )
+    payload: Mapped[dict | None] = mapped_column(
+        type_=JSONBetter,
+        comment="The task payload. This will be a JSON object with task-specific data.",
+    )
+    event_id: Mapped[str | None] = mapped_column(
+        ForeignKey("events.id", ondelete="CASCADE"),
+        comment="Optional reference to an event that triggered this task."
+    )
+
+    event: Mapped["Event | None"] = relationship(back_populates="tasks")
+
+    __table_args__ = (
+        Index("idx_tasks_embargo", "embargo_until"),
+        Index("idx_tasks_type", "task_type"),
+    )
 
 
 class User(Base):

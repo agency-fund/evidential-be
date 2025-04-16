@@ -140,3 +140,5 @@ tasks:
       sqlite3 xngin.db .tables | grep -q "atlas_schema_revisions" \
         && uv run atlas migrate apply --env sa_sqlite --url sqlite://xngin.db \
         || uv run atlas migrate apply --env sa_sqlite --url sqlite://xngin.db --baseline $(ls -t migrations/sa_sqlite | grep .sql | sort -n | cut -f1 -d. | head -1)
+  start-tq:
+    cmd: uv run xngin-tq --dsn {{.XNGIN_DEVAPP_DSN}}
