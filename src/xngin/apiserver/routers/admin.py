@@ -1,6 +1,7 @@
 """Implements a basic Admin API."""
 
 import logging
+import secrets
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime, timedelta
 from typing import Annotated
@@ -49,11 +50,13 @@ from xngin.apiserver.models.tables import (
     ParticipantTypesInspected,
     User,
     UserOrganization,
+    Webhook,
 )
 from xngin.apiserver.routers import experiments, experiments_api_types
 from xngin.apiserver.routers.admin_api_types import (
     AddMemberToOrganizationRequest,
     AddWebhookToOrganizationRequest,
+    AddWebhookToOrganizationResponse,
     ApiKeySummary,
     CreateApiKeyResponse,
     CreateDatasourceRequest,
@@ -313,11 +316,32 @@ def create_organizations(
 def add_webhook_to_organization(
     organization_id: str,
     session: Annotated[Session, Depends(xngin_db_session)],
-    token_info: Annotated[TokenInfo, Depends(require_oidc_token)],
     user: Annotated[User, Depends(user_from_token)],
     body: Annotated[AddWebhookToOrganizationRequest, Body(...)],
-):
+) -> AddWebhookToOrganizationResponse:
     """Adds a Webhook to an organization."""
+    # Verify user has access to the organization
+    org = get_organization_or_raise(session, user, organization_id)
+
+    # Generate a secure auth token
+    auth_token = secrets.token_hex(16)
+
+    # Create and save the webhook
+    webhook = Webhook(
+        type=body.type,
+        url=body.url,
+        auth_token=auth_token,
+        organization_id=org.id
+    )
+    session.add(webhook)
+    session.commit()
+
+    return AddWebhookToOrganizationResponse(
+        id=webhook.id,
+        type=webhook.type,
+        url=webhook.url,
+        auth_token=auth_token
+    )
 
 
 @router.delete("/organizations/{organization_id}/webhooks/{webhook_id}")
