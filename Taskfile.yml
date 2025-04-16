@@ -155,6 +155,10 @@ tasks:
     cmds:
       - uv run atlas migrate diff --env sa_postgres
       - uv run atlas migrate apply --env sa_postgres --url '{{.XNGIN_DEVAPP_DSN}}'
+  down-migration:
+    desc: "Go back a version in the migration history. Note that it include pre-migration checks to ensure data isn't deleted and tables are empty, so you may have to manually do some prep for the reversion. See https://atlasgo.io/versioned/down"
+    cmds:
+      - uv run atlas migrate down --env sa_postgres --url '{{.XNGIN_DEVAPP_DSN}}'
   apply-migrations-sqlite:
     desc: "Apply sqlite migrations locally"
     cmd: |
