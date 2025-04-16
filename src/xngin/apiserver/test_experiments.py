@@ -589,7 +589,6 @@ def test_state_setting_experiment_impl(
 ):
     # Initialize our state with an existing experiment who's state we want to modify.
     experiment = make_insertable_experiment(initial_state, testing_datasource.ds.id)
-    # Create ArmTable instances for each arm in the experiment
     db_session.add(experiment)
     db_session.commit()
 
