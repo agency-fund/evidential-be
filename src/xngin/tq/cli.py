@@ -1,5 +1,5 @@
 """CLI interface for the task queue."""
-
+import os
 import signal
 import sys
 from typing import Annotated
@@ -13,8 +13,19 @@ DEFAULT_MAX_RETRIES = 10
 
 DEFAULT_POLLING_INTERVAL = 5 * 60
 
-app = typer.Typer(help="Task queue processor for xngin")
+if sentry_dsn := os.environ.get("SENTRY_DSN"):
+    import sentry_sdk
 
+    sentry_sdk.init(
+        dsn=sentry_dsn,
+        environment=os.environ.get("ENVIRONMENT", "local"),
+        traces_sample_rate=1.0,
+        _experiments={
+            "continuous_profiling_auto_start": True,
+        },
+    )
+
+app = typer.Typer(help="Task queue processor for xngin")
 
 @app.command()
 def run(
