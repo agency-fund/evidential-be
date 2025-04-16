@@ -3,7 +3,7 @@
 import json
 import time
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from typing import Any, Callable, Dict, Optional, Protocol
 
 import psycopg
@@ -49,7 +49,7 @@ class TaskHandler(Protocol):
 class TaskQueue:
     """Task queue implementation using Postgres."""
 
-    def __init__(self, dsn: str, max_retries: int = 3, poll_interval: int = 30):
+    def __init__(self, dsn: str, max_retries: int = 3, poll_interval: int = 60*5):
         """Initialize the task queue.
 
         Args:
@@ -189,6 +189,20 @@ class TaskQueue:
             conn.commit()
             logger.info(f"Task {task.id} completed and marked as successful")
 
+    def _calculate_backoff(self, retry_count: int) -> timedelta:
+        """Calculate exponential backoff time based on retry count.
+
+        Args:
+            retry_count: Current retry count
+
+        Returns:
+            Timedelta representing the backoff duration
+        """
+        # Start with 1 minute, double each time, max out at 15 minutes
+        # retry_count is 0-based, so add 1 for the calculation
+        minutes = min(2 ** retry_count, 15)
+        return timedelta(minutes=minutes)
+
     def _mark_task_failed(self, conn: psycopg.Connection, task: Task, exc: Exception) -> None:
         """Mark a task as failed.
 
@@ -197,6 +211,8 @@ class TaskQueue:
             task: The task to mark as failed.
             exc: The exception that caused the failure.
         """
+        now = datetime.now(UTC)
+
         with conn.cursor() as cur:
             # Check if we've reached max retries
             if task.retry_count >= self.max_retries - 1:  # -1 because we're about to increment
@@ -206,25 +222,30 @@ class TaskQueue:
                     UPDATE tasks
                     SET status = 'dead',
                         retry_count = retry_count + 1,
-                        updated_at = NOW()
+                        updated_at = %s
                     WHERE id = %s
                     """,
-                    (task.id,),
+                    (now, task.id),
                 )
                 logger.warning(f"Task {task.id} failed and reached max retries, marked as dead")
             else:
-                # Reset to pending for retry
+                # Calculate backoff time for next retry
+                backoff = self._calculate_backoff(task.retry_count)
+                embargo_until = now + backoff
+
+                # Reset to pending for retry with embargo
                 cur.execute(
                     """
                     UPDATE tasks
                     SET status = 'pending',
                         retry_count = retry_count + 1,
-                        updated_at = NOW()
+                        updated_at = %s,
+                        embargo_until = %s
                     WHERE id = %s
                     """,
-                    (task.id,),
+                    (now, embargo_until, task.id),
                 )
-                logger.info(f"Task {task.id} failed, retry count now {task.retry_count + 1}")
+                logger.info(f"Task {task.id} failed, retry count now {task.retry_count + 1}, next attempt after {embargo_until} (backoff: {backoff})")
             conn.commit()
 
     def run(self) -> None:
