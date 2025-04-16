@@ -1,4 +1,5 @@
 """CLI interface for the task queue."""
+
 import os
 import signal
 import sys
@@ -26,6 +27,7 @@ if sentry_dsn := os.environ.get("SENTRY_DSN"):
     )
 
 app = typer.Typer(help="Task queue processor for xngin")
+
 
 @app.command()
 def run(
@@ -83,12 +85,3 @@ def run(
 
     # Run the queue
     queue.run()
-
-
-def main() -> None:
-    """Entry point for the CLI."""
-    app()
-
-
-if __name__ == "__main__":
-    main()

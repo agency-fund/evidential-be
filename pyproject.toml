@@ -38,7 +38,7 @@ build-backend = "hatchling.build"
 [project.scripts]
 xngin-apiserver = "xngin.apiserver.main:main"
 xngin-cli = "xngin.cli.main:app"
-xngin-tq = "xngin.tq.cli:main"
+xngin-tq = "xngin.tq.cli:app"
 
 [tool.pytest.ini_options]
 log_cli = 0  # set to 1 for live logs
