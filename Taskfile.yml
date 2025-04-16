@@ -141,4 +141,7 @@ tasks:
         && uv run atlas migrate apply --env sa_sqlite --url sqlite://xngin.db \
         || uv run atlas migrate apply --env sa_sqlite --url sqlite://xngin.db --baseline $(ls -t migrations/sa_sqlite | grep .sql | sort -n | cut -f1 -d. | head -1)
   start-tq:
-    cmd: uv run xngin-tq --dsn {{.XNGIN_DEVAPP_DSN}}
+    desc: "Start the task queue."
+    env:
+      XNGIN_TQ_DSN: "{{.XNGIN_DEVAPP_DSN}}"
+    cmd: uv run xngin-tq

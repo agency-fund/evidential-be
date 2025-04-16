@@ -282,7 +282,6 @@ class TaskQueue:
                         except StopIteration:
                             logger.debug("Timeout or other stop.")
                         finally:
-                            logger.debug("Closing generator")
                             gen.close()
 
                         # No notifications received, poll again
