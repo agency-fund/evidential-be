@@ -1,4 +1,5 @@
-from typing import Annotated
+from datetime import datetime
+from typing import Annotated, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 from xngin.apiserver.api_types import (
@@ -14,6 +15,7 @@ from xngin.apiserver.limits import (
     MAX_LENGTH_OF_EMAIL_VALUE,
     MAX_LENGTH_OF_ID_VALUE,
     MAX_LENGTH_OF_NAME_VALUE,
+    MAX_LENGTH_OF_WEBHOOK_URL_VALUE,
     MAX_NUMBER_OF_FIELDS,
 )
 from xngin.apiserver.settings import DatasourceConfig, Dwh, ParticipantsConfig
@@ -59,6 +61,16 @@ class ListOrganizationsResponse(AdminApiBaseModel):
     items: list[OrganizationSummary]
 
 
+class EventSummary(AdminApiBaseModel):
+    id: str
+    created_at: datetime
+    type: str
+
+
+class ListOrganizationEventsResponse(AdminApiBaseModel):
+    items: list[EventSummary]
+
+
 class GetOrganizationResponse(AdminApiBaseModel):
     id: Annotated[str, Field(max_length=MAX_LENGTH_OF_ID_VALUE)]
     name: Annotated[str, Field(max_length=MAX_LENGTH_OF_NAME_VALUE)]
@@ -72,6 +84,18 @@ class AddMemberToOrganizationRequest(AdminApiBaseModel):
 
 class ListDatasourcesResponse(AdminApiBaseModel):
     items: list[DatasourceSummary]
+
+
+class AddWebhookToOrganizationRequest(AdminApiBaseModel):
+    type: Literal["event.created"]
+    url: Annotated[str, Field(max_length=MAX_LENGTH_OF_WEBHOOK_URL_VALUE)]
+
+
+class AddWebhookToOrganizationResponse(AdminApiBaseModel):
+    id: str
+    type: str
+    url: str
+    auth_token: str
 
 
 class CreateDatasourceRequest(AdminApiBaseModel):

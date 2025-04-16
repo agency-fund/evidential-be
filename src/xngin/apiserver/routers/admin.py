@@ -53,6 +53,7 @@ from xngin.apiserver.models.tables import (
 from xngin.apiserver.routers import experiments, experiments_api_types
 from xngin.apiserver.routers.admin_api_types import (
     AddMemberToOrganizationRequest,
+    AddWebhookToOrganizationRequest,
     ApiKeySummary,
     CreateApiKeyResponse,
     CreateDatasourceRequest,
@@ -70,6 +71,7 @@ from xngin.apiserver.routers.admin_api_types import (
     InspectParticipantTypesResponse,
     ListApiKeysResponse,
     ListDatasourcesResponse,
+    ListOrganizationEventsResponse,
     ListOrganizationsResponse,
     ListParticipantsTypeResponse,
     OrganizationSummary,
@@ -305,6 +307,36 @@ def create_organizations(
     session.commit()
 
     return CreateOrganizationResponse(id=organization.id)
+
+
+@router.post("/organizations/{organization_id}/webhooks")
+def add_webhook_to_organization(
+    organization_id: str,
+    session: Annotated[Session, Depends(xngin_db_session)],
+    token_info: Annotated[TokenInfo, Depends(require_oidc_token)],
+    user: Annotated[User, Depends(user_from_token)],
+    body: Annotated[AddWebhookToOrganizationRequest, Body(...)],
+):
+    """Adds a Webhook to an organization."""
+
+
+@router.delete("/organizations/{organization_id}/webhooks/{webhook_id}")
+def delete_webhook_from_organization(
+    organization_id: str,
+    webhook_id: str,
+    session: Annotated[Session, Depends(xngin_db_session)],
+    token_info: Annotated[TokenInfo, Depends(require_oidc_token)],
+    user: Annotated[User, Depends(user_from_token)],
+):
+    """Removes a Webhook from an organization."""
+    # TODO
+
+
+@router.get("/organizations/{organization_id}/events")
+def list_organization_events(
+    organization_id: str,
+) -> list[ListOrganizationEventsResponse]:
+    """Returns the most recent 200 events in an organization."""
 
 
 @router.post(
