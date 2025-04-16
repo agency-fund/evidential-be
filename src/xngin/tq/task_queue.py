@@ -38,15 +38,17 @@ class TaskHandler(Protocol):
     def __call__(
         self,
         task: Task,
-        on_success: Callable[[], None],
-        on_failure: Callable[[Exception], None],
-    ) -> None:
+    ) -> bool:
         """Handle a task.
 
         Args:
             task: The task to handle.
-            on_success: Callback to call when the task is successfully handled.
-            on_failure: Callback to call when the task handling fails.
+
+        Returns:
+            True if the task was handled successfully.
+
+        Raises:
+            Exception: If the task handling fails.
         """
         ...
 
@@ -163,18 +165,13 @@ class TaskQueue:
 
         handler = self.handlers[task.task_type]
 
-        def on_success() -> None:
-            self._mark_task_completed(conn, task)
-
-        def on_failure(exc: Exception) -> None:
-            logger.error(f"Task {task.id} failed: {exc}")
-            self._mark_task_failed(conn, task, exc)
-
         try:
-            handler(task, on_success, on_failure)
+            handler(task)
+            # If we get here, the handler completed without raising an exception
+            self._mark_task_completed(conn, task)
         except Exception as e:
             logger.exception(f"Error handling task {task.id}")
-            on_failure(e)
+            self._mark_task_failed(conn, task, e)
 
     def _mark_task_completed(self, conn: psycopg.Connection, task: Task) -> None:
         """Mark a task as completed by setting its status to 'success'.
