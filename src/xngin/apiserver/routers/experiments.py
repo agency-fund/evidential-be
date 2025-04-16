@@ -36,6 +36,7 @@ from xngin.apiserver.models.tables import (
     ArmAssignment,
     Event,
     Experiment,
+    Task,
 )
 from xngin.apiserver.routers.experiments_api import (
     CommonQueryParams,
@@ -56,6 +57,7 @@ from xngin.apiserver.settings import (
 )
 from xngin.events.experiment_created import ExperimentCreated
 from xngin.stats.assignment import RowProtocol, assign_treatment
+from xngin.tq.task_types import WebhookOutboundTask
 
 
 @asynccontextmanager
@@ -250,12 +252,29 @@ def commit_experiment_impl(xngin_session: Session, experiment: Experiment):
         )
 
     experiment.state = ExperimentState.COMMITTED
+
+    experiment_id = str(experiment.id)
     event = Event(
         organization=experiment.datasource.organization,
         type="experiment.created",
-        data=ExperimentCreated.create(str(experiment.id)).model_dump(),
+        data=ExperimentCreated(experiment_id=experiment_id).model_dump(),
     )
     xngin_session.add(event)
+
+    for webhook in experiment.datasource.organization.webhooks:
+        if webhook.type == "experiment.created":
+            task = Task(
+                task_type="webhook.outbound",
+                payload=WebhookOutboundTask(
+                    url=webhook.url,
+                    payload={"experiment_id": experiment_id},
+                    headers={"Authorization": webhook.auth_token}
+                    if webhook.auth_token
+                    else {},
+                ).model_dump(),
+            )
+            task.event = event
+            xngin_session.add(task)
     xngin_session.commit()
 
     return Response(status_code=status.HTTP_204_NO_CONTENT)
