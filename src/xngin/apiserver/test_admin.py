@@ -17,6 +17,7 @@ from xngin.apiserver.main import app
 from xngin.apiserver.models.enums import ExperimentState
 from xngin.apiserver.models.tables import (
     ArmAssignment,
+    ArmTable,
     Experiment,
     Organization,
     User,
@@ -104,7 +105,8 @@ def fixture_teardown(db_session: Session):
     # setup here
     yield
     # teardown here
-
+    # Rollback any pending transactions that may have been hanging due to an exception.
+    db_session.rollback()
     # Clean up objects created in each test by truncating tables and leveraging cascade.
     db_session.query(Organization).delete()
     db_session.query(User).delete()
@@ -205,18 +207,36 @@ def make_insertable_experiment(state: ExperimentState, datasource_id="testing"):
     )
 
 
+def make_arms_from_experiment(experiment: Experiment, organization_id: str):
+    return [
+        ArmTable(
+            id=arm["arm_id"],
+            experiment_id=experiment.id,
+            name=arm["arm_name"],
+            description=arm["arm_description"],
+            organization_id=organization_id,
+        )
+        for arm in experiment.design_spec["arms"]
+    ]
+
+
 @pytest.fixture(name="testing_experiment")
 def fixture_testing_experiment(db_session, testing_datasource_with_user_added):
     """Create an experiment on a test inline schema datasource with proper user permissions."""
+    datasource = testing_datasource_with_user_added.ds
+
     experiment = make_insertable_experiment(
         ExperimentState.COMMITTED,
-        datasource_id=testing_datasource_with_user_added.ds.id,
+        datasource_id=datasource.id,
     )
     # Fake arm_ids in the design_spec since we're not using the admin API to create the experiment.
     for arm in experiment.design_spec["arms"]:
         if "arm_id" not in arm:
             arm["arm_id"] = str(uuid.uuid4())
     db_session.add(experiment)
+    # Create ArmTable instances for each arm in the experiment
+    db_arms = make_arms_from_experiment(experiment, datasource.organization_id)
+    db_session.add_all(db_arms)
     # Add fake assignments for each arm for real participant ids in our test data.
     arm_ids = [arm["arm_id"] for arm in experiment.design_spec["arms"]]
     for i in range(10):
