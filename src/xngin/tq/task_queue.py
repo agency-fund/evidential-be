@@ -33,20 +33,16 @@ class Task:
 
 
 class TaskHandler(Protocol):
-    """Protocol for task handlers."""
+    """Protocol for task handlers.
+
+    Handlers should raise an exception if there is an error.
+    """
 
     def __call__(
         self,
         task: Task,
     ):
-        """Handle a task.
-
-        Args:
-            task: The task to handle.
-
-        Raises:
-            Exception: If the task handling fails.
-        """
+        """Handle a task."""
         ...
 
 
@@ -80,12 +76,8 @@ class TaskQueue:
         """Set up notifications for new tasks.
 
         This will cause any insert into the tasks table to also send a NOTIFY immediately.
-
-        Args:
-            conn: Database connection.
         """
         with conn.cursor() as cur:
-            # Create a trigger function if it doesn't exist
             cur.execute(
                 """
                 CREATE OR REPLACE FUNCTION notify_task_queue() RETURNS TRIGGER AS $$
