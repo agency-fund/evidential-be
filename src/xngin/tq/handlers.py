@@ -39,7 +39,7 @@ def make_webhook_outbound_handler(dsn: str):
                 )
                 logger.debug(f"Response: {response.content}")
 
-                if response.status_code >= 200 and response.status_code < 300:
+                if 200 <= response.status_code < 300:
                     logger.info(
                         f"Successfully sent event data to {request.url}: {response.status_code}"
                     )
