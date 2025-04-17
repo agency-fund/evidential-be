@@ -18,7 +18,7 @@ MAX_NUMBER_OF_ARMS = 10
 
 # Maximum number of fields that may appear in any single list. Some types contain more than one list of fields, so
 # there may be some multiple of this value in an object.
-MAX_NUMBER_OF_FIELDS = 100
+MAX_NUMBER_OF_FIELDS = 150
 
 # Maximum number of filters we allow to define an audience.
 MAX_NUMBER_OF_FILTERS = 20
