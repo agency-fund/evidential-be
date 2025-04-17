@@ -1481,7 +1481,7 @@ requires-dist = [
     { name = "fastapi", extras = ["standard"], specifier = ">=0.115.6,<0.116.0" },
     { name = "gspread", specifier = ">=6.1.2,<6.2.0" },
     { name = "httpx", specifier = ">=0.27.0,<0.28.0" },
-    { name = "loguru", specifier = ">=0.7.2,<0.8.0" },
+    { name = "loguru", specifier = ">=0.7.3,<0.8.0" },
     { name = "numpy", specifier = ">=1.26.4,<1.27" },
     { name = "pandas", specifier = ">=2.2.0,<3" },
     { name = "pandas-gbq", specifier = ">=0.25.0,<0.26" },
