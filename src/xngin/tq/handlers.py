@@ -1,17 +1,22 @@
 """Task handlers for the task queue."""
+
 import httpx
 import sqlalchemy
 from loguru import logger
 from sqlalchemy import NullPool
 from sqlalchemy.orm import Session
 from xngin.apiserver.models import tables
-from xngin.events.experiment_created import WebhookSent
+from xngin.events.webhook_sent import WebhookSentEvent
 from xngin.tq.task_queue import Task
 from xngin.tq.task_types import WebhookOutboundTask
 
 
 def make_webhook_outbound_handler(dsn: str):
-    """Returns a webhook outbound handler bound with the DSN via a SQLAlchemy engine."""
+    """Returns a webhook outbound handler bound with the DSN via a SQLAlchemy engine.
+
+    Also creates an entry in the Event table with information that will be useful for
+    customers when debugging.
+    """
     engine = sqlalchemy.create_engine(dsn, poolclass=NullPool)
 
     def webhook_outbound_handler(task: Task):
@@ -43,7 +48,7 @@ def make_webhook_outbound_handler(dsn: str):
                         tables.Event(
                             organization_id=request.organization_id,
                             type="webhook.sent",
-                            data=WebhookSent(
+                            data=WebhookSentEvent(
                                 request=request,
                                 success=True,
                                 response=f"{response.status_code}",
@@ -57,15 +62,15 @@ def make_webhook_outbound_handler(dsn: str):
                     response.raise_for_status()
             except httpx.HTTPError as err:
                 logger.exception("Outbound webhook failed")
-                if 'response' in locals():
-                    message = f"status={response.status_code} message={str(err)}"
+                if "response" in locals():
+                    message = f"status={response.status_code} message={err!s}"
                 else:
                     message = str(err)
                 session.add(
                     tables.Event(
                         organization_id=request.organization_id,
                         type="webhook.sent",
-                        data=WebhookSent(
+                        data=WebhookSentEvent(
                             request=request,
                             success=False,
                             response=message,

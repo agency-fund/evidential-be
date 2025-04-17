@@ -23,7 +23,7 @@ class Task:
     embargo_until: datetime
     payload: dict[str, Any] | None = None
     event_id: str | None = None
-    message: str|None = None
+    message: str | None = None
 
     def __repr__(self) -> str:
         """Return a string representation of the task."""
@@ -170,9 +170,7 @@ class TaskQueue:
             conn.commit()
             logger.info(f"Task {task.id} completed and marked as successful")
 
-    def _mark_task_failed(
-        self, conn: psycopg.Connection, task: Task, err: str
-    ) -> None:
+    def _mark_task_failed(self, conn: psycopg.Connection, task: Task, err: str) -> None:
         """Mark a task as failed."""
         with conn.cursor() as cur:
             # Check if we've reached max retries
@@ -189,7 +187,10 @@ class TaskQueue:
                         message = %s
                     WHERE id = %s
                     """,
-                    (err, task.id,),
+                    (
+                        err,
+                        task.id,
+                    ),
                 )
                 logger.warning(
                     f"Task {task.id} failed and reached max retries, marked as dead"

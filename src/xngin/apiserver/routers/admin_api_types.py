@@ -73,6 +73,7 @@ class EventSummary(AdminApiBaseModel):
     link: Annotated[
         str | None, Field(description="A navigable link to related information.")
     ] = None
+    details: Annotated[dict | None, Field(description="Details")]
 
 
 class ListOrganizationEventsResponse(AdminApiBaseModel):
@@ -95,7 +96,7 @@ class ListDatasourcesResponse(AdminApiBaseModel):
 
 
 class AddWebhookToOrganizationRequest(AdminApiBaseModel):
-    type: Literal["event.created"]
+    type: Literal["experiment.created"]
     url: Annotated[str, Field(max_length=MAX_LENGTH_OF_WEBHOOK_URL_VALUE)]
 
 

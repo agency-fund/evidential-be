@@ -103,7 +103,6 @@ from xngin.apiserver.settings import (
     SqliteLocalConfig,
     infer_table,
 )
-from xngin.events.experiment_created import ExperimentCreated, WebhookSent
 from xngin.stats.analysis import analyze_experiment as analyze_experiment_impl
 
 GENERIC_SUCCESS = Response(status_code=status.HTTP_204_NO_CONTENT)
@@ -423,25 +422,15 @@ def list_organization_events(
     # Convert events to EventSummary objects
     event_summaries = []
     for event in events:
-        link = None
-
-        if event.type == "experiment.created":
-            experiment_id = ExperimentCreated.model_validate(event.data).experiment_id
-            summary = f"Created experiment {experiment_id}"
-            link = f"/experiments/view/{experiment_id}"
-        elif event.type == "webhook.sent":
-            sent_details = WebhookSent.model_validate(event.data)
-            summary = sent_details.summarize()
-        else:
-            summary = "External event."
-
+        data = event.get_data()
         event_summaries.append(
             EventSummary(
                 id=event.id,
                 created_at=event.created_at,
                 type=event.type,
-                summary=summary,
-                link=link,
+                summary=data.summarize() if data else "Unknown",
+                link=data.link() if data else None,
+                details=data.model_dump() if data else None,
             )
         )
 

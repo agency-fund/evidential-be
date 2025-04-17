@@ -73,6 +73,11 @@ env:
   # with the testing datawarehouse when `task start-with-local-pg` is used.
   XNGIN_DEVDWH_NAME: "dwh"
   XNGIN_DEVDWH_DSN: "postgresql://postgres:postgres@localhost:5499/dwh?sslmode=disable"
+
+  # XNGIN_PUBLIC_HOSTNAME defines the base hostname (and optional port) we use when constructing URLs to send to
+  # external systems (such as via outbound webhooks).
+  XNGIN_PUBLIC_PROTOCOL: "http"
+  XNGIN_PUBLIC_HOSTNAME: "localhost:8000"
 tasks:
   start:
     desc: "Starts apiserver locally with settings compatible with local dash dev server (using PostgreSQL)"

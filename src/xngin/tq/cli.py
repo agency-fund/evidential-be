@@ -68,6 +68,8 @@ def run(
     logger.add(sys.stderr, level=log_level)
     logger.info(f"Starting task queue with DSN: {dsn}")
 
-    queue = TaskQueue(dsn=dsn, max_retries=max_retries, poll_interval_secs=poll_interval)
+    queue = TaskQueue(
+        dsn=dsn, max_retries=max_retries, poll_interval_secs=poll_interval
+    )
     queue.register_handler("webhook.outbound", make_webhook_outbound_handler(dsn))
     queue.run()

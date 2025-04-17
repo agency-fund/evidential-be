@@ -16,6 +16,16 @@ UPDATE_API_TESTS = truthy_env("UPDATE_API_TESTS")
 
 XNGIN_DEVDWH_DSN = os.environ.get("XNGIN_DEVDWH_DSN", "")
 
+# XNGIN_PUBLIC_PROTOCOL defines the protocol clients should use on our public URL. This should always be "https",
+# except in dev environments.
+XNGIN_PUBLIC_PROTOCOL = os.environ.get("XNGIN_PUBLIC_PROTOCOL", "https")
+
+# XNGIN_PUBLIC_HOSTNAME defines the base hostname (and optional port) we use when constructing URLs to send to
+# external systems (such as via outbound webhooks).
+XNGIN_PUBLIC_HOSTNAME = os.environ.get(
+    "XNGIN_PUBLIC_HOSTNAME", "main.dev.agencyfund.org"
+)
+
 LOG_SQL = truthy_env("LOG_SQL")
 LOG_SQL_APP_DB = truthy_env("LOG_SQL_APP_DB")
 

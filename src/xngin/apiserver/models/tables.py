@@ -23,6 +23,7 @@ from xngin.apiserver.routers.admin_api_types import (
 )
 from xngin.apiserver.routers.experiments_api_types import AssignSummary
 from xngin.apiserver.settings import DatasourceConfig
+from xngin.events import EventDataTypes
 
 # JSONBetter is JSON for most databases but JSONB for Postgres.
 JSONBetter = sqlalchemy.JSON().with_variant(postgresql.JSONB(), "postgresql")
@@ -103,17 +104,25 @@ class Organization(Base):
 
 
 class Webhook(Base):
-    """Represents an API webhook."""
+    """Represents an API webhook.
+
+    The bodies of the outbound webhooks are defined by types in src.xngin.apiserver.webhooks.
+    """
 
     __tablename__ = "webhooks"
 
     id: Mapped[str] = mapped_column(primary_key=True, default=unique_id_factory("wh"))
     type: Mapped[str] = mapped_column(
-        comment="The type of webhook; e.g. experiment.created"
+        comment="The type of webhook; e.g. experiment.created. These are user-visible arbitrary strings."
     )
 
-    url: Mapped[str] = mapped_column(comment="The URL to post the event to.")
-    auth_token: Mapped[str | None] = mapped_column(comment="The authorization token.")
+    url: Mapped[str] = mapped_column(
+        comment="The URL to post the event to. The payload body depends "
+        "on the type of webhook."
+    )
+    auth_token: Mapped[str | None] = mapped_column(
+        comment="The token that will be sent in the Authorization header."
+    )
 
     organization_id: Mapped[str] = mapped_column(ForeignKey("organizations.id"))
     organization: Mapped["Organization"] = relationship(back_populates="webhooks")
@@ -139,6 +148,17 @@ class Event(Base):
     organization_id: Mapped[str] = mapped_column(ForeignKey("organizations.id"))
     organization: Mapped["Organization"] = relationship(back_populates="events")
 
+    def set_data(self, data):
+        as_json = data.model_dump_json()
+        TypeAdapter(EventDataTypes).validate_json(as_json)
+        self.data = json.loads(as_json)
+        return self
+
+    def get_data(self) -> EventDataTypes | None:
+        if self.data is None:
+            return None
+        return TypeAdapter(EventDataTypes).validate_python(self.data)
+
     __table_args__ = (Index("event_stream", "organization_id", created_at),)
 
 
@@ -156,7 +176,7 @@ class Task(Base):
         onupdate=sqlalchemy.sql.func.now(),
     )
     task_type: Mapped[str] = mapped_column(
-        comment="The type of task. E.g. `event.created`"
+        comment="The type of task. E.g. `experiment.created`"
     )
     status: Mapped[str] = mapped_column(
         server_default="pending",
@@ -173,7 +193,9 @@ class Task(Base):
         type_=JSONBetter,
         comment="The task payload. This will be a JSON object with task-specific data.",
     )
-    message: Mapped[str|None] = mapped_column(comment="An optional informative message about the state of this task.")
+    message: Mapped[str | None] = mapped_column(
+        comment="An optional informative message about the state of this task."
+    )
 
     __table_args__ = (Index("idx_tasks_embargo", "embargo_until"),)
 

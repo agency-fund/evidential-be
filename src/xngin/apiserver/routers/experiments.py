@@ -18,6 +18,7 @@ from fastapi import (
 from fastapi.responses import StreamingResponse
 from sqlalchemy import Table, select
 from sqlalchemy.orm import Session
+from xngin.apiserver import flags
 from xngin.apiserver.api_types import (
     Assignment,
     DesignSpec,
@@ -57,7 +58,8 @@ from xngin.apiserver.settings import (
     Datasource,
     infer_table,
 )
-from xngin.events.experiment_created import ExperimentCreated
+from xngin.apiserver.webhooks.webhook_types import ExperimentCreatedWebhookBody
+from xngin.events.experiment_created import ExperimentCreatedEvent
 from xngin.stats.assignment import RowProtocol, assign_treatment
 from xngin.tq.task_types import WebhookOutboundTask
 
@@ -279,22 +281,29 @@ def commit_experiment_impl(xngin_session: Session, experiment: Experiment):
     event = Event(
         organization=experiment.datasource.organization,
         type="experiment.created",
-        data=ExperimentCreated(experiment_id=experiment_id).model_dump(),
-    )
+    ).set_data(ExperimentCreatedEvent(experiment_id=experiment_id))
     xngin_session.add(event)
 
     for webhook in experiment.datasource.organization.webhooks:
+        # If the organization has a webhook for experiment.created, enqueue a task for it.
+        # In the future, this may be replaced by a standalone queuing service.
         if webhook.type == "experiment.created":
+            webhook_task = WebhookOutboundTask(
+                organization_id=experiment.datasource.organization_id,
+                url=webhook.url,
+                body=ExperimentCreatedWebhookBody(
+                    organization_id=experiment.datasource.organization_id,
+                    datasource_id=experiment.datasource.id,
+                    experiment_id=experiment_id,
+                    experiment_url=f"{flags.XNGIN_PUBLIC_PROTOCOL}://{flags.XNGIN_PUBLIC_HOSTNAME}/v1/experiments/{experiment_id}",
+                ).model_dump(),
+                headers={"Authorization": webhook.auth_token}
+                if webhook.auth_token
+                else {},
+            )
             task = Task(
                 task_type="webhook.outbound",
-                payload=WebhookOutboundTask(
-                    organization_id=experiment.datasource.organization_id,
-                    url=webhook.url,
-                    body={"experiment_id": experiment_id},
-                    headers={"Authorization": webhook.auth_token}
-                    if webhook.auth_token
-                    else {},
-                ).model_dump(),
+                payload=webhook_task.model_dump(),
             )
             xngin_session.add(task)
     xngin_session.commit()
