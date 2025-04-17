@@ -1,4 +1,4 @@
-"""CLI interface for the task queue."""
+"""tq is a simple Psotgres task queue daemon."""
 
 import os
 import sys
