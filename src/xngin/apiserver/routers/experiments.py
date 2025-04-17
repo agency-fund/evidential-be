@@ -290,7 +290,7 @@ def commit_experiment_impl(xngin_session: Session, experiment: Experiment):
                 payload=WebhookOutboundTask(
                     organization_id=experiment.datasource.organization_id,
                     url=webhook.url,
-                    payload={"experiment_id": experiment_id},
+                    body={"experiment_id": experiment_id},
                     headers={"Authorization": webhook.auth_token}
                     if webhook.auth_token
                     else {},

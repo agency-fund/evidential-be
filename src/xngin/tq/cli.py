@@ -1,18 +1,19 @@
 """CLI interface for the task queue."""
 
 import os
-import signal
 import sys
 from typing import Annotated
 
 import typer
 from loguru import logger
-from xngin.tq.handlers import webhook_outbound_handler, webhook_status_handler
+from xngin.tq.handlers import make_webhook_outbound_handler
 from xngin.tq.task_queue import TaskQueue
 
+# The maximum number of times we will try to complete a task before marking it as "dead".
 DEFAULT_MAX_RETRIES = 10
 
-DEFAULT_POLLING_INTERVAL = 5 * 60
+# Default polling interval (in seconds).
+DEFAULT_POLLING_INTERVAL = 60
 
 if sentry_dsn := os.environ.get("SENTRY_DSN"):
     import sentry_sdk
@@ -63,26 +64,10 @@ def run(
     ] = "DEBUG",
 ) -> None:
     """Run the task queue processor."""
-    # Configure logging
     logger.remove()
     logger.add(sys.stderr, level=log_level)
-
     logger.info(f"Starting task queue with DSN: {dsn}")
 
-    # Create the task queue
-    queue = TaskQueue(dsn=dsn, max_retries=max_retries, poll_interval=poll_interval)
-
-    # Register handlers
-    queue.register_handler("webhook.outbound", webhook_outbound_handler)
-    queue.register_handler("webhook.status", webhook_status_handler)
-
-    # Handle SIGINT and SIGTERM
-    def signal_handler(sig, frame):
-        logger.info(f"Received signal {sig}, shutting down...")
-        queue.stop()
-
-    signal.signal(signal.SIGINT, signal_handler)
-    signal.signal(signal.SIGTERM, signal_handler)
-
-    # Run the queue
+    queue = TaskQueue(dsn=dsn, max_retries=max_retries, poll_interval_secs=poll_interval)
+    queue.register_handler("webhook.outbound", make_webhook_outbound_handler(dsn))
     queue.run()

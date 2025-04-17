@@ -23,6 +23,7 @@ class Task:
     embargo_until: datetime
     payload: dict[str, Any] | None = None
     event_id: str | None = None
+    message: str|None = None
 
     def __repr__(self) -> str:
         """Return a string representation of the task."""
@@ -52,19 +53,18 @@ class TaskHandler(Protocol):
 class TaskQueue:
     """Task queue implementation using Postgres."""
 
-    def __init__(self, dsn: str, max_retries: int = 3, poll_interval: int = 60 * 5):
+    def __init__(self, dsn: str, max_retries: int, poll_interval_secs: int):
         """Initialize the task queue.
 
         Args:
             dsn: Database connection string.
             max_retries: Maximum number of retries for a task.
-            poll_interval: Interval in seconds to poll for tasks when no notifications are received.
+            poll_interval_secs: Interval in seconds to poll for tasks when no notifications are received.
         """
         self.dsn = dsn
         self.max_retries = max_retries
-        self.poll_interval = poll_interval
+        self.poll_interval = poll_interval_secs
         self.handlers: dict[str, TaskHandler] = {}
-        self.running = False
 
     def register_handler(self, task_type: str, handler: TaskHandler) -> None:
         """Register a handler for a task type.
@@ -78,6 +78,8 @@ class TaskQueue:
 
     def _setup_notifications(self, conn: psycopg.Connection) -> None:
         """Set up notifications for new tasks.
+
+        This will cause any insert into the tasks table to also send a NOTIFY immediately.
 
         Args:
             conn: Database connection.
@@ -107,19 +109,10 @@ class TaskQueue:
             # Listen for notifications
             cur.execute("LISTEN task_queue;")
             conn.commit()
-            logger.info("Set up notifications for task queue")
 
     def _fetch_task(self, conn: psycopg.Connection) -> Task | None:
-        """Fetch a task from the queue.
-
-        Args:
-            conn: Database connection.
-
-        Returns:
-            A task if one is available, None otherwise.
-        """
+        """Fetch a task from the queue."""
         with conn.cursor(row_factory=dict_row) as cur:
-            # Use UPDATE with FOR UPDATE SKIP LOCKED to claim a task atomically
             cur.execute(
                 """
                 UPDATE tasks
@@ -139,23 +132,18 @@ class TaskQueue:
             )
             row = cur.fetchone()
             if row:
-                conn.commit()  # Commit the status update
+                conn.commit()
                 return Task(**row)
             return None
 
     def _handle_task(self, conn: psycopg.Connection, task: Task) -> None:
-        """Handle a task.
-
-        Args:
-            conn: Database connection.
-            task: The task to handle.
-        """
+        """Handle a task."""
         logger.info(f"Handling task: {task}")
 
         if task.task_type not in self.handlers:
             logger.error(f"No handler registered for task type: {task.task_type}")
             self._mark_task_failed(
-                conn, task, Exception(f"No handler for task type: {task.task_type}")
+                conn, task, f"No handler for task type: {task.task_type}"
             )
             return
 
@@ -163,24 +151,18 @@ class TaskQueue:
 
         try:
             handler(task)
-            # If we get here, the handler completed without raising an exception
             self._mark_task_completed(conn, task)
         except Exception as e:
             logger.exception(f"Error handling task {task.id}")
-            self._mark_task_failed(conn, task, e)
+            self._mark_task_failed(conn, task, str(e))
 
     def _mark_task_completed(self, conn: psycopg.Connection, task: Task) -> None:
-        """Mark a task as completed by setting its status to 'success'.
-
-        Args:
-            conn: Database connection.
-            task: The task to mark as completed.
-        """
+        """Mark a task as completed by setting its status to 'success'."""
         with conn.cursor() as cur:
             cur.execute(
                 """
                 UPDATE tasks
-                SET status = 'success', updated_at = NOW()
+                SET status = 'success', updated_at = NOW(), message = null
                 WHERE id = %s
                 """,
                 (task.id,),
@@ -189,15 +171,9 @@ class TaskQueue:
             logger.info(f"Task {task.id} completed and marked as successful")
 
     def _mark_task_failed(
-        self, conn: psycopg.Connection, task: Task, exc: Exception
+        self, conn: psycopg.Connection, task: Task, err: str
     ) -> None:
-        """Mark a task as failed.
-
-        Args:
-            conn: Database connection.
-            task: The task to mark as failed.
-            exc: The exception that caused the failure.
-        """
+        """Mark a task as failed."""
         with conn.cursor() as cur:
             # Check if we've reached max retries
             if (
@@ -209,10 +185,11 @@ class TaskQueue:
                     UPDATE tasks
                     SET status = 'dead',
                         retry_count = retry_count + 1,
-                        updated_at = NOW()
+                        updated_at = NOW(),
+                        message = %s
                     WHERE id = %s
                     """,
-                    (task.id,),
+                    (err, task.id,),
                 )
                 logger.warning(
                     f"Task {task.id} failed and reached max retries, marked as dead"
@@ -228,10 +205,11 @@ class TaskQueue:
                     SET status = 'pending',
                         retry_count = retry_count + 1,
                         updated_at = NOW(),
-                        embargo_until = NOW() + INTERVAL '%s minutes'
+                        embargo_until = NOW() + INTERVAL '%s minutes',
+                        message = %s
                     WHERE id = %s
                     """,
-                    (backoff_minutes, task.id),
+                    (backoff_minutes, err, task.id),
                 )
                 logger.info(
                     f"Task {task.id} failed, retry count now {task.retry_count + 1}, next attempt after {backoff_minutes} minutes"
@@ -243,48 +221,39 @@ class TaskQueue:
 
         This method will run indefinitely, processing tasks as they become available.
         """
-        self.running = True
         logger.info(f"Starting task queue with DSN: {self.dsn}")
 
-        while self.running:
+        # Main task handling loop: Handle any new tasks, then wait for NOTIFY or polling_interval, repeat.
+        while True:
             try:
                 with psycopg.connect(self.dsn, autocommit=False) as conn:
                     self._setup_notifications(conn)
 
-                    while self.running:
-                        # Try to fetch and process a task
-                        task = self._fetch_task(conn)
-                        if task:
-                            self._handle_task(conn, task)
-                            continue
+                    task = self._fetch_task(conn)
+                    if task:
+                        self._handle_task(conn, task)
+                        continue
 
-                        # No task available, wait for notification or timeout
-                        logger.debug("No tasks available, waiting for notifications...")
-                        conn.commit()  # Release any locks
+                    logger.debug("No tasks available, waiting for notifications...")
+                    conn.commit()
 
-                        # Wait for notifications with timeout
-                        try:
-                            gen = conn.notifies(timeout=self.poll_interval)
-                            next(gen)
-                            logger.debug("Received notification about new tasks")
-                            # Continue immediately to process the new task
-                            continue
-                        except StopIteration:
-                            logger.debug("Timeout or other stop.")
-                        finally:
-                            gen.close()
+                    try:
+                        gen = conn.notifies(timeout=self.poll_interval)
+                        next(gen)
+                        logger.debug("Received notification about new tasks")
+                        continue
+                    except StopIteration:
+                        # StopIteration is raised when poll_interval expires
+                        continue
+                    finally:
+                        gen.close()
 
-                        # No notifications received, poll again
-                        logger.debug(
-                            f"No notifications received in {self.poll_interval}s, polling again"
-                        )
+                    # No notifications received, poll again
+                    logger.debug(
+                        f"No notifications received in {self.poll_interval}s, polling again"
+                    )
 
             except psycopg.OperationalError as e:
                 logger.error(f"Database connection error: {e}")
                 logger.info("Reconnecting in 5 seconds...")
                 time.sleep(5)
-
-    def stop(self) -> None:
-        """Stop the task queue processor."""
-        logger.info("Stopping task queue")
-        self.running = False

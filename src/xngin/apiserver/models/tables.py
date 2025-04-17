@@ -173,6 +173,7 @@ class Task(Base):
         type_=JSONBetter,
         comment="The task payload. This will be a JSON object with task-specific data.",
     )
+    message: Mapped[str|None] = mapped_column(comment="An optional informative message about the state of this task.")
 
     __table_args__ = (Index("idx_tasks_embargo", "embargo_until"),)
 
