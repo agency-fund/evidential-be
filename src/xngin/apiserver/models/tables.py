@@ -151,7 +151,7 @@ class Event(Base):
     organization_id: Mapped[str] = mapped_column(ForeignKey("organizations.id"))
     organization: Mapped["Organization"] = relationship(back_populates="events")
 
-    def set_data(self, data):
+    def set_data(self, data: EventDataTypes):
         as_json = data.model_dump_json()
         TypeAdapter(EventDataTypes).validate_json(as_json)
         self.data = json.loads(as_json)
