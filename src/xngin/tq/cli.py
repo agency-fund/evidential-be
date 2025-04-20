@@ -1,4 +1,4 @@
-"""tq is a simple Psotgres task queue daemon."""
+"""tq is a simple Postgres task queue daemon."""
 
 import os
 import sys
