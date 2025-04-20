@@ -46,13 +46,13 @@ def make_webhook_outbound_handler(dsn: str):
                     logger.debug(f"Response: {response.json()}")
                     session.add(
                         tables.Event(
-                            organization_id=request.organization_id,
-                            type="webhook.sent",
-                            data=WebhookSentEvent(
+                            organization_id=request.organization_id, type="webhook.sent"
+                        ).set_data(
+                            WebhookSentEvent(
                                 request=request,
                                 success=True,
                                 response=f"{response.status_code}",
-                            ).model_dump(),
+                            )
                         )
                     )
                 else:
@@ -68,13 +68,13 @@ def make_webhook_outbound_handler(dsn: str):
                     message = str(err)
                 session.add(
                     tables.Event(
-                        organization_id=request.organization_id,
-                        type="webhook.sent",
-                        data=WebhookSentEvent(
+                        organization_id=request.organization_id, type="webhook.sent"
+                    ).set_data(
+                        WebhookSentEvent(
                             request=request,
                             success=False,
                             response=message,
-                        ).model_dump(),
+                        )
                     )
                 )
                 raise
