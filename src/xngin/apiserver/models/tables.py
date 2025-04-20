@@ -129,7 +129,10 @@ class Webhook(Base):
 
 
 class Event(Base):
-    """Represents events that occur in an organization."""
+    """Represents events that occur in an organization.
+
+    All .data values should correspond to a Pydantic type defined in the xngin.events module.
+    """
 
     __tablename__ = "events"
 
