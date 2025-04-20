@@ -1,4 +1,4 @@
-from typing import Annotated, Literal
+from typing import Annotated, ClassVar, Literal
 
 from pydantic import Field
 from xngin.events.common import BaseEventModel
@@ -7,7 +7,9 @@ from xngin.events.common import BaseEventModel
 class ExperimentCreatedEvent(BaseEventModel):
     """Describes which experiment was created."""
 
-    type: Literal["experiment.created"] = "experiment.created"
+    TYPE: ClassVar[Literal["experiment.created"]] = "experiment.created"
+
+    type: Literal["experiment.created"] = TYPE
     experiment_id: Annotated[str, Field(description="The experiment ID.")]
 
     def summarize(self) -> str:

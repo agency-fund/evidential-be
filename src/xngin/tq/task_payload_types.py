@@ -4,9 +4,11 @@ from typing import Literal
 
 from pydantic import BaseModel
 
+WEBHOOK_OUTBOUND_TASK_TYPE = "webhook.outbound"
+
 
 class WebhookOutboundTask(BaseModel):
-    """Defines the payload of a Task of type = "webhook.outbound".
+    """Defines the payload of a Task of type = WEBHOOK_OUTBOUND_TASK_TYPE.
 
     Consumed by webhook_outbound_handler.
     """

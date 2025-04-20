@@ -7,6 +7,7 @@ from typing import Annotated
 import typer
 from loguru import logger
 from xngin.tq.handlers import make_webhook_outbound_handler
+from xngin.tq.task_payload_types import WEBHOOK_OUTBOUND_TASK_TYPE
 from xngin.tq.task_queue import TaskQueue
 
 # The maximum number of times we will try to complete a task before marking it as "dead".
@@ -73,5 +74,7 @@ def run(
     queue = TaskQueue(
         dsn=dsn, max_retries=max_retries, poll_interval_secs=poll_interval
     )
-    queue.register_handler("webhook.outbound", make_webhook_outbound_handler(dsn))
+    queue.register_handler(
+        WEBHOOK_OUTBOUND_TASK_TYPE, make_webhook_outbound_handler(dsn)
+    )
     queue.run()
