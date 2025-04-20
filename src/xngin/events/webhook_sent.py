@@ -1,7 +1,7 @@
 from typing import Literal
 
 from xngin.events.common import BaseEventModel
-from xngin.tq.task_types import WebhookOutboundTask
+from xngin.tq.task_payload_types import WebhookOutboundTask
 
 
 class WebhookSentEvent(BaseEventModel):

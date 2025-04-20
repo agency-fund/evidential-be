@@ -7,8 +7,8 @@ from sqlalchemy import NullPool
 from sqlalchemy.orm import Session
 from xngin.apiserver.models import tables
 from xngin.events.webhook_sent import WebhookSentEvent
+from xngin.tq.task_payload_types import WebhookOutboundTask
 from xngin.tq.task_queue import Task
-from xngin.tq.task_types import WebhookOutboundTask
 
 
 def make_webhook_outbound_handler(dsn: str):
