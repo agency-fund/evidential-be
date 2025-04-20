@@ -54,7 +54,7 @@ class TaskQueue:
 
         Args:
             dsn: Database connection string.
-            max_retries: Maximum number of retries for a task.
+            max_retries: Maximum number of retries for a task. Note: the task is always tried once.
             poll_interval_secs: Interval in seconds to poll for tasks when no notifications are received.
         """
         self.dsn = dsn
@@ -165,10 +165,7 @@ class TaskQueue:
     def _mark_task_failed(self, conn: psycopg.Connection, task: Task, err: str) -> None:
         """Mark a task as failed."""
         with conn.cursor() as cur:
-            # Check if we've reached max retries
-            if (
-                task.retry_count >= self.max_retries - 1
-            ):  # -1 because we're about to increment
+            if task.retry_count >= self.max_retries:
                 # Mark as dead if max retries reached
                 cur.execute(
                     """

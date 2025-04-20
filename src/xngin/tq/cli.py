@@ -44,13 +44,15 @@ def run(
         int,
         typer.Option(
             "--max-retries",
-            help="Maximum number of retries for a task",
+            min=0,
+            help="Maximum number of retries for a task. Note: the task is always tried once.",
         ),
     ] = DEFAULT_MAX_RETRIES,
     poll_interval: Annotated[
         int,
         typer.Option(
             "--poll-interval",
+            min=1,
             help="Interval in seconds to poll for tasks when no notifications are received",
         ),
     ] = DEFAULT_POLLING_INTERVAL,
