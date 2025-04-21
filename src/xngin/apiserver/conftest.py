@@ -23,7 +23,6 @@ from xngin.apiserver.dns import safe_resolve
 from xngin.apiserver.models import tables
 from xngin.apiserver.models.tables import ApiKey, Datasource, Organization
 from xngin.apiserver.settings import ParticipantsDef, SettingsForTesting, XnginSettings
-from xngin.apiserver.testing import testing_dwh
 from xngin.db_extensions import custom_functions
 
 # SQLAlchemy's logger will append this to the name of its loggers used for the application database; e.g.
@@ -37,7 +36,6 @@ class DeveloperErrorRunFromRootOfRepositoryPleaseError(Exception):
 
 
 class DbType(enum.StrEnum):
-    SL = "sqlite"
     RS = "redshift"
     PG = "postgres"
     BQ = "bigquery"
@@ -45,8 +43,6 @@ class DbType(enum.StrEnum):
     def dialect(self) -> Dialect:
         """Returns the SQLAlchemy dialect most appropriate for this DbType."""
         match self:
-            case DbType.SL:
-                return sqlalchemy.dialects.sqlite.dialect()
             case DbType.RS:
                 return sqlalchemy.dialects.postgresql.psycopg2.dialect()
             case DbType.PG:
@@ -69,13 +65,17 @@ def get_settings_for_test() -> XnginSettings:
 
 def get_test_appdb_info():
     """Use this for tests of our application db, e.g. for caching user table confgs."""
-    connection_uri = os.environ.get("XNGIN_TEST_APPDB_URI", "sqlite:///:memory:")
+    connection_uri = os.environ.get("XNGIN_TEST_APPDB_URI", "")
+    if not connection_uri:
+        raise ValueError("XNGIN_TEST_APPDB_URI must be set")
     return get_test_uri_info(connection_uri)
 
 
 def get_test_dwh_info():
     """Use this for tests that skip settings.json and directly connect to a simulated DWH."""
-    connection_uri = os.environ.get("XNGIN_TEST_DWH_URI", "sqlite:///:memory:")
+    connection_uri = os.environ.get("XNGIN_TEST_DWH_URI", "")
+    if not connection_uri:
+        raise ValueError("XNGIN_TEST_DWH_URI must be set.")
     return get_test_uri_info(connection_uri)
 
 
@@ -101,10 +101,7 @@ def get_test_uri_info(connection_uri: str):
     - map of connection args for use with SQLAlchemy's create_engine()
     """
     connect_args = {}
-    if connection_uri.startswith("sqlite"):
-        dbtype = DbType.SL
-        connect_args = {"check_same_thread": False}
-    elif connection_uri.startswith("bigquery"):
+    if connection_uri.startswith("bigquery"):
         dbtype = DbType.BQ
     elif "redshift.amazonaws.com" in connection_uri:
         dbtype = DbType.RS
@@ -112,7 +109,7 @@ def get_test_uri_info(connection_uri: str):
         dbtype = DbType.PG
     else:
         raise ValueError(
-            f"connection_uri is not recognized as a SQLite, BigQuery, Redshift, or Postgres database: {connection_uri}"
+            f"connection_uri is not recognized as a BigQuery, Redshift, or Postgres database: {connection_uri}"
         )
     return make_url(connection_uri), dbtype, connect_args
 
@@ -168,7 +165,8 @@ def ensure_correct_working_directory():
 @pytest.fixture(scope="session", autouse=True)
 def ensure_dwh_sqlite_database_exists(ensure_correct_working_directory):
     """Create testing_dwh.db, if it doesn't already exist."""
-    testing_dwh.create_dwh_sqlite_database()
+    # TODO: remove
+    #  testing_dwh.create_dwh_sqlite_database()
 
 
 def cwd_or_raise_unless_running_from_top_directory():

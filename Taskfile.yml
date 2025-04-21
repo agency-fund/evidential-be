@@ -73,25 +73,16 @@ env:
   # with the testing datawarehouse when `task start-with-local-pg` is used.
   XNGIN_DEVDWH_NAME: "dwh"
   XNGIN_DEVDWH_DSN: "postgresql://postgres:postgres@localhost:5499/dwh?sslmode=disable"
+
+  XNGIN_TEST_APPDB_URI: "{{.XNGIN_TESTAPP_DSN}}"
+  XNGIN_TEST_DWH_URI: "{{.XNGIN_TESTDWH_DSN}}"
+
+  DATABASE_URL: "postgres://fail:fail@127.0.0.1:5499/fail"
 tasks:
   start:
     desc: "Starts apiserver locally with settings compatible with local dash dev server (using PostgreSQL)"
     cmd:
       task: start-with-local-pg
-  start-with-sqlite:
-    desc: "Starts apiserver locally with settings compatible with local dash dev server (using SQLite)."
-    interactive: true
-    dotenv:
-      # Populate BQ_SERVICE_ACCOUNT (optional) and GOOGLE_OIDC_CLIENT_SECRET (optional).
-      - .env
-    env:
-      # Admin API settings. These need to be set for interaction with the dash web UI.
-      # Also see instructions for .env above.
-      ENABLE_ADMIN: "true"
-      ENABLE_OIDC: "true"
-
-    cmds:
-      - uv run fastapi dev src/xngin/apiserver/main.py
   bootstrap-app-db:
     internal: true
     desc: |
@@ -137,9 +128,6 @@ tasks:
     cmd: uv run pytest src/xngin/apiserver/test_api.py
   test-pgintegration:
     desc: "Runs unit tests w/local postgres support"
-    env:
-      XNGIN_TEST_APPDB_URI: "{{.XNGIN_TESTAPP_DSN}}"
-      XNGIN_TEST_DWH_URI: "{{.XNGIN_TESTDWH_DSN}}"
     interactive: true
     cmds:
       - ./tools/localpg.py --allow-existing -d --wait --create-db test_xngin
@@ -172,16 +160,6 @@ tasks:
     cmds:
       - uv run atlas migrate diff --env sa_postgres
       - uv run atlas migrate apply --env sa_postgres --url '{{.XNGIN_DEVAPP_DSN}}'
-  apply-migrations-sqlite:
-    desc: "Apply sqlite migrations locally"
-    cmd: |
-      # Generate the migration files to ensure that they are up to date
-      uv run atlas migrate diff --env sa_sqlite
-      # If the apiserver created the database, there will not be any migration data; therefore, we pass a --baseline
-      # flag to get that created.
-      sqlite3 xngin.db .tables | grep -q "atlas_schema_revisions" \
-        && uv run atlas migrate apply --env sa_sqlite --url sqlite://xngin.db \
-        || uv run atlas migrate apply --env sa_sqlite --url sqlite://xngin.db --baseline $(ls -t migrations/sa_sqlite | grep .sql | sort -n | cut -f1 -d. | head -1)
   create-user:
     desc: "Create a user: task create-user -- username@example.com"
     interactive: true

@@ -1,6 +1,5 @@
 import os
 import sqlite3
-from pathlib import Path
 
 from sqlalchemy import create_engine, event
 from sqlalchemy.engine.interfaces import DBAPIConnection
@@ -14,9 +13,6 @@ SA_LOGGER_NAME_FOR_APP = "xngin_app"
 
 DEFAULT_POSTGRES_DIALECT = "postgresql+psycopg"
 
-# TODO: replace with something that looks upwards until it finds pyproject.toml.
-DEFAULT_SQLITE_DB = Path(__file__).parent.parent.parent.parent / "xngin.db"
-
 
 def get_server_database_url():
     """Gets a SQLAlchemy-compatible URL string from the environment."""
@@ -25,7 +21,7 @@ def get_server_database_url():
         return generic_url_to_sa_url(database_url)
     if xngin_db := os.environ.get("XNGIN_DB"):
         return xngin_db
-    return f"sqlite:///{DEFAULT_SQLITE_DB}"
+    raise ValueError("DATABASE_URL or XNGIN_DB not set")
 
 
 def generic_url_to_sa_url(database_url):

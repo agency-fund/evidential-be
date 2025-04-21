@@ -16,7 +16,6 @@ from sqlalchemy import (
     String,
     Table,
     create_engine,
-    event,
     make_url,
     text,
 )
@@ -42,7 +41,6 @@ from xngin.apiserver.dwh.queries import (
     make_csv_regex,
 )
 from xngin.apiserver.exceptions_common import LateValidationError
-from xngin.db_extensions.custom_functions import NumpyStddev
 
 SA_LOGGER_NAME_FOR_DWH = "xngin_dwh"
 SA_LOGGING_PREFIX_FOR_DWH = "dwh"
@@ -227,11 +225,6 @@ def fixture_db_session():
     # TODO: consider trying to consolidate dwh-conditional config with that in settings.py
     if db_type is DbType.RS and hasattr(engine.dialect, "_set_backslash_escapes"):
         engine.dialect._set_backslash_escapes = lambda _: None
-    elif db_type is DbType.SL:
-
-        @event.listens_for(engine, "connect")
-        def register_sqlite_functions(dbapi_connection, _):
-            NumpyStddev.register(dbapi_connection)
 
     Base.metadata.create_all(engine)
     session = Session(engine)

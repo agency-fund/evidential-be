@@ -1,6 +1,5 @@
-import math
 from types import MappingProxyType
-import numpy as np
+
 import pytest
 from sqlalchemy import (
     Column,
@@ -8,13 +7,11 @@ from sqlalchemy import (
     MetaData,
     String,
     Table,
-    select,
     create_engine,
-    text,
+    select,
 )
+from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 from sqlalchemy.sql.functions import func
-from sqlalchemy.orm import DeclarativeBase, mapped_column, Mapped
-
 from xngin.db_extensions import custom_functions
 
 # Suppress for tests that create an engine with "bigquery" dialect
@@ -60,7 +57,6 @@ class SampleTableNoPK(Base):
 def test_random_compilation_on_different_engine_dialects():
     expected_results = {
         "postgresql": "random()",
-        "sqlite": "random()",
         "bigquery": "rand()",
     }
 
@@ -75,7 +71,6 @@ def test_random_compilation_on_different_engine_dialects():
 def test_stddev_pop_compilation_on_different_engine_dialects():
     expected_results = {
         "postgresql": "SELECT stddev_pop(test_table.float_col) AS stddev_pop_1 FROM test_table",
-        "sqlite": "SELECT stddev_pop(test_table.float_col) AS stddev_pop_1 FROM test_table",
         "bigquery": "SELECT stddev_pop(`test_table`.`float_col`) AS `stddev_pop_1` FROM `test_table`",
     }
 
@@ -88,6 +83,7 @@ def test_stddev_pop_compilation_on_different_engine_dialects():
 
 def test_deterministic_random():
     """Test that deterministic random orders by primary key."""
+    # We still allow use of sqlite:// here because we aren't actually testing anything SQLite related.
     engine = create_engine("sqlite://")
 
     # deterministic random enabled
@@ -113,28 +109,3 @@ def test_deterministic_random():
     )
     sql_text = str(query.compile(engine))
     assert "ORDER BY random()" in sql_text
-
-
-def test_numpy_stddev_for_sqlite_extension():
-    engine = create_engine("sqlite://")
-    Base.metadata.create_all(bind=engine)
-    custom_functions.NumpyStddev.register(engine.raw_connection())
-
-    # Create a test table and insert some values
-    with engine.begin() as conn:
-        conn.execute(text("CREATE TEMPORARY TABLE test_stddev(int_col INTEGER)"))
-        conn.execute(
-            text("INSERT INTO test_stddev (int_col) VALUES (1), (2), (3), (4), (5)")
-        )
-
-        query = select(
-            custom_functions.stddev_pop(text("test_stddev.int_col"))
-        ).select_from(text("test_stddev"))
-        result = conn.execute(query).scalar()
-        conn.rollback()
-
-    # Calculate the expected standard deviation using numpy
-    expected_stddev = float(np.std([1.0, 2.0, 3.0, 4.0, 5.0], ddof=0))
-
-    assert result == expected_stddev
-    assert result == math.sqrt(2)
