@@ -21,7 +21,7 @@ from sqlalchemy.orm import Session
 from xngin.apiserver import flags
 from xngin.apiserver.api_types import (
     Assignment,
-    DesignSpec,
+    PreassignedExperimentSpec,
     Strata,
 )
 from xngin.apiserver.dependencies import (
@@ -422,7 +422,7 @@ def get_experiment_assignments_impl(
     experiment: Experiment,
 ) -> GetExperimentAssignmentsResponse:
     # Map arm IDs to names
-    design_spec = DesignSpec.model_validate(experiment.design_spec)
+    design_spec = PreassignedExperimentSpec.model_validate(experiment.design_spec)
     arm_id_to_name = {str(arm.arm_id): arm.arm_name for arm in design_spec.arms}
     # Convert ArmAssignment models to Assignment API types
     assignments = [

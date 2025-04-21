@@ -19,7 +19,7 @@ from xngin.apiserver.api_types import (
     ArmSize,
     AudienceSpec,
     BalanceCheck,
-    DesignSpec,
+    PreassignedExperimentSpec,
     DesignSpecMetric,
     DesignSpecMetricRequest,
     MetricPowerAnalysis,
@@ -86,7 +86,7 @@ def make_create_experiment_request(with_uuids: bool = True) -> CreateExperimentR
     end_date = datetime(2025, 2, 1, tzinfo=UTC)
     # Construct request body
     return CreateExperimentRequest(
-        design_spec=DesignSpec(
+        design_spec=PreassignedExperimentSpec(
             experiment_id=experiment_id,
             experiment_name="Test Experiment",
             description="Test experiment description",
@@ -723,8 +723,8 @@ def test_get_experiment(db_session, testing_datasource):
     experiment_json = response.json()
     assert experiment_json["datasource_id"] == new_experiment.datasource_id
     assert experiment_json["state"] == new_experiment.state
-    actual = DesignSpec.model_validate(experiment_json["design_spec"])
-    expected = DesignSpec.model_validate(new_experiment.design_spec)
+    actual = PreassignedExperimentSpec.model_validate(experiment_json["design_spec"])
+    expected = PreassignedExperimentSpec.model_validate(new_experiment.design_spec)
     diff = DeepDiff(actual, expected)
     assert not diff, f"Objects differ:\n{diff.pretty()}"
 

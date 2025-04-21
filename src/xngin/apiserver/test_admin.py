@@ -168,6 +168,7 @@ def make_createexperimentrequest_json(participant_type: str = "test_participant_
         "design_spec": {
             "experiment_name": "test",
             "description": "test",
+            "experiment_type": "preassigned",
             # Attach UTC tz, but use dates_equal() to compare to respect db storage support
             "start_date": "2024-01-01T00:00:00+00:00",
             "end_date": "2024-01-02T00:00:00+00:00",

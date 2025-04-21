@@ -3,7 +3,7 @@ import decimal
 import enum
 import uuid
 from collections.abc import Sequence
-from typing import Annotated, Self
+from typing import Annotated, Literal, Self, get_args
 
 import sqlalchemy.sql.sqltypes
 from loguru import logger
@@ -12,6 +12,7 @@ from pydantic import (
     ConfigDict,
     Field,
     field_serializer,
+    field_validator,
     model_validator,
 )
 from xngin.apiserver.common_field_types import FieldName
@@ -511,7 +512,13 @@ class ExperimentAnalysis(ApiBaseModel):
     ]
 
 
-class DesignSpec(ApiBaseModel):
+ExperimentType = Literal["online", "preassigned"]
+# TODO: add bandit and contextual bandit types
+# BANDIT = "bandit"
+# CONTEXTUAL_BANDIT = "contextual_bandit"
+
+
+class BaseDesignSpec(ApiBaseModel):
     """Experiment design parameters for power calculations and treatment assignment."""
 
     experiment_id: Annotated[
@@ -520,6 +527,10 @@ class DesignSpec(ApiBaseModel):
             description="UUID of the experiment. If using the /experiments/with-assignment endpoint, this is generated for you and available in the response; you should NOT set this. Only generate ids of your own if using the stateless Experiment Design API as you will do your own persistence."
         ),
     ] = None
+    experiment_type: Annotated[
+        str,
+        Field(description="This type determines how we do assignment and analyses."),
+    ]
     experiment_name: Annotated[str, Field(max_length=MAX_LENGTH_OF_NAME_VALUE)]
     description: Annotated[str, Field(max_length=MAX_LENGTH_OF_DESCRIPTION_VALUE)]
     start_date: datetime.datetime
@@ -551,6 +562,29 @@ class DesignSpec(ApiBaseModel):
         ),
     ]
 
+    @field_serializer("start_date", "end_date", when_used="json")
+    def serialize_dt(self, dt: datetime.datetime, _info):
+        """Convert dates to iso strings in model_dump_json()/model_dump(mode='json')"""
+        return dt.isoformat()
+
+    @field_validator("experiment_type")
+    @classmethod
+    def validate_experiment_type(cls, v):
+        """Validate that the experiment type is one of the supported ExperimentTypes."""
+        if v not in get_args(ExperimentType):
+            raise ValueError(f"Invalid experiment type: {v}")
+        return v
+
+    def uuids_are_present(self) -> bool:
+        """True if the any UUIDs are present."""
+        return self.experiment_id is not None or any([
+            arm.arm_id is not None for arm in self.arms
+        ])
+
+
+class FrequentistExperimentSpec(BaseDesignSpec):
+    """Experiment design parameters for power calculations and analysis."""
+
     # stat parameters
     power: Annotated[
         float,
@@ -580,16 +614,31 @@ class DesignSpec(ApiBaseModel):
         ),
     ]
 
-    @field_serializer("start_date", "end_date", when_used="json")
-    def serialize_dt(self, dt: datetime.datetime, _info):
-        """Convert dates to iso strings in model_dump_json()/model_dump(mode='json')"""
-        return dt.isoformat()
 
-    def uuids_are_present(self) -> bool:
-        """True if the any UUIDs are present."""
-        return self.experiment_id is not None or any([
-            arm.arm_id is not None for arm in self.arms
-        ])
+class PreassignedExperimentSpec(FrequentistExperimentSpec):
+    """Use this to randomly select and assign from existing participants at design time."""
+
+    experiment_type: Literal["preassigned"] = "preassigned"
+
+
+class OnlineExperimentSpec(FrequentistExperimentSpec):
+    """Use this for experiments that need to randomly assign participants into arms during live
+    experiment execution, e.g. experimenting with new users. Assignments are issued via API request.
+    """
+
+    experiment_type: Annotated[
+        Literal["online"],
+        Field(description="Experiment type identifier for online experiments"),
+    ] = "online"
+
+
+type DesignSpec = Annotated[
+    PreassignedExperimentSpec | OnlineExperimentSpec,
+    Field(
+        discriminator="experiment_type",
+        description="Concrete type of experiment to run.",
+    ),
+]
 
 
 class MetricPowerAnalysisMessageType(enum.StrEnum):
