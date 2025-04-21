@@ -228,7 +228,8 @@ class TaskQueue:
                     conn.commit()
 
                     try:
-                        gen = next(conn.notifies(timeout=self.poll_interval))
+                        gen = conn.notifies(timeout=self.poll_interval)
+                        next(gen)
                         logger.debug("Received notification about new tasks")
                         continue
                     except StopIteration:
