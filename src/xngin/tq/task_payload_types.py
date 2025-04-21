@@ -8,10 +8,7 @@ WEBHOOK_OUTBOUND_TASK_TYPE = "webhook.outbound"
 
 
 class WebhookOutboundTask(BaseModel):
-    """Defines the payload of a Task of type = WEBHOOK_OUTBOUND_TASK_TYPE.
-
-    Consumed by webhook_outbound_handler.
-    """
+    """Defines the payload understood by webhook_outbound_handler."""
 
     url: str
     body: dict = dict()

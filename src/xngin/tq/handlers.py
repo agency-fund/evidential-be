@@ -20,7 +20,10 @@ def make_webhook_outbound_handler(dsn: str):
     engine = sqlalchemy.create_engine(dsn, poolclass=NullPool)
 
     def webhook_outbound_handler(task: Task):
-        """Handle a webhook.outbound task."""
+        """Handle a webhook.outbound task.
+
+        The payload is assumed to be a WebhookOutboundTask.
+        """
         if not task.payload:
             logger.error("Task payload is empty")
             raise ValueError("Task payload is empty")
