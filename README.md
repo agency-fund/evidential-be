@@ -43,7 +43,10 @@ Follow the steps below to get a local development environment running.
 1. Run the unit tests:
 
    ```shell
-   uv run pytest
+   # This creates a local Postgres instance on port 5499.
+   task bootstrap-app-db
+   # This runs the unit tests.
+   task test
    ```
 
 1. If you're working with the [Evidential UI](//github.com/agency-fund/xngin-dash), set the OAuth Client
@@ -72,6 +75,15 @@ Follow the steps below to get a local development environment running.
    This will start the server at http://localhost:8000. It stores its state in a local Postgres instance, running in
    Docker, on localhost:5499.
 
+   > Note: Our system uses Google logins for SSO. If you do not have an @agency.fund Google login, run the following
+   > command to allow yourself access to the UI:
+   >
+   > ```shell
+   > task create-user -- USERNAME@gmail.com
+   > ```
+
+1. If you are only working on the UI, you can skip the rest of the instructions.
+
 1. Send some test requests:
 
    Each request should have an HTTP request header `Datasource-ID` set to the `id` value of a configuration entry in the
@@ -92,17 +104,6 @@ Follow the steps below to get a local development environment running.
 ```
 
 2. Visit the local interactive docs page: http://localhost:8000/docs
-
-1. (Optional) `uv` manages the virtual environment. If you wish to activate it so that you do not need to prefix all
-   commands with `uv run`, you can do so:
-
-   ```shell
-   source .venv/bin/activate
-   ```
-
-   The environment var `VIRTUAL_ENV` should now be set, pointing to the project's environment.
-
-   You can exit the virtual environment with `deactivate`.
 
 1. Now set up the pre-commit hooks in your local git with:
 
@@ -141,12 +142,11 @@ with these concepts:
   - [Pydantic models](https://docs.pydantic.dev/2.8/concepts/models/)
   - [Custom validation](https://docs.pydantic.dev/2.8/concepts/validators/)
   - [Serialization](https://docs.pydantic.dev/2.8/concepts/serialization/)
-  - [Annotated Type](https://docs.pydantic.dev/2.8/concepts/fields/#using-annotated),
-  - [Composing Types](https://docs.pydantic.dev/2.8/concepts/types/#composing-types-via-annotated)\].
+  - [Annotated Type](https://docs.pydantic.dev/2.8/concepts/fields/#using-annotated)
+  - [Composing Types](https://docs.pydantic.dev/2.8/concepts/types/#composing-types-via-annotated)
 - FastAPI:
   - [FastAPI Tutorial](https://fastapi.tiangolo.com/tutorial/first-steps/)
-  - [Adding metadata using
-    `Annotated`](https://fastapi.tiangolo.com/python-types/#type-hints-with-metadata-annotations)
+  - [Adding metadata using `Annotated`](https://fastapi.tiangolo.com/python-types/#type-hints-with-metadata-annotations)
   - [Dependency Injection](https://fastapi.tiangolo.com/tutorial/dependencies/)
 - OpenAPI:
   - The metadata annotations on FastAPI handlers and Pydantic type produce an OpenAPI specification document which we
@@ -156,10 +156,8 @@ with these concepts:
   - We use SQLAlchemy to manage our application database and connect to customer data warehouses.
 - Other dev tooling:
   - [Atlas](https://atlasgo.io/) for schema migrations.
-  - [ruff](https://github.com/astral-sh/ruff) for linting and formatting (configured
-    with [pyproject.toml](pyproject.toml))
-  - [pre-commit](https://pre-commit.com/) for invoking automatic checks (configured
-    with [.pre-commit-config.yaml](.pre-commit-config.yaml)).
+  - [ruff](https://github.com/astral-sh/ruff) for linting and formatting (configured with [pyproject.toml](pyproject.toml)
+  - [pre-commit](https://pre-commit.com/) for invoking automatic checks (configured with [.pre-commit-config.yaml](.pre-commit-config.yaml).
 - To understand the frontend, see https://github.com/agency-fund/xngin-dash.
 
 ## Settings<a name="settings"></a>

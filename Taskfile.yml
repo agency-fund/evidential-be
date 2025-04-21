@@ -98,7 +98,6 @@ tasks:
     cmds:
       - uv run fastapi dev src/xngin/apiserver/main.py
   bootstrap-app-db:
-    internal: true
     desc: |
       Ensure the localpg server is running and has an "xngin" database. If the database doesn't already exist, it will
       be created, and Atlas will create the tables so that subsequent table migrations behave as expected.
