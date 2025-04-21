@@ -1,4 +1,5 @@
-from typing import Annotated
+from datetime import datetime
+from typing import Annotated, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 from xngin.apiserver.api_types import (
@@ -14,6 +15,7 @@ from xngin.apiserver.limits import (
     MAX_LENGTH_OF_EMAIL_VALUE,
     MAX_LENGTH_OF_ID_VALUE,
     MAX_LENGTH_OF_NAME_VALUE,
+    MAX_LENGTH_OF_WEBHOOK_URL_VALUE,
     MAX_NUMBER_OF_FIELDS,
 )
 from xngin.apiserver.settings import DatasourceConfig, Dwh, ParticipantsConfig
@@ -59,6 +61,25 @@ class ListOrganizationsResponse(AdminApiBaseModel):
     items: list[OrganizationSummary]
 
 
+class EventSummary(AdminApiBaseModel):
+    """Describes an event."""
+
+    id: Annotated[str, Field(description="The ID of the event.")]
+    created_at: Annotated[
+        datetime, Field(description="The time the event was created.")
+    ]
+    type: Annotated[str, Field(description="The type of event.")]
+    summary: Annotated[str, Field(description="Human-readable summary of the event.")]
+    link: Annotated[
+        str | None, Field(description="A navigable link to related information.")
+    ] = None
+    details: Annotated[dict | None, Field(description="Details")]
+
+
+class ListOrganizationEventsResponse(AdminApiBaseModel):
+    items: list[EventSummary]
+
+
 class GetOrganizationResponse(AdminApiBaseModel):
     id: Annotated[str, Field(max_length=MAX_LENGTH_OF_ID_VALUE)]
     name: Annotated[str, Field(max_length=MAX_LENGTH_OF_NAME_VALUE)]
@@ -72,6 +93,47 @@ class AddMemberToOrganizationRequest(AdminApiBaseModel):
 
 class ListDatasourcesResponse(AdminApiBaseModel):
     items: list[DatasourceSummary]
+
+
+class AddWebhookToOrganizationRequest(AdminApiBaseModel):
+    type: Literal["experiment.created"]
+    url: Annotated[str, Field(max_length=MAX_LENGTH_OF_WEBHOOK_URL_VALUE)]
+
+
+class AddWebhookToOrganizationResponse(AdminApiBaseModel):
+    """Information on the successfully created webhook."""
+
+    id: Annotated[str, Field(description="The ID of the newly created webhook.")]
+    type: Annotated[
+        str, Field(description="The type of webhook; e.g. experiment.created")
+    ]
+    url: Annotated[str, Field(description="The URL to notify.")]
+    auth_token: Annotated[
+        str | None,
+        Field(
+            description="The value of the Authorization: header that will be sent with the request to the configured URL."
+        ),
+    ]
+
+
+class WebhookSummary(AdminApiBaseModel):
+    """Summarizes a Webhook configuration for an organization."""
+
+    id: Annotated[str, Field(description="The ID of the webhook.")]
+    type: Annotated[
+        str, Field(description="The type of webhook; e.g. experiment.created")
+    ]
+    url: Annotated[str, Field(description="The URL to notify.")]
+    auth_token: Annotated[
+        str | None,
+        Field(
+            description="The value of the Authorization: header that will be sent with the request to the configured URL."
+        ),
+    ]
+
+
+class ListWebhooksResponse(AdminApiBaseModel):
+    items: list[WebhookSummary]
 
 
 class CreateDatasourceRequest(AdminApiBaseModel):

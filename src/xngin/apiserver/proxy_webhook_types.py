@@ -1,16 +1,15 @@
-"""This defines the various webhook request/response contracts as pydantic models."""
+"""This defines the various webhook request/response contracts as Pydantic models."""
 
-from datetime import datetime, UTC
-from typing import Any, Literal, Self
 import uuid
+from datetime import UTC, datetime
+from typing import Any, Literal, Self
 
 import httpx
-from pydantic import BaseModel, Field, field_serializer, model_validator, ConfigDict
-
+from pydantic import BaseModel, ConfigDict, Field, field_serializer, model_validator
 from xngin.apiserver.api_types import (
-    DesignSpec,
-    AudienceSpec,
     AssignResponse,
+    AudienceSpec,
+    DesignSpec,
     PowerResponse,
 )
 

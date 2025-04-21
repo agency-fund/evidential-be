@@ -73,6 +73,11 @@ env:
   # with the testing datawarehouse when `task start-with-local-pg` is used.
   XNGIN_DEVDWH_NAME: "dwh"
   XNGIN_DEVDWH_DSN: "postgresql://postgres:postgres@localhost:5499/dwh?sslmode=disable"
+
+  # XNGIN_PUBLIC_HOSTNAME defines the base hostname (and optional port) we use when constructing URLs to send to
+  # external systems (such as via outbound webhooks).
+  XNGIN_PUBLIC_PROTOCOL: "http"
+  XNGIN_PUBLIC_HOSTNAME: "localhost:8000"
 tasks:
   start:
     desc: "Starts apiserver locally with settings compatible with local dash dev server (using PostgreSQL)"
@@ -154,6 +159,12 @@ tasks:
     desc: "Rehash your migration file (see atlas.sum) if you had to modify the generated migration file afterwards, e.g. to add a custom backfill."
     cmds:
       - uv run atlas migrate hash --env sa_postgres
+  migration-reset:
+    desc: "Drop the local development database's schema, tables, and Atlas migration state. Use this when your local database is out of sync with merged migrations."
+    cmds:
+      - uv run atlas schema clean --env sa_postgres --url '{{.XNGIN_DEVAPP_DSN}}'
+      - psql "{{.XNGIN_DEVAPP_DSN}}" -c 'CREATE SCHEMA public;'
+      - task: apply-migrations-pg
   migration-status:
     desc: "Provides in-depth information about the migration status of the connected database. Useful for debugging migration issues."
     cmds:
@@ -195,3 +206,12 @@ tasks:
         exit 1
       fi
       uv run xngin-cli add-user --email "{{.CLI_ARGS}}" --privileged
+  start-tq:
+    desc: "Start the task queue."
+    env:
+      DATABASE_URL: "{{.XNGIN_DEVAPP_DSN}}"
+    cmd: uv run xngin-tq
+  psql:
+    desc: "Start interactive psql"
+    interactive: true
+    cmd: psql "{{.XNGIN_DEVAPP_DSN}}"

@@ -12,6 +12,12 @@ from xngin.apiserver.dependencies import (
     datasource_config_required,
     httpx_dependency,
 )
+from xngin.apiserver.proxy_webhook_types import (
+    STANDARD_WEBHOOK_RESPONSES,
+    WebhookCommitRequest,
+    WebhookResponse,
+    WebhookUpdateCommitRequest,
+)
 from xngin.apiserver.settings import (
     DatasourceConfig,
     HttpMethodTypes,
@@ -19,12 +25,6 @@ from xngin.apiserver.settings import (
     WebhookUrl,
 )
 from xngin.apiserver.utils import substitute_url
-from xngin.apiserver.webhook_types import (
-    STANDARD_WEBHOOK_RESPONSES,
-    WebhookCommitRequest,
-    WebhookResponse,
-    WebhookUpdateCommitRequest,
-)
 
 
 @asynccontextmanager

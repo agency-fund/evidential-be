@@ -1,5 +1,6 @@
 """Implements a basic Admin API."""
 
+import secrets
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime, timedelta
 from typing import Annotated
@@ -43,15 +44,19 @@ from xngin.apiserver.models.tables import (
     ApiKey,
     Datasource,
     DatasourceTablesInspected,
+    Event,
     Experiment,
     Organization,
     ParticipantTypesInspected,
     User,
     UserOrganization,
+    Webhook,
 )
 from xngin.apiserver.routers import experiments, experiments_api_types
 from xngin.apiserver.routers.admin_api_types import (
     AddMemberToOrganizationRequest,
+    AddWebhookToOrganizationRequest,
+    AddWebhookToOrganizationResponse,
     ApiKeySummary,
     CreateApiKeyResponse,
     CreateDatasourceRequest,
@@ -61,6 +66,7 @@ from xngin.apiserver.routers.admin_api_types import (
     CreateParticipantsTypeRequest,
     CreateParticipantsTypeResponse,
     DatasourceSummary,
+    EventSummary,
     FieldMetadata,
     GetDatasourceResponse,
     GetOrganizationResponse,
@@ -69,14 +75,17 @@ from xngin.apiserver.routers.admin_api_types import (
     InspectParticipantTypesResponse,
     ListApiKeysResponse,
     ListDatasourcesResponse,
+    ListOrganizationEventsResponse,
     ListOrganizationsResponse,
     ListParticipantsTypeResponse,
+    ListWebhooksResponse,
     OrganizationSummary,
     UpdateDatasourceRequest,
     UpdateOrganizationRequest,
     UpdateParticipantsTypeRequest,
     UpdateParticipantsTypeResponse,
     UserSummary,
+    WebhookSummary,
 )
 from xngin.apiserver.routers.experiments_api import (
     create_col_to_filter_meta_mapper,
@@ -300,6 +309,135 @@ def create_organizations(
     session.commit()
 
     return CreateOrganizationResponse(id=organization.id)
+
+
+@router.post("/organizations/{organization_id}/webhooks")
+def add_webhook_to_organization(
+    organization_id: str,
+    session: Annotated[Session, Depends(xngin_db_session)],
+    user: Annotated[User, Depends(user_from_token)],
+    body: Annotated[AddWebhookToOrganizationRequest, Body(...)],
+) -> AddWebhookToOrganizationResponse:
+    """Adds a Webhook to an organization."""
+    # Verify user has access to the organization
+    org = get_organization_or_raise(session, user, organization_id)
+
+    # Generate a secure auth token
+    auth_token = secrets.token_hex(16)
+
+    # Create and save the webhook
+    webhook = Webhook(
+        type=body.type, url=body.url, auth_token=auth_token, organization_id=org.id
+    )
+    session.add(webhook)
+    session.commit()
+
+    return AddWebhookToOrganizationResponse(
+        id=webhook.id, type=webhook.type, url=webhook.url, auth_token=auth_token
+    )
+
+
+@router.get("/organizations/{organization_id}/webhooks")
+def list_organization_webhooks(
+    organization_id: str,
+    session: Annotated[Session, Depends(xngin_db_session)],
+    user: Annotated[User, Depends(user_from_token)],
+) -> ListWebhooksResponse:
+    """Lists all the webhooks for an organization."""
+    # Verify user has access to the organization
+    org = get_organization_or_raise(session, user, organization_id)
+
+    # Query for webhooks
+    stmt = select(Webhook).where(Webhook.organization_id == org.id)
+    webhooks = session.scalars(stmt).all()
+
+    # Convert webhooks to WebhookSummary objects
+    webhook_summaries = convert_webhooks_to_webhooksummaries(webhooks)
+
+    return ListWebhooksResponse(items=webhook_summaries)
+
+
+def convert_webhooks_to_webhooksummaries(webhooks):
+    return [
+        WebhookSummary(
+            id=webhook.id,
+            type=webhook.type,
+            url=webhook.url,
+            auth_token=webhook.auth_token,
+        )
+        for webhook in webhooks
+    ]
+
+
+@router.delete(
+    "/organizations/{organization_id}/webhooks/{webhook_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+)
+def delete_webhook_from_organization(
+    organization_id: str,
+    webhook_id: str,
+    session: Annotated[Session, Depends(xngin_db_session)],
+    user: Annotated[User, Depends(user_from_token)],
+):
+    """Removes a Webhook from an organization."""
+    # Verify user has access to the organization
+    org = get_organization_or_raise(session, user, organization_id)
+
+    # Find and delete the webhook
+    stmt = (
+        delete(Webhook)
+        .where(Webhook.id == webhook_id)
+        .where(Webhook.organization_id == org.id)
+    )
+    result = session.execute(stmt)
+
+    if result.rowcount == 0:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Webhook not found"
+        )
+
+    session.commit()
+    return GENERIC_SUCCESS
+
+
+@router.get("/organizations/{organization_id}/events")
+def list_organization_events(
+    organization_id: str,
+    session: Annotated[Session, Depends(xngin_db_session)],
+    user: Annotated[User, Depends(user_from_token)],
+) -> ListOrganizationEventsResponse:
+    """Returns the most recent 200 events in an organization."""
+    # Verify user has access to the organization
+    org = get_organization_or_raise(session, user, organization_id)
+
+    # Query for the most recent 200 events
+    stmt = (
+        select(Event)
+        .where(Event.organization_id == org.id)
+        .order_by(Event.created_at.desc())
+        .limit(200)
+    )
+    events = session.scalars(stmt).all()
+
+    event_summaries = convert_events_to_eventsummaries(events)
+    return ListOrganizationEventsResponse(items=event_summaries)
+
+
+def convert_events_to_eventsummaries(events):
+    event_summaries = []
+    for event in events:
+        data = event.get_data()
+        event_summaries.append(
+            EventSummary(
+                id=event.id,
+                created_at=event.created_at,
+                type=event.type,
+                summary=data.summarize() if data else "Unknown",
+                link=data.link() if data else None,
+                details=data.model_dump() if data else None,
+            )
+        )
+    return event_summaries
 
 
 @router.post(
