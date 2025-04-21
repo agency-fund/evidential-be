@@ -30,7 +30,7 @@ env:
   PYTHONUNBUFFERED: "1"
 
   # Tests should never connect to this DSN but it (or XNGIN_DB) must be set.
-  DATABASE_URL: "postgres://fail:fail@127.0.0.2:5499/fail"
+  DATABASE_URL: "postgresql://fail:fail@127.0.0.2:5499/fail"
 
 jobs:
   unittests:
@@ -105,6 +105,8 @@ jobs:
           uv run xngin-cli validate-settings ./src/xngin/apiserver/testdata/xngin.gha.settings.json
           uv run xngin-cli validate-settings xngin.settings.json
       - name: xngin-cli smoke tests
+        env:
+          DATABASE_URL: "postgresql://postgres:postgres@localhost:5499/postgres?sslmode=disable"
         run: |
           set -x
 
