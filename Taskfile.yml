@@ -74,8 +74,6 @@ env:
   # Datasource for the tests using the xngin.apiserver.dwh.test_queries.fixture_dwh_session fixture. The database name
   # is ignored because test_queries creates a random database name for each test (see fixture_dwh_session).
   XNGIN_TEST_DWH_URI: "postgresql://postgres:postgres@localhost:5499/test_dwh?sslmode=disable"
-
-  DATABASE_URL: "postgres://fail:fail@127.0.0.1:5499/fail"
 tasks:
   bootstrap-app-db:
     internal: true
@@ -85,7 +83,7 @@ tasks:
     cmds:
       - >
         ./tools/localpg.py --allow-existing -d --wait --create-db {{.XNGIN_DEVAPPDB_NAME}}
-        --if-created "uv run task apply-migrations-pg"
+        --if-created "uv run task apply-migrations"
   start:
     desc: "Starts apiserver locally with settings compatible with local dash dev server (using PostgreSQL)"
     interactive: true
@@ -101,17 +99,22 @@ tasks:
       ENABLE_OIDC: "true"
     deps:
       - bootstrap-app-db
+      - bootstrap-dwh
     cmds:
-      - task bootstrap-dwh || /bin/true
       - uv run fastapi dev src/xngin/apiserver/main.py
   bootstrap-dwh:
     desc: "Bootstraps the localpg server with a sample data warehouse."
     interactive: true
     cmds:
-      - uv run xngin-cli create-testing-dwh --dsn "$XNGIN_DEVDWH_DSN"
+      - uv run xngin-cli create-testing-dwh --dsn "$XNGIN_DEVDWH_DSN" --allow-existing --create-db
   test:
     desc: "Runs unit tests"
     interactive: true
+    env:
+      # Tests should never connect to this URL.
+      DATABASE_URL: "postgres://fail:fail@127.0.0.1:5499/fail"
+    deps:
+      - bootstrap-dwh
     cmds:
       - uv run pytest
   update-api-tests:
@@ -122,10 +125,9 @@ tasks:
     cmd: uv run pytest src/xngin/apiserver/test_api.py
   make-migrations:
     desc: "Build Postgres migrations"
-    cmds:
-      - uv run atlas migrate diff --env sa_postgres && git add migrations
-      # If you modify the migration file afterwards, you should re-hash it:
-      # uv run atlas migrate hash --env sa_postgres
+    cmd: |
+      uv run atlas migrate diff --env sa_postgres && git add migrations
+      echo 💡 If you modify the migration file afterwards, you should re-hash it: task hash-migrations
   hash-migrations:
     desc: "Rehash your migration file (see atlas.sum) if you had to modify the generated migration file afterwards, e.g. to add a custom backfill."
     cmds:
@@ -143,7 +145,7 @@ tasks:
     desc: "Go back a version in the migration history. Note that it include pre-migration checks to ensure data isn't deleted and tables are empty, so you may have to manually do some prep for the reversion. See https://atlasgo.io/versioned/down"
     cmds:
       - uv run atlas migrate down --env sa_postgres --url '{{.XNGIN_DEVAPP_DSN}}'
-  apply-migrations-pg:
+  apply-migrations:
     desc: "Apply Postgres migrations locally (requires localpg instance to be running, to have an xngin database, and to have been previously migrated)"
     cmds:
       - uv run atlas migrate diff --env sa_postgres

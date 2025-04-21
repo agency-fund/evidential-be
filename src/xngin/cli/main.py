@@ -189,6 +189,12 @@ def create_testing_dwh(
     password: Annotated[
         str | None, typer.Option(envvar="PGPASSWORD", help="The database password.")
     ] = None,
+    create_db: Annotated[
+        bool,
+        typer.Option(
+            help="Create the database if it does not yet exist (Postgres only)."
+        ),
+    ] = False,
     allow_existing: Annotated[
         bool,
         typer.Option(
@@ -293,7 +299,10 @@ def create_testing_dwh(
         return ct
 
     if allow_existing:
-        engine = create_engine(url, logging_name=SA_LOGGER_NAME_FOR_CLI)
+        if create_db:
+            engine = create_engine_and_database(url)
+        else:
+            engine = create_engine(url, logging_name=SA_LOGGER_NAME_FOR_CLI)
         conn = engine.raw_connection()
         with conn.cursor() as cur:
             try:

@@ -43,7 +43,7 @@ Follow the steps below to get a local development environment running.
 1. Run the unit tests:
 
    ```shell
-   uv run pytest
+   task test
    ```
 
 1. If you're working with the [Evidential UI](//github.com/agency-fund/xngin-dash), set the OAuth Client
