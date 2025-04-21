@@ -96,11 +96,6 @@ jobs:
         with:
           version: 3.x
           repo-token: ${{ secrets.GITHUB_TOKEN }}
-      - name: Run task helper scripts
-        run: |
-          task bootstrap-app
-          task bootstrap-dwh
-          task create-user -- username@example.com
       - name: xngin-cli config validators
         run: |
           set -x
@@ -110,8 +105,6 @@ jobs:
           uv run xngin-cli validate-settings ./src/xngin/apiserver/testdata/xngin.gha.settings.json
           uv run xngin-cli validate-settings xngin.settings.json
       - name: xngin-cli smoke tests
-        env:
-          DATABASE_URL: "postgresql://postgres:postgres@localhost:5499/postgres?sslmode=disable"
         run: |
           set -x
 
@@ -125,6 +118,7 @@ jobs:
           uv run xngin-cli parse-config-spreadsheet file://./config.csv test_participant_type
       - name: Run xngin.gha.settings.json tests
         env:
+          DATABASE_URL: "postgresql://postgres:postgres@localhost:5499/postgres?sslmode=disable"
           PGPASSWORD: postgres
         run: |
           set -x
