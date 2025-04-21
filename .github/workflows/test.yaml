@@ -98,8 +98,8 @@ jobs:
           repo-token: ${{ secrets.GITHUB_TOKEN }}
       - name: Run task helper scripts
         run: |
+          task bootstrap-app
           task bootstrap-dwh
-          task bootstrap-app-db
           task create-user -- username@example.com
       - name: xngin-cli config validators
         run: |

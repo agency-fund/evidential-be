@@ -75,9 +75,8 @@ env:
   # is ignored because test_queries creates a random database name for each test (see fixture_dwh_session).
   XNGIN_TEST_DWH_URI: "postgresql://postgres:postgres@localhost:5499/test_dwh?sslmode=disable"
 tasks:
-  bootstrap-app-db:
-    internal: true
-    desc: |
+  bootstrap-app:
+    desc: >-
       Ensure the localpg server is running and has an "xngin" database. If the database doesn't already exist, it will
       be created, and Atlas will create the tables so that subsequent table migrations behave as expected.
     cmds:
@@ -98,12 +97,12 @@ tasks:
       ENABLE_ADMIN: "true"
       ENABLE_OIDC: "true"
     deps:
-      - bootstrap-app-db
+      - bootstrap-app
       - bootstrap-dwh
     cmds:
       - uv run fastapi dev src/xngin/apiserver/main.py
   bootstrap-dwh:
-    desc: "Bootstraps the localpg server with a sample data warehouse."
+    desc: "Loads a sample data warehouse into the localpg server."
     interactive: true
     cmds:
       - uv run xngin-cli create-testing-dwh --dsn "$XNGIN_DEVDWH_DSN" --allow-existing --create-db
@@ -154,7 +153,7 @@ tasks:
     desc: "Create a user: task create-user -- username@example.com"
     interactive: true
     deps:
-      - bootstrap-app-db
+      - bootstrap-app
     env:
       XNGIN_DEVAPP_DSN: "{{.XNGIN_DEVAPP_DSN}}"
     cmd: |
