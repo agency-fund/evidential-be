@@ -124,7 +124,9 @@ class Webhook(Base):
         comment="The token that will be sent in the Authorization header."
     )
 
-    organization_id: Mapped[str] = mapped_column(ForeignKey("organizations.id"))
+    organization_id: Mapped[str] = mapped_column(
+        ForeignKey("organizations.id", ondelete="CASCADE")
+    )
     organization: Mapped["Organization"] = relationship(back_populates="webhooks")
 
 
@@ -148,7 +150,9 @@ class Event(Base):
         comment="The event payload. This will always be a JSON object with a `type` field.",
     )
 
-    organization_id: Mapped[str] = mapped_column(ForeignKey("organizations.id"))
+    organization_id: Mapped[str] = mapped_column(
+        ForeignKey("organizations.id", ondelete="CASCADE")
+    )
     organization: Mapped["Organization"] = relationship(back_populates="events")
 
     def set_data(self, data: EventDataTypes):
