@@ -36,6 +36,19 @@ jobs:
   unittests-integration:
     timeout-minutes: 15
     runs-on: ubuntu-22.04
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_DB: postgres
+          POSTGRES_PASSWORD: postgres
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 5499:5432
     env:
       XNGIN_TEST_APPDB_URI: "postgresql://postgres:postgres@localhost:5499/test_xngin?sslmode=disable"
       XNGIN_TEST_DWH_URI: "postgresql://postgres:postgres@localhost:5499/test_dwh?sslmode=disable"
