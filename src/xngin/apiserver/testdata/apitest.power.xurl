@@ -58,10 +58,10 @@ HTTP 200
         "available_n": 39405,
         "available_nonnull_n": 39405,
         "field_name": "current_income",
-        "metric_baseline": 26333.628738429015,
+        "metric_baseline": 26333.62873842901,
         "metric_pct_change": 0.1,
-        "metric_stddev": 6752.850516930193,
-        "metric_target": 28966.99161227192,
+        "metric_stddev": 6752.8505169301925,
+        "metric_target": 28966.991612271915,
         "metric_type": "numeric"
       },
       "msg": {
@@ -84,10 +84,10 @@ HTTP 200
         "available_n": 39405,
         "available_nonnull_n": 39405,
         "field_name": "income",
-        "metric_baseline": 30898.867656825856,
+        "metric_baseline": 30898.86765682582,
         "metric_pct_change": 0.1,
-        "metric_stddev": 8449.033214299421,
-        "metric_target": 33988.75442250844,
+        "metric_stddev": 8449.033214299427,
+        "metric_target": 33988.754422508406,
         "metric_type": "numeric"
       },
       "msg": {
@@ -112,23 +112,23 @@ HTTP 200
         "field_name": "is_engaged",
         "metric_baseline": 0.20913589645984013,
         "metric_pct_change": 0.1,
-        "metric_stddev": 0.40669161937735965,
+        "metric_stddev": null,
         "metric_target": 0.23004948610582415,
-        "metric_type": "numeric"
+        "metric_type": "binary"
       },
       "msg": {
-        "msg": "There are 39405 units available to run your experiment and a minimum of 11876 units are needed to meet your experimental design specs. There are enough units available. ",
+        "msg": "There are 39405 units available to run your experiment and a minimum of 12298 units are needed to meet your experimental design specs. There are enough units available. ",
         "source_msg": "There are {available_n} units available to run your experiment and a minimum of {target_n} units are needed to meet your experimental design specs. There are enough units available. ",
         "type": "sufficient",
         "values": {
           "available_n": 39405,
           "available_nonnull_n": 39405,
-          "target_n": 11876
+          "target_n": 12298
         }
       },
       "pct_change_possible": null,
       "sufficient_n": true,
-      "target_n": 11876,
+      "target_n": 12298,
       "target_possible": null
     }
   ]

@@ -5,37 +5,37 @@ HTTP 200
 {
   "results": [
     {
-      "data_type": "double precision",
+      "data_type": "numeric",
       "description": "Current Income",
       "field_name": "current_income"
     },
     {
-      "data_type": "double precision",
+      "data_type": "numeric",
       "description": "Income",
       "field_name": "income"
     },
     {
-      "data_type": "integer",
+      "data_type": "boolean",
       "description": "Engaged?",
       "field_name": "is_engaged"
     },
     {
-      "data_type": "integer",
+      "data_type": "boolean",
       "description": "Onboarded?",
       "field_name": "is_onboarded"
     },
     {
-      "data_type": "integer",
+      "data_type": "boolean",
       "description": "Recruited?",
       "field_name": "is_recruited"
     },
     {
-      "data_type": "integer",
+      "data_type": "boolean",
       "description": "Registered?",
       "field_name": "is_registered"
     },
     {
-      "data_type": "integer",
+      "data_type": "boolean",
       "description": "Retained?",
       "field_name": "is_retained"
     }

@@ -23,6 +23,7 @@ from xngin.apiserver.dns import safe_resolve
 from xngin.apiserver.models import tables
 from xngin.apiserver.models.tables import ApiKey, Datasource, Organization
 from xngin.apiserver.settings import ParticipantsDef, SettingsForTesting, XnginSettings
+from xngin.apiserver.testing.pg_helpers import create_database_if_not_exists_pg
 from xngin.db_extensions import custom_functions
 
 # SQLAlchemy's logger will append this to the name of its loggers used for the application database; e.g.
@@ -72,7 +73,10 @@ def get_test_appdb_info():
 
 
 def get_test_dwh_info():
-    """Use this for tests that skip settings.json and directly connect to a simulated DWH."""
+    """Use this for tests that skip settings.json and directly connect to a simulated DWH.
+
+    See xngin.apiserver.dwh.test_queries.fixture_dwh_session.
+    """
     connection_uri = os.environ.get("XNGIN_TEST_DWH_URI", "")
     if not connection_uri:
         raise ValueError("XNGIN_TEST_DWH_URI must be set.")
@@ -115,12 +119,16 @@ def get_test_uri_info(connection_uri: str):
 
 
 def get_test_sessionmaker():
-    """
-    Returns a function to create a Session generator for use in tests as our app db.
+    """Returns a session for the XNGIN_TEST_APPDB_URI; the returned database is not guaranteed unique.
 
-    The backing db is configured by XNGIN_TEST_APPDB_URI, defaulting to an in-memory ephemeral db.
+    The database will be created if it does not exit.
     """
-    connect_url, _, connect_args = get_test_appdb_info()
+    connect_url, db_type, connect_args = get_test_appdb_info()
+    match db_type:
+        case DbType.PG:
+            create_database_if_not_exists_pg(connect_url)
+        case _:
+            raise ValueError("XNGIN_TEST_APPDB_URI must be postgres.")
     db_engine = sqlalchemy.create_engine(
         connect_url,
         logging_name=SA_LOGGER_NAME_FOR_APP,
@@ -137,11 +145,11 @@ def get_test_sessionmaker():
     tables.Base.metadata.create_all(bind=db_engine)
 
     def get_db_for_test():
-        db = testing_session_local()
+        sess = testing_session_local()
         try:
-            yield db
+            yield sess
         finally:
-            db.close()
+            sess.close()
 
     return get_db_for_test
 
@@ -160,13 +168,6 @@ def ensure_correct_working_directory():
     This is important because the tests generate some temporary data on disk and we want the paths to be right.
     """
     cwd_or_raise_unless_running_from_top_directory()
-
-
-@pytest.fixture(scope="session", autouse=True)
-def ensure_dwh_sqlite_database_exists(ensure_correct_working_directory):
-    """Create testing_dwh.db, if it doesn't already exist."""
-    # TODO: remove
-    #  testing_dwh.create_dwh_sqlite_database()
 
 
 def cwd_or_raise_unless_running_from_top_directory():

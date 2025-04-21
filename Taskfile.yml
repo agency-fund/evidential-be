@@ -1,17 +1,10 @@
 version: '3'
 output: prefixed
 vars:
-  # App database for the local dev environment (see tasks start-with-local-pg, apply-migrations-pg)
+  # App database for the local dev environment (see tasks: start, apply-migrations)
   XNGIN_DEVAPPDB_NAME: "xngin"
   XNGIN_DEVAPP_DSN: "postgresql://postgres:postgres@localhost:5499/{{.XNGIN_DEVAPPDB_NAME}}?sslmode=disable"
 
-  # Datasource for tests of the xngin app database that use the xngin_db_session dependency.
-  XNGIN_TESTAPP_DSN: "postgresql://postgres:postgres@localhost:5499/test_xngin?sslmode=disable"
-
-  # Datasource for the Postgres integration tests run by `task test-pgintegration`.
-  # Note: test_queries.py creates a random database name adapting this dsn for each test using its
-  # fixture_db_session.
-  XNGIN_TESTDWH_DSN: "postgresql://postgres:postgres@localhost:5499/test_dwh?sslmode=disable"
 env:
   # Disable Atlas telemetry.
   ATLAS_NO_ANON_TELEMETRY: "true"
@@ -69,20 +62,21 @@ env:
   XNGIN_SETTINGS: "src/xngin/apiserver/testdata/xngin.testing.settings.json"
   XNGIN_DEBUG: "true"
 
-  # Data warehouse available for use by the local dev environment (see task bootstrap-dwh-local-pg). It is bootstrapped
-  # with the testing datawarehouse when `task start-with-local-pg` is used.
+  # Data warehouse available for use by the local dev environment (see task bootstrap-dwh) and also referenced
+  # by unit tests via xngin.testing.settings.json. It is bootstrapped with the testing datawarehouse when
+  # `task start-with-local-pg` is used.
   XNGIN_DEVDWH_NAME: "dwh"
   XNGIN_DEVDWH_DSN: "postgresql://postgres:postgres@localhost:5499/dwh?sslmode=disable"
 
-  XNGIN_TEST_APPDB_URI: "{{.XNGIN_TESTAPP_DSN}}"
-  XNGIN_TEST_DWH_URI: "{{.XNGIN_TESTDWH_DSN}}"
+  # Datasource for tests of the xngin app database that use the xngin_db_session dependency.
+  XNGIN_TEST_APPDB_URI: "postgresql://postgres:postgres@localhost:5499/test_xngin?sslmode=disable"
+
+  # Datasource for the tests using the xngin.apiserver.dwh.test_queries.fixture_dwh_session fixture. The database name
+  # is ignored because test_queries creates a random database name for each test (see fixture_dwh_session).
+  XNGIN_TEST_DWH_URI: "postgresql://postgres:postgres@localhost:5499/test_dwh?sslmode=disable"
 
   DATABASE_URL: "postgres://fail:fail@127.0.0.1:5499/fail"
 tasks:
-  start:
-    desc: "Starts apiserver locally with settings compatible with local dash dev server (using PostgreSQL)"
-    cmd:
-      task: start-with-local-pg
   bootstrap-app-db:
     internal: true
     desc: |
@@ -92,7 +86,7 @@ tasks:
       - >
         ./tools/localpg.py --allow-existing -d --wait --create-db {{.XNGIN_DEVAPPDB_NAME}}
         --if-created "uv run task apply-migrations-pg"
-  start-with-local-pg:
+  start:
     desc: "Starts apiserver locally with settings compatible with local dash dev server (using PostgreSQL)"
     interactive: true
     dotenv:
@@ -108,9 +102,9 @@ tasks:
     deps:
       - bootstrap-app-db
     cmds:
-      - task bootstrap-dwh-local-pg || /bin/true
+      - task bootstrap-dwh || /bin/true
       - uv run fastapi dev src/xngin/apiserver/main.py
-  bootstrap-dwh-local-pg:
+  bootstrap-dwh:
     desc: "Bootstraps the localpg server with a sample data warehouse."
     interactive: true
     cmds:
@@ -126,12 +120,6 @@ tasks:
     env:
       UPDATE_API_TESTS: "1"
     cmd: uv run pytest src/xngin/apiserver/test_api.py
-  test-pgintegration:
-    desc: "Runs unit tests w/local postgres support"
-    interactive: true
-    cmds:
-      - ./tools/localpg.py --allow-existing -d --wait --create-db test_xngin
-      - uv run pytest -m 'pgintegration or not integration'
   make-migrations:
     desc: "Build Postgres migrations"
     cmds:

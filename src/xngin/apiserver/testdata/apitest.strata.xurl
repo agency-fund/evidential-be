@@ -5,7 +5,7 @@ HTTP 200
 {
   "results": [
     {
-      "data_type": "double precision",
+      "data_type": "numeric",
       "description": "Baseline Income",
       "extra": {
         "Extra Ad-Hoc Field": "",
@@ -14,7 +14,7 @@ HTTP 200
       "field_name": "baseline_income"
     },
     {
-      "data_type": "double precision",
+      "data_type": "numeric",
       "description": "Current Income",
       "extra": {
         "Extra Ad-Hoc Field": "",
@@ -41,7 +41,7 @@ HTTP 200
       "field_name": "gender"
     },
     {
-      "data_type": "integer",
+      "data_type": "boolean",
       "description": "Engaged?",
       "extra": {
         "Extra Ad-Hoc Field": "",
@@ -50,7 +50,7 @@ HTTP 200
       "field_name": "is_engaged"
     },
     {
-      "data_type": "integer",
+      "data_type": "boolean",
       "description": "Onboarded?",
       "extra": {
         "Extra Ad-Hoc Field": "",
@@ -59,7 +59,7 @@ HTTP 200
       "field_name": "is_onboarded"
     },
     {
-      "data_type": "integer",
+      "data_type": "boolean",
       "description": "Recruited?",
       "extra": {
         "Extra Ad-Hoc Field": "",
@@ -68,7 +68,7 @@ HTTP 200
       "field_name": "is_recruited"
     },
     {
-      "data_type": "integer",
+      "data_type": "boolean",
       "description": "Registered?",
       "extra": {
         "Extra Ad-Hoc Field": "",
@@ -77,7 +77,7 @@ HTTP 200
       "field_name": "is_registered"
     },
     {
-      "data_type": "integer",
+      "data_type": "boolean",
       "description": "Retained?",
       "extra": {
         "Extra Ad-Hoc Field": "",

@@ -5,7 +5,7 @@ HTTP 200
 {
   "results": [
     {
-      "data_type": "double precision",
+      "data_type": "numeric",
       "description": "Baseline Income",
       "field_name": "baseline_income",
       "max": 120621.36985115612,
@@ -17,7 +17,7 @@ HTTP 200
       ]
     },
     {
-      "data_type": "double precision",
+      "data_type": "numeric",
       "description": "Current Income",
       "field_name": "current_income",
       "max": 96941.0,
@@ -59,67 +59,71 @@ HTTP 200
       ]
     },
     {
-      "data_type": "integer",
+      "data_type": "boolean",
       "description": "Engaged?",
+      "distinct_values": [
+        "False",
+        "True"
+      ],
       "field_name": "is_engaged",
-      "max": 1,
-      "min": 0,
       "relations": [
-        "between",
-        "excludes",
-        "includes"
+        "includes",
+        "excludes"
       ]
     },
     {
-      "data_type": "integer",
+      "data_type": "boolean",
       "description": "Onboarded?",
+      "distinct_values": [
+        "False",
+        "True"
+      ],
       "field_name": "is_onboarded",
-      "max": 1,
-      "min": 0,
       "relations": [
-        "between",
-        "excludes",
-        "includes"
+        "includes",
+        "excludes"
       ]
     },
     {
-      "data_type": "integer",
+      "data_type": "boolean",
       "description": "Recruited?",
+      "distinct_values": [
+        "True"
+      ],
       "field_name": "is_recruited",
-      "max": 1,
-      "min": 1,
       "relations": [
-        "between",
-        "excludes",
-        "includes"
+        "includes",
+        "excludes"
       ]
     },
     {
-      "data_type": "integer",
+      "data_type": "boolean",
       "description": "Registered?",
+      "distinct_values": [
+        "False",
+        "True"
+      ],
       "field_name": "is_registered",
-      "max": 1,
-      "min": 0,
       "relations": [
-        "between",
-        "excludes",
-        "includes"
+        "includes",
+        "excludes"
       ]
     },
     {
-      "data_type": "integer",
+      "data_type": "boolean",
       "description": "Retained?",
+      "distinct_values": [
+        "False",
+        "True"
+      ],
       "field_name": "is_retained",
-      "max": 1,
-      "min": 0,
       "relations": [
-        "between",
-        "excludes",
-        "includes"
+        "includes",
+        "excludes"
       ]
     },
     {
-      "data_type": "character varying",
+      "data_type": "uuid",
       "description": "uuid used as filter",
       "distinct_values": [
         "1731e17b-88b4-4021-b8c5-77929d53ab9a",

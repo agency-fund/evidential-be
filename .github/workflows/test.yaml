@@ -30,46 +30,30 @@ env:
   PYTHONUNBUFFERED: "1"
 
 jobs:
-  unittests:
+  unittests-integration:
     timeout-minutes: 15
-    runs-on: ${{ matrix.os }}
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [ubuntu-22.04, macos-14]
+    runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v4
         with:
-          version: "0.6.1"
+          version: "0.6.14"
           enable-cache: true
-      - if: startsWith(matrix.os, 'macos-')
-        run: |
-          # Install postgres so that the Python psycopg2 module can build from source.
-          brew install postgresql@14
       - name: Install dependencies
         run: |
           uv sync --locked
-      - name: pytest unit tests
-        run: uv run pytest
       - name: write secrets
-        # The secret is only needed by the integration test
-        if: startsWith(matrix.os, 'ubuntu-')
         run: |
           mkdir -p ~/.config/gspread && echo "${GCLOUD_SERVICE_ACCOUNT_CREDENTIALS}" > ~/.config/gspread/service_account.json
           openssl sha256 ~/.config/gspread/service_account.json
         env:
           GCLOUD_SERVICE_ACCOUNT_CREDENTIALS: ${{ secrets.GOOGLE_APPLICATION_CREDENTIALS_CONTENT }}
       - name: pytest integration tests
-        if: startsWith(matrix.os, 'ubuntu-')
         run: |
           # used by the sqlalchemy bigquery driver in some integration tests
           export GOOGLE_APPLICATION_CREDENTIALS=$HOME/.config/gspread/service_account.json
-          set -x
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends retry
-          retry -t 3 -d 30 -- uv run pytest -m integration
-  pg-integration:
+          uv run pytest -m integration
+  unittests:
     runs-on: ubuntu-22.04
     timeout-minutes: 15
     strategy:
@@ -95,10 +79,14 @@ jobs:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v4
         with:
-          version: "0.6.1"
+          version: "0.6.14"
           enable-cache: true
+      - name: Load test database
+        run: |
+          set -x
+          uv run xngin-cli create-testing-dwh --dsn postgresql+${{ matrix.driver }}://postgres:postgres@127.0.0.1:5499/dwh?sslmode=disable
       - name: Run all pytest tests
-        run: uv run pytest -m 'pgintegration or not integration'
+        run: uv run pytest -m 'not integration'
       - name: Run smoke tests
         env:
           PGPASSWORD: postgres
@@ -129,7 +117,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v4
         with:
-          version: "0.6.1"
+          version: "0.6.14"
           enable-cache: true
       - run: uv sync --locked
       - uses: google-github-actions/auth@v2
@@ -183,7 +171,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v4
         with:
-          version: "0.6.1"
+          version: "0.6.14"
           enable-cache: true
       - name: xngin-cli smoke tests
         run: |
@@ -211,7 +199,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v4
         with:
-          version: "0.6.1"
+          version: "0.6.14"
           enable-cache: true
       - run: uv sync --locked
       - name: write secrets

@@ -1,5 +1,4 @@
 import os
-import sqlite3
 
 from sqlalchemy import create_engine, event
 from sqlalchemy.engine.interfaces import DBAPIConnection
@@ -36,16 +35,8 @@ def generic_url_to_sa_url(database_url):
 SQLALCHEMY_DATABASE_URL = get_server_database_url()
 
 
-def get_connect_args():
-    default = {}
-    if SQLALCHEMY_DATABASE_URL.startswith("sqlite:"):
-        default.update({"check_same_thread": False})
-    return default
-
-
 engine = create_engine(
     SQLALCHEMY_DATABASE_URL,
-    connect_args=get_connect_args(),
     execution_options={"logging_token": "app"},
     logging_name=SA_LOGGER_NAME_FOR_APP,
     echo=flags.ECHO_SQL_APP_DB,
@@ -54,11 +45,8 @@ engine = create_engine(
 
 @event.listens_for(engine, "connect")
 def set_sqlite_pragma(dbapi_connection: DBAPIConnection, _):
-    if not isinstance(dbapi_connection, sqlite3.Connection):
-        return
-    cursor = dbapi_connection.cursor()
-    cursor.execute("PRAGMA foreign_keys=ON")  # for API key cascading deletes
-    cursor.close()
+    # If we need to set dbapi-level connection settings, set them here.
+    pass
 
 
 SessionLocal = sessionmaker(bind=engine)

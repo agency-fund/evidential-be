@@ -210,9 +210,6 @@ def create_testing_dwh(
 
     On BigQuery: CSV is parsed by Pandas. Table DDL is derived by pandas-gbq and written via to_gbq().
 
-    On SQLite databases: CSV is parsed by Pandas. Table DDL will be read from a .sqlite.ddl file or derived from Pandas
-    read_csv, and written via SQLAlchemy and Pandas to_sql().
-
     Due to variations in all of the above, the loaded data may vary in small ways when loaded with different data
     stores. E.g. floats may not roundtrip.
     """
@@ -384,22 +381,6 @@ def create_testing_dwh(
 
             count(cursor)
 
-    elif url.get_backend_name() == "sqlite":
-        df = read_csv()
-        engine = create_engine_and_database(url)
-        with engine.begin() as conn:
-            cursor = conn.connection.cursor()
-            ddl = get_ddl_magic(engine.dialect.identifier_preparer, "sqlite")
-            drop_and_create(cursor, ddl)
-            print("Loading using Pandas to_sql (sloowww)...")
-            df.to_sql(
-                table_name,
-                conn,
-                schema=schema_name,
-                if_exists="append",
-                index=False,
-            )
-            count(cursor)
     else:
         err_console.print("Unrecognized database driver.")
         raise typer.Exit(2)

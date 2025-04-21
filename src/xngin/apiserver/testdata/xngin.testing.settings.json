@@ -47,7 +47,7 @@
           "port": 5439,
           "host": "__example__.redshift.amazonaws.com",
           "password": "password",
-          "dbname": "dbname",
+          "dbname": "dwh",
           "sslmode": "verify-full"
         }
       }
@@ -79,7 +79,7 @@
           "port": 5439,
           "host": "__example__.redshift.amazonaws.com",
           "password": "password",
-          "dbname": "dbname",
+          "dbname": "dwh",
           "sslmode": "verify-full"
         }
       }
@@ -87,7 +87,7 @@
     {
       "id": "testing",
       "config": {
-        "type": "sqlite_local",
+        "type": "remote",
         "participants": [
           {
             "type": "sheet",
@@ -99,7 +99,15 @@
             }
           }
         ],
-        "sqlite_filename": "src/xngin/apiserver/testdata/testing_dwh.db"
+        "dwh": {
+          "driver": "postgresql+psycopg2",
+          "user": "postgres",
+          "port": 5499,
+          "host": "127.0.0.1",
+          "password": "postgres",
+          "dbname": "dwh",
+          "sslmode": "disable"
+        }
       }
     },
     {
@@ -123,7 +131,7 @@
           "port": 5499,
           "host": "127.0.0.1",
           "password": "postgres",
-          "dbname": "postgres",
+          "dbname": "dwh",
           "sslmode": "disable"
         }
       }
@@ -132,7 +140,7 @@
       "id": "testing-secured",
       "require_api_key": true,
       "config": {
-        "type": "sqlite_local",
+        "type": "remote",
         "participants": [
           {
             "type": "sheet",
@@ -144,14 +152,30 @@
             }
           }
         ],
-        "sqlite_filename": "src/xngin/apiserver/testdata/testing_dwh.db"
+        "dwh": {
+          "driver": "postgresql+psycopg2",
+          "user": "postgres",
+          "port": 5499,
+          "host": "127.0.0.1",
+          "password": "postgres",
+          "dbname": "testing_dwh",
+          "sslmode": "disable"
+        }
       }
     },
     {
       "id": "testing-inline-schema",
       "config": {
-        "type": "sqlite_local",
-        "sqlite_filename": "src/xngin/apiserver/testdata/testing_dwh.db",
+        "type": "remote",
+        "dwh": {
+          "driver": "postgresql+psycopg2",
+          "user": "postgres",
+          "port": 5499,
+          "host": "127.0.0.1",
+          "password": "postgres",
+          "dbname": "dwh",
+          "sslmode": "disable"
+        },
         "participants": [
           {
             "type": "schema",

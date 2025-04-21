@@ -492,7 +492,6 @@ def test_create_participants_type_invalid(testing_datasource):
     )
 
 
-@pytest.mark.pgintegration
 def test_lifecycle_with_pg(testing_datasource):
     """Exercises the admin API methods that require an external database."""
     # Add the privileged user to the organization.

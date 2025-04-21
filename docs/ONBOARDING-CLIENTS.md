@@ -46,7 +46,6 @@ For more examples, see the `xngin.gha.settings.json` settings used for testing.
 - Redshift - `postgresql+psycopg2://username@host:port/databasename`
 - Postgres - `postgresql+psycopg://username@host:port/databasename`
 - BigQuery (experimental) - `bigquery://some-project/some-dataset`
-- SQLite3 (for tests) - `sqlite:///file_path`
 
 ### BigQuery as the Customer's DWH Support<a name="bigquery-as-the-customers-dwh-support"></a>
 

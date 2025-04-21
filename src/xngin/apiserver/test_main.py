@@ -1,6 +1,5 @@
-from fastapi.testclient import TestClient
-
 import pytest
+from fastapi.testclient import TestClient
 from xngin.apiserver import conftest, constants
 from xngin.apiserver.api_types import DataType
 from xngin.apiserver.main import app
@@ -65,11 +64,10 @@ def test_generate_column_descriptors():
     # Next assertion ust because we labeled it that way in settings!
     assert db_schema["last_name"].is_unique_id
     assert db_schema["current_income"].field_name == "current_income"
-    assert db_schema["current_income"].data_type == DataType.DOUBLE_PRECISION
+    assert db_schema["current_income"].data_type == DataType.NUMERIC
     assert db_schema["current_income"].is_unique_id is False
     assert db_schema["is_recruited"].field_name == "is_recruited"
-    # sqlite stores booleans as ints, so:
-    assert db_schema["is_recruited"].data_type == DataType.INTEGER
+    assert db_schema["is_recruited"].data_type == DataType.BOOLEAN
     assert db_schema["is_recruited"].is_unique_id is False
 
 

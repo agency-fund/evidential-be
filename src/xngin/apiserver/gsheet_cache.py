@@ -1,16 +1,15 @@
 from collections.abc import Callable
 
 from sqlalchemy import update
-from sqlalchemy.orm import Session
 from sqlalchemy.exc import IntegrityError
-
+from sqlalchemy.orm import Session
 from xngin.apiserver.models.tables import CacheTable
 from xngin.apiserver.settings import SheetRef
 from xngin.schema.schema_types import ParticipantsSchema
 
 
 class GSheetCache:
-    """Implements a simple read-through cache for Google Sheets data backed by a SQLite database."""
+    """Implements a simple read-through cache for Google Sheets data backed by a database."""
 
     def __init__(self, session: Session):
         self.session = session
@@ -31,7 +30,6 @@ class GSheetCache:
             try:
                 self.session.add(entry)
                 self.session.commit()
-            # This fallback should support sqlite and postgresql
             except IntegrityError:
                 self.session.rollback()
                 self.session.execute(
