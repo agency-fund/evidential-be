@@ -39,7 +39,7 @@ from xngin.apiserver.routers.admin_api_types import (
 )
 from xngin.apiserver.routers.experiments_api_types import (
     CreateExperimentRequest,
-    CreateExperimentWithAssignmentResponse,
+    CreateExperimentResponse,
     ExperimentConfig,
     GetExperimentAssignmentsResponse,
     ListExperimentsResponse,
@@ -162,13 +162,16 @@ def fixture_testing_sheet_datasource_with_user_added(testing_datasource):
     return testing_datasource
 
 
-def make_createexperimentrequest_json(participant_type: str = "test_participant_type"):
+def make_createexperimentrequest_json(
+    participant_type: str = "test_participant_type",
+    experiment_type: str = "preassigned",
+):
     """Create an experiment on the test ds."""
     return {
         "design_spec": {
             "experiment_name": "test",
             "description": "test",
-            "experiment_type": "preassigned",
+            "experiment_type": experiment_type,
             # Attach UTC tz, but use dates_equal() to compare to respect db storage support
             "start_date": "2024-01-01T00:00:00+00:00",
             "end_date": "2024-01-02T00:00:00+00:00",
@@ -629,14 +632,12 @@ def test_lifecycle_with_pg(testing_datasource):
 
     # Create experiment using that participant type.
     response = ppost(
-        f"/v1/m/experiments/{testing_datasource.ds.id}/with-assignment",
+        f"/v1/m/experiments/{testing_datasource.ds.id}",
         params={"chosen_n": 100},
         json=make_createexperimentrequest_json(participant_type),
     )
     assert response.status_code == 200, response.content
-    created_experiment = CreateExperimentWithAssignmentResponse.model_validate(
-        response.json()
-    )
+    created_experiment = CreateExperimentResponse.model_validate(response.json())
     parsed_experiment_id = created_experiment.design_spec.experiment_id
     assert parsed_experiment_id is not None
     parsed_arm_ids = {arm.arm_id for arm in created_experiment.design_spec.arms}
@@ -700,7 +701,7 @@ def test_create_experiment_with_assignment_validation_errors(
         "123e4567-e89b-12d3-a456-426614174000"
     )
     response = ppost(
-        f"/v1/m/experiments/{testing_datasource.ds.id}/with-assignment",
+        f"/v1/m/experiments/{testing_datasource.ds.id}",
         params={"chosen_n": 100},
         json=base_request,
     )
@@ -711,7 +712,7 @@ def test_create_experiment_with_assignment_validation_errors(
     # This datasource is loaded with a "remote" config from xngin.testing.settings.json, but
     # the associated participants config is of type "sheet".
     response = ppost(
-        f"/v1/m/experiments/{testing_sheet_datasource_with_user_added.ds.id}/with-assignment",
+        f"/v1/m/experiments/{testing_sheet_datasource_with_user_added.ds.id}",
         params={"chosen_n": 100},
         json=make_createexperimentrequest_json(),
     )
@@ -719,7 +720,7 @@ def test_create_experiment_with_assignment_validation_errors(
     assert "Participants must be of type schema" in response.json()["message"]
 
 
-def test_create_experiment_with_assignment_using_inline_schema_ds(
+def test_create_preassigned_experiment_using_inline_schema_ds(
     db_session, testing_datasource_with_user_added, use_deterministic_random
 ):
     datasource_id = testing_datasource_with_user_added.ds.id
@@ -727,14 +728,12 @@ def test_create_experiment_with_assignment_using_inline_schema_ds(
     base_request = CreateExperimentRequest.model_validate(base_request_json)
 
     response = ppost(
-        f"/v1/m/experiments/{datasource_id}/with-assignment",
+        f"/v1/m/experiments/{datasource_id}",
         params={"chosen_n": 100, "random_state": 42},
         json=base_request_json,
     )
     assert response.status_code == 200, response.content
-    created_experiment = CreateExperimentWithAssignmentResponse.model_validate(
-        response.json()
-    )
+    created_experiment = CreateExperimentResponse.model_validate(response.json())
     parsed_experiment_id = created_experiment.design_spec.experiment_id
     assert parsed_experiment_id is not None
     parsed_arm_ids = {arm.arm_id for arm in created_experiment.design_spec.arms}
@@ -747,10 +746,11 @@ def test_create_experiment_with_assignment_using_inline_schema_ds(
     assert created_experiment.state == ExperimentState.ASSIGNED
     assign_summary = created_experiment.assign_summary
     assert assign_summary.sample_size == 100
+    assert assign_summary.balance_check is not None
     assert assign_summary.balance_check.balance_ok is True
 
     # Check if the representations are equivalent
-    # scrub the uuids from the config for comparison
+    # scrub the ids from the config for comparison
     actual_design_spec = created_experiment.design_spec.model_copy(deep=True)
     actual_design_spec.experiment_id = None
     actual_design_spec.arms[0].arm_id = None
@@ -794,6 +794,48 @@ def test_create_experiment_with_assignment_using_inline_schema_ds(
     num_control = sum(1 for a in assignments if a.arm_id == arm1_id)
     num_treat = sum(1 for a in assignments if a.arm_id == arm2_id)
     assert abs(num_control - num_treat) <= 5  # Allow some wiggle room
+
+
+def test_create_online_experiment_using_inline_schema_ds(
+    testing_datasource_with_user_added, use_deterministic_random
+):
+    datasource_id = testing_datasource_with_user_added.ds.id
+    base_request_json = make_createexperimentrequest_json(
+        "test_participant_type", "online"
+    )
+    base_request = CreateExperimentRequest.model_validate(base_request_json)
+
+    response = ppost(
+        f"/v1/m/experiments/{datasource_id}",
+        params={"chosen_n": 100, "random_state": 42},
+        json=base_request_json,
+    )
+    assert response.status_code == 200, response.content
+    created_experiment = CreateExperimentResponse.model_validate(response.json())
+    parsed_experiment_id = created_experiment.design_spec.experiment_id
+    assert parsed_experiment_id is not None
+    parsed_arm_ids = {arm.arm_id for arm in created_experiment.design_spec.arms}
+    assert len(parsed_arm_ids) == 2
+
+    # Verify basic response
+    assert created_experiment.design_spec.experiment_id is not None
+    assert created_experiment.design_spec.arms[0].arm_id is not None
+    assert created_experiment.design_spec.arms[1].arm_id is not None
+    assert created_experiment.state == ExperimentState.COMMITTED
+    assign_summary = created_experiment.assign_summary
+    assert assign_summary.balance_check is None
+    assert assign_summary.sample_size == 0
+    assert assign_summary.arm_sizes is not None
+    assert all(a.size == 0 for a in assign_summary.arm_sizes)
+    assert created_experiment.power_analyses is None
+    # Check if the representations are equivalent
+    # scrub the ids from the config for comparison
+    actual_design_spec = created_experiment.design_spec.model_copy(deep=True)
+    actual_design_spec.experiment_id = None
+    actual_design_spec.arms[0].arm_id = None
+    actual_design_spec.arms[1].arm_id = None
+    assert actual_design_spec == base_request.design_spec
+    assert created_experiment.audience_spec == base_request.audience_spec
 
 
 def test_experiments_analyze(testing_experiment):

@@ -27,7 +27,7 @@ class CreateExperimentRequest(ExperimentsBaseModel):
 class AssignSummary(ExperimentsBaseModel):
     """Key pieces of an AssignResponse without the assignments."""
 
-    balance_check: BalanceCheck
+    balance_check: BalanceCheck | None
     sample_size: Annotated[
         int, Field(description="The number of participants across all arms in total.")
     ]
@@ -54,7 +54,7 @@ class ExperimentConfig(ExperimentsBaseModel):
     assign_summary: AssignSummary
 
 
-class CreateExperimentWithAssignmentResponse(ExperimentConfig):
+class CreateExperimentResponse(ExperimentConfig):
     """Same as the request but with uuids filled for the experiment and arms, and summary info on the assignment."""
 
 

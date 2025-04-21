@@ -1141,7 +1141,7 @@ def delete_api_key(
     return GENERIC_SUCCESS
 
 
-@router.post("/experiments/{datasource_id}/with-assignment")
+@router.post("/experiments/{datasource_id}/")
 def create_experiment_with_assignment(
     datasource_id: str,
     session: Annotated[Session, Depends(xngin_db_session)],
@@ -1161,7 +1161,7 @@ def create_experiment_with_assignment(
             include_in_schema=False,
         ),
     ] = None,
-) -> experiments_api_types.CreateExperimentWithAssignmentResponse:
+) -> experiments_api_types.CreateExperimentResponse:
     datasource = get_datasource_or_raise(session, user, datasource_id)
     if body.design_spec.uuids_are_present():
         raise LateValidationError("Invalid DesignSpec: UUIDs must not be set.")
@@ -1365,6 +1365,24 @@ def get_experiment_assignments_as_csv(
     ds = get_datasource_or_raise(session, user, datasource_id)
     experiment = get_experiment_via_ds_or_raise(session, ds, experiment_id)
     return experiments.get_experiment_assignments_as_csv_impl(experiment)
+
+
+@router.get(
+    "/datasources/{datasource_id}/experiments/{experiment_id}/assignments/{participant_id}",
+    description="""
+    Get the assignment for a specific participant. If the experiment type is 'preassigned', the
+    participant's assignment for this experiment is returned if it exists else an error. If it is
+    'online', if the assignment exists we return it, else we generate a new assignment for that
+    user.""",
+)
+def get_experiment_assignment(
+    datasource_id: str,
+    experiment_id: str,
+    participant_id: str,
+    session: Annotated[Session, Depends(xngin_db_session)],
+    user: Annotated[User, Depends(user_from_token)],
+):
+    """TODO"""
 
 
 @router.delete(

@@ -439,7 +439,7 @@ class Experiment(Base):
     def get_assign_summary(self) -> AssignSummary:
         return TypeAdapter(AssignSummary).validate_python(self.assign_summary)
 
-    def get_balance_check(self) -> BalanceCheck:
+    def get_balance_check(self) -> BalanceCheck | None:
         return TypeAdapter(BalanceCheck).validate_python(
             self.assign_summary["balance_check"]
         )
