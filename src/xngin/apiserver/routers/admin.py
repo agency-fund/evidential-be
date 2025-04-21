@@ -349,12 +349,16 @@ def list_organization_webhooks(
 
     # Query for webhooks
     stmt = select(Webhook).where(Webhook.organization_id == org.id)
-
-    result = session.execute(stmt)
-    webhooks = result.scalars().all()
+    webhooks = session.scalars(stmt).all()
 
     # Convert webhooks to WebhookSummary objects
-    webhook_summaries = [
+    webhook_summaries = convert_webhooks_to_webhooksummaries(webhooks)
+
+    return ListWebhooksResponse(items=webhook_summaries)
+
+
+def convert_webhooks_to_webhooksummaries(webhooks):
+    return [
         WebhookSummary(
             id=webhook.id,
             type=webhook.type,
@@ -363,8 +367,6 @@ def list_organization_webhooks(
         )
         for webhook in webhooks
     ]
-
-    return ListWebhooksResponse(items=webhook_summaries)
 
 
 @router.delete(
@@ -415,11 +417,13 @@ def list_organization_events(
         .order_by(Event.created_at.desc())
         .limit(200)
     )
+    events = session.scalars(stmt).all()
 
-    result = session.execute(stmt)
-    events = result.scalars().all()
+    event_summaries = convert_events_to_eventsummaries(events)
+    return ListOrganizationEventsResponse(items=event_summaries)
 
-    # Convert events to EventSummary objects
+
+def convert_events_to_eventsummaries(events):
     event_summaries = []
     for event in events:
         data = event.get_data()
@@ -433,8 +437,7 @@ def list_organization_events(
                 details=data.model_dump() if data else None,
             )
         )
-
-    return ListOrganizationEventsResponse(items=event_summaries)
+    return event_summaries
 
 
 @router.post(
