@@ -44,7 +44,7 @@ sequenceDiagram
     participant DB as PostgreSQL
     participant TQ as Task Queue Service
     participant EH as Handler
-    App ->> DB: INSERT INTO tasks (task_type, payload)
+    App ->> DB: INSERT INTO tasks (task_type, payload, status=pending)
     Note over DB: Trigger fires
     DB ->> TQ: NOTIFY task_queue
     TQ ->> DB: SELECT task FOR UPDATE SKIP LOCKED
