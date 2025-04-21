@@ -234,14 +234,12 @@ class TaskQueue:
                         continue
                     except StopIteration:
                         # StopIteration is raised when poll_interval expires
+                        logger.debug(
+                            f"Waited {self.poll_interval} for notification. Polling again."
+                        )
                         continue
                     finally:
                         gen.close()
-
-                    # No notifications received, poll again
-                    logger.debug(
-                        f"No notifications received in {self.poll_interval}s, polling again"
-                    )
 
             except psycopg.OperationalError as e:
                 logger.error(f"Database connection error: {e}")
