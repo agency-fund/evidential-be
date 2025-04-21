@@ -13,7 +13,7 @@ WORKDIR /code
 COPY pyproject.toml .
 COPY uv.lock .
 # Note: Railway builders will error if the id= is set via build variables.
-RUN --mount=type=cache,id=s/53dd800c-90e7-49cd-b7f6-549131ff038e-/root/.cache/uv,target=/root/.cache/uv /bin/uv sync --frozen --no-install-project --no-dev
+RUN --mount=type=cache,id=s/dde1b214-25f2-440a-9a1b-480894347453-/root/.cache/uv,target=/root/.cache/uv /bin/uv sync --frozen --no-install-project --no-dev
 COPY ./src /code/src
-RUN --mount=type=cache,id=s/53dd800c-90e7-49cd-b7f6-549131ff038e-/root/.cache/uv,target=/root/.cache/uv /bin/uv sync --frozen --no-dev
+RUN --mount=type=cache,id=s/dde1b214-25f2-440a-9a1b-480894347453-/root/.cache/uv,target=/root/.cache/uv /bin/uv sync --frozen --no-dev
 CMD ["/bin/uv", "run", "--no-dev", "xngin-tq"]
