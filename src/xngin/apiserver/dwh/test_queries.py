@@ -794,7 +794,6 @@ def test_make_csv_regex(csv, values, expected):
     Null-, empty string, and negative cases are special and handled in SQL elsewhere.
     """
     r = make_csv_regex(values)
-    # confirmed that sqlalchemy.dialects.sqlite.pysqlite also uses re.search
     matches = re.search(r, csv)
     actual = matches is not None
     assert actual == expected, (

@@ -1,7 +1,6 @@
 import os
 
-from sqlalchemy import create_engine, event
-from sqlalchemy.engine.interfaces import DBAPIConnection
+from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from xngin.apiserver import flags
 from xngin.apiserver.models.tables import Base
@@ -41,12 +40,6 @@ engine = create_engine(
     logging_name=SA_LOGGER_NAME_FOR_APP,
     echo=flags.ECHO_SQL_APP_DB,
 )
-
-
-@event.listens_for(engine, "connect")
-def set_sqlite_pragma(dbapi_connection: DBAPIConnection, _):
-    # If we need to set dbapi-level connection settings, set them here.
-    pass
 
 
 SessionLocal = sessionmaker(bind=engine)
