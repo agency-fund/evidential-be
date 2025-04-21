@@ -30,55 +30,35 @@ env:
   PYTHONUNBUFFERED: "1"
 
   # Tests should never connect to this DSN but it (or XNGIN_DB) must be set.
-  DATABASE_URL: "postgres://fail:fail@127.0.0.1:5499/fail"
+  DATABASE_URL: "postgres://fail:fail@127.0.0.2:5499/fail"
 
 jobs:
-  unittests-integration:
+  unittests:
     timeout-minutes: 15
     runs-on: ubuntu-22.04
-    services:
-      postgres:
-        image: postgres:17
-        env:
-          POSTGRES_DB: postgres
-          POSTGRES_PASSWORD: postgres
-        options: >-
-          --health-cmd pg_isready
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 5
-        ports:
-          - 5499:5432
-    env:
-      XNGIN_TEST_APPDB_URI: "postgresql://postgres:postgres@localhost:5499/test_xngin?sslmode=disable"
-      XNGIN_TEST_DWH_URI: "postgresql://postgres:postgres@localhost:5499/test_dwh?sslmode=disable"
     steps:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v4
         with:
           version: "0.6.14"
           enable-cache: true
-      - name: Install dependencies
-        run: |
-          uv sync --locked
+      - name: Install Task
+        uses: arduino/setup-task@v2
+        with:
+          version: 3.x
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
       - name: write secrets
         run: |
           mkdir -p ~/.config/gspread && echo "${GCLOUD_SERVICE_ACCOUNT_CREDENTIALS}" > ~/.config/gspread/service_account.json
           openssl sha256 ~/.config/gspread/service_account.json
         env:
           GCLOUD_SERVICE_ACCOUNT_CREDENTIALS: ${{ secrets.GOOGLE_APPLICATION_CREDENTIALS_CONTENT }}
-      - name: pytest integration tests
-        run: |
-          # used by the sqlalchemy bigquery driver in some integration tests
+      - run: |
           export GOOGLE_APPLICATION_CREDENTIALS=$HOME/.config/gspread/service_account.json
-          uv run pytest -m integration
-  unittests:
-    runs-on: ubuntu-22.04
+          task test
+  smoke-cli:
     timeout-minutes: 15
-    strategy:
-      fail-fast: false
-      matrix:
-        driver: ["psycopg", "psycopg2"]
+    runs-on: ubuntu-22.04
     services:
       postgres:
         image: postgres:17
@@ -92,33 +72,61 @@ jobs:
           --health-retries 5
         ports:
           - 5499:5432
-    env:
-      DATABASE_URL: "postgresql+${{ matrix.driver }}://postgres:postgres@localhost:5499/xngin?sslmode=disable"
-      XNGIN_TEST_APPDB_URI: "postgresql://postgres:postgres@localhost:5499/test_xngin?sslmode=disable"
-      XNGIN_TEST_DWH_URI: "postgresql+${{ matrix.driver }}://postgres:postgres@localhost:5499/testing?sslmode=disable"
     steps:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v4
         with:
           version: "0.6.14"
           enable-cache: true
-      - name: Load test database
+      - name: Install Task
+        uses: arduino/setup-task@v2
+        with:
+          version: 3.x
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
+      - name: Run task helper scripts
+        run: |
+          task bootstrap-dwh
+          task bootstrap-app-db
+          task create-user -- username@example.com
+      - name: xngin-cli config validators
         run: |
           set -x
-          uv run xngin-cli create-testing-dwh --dsn postgresql+${{ matrix.driver }}://postgres:postgres@127.0.0.1:5499/dwh?sslmode=disable
-      - name: Run all pytest tests
-        run: uv run pytest -m 'not integration'
-      - name: Run smoke tests
+          uv run xngin-cli --help
+          uv run xngin-cli export-json-schemas
+          uv run xngin-cli validate-settings ./src/xngin/apiserver/testdata/xngin.testing.settings.json
+          uv run xngin-cli validate-settings ./src/xngin/apiserver/testdata/xngin.gha.settings.json
+          uv run xngin-cli validate-settings xngin.settings.json
+      - name: xngin-cli smoke tests
+        env:
+          DATABASE_URL: "postgresql://postgres:postgres@localhost:5499/postgres?sslmode=disable"
+        run: |
+          set -x
+
+          # import/export lifecycle
+          uv run xngin-cli create-testing-dwh --dsn $DATABASE_URL --table-name=test_participant_type
+          # First bootstrap just tests --unique-id-col (although the column itself isn't unique)
+          uv run xngin-cli bootstrap-spreadsheet $DATABASE_URL test_participant_type --unique-id-col potential_1 | tee config-unique.csv
+          uv run xngin-cli parse-config-spreadsheet file://./config-unique.csv test_participant_type
+          # This next bootstrap is a more appropriate testing config
+          uv run xngin-cli bootstrap-spreadsheet $DATABASE_URL test_participant_type | tee config.csv
+          uv run xngin-cli parse-config-spreadsheet file://./config.csv test_participant_type
+      - name: Run xngin.gha.settings.json tests
         env:
           PGPASSWORD: postgres
         run: |
           set -x
 
           # These imports correspond to entries in xngin.gha.settings.json.
-          uv run xngin-cli create-testing-dwh --dsn postgresql+${{ matrix.driver }}://postgres@127.0.0.1:5499/postgres
-          uv run xngin-cli create-testing-dwh --dsn postgresql+${{ matrix.driver }}://postgres@127.0.0.1:5499/postgres \
+          uv run xngin-cli create-testing-dwh --dsn postgresql+psycopg://postgres@127.0.0.1:5499/postgres
+          uv run xngin-cli create-testing-dwh --dsn postgresql+psycopg://postgres@127.0.0.1:5499/postgres \
             --schema-name alt --table-name=alt_table
 
+          # These do the same thing as above but use psycopg2 driver to ensure that it still works.
+          uv run xngin-cli create-testing-dwh --dsn postgresql+psycopg2://postgres@127.0.0.1:5499/postgres
+          uv run xngin-cli create-testing-dwh --dsn postgresql+psycopg2://postgres@127.0.0.1:5499/postgres \
+            --schema-name alt2 --table-name=alt_table2
+
+          # Verify the sources in xngin.gha.settings.json are still readable (uses the psycopg imports).
           XNGIN_SETTINGS=src/xngin/apiserver/testdata/xngin.gha.settings.json uv run fastapi run \
             src/xngin/apiserver/main.py &
           sleep 10
@@ -172,47 +180,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - run: docker buildx bake
-  smoke-cli:
-    runs-on: ubuntu-22.04
-    timeout-minutes: 15
-    services:
-      postgres:
-        image: postgres:17
-        env:
-          POSTGRES_DB: postgres
-          POSTGRES_PASSWORD: postgres
-        options: >-
-          --health-cmd pg_isready
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 5
-        ports:
-          - 5499:5432
-    steps:
-      - uses: actions/checkout@v4
-      - uses: astral-sh/setup-uv@v4
-        with:
-          version: "0.6.14"
-          enable-cache: true
-      - name: xngin-cli smoke tests
-        env:
-          DATABASE_URL: "postgresql://postgres:postgres@localhost:5499/postgres?sslmode=disable"
-        run: |
-          set -x
-          uv run xngin-cli --help
-          uv run xngin-cli export-json-schemas
-          uv run xngin-cli validate-settings ./src/xngin/apiserver/testdata/xngin.testing.settings.json
-          uv run xngin-cli validate-settings ./src/xngin/apiserver/testdata/xngin.gha.settings.json
-          uv run xngin-cli validate-settings xngin.settings.json
 
-          # import/export lifecycle
-          uv run xngin-cli create-testing-dwh --dsn $DATABASE_URL --table-name=test_participant_type
-          # First bootstrap just tests --unique-id-col (although the column itself isn't unique)
-          uv run xngin-cli bootstrap-spreadsheet $DATABASE_URL test_participant_type --unique-id-col potential_1 | tee config-unique.csv
-          uv run xngin-cli parse-config-spreadsheet file://./config-unique.csv test_participant_type
-          # This next bootstrap is a more appropriate testing config
-          uv run xngin-cli bootstrap-spreadsheet $DATABASE_URL test_participant_type | tee config.csv
-          uv run xngin-cli parse-config-spreadsheet file://./config.csv test_participant_type
   smoke-server-bq:
     runs-on: ubuntu-22.04
     timeout-minutes: 15
@@ -246,6 +214,8 @@ jobs:
           mkdir -p ~/.config/gspread && echo "${GCLOUD_SERVICE_ACCOUNT_CREDENTIALS}" > service_account.json
           openssl sha256 service_account.json
       - name: bq smoke tests
+        env:
+          DATABASE_URL: "postgresql://postgres:postgres@localhost:5499/postgres?sslmode=disable"
         run: |
           set -x
 
