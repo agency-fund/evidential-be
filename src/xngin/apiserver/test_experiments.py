@@ -81,7 +81,9 @@ def fixture_teardown(db_session: Session):
     db_session.close()
 
 
-def make_create_experiment_request(with_uuids: bool = True) -> CreateExperimentRequest:
+def make_create_preassigned_experiment_request(
+    with_uuids: bool = True,
+) -> CreateExperimentRequest:
     experiment_id = str(uuid.uuid4()) if with_uuids else None
     arm1_id = str(uuid.uuid4()) if with_uuids else None
     arm2_id = str(uuid.uuid4()) if with_uuids else None
@@ -126,12 +128,16 @@ def make_create_experiment_request(with_uuids: bool = True) -> CreateExperimentR
 
 # Insert an experiment with a valid state.
 def make_insertable_experiment(state: ExperimentState, datasource_id="testing"):
-    request = make_create_experiment_request()
+    request = make_create_preassigned_experiment_request()
     arm0 = request.design_spec.arms[0]
     arm1 = request.design_spec.arms[1]
     return Experiment(
         id=str(request.design_spec.experiment_id),
         datasource_id=datasource_id,
+        experiment_type="preassigned",
+        participant_type=request.audience_spec.participant_type,
+        name=request.design_spec.experiment_name,
+        description=request.design_spec.description,
         state=state,
         start_date=request.design_spec.start_date,
         end_date=request.design_spec.end_date,
@@ -217,6 +223,10 @@ def make_insertable_online_experiment(
     return Experiment(
         id=str(experiment_id),
         datasource_id=datasource_id,
+        experiment_type="online",
+        participant_type=audience_spec.participant_type,
+        name=design_spec.experiment_name,
+        description=design_spec.description,
         state=state,
         start_date=design_spec.start_date,
         end_date=design_spec.end_date,
@@ -254,7 +264,7 @@ class MockRow:
 
 @pytest.fixture
 def sample_table():
-    """Create a mock SQLAlchemy table that works with make_create_experiment_request()"""
+    """Create a mock SQLAlchemy table that works with make_create_preassigned_experiment_request()"""
     metadata_obj = MetaData()
     return Table(
         "participants",
@@ -283,7 +293,7 @@ def test_create_experiment_with_assignment_impl_for_preassigned(
 ):
     """Test implementation of creating a preassigned experiment."""
     participants = make_sample_data(n=100)
-    request = make_create_experiment_request(with_uuids=False)
+    request = make_create_preassigned_experiment_request(with_uuids=False)
     # Add a partial mock PowerResponse just to verify storage
     request.power_analyses = PowerResponse(
         analyses=[
@@ -336,6 +346,10 @@ def test_create_experiment_with_assignment_impl_for_preassigned(
             Experiment.id == str(response.design_spec.experiment_id)
         )
     ).one()
+    assert experiment.experiment_type == "preassigned"
+    assert experiment.participant_type == request.audience_spec.participant_type
+    assert experiment.name == request.design_spec.experiment_name
+    assert experiment.description == request.design_spec.description
     assert experiment.state == ExperimentState.ASSIGNED
     assert experiment.datasource_id == testing_datasource.ds.id
     # This comparison is dependent on whether the db can store tz or not (sqlite does not).
@@ -394,7 +408,7 @@ def test_create_experiment_with_assignment_impl_for_online(
 ):
     """Test implementation of creating an online experiment."""
     # Create online experiment request, modifying the experiment type from the fixture
-    request = make_create_experiment_request(with_uuids=False)
+    request = make_create_preassigned_experiment_request(with_uuids=False)
     # Convert the experiment type to online
     request.design_spec.experiment_type = "online"
 
@@ -439,6 +453,10 @@ def test_create_experiment_with_assignment_impl_for_online(
             Experiment.id == str(response.design_spec.experiment_id)
         )
     ).one()
+    assert experiment.experiment_type == "online"
+    assert experiment.participant_type == request.audience_spec.participant_type
+    assert experiment.name == request.design_spec.experiment_name
+    assert experiment.description == request.design_spec.description
     # We committed because there's no need to preview assignments nor power check (for now).
     assert experiment.state == ExperimentState.COMMITTED
     assert experiment.datasource_id == testing_datasource.ds.id
@@ -477,7 +495,7 @@ def test_create_experiment_with_assignment_impl_overwrites_uuids(
     (which would otherwise be caught in the route handler).
     """
     participants = make_sample_data(n=100)
-    request = make_create_experiment_request(with_uuids=True)
+    request = make_create_preassigned_experiment_request(with_uuids=True)
     original_experiment_id = str(request.design_spec.experiment_id)
     original_arm_ids = [str(arm.arm_id) for arm in request.design_spec.arms]
 
@@ -519,7 +537,7 @@ def test_create_experiment_with_assignment_impl_no_metric_stratification(
 ):
     """Test implementation of creating an experiment without stratifying on metrics."""
     participants = make_sample_data(n=100)
-    request = make_create_experiment_request(with_uuids=False)
+    request = make_create_preassigned_experiment_request(with_uuids=False)
 
     # Test with stratify_on_metrics=False
     response = create_experiment_with_assignment_impl(
@@ -569,7 +587,7 @@ def test_create_experiment_with_assignment_impl_no_metric_stratification(
 
 def test_create_experiment_with_assignment_invalid_design_spec(db_session):
     """Test creating an experiment and saving assignments to the database."""
-    request = make_create_experiment_request(with_uuids=True)
+    request = make_create_preassigned_experiment_request(with_uuids=True)
 
     response = client.post(
         "/experiments/with-assignment",
@@ -587,7 +605,7 @@ def test_create_experiment_with_assignment_sl(
     """Test creating an experiment and saving assignments to the database."""
     # First create a datasource to maintain proper referential integrity, but with a local config so we know we can read our dwh data.
     ds_metadata = conftest.make_datasource_metadata(db_session, datasource_id="testing")
-    request = make_create_experiment_request(with_uuids=False)
+    request = make_create_preassigned_experiment_request(with_uuids=False)
 
     response = client.post(
         "/experiments/with-assignment",

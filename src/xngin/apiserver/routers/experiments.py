@@ -180,48 +180,13 @@ def create_experiment_with_assignment_impl(
             stratify_on_metrics=stratify_on_metrics,
         )
     if request.design_spec.experiment_type == "online":
-        empty_assign_summary = AssignSummary(
-            balance_check=None,
-            sample_size=0,
-            arm_sizes=[
-                ArmSize(arm=arm.model_copy(), size=0)
-                for arm in request.design_spec.arms
-            ],
-        )
-        experiment = Experiment(
-            id=str(request.design_spec.experiment_id),
+        return create_online_experiment_impl(
+            request=request,
             datasource_id=datasource_id,
-            # No assignments nor power check (for now), so just commit it.
-            state=ExperimentState.COMMITTED,
-            start_date=request.design_spec.start_date,
-            end_date=request.design_spec.end_date,
-            design_spec=request.design_spec.model_dump(mode="json"),
-            audience_spec=request.audience_spec.model_dump(mode="json"),
-            power_analyses=None,
-            # Online experiment starts with no assignments.
-            assign_summary=empty_assign_summary.model_dump(mode="json"),
+            organization_id=organization_id,
+            xngin_session=xngin_session,
         )
-        xngin_session.add(experiment)
-        # Create arm records
-        for arm in request.design_spec.arms:
-            db_arm = ArmTable(
-                id=str(arm.arm_id),
-                name=arm.arm_name,
-                description=arm.arm_description,
-                experiment_id=str(experiment.id),
-                organization_id=organization_id,
-            )
-            xngin_session.add(db_arm)
-        xngin_session.commit()
-        # Return the committed experiment config with no assignments.
-        return CreateExperimentResponse(
-            datasource_id=datasource_id,
-            state=experiment.state,
-            design_spec=experiment.get_design_spec(),
-            audience_spec=experiment.get_audience_spec(),
-            power_analyses=None,
-            assign_summary=empty_assign_summary,
-        )
+
     raise HTTPException(
         status_code=status.HTTP_400_BAD_REQUEST,
         detail=f"Invalid experiment type: {request.design_spec.experiment_type}",
@@ -268,6 +233,10 @@ def create_preassigned_experiment_impl(
     experiment = Experiment(
         id=str(request.design_spec.experiment_id),
         datasource_id=datasource_id,
+        experiment_type="preassigned",
+        participant_type=request.audience_spec.participant_type,
+        name=request.design_spec.experiment_name,
+        description=request.design_spec.description,
         state=ExperimentState.ASSIGNED,
         start_date=request.design_spec.start_date,
         end_date=request.design_spec.end_date,
@@ -312,6 +281,61 @@ def create_preassigned_experiment_impl(
         audience_spec=experiment.get_audience_spec(),
         power_analyses=experiment.get_power_analyses(),
         assign_summary=assign_summary,
+    )
+
+
+def create_online_experiment_impl(
+    request: CreateExperimentRequest,
+    datasource_id: str,
+    organization_id: str,
+    xngin_session: Session,
+) -> CreateExperimentResponse:
+    # TODO: consider not storing the assign_summary (which can be dynamically generated) and just
+    # persisting the balance check.
+    empty_assign_summary = AssignSummary(
+        balance_check=None,
+        sample_size=0,
+        arm_sizes=[
+            ArmSize(arm=arm.model_copy(), size=0) for arm in request.design_spec.arms
+        ],
+    )
+    experiment = Experiment(
+        id=str(request.design_spec.experiment_id),
+        datasource_id=datasource_id,
+        experiment_type="online",
+        participant_type=request.audience_spec.participant_type,
+        name=request.design_spec.experiment_name,
+        description=request.design_spec.description,
+        # No assignments nor power check (for now), so just commit it.
+        state=ExperimentState.COMMITTED,
+        start_date=request.design_spec.start_date,
+        end_date=request.design_spec.end_date,
+        design_spec=request.design_spec.model_dump(mode="json"),
+        audience_spec=request.audience_spec.model_dump(mode="json"),
+        power_analyses=None,
+        # Online experiment starts with no assignments.
+        assign_summary=empty_assign_summary.model_dump(mode="json"),
+    )
+    xngin_session.add(experiment)
+    # Create arm records
+    for arm in request.design_spec.arms:
+        db_arm = ArmTable(
+            id=str(arm.arm_id),
+            name=arm.arm_name,
+            description=arm.arm_description,
+            experiment_id=str(experiment.id),
+            organization_id=organization_id,
+        )
+        xngin_session.add(db_arm)
+    xngin_session.commit()
+    # Return the committed experiment config with no assignments.
+    return CreateExperimentResponse(
+        datasource_id=datasource_id,
+        state=experiment.state,
+        design_spec=experiment.get_design_spec(),
+        audience_spec=experiment.get_audience_spec(),
+        power_analyses=None,
+        assign_summary=empty_assign_summary,
     )
 
 

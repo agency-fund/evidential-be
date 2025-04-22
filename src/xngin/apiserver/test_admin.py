@@ -205,6 +205,10 @@ def make_insertable_experiment(
     return Experiment(
         id=str(uuid.uuid4()),
         datasource_id=datasource_id,
+        experiment_type=experiment_type,
+        participant_type=request["audience_spec"]["participant_type"],
+        name=request["design_spec"]["experiment_name"],
+        description=request["design_spec"]["description"],
         state=state,
         start_date=datetime.datetime.fromisoformat(
             request["design_spec"]["start_date"]
@@ -258,12 +262,12 @@ def fixture_testing_experiment(db_session, testing_datasource_with_user_added):
     datasource = testing_datasource_with_user_added.ds
     experiment = make_experiment_and_arms(db_session, datasource, "preassigned")
     # Add fake assignments for each arm for real participant ids in our test data.
-    arm_ids = [arm["arm_id"] for arm in experiment.design_spec["arms"]]
+    arm_ids = [arm.id for arm in experiment.arms]
     for i in range(10):
         assignment = ArmAssignment(
             experiment_id=str(experiment.id),
             participant_id=str(i),
-            participant_type=experiment.get_audience_spec().participant_type,
+            participant_type=experiment.participant_type,
             arm_id=arm_ids[i % 2],  # Alternate between the two arms
             strata={},
         )
@@ -786,6 +790,10 @@ def test_create_preassigned_experiment_using_inline_schema_ds(
     ).one()
     assert experiment.state == ExperimentState.ASSIGNED
     assert experiment.datasource_id == datasource_id
+    assert experiment.experiment_type == "preassigned"
+    assert experiment.participant_type == "test_participant_type"
+    assert experiment.name == base_request.design_spec.experiment_name
+    assert experiment.description == base_request.design_spec.description
     assert conftest.dates_equal(
         experiment.start_date, base_request.design_spec.start_date
     )

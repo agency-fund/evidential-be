@@ -183,7 +183,7 @@ tasks:
     cmds:
       - uv run atlas schema clean --env sa_postgres --url '{{.XNGIN_DEVAPP_MIGRATIONS_DSN}}'
       - psql "{{.XNGIN_DEVAPP_MIGRATIONS_DSN}}" -c 'CREATE SCHEMA public;'
-      - task: apply-migrations-pg
+      - task: apply-migrations
   migration-status:
     desc: "Provides in-depth information about the migration status of the connected database. Useful for debugging migration issues."
     cmds:
