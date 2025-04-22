@@ -386,12 +386,13 @@ class Experiment(Base):
     datasource_id: Mapped[str] = mapped_column(
         String(255), ForeignKey("datasources.id", ondelete="CASCADE")
     )
-    experiment_type: Mapped[str | None] = mapped_column(
+    experiment_type: Mapped[str] = mapped_column(
         comment="Should be one of the ExperimentType literals."
     )
-    participant_type: Mapped[str | None] = mapped_column(String(255))
-    name: Mapped[str | None] = mapped_column(String(255))
-    description: Mapped[str | None] = mapped_column(String(2000))
+    participant_type: Mapped[str] = mapped_column(String(255))
+    name: Mapped[str] = mapped_column(String(255))
+    # Describe your experiment and hypothesis here.
+    description: Mapped[str] = mapped_column(String(2000))
     state: Mapped[ExperimentState]
     # Target start date of the experiment. Denormalized from design_spec.
     start_date: Mapped[datetime] = mapped_column()
