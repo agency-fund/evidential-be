@@ -3,19 +3,18 @@ from datetime import datetime, timedelta
 from pathlib import Path
 
 from fastapi.testclient import TestClient
-
 from xngin.apiserver import conftest, constants
 from xngin.apiserver.api_types import (
     CommitRequest,
 )
 from xngin.apiserver.main import app
-from xngin.apiserver.testing.xurl import Xurl
-from xngin.apiserver.webhook_types import (
+from xngin.apiserver.proxy_webhook_types import (
+    WebhookResponse,
     WebhookUpdateCommitRequest,
     WebhookUpdateDescriptionRequest,
     WebhookUpdateTimestampsRequest,
-    WebhookResponse,
 )
+from xngin.apiserver.testing.xurl import Xurl
 
 conftest.setup(app)
 client = TestClient(app)

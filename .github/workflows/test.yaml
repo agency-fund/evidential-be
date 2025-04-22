@@ -35,7 +35,11 @@ env:
 jobs:
   unittests:
     timeout-minutes: 15
-    runs-on: ubuntu-22.04
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ ubuntu-22.04, macos-14 ]
     services:
       postgres:
         image: postgres:17

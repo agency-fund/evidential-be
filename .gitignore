@@ -193,3 +193,4 @@ atlas
 # Ignore Aider data.
 .aider*
 CONVENTIONS.md
+prompts
