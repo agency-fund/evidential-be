@@ -695,7 +695,6 @@ def add_user(
     console.print(f"DSN: [cyan]{dsn}[/cyan]")
     console.print(f"DWH: [cyan]{dwh}[/cyan]")
 
-    # If email wasn't provided as a flag, prompt for it
     if email is None:
         while True:
             email_input = typer.prompt("Enter email address")
