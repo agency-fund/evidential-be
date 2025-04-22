@@ -820,6 +820,16 @@ source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/62/51/2007ea29e605957a17ac6357115d0c1a1b60c8c984951c19419b3474cdfd/psycopg2-2.9.10.tar.gz", hash = "sha256:12ec0b40b0273f95296233e8750441339298e6a572f7039da5b260e3c8b60e11", size = 385672 }
 
 [[package]]
+name = "psycopg2-binary"
+version = "2.9.10"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/cb/0e/bdc8274dc0585090b4e3432267d7be4dfbfd8971c0fa59167c711105a6bf/psycopg2-binary-2.9.10.tar.gz", hash = "sha256:4b3df0e6990aa98acda57d983942eff13d824135fe2250e6522edaa782a06de2", size = 385764 }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/49/7d/465cc9795cf76f6d329efdafca74693714556ea3891813701ac1fee87545/psycopg2_binary-2.9.10-cp312-cp312-macosx_12_0_x86_64.whl", hash = "sha256:880845dfe1f85d9d5f7c412efea7a08946a46894537e4e5d091732eb1d34d9a0", size = 3044771 },
+    { url = "https://files.pythonhosted.org/packages/8b/31/6d225b7b641a1a2148e3ed65e1aa74fc86ba3fee850545e27be9e1de893d/psycopg2_binary-2.9.10-cp312-cp312-macosx_14_0_arm64.whl", hash = "sha256:9440fa522a79356aaa482aa4ba500b65f28e5d0e63b801abf6aa152a29bd842a", size = 3275336 },
+]
+
+[[package]]
 name = "pyarrow"
 version = "18.1.0"
 source = { registry = "https://pypi.org/simple" }
@@ -1444,7 +1454,8 @@ dependencies = [
     { name = "pandas-gbq", marker = "sys_platform == 'darwin' or sys_platform == 'linux'" },
     { name = "parsy", marker = "sys_platform == 'darwin' or sys_platform == 'linux'" },
     { name = "psycopg", marker = "sys_platform == 'darwin' or sys_platform == 'linux'" },
-    { name = "psycopg2", marker = "sys_platform == 'darwin' or sys_platform == 'linux'" },
+    { name = "psycopg2", marker = "sys_platform == 'linux'" },
+    { name = "psycopg2-binary", marker = "sys_platform == 'darwin'" },
     { name = "pydantic", marker = "sys_platform == 'darwin' or sys_platform == 'linux'" },
     { name = "python-jose", marker = "sys_platform == 'darwin' or sys_platform == 'linux'" },
     { name = "scipy", marker = "sys_platform == 'darwin' or sys_platform == 'linux'" },
@@ -1487,7 +1498,8 @@ requires-dist = [
     { name = "pandas-gbq", specifier = ">=0.25.0,<0.26" },
     { name = "parsy", specifier = ">=2.1,<3" },
     { name = "psycopg", specifier = ">=3.2.3,<4" },
-    { name = "psycopg2", specifier = ">=2.9.10,<3" },
+    { name = "psycopg2", marker = "sys_platform == 'linux'", specifier = ">=2.9.10,<3" },
+    { name = "psycopg2-binary", marker = "sys_platform == 'darwin'", specifier = ">=2.9.10,<3" },
     { name = "pydantic", specifier = ">=2.10.4,<3.0.0" },
     { name = "python-jose", specifier = ">=3.3.0,<3.4" },
     { name = "scipy", specifier = ">=1.12.0,<2" },
