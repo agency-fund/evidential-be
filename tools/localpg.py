@@ -137,6 +137,12 @@ def run(
         help="Create a new database with this name (requires -d/--daemon)",
         envvar="LOCALPG_CREATE_DB",
     ),
+    drop_db_first: bool = typer.Option(
+        False,
+        "--drop-db-first",
+        help="Drop the database specified by --create-db if it already exists",
+        envvar="LOCALPG_DROP_DB_FIRST",
+    ),
     if_created: str = typer.Option(
         None,
         "--if-created",
@@ -203,7 +209,7 @@ def run(
 
         # Create the database if requested even if the container was already running.
         if daemon and create_db:
-            db_created = create_database(create_db, port)
+            db_created = create_database(create_db, port, drop_db_first)
             if db_created and if_created:
                 console.print(f"\n🔄 [info]Running command: {if_created}[/]")
                 try:
@@ -225,7 +231,7 @@ def run(
         raise typer.Exit(1) from e
 
 
-def create_database(dbname: str, port: int) -> bool:
+def create_database(dbname: str, port: int, drop_database: bool = False) -> bool:
     """Creates a new database using psycopg.
 
     Returns:
@@ -235,11 +241,13 @@ def create_database(dbname: str, port: int) -> bool:
     conn_str = f"postgresql://postgres:postgres@localhost:{port}/postgres"
     try:
         with psycopg.connect(conn_str, autocommit=True) as conn:
+            if drop_database:
+                conn.execute(f"DROP DATABASE IF EXISTS {dbname}")
             conn.execute(f"CREATE DATABASE {dbname}")
             console.print(f"\n✨ [info]Created database '{dbname}'[/]")
             return True
     except psycopg.errors.DuplicateDatabase:
-        console.print(f"📊 [info]Database '{dbname}' already exists[/]")
+        console.print(f"⚠️ [warning]Database '{dbname}' already exists[/]")
         return False
 
 
