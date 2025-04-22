@@ -117,7 +117,6 @@ ignore = [
 ]
 
 [tool.uv]
-compile-bytecode = true
 dev-dependencies = [
     "pre-commit>=4.0.1,<4.1.0",
     "pytest>=8.3.2,<9.0.0",
