@@ -19,6 +19,7 @@ from xngin.apiserver.api_types import (
     ArmSize,
     AudienceSpec,
     BalanceCheck,
+    OnlineExperimentSpec,
     PreassignedExperimentSpec,
     DesignSpecMetric,
     DesignSpecMetricRequest,
@@ -38,12 +39,15 @@ from xngin.apiserver.models.tables import (
     Experiment,
 )
 from xngin.apiserver.routers.experiments import (
+    ExperimentsAssignmentError,
     abandon_experiment_impl,
     commit_experiment_impl,
     create_experiment_with_assignment_impl,
     experiment_assignments_to_csv_generator,
+    get_existing_assignment_for_participant,
     get_experiment_assignments_impl,
     list_experiments_impl,
+    make_assignment_for_participant,
 )
 from xngin.apiserver.routers.experiments_api_types import (
     AssignSummary,
@@ -169,6 +173,56 @@ def make_insertable_experiment(state: ExperimentState, datasource_id="testing"):
                 balance_ok=True,
             ),
         ).model_dump(mode="json"),
+    )
+
+
+def make_insertable_online_experiment(
+    state=ExperimentState.COMMITTED, datasource_id="testing"
+):
+    experiment_id = uuid.uuid4()
+    arm1_id = uuid.uuid4()
+    arm2_id = uuid.uuid4()
+    arm1 = Arm(arm_id=arm1_id, arm_name="control", arm_description="Control")
+    arm2 = Arm(arm_id=arm2_id, arm_name="treatment", arm_description="Treatment")
+    # Attach UTC tz, but use dates_equal() to compare to respect db storage support
+    start_date = datetime(2025, 1, 1, tzinfo=UTC)
+    end_date = datetime(2025, 2, 1, tzinfo=UTC)
+    design_spec = OnlineExperimentSpec(
+        experiment_id=experiment_id,
+        experiment_name="Test Experiment",
+        description="Test experiment description",
+        arms=[arm1, arm2],
+        start_date=start_date,
+        end_date=end_date,
+        strata_field_names=["gender"],
+        metrics=[
+            DesignSpecMetricRequest(
+                field_name="is_onboarded",
+                metric_pct_change=0.1,
+            )
+        ],
+        power=0.8,
+        alpha=0.05,
+        fstat_thresh=0.2,
+    )
+    audience_spec = AudienceSpec(
+        participant_type="test_participant_type",
+        filters=[],
+    )
+    assign_summary = AssignSummary(
+        sample_size=0,
+        arm_sizes=[ArmSize(arm=arm1, size=0), ArmSize(arm=arm2, size=0)],
+        balance_check=None,
+    )
+    return Experiment(
+        id=str(experiment_id),
+        datasource_id=datasource_id,
+        state=state,
+        start_date=design_spec.start_date,
+        end_date=design_spec.end_date,
+        design_spec=design_spec.model_dump(mode="json"),
+        audience_spec=audience_spec.model_dump(),
+        assign_summary=assign_summary.model_dump(mode="json"),
     )
 
 
@@ -939,6 +993,81 @@ def test_get_experiment_assignments_as_csv(db_session, testing_datasource):
     assert rows[0] == "participant_id,arm_id,arm_name,gender,score\r\n"
     assert rows[1] == f"p1,{arm1_id},{arm1_name},F,1.1\r\n"
     assert rows[2] == f'p2,{arm2_id},{arm2_name},M,"esc,aped"\r\n'
+
+
+def test_get_existing_assignment_for_participant(db_session, testing_datasource):
+    experiment = make_experiment_with_assignments(db_session, testing_datasource.ds)
+    expected_assignment = experiment.arm_assignments[0]
+
+    assignment = get_existing_assignment_for_participant(
+        db_session, experiment.id, expected_assignment.participant_id
+    )
+    assert assignment is not None
+    assert assignment.participant_id == expected_assignment.participant_id
+    assert str(assignment.arm_id) == expected_assignment.arm_id
+
+    assignment = get_existing_assignment_for_participant(
+        db_session, experiment.id, "new_id"
+    )
+    assert assignment is None
+
+
+def test_make_assignment_for_participant_errors(db_session, testing_datasource):
+    experiment = make_insertable_experiment(
+        ExperimentState.ASSIGNED, testing_datasource.ds.id
+    )
+    with pytest.raises(
+        ExperimentsAssignmentError, match="Invalid experiment state: assigned"
+    ):
+        make_assignment_for_participant(db_session, experiment, "p1", None)
+
+    experiment = make_insertable_experiment(
+        ExperimentState.COMMITTED, testing_datasource.ds.id
+    )
+    with pytest.raises(ExperimentsAssignmentError, match="Experiment has no arms"):
+        make_assignment_for_participant(db_session, experiment, "p1", None)
+
+
+def test_make_assignment_for_participant(db_session, testing_datasource):
+    preassigned_experiment = make_insertable_experiment(
+        ExperimentState.COMMITTED, testing_datasource.ds.id
+    )
+    db_session.add(preassigned_experiment)
+    arms = make_arms_from_experiment(
+        preassigned_experiment, testing_datasource.ds.organization_id
+    )
+    db_session.add_all(arms)
+    db_session.commit()
+    # Assert that we won't create new assignments for preassigned experiments
+    expect_none = make_assignment_for_participant(
+        db_session, preassigned_experiment, "new_id", None
+    )
+    assert expect_none is None
+
+    online_experiment = make_insertable_online_experiment(
+        ExperimentState.COMMITTED, testing_datasource.ds.id
+    )
+    db_session.add(online_experiment)
+    arms = make_arms_from_experiment(
+        online_experiment, testing_datasource.ds.organization_id
+    )
+    db_session.add_all(arms)
+    db_session.commit()
+    # Assert that we do create new assignments for online experiments
+    assignment = make_assignment_for_participant(
+        db_session, online_experiment, "new_id", None
+    )
+    assert assignment is not None
+    assert assignment.participant_id == "new_id"
+    arms = {arm.id: arm.name for arm in arms}
+    assert assignment.arm_name == arms[str(assignment.arm_id)]
+    assert not assignment.strata
+
+    # But that if we try to create an assignment for a participant that already has one, it triggers an error.
+    with pytest.raises(
+        ExperimentsAssignmentError, match="Failed to assign participant"
+    ):
+        make_assignment_for_participant(db_session, online_experiment, "new_id", None)
 
 
 def test_experiment_sql():

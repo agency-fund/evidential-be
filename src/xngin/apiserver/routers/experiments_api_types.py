@@ -74,3 +74,14 @@ class GetExperimentAssignmentsResponse(ExperimentsBaseModel):
     experiment_id: uuid.UUID
     sample_size: int
     assignments: list[Assignment]
+
+
+class GetParticipantAssignmentResponse(ExperimentsBaseModel):
+    """Describes assignment for a single <experiment, participant> pair."""
+
+    experiment_id: str
+    participant_id: str
+    assignment: Annotated[
+        Assignment | None,
+        Field(description="Null if no assignment. assignment.strata are not included."),
+    ]

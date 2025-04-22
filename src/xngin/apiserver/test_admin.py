@@ -11,13 +11,14 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 from xngin.apiserver import conftest
 from xngin.apiserver import main as main_module
-from xngin.apiserver.api_types import DataType, ExperimentAnalysis
+from xngin.apiserver.api_types import DataType, ExperimentAnalysis, ExperimentType
 from xngin.apiserver.dependencies import xngin_db_session
 from xngin.apiserver.main import app
 from xngin.apiserver.models.enums import ExperimentState
 from xngin.apiserver.models.tables import (
     ArmAssignment,
     ArmTable,
+    Datasource as DatasourceTable,
     Experiment,
     Organization,
     User,
@@ -42,6 +43,7 @@ from xngin.apiserver.routers.experiments_api_types import (
     CreateExperimentResponse,
     ExperimentConfig,
     GetExperimentAssignmentsResponse,
+    GetParticipantAssignmentResponse,
     ListExperimentsResponse,
 )
 from xngin.apiserver.routers.oidc_dependencies import (
@@ -194,8 +196,12 @@ def make_createexperimentrequest_json(
     }
 
 
-def make_insertable_experiment(state: ExperimentState, datasource_id="testing"):
-    request = make_createexperimentrequest_json()
+def make_insertable_experiment(
+    state: ExperimentState,
+    datasource_id: str = "testing",
+    experiment_type: ExperimentType = "preassigned",
+) -> Experiment:
+    request = make_createexperimentrequest_json(experiment_type=experiment_type)
     return Experiment(
         id=str(uuid.uuid4()),
         datasource_id=datasource_id,
@@ -211,7 +217,9 @@ def make_insertable_experiment(state: ExperimentState, datasource_id="testing"):
     )
 
 
-def make_arms_from_experiment(experiment: Experiment, organization_id: str):
+def make_arms_from_experiment(
+    experiment: Experiment, organization_id: str
+) -> list[ArmTable]:
     return [
         ArmTable(
             id=arm["arm_id"],
@@ -224,14 +232,13 @@ def make_arms_from_experiment(experiment: Experiment, organization_id: str):
     ]
 
 
-@pytest.fixture(name="testing_experiment")
-def fixture_testing_experiment(db_session, testing_datasource_with_user_added):
-    """Create an experiment on a test inline schema datasource with proper user permissions."""
-    datasource = testing_datasource_with_user_added.ds
-
+def make_experiment_and_arms(
+    db_session, datasource: DatasourceTable, experiment_type: ExperimentType
+) -> Experiment:
     experiment = make_insertable_experiment(
         ExperimentState.COMMITTED,
         datasource_id=datasource.id,
+        experiment_type=experiment_type,
     )
     # Fake arm_ids in the design_spec since we're not using the admin API to create the experiment.
     for arm in experiment.design_spec["arms"]:
@@ -241,6 +248,15 @@ def fixture_testing_experiment(db_session, testing_datasource_with_user_added):
     # Create ArmTable instances for each arm in the experiment
     db_arms = make_arms_from_experiment(experiment, datasource.organization_id)
     db_session.add_all(db_arms)
+    db_session.commit()
+    return experiment
+
+
+@pytest.fixture(name="testing_experiment")
+def fixture_testing_experiment(db_session, testing_datasource_with_user_added):
+    """Create an experiment on a test inline schema datasource with proper user permissions."""
+    datasource = testing_datasource_with_user_added.ds
+    experiment = make_experiment_and_arms(db_session, datasource, "preassigned")
     # Add fake assignments for each arm for real participant ids in our test data.
     arm_ids = [arm["arm_id"] for arm in experiment.design_spec["arms"]]
     for i in range(10):
@@ -836,6 +852,76 @@ def test_create_online_experiment_using_inline_schema_ds(
     actual_design_spec.arms[1].arm_id = None
     assert actual_design_spec == base_request.design_spec
     assert created_experiment.audience_spec == base_request.audience_spec
+
+
+def test_get_experiment_assignment_for_preassigned_participant(testing_experiment):
+    datasource_id = testing_experiment.datasource_id
+    experiment_id = testing_experiment.id
+    assignments = testing_experiment.arm_assignments
+
+    response = pget(
+        f"/v1/m/datasources/{datasource_id}/experiments/{experiment_id}/assignments/unassigned_id"
+    )
+    assert response.status_code == 200
+    assignment_response = GetParticipantAssignmentResponse.model_validate(
+        response.json()
+    )
+    assert assignment_response.experiment_id == experiment_id
+    assert assignment_response.participant_id == "unassigned_id"
+    assert assignment_response.assignment is None
+
+    response = pget(
+        f"/v1/m/datasources/{datasource_id}/experiments/{experiment_id}/assignments/{assignments[0].participant_id}"
+    )
+    assert response.status_code == 200
+    assignment_response = GetParticipantAssignmentResponse.model_validate(
+        response.json()
+    )
+    assert assignment_response.experiment_id == experiment_id
+    assert assignment_response.participant_id == assignments[0].participant_id
+    assert assignment_response.assignment is not None
+
+
+def test_get_experiment_assignment_for_online_participant(
+    db_session, testing_datasource_with_user_added
+):
+    testing_experiment = make_experiment_and_arms(
+        db_session, testing_datasource_with_user_added.ds, "online"
+    )
+    datasource_id = testing_experiment.datasource_id
+    experiment_id = testing_experiment.id
+
+    # Create a new participant assignment.
+    response = pget(
+        f"/v1/m/datasources/{datasource_id}/experiments/{experiment_id}/assignments/new_id"
+    )
+    assert response.status_code == 200
+    assignment_response = GetParticipantAssignmentResponse.model_validate(
+        response.json()
+    )
+    assert assignment_response.experiment_id == experiment_id
+    assert assignment_response.participant_id == "new_id"
+    assert assignment_response.assignment is not None
+    assert str(assignment_response.assignment.arm_id) in {
+        arm.id for arm in testing_experiment.arms
+    }
+
+    # Get back the same assignment.
+    response = pget(
+        f"/v1/m/datasources/{datasource_id}/experiments/{experiment_id}/assignments/new_id"
+    )
+    assert response.status_code == 200
+    assignment_response2 = GetParticipantAssignmentResponse.model_validate(
+        response.json()
+    )
+    assert assignment_response2 == assignment_response
+
+    # Make sure there's only one db entry.
+    assignment = db_session.scalars(
+        select(ArmAssignment).where(ArmAssignment.experiment_id == str(experiment_id))
+    ).one()
+    assert assignment.participant_id == "new_id"
+    assert assignment.arm_id == str(assignment_response.assignment.arm_id)
 
 
 def test_experiments_analyze(testing_experiment):

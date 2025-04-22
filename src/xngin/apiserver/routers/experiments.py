@@ -1,5 +1,6 @@
 import csv
 import io
+import random
 import uuid
 from collections.abc import Sequence
 from contextlib import asynccontextmanager
@@ -17,6 +18,7 @@ from fastapi import (
 )
 from fastapi.responses import StreamingResponse
 from sqlalchemy import Table, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 from xngin.apiserver import flags
 from xngin.apiserver.api_types import (
@@ -63,6 +65,10 @@ from xngin.apiserver.webhooks.webhook_types import ExperimentCreatedWebhookBody
 from xngin.events.experiment_created import ExperimentCreatedEvent
 from xngin.stats.assignment import RowProtocol, assign_treatment
 from xngin.tq.task_payload_types import WEBHOOK_OUTBOUND_TASK_TYPE, WebhookOutboundTask
+
+
+class ExperimentsAssignmentError(Exception):
+    """Wrapper for errors raised by our xngin.apiserver.routers.experiments package."""
 
 
 @asynccontextmanager
@@ -585,3 +591,88 @@ def get_experiment_assignments_as_csv_sl(
     """
     experiment = get_experiment_or_raise(xngin_session, experiment_id, datasource.id)
     return get_experiment_assignments_as_csv_impl(experiment)
+
+
+def get_existing_assignment_for_participant(
+    xngin_session: Session, experiment_id: str, participant_id: str
+) -> Assignment | None:
+    """Internal helper to look up an existing assignment for a participant.  Excludes strata.
+
+    Returns: None if no assignment exists.
+    """
+    # Look up the participant's assignment if it exists
+    assignment_query = (
+        xngin_session.query(ArmAssignment)
+        .join(ArmTable)
+        .filter(
+            ArmAssignment.experiment_id == experiment_id,
+            ArmAssignment.participant_id == participant_id,
+        )
+    )
+    existing_assignment = assignment_query.one_or_none()
+    # If the participant already has an assignment for this experiment, return it.
+    if existing_assignment:
+        return Assignment(
+            participant_id=existing_assignment.participant_id,
+            arm_id=uuid.UUID(existing_assignment.arm_id),
+            arm_name=existing_assignment.arm.name,
+            strata=[],
+        )
+    return None
+
+
+def make_assignment_for_participant(
+    xngin_session: Session,
+    experiment: Experiment,
+    participant_id: str,
+    random_state: int | None,
+) -> Assignment | None:
+    """Internal helper to make and persist an assignment for a participant depending on the
+    experiment type. Excludes strata."""
+
+    if experiment.state != ExperimentState.COMMITTED:
+        raise ExperimentsAssignmentError(
+            f"Invalid experiment state: {experiment.state}"
+        )
+
+    if len(experiment.arms) == 0:
+        raise ExperimentsAssignmentError("Experiment has no arms")
+
+    # TODO: Pull type from experiment entity directly when we persist it in its own column.
+    design_spec = experiment.get_design_spec()
+    if design_spec.experiment_type == "preassigned":
+        # Preassigned experiments are not allowed to have new ones added.
+        return None
+    if design_spec.experiment_type == "online":
+        # For online experiments, create a new assignment with simple random assignment.
+        # TODO? consider using a threadsafe permuted random assignment for better balance.
+        random.seed(random_state)
+        chosen_arm = random.choice(experiment.arms)
+
+        # Create and save the new assignment
+        new_assignment = ArmAssignment(
+            experiment_id=experiment.id,
+            participant_id=participant_id,
+            participant_type=experiment.get_audience_spec().participant_type,
+            arm_id=chosen_arm.id,
+            strata=[],  # Online assignments don't have strata
+        )
+        try:
+            xngin_session.add(new_assignment)
+            xngin_session.commit()
+        except IntegrityError as e:
+            xngin_session.rollback()
+            raise ExperimentsAssignmentError(
+                f"Failed to assign participant '{participant_id}' to arm '{chosen_arm.id}': {e}"
+            ) from e
+
+        return Assignment(
+            participant_id=participant_id,
+            arm_id=uuid.UUID(chosen_arm.id),
+            arm_name=chosen_arm.name,
+            strata=[],
+        )
+    # Else:
+    raise ExperimentsAssignmentError(
+        f"Invalid experiment type: {design_spec.experiment_type}"
+    )

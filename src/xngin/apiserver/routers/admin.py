@@ -23,7 +23,7 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from sqlalchemy import delete, select, text
 from sqlalchemy.exc import OperationalError
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 from xngin.apiserver import flags, settings
 from xngin.apiserver.api_types import (
     ArmAnalysis,
@@ -93,7 +93,10 @@ from xngin.apiserver.routers.experiments_api import (
     power_check_impl,
     validate_schema_metrics_or_raise,
 )
-from xngin.apiserver.routers.experiments_api_types import ExperimentConfig
+from xngin.apiserver.routers.experiments_api_types import (
+    ExperimentConfig,
+    GetParticipantAssignmentResponse,
+)
 from xngin.apiserver.routers.oidc_dependencies import TokenInfo, require_oidc_token
 from xngin.apiserver.settings import (
     Dsn,
@@ -241,15 +244,21 @@ def get_datasource_or_raise(session: Session, user: User, datasource_id: str):
 
 
 def get_experiment_via_ds_or_raise(
-    session: Session, ds: Datasource, experiment_id: str
+    session: Session, ds: Datasource, experiment_id: str, include_arms: bool = False
 ) -> Experiment:
     """Reads the requested experiment (related to the given datasource) from the database. Raises 404 if not found."""
     stmt = (
         select(Experiment)
-        .join(Datasource, Datasource.id == ds.id)
+        .where(Experiment.datasource_id == ds.id)
         .where(Experiment.id == experiment_id)
     )
-    exp = session.execute(stmt).scalar_one_or_none()
+    if include_arms:
+        stmt = stmt.options(joinedload(Experiment.arms, innerjoin=True))
+        # unique() tells sqla to "uniquify the incoming rows by primary key",
+        # necessary for using joinedload with collections.
+        exp = session.execute(stmt).unique().scalar_one_or_none()
+    else:
+        exp = session.execute(stmt).scalar_one_or_none()
     if exp is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail="Experiment not found."
@@ -1369,20 +1378,45 @@ def get_experiment_assignments_as_csv(
 
 @router.get(
     "/datasources/{datasource_id}/experiments/{experiment_id}/assignments/{participant_id}",
-    description="""
-    Get the assignment for a specific participant. If the experiment type is 'preassigned', the
-    participant's assignment for this experiment is returned if it exists else an error. If it is
-    'online', if the assignment exists we return it, else we generate a new assignment for that
-    user.""",
+    description="""Get the assignment for a specific participant, excluding strata if any.
+    For 'preassigned' experiments, the participant's Assignment is returned if it exists.
+    For 'online', returns the assignment if it exists, else generates an assignment.""",
 )
-def get_experiment_assignment(
+def get_experiment_assignment_for_participant(
     datasource_id: str,
     experiment_id: str,
     participant_id: str,
     session: Annotated[Session, Depends(xngin_db_session)],
     user: Annotated[User, Depends(user_from_token)],
-):
-    """TODO"""
+    random_state: Annotated[
+        int | None,
+        Query(
+            description="Specify a random seed for reproducibility.",
+            include_in_schema=False,
+        ),
+    ] = None,
+) -> experiments_api_types.GetParticipantAssignmentResponse:
+    """Get the assignment for a specific participant in an experiment."""
+    # Validate the datasource and experiment exist
+    ds = get_datasource_or_raise(session, user, datasource_id)
+
+    # Look up the participant's assignment if it exists
+    assignment = experiments.get_existing_assignment_for_participant(
+        session, experiment_id, participant_id
+    )
+    if not assignment:
+        experiment = get_experiment_via_ds_or_raise(
+            session, ds, experiment_id, include_arms=True
+        )
+        assignment = experiments.make_assignment_for_participant(
+            session, experiment, participant_id, random_state
+        )
+
+    return GetParticipantAssignmentResponse(
+        experiment_id=experiment_id,
+        participant_id=participant_id,
+        assignment=assignment,
+    )
 
 
 @router.delete(
