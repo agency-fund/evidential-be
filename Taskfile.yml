@@ -112,6 +112,7 @@ tasks:
       - cmd: |
           atlas version
           uv version
+          task --version
       - cmd: uv sync --compile-bytecode
       - task: check-docker
   start:
