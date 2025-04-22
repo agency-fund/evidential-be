@@ -43,10 +43,6 @@ jobs:
         with:
           version: "0.6.1"
           enable-cache: true
-      - if: startsWith(matrix.os, 'macos-')
-        run: |
-          # Install postgres so that the Python psycopg2 module can build from source.
-          brew install postgresql@14
       - name: Install dependencies
         run: |
           uv sync --locked
