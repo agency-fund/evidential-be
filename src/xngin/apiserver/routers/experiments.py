@@ -1,6 +1,5 @@
 import csv
 import io
-import random
 import uuid
 from collections.abc import Sequence
 from contextlib import asynccontextmanager
@@ -61,6 +60,7 @@ from xngin.apiserver.settings import (
     Datasource,
     infer_table,
 )
+from xngin.apiserver.utils import random_choice
 from xngin.apiserver.webhooks.webhook_types import ExperimentCreatedWebhookBody
 from xngin.events.experiment_created import ExperimentCreatedEvent
 from xngin.stats.assignment import RowProtocol, assign_treatment
@@ -670,8 +670,7 @@ def make_assignment_for_participant(
     if design_spec.experiment_type == "online":
         # For online experiments, create a new assignment with simple random assignment.
         # TODO? consider using a threadsafe permuted random assignment for better balance.
-        random.seed(random_state)
-        chosen_arm = random.choice(experiment.arms)
+        chosen_arm = random_choice(experiment.arms, seed=random_state)
 
         # Create and save the new assignment
         new_assignment = ArmAssignment(

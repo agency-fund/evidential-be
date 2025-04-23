@@ -1,4 +1,6 @@
 import copy
+import random
+import secrets
 from urllib.parse import urlparse, urlunparse, quote
 
 STRIP_UNSAFE_HEADER_CHARS = str.maketrans("", "", "\r\n")
@@ -45,3 +47,15 @@ def substitute_url(url_template: str, raw_replacements: dict[str, str]):
 
     # Return the reconstructed url
     return urlunparse(parsed._replace(path=new_path, query=new_query))
+
+
+def random_choice(choices: list, seed: int | None = None):
+    """Choose a random value from choices."""
+    if seed:
+        if not isinstance(seed, int):
+            raise ValueError("seed must be an integer")
+        # use a predictable random
+        r = random.Random(seed)
+        return r.choice(choices)
+    # Use very strong random by default
+    return secrets.choice(choices)
