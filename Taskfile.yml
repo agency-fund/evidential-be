@@ -3,7 +3,7 @@ output: prefixed
 vars:
   # App database for the local dev environment (see tasks: start, apply-migrations)
   XNGIN_DEVAPPDB_NAME: "xngin"
-  XNGIN_DEVAPP_DSN: "postgresql://postgres:postgres@localhost:5499/{{.XNGIN_DEVAPPDB_NAME}}?sslmode=disable"
+  XNGIN_DEVAPP_DSN: "postgresql+psycopg://postgres:postgres@localhost:5499/{{.XNGIN_DEVAPPDB_NAME}}?sslmode=disable"
 
 env:
   # Disable Atlas telemetry.
@@ -66,14 +66,14 @@ env:
   # by unit tests via xngin.testing.settings.json. It is bootstrapped with the testing datawarehouse when
   # `task start` is used.
   XNGIN_DEVDWH_NAME: "dwh"
-  XNGIN_DEVDWH_DSN: "postgresql://postgres:postgres@localhost:5499/dwh?sslmode=disable"
+  XNGIN_DEVDWH_DSN: "postgresql+psycopg://postgres:postgres@localhost:5499/dwh?sslmode=disable"
 
   # Datasource for tests of the xngin app database that use the xngin_db_session dependency.
-  XNGIN_TEST_APPDB_URI: "postgresql://postgres:postgres@localhost:5499/test_xngin?sslmode=disable"
+  XNGIN_TEST_APPDB_URI: "postgresql+psycopg://postgres:postgres@localhost:5499/test_xngin?sslmode=disable"
 
   # Datasource for the tests using the xngin.apiserver.dwh.test_queries.fixture_dwh_session fixture. The database name
   # is ignored because test_queries creates a random database name for each test (see fixture_dwh_session).
-  XNGIN_TEST_DWH_URI: "postgresql://postgres:postgres@localhost:5499/test_dwh?sslmode=disable"
+  XNGIN_TEST_DWH_URI: "postgresql+psycopg://postgres:postgres@localhost:5499/test_dwh?sslmode=disable"
 
   # XNGIN_PUBLIC_HOSTNAME defines the base hostname (and optional port) we use when constructing URLs to send to
   # external systems (such as via outbound webhooks).
