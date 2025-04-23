@@ -40,39 +40,35 @@ jobs:
       fail-fast: false
       matrix:
         os: [ ubuntu-22.04, macos-14 ]
-    services:
-      postgres:
-        image: postgres:17
-        env:
-          POSTGRES_DB: postgres
-          POSTGRES_PASSWORD: postgres
-        options: >-
-          --health-cmd pg_isready
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 5
-        ports:
-          - 5499:5432
     steps:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v4
         with:
           version: "0.6.14"
           enable-cache: true
-      - name: Install Task
-        uses: arduino/setup-task@v2
-        with:
-          version: 3.x
-          repo-token: ${{ secrets.GITHUB_TOKEN }}
+      - if: startsWith(matrix.os, 'macos-')
+        run: |
+          # Install postgres so that the Python psycopg2 module can build from source.
+          brew install postgresql@14
+      - name: Install dependencies
+        run: |
+          uv sync --locked
+      - name: pytest unit tests
+        run: uv run pytest
       - name: write secrets
+        # The secret is only needed by the integration test
+        if: startsWith(matrix.os, 'ubuntu-')
         run: |
           mkdir -p ~/.config/gspread && echo "${GCLOUD_SERVICE_ACCOUNT_CREDENTIALS}" > ~/.config/gspread/service_account.json
           openssl sha256 ~/.config/gspread/service_account.json
         env:
           GCLOUD_SERVICE_ACCOUNT_CREDENTIALS: ${{ secrets.GOOGLE_APPLICATION_CREDENTIALS_CONTENT }}
-      - run: |
+      - name: pytest integration tests
+        if: startsWith(matrix.os, 'ubuntu-')
+        run: |
+          # used by the sqlalchemy bigquery driver in some integration tests
           export GOOGLE_APPLICATION_CREDENTIALS=$HOME/.config/gspread/service_account.json
-          task test
+          uv run pytest -m integration
   smoke-cli:
     timeout-minutes: 15
     runs-on: ubuntu-22.04
