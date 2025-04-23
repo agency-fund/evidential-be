@@ -268,7 +268,9 @@ def create_preassigned_experiment_impl(
             participant_type=request.audience_spec.participant_type,
             participant_id=assignment.participant_id,
             arm_id=str(assignment.arm_id),
-            strata=[s.model_dump(mode="json") for s in assignment.strata],
+            strata=[s.model_dump(mode="json") for s in assignment.strata]
+            if assignment.strata
+            else None,
         )
         xngin_session.add(db_assignment)
 

@@ -519,7 +519,7 @@ ExperimentType = Literal["online", "preassigned"]
 
 
 class BaseDesignSpec(ApiBaseModel):
-    """Experiment design parameters for power calculations and treatment assignment."""
+    """Experiment design metadata and target metrics common to all experiment types."""
 
     experiment_id: Annotated[
         uuid.UUID | None,
@@ -616,14 +616,15 @@ class FrequentistExperimentSpec(BaseDesignSpec):
 
 
 class PreassignedExperimentSpec(FrequentistExperimentSpec):
-    """Use this to randomly select and assign from existing participants at design time."""
+    """Use this type to randomly select and assign from existing participants at design time."""
 
     experiment_type: Literal["preassigned"] = "preassigned"
 
 
 class OnlineExperimentSpec(FrequentistExperimentSpec):
-    """Use this for experiments that need to randomly assign participants into arms during live
-    experiment execution, e.g. experimenting with new users. Assignments are issued via API request.
+    """Use this type to randomly assign participants into arms during live experiment execution.
+
+    For example, you may wish to experiment on new users. Assignments are issued via API request.
     """
 
     experiment_type: Annotated[

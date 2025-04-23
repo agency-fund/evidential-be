@@ -217,7 +217,20 @@ def make_insertable_experiment(
         design_spec=request["design_spec"],
         audience_spec=request["audience_spec"],
         power_analyses=None,
-        assign_summary=None,
+        assign_summary={
+            "sample_size": 0,
+            "arm_sizes": [
+                {
+                    "arm": {"arm_name": "control", "arm_description": "control"},
+                    "size": 0,
+                },
+                {
+                    "arm": {"arm_name": "treatment", "arm_description": "treatment"},
+                    "size": 0,
+                },
+            ],
+            "balance_check": None,
+        },
     )
 
 

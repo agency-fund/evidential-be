@@ -367,15 +367,17 @@ class ArmAssignment(Base):
         String(36), ForeignKey("arms.id", ondelete="CASCADE")
     )
     # JSON serialized form of a list of Strata objects (from Assignment.strata).
-    strata: Mapped[dict] = mapped_column(type_=JSONBetter)
+    strata: Mapped[list[dict[str, str]]]  = mapped_column(type_=JSONBetter)
 
     experiment: Mapped["Experiment"] = relationship(back_populates="arm_assignments")
     arm: Mapped["ArmTable"] = relationship(back_populates="arm_assignments")
 
-    def strata_names(self):
+    def strata_names(self) -> list[str]:
+        """Returns the names of the strata fields."""
         return [s["field_name"] for s in self.strata]
 
-    def strata_values(self):
+    def strata_values(self) -> list[str]:
+        """Returns the values of the strata fields as strings."""
         return [s["strata_value"] for s in self.strata]
 
 
@@ -429,7 +431,7 @@ class Experiment(Base):
         return ds.arms
 
     def get_arm_ids(self) -> list[str]:
-        return [arm.arm_id for arm in self.get_arms()]
+        return [str(arm.arm_id) for arm in self.get_arms()]
 
     def get_arm_names(self) -> list[str]:
         return [arm.arm_name for arm in self.get_arms()]
