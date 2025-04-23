@@ -22,23 +22,15 @@ Evidential is an experiments management platform built on FastAPI, Postgres, and
 
 Follow the steps below to get a local development environment running.
 
-1. Install [uv](https://docs.astral.sh/uv/):
-
-   ```shell
-   curl -LsSf https://astral.sh/uv/0.6.1/install.sh | sh
-   ```
-
 1. Install [Task](https://taskfile.dev/).
 
-1. Install Docker.
-
-1. Update the project's environment, install dependencies, and create a virtual environment (.venv).
+1. Install dependencies (Atlas, uv, Python dependencies) by running:
 
    ```shell
-   uv sync
+   task install-dependencies
    ```
 
-1. If you are using an IDE, configure it to use the .venv directory as the virtual environment.
+1. Install Docker.
 
 1. Run the unit tests:
 
@@ -49,15 +41,11 @@ Follow the steps below to get a local development environment running.
    task test
    ```
 
-1. If you're working with the [Evidential UI](//github.com/agency-fund/xngin-dash), set the OAuth Client
-   Credentials appropriate for your work in your .env:
+1. Obtain the OIDC development client secret from a teammate and add it to your .env file:
 
    ```shell
-   echo GOOGLE_OIDC_CLIENT_ID=... >> .env
    echo GOOGLE_OIDC_CLIENT_SECRET=... >> .env
    ```
-
-   You can use a shared set of credentials; ask a teammate for details.
 
 1. Get familiar with the task runner. Most of the commands you will run are defined in Taskfile.yml and using it helps
    ensure all developers are running in consistent environments. Run:

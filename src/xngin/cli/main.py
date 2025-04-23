@@ -666,19 +666,21 @@ def add_user(
         ),
     ],
     email: Annotated[
-        str,
+        str | None,
         typer.Option(
-            help="Email address of the user to add.",
-            callback=validate_arg_is_email,
+            help="Email address of the user to add. If not provided, will prompt interactively.",
+            callback=lambda v: validate_arg_is_email(v) if v else None,
+            envvar="XNGIN_ADD_USER_EMAIL",
         ),
-    ],
+    ] = None,
     privileged: Annotated[
-        bool, typer.Option(help="Whether the user should have privileged access.")
+        bool,
+        typer.Option(help="Whether the user should have privileged access."),
     ] = False,
     dwh: Annotated[
         str | None,
         typer.Option(
-            help="The SQLAlchmey DSN of a DWH to be added to the user's organization.",
+            help="The SQLAlchemy DSN of a DWH to be added to the user's organization.",
             envvar="XNGIN_DEVDWH_DSN",
         ),
     ] = None,
@@ -687,9 +689,29 @@ def add_user(
 
     This command connects to the specified database and adds a new user with the given email address.
     If the --privileged flag is set, the user will be granted privileged access.
+
+    If email is not provided via the --email flag, the command will prompt for it interactively.
     """
     console.print(f"DSN: [cyan]{dsn}[/cyan]")
     console.print(f"DWH: [cyan]{dwh}[/cyan]")
+
+    if email is None:
+        while True:
+            email_input = typer.prompt("Enter email address")
+            try:
+                email = validate_email(
+                    email_input, check_deliverability=False
+                ).normalized
+                break
+            except EmailNotValidError as err:
+                err_console.print(f"[bold red]Invalid email:[/bold red] {err!s}")
+
+        privileged = typer.confirm(
+            "Should this user have privileged access?", default=False
+        )
+
+    console.print(f"Adding user with email: [cyan]{email}[/cyan]")
+    console.print(f"Privileged access: [cyan]{privileged}[/cyan]")
 
     engine = create_engine(dsn)
     with Session(engine) as session:
@@ -706,9 +728,15 @@ def add_user(
                     participants=[], type="remote", dwh=Dsn.from_url(dev_dsn)
                 )
                 datasource = tables.Datasource(
-                    name="Local DWH", organization=organization
+                    name="My DWH", organization=organization
                 ).set_config(config)
                 session.add(datasource)
+            else:
+                console.print(
+                    "\n[bold yellow]Warning: Not adding a datasource for a data warehouse "
+                    "because the --dwh flag was not specified or environment variable "
+                    "XNGIN_DEVDWH_DSN is unset.[/bold yellow]"
+                )
 
             session.commit()
             console.print("\n[bold green]User added successfully:[/bold green]")
