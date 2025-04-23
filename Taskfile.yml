@@ -124,7 +124,6 @@ tasks:
   test-integration:
     desc: "Runs Google integration tests."
     interactive: true
-    internal: true
     cmds:
       - uv run pytest -m integration
   update-api-tests:
