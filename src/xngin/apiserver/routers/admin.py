@@ -23,7 +23,7 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from sqlalchemy import delete, select, text
 from sqlalchemy.exc import OperationalError
-from sqlalchemy.orm import Session, joinedload
+from sqlalchemy.orm import Session
 from xngin.apiserver import flags, settings
 from xngin.apiserver.api_types import (
     ArmAnalysis,
@@ -244,7 +244,7 @@ def get_datasource_or_raise(session: Session, user: User, datasource_id: str):
 
 
 def get_experiment_via_ds_or_raise(
-    session: Session, ds: Datasource, experiment_id: str, include_arms: bool = False
+    session: Session, ds: Datasource, experiment_id: str
 ) -> Experiment:
     """Reads the requested experiment (related to the given datasource) from the database. Raises 404 if not found."""
     stmt = (
@@ -252,13 +252,7 @@ def get_experiment_via_ds_or_raise(
         .where(Experiment.datasource_id == ds.id)
         .where(Experiment.id == experiment_id)
     )
-    if include_arms:
-        stmt = stmt.options(joinedload(Experiment.arms, innerjoin=True))
-        # unique() tells sqla to "uniquify the incoming rows by primary key",
-        # necessary for using joinedload with collections.
-        exp = session.execute(stmt).unique().scalar_one_or_none()
-    else:
-        exp = session.execute(stmt).scalar_one_or_none()
+    exp = session.execute(stmt).scalar_one_or_none()
     if exp is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail="Experiment not found."
@@ -1405,9 +1399,7 @@ def get_experiment_assignment_for_participant(
         session, experiment_id, participant_id
     )
     if not assignment:
-        experiment = get_experiment_via_ds_or_raise(
-            session, ds, experiment_id, include_arms=True
-        )
+        experiment = get_experiment_via_ds_or_raise(session, ds, experiment_id)
         assignment = experiments.make_assignment_for_participant(
             session, experiment, participant_id, random_state
         )
