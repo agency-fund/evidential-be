@@ -121,7 +121,7 @@ def get_test_uri_info(connection_uri: str):
 def get_test_sessionmaker():
     """Returns a session for the XNGIN_TEST_APPDB_URI; the returned database is not guaranteed unique.
 
-    The database will be created if it does not exit.
+    The database will be created if it does not exist.
     """
     connect_url, db_type, connect_args = get_test_appdb_info()
     match db_type:
