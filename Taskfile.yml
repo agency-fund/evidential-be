@@ -1,17 +1,10 @@
 version: '3'
 output: prefixed
 vars:
-  # App database for the local dev environment (see tasks start-with-local-pg, apply-migrations-pg)
+  # App database for the local dev environment (see tasks: start, apply-migrations)
   XNGIN_DEVAPPDB_NAME: "xngin"
-  XNGIN_DEVAPP_DSN: "postgresql://postgres:postgres@localhost:5499/{{.XNGIN_DEVAPPDB_NAME}}?sslmode=disable"
+  XNGIN_DEVAPP_DSN: "postgresql+psycopg://postgres:postgres@localhost:5499/{{.XNGIN_DEVAPPDB_NAME}}?sslmode=disable"
 
-  # Datasource for tests of the xngin app database that use the xngin_db_session dependency.
-  XNGIN_TESTAPP_DSN: "postgresql://postgres:postgres@localhost:5499/test_xngin?sslmode=disable"
-
-  # Datasource for the Postgres integration tests run by `task test-pgintegration`.
-  # Note: test_queries.py creates a random database name adapting this dsn for each test using its
-  # fixture_db_session.
-  XNGIN_TESTDWH_DSN: "postgresql://postgres:postgres@localhost:5499/test_dwh?sslmode=disable"
 env:
   # Disable Atlas telemetry.
   ATLAS_NO_ANON_TELEMETRY: "true"
@@ -69,10 +62,18 @@ env:
   XNGIN_SETTINGS: "src/xngin/apiserver/testdata/xngin.testing.settings.json"
   XNGIN_DEBUG: "true"
 
-  # Data warehouse available for use by the local dev environment (see task bootstrap-dwh-local-pg). It is bootstrapped
-  # with the testing datawarehouse when `task start-with-local-pg` is used.
+  # Data warehouse available for use by the local dev environment (see task bootstrap-dwh) and also referenced
+  # by unit tests via xngin.testing.settings.json. It is bootstrapped with the testing datawarehouse when
+  # `task start` is used.
   XNGIN_DEVDWH_NAME: "dwh"
-  XNGIN_DEVDWH_DSN: "postgresql://postgres:postgres@localhost:5499/dwh?sslmode=disable"
+  XNGIN_DEVDWH_DSN: "postgresql+psycopg://postgres:postgres@localhost:5499/dwh?sslmode=disable"
+
+  # Datasource for tests of the xngin app database that use the xngin_db_session dependency.
+  XNGIN_TEST_APPDB_URI: "postgresql+psycopg://postgres:postgres@localhost:5499/test_xngin?sslmode=disable"
+
+  # Datasource for the tests using the xngin.apiserver.dwh.test_queries.fixture_dwh_session fixture. The database name
+  # is ignored because test_queries creates a random database name for each test (see fixture_dwh_session).
+  XNGIN_TEST_DWH_URI: "postgresql+psycopg://postgres:postgres@localhost:5499/test_dwh?sslmode=disable"
 
   # XNGIN_PUBLIC_HOSTNAME defines the base hostname (and optional port) we use when constructing URLs to send to
   # external systems (such as via outbound webhooks).
@@ -115,33 +116,15 @@ tasks:
           task --version
       - cmd: uv sync --compile-bytecode
       - task: check-docker
-  start:
-    desc: "Starts apiserver locally with settings compatible with local dash dev server (using PostgreSQL)"
-    cmd:
-      task: start-with-local-pg
-  start-with-sqlite:
-    desc: "Starts apiserver locally with settings compatible with local dash dev server (using SQLite)."
-    interactive: true
-    dotenv:
-      # Populate BQ_SERVICE_ACCOUNT (optional) and GOOGLE_OIDC_CLIENT_SECRET (optional).
-      - .env
-    env:
-      # Admin API settings. These need to be set for interaction with the dash web UI.
-      # Also see instructions for .env above.
-      ENABLE_ADMIN: "true"
-      ENABLE_OIDC: "true"
-
-    cmds:
-      - uv run fastapi dev src/xngin/apiserver/main.py
-  bootstrap-app-db:
-    desc: |
+  bootstrap-app:
+    desc: >-
       Ensure the localpg server is running and has an "xngin" database. If the database doesn't already exist, it will
       be created, and Atlas will create the tables so that subsequent table migrations behave as expected.
     cmds:
       - >
         ./tools/localpg.py --allow-existing -d --wait --create-db {{.XNGIN_DEVAPPDB_NAME}}
-        --if-created "uv run task apply-migrations-pg"
-  start-with-local-pg:
+        --if-created "uv run task apply-migrations"
+  start:
     desc: "Starts apiserver locally with settings compatible with local dash dev server (using PostgreSQL)"
     interactive: true
     dotenv:
@@ -155,41 +138,41 @@ tasks:
       ENABLE_ADMIN: "true"
       ENABLE_OIDC: "true"
     deps:
-      - bootstrap-app-db
+      - bootstrap-app
+      - bootstrap-dwh
     cmds:
-      - task bootstrap-dwh-local-pg || /bin/true
       - uv run fastapi dev src/xngin/apiserver/main.py
-  bootstrap-dwh-local-pg:
-    desc: "Bootstraps the localpg server with a sample data warehouse."
+  bootstrap-dwh:
+    desc: "Loads a sample data warehouse into the localpg server."
     interactive: true
     cmds:
-      - uv run xngin-cli create-testing-dwh --dsn "$XNGIN_DEVDWH_DSN"
+      - uv run xngin-cli create-testing-dwh --dsn "$XNGIN_DEVDWH_DSN" --allow-existing --create-db
   test:
     desc: "Runs unit tests"
     interactive: true
+    env:
+      # Tests should never connect to this URL.
+      DATABASE_URL: "postgres://fail:fail@127.0.0.1:5499/fail"
+    deps:
+      - bootstrap-dwh
     cmds:
       - uv run pytest
+  test-integration:
+    desc: "Runs Google integration tests."
+    interactive: true
+    cmds:
+      - uv run pytest -m integration
   update-api-tests:
     desc: "Run the API tests and update the expected responses."
     interactive: true
     env:
       UPDATE_API_TESTS: "1"
     cmd: uv run pytest src/xngin/apiserver/test_api.py
-  test-pgintegration:
-    desc: "Runs unit tests w/local postgres support"
-    env:
-      XNGIN_TEST_APPDB_URI: "{{.XNGIN_TESTAPP_DSN}}"
-      XNGIN_TEST_DWH_URI: "{{.XNGIN_TESTDWH_DSN}}"
-    interactive: true
-    cmds:
-      - ./tools/localpg.py --allow-existing -d --wait --create-db test_xngin
-      - uv run pytest -m 'pgintegration or not integration'
   make-migrations:
     desc: "Build Postgres migrations"
-    cmds:
-      - uv run atlas migrate diff --env sa_postgres && git add migrations
-      # If you modify the migration file afterwards, you should re-hash it:
-      # uv run atlas migrate hash --env sa_postgres
+    cmd: |
+      uv run atlas migrate diff --env sa_postgres && git add migrations
+      echo 💡 If you modify the migration file afterwards, you should re-hash it: task hash-migrations
   hash-migrations:
     desc: "Rehash your migration file (see atlas.sum) if you had to modify the generated migration file afterwards, e.g. to add a custom backfill."
     cmds:
@@ -213,26 +196,16 @@ tasks:
     desc: "Go back a version in the migration history. Note that it include pre-migration checks to ensure data isn't deleted and tables are empty, so you may have to manually do some prep for the reversion. See https://atlasgo.io/versioned/down"
     cmds:
       - uv run atlas migrate down --env sa_postgres --url '{{.XNGIN_DEVAPP_DSN}}'
-  apply-migrations-pg:
+  apply-migrations:
     desc: "Apply Postgres migrations locally (requires localpg instance to be running, to have an xngin database, and to have been previously migrated)"
     cmds:
       - uv run atlas migrate diff --env sa_postgres
       - uv run atlas migrate apply --env sa_postgres --url '{{.XNGIN_DEVAPP_DSN}}'
-  apply-migrations-sqlite:
-    desc: "Apply sqlite migrations locally"
-    cmd: |
-      # Generate the migration files to ensure that they are up to date
-      uv run atlas migrate diff --env sa_sqlite
-      # If the apiserver created the database, there will not be any migration data; therefore, we pass a --baseline
-      # flag to get that created.
-      sqlite3 xngin.db .tables | grep -q "atlas_schema_revisions" \
-        && uv run atlas migrate apply --env sa_sqlite --url sqlite://xngin.db \
-        || uv run atlas migrate apply --env sa_sqlite --url sqlite://xngin.db --baseline $(ls -t migrations/sa_sqlite | grep .sql | sort -n | cut -f1 -d. | head -1)
   create-user:
     desc: "Create a user: task create-user -- username@example.com"
     interactive: true
     deps:
-      - bootstrap-app-db
+      - bootstrap-app
     env:
       XNGIN_DEVAPP_DSN: "{{.XNGIN_DEVAPP_DSN}}"
     cmd: |

@@ -15,11 +15,10 @@ from dataclasses import dataclass
 import pytest
 import sqlalchemy
 import sqlalchemy_bigquery
-from sqlalchemy import Integer, DateTime, TIMESTAMP, Table, Float, Boolean, String
-from sqlalchemy.dialects.postgresql import psycopg2, psycopg
-from sqlalchemy.orm import mapped_column, DeclarativeBase
+from sqlalchemy import TIMESTAMP, Boolean, DateTime, Float, Integer, String, Table
+from sqlalchemy.dialects.postgresql import psycopg, psycopg2
+from sqlalchemy.orm import DeclarativeBase, mapped_column
 from sqlalchemy.sql.ddl import CreateTable
-
 from xngin.apiserver.api_types import AudienceSpec, AudienceSpecFilter, Relation
 from xngin.apiserver.conftest import DbType
 from xngin.apiserver.dwh.queries import compose_query, create_query_filters_from_spec
@@ -52,14 +51,6 @@ class DateTimeTestCase:
 
 
 DATETIME_SCENARIOS = [
-    DateTimeTestCase(
-        sqlalchemy.dialects.sqlite.dialect(),
-        "CREATE TABLE dtt ( id INTEGER NOT NULL, dt_col DATETIME NOT NULL, ts_col TIMESTAMP NOT NULL, PRIMARY KEY (id))",
-        "SELECT dtt.id, dtt.dt_col, dtt.ts_col "
-        "FROM dtt WHERE dtt.ts_col >= '2020-01-01 00:00:00.000000' "
-        "AND dtt.dt_col BETWEEN '2023-06-01 12:34:56.000000' AND '2024-01-01 00:00:00.000000' "
-        "ORDER BY random() LIMIT 2 OFFSET 0",
-    ),
     DateTimeTestCase(
         sqlalchemy_bigquery.dialect(),
         "CREATE TABLE `dtt` ( `id` INT64 NOT NULL, `dt_col` DATETIME NOT NULL, `ts_col` TIMESTAMP NOT NULL)",
@@ -163,7 +154,6 @@ WHERE_TESTCASES = [
             )
         ],
         where={
-            DbType.SL: "tt.float_col IS NULL OR (tt.float_col NOT IN (2, 3)) ORDER BY random() LIMIT 3 OFFSET 0",
             DbType.RS: "tt.float_col IS NULL OR (tt.float_col NOT IN (2, 3)) ORDER BY random()  LIMIT 3",
             DbType.PG: "tt.float_col IS NULL OR (tt.float_col NOT IN (2, 3)) ORDER BY random()  LIMIT 3",
             DbType.BQ: "`tt`.`float_col` IS NULL OR (`tt`.`float_col` NOT IN (2, 3)) ORDER BY rand() LIMIT 3",
@@ -178,7 +168,6 @@ WHERE_TESTCASES = [
             )
         ],
         where={
-            DbType.SL: "tt.int_col IS NOT NULL ORDER BY random() LIMIT 3 OFFSET 0",
             DbType.RS: "tt.int_col IS NOT NULL ORDER BY random()  LIMIT 3",
             DbType.PG: "tt.int_col IS NOT NULL ORDER BY random()  LIMIT 3",
             DbType.BQ: "`tt`.`int_col` IS NOT NULL ORDER BY rand() LIMIT 3",
@@ -193,7 +182,6 @@ WHERE_TESTCASES = [
             )
         ],
         where={
-            DbType.SL: "tt.int_col IS NULL OR (tt.int_col NOT IN (1)) ORDER BY random() LIMIT 3 OFFSET 0",
             DbType.RS: "tt.int_col IS NULL OR (tt.int_col NOT IN (1)) ORDER BY random()  LIMIT 3",
             DbType.PG: "tt.int_col IS NULL OR (tt.int_col NOT IN (1)) ORDER BY random()  LIMIT 3",
             DbType.BQ: "`tt`.`int_col` IS NULL OR (`tt`.`int_col` NOT IN (1)) ORDER BY rand() LIMIT 3",
@@ -208,7 +196,6 @@ WHERE_TESTCASES = [
             )
         ],
         where={
-            DbType.SL: "tt.int_col IS NOT NULL AND (tt.int_col NOT IN (1)) ORDER BY random() LIMIT 3 OFFSET 0",
             DbType.RS: "tt.int_col IS NOT NULL AND (tt.int_col NOT IN (1)) ORDER BY random()  LIMIT 3",
             DbType.PG: "tt.int_col IS NOT NULL AND (tt.int_col NOT IN (1)) ORDER BY random()  LIMIT 3",
             DbType.BQ: "`tt`.`int_col` IS NOT NULL AND (`tt`.`int_col` NOT IN (1)) ORDER BY rand() LIMIT 3",
@@ -223,7 +210,6 @@ WHERE_TESTCASES = [
             )
         ],
         where={
-            DbType.SL: "tt.dt_col IS NULL OR (tt.dt_col NOT IN ('2024-01-01 00:00:00.000000')) ORDER BY random() LIMIT 3 OFFSET 0",
             DbType.RS: "tt.dt_col IS NULL OR (tt.dt_col NOT IN ('2024-01-01 00:00:00')) ORDER BY random()  LIMIT 3",
             DbType.PG: "tt.dt_col IS NULL OR (tt.dt_col NOT IN ('2024-01-01 00:00:00')) ORDER BY random()  LIMIT 3",
             DbType.BQ: "`tt`.`dt_col` IS NULL OR (`tt`.`dt_col` NOT IN (DATETIME '2024-01-01 00:00:00')) ORDER BY rand() LIMIT 3",
@@ -238,7 +224,6 @@ WHERE_TESTCASES = [
             )
         ],
         where={
-            DbType.SL: "tt.dt_col IS NOT NULL AND (tt.dt_col NOT IN ('2024-01-01 00:00:00.000000')) ORDER BY random() LIMIT 3 OFFSET 0",
             DbType.RS: "tt.dt_col IS NOT NULL AND (tt.dt_col NOT IN ('2024-01-01 00:00:00')) ORDER BY random()  LIMIT 3",
             DbType.PG: "tt.dt_col IS NOT NULL AND (tt.dt_col NOT IN ('2024-01-01 00:00:00')) ORDER BY random()  LIMIT 3",
             DbType.BQ: "`tt`.`dt_col` IS NOT NULL AND (`tt`.`dt_col` NOT IN (DATETIME '2024-01-01 00:00:00')) ORDER BY rand() LIMIT 3",
@@ -253,7 +238,6 @@ WHERE_TESTCASES = [
             )
         ],
         where={
-            DbType.SL: "tt.int_col IS NULL ORDER BY random() LIMIT 3 OFFSET 0",
             DbType.RS: "tt.int_col IS NULL ORDER BY random()  LIMIT 3",
             DbType.PG: "tt.int_col IS NULL ORDER BY random()  LIMIT 3",
             DbType.BQ: "`tt`.`int_col` IS NULL ORDER BY rand() LIMIT 3",
@@ -268,7 +252,6 @@ WHERE_TESTCASES = [
             )
         ],
         where={
-            DbType.SL: "NOT (tt.int_col IS NULL OR (tt.int_col NOT IN (42))) ORDER BY random() LIMIT 3 OFFSET 0",
             DbType.RS: "NOT (tt.int_col IS NULL OR (tt.int_col NOT IN (42))) ORDER BY random()  LIMIT 3",
             DbType.PG: "NOT (tt.int_col IS NULL OR (tt.int_col NOT IN (42))) ORDER BY random()  LIMIT 3",
             DbType.BQ: "NOT (`tt`.`int_col` IS NULL OR (`tt`.`int_col` NOT IN (42))) ORDER BY rand() LIMIT 3",
@@ -283,7 +266,6 @@ WHERE_TESTCASES = [
             )
         ],
         where={
-            DbType.SL: "NOT (tt.int_col IS NOT NULL AND (tt.int_col NOT IN (1))) ORDER BY random() LIMIT 3 OFFSET 0",
             DbType.RS: "NOT (tt.int_col IS NOT NULL AND (tt.int_col NOT IN (1))) ORDER BY random()  LIMIT 3",
             DbType.PG: "NOT (tt.int_col IS NOT NULL AND (tt.int_col NOT IN (1))) ORDER BY random()  LIMIT 3",
             DbType.BQ: "NOT (`tt`.`int_col` IS NOT NULL AND (`tt`.`int_col` NOT IN (1))) ORDER BY rand() LIMIT 3",
@@ -298,7 +280,6 @@ WHERE_TESTCASES = [
             )
         ],
         where={
-            DbType.SL: "NOT (tt.dt_col IS NULL OR (tt.dt_col NOT IN ('2024-01-01 00:00:00.000000'))) ORDER BY random() LIMIT 3 OFFSET 0",
             DbType.RS: "NOT (tt.dt_col IS NULL OR (tt.dt_col NOT IN ('2024-01-01 00:00:00'))) ORDER BY random()  LIMIT 3",
             DbType.PG: "NOT (tt.dt_col IS NULL OR (tt.dt_col NOT IN ('2024-01-01 00:00:00'))) ORDER BY random()  LIMIT 3",
             DbType.BQ: "NOT (`tt`.`dt_col` IS NULL OR (`tt`.`dt_col` NOT IN (DATETIME '2024-01-01 00:00:00'))) ORDER BY rand() LIMIT 3",
@@ -313,7 +294,6 @@ WHERE_TESTCASES = [
             )
         ],
         where={
-            DbType.SL: "NOT (tt.dt_col IS NOT NULL AND (tt.dt_col NOT IN ('2024-01-01 00:00:00.000000'))) ORDER BY random() LIMIT 3 OFFSET 0",
             DbType.RS: "NOT (tt.dt_col IS NOT NULL AND (tt.dt_col NOT IN ('2024-01-01 00:00:00'))) ORDER BY random()  LIMIT 3",
             DbType.PG: "NOT (tt.dt_col IS NOT NULL AND (tt.dt_col NOT IN ('2024-01-01 00:00:00'))) ORDER BY random()  LIMIT 3",
             DbType.BQ: "NOT (`tt`.`dt_col` IS NOT NULL AND (`tt`.`dt_col` NOT IN (DATETIME '2024-01-01 00:00:00'))) ORDER BY rand() LIMIT 3",
@@ -328,7 +308,6 @@ WHERE_TESTCASES = [
             )
         ],
         where={
-            DbType.SL: "tt.dt_col BETWEEN '2024-01-01 00:00:00.000000' AND '2024-01-02 00:00:00.000000' ORDER BY random() LIMIT 3 OFFSET 0",
             DbType.RS: "tt.dt_col BETWEEN '2024-01-01 00:00:00' AND '2024-01-02 00:00:00' ORDER BY random()  LIMIT 3",
             DbType.PG: "tt.dt_col BETWEEN '2024-01-01 00:00:00' AND '2024-01-02 00:00:00' ORDER BY random()  LIMIT 3",
             DbType.BQ: "`tt`.`dt_col` BETWEEN DATETIME '2024-01-01 00:00:00' AND DATETIME '2024-01-02 00:00:00' ORDER BY rand() LIMIT 3",
@@ -343,7 +322,6 @@ WHERE_TESTCASES = [
             )
         ],
         where={
-            DbType.SL: "tt.ts_col BETWEEN '2024-01-01 00:00:00.000000' AND '2024-01-02 00:00:00.000000' ORDER BY random() LIMIT 3 OFFSET 0",
             DbType.RS: "tt.ts_col BETWEEN '2024-01-01 00:00:00' AND '2024-01-02 00:00:00' ORDER BY random()  LIMIT 3",
             DbType.PG: "tt.ts_col BETWEEN '2024-01-01 00:00:00' AND '2024-01-02 00:00:00' ORDER BY random()  LIMIT 3",
             DbType.BQ: "`tt`.`ts_col` BETWEEN TIMESTAMP '2024-01-01 00:00:00' AND TIMESTAMP '2024-01-02 00:00:00' ORDER BY rand() LIMIT 3",
@@ -358,7 +336,6 @@ WHERE_TESTCASES = [
             )
         ],
         where={
-            DbType.SL: "tt.ts_col BETWEEN '2024-01-01 01:02:03.000000' AND '2024-01-02 00:00:00.000000' ORDER BY random() LIMIT 3 OFFSET 0",
             DbType.RS: "tt.ts_col BETWEEN '2024-01-01 01:02:03' AND '2024-01-02 00:00:00' ORDER BY random()  LIMIT 3",
             DbType.PG: "tt.ts_col BETWEEN '2024-01-01 01:02:03' AND '2024-01-02 00:00:00' ORDER BY random()  LIMIT 3",
             DbType.BQ: "`tt`.`ts_col` BETWEEN TIMESTAMP '2024-01-01 01:02:03' AND TIMESTAMP '2024-01-02 00:00:00' ORDER BY rand() LIMIT 3",
@@ -379,7 +356,6 @@ WHERE_TESTCASES = [
         ],
         where={
             DbType.BQ: "NOT (`tt`.`int_col` IS NULL OR (`tt`.`int_col` NOT IN (42, -17))) AND REGEXP_CONTAINS(lower(`tt`.`experiment_ids`), '(^(b|c)$)|(^(b|c),)|(,(b|c)$)|(,(b|c),)') ORDER BY rand() LIMIT 3",
-            DbType.SL: "NOT (tt.int_col IS NULL OR (tt.int_col NOT IN (42, -17))) AND lower(tt.experiment_ids) REGEXP '(^(b|c)$)|(^(b|c),)|(,(b|c)$)|(,(b|c),)' ORDER BY random() LIMIT 3 OFFSET 0",
             DbType.PG: "NOT (tt.int_col IS NULL OR (tt.int_col NOT IN (42, -17))) AND lower(tt.experiment_ids) ~ '(^(b|c)$)|(^(b|c),)|(,(b|c)$)|(,(b|c),)' ORDER BY random()  LIMIT 3",
             DbType.RS: "NOT (tt.int_col IS NULL OR (tt.int_col NOT IN (42, -17))) AND lower(tt.experiment_ids) ~ '(^(b|c)$)|(^(b|c),)|(,(b|c)$)|(,(b|c),)' ORDER BY random()  LIMIT 3",
         },
@@ -401,7 +377,6 @@ WHERE_TESTCASES = [
             DbType.BQ: "NOT (`tt`.`int_col` IS NULL OR (`tt`.`int_col` NOT IN (42, -17))) AND (`tt`.`experiment_ids` IS NULL OR char_length(`tt`.`experiment_ids`) = 0 OR NOT REGEXP_CONTAINS(lower(`tt`.`experiment_ids`), '(^(b|c)$)|(^(b|c),)|(,(b|c)$)|(,(b|c),)')) ORDER BY rand() LIMIT 3",
             DbType.PG: "NOT (tt.int_col IS NULL OR (tt.int_col NOT IN (42, -17))) AND (tt.experiment_ids IS NULL OR char_length(tt.experiment_ids) = 0 OR lower(tt.experiment_ids) !~ '(^(b|c)$)|(^(b|c),)|(,(b|c)$)|(,(b|c),)') ORDER BY random()  LIMIT 3",
             DbType.RS: "NOT (tt.int_col IS NULL OR (tt.int_col NOT IN (42, -17))) AND (tt.experiment_ids IS NULL OR char_length(tt.experiment_ids) = 0 OR lower(tt.experiment_ids) !~ '(^(b|c)$)|(^(b|c),)|(,(b|c)$)|(,(b|c),)') ORDER BY random()  LIMIT 3",
-            DbType.SL: "NOT (tt.int_col IS NULL OR (tt.int_col NOT IN (42, -17))) AND (tt.experiment_ids IS NULL OR length(tt.experiment_ids) = 0 OR lower(tt.experiment_ids) NOT REGEXP '(^(b|c)$)|(^(b|c),)|(,(b|c)$)|(,(b|c),)') ORDER BY random() LIMIT 3 OFFSET 0",
         },
     ),
     WhereTestCase(
@@ -411,7 +386,6 @@ WHERE_TESTCASES = [
             )
         ],
         where={
-            DbType.SL: "tt.int_col BETWEEN -17 AND 42 ORDER BY random() LIMIT 3 OFFSET 0",
             DbType.RS: "tt.int_col BETWEEN -17 AND 42 ORDER BY random()  LIMIT 3",
             DbType.PG: "tt.int_col BETWEEN -17 AND 42 ORDER BY random()  LIMIT 3",
             DbType.BQ: "`tt`.`int_col` BETWEEN -17 AND 42 ORDER BY rand() LIMIT 3",
@@ -426,7 +400,6 @@ WHERE_TESTCASES = [
             )
         ],
         where={
-            DbType.SL: "tt.bool_col IS 1 ORDER BY random() LIMIT 3 OFFSET 0",
             DbType.RS: "tt.bool_col IS true ORDER BY random()  LIMIT 3",
             DbType.PG: "tt.bool_col IS true ORDER BY random()  LIMIT 3",
             DbType.BQ: "`tt`.`bool_col` IS true ORDER BY rand() LIMIT 3",
@@ -441,7 +414,6 @@ WHERE_TESTCASES = [
             )
         ],
         where={
-            DbType.SL: "tt.bool_col IS NOT 1 ORDER BY random() LIMIT 3 OFFSET 0",
             DbType.RS: "tt.bool_col IS NOT true ORDER BY random()  LIMIT 3",
             DbType.PG: "tt.bool_col IS NOT true ORDER BY random()  LIMIT 3",
             DbType.BQ: "`tt`.`bool_col` IS NOT true ORDER BY rand() LIMIT 3",
@@ -456,7 +428,6 @@ WHERE_TESTCASES = [
             )
         ],
         where={
-            DbType.SL: "tt.bool_col IS NOT NULL ORDER BY random() LIMIT 3 OFFSET 0",
             DbType.RS: "tt.bool_col IS NOT NULL ORDER BY random()  LIMIT 3",
             DbType.PG: "tt.bool_col IS NOT NULL ORDER BY random()  LIMIT 3",
             DbType.BQ: "`tt`.`bool_col` IS NOT NULL ORDER BY rand() LIMIT 3",
@@ -471,7 +442,6 @@ WHERE_TESTCASES = [
             )
         ],
         where={
-            DbType.SL: "tt.bool_col IS NULL ORDER BY random() LIMIT 3 OFFSET 0",
             DbType.RS: "tt.bool_col IS NULL ORDER BY random()  LIMIT 3",
             DbType.PG: "tt.bool_col IS NULL ORDER BY random()  LIMIT 3",
             DbType.BQ: "`tt`.`bool_col` IS NULL ORDER BY rand() LIMIT 3",
@@ -484,7 +454,6 @@ WHERE_TESTCASES = [
             )
         ],
         where={
-            DbType.SL: "tt.bool_col IS 0 ORDER BY random() LIMIT 3 OFFSET 0",
             DbType.BQ: "`tt`.`bool_col` IS false ORDER BY rand() LIMIT 3",
             DbType.RS: "tt.bool_col IS false ORDER BY random()  LIMIT 3",
             DbType.PG: "tt.bool_col IS false ORDER BY random()  LIMIT 3",
@@ -499,7 +468,6 @@ WHERE_TESTCASES = [
             )
         ],
         where={
-            DbType.SL: "tt.bool_col IS NOT NULL AND tt.bool_col IS NOT 1 ORDER BY random() LIMIT 3 OFFSET 0",
             DbType.RS: "tt.bool_col IS NOT NULL AND tt.bool_col IS NOT true ORDER BY random()  LIMIT 3",
             DbType.PG: "tt.bool_col IS NOT NULL AND tt.bool_col IS NOT true ORDER BY random()  LIMIT 3",
             DbType.BQ: "`tt`.`bool_col` IS NOT NULL AND `tt`.`bool_col` IS NOT true ORDER BY rand() LIMIT 3",
@@ -514,7 +482,6 @@ WHERE_TESTCASES = [
             )
         ],
         where={
-            DbType.SL: "tt.bool_col IS NULL OR tt.bool_col IS 0 ORDER BY random() LIMIT 3 OFFSET 0",
             DbType.RS: "tt.bool_col IS NULL OR tt.bool_col IS false ORDER BY random()  LIMIT 3",
             DbType.PG: "tt.bool_col IS NULL OR tt.bool_col IS false ORDER BY random()  LIMIT 3",
             DbType.BQ: "`tt`.`bool_col` IS NULL OR `tt`.`bool_col` IS false ORDER BY rand() LIMIT 3",
@@ -529,7 +496,6 @@ WHERE_TESTCASES = [
             )
         ],
         where={
-            DbType.SL: "tt.bool_col IS 1 OR tt.bool_col IS NULL ORDER BY random() LIMIT 3 OFFSET 0",
             DbType.BQ: "`tt`.`bool_col` IS true OR `tt`.`bool_col` IS NULL ORDER BY rand() LIMIT 3",
             DbType.RS: "tt.bool_col IS true OR tt.bool_col IS NULL ORDER BY random()  LIMIT 3",
             DbType.PG: "tt.bool_col IS true OR tt.bool_col IS NULL ORDER BY random()  LIMIT 3",
@@ -544,7 +510,6 @@ WHERE_TESTCASES = [
             )
         ],
         where={
-            DbType.SL: "tt.bool_col IS NOT 0 AND tt.bool_col IS NOT 1 ORDER BY random() LIMIT 3 OFFSET 0",
             DbType.RS: "tt.bool_col IS NOT false AND tt.bool_col IS NOT true ORDER BY random()  LIMIT 3",
             DbType.PG: "tt.bool_col IS NOT false AND tt.bool_col IS NOT true ORDER BY random()  LIMIT 3",
             DbType.BQ: "`tt`.`bool_col` IS NOT false AND `tt`.`bool_col` IS NOT true ORDER BY rand() LIMIT 3",
@@ -559,7 +524,6 @@ WHERE_TESTCASES = [
             )
         ],
         where={
-            DbType.SL: "tt.bool_col IS NOT 0 AND tt.bool_col IS NOT NULL ORDER BY random() LIMIT 3 OFFSET 0",
             DbType.BQ: "`tt`.`bool_col` IS NOT false AND `tt`.`bool_col` IS NOT NULL ORDER BY rand() LIMIT 3",
             DbType.RS: "tt.bool_col IS NOT false AND tt.bool_col IS NOT NULL ORDER BY random()  LIMIT 3",
             DbType.PG: "tt.bool_col IS NOT false AND tt.bool_col IS NOT NULL ORDER BY random()  LIMIT 3",

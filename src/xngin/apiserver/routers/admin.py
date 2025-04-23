@@ -100,7 +100,6 @@ from xngin.apiserver.settings import (
     ParticipantsConfig,
     ParticipantsDef,
     RemoteDatabaseConfig,
-    SqliteLocalConfig,
     infer_table,
 )
 from xngin.stats.analysis import analyze_experiment as analyze_experiment_impl
@@ -569,9 +568,7 @@ def get_organization(
             DatasourceSummary(
                 id=ds.id,
                 name=ds.name,
-                driver="sqlite"
-                if isinstance(ds.get_config(), SqliteLocalConfig)
-                else ds.get_config().dwh.driver,
+                driver=ds.get_config().dwh.driver,
                 type=ds.get_config().type,
                 # Nit: Redundant in this response
                 organization_id=ds.organization_id,
@@ -607,9 +604,7 @@ def list_organization_datasources(
         return DatasourceSummary(
             id=ds.id,
             name=ds.name,
-            driver="sqlite"
-            if isinstance(config, SqliteLocalConfig)
-            else config.dwh.driver,
+            driver=config.dwh.driver,
             type=config.type,
             organization_id=ds.organization_id,
             organization_name=ds.organization.name,

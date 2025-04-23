@@ -58,442 +58,442 @@ HTTP 200
   ],
   "assignments": [
     {
-      "arm_id": "5bc829fb-ffa6-456c-9e54-d26ba8d1031d",
-      "arm_name": "Treatment",
-      "participant_id": "122169",
+      "arm_id": "699a500b-41d6-4cba-b254-60b9493717cb",
+      "arm_name": "Control",
+      "participant_id": "1",
       "strata": [
         {
           "field_name": "current_income",
-          "strata_value": "10587.0"
+          "strata_value": "29912.0"
         }
       ]
     },
     {
       "arm_id": "699a500b-41d6-4cba-b254-60b9493717cb",
       "arm_name": "Control",
-      "participant_id": "12955",
+      "participant_id": "10",
       "strata": [
         {
           "field_name": "current_income",
-          "strata_value": "11063.0"
-        }
-      ]
-    },
-    {
-      "arm_id": "5bc829fb-ffa6-456c-9e54-d26ba8d1031d",
-      "arm_name": "Treatment",
-      "participant_id": "154001",
-      "strata": [
-        {
-          "field_name": "current_income",
-          "strata_value": "12100.0"
-        }
-      ]
-    },
-    {
-      "arm_id": "5bc829fb-ffa6-456c-9e54-d26ba8d1031d",
-      "arm_name": "Treatment",
-      "participant_id": "155035",
-      "strata": [
-        {
-          "field_name": "current_income",
-          "strata_value": "8466.284540241537"
-        }
-      ]
-    },
-    {
-      "arm_id": "5bc829fb-ffa6-456c-9e54-d26ba8d1031d",
-      "arm_name": "Treatment",
-      "participant_id": "171643",
-      "strata": [
-        {
-          "field_name": "current_income",
-          "strata_value": "11022.0"
+          "strata_value": "24173.0"
         }
       ]
     },
     {
       "arm_id": "699a500b-41d6-4cba-b254-60b9493717cb",
       "arm_name": "Control",
-      "participant_id": "179916",
+      "participant_id": "11",
       "strata": [
         {
           "field_name": "current_income",
-          "strata_value": "12108.0"
+          "strata_value": "18532.0"
         }
       ]
     },
     {
       "arm_id": "699a500b-41d6-4cba-b254-60b9493717cb",
       "arm_name": "Control",
-      "participant_id": "198781",
+      "participant_id": "12",
       "strata": [
         {
           "field_name": "current_income",
-          "strata_value": "8831.94689270468"
+          "strata_value": "26885.0"
         }
       ]
     },
     {
       "arm_id": "5bc829fb-ffa6-456c-9e54-d26ba8d1031d",
       "arm_name": "Treatment",
-      "participant_id": "210073",
+      "participant_id": "13",
       "strata": [
         {
           "field_name": "current_income",
-          "strata_value": "11523.0"
-        }
-      ]
-    },
-    {
-      "arm_id": "699a500b-41d6-4cba-b254-60b9493717cb",
-      "arm_name": "Control",
-      "participant_id": "23560",
-      "strata": [
-        {
-          "field_name": "current_income",
-          "strata_value": "8805.256210043137"
+          "strata_value": "35783.0"
         }
       ]
     },
     {
       "arm_id": "5bc829fb-ffa6-456c-9e54-d26ba8d1031d",
       "arm_name": "Treatment",
-      "participant_id": "237616",
+      "participant_id": "14",
       "strata": [
         {
           "field_name": "current_income",
-          "strata_value": "11971.0"
-        }
-      ]
-    },
-    {
-      "arm_id": "699a500b-41d6-4cba-b254-60b9493717cb",
-      "arm_name": "Control",
-      "participant_id": "248783",
-      "strata": [
-        {
-          "field_name": "current_income",
-          "strata_value": "8571.712736754633"
+          "strata_value": "30168.0"
         }
       ]
     },
     {
       "arm_id": "5bc829fb-ffa6-456c-9e54-d26ba8d1031d",
       "arm_name": "Treatment",
-      "participant_id": "295539",
+      "participant_id": "15",
       "strata": [
         {
           "field_name": "current_income",
-          "strata_value": "8475.626279173077"
+          "strata_value": "24909.982684021215"
         }
       ]
     },
     {
       "arm_id": "699a500b-41d6-4cba-b254-60b9493717cb",
       "arm_name": "Control",
-      "participant_id": "302146",
+      "participant_id": "16",
       "strata": [
         {
           "field_name": "current_income",
-          "strata_value": "11254.0"
-        }
-      ]
-    },
-    {
-      "arm_id": "699a500b-41d6-4cba-b254-60b9493717cb",
-      "arm_name": "Control",
-      "participant_id": "310074",
-      "strata": [
-        {
-          "field_name": "current_income",
-          "strata_value": "9940.0"
-        }
-      ]
-    },
-    {
-      "arm_id": "699a500b-41d6-4cba-b254-60b9493717cb",
-      "arm_name": "Control",
-      "participant_id": "33392",
-      "strata": [
-        {
-          "field_name": "current_income",
-          "strata_value": "11604.0"
+          "strata_value": "35161.0"
         }
       ]
     },
     {
       "arm_id": "5bc829fb-ffa6-456c-9e54-d26ba8d1031d",
       "arm_name": "Treatment",
-      "participant_id": "35426",
+      "participant_id": "17",
       "strata": [
         {
           "field_name": "current_income",
-          "strata_value": "8689.151740465422"
-        }
-      ]
-    },
-    {
-      "arm_id": "5bc829fb-ffa6-456c-9e54-d26ba8d1031d",
-      "arm_name": "Treatment",
-      "participant_id": "393637",
-      "strata": [
-        {
-          "field_name": "current_income",
-          "strata_value": "12155.0"
-        }
-      ]
-    },
-    {
-      "arm_id": "5bc829fb-ffa6-456c-9e54-d26ba8d1031d",
-      "arm_name": "Treatment",
-      "participant_id": "407190",
-      "strata": [
-        {
-          "field_name": "current_income",
-          "strata_value": "12463.0"
-        }
-      ]
-    },
-    {
-      "arm_id": "5bc829fb-ffa6-456c-9e54-d26ba8d1031d",
-      "arm_name": "Treatment",
-      "participant_id": "410077",
-      "strata": [
-        {
-          "field_name": "current_income",
-          "strata_value": "11081.0"
+          "strata_value": "23045.77066229423"
         }
       ]
     },
     {
       "arm_id": "699a500b-41d6-4cba-b254-60b9493717cb",
       "arm_name": "Control",
-      "participant_id": "431735",
+      "participant_id": "18",
       "strata": [
         {
           "field_name": "current_income",
-          "strata_value": "10241.0"
-        }
-      ]
-    },
-    {
-      "arm_id": "699a500b-41d6-4cba-b254-60b9493717cb",
-      "arm_name": "Control",
-      "participant_id": "440263",
-      "strata": [
-        {
-          "field_name": "current_income",
-          "strata_value": "11847.0"
+          "strata_value": "26760.0"
         }
       ]
     },
     {
       "arm_id": "5bc829fb-ffa6-456c-9e54-d26ba8d1031d",
       "arm_name": "Treatment",
-      "participant_id": "469679",
+      "participant_id": "19",
       "strata": [
         {
           "field_name": "current_income",
-          "strata_value": "12137.0"
+          "strata_value": "24769.0"
         }
       ]
     },
     {
       "arm_id": "699a500b-41d6-4cba-b254-60b9493717cb",
       "arm_name": "Control",
-      "participant_id": "484970",
+      "participant_id": "2",
       "strata": [
         {
           "field_name": "current_income",
-          "strata_value": "11348.0"
+          "strata_value": "24601.72715286951"
+        }
+      ]
+    },
+    {
+      "arm_id": "699a500b-41d6-4cba-b254-60b9493717cb",
+      "arm_name": "Control",
+      "participant_id": "20",
+      "strata": [
+        {
+          "field_name": "current_income",
+          "strata_value": "45298.0"
         }
       ]
     },
     {
       "arm_id": "5bc829fb-ffa6-456c-9e54-d26ba8d1031d",
       "arm_name": "Treatment",
-      "participant_id": "486195",
+      "participant_id": "21",
       "strata": [
         {
           "field_name": "current_income",
-          "strata_value": "10270.0"
-        }
-      ]
-    },
-    {
-      "arm_id": "699a500b-41d6-4cba-b254-60b9493717cb",
-      "arm_name": "Control",
-      "participant_id": "510222",
-      "strata": [
-        {
-          "field_name": "current_income",
-          "strata_value": "8761.21658365159"
+          "strata_value": "42429.0"
         }
       ]
     },
     {
       "arm_id": "5bc829fb-ffa6-456c-9e54-d26ba8d1031d",
       "arm_name": "Treatment",
-      "participant_id": "552382",
+      "participant_id": "22",
       "strata": [
         {
           "field_name": "current_income",
-          "strata_value": "8490.306154636924"
-        }
-      ]
-    },
-    {
-      "arm_id": "699a500b-41d6-4cba-b254-60b9493717cb",
-      "arm_name": "Control",
-      "participant_id": "65425",
-      "strata": [
-        {
-          "field_name": "current_income",
-          "strata_value": "11744.0"
+          "strata_value": "39253.0"
         }
       ]
     },
     {
       "arm_id": "5bc829fb-ffa6-456c-9e54-d26ba8d1031d",
       "arm_name": "Treatment",
-      "participant_id": "710929",
+      "participant_id": "23",
       "strata": [
         {
           "field_name": "current_income",
-          "strata_value": "11860.0"
+          "strata_value": "43093.0"
         }
       ]
     },
     {
       "arm_id": "5bc829fb-ffa6-456c-9e54-d26ba8d1031d",
       "arm_name": "Treatment",
-      "participant_id": "730934",
+      "participant_id": "24",
       "strata": [
         {
           "field_name": "current_income",
-          "strata_value": "10937.0"
+          "strata_value": "44021.0"
         }
       ]
     },
     {
       "arm_id": "699a500b-41d6-4cba-b254-60b9493717cb",
       "arm_name": "Control",
-      "participant_id": "76948",
+      "participant_id": "25",
       "strata": [
         {
           "field_name": "current_income",
-          "strata_value": "11123.0"
+          "strata_value": "20937.324061538402"
+        }
+      ]
+    },
+    {
+      "arm_id": "699a500b-41d6-4cba-b254-60b9493717cb",
+      "arm_name": "Control",
+      "participant_id": "26",
+      "strata": [
+        {
+          "field_name": "current_income",
+          "strata_value": "34612.0"
         }
       ]
     },
     {
       "arm_id": "5bc829fb-ffa6-456c-9e54-d26ba8d1031d",
       "arm_name": "Treatment",
-      "participant_id": "773941",
+      "participant_id": "27",
       "strata": [
         {
           "field_name": "current_income",
-          "strata_value": "11755.0"
+          "strata_value": "32558.477118659215"
+        }
+      ]
+    },
+    {
+      "arm_id": "699a500b-41d6-4cba-b254-60b9493717cb",
+      "arm_name": "Control",
+      "participant_id": "28",
+      "strata": [
+        {
+          "field_name": "current_income",
+          "strata_value": "42714.0"
         }
       ]
     },
     {
       "arm_id": "5bc829fb-ffa6-456c-9e54-d26ba8d1031d",
       "arm_name": "Treatment",
-      "participant_id": "776353",
+      "participant_id": "29",
       "strata": [
         {
           "field_name": "current_income",
-          "strata_value": "12145.0"
+          "strata_value": "27961.73897141952"
         }
       ]
     },
     {
       "arm_id": "699a500b-41d6-4cba-b254-60b9493717cb",
       "arm_name": "Control",
-      "participant_id": "812175",
+      "participant_id": "3",
       "strata": [
         {
           "field_name": "current_income",
-          "strata_value": "11582.0"
+          "strata_value": "46167.0"
+        }
+      ]
+    },
+    {
+      "arm_id": "699a500b-41d6-4cba-b254-60b9493717cb",
+      "arm_name": "Control",
+      "participant_id": "30",
+      "strata": [
+        {
+          "field_name": "current_income",
+          "strata_value": "38580.337940598"
+        }
+      ]
+    },
+    {
+      "arm_id": "699a500b-41d6-4cba-b254-60b9493717cb",
+      "arm_name": "Control",
+      "participant_id": "31",
+      "strata": [
+        {
+          "field_name": "current_income",
+          "strata_value": "65891.0"
         }
       ]
     },
     {
       "arm_id": "5bc829fb-ffa6-456c-9e54-d26ba8d1031d",
       "arm_name": "Treatment",
-      "participant_id": "830767",
+      "participant_id": "32",
       "strata": [
         {
           "field_name": "current_income",
-          "strata_value": "10229.0"
-        }
-      ]
-    },
-    {
-      "arm_id": "699a500b-41d6-4cba-b254-60b9493717cb",
-      "arm_name": "Control",
-      "participant_id": "865084",
-      "strata": [
-        {
-          "field_name": "current_income",
-          "strata_value": "12568.0"
-        }
-      ]
-    },
-    {
-      "arm_id": "699a500b-41d6-4cba-b254-60b9493717cb",
-      "arm_name": "Control",
-      "participant_id": "866648",
-      "strata": [
-        {
-          "field_name": "current_income",
-          "strata_value": "12686.0"
+          "strata_value": "15390.0"
         }
       ]
     },
     {
       "arm_id": "5bc829fb-ffa6-456c-9e54-d26ba8d1031d",
       "arm_name": "Treatment",
-      "participant_id": "895588",
+      "participant_id": "33",
       "strata": [
         {
           "field_name": "current_income",
-          "strata_value": "12235.0"
+          "strata_value": "27526.259032947786"
+        }
+      ]
+    },
+    {
+      "arm_id": "5bc829fb-ffa6-456c-9e54-d26ba8d1031d",
+      "arm_name": "Treatment",
+      "participant_id": "34",
+      "strata": [
+        {
+          "field_name": "current_income",
+          "strata_value": "36330.0"
         }
       ]
     },
     {
       "arm_id": "699a500b-41d6-4cba-b254-60b9493717cb",
       "arm_name": "Control",
-      "participant_id": "947098",
+      "participant_id": "35",
       "strata": [
         {
           "field_name": "current_income",
-          "strata_value": "11477.0"
+          "strata_value": "42566.0"
+        }
+      ]
+    },
+    {
+      "arm_id": "5bc829fb-ffa6-456c-9e54-d26ba8d1031d",
+      "arm_name": "Treatment",
+      "participant_id": "36",
+      "strata": [
+        {
+          "field_name": "current_income",
+          "strata_value": "42313.0"
+        }
+      ]
+    },
+    {
+      "arm_id": "5bc829fb-ffa6-456c-9e54-d26ba8d1031d",
+      "arm_name": "Treatment",
+      "participant_id": "37",
+      "strata": [
+        {
+          "field_name": "current_income",
+          "strata_value": "42830.0"
+        }
+      ]
+    },
+    {
+      "arm_id": "5bc829fb-ffa6-456c-9e54-d26ba8d1031d",
+      "arm_name": "Treatment",
+      "participant_id": "38",
+      "strata": [
+        {
+          "field_name": "current_income",
+          "strata_value": "16751.0"
         }
       ]
     },
     {
       "arm_id": "699a500b-41d6-4cba-b254-60b9493717cb",
       "arm_name": "Control",
-      "participant_id": "956625",
+      "participant_id": "39",
       "strata": [
         {
           "field_name": "current_income",
-          "strata_value": "13021.0"
+          "strata_value": "27397.0"
+        }
+      ]
+    },
+    {
+      "arm_id": "5bc829fb-ffa6-456c-9e54-d26ba8d1031d",
+      "arm_name": "Treatment",
+      "participant_id": "4",
+      "strata": [
+        {
+          "field_name": "current_income",
+          "strata_value": "51329.32958784096"
         }
       ]
     },
     {
       "arm_id": "699a500b-41d6-4cba-b254-60b9493717cb",
       "arm_name": "Control",
-      "participant_id": "996915",
+      "participant_id": "40",
       "strata": [
         {
           "field_name": "current_income",
-          "strata_value": "12314.0"
+          "strata_value": "37492.0"
+        }
+      ]
+    },
+    {
+      "arm_id": "699a500b-41d6-4cba-b254-60b9493717cb",
+      "arm_name": "Control",
+      "participant_id": "5",
+      "strata": [
+        {
+          "field_name": "current_income",
+          "strata_value": "40172.80606642128"
+        }
+      ]
+    },
+    {
+      "arm_id": "699a500b-41d6-4cba-b254-60b9493717cb",
+      "arm_name": "Control",
+      "participant_id": "6",
+      "strata": [
+        {
+          "field_name": "current_income",
+          "strata_value": "43665.63395162821"
+        }
+      ]
+    },
+    {
+      "arm_id": "5bc829fb-ffa6-456c-9e54-d26ba8d1031d",
+      "arm_name": "Treatment",
+      "participant_id": "7",
+      "strata": [
+        {
+          "field_name": "current_income",
+          "strata_value": "47954.0"
+        }
+      ]
+    },
+    {
+      "arm_id": "5bc829fb-ffa6-456c-9e54-d26ba8d1031d",
+      "arm_name": "Treatment",
+      "participant_id": "8",
+      "strata": [
+        {
+          "field_name": "current_income",
+          "strata_value": "50691.56932365489"
+        }
+      ]
+    },
+    {
+      "arm_id": "699a500b-41d6-4cba-b254-60b9493717cb",
+      "arm_name": "Control",
+      "participant_id": "9",
+      "strata": [
+        {
+          "field_name": "current_income",
+          "strata_value": "46780.0"
         }
       ]
     }
@@ -501,9 +501,9 @@ HTTP 200
   "balance_check": {
     "balance_ok": true,
     "denominator_df": 38,
-    "f_statistic": 0.068011333,
+    "f_statistic": 0.074818828,
     "numerator_df": 1,
-    "p_value": 0.795662726
+    "p_value": 0.785926863
   },
   "experiment_id": "0897bbd7-dacd-41b4-b164-7a1950fa61f2",
   "sample_size": 40,

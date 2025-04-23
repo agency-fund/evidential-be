@@ -4,17 +4,16 @@ import httpx
 from fastapi import Depends, Header
 from fastapi.security import APIKeyHeader
 from sqlalchemy.orm import Session
-
 from xngin.apiserver import constants
 from xngin.apiserver.apikeys import require_valid_api_key
 from xngin.apiserver.database import SessionLocal
 from xngin.apiserver.gsheet_cache import GSheetCache
 from xngin.apiserver.models.tables import Datasource as DatasourceTable
 from xngin.apiserver.settings import (
-    get_settings_for_server,
-    XnginSettings,
     Datasource,
     DatasourceConfig,
+    XnginSettings,
+    get_settings_for_server,
 )
 
 
@@ -31,12 +30,12 @@ def settings_dependency():
 
 
 def xngin_db_session():
-    """Returns a database connection to the xngin sqlite database (not customer data warehouse)."""
-    db = SessionLocal()
+    """Returns a database connection to the xngin app database (not customer data warehouse)."""
+    session = SessionLocal()
     try:
-        yield db
+        yield session
     finally:
-        db.close()
+        session.close()
 
 
 def datasource_dependency(

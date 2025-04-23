@@ -5,11 +5,9 @@
 - [Testing](#testing)
   - [Unit Tests](#unit-tests)
   - [Google Integration Tests](#google-integration-tests)
-  - [Postgres Integration Tests](#postgres-integration-tests)
   - [BigQuery Integration Tests](#bigquery-integration-tests)
   - [Showing additional test output](#showing-additional-test-output)
   - [API Test Scripts](#api-test-scripts)
-  - [How do I force-build the test sqlite database?](#how-do-i-force-build-the-test-sqlite-database)
   - [Loading the testing DWH with a different schema?](#loading-the-testing-dwh-with-a-different-schema)
   - [Testing environment for BigQuery as the Service Provider](#testing-environment-for-bigquery-as-the-service-provider)
 
@@ -18,7 +16,7 @@
 This is a collection of random tips about testing. Most of the test configurations you will use are already defined
 in the [Taskfile](../Taskfile.yml).
 
-> Warning: If you find yourself doing any testing that doesn't have tooling for it already, let's talk!
+> Warning: If you find yourself doing any testing that doesn't have `task` entry for it already, let's talk!
 
 ## Unit Tests<a name="unit-tests"></a>
 
@@ -28,22 +26,16 @@ Run unit tests with:
 task test
 ```
 
-Or:
-
-```shell
-task test-pgintegration
-```
-
 We run unittests with [pytest](https://docs.pytest.org/en/stable/).
 
-[Various tests](../.github/workflows/test.yaml) are also run as part of our github action test workflow.
+The `task test` helper automatically creates a local Postgres instance for testing and creates a testing datawarehouse
+in the "dwh" database from [testing_dwh.csv.zst](../src/xngin/apiserver/testdata/testing_dwh.csv.zst) file.
+[testing_sheet.csv](../src/xngin/apiserver/testdata/testing_sheet.csv) is the corresponding spreadsheet that simulates a
+typical table configuration for the participant type data above.
 
-Most of our tests that rely on `conftest.py` for fixtures and the management of a local ephemeral
-sqlite database will create a local sqlite db for testing if it doesn't exist already in
-`src/xngin/apiserver/testdata/testing_dwh.db` using the zipped data dump in `testing_dwh.csv.zst`.
+[Various tests](../.github/workflows/test.yaml) are also run as part of our GitHub action test workflow.
 
-`testing_sheet.csv` is the corresponding spreadsheet that simulates a typical table configuration for the participant
-type data above.
+[conftest.py](../src/xngin/apiserver/conftest.py) defines fixtures used by many of the tests .
 
 ## Google Integration Tests<a name="google-integration-tests"></a>
 
@@ -53,10 +45,6 @@ by setting `GOOGLE_APPLICATION_CREDENTIALS` and running:
 ```shell
 pytest -m integration
 ```
-
-## Postgres Integration Tests<a name="postgres-integration-tests"></a>
-
-Run `task test-pgintegration` to run the Postgres integration tests.
 
 ## BigQuery Integration Tests<a name="bigquery-integration-tests"></a>
 
@@ -99,11 +87,6 @@ prefixing your pytest run with the environment variable: `UPDATE_API_TESTS=1`.
 
 Or just run `task update-api-tests`.
 
-## How do I force-build the test sqlite database?<a name="how-do-i-force-build-the-test-sqlite-database"></a>
-
-Delete the `src/xngin/apiserver/testdata/testing_dwh.db` and let the unit tests rebuild it
-for you.
-
 ## Loading the testing DWH with a different schema?<a name="loading-the-testing-dwh-with-a-different-schema"></a>
 
 Use the CLI command:
@@ -125,25 +108,19 @@ One way to manually query pg is using the `psql` terminal included with Postgres
 psql -h localhost -p 5432 -d xngin -U xnginwebserver -c "select count(*) from alt.test_participant_type"
 ```
 
-### How can I run the unittests against a non-SQLite data warehouse?<a name="how-can-i-run-the-unittests-that-use-my-pgbq-instance-as-the-test-dwh"></a>
+### How can I run the unittests against an arbitrary data warehouse?<a name="how-can-i-run-the-unittests-that-use-my-pgbq-instance-as-the-test-dwh"></a>
 
-> Note: We are removing support for SQLite as a testing data warehouse.
+Tests that rely on the testing warehouse do so via references in xngin.testing.settings.json or via the
+XNGIN_TEST_DWH_URI environment variable.
 
-Tests that rely on `get_test_dwh_info()` will use the `XNGIN_TEST_DWH_URI` environment variable, if set, instead of
-an ephemeral SQLite database.
-
-You can run the tests against a local PostgreSQL database using the predefined tasks:
+You can populate another datasource (such as BigQuery) with the testing dataset and run some of the tests against it.
+Here's an example with BigQuery:
 
 ```shell
-task test-pgintegration
-```
-
-Or you can run the tests against other DSNs. Here's an example with BigQuery:
-
-```
-XNGIN_TEST_DWH_URI="bigquery://xngin-development-dc/ds" \
-  GSHEET_GOOGLE_APPLICATION_CREDENTIALS=credentials.json \
-  pytest src/xngin/apiserver/dwh/test_queries.py::test_boolean_filter
+$ export GSHEET_GOOGLE_APPLICATION_CREDENTIALS=credentials.json
+$ uv run xngin-cli create-testing-dwh --dsn bigquery://xngin-development-dc/ds
+$ XNGIN_TEST_DWH_URI="bigquery://xngin-development-dc/ds"
+  uv run pytest -vv src/xngin/apiserver/dwh/test_queries.py::test_boolean_filter
 ```
 
 ## Testing environment for BigQuery as the Service Provider<a name="testing-environment-for-bigquery-as-the-service-provider"></a>

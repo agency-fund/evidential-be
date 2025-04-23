@@ -67,7 +67,7 @@ Follow the steps below to get a local development environment running.
    > command to allow yourself access to the UI:
    >
    > ```shell
-   > task create-user -- USERNAME@gmail.com
+   > task create-user
    > ```
 
 1. If you are only working on the UI, you can skip the rest of the instructions.

@@ -47,10 +47,9 @@ log_cli = 0  # set to 1 for live logs
 log_cli_level = "warn"
 markers = [
     "integration: integration tests that rely on remote resources",
-    "pgintegration: integration tests that rely on a local postgres instance",
     "nondeterministic: tests that are nondeterministic (but should be)"
 ]
-addopts = "-m 'not integration and not nondeterministic and not pgintegration'"
+addopts = "-m 'not integration and not nondeterministic'"
 # filtewarnings can be used to silence warnings during tests.
 # format is: action:message:category:module
 filterwarnings = [

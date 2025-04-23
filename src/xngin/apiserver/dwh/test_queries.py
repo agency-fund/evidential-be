@@ -7,6 +7,7 @@ from datetime import UTC, datetime
 
 import pytest
 import sqlalchemy
+import sqlalchemy_bigquery
 from sqlalchemy import (
     Boolean,
     Column,
@@ -16,7 +17,6 @@ from sqlalchemy import (
     String,
     Table,
     create_engine,
-    event,
     make_url,
     text,
 )
@@ -42,7 +42,6 @@ from xngin.apiserver.dwh.queries import (
     make_csv_regex,
 )
 from xngin.apiserver.exceptions_common import LateValidationError
-from xngin.db_extensions.custom_functions import NumpyStddev
 
 SA_LOGGER_NAME_FOR_DWH = "xngin_dwh"
 SA_LOGGING_PREFIX_FOR_DWH = "dwh"
@@ -175,12 +174,9 @@ class Case:
         ])
 
 
-@pytest.fixture(name="db_session")
-def fixture_db_session():
+@pytest.fixture(name="dwh_session")
+def fixture_dwh_session():
     """Yields a session that tests can use to operate on a testing database.
-
-    Usually we are working with a SQLite database (simple!) but it might be overridden by the XNGIN_TEST_DWH_URI
-    environment variable (see get_test_dwh_info()).
 
     On Postgres databases: a new database will be created and deleted for each use of this fixture.
 
@@ -193,7 +189,7 @@ def fixture_db_session():
     use_temporary_database = db_type == DbType.PG
 
     if use_temporary_database:
-        temporary_database_name = f"fixture_db_session_{secrets.token_hex(16)}"
+        temporary_database_name = f"fixture_dwh_session_{secrets.token_hex(16)}"
         default_engine = create_engine(
             default_url,
             connect_args=connect_args,
@@ -227,11 +223,6 @@ def fixture_db_session():
     # TODO: consider trying to consolidate dwh-conditional config with that in settings.py
     if db_type is DbType.RS and hasattr(engine.dialect, "_set_backslash_escapes"):
         engine.dialect._set_backslash_escapes = lambda _: None
-    elif db_type is DbType.SL:
-
-        @event.listens_for(engine, "connect")
-        def register_sqlite_functions(dbapi_connection, _):
-            NumpyStddev.register(dbapi_connection)
 
     Base.metadata.create_all(engine)
     session = Session(engine)
@@ -264,42 +255,37 @@ def fixture_db_session():
             conn.execute(text(f"DROP DATABASE {temporary_database_name}"))
 
 
-@pytest.fixture(name="engine")
-def fixture_engine(db_session):
-    """Injects an engine into a test."""
-    return db_session.get_bind()
-
-
-@pytest.fixture(name="compiler")
-def fixture_compiler(engine):
-    """Returns a helper method to compile a sqlalchemy.Select into a SQL string."""
-    return lambda query: str(
-        query.compile(engine, compile_kwargs={"literal_binds": True})
-    ).replace("\n", "")
-
-
-def test_execute_query_without_filters(compiler):
-    sql = compiler(compose_query(SampleTable.get_table(), 2, []))
-    _, dbtype, _ = get_test_dwh_info()
-    if dbtype == DbType.BQ:
+def test_compile_query_without_filters_pg():
+    # SQLAlchemy shares a base class for both psycopg2's and psycopg's dialect so they are very similar.
+    dialects = (
+        sqlalchemy.dialects.postgresql.psycopg2.dialect(),
+        sqlalchemy.dialects.postgresql.psycopg.dialect(),
+    )
+    for dialect in dialects:
+        query = compose_query(SampleTable.get_table(), 2, [])
+        actual = str(
+            query.compile(dialect=dialect, compile_kwargs={"literal_binds": True})
+        ).replace("\n", "")
         expectation = (
-            "SELECT `test_table`.`id`, `test_table`.`int_col`, `test_table`.`float_col`, "
-            "`test_table`.`bool_col`, `test_table`.`string_col`, `test_table`.`experiment_ids` "
-            "FROM `test_table` ORDER BY rand() LIMIT 2"
-        )
-        assert sql == expectation, sql
-    else:
-        # regex to accommodate pg and sqlite compilers
-        match = re.match(
-            re.escape(
-                "SELECT test_table.id, test_table.int_col, test_table.float_col,"
-                " test_table.bool_col, test_table.string_col, test_table.experiment_ids "
-                "FROM test_table ORDER BY random()"
-            )
-            + r" +LIMIT 2(?: OFFSET 0){0,1}",
-            sql,
-        )
-        assert match is not None, sql
+            "SELECT test_table.id, test_table.int_col, test_table.float_col,"
+            " test_table.bool_col, test_table.string_col, test_table.experiment_ids "
+            "FROM test_table ORDER BY random()  LIMIT 2"
+        )  # two spaces!
+        assert actual == expectation
+
+
+def test_compile_query_without_filters_bq():
+    query = compose_query(SampleTable.get_table(), 2, [])
+    dialect = sqlalchemy_bigquery.dialect()
+    actual = str(
+        query.compile(dialect=dialect, compile_kwargs={"literal_binds": True})
+    ).replace("\n", "")
+    expectation = (
+        "SELECT `test_table`.`id`, `test_table`.`int_col`, `test_table`.`float_col`, "
+        "`test_table`.`bool_col`, `test_table`.`string_col`, `test_table`.`experiment_ids` "
+        "FROM `test_table` ORDER BY rand() LIMIT 2"
+    )
+    assert actual == expectation, actual
 
 
 IS_NULLABLE_CASES = [
@@ -448,7 +434,7 @@ IS_NULLABLE_CASES = [
 
 
 @pytest.mark.parametrize("testcase", IS_NULLABLE_CASES, ids=lambda d: str(d))
-def test_is_nullable(testcase, db_session, use_deterministic_random):
+def test_is_nullable(testcase, dwh_session, use_deterministic_random):
     testcase.filters = [
         AudienceSpecFilter.model_validate(filt.model_dump())
         for filt in testcase.filters
@@ -459,7 +445,7 @@ def test_is_nullable(testcase, db_session, use_deterministic_random):
         AudienceSpec(participant_type=table.name, filters=testcase.filters),
     )
     q = compose_query(table, testcase.chosen_n, filters)
-    query_results = db_session.execute(q).all()
+    query_results = dwh_session.execute(q).all()
     assert list(sorted([r.id for r in query_results])) == list(
         sorted(r.id for r in testcase.matches)
     ), testcase
@@ -627,7 +613,7 @@ RELATION_CASES = [
 
 
 @pytest.mark.parametrize("testcase", RELATION_CASES)
-def test_relations(testcase, db_session, use_deterministic_random):
+def test_relations(testcase, dwh_session, use_deterministic_random):
     testcase.filters = [
         AudienceSpecFilter.model_validate(filt.model_dump())
         for filt in testcase.filters
@@ -639,7 +625,7 @@ def test_relations(testcase, db_session, use_deterministic_random):
         ),
     )
     q = compose_query(SampleTable.get_table(), testcase.chosen_n, filters)
-    query_results = db_session.execute(q).all()
+    query_results = dwh_session.execute(q).all()
     assert list(sorted([r.id for r in query_results])) == list(
         sorted(r.id for r in testcase.matches)
     ), testcase
@@ -809,7 +795,6 @@ def test_make_csv_regex(csv, values, expected):
     Null-, empty string, and negative cases are special and handled in SQL elsewhere.
     """
     r = make_csv_regex(values)
-    # confirmed that sqlalchemy.dialects.sqlite.pysqlite also uses re.search
     matches = re.search(r, csv)
     actual = matches is not None
     assert actual == expected, (
@@ -817,10 +802,10 @@ def test_make_csv_regex(csv, values, expected):
     )
 
 
-def test_get_stats_on_missing_metric_raises_error(db_session):
+def test_get_stats_on_missing_metric_raises_error(dwh_session):
     with pytest.raises(LateValidationError) as exc:
         get_stats_on_metrics(
-            db_session,
+            dwh_session,
             SampleTable.get_table(),
             [DesignSpecMetricRequest(field_name="missing_col", metric_pct_change=0.1)],
             AudienceSpec(
@@ -834,10 +819,10 @@ def test_get_stats_on_missing_metric_raises_error(db_session):
     )
 
 
-def test_get_stats_on_integer_metric(db_session):
+def test_get_stats_on_integer_metric(dwh_session):
     """Test would fail on postgres and redshift without a cast to float for different reasons."""
     rows = get_stats_on_metrics(
-        db_session,
+        dwh_session,
         SampleTable.get_table(),
         [DesignSpecMetricRequest(field_name="int_col", metric_pct_change=0.1)],
         AudienceSpec(
@@ -871,9 +856,9 @@ def test_get_stats_on_integer_metric(db_session):
     )
 
 
-def test_get_stats_on_nullable_integer_metric(db_session):
+def test_get_stats_on_nullable_integer_metric(dwh_session):
     rows = get_stats_on_metrics(
-        db_session,
+        dwh_session,
         SampleNullableTable.get_table(),
         [DesignSpecMetricRequest(field_name="int_col", metric_pct_change=0.1)],
         AudienceSpec(participant_type="ignored", filters=[]),
@@ -902,10 +887,10 @@ def test_get_stats_on_nullable_integer_metric(db_session):
     )
 
 
-def test_get_stats_on_boolean_metric(db_session):
+def test_get_stats_on_boolean_metric(dwh_session):
     """Test would fail on postgres and redshift without casting to int to float."""
     rows = get_stats_on_metrics(
-        db_session,
+        dwh_session,
         SampleTable.get_table(),
         [DesignSpecMetricRequest(field_name="bool_col", metric_pct_change=0.1)],
         AudienceSpec(
@@ -937,9 +922,9 @@ def test_get_stats_on_boolean_metric(db_session):
     )
 
 
-def test_get_stats_on_numeric_metric(db_session):
+def test_get_stats_on_numeric_metric(dwh_session):
     rows = get_stats_on_metrics(
-        db_session,
+        dwh_session,
         SampleTable.get_table(),
         [DesignSpecMetricRequest(field_name="float_col", metric_pct_change=0.1)],
         AudienceSpec(
@@ -972,10 +957,10 @@ def test_get_stats_on_numeric_metric(db_session):
     )
 
 
-def test_get_participant_metrics(db_session):
+def test_get_participant_metrics(dwh_session):
     participant_ids = ["100", "200"]
     rows = get_participant_metrics(
-        db_session,
+        dwh_session,
         SampleTable.get_table(),
         [
             DesignSpecMetricRequest(field_name="float_col", metric_pct_change=0.1),

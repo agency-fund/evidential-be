@@ -53,7 +53,7 @@ def fixture_update_api_tests_flag(pytestconfig):
     return flags.UPDATE_API_TESTS
 
 
-@pytest.fixture(name="db_session", autouse=True)
+@pytest.fixture(name="db_session")
 def fixture_db_session():
     session = next(app.dependency_overrides[xngin_db_session]())
     # Ensure we're not using stale cache settings (possible if not using an ephemeral app db).
@@ -108,9 +108,7 @@ API_TESTS_X_DATASOURCE = zip(
 
 
 @pytest.mark.parametrize("script,datasource_id", API_TESTS_X_DATASOURCE)
-def test_api(
-    db_session, script, datasource_id, update_api_tests_flag, use_deterministic_random
-):
+def test_api(script, datasource_id, update_api_tests_flag, use_deterministic_random):
     """Runs all the API_TESTS test scripts using the datasource specified in param or file if None.
 
     Test scripts may omit asserting equality of actual response and expected response on specific paths. For example:

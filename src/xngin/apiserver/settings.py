@@ -33,7 +33,6 @@ from xngin.apiserver import flags
 from xngin.apiserver.certs import get_amazon_trust_ca_bundle_path
 from xngin.apiserver.dns.safe_resolve import safe_resolve
 from xngin.apiserver.settings_secrets import replace_secrets
-from xngin.db_extensions import NumpyStddev
 from xngin.schema.schema_types import ParticipantsSchema
 
 DEFAULT_SETTINGS_FILE = "xngin.settings.json"
@@ -507,60 +506,7 @@ class RemoteDatabaseConfig(ParticipantsMixin, ConfigBaseModel):
             engine.dialect._set_backslash_escapes = lambda _: None
 
 
-class SqliteLocalConfig(ParticipantsMixin, ConfigBaseModel):
-    type: Literal["sqlite_local"]
-    sqlite_filename: str
-
-    @field_validator("sqlite_filename")
-    @classmethod
-    def validate_sqlite_filename(cls, value):
-        if value.startswith("sqlite://"):
-            raise ValueError("sqlite_filename should not start with sqlite://")
-        return value
-
-    def to_sqlalchemy_url(self):
-        return sqlalchemy.URL.create(
-            drivername="sqlite",
-            database=self.sqlite_filename,
-            query={"mode": "ro"},
-        )
-
-    def supports_reflection(self):
-        return True
-
-    def dbsession(self):
-        """Returns a Session to be used to send queries to a SQLite database.
-
-        Use this in a `with` block to ensure correct transaction handling. If you need the
-        sqlalchemy Engine, call .get_bind().
-        """
-        engine = self.dbengine()
-        return Session(engine)
-
-    def dbengine(self):
-        """Returns a SQLAlchemy Engine for the customer database.
-
-        Use this when reflecting. If you're doing any queries on the tables, prefer dbsession().
-        """
-        url = self.to_sqlalchemy_url()
-        engine = sqlalchemy.create_engine(
-            url,
-            connect_args={"timeout": 5},
-            execution_options={"logging_token": "dwh"},
-            logging_name=SA_LOGGER_NAME_FOR_DWH,
-            echo=flags.ECHO_SQL,
-        )
-
-        @event.listens_for(engine, "connect")
-        def register_sqlite_functions(dbapi_connection, _):
-            NumpyStddev.register(dbapi_connection)
-
-        return engine
-
-
-type DatasourceConfig = Annotated[
-    RemoteDatabaseConfig | SqliteLocalConfig, Field(discriminator="type")
-]
+type DatasourceConfig = Annotated[RemoteDatabaseConfig, Field(discriminator="type")]
 
 
 class Datasource(ConfigBaseModel):
