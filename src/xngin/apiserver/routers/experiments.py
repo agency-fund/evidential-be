@@ -540,7 +540,7 @@ def get_experiment_assignments_impl(
     return GetExperimentAssignmentsResponse(
         balance_check=experiment.get_balance_check(),
         experiment_id=uuid.UUID(experiment.id),
-        sample_size=experiment.assign_summary["sample_size"],
+        sample_size=len(assignments),
         assignments=assignments,
     )
 

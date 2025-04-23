@@ -881,7 +881,7 @@ def test_get_experiment_assignments_impl(db_session, testing_datasource):
 
     # Check the response structure; lhs is a UUID and rhs may be a string (e.g. sqlite).
     assert str(data.experiment_id) == experiment.id
-    assert data.sample_size == experiment.assign_summary["sample_size"]
+    assert data.sample_size == experiment.get_assign_summary().sample_size
     assert data.balance_check == experiment.get_balance_check()
 
     # Check assignments

@@ -2,6 +2,7 @@ import json
 import secrets
 from datetime import UTC, datetime
 from typing import ClassVar, Self
+import uuid
 
 import sqlalchemy
 from pydantic import TypeAdapter
@@ -11,6 +12,7 @@ from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 from sqlalchemy.types import TypeEngine
 from xngin.apiserver.api_types import (
     Arm,
+    ArmSize,
     AudienceSpec,
     BalanceCheck,
     DesignSpec,
@@ -444,12 +446,27 @@ class Experiment(Base):
         return TypeAdapter(PowerResponse).validate_python(self.power_analyses)
 
     def get_assign_summary(self) -> AssignSummary:
-        return TypeAdapter(AssignSummary).validate_python(self.assign_summary)
+        """Constructs an AssignSummary from the experiment's arms and arm_assignments."""
+        balance_check = self.get_balance_check()
+        arm_sizes = [
+            ArmSize(
+                arm=Arm(arm_id=uuid.UUID(arm.id), arm_name=arm.name),
+                size=len(arm.arm_assignments),
+            )
+            for arm in self.arms
+        ]
+        return AssignSummary(
+            balance_check=balance_check,
+            arm_sizes=arm_sizes,
+            sample_size=sum(arm_size.size for arm_size in arm_sizes),
+        )
 
     def get_balance_check(self) -> BalanceCheck | None:
-        return TypeAdapter(BalanceCheck).validate_python(
-            self.assign_summary["balance_check"]
-        )
+        if self.assign_summary is not None:
+            return TypeAdapter(BalanceCheck).validate_python(
+                self.assign_summary["balance_check"]
+            )
+        return None
 
 
 class ArmTable(Base):
