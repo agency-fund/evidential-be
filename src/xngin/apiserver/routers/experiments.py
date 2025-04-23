@@ -645,7 +645,7 @@ def get_existing_assignment_for_participant(
     return None
 
 
-def make_assignment_for_participant(
+def create_assignment_for_participant(
     xngin_session: Session,
     experiment: Experiment,
     participant_id: str,

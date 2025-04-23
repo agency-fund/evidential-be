@@ -1400,7 +1400,7 @@ def get_experiment_assignment_for_participant(
     )
     if not assignment:
         experiment = get_experiment_via_ds_or_raise(session, ds, experiment_id)
-        assignment = experiments.make_assignment_for_participant(
+        assignment = experiments.create_assignment_for_participant(
             session, experiment, participant_id, random_state
         )
 

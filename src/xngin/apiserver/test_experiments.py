@@ -47,7 +47,7 @@ from xngin.apiserver.routers.experiments import (
     get_existing_assignment_for_participant,
     get_experiment_assignments_impl,
     list_experiments_impl,
-    make_assignment_for_participant,
+    create_assignment_for_participant,
 )
 from xngin.apiserver.routers.experiments_api_types import (
     AssignSummary,
@@ -1037,13 +1037,13 @@ def test_make_assignment_for_participant_errors(db_session, testing_datasource):
     with pytest.raises(
         ExperimentsAssignmentError, match="Invalid experiment state: assigned"
     ):
-        make_assignment_for_participant(db_session, experiment, "p1", None)
+        create_assignment_for_participant(db_session, experiment, "p1", None)
 
     experiment = make_insertable_experiment(
         ExperimentState.COMMITTED, testing_datasource.ds.id
     )
     with pytest.raises(ExperimentsAssignmentError, match="Experiment has no arms"):
-        make_assignment_for_participant(db_session, experiment, "p1", None)
+        create_assignment_for_participant(db_session, experiment, "p1", None)
 
 
 def test_make_assignment_for_participant(db_session, testing_datasource):
@@ -1057,7 +1057,7 @@ def test_make_assignment_for_participant(db_session, testing_datasource):
     db_session.add_all(arms)
     db_session.commit()
     # Assert that we won't create new assignments for preassigned experiments
-    expect_none = make_assignment_for_participant(
+    expect_none = create_assignment_for_participant(
         db_session, preassigned_experiment, "new_id", None
     )
     assert expect_none is None
@@ -1072,7 +1072,7 @@ def test_make_assignment_for_participant(db_session, testing_datasource):
     db_session.add_all(arms)
     db_session.commit()
     # Assert that we do create new assignments for online experiments
-    assignment = make_assignment_for_participant(
+    assignment = create_assignment_for_participant(
         db_session, online_experiment, "new_id", None
     )
     assert assignment is not None
@@ -1085,7 +1085,7 @@ def test_make_assignment_for_participant(db_session, testing_datasource):
     with pytest.raises(
         ExperimentsAssignmentError, match="Failed to assign participant"
     ):
-        make_assignment_for_participant(db_session, online_experiment, "new_id", None)
+        create_assignment_for_participant(db_session, online_experiment, "new_id", None)
 
 
 def test_experiment_sql():
