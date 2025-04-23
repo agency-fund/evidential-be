@@ -256,21 +256,22 @@ def fixture_dwh_session():
 
 
 def test_compile_query_without_filters_pg():
-    query = compose_query(SampleTable.get_table(), 2, [])
-    dialect = sqlalchemy.dialects.postgresql.psycopg2.dialect()
-    actual = str(
-        query.compile(dialect=dialect, compile_kwargs={"literal_binds": True})
-    ).replace("\n", "")
-    match = re.match(
-        re.escape(
+    # SQLAlchemy shares a base class for both psycopg2's and psycopg's dialect so they are very similar.
+    dialects = (
+        sqlalchemy.dialects.postgresql.psycopg2.dialect(),
+        sqlalchemy.dialects.postgresql.psycopg.dialect(),
+    )
+    for dialect in dialects:
+        query = compose_query(SampleTable.get_table(), 2, [])
+        actual = str(
+            query.compile(dialect=dialect, compile_kwargs={"literal_binds": True})
+        ).replace("\n", "")
+        expectation = (
             "SELECT test_table.id, test_table.int_col, test_table.float_col,"
             " test_table.bool_col, test_table.string_col, test_table.experiment_ids "
-            "FROM test_table ORDER BY random()"
-        )
-        + r" +LIMIT 2(?: OFFSET 0){0,1}",
-        actual,
-    )
-    assert match is not None, actual
+            "FROM test_table ORDER BY random()  LIMIT 2"
+        )  # two spaces!
+        assert actual == expectation
 
 
 def test_compile_query_without_filters_bq():
