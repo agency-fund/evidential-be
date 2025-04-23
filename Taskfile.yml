@@ -121,6 +121,12 @@ tasks:
       - bootstrap-dwh
     cmds:
       - uv run pytest
+  test-integration:
+    desc: "Runs Google integration tests."
+    interactive: true
+    internal: true
+    cmds:
+      - uv run pytest -m integration
   update-api-tests:
     desc: "Run the API tests and update the expected responses."
     interactive: true

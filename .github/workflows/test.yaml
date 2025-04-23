@@ -84,7 +84,7 @@ jobs:
       - name: integration tests
         run: |
           export GOOGLE_APPLICATION_CREDENTIALS=$HOME/.config/gspread/service_account.json
-          uv run pytest -m integration
+          task test-integration
   smoke-cli:
     timeout-minutes: 15
     runs-on: ubuntu-22.04
