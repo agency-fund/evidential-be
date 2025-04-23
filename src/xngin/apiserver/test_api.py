@@ -165,7 +165,6 @@ def test_api(script, datasource_id, update_api_tests_flag, use_deterministic_ran
             f"HTTP response body: {temporary.name}\nResponse:\n{trunc(response.content)}"
         )
         deepdiff_kwargs = parse_trailer(xurl.trailer)
-        # deepdiff_kwargs.update({"ignore_order": True})
         assert_same(
             response.json(),
             json.loads(xurl.expected_response),
