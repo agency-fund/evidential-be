@@ -80,6 +80,42 @@ env:
   XNGIN_PUBLIC_PROTOCOL: "http"
   XNGIN_PUBLIC_HOSTNAME: "localhost:8000"
 tasks:
+  install-atlas:
+    interactive: true
+    status:
+      - which atlas
+    cmd: curl -sSf https://atlasgo.sh | sh
+  install-uv:
+    interactive: true
+    status:
+      - which uv
+    cmd: curl -LsSf https://astral.sh/uv/install.sh | sh
+  check-pg-config:
+    platforms:
+      - linux
+    status:
+      - which pg_config
+    cmds:
+      - "echo ⚠️ This machine does not have a pg_config binary available."
+      - "echo To fix, run: sudo apt install libpq-dev."
+  check-docker:
+    status:
+      - which docker
+    cmds:
+      - "echo ⚠️ This machine does not have a docker binary available. Please install Docker."
+  install-dependencies:
+    desc: "Install Atlas and UV and check on dependencies."
+    prompt: "This command will install CLI tools (Atlas and uv) and create or update a Python virtual environment. This may add binaries to your $PATH, and also prompt you for your sudo password. Do you wish to proceed?"
+    cmds:
+      - task: install-atlas
+      - task: install-uv
+      - task: check-pg-config
+      - cmd: |
+          atlas version
+          uv version
+          task --version
+      - cmd: uv sync --compile-bytecode
+      - task: check-docker
   bootstrap-app:
     desc: >-
       Ensure the localpg server is running and has an "xngin" database. If the database doesn't already exist, it will
@@ -173,11 +209,7 @@ tasks:
     env:
       XNGIN_DEVAPP_DSN: "{{.XNGIN_DEVAPP_DSN}}"
     cmd: |
-      if [ "{{.CLI_ARGS}}" == "" ]; then
-        echo Email address must be passed as argument after "--". Example: task create-user -- email@example.com
-        exit 1
-      fi
-      uv run xngin-cli add-user --email "{{.CLI_ARGS}}" --privileged
+      uv run xngin-cli add-user
   start-tq:
     desc: "Start the task queue."
     env:
