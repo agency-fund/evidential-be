@@ -652,7 +652,7 @@ def test_lifecycle_with_pg(testing_datasource):
 
     # Create experiment using that participant type.
     response = ppost(
-        f"/v1/m/experiments/{testing_datasource.ds.id}",
+        f"/v1/m/datasources/{testing_datasource.ds.id}/experiments",
         params={"chosen_n": 100},
         json=make_createexperimentrequest_json(participant_type),
     )
@@ -721,7 +721,7 @@ def test_create_experiment_with_assignment_validation_errors(
         "123e4567-e89b-12d3-a456-426614174000"
     )
     response = ppost(
-        f"/v1/m/experiments/{testing_datasource.ds.id}",
+        f"/v1/m/datasources/{testing_datasource.ds.id}/experiments",
         params={"chosen_n": 100},
         json=base_request,
     )
@@ -732,7 +732,7 @@ def test_create_experiment_with_assignment_validation_errors(
     # This datasource is loaded with a "remote" config from xngin.testing.settings.json, but
     # the associated participants config is of type "sheet".
     response = ppost(
-        f"/v1/m/experiments/{testing_sheet_datasource_with_user_added.ds.id}",
+        f"/v1/m/datasources/{testing_sheet_datasource_with_user_added.ds.id}/experiments",
         params={"chosen_n": 100},
         json=make_createexperimentrequest_json(),
     )
@@ -748,7 +748,7 @@ def test_create_preassigned_experiment_using_inline_schema_ds(
     base_request = CreateExperimentRequest.model_validate(base_request_json)
 
     response = ppost(
-        f"/v1/m/experiments/{datasource_id}",
+        f"/v1/m/datasources/{datasource_id}/experiments",
         params={"chosen_n": 100, "random_state": 42},
         json=base_request_json,
     )
@@ -830,7 +830,7 @@ def test_create_online_experiment_using_inline_schema_ds(
     base_request = CreateExperimentRequest.model_validate(base_request_json)
 
     response = ppost(
-        f"/v1/m/experiments/{datasource_id}",
+        f"/v1/m/datasources/{datasource_id}/experiments",
         params={"chosen_n": 100, "random_state": 42},
         json=base_request_json,
     )

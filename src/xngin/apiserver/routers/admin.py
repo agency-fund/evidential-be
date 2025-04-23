@@ -1144,7 +1144,7 @@ def delete_api_key(
     return GENERIC_SUCCESS
 
 
-@router.post("/experiments/{datasource_id}/")
+@router.post("/datasources/{datasource_id}/experiments")
 def create_experiment_with_assignment(
     datasource_id: str,
     session: Annotated[Session, Depends(xngin_db_session)],
