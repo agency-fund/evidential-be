@@ -19,7 +19,8 @@ from xngin.apiserver.api_types import (
     ArmSize,
     AudienceSpec,
     BalanceCheck,
-    DesignSpec,
+    OnlineExperimentSpec,
+    PreassignedExperimentSpec,
     DesignSpecMetric,
     DesignSpecMetricRequest,
     MetricPowerAnalysis,
@@ -38,17 +39,20 @@ from xngin.apiserver.models.tables import (
     Experiment,
 )
 from xngin.apiserver.routers.experiments import (
+    ExperimentsAssignmentError,
     abandon_experiment_impl,
     commit_experiment_impl,
     create_experiment_with_assignment_impl,
     experiment_assignments_to_csv_generator,
+    get_existing_assignment_for_participant,
     get_experiment_assignments_impl,
     list_experiments_impl,
+    create_assignment_for_participant,
 )
 from xngin.apiserver.routers.experiments_api_types import (
     AssignSummary,
     CreateExperimentRequest,
-    ExperimentConfig,
+    CreateExperimentResponse,
     GetExperimentAssignmentsResponse,
     ListExperimentsResponse,
 )
@@ -77,7 +81,9 @@ def fixture_teardown(db_session: Session):
     db_session.close()
 
 
-def make_create_experiment_request(with_uuids: bool = True) -> CreateExperimentRequest:
+def make_create_preassigned_experiment_request(
+    with_uuids: bool = True,
+) -> CreateExperimentRequest:
     experiment_id = str(uuid.uuid4()) if with_uuids else None
     arm1_id = str(uuid.uuid4()) if with_uuids else None
     arm2_id = str(uuid.uuid4()) if with_uuids else None
@@ -86,7 +92,7 @@ def make_create_experiment_request(with_uuids: bool = True) -> CreateExperimentR
     end_date = datetime(2025, 2, 1, tzinfo=UTC)
     # Construct request body
     return CreateExperimentRequest(
-        design_spec=DesignSpec(
+        design_spec=PreassignedExperimentSpec(
             experiment_id=experiment_id,
             experiment_name="Test Experiment",
             description="Test experiment description",
@@ -122,12 +128,16 @@ def make_create_experiment_request(with_uuids: bool = True) -> CreateExperimentR
 
 # Insert an experiment with a valid state.
 def make_insertable_experiment(state: ExperimentState, datasource_id="testing"):
-    request = make_create_experiment_request()
+    request = make_create_preassigned_experiment_request()
     arm0 = request.design_spec.arms[0]
     arm1 = request.design_spec.arms[1]
     return Experiment(
         id=str(request.design_spec.experiment_id),
         datasource_id=datasource_id,
+        experiment_type="preassigned",
+        participant_type=request.audience_spec.participant_type,
+        name=request.design_spec.experiment_name,
+        description=request.design_spec.description,
         state=state,
         start_date=request.design_spec.start_date,
         end_date=request.design_spec.end_date,
@@ -172,6 +182,60 @@ def make_insertable_experiment(state: ExperimentState, datasource_id="testing"):
     )
 
 
+def make_insertable_online_experiment(
+    state=ExperimentState.COMMITTED, datasource_id="testing"
+):
+    experiment_id = uuid.uuid4()
+    arm1_id = uuid.uuid4()
+    arm2_id = uuid.uuid4()
+    arm1 = Arm(arm_id=arm1_id, arm_name="control", arm_description="Control")
+    arm2 = Arm(arm_id=arm2_id, arm_name="treatment", arm_description="Treatment")
+    # Attach UTC tz, but use dates_equal() to compare to respect db storage support
+    start_date = datetime(2025, 1, 1, tzinfo=UTC)
+    end_date = datetime(2025, 2, 1, tzinfo=UTC)
+    design_spec = OnlineExperimentSpec(
+        experiment_id=experiment_id,
+        experiment_name="Test Experiment",
+        description="Test experiment description",
+        arms=[arm1, arm2],
+        start_date=start_date,
+        end_date=end_date,
+        strata_field_names=["gender"],
+        metrics=[
+            DesignSpecMetricRequest(
+                field_name="is_onboarded",
+                metric_pct_change=0.1,
+            )
+        ],
+        power=0.8,
+        alpha=0.05,
+        fstat_thresh=0.2,
+    )
+    audience_spec = AudienceSpec(
+        participant_type="test_participant_type",
+        filters=[],
+    )
+    assign_summary = AssignSummary(
+        sample_size=0,
+        arm_sizes=[ArmSize(arm=arm1, size=0), ArmSize(arm=arm2, size=0)],
+        balance_check=None,
+    )
+    return Experiment(
+        id=str(experiment_id),
+        datasource_id=datasource_id,
+        experiment_type="online",
+        participant_type=audience_spec.participant_type,
+        name=design_spec.experiment_name,
+        description=design_spec.description,
+        state=state,
+        start_date=design_spec.start_date,
+        end_date=design_spec.end_date,
+        design_spec=design_spec.model_dump(mode="json"),
+        audience_spec=audience_spec.model_dump(),
+        assign_summary=assign_summary.model_dump(mode="json"),
+    )
+
+
 def make_arms_from_experiment(experiment: Experiment, organization_id: str):
     return [
         ArmTable(
@@ -200,7 +264,7 @@ class MockRow:
 
 @pytest.fixture
 def sample_table():
-    """Create a mock SQLAlchemy table that works with make_create_experiment_request()"""
+    """Create a mock SQLAlchemy table that works with make_create_preassigned_experiment_request()"""
     metadata_obj = MetaData()
     return Table(
         "participants",
@@ -224,12 +288,12 @@ def make_sample_data(n=100):
     ]
 
 
-def test_create_experiment_with_assignment_impl(
+def test_create_experiment_with_assignment_impl_for_preassigned(
     db_session, testing_datasource, sample_table, use_deterministic_random
 ):
-    """Test implementation of creating an experiment with assignment."""
+    """Test implementation of creating a preassigned experiment."""
     participants = make_sample_data(n=100)
-    request = make_create_experiment_request(with_uuids=False)
+    request = make_create_preassigned_experiment_request(with_uuids=False)
     # Add a partial mock PowerResponse just to verify storage
     request.power_analyses = PowerResponse(
         analyses=[
@@ -273,6 +337,7 @@ def test_create_experiment_with_assignment_impl(
     assert response.power_analyses == request.power_analyses
     # Verify assign_summary
     assert response.assign_summary.sample_size == len(participants)
+    assert response.assign_summary.balance_check is not None
     assert response.assign_summary.balance_check.balance_ok is True
 
     # Verify database state using the ids in the returned DesignSpec.
@@ -281,6 +346,10 @@ def test_create_experiment_with_assignment_impl(
             Experiment.id == str(response.design_spec.experiment_id)
         )
     ).one()
+    assert experiment.experiment_type == "preassigned"
+    assert experiment.participant_type == request.audience_spec.participant_type
+    assert experiment.name == request.design_spec.experiment_name
+    assert experiment.description == request.design_spec.description
     assert experiment.state == ExperimentState.ASSIGNED
     assert experiment.datasource_id == testing_datasource.ds.id
     # This comparison is dependent on whether the db can store tz or not (sqlite does not).
@@ -302,6 +371,15 @@ def test_create_experiment_with_assignment_impl(
     assignment_participant_ids = {a.participant_id for a in assignments}
     assert assignment_participant_ids == {p.participant_id for p in participants}
     assert len(assignment_participant_ids) == len(participants)
+
+    # Verify arms were created in database
+    arms = db_session.scalars(
+        select(ArmTable).where(ArmTable.experiment_id == str(experiment.id))
+    ).all()
+    assert len(arms) == 2
+    arm_ids = {str(arm.id) for arm in arms}
+    expected_arm_ids = {str(arm.arm_id) for arm in response.design_spec.arms}
+    assert arm_ids == expected_arm_ids
 
     # Check one assignment to see if it looks roughly right
     sample_assignment = assignments[0]
@@ -325,6 +403,90 @@ def test_create_experiment_with_assignment_impl(
     assert abs(num_control - num_treat) <= 1
 
 
+def test_create_experiment_with_assignment_impl_for_online(
+    db_session, testing_datasource, sample_table, use_deterministic_random
+):
+    """Test implementation of creating an online experiment."""
+    # Create online experiment request, modifying the experiment type from the fixture
+    request = make_create_preassigned_experiment_request(with_uuids=False)
+    # Convert the experiment type to online
+    request.design_spec.experiment_type = "online"
+
+    response = create_experiment_with_assignment_impl(
+        request=request.model_copy(deep=True),
+        datasource_id=testing_datasource.ds.id,
+        participant_unique_id_field="participant_id",
+        dwh_sa_table=sample_table,
+        dwh_participants=[],  # No pre-assigned participants in online experiments
+        random_state=42,
+        xngin_session=db_session,
+        stratify_on_metrics=True,
+    )
+
+    # Verify response
+    assert response.datasource_id == testing_datasource.ds.id
+    assert response.state == ExperimentState.COMMITTED
+
+    # Verify design_spec
+    assert response.design_spec.experiment_id is not None
+    assert response.design_spec.arms[0].arm_id is not None
+    assert response.design_spec.arms[1].arm_id is not None
+    assert response.design_spec.experiment_name == request.design_spec.experiment_name
+    assert response.design_spec.description == request.design_spec.description
+    assert response.design_spec.start_date == request.design_spec.start_date
+    assert response.design_spec.end_date == request.design_spec.end_date
+    assert response.design_spec.strata_field_names == ["gender"]
+    assert response.audience_spec == request.audience_spec
+    assert (
+        response.power_analyses is None
+    )  # Online experiments don't have power analyses by default
+
+    # Verify assign_summary for online experiment
+    assert response.assign_summary.sample_size == 0
+    assert response.assign_summary.balance_check is None
+    assert response.assign_summary.arm_sizes is not None
+    assert all(arm_size.size == 0 for arm_size in response.assign_summary.arm_sizes)
+
+    # Verify database state
+    experiment: Experiment = db_session.scalars(
+        select(Experiment).where(
+            Experiment.id == str(response.design_spec.experiment_id)
+        )
+    ).one()
+    assert experiment.experiment_type == "online"
+    assert experiment.participant_type == request.audience_spec.participant_type
+    assert experiment.name == request.design_spec.experiment_name
+    assert experiment.description == request.design_spec.description
+    # We committed because there's no need to preview assignments nor power check (for now).
+    assert experiment.state == ExperimentState.COMMITTED
+    assert experiment.datasource_id == testing_datasource.ds.id
+    assert conftest.dates_equal(experiment.start_date, request.design_spec.start_date)
+    assert conftest.dates_equal(experiment.end_date, request.design_spec.end_date)
+
+    # Verify design_spec and audience_spec were stored correctly
+    stored_design_spec = experiment.get_design_spec()
+    assert stored_design_spec == response.design_spec
+    stored_audience_spec = experiment.get_audience_spec()
+    assert stored_audience_spec == response.audience_spec
+    # Verify no power_analyses for online experiments
+    assert experiment.power_analyses is None
+
+    # Verify arms were created in database
+    arms = db_session.scalars(
+        select(ArmTable).where(ArmTable.experiment_id == str(experiment.id))
+    ).all()
+    assert len(arms) == 2
+    arm_ids = {str(arm.id) for arm in arms}
+    expected_arm_ids = {str(arm.arm_id) for arm in response.design_spec.arms}
+    assert arm_ids == expected_arm_ids
+
+    # Verify that no assignments were created for online experiment
+    assignments = db_session.scalars(
+        select(ArmAssignment).where(ArmAssignment.experiment_id == str(experiment.id))
+    ).all()
+    assert len(assignments) == 0
+
+
 def test_create_experiment_with_assignment_impl_overwrites_uuids(
     db_session, testing_datasource, sample_table, use_deterministic_random
 ):
@@ -333,7 +495,7 @@ def test_create_experiment_with_assignment_impl_overwrites_uuids(
     (which would otherwise be caught in the route handler).
     """
     participants = make_sample_data(n=100)
-    request = make_create_experiment_request(with_uuids=True)
+    request = make_create_preassigned_experiment_request(with_uuids=True)
     original_experiment_id = str(request.design_spec.experiment_id)
     original_arm_ids = [str(arm.arm_id) for arm in request.design_spec.arms]
 
@@ -375,7 +537,7 @@ def test_create_experiment_with_assignment_impl_no_metric_stratification(
 ):
     """Test implementation of creating an experiment without stratifying on metrics."""
     participants = make_sample_data(n=100)
-    request = make_create_experiment_request(with_uuids=False)
+    request = make_create_preassigned_experiment_request(with_uuids=False)
 
     # Test with stratify_on_metrics=False
     response = create_experiment_with_assignment_impl(
@@ -425,7 +587,7 @@ def test_create_experiment_with_assignment_impl_no_metric_stratification(
 
 def test_create_experiment_with_assignment_invalid_design_spec(db_session):
     """Test creating an experiment and saving assignments to the database."""
-    request = make_create_experiment_request(with_uuids=True)
+    request = make_create_preassigned_experiment_request(with_uuids=True)
 
     response = client.post(
         "/experiments/with-assignment",
@@ -443,7 +605,7 @@ def test_create_experiment_with_assignment_sl(
     """Test creating an experiment and saving assignments to the database."""
     # First create a datasource to maintain proper referential integrity, but with a local config so we know we can read our dwh data.
     ds_metadata = conftest.make_datasource_metadata(db_session, datasource_id="testing")
-    request = make_create_experiment_request(with_uuids=False)
+    request = make_create_preassigned_experiment_request(with_uuids=False)
 
     response = client.post(
         "/experiments/with-assignment",
@@ -457,59 +619,12 @@ def test_create_experiment_with_assignment_sl(
 
     # Verify basic response
     assert response.status_code == 200, request
-    experiment_config = response.json()
-    assert experiment_config["design_spec"]["experiment_id"] is not None
-    assert experiment_config["design_spec"]["arms"][0]["arm_id"] is not None
-    assert experiment_config["design_spec"]["arms"][1]["arm_id"] is not None
-    assert experiment_config["datasource_id"] == ds_metadata.ds.id
-    assert experiment_config["state"] == ExperimentState.ASSIGNED
-    assign_summary = experiment_config["assign_summary"]
-    assert assign_summary["sample_size"] == 100
-    # TODO(qixotic): Changing this from sqlite to Postgres causes the balance check to succeed instead of fail. Why?
-    assert assign_summary["balance_check"]["balance_ok"] is True, assign_summary[
-        "balance_check"
-    ]
-    # Check if the representations are equivalent
-    config = ExperimentConfig.model_validate(experiment_config)
-    # scrub the uuids from the config for comparison
-    actual_design_spec = config.design_spec.model_copy(deep=True)
-    actual_design_spec.experiment_id = None
-    actual_design_spec.arms[0].arm_id = None
-    actual_design_spec.arms[1].arm_id = None
-    assert actual_design_spec == request.design_spec
-    assert config.audience_spec == request.audience_spec
-    assert config.power_analyses == request.power_analyses
-
-    experiment_id = config.design_spec.experiment_id
-    (arm1_id, arm2_id) = [str(arm.arm_id) for arm in config.design_spec.arms]
-    # Verify database state using the ids in the returned DesignSpec.
-    experiment = db_session.scalars(
-        select(Experiment).where(Experiment.id == str(experiment_id))
-    ).one()
-    assert experiment.state == ExperimentState.ASSIGNED
-    assert experiment.datasource_id == ds_metadata.ds.id
-    assert conftest.dates_equal(experiment.start_date, request.design_spec.start_date)
-    assert conftest.dates_equal(experiment.end_date, request.design_spec.end_date)
-    # Verify assignments were created
-    assignments = db_session.scalars(
-        select(ArmAssignment).where(ArmAssignment.experiment_id == str(experiment_id))
-    ).all()
-    assert len(assignments) == 100, {
-        e.name: getattr(experiment, e.name) for e in Experiment.__table__.columns
-    }
-
-    # Check one assignment to see if it looks roughly right
-    sample_assignment: ArmAssignment = assignments[0]
-    assert sample_assignment.participant_type == "test_participant_type"
-    assert sample_assignment.experiment_id == str(experiment_id)
-    assert sample_assignment.arm_id in {arm1_id, arm2_id}
-    for stratum in sample_assignment.strata:
-        assert stratum["field_name"] in {"gender", "is_onboarded"}
-
-    # Check for approximate balance in arm assignment
-    num_control = sum(1 for a in assignments if a.arm_id == arm1_id)
-    num_treat = sum(1 for a in assignments if a.arm_id == arm2_id)
-    assert abs(num_control - num_treat) <= 5  # Allow some wiggle room
+    experiment_config = CreateExperimentResponse.model_validate(response.json())
+    assert experiment_config.design_spec.experiment_id is not None
+    assert experiment_config.design_spec.arms[0].arm_id is not None
+    assert experiment_config.design_spec.arms[1].arm_id is not None
+    assert experiment_config.datasource_id == ds_metadata.ds.id
+    assert experiment_config.state == ExperimentState.ASSIGNED
 
 
 @pytest.mark.parametrize(
@@ -723,8 +838,8 @@ def test_get_experiment(db_session, testing_datasource):
     experiment_json = response.json()
     assert experiment_json["datasource_id"] == new_experiment.datasource_id
     assert experiment_json["state"] == new_experiment.state
-    actual = DesignSpec.model_validate(experiment_json["design_spec"])
-    expected = DesignSpec.model_validate(new_experiment.design_spec)
+    actual = PreassignedExperimentSpec.model_validate(experiment_json["design_spec"])
+    expected = PreassignedExperimentSpec.model_validate(new_experiment.design_spec)
     diff = DeepDiff(actual, expected)
     assert not diff, f"Objects differ:\n{diff.pretty()}"
 
@@ -766,7 +881,7 @@ def test_get_experiment_assignments_impl(db_session, testing_datasource):
 
     # Check the response structure; lhs is a UUID and rhs may be a string (e.g. sqlite).
     assert str(data.experiment_id) == experiment.id
-    assert data.sample_size == experiment.assign_summary["sample_size"]
+    assert data.sample_size == experiment.get_assign_summary().sample_size
     assert data.balance_check == experiment.get_balance_check()
 
     # Check assignments
@@ -896,6 +1011,81 @@ def test_get_experiment_assignments_as_csv(db_session, testing_datasource):
     assert rows[0] == "participant_id,arm_id,arm_name,gender,score\r\n"
     assert rows[1] == f"p1,{arm1_id},{arm1_name},F,1.1\r\n"
     assert rows[2] == f'p2,{arm2_id},{arm2_name},M,"esc,aped"\r\n'
+
+
+def test_get_existing_assignment_for_participant(db_session, testing_datasource):
+    experiment = make_experiment_with_assignments(db_session, testing_datasource.ds)
+    expected_assignment = experiment.arm_assignments[0]
+
+    assignment = get_existing_assignment_for_participant(
+        db_session, experiment.id, expected_assignment.participant_id
+    )
+    assert assignment is not None
+    assert assignment.participant_id == expected_assignment.participant_id
+    assert str(assignment.arm_id) == expected_assignment.arm_id
+
+    assignment = get_existing_assignment_for_participant(
+        db_session, experiment.id, "new_id"
+    )
+    assert assignment is None
+
+
+def test_make_assignment_for_participant_errors(db_session, testing_datasource):
+    experiment = make_insertable_experiment(
+        ExperimentState.ASSIGNED, testing_datasource.ds.id
+    )
+    with pytest.raises(
+        ExperimentsAssignmentError, match="Invalid experiment state: assigned"
+    ):
+        create_assignment_for_participant(db_session, experiment, "p1", None)
+
+    experiment = make_insertable_experiment(
+        ExperimentState.COMMITTED, testing_datasource.ds.id
+    )
+    with pytest.raises(ExperimentsAssignmentError, match="Experiment has no arms"):
+        create_assignment_for_participant(db_session, experiment, "p1", None)
+
+
+def test_make_assignment_for_participant(db_session, testing_datasource):
+    preassigned_experiment = make_insertable_experiment(
+        ExperimentState.COMMITTED, testing_datasource.ds.id
+    )
+    db_session.add(preassigned_experiment)
+    arms = make_arms_from_experiment(
+        preassigned_experiment, testing_datasource.ds.organization_id
+    )
+    db_session.add_all(arms)
+    db_session.commit()
+    # Assert that we won't create new assignments for preassigned experiments
+    expect_none = create_assignment_for_participant(
+        db_session, preassigned_experiment, "new_id", None
+    )
+    assert expect_none is None
+
+    online_experiment = make_insertable_online_experiment(
+        ExperimentState.COMMITTED, testing_datasource.ds.id
+    )
+    db_session.add(online_experiment)
+    arms = make_arms_from_experiment(
+        online_experiment, testing_datasource.ds.organization_id
+    )
+    db_session.add_all(arms)
+    db_session.commit()
+    # Assert that we do create new assignments for online experiments
+    assignment = create_assignment_for_participant(
+        db_session, online_experiment, "new_id", None
+    )
+    assert assignment is not None
+    assert assignment.participant_id == "new_id"
+    arms = {arm.id: arm.name for arm in arms}
+    assert assignment.arm_name == arms[str(assignment.arm_id)]
+    assert not assignment.strata
+
+    # But that if we try to create an assignment for a participant that already has one, it triggers an error.
+    with pytest.raises(
+        ExperimentsAssignmentError, match="Failed to assign participant"
+    ):
+        create_assignment_for_participant(db_session, online_experiment, "new_id", None)
 
 
 def test_experiment_sql():

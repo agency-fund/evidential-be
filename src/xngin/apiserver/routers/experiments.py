@@ -17,11 +17,13 @@ from fastapi import (
 )
 from fastapi.responses import StreamingResponse
 from sqlalchemy import Table, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 from xngin.apiserver import flags
 from xngin.apiserver.api_types import (
+    ArmSize,
     Assignment,
-    DesignSpec,
+    PreassignedExperimentSpec,
     Strata,
 )
 from xngin.apiserver.dependencies import (
@@ -48,7 +50,7 @@ from xngin.apiserver.routers.experiments_api import (
 from xngin.apiserver.routers.experiments_api_types import (
     AssignSummary,
     CreateExperimentRequest,
-    CreateExperimentWithAssignmentResponse,
+    CreateExperimentResponse,
     ExperimentConfig,
     GetExperimentAssignmentsResponse,
     GetExperimentResponse,
@@ -58,10 +60,15 @@ from xngin.apiserver.settings import (
     Datasource,
     infer_table,
 )
+from xngin.apiserver.utils import random_choice
 from xngin.apiserver.webhooks.webhook_types import ExperimentCreatedWebhookBody
 from xngin.events.experiment_created import ExperimentCreatedEvent
 from xngin.stats.assignment import RowProtocol, assign_treatment
 from xngin.tq.task_payload_types import WEBHOOK_OUTBOUND_TASK_TYPE, WebhookOutboundTask
+
+
+class ExperimentsAssignmentError(Exception):
+    """Wrapper for errors raised by our xngin.apiserver.routers.experiments package."""
 
 
 @asynccontextmanager
@@ -99,7 +106,7 @@ def create_experiment_with_assignment_sl(
             include_in_schema=False,
         ),
     ] = None,
-) -> CreateExperimentWithAssignmentResponse:
+) -> CreateExperimentResponse:
     """Creates an experiment and saves its assignments to the database."""
     if body.design_spec.uuids_are_present():
         raise LateValidationError("Invalid DesignSpec: UUIDs must not be set.")
@@ -145,7 +152,7 @@ def create_experiment_with_assignment_impl(
     random_state: int | None,
     xngin_session: Session,
     stratify_on_metrics: bool,
-) -> CreateExperimentWithAssignmentResponse:
+) -> CreateExperimentResponse:
     # Get the organization_id from the database
     db_datasource = xngin_session.get(DatasourceTable, datasource_id)
     if not db_datasource:
@@ -160,6 +167,43 @@ def create_experiment_with_assignment_impl(
     for arm in request.design_spec.arms:
         arm.arm_id = uuid.uuid4()
 
+    if request.design_spec.experiment_type == "preassigned":
+        return create_preassigned_experiment_impl(
+            request=request,
+            datasource_id=datasource_id,
+            organization_id=organization_id,
+            participant_unique_id_field=participant_unique_id_field,
+            dwh_sa_table=dwh_sa_table,
+            dwh_participants=dwh_participants,
+            random_state=random_state,
+            xngin_session=xngin_session,
+            stratify_on_metrics=stratify_on_metrics,
+        )
+    if request.design_spec.experiment_type == "online":
+        return create_online_experiment_impl(
+            request=request,
+            datasource_id=datasource_id,
+            organization_id=organization_id,
+            xngin_session=xngin_session,
+        )
+
+    raise HTTPException(
+        status_code=status.HTTP_400_BAD_REQUEST,
+        detail=f"Invalid experiment type: {request.design_spec.experiment_type}",
+    )
+
+
+def create_preassigned_experiment_impl(
+    request: CreateExperimentRequest,
+    datasource_id: str,
+    organization_id: str,
+    participant_unique_id_field: str,
+    dwh_sa_table: Table,
+    dwh_participants: Sequence[RowProtocol],
+    random_state: int | None,
+    xngin_session: Session,
+    stratify_on_metrics: bool,
+) -> CreateExperimentResponse:
     metric_names = [m.field_name for m in request.design_spec.metrics]
     if stratify_on_metrics:
         stratum_cols = request.design_spec.strata_field_names + metric_names
@@ -189,6 +233,10 @@ def create_experiment_with_assignment_impl(
     experiment = Experiment(
         id=str(request.design_spec.experiment_id),
         datasource_id=datasource_id,
+        experiment_type="preassigned",
+        participant_type=request.audience_spec.participant_type,
+        name=request.design_spec.experiment_name,
+        description=request.design_spec.description,
         state=ExperimentState.ASSIGNED,
         start_date=request.design_spec.start_date,
         end_date=request.design_spec.end_date,
@@ -220,19 +268,76 @@ def create_experiment_with_assignment_impl(
             participant_type=request.audience_spec.participant_type,
             participant_id=assignment.participant_id,
             arm_id=str(assignment.arm_id),
-            strata=[s.model_dump(mode="json") for s in assignment.strata],
+            strata=[s.model_dump(mode="json") for s in assignment.strata]
+            if assignment.strata
+            else None,
         )
         xngin_session.add(db_assignment)
 
     xngin_session.commit()
 
-    return CreateExperimentWithAssignmentResponse(
+    return CreateExperimentResponse(
         datasource_id=datasource_id,
         state=experiment.state,
         design_spec=experiment.get_design_spec(),
         audience_spec=experiment.get_audience_spec(),
         power_analyses=experiment.get_power_analyses(),
         assign_summary=assign_summary,
+    )
+
+
+def create_online_experiment_impl(
+    request: CreateExperimentRequest,
+    datasource_id: str,
+    organization_id: str,
+    xngin_session: Session,
+) -> CreateExperimentResponse:
+    # TODO: consider not storing the assign_summary (which can be dynamically generated) and just
+    # persisting the balance check.
+    empty_assign_summary = AssignSummary(
+        balance_check=None,
+        sample_size=0,
+        arm_sizes=[
+            ArmSize(arm=arm.model_copy(), size=0) for arm in request.design_spec.arms
+        ],
+    )
+    experiment = Experiment(
+        id=str(request.design_spec.experiment_id),
+        datasource_id=datasource_id,
+        experiment_type="online",
+        participant_type=request.audience_spec.participant_type,
+        name=request.design_spec.experiment_name,
+        description=request.design_spec.description,
+        # No assignments nor power check (for now), so just commit it.
+        state=ExperimentState.COMMITTED,
+        start_date=request.design_spec.start_date,
+        end_date=request.design_spec.end_date,
+        design_spec=request.design_spec.model_dump(mode="json"),
+        audience_spec=request.audience_spec.model_dump(mode="json"),
+        power_analyses=None,
+        # Online experiment starts with no assignments.
+        assign_summary=empty_assign_summary.model_dump(mode="json"),
+    )
+    xngin_session.add(experiment)
+    # Create arm records
+    for arm in request.design_spec.arms:
+        db_arm = ArmTable(
+            id=str(arm.arm_id),
+            name=arm.arm_name,
+            description=arm.arm_description,
+            experiment_id=str(experiment.id),
+            organization_id=organization_id,
+        )
+        xngin_session.add(db_arm)
+    xngin_session.commit()
+    # Return the committed experiment config with no assignments.
+    return CreateExperimentResponse(
+        datasource_id=datasource_id,
+        state=experiment.state,
+        design_spec=experiment.get_design_spec(),
+        audience_spec=experiment.get_audience_spec(),
+        power_analyses=None,
+        assign_summary=empty_assign_summary,
     )
 
 
@@ -422,7 +527,7 @@ def get_experiment_assignments_impl(
     experiment: Experiment,
 ) -> GetExperimentAssignmentsResponse:
     # Map arm IDs to names
-    design_spec = DesignSpec.model_validate(experiment.design_spec)
+    design_spec = PreassignedExperimentSpec.model_validate(experiment.design_spec)
     arm_id_to_name = {str(arm.arm_id): arm.arm_name for arm in design_spec.arms}
     # Convert ArmAssignment models to Assignment API types
     assignments = [
@@ -437,7 +542,7 @@ def get_experiment_assignments_impl(
     return GetExperimentAssignmentsResponse(
         balance_check=experiment.get_balance_check(),
         experiment_id=uuid.UUID(experiment.id),
-        sample_size=experiment.assign_summary["sample_size"],
+        sample_size=len(assignments),
         assignments=assignments,
     )
 
@@ -512,3 +617,87 @@ def get_experiment_assignments_as_csv_sl(
     """
     experiment = get_experiment_or_raise(xngin_session, experiment_id, datasource.id)
     return get_experiment_assignments_as_csv_impl(experiment)
+
+
+def get_existing_assignment_for_participant(
+    xngin_session: Session, experiment_id: str, participant_id: str
+) -> Assignment | None:
+    """Internal helper to look up an existing assignment for a participant.  Excludes strata.
+
+    Returns: None if no assignment exists.
+    """
+    # Look up the participant's assignment if it exists
+    assignment_query = (
+        xngin_session.query(ArmAssignment)
+        .join(ArmTable)
+        .filter(
+            ArmAssignment.experiment_id == experiment_id,
+            ArmAssignment.participant_id == participant_id,
+        )
+    )
+    existing_assignment = assignment_query.one_or_none()
+    # If the participant already has an assignment for this experiment, return it.
+    if existing_assignment:
+        return Assignment(
+            participant_id=existing_assignment.participant_id,
+            arm_id=uuid.UUID(existing_assignment.arm_id),
+            arm_name=existing_assignment.arm.name,
+            strata=[],
+        )
+    return None
+
+
+def create_assignment_for_participant(
+    xngin_session: Session,
+    experiment: Experiment,
+    participant_id: str,
+    random_state: int | None,
+) -> Assignment | None:
+    """Internal helper to make and persist an assignment for a participant depending on the
+    experiment type. Excludes strata."""
+
+    if experiment.state != ExperimentState.COMMITTED:
+        raise ExperimentsAssignmentError(
+            f"Invalid experiment state: {experiment.state}"
+        )
+
+    if len(experiment.arms) == 0:
+        raise ExperimentsAssignmentError("Experiment has no arms")
+
+    # TODO: Pull type from experiment entity directly when we persist it in its own column.
+    design_spec = experiment.get_design_spec()
+    if design_spec.experiment_type == "preassigned":
+        # Preassigned experiments are not allowed to have new ones added.
+        return None
+    if design_spec.experiment_type == "online":
+        # For online experiments, create a new assignment with simple random assignment.
+        # TODO? consider using a threadsafe permuted random assignment for better balance.
+        chosen_arm = random_choice(experiment.arms, seed=random_state)
+
+        # Create and save the new assignment
+        new_assignment = ArmAssignment(
+            experiment_id=experiment.id,
+            participant_id=participant_id,
+            participant_type=experiment.get_audience_spec().participant_type,
+            arm_id=chosen_arm.id,
+            strata=[],  # Online assignments don't have strata
+        )
+        try:
+            xngin_session.add(new_assignment)
+            xngin_session.commit()
+        except IntegrityError as e:
+            xngin_session.rollback()
+            raise ExperimentsAssignmentError(
+                f"Failed to assign participant '{participant_id}' to arm '{chosen_arm.id}': {e}"
+            ) from e
+
+        return Assignment(
+            participant_id=participant_id,
+            arm_id=uuid.UUID(chosen_arm.id),
+            arm_name=chosen_arm.name,
+            strata=[],
+        )
+    # Else:
+    raise ExperimentsAssignmentError(
+        f"Invalid experiment type: {design_spec.experiment_type}"
+    )

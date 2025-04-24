@@ -93,7 +93,10 @@ from xngin.apiserver.routers.experiments_api import (
     power_check_impl,
     validate_schema_metrics_or_raise,
 )
-from xngin.apiserver.routers.experiments_api_types import ExperimentConfig
+from xngin.apiserver.routers.experiments_api_types import (
+    ExperimentConfig,
+    GetParticipantAssignmentResponse,
+)
 from xngin.apiserver.routers.oidc_dependencies import TokenInfo, require_oidc_token
 from xngin.apiserver.settings import (
     Dsn,
@@ -246,7 +249,7 @@ def get_experiment_via_ds_or_raise(
     """Reads the requested experiment (related to the given datasource) from the database. Raises 404 if not found."""
     stmt = (
         select(Experiment)
-        .join(Datasource, Datasource.id == ds.id)
+        .where(Experiment.datasource_id == ds.id)
         .where(Experiment.id == experiment_id)
     )
     exp = session.execute(stmt).scalar_one_or_none()
@@ -1141,7 +1144,7 @@ def delete_api_key(
     return GENERIC_SUCCESS
 
 
-@router.post("/experiments/{datasource_id}/with-assignment")
+@router.post("/datasources/{datasource_id}/experiments")
 def create_experiment_with_assignment(
     datasource_id: str,
     session: Annotated[Session, Depends(xngin_db_session)],
@@ -1161,7 +1164,7 @@ def create_experiment_with_assignment(
             include_in_schema=False,
         ),
     ] = None,
-) -> experiments_api_types.CreateExperimentWithAssignmentResponse:
+) -> experiments_api_types.CreateExperimentResponse:
     datasource = get_datasource_or_raise(session, user, datasource_id)
     if body.design_spec.uuids_are_present():
         raise LateValidationError("Invalid DesignSpec: UUIDs must not be set.")
@@ -1365,6 +1368,47 @@ def get_experiment_assignments_as_csv(
     ds = get_datasource_or_raise(session, user, datasource_id)
     experiment = get_experiment_via_ds_or_raise(session, ds, experiment_id)
     return experiments.get_experiment_assignments_as_csv_impl(experiment)
+
+
+@router.get(
+    "/datasources/{datasource_id}/experiments/{experiment_id}/assignments/{participant_id}",
+    description="""Get the assignment for a specific participant, excluding strata if any.
+    For 'preassigned' experiments, the participant's Assignment is returned if it exists.
+    For 'online', returns the assignment if it exists, else generates an assignment.""",
+)
+def get_experiment_assignment_for_participant(
+    datasource_id: str,
+    experiment_id: str,
+    participant_id: str,
+    session: Annotated[Session, Depends(xngin_db_session)],
+    user: Annotated[User, Depends(user_from_token)],
+    random_state: Annotated[
+        int | None,
+        Query(
+            description="Specify a random seed for reproducibility.",
+            include_in_schema=False,
+        ),
+    ] = None,
+) -> experiments_api_types.GetParticipantAssignmentResponse:
+    """Get the assignment for a specific participant in an experiment."""
+    # Validate the datasource and experiment exist
+    ds = get_datasource_or_raise(session, user, datasource_id)
+
+    # Look up the participant's assignment if it exists
+    assignment = experiments.get_existing_assignment_for_participant(
+        session, experiment_id, participant_id
+    )
+    if not assignment:
+        experiment = get_experiment_via_ds_or_raise(session, ds, experiment_id)
+        assignment = experiments.create_assignment_for_participant(
+            session, experiment, participant_id, random_state
+        )
+
+    return GetParticipantAssignmentResponse(
+        experiment_id=experiment_id,
+        participant_id=participant_id,
+        assignment=assignment,
+    )
 
 
 @router.delete(

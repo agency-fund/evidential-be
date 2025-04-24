@@ -27,7 +27,12 @@ class CreateExperimentRequest(ExperimentsBaseModel):
 class AssignSummary(ExperimentsBaseModel):
     """Key pieces of an AssignResponse without the assignments."""
 
-    balance_check: BalanceCheck
+    balance_check: Annotated[
+        BalanceCheck | None,
+        Field(
+            description="Balance test results if available. 'online' experiments do not have balance checks."
+        ),
+    ] = None
     sample_size: Annotated[
         int, Field(description="The number of participants across all arms in total.")
     ]
@@ -54,7 +59,7 @@ class ExperimentConfig(ExperimentsBaseModel):
     assign_summary: AssignSummary
 
 
-class CreateExperimentWithAssignmentResponse(ExperimentConfig):
+class CreateExperimentResponse(ExperimentConfig):
     """Same as the request but with uuids filled for the experiment and arms, and summary info on the assignment."""
 
 
@@ -67,10 +72,26 @@ class ListExperimentsResponse(ExperimentsBaseModel):
 
 
 class GetExperimentAssignmentsResponse(ExperimentsBaseModel):
-    """Describes assignments for all participants and balance test results."""
+    """Describes assignments for all participants and balance test results if available."""
 
-    balance_check: BalanceCheck
+    balance_check: Annotated[
+        BalanceCheck | None,
+        Field(
+            description="Balance test results if available. 'online' experiments do not have balance checks."
+        ),
+    ] = None
 
     experiment_id: uuid.UUID
     sample_size: int
     assignments: list[Assignment]
+
+
+class GetParticipantAssignmentResponse(ExperimentsBaseModel):
+    """Describes assignment for a single <experiment, participant> pair."""
+
+    experiment_id: str
+    participant_id: str
+    assignment: Annotated[
+        Assignment | None,
+        Field(description="Null if no assignment. assignment.strata are not included."),
+    ]

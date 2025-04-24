@@ -8,6 +8,7 @@ from pydantic import ValidationError
 from xngin.apiserver.apikeys import ApiKeyError
 from xngin.apiserver.dependencies import CannotFindDatasourceError
 from xngin.apiserver.exceptions_common import LateValidationError
+from xngin.apiserver.routers.experiments import ExperimentsAssignmentError
 from xngin.apiserver.settings import (
     CannotFindTableError,
     CannotFindParticipantsError,
@@ -40,6 +41,10 @@ def setup(app):
         _request: Request, exc: CannotFindParticipantsError
     ):
         return JSONResponse(status_code=404, content={"message": exc.message})
+
+    @app.exception_handler(ExperimentsAssignmentError)
+    async def exception_handler_experimentserror(_request: Request, exc: StatsError):
+        return JSONResponse(status_code=422, content={"message": str(exc)})
 
     @app.exception_handler(StatsError)
     async def exception_handler_statsmodelerror(_request: Request, exc: StatsError):

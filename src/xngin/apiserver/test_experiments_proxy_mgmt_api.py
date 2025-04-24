@@ -32,7 +32,7 @@ def load_mock_response_from_xurl(mocker, file):
     # TODO: consider using dep injection for the httpx client
     mock_response = mocker.Mock()
     mock_response.status_code = xurl.expected_status
-    expected_response_as_dict = json.loads(xurl.expected_response)
+    expected_response_as_dict = json.loads(xurl.expected_response or "{}")
     if "body" in expected_response_as_dict:
         # Extract the fake webhook response from the mock api server response,
         # then re-serialize it to use as a mock webhook response.

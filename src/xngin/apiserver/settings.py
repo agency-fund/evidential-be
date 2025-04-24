@@ -506,7 +506,8 @@ class RemoteDatabaseConfig(ParticipantsMixin, ConfigBaseModel):
             engine.dialect._set_backslash_escapes = lambda _: None
 
 
-type DatasourceConfig = Annotated[RemoteDatabaseConfig, Field(discriminator="type")]
+# TODO: use a Field(discriminator="type") when we support more than just "remote" databases.
+type DatasourceConfig = RemoteDatabaseConfig
 
 
 class Datasource(ConfigBaseModel):

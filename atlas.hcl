@@ -19,3 +19,9 @@ env "sa_postgres" {
     }
   }
 }
+
+lint {
+  non_linear {
+    error = true
+  }
+}

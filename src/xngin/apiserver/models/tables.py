@@ -2,6 +2,7 @@ import json
 import secrets
 from datetime import UTC, datetime
 from typing import ClassVar, Self
+import uuid
 
 import sqlalchemy
 from pydantic import TypeAdapter
@@ -11,6 +12,7 @@ from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 from sqlalchemy.types import TypeEngine
 from xngin.apiserver.api_types import (
     Arm,
+    ArmSize,
     AudienceSpec,
     BalanceCheck,
     DesignSpec,
@@ -365,15 +367,17 @@ class ArmAssignment(Base):
         String(36), ForeignKey("arms.id", ondelete="CASCADE")
     )
     # JSON serialized form of a list of Strata objects (from Assignment.strata).
-    strata: Mapped[dict] = mapped_column(type_=JSONBetter)
+    strata: Mapped[list[dict[str, str]]] = mapped_column(type_=JSONBetter)
 
     experiment: Mapped["Experiment"] = relationship(back_populates="arm_assignments")
     arm: Mapped["ArmTable"] = relationship(back_populates="arm_assignments")
 
-    def strata_names(self):
+    def strata_names(self) -> list[str]:
+        """Returns the names of the strata fields."""
         return [s["field_name"] for s in self.strata]
 
-    def strata_values(self):
+    def strata_values(self) -> list[str]:
+        """Returns the values of the strata fields as strings."""
         return [s["strata_value"] for s in self.strata]
 
 
@@ -386,6 +390,13 @@ class Experiment(Base):
     datasource_id: Mapped[str] = mapped_column(
         String(255), ForeignKey("datasources.id", ondelete="CASCADE")
     )
+    experiment_type: Mapped[str] = mapped_column(
+        comment="Should be one of the ExperimentType literals."
+    )
+    participant_type: Mapped[str] = mapped_column(String(255))
+    name: Mapped[str] = mapped_column(String(255))
+    # Describe your experiment and hypothesis here.
+    description: Mapped[str] = mapped_column(String(2000))
     state: Mapped[ExperimentState]
     # Target start date of the experiment. Denormalized from design_spec.
     start_date: Mapped[datetime] = mapped_column()
@@ -420,7 +431,7 @@ class Experiment(Base):
         return ds.arms
 
     def get_arm_ids(self) -> list[str]:
-        return [arm.arm_id for arm in self.get_arms()]
+        return [str(arm.arm_id) for arm in self.get_arms()]
 
     def get_arm_names(self) -> list[str]:
         return [arm.arm_name for arm in self.get_arms()]
@@ -437,12 +448,27 @@ class Experiment(Base):
         return TypeAdapter(PowerResponse).validate_python(self.power_analyses)
 
     def get_assign_summary(self) -> AssignSummary:
-        return TypeAdapter(AssignSummary).validate_python(self.assign_summary)
-
-    def get_balance_check(self) -> BalanceCheck:
-        return TypeAdapter(BalanceCheck).validate_python(
-            self.assign_summary["balance_check"]
+        """Constructs an AssignSummary from the experiment's arms and arm_assignments."""
+        balance_check = self.get_balance_check()
+        arm_sizes = [
+            ArmSize(
+                arm=Arm(arm_id=uuid.UUID(arm.id), arm_name=arm.name),
+                size=len(arm.arm_assignments),
+            )
+            for arm in self.arms
+        ]
+        return AssignSummary(
+            balance_check=balance_check,
+            arm_sizes=arm_sizes,
+            sample_size=sum(arm_size.size for arm_size in arm_sizes),
         )
+
+    def get_balance_check(self) -> BalanceCheck | None:
+        if self.assign_summary is not None:
+            return TypeAdapter(BalanceCheck).validate_python(
+                self.assign_summary["balance_check"]
+            )
+        return None
 
 
 class ArmTable(Base):

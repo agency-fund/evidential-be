@@ -11,13 +11,14 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 from xngin.apiserver import conftest
 from xngin.apiserver import main as main_module
-from xngin.apiserver.api_types import DataType, ExperimentAnalysis
+from xngin.apiserver.api_types import DataType, ExperimentAnalysis, ExperimentType
 from xngin.apiserver.dependencies import xngin_db_session
 from xngin.apiserver.main import app
 from xngin.apiserver.models.enums import ExperimentState
 from xngin.apiserver.models.tables import (
     ArmAssignment,
     ArmTable,
+    Datasource as DatasourceTable,
     Experiment,
     Organization,
     User,
@@ -39,9 +40,10 @@ from xngin.apiserver.routers.admin_api_types import (
 )
 from xngin.apiserver.routers.experiments_api_types import (
     CreateExperimentRequest,
-    CreateExperimentWithAssignmentResponse,
+    CreateExperimentResponse,
     ExperimentConfig,
     GetExperimentAssignmentsResponse,
+    GetParticipantAssignmentResponse,
     ListExperimentsResponse,
 )
 from xngin.apiserver.routers.oidc_dependencies import (
@@ -162,12 +164,16 @@ def fixture_testing_sheet_datasource_with_user_added(testing_datasource):
     return testing_datasource
 
 
-def make_createexperimentrequest_json(participant_type: str = "test_participant_type"):
+def make_createexperimentrequest_json(
+    participant_type: str = "test_participant_type",
+    experiment_type: str = "preassigned",
+):
     """Create an experiment on the test ds."""
     return {
         "design_spec": {
             "experiment_name": "test",
             "description": "test",
+            "experiment_type": experiment_type,
             # Attach UTC tz, but use dates_equal() to compare to respect db storage support
             "start_date": "2024-01-01T00:00:00+00:00",
             "end_date": "2024-01-02T00:00:00+00:00",
@@ -190,11 +196,19 @@ def make_createexperimentrequest_json(participant_type: str = "test_participant_
     }
 
 
-def make_insertable_experiment(state: ExperimentState, datasource_id="testing"):
-    request = make_createexperimentrequest_json()
+def make_insertable_experiment(
+    state: ExperimentState,
+    datasource_id: str = "testing",
+    experiment_type: ExperimentType = "preassigned",
+) -> Experiment:
+    request = make_createexperimentrequest_json(experiment_type=experiment_type)
     return Experiment(
         id=str(uuid.uuid4()),
         datasource_id=datasource_id,
+        experiment_type=experiment_type,
+        participant_type=request["audience_spec"]["participant_type"],
+        name=request["design_spec"]["experiment_name"],
+        description=request["design_spec"]["description"],
         state=state,
         start_date=datetime.datetime.fromisoformat(
             request["design_spec"]["start_date"]
@@ -203,11 +217,26 @@ def make_insertable_experiment(state: ExperimentState, datasource_id="testing"):
         design_spec=request["design_spec"],
         audience_spec=request["audience_spec"],
         power_analyses=None,
-        assign_summary=None,
+        assign_summary={
+            "sample_size": 0,
+            "arm_sizes": [
+                {
+                    "arm": {"arm_name": "control", "arm_description": "control"},
+                    "size": 0,
+                },
+                {
+                    "arm": {"arm_name": "treatment", "arm_description": "treatment"},
+                    "size": 0,
+                },
+            ],
+            "balance_check": None,
+        },
     )
 
 
-def make_arms_from_experiment(experiment: Experiment, organization_id: str):
+def make_arms_from_experiment(
+    experiment: Experiment, organization_id: str
+) -> list[ArmTable]:
     return [
         ArmTable(
             id=arm["arm_id"],
@@ -220,14 +249,13 @@ def make_arms_from_experiment(experiment: Experiment, organization_id: str):
     ]
 
 
-@pytest.fixture(name="testing_experiment")
-def fixture_testing_experiment(db_session, testing_datasource_with_user_added):
-    """Create an experiment on a test inline schema datasource with proper user permissions."""
-    datasource = testing_datasource_with_user_added.ds
-
+def make_experiment_and_arms(
+    db_session, datasource: DatasourceTable, experiment_type: ExperimentType
+) -> Experiment:
     experiment = make_insertable_experiment(
         ExperimentState.COMMITTED,
         datasource_id=datasource.id,
+        experiment_type=experiment_type,
     )
     # Fake arm_ids in the design_spec since we're not using the admin API to create the experiment.
     for arm in experiment.design_spec["arms"]:
@@ -237,13 +265,22 @@ def fixture_testing_experiment(db_session, testing_datasource_with_user_added):
     # Create ArmTable instances for each arm in the experiment
     db_arms = make_arms_from_experiment(experiment, datasource.organization_id)
     db_session.add_all(db_arms)
+    db_session.commit()
+    return experiment
+
+
+@pytest.fixture(name="testing_experiment")
+def fixture_testing_experiment(db_session, testing_datasource_with_user_added):
+    """Create an experiment on a test inline schema datasource with proper user permissions."""
+    datasource = testing_datasource_with_user_added.ds
+    experiment = make_experiment_and_arms(db_session, datasource, "preassigned")
     # Add fake assignments for each arm for real participant ids in our test data.
-    arm_ids = [arm["arm_id"] for arm in experiment.design_spec["arms"]]
+    arm_ids = [arm.id for arm in experiment.arms]
     for i in range(10):
         assignment = ArmAssignment(
             experiment_id=str(experiment.id),
             participant_id=str(i),
-            participant_type=experiment.get_audience_spec().participant_type,
+            participant_type=experiment.participant_type,
             arm_id=arm_ids[i % 2],  # Alternate between the two arms
             strata={},
         )
@@ -628,14 +665,12 @@ def test_lifecycle_with_pg(testing_datasource):
 
     # Create experiment using that participant type.
     response = ppost(
-        f"/v1/m/experiments/{testing_datasource.ds.id}/with-assignment",
+        f"/v1/m/datasources/{testing_datasource.ds.id}/experiments",
         params={"chosen_n": 100},
         json=make_createexperimentrequest_json(participant_type),
     )
     assert response.status_code == 200, response.content
-    created_experiment = CreateExperimentWithAssignmentResponse.model_validate(
-        response.json()
-    )
+    created_experiment = CreateExperimentResponse.model_validate(response.json())
     parsed_experiment_id = created_experiment.design_spec.experiment_id
     assert parsed_experiment_id is not None
     parsed_arm_ids = {arm.arm_id for arm in created_experiment.design_spec.arms}
@@ -699,7 +734,7 @@ def test_create_experiment_with_assignment_validation_errors(
         "123e4567-e89b-12d3-a456-426614174000"
     )
     response = ppost(
-        f"/v1/m/experiments/{testing_datasource.ds.id}/with-assignment",
+        f"/v1/m/datasources/{testing_datasource.ds.id}/experiments",
         params={"chosen_n": 100},
         json=base_request,
     )
@@ -710,7 +745,7 @@ def test_create_experiment_with_assignment_validation_errors(
     # This datasource is loaded with a "remote" config from xngin.testing.settings.json, but
     # the associated participants config is of type "sheet".
     response = ppost(
-        f"/v1/m/experiments/{testing_sheet_datasource_with_user_added.ds.id}/with-assignment",
+        f"/v1/m/datasources/{testing_sheet_datasource_with_user_added.ds.id}/experiments",
         params={"chosen_n": 100},
         json=make_createexperimentrequest_json(),
     )
@@ -718,7 +753,7 @@ def test_create_experiment_with_assignment_validation_errors(
     assert "Participants must be of type schema" in response.json()["message"]
 
 
-def test_create_experiment_with_assignment_using_inline_schema_ds(
+def test_create_preassigned_experiment_using_inline_schema_ds(
     db_session, testing_datasource_with_user_added, use_deterministic_random
 ):
     datasource_id = testing_datasource_with_user_added.ds.id
@@ -726,14 +761,12 @@ def test_create_experiment_with_assignment_using_inline_schema_ds(
     base_request = CreateExperimentRequest.model_validate(base_request_json)
 
     response = ppost(
-        f"/v1/m/experiments/{datasource_id}/with-assignment",
+        f"/v1/m/datasources/{datasource_id}/experiments",
         params={"chosen_n": 100, "random_state": 42},
         json=base_request_json,
     )
     assert response.status_code == 200, response.content
-    created_experiment = CreateExperimentWithAssignmentResponse.model_validate(
-        response.json()
-    )
+    created_experiment = CreateExperimentResponse.model_validate(response.json())
     parsed_experiment_id = created_experiment.design_spec.experiment_id
     assert parsed_experiment_id is not None
     parsed_arm_ids = {arm.arm_id for arm in created_experiment.design_spec.arms}
@@ -746,10 +779,11 @@ def test_create_experiment_with_assignment_using_inline_schema_ds(
     assert created_experiment.state == ExperimentState.ASSIGNED
     assign_summary = created_experiment.assign_summary
     assert assign_summary.sample_size == 100
+    assert assign_summary.balance_check is not None
     assert assign_summary.balance_check.balance_ok is True
 
     # Check if the representations are equivalent
-    # scrub the uuids from the config for comparison
+    # scrub the ids from the config for comparison
     actual_design_spec = created_experiment.design_spec.model_copy(deep=True)
     actual_design_spec.experiment_id = None
     actual_design_spec.arms[0].arm_id = None
@@ -769,6 +803,10 @@ def test_create_experiment_with_assignment_using_inline_schema_ds(
     ).one()
     assert experiment.state == ExperimentState.ASSIGNED
     assert experiment.datasource_id == datasource_id
+    assert experiment.experiment_type == "preassigned"
+    assert experiment.participant_type == "test_participant_type"
+    assert experiment.name == base_request.design_spec.experiment_name
+    assert experiment.description == base_request.design_spec.description
     assert conftest.dates_equal(
         experiment.start_date, base_request.design_spec.start_date
     )
@@ -793,6 +831,118 @@ def test_create_experiment_with_assignment_using_inline_schema_ds(
     num_control = sum(1 for a in assignments if a.arm_id == arm1_id)
     num_treat = sum(1 for a in assignments if a.arm_id == arm2_id)
     assert abs(num_control - num_treat) <= 5  # Allow some wiggle room
+
+
+def test_create_online_experiment_using_inline_schema_ds(
+    testing_datasource_with_user_added, use_deterministic_random
+):
+    datasource_id = testing_datasource_with_user_added.ds.id
+    base_request_json = make_createexperimentrequest_json(
+        "test_participant_type", "online"
+    )
+    base_request = CreateExperimentRequest.model_validate(base_request_json)
+
+    response = ppost(
+        f"/v1/m/datasources/{datasource_id}/experiments",
+        params={"chosen_n": 100, "random_state": 42},
+        json=base_request_json,
+    )
+    assert response.status_code == 200, response.content
+    created_experiment = CreateExperimentResponse.model_validate(response.json())
+    parsed_experiment_id = created_experiment.design_spec.experiment_id
+    assert parsed_experiment_id is not None
+    parsed_arm_ids = {arm.arm_id for arm in created_experiment.design_spec.arms}
+    assert len(parsed_arm_ids) == 2
+
+    # Verify basic response
+    assert created_experiment.design_spec.experiment_id is not None
+    assert created_experiment.design_spec.arms[0].arm_id is not None
+    assert created_experiment.design_spec.arms[1].arm_id is not None
+    assert created_experiment.state == ExperimentState.COMMITTED
+    assign_summary = created_experiment.assign_summary
+    assert assign_summary.balance_check is None
+    assert assign_summary.sample_size == 0
+    assert assign_summary.arm_sizes is not None
+    assert all(a.size == 0 for a in assign_summary.arm_sizes)
+    assert created_experiment.power_analyses is None
+    # Check if the representations are equivalent
+    # scrub the ids from the config for comparison
+    actual_design_spec = created_experiment.design_spec.model_copy(deep=True)
+    actual_design_spec.experiment_id = None
+    actual_design_spec.arms[0].arm_id = None
+    actual_design_spec.arms[1].arm_id = None
+    assert actual_design_spec == base_request.design_spec
+    assert created_experiment.audience_spec == base_request.audience_spec
+
+
+def test_get_experiment_assignment_for_preassigned_participant(testing_experiment):
+    datasource_id = testing_experiment.datasource_id
+    experiment_id = testing_experiment.id
+    assignments = testing_experiment.arm_assignments
+
+    response = pget(
+        f"/v1/m/datasources/{datasource_id}/experiments/{experiment_id}/assignments/unassigned_id"
+    )
+    assert response.status_code == 200
+    assignment_response = GetParticipantAssignmentResponse.model_validate(
+        response.json()
+    )
+    assert assignment_response.experiment_id == experiment_id
+    assert assignment_response.participant_id == "unassigned_id"
+    assert assignment_response.assignment is None
+
+    response = pget(
+        f"/v1/m/datasources/{datasource_id}/experiments/{experiment_id}/assignments/{assignments[0].participant_id}"
+    )
+    assert response.status_code == 200
+    assignment_response = GetParticipantAssignmentResponse.model_validate(
+        response.json()
+    )
+    assert assignment_response.experiment_id == experiment_id
+    assert assignment_response.participant_id == assignments[0].participant_id
+    assert assignment_response.assignment is not None
+
+
+def test_get_experiment_assignment_for_online_participant(
+    db_session, testing_datasource_with_user_added
+):
+    testing_experiment = make_experiment_and_arms(
+        db_session, testing_datasource_with_user_added.ds, "online"
+    )
+    datasource_id = testing_experiment.datasource_id
+    experiment_id = testing_experiment.id
+
+    # Create a new participant assignment.
+    response = pget(
+        f"/v1/m/datasources/{datasource_id}/experiments/{experiment_id}/assignments/new_id"
+    )
+    assert response.status_code == 200
+    assignment_response = GetParticipantAssignmentResponse.model_validate(
+        response.json()
+    )
+    assert assignment_response.experiment_id == experiment_id
+    assert assignment_response.participant_id == "new_id"
+    assert assignment_response.assignment is not None
+    assert str(assignment_response.assignment.arm_id) in {
+        arm.id for arm in testing_experiment.arms
+    }
+
+    # Get back the same assignment.
+    response = pget(
+        f"/v1/m/datasources/{datasource_id}/experiments/{experiment_id}/assignments/new_id"
+    )
+    assert response.status_code == 200
+    assignment_response2 = GetParticipantAssignmentResponse.model_validate(
+        response.json()
+    )
+    assert assignment_response2 == assignment_response
+
+    # Make sure there's only one db entry.
+    assignment = db_session.scalars(
+        select(ArmAssignment).where(ArmAssignment.experiment_id == str(experiment_id))
+    ).one()
+    assert assignment.participant_id == "new_id"
+    assert assignment.arm_id == str(assignment_response.assignment.arm_id)
 
 
 def test_experiments_analyze(testing_experiment):
