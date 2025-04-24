@@ -5,6 +5,7 @@ vars:
   XNGIN_DEVAPPDB_NAME: "xngin"
   XNGIN_DEVAPP_DSN: "postgresql+psycopg://postgres:postgres@localhost:5499/{{.XNGIN_DEVAPPDB_NAME}}?sslmode=disable"
   XNGIN_DEVAPP_MIGRATIONS_DSN: '{{replace "+psycopg" "" .XNGIN_DEVAPP_DSN}}'
+  XNGIN_DEVAPP_MIGRATIONS_LINT_DSN: "postgresql://postgres:postgres@localhost:5499/migration_lint?sslmode=disable"
 
 env:
   # Disable Atlas telemetry.
@@ -184,6 +185,15 @@ tasks:
       - uv run atlas schema clean --env sa_postgres --url '{{.XNGIN_DEVAPP_MIGRATIONS_DSN}}'
       - psql "{{.XNGIN_DEVAPP_MIGRATIONS_DSN}}" -c 'CREATE SCHEMA public;'
       - task: apply-migrations
+  migration-lint:
+    desc: "Lint the latest migration file. Add 'LATEST=N' to lint the N most recent files."
+    vars:
+      LATEST: '{{default "1" .LATEST}}'
+    cmds:
+      - psql "{{.XNGIN_DEVAPP_MIGRATIONS_DSN}}" -c 'CREATE DATABASE migration_lint;' || true
+      - >
+        uv run atlas migrate lint --dir 'file://migrations/sa_postgres/'
+        --latest {{.LATEST}} --dev-url '{{.XNGIN_DEVAPP_MIGRATIONS_LINT_DSN}}'
   migration-status:
     desc: "Provides in-depth information about the migration status of the connected database. Useful for debugging migration issues."
     cmds:
