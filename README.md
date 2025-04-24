@@ -36,7 +36,7 @@ Follow the steps below to get a local development environment running.
 
    ```shell
    # This creates a local Postgres instance on port 5499.
-   task bootstrap-app-db
+   task bootstrap-app
    # This runs the unit tests.
    task test
    ```
