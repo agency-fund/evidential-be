@@ -112,17 +112,12 @@ class Webhook(Base):
     __tablename__ = "webhooks"
 
     id: Mapped[str] = mapped_column(primary_key=True, default=unique_id_factory("wh"))
-    type: Mapped[str] = mapped_column(
-        comment="The type of webhook; e.g. experiment.created. These are user-visible arbitrary strings."
-    )
-
-    url: Mapped[str] = mapped_column(
-        comment="The URL to post the event to. The payload body depends "
-        "on the type of webhook."
-    )
-    auth_token: Mapped[str | None] = mapped_column(
-        comment="The token that will be sent in the Authorization header."
-    )
+    # The type of webhook; e.g. experiment.created. These are user-visible arbitrary strings.
+    type: Mapped[str] = mapped_column()
+    # The URL to post the event to. The payload body depends on the type of webhook.
+    url: Mapped[str] = mapped_column()
+    # The token that will be sent in the Authorization header.
+    auth_token: Mapped[str | None] = mapped_column()
 
     organization_id: Mapped[str] = mapped_column(
         ForeignKey("organizations.id", ondelete="CASCADE")
@@ -142,12 +137,11 @@ class Event(Base):
     created_at: Mapped[datetime] = mapped_column(
         server_default=sqlalchemy.sql.func.now()
     )
-    type: Mapped[str] = mapped_column(
-        comment="The type of event. E.g. `experiment.created`"
-    )
+    # The type of event. E.g. `experiment.created`
+    type: Mapped[str] = mapped_column()
+    # The event payload. This will always be a JSON object with a `type` field.
     data: Mapped[dict] = mapped_column(
         type_=JSONBetter,
-        comment="The event payload. This will always be a JSON object with a `type` field.",
     )
 
     organization_id: Mapped[str] = mapped_column(
@@ -182,27 +176,20 @@ class Task(Base):
         server_default=sqlalchemy.sql.func.now(),
         onupdate=sqlalchemy.sql.func.now(),
     )
-    task_type: Mapped[str] = mapped_column(
-        comment="The type of task. E.g. `experiment.created`"
-    )
-    status: Mapped[str] = mapped_column(
-        server_default="pending",
-        comment="Status of the task: 'pending', 'running', 'success', or 'dead'.",
-    )
+    # The type of task. E.g. `experiment.created`
+    task_type: Mapped[str] = mapped_column()
+    # Status of the task: 'pending', 'running', 'success', or 'dead'.
+    status: Mapped[str] = mapped_column(server_default="pending")
+    # Time until which the task should not be processed. Defaults to created_at.
     embargo_until: Mapped[datetime] = mapped_column(
-        server_default=sqlalchemy.sql.func.now(),
-        comment="Time until which the task should not be processed. Defaults to created_at.",
+        server_default=sqlalchemy.sql.func.now()
     )
-    retry_count: Mapped[int] = mapped_column(
-        server_default="0", comment="Number of times this task has been retried."
-    )
-    payload: Mapped[dict | None] = mapped_column(
-        type_=JSONBetter,
-        comment="The task payload. This will be a JSON object with task-specific data.",
-    )
-    message: Mapped[str | None] = mapped_column(
-        comment="An optional informative message about the state of this task."
-    )
+    # Number of times this task has been retried.
+    retry_count: Mapped[int] = mapped_column(server_default="0")
+    # The task payload. This will be a JSON object with task-specific data.
+    payload: Mapped[dict | None] = mapped_column(type_=JSONBetter)
+    # An optional informative message about the state of this task.
+    message: Mapped[str | None] = mapped_column()
 
     __table_args__ = (Index("idx_tasks_embargo", "embargo_until"),)
 
@@ -220,10 +207,8 @@ class User(Base):
     iss: Mapped[str | None] = mapped_column(String(255), default=None)
     sub: Mapped[str | None] = mapped_column(String(255), default=None)
 
-    is_privileged: Mapped[bool] = mapped_column(
-        server_default=sqlalchemy.sql.false(),
-        comment="True when this user is considered to be privileged.",
-    )
+    # True when this user is considered to be privileged.
+    is_privileged: Mapped[bool] = mapped_column(server_default=sqlalchemy.sql.false())
 
     # Relationships
     organizations: Mapped[list["Organization"]] = relationship(
@@ -259,16 +244,13 @@ class Datasource(Base):
     organization_id: Mapped[str] = mapped_column(
         ForeignKey("organizations.id", ondelete="CASCADE")
     )
-    config: Mapped[dict] = mapped_column(
-        type_=JSONBetter, comment="JSON serialized form of DatasourceConfig"
-    )
+    # JSON serialized form of DatasourceConfig
+    config: Mapped[dict] = mapped_column(type_=JSONBetter)
 
-    table_list: Mapped[list[str] | None] = mapped_column(
-        type_=JSONBetter, comment="List of table names available in this datasource"
-    )
-    table_list_updated: Mapped[datetime | None] = mapped_column(
-        comment="Timestamp of the last update to `inspected_tables`"
-    )
+    # List of table names available in this datasource
+    table_list: Mapped[list[str] | None] = mapped_column(type_=JSONBetter)
+    # Timestamp of the last update to `inspected_tables`
+    table_list_updated: Mapped[datetime | None] = mapped_column()
 
     organization: Mapped["Organization"] = relationship(back_populates="datasources")
     api_keys: Mapped[list["ApiKey"]] = relationship(
@@ -323,12 +305,10 @@ class DatasourceTablesInspected(Base):
     )
     table_name: Mapped[str] = mapped_column(primary_key=True)
 
-    response: Mapped[dict | None] = mapped_column(
-        type_=JSONBetter, comment="Serialized InspectDatasourceTablesResponse."
-    )
-    response_last_updated: Mapped[datetime | None] = mapped_column(
-        comment="Timestamp of the last update to `response`"
-    )
+    # Serialized InspectDatasourceTablesResponse.
+    response: Mapped[dict | None] = mapped_column(type_=JSONBetter)
+    # Timestamp of the last update to `response`
+    response_last_updated: Mapped[datetime | None] = mapped_column()
 
     def get_response(self):
         return InspectDatasourceTableResponse.model_validate(self.response)
@@ -349,12 +329,10 @@ class ParticipantTypesInspected(Base):
     )
     participant_type: Mapped[str] = mapped_column(primary_key=True)
 
-    response: Mapped[dict | None] = mapped_column(
-        type_=JSONBetter, comment="Serialized InspectParticipantTypesResponse."
-    )
-    response_last_updated: Mapped[datetime | None] = mapped_column(
-        comment="Timestamp of the last update to `response`"
-    )
+    # Serialized InspectParticipantTypesResponse.
+    response: Mapped[dict | None] = mapped_column(type_=JSONBetter)
+    # Timestamp of the last update to `response`
+    response_last_updated: Mapped[datetime | None] = mapped_column()
 
     def get_response(self):
         return InspectParticipantTypesResponse.model_validate(self.response)
@@ -384,13 +362,10 @@ class ArmAssignment(Base):
     participant_id: Mapped[str] = mapped_column(String(255), primary_key=True)
     participant_type: Mapped[str] = mapped_column(String(255))
     arm_id: Mapped[str] = mapped_column(
-        String(36),
-        ForeignKey("arms.id", ondelete="CASCADE"),
+        String(36), ForeignKey("arms.id", ondelete="CASCADE")
     )
-    strata: Mapped[dict] = mapped_column(
-        type_=JSONBetter,
-        comment="JSON serialized form of a list of Strata objects (from Assignment.strata).",
-    )
+    # JSON serialized form of a list of Strata objects (from Assignment.strata).
+    strata: Mapped[dict] = mapped_column(type_=JSONBetter)
 
     experiment: Mapped["Experiment"] = relationship(back_populates="arm_assignments")
     arm: Mapped["ArmTable"] = relationship(back_populates="arm_assignments")
@@ -412,26 +387,19 @@ class Experiment(Base):
         String(255), ForeignKey("datasources.id", ondelete="CASCADE")
     )
     state: Mapped[ExperimentState]
-    start_date: Mapped[datetime] = mapped_column(
-        comment="Target start date of the experiment. Denormalized from design_spec."
-    )
-    end_date: Mapped[datetime] = mapped_column(
-        comment="Target end date of the experiment. Denormalized from design_spec."
-    )
-    # We presume updates to descriptions/names/times won't happen frequently.
-    design_spec: Mapped[dict] = mapped_column(
-        type_=JSONBetter, comment="JSON serialized form of DesignSpec."
-    )
-    audience_spec: Mapped[dict] = mapped_column(
-        type_=JSONBetter, comment="JSON serialized form of AudienceSpec."
-    )
-    power_analyses: Mapped[dict | None] = mapped_column(
-        type_=JSONBetter,
-        comment="JSON serialized form of a PowerResponse. Not required since some experiments may not have data to run power analyses.",
-    )
-    assign_summary: Mapped[dict] = mapped_column(
-        type_=JSONBetter, comment="JSON serialized form of AssignSummary."
-    )
+    # Target start date of the experiment. Denormalized from design_spec.
+    start_date: Mapped[datetime] = mapped_column()
+    # Target end date of the experiment. Denormalized from design_spec.
+    end_date: Mapped[datetime] = mapped_column()
+
+    # JSON serialized form of DesignSpec.
+    design_spec: Mapped[dict] = mapped_column(type_=JSONBetter)
+    # JSON serialized form of AudienceSpec.
+    audience_spec: Mapped[dict] = mapped_column(type_=JSONBetter)
+    # JSON serialized form of a PowerResponse. Not required since some experiments may not have data to run power analyses.
+    power_analyses: Mapped[dict | None] = mapped_column(type_=JSONBetter)
+    # JSON serialized form of AssignSummary.
+    assign_summary: Mapped[dict] = mapped_column(type_=JSONBetter)
     created_at: Mapped[datetime] = mapped_column(
         server_default=sqlalchemy.sql.func.now()
     )
