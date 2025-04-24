@@ -367,7 +367,7 @@ class ArmAssignment(Base):
         String(36), ForeignKey("arms.id", ondelete="CASCADE")
     )
     # JSON serialized form of a list of Strata objects (from Assignment.strata).
-    strata: Mapped[list[dict[str, str]]]  = mapped_column(type_=JSONBetter)
+    strata: Mapped[list[dict[str, str]]] = mapped_column(type_=JSONBetter)
 
     experiment: Mapped["Experiment"] = relationship(back_populates="arm_assignments")
     arm: Mapped["ArmTable"] = relationship(back_populates="arm_assignments")
