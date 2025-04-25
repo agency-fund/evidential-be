@@ -181,22 +181,22 @@ tasks:
   migration-reset:
     desc: "Drop the local development database's schema, tables, and Atlas migration state. Use this when your local database is out of sync with merged migrations."
     cmds:
-      - uv run atlas schema clean --env sa_postgres --url '{{.XNGIN_DEVAPP_MIGRATIONS_DSN}}'
-      - psql "{{.XNGIN_DEVAPP_MIGRATIONS_DSN}}" -c 'CREATE SCHEMA public;'
+      - uv run atlas schema clean --env sa_postgres --url "{{.XNGIN_DEVAPP_MIGRATIONS_DSN}}"
+      - psql "{{.XNGIN_DEVAPP_MIGRATIONS_DSN}}" -c "CREATE SCHEMA public;"
       - task: apply-migrations
   migration-lint:
     desc: "Lint the latest migration file. Add 'LATEST=N' to lint the N most recent files."
     vars:
-      LATEST: '{{default "1" .LATEST}}'
+      LATEST: "{{default 1 .LATEST}}"
     cmds:
-      - psql "{{.XNGIN_DEVAPP_MIGRATIONS_DSN}}" -c 'CREATE DATABASE migration_lint;' || true
+      - psql "{{.XNGIN_DEVAPP_MIGRATIONS_DSN}}" -c "CREATE DATABASE migration_lint;" || true
       - >
-        uv run atlas migrate lint --dir 'file://migrations/sa_postgres/'
-        --latest {{.LATEST}} --dev-url '{{.XNGIN_DEVAPP_MIGRATIONS_LINT_DSN}}'
+        uv run atlas migrate lint --dir "file://migrations/sa_postgres/"
+        --latest {{.LATEST}} --dev-url "{{.XNGIN_DEVAPP_MIGRATIONS_LINT_DSN}}"
   migration-status:
     desc: "Provides in-depth information about the migration status of the connected database. Useful for debugging migration issues."
     cmds:
-      - uv run atlas migrate status --env sa_postgres --url '{{.XNGIN_DEVAPP_MIGRATIONS_DSN}}'
+      - uv run atlas migrate status --env sa_postgres --url "{{.XNGIN_DEVAPP_MIGRATIONS_DSN}}"
   make-manual-migration:
     desc: "Create and edit a new migration file manually. Use this to manually adjust values in the database."
     interactive: true
@@ -205,12 +205,12 @@ tasks:
   down-migration:
     desc: "Go back a version in the migration history. Note that it include pre-migration checks to ensure data isn't deleted and tables are empty, so you may have to manually do some prep for the reversion. See https://atlasgo.io/versioned/down"
     cmds:
-      - uv run atlas migrate down --env sa_postgres --url '{{.XNGIN_DEVAPP_MIGRATIONS_DSN}}'
+      - uv run atlas migrate down --env sa_postgres --url "{{.XNGIN_DEVAPP_MIGRATIONS_DSN}}"
   apply-migrations:
     desc: "Apply Postgres migrations locally (requires localpg instance to be running, to have an xngin database, and to have been previously migrated)"
     cmds:
       - uv run atlas migrate diff --env sa_postgres
-      - uv run atlas migrate apply --env sa_postgres --url '{{.XNGIN_DEVAPP_MIGRATIONS_DSN}}'
+      - uv run atlas migrate apply --env sa_postgres --url "{{.XNGIN_DEVAPP_MIGRATIONS_DSN}}"
   create-user:
     desc: "Create a user: task create-user -- username@example.com"
     interactive: true
