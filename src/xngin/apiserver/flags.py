@@ -6,6 +6,7 @@ def truthy_env(env_var: str):
     return os.environ.get(env_var, "").lower() in {"true", "1"}
 
 
+AIRPLANE_MODE = truthy_env("AIRPLANE_MODE")
 ALLOW_CONNECTING_TO_PRIVATE_IPS = truthy_env("ALLOW_CONNECTING_TO_PRIVATE_IPS")
 ECHO_SQL = truthy_env("ECHO_SQL")
 ECHO_SQL_APP_DB = truthy_env("ECHO_SQL_APP_DB")

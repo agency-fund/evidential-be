@@ -1,12 +1,11 @@
-import os
 import secrets
 from dataclasses import dataclass
 from typing import Annotated
 
-from fastapi import Depends, HTTPException, Security
-from fastapi import status
-from jose import jwt, JWTError
+from fastapi import Depends, HTTPException, Security, status
+from jose import JWTError, jwt
 from loguru import logger
+from xngin.apiserver import flags
 from xngin.apiserver.routers.oidc import (
     CLIENT_ID,
     get_google_configuration,
@@ -53,11 +52,11 @@ TESTING_TOKENS = {
 def setup(app):
     """Configures FastAPI dependencies to skip OIDC flows and use fake users."""
 
-    # TODO: this is never set anywhere; can we remove it?
-    if os.environ.get("ENABLE_TEST_PRIVILEGED_USER", "").lower() not in {"true", "1"}:
+    # If we are not in airplane mode, there is no setup to do.
+    if not flags.AIRPLANE_MODE:
         return
 
-    logger.warning("ENABLE_TEST_PRIVILEGED_USER is set -- ")
+    logger.warning("AIRPLANE_MODE is set.")
 
     def noop():
         pass

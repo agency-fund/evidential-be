@@ -56,7 +56,8 @@ google_config = None
 
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
-    await asyncio.gather(get_google_jwks())
+    if not flags.AIRPLANE_MODE:
+        await asyncio.gather(get_google_jwks())
     yield
 
 

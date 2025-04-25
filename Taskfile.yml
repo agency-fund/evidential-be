@@ -8,6 +8,7 @@ vars:
   XNGIN_DEVAPP_MIGRATIONS_LINT_DSN: "postgresql://postgres:postgres@localhost:5499/migration_lint?sslmode=disable"
 
 env:
+
   # Disable Atlas telemetry.
   ATLAS_NO_ANON_TELEMETRY: "true"
   DO_NOT_TRACK: "1"
@@ -143,6 +144,12 @@ tasks:
       - bootstrap-dwh
     cmds:
       - uv run fastapi dev src/xngin/apiserver/main.py
+  start-airplane:
+    desc: "Like start, but runs the backend in airplane mode. All Admin API interactions will be authenticated as testing@agency.fund automatically."
+    interactive: true
+    env:
+      AIRPLANE_MODE: "true"
+    cmd: task start
   bootstrap-dwh:
     desc: "Loads a sample data warehouse into the localpg server."
     interactive: true
