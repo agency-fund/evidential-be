@@ -2,7 +2,7 @@ from datetime import datetime
 from typing import Annotated, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
-from xngin.apiserver.api_types import (
+from xngin.apiserver.stateless_api_types import (
     ApiBaseModel,
     DataType,
     GetFiltersResponseElement,

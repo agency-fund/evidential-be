@@ -1,7 +1,7 @@
 import pytest
 from fastapi.testclient import TestClient
 from xngin.apiserver import conftest, constants
-from xngin.apiserver.api_types import DataType
+from xngin.apiserver.stateless_api_types import DataType
 from xngin.apiserver.main import app
 from xngin.apiserver.routers.stateless_api import generate_field_descriptors
 from xngin.apiserver.settings import (

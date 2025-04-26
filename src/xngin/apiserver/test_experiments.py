@@ -14,7 +14,7 @@ from sqlalchemy.dialects import postgresql
 from sqlalchemy.orm import Session
 from sqlalchemy.schema import CreateTable
 from xngin.apiserver import conftest, constants
-from xngin.apiserver.api_types import (
+from xngin.apiserver.stateless_api_types import (
     Arm,
     ArmSize,
     AudienceSpec,

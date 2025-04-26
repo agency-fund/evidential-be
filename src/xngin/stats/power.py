@@ -2,7 +2,7 @@
 import numpy as np
 import statsmodels.stats.api as sms
 
-from xngin.apiserver.api_types import (
+from xngin.apiserver.stateless_api_types import (
     DesignSpecMetric,
     MetricType,
     MetricPowerAnalysis,

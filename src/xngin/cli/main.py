@@ -32,7 +32,7 @@ from sqlalchemy.exc import IntegrityError, OperationalError
 from sqlalchemy.orm import Session
 from sqlalchemy.sql.compiler import IdentifierPreparer
 from xngin.apiserver import settings
-from xngin.apiserver.api_types import DataType
+from xngin.apiserver.stateless_api_types import DataType
 from xngin.apiserver.models import tables
 from xngin.apiserver.settings import (
     CannotFindTableError,

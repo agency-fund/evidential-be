@@ -1,4 +1,4 @@
-from xngin.apiserver.api_types import DesignSpecMetric
+from xngin.apiserver.stateless_api_types import DesignSpecMetric
 
 
 class StatsError(Exception):

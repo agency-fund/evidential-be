@@ -6,7 +6,7 @@ from typing import Any, Literal, Self
 
 import httpx
 from pydantic import BaseModel, ConfigDict, Field, field_serializer, model_validator
-from xngin.apiserver.api_types import (
+from xngin.apiserver.stateless_api_types import (
     AssignResponse,
     AudienceSpec,
     DesignSpec,

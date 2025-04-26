@@ -11,7 +11,11 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 from xngin.apiserver import conftest
 from xngin.apiserver import main as main_module
-from xngin.apiserver.api_types import DataType, ExperimentAnalysis, ExperimentType
+from xngin.apiserver.stateless_api_types import (
+    DataType,
+    ExperimentAnalysis,
+    ExperimentType,
+)
 from xngin.apiserver.dependencies import xngin_db_session
 from xngin.apiserver.main import app
 from xngin.apiserver.models.enums import ExperimentState

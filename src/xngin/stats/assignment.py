@@ -9,7 +9,7 @@ import pandas as pd
 from pandas import DataFrame
 from sqlalchemy import Table
 from stochatreat import stochatreat
-from xngin.apiserver.api_types import (
+from xngin.apiserver.stateless_api_types import (
     Arm,
     ArmSize,
     Assignment,

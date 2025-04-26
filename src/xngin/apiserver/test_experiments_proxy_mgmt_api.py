@@ -4,7 +4,7 @@ from pathlib import Path
 
 from fastapi.testclient import TestClient
 from xngin.apiserver import conftest, constants
-from xngin.apiserver.api_types import (
+from xngin.apiserver.stateless_api_types import (
     CommitRequest,
 )
 from xngin.apiserver.main import app

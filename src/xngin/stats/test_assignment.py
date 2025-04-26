@@ -9,7 +9,7 @@ import pandas as pd
 import numpy as np
 from sqlalchemy import DECIMAL, Boolean, Column, Float, Integer, MetaData, String, Table
 from xngin.stats.assignment import assign_treatment, simple_random_assignment
-from xngin.apiserver.api_types import Assignment, Arm, Strata
+from xngin.apiserver.stateless_api_types import Assignment, Arm, Strata
 
 
 @dataclass

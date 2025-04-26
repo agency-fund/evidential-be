@@ -19,7 +19,7 @@ from sqlalchemy import (
 )
 from sqlalchemy.orm import Session
 
-from xngin.apiserver.api_types import (
+from xngin.apiserver.stateless_api_types import (
     AudienceSpec,
     AudienceSpecFilter,
     DesignSpecMetric,
