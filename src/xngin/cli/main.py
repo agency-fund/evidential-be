@@ -247,7 +247,12 @@ def create_testing_dwh(
             with engine.connect():
                 print("Connected.")
         except OperationalError as exc:
-            if "postgres" not in url.drivername or "does not exist" not in str(exc):
+            if "postgres" not in url.drivername or (
+                # 1st case: psycopg2 driver
+                "does not exist" not in str(exc)
+                # 2nd case: psycopg driver
+                and "Connection refused" not in str(exc)
+            ):
                 raise
             print(f"Creating database {url.database}...")
             engine = create_engine(
