@@ -2,10 +2,10 @@
 
 import uuid
 from datetime import UTC, datetime
-from typing import Any, Literal, Self
+from typing import Any
 
 import httpx
-from pydantic import BaseModel, ConfigDict, Field, field_serializer, model_validator
+from pydantic import BaseModel, ConfigDict, Field, field_serializer
 from xngin.apiserver.routers.stateless_api_types import (
     AssignResponse,
     AudienceSpec,
@@ -67,72 +67,3 @@ class WebhookCommitRequest(WebhookBaseModel):
     def serialize_dt(self, dt: datetime, _info):
         """Convert dates to iso strings in model_dump_json()/model_dump(mode='json')"""
         return dt.isoformat()
-
-
-class WebhookUpdateTimestampsRequest(WebhookBaseModel):
-    """Describes how to update an experiment's start and/or end dates."""
-
-    experiment_id: uuid.UUID = Field(description="ID of the experiment to update.")
-    start_date: datetime = Field(
-        description="New or the same start date to update with."
-    )
-    end_date: datetime = Field(
-        description="New or the same end date to update with. Must be later "
-        "than start_date."
-    )
-
-    @model_validator(mode="after")
-    def validate_end_date_after_start(self) -> Self:
-        if self.end_date <= self.start_date:
-            raise ValueError("end_date must be after start_date")
-        return self
-
-    @field_serializer("start_date", "end_date", when_used="json")
-    def serialize_dt(self, dt: datetime, _info):
-        """Convert dates to iso strings in model_dump_json()/model_dump(mode='json')"""
-        return dt.isoformat()
-
-
-class ArmUpdate(WebhookBaseModel):
-    arm_name: str = Field(
-        description="New experiment arm name to be updated.", min_length=1
-    )
-    arm_id: uuid.UUID = Field(
-        description="The id originally assigned to this arm by the user."
-    )
-
-
-class WebhookUpdateDescriptionRequest(WebhookBaseModel):
-    """Describes how to update an experiment description and/or the names of its arms."""
-
-    experiment_id: uuid.UUID = Field(description="ID of the experiment to update.")
-    experiment_name: str = Field(description="New experiment name.", min_length=1)
-    description: str = Field(description="New experiment description.", min_length=1)
-    arms: list[ArmUpdate] = Field(
-        description="All arms as saved in the original DesignSpec must be present here, even if "
-        "you don't intend to change the arm_name"
-    )
-
-
-class WebhookUpdateCommitRequest(WebhookBaseModel):
-    """Request structure for supported types of experiment updates."""
-
-    update_json: WebhookUpdateTimestampsRequest | WebhookUpdateDescriptionRequest
-
-
-# TODO: as part of potential API endpoint revisions
-class UpdateExperimentStartEndRequest(WebhookBaseModel):
-    """WIP to alternate interface to updating an experiment"""
-
-    update_type: Literal["timestamps"]
-    start_date: datetime
-    end_date: datetime
-
-
-# TODO: as part of potential API endpoint revisions
-class UpdateExperimentDescriptionsRequest(WebhookBaseModel):
-    """WIP to alternate interface to updating an experiment name & description."""
-
-    update_type: Literal["description"]
-    experiment_name: str = Field(description="New experiment name.", min_length=1)
-    description: str = Field(description="New experiment description.", min_length=1)
