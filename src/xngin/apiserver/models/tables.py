@@ -10,7 +10,7 @@ from sqlalchemy import ForeignKey, Index, String
 from sqlalchemy.dialects import postgresql
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 from sqlalchemy.types import TypeEngine
-from xngin.apiserver.stateless_api_types import (
+from xngin.apiserver.routers.stateless_api_types import (
     Arm,
     ArmSize,
     AudienceSpec,

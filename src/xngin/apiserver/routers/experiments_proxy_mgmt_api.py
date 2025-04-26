@@ -5,7 +5,7 @@ import httpx
 from fastapi import APIRouter, Depends, FastAPI, HTTPException, Query, Response
 from loguru import logger
 from pydantic import BaseModel
-from xngin.apiserver.stateless_api_types import (
+from xngin.apiserver.routers.stateless_api_types import (
     CommitRequest,
 )
 from xngin.apiserver.dependencies import (

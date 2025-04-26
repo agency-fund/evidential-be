@@ -3,7 +3,7 @@ from typing import Annotated
 
 from pydantic import BaseModel, Field, field_validator, model_validator, ConfigDict
 
-from xngin.apiserver.stateless_api_types import DataType
+from xngin.apiserver.routers.stateless_api_types import DataType
 
 
 class SchemaBaseModel(BaseModel):

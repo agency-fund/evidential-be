@@ -19,7 +19,7 @@ from sqlalchemy import TIMESTAMP, Boolean, DateTime, Float, Integer, String, Tab
 from sqlalchemy.dialects.postgresql import psycopg, psycopg2
 from sqlalchemy.orm import DeclarativeBase, mapped_column
 from sqlalchemy.sql.ddl import CreateTable
-from xngin.apiserver.stateless_api_types import (
+from xngin.apiserver.routers.stateless_api_types import (
     AudienceSpec,
     AudienceSpecFilter,
     Relation,

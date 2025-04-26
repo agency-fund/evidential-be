@@ -22,7 +22,7 @@ from sqlalchemy import (
 )
 from sqlalchemy.orm import DeclarativeBase, Session, mapped_column
 from xngin.apiserver import flags
-from xngin.apiserver.stateless_api_types import (
+from xngin.apiserver.routers.stateless_api_types import (
     AudienceSpec,
     AudienceSpecFilter,
     DesignSpecMetric,

@@ -25,7 +25,7 @@ from sqlalchemy import delete, select, text
 from sqlalchemy.exc import OperationalError
 from sqlalchemy.orm import Session
 from xngin.apiserver import flags, settings
-from xngin.apiserver.stateless_api_types import (
+from xngin.apiserver.routers.stateless_api_types import (
     ArmAnalysis,
     DataType,
     ExperimentAnalysis,

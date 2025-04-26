@@ -11,7 +11,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 from xngin.apiserver import conftest
 from xngin.apiserver import main as main_module
-from xngin.apiserver.stateless_api_types import (
+from xngin.apiserver.routers.stateless_api_types import (
     DataType,
     ExperimentAnalysis,
     ExperimentType,

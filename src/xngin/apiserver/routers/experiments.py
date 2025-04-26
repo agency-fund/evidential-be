@@ -20,7 +20,7 @@ from sqlalchemy import Table, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 from xngin.apiserver import flags
-from xngin.apiserver.stateless_api_types import (
+from xngin.apiserver.routers.stateless_api_types import (
     ArmSize,
     Assignment,
     PreassignedExperimentSpec,
