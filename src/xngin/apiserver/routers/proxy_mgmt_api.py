@@ -12,7 +12,7 @@ from xngin.apiserver.dependencies import (
     datasource_config_required,
     httpx_dependency,
 )
-from xngin.apiserver.proxy_webhook_types import (
+from xngin.apiserver.routers.proxy_mgmt_api_types import (
     STANDARD_WEBHOOK_RESPONSES,
     WebhookCommitRequest,
     WebhookResponse,

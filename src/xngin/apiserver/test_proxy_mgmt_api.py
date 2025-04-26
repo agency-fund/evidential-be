@@ -7,7 +7,7 @@ from xngin.apiserver.routers.stateless_api_types import (
     CommitRequest,
 )
 from xngin.apiserver.main import app
-from xngin.apiserver.proxy_webhook_types import (
+from xngin.apiserver.routers.proxy_mgmt_api_types import (
     WebhookResponse,
 )
 from xngin.apiserver.testing.xurl import Xurl
