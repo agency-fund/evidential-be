@@ -16,10 +16,10 @@ from xngin.apiserver.flags import PUBLISH_ALL_DOCS
 from xngin.apiserver.routers import (
     admin,
     experiments,
-    experiments_api,
     experiments_proxy_mgmt_api,
     oidc,
     oidc_dependencies,
+    stateless_api,
 )
 
 if sentry_dsn := os.environ.get("SENTRY_DSN"):
@@ -67,7 +67,9 @@ middleware.setup(app)
 customlogging.setup()
 
 app.include_router(
-    experiments_api.router, prefix=constants.API_PREFIX_V1, tags=["Experiment Design"]
+    stateless_api.router,
+    prefix=constants.API_PREFIX_V1,
+    tags=["Experiment Design"],
 )
 
 app.include_router(

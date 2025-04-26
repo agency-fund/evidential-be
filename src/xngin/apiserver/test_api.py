@@ -14,7 +14,7 @@ from xngin.apiserver.dependencies import xngin_db_session
 from xngin.apiserver.gsheet_cache import GSheetCache
 from xngin.apiserver.main import app
 from xngin.apiserver.models.tables import CacheTable
-from xngin.apiserver.routers.experiments_api import (
+from xngin.apiserver.routers.stateless_api import (
     CommonQueryParams,
     get_participants_config_and_schema,
 )

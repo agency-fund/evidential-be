@@ -151,13 +151,15 @@ tasks:
   test:
     desc: "Runs unit tests"
     interactive: true
+    vars:
+      ARGS: '{{default "" .ARGS}}'
     env:
       # Tests should never connect to this URL.
       DATABASE_URL: "postgres://fail:fail@127.0.0.1:5499/fail"
     deps:
       - bootstrap-dwh
     cmds:
-      - uv run pytest
+      - uv run pytest {{.ARGS}}
   test-integration:
     desc: "Runs Google integration tests."
     interactive: true
