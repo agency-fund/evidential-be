@@ -23,18 +23,6 @@
             "commit": {
               "method": "POST",
               "url": "http://localhost:4001/dev/api/v1/experiment-commit/save-experiment-commit"
-            },
-            "assignment_file": {
-              "method": "GET",
-              "url": "http://localhost:4001/dev/api/v1/experiment-commit/get-file-name-by-experiment-id/{experiment_id}"
-            },
-            "update_timestamps": {
-              "method": "PUT",
-              "url": "http://localhost:4001/dev/api/v1/experiment-commit/update-timestamps-for-experiment"
-            },
-            "update_description": {
-              "method": "PUT",
-              "url": "http://localhost:4001/dev/api/v1/experiment-commit/update-experiment-commit"
             }
           },
           "common_headers": {
