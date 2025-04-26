@@ -3,7 +3,7 @@ import uuid
 import pytest
 from xngin.apiserver.models.tables import ArmAssignment
 from xngin.stats.analysis import analyze_experiment
-from xngin.apiserver.api_types import ParticipantOutcome, MetricValue
+from xngin.apiserver.routers.stateless_api_types import ParticipantOutcome, MetricValue
 
 
 @pytest.fixture

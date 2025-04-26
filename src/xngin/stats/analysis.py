@@ -3,7 +3,7 @@ import pandas as pd
 import statsmodels.formula.api as smf
 
 from patsy.eval import EvalFactor
-from xngin.apiserver.api_types import (
+from xngin.apiserver.routers.stateless_api_types import (
     ParticipantOutcome,
 )
 from xngin.apiserver.models.tables import ArmAssignment

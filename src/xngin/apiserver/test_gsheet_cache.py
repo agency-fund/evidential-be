@@ -7,7 +7,7 @@ from sqlalchemy.orm import Session
 from sqlalchemy.exc import IntegrityError
 
 from xngin.apiserver import conftest
-from xngin.apiserver.api_types import DataType
+from xngin.apiserver.routers.stateless_api_types import DataType
 from xngin.apiserver.models.tables import CacheTable
 from xngin.apiserver.gsheet_cache import GSheetCache
 from xngin.apiserver.settings import SheetRef

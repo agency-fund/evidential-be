@@ -20,7 +20,7 @@ from sqlalchemy import Table, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 from xngin.apiserver import flags
-from xngin.apiserver.api_types import (
+from xngin.apiserver.routers.stateless_api_types import (
     ArmSize,
     Assignment,
     PreassignedExperimentSpec,
@@ -43,7 +43,7 @@ from xngin.apiserver.models.tables import (
     Task,
 )
 from xngin.apiserver.models.tables import Datasource as DatasourceTable
-from xngin.apiserver.routers.experiments_api import (
+from xngin.apiserver.routers.stateless_api import (
     CommonQueryParams,
     get_participants_config_and_schema,
 )

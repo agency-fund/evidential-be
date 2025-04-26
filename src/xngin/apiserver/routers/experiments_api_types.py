@@ -2,7 +2,7 @@ import uuid
 from typing import Annotated
 
 from pydantic import BaseModel, ConfigDict, Field
-from xngin.apiserver.api_types import (
+from xngin.apiserver.routers.stateless_api_types import (
     ArmSize,
     Assignment,
     AudienceSpec,

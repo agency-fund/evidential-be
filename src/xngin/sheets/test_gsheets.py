@@ -4,7 +4,7 @@ from pydantic import ValidationError
 import pytest
 
 from sqlalchemy import BigInteger, Column, Integer, MetaData, String, Table
-from xngin.apiserver.api_types import DataType
+from xngin.apiserver.routers.stateless_api_types import DataType
 from xngin.sheets.config_sheet import (
     create_schema_from_table,
 )
