@@ -384,7 +384,7 @@ def assign_treatment(
         stratum_cols=body.design_spec.strata_field_names + metric_names,
         id_col=schema.get_unique_id_field(),
         arms=body.design_spec.arms,
-        experiment_id=str(body.design_spec.experiment_id),
+        experiment_id=body.design_spec.experiment_id,
         fstat_thresh=body.design_spec.fstat_thresh,
         quantiles=quantiles,
         stratum_id_name=stratum_id_name,

@@ -1,4 +1,3 @@
-import uuid
 from typing import Annotated
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -60,7 +59,7 @@ class ExperimentConfig(ExperimentsBaseModel):
 
 
 class CreateExperimentResponse(ExperimentConfig):
-    """Same as the request but with uuids filled for the experiment and arms, and summary info on the assignment."""
+    """Same as the request but with ids filled for the experiment and arms, and summary info on the assignment."""
 
 
 class GetExperimentResponse(ExperimentConfig):
@@ -81,7 +80,7 @@ class GetExperimentAssignmentsResponse(ExperimentsBaseModel):
         ),
     ] = None
 
-    experiment_id: uuid.UUID
+    experiment_id: str
     sample_size: int
     assignments: list[Assignment]
 

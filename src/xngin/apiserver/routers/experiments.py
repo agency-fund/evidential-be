@@ -164,7 +164,7 @@ def create_experiment_with_assignment_impl(
     organization_id = db_datasource.organization_id
 
     # First generate uuids for the experiment and arms, which do_assignment needs.
-    request.design_spec.experiment_id = uuid.uuid4()
+    request.design_spec.experiment_id = str(uuid.uuid4())
     for arm in request.design_spec.arms:
         arm.arm_id = str(uuid.uuid4())
 
@@ -218,7 +218,7 @@ def create_preassigned_experiment_impl(
         stratum_cols=stratum_cols,
         id_col=participant_unique_id_field,
         arms=request.design_spec.arms,
-        experiment_id=str(request.design_spec.experiment_id),
+        experiment_id=request.design_spec.experiment_id,
         fstat_thresh=request.design_spec.fstat_thresh,
         quantiles=4,  # TODO(qixotic): make this configurable
         stratum_id_name=None,
@@ -232,7 +232,7 @@ def create_preassigned_experiment_impl(
         else None
     )
     experiment = Experiment(
-        id=str(request.design_spec.experiment_id),
+        id=request.design_spec.experiment_id,
         datasource_id=datasource_id,
         experiment_type="preassigned",
         participant_type=request.audience_spec.participant_type,
@@ -256,7 +256,7 @@ def create_preassigned_experiment_impl(
             id=arm.arm_id,
             name=arm.arm_name,
             description=arm.arm_description,
-            experiment_id=str(experiment.id),
+            experiment_id=experiment.id,
             organization_id=organization_id,
         )
         xngin_session.add(db_arm)
@@ -265,7 +265,7 @@ def create_preassigned_experiment_impl(
     for assignment in assignment_response.assignments:
         # TODO: bulk insert https://docs.sqlalchemy.org/en/20/orm/queryguide/dml.html#orm-queryguide-bulk-insert {"dml_strategy": "raw"}
         db_assignment = ArmAssignment(
-            experiment_id=str(experiment.id),
+            experiment_id=experiment.id,
             participant_type=request.audience_spec.participant_type,
             participant_id=assignment.participant_id,
             arm_id=str(assignment.arm_id),
@@ -294,7 +294,7 @@ def create_online_experiment_impl(
     xngin_session: Session,
 ) -> CreateExperimentResponse:
     experiment = Experiment(
-        id=str(request.design_spec.experiment_id),
+        id=request.design_spec.experiment_id,
         datasource_id=datasource_id,
         experiment_type="online",
         participant_type=request.audience_spec.participant_type,
@@ -315,7 +315,7 @@ def create_online_experiment_impl(
             id=arm.arm_id,
             name=arm.arm_name,
             description=arm.arm_description,
-            experiment_id=str(experiment.id),
+            experiment_id=experiment.id,
             organization_id=organization_id,
         )
         xngin_session.add(db_arm)
@@ -380,7 +380,7 @@ def commit_experiment_impl(xngin_session: Session, experiment: Experiment):
 
     experiment.state = ExperimentState.COMMITTED
 
-    experiment_id = str(experiment.id)
+    experiment_id = experiment.id
     event = Event(
         organization=experiment.datasource.organization,
         type=ExperimentCreatedEvent.TYPE,
@@ -539,7 +539,7 @@ def get_experiment_assignments_impl(
     ]
     return GetExperimentAssignmentsResponse(
         balance_check=experiment.get_balance_check(),
-        experiment_id=uuid.UUID(experiment.id),
+        experiment_id=experiment.id,
         sample_size=len(assignments),
         assignments=assignments,
     )

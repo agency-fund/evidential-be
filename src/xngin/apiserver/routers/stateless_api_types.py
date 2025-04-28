@@ -501,8 +501,8 @@ class ExperimentAnalysis(ApiBaseModel):
     """Describes the change if any in metrics targeted by an experiment."""
 
     experiment_id: Annotated[
-        uuid.UUID,
-        Field(description="UUID of the experiment."),
+        str,
+        Field(description="ID of the experiment."),
     ]
     metric_analyses: Annotated[
         list[MetricAnalysis],
@@ -522,9 +522,9 @@ class BaseDesignSpec(ApiBaseModel):
     """Experiment design metadata and target metrics common to all experiment types."""
 
     experiment_id: Annotated[
-        uuid.UUID | None,
+        str | None,
         Field(
-            description="UUID of the experiment. If using the /experiments/with-assignment endpoint, this is generated for you and available in the response; you should NOT set this. Only generate ids of your own if using the stateless Experiment Design API as you will do your own persistence."
+            description="ID of the experiment. If creating a new experiment (POST /datasources/{datasource_id}/experiments), this is generated for you and made available in the response; you should NOT set this. Only generate ids of your own if using the stateless Experiment Design API as you will do your own persistence."
         ),
     ] = None
     experiment_type: Annotated[
@@ -576,10 +576,10 @@ class BaseDesignSpec(ApiBaseModel):
         return v
 
     def ids_are_present(self) -> bool:
-        """True if the any UUIDs are present."""
-        return self.experiment_id is not None or any([
+        """True if any IDs are present."""
+        return self.experiment_id is not None or any(
             arm.arm_id is not None for arm in self.arms
-        ])
+        )
 
 
 class FrequentistExperimentSpec(BaseDesignSpec):
@@ -837,7 +837,7 @@ class AssignResponse(ApiBaseModel):
         ),
     ] = None
 
-    experiment_id: uuid.UUID
+    experiment_id: str
     sample_size: Annotated[
         int,
         Field(description="The number of participants across all arms in total."),

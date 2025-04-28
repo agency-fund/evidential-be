@@ -4,7 +4,6 @@ import secrets
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime, timedelta
 from typing import Annotated
-import uuid
 
 import google.api_core.exceptions
 import sqlalchemy
@@ -1277,7 +1276,7 @@ def analyze_experiment(
             )
         )
     return ExperimentAnalysis(
-        experiment_id=uuid.UUID(experiment.id), metric_analyses=metric_analyses
+        experiment_id=experiment.id, metric_analyses=metric_analyses
     )
 
 

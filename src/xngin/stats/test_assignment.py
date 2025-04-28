@@ -99,7 +99,7 @@ def test_assign_treatment(sample_table, sample_rows):
     assert result.balance_check.f_statistic == pytest.approx(0.006156735)
     assert result.balance_check.p_value == pytest.approx(0.99992466)
     assert result.balance_check.balance_ok
-    assert str(result.experiment_id) == "b767716b-f388-4cd9-a18a-08c4916ce26f"
+    assert result.experiment_id == "b767716b-f388-4cd9-a18a-08c4916ce26f"
     assert result.sample_size == len(sample_rows)
     assert (
         result.sample_size

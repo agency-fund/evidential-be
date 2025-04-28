@@ -2,7 +2,6 @@ import decimal
 from collections import defaultdict
 from collections.abc import Sequence
 from typing import Any, Protocol
-from uuid import UUID
 
 import numpy as np
 import pandas as pd
@@ -255,7 +254,7 @@ def _make_assign_response(
     # Return the ExperimentAssignment with the list of participants
     return AssignResponse(
         balance_check=balance_check,
-        experiment_id=UUID(experiment_id),
+        experiment_id=experiment_id,
         sample_size=len(treatment_ids),
         unique_id_field=id_col,
         assignments=participants_list,
