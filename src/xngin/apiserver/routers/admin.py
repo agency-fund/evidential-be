@@ -1336,7 +1336,7 @@ def get_experiment(
         design_spec=experiment.get_design_spec(),
         audience_spec=experiment.get_audience_spec(),
         power_analyses=experiment.get_power_analyses(),
-        assign_summary=experiment.get_assign_summary(),
+        assign_summary=experiments.get_assign_summary(experiment),
     )
 
 

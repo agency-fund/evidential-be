@@ -16,7 +16,6 @@ from sqlalchemy.schema import CreateTable
 from xngin.apiserver import conftest, constants
 from xngin.apiserver.routers.stateless_api_types import (
     Arm,
-    ArmSize,
     AudienceSpec,
     BalanceCheck,
     OnlineExperimentSpec,
@@ -44,13 +43,13 @@ from xngin.apiserver.routers.experiments import (
     commit_experiment_impl,
     create_experiment_with_assignment_impl,
     experiment_assignments_to_csv_generator,
+    get_assign_summary,
     get_existing_assignment_for_participant,
     get_experiment_assignments_impl,
     list_experiments_impl,
     create_assignment_for_participant,
 )
 from xngin.apiserver.routers.experiments_api_types import (
-    AssignSummary,
     CreateExperimentRequest,
     CreateExperimentResponse,
     GetExperimentAssignmentsResponse,
@@ -129,8 +128,6 @@ def make_create_preassigned_experiment_request(
 # Insert an experiment with a valid state.
 def make_insertable_experiment(state: ExperimentState, datasource_id="testing"):
     request = make_create_preassigned_experiment_request()
-    arm0 = request.design_spec.arms[0]
-    arm1 = request.design_spec.arms[1]
     balance_check = BalanceCheck(
         f_statistic=0.088004147,
         numerator_df=2,
@@ -172,14 +169,6 @@ def make_insertable_experiment(state: ExperimentState, datasource_id="testing"):
                 )
             ]
         ).model_dump(),
-        assign_summary=AssignSummary(
-            sample_size=100,
-            arm_sizes=[
-                ArmSize(arm=arm0, size=50),
-                ArmSize(arm=arm1, size=50),
-            ],
-            balance_check=balance_check,
-        ).model_dump(mode="json"),
     ).set_balance_check(balance_check)
 
 
@@ -216,11 +205,6 @@ def make_insertable_online_experiment(
         participant_type="test_participant_type",
         filters=[],
     )
-    assign_summary = AssignSummary(
-        sample_size=0,
-        arm_sizes=[ArmSize(arm=arm1, size=0), ArmSize(arm=arm2, size=0)],
-        balance_check=None,
-    )
     return Experiment(
         id=str(experiment_id),
         datasource_id=datasource_id,
@@ -233,7 +217,6 @@ def make_insertable_online_experiment(
         end_date=design_spec.end_date,
         design_spec=design_spec.model_dump(mode="json"),
         audience_spec=audience_spec.model_dump(),
-        assign_summary=assign_summary.model_dump(mode="json"),
     )
 
 
@@ -882,7 +865,7 @@ def test_get_experiment_assignments_impl(db_session, testing_datasource):
 
     # Check the response structure; lhs is a UUID and rhs may be a string (e.g. sqlite).
     assert str(data.experiment_id) == experiment.id
-    assert data.sample_size == experiment.get_assign_summary().sample_size
+    assert data.sample_size == get_assign_summary(experiment).sample_size
     assert data.balance_check == experiment.get_balance_check()
 
     # Check assignments

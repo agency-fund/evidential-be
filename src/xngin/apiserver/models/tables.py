@@ -2,7 +2,6 @@ import json
 import secrets
 from datetime import UTC, datetime
 from typing import ClassVar, Self
-import uuid
 
 import sqlalchemy
 from pydantic import TypeAdapter
@@ -12,7 +11,6 @@ from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 from sqlalchemy.types import TypeEngine
 from xngin.apiserver.routers.stateless_api_types import (
     Arm,
-    ArmSize,
     AudienceSpec,
     BalanceCheck,
     DesignSpec,
@@ -23,7 +21,6 @@ from xngin.apiserver.routers.admin_api_types import (
     InspectDatasourceTableResponse,
     InspectParticipantTypesResponse,
 )
-from xngin.apiserver.routers.experiments_api_types import AssignSummary
 from xngin.apiserver.settings import DatasourceConfig
 from xngin.events import EventDataTypes
 
@@ -409,7 +406,6 @@ class Experiment(Base):
     audience_spec: Mapped[dict] = mapped_column(type_=JSONBetter)
     # JSON serialized form of a PowerResponse. Not required since some experiments may not have data to run power analyses.
     power_analyses: Mapped[dict | None] = mapped_column(type_=JSONBetter)
-    assign_summary: Mapped[dict] = mapped_column(type_=JSONBetter)
     # JSON serialized form of a BalanceCheck. May be null if the experiment type doesn't support
     # balance checks.
     balance_check: Mapped[dict | None] = mapped_column(type_=JSONBetter)
@@ -448,22 +444,6 @@ class Experiment(Base):
         if self.power_analyses is None:
             return None
         return TypeAdapter(PowerResponse).validate_python(self.power_analyses)
-
-    def get_assign_summary(self) -> AssignSummary:
-        """Constructs an AssignSummary from the experiment's arms and arm_assignments."""
-        balance_check = self.get_balance_check()
-        arm_sizes = [
-            ArmSize(
-                arm=Arm(arm_id=uuid.UUID(arm.id), arm_name=arm.name),
-                size=len(arm.arm_assignments),
-            )
-            for arm in self.arms
-        ]
-        return AssignSummary(
-            balance_check=balance_check,
-            arm_sizes=arm_sizes,
-            sample_size=sum(arm_size.size for arm_size in arm_sizes),
-        )
 
     def set_balance_check(self, value: BalanceCheck | None) -> Self:
         if value is None:

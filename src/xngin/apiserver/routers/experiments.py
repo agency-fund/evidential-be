@@ -21,6 +21,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 from xngin.apiserver import flags
 from xngin.apiserver.routers.stateless_api_types import (
+    Arm,
     ArmSize,
     Assignment,
     PreassignedExperimentSpec,
@@ -225,11 +226,6 @@ def create_preassigned_experiment_impl(
     )
 
     # Create experiment record
-    assign_summary = AssignSummary(
-        balance_check=assignment_response.balance_check,
-        sample_size=assignment_response.sample_size,
-        arm_sizes=assignment_response.arm_sizes,
-    )
     balance_check = (
         assignment_response.balance_check.model_dump()
         if assignment_response.balance_check
@@ -251,7 +247,6 @@ def create_preassigned_experiment_impl(
         if request.power_analyses
         else None,
         balance_check=balance_check,
-        assign_summary=assign_summary.model_dump(mode="json"),
     )  # .set_design_spec(body.design_spec)
     xngin_session.add(experiment)
 
@@ -288,7 +283,11 @@ def create_preassigned_experiment_impl(
         design_spec=experiment.get_design_spec(),
         audience_spec=experiment.get_audience_spec(),
         power_analyses=experiment.get_power_analyses(),
-        assign_summary=assign_summary,
+        assign_summary=AssignSummary(
+            balance_check=assignment_response.balance_check,
+            sample_size=assignment_response.sample_size,
+            arm_sizes=assignment_response.arm_sizes,
+        ),
     )
 
 
@@ -298,15 +297,6 @@ def create_online_experiment_impl(
     organization_id: str,
     xngin_session: Session,
 ) -> CreateExperimentResponse:
-    # TODO: consider not storing the assign_summary (which can be dynamically generated) and just
-    # persisting the balance check.
-    empty_assign_summary = AssignSummary(
-        balance_check=None,
-        sample_size=0,
-        arm_sizes=[
-            ArmSize(arm=arm.model_copy(), size=0) for arm in request.design_spec.arms
-        ],
-    )
     experiment = Experiment(
         id=str(request.design_spec.experiment_id),
         datasource_id=datasource_id,
@@ -321,8 +311,6 @@ def create_online_experiment_impl(
         design_spec=request.design_spec.model_dump(mode="json"),
         audience_spec=request.audience_spec.model_dump(mode="json"),
         power_analyses=None,
-        # Online experiment starts with no assignments.
-        assign_summary=empty_assign_summary.model_dump(mode="json"),
     )
     xngin_session.add(experiment)
     # Create arm records
@@ -337,6 +325,14 @@ def create_online_experiment_impl(
         xngin_session.add(db_arm)
     xngin_session.commit()
     # Return the committed experiment config with no assignments.
+    # Online experiments start with no assignments.
+    empty_assign_summary = AssignSummary(
+        balance_check=None,
+        sample_size=0,
+        arm_sizes=[
+            ArmSize(arm=arm.model_copy(), size=0) for arm in request.design_spec.arms
+        ],
+    )
     return CreateExperimentResponse(
         datasource_id=datasource_id,
         state=experiment.state,
@@ -487,7 +483,7 @@ def list_experiments_impl(
                 design_spec=e.get_design_spec(),
                 audience_spec=e.get_audience_spec(),
                 power_analyses=e.get_power_analyses(),
-                assign_summary=e.get_assign_summary(),
+                assign_summary=get_assign_summary(e),
             )
             for e in experiments
         ]
@@ -510,7 +506,7 @@ def get_experiment_sl(
         design_spec=experiment.get_design_spec(),
         audience_spec=experiment.get_audience_spec(),
         power_analyses=experiment.get_power_analyses(),
-        assign_summary=experiment.get_assign_summary(),
+        assign_summary=get_assign_summary(experiment),
     )
 
 
@@ -706,4 +702,21 @@ def create_assignment_for_participant(
     # Else:
     raise ExperimentsAssignmentError(
         f"Invalid experiment type: {design_spec.experiment_type}"
+    )
+
+
+def get_assign_summary(experiment: Experiment) -> AssignSummary:
+    """Constructs an AssignSummary from the experiment's arms and arm_assignments."""
+    balance_check = experiment.get_balance_check()
+    arm_sizes = [
+        ArmSize(
+            arm=Arm(arm_id=uuid.UUID(arm.id), arm_name=arm.name),
+            size=len(arm.arm_assignments),
+        )
+        for arm in experiment.arms
+    ]
+    return AssignSummary(
+        balance_check=balance_check,
+        arm_sizes=arm_sizes,
+        sample_size=sum(arm_size.size for arm_size in arm_sizes),
     )
