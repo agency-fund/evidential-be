@@ -235,7 +235,7 @@ def make_insertable_experiment(
             ],
             "balance_check": None,
         },
-    )
+    ).set_balance_check(None)
 
 
 def make_arms_from_experiment(

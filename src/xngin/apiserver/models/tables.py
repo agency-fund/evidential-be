@@ -409,8 +409,10 @@ class Experiment(Base):
     audience_spec: Mapped[dict] = mapped_column(type_=JSONBetter)
     # JSON serialized form of a PowerResponse. Not required since some experiments may not have data to run power analyses.
     power_analyses: Mapped[dict | None] = mapped_column(type_=JSONBetter)
-    # JSON serialized form of AssignSummary.
     assign_summary: Mapped[dict] = mapped_column(type_=JSONBetter)
+    # JSON serialized form of a BalanceCheck. May be null if the experiment type doesn't support
+    # balance checks.
+    balance_check: Mapped[dict | None] = mapped_column(type_=JSONBetter)
     created_at: Mapped[datetime] = mapped_column(
         server_default=sqlalchemy.sql.func.now()
     )
@@ -463,11 +465,17 @@ class Experiment(Base):
             sample_size=sum(arm_size.size for arm_size in arm_sizes),
         )
 
+    def set_balance_check(self, value: BalanceCheck | None) -> Self:
+        if value is None:
+            self.balance_check = None
+        else:
+            BalanceCheck.model_validate(value)
+            self.balance_check = value.model_dump()
+        return self
+
     def get_balance_check(self) -> BalanceCheck | None:
-        if self.assign_summary is not None:
-            return TypeAdapter(BalanceCheck).validate_python(
-                self.assign_summary["balance_check"]
-            )
+        if self.balance_check is not None:
+            return TypeAdapter(BalanceCheck).validate_python(self.balance_check)
         return None
 
 

@@ -131,6 +131,13 @@ def make_insertable_experiment(state: ExperimentState, datasource_id="testing"):
     request = make_create_preassigned_experiment_request()
     arm0 = request.design_spec.arms[0]
     arm1 = request.design_spec.arms[1]
+    balance_check = BalanceCheck(
+        f_statistic=0.088004147,
+        numerator_df=2,
+        denominator_df=97,
+        p_value=0.91583011,
+        balance_ok=True,
+    )
     return Experiment(
         id=str(request.design_spec.experiment_id),
         datasource_id=datasource_id,
@@ -171,15 +178,9 @@ def make_insertable_experiment(state: ExperimentState, datasource_id="testing"):
                 ArmSize(arm=arm0, size=50),
                 ArmSize(arm=arm1, size=50),
             ],
-            balance_check=BalanceCheck(
-                f_statistic=0.088004147,
-                numerator_df=2,
-                denominator_df=97,
-                p_value=0.91583011,
-                balance_ok=True,
-            ),
+            balance_check=balance_check,
         ).model_dump(mode="json"),
-    )
+    ).set_balance_check(balance_check)
 
 
 def make_insertable_online_experiment(

@@ -230,6 +230,11 @@ def create_preassigned_experiment_impl(
         sample_size=assignment_response.sample_size,
         arm_sizes=assignment_response.arm_sizes,
     )
+    balance_check = (
+        assignment_response.balance_check.model_dump()
+        if assignment_response.balance_check
+        else None
+    )
     experiment = Experiment(
         id=str(request.design_spec.experiment_id),
         datasource_id=datasource_id,
@@ -245,6 +250,7 @@ def create_preassigned_experiment_impl(
         power_analyses=request.power_analyses.model_dump(mode="json")
         if request.power_analyses
         else None,
+        balance_check=balance_check,
         assign_summary=assign_summary.model_dump(mode="json"),
     )  # .set_design_spec(body.design_spec)
     xngin_session.add(experiment)
