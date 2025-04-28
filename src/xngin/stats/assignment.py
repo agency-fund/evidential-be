@@ -11,7 +11,6 @@ from sqlalchemy import Table
 from stochatreat import stochatreat
 from xngin.apiserver.routers.stateless_api_types import (
     Arm,
-    ArmSize,
     Assignment,
     AssignResponse,
     BalanceCheck,
@@ -260,8 +259,4 @@ def _make_assign_response(
         sample_size=len(treatment_ids),
         unique_id_field=id_col,
         assignments=participants_list,
-        arm_sizes=[
-            ArmSize(arm=arms[treatment_id], size=size)
-            for treatment_id, size in sorted(arm_sizes_by_treatment_id.items())
-        ],
     )

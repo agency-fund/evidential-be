@@ -283,11 +283,7 @@ def create_preassigned_experiment_impl(
         design_spec=experiment.get_design_spec(),
         audience_spec=experiment.get_audience_spec(),
         power_analyses=experiment.get_power_analyses(),
-        assign_summary=AssignSummary(
-            balance_check=assignment_response.balance_check,
-            sample_size=assignment_response.sample_size,
-            arm_sizes=assignment_response.arm_sizes,
-        ),
+        assign_summary=get_assign_summary(experiment),
     )
 
 

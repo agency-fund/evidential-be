@@ -851,7 +851,6 @@ class AssignResponse(ApiBaseModel):
     # TODO(qixotic): Consider lifting up Assignment.arm_id & arm_name to the AssignResponse level
     # and organize assignments into lists by arm. Be less bulky and arm sizes come naturally.
     assignments: Annotated[list[Assignment], Field()]
-    arm_sizes: Annotated[list[ArmSize], Field(max_length=MAX_NUMBER_OF_ARMS)]
 
 
 class AnalysisRequest(ApiBaseModel):
