@@ -176,8 +176,8 @@ def make_insertable_online_experiment(
     state=ExperimentState.COMMITTED, datasource_id="testing"
 ):
     experiment_id = uuid.uuid4()
-    arm1_id = uuid.uuid4()
-    arm2_id = uuid.uuid4()
+    arm1_id = str(uuid.uuid4())
+    arm2_id = str(uuid.uuid4())
     arm1 = Arm(arm_id=arm1_id, arm_name="control", arm_description="Control")
     arm2 = Arm(arm_id=arm2_id, arm_name="treatment", arm_description="Treatment")
     # Attach UTC tz, but use dates_equal() to compare to respect db storage support
@@ -361,17 +361,15 @@ def test_create_experiment_with_assignment_impl_for_preassigned(
         select(ArmTable).where(ArmTable.experiment_id == str(experiment.id))
     ).all()
     assert len(arms) == 2
-    arm_ids = {str(arm.id) for arm in arms}
-    expected_arm_ids = {str(arm.arm_id) for arm in response.design_spec.arms}
+    arm_ids = {arm.id for arm in arms}
+    expected_arm_ids = {arm.arm_id for arm in response.design_spec.arms}
     assert arm_ids == expected_arm_ids
 
     # Check one assignment to see if it looks roughly right
     sample_assignment = assignments[0]
     assert sample_assignment.participant_type == "test_participant_type"
     assert sample_assignment.experiment_id == experiment.id
-    assert sample_assignment.arm_id in (
-        str(arm.arm_id) for arm in response.design_spec.arms
-    )
+    assert sample_assignment.arm_id in (arm.arm_id for arm in response.design_spec.arms)
     # Verify strata information
     assert (
         len(sample_assignment.strata) == 2
@@ -460,8 +458,8 @@ def test_create_experiment_with_assignment_impl_for_online(
         select(ArmTable).where(ArmTable.experiment_id == str(experiment.id))
     ).all()
     assert len(arms) == 2
-    arm_ids = {str(arm.id) for arm in arms}
-    expected_arm_ids = {str(arm.arm_id) for arm in response.design_spec.arms}
+    arm_ids = {arm.id for arm in arms}
+    expected_arm_ids = {arm.arm_id for arm in response.design_spec.arms}
     assert arm_ids == expected_arm_ids
 
     # Verify that no assignments were created for online experiment
@@ -481,7 +479,7 @@ def test_create_experiment_with_assignment_impl_overwrites_uuids(
     participants = make_sample_data(n=100)
     request = make_create_preassigned_experiment_request(with_uuids=True)
     original_experiment_id = str(request.design_spec.experiment_id)
-    original_arm_ids = [str(arm.arm_id) for arm in request.design_spec.arms]
+    original_arm_ids = [arm.arm_id for arm in request.design_spec.arms]
 
     # Call the function under test
     response = create_experiment_with_assignment_impl(
@@ -497,7 +495,7 @@ def test_create_experiment_with_assignment_impl_overwrites_uuids(
 
     # Verify that new UUIDs were generated
     assert response.design_spec.experiment_id != original_experiment_id
-    new_arm_ids = [str(arm.arm_id) for arm in response.design_spec.arms]
+    new_arm_ids = [arm.arm_id for arm in response.design_spec.arms]
     assert set(new_arm_ids) != set(original_arm_ids)
 
     # Verify database state
@@ -512,7 +510,7 @@ def test_create_experiment_with_assignment_impl_overwrites_uuids(
         select(ArmAssignment).where(ArmAssignment.experiment_id == str(experiment.id))
     ).all()
     # Verify all assignments use the new arm IDs
-    assignment_arm_ids = {str(a.arm_id) for a in assignments}
+    assignment_arm_ids = {a.arm_id for a in assignments}
     assert assignment_arm_ids == set(new_arm_ids)
 
 

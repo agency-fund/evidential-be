@@ -1169,7 +1169,7 @@ def create_experiment_with_assignment(
     ] = None,
 ) -> experiments_api_types.CreateExperimentResponse:
     datasource = get_datasource_or_raise(session, user, datasource_id)
-    if body.design_spec.uuids_are_present():
+    if body.design_spec.ids_are_present():
         raise LateValidationError("Invalid DesignSpec: UUIDs must not be set.")
     ds_config = datasource.get_config()
     participants_cfg = ds_config.find_participants(body.audience_spec.participant_type)
@@ -1248,7 +1248,7 @@ def analyze_experiment(
         )
 
     # Always assume the first arm is the baseline; UI can override this.
-    baseline_arm_id = baseline_arm_id or str(design_spec.arms[0].arm_id)
+    baseline_arm_id = baseline_arm_id or design_spec.arms[0].arm_id
     analyze_results = analyze_experiment_impl(
         assignments, participant_outcomes, baseline_arm_id
     )
@@ -1261,7 +1261,7 @@ def analyze_experiment(
             arm_result = analyze_results[metric_name][arm.id]
             arm_analyses.append(
                 ArmAnalysis(
-                    arm_id=uuid.UUID(arm.id),
+                    arm_id=arm.id,
                     arm_name=arm.name,
                     arm_description=arm.description,
                     is_baseline=arm_result.is_baseline,

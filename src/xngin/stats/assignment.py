@@ -215,7 +215,7 @@ def _make_assign_response(
 ) -> AssignResponse:
     """Prepare assignments for return along with the original data as a list of ExperimentParticipant objects."""
     participants_list = []
-    arm_sizes_by_treatment_id = defaultdict(int)
+    arm_sizes_by_treatment_id: dict[int, int] = defaultdict(int)
 
     stratum_ids = [0] * len(treatment_ids) if stratum_ids is None else stratum_ids
     for stratum_id, treatment_assignment, row in zip(

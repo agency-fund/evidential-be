@@ -109,7 +109,7 @@ def create_experiment_with_assignment_sl(
     ] = None,
 ) -> CreateExperimentResponse:
     """Creates an experiment and saves its assignments to the database."""
-    if body.design_spec.uuids_are_present():
+    if body.design_spec.ids_are_present():
         raise LateValidationError("Invalid DesignSpec: UUIDs must not be set.")
 
     ds_config = datasource.config
@@ -166,7 +166,7 @@ def create_experiment_with_assignment_impl(
     # First generate uuids for the experiment and arms, which do_assignment needs.
     request.design_spec.experiment_id = uuid.uuid4()
     for arm in request.design_spec.arms:
-        arm.arm_id = uuid.uuid4()
+        arm.arm_id = str(uuid.uuid4())
 
     if request.design_spec.experiment_type == "preassigned":
         return create_preassigned_experiment_impl(
@@ -253,7 +253,7 @@ def create_preassigned_experiment_impl(
     # Create arm records
     for arm in request.design_spec.arms:
         db_arm = ArmTable(
-            id=str(arm.arm_id),
+            id=arm.arm_id,
             name=arm.arm_name,
             description=arm.arm_description,
             experiment_id=str(experiment.id),
@@ -312,7 +312,7 @@ def create_online_experiment_impl(
     # Create arm records
     for arm in request.design_spec.arms:
         db_arm = ArmTable(
-            id=str(arm.arm_id),
+            id=arm.arm_id,
             name=arm.arm_name,
             description=arm.arm_description,
             experiment_id=str(experiment.id),
@@ -526,13 +526,13 @@ def get_experiment_assignments_impl(
 ) -> GetExperimentAssignmentsResponse:
     # Map arm IDs to names
     design_spec = PreassignedExperimentSpec.model_validate(experiment.design_spec)
-    arm_id_to_name = {str(arm.arm_id): arm.arm_name for arm in design_spec.arms}
+    arm_id_to_name = {arm.arm_id: arm.arm_name for arm in design_spec.arms}
     # Convert ArmAssignment models to Assignment API types
     assignments = [
         Assignment(
             participant_id=arm_assignment.participant_id,
-            arm_id=uuid.UUID(arm_assignment.arm_id),
-            arm_name=arm_id_to_name[str(arm_assignment.arm_id)],
+            arm_id=arm_assignment.arm_id,
+            arm_name=arm_id_to_name[arm_assignment.arm_id],
             strata=[Strata.model_validate(s) for s in arm_assignment.strata],
         )
         for arm_assignment in experiment.arm_assignments
@@ -549,7 +549,7 @@ def experiment_assignments_to_csv_generator(experiment: Experiment):
     """Generator function to yield CSV rows of experiment assignments as strings"""
     # Map arm IDs to names
     design_spec = experiment.get_design_spec()
-    arm_id_to_name = {str(arm.arm_id): arm.arm_name for arm in design_spec.arms}
+    arm_id_to_name = {arm.arm_id: arm.arm_name for arm in design_spec.arms}
 
     # Get strata field names from the first assignment
     strata_field_names = []
@@ -573,8 +573,8 @@ def experiment_assignments_to_csv_generator(experiment: Experiment):
                 for participant in batch:
                     row = [
                         participant.participant_id,
-                        str(participant.arm_id),
-                        arm_id_to_name[str(participant.arm_id)],
+                        participant.arm_id,
+                        arm_id_to_name[participant.arm_id],
                         *["" if v is None else v for v in participant.strata_values()],
                     ]
                     writer.writerow(row)
@@ -638,7 +638,7 @@ def get_existing_assignment_for_participant(
     if existing_assignment:
         return Assignment(
             participant_id=existing_assignment.participant_id,
-            arm_id=uuid.UUID(existing_assignment.arm_id),
+            arm_id=existing_assignment.arm_id,
             arm_name=existing_assignment.arm.name,
             strata=[],
         )
@@ -691,7 +691,7 @@ def create_assignment_for_participant(
 
         return Assignment(
             participant_id=participant_id,
-            arm_id=uuid.UUID(chosen_arm.id),
+            arm_id=chosen_arm.id,
             arm_name=chosen_arm.name,
             strata=[],
         )
@@ -706,7 +706,7 @@ def get_assign_summary(experiment: Experiment) -> AssignSummary:
     balance_check = experiment.get_balance_check()
     arm_sizes = [
         ArmSize(
-            arm=Arm(arm_id=uuid.UUID(arm.id), arm_name=arm.name),
+            arm=Arm(arm_id=arm.id, arm_name=arm.name),
             size=len(arm.arm_assignments),
         )
         for arm in experiment.arms

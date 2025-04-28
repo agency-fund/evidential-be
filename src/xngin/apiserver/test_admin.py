@@ -786,9 +786,7 @@ def test_create_preassigned_experiment_using_inline_schema_ds(
     assert created_experiment.power_analyses == base_request.power_analyses
 
     experiment_id = created_experiment.design_spec.experiment_id
-    (arm1_id, arm2_id) = [
-        str(arm.arm_id) for arm in created_experiment.design_spec.arms
-    ]
+    (arm1_id, arm2_id) = [arm.arm_id for arm in created_experiment.design_spec.arms]
 
     # Verify database state using the ids in the returned DesignSpec.
     experiment = db_session.scalars(
@@ -959,8 +957,8 @@ def test_experiments_analyze(testing_experiment):
     assert baseline_arms[0].is_baseline
     for analysis in experiment_analysis.metric_analyses:
         # Verify arm_ids match the database model.
-        assert {str(arm.arm_id) for arm in analysis.arm_analyses} == {
-            str(arm.id) for arm in testing_experiment.arms
+        assert {arm.arm_id for arm in analysis.arm_analyses} == {
+            arm.id for arm in testing_experiment.arms
         }
 
 

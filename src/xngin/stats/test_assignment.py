@@ -79,7 +79,7 @@ def sample_rows(sample_data):
 
 
 def make_arms(names: list[str]):
-    return [Arm(arm_id=uuid.uuid4(), arm_name=name) for name in names]
+    return [Arm(arm_id=str(uuid.uuid4()), arm_name=name) for name in names]
 
 
 def test_assign_treatment(sample_table, sample_rows):
