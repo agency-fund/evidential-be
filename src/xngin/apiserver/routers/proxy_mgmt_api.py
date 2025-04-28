@@ -1,5 +1,5 @@
 from contextlib import asynccontextmanager
-from typing import Annotated, Literal
+from typing import Annotated
 
 import httpx
 from fastapi import APIRouter, Depends, FastAPI, HTTPException, Query, Response
@@ -12,11 +12,10 @@ from xngin.apiserver.dependencies import (
     datasource_config_required,
     httpx_dependency,
 )
-from xngin.apiserver.proxy_webhook_types import (
+from xngin.apiserver.routers.proxy_mgmt_api_types import (
     STANDARD_WEBHOOK_RESPONSES,
     WebhookCommitRequest,
     WebhookResponse,
-    WebhookUpdateCommitRequest,
 )
 from xngin.apiserver.settings import (
     DatasourceConfig,
@@ -24,7 +23,6 @@ from xngin.apiserver.settings import (
     WebhookConfig,
     WebhookUrl,
 )
-from xngin.apiserver.utils import substitute_url
 
 
 @asynccontextmanager
@@ -36,35 +34,6 @@ router = APIRouter(
     lifespan=lifespan,
     prefix="",
 )
-
-
-@router.get(
-    "/assignment-file",
-    summary="Retrieve all participant assignments for the given experiment_id from a remote database.",
-    responses=STANDARD_WEBHOOK_RESPONSES,
-)
-async def assignment_file(
-    response: Response,
-    experiment_id: Annotated[
-        str,
-        Query(description="ID of the experiment whose assignments we wish to fetch."),
-    ],
-    http_client: Annotated[httpx.AsyncClient, Depends(httpx_dependency)],
-    config: Annotated[DatasourceConfig, Depends(datasource_config_required)],
-) -> WebhookResponse:
-    webhook_config = config.webhook_config
-    if webhook_config is None:
-        raise HTTPException(501, "Webhook not configured.")
-    action = webhook_config.actions.assignment_file
-    if action is None:
-        # TODO: read from internal storage if webhooks are not defined.
-        raise HTTPException(501, "Action 'assignment_file' not configured.")
-
-    url = substitute_url(action.url, {"experiment_id": experiment_id})
-    response.status_code, payload = await make_webhook_request_base(
-        http_client, webhook_config, method=action.method, url=url
-    )
-    return payload
 
 
 @router.post(
@@ -96,37 +65,6 @@ async def commit_experiment_wh(
 
     response.status_code, payload = await make_webhook_request(
         http_client, webhook_config, action, commit_payload
-    )
-    return payload
-
-
-@router.post(
-    "/update-commit",
-    summary="Update an existing experiment's timestamps or description (experiment and arms) in a remote database.",
-    responses=STANDARD_WEBHOOK_RESPONSES,
-)
-async def update_experiment(
-    response: Response,
-    body: WebhookUpdateCommitRequest,
-    update_type: Annotated[
-        Literal["timestamps", "description"],
-        Query(description="The type of experiment metadata update to perform"),
-    ],
-    http_client: Annotated[httpx.AsyncClient, Depends(httpx_dependency)],
-    config: Annotated[DatasourceConfig, Depends(datasource_config_required)],
-) -> WebhookResponse:
-    webhook_config = config.webhook_config
-    if webhook_config is None:
-        raise HTTPException(501, "Webhook not configured.")
-    if update_type == "timestamps" and webhook_config.actions.update_timestamps:
-        action = webhook_config.actions.update_timestamps
-    elif update_type == "description" and webhook_config.actions.update_description:
-        action = webhook_config.actions.update_description
-    else:
-        raise HTTPException(501, f"Action '{update_type}' not configured.")
-    # Need to pull out the upstream server payload:
-    response.status_code, payload = await make_webhook_request(
-        http_client, webhook_config, action, body.update_json
     )
     return payload
 

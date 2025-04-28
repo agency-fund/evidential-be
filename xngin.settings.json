@@ -21,18 +21,6 @@
             "commit": {
               "method": "POST",
               "url": "${secret:CUSTOMER_API_BASE}/save-experiment-commit"
-            },
-            "assignment_file": {
-              "method": "GET",
-              "url": "${secret:CUSTOMER_API_BASE}/get-file-name-by-experiment-id/{experiment_id}"
-            },
-            "update_timestamps": {
-              "method": "PUT",
-              "url": "${secret:CUSTOMER_API_BASE}/update-timestamps-for-experiment"
-            },
-            "update_description": {
-              "method": "PUT",
-              "url": "${secret:CUSTOMER_API_BASE}/update-experiment-commit"
             }
           },
           "common_headers": {

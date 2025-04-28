@@ -195,9 +195,6 @@ class WebhookActions(ConfigBaseModel):
 
     # No action is required, so a user can leave it out completely.
     commit: WebhookUrl | None = None
-    assignment_file: WebhookUrl | None = None
-    update_timestamps: WebhookUrl | None = None
-    update_description: WebhookUrl | None = None
 
 
 class WebhookCommonHeaders(ConfigBaseModel):

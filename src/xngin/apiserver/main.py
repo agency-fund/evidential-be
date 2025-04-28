@@ -16,7 +16,7 @@ from xngin.apiserver.flags import PUBLISH_ALL_DOCS
 from xngin.apiserver.routers import (
     admin,
     experiments,
-    experiments_proxy_mgmt_api,
+    proxy_mgmt_api,
     oidc,
     oidc_dependencies,
     stateless_api,
@@ -77,7 +77,7 @@ app.include_router(
 )
 
 app.include_router(
-    experiments_proxy_mgmt_api.router,
+    proxy_mgmt_api.router,
     prefix=constants.API_PREFIX_V1,
     tags=["Experiment Management"],
 )
