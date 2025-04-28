@@ -89,7 +89,7 @@ async def make_webhook_request_base(
     config: WebhookConfig,
     method: HttpMethodTypes,
     url: str,
-    data: BaseModel = None,
+    data: BaseModel | None = None,
 ) -> tuple[int, WebhookResponse]:
     """Like make_webhook_request() but can directly take an http method and url.
 

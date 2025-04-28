@@ -759,7 +759,9 @@ def is_postgres_database_not_found_error(exc):
     )
 
 
-def create_inspect_table_response_from_table(table: sqlalchemy.Table):
+def create_inspect_table_response_from_table(
+    table: sqlalchemy.Table,
+) -> InspectDatasourceTableResponse:
     """Creates an InspectDatasourceTableResponse from a sqlalchemy.Table.
 
     This is similar to config_sheet.create_schema_from_table but tailored to use in the API.
@@ -949,7 +951,7 @@ def inspect_participant_types(
     )
     session.commit()
 
-    def inspect_participant_types_impl():
+    def inspect_participant_types_impl() -> InspectParticipantTypesResponse:
         with dsconfig.dbsession() as dwh_session:
             sa_table = infer_table(
                 dwh_session.get_bind(),

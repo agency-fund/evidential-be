@@ -308,7 +308,7 @@ class DatasourceTablesInspected(Base):
     # Timestamp of the last update to `response`
     response_last_updated: Mapped[datetime | None] = mapped_column()
 
-    def get_response(self):
+    def get_response(self) -> InspectDatasourceTableResponse:
         return InspectDatasourceTableResponse.model_validate(self.response)
 
     def set_response(self, value: InspectDatasourceTableResponse) -> Self:
@@ -332,7 +332,7 @@ class ParticipantTypesInspected(Base):
     # Timestamp of the last update to `response`
     response_last_updated: Mapped[datetime | None] = mapped_column()
 
-    def get_response(self):
+    def get_response(self) -> InspectParticipantTypesResponse:
         return InspectParticipantTypesResponse.model_validate(self.response)
 
     def set_response(self, value: InspectParticipantTypesResponse) -> Self:
