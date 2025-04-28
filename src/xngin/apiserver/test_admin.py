@@ -957,7 +957,7 @@ def test_experiments_analyze(testing_experiment):
     for analysis in experiment_analysis.metric_analyses:
         # Verify arm_ids match the database model.
         assert {str(arm.arm_id) for arm in analysis.arm_analyses} == {
-            str(arm.arm_id) for arm in testing_experiment.get_arms()
+            str(arm.id) for arm in testing_experiment.arms
         }
 
 

@@ -4,6 +4,7 @@ import secrets
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime, timedelta
 from typing import Annotated
+import uuid
 
 import google.api_core.exceptions
 import sqlalchemy
@@ -1254,14 +1255,13 @@ def analyze_experiment(
     for metric in experiment.get_design_spec().metrics:
         metric_name = metric.field_name
         arm_analyses = []
-        for arm in experiment.get_arms():
-            arm_id = str(arm.arm_id)
-            arm_result = analyze_results[metric_name][arm_id]
+        for arm in experiment.arms:
+            arm_result = analyze_results[metric_name][arm.id]
             arm_analyses.append(
                 ArmAnalysis(
-                    arm_id=arm_id,
-                    arm_name=arm.arm_name,
-                    arm_description=arm.arm_description,
+                    arm_id=uuid.UUID(arm.id),
+                    arm_name=arm.name,
+                    arm_description=arm.description,
                     is_baseline=arm_result.is_baseline,
                     estimate=arm_result.estimate,
                     p_value=arm_result.p_value,
@@ -1275,7 +1275,7 @@ def analyze_experiment(
             )
         )
     return ExperimentAnalysis(
-        experiment_id=experiment.id, metric_analyses=metric_analyses
+        experiment_id=uuid.UUID(experiment.id), metric_analyses=metric_analyses
     )
 
 

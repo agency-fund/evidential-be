@@ -10,7 +10,6 @@ from sqlalchemy.dialects import postgresql
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 from sqlalchemy.types import TypeEngine
 from xngin.apiserver.routers.stateless_api_types import (
-    Arm,
     AudienceSpec,
     BalanceCheck,
     DesignSpec,
@@ -424,15 +423,11 @@ class Experiment(Base):
     )
     datasource: Mapped["Datasource"] = relationship(back_populates="experiments")
 
-    def get_arms(self) -> list[Arm]:
-        ds = self.get_design_spec()
-        return ds.arms
-
     def get_arm_ids(self) -> list[str]:
-        return [str(arm.arm_id) for arm in self.get_arms()]
+        return [arm.id for arm in self.arms]
 
     def get_arm_names(self) -> list[str]:
-        return [arm.arm_name for arm in self.get_arms()]
+        return [arm.name for arm in self.arms]
 
     def get_design_spec(self) -> DesignSpec:
         return TypeAdapter(DesignSpec).validate_python(self.design_spec)
