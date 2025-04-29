@@ -2,7 +2,6 @@ import decimal
 from collections import defaultdict
 from collections.abc import Sequence
 from typing import Any, Protocol
-from uuid import UUID
 
 import numpy as np
 import pandas as pd
@@ -54,7 +53,7 @@ def assign_treatment(
         data: sqlalchemy result set of Rows representing units to be assigned
         stratum_cols: List of column names to stratify on
         id_col: Name of column containing unit identifiers
-        arms: Name & uuid of each treatment arm
+        arms: Name & id of each treatment arm
         experiment_id: Unique identifier for experiment
         fstat_thresh: Threshold for F-statistic p-value
         quantiles: number of buckets to use for stratification of numerics
@@ -215,7 +214,7 @@ def _make_assign_response(
 ) -> AssignResponse:
     """Prepare assignments for return along with the original data as a list of ExperimentParticipant objects."""
     participants_list = []
-    arm_sizes_by_treatment_id = defaultdict(int)
+    arm_sizes_by_treatment_id: dict[int, int] = defaultdict(int)
 
     stratum_ids = [0] * len(treatment_ids) if stratum_ids is None else stratum_ids
     for stratum_id, treatment_assignment, row in zip(
@@ -255,7 +254,7 @@ def _make_assign_response(
     # Return the ExperimentAssignment with the list of participants
     return AssignResponse(
         balance_check=balance_check,
-        experiment_id=UUID(experiment_id),
+        experiment_id=experiment_id,
         sample_size=len(treatment_ids),
         unique_id_field=id_col,
         assignments=participants_list,

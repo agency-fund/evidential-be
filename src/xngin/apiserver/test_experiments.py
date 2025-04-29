@@ -1,5 +1,4 @@
 import dataclasses
-import uuid
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from typing import Any
@@ -36,6 +35,8 @@ from xngin.apiserver.models.tables import (
     ArmTable,
     Datasource,
     Experiment,
+    experiment_id_factory,
+    arm_id_factory,
 )
 from xngin.apiserver.routers.experiments import (
     ExperimentsAssignmentError,
@@ -83,9 +84,9 @@ def fixture_teardown(db_session: Session):
 def make_create_preassigned_experiment_request(
     with_uuids: bool = True,
 ) -> CreateExperimentRequest:
-    experiment_id = str(uuid.uuid4()) if with_uuids else None
-    arm1_id = str(uuid.uuid4()) if with_uuids else None
-    arm2_id = str(uuid.uuid4()) if with_uuids else None
+    experiment_id = experiment_id_factory() if with_uuids else None
+    arm1_id = arm_id_factory() if with_uuids else None
+    arm2_id = arm_id_factory() if with_uuids else None
     # Attach UTC tz, but use dates_equal() to compare to respect db storage support
     start_date = datetime(2025, 1, 1, tzinfo=UTC)
     end_date = datetime(2025, 2, 1, tzinfo=UTC)
@@ -136,7 +137,7 @@ def make_insertable_experiment(state: ExperimentState, datasource_id="testing"):
         balance_ok=True,
     )
     return Experiment(
-        id=str(request.design_spec.experiment_id),
+        id=request.design_spec.experiment_id,
         datasource_id=datasource_id,
         experiment_type="preassigned",
         participant_type=request.audience_spec.participant_type,
@@ -175,9 +176,9 @@ def make_insertable_experiment(state: ExperimentState, datasource_id="testing"):
 def make_insertable_online_experiment(
     state=ExperimentState.COMMITTED, datasource_id="testing"
 ):
-    experiment_id = uuid.uuid4()
-    arm1_id = uuid.uuid4()
-    arm2_id = uuid.uuid4()
+    experiment_id = experiment_id_factory()
+    arm1_id = arm_id_factory()
+    arm2_id = arm_id_factory()
     arm1 = Arm(arm_id=arm1_id, arm_name="control", arm_description="Control")
     arm2 = Arm(arm_id=arm2_id, arm_name="treatment", arm_description="Treatment")
     # Attach UTC tz, but use dates_equal() to compare to respect db storage support
@@ -206,7 +207,7 @@ def make_insertable_online_experiment(
         filters=[],
     )
     return Experiment(
-        id=str(experiment_id),
+        id=experiment_id,
         datasource_id=datasource_id,
         experiment_type="online",
         participant_type=audience_spec.participant_type,
@@ -326,9 +327,7 @@ def test_create_experiment_with_assignment_impl_for_preassigned(
 
     # Verify database state using the ids in the returned DesignSpec.
     experiment: Experiment = db_session.scalars(
-        select(Experiment).where(
-            Experiment.id == str(response.design_spec.experiment_id)
-        )
+        select(Experiment).where(Experiment.id == response.design_spec.experiment_id)
     ).one()
     assert experiment.experiment_type == "preassigned"
     assert experiment.participant_type == request.audience_spec.participant_type
@@ -348,7 +347,7 @@ def test_create_experiment_with_assignment_impl_for_preassigned(
     assert stored_power_analyses == response.power_analyses
     # Verify assignments were created
     assignments = db_session.scalars(
-        select(ArmAssignment).where(ArmAssignment.experiment_id == str(experiment.id))
+        select(ArmAssignment).where(ArmAssignment.experiment_id == experiment.id)
     ).all()
     assert len(assignments) == len(participants)
     # Verify all participant IDs in the db are the participants in the request
@@ -358,20 +357,18 @@ def test_create_experiment_with_assignment_impl_for_preassigned(
 
     # Verify arms were created in database
     arms = db_session.scalars(
-        select(ArmTable).where(ArmTable.experiment_id == str(experiment.id))
+        select(ArmTable).where(ArmTable.experiment_id == experiment.id)
     ).all()
     assert len(arms) == 2
-    arm_ids = {str(arm.id) for arm in arms}
-    expected_arm_ids = {str(arm.arm_id) for arm in response.design_spec.arms}
+    arm_ids = {arm.id for arm in arms}
+    expected_arm_ids = {arm.arm_id for arm in response.design_spec.arms}
     assert arm_ids == expected_arm_ids
 
     # Check one assignment to see if it looks roughly right
     sample_assignment = assignments[0]
     assert sample_assignment.participant_type == "test_participant_type"
     assert sample_assignment.experiment_id == experiment.id
-    assert sample_assignment.arm_id in (
-        str(arm.arm_id) for arm in response.design_spec.arms
-    )
+    assert sample_assignment.arm_id in (arm.arm_id for arm in response.design_spec.arms)
     # Verify strata information
     assert (
         len(sample_assignment.strata) == 2
@@ -433,9 +430,7 @@ def test_create_experiment_with_assignment_impl_for_online(
 
     # Verify database state
     experiment: Experiment = db_session.scalars(
-        select(Experiment).where(
-            Experiment.id == str(response.design_spec.experiment_id)
-        )
+        select(Experiment).where(Experiment.id == response.design_spec.experiment_id)
     ).one()
     assert experiment.experiment_type == "online"
     assert experiment.participant_type == request.audience_spec.participant_type
@@ -457,16 +452,16 @@ def test_create_experiment_with_assignment_impl_for_online(
 
     # Verify arms were created in database
     arms = db_session.scalars(
-        select(ArmTable).where(ArmTable.experiment_id == str(experiment.id))
+        select(ArmTable).where(ArmTable.experiment_id == experiment.id)
     ).all()
     assert len(arms) == 2
-    arm_ids = {str(arm.id) for arm in arms}
-    expected_arm_ids = {str(arm.arm_id) for arm in response.design_spec.arms}
+    arm_ids = {arm.id for arm in arms}
+    expected_arm_ids = {arm.arm_id for arm in response.design_spec.arms}
     assert arm_ids == expected_arm_ids
 
     # Verify that no assignments were created for online experiment
     assignments = db_session.scalars(
-        select(ArmAssignment).where(ArmAssignment.experiment_id == str(experiment.id))
+        select(ArmAssignment).where(ArmAssignment.experiment_id == experiment.id)
     ).all()
     assert len(assignments) == 0
 
@@ -480,8 +475,8 @@ def test_create_experiment_with_assignment_impl_overwrites_uuids(
     """
     participants = make_sample_data(n=100)
     request = make_create_preassigned_experiment_request(with_uuids=True)
-    original_experiment_id = str(request.design_spec.experiment_id)
-    original_arm_ids = [str(arm.arm_id) for arm in request.design_spec.arms]
+    original_experiment_id = request.design_spec.experiment_id
+    original_arm_ids = [arm.arm_id for arm in request.design_spec.arms]
 
     # Call the function under test
     response = create_experiment_with_assignment_impl(
@@ -497,22 +492,20 @@ def test_create_experiment_with_assignment_impl_overwrites_uuids(
 
     # Verify that new UUIDs were generated
     assert response.design_spec.experiment_id != original_experiment_id
-    new_arm_ids = [str(arm.arm_id) for arm in response.design_spec.arms]
+    new_arm_ids = [arm.arm_id for arm in response.design_spec.arms]
     assert set(new_arm_ids) != set(original_arm_ids)
 
     # Verify database state
     experiment = db_session.scalars(
-        select(Experiment).where(
-            Experiment.id == str(response.design_spec.experiment_id)
-        )
+        select(Experiment).where(Experiment.id == response.design_spec.experiment_id)
     ).one()
     assert experiment.state == ExperimentState.ASSIGNED
     # Verify assignments were created with the new UUIDs
     assignments = db_session.scalars(
-        select(ArmAssignment).where(ArmAssignment.experiment_id == str(experiment.id))
+        select(ArmAssignment).where(ArmAssignment.experiment_id == experiment.id)
     ).all()
     # Verify all assignments use the new arm IDs
-    assignment_arm_ids = {str(a.arm_id) for a in assignments}
+    assignment_arm_ids = {a.arm_id for a in assignments}
     assert assignment_arm_ids == set(new_arm_ids)
 
 
@@ -546,13 +539,11 @@ def test_create_experiment_with_assignment_impl_no_metric_stratification(
 
     # Verify database state
     experiment = db_session.scalars(
-        select(Experiment).where(
-            Experiment.id == str(response.design_spec.experiment_id)
-        )
+        select(Experiment).where(Experiment.id == response.design_spec.experiment_id)
     ).one()
     # Verify assignments were created
     assignments = db_session.scalars(
-        select(ArmAssignment).where(ArmAssignment.experiment_id == str(experiment.id))
+        select(ArmAssignment).where(ArmAssignment.experiment_id == experiment.id)
     ).all()
     assert len(assignments) == len(participants)
     # Check strata information only has gender, not is_onboarded
@@ -864,7 +855,7 @@ def test_get_experiment_assignments_impl(db_session, testing_datasource):
     data: GetExperimentAssignmentsResponse = get_experiment_assignments_impl(experiment)
 
     # Check the response structure; lhs is a UUID and rhs may be a string (e.g. sqlite).
-    assert str(data.experiment_id) == experiment.id
+    assert data.experiment_id == experiment.id
     assert data.sample_size == get_assign_summary(experiment).sample_size
     assert data.balance_check == experiment.get_balance_check()
 
@@ -895,7 +886,7 @@ def test_get_experiment_assignments_not_found():
     TODO: deprecate this in favor of an admin.py version when ready.
     """
     response = client.get(
-        f"/experiments/{uuid.uuid4()}/assignments",
+        f"/experiments/{experiment_id_factory()}/assignments",
         headers={constants.HEADER_CONFIG_ID: "testing"},
     )
     assert response.status_code == 404
