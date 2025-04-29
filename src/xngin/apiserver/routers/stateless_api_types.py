@@ -46,10 +46,13 @@ class DataType(enum.StrEnum):
     DOUBLE_PRECISION = "double precision"
     NUMERIC = "numeric"
     TIMESTAMP_WITHOUT_TIMEZONE = "timestamp without time zone"
+    TIMESTAMP_WITH_TIMEZONE = "timestamp with time zone"
     BIGINT = "bigint"
     JSONB = "jsonb (unsupported)"
     JSON = "json (unsupported)"
     UNKNOWN = "unsupported"
+    # NOTE: If adding types, the frontend (e.g. data-type-badge.tsx when viewing participant type
+    # details) should also be updated to badge appropriately in the UI.
 
     @classmethod
     def match(cls, value):
@@ -79,7 +82,9 @@ class DataType(enum.StrEnum):
             return DataType.NUMERIC
         if isinstance(value, sqlalchemy.sql.sqltypes.Date):
             return DataType.DATE
-        if isinstance(value, sqlalchemy.sql.sqltypes.DateTime):
+        if isinstance(value, sqlalchemy.sql.sqltypes.DateTime) and value.timezone:
+            return DataType.TIMESTAMP_WITH_TIMEZONE
+        if isinstance(value, sqlalchemy.sql.sqltypes.DateTime) and not value.timezone:
             return DataType.TIMESTAMP_WITHOUT_TIMEZONE
         if isinstance(value, sqlalchemy.dialects.postgresql.json.JSONB):
             return DataType.JSONB
@@ -122,6 +127,7 @@ class DataType(enum.StrEnum):
             case (
                 DataType.DATE
                 | DataType.TIMESTAMP_WITHOUT_TIMEZONE
+                | DataType.TIMESTAMP_WITH_TIMEZONE
                 | DataType.INTEGER
                 | DataType.DOUBLE_PRECISION
                 | DataType.NUMERIC

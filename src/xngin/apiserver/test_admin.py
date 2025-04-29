@@ -542,7 +542,7 @@ def test_lifecycle_with_pg(testing_datasource):
     )
     assert response.status_code == 204, response.content
 
-    # Populate the testing data warehouse.
+    # Populate the testing data warehouse. NOTE: This will drop and recreate the database!
     create_testing_dwh(dsn=testing_datasource.dsn, nrows=100)
 
     # Inspect the datasource.
@@ -618,10 +618,9 @@ def test_lifecycle_with_pg(testing_datasource):
                 data_type=DataType.TIMESTAMP_WITHOUT_TIMEZONE,
                 description="",
             ),
-            # TODO: https://github.com/agency-fund/xngin/issues/337
             FieldMetadata(
                 field_name="timestamp_with_tz",
-                data_type=DataType.TIMESTAMP_WITHOUT_TIMEZONE,
+                data_type=DataType.TIMESTAMP_WITH_TIMEZONE,
                 description="",
             ),
             FieldMetadata(

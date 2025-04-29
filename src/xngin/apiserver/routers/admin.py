@@ -195,10 +195,10 @@ def user_from_token(
             session.add(organization)
             organization.users.append(user)
             if dev_dsn := flags.XNGIN_DEVDWH_DSN:
-                # TODO: Also add a default participant type.
                 config = RemoteDatabaseConfig(
                     participants=[], type="remote", dwh=Dsn.from_url(dev_dsn)
                 )
+                # Prepopulate columns to cover each data type supported by strata/filters/metrics.
                 participants_def = ParticipantsDef(
                     type="schema",
                     participant_type="users",
@@ -214,12 +214,14 @@ def user_from_token(
                             field_name="baseline_income",
                             data_type=DataType.NUMERIC,
                             is_filter=True,
+                            is_strata=True,
                         ),
                         FieldDescriptor(
                             field_name="current_income",
                             data_type=DataType.NUMERIC,
                             is_filter=True,
                             is_metric=True,
+                            is_strata=True,
                         ),
                         FieldDescriptor(
                             field_name="ethnicity",
@@ -233,6 +235,7 @@ def user_from_token(
                             field_name="gender",
                             data_type=DataType.CHARACTER_VARYING,
                             is_filter=True,
+                            is_strata=True,
                         ),
                         FieldDescriptor(
                             field_name="is_recruited",
@@ -247,12 +250,14 @@ def user_from_token(
                             data_type=DataType.BOOLEAN,
                             is_filter=True,
                             is_metric=True,
+                            is_strata=True,
                         ),
                         FieldDescriptor(
                             field_name="is_engaged",
                             data_type=DataType.BOOLEAN,
                             is_filter=True,
                             is_metric=True,
+                            is_strata=True,
                         ),
                         FieldDescriptor(
                             field_name="is_retained",
@@ -260,13 +265,14 @@ def user_from_token(
                         ),
                         FieldDescriptor(
                             field_name="potential_0",
-                            data_type=DataType.BIGINT,
-                            is_filter=True,
-                            is_metric=True,
+                            data_type=DataType.NUMERIC,
                         ),
                         FieldDescriptor(
                             field_name="potential_1",
                             data_type=DataType.BIGINT,
+                            is_filter=True,
+                            is_metric=True,
+                            is_strata=True,
                         ),
                         FieldDescriptor(
                             field_name="sample_date",
@@ -279,9 +285,9 @@ def user_from_token(
                             is_filter=True,
                         ),
                         FieldDescriptor(
-                            field_name="sample_timestamp_with_tz",
-                            # TODO: Fix the data type
-                            data_type=DataType.TIMESTAMP_WITHOUT_TIMEZONE,
+                            field_name="timestamp_with_tz",
+                            data_type=DataType.TIMESTAMP_WITH_TIMEZONE,
+                            is_filter=True,
                         ),
                         FieldDescriptor(
                             field_name="uuid_filter",
@@ -1048,8 +1054,10 @@ def inspect_participant_types(
                 pconfig.table_name,
                 dsconfig.supports_reflection(),
             )
-        db_schema = generate_field_descriptors(sa_table, pconfig.get_unique_id_field())
-        mapper = create_col_to_filter_meta_mapper(db_schema, sa_table, dwh_session)
+            db_schema = generate_field_descriptors(
+                sa_table, pconfig.get_unique_id_field()
+            )
+            mapper = create_col_to_filter_meta_mapper(db_schema, sa_table, dwh_session)
 
         filter_fields = {c.field_name: c for c in pconfig.fields if c.is_filter}
         strata_fields = {c.field_name: c for c in pconfig.fields if c.is_strata}
