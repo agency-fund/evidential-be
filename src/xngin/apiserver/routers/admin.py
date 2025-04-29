@@ -105,6 +105,7 @@ from xngin.apiserver.settings import (
     RemoteDatabaseConfig,
     infer_table,
 )
+from xngin.schema.schema_types import FieldDescriptor
 from xngin.stats.analysis import analyze_experiment as analyze_experiment_impl
 
 GENERIC_SUCCESS = Response(status_code=status.HTTP_204_NO_CONTENT)
@@ -198,6 +199,98 @@ def user_from_token(
                 config = RemoteDatabaseConfig(
                     participants=[], type="remote", dwh=Dsn.from_url(dev_dsn)
                 )
+                participants_def = ParticipantsDef(
+                    type="schema",
+                    participant_type="users",
+                    table_name="dwh",
+                    fields=[
+                        FieldDescriptor(
+                            field_name="id",
+                            data_type=DataType.BIGINT,
+                            description="The ID of the user.",
+                            is_unique_id=True,
+                        ),
+                        FieldDescriptor(
+                            field_name="baseline_income",
+                            data_type=DataType.NUMERIC,
+                            is_filter=True,
+                        ),
+                        FieldDescriptor(
+                            field_name="current_income",
+                            data_type=DataType.NUMERIC,
+                            is_filter=True,
+                            is_metric=True,
+                        ),
+                        FieldDescriptor(
+                            field_name="ethnicity",
+                            data_type=DataType.CHARACTER_VARYING,
+                        ),
+                        FieldDescriptor(
+                            field_name="first_name",
+                            data_type=DataType.CHARACTER_VARYING,
+                        ),
+                        FieldDescriptor(
+                            field_name="gender",
+                            data_type=DataType.CHARACTER_VARYING,
+                            is_filter=True,
+                        ),
+                        FieldDescriptor(
+                            field_name="is_recruited",
+                            data_type=DataType.BOOLEAN,
+                        ),
+                        FieldDescriptor(
+                            field_name="is_registered",
+                            data_type=DataType.BOOLEAN,
+                        ),
+                        FieldDescriptor(
+                            field_name="is_onboarded",
+                            data_type=DataType.BOOLEAN,
+                            is_filter=True,
+                            is_metric=True,
+                        ),
+                        FieldDescriptor(
+                            field_name="is_engaged",
+                            data_type=DataType.BOOLEAN,
+                            is_filter=True,
+                            is_metric=True,
+                        ),
+                        FieldDescriptor(
+                            field_name="is_retained",
+                            data_type=DataType.BOOLEAN,
+                        ),
+                        FieldDescriptor(
+                            field_name="potential_0",
+                            data_type=DataType.BIGINT,
+                            is_filter=True,
+                            is_metric=True,
+                        ),
+                        FieldDescriptor(
+                            field_name="potential_1",
+                            data_type=DataType.BIGINT,
+                        ),
+                        FieldDescriptor(
+                            field_name="sample_date",
+                            data_type=DataType.DATE,
+                            is_filter=True,
+                        ),
+                        FieldDescriptor(
+                            field_name="sample_timestamp",
+                            data_type=DataType.TIMESTAMP_WITHOUT_TIMEZONE,
+                            is_filter=True,
+                        ),
+                        FieldDescriptor(
+                            field_name="sample_timestamp_with_tz",
+                            # TODO: Fix the data type
+                            data_type=DataType.TIMESTAMP_WITHOUT_TIMEZONE,
+                        ),
+                        FieldDescriptor(
+                            field_name="uuid_filter",
+                            data_type=DataType.UUID,
+                            is_filter=True,
+                        ),
+                    ],
+                )
+                config.participants.append(participants_def)
                 datasource = Datasource(
                     name="Local DWH", organization=organization
                 ).set_config(config)

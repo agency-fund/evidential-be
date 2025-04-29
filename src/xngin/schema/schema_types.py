@@ -17,19 +17,19 @@ class FieldDescriptor(SchemaBaseModel):
     data_type: Annotated[DataType, Field(description="The data type of this field")]
     description: Annotated[
         str, Field(description="Human-readable description of the field")
-    ]
+    ] = ""
     is_unique_id: Annotated[
         bool, Field(description="Whether this field uniquely identifies records")
-    ]
+    ] = False
     is_strata: Annotated[
         bool, Field(description="Whether this field should be used for stratification")
-    ]
+    ] = False
     is_filter: Annotated[
         bool, Field(description="Whether this field can be used as a filter")
-    ]
+    ] = False
     is_metric: Annotated[
         bool, Field(description="Whether this field can be used as a metric")
-    ]
+    ] = False
     extra: Annotated[
         dict[str, str] | None, Field(description="Additional field metadata")
     ] = None
