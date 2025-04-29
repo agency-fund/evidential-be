@@ -3,13 +3,13 @@ from dataclasses import dataclass
 import dataclasses
 from decimal import Decimal
 from typing import Any
-import uuid
 import pytest
 import pandas as pd
 import numpy as np
 from sqlalchemy import DECIMAL, Boolean, Column, Float, Integer, MetaData, String, Table
 from xngin.stats.assignment import assign_treatment, simple_random_assignment
 from xngin.apiserver.routers.stateless_api_types import Assignment, Arm, Strata
+from xngin.apiserver.models.tables import arm_id_factory
 
 
 @dataclass
@@ -66,20 +66,20 @@ def make_sample_data_dict(n=1000):
     return data
 
 
-@pytest.fixture
-def sample_data():
+@pytest.fixture(name="sample_data")
+def fixture_sample_data():
     """Helper that turns a python dict into a pandas DataFrame."""
     return pd.DataFrame(make_sample_data_dict())
 
 
-@pytest.fixture
-def sample_rows(sample_data):
+@pytest.fixture(name="sample_rows")
+def fixture_sample_rows(sample_data):
     """Helper that turns a pandas DataFrame into a list of SQLAlchemy-like Row objects."""
     return [Row(**row) for row in sample_data.to_dict("records")]
 
 
 def make_arms(names: list[str]):
-    return [Arm(arm_id=str(uuid.uuid4()), arm_name=name) for name in names]
+    return [Arm(arm_id=arm_id_factory(), arm_name=name) for name in names]
 
 
 def test_assign_treatment(sample_table, sample_rows):
@@ -128,6 +128,7 @@ def test_assign_treatment(sample_table, sample_rows):
     assert result.assignments[8].arm_name == "treatment"
     assert result.assignments[9].arm_name == "treatment"
     # Verify strata sorted in order
+    assert result.assignments[0].strata is not None
     assert [s.field_name for s in result.assignments[0].strata] == [
         "gender",
         "region",
@@ -350,7 +351,10 @@ def test_with_nans_that_would_break_stochatreat_without_preprocessing(sample_tab
         result.sample_size
         == result.balance_check.numerator_df + result.balance_check.denominator_df + 1
     )
-    assert all(len(participant.strata) == 1 for participant in result.assignments)
+    assert all(
+        participant.strata is not None and len(participant.strata) == 1
+        for participant in result.assignments
+    )
 
 
 def test_simple_random_assignment(sample_rows):

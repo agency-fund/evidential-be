@@ -1,7 +1,6 @@
 import base64
 import datetime
 import json
-import uuid
 from functools import partial
 
 import pytest
@@ -26,6 +25,8 @@ from xngin.apiserver.models.tables import (
     Experiment,
     Organization,
     User,
+    experiment_id_factory,
+    arm_id_factory,
 )
 from xngin.apiserver.routers import oidc_dependencies
 from xngin.apiserver.routers.admin_api_types import (
@@ -207,7 +208,7 @@ def make_insertable_experiment(
 ) -> Experiment:
     request = make_createexperimentrequest_json(experiment_type=experiment_type)
     return Experiment(
-        id=str(uuid.uuid4()),
+        id=experiment_id_factory(),
         datasource_id=datasource_id,
         experiment_type=experiment_type,
         participant_type=request["audience_spec"]["participant_type"],
@@ -250,7 +251,7 @@ def make_experiment_and_arms(
     # Fake arm_ids in the design_spec since we're not using the admin API to create the experiment.
     for arm in experiment.design_spec["arms"]:
         if "arm_id" not in arm:
-            arm["arm_id"] = str(uuid.uuid4())
+            arm["arm_id"] = arm_id_factory()
     db_session.add(experiment)
     # Create ArmTable instances for each arm in the experiment
     db_arms = make_arms_from_experiment(experiment, datasource.organization_id)

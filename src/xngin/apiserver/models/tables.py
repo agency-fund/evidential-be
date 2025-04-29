@@ -29,11 +29,15 @@ JSONBetter = sqlalchemy.JSON().with_variant(postgresql.JSONB(), "postgresql")
 ALPHABET = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz"
 
 
-def unique_id_factory(prefix):
-    def generate():
+def unique_id_factory(prefix: str):
+    def generate() -> str:
         return prefix + "_" + "".join([secrets.choice(ALPHABET) for _ in range(16)])
 
     return generate
+
+
+experiment_id_factory = unique_id_factory("exp")
+arm_id_factory = unique_id_factory("arm")
 
 
 class Base(DeclarativeBase):

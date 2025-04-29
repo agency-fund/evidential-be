@@ -53,7 +53,7 @@ def assign_treatment(
         data: sqlalchemy result set of Rows representing units to be assigned
         stratum_cols: List of column names to stratify on
         id_col: Name of column containing unit identifiers
-        arms: Name & uuid of each treatment arm
+        arms: Name & id of each treatment arm
         experiment_id: Unique identifier for experiment
         fstat_thresh: Threshold for F-statistic p-value
         quantiles: number of buckets to use for stratification of numerics

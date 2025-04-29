@@ -1,5 +1,4 @@
 import dataclasses
-import uuid
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from typing import Any
@@ -36,6 +35,8 @@ from xngin.apiserver.models.tables import (
     ArmTable,
     Datasource,
     Experiment,
+    experiment_id_factory,
+    arm_id_factory,
 )
 from xngin.apiserver.routers.experiments import (
     ExperimentsAssignmentError,
@@ -83,9 +84,9 @@ def fixture_teardown(db_session: Session):
 def make_create_preassigned_experiment_request(
     with_uuids: bool = True,
 ) -> CreateExperimentRequest:
-    experiment_id = str(uuid.uuid4()) if with_uuids else None
-    arm1_id = str(uuid.uuid4()) if with_uuids else None
-    arm2_id = str(uuid.uuid4()) if with_uuids else None
+    experiment_id = experiment_id_factory() if with_uuids else None
+    arm1_id = arm_id_factory() if with_uuids else None
+    arm2_id = arm_id_factory() if with_uuids else None
     # Attach UTC tz, but use dates_equal() to compare to respect db storage support
     start_date = datetime(2025, 1, 1, tzinfo=UTC)
     end_date = datetime(2025, 2, 1, tzinfo=UTC)
@@ -175,9 +176,9 @@ def make_insertable_experiment(state: ExperimentState, datasource_id="testing"):
 def make_insertable_online_experiment(
     state=ExperimentState.COMMITTED, datasource_id="testing"
 ):
-    experiment_id = str(uuid.uuid4())
-    arm1_id = str(uuid.uuid4())
-    arm2_id = str(uuid.uuid4())
+    experiment_id = experiment_id_factory()
+    arm1_id = arm_id_factory()
+    arm2_id = arm_id_factory()
     arm1 = Arm(arm_id=arm1_id, arm_name="control", arm_description="Control")
     arm2 = Arm(arm_id=arm2_id, arm_name="treatment", arm_description="Treatment")
     # Attach UTC tz, but use dates_equal() to compare to respect db storage support
@@ -885,7 +886,7 @@ def test_get_experiment_assignments_not_found():
     TODO: deprecate this in favor of an admin.py version when ready.
     """
     response = client.get(
-        f"/experiments/{uuid.uuid4()}/assignments",
+        f"/experiments/{experiment_id_factory()}/assignments",
         headers={constants.HEADER_CONFIG_ID: "testing"},
     )
     assert response.status_code == 404

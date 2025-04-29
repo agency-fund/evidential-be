@@ -1,6 +1,5 @@
 import csv
 import io
-import uuid
 from collections.abc import Sequence
 from contextlib import asynccontextmanager
 from itertools import batched
@@ -42,6 +41,8 @@ from xngin.apiserver.models.tables import (
     Event,
     Experiment,
     Task,
+    experiment_id_factory,
+    arm_id_factory,
 )
 from xngin.apiserver.models.tables import Datasource as DatasourceTable
 from xngin.apiserver.routers.stateless_api import (
@@ -164,9 +165,9 @@ def create_experiment_with_assignment_impl(
     organization_id = db_datasource.organization_id
 
     # First generate uuids for the experiment and arms, which do_assignment needs.
-    request.design_spec.experiment_id = str(uuid.uuid4())
+    request.design_spec.experiment_id = experiment_id_factory()
     for arm in request.design_spec.arms:
-        arm.arm_id = str(uuid.uuid4())
+        arm.arm_id = arm_id_factory()
 
     if request.design_spec.experiment_type == "preassigned":
         return create_preassigned_experiment_impl(
