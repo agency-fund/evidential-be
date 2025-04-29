@@ -2,7 +2,6 @@ import json
 import secrets
 from datetime import UTC, datetime
 from typing import ClassVar, Self
-import uuid
 
 import sqlalchemy
 from pydantic import TypeAdapter
@@ -11,8 +10,6 @@ from sqlalchemy.dialects import postgresql
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 from sqlalchemy.types import TypeEngine
 from xngin.apiserver.routers.stateless_api_types import (
-    Arm,
-    ArmSize,
     AudienceSpec,
     BalanceCheck,
     DesignSpec,
@@ -23,7 +20,6 @@ from xngin.apiserver.routers.admin_api_types import (
     InspectDatasourceTableResponse,
     InspectParticipantTypesResponse,
 )
-from xngin.apiserver.routers.experiments_api_types import AssignSummary
 from xngin.apiserver.settings import DatasourceConfig
 from xngin.events import EventDataTypes
 
@@ -312,7 +308,7 @@ class DatasourceTablesInspected(Base):
     # Timestamp of the last update to `response`
     response_last_updated: Mapped[datetime | None] = mapped_column()
 
-    def get_response(self):
+    def get_response(self) -> InspectDatasourceTableResponse:
         return InspectDatasourceTableResponse.model_validate(self.response)
 
     def set_response(self, value: InspectDatasourceTableResponse) -> Self:
@@ -336,7 +332,7 @@ class ParticipantTypesInspected(Base):
     # Timestamp of the last update to `response`
     response_last_updated: Mapped[datetime | None] = mapped_column()
 
-    def get_response(self):
+    def get_response(self) -> InspectParticipantTypesResponse:
         return InspectParticipantTypesResponse.model_validate(self.response)
 
     def set_response(self, value: InspectParticipantTypesResponse) -> Self:
@@ -409,8 +405,9 @@ class Experiment(Base):
     audience_spec: Mapped[dict] = mapped_column(type_=JSONBetter)
     # JSON serialized form of a PowerResponse. Not required since some experiments may not have data to run power analyses.
     power_analyses: Mapped[dict | None] = mapped_column(type_=JSONBetter)
-    # JSON serialized form of AssignSummary.
-    assign_summary: Mapped[dict] = mapped_column(type_=JSONBetter)
+    # JSON serialized form of a BalanceCheck. May be null if the experiment type doesn't support
+    # balance checks.
+    balance_check: Mapped[dict | None] = mapped_column(type_=JSONBetter)
     created_at: Mapped[datetime] = mapped_column(
         server_default=sqlalchemy.sql.func.now()
     )
@@ -426,15 +423,11 @@ class Experiment(Base):
     )
     datasource: Mapped["Datasource"] = relationship(back_populates="experiments")
 
-    def get_arms(self) -> list[Arm]:
-        ds = self.get_design_spec()
-        return ds.arms
-
     def get_arm_ids(self) -> list[str]:
-        return [str(arm.arm_id) for arm in self.get_arms()]
+        return [arm.id for arm in self.arms]
 
     def get_arm_names(self) -> list[str]:
-        return [arm.arm_name for arm in self.get_arms()]
+        return [arm.name for arm in self.arms]
 
     def get_design_spec(self) -> DesignSpec:
         return TypeAdapter(DesignSpec).validate_python(self.design_spec)
@@ -447,27 +440,17 @@ class Experiment(Base):
             return None
         return TypeAdapter(PowerResponse).validate_python(self.power_analyses)
 
-    def get_assign_summary(self) -> AssignSummary:
-        """Constructs an AssignSummary from the experiment's arms and arm_assignments."""
-        balance_check = self.get_balance_check()
-        arm_sizes = [
-            ArmSize(
-                arm=Arm(arm_id=uuid.UUID(arm.id), arm_name=arm.name),
-                size=len(arm.arm_assignments),
-            )
-            for arm in self.arms
-        ]
-        return AssignSummary(
-            balance_check=balance_check,
-            arm_sizes=arm_sizes,
-            sample_size=sum(arm_size.size for arm_size in arm_sizes),
-        )
+    def set_balance_check(self, value: BalanceCheck | None) -> Self:
+        if value is None:
+            self.balance_check = None
+        else:
+            BalanceCheck.model_validate(value)
+            self.balance_check = value.model_dump()
+        return self
 
     def get_balance_check(self) -> BalanceCheck | None:
-        if self.assign_summary is not None:
-            return TypeAdapter(BalanceCheck).validate_python(
-                self.assign_summary["balance_check"]
-            )
+        if self.balance_check is not None:
+            return TypeAdapter(BalanceCheck).validate_python(self.balance_check)
         return None
 
 

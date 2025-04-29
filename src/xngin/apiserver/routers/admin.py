@@ -4,6 +4,7 @@ import secrets
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime, timedelta
 from typing import Annotated
+import uuid
 
 import google.api_core.exceptions
 import sqlalchemy
@@ -758,7 +759,9 @@ def is_postgres_database_not_found_error(exc):
     )
 
 
-def create_inspect_table_response_from_table(table: sqlalchemy.Table):
+def create_inspect_table_response_from_table(
+    table: sqlalchemy.Table,
+) -> InspectDatasourceTableResponse:
     """Creates an InspectDatasourceTableResponse from a sqlalchemy.Table.
 
     This is similar to config_sheet.create_schema_from_table but tailored to use in the API.
@@ -948,7 +951,7 @@ def inspect_participant_types(
     )
     session.commit()
 
-    def inspect_participant_types_impl():
+    def inspect_participant_types_impl() -> InspectParticipantTypesResponse:
         with dsconfig.dbsession() as dwh_session:
             sa_table = infer_table(
                 dwh_session.get_bind(),
@@ -1254,14 +1257,13 @@ def analyze_experiment(
     for metric in experiment.get_design_spec().metrics:
         metric_name = metric.field_name
         arm_analyses = []
-        for arm in experiment.get_arms():
-            arm_id = str(arm.arm_id)
-            arm_result = analyze_results[metric_name][arm_id]
+        for arm in experiment.arms:
+            arm_result = analyze_results[metric_name][arm.id]
             arm_analyses.append(
                 ArmAnalysis(
-                    arm_id=arm_id,
-                    arm_name=arm.arm_name,
-                    arm_description=arm.arm_description,
+                    arm_id=uuid.UUID(arm.id),
+                    arm_name=arm.name,
+                    arm_description=arm.description,
                     is_baseline=arm_result.is_baseline,
                     estimate=arm_result.estimate,
                     p_value=arm_result.p_value,
@@ -1275,7 +1277,7 @@ def analyze_experiment(
             )
         )
     return ExperimentAnalysis(
-        experiment_id=experiment.id, metric_analyses=metric_analyses
+        experiment_id=uuid.UUID(experiment.id), metric_analyses=metric_analyses
     )
 
 
@@ -1336,7 +1338,7 @@ def get_experiment(
         design_spec=experiment.get_design_spec(),
         audience_spec=experiment.get_audience_spec(),
         power_analyses=experiment.get_power_analyses(),
-        assign_summary=experiment.get_assign_summary(),
+        assign_summary=experiments.get_assign_summary(experiment),
     )
 
 

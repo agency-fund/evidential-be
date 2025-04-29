@@ -303,7 +303,7 @@ def powercheck(
 
 def power_check_impl(
     body: PowerRequest, config: DatasourceConfig, participants_cfg: ParticipantsConfig
-):
+) -> PowerResponse:
     with config.dbsession() as dwh_session:
         sa_table = infer_table(
             dwh_session.get_bind(),
@@ -408,9 +408,9 @@ def debug_settings(
     """Endpoint for testing purposes. Returns the current server configuration and optionally the config ID."""
     # Secrets will not be returned because they are stored as SecretStrs, but nonetheless this method
     # should only be invoked from trusted IP addresses.
-    if request.client.host not in settings.trusted_ips:
+    if request.client is None or request.client.host not in settings.trusted_ips:
         raise HTTPException(403)
-    response = {"settings": settings}
+    response: dict[str, str | XnginSettings] = {"settings": settings}
     if config_id := request.headers.get(constants.HEADER_CONFIG_ID):
         response["config_id"] = config_id
     return response

@@ -221,21 +221,7 @@ def make_insertable_experiment(
         design_spec=request["design_spec"],
         audience_spec=request["audience_spec"],
         power_analyses=None,
-        assign_summary={
-            "sample_size": 0,
-            "arm_sizes": [
-                {
-                    "arm": {"arm_name": "control", "arm_description": "control"},
-                    "size": 0,
-                },
-                {
-                    "arm": {"arm_name": "treatment", "arm_description": "treatment"},
-                    "size": 0,
-                },
-            ],
-            "balance_check": None,
-        },
-    )
+    ).set_balance_check(None)
 
 
 def make_arms_from_experiment(
@@ -352,19 +338,22 @@ def test_lifecycle(testing_datasource):
         ).model_dump_json(),
     )
     assert response.status_code == 200, response.content
-    parsed = CreateDatasourceResponse.model_validate(response.json())
-    datasource_id = parsed.id
+    datasource_response = CreateDatasourceResponse.model_validate(response.json())
+    datasource_id = datasource_response.id
 
     # List datasources
     response = pget(f"/v1/m/organizations/{testing_datasource.org.id}/datasources")
     assert response.status_code == 200, response.content
-    parsed = ListDatasourcesResponse.model_validate(response.json())
-    assert len(parsed.items) == 2
-    assert {i.driver for i in parsed.items} == {
+    list_ds_response = ListDatasourcesResponse.model_validate(response.json())
+    assert len(list_ds_response.items) == 2
+    assert {i.driver for i in list_ds_response.items} == {
         "postgresql+psycopg2",
         "postgresql+psycopg",
     }
-    assert parsed.items[0].organization_id == parsed.items[1].organization_id
+    assert (
+        list_ds_response.items[0].organization_id
+        == list_ds_response.items[1].organization_id
+    )
 
     # Update datasource name
     response = ppatch(
@@ -441,16 +430,16 @@ def test_lifecycle(testing_datasource):
         ).model_dump_json(),
     )
     assert response.status_code == 200, response.content
-    parsed = CreateParticipantsTypeResponse.model_validate(response.json())
-    assert parsed.participant_type == "newpt"
+    create_pt_response = CreateParticipantsTypeResponse.model_validate(response.json())
+    assert create_pt_response.participant_type == "newpt"
 
     # List participants
     response = pget(
         f"/v1/m/datasources/{testing_datasource.ds.id}/participants",
     )
     assert response.status_code == 200, response.content
-    parsed = ListParticipantsTypeResponse.model_validate(response.json())
-    assert len(parsed.items) == 2, parsed
+    list_pt_response = ListParticipantsTypeResponse.model_validate(response.json())
+    assert len(list_pt_response.items) == 2, list_pt_response
 
     # Update participant
     response = ppatch(
@@ -460,22 +449,22 @@ def test_lifecycle(testing_datasource):
         ).model_dump_json(),
     )
     assert response.status_code == 200
-    parsed = UpdateParticipantsTypeResponse.model_validate(response.json())
-    assert parsed.participant_type == "renamedpt"
+    update_pt_response = UpdateParticipantsTypeResponse.model_validate(response.json())
+    assert update_pt_response.participant_type == "renamedpt"
 
     # List participants (again)
     response = pget(f"/v1/m/datasources/{testing_datasource.ds.id}/participants")
     assert response.status_code == 200, response.content
-    parsed = ListParticipantsTypeResponse.model_validate(response.json())
-    assert len(parsed.items) == 2, parsed
+    list_pt_response = ListParticipantsTypeResponse.model_validate(response.json())
+    assert len(list_pt_response.items) == 2, list_pt_response
 
     # Get the named participant type
     response = pget(
         f"/v1/m/datasources/{testing_datasource.ds.id}/participants/renamedpt",
     )
     assert response.status_code == 200, response.content
-    parsed = ParticipantsDef.model_validate(response.json())
-    assert parsed.participant_type == "renamedpt"
+    participants_def = ParticipantsDef.model_validate(response.json())
+    assert participants_def.participant_type == "renamedpt"
 
     # Delete the renamed participant type.
     response = pdelete(
@@ -971,7 +960,7 @@ def test_experiments_analyze(testing_experiment):
     for analysis in experiment_analysis.metric_analyses:
         # Verify arm_ids match the database model.
         assert {str(arm.arm_id) for arm in analysis.arm_analyses} == {
-            str(arm.arm_id) for arm in testing_experiment.get_arms()
+            str(arm.id) for arm in testing_experiment.arms
         }
 
 
