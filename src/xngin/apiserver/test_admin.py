@@ -1,7 +1,6 @@
 import base64
 import datetime
 import json
-import uuid
 from functools import partial
 
 from fastapi import HTTPException
@@ -28,6 +27,8 @@ from xngin.apiserver.models.tables import (
     Experiment,
     Organization,
     User,
+    experiment_id_factory,
+    arm_id_factory,
 )
 from xngin.apiserver.routers import oidc_dependencies
 from xngin.apiserver.routers.admin_api_types import (
@@ -211,7 +212,7 @@ def make_insertable_experiment(
 ) -> Experiment:
     request = make_createexperimentrequest_json(experiment_type=experiment_type)
     return Experiment(
-        id=str(uuid.uuid4()),
+        id=experiment_id_factory(),
         datasource_id=datasource_id,
         experiment_type=experiment_type,
         participant_type=request["audience_spec"]["participant_type"],
@@ -225,21 +226,7 @@ def make_insertable_experiment(
         design_spec=request["design_spec"],
         audience_spec=request["audience_spec"],
         power_analyses=None,
-        assign_summary={
-            "sample_size": 0,
-            "arm_sizes": [
-                {
-                    "arm": {"arm_name": "control", "arm_description": "control"},
-                    "size": 0,
-                },
-                {
-                    "arm": {"arm_name": "treatment", "arm_description": "treatment"},
-                    "size": 0,
-                },
-            ],
-            "balance_check": None,
-        },
-    )
+    ).set_balance_check(None)
 
 
 def make_arms_from_experiment(
@@ -268,7 +255,7 @@ def make_experiment_and_arms(
     # Fake arm_ids in the design_spec since we're not using the admin API to create the experiment.
     for arm in experiment.design_spec["arms"]:
         if "arm_id" not in arm:
-            arm["arm_id"] = str(uuid.uuid4())
+            arm["arm_id"] = arm_id_factory()
     db_session.add(experiment)
     # Create ArmTable instances for each arm in the experiment
     db_arms = make_arms_from_experiment(experiment, datasource.organization_id)
@@ -286,7 +273,7 @@ def fixture_testing_experiment(db_session, testing_datasource_with_user_added):
     arm_ids = [arm.id for arm in experiment.arms]
     for i in range(10):
         assignment = ArmAssignment(
-            experiment_id=str(experiment.id),
+            experiment_id=experiment.id,
             participant_id=str(i),
             participant_type=experiment.participant_type,
             arm_id=arm_ids[i % 2],  # Alternate between the two arms
@@ -381,19 +368,22 @@ def test_lifecycle(testing_datasource):
         ).model_dump_json(),
     )
     assert response.status_code == 200, response.content
-    parsed = CreateDatasourceResponse.model_validate(response.json())
-    datasource_id = parsed.id
+    datasource_response = CreateDatasourceResponse.model_validate(response.json())
+    datasource_id = datasource_response.id
 
     # List datasources
     response = pget(f"/v1/m/organizations/{testing_datasource.org.id}/datasources")
     assert response.status_code == 200, response.content
-    parsed = ListDatasourcesResponse.model_validate(response.json())
-    assert len(parsed.items) == 2
-    assert {i.driver for i in parsed.items} == {
+    list_ds_response = ListDatasourcesResponse.model_validate(response.json())
+    assert len(list_ds_response.items) == 2
+    assert {i.driver for i in list_ds_response.items} == {
         "postgresql+psycopg2",
         "postgresql+psycopg",
     }
-    assert parsed.items[0].organization_id == parsed.items[1].organization_id
+    assert (
+        list_ds_response.items[0].organization_id
+        == list_ds_response.items[1].organization_id
+    )
 
     # Update datasource name
     response = ppatch(
@@ -470,16 +460,16 @@ def test_lifecycle(testing_datasource):
         ).model_dump_json(),
     )
     assert response.status_code == 200, response.content
-    parsed = CreateParticipantsTypeResponse.model_validate(response.json())
-    assert parsed.participant_type == "newpt"
+    create_pt_response = CreateParticipantsTypeResponse.model_validate(response.json())
+    assert create_pt_response.participant_type == "newpt"
 
     # List participants
     response = pget(
         f"/v1/m/datasources/{testing_datasource.ds.id}/participants",
     )
     assert response.status_code == 200, response.content
-    parsed = ListParticipantsTypeResponse.model_validate(response.json())
-    assert len(parsed.items) == 2, parsed
+    list_pt_response = ListParticipantsTypeResponse.model_validate(response.json())
+    assert len(list_pt_response.items) == 2, list_pt_response
 
     # Update participant
     response = ppatch(
@@ -489,22 +479,22 @@ def test_lifecycle(testing_datasource):
         ).model_dump_json(),
     )
     assert response.status_code == 200
-    parsed = UpdateParticipantsTypeResponse.model_validate(response.json())
-    assert parsed.participant_type == "renamedpt"
+    update_pt_response = UpdateParticipantsTypeResponse.model_validate(response.json())
+    assert update_pt_response.participant_type == "renamedpt"
 
     # List participants (again)
     response = pget(f"/v1/m/datasources/{testing_datasource.ds.id}/participants")
     assert response.status_code == 200, response.content
-    parsed = ListParticipantsTypeResponse.model_validate(response.json())
-    assert len(parsed.items) == 2, parsed
+    list_pt_response = ListParticipantsTypeResponse.model_validate(response.json())
+    assert len(list_pt_response.items) == 2, list_pt_response
 
     # Get the named participant type
     response = pget(
         f"/v1/m/datasources/{testing_datasource.ds.id}/participants/renamedpt",
     )
     assert response.status_code == 200, response.content
-    parsed = ParticipantsDef.model_validate(response.json())
-    assert parsed.participant_type == "renamedpt"
+    participants_def = ParticipantsDef.model_validate(response.json())
+    assert participants_def.participant_type == "renamedpt"
 
     # Delete the renamed participant type.
     response = pdelete(
@@ -825,13 +815,11 @@ def test_create_preassigned_experiment_using_inline_schema_ds(
     assert created_experiment.power_analyses == base_request.power_analyses
 
     experiment_id = created_experiment.design_spec.experiment_id
-    (arm1_id, arm2_id) = [
-        str(arm.arm_id) for arm in created_experiment.design_spec.arms
-    ]
+    (arm1_id, arm2_id) = [arm.arm_id for arm in created_experiment.design_spec.arms]
 
     # Verify database state using the ids in the returned DesignSpec.
     experiment = db_session.scalars(
-        select(Experiment).where(Experiment.id == str(experiment_id))
+        select(Experiment).where(Experiment.id == experiment_id)
     ).one()
     assert experiment.state == ExperimentState.ASSIGNED
     assert experiment.datasource_id == datasource_id
@@ -845,7 +833,7 @@ def test_create_preassigned_experiment_using_inline_schema_ds(
     assert conftest.dates_equal(experiment.end_date, base_request.design_spec.end_date)
     # Verify assignments were created
     assignments = db_session.scalars(
-        select(ArmAssignment).where(ArmAssignment.experiment_id == str(experiment_id))
+        select(ArmAssignment).where(ArmAssignment.experiment_id == experiment_id)
     ).all()
     assert len(assignments) == 100, {
         e.name: getattr(experiment, e.name) for e in Experiment.__table__.columns
@@ -854,7 +842,7 @@ def test_create_preassigned_experiment_using_inline_schema_ds(
     # Check one assignment to see if it looks roughly right
     sample_assignment: ArmAssignment = assignments[0]
     assert sample_assignment.participant_type == "test_participant_type"
-    assert sample_assignment.experiment_id == str(experiment_id)
+    assert sample_assignment.experiment_id == experiment_id
     assert sample_assignment.arm_id in {arm1_id, arm2_id}
     for stratum in sample_assignment.strata:
         assert stratum["field_name"] in {"current_income", "gender"}
@@ -971,7 +959,7 @@ def test_get_experiment_assignment_for_online_participant(
 
     # Make sure there's only one db entry.
     assignment = db_session.scalars(
-        select(ArmAssignment).where(ArmAssignment.experiment_id == str(experiment_id))
+        select(ArmAssignment).where(ArmAssignment.experiment_id == experiment_id)
     ).one()
     assert assignment.participant_id == "new_id"
     assert assignment.arm_id == str(assignment_response.assignment.arm_id)
@@ -987,9 +975,7 @@ def test_experiments_analyze(testing_experiment):
 
     assert response.status_code == 200, response.content
     experiment_analysis = ExperimentAnalysis.model_validate(response.json())
-    # ExperimentAnalysis uses real native uuids, whereas the returned database model are actually
-    # treated as strings by sqlalchemy given our table definition, so compare as strings.
-    assert str(experiment_analysis.experiment_id) == str(experiment_id)
+    assert experiment_analysis.experiment_id == experiment_id
     assert len(experiment_analysis.metric_analyses) == 1
     # Verify that only the first arm is marked as baseline by default
     metric_analysis = experiment_analysis.metric_analyses[0]
@@ -998,8 +984,8 @@ def test_experiments_analyze(testing_experiment):
     assert baseline_arms[0].is_baseline
     for analysis in experiment_analysis.metric_analyses:
         # Verify arm_ids match the database model.
-        assert {str(arm.arm_id) for arm in analysis.arm_analyses} == {
-            str(arm.arm_id) for arm in testing_experiment.get_arms()
+        assert {arm.arm_id for arm in analysis.arm_analyses} == {
+            arm.id for arm in testing_experiment.arms
         }
 
 

@@ -1,6 +1,5 @@
 import csv
 import io
-import uuid
 from collections.abc import Sequence
 from contextlib import asynccontextmanager
 from itertools import batched
@@ -21,6 +20,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 from xngin.apiserver import flags
 from xngin.apiserver.routers.stateless_api_types import (
+    Arm,
     ArmSize,
     Assignment,
     PreassignedExperimentSpec,
@@ -41,6 +41,8 @@ from xngin.apiserver.models.tables import (
     Event,
     Experiment,
     Task,
+    experiment_id_factory,
+    arm_id_factory,
 )
 from xngin.apiserver.models.tables import Datasource as DatasourceTable
 from xngin.apiserver.routers.stateless_api import (
@@ -108,7 +110,7 @@ def create_experiment_with_assignment_sl(
     ] = None,
 ) -> CreateExperimentResponse:
     """Creates an experiment and saves its assignments to the database."""
-    if body.design_spec.uuids_are_present():
+    if body.design_spec.ids_are_present():
         raise LateValidationError("Invalid DesignSpec: UUIDs must not be set.")
 
     ds_config = datasource.config
@@ -163,9 +165,9 @@ def create_experiment_with_assignment_impl(
     organization_id = db_datasource.organization_id
 
     # First generate uuids for the experiment and arms, which do_assignment needs.
-    request.design_spec.experiment_id = uuid.uuid4()
+    request.design_spec.experiment_id = experiment_id_factory()
     for arm in request.design_spec.arms:
-        arm.arm_id = uuid.uuid4()
+        arm.arm_id = arm_id_factory()
 
     if request.design_spec.experiment_type == "preassigned":
         return create_preassigned_experiment_impl(
@@ -217,7 +219,7 @@ def create_preassigned_experiment_impl(
         stratum_cols=stratum_cols,
         id_col=participant_unique_id_field,
         arms=request.design_spec.arms,
-        experiment_id=str(request.design_spec.experiment_id),
+        experiment_id=request.design_spec.experiment_id,
         fstat_thresh=request.design_spec.fstat_thresh,
         quantiles=4,  # TODO(qixotic): make this configurable
         stratum_id_name=None,
@@ -225,13 +227,13 @@ def create_preassigned_experiment_impl(
     )
 
     # Create experiment record
-    assign_summary = AssignSummary(
-        balance_check=assignment_response.balance_check,
-        sample_size=assignment_response.sample_size,
-        arm_sizes=assignment_response.arm_sizes,
+    balance_check = (
+        assignment_response.balance_check.model_dump()
+        if assignment_response.balance_check
+        else None
     )
     experiment = Experiment(
-        id=str(request.design_spec.experiment_id),
+        id=request.design_spec.experiment_id,
         datasource_id=datasource_id,
         experiment_type="preassigned",
         participant_type=request.audience_spec.participant_type,
@@ -245,17 +247,17 @@ def create_preassigned_experiment_impl(
         power_analyses=request.power_analyses.model_dump(mode="json")
         if request.power_analyses
         else None,
-        assign_summary=assign_summary.model_dump(mode="json"),
+        balance_check=balance_check,
     )  # .set_design_spec(body.design_spec)
     xngin_session.add(experiment)
 
     # Create arm records
     for arm in request.design_spec.arms:
         db_arm = ArmTable(
-            id=str(arm.arm_id),
+            id=arm.arm_id,
             name=arm.arm_name,
             description=arm.arm_description,
-            experiment_id=str(experiment.id),
+            experiment_id=experiment.id,
             organization_id=organization_id,
         )
         xngin_session.add(db_arm)
@@ -264,7 +266,7 @@ def create_preassigned_experiment_impl(
     for assignment in assignment_response.assignments:
         # TODO: bulk insert https://docs.sqlalchemy.org/en/20/orm/queryguide/dml.html#orm-queryguide-bulk-insert {"dml_strategy": "raw"}
         db_assignment = ArmAssignment(
-            experiment_id=str(experiment.id),
+            experiment_id=experiment.id,
             participant_type=request.audience_spec.participant_type,
             participant_id=assignment.participant_id,
             arm_id=str(assignment.arm_id),
@@ -282,7 +284,7 @@ def create_preassigned_experiment_impl(
         design_spec=experiment.get_design_spec(),
         audience_spec=experiment.get_audience_spec(),
         power_analyses=experiment.get_power_analyses(),
-        assign_summary=assign_summary,
+        assign_summary=get_assign_summary(experiment),
     )
 
 
@@ -292,17 +294,8 @@ def create_online_experiment_impl(
     organization_id: str,
     xngin_session: Session,
 ) -> CreateExperimentResponse:
-    # TODO: consider not storing the assign_summary (which can be dynamically generated) and just
-    # persisting the balance check.
-    empty_assign_summary = AssignSummary(
-        balance_check=None,
-        sample_size=0,
-        arm_sizes=[
-            ArmSize(arm=arm.model_copy(), size=0) for arm in request.design_spec.arms
-        ],
-    )
     experiment = Experiment(
-        id=str(request.design_spec.experiment_id),
+        id=request.design_spec.experiment_id,
         datasource_id=datasource_id,
         experiment_type="online",
         participant_type=request.audience_spec.participant_type,
@@ -315,22 +308,28 @@ def create_online_experiment_impl(
         design_spec=request.design_spec.model_dump(mode="json"),
         audience_spec=request.audience_spec.model_dump(mode="json"),
         power_analyses=None,
-        # Online experiment starts with no assignments.
-        assign_summary=empty_assign_summary.model_dump(mode="json"),
     )
     xngin_session.add(experiment)
     # Create arm records
     for arm in request.design_spec.arms:
         db_arm = ArmTable(
-            id=str(arm.arm_id),
+            id=arm.arm_id,
             name=arm.arm_name,
             description=arm.arm_description,
-            experiment_id=str(experiment.id),
+            experiment_id=experiment.id,
             organization_id=organization_id,
         )
         xngin_session.add(db_arm)
     xngin_session.commit()
     # Return the committed experiment config with no assignments.
+    # Online experiments start with no assignments.
+    empty_assign_summary = AssignSummary(
+        balance_check=None,
+        sample_size=0,
+        arm_sizes=[
+            ArmSize(arm=arm.model_copy(), size=0) for arm in request.design_spec.arms
+        ],
+    )
     return CreateExperimentResponse(
         datasource_id=datasource_id,
         state=experiment.state,
@@ -382,7 +381,7 @@ def commit_experiment_impl(xngin_session: Session, experiment: Experiment):
 
     experiment.state = ExperimentState.COMMITTED
 
-    experiment_id = str(experiment.id)
+    experiment_id = experiment.id
     event = Event(
         organization=experiment.datasource.organization,
         type=ExperimentCreatedEvent.TYPE,
@@ -481,7 +480,7 @@ def list_experiments_impl(
                 design_spec=e.get_design_spec(),
                 audience_spec=e.get_audience_spec(),
                 power_analyses=e.get_power_analyses(),
-                assign_summary=e.get_assign_summary(),
+                assign_summary=get_assign_summary(e),
             )
             for e in experiments
         ]
@@ -504,7 +503,7 @@ def get_experiment_sl(
         design_spec=experiment.get_design_spec(),
         audience_spec=experiment.get_audience_spec(),
         power_analyses=experiment.get_power_analyses(),
-        assign_summary=experiment.get_assign_summary(),
+        assign_summary=get_assign_summary(experiment),
     )
 
 
@@ -528,20 +527,20 @@ def get_experiment_assignments_impl(
 ) -> GetExperimentAssignmentsResponse:
     # Map arm IDs to names
     design_spec = PreassignedExperimentSpec.model_validate(experiment.design_spec)
-    arm_id_to_name = {str(arm.arm_id): arm.arm_name for arm in design_spec.arms}
+    arm_id_to_name = {arm.arm_id: arm.arm_name for arm in design_spec.arms}
     # Convert ArmAssignment models to Assignment API types
     assignments = [
         Assignment(
             participant_id=arm_assignment.participant_id,
-            arm_id=uuid.UUID(arm_assignment.arm_id),
-            arm_name=arm_id_to_name[str(arm_assignment.arm_id)],
+            arm_id=arm_assignment.arm_id,
+            arm_name=arm_id_to_name[arm_assignment.arm_id],
             strata=[Strata.model_validate(s) for s in arm_assignment.strata],
         )
         for arm_assignment in experiment.arm_assignments
     ]
     return GetExperimentAssignmentsResponse(
         balance_check=experiment.get_balance_check(),
-        experiment_id=uuid.UUID(experiment.id),
+        experiment_id=experiment.id,
         sample_size=len(assignments),
         assignments=assignments,
     )
@@ -551,7 +550,7 @@ def experiment_assignments_to_csv_generator(experiment: Experiment):
     """Generator function to yield CSV rows of experiment assignments as strings"""
     # Map arm IDs to names
     design_spec = experiment.get_design_spec()
-    arm_id_to_name = {str(arm.arm_id): arm.arm_name for arm in design_spec.arms}
+    arm_id_to_name = {arm.arm_id: arm.arm_name for arm in design_spec.arms}
 
     # Get strata field names from the first assignment
     strata_field_names = []
@@ -575,8 +574,8 @@ def experiment_assignments_to_csv_generator(experiment: Experiment):
                 for participant in batch:
                     row = [
                         participant.participant_id,
-                        str(participant.arm_id),
-                        arm_id_to_name[str(participant.arm_id)],
+                        participant.arm_id,
+                        arm_id_to_name[participant.arm_id],
                         *["" if v is None else v for v in participant.strata_values()],
                     ]
                     writer.writerow(row)
@@ -640,7 +639,7 @@ def get_existing_assignment_for_participant(
     if existing_assignment:
         return Assignment(
             participant_id=existing_assignment.participant_id,
-            arm_id=uuid.UUID(existing_assignment.arm_id),
+            arm_id=existing_assignment.arm_id,
             arm_name=existing_assignment.arm.name,
             strata=[],
         )
@@ -693,11 +692,28 @@ def create_assignment_for_participant(
 
         return Assignment(
             participant_id=participant_id,
-            arm_id=uuid.UUID(chosen_arm.id),
+            arm_id=chosen_arm.id,
             arm_name=chosen_arm.name,
             strata=[],
         )
     # Else:
     raise ExperimentsAssignmentError(
         f"Invalid experiment type: {design_spec.experiment_type}"
+    )
+
+
+def get_assign_summary(experiment: Experiment) -> AssignSummary:
+    """Constructs an AssignSummary from the experiment's arms and arm_assignments."""
+    balance_check = experiment.get_balance_check()
+    arm_sizes = [
+        ArmSize(
+            arm=Arm(arm_id=arm.id, arm_name=arm.name),
+            size=len(arm.arm_assignments),
+        )
+        for arm in experiment.arms
+    ]
+    return AssignSummary(
+        balance_check=balance_check,
+        arm_sizes=arm_sizes,
+        sample_size=sum(arm_size.size for arm_size in arm_sizes),
     )
