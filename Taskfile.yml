@@ -55,7 +55,7 @@ env:
   LOG_SQL: "true"
 
   # Configure customlogging.py to log app SQL to the custom log.
-  LOG_SQL_APPDB: "false"
+  LOG_SQL_APP_DB: "false"
 
   # Publish the OpenAPI spec for the admin and OIDC APIs
   XNGIN_PUBLISH_ALL_DOCS: "true"
