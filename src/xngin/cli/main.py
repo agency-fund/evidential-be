@@ -33,12 +33,9 @@ from sqlalchemy.orm import Session
 from sqlalchemy.sql.compiler import IdentifierPreparer
 from xngin.apiserver import settings
 from xngin.apiserver.routers.stateless_api_types import DataType
-from xngin.apiserver.models import tables
 from xngin.apiserver.settings import (
     CannotFindTableError,
     Datasource,
-    Dsn,
-    RemoteDatabaseConfig,
     SheetRef,
     XnginSettings,
 )
@@ -708,39 +705,28 @@ def add_user(
     console.print(f"Adding user with email: [cyan]{email}[/cyan]")
     console.print(f"Privileged access: [cyan]{privileged}[/cyan]")
 
+    if not dwh:
+        console.print(
+            "\n[bold yellow]Warning: Not adding a datasource for a data warehouse "
+            "because the --dwh flag was not specified or environment variable "
+            "XNGIN_DEVDWH_DSN is unset.[/bold yellow]"
+        )
+
     engine = create_engine(dsn)
     with Session(engine) as session:
         try:
-            user = tables.User(email=email, is_privileged=privileged)
-            session.add(user)
-            organization = tables.Organization(name="My Organization")
-            session.add(organization)
-            organization.users.append(user)
-            datasource = None
-            if dev_dsn := dwh:
-                # TODO: Also add a default participant type.
-                config = RemoteDatabaseConfig(
-                    participants=[], type="remote", dwh=Dsn.from_url(dev_dsn)
-                )
-                datasource = tables.Datasource(
-                    name="My DWH", organization=organization
-                ).set_config(config)
-                session.add(datasource)
-            else:
-                console.print(
-                    "\n[bold yellow]Warning: Not adding a datasource for a data warehouse "
-                    "because the --dwh flag was not specified or environment variable "
-                    "XNGIN_DEVDWH_DSN is unset.[/bold yellow]"
-                )
-
+            user = testing_dwh.create_user_and_first_datasource(
+                session, email=email, dsn=dwh, privileged=privileged
+            )
             session.commit()
             console.print("\n[bold green]User added successfully:[/bold green]")
             console.print(f"User ID: [cyan]{user.id}[/cyan]")
             console.print(f"Email: [cyan]{user.email}[/cyan]")
             console.print(f"Privileged: [cyan]{user.is_privileged}[/cyan]")
-            if datasource:
-                console.print(f"Datasource ID: [cyan]{datasource.id}[/cyan]")
-
+            for organization in user.organizations:
+                console.print(f"Organization ID: [cyan]{organization.id}[/cyan]")
+                for datasource in organization.datasources:
+                    console.print(f"  Datasource ID: [cyan]{datasource.id}[/cyan]")
         except IntegrityError as err:
             session.rollback()
             err_console.print(
