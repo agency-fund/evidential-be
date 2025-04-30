@@ -211,6 +211,10 @@ def user_from_token(
                             is_unique_id=True,
                         ),
                         FieldDescriptor(
+                            field_name="income",
+                            data_type=DataType.NUMERIC,
+                        ),
+                        FieldDescriptor(
                             field_name="baseline_income",
                             data_type=DataType.NUMERIC,
                             is_filter=True,
@@ -229,6 +233,10 @@ def user_from_token(
                         ),
                         FieldDescriptor(
                             field_name="first_name",
+                            data_type=DataType.CHARACTER_VARYING,
+                        ),
+                        FieldDescriptor(
+                            field_name="last_name",
                             data_type=DataType.CHARACTER_VARYING,
                         ),
                         FieldDescriptor(

@@ -4,6 +4,7 @@ import json
 import uuid
 from functools import partial
 
+from fastapi import HTTPException
 import pytest
 from fastapi.testclient import TestClient
 from pydantic import SecretStr
@@ -11,6 +12,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 from xngin.apiserver import conftest
 from xngin.apiserver import main as main_module
+from xngin.apiserver.routers.admin import user_from_token
 from xngin.apiserver.routers.stateless_api_types import (
     DataType,
     ExperimentAnalysis,
@@ -53,6 +55,7 @@ from xngin.apiserver.routers.experiments_api_types import (
 from xngin.apiserver.routers.oidc_dependencies import (
     PRIVILEGED_EMAIL,
     PRIVILEGED_TOKEN_FOR_TESTING,
+    TESTING_TOKENS,
     UNPRIVILEGED_EMAIL,
     UNPRIVILEGED_TOKEN_FOR_TESTING,
 )
@@ -62,6 +65,7 @@ from xngin.apiserver.settings import (
     GcpServiceAccountInfo,
     ParticipantsDef,
     SheetParticipantsRef,
+    infer_table,
 )
 from xngin.cli.main import create_testing_dwh
 from xngin.schema.schema_types import FieldDescriptor, ParticipantsSchema
@@ -291,6 +295,31 @@ def fixture_testing_experiment(db_session, testing_datasource_with_user_added):
         db_session.add(assignment)
     db_session.commit()
     return experiment
+
+
+def test_user_from_token(db_session):
+    with pytest.raises(HTTPException, match="No user found with email") as e:
+        user_from_token(db_session, TESTING_TOKENS[UNPRIVILEGED_TOKEN_FOR_TESTING])
+    assert e.value.status_code == 403
+
+    user = user_from_token(db_session, TESTING_TOKENS[PRIVILEGED_TOKEN_FOR_TESTING])
+    assert user.is_privileged
+
+    org = user.organizations[0]
+    ds = org.datasources[0]
+    ds_config = ds.get_config()
+    pt_def = ds_config.participants[0]
+    # Assert it's a "schema" type, not the old "sheets" type.
+    assert isinstance(pt_def, ParticipantsDef)
+    # Check auto-generated ParticipantsDef is aligned with the test dwh.
+    session = ds_config.dbsession()
+    sa_table = infer_table(session.get_bind(), pt_def.table_name)
+    col_names = {c.name for c in sa_table.columns}
+    field_names = {f.field_name for f in pt_def.fields}
+    assert col_names == field_names
+    for field in pt_def.fields:
+        col = sa_table.columns[field.field_name]
+        assert DataType.match(col.type) == field.data_type
 
 
 def test_list_orgs_unauthenticated():
