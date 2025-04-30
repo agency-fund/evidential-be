@@ -69,6 +69,10 @@ mv /tmp/smaller.tgz src/xngin/apiserver/testdata/testing_dwh.csv.zst
 ls -lh src/xngin/apiserver/testdata/testing_dwh.csv.zst
 ```
 
+If you add or modify columns, be sure to also update
+[testing_dwh_def.py](../src/xngin/apiserver/testing/testing_dwh_def.py) to reflect any changes. A
+small unittest (`test_admin.py::test_user_from_token`) checks that names and type mappings agree.
+
 ## Modifying the DDL
 
 Different databases have different syntax for table creation. Variants may use different type names or support different

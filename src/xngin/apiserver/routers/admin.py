@@ -105,6 +105,7 @@ from xngin.apiserver.settings import (
     RemoteDatabaseConfig,
     infer_table,
 )
+from xngin.apiserver.testing.testing_dwh_def import TESTING_PARTICIPANT_DEF
 from xngin.stats.analysis import analyze_experiment as analyze_experiment_impl
 
 GENERIC_SUCCESS = Response(status_code=status.HTTP_204_NO_CONTENT)
@@ -194,10 +195,11 @@ def user_from_token(
             session.add(organization)
             organization.users.append(user)
             if dev_dsn := flags.XNGIN_DEVDWH_DSN:
-                # TODO: Also add a default participant type.
                 config = RemoteDatabaseConfig(
                     participants=[], type="remote", dwh=Dsn.from_url(dev_dsn)
                 )
+                participants_def = TESTING_PARTICIPANT_DEF
+                config.participants.append(participants_def)
                 datasource = Datasource(
                     name="Local DWH", organization=organization
                 ).set_config(config)
@@ -957,8 +959,10 @@ def inspect_participant_types(
                 pconfig.table_name,
                 dsconfig.supports_reflection(),
             )
-        db_schema = generate_field_descriptors(sa_table, pconfig.get_unique_id_field())
-        mapper = create_col_to_filter_meta_mapper(db_schema, sa_table, dwh_session)
+            db_schema = generate_field_descriptors(
+                sa_table, pconfig.get_unique_id_field()
+            )
+            mapper = create_col_to_filter_meta_mapper(db_schema, sa_table, dwh_session)
 
         filter_fields = {c.field_name: c for c in pconfig.fields if c.is_filter}
         strata_fields = {c.field_name: c for c in pconfig.fields if c.is_strata}
