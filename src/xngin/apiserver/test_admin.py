@@ -316,7 +316,8 @@ def test_list_orgs_unprivileged(testing_datasource):
     assert response.status_code == 403, response.content
 
 
-def test_create_datasource_invalid_dns(db_session, testing_datasource):
+def test_create_datasource_invalid_dns(testing_datasource):
+    """Tests that we reject insecure hostnames with a 400."""
     response = ppost(
         f"/v1/m/organizations/{testing_datasource.org.id}/members",
         json={"email": PRIVILEGED_EMAIL},
@@ -328,7 +329,6 @@ def test_create_datasource_invalid_dns(db_session, testing_datasource):
         content=CreateDatasourceRequest(
             organization_id=testing_datasource.org.id,
             name="test remote ds",
-            # These settings correspond to the Postgres spun up in GHA or via localpg.py.
             dwh=Dsn(
                 driver="postgresql+psycopg",
                 host=safe_resolve.UNSAFE_IP_FOR_TESTING,
