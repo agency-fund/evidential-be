@@ -15,7 +15,7 @@ from fastapi import (
     status,
 )
 from fastapi.responses import StreamingResponse
-from sqlalchemy import Table, select
+from sqlalchemy import Table, func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 from xngin.apiserver import flags
@@ -284,7 +284,7 @@ def create_preassigned_experiment_impl(
         design_spec=experiment.get_design_spec(),
         audience_spec=experiment.get_audience_spec(),
         power_analyses=experiment.get_power_analyses(),
-        assign_summary=get_assign_summary(experiment),
+        assign_summary=get_assign_summary(xngin_session, experiment),
     )
 
 
@@ -480,7 +480,7 @@ def list_experiments_impl(
                 design_spec=e.get_design_spec(),
                 audience_spec=e.get_audience_spec(),
                 power_analyses=e.get_power_analyses(),
-                assign_summary=get_assign_summary(e),
+                assign_summary=get_assign_summary(xngin_session, e),
             )
             for e in experiments
         ]
@@ -503,7 +503,7 @@ def get_experiment_sl(
         design_spec=experiment.get_design_spec(),
         audience_spec=experiment.get_audience_spec(),
         power_analyses=experiment.get_power_analyses(),
-        assign_summary=get_assign_summary(experiment),
+        assign_summary=get_assign_summary(xngin_session, experiment),
     )
 
 
@@ -702,18 +702,23 @@ def create_assignment_for_participant(
     )
 
 
-def get_assign_summary(experiment: Experiment) -> AssignSummary:
+def get_assign_summary(xngin_session: Session, experiment: Experiment) -> AssignSummary:
     """Constructs an AssignSummary from the experiment's arms and arm_assignments."""
-    balance_check = experiment.get_balance_check()
+    rows = xngin_session.execute(
+        select(ArmAssignment.arm_id, ArmTable.name, func.count())
+        .join(ArmTable)
+        .where(ArmAssignment.experiment_id == experiment.id)
+        .group_by(ArmAssignment.arm_id, ArmTable.name)
+    ).all()
     arm_sizes = [
         ArmSize(
-            arm=Arm(arm_id=arm.id, arm_name=arm.name),
-            size=len(arm.arm_assignments),
+            arm=Arm(arm_id=arm_id, arm_name=name),
+            size=count,
         )
-        for arm in experiment.arms
+        for arm_id, name, count in rows
     ]
     return AssignSummary(
-        balance_check=balance_check,
+        balance_check=experiment.get_balance_check(),
         arm_sizes=arm_sizes,
         sample_size=sum(arm_size.size for arm_size in arm_sizes),
     )
