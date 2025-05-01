@@ -14,6 +14,14 @@ from fastapi import (
 from sqlalchemy import distinct
 from sqlalchemy.orm import Session
 from xngin.apiserver import constants
+from xngin.apiserver.dependencies import (
+    datasource_config_required,
+    gsheet_cache,
+    settings_dependency,
+)
+from xngin.apiserver.dwh.queries import get_stats_on_metrics, query_for_participants
+from xngin.apiserver.exceptions_common import LateValidationError
+from xngin.apiserver.gsheet_cache import GSheetCache
 from xngin.apiserver.routers.stateless_api_types import (
     AssignRequest,
     AssignResponse,
@@ -30,14 +38,6 @@ from xngin.apiserver.routers.stateless_api_types import (
     PowerRequest,
     PowerResponse,
 )
-from xngin.apiserver.dependencies import (
-    datasource_config_required,
-    gsheet_cache,
-    settings_dependency,
-)
-from xngin.apiserver.dwh.queries import get_stats_on_metrics, query_for_participants
-from xngin.apiserver.exceptions_common import LateValidationError
-from xngin.apiserver.gsheet_cache import GSheetCache
 from xngin.apiserver.settings import (
     DatasourceConfig,
     ParticipantsConfig,
@@ -68,6 +68,7 @@ router = APIRouter(
 )
 
 
+# ruff: noqa: B903
 class CommonQueryParams:
     """Describes query parameters common to the /strata, /filters, and /metrics APIs."""
 
