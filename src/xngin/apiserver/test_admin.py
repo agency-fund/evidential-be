@@ -9,7 +9,7 @@ from fastapi.testclient import TestClient
 from pydantic import SecretStr
 from sqlalchemy import select
 from sqlalchemy.orm import Session
-from xngin.apiserver import conftest
+from xngin.apiserver import conftest, flags
 from xngin.apiserver import main as main_module
 from xngin.apiserver.dependencies import xngin_db_session
 from xngin.apiserver.dns import safe_resolve
@@ -301,6 +301,10 @@ def test_user_from_token(db_session):
         assert DataType.match(col.type) == field.data_type
 
 
+@pytest.mark.skipif(
+    flags.AIRPLANE_MODE,
+    reason="This test will fail in airplane mode because airplane mode treats all Admin API calls as authenticated.",
+)
 def test_list_orgs_unauthenticated():
     response = client.get("/v1/m/organizations")
     assert response.status_code == 403, response.content
@@ -311,6 +315,10 @@ def test_list_orgs_privileged(testing_datasource):
     assert response.status_code == 200, response.content
 
 
+@pytest.mark.skipif(
+    flags.AIRPLANE_MODE,
+    reason="This test will fail in airplane mode because airplane mode treats all Admin API calls as authenticated.",
+)
 def test_list_orgs_unprivileged(testing_datasource):
     response = uget("/v1/m/organizations")
     assert response.status_code == 403, response.content

@@ -1,14 +1,15 @@
 import random
 import uuid
+
 import pytest
 from xngin.apiserver.models.tables import ArmAssignment
+from xngin.apiserver.routers.stateless_api_types import MetricValue, ParticipantOutcome
 from xngin.stats.analysis import analyze_experiment
-from xngin.apiserver.routers.stateless_api_types import ParticipantOutcome, MetricValue
 
 
 @pytest.fixture
 def test_assignments(n=1000, seed=42):
-    random.seed(seed)  # Set seed for Python's random module
+    rand = random.Random(seed)
     # Use fixed UUIDs instead of randomly generated ones
     arm_ids = [
         uuid.UUID("0ffe0995-6404-4622-934a-0d5cccfe3a59"),
@@ -17,7 +18,7 @@ def test_assignments(n=1000, seed=42):
     ]
     assignments = []
     for i in range(n):
-        arm_id = random.choice(arm_ids)
+        arm_id = rand.choice(arm_ids)
         assignments.append(
             # TODO: test Assignment for old stateless api
             # re: https://github.com/agency-fund/xngin/pull/306 since arm_id is a
@@ -29,14 +30,12 @@ def test_assignments(n=1000, seed=42):
 
 @pytest.fixture
 def test_outcomes(n=1000, seed=43):
-    random.seed(seed)
+    rand = random.Random(seed)
     return [
         ParticipantOutcome(
             participant_id=str(i),
             metric_values=[
-                MetricValue(
-                    metric_name="bool_field", metric_value=random.choice([0, 1])
-                )
+                MetricValue(metric_name="bool_field", metric_value=rand.choice([0, 1]))
             ],
         )
         for i in range(n)

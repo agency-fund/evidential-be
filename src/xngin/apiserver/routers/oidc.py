@@ -1,6 +1,5 @@
 """Implements a basic Google OIDC RP."""
 
-import asyncio
 import os
 from contextlib import asynccontextmanager
 from typing import Annotated
@@ -56,7 +55,6 @@ google_config = None
 
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
-    await asyncio.gather(get_google_jwks())
     yield
 
 
