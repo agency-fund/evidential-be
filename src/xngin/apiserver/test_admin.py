@@ -12,20 +12,10 @@ from sqlalchemy.orm import Session
 from xngin.apiserver import conftest, flags
 from xngin.apiserver import main as main_module
 from xngin.apiserver.dependencies import xngin_db_session
+from xngin.apiserver.dns import safe_resolve
 from xngin.apiserver.main import app
+from xngin.apiserver.models import tables
 from xngin.apiserver.models.enums import ExperimentState
-from xngin.apiserver.models.tables import (
-    ArmAssignment,
-    ArmTable,
-    Experiment,
-    Organization,
-    User,
-    arm_id_factory,
-    experiment_id_factory,
-)
-from xngin.apiserver.models.tables import (
-    Datasource as DatasourceTable,
-)
 from xngin.apiserver.routers import oidc_dependencies
 from xngin.apiserver.routers.admin import user_from_token
 from xngin.apiserver.routers.admin_api_types import (
@@ -121,8 +111,8 @@ def fixture_teardown(db_session: Session):
     # Rollback any pending transactions that may have been hanging due to an exception.
     db_session.rollback()
     # Clean up objects created in each test by truncating tables and leveraging cascade.
-    db_session.query(Organization).delete()
-    db_session.query(User).delete()
+    db_session.query(tables.Organization).delete()
+    db_session.query(tables.User).delete()
     db_session.commit()
     db_session.close()
 
@@ -211,10 +201,10 @@ def make_insertable_experiment(
     state: ExperimentState,
     datasource_id: str = "testing",
     experiment_type: ExperimentType = "preassigned",
-) -> Experiment:
+) -> tables.Experiment:
     request = make_createexperimentrequest_json(experiment_type=experiment_type)
-    return Experiment(
-        id=experiment_id_factory(),
+    return tables.Experiment(
+        id=tables.experiment_id_factory(),
         datasource_id=datasource_id,
         experiment_type=experiment_type,
         participant_type=request["audience_spec"]["participant_type"],
@@ -232,10 +222,10 @@ def make_insertable_experiment(
 
 
 def make_arms_from_experiment(
-    experiment: Experiment, organization_id: str
-) -> list[ArmTable]:
+    experiment: tables.Experiment, organization_id: str
+) -> list[tables.ArmTable]:
     return [
-        ArmTable(
+        tables.ArmTable(
             id=arm["arm_id"],
             experiment_id=experiment.id,
             name=arm["arm_name"],
@@ -247,8 +237,8 @@ def make_arms_from_experiment(
 
 
 def make_experiment_and_arms(
-    db_session, datasource: DatasourceTable, experiment_type: ExperimentType
-) -> Experiment:
+    db_session, datasource: tables.Datasource, experiment_type: ExperimentType
+) -> tables.Experiment:
     experiment = make_insertable_experiment(
         ExperimentState.COMMITTED,
         datasource_id=datasource.id,
@@ -257,7 +247,7 @@ def make_experiment_and_arms(
     # Fake arm_ids in the design_spec since we're not using the admin API to create the experiment.
     for arm in experiment.design_spec["arms"]:
         if "arm_id" not in arm:
-            arm["arm_id"] = arm_id_factory()
+            arm["arm_id"] = tables.arm_id_factory()
     db_session.add(experiment)
     # Create ArmTable instances for each arm in the experiment
     db_arms = make_arms_from_experiment(experiment, datasource.organization_id)
@@ -274,12 +264,12 @@ def fixture_testing_experiment(db_session, testing_datasource_with_user_added):
     # Add fake assignments for each arm for real participant ids in our test data.
     arm_ids = [arm.id for arm in experiment.arms]
     for i in range(10):
-        assignment = ArmAssignment(
+        assignment = tables.ArmAssignment(
             experiment_id=experiment.id,
             participant_id=str(i),
             participant_type=experiment.participant_type,
             arm_id=arm_ids[i % 2],  # Alternate between the two arms
-            strata={},
+            strata=[],
         )
         db_session.add(assignment)
     db_session.commit()
@@ -334,8 +324,36 @@ def test_list_orgs_unprivileged(testing_datasource):
     assert response.status_code == 403, response.content
 
 
+def test_create_datasource_invalid_dns(testing_datasource):
+    """Tests that we reject insecure hostnames with a 400."""
+    response = ppost(
+        f"/v1/m/organizations/{testing_datasource.org.id}/members",
+        json={"email": PRIVILEGED_EMAIL},
+    )
+    assert response.status_code == 204, response.content
+
+    response = ppost(
+        "/v1/m/datasources",
+        content=CreateDatasourceRequest(
+            organization_id=testing_datasource.org.id,
+            name="test remote ds",
+            dwh=Dsn(
+                driver="postgresql+psycopg",
+                host=safe_resolve.UNSAFE_IP_FOR_TESTING,
+                user="postgres",
+                port=5499,
+                password=SecretStr("postgres"),
+                dbname="postgres",
+                sslmode="disable",
+            ),
+        ).model_dump_json(),
+    )
+    assert response.status_code == 400, response.content
+    assert "DNS resolution failed" in str(response.content)
+
+
 def test_lifecycle(testing_datasource):
-    """Exercises the admin API methods that can operate purely in-process w/o an external database."""
+    """Exercises the admin API methods that can operate purely in-process w/o an external dwh."""
     # Add privileged user to existing organization
     response = ppost(
         f"/v1/m/organizations/{testing_datasource.org.id}/members",
@@ -562,7 +580,7 @@ def test_create_participants_type_invalid(testing_datasource):
     )
 
 
-def test_lifecycle_with_pg(testing_datasource):
+def test_lifecycle_with_db(testing_datasource):
     """Exercises the admin API methods that require an external database."""
     # Add the privileged user to the organization.
     response = ppost(
@@ -829,7 +847,7 @@ def test_create_preassigned_experiment_using_inline_schema_ds(
 
     # Verify database state using the ids in the returned DesignSpec.
     experiment = db_session.scalars(
-        select(Experiment).where(Experiment.id == experiment_id)
+        select(tables.Experiment).where(tables.Experiment.id == experiment_id)
     ).one()
     assert experiment.state == ExperimentState.ASSIGNED
     assert experiment.datasource_id == datasource_id
@@ -843,14 +861,16 @@ def test_create_preassigned_experiment_using_inline_schema_ds(
     assert conftest.dates_equal(experiment.end_date, base_request.design_spec.end_date)
     # Verify assignments were created
     assignments = db_session.scalars(
-        select(ArmAssignment).where(ArmAssignment.experiment_id == experiment_id)
+        select(tables.ArmAssignment).where(
+            tables.ArmAssignment.experiment_id == experiment_id
+        )
     ).all()
     assert len(assignments) == 100, {
-        e.name: getattr(experiment, e.name) for e in Experiment.__table__.columns
+        e.name: getattr(experiment, e.name) for e in tables.Experiment.__table__.columns
     }
 
     # Check one assignment to see if it looks roughly right
-    sample_assignment: ArmAssignment = assignments[0]
+    sample_assignment: tables.ArmAssignment = assignments[0]
     assert sample_assignment.participant_type == "test_participant_type"
     assert sample_assignment.experiment_id == experiment_id
     assert sample_assignment.arm_id in {arm1_id, arm2_id}
@@ -969,7 +989,9 @@ def test_get_experiment_assignment_for_online_participant(
 
     # Make sure there's only one db entry.
     assignment = db_session.scalars(
-        select(ArmAssignment).where(ArmAssignment.experiment_id == experiment_id)
+        select(tables.ArmAssignment).where(
+            tables.ArmAssignment.experiment_id == experiment_id
+        )
     ).one()
     assert assignment.participant_id == "new_id"
     assert assignment.arm_id == str(assignment_response.assignment.arm_id)

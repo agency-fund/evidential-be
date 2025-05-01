@@ -6,6 +6,9 @@ from xngin.apiserver.flags import ALLOW_CONNECTING_TO_PRIVATE_IPS
 
 DNS_TIMEOUT_SECS = 5
 
+# Sentinel value that unit tests can use to ensure a host is treated as invalid.
+UNSAFE_IP_FOR_TESTING = "127.0.0.9"
+
 
 class DnsLookupError(Exception):
     """Raised when the DNS lookup of a customer-specified address failed."""
@@ -50,6 +53,11 @@ def is_safe_ipset(ips: set[str]):
 
 
 def safe_resolve(host: str):
+    if host == UNSAFE_IP_FOR_TESTING:
+        raise DnsLookupError(
+            "Detected sentinel value of invalid IP used for testing purposes."
+        )
+
     # If it is a safe IP address, return it immediately.
     if is_safe_ip(host):
         return host
