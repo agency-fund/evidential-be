@@ -1,6 +1,5 @@
 """Implements a basic Google OIDC RP."""
 
-import os
 from contextlib import asynccontextmanager
 from typing import Annotated
 
@@ -8,21 +7,8 @@ import httpx
 from fastapi import APIRouter, Depends, FastAPI, HTTPException, Query
 from loguru import logger
 from pydantic import BaseModel, Field
-from xngin.apiserver import constants, flags
-from xngin.apiserver.routers.oidc_dependencies import (
-    ENV_GOOGLE_OIDC_CLIENT_ID,
-    ENV_GOOGLE_OIDC_CLIENT_SECRET,
-    get_google_configuration,
-    CLIENT_ID,
-    CLIENT_SECRET,
-)
-
-ENV_GOOGLE_OIDC_REDIRECT_URI = "GOOGLE_OIDC_REDIRECT_URI"
-
-DEFAULT_REDIRECT_URI = f"http://localhost:8000{constants.API_PREFIX_V1}/a/oidc"
-REDIRECT_URI = os.environ.get(
-    ENV_GOOGLE_OIDC_REDIRECT_URI, DEFAULT_REDIRECT_URI
-)  # used for testing UI only
+from xngin.apiserver import flags
+from xngin.apiserver.routers.oidc_dependencies import get_google_configuration
 
 
 class OidcMisconfiguredError(Exception):
@@ -33,13 +19,13 @@ def is_enabled():
     """Feature flag: Returns true iff OIDC is enabled."""
     enabled = flags.ENABLE_OIDC
     if enabled:
-        if not CLIENT_ID:
+        if not flags.CLIENT_ID:
             raise OidcMisconfiguredError(
-                f"{ENV_GOOGLE_OIDC_CLIENT_ID} environment variable is not set."
+                f"{flags.ENV_GOOGLE_OIDC_CLIENT_ID} environment variable is not set."
             )
-        if not os.environ.get(ENV_GOOGLE_OIDC_CLIENT_SECRET):
+        if not flags.CLIENT_SECRET:
             logger.warning(
-                f"{ENV_GOOGLE_OIDC_CLIENT_SECRET} environment variable is not set."
+                f"{flags.ENV_GOOGLE_OIDC_CLIENT_SECRET} environment variable is not set."
             )
     return enabled
 
@@ -84,12 +70,12 @@ async def auth_callback(
         token_response = await client.post(
             token_endpoint,
             data={
-                "client_id": CLIENT_ID,
+                "client_id": flags.CLIENT_ID,
                 # client_secret is not strictly required by PKCE spec but Google requires it.
-                "client_secret": CLIENT_SECRET,
+                "client_secret": flags.CLIENT_SECRET,
                 "code": code,
                 "code_verifier": code_verifier,
-                "redirect_uri": REDIRECT_URI,
+                "redirect_uri": flags.OIDC_REDIRECT_URI,
                 "grant_type": "authorization_code",
             },
         )

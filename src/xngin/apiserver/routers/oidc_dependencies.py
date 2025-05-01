@@ -1,4 +1,3 @@
-import os
 import secrets
 from dataclasses import dataclass
 from typing import Annotated
@@ -9,12 +8,6 @@ import httpx
 from jose import JWTError, jwt
 from loguru import logger
 from xngin.apiserver import flags
-
-ENV_GOOGLE_OIDC_CLIENT_ID = "GOOGLE_OIDC_CLIENT_ID"
-ENV_GOOGLE_OIDC_CLIENT_SECRET = "GOOGLE_OIDC_CLIENT_SECRET"
-
-CLIENT_ID = os.environ.get(ENV_GOOGLE_OIDC_CLIENT_ID)
-CLIENT_SECRET = os.environ.get(ENV_GOOGLE_OIDC_CLIENT_SECRET)
 
 # JWTs generated for domains other than @agency.fund are considered untrusted.
 PRIVILEGED_DOMAINS = ("agency.fund",)
@@ -131,7 +124,7 @@ async def require_oidc_token(
             token,
             key,
             algorithms=["RS256"],
-            audience=CLIENT_ID,
+            audience=flags.CLIENT_ID,
             issuer=oidc_config.get("issuer"),
             options={
                 "require_iss": True,
