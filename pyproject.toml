@@ -77,6 +77,7 @@ select = [
     "FAST",
     "FURB",
     "N",
+    "NPY",
     "PD",
     "PLC",
     "PIE",
@@ -96,6 +97,7 @@ ignore = [
     "FURB101", # `open` and `read` should be replaced by `Path(file).read_text()`
     "FURB103", # `open` and `write` should be replaced by `Path(filename)....`
     "FURB152", # replace values that resemble mathemematical constants with constants (e.g. 3.14 => math.pi)
+    "NPY002", # Replace legacy `np.random.X` call with `np.random.Generator`
     "PD002", # `inplace=True` should be avoided; it has inconsistent behavior
     "PD003", # `.isna` is preferred to `.isnull`; functionality is equivalent"
     "PD101", # Using `series.nunique()` for checking that a series is constant is inefficient
