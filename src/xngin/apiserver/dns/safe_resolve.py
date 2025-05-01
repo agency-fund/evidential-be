@@ -1,4 +1,6 @@
 import ipaddress
+import socket
+from sys import platform
 
 import dns.resolver
 from dns.resolver import resolve
@@ -20,9 +22,13 @@ class DnsLookupUnsafeError(DnsLookupError):
 
 def lookup_v4(host: str) -> list[str] | None:
     """Returns the IP addresses for a hostname, or None if there was some kind of failure."""
+    if platform == "darwin":
+        # dnspython doesn't function properly on OSX machines so call socket.getaddrinfo directly.
+        answer = socket.getaddrinfo(host, None, socket.AF_INET)
+        return [a[4][0] for a in answer]
     try:
-        answer = resolve(host, "A", lifetime=DNS_TIMEOUT_SECS)
-        return [r.to_text() for r in answer]
+        dns_answer = resolve(host, "A", lifetime=DNS_TIMEOUT_SECS)
+        return [r.to_text() for r in dns_answer]
     except dns.exception.DNSException:
         return None
 
