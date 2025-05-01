@@ -107,7 +107,7 @@ if oidc.is_enabled():
 if oidc.is_enabled() and admin.is_enabled():
     enable_admin_api()
 
-oidc_dependencies.setup(app)
+oidc_dependencies.setup_airplane_mode(app)
 
 
 @dataclasses.dataclass

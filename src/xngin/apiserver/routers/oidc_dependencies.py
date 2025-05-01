@@ -49,7 +49,7 @@ TESTING_TOKENS = {
 }
 
 
-def setup(app):
+def setup_airplane_mode(app):
     """Configures FastAPI dependencies to skip OIDC flows and use fake users."""
 
     # If we are not in airplane mode, there is no setup to do.
