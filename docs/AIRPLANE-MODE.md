@@ -11,9 +11,6 @@ When in airplane mode:
 - The frontend may emit some errors about fonts being unavailable (these can be ignored).
 - Unit tests will fail in airplane mode.
 
-> Note: For airplane mode to work, the frontend and backend must both have been started in their non-airplane mode
-> while connected to the internet.
-
 To start the frontend in airplane mode, run:
 
 ```shell
