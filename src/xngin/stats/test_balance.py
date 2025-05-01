@@ -1,6 +1,7 @@
-import pytest
-import pandas as pd
 import numpy as np
+import pandas as pd
+import pytest
+from numpy.random import MT19937, RandomState
 from stochatreat import stochatreat
 from xngin.stats.balance import (
     BalanceResult,
@@ -13,14 +14,15 @@ from xngin.stats.stats_errors import StatsBalanceError
 
 @pytest.fixture
 def sample_data():
-    np.random.seed(42)
+    rs = RandomState(MT19937())
+    rs.seed(42)
     n = 1000
     data = {
-        "treat": np.random.binomial(1, 0.5, n),
-        "age": np.random.normal(30, 5, n),
-        "income": np.random.lognormal(10, 1, n),
-        "gender": np.random.binomial(1, 0.5, n),
-        "region": np.random.choice(["North", "South", "East", "West"], n),
+        "treat": rs.binomial(1, 0.5, n),
+        "age": rs.normal(30, 5, n),
+        "income": rs.lognormal(10, 1, n),
+        "gender": rs.binomial(1, 0.5, n),
+        "region": rs.choice(["North", "South", "East", "West"], n),
     }
     return pd.DataFrame(data)
 

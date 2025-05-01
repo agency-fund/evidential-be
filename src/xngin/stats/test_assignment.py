@@ -6,6 +6,7 @@ from typing import Any
 import pytest
 import pandas as pd
 import numpy as np
+from numpy.random import RandomState, MT19937
 from sqlalchemy import DECIMAL, Boolean, Column, Float, Integer, MetaData, String, Table
 from xngin.stats.assignment import assign_treatment, simple_random_assignment
 from xngin.apiserver.routers.stateless_api_types import Assignment, Arm, Strata
@@ -49,14 +50,15 @@ def sample_table():
 
 
 def make_sample_data_dict(n=1000):
-    np.random.seed(42)
+    rs = RandomState(MT19937())
+    rs.seed(42)
     data = {
         "id": range(n),
-        "age": np.round(np.random.normal(30, 5, n), 0),
-        "income": np.round(np.float64(np.random.lognormal(10, 1, n)), 0),
-        "gender": np.random.choice(["M", "F"], n),
-        "region": np.random.choice(["North", "South", "East", "West"], n),
-        "skewed": np.random.permutation(
+        "age": np.round(rs.normal(30, 5, n), 0),
+        "income": np.round(np.float64(rs.lognormal(10, 1, n)), 0),
+        "gender": rs.choice(["M", "F"], n),
+        "region": rs.choice(["North", "South", "East", "West"], n),
+        "skewed": rs.permutation(
             np.concatenate((np.repeat([1], n * 0.9), np.repeat([0], n * 0.1)))
         ),
     }
