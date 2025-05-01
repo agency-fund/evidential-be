@@ -1,15 +1,17 @@
+import dataclasses
 from collections import defaultdict
 from dataclasses import dataclass
-import dataclasses
 from decimal import Decimal
 from typing import Any
-import pytest
-import pandas as pd
+
 import numpy as np
+import pandas as pd
+import pytest
+from numpy.random import MT19937, RandomState
 from sqlalchemy import DECIMAL, Boolean, Column, Float, Integer, MetaData, String, Table
-from xngin.stats.assignment import assign_treatment, simple_random_assignment
-from xngin.apiserver.routers.stateless_api_types import Assignment, Arm, Strata
 from xngin.apiserver.models.tables import arm_id_factory
+from xngin.apiserver.routers.stateless_api_types import Arm, Assignment, Strata
+from xngin.stats.assignment import assign_treatment, simple_random_assignment
 
 
 @dataclass
@@ -49,14 +51,15 @@ def sample_table():
 
 
 def make_sample_data_dict(n=1000):
-    np.random.seed(42)
+    rs = RandomState(MT19937())
+    rs.seed(42)
     data = {
         "id": range(n),
-        "age": np.round(np.random.normal(30, 5, n), 0),
-        "income": np.round(np.float64(np.random.lognormal(10, 1, n)), 0),
-        "gender": np.random.choice(["M", "F"], n),
-        "region": np.random.choice(["North", "South", "East", "West"], n),
-        "skewed": np.random.permutation(
+        "age": np.round(rs.normal(30, 5, n), 0),
+        "income": np.round(np.float64(rs.lognormal(10, 1, n)), 0),
+        "gender": rs.choice(["M", "F"], n),
+        "region": rs.choice(["North", "South", "East", "West"], n),
+        "skewed": rs.permutation(
             np.concatenate((np.repeat([1], n * 0.9), np.repeat([0], n * 0.1)))
         ),
     }
@@ -237,13 +240,14 @@ def test_assign_treatment_with_obj_columns_inferred(sample_table, sample_data):
 
     n = len(sample_data)
     # Test numeric types mistakenly typed as objects
+    rng = np.random.default_rng()
     sample_data = sample_data.assign(
         object1=[2**32] * (n - 1) + [2],
         # If not converted, causes SyntaxError due to floating point numbers
         # converted to dummy variables with bad column names
-        object2=np.concatenate([[None] * (n - 100), np.random.uniform(size=100)]),
+        object2=np.concatenate([[None] * (n - 100), rng.uniform(size=100)]),
         # If not converted, will cause a recursion error
-        object3=np.random.uniform(size=n),
+        object3=rng.uniform(size=n),
     ).astype({"object1": "O", "object2": "O", "object3": "O"})
     rows = [ExtendedRow(**row) for row in sample_data.to_dict("records")]
 

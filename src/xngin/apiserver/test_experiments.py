@@ -3,11 +3,11 @@ from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
-import numpy as np
 import pytest
 from deepdiff import DeepDiff
 from fastapi import HTTPException
 from fastapi.testclient import TestClient
+from numpy.random import RandomState, MT19937
 from sqlalchemy import Boolean, Column, MetaData, String, Table, select
 from sqlalchemy.dialects import postgresql
 from sqlalchemy.orm import Session
@@ -262,12 +262,13 @@ def sample_table():
 
 def make_sample_data(n=100):
     """Create mock participant data that works with our sample_table"""
-    np.random.seed(42)
+    rs = RandomState(MT19937())
+    rs.seed(42)
     return [
         MockRow(
             participant_id=f"p{i}",
-            gender=np.random.choice(["M", "F"]),
-            is_onboarded=bool(np.random.choice([True, False], p=[0.5, 0.5])),
+            gender=rs.choice(["M", "F"]),
+            is_onboarded=bool(rs.choice([True, False], p=[0.5, 0.5])),
         )
         for i in range(n)
     ]
