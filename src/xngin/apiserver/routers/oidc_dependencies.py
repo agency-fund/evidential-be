@@ -1,20 +1,34 @@
+import os
 import secrets
 from dataclasses import dataclass
 from typing import Annotated
 
 from fastapi import Depends, HTTPException, Security, status
+from fastapi.security import OpenIdConnect
+import httpx
 from jose import JWTError, jwt
 from loguru import logger
 from xngin.apiserver import flags
-from xngin.apiserver.routers.oidc import (
-    CLIENT_ID,
-    get_google_configuration,
-    get_google_jwks,
-    oidc_google,
-)
+
+ENV_GOOGLE_OIDC_CLIENT_ID = "GOOGLE_OIDC_CLIENT_ID"
+ENV_GOOGLE_OIDC_CLIENT_SECRET = "GOOGLE_OIDC_CLIENT_SECRET"
+
+CLIENT_ID = os.environ.get(ENV_GOOGLE_OIDC_CLIENT_ID)
+CLIENT_SECRET = os.environ.get(ENV_GOOGLE_OIDC_CLIENT_SECRET)
 
 # JWTs generated for domains other than @agency.fund are considered untrusted.
 PRIVILEGED_DOMAINS = ("agency.fund",)
+
+GOOGLE_DISCOVERY_URL = "https://accounts.google.com/.well-known/openid-configuration"
+oidc_google = OpenIdConnect(openIdConnectUrl=GOOGLE_DISCOVERY_URL)
+
+# TODO: refresh these occasionally
+google_jwks = None
+google_config = None
+
+
+class ServerAppearsOfflineError(Exception):
+    pass
 
 
 @dataclass
@@ -49,24 +63,31 @@ TESTING_TOKENS = {
 }
 
 
-def setup(app):
-    """Configures FastAPI dependencies to skip OIDC flows and use fake users."""
+async def get_google_configuration():
+    """Fetch and cache Google's OpenID configuration"""
+    global google_config
+    if google_config is None:
+        try:
+            async with httpx.AsyncClient() as client:
+                response = await client.get(GOOGLE_DISCOVERY_URL)
+                response.raise_for_status()
+                google_config = response.json()
+        except httpx.ConnectError as exc:
+            raise ServerAppearsOfflineError("We appear to be offline.") from exc
 
-    # If we are not in airplane mode, there is no setup to do.
-    if not flags.AIRPLANE_MODE:
-        return
+    return google_config
 
-    logger.warning("AIRPLANE_MODE is set.")
 
-    def noop():
-        pass
-
-    def get_privileged_token():
-        return TESTING_TOKENS[PRIVILEGED_TOKEN_FOR_TESTING]
-
-    app.dependency_overrides[get_google_configuration] = noop
-    app.dependency_overrides[get_google_jwks] = noop
-    app.dependency_overrides[require_oidc_token] = get_privileged_token
+async def get_google_jwks():
+    """Fetch and cache Google's JWKS"""
+    global google_jwks
+    if google_jwks is None:
+        config = await get_google_configuration()
+        async with httpx.AsyncClient() as client:
+            response = await client.get(config["jwks_uri"])
+            response.raise_for_status()
+            google_jwks = response.json()
+    return google_jwks
 
 
 async def require_oidc_token(
@@ -137,3 +158,23 @@ async def require_oidc_token(
         sub=decoded["sub"],
         hd=decoded.get("hd", ""),
     )
+
+
+def setup(app):
+    """Configures FastAPI dependencies for OIDC."""
+
+    # If we are not in airplane mode, there is no setup to do.
+    if not flags.AIRPLANE_MODE:
+        return
+
+    logger.warning("AIRPLANE_MODE is set.")
+
+    def noop():
+        pass
+
+    def get_privileged_token():
+        return TESTING_TOKENS[PRIVILEGED_TOKEN_FOR_TESTING]
+
+    app.dependency_overrides[get_google_configuration] = noop
+    app.dependency_overrides[get_google_jwks] = noop
+    app.dependency_overrides[require_oidc_token] = get_privileged_token
