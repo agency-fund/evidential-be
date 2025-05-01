@@ -3,34 +3,31 @@ import datetime
 import json
 from functools import partial
 
-from fastapi import HTTPException
 import pytest
+from fastapi import HTTPException
 from fastapi.testclient import TestClient
 from pydantic import SecretStr
 from sqlalchemy import select
 from sqlalchemy.orm import Session
-from xngin.apiserver import conftest
+from xngin.apiserver import conftest, flags
 from xngin.apiserver import main as main_module
-from xngin.apiserver.routers.admin import user_from_token
-from xngin.apiserver.routers.stateless_api_types import (
-    DataType,
-    ExperimentAnalysis,
-    ExperimentType,
-)
 from xngin.apiserver.dependencies import xngin_db_session
 from xngin.apiserver.main import app
 from xngin.apiserver.models.enums import ExperimentState
 from xngin.apiserver.models.tables import (
     ArmAssignment,
     ArmTable,
-    Datasource as DatasourceTable,
     Experiment,
     Organization,
     User,
-    experiment_id_factory,
     arm_id_factory,
+    experiment_id_factory,
+)
+from xngin.apiserver.models.tables import (
+    Datasource as DatasourceTable,
 )
 from xngin.apiserver.routers import oidc_dependencies
+from xngin.apiserver.routers.admin import user_from_token
 from xngin.apiserver.routers.admin_api_types import (
     CreateDatasourceRequest,
     CreateDatasourceResponse,
@@ -59,6 +56,11 @@ from xngin.apiserver.routers.oidc_dependencies import (
     TESTING_TOKENS,
     UNPRIVILEGED_EMAIL,
     UNPRIVILEGED_TOKEN_FOR_TESTING,
+)
+from xngin.apiserver.routers.stateless_api_types import (
+    DataType,
+    ExperimentAnalysis,
+    ExperimentType,
 )
 from xngin.apiserver.settings import (
     BqDsn,
@@ -309,6 +311,10 @@ def test_user_from_token(db_session):
         assert DataType.match(col.type) == field.data_type
 
 
+@pytest.mark.skipif(
+    flags.AIRPLANE_MODE,
+    reason="This test will fail in airplane mode because airplane mode treats all Admin API calls as authenticated.",
+)
 def test_list_orgs_unauthenticated():
     response = client.get("/v1/m/organizations")
     assert response.status_code == 403, response.content
@@ -319,6 +325,10 @@ def test_list_orgs_privileged(testing_datasource):
     assert response.status_code == 200, response.content
 
 
+@pytest.mark.skipif(
+    flags.AIRPLANE_MODE,
+    reason="This test will fail in airplane mode because airplane mode treats all Admin API calls as authenticated.",
+)
 def test_list_orgs_unprivileged(testing_datasource):
     response = uget("/v1/m/organizations")
     assert response.status_code == 403, response.content
