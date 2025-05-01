@@ -25,16 +25,6 @@ from sqlalchemy import delete, select, text
 from sqlalchemy.exc import OperationalError
 from sqlalchemy.orm import Session
 from xngin.apiserver import flags, settings
-from xngin.apiserver.routers.stateless_api_types import (
-    ArmAnalysis,
-    DataType,
-    ExperimentAnalysis,
-    GetMetricsResponseElement,
-    GetStrataResponseElement,
-    MetricAnalysis,
-    PowerRequest,
-    PowerResponse,
-)
 from xngin.apiserver.apikeys import hash_key, make_key
 from xngin.apiserver.dependencies import xngin_db_session
 from xngin.apiserver.dns.safe_resolve import DnsLookupError, safe_resolve
@@ -87,25 +77,34 @@ from xngin.apiserver.routers.admin_api_types import (
     UserSummary,
     WebhookSummary,
 )
+from xngin.apiserver.routers.experiments_api_types import (
+    ExperimentConfig,
+    GetParticipantAssignmentResponse,
+)
+from xngin.apiserver.routers.oidc_dependencies import TokenInfo, require_oidc_token
 from xngin.apiserver.routers.stateless_api import (
     create_col_to_filter_meta_mapper,
     generate_field_descriptors,
     power_check_impl,
     validate_schema_metrics_or_raise,
 )
-from xngin.apiserver.routers.experiments_api_types import (
-    ExperimentConfig,
-    GetParticipantAssignmentResponse,
+from xngin.apiserver.routers.stateless_api_types import (
+    ArmAnalysis,
+    DataType,
+    ExperimentAnalysis,
+    GetMetricsResponseElement,
+    GetStrataResponseElement,
+    MetricAnalysis,
+    PowerRequest,
+    PowerResponse,
 )
-from xngin.apiserver.routers.oidc_dependencies import TokenInfo, require_oidc_token
 from xngin.apiserver.settings import (
-    Dsn,
     ParticipantsConfig,
     ParticipantsDef,
     RemoteDatabaseConfig,
     infer_table,
 )
-from xngin.apiserver.testing.testing_dwh_def import TESTING_PARTICIPANT_DEF
+from xngin.apiserver.testing.testing_dwh import create_user_and_first_datasource
 from xngin.stats.analysis import analyze_experiment as analyze_experiment_impl
 
 GENERIC_SUCCESS = Response(status_code=status.HTTP_204_NO_CONTENT)
@@ -187,23 +186,13 @@ def user_from_token(
     """
     user = session.query(User).filter(User.email == token_info.email).first()
     if not user:
-        # Privileged users will have a user and an organization created on the fly.
         if token_info.is_privileged():
-            user = User(email=token_info.email, is_privileged=True)
-            session.add(user)
-            organization = Organization(name="My Organization")
-            session.add(organization)
-            organization.users.append(user)
-            if dev_dsn := flags.XNGIN_DEVDWH_DSN:
-                config = RemoteDatabaseConfig(
-                    participants=[], type="remote", dwh=Dsn.from_url(dev_dsn)
-                )
-                participants_def = TESTING_PARTICIPANT_DEF
-                config.participants.append(participants_def)
-                datasource = Datasource(
-                    name="Local DWH", organization=organization
-                ).set_config(config)
-                session.add(datasource)
+            user = create_user_and_first_datasource(
+                session,
+                email=token_info.email,
+                dsn=flags.XNGIN_DEVDWH_DSN,
+                privileged=True,
+            )
             session.commit()
         else:
             raise HTTPException(
