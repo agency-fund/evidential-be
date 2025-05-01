@@ -174,7 +174,7 @@ def test_check_balance_with_mostly_nulls_categorical():
     data = {
         "treat": [0, 0, 0, 0, 0, 1, 1, 1, 1, 1] * 2,
         "int64": [0, 1, 0, 1, 0, 1, 0, 1, 0, 1] * 2,
-        "float": np.random.uniform(size=20),
+        "float": np.random.default_rng().uniform(size=20),
         "nulls": [None] * 16 + ["a", "b"] * 2,
     }
     df = pd.DataFrame(data)
@@ -303,7 +303,7 @@ def test_preprocessing_numerics_as_categories():
     data = pd.DataFrame({
         "ints": range(0, 100),
         "ints_with_na": [*range(0, 99), None],
-        "floats": np.random.normal(30, 5, 100),
+        "floats": np.random.default_rng().normal(30, 5, 100),
     })
     df, exclude, numeric_notnull_set = preprocess_for_balance_and_stratification(data)
 
