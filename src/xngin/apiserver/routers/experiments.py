@@ -301,8 +301,8 @@ def create_online_experiment_impl(
         participant_type=request.audience_spec.participant_type,
         name=request.design_spec.experiment_name,
         description=request.design_spec.description,
-        # No assignments nor power check (for now), so just commit it.
-        state=ExperimentState.COMMITTED,
+        # No assignments nor power check (for now), but we still want to allow a review.
+        state=ExperimentState.ASSIGNED,
         start_date=request.design_spec.start_date,
         end_date=request.design_spec.end_date,
         design_spec=request.design_spec.model_dump(mode="json"),

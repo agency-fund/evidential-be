@@ -274,7 +274,7 @@ def make_sample_data(n=100):
     ]
 
 
-def test_create_experiment_with_assignment_impl_for_preassigned(
+def test_create_experiment_impl_for_preassigned(
     db_session, testing_datasource, sample_table, use_deterministic_random
 ):
     """Test implementation of creating a preassigned experiment."""
@@ -385,7 +385,7 @@ def test_create_experiment_with_assignment_impl_for_preassigned(
     assert abs(num_control - num_treat) <= 1
 
 
-def test_create_experiment_with_assignment_impl_for_online(
+def test_create_experiment_impl_for_online(
     db_session, testing_datasource, sample_table, use_deterministic_random
 ):
     """Test implementation of creating an online experiment."""
@@ -407,7 +407,7 @@ def test_create_experiment_with_assignment_impl_for_online(
 
     # Verify response
     assert response.datasource_id == testing_datasource.ds.id
-    assert response.state == ExperimentState.COMMITTED
+    assert response.state == ExperimentState.ASSIGNED
 
     # Verify design_spec
     assert response.design_spec.experiment_id is not None
@@ -437,8 +437,8 @@ def test_create_experiment_with_assignment_impl_for_online(
     assert experiment.participant_type == request.audience_spec.participant_type
     assert experiment.name == request.design_spec.experiment_name
     assert experiment.description == request.design_spec.description
-    # We committed because there's no need to preview assignments nor power check (for now).
-    assert experiment.state == ExperimentState.COMMITTED
+    # Online experiments still go through a review step before being committed
+    assert experiment.state == ExperimentState.ASSIGNED
     assert experiment.datasource_id == testing_datasource.ds.id
     assert conftest.dates_equal(experiment.start_date, request.design_spec.start_date)
     assert conftest.dates_equal(experiment.end_date, request.design_spec.end_date)
@@ -467,7 +467,7 @@ def test_create_experiment_with_assignment_impl_for_online(
     assert len(assignments) == 0
 
 
-def test_create_experiment_with_assignment_impl_overwrites_uuids(
+def test_create_experiment_impl_overwrites_uuids(
     db_session, testing_datasource, sample_table, use_deterministic_random
 ):
     """
@@ -510,7 +510,7 @@ def test_create_experiment_with_assignment_impl_overwrites_uuids(
     assert assignment_arm_ids == set(new_arm_ids)
 
 
-def test_create_experiment_with_assignment_impl_no_metric_stratification(
+def test_create_experiment_impl_no_metric_stratification(
     db_session, testing_datasource, sample_table, use_deterministic_random
 ):
     """Test implementation of creating an experiment without stratifying on metrics."""
@@ -561,7 +561,7 @@ def test_create_experiment_with_assignment_impl_no_metric_stratification(
     assert abs(num_control - num_treat) <= 1
 
 
-def test_create_experiment_with_assignment_invalid_design_spec(db_session):
+def test_create_experiment_impl_invalid_design_spec(db_session):
     """Test creating an experiment and saving assignments to the database."""
     request = make_create_preassigned_experiment_request(with_uuids=True)
 

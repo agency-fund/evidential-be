@@ -908,7 +908,7 @@ def test_create_online_experiment_using_inline_schema_ds(
     assert created_experiment.design_spec.experiment_id is not None
     assert created_experiment.design_spec.arms[0].arm_id is not None
     assert created_experiment.design_spec.arms[1].arm_id is not None
-    assert created_experiment.state == ExperimentState.COMMITTED
+    assert created_experiment.state == ExperimentState.ASSIGNED
     assign_summary = created_experiment.assign_summary
     assert assign_summary.balance_check is None
     assert assign_summary.sample_size == 0
