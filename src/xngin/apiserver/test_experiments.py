@@ -42,7 +42,7 @@ from xngin.apiserver.routers.experiments import (
     ExperimentsAssignmentError,
     abandon_experiment_impl,
     commit_experiment_impl,
-    create_experiment_with_assignment_impl,
+    create_experiment_impl,
     experiment_assignments_to_csv_generator,
     get_assign_summary,
     get_existing_assignment_for_participant,
@@ -292,7 +292,7 @@ def test_create_experiment_with_assignment_impl_for_preassigned(
     )
 
     # Test!
-    response = create_experiment_with_assignment_impl(
+    response = create_experiment_impl(
         request=request.model_copy(
             deep=True
         ),  # we'll use the original request for assertions
@@ -394,7 +394,7 @@ def test_create_experiment_with_assignment_impl_for_online(
     # Convert the experiment type to online
     request.design_spec.experiment_type = "online"
 
-    response = create_experiment_with_assignment_impl(
+    response = create_experiment_impl(
         request=request.model_copy(deep=True),
         datasource_id=testing_datasource.ds.id,
         participant_unique_id_field="participant_id",
@@ -480,7 +480,7 @@ def test_create_experiment_with_assignment_impl_overwrites_uuids(
     original_arm_ids = [arm.arm_id for arm in request.design_spec.arms]
 
     # Call the function under test
-    response = create_experiment_with_assignment_impl(
+    response = create_experiment_impl(
         request=request,
         datasource_id=testing_datasource.ds.id,
         participant_unique_id_field="participant_id",
@@ -518,7 +518,7 @@ def test_create_experiment_with_assignment_impl_no_metric_stratification(
     request = make_create_preassigned_experiment_request(with_uuids=False)
 
     # Test with stratify_on_metrics=False
-    response = create_experiment_with_assignment_impl(
+    response = create_experiment_impl(
         request=request.model_copy(deep=True),
         datasource_id=testing_datasource.ds.id,
         participant_unique_id_field="participant_id",

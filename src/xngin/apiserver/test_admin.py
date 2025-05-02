@@ -894,7 +894,7 @@ def test_create_online_experiment_using_inline_schema_ds(
 
     response = ppost(
         f"/v1/m/datasources/{datasource_id}/experiments",
-        params={"chosen_n": 100, "random_state": 42},
+        params={"random_state": 42},
         json=base_request_json,
     )
     assert response.status_code == 200, response.content

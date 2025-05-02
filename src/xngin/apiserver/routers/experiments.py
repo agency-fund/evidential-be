@@ -133,7 +133,7 @@ def create_experiment_with_assignment_sl(
         )
 
     # Persist the experiment and assignments in the xngin database
-    return create_experiment_with_assignment_impl(
+    return create_experiment_impl(
         request=body,
         datasource_id=datasource.id,
         participant_unique_id_field=schema.get_unique_id_field(),
@@ -145,12 +145,12 @@ def create_experiment_with_assignment_sl(
     )
 
 
-def create_experiment_with_assignment_impl(
+def create_experiment_impl(
     request: CreateExperimentRequest,
     datasource_id: str,
     participant_unique_id_field: str,
     dwh_sa_table: Table,
-    dwh_participants: Sequence[RowProtocol],
+    dwh_participants: Sequence[RowProtocol] | None,
     random_state: int | None,
     xngin_session: Session,
     stratify_on_metrics: bool,
