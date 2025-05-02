@@ -375,7 +375,7 @@ def commit_experiment_impl(xngin_session: Session, experiment: Experiment):
         return Response(status_code=status.HTTP_304_NOT_MODIFIED)
     if experiment.state != ExperimentState.ASSIGNED:
         raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
+            status_code=status.HTTP_400_BAD_REQUEST,
             detail=f"Invalid state: {experiment.state}",
         )
 
@@ -434,7 +434,7 @@ def abandon_experiment_impl(xngin_session: Session, experiment: Experiment):
         return Response(status_code=status.HTTP_304_NOT_MODIFIED)
     if experiment.state not in {ExperimentState.DESIGNING, ExperimentState.ASSIGNED}:
         raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
+            status_code=status.HTTP_400_BAD_REQUEST,
             detail=f"Invalid state: {experiment.state}",
         )
 

@@ -1026,12 +1026,12 @@ def test_experiments_analyze(testing_experiment):
     [
         ("commit", ExperimentState.ASSIGNED, 204, None),  # Success case
         ("commit", ExperimentState.COMMITTED, 304, None),  # No-op
-        ("commit", ExperimentState.DESIGNING, 403, "Invalid state: designing"),
-        ("commit", ExperimentState.ABORTED, 403, "Invalid state: aborted"),
+        ("commit", ExperimentState.DESIGNING, 400, "Invalid state: designing"),
+        ("commit", ExperimentState.ABORTED, 400, "Invalid state: aborted"),
         ("abandon", ExperimentState.DESIGNING, 204, None),  # Success case
         ("abandon", ExperimentState.ASSIGNED, 204, None),  # Success case
         ("abandon", ExperimentState.ABANDONED, 304, None),  # No-op
-        ("abandon", ExperimentState.COMMITTED, 403, "Invalid state: committed"),
+        ("abandon", ExperimentState.COMMITTED, 400, "Invalid state: committed"),
     ],
 )
 def test_admin_experiment_state_setting(
