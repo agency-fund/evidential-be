@@ -1,35 +1,17 @@
 """Implements a basic Google OIDC RP."""
 
-import os
 from contextlib import asynccontextmanager
 from typing import Annotated
 
 import httpx
-from fastapi import APIRouter, FastAPI, HTTPException, Query
-from fastapi.security import OpenIdConnect
+from fastapi import APIRouter, Depends, FastAPI, HTTPException, Query
 from loguru import logger
 from pydantic import BaseModel, Field
-from xngin.apiserver import constants, flags
-
-ENV_GOOGLE_OIDC_CLIENT_ID = "GOOGLE_OIDC_CLIENT_ID"
-ENV_GOOGLE_OIDC_CLIENT_SECRET = "GOOGLE_OIDC_CLIENT_SECRET"
-ENV_GOOGLE_OIDC_REDIRECT_URI = "GOOGLE_OIDC_REDIRECT_URI"
-
-CLIENT_ID = os.environ.get(ENV_GOOGLE_OIDC_CLIENT_ID)
-CLIENT_SECRET = os.environ.get(ENV_GOOGLE_OIDC_CLIENT_SECRET)
-GOOGLE_DISCOVERY_URL = "https://accounts.google.com/.well-known/openid-configuration"
-DEFAULT_REDIRECT_URI = f"http://localhost:8000{constants.API_PREFIX_V1}/a/oidc"
-REDIRECT_URI = os.environ.get(
-    ENV_GOOGLE_OIDC_REDIRECT_URI, DEFAULT_REDIRECT_URI
-)  # used for testing UI only
-oidc_google = OpenIdConnect(openIdConnectUrl=GOOGLE_DISCOVERY_URL)
+from xngin.apiserver import flags
+from xngin.apiserver.routers.oidc_dependencies import get_google_configuration
 
 
 class OidcMisconfiguredError(Exception):
-    pass
-
-
-class ServerAppearsOfflineError(Exception):
     pass
 
 
@@ -37,20 +19,15 @@ def is_enabled():
     """Feature flag: Returns true iff OIDC is enabled."""
     enabled = flags.ENABLE_OIDC
     if enabled:
-        if not os.environ.get(ENV_GOOGLE_OIDC_CLIENT_ID):
+        if not flags.CLIENT_ID:
             raise OidcMisconfiguredError(
-                f"{ENV_GOOGLE_OIDC_CLIENT_ID} environment variable is not set."
+                f"{flags.ENV_GOOGLE_OIDC_CLIENT_ID} environment variable is not set."
             )
-        if not os.environ.get(ENV_GOOGLE_OIDC_CLIENT_SECRET):
+        if not flags.CLIENT_SECRET:
             logger.warning(
-                f"{ENV_GOOGLE_OIDC_CLIENT_SECRET} environment variable is not set."
+                f"{flags.ENV_GOOGLE_OIDC_CLIENT_SECRET} environment variable is not set."
             )
     return enabled
-
-
-# TODO: refresh these occasionally
-google_jwks = None
-google_config = None
 
 
 @asynccontextmanager
@@ -62,33 +39,6 @@ router = APIRouter(
     lifespan=lifespan,
     prefix="/a/oidc",
 )
-
-
-async def get_google_configuration():
-    """Fetch and cache Google's OpenID configuration"""
-    global google_config
-    if google_config is None:
-        try:
-            async with httpx.AsyncClient() as client:
-                response = await client.get(GOOGLE_DISCOVERY_URL)
-                response.raise_for_status()
-                google_config = response.json()
-        except httpx.ConnectError as exc:
-            raise ServerAppearsOfflineError("We appear to be offline.") from exc
-
-    return google_config
-
-
-async def get_google_jwks():
-    """Fetch and cache Google's JWKS"""
-    global google_jwks
-    if google_jwks is None:
-        config = await get_google_configuration()
-        async with httpx.AsyncClient() as client:
-            response = await client.get(config["jwks_uri"])
-            response.raise_for_status()
-            google_jwks = response.json()
-    return google_jwks
 
 
 class CallbackResponse(BaseModel):
@@ -109,29 +59,29 @@ async def auth_callback(
     code_verifier: Annotated[
         str, Query(min_length=43, max_length=128, pattern=r"^[A-Za-z0-9._~-]+$")
     ],
+    oidc_config: Annotated[dict, Depends(get_google_configuration)],
 ) -> CallbackResponse:
     """OAuth callback endpoint that exchanges the authorization code for tokens, and returns the id_token to the client.
 
     Only relevant for PKCE.
     """
-    config = await get_google_configuration()
     async with httpx.AsyncClient() as client:
-        token_endpoint = config["token_endpoint"]
+        token_endpoint = oidc_config["token_endpoint"]
         token_response = await client.post(
             token_endpoint,
             data={
-                "client_id": CLIENT_ID,
+                "client_id": flags.CLIENT_ID,
                 # client_secret is not strictly required by PKCE spec but Google requires it.
-                "client_secret": CLIENT_SECRET,
+                "client_secret": flags.CLIENT_SECRET,
                 "code": code,
                 "code_verifier": code_verifier,
-                "redirect_uri": REDIRECT_URI,
+                "redirect_uri": flags.OIDC_REDIRECT_URI,
                 "grant_type": "authorization_code",
             },
         )
         token_response.raise_for_status()
         response = token_response.json()
-        if type(response) is not dict or response.get("id_token") is None:
+        if not isinstance(response, dict) or response.get("id_token") is None:
             raise HTTPException(
                 status_code=500, detail=f"Unexpected response from {token_endpoint}"
             )
