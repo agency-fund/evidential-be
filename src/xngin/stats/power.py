@@ -74,9 +74,16 @@ def analyze_metric_power(
 
     # Case A: Both target and baseline defined - calculate required n
     if metric.metric_type == MetricType.NUMERIC:
-        effect_size = (  # type:ignore[operator]
+        if metric.metric_stddev is None or metric.metric_stddev <= 0:
+            return _power_analysis_error(
+                metric,
+                MetricPowerAnalysisMessageType.ZERO_STDDEV,
+                "There is no variation in the metric with the given filters. Standard deviation must be positive to do a sample size calculation.",
+            )
+
+        effect_size = (
             metric.metric_target - metric.metric_baseline
-        ) / metric.metric_stddev  # metric_stddev not None via validation
+        ) / metric.metric_stddev
     elif metric.metric_type == MetricType.BINARY:
         effect_size = sms.proportion_effectsize(
             metric.metric_baseline, metric.metric_target

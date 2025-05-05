@@ -656,6 +656,7 @@ class MetricPowerAnalysisMessageType(enum.StrEnum):
     NO_BASELINE = "no baseline"
     NO_AVAILABLE_N = "no available n"
     ZERO_EFFECT_SIZE = "zero effect size"
+    ZERO_STDDEV = "zero variation"
 
 
 class MetricPowerAnalysisMessage(ApiBaseModel):
