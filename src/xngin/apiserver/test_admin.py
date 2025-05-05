@@ -894,7 +894,7 @@ def test_create_online_experiment_using_inline_schema_ds(
 
     response = ppost(
         f"/v1/m/datasources/{datasource_id}/experiments",
-        params={"chosen_n": 100, "random_state": 42},
+        params={"random_state": 42},
         json=base_request_json,
     )
     assert response.status_code == 200, response.content
@@ -908,7 +908,7 @@ def test_create_online_experiment_using_inline_schema_ds(
     assert created_experiment.design_spec.experiment_id is not None
     assert created_experiment.design_spec.arms[0].arm_id is not None
     assert created_experiment.design_spec.arms[1].arm_id is not None
-    assert created_experiment.state == ExperimentState.COMMITTED
+    assert created_experiment.state == ExperimentState.ASSIGNED
     assign_summary = created_experiment.assign_summary
     assert assign_summary.balance_check is None
     assert assign_summary.sample_size == 0
@@ -1026,12 +1026,12 @@ def test_experiments_analyze(testing_experiment):
     [
         ("commit", ExperimentState.ASSIGNED, 204, None),  # Success case
         ("commit", ExperimentState.COMMITTED, 304, None),  # No-op
-        ("commit", ExperimentState.DESIGNING, 403, "Invalid state: designing"),
-        ("commit", ExperimentState.ABORTED, 403, "Invalid state: aborted"),
+        ("commit", ExperimentState.DESIGNING, 400, "Invalid state: designing"),
+        ("commit", ExperimentState.ABORTED, 400, "Invalid state: aborted"),
         ("abandon", ExperimentState.DESIGNING, 204, None),  # Success case
         ("abandon", ExperimentState.ASSIGNED, 204, None),  # Success case
         ("abandon", ExperimentState.ABANDONED, 304, None),  # No-op
-        ("abandon", ExperimentState.COMMITTED, 403, "Invalid state: committed"),
+        ("abandon", ExperimentState.COMMITTED, 400, "Invalid state: committed"),
     ],
 )
 def test_admin_experiment_state_setting(

@@ -3,7 +3,7 @@
 import secrets
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime, timedelta
-from typing import Annotated
+from typing import Annotated, Any
 
 import google.api_core.exceptions
 import sqlalchemy
@@ -120,7 +120,7 @@ class HTTPExceptionError(BaseModel):
 #
 # FastAPI will add a case for 422 (method argument or pydantic validation errors) automatically. 500s are
 # intentionally omitted here as they (ideally) should never happen.
-STANDARD_ADMIN_RESPONSES = {
+STANDARD_ADMIN_RESPONSES: dict[str | int, dict[str, Any]] = {
     # We return 400 when the client's request is invalid.
     "400": {"model": HTTPExceptionError, "description": "The request is invalid."},
     # We return 401 when the user presents an Authorization: header but it is not valid.
@@ -1146,14 +1146,14 @@ def delete_api_key(
 
 
 @router.post("/datasources/{datasource_id}/experiments")
-def create_experiment_with_assignment(
+def create_experiment(
     datasource_id: str,
     session: Annotated[Session, Depends(xngin_db_session)],
     user: Annotated[User, Depends(user_from_token)],
     body: experiments_api_types.CreateExperimentRequest,
     chosen_n: Annotated[
-        int, Query(..., description="Number of participants to assign.")
-    ],
+        int | None, Query(..., description="Number of participants to assign.")
+    ] = None,
     stratify_on_metrics: Annotated[
         bool,
         Query(description="Whether to also stratify on metrics during assignment."),
@@ -1177,17 +1177,24 @@ def create_experiment_with_assignment(
         )
 
     # Get participants and their schema info from the client dwh
+    participants = None
     with ds_config.dbsession() as dwh_session:
         sa_table = infer_table(
             dwh_session.get_bind(),
             participants_cfg.table_name,
             ds_config.supports_reflection(),
         )
-        participants = query_for_participants(
-            dwh_session, sa_table, body.audience_spec, chosen_n
-        )
+        if chosen_n is not None:
+            participants = query_for_participants(
+                dwh_session, sa_table, body.audience_spec, chosen_n
+            )
+        elif body.design_spec.experiment_type == "preassigned":
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Preassigned experiments must have a chosen_n.",
+            )
 
-    return experiments.create_experiment_with_assignment_impl(
+    return experiments.create_experiment_impl(
         request=body,
         datasource_id=datasource.id,
         participant_unique_id_field=participants_cfg.get_unique_id_field(),
@@ -1279,9 +1286,19 @@ def analyze_experiment(
     )
 
 
+EXPERIMENT_STATE_TRANSITION_RESPONSES: dict[int | str, dict[str, Any]] = {
+    204: {"model": None, "description": "Experiment state updated successfully."},
+    304: {"model": None, "description": "Experiment already in the target state."},
+    400: {
+        "model": HTTPExceptionError,
+        "description": "Experiment is not in a valid state to transition to the target state.",
+    },
+}
+
+
 @router.post(
     "/datasources/{datasource_id}/experiments/{experiment_id}/commit",
-    status_code=status.HTTP_204_NO_CONTENT,
+    responses=EXPERIMENT_STATE_TRANSITION_RESPONSES,
 )
 def commit_experiment(
     datasource_id: str,
@@ -1296,7 +1313,7 @@ def commit_experiment(
 
 @router.post(
     "/datasources/{datasource_id}/experiments/{experiment_id}/abandon",
-    status_code=status.HTTP_204_NO_CONTENT,
+    responses=EXPERIMENT_STATE_TRANSITION_RESPONSES,
 )
 def abandon_experiment(
     datasource_id: str,

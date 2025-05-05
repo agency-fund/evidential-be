@@ -9,8 +9,8 @@ class ExperimentState(enum.StrEnum):
     [DESIGNING]->[ASSIGNED]->{[[ABANDONED]], COMMITTED}->[[ABORTED]]
     """
 
-    DESIGNING = "designing"
-    ASSIGNED = "assigned"
+    DESIGNING = "designing"  # TODO: https://github.com/agency-fund/xngin/issues/352
+    ASSIGNED = "assigned"  # TODO: rename to "REVIEWING"
     ABANDONED = "abandoned"
     COMMITTED = "committed"
     # TODO: Consider adding two more states:
