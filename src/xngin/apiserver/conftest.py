@@ -18,7 +18,11 @@ from sqlalchemy.engine.interfaces import Dialect
 from sqlalchemy.orm import Session, sessionmaker
 from xngin.apiserver import database, flags
 from xngin.apiserver.apikeys import hash_key, make_key
-from xngin.apiserver.dependencies import settings_dependency, xngin_db_session
+from xngin.apiserver.dependencies import (
+    random_seed_dependency,
+    settings_dependency,
+    xngin_db_session,
+)
 from xngin.apiserver.dns import safe_resolve
 from xngin.apiserver.models import tables
 from xngin.apiserver.models.tables import ApiKey, Datasource, Organization
@@ -154,11 +158,17 @@ def get_test_sessionmaker():
     return get_db_for_test
 
 
+def get_random_seed_for_test():
+    """Returns a seed for testing."""
+    return 42
+
+
 def setup(app):
     """Configures FastAPI dependencies for testing."""
     # https://fastapi.tiangolo.com/advanced/testing-dependencies/#use-the-appdependency_overrides-attribute
     app.dependency_overrides[xngin_db_session] = get_test_sessionmaker()
     app.dependency_overrides[settings_dependency] = get_settings_for_test
+    app.dependency_overrides[random_seed_dependency] = get_random_seed_for_test
 
 
 @pytest.fixture(scope="session", autouse=True)

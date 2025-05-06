@@ -569,7 +569,7 @@ def test_create_experiment_impl_invalid_design_spec(db_session):
 
     response = client.post(
         "/experiments/with-assignment",
-        params={"chosen_n": 100, "random_state": 42},
+        params={"chosen_n": 100},
         headers={constants.HEADER_CONFIG_ID: "testing"},
         content=request.model_dump_json(),
     )
@@ -587,7 +587,7 @@ def test_create_experiment_with_assignment_sl(
 
     response = client.post(
         "/experiments/with-assignment",
-        params={"chosen_n": 100, "random_state": 42},
+        params={"chosen_n": 100},
         headers={
             constants.HEADER_CONFIG_ID: ds_metadata.ds.id,
             constants.HEADER_API_KEY: ds_metadata.key,
@@ -1055,7 +1055,7 @@ def test_get_assignment_for_online_participant_with_apikey(
     db_session.commit()
 
     response = client.get(
-        f"/experiments/{online_experiment.id!s}/assignments/1?random_state=42",
+        f"/experiments/{online_experiment.id!s}/assignments/1",
         headers={
             constants.HEADER_CONFIG_ID: testing_datasource.ds.id,
             constants.HEADER_API_KEY: testing_datasource.key,
@@ -1068,6 +1068,7 @@ def test_get_assignment_for_online_participant_with_apikey(
     arms_map = {arm.id: arm.name for arm in arms}
     assert parsed.assignment is not None
     assert parsed.assignment.arm_name == arms_map[str(parsed.assignment.arm_id)]
+    assert parsed.assignment.arm_name == "control"
     assert not parsed.assignment.strata
 
     # Test that we get the same assignment for the same participant.

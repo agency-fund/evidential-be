@@ -21,6 +21,11 @@ class CannotFindDatasourceError(Exception):
     """Error raised when an invalid Datasource-ID is provided in a request."""
 
 
+def random_seed_dependency():
+    """Returns None; to be overridden by tests."""
+    return
+
+
 def settings_dependency():
     """Provides the settings for the server.
 
