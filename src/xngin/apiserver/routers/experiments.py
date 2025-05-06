@@ -29,6 +29,7 @@ from xngin.apiserver.routers.stateless_api_types import (
 from xngin.apiserver.dependencies import (
     datasource_dependency,
     gsheet_cache,
+    random_seed_dependency,
     xngin_db_session,
 )
 from xngin.apiserver.dwh.queries import query_for_participants
@@ -56,6 +57,7 @@ from xngin.apiserver.routers.experiments_api_types import (
     ExperimentConfig,
     GetExperimentAssignmentsResponse,
     GetExperimentResponse,
+    GetParticipantAssignmentResponse,
     ListExperimentsResponse,
 )
 from xngin.apiserver.settings import (
@@ -100,14 +102,8 @@ def create_experiment_with_assignment_sl(
     gsheets: Annotated[GSheetCache, Depends(gsheet_cache)],
     datasource: Annotated[Datasource, Depends(datasource_dependency)],
     xngin_session: Annotated[Session, Depends(xngin_db_session)],
+    random_state: Annotated[int | None, Depends(random_seed_dependency)],
     refresh: Annotated[bool, Query(description="Refresh the cache.")] = False,
-    random_state: Annotated[
-        int | None,
-        Query(
-            description="Specify a random seed for reproducibility.",
-            include_in_schema=False,
-        ),
-    ] = None,
 ) -> CreateExperimentResponse:
     """Creates an experiment and saves its assignments to the database."""
     if body.design_spec.ids_are_present():
@@ -616,6 +612,37 @@ def get_experiment_assignments_as_csv_sl(
     """
     experiment = get_experiment_or_raise(xngin_session, experiment_id, datasource.id)
     return get_experiment_assignments_as_csv_impl(experiment)
+
+
+@router.get(
+    "/experiments/{experiment_id}/assignments/{participant_id}",
+    summary="Get the assignment for a specific participant, excluding strata if any.",
+    description="""For 'preassigned' experiments, the participant's Assignment is returned if it
+    exists.  For 'online', returns the assignment if it exists, else generates an assignment""",
+)
+def get_assignment_for_participant_with_apikey(
+    experiment_id: str,
+    participant_id: str,
+    datasource: Annotated[Datasource, Depends(datasource_dependency)],
+    xngin_session: Annotated[Session, Depends(xngin_db_session)],
+    random_state: Annotated[int | None, Depends(random_seed_dependency)],
+) -> GetParticipantAssignmentResponse:
+    assignment = get_existing_assignment_for_participant(
+        xngin_session, experiment_id, participant_id
+    )
+    if not assignment:
+        experiment = get_experiment_or_raise(
+            xngin_session, experiment_id, datasource.id
+        )
+        assignment = create_assignment_for_participant(
+            xngin_session, experiment, participant_id, random_state
+        )
+
+    return GetParticipantAssignmentResponse(
+        experiment_id=experiment_id,
+        participant_id=participant_id,
+        assignment=assignment,
+    )
 
 
 def get_existing_assignment_for_participant(

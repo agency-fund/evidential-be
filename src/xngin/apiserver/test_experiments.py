@@ -13,6 +13,7 @@ from sqlalchemy.dialects import postgresql
 from sqlalchemy.orm import Session
 from sqlalchemy.schema import CreateTable
 from xngin.apiserver import conftest, constants
+from xngin.apiserver.models import tables
 from xngin.apiserver.routers.stateless_api_types import (
     Arm,
     AudienceSpec,
@@ -54,6 +55,7 @@ from xngin.apiserver.routers.experiments_api_types import (
     CreateExperimentRequest,
     CreateExperimentResponse,
     GetExperimentAssignmentsResponse,
+    GetParticipantAssignmentResponse,
     ListExperimentsResponse,
 )
 
@@ -567,7 +569,7 @@ def test_create_experiment_impl_invalid_design_spec(db_session):
 
     response = client.post(
         "/experiments/with-assignment",
-        params={"chosen_n": 100, "random_state": 42},
+        params={"chosen_n": 100},
         headers={constants.HEADER_CONFIG_ID: "testing"},
         content=request.model_dump_json(),
     )
@@ -585,7 +587,7 @@ def test_create_experiment_with_assignment_sl(
 
     response = client.post(
         "/experiments/with-assignment",
-        params={"chosen_n": 100, "random_state": 42},
+        params={"chosen_n": 100},
         headers={
             constants.HEADER_CONFIG_ID: ds_metadata.ds.id,
             constants.HEADER_API_KEY: ds_metadata.key,
@@ -987,6 +989,107 @@ def test_get_experiment_assignments_as_csv(db_session, testing_datasource):
     assert rows[0] == "participant_id,arm_id,arm_name,gender,score\r\n"
     assert rows[1] == f"p1,{arm1_id},{arm1_name},F,1.1\r\n"
     assert rows[2] == f'p2,{arm2_id},{arm2_name},M,"esc,aped"\r\n'
+
+
+def test_get_assignment_for_preassigned_participant_with_apikey(
+    db_session, testing_datasource
+):
+    preassigned_experiment = make_insertable_experiment(
+        ExperimentState.COMMITTED, testing_datasource.ds.id
+    )
+    db_session.add(preassigned_experiment)
+    arms = make_arms_from_experiment(
+        preassigned_experiment, testing_datasource.ds.organization_id
+    )
+    db_session.add_all(arms)
+    assignment = tables.ArmAssignment(
+        experiment_id=preassigned_experiment.id,
+        participant_id="assigned_id",
+        participant_type=preassigned_experiment.participant_type,
+        arm_id=arms[0].id,
+        strata=[],
+    )
+    db_session.add(assignment)
+    db_session.commit()
+
+    response = client.get(
+        f"/experiments/{preassigned_experiment.id!s}/assignments/unassigned_id?random_state=42",
+        headers={
+            constants.HEADER_CONFIG_ID: testing_datasource.ds.id,
+            constants.HEADER_API_KEY: testing_datasource.key,
+        },
+    )
+    assert response.status_code == 200
+    parsed = GetParticipantAssignmentResponse.model_validate_json(response.text)
+    assert parsed.experiment_id == preassigned_experiment.id
+    assert parsed.participant_id == "unassigned_id"
+    assert parsed.assignment is None
+
+    response = client.get(
+        f"/experiments/{preassigned_experiment.id!s}/assignments/assigned_id",
+        headers={
+            constants.HEADER_CONFIG_ID: testing_datasource.ds.id,
+            constants.HEADER_API_KEY: testing_datasource.key,
+        },
+    )
+    assert response.status_code == 200
+    parsed = GetParticipantAssignmentResponse.model_validate_json(response.text)
+    assert parsed.experiment_id == preassigned_experiment.id
+    assert parsed.participant_id == "assigned_id"
+    assert parsed.assignment is not None
+    assert parsed.assignment.arm_name == "control"
+
+
+def test_get_assignment_for_online_participant_with_apikey(
+    db_session, testing_datasource
+):
+    """Test endpoint that gets an assignment for a participant via API key."""
+    online_experiment = make_insertable_online_experiment(
+        ExperimentState.COMMITTED, testing_datasource.ds.id
+    )
+    db_session.add(online_experiment)
+    arms = make_arms_from_experiment(
+        online_experiment, testing_datasource.ds.organization_id
+    )
+    db_session.add_all(arms)
+    db_session.commit()
+
+    response = client.get(
+        f"/experiments/{online_experiment.id!s}/assignments/1",
+        headers={
+            constants.HEADER_CONFIG_ID: testing_datasource.ds.id,
+            constants.HEADER_API_KEY: testing_datasource.key,
+        },
+    )
+    assert response.status_code == 200
+    parsed = GetParticipantAssignmentResponse.model_validate_json(response.text)
+    assert parsed.experiment_id == online_experiment.id
+    assert parsed.participant_id == "1"
+    arms_map = {arm.id: arm.name for arm in arms}
+    assert parsed.assignment is not None
+    assert parsed.assignment.arm_name == arms_map[str(parsed.assignment.arm_id)]
+    assert parsed.assignment.arm_name == "control"
+    assert not parsed.assignment.strata
+
+    # Test that we get the same assignment for the same participant.
+    response2 = client.get(
+        f"/experiments/{online_experiment.id!s}/assignments/1",
+        headers={
+            constants.HEADER_CONFIG_ID: testing_datasource.ds.id,
+            constants.HEADER_API_KEY: testing_datasource.key,
+        },
+    )
+    assert response2.status_code == 200
+    assert response2.json() == response.json()
+
+    # Make sure there's only one db entry.
+    assignment = db_session.scalars(
+        select(tables.ArmAssignment).where(
+            tables.ArmAssignment.experiment_id == online_experiment.id
+        )
+    ).one()
+    assert assignment.participant_id == "1"
+    assert assignment.arm_id == str(parsed.assignment.arm_id)
 
 
 def test_get_existing_assignment_for_participant(db_session, testing_datasource):
