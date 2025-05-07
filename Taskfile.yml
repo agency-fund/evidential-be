@@ -3,7 +3,15 @@ output: prefixed
 vars:
   # App database for the local dev environment (see tasks: start, apply-migrations)
   XNGIN_DEVAPPDB_NAME: "xngin"
+
+  # The DSN passed to SQLAlchemy when connecting to the development xngin database.
   XNGIN_DEVAPP_DSN: "postgresql+psycopg://postgres:postgres@localhost:5499/{{.XNGIN_DEVAPPDB_NAME}}?sslmode=disable"
+
+  # The DSN used for managing the Postgres instance. This refers to the postgres database because it reliably exists,
+  # whereas the xngin database does not.
+  XNGIN_DEVAPP_DDL_DSN: "postgresql://postgres:postgres@localhost:5499/postgres?sslmode=disable"
+
+  # The DSN used for Atlas migrations of the xngin database.
   XNGIN_DEVAPP_MIGRATIONS_DSN: '{{replace "+psycopg" "" .XNGIN_DEVAPP_DSN}}'
   XNGIN_DEVAPP_MIGRATIONS_LINT_DSN: "postgresql://postgres:postgres@localhost:5499/migration_lint?sslmode=disable"
 
@@ -119,6 +127,7 @@ tasks:
       - cmd: uv sync --compile-bytecode
       - task: check-docker
   bootstrap-app:
+    interactive: true
     desc: >-
       Ensure the localpg server is running and has an "xngin" database. If the database doesn't already exist, it will
       be created, and Atlas will create the tables so that subsequent table migrations behave as expected.
@@ -141,8 +150,9 @@ tasks:
       ENABLE_OIDC: "true"
     deps:
       - bootstrap-app
-      - bootstrap-dwh
     cmds:
+      - task: bootstrap-dwh
+      - task: apply-migrations
       - uv run fastapi dev src/xngin/apiserver/main.py
   start-airplane:
     desc: "Like start, but runs the backend in airplane mode. All Admin API interactions will be authenticated as testing@agency.fund automatically."
@@ -226,7 +236,7 @@ tasks:
     desc: "Apply Postgres migrations locally (requires localpg instance to be running, to have an xngin database, and to have been previously migrated)"
     cmds:
       - uv run atlas migrate diff --env sa_postgres
-      - uv run atlas migrate apply --env sa_postgres --url "{{.XNGIN_DEVAPP_MIGRATIONS_DSN}}"
+      - uv run atlas migrate apply --env sa_postgres --url "{{.XNGIN_DEVAPP_MIGRATIONS_DSN}}" || (echo "⚠️ Something is awry with your development database. This can happen when switching branches. You can reset the database to the default state by running \"task drop-app\" before running \"task start\" again."; exit 1)
   create-user:
     desc: "Create a user: task create-user -- username@example.com"
     interactive: true
@@ -245,3 +255,7 @@ tasks:
     desc: "Start interactive psql"
     interactive: true
     cmd: psql "{{.XNGIN_DEVAPP_MIGRATIONS_DSN}}"
+  drop-app:
+    desc: "Forcibly remove the local development application database."
+    interactive: true
+    cmd: psql "{{.XNGIN_DEVAPP_DDL_DSN}}" -c "DROP DATABASE {{.XNGIN_DEVAPPDB_NAME}} WITH (FORCE);" || /bin/true
