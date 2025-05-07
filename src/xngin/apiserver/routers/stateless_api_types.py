@@ -1,6 +1,7 @@
 import datetime
 import decimal
 import enum
+import math
 import uuid
 from collections.abc import Sequence
 from typing import Annotated, Literal, Self, get_args
@@ -467,17 +468,24 @@ class ArmAnalysis(Arm):
         ),
     ]
     p_value: Annotated[
-        float,
+        float | None,
         Field(
             description="The p-value indicating statistical significance of the treatment effect."
         ),
     ]
     t_stat: Annotated[
-        float, Field(description="The t-statistic from the statistical test.")
+        float | None, Field(description="The t-statistic from the statistical test.")
     ]
     std_error: Annotated[
         float, Field(description="The standard error of the treatment effect estimate.")
     ]
+
+    @field_serializer("t_stat", "p_value", when_used="json")
+    def serialize_float(self, v: float, _info):
+        """Serialize floats to None when they are NaN, which becomes null in JSON."""
+        if math.isnan(v):
+            return None
+        return v
 
 
 class MetricAnalysis(ApiBaseModel):
