@@ -470,11 +470,14 @@ class ArmAnalysis(Arm):
     p_value: Annotated[
         float | None,
         Field(
-            description="The p-value indicating statistical significance of the treatment effect."
+            description="The p-value indicating statistical significance of the treatment effect. Value may be None if the t-stat is not available, e.g. due to inability to calculate the standard error."
         ),
     ]
     t_stat: Annotated[
-        float | None, Field(description="The t-statistic from the statistical test.")
+        float | None,
+        Field(
+            description="The t-statistic from the statistical test. If the value is actually NaN, e.g. due to inability to calculate the standard error, we return None."
+        ),
     ]
     std_error: Annotated[
         float, Field(description="The standard error of the treatment effect estimate.")
