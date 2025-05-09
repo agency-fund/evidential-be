@@ -698,7 +698,14 @@ def create_assignment_for_participant(
     if design_spec.experiment_type == "online":
         # For online experiments, create a new assignment with simple random assignment.
         # TODO? consider using a threadsafe permuted random assignment for better balance.
-        chosen_arm = random_choice(experiment.arms, seed=random_state)
+        if random_state:
+            # Sort by arm name to ensure deterministic assignment with seed for tests.
+            chosen_arm = random_choice(
+                sorted(experiment.arms, key=lambda a: a.name),
+                seed=random_state,
+            )
+        else:
+            chosen_arm = random_choice(experiment.arms)
 
         # Create and save the new assignment
         new_assignment = ArmAssignment(

@@ -6,16 +6,17 @@ import secrets
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
-from typing import assert_never
+from typing import Any, assert_never, cast
 
 import pytest
 import sqlalchemy
-import sqlalchemy_bigquery
 from pydantic import TypeAdapter, ValidationError
 from sqlalchemy import StaticPool, make_url
 from sqlalchemy.dialects.postgresql import psycopg
 from sqlalchemy.engine.interfaces import Dialect
+from sqlalchemy.engine.url import URL
 from sqlalchemy.orm import Session, sessionmaker
+from sqlalchemy_bigquery import dialect as bigquery_dialect
 from xngin.apiserver import database, flags
 from xngin.apiserver.apikeys import hash_key, make_key
 from xngin.apiserver.dependencies import (
@@ -26,6 +27,7 @@ from xngin.apiserver.dependencies import (
 from xngin.apiserver.dns import safe_resolve
 from xngin.apiserver.models import tables
 from xngin.apiserver.models.tables import ApiKey, Datasource, Organization
+from xngin.apiserver.routers.oidc_dependencies import PRIVILEGED_EMAIL
 from xngin.apiserver.settings import ParticipantsDef, SettingsForTesting, XnginSettings
 from xngin.apiserver.testing.pg_helpers import create_database_if_not_exists_pg
 from xngin.db_extensions import custom_functions
@@ -53,8 +55,27 @@ class DbType(enum.StrEnum):
             case DbType.PG:
                 return psycopg.dialect()
             case DbType.BQ:
-                return sqlalchemy_bigquery.dialect()
+                # No type hints so cast
+                # https://github.com/googleapis/python-bigquery-sqlalchemy/issues/355
+                return cast(Dialect, bigquery_dialect())
         assert_never(self)
+
+    def is_supported_dwh(self) -> bool:
+        """Returns True if this DbType is supported as a DWH backend."""
+        return self in {DbType.RS, DbType.PG, DbType.BQ}
+
+    def is_supported_appdb(self) -> bool:
+        """Returns True if this DbType is supported as an app database."""
+        return self == DbType.PG
+
+
+@dataclass
+class TestUriInfo:
+    """Holds information about a test database URI."""
+
+    connect_url: URL
+    db_type: DbType
+    connect_args: dict[str, Any]
 
 
 def get_settings_for_test() -> XnginSettings:
@@ -68,15 +89,20 @@ def get_settings_for_test() -> XnginSettings:
             raise
 
 
-def get_test_appdb_info():
+def get_test_appdb_info() -> TestUriInfo:
     """Use this for tests of our application db, e.g. for caching user table confgs."""
     connection_uri = os.environ.get("XNGIN_TEST_APPDB_URI", "")
     if not connection_uri:
         raise ValueError("XNGIN_TEST_APPDB_URI must be set")
-    return get_test_uri_info(connection_uri)
+    info = get_test_uri_info(connection_uri)
+    if not info.db_type.is_supported_appdb():
+        raise ValueError(
+            f"{info.db_type} is not a supported app database: {connection_uri}"
+        )
+    return info
 
 
-def get_test_dwh_info():
+def get_test_dwh_info() -> TestUriInfo:
     """Use this for tests that skip settings.json and directly connect to a simulated DWH.
 
     See xngin.apiserver.dwh.test_queries.fixture_dwh_session.
@@ -84,14 +110,18 @@ def get_test_dwh_info():
     connection_uri = os.environ.get("XNGIN_TEST_DWH_URI", "")
     if not connection_uri:
         raise ValueError("XNGIN_TEST_DWH_URI must be set.")
-    return get_test_uri_info(connection_uri)
+    info = get_test_uri_info(connection_uri)
+    if not info.db_type.is_supported_dwh():
+        raise ValueError(f"{info.db_type} is not a supported DWH: {connection_uri}")
+    return info
 
 
 @pytest.fixture(scope="session", autouse=True)
 def setup_debug_logging():
     print(
-        f"Running tests with XNGIN_TEST_APPDB_URI: {get_test_appdb_info()} "
-        f"and XNGIN_TEST_DWH_URI: {get_test_dwh_info()}"
+        "Running tests with "
+        f"\n\tXNGIN_TEST_APPDB_URI: {get_test_appdb_info()} "
+        f"\n\tXNGIN_TEST_DWH_URI  : {get_test_dwh_info()}"
     )
 
 
@@ -100,15 +130,9 @@ def allow_connecting_to_private_ips():
     safe_resolve.ALLOW_CONNECTING_TO_PRIVATE_IPS = True
 
 
-def get_test_uri_info(connection_uri: str):
-    """Returns a tuple of info about a test database given its connection_uri.
-
-    Returns:
-    - connection string uri
-    - type of dwh backend derived from the uri
-    - map of connection args for use with SQLAlchemy's create_engine()
-    """
-    connect_args = {}
+def get_test_uri_info(connection_uri: str) -> TestUriInfo:
+    """Returns a TestUriInfo dataclass about a test database given its connection_uri."""
+    connect_args: dict[str, Any] = {}
     if connection_uri.startswith("bigquery"):
         dbtype = DbType.BQ
     elif "redshift.amazonaws.com" in connection_uri:
@@ -119,7 +143,9 @@ def get_test_uri_info(connection_uri: str):
         raise ValueError(
             f"connection_uri is not recognized as a BigQuery, Redshift, or Postgres database: {connection_uri}"
         )
-    return make_url(connection_uri), dbtype, connect_args
+    return TestUriInfo(
+        connect_url=make_url(connection_uri), db_type=dbtype, connect_args=connect_args
+    )
 
 
 def get_test_sessionmaker():
@@ -127,17 +153,17 @@ def get_test_sessionmaker():
 
     The database will be created if it does not exist.
     """
-    connect_url, db_type, connect_args = get_test_appdb_info()
-    match db_type:
+    appdb_info = get_test_appdb_info()
+    match appdb_info.db_type:
         case DbType.PG:
-            create_database_if_not_exists_pg(connect_url)
+            create_database_if_not_exists_pg(appdb_info.connect_url)
         case _:
             raise ValueError("XNGIN_TEST_APPDB_URI must be postgres.")
     db_engine = sqlalchemy.create_engine(
-        connect_url,
+        appdb_info.connect_url,
         logging_name=SA_LOGGER_NAME_FOR_APP,
         execution_options={"logging_token": "app"},
-        connect_args=connect_args,
+        connect_args=appdb_info.connect_args,
         poolclass=StaticPool,
         echo=flags.ECHO_SQL_APP_DB,
     )
@@ -249,6 +275,21 @@ def fixture_testing_datasource(db_session) -> DatasourceMetadata:
     *different* than the xngin server-side database configured by conftest.setup().
     """
     return make_datasource_metadata(db_session)
+
+
+@pytest.fixture(name="testing_datasource_with_user", scope="function")
+def fixture_testing_datasource_with_user(db_session) -> DatasourceMetadata:
+    """
+    Generates a new Organization, Datasource, and API key. Adds our privileged user to the org.
+    """
+    metadata = make_datasource_metadata(db_session)
+    user = tables.User(
+        id="user_" + secrets.token_hex(8), email=PRIVILEGED_EMAIL, is_privileged=True
+    )
+    user.organizations.append(metadata.org)
+    db_session.add(user)
+    db_session.commit()
+    return metadata
 
 
 def make_datasource_metadata(

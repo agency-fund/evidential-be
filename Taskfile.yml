@@ -168,15 +168,13 @@ tasks:
   test:
     desc: "Runs unit tests"
     interactive: true
-    vars:
-      ARGS: '{{default "" .CLI_ARGS}}'
     env:
       # Tests should never connect to this URL.
       DATABASE_URL: "postgres://fail:fail@127.0.0.1:5499/fail"
     deps:
       - bootstrap-dwh
     cmds:
-      - uv run pytest {{.ARGS}}
+      - uv run pytest {{.CLI_ARGS}}
   test-airplane:
     desc: "Run unit tests (in airplane mode)."
     interactive: true
