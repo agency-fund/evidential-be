@@ -92,6 +92,9 @@ ppatch = partial(
 pdelete = partial(
     client.delete, headers={"Authorization": f"Bearer {PRIVILEGED_TOKEN_FOR_TESTING}"}
 )
+udelete = partial(
+    client.delete, headers={"Authorization": f"Bearer {UNPRIVILEGED_TOKEN_FOR_TESTING}"}
+)
 uget = partial(
     client.get, headers={"Authorization": f"Bearer {UNPRIVILEGED_TOKEN_FOR_TESTING}"}
 )
@@ -548,8 +551,18 @@ def test_lifecycle(testing_datasource):
     )
     assert response.status_code == 404, response.content
 
-    # Delete datasources
-    response = pdelete(f"/v1/m/datasources/{testing_datasource.ds.id}")
+
+def test_delete_datasource(testing_datasource_with_user):
+    # Delete the datasource as an unprivileged user.
+    response = udelete(f"/v1/m/datasources/{testing_datasource_with_user.ds.id}")
+    assert response.status_code == 403, response.content
+
+    # Delete the datasource as a privileged user.
+    response = pdelete(f"/v1/m/datasources/{testing_datasource_with_user.ds.id}")
+    assert response.status_code == 204, response.content
+
+    # Delete the datasource a 2nd time.
+    response = pdelete(f"/v1/m/datasources/{testing_datasource_with_user.ds.id}")
     assert response.status_code == 204, response.content
 
 

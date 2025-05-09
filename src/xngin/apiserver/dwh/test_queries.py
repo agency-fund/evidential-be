@@ -183,7 +183,11 @@ def fixture_dwh_session():
     SampleTable and SampleNullableTable are created and populated on each invocation, and destroyed after the yield
     completes.
     """
-    connect_url, db_type, connect_args = get_test_dwh_info()
+    dwh_info = get_test_dwh_info()
+    connect_url = dwh_info.connect_url
+    db_type = dwh_info.db_type
+    connect_args = dwh_info.connect_args
+
     default_url = make_url(connect_url)._replace(database=None)
     temporary_database_name = None
     use_temporary_database = db_type == DbType.PG

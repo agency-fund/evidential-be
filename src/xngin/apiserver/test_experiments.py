@@ -983,12 +983,11 @@ def test_get_experiment_assignments_as_csv(db_session, testing_datasource):
     )
     # Now verify the contents
     rows = response.text.splitlines(keepends=True)
-    (arm1_id, arm2_id) = experiment.get_arm_ids()
-    (arm1_name, arm2_name) = experiment.get_arm_names()
+    arm_name_to_id = {a.name: a.id for a in experiment.arms}
     assert len(rows) == 3
     assert rows[0] == "participant_id,arm_id,arm_name,gender,score\r\n"
-    assert rows[1] == f"p1,{arm1_id},{arm1_name},F,1.1\r\n"
-    assert rows[2] == f'p2,{arm2_id},{arm2_name},M,"esc,aped"\r\n'
+    assert rows[1] == f"p1,{arm_name_to_id['control']},control,F,1.1\r\n"
+    assert rows[2] == f'p2,{arm_name_to_id["treatment"]},treatment,M,"esc,aped"\r\n'
 
 
 def test_get_assignment_for_preassigned_participant_with_apikey(
