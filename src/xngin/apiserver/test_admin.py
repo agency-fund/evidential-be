@@ -188,7 +188,7 @@ def make_createexperimentrequest_json(
                 {"arm_name": "treatment", "arm_description": "treatment"},
             ],
             "filters": [],
-            "strata_field_names": ["gender"],
+            "strata": [{"field_name": "gender"}],
             "metrics": [
                 {
                     "field_name": "current_income",

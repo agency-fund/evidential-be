@@ -25,9 +25,7 @@ Datasource-ID: testing
       "relation": "includes",
       "value": ["Asian"]
     }],
-    "strata_field_names": [
-      "is_onboarded"
-    ],
+    "strata": [{ "field_name": "is_onboarded" }],
     "power": 0.8,
     "alpha": 0.05,
     "fstat_thresh": 0.5,

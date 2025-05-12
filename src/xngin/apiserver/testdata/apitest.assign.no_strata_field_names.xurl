@@ -21,7 +21,7 @@ Datasource-ID: testing
     "end_date": "2024-11-20",
     "participant_type": "test_participant_type",
     "filters": [],
-    "strata_field_names": [],
+    "strata": [],
     "power": 0.8,
     "alpha": 0.05,
     "fstat_thresh": 0.5,

@@ -21,10 +21,10 @@ Datasource-ID: testing
     "end_date": "2024-11-20",
     "participant_type": "test_participant_type",
     "filters": [],
-    "strata_field_names": [
-      "is_onboarded",
-      "potential_1",
-      "current_income"
+    "strata": [
+      { "field_name": "is_onboarded" },
+      { "field_name": "potential_1" },
+      { "field_name": "current_income" }
     ],
     "power": 0.8,
     "alpha": 0.05,
