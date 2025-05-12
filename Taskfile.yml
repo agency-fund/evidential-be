@@ -2,7 +2,7 @@ version: '3'
 output: prefixed
 vars:
   # App database for the local dev environment (see tasks: start, apply-migrations)
-  XNGIN_DEVAPPDB_NAME: "xngin"
+  XNGIN_DEVAPPDB_NAME: '{{default "xngin" .XNGIN_DEVAPPDB_NAME}}'
 
   # The DSN passed to SQLAlchemy when connecting to the development xngin database.
   XNGIN_DEVAPP_DSN: "postgresql+psycopg://postgres:postgres@localhost:5499/{{.XNGIN_DEVAPPDB_NAME}}?sslmode=disable"

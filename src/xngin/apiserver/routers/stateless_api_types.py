@@ -321,16 +321,6 @@ class AudienceSpecFilter(ApiBaseModel):
         return self
 
 
-# TODO: remove AudienceSpec
-class AudienceSpec(ApiBaseModel):
-    """Defines target participants for an experiment using filters."""
-
-    participant_type: Annotated[str, Field(max_length=MAX_LENGTH_OF_NAME_VALUE)]
-    filters: Annotated[
-        list[AudienceSpecFilter], Field(max_length=MAX_NUMBER_OF_FILTERS)
-    ]
-
-
 class MetricType(enum.StrEnum):
     """Classifies metrics by their value type."""
 

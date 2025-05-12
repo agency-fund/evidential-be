@@ -48,7 +48,6 @@ from xngin.apiserver.routers.oidc_dependencies import (
     UNPRIVILEGED_TOKEN_FOR_TESTING,
 )
 from xngin.apiserver.routers.stateless_api_types import (
-    AudienceSpec,
     DataType,
     DesignSpec,
     ExperimentAnalysis,
@@ -220,10 +219,6 @@ def make_insertable_experiment(
         start_date=datetime.datetime.fromisoformat(design_spec.start_date.isoformat()),
         end_date=datetime.datetime.fromisoformat(design_spec.end_date.isoformat()),
         design_spec=design_spec.model_dump(mode="json"),
-        audience_spec=AudienceSpec(  # TODO: remove deprecated audience_spec
-            participant_type=design_spec.participant_type,
-            filters=design_spec.filters,
-        ).model_dump(mode="json"),
         power_analyses=None,
     ).set_balance_check(None)
 

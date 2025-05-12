@@ -16,7 +16,6 @@ from xngin.apiserver import conftest, constants
 from xngin.apiserver.models import tables
 from xngin.apiserver.routers.stateless_api_types import (
     Arm,
-    AudienceSpec,
     BalanceCheck,
     OnlineExperimentSpec,
     PreassignedExperimentSpec,
@@ -147,10 +146,6 @@ def make_insertable_experiment(state: ExperimentState, datasource_id="testing"):
         start_date=request.design_spec.start_date,
         end_date=request.design_spec.end_date,
         design_spec=request.design_spec.model_dump(mode="json"),
-        audience_spec=AudienceSpec(  # TODO: remove deprecated audience_spec
-            participant_type=request.design_spec.participant_type,
-            filters=request.design_spec.filters,
-        ).model_dump(mode="json"),
         power_analyses=PowerResponse(
             analyses=[
                 MetricPowerAnalysis(
@@ -218,10 +213,6 @@ def make_insertable_online_experiment(
         start_date=design_spec.start_date,
         end_date=design_spec.end_date,
         design_spec=design_spec.model_dump(mode="json"),
-        audience_spec=AudienceSpec(  # TODO: remove deprecated audience_spec
-            participant_type=design_spec.participant_type,
-            filters=design_spec.filters,
-        ).model_dump(mode="json"),
     )
 
 

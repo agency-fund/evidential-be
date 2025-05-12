@@ -23,7 +23,6 @@ from xngin.apiserver.routers.stateless_api_types import (
     Arm,
     ArmSize,
     Assignment,
-    AudienceSpec,
     PreassignedExperimentSpec,
     Strata,
 )
@@ -245,10 +244,6 @@ def create_preassigned_experiment_impl(
         start_date=request.design_spec.start_date,
         end_date=request.design_spec.end_date,
         design_spec=request.design_spec.model_dump(mode="json"),
-        audience_spec=AudienceSpec(  # TODO: remove deprecated audience_spec
-            participant_type=request.design_spec.participant_type,
-            filters=request.design_spec.filters,
-        ).model_dump(mode="json"),
         power_analyses=request.power_analyses.model_dump(mode="json")
         if request.power_analyses
         else None,
@@ -310,10 +305,6 @@ def create_online_experiment_impl(
         start_date=request.design_spec.start_date,
         end_date=request.design_spec.end_date,
         design_spec=request.design_spec.model_dump(mode="json"),
-        audience_spec=AudienceSpec(  # TODO: remove deprecated audience_spec
-            participant_type=request.design_spec.participant_type,
-            filters=request.design_spec.filters,
-        ).model_dump(mode="json"),
         power_analyses=None,
     )
     xngin_session.add(experiment)

@@ -1224,9 +1224,7 @@ def analyze_experiment(
 
     experiment = get_experiment_via_ds_or_raise(xngin_session, ds, experiment_id)
 
-    participants_cfg = dsconfig.find_participants(
-        experiment.get_audience_spec().participant_type
-    )
+    participants_cfg = dsconfig.find_participants(experiment.participant_type)
     if not isinstance(participants_cfg, ParticipantsDef):
         raise LateValidationError(
             "Invalid ParticipantsConfig: Participants must be of type schema."
