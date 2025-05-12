@@ -1186,7 +1186,7 @@ def create_experiment(
         )
         if chosen_n is not None:
             participants = query_for_participants(
-                dwh_session, sa_table, body.design_spec, chosen_n
+                dwh_session, sa_table, body.design_spec.filters, chosen_n
             )
         elif body.design_spec.experiment_type == "preassigned":
             raise HTTPException(

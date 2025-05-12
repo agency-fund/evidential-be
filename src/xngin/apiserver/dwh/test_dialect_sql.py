@@ -9,7 +9,6 @@ Common functions can have different names, too; e.g. one database's RANDOM can b
 None of the tests in this file actually execute queries -- it tests the query generation, but not the query execution.
 """
 
-from datetime import UTC, datetime
 import re
 from dataclasses import dataclass
 
@@ -21,14 +20,11 @@ from sqlalchemy.dialects.postgresql import psycopg, psycopg2
 from sqlalchemy.orm import DeclarativeBase, mapped_column
 from sqlalchemy.sql.ddl import CreateTable
 from xngin.apiserver.routers.stateless_api_types import (
-    Arm,
     AudienceSpecFilter,
-    BaseDesignSpec,
-    DesignSpecMetricRequest,
     Relation,
 )
 from xngin.apiserver.conftest import DbType
-from xngin.apiserver.dwh.queries import compose_query, create_query_filters_from_spec
+from xngin.apiserver.dwh.queries import compose_query, create_query_filters
 
 
 class HelpfulBase(DeclarativeBase):
@@ -89,23 +85,6 @@ DATETIME_SCENARIOS = [
 ]
 
 
-def make_design_spec(filters: list[AudienceSpecFilter]) -> BaseDesignSpec:
-    """Makes a test BaseDesignSpec just for filter testing, with everything else defaults."""
-    return BaseDesignSpec(
-        filters=filters,
-        # Other fields below should be ignored in tests.
-        participant_type="ignored",
-        experiment_type="preassigned",
-        experiment_name="ignored",
-        description="ignored",
-        start_date=datetime(2025, 1, 1, tzinfo=UTC),
-        end_date=datetime(2025, 2, 1, tzinfo=UTC),
-        arms=[Arm(arm_name="A"), Arm(arm_name="B")],
-        metrics=[DesignSpecMetricRequest(field_name="ignored", metric_pct_change=1)],
-        strata_field_names=[],
-    )
-
-
 @pytest.mark.parametrize("testcase", DATETIME_SCENARIOS)
 def test_datetimes(testcase: DateTimeTestCase):
     """Exercises various SQLAlchemy dialects handling of datetime and timestamp types."""
@@ -113,9 +92,9 @@ def test_datetimes(testcase: DateTimeTestCase):
     q = compose_query(
         sa_table,
         2,
-        create_query_filters_from_spec(
+        create_query_filters(
             sa_table,
-            make_design_spec([
+            [
                 AudienceSpecFilter(
                     field_name="ts_col",
                     relation=Relation.BETWEEN,
@@ -126,7 +105,7 @@ def test_datetimes(testcase: DateTimeTestCase):
                     relation=Relation.BETWEEN,
                     value=["2023-06-01T12:34:56", "2024-01-01 00:00:00Z"],
                 ),
-            ]),
+            ],
         ),
     )
     ddl = str(CreateTable(sa_table).compile(dialect=testcase.dialect))
@@ -563,8 +542,7 @@ def test_where(testcase: WhereTestCase):
             testcase.where[variant] = ""
 
     sa_table = WhereTable.get_table()
-    design_spec = make_design_spec(testcase.filters)
-    filters = create_query_filters_from_spec(sa_table, design_spec)
+    filters = create_query_filters(sa_table, testcase.filters)
     q = compose_query(sa_table, 3, filters)
 
     failures = {}

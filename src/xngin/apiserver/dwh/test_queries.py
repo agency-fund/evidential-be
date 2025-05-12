@@ -23,7 +23,6 @@ from sqlalchemy import (
 from sqlalchemy.orm import DeclarativeBase, Session, mapped_column
 from xngin.apiserver import flags
 from xngin.apiserver.routers.stateless_api_types import (
-    AudienceSpec,
     AudienceSpecFilter,
     DesignSpecMetric,
     DesignSpecMetricRequest,
@@ -36,7 +35,7 @@ from xngin.apiserver.conftest import DbType, get_test_dwh_info
 from xngin.apiserver.dwh.queries import (
     compose_query,
     create_datetime_filter,
-    create_query_filters_from_spec,
+    create_query_filters,
     get_participant_metrics,
     get_stats_on_metrics,
     make_csv_regex,
@@ -230,10 +229,10 @@ def fixture_dwh_session():
 
     Base.metadata.create_all(engine)
     session = Session(engine)
-    for data in SAMPLE_TABLE_ROWS:
-        session.add(SampleTable(**data.__dict__))
-    for data in SAMPLE_NULLABLE_TABLE_ROWS:
-        session.add(SampleNullableTable(**data.__dict__))
+    for row in SAMPLE_TABLE_ROWS:
+        session.add(SampleTable(**row.__dict__))
+    for nullable_row in SAMPLE_NULLABLE_TABLE_ROWS:
+        session.add(SampleNullableTable(**nullable_row.__dict__))
 
     session.commit()
 
@@ -444,10 +443,7 @@ def test_is_nullable(testcase, dwh_session, use_deterministic_random):
         for filt in testcase.filters
     ]
     table = SampleNullableTable.get_table()
-    filters = create_query_filters_from_spec(
-        table,
-        AudienceSpec(participant_type=table.name, filters=testcase.filters),
-    )
+    filters = create_query_filters(table, testcase.filters)
     q = compose_query(table, testcase.chosen_n, filters)
     query_results = dwh_session.execute(q).all()
     assert list(sorted([r.id for r in query_results])) == list(
@@ -622,12 +618,7 @@ def test_relations(testcase, dwh_session, use_deterministic_random):
         AudienceSpecFilter.model_validate(filt.model_dump())
         for filt in testcase.filters
     ]
-    filters = create_query_filters_from_spec(
-        SampleTable.get_table(),
-        AudienceSpec(
-            participant_type=SampleTable.__tablename__, filters=testcase.filters
-        ),
-    )
+    filters = create_query_filters(SampleTable.get_table(), testcase.filters)
     q = compose_query(SampleTable.get_table(), testcase.chosen_n, filters)
     query_results = dwh_session.execute(q).all()
     assert list(sorted([r.id for r in query_results])) == list(
@@ -812,10 +803,7 @@ def test_get_stats_on_missing_metric_raises_error(dwh_session):
             dwh_session,
             SampleTable.get_table(),
             [DesignSpecMetricRequest(field_name="missing_col", metric_pct_change=0.1)],
-            AudienceSpec(
-                participant_type="ignored",
-                filters=[],
-            ),
+            audience_filters=[],
         )
     assert (
         "Missing metrics (check your Datasource configuration): {'missing_col'}"
@@ -829,10 +817,7 @@ def test_get_stats_on_integer_metric(dwh_session):
         dwh_session,
         SampleTable.get_table(),
         [DesignSpecMetricRequest(field_name="int_col", metric_pct_change=0.1)],
-        AudienceSpec(
-            participant_type="ignored",
-            filters=[],
-        ),
+        audience_filters=[],
     )
 
     expected = DesignSpecMetric(
@@ -865,7 +850,7 @@ def test_get_stats_on_nullable_integer_metric(dwh_session):
         dwh_session,
         SampleNullableTable.get_table(),
         [DesignSpecMetricRequest(field_name="int_col", metric_pct_change=0.1)],
-        AudienceSpec(participant_type="ignored", filters=[]),
+        audience_filters=[],
     )
 
     expected = DesignSpecMetric(
@@ -897,10 +882,7 @@ def test_get_stats_on_boolean_metric(dwh_session):
         dwh_session,
         SampleTable.get_table(),
         [DesignSpecMetricRequest(field_name="bool_col", metric_pct_change=0.1)],
-        AudienceSpec(
-            participant_type="ignored",
-            filters=[],
-        ),
+        audience_filters=[],
     )
 
     expected = DesignSpecMetric(
@@ -931,10 +913,7 @@ def test_get_stats_on_numeric_metric(dwh_session):
         dwh_session,
         SampleTable.get_table(),
         [DesignSpecMetricRequest(field_name="float_col", metric_pct_change=0.1)],
-        AudienceSpec(
-            participant_type="ignored",
-            filters=[],
-        ),
+        audience_filters=[],
     )
 
     expected = DesignSpecMetric(

@@ -29,7 +29,6 @@ from xngin.apiserver.routers.stateless_api_types import (
     MetricValue,
     ParticipantOutcome,
     Relation,
-    BaseDesignSpec,
 )
 from xngin.apiserver.exceptions_common import LateValidationError
 from xngin.db_extensions import custom_functions
@@ -39,7 +38,7 @@ def get_stats_on_metrics(
     session,
     sa_table: Table,
     metrics: list[DesignSpecMetricRequest],
-    design_spec: BaseDesignSpec,
+    audience_filters: list[AudienceSpecFilter],
 ) -> list[DesignSpecMetric]:
     missing_metrics = {m.field_name for m in metrics if m.field_name not in sa_table.c}
     if len(missing_metrics) > 0:
@@ -68,7 +67,7 @@ def get_stats_on_metrics(
             custom_functions.stddev_pop(cast_column).label(f"{field_name}__stddev"),
             func.count(col).label(f"{field_name}__count"),
         ))
-    filters = create_query_filters_from_spec(sa_table, design_spec)
+    filters = create_query_filters(sa_table, audience_filters)
     query = select(*select_columns).filter(*filters)
     stats = session.execute(query).mappings().fetchone()
 
@@ -177,11 +176,11 @@ def get_participant_metrics(
 def query_for_participants(
     session: Session,
     sa_table: Table,
-    design_spec: BaseDesignSpec,
+    audience_filters: list[AudienceSpecFilter],
     chosen_n: int,
 ):
     """Samples participants."""
-    filters = create_query_filters_from_spec(sa_table, design_spec)
+    filters = create_query_filters(sa_table, audience_filters)
     query = compose_query(sa_table, chosen_n, filters)
     return session.execute(query).all()
 
@@ -197,11 +196,11 @@ def create_one_filter(filter_: AudienceSpecFilter, sa_table: sqlalchemy.Table):
     return create_filter(sa_table.columns[filter_.field_name], filter_)
 
 
-def create_query_filters_from_spec(
-    sa_table: sqlalchemy.Table, design_spec: BaseDesignSpec
+def create_query_filters(
+    sa_table: sqlalchemy.Table, audience_filters: list[AudienceSpecFilter]
 ):
-    """Converts a DesignSpec into a list of SQLAlchemy filters."""
-    return [create_one_filter(filter_, sa_table) for filter_ in design_spec.filters]
+    """Converts a list of AudienceSpecFilter into a list of SQLAlchemy filters."""
+    return [create_one_filter(filter_, sa_table) for filter_ in audience_filters]
 
 
 def create_special_experiment_id_filter(

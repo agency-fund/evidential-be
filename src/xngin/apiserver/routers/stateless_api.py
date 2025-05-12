@@ -316,7 +316,7 @@ def power_check_impl(
             dwh_session,
             sa_table,
             body.design_spec.metrics,
-            body.design_spec,
+            body.design_spec.filters,
         )
 
         return PowerResponse(
@@ -375,7 +375,7 @@ def assign_treatment(
             config.supports_reflection(),
         )
         participants = query_for_participants(
-            dwh_session, sa_table, body.design_spec, chosen_n
+            dwh_session, sa_table, body.design_spec.filters, chosen_n
         )
 
     metric_names = [m.field_name for m in body.design_spec.metrics]
