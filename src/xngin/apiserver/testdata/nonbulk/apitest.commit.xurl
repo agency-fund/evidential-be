@@ -3,6 +3,7 @@ Datasource-ID: customer-test
 ```json
 {
   "design_spec": {
+    "participant_type": "groups",
     "experiment_id": "0897bbd7-dacd-41b4-b164-7a1950fa61f2",
     "experiment_type": "preassigned",
     "experiment_name": "Sample experiment name.",
@@ -22,18 +23,6 @@ Datasource-ID: customer-test
     "strata_field_names": [
       "active_experiment_ids"
     ],
-    "power": 0.8,
-    "alpha": 0.05,
-    "fstat_thresh": 0.5,
-    "metrics": [
-      {
-        "field_name": "chat_msgs_hour",
-        "metric_pct_change": 0.1
-      }
-    ]
-  },
-  "audience_spec": {
-    "participant_type": "groups",
     "filters": [
       {
         "field_name": "is_onboarded",
@@ -41,6 +30,15 @@ Datasource-ID: customer-test
         "value": [
           "TRUE"
         ]
+      }
+    ],
+    "power": 0.8,
+    "alpha": 0.05,
+    "fstat_thresh": 0.5,
+    "metrics": [
+      {
+        "field_name": "chat_msgs_hour",
+        "metric_pct_change": 0.1
       }
     ]
   },

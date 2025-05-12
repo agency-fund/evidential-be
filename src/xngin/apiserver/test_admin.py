@@ -6,7 +6,7 @@ from functools import partial
 import pytest
 from fastapi import HTTPException
 from fastapi.testclient import TestClient
-from pydantic import SecretStr
+from pydantic import SecretStr, TypeAdapter
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 from xngin.apiserver import conftest, flags
@@ -48,7 +48,9 @@ from xngin.apiserver.routers.oidc_dependencies import (
     UNPRIVILEGED_TOKEN_FOR_TESTING,
 )
 from xngin.apiserver.routers.stateless_api_types import (
+    AudienceSpec,
     DataType,
+    DesignSpec,
     ExperimentAnalysis,
     ExperimentType,
 )
@@ -175,6 +177,7 @@ def make_createexperimentrequest_json(
     """Create an experiment on the test ds."""
     return {
         "design_spec": {
+            "participant_type": participant_type,
             "experiment_name": "test",
             "description": "test",
             "experiment_type": experiment_type,
@@ -185,6 +188,7 @@ def make_createexperimentrequest_json(
                 {"arm_name": "control", "arm_description": "control"},
                 {"arm_name": "treatment", "arm_description": "treatment"},
             ],
+            "filters": [],
             "strata_field_names": ["gender"],
             "metrics": [
                 {
@@ -192,11 +196,7 @@ def make_createexperimentrequest_json(
                     "metric_pct_change": 0.1,
                 }
             ],
-        },
-        "audience_spec": {
-            "participant_type": participant_type,
-            "filters": [],
-        },
+        }
     }
 
 
@@ -206,20 +206,24 @@ def make_insertable_experiment(
     experiment_type: ExperimentType = "preassigned",
 ) -> tables.Experiment:
     request = make_createexperimentrequest_json(experiment_type=experiment_type)
+    design_spec: DesignSpec = TypeAdapter(DesignSpec).validate_python(
+        request["design_spec"]
+    )
     return tables.Experiment(
         id=tables.experiment_id_factory(),
         datasource_id=datasource_id,
         experiment_type=experiment_type,
-        participant_type=request["audience_spec"]["participant_type"],
-        name=request["design_spec"]["experiment_name"],
-        description=request["design_spec"]["description"],
+        participant_type=design_spec.participant_type,
+        name=design_spec.experiment_name,
+        description=design_spec.description,
         state=state,
-        start_date=datetime.datetime.fromisoformat(
-            request["design_spec"]["start_date"]
-        ),
-        end_date=datetime.datetime.fromisoformat(request["design_spec"]["end_date"]),
-        design_spec=request["design_spec"],
-        audience_spec=request["audience_spec"],
+        start_date=datetime.datetime.fromisoformat(design_spec.start_date.isoformat()),
+        end_date=datetime.datetime.fromisoformat(design_spec.end_date.isoformat()),
+        design_spec=design_spec.model_dump(mode="json"),
+        audience_spec=AudienceSpec(  # TODO: remove deprecated audience_spec
+            participant_type=design_spec.participant_type,
+            filters=design_spec.filters,
+        ).model_dump(mode="json"),
         power_analyses=None,
     ).set_balance_check(None)
 
@@ -249,7 +253,7 @@ def make_experiment_and_arms(
     )
     # Fake arm_ids in the design_spec since we're not using the admin API to create the experiment.
     for arm in experiment.design_spec["arms"]:
-        if "arm_id" not in arm:
+        if "arm_id" not in arm or arm["arm_id"] is None:
             arm["arm_id"] = tables.arm_id_factory()
     db_session.add(experiment)
     # Create ArmTable instances for each arm in the experiment
@@ -852,7 +856,6 @@ def test_create_preassigned_experiment_using_inline_schema_ds(
     actual_design_spec.arms[0].arm_id = None
     actual_design_spec.arms[1].arm_id = None
     assert actual_design_spec == base_request.design_spec
-    assert created_experiment.audience_spec == base_request.audience_spec
     assert created_experiment.power_analyses == base_request.power_analyses
 
     experiment_id = created_experiment.design_spec.experiment_id
@@ -935,7 +938,6 @@ def test_create_online_experiment_using_inline_schema_ds(
     actual_design_spec.arms[0].arm_id = None
     actual_design_spec.arms[1].arm_id = None
     assert actual_design_spec == base_request.design_spec
-    assert created_experiment.audience_spec == base_request.audience_spec
 
 
 def test_get_experiment_assignment_for_preassigned_participant(testing_experiment):

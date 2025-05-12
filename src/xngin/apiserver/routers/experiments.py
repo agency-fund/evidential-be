@@ -23,6 +23,7 @@ from xngin.apiserver.routers.stateless_api_types import (
     Arm,
     ArmSize,
     Assignment,
+    AudienceSpec,
     PreassignedExperimentSpec,
     Strata,
 )
@@ -111,7 +112,7 @@ def create_experiment_with_assignment_sl(
 
     ds_config = datasource.config
     commons = CommonQueryParams(
-        participant_type=body.audience_spec.participant_type, refresh=refresh
+        participant_type=body.design_spec.participant_type, refresh=refresh
     )
     participants_cfg, schema = get_participants_config_and_schema(
         commons, ds_config, gsheets
@@ -125,7 +126,7 @@ def create_experiment_with_assignment_sl(
             ds_config.supports_reflection(),
         )
         participants = query_for_participants(
-            dwh_session, sa_table, body.audience_spec, chosen_n
+            dwh_session, sa_table, body.design_spec, chosen_n
         )
 
     # Persist the experiment and assignments in the xngin database
@@ -166,6 +167,11 @@ def create_experiment_impl(
         arm.arm_id = arm_id_factory()
 
     if request.design_spec.experiment_type == "preassigned":
+        if dwh_participants is None:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Preassigned experiments must have participants data",
+            )
         return create_preassigned_experiment_impl(
             request=request,
             datasource_id=datasource_id,
@@ -239,6 +245,10 @@ def create_preassigned_experiment_impl(
         start_date=request.design_spec.start_date,
         end_date=request.design_spec.end_date,
         design_spec=request.design_spec.model_dump(mode="json"),
+        audience_spec=AudienceSpec(  # TODO: remove deprecated audience_spec
+            participant_type=request.design_spec.participant_type,
+            filters=request.design_spec.filters,
+        ).model_dump(mode="json"),
         power_analyses=request.power_analyses.model_dump(mode="json")
         if request.power_analyses
         else None,
@@ -300,6 +310,10 @@ def create_online_experiment_impl(
         start_date=request.design_spec.start_date,
         end_date=request.design_spec.end_date,
         design_spec=request.design_spec.model_dump(mode="json"),
+        audience_spec=AudienceSpec(  # TODO: remove deprecated audience_spec
+            participant_type=request.design_spec.participant_type,
+            filters=request.design_spec.filters,
+        ).model_dump(mode="json"),
         power_analyses=None,
     )
     xngin_session.add(experiment)
@@ -470,7 +484,6 @@ def list_experiments_impl(
                 datasource_id=e.datasource_id,
                 state=e.state,
                 design_spec=e.get_design_spec(),
-                audience_spec=e.get_audience_spec(),
                 power_analyses=e.get_power_analyses(),
                 assign_summary=get_assign_summary(xngin_session, e),
             )
@@ -493,7 +506,6 @@ def get_experiment_sl(
         datasource_id=experiment.datasource_id,
         state=experiment.state,
         design_spec=experiment.get_design_spec(),
-        audience_spec=experiment.get_audience_spec(),
         power_analyses=experiment.get_power_analyses(),
         assign_summary=get_assign_summary(xngin_session, experiment),
     )
@@ -707,7 +719,7 @@ def create_assignment_for_participant(
         new_assignment = ArmAssignment(
             experiment_id=experiment.id,
             participant_id=participant_id,
-            participant_type=experiment.get_audience_spec().participant_type,
+            participant_type=experiment.participant_type,
             arm_id=chosen_arm.id,
             strata=[],  # Online assignments don't have strata
         )

@@ -284,6 +284,7 @@ jobs:
             -X POST "http://localhost:8000/v1/assign?chosen_n=40&random_state=42" \
             -d '{
               "design_spec": {
+                "participant_type": "warehouse",
                 "experiment_id": "0897bbd7-dacd-41b4-b164-7a1950fa61f2",
                 "experiment_type": "preassigned",
                 "experiment_name": "Sample experiment name.",
@@ -300,6 +301,7 @@ jobs:
                 ],
                 "start_date": "2024-11-06",
                 "end_date": "2024-11-20",
+                "filters": [],
                 "strata_field_names": [
                   "is_onboarded"
                 ],
@@ -312,10 +314,6 @@ jobs:
                     "metric_pct_change": 0.1
                   }
                 ]
-              },
-              "audience_spec": {
-                "participant_type": "warehouse",
-                "filters": []
               }
             }'
           kill %1
