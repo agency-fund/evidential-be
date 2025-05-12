@@ -406,6 +406,7 @@ class Experiment(Base):
     # JSON serialized form of DesignSpec.
     design_spec: Mapped[dict] = mapped_column(type_=JSONBetter)
     # JSON serialized form of AudienceSpec.
+    # TODO: remove this field once we have migrated all experiments to use design_spec.
     audience_spec: Mapped[dict] = mapped_column(type_=JSONBetter)
     # JSON serialized form of a PowerResponse. Not required since some experiments may not have data to run power analyses.
     power_analyses: Mapped[dict | None] = mapped_column(type_=JSONBetter)
@@ -437,7 +438,11 @@ class Experiment(Base):
         return TypeAdapter(DesignSpec).validate_python(self.design_spec)
 
     def get_audience_spec(self) -> AudienceSpec:
-        return TypeAdapter(AudienceSpec).validate_python(self.audience_spec)
+        """Extract participant_type and filters from design_spec to create an AudienceSpec."""
+        design = self.get_design_spec()
+        return AudienceSpec(
+            participant_type=design.participant_type, filters=design.filters
+        )
 
     def get_power_analyses(self) -> PowerResponse | None:
         if self.power_analyses is None:

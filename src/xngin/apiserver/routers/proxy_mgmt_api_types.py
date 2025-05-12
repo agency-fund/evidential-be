@@ -8,7 +8,6 @@ import httpx
 from pydantic import BaseModel, ConfigDict, Field, field_serializer
 from xngin.apiserver.routers.stateless_api_types import (
     AssignResponse,
-    AudienceSpec,
     DesignSpec,
     PowerResponse,
 )
@@ -59,7 +58,6 @@ class WebhookCommitRequest(WebhookBaseModel):
     )
     creator_user_id: str = Field(description="ID of the user creating the experiment")
     design_spec: DesignSpec
-    audience_spec: AudienceSpec
     power_analyses: PowerResponse | None = None
     experiment_assignment: AssignResponse
 

@@ -321,6 +321,7 @@ class AudienceSpecFilter(ApiBaseModel):
         return self
 
 
+# TODO: remove AudienceSpec
 class AudienceSpec(ApiBaseModel):
     """Defines target participants for an experiment using filters."""
 
@@ -538,6 +539,8 @@ ExperimentType = Literal["online", "preassigned"]
 class BaseDesignSpec(ApiBaseModel):
     """Experiment design metadata and target metrics common to all experiment types."""
 
+    participant_type: Annotated[str, Field(max_length=MAX_LENGTH_OF_NAME_VALUE)]
+
     experiment_id: Annotated[
         str | None,
         Field(
@@ -577,6 +580,10 @@ class BaseDesignSpec(ApiBaseModel):
             min_length=1,
             max_length=MAX_NUMBER_OF_FIELDS,
         ),
+    ]
+
+    filters: Annotated[
+        list[AudienceSpecFilter], Field(max_length=MAX_NUMBER_OF_FILTERS)
     ]
 
     @field_serializer("start_date", "end_date", when_used="json")
@@ -950,14 +957,12 @@ class GetStrataResponse(BaseModel):
     results: Annotated[list[GetStrataResponseElement], Field()]
 
 
-class AssignRequest(ApiBaseModel):
-    design_spec: DesignSpec
-    audience_spec: AudienceSpec
-
-
 class PowerRequest(ApiBaseModel):
     design_spec: DesignSpec
-    audience_spec: AudienceSpec
+
+
+class AssignRequest(ApiBaseModel):
+    design_spec: DesignSpec
 
 
 class PowerResponse(ApiBaseModel):
@@ -970,7 +975,6 @@ class CommitRequest(ApiBaseModel):
     """The complete experiment configuration to persist in an experiment registry."""
 
     design_spec: DesignSpec
-    audience_spec: AudienceSpec
     power_analyses: Annotated[
         PowerResponse | None,
         Field(
