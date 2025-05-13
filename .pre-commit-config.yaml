@@ -12,7 +12,9 @@ repos:
       - id: destroyed-symlinks
       - id: detect-private-key
       - id: end-of-file-fixer
+        exclude: ^migrations/
       - id: trailing-whitespace
+        exclude: ^migrations/
       - id: check-added-large-files
         exclude: ^src/xngin/apiserver/testdata/testing_dwh.csv.zst$
   - repo: https://github.com/astral-sh/ruff-pre-commit
