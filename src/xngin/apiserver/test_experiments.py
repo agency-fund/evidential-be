@@ -313,7 +313,7 @@ def test_create_experiment_impl_for_preassigned(
     assert response.design_spec.start_date == request.design_spec.start_date
     assert response.design_spec.end_date == request.design_spec.end_date
     # although we stratify on target metrics as well in this test, note that the
-    # original strata_field_names are not augmented with the metric names.
+    # original strata are not augmented with the metric names.
     assert response.design_spec.strata == [Stratum(field_name="gender")]
     assert response.power_analyses == request.power_analyses
     # Verify assign_summary
@@ -366,7 +366,7 @@ def test_create_experiment_impl_for_preassigned(
     # Verify strata information
     assert (
         len(sample_assignment.strata) == 2
-    )  # our metric by default and strata_field_names
+    )  # our metric by default and the original strata
     assert sample_assignment.strata[0]["field_name"] == "gender"
     assert sample_assignment.strata[1]["field_name"] == "is_onboarded"
 

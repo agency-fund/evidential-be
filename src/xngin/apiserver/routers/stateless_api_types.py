@@ -556,15 +556,6 @@ class BaseDesignSpec(ApiBaseModel):
     # arms (at least two)
     arms: Annotated[list[Arm], Field(..., min_length=2, max_length=MAX_NUMBER_OF_ARMS)]
 
-    # TODO: remove strata_field_names
-    strata_field_names: Annotated[
-        list[FieldName] | None,
-        Field(
-            description="List of participant_type variables to use for stratification.",
-            max_length=MAX_NUMBER_OF_FIELDS,
-        ),
-    ] = None
-
     # TODO add extra "strata_spec:" field that holds experiment-wide stratification rules
     # such as # of buckets to use during quantilization and the name to use for reporting the
     # stratum_group_id.

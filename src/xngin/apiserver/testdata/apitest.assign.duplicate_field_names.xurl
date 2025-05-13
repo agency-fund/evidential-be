@@ -6,7 +6,7 @@ Datasource-ID: testing
     "experiment_id": "0897bbd7-dacd-41b4-b164-7a1950fa61f2",
     "experiment_type": "preassigned",
     "experiment_name": "Sample experiment name.",
-    "description": "Test a duplicate column name shared in strata_field_names and metrics",
+    "description": "Test a duplicate column name shared in strata and metrics",
     "arms": [
       {
         "arm_name": "Control",
