@@ -382,7 +382,11 @@ def commit_experiment_impl(xngin_session: Session, experiment: Experiment):
     event = Event(
         organization=experiment.datasource.organization,
         type=ExperimentCreatedEvent.TYPE,
-    ).set_data(ExperimentCreatedEvent(experiment_id=experiment_id))
+    ).set_data(
+        ExperimentCreatedEvent(
+            datasource_id=experiment.datasource_id, experiment_id=experiment_id
+        )
+    )
     xngin_session.add(event)
 
     for webhook in experiment.datasource.organization.webhooks:
