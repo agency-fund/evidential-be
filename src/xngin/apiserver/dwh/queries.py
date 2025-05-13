@@ -38,7 +38,7 @@ def get_stats_on_metrics(
     session,
     sa_table: Table,
     metrics: list[DesignSpecMetricRequest],
-    audience_filters: list[Filter],
+    filters: list[Filter],
 ) -> list[DesignSpecMetric]:
     missing_metrics = {m.field_name for m in metrics if m.field_name not in sa_table.c}
     if len(missing_metrics) > 0:
@@ -67,7 +67,7 @@ def get_stats_on_metrics(
             custom_functions.stddev_pop(cast_column).label(f"{field_name}__stddev"),
             func.count(col).label(f"{field_name}__count"),
         ))
-    filters = create_query_filters(sa_table, audience_filters)
+    filters = create_query_filters(sa_table, filters)
     query = select(*select_columns).filter(*filters)
     stats = session.execute(query).mappings().fetchone()
 
@@ -176,11 +176,11 @@ def get_participant_metrics(
 def query_for_participants(
     session: Session,
     sa_table: Table,
-    audience_filters: list[Filter],
+    filters: list[Filter],
     chosen_n: int,
 ):
     """Samples participants."""
-    filters = create_query_filters(sa_table, audience_filters)
+    filters = create_query_filters(sa_table, filters)
     query = compose_query(sa_table, chosen_n, filters)
     return session.execute(query).all()
 
@@ -196,9 +196,9 @@ def create_one_filter(filter_: Filter, sa_table: sqlalchemy.Table):
     return create_filter(sa_table.columns[filter_.field_name], filter_)
 
 
-def create_query_filters(sa_table: sqlalchemy.Table, audience_filters: list[Filter]):
+def create_query_filters(sa_table: sqlalchemy.Table, filters: list[Filter]):
     """Converts a list of Filter into a list of SQLAlchemy filters."""
-    return [create_one_filter(filter_, sa_table) for filter_ in audience_filters]
+    return [create_one_filter(filter_, sa_table) for filter_ in filters]
 
 
 def create_special_experiment_id_filter(
