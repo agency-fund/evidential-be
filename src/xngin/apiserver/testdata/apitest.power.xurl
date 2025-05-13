@@ -19,6 +19,12 @@ Datasource-ID: testing
     ],
     "start_date": "2024-11-06",
     "end_date": "2024-11-20",
+    "participant_type": "test_participant_type",
+    "filters": [{
+      "field_name": "ethnicity",
+      "relation": "includes",
+      "value": ["Asian"]
+    }],
     "strata_field_names": [
       "is_onboarded"
     ],
@@ -39,14 +45,6 @@ Datasource-ID: testing
         "metric_pct_change": 0.1
       }
     ]
-  },
-  "audience_spec": {
-    "participant_type": "test_participant_type",
-    "filters": [{
-      "field_name": "ethnicity",
-      "relation": "includes",
-      "value": ["Asian"]
-    }]
   }
 }
 ```
@@ -59,10 +57,10 @@ HTTP 200
         "available_n": 39405,
         "available_nonnull_n": 39405,
         "field_name": "current_income",
-        "metric_baseline": 26333.62873842901,
+        "metric_baseline": 26333.628738429004,
         "metric_pct_change": 0.1,
-        "metric_stddev": 6752.8505169301925,
-        "metric_target": 28966.991612271915,
+        "metric_stddev": 6752.850516930191,
+        "metric_target": 28966.991612271908,
         "metric_type": "numeric"
       },
       "msg": {
@@ -85,10 +83,10 @@ HTTP 200
         "available_n": 39405,
         "available_nonnull_n": 39405,
         "field_name": "income",
-        "metric_baseline": 30898.86765682582,
+        "metric_baseline": 30898.867656825838,
         "metric_pct_change": 0.1,
-        "metric_stddev": 8449.033214299427,
-        "metric_target": 33988.754422508406,
+        "metric_stddev": 8449.03321429942,
+        "metric_target": 33988.75442250843,
         "metric_type": "numeric"
       },
       "msg": {

@@ -19,6 +19,8 @@ Datasource-ID: testing
     ],
     "start_date": "2024-11-06",
     "end_date": "2024-11-20",
+    "participant_type": "test_participant_type",
+    "filters": [],
     "strata_field_names": [],
     "power": 0.8,
     "alpha": 0.05,
@@ -29,10 +31,6 @@ Datasource-ID: testing
         "metric_pct_change": 0.1
       }
     ]
-  },
-  "audience_spec": {
-    "participant_type": "test_participant_type",
-    "filters": []
   }
 }
 ```

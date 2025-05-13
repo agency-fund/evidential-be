@@ -4,7 +4,6 @@ from pydantic import BaseModel, ConfigDict, Field
 from xngin.apiserver.routers.stateless_api_types import (
     ArmSize,
     Assignment,
-    AudienceSpec,
     BalanceCheck,
     DesignSpec,
     PowerResponse,
@@ -19,7 +18,6 @@ class ExperimentsBaseModel(BaseModel):
 
 class CreateExperimentRequest(ExperimentsBaseModel):
     design_spec: DesignSpec
-    audience_spec: AudienceSpec
     power_analyses: PowerResponse | None = None
 
 
@@ -53,7 +51,6 @@ class ExperimentConfig(ExperimentsBaseModel):
         ExperimentState, Field(description="Current state of this experiment.")
     ]
     design_spec: DesignSpec
-    audience_spec: AudienceSpec
     power_analyses: PowerResponse | None
     assign_summary: AssignSummary
 

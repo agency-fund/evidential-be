@@ -16,7 +16,6 @@ from xngin.apiserver import conftest, constants
 from xngin.apiserver.models import tables
 from xngin.apiserver.routers.stateless_api_types import (
     Arm,
-    AudienceSpec,
     BalanceCheck,
     OnlineExperimentSpec,
     PreassignedExperimentSpec,
@@ -95,6 +94,7 @@ def make_create_preassigned_experiment_request(
     # Construct request body
     return CreateExperimentRequest(
         design_spec=PreassignedExperimentSpec(
+            participant_type="test_participant_type",
             experiment_id=experiment_id,
             experiment_name="Test Experiment",
             description="Test experiment description",
@@ -110,6 +110,7 @@ def make_create_preassigned_experiment_request(
             ],
             start_date=start_date,
             end_date=end_date,
+            filters=[],
             strata_field_names=["gender"],
             metrics=[
                 DesignSpecMetricRequest(
@@ -120,10 +121,6 @@ def make_create_preassigned_experiment_request(
             power=0.8,
             alpha=0.05,
             fstat_thresh=0.2,
-        ),
-        audience_spec=AudienceSpec(
-            participant_type="test_participant_type",
-            filters=[],
         ),
     )
 
@@ -142,14 +139,13 @@ def make_insertable_experiment(state: ExperimentState, datasource_id="testing"):
         id=request.design_spec.experiment_id,
         datasource_id=datasource_id,
         experiment_type="preassigned",
-        participant_type=request.audience_spec.participant_type,
+        participant_type=request.design_spec.participant_type,
         name=request.design_spec.experiment_name,
         description=request.design_spec.description,
         state=state,
         start_date=request.design_spec.start_date,
         end_date=request.design_spec.end_date,
         design_spec=request.design_spec.model_dump(mode="json"),
-        audience_spec=request.audience_spec.model_dump(),
         power_analyses=PowerResponse(
             analyses=[
                 MetricPowerAnalysis(
@@ -187,12 +183,14 @@ def make_insertable_online_experiment(
     start_date = datetime(2025, 1, 1, tzinfo=UTC)
     end_date = datetime(2025, 2, 1, tzinfo=UTC)
     design_spec = OnlineExperimentSpec(
+        participant_type="test_participant_type",
         experiment_id=experiment_id,
         experiment_name="Test Experiment",
         description="Test experiment description",
         arms=[arm1, arm2],
         start_date=start_date,
         end_date=end_date,
+        filters=[],
         strata_field_names=["gender"],
         metrics=[
             DesignSpecMetricRequest(
@@ -204,22 +202,17 @@ def make_insertable_online_experiment(
         alpha=0.05,
         fstat_thresh=0.2,
     )
-    audience_spec = AudienceSpec(
-        participant_type="test_participant_type",
-        filters=[],
-    )
     return Experiment(
         id=experiment_id,
         datasource_id=datasource_id,
         experiment_type="online",
-        participant_type=audience_spec.participant_type,
+        participant_type=design_spec.participant_type,
         name=design_spec.experiment_name,
         description=design_spec.description,
         state=state,
         start_date=design_spec.start_date,
         end_date=design_spec.end_date,
         design_spec=design_spec.model_dump(mode="json"),
-        audience_spec=audience_spec.model_dump(),
     )
 
 
@@ -321,7 +314,6 @@ def test_create_experiment_impl_for_preassigned(
     # although we stratify on target metrics as well in this test, note that the
     # original strata_field_names are not augmented with the metric names.
     assert response.design_spec.strata_field_names == ["gender"]
-    assert response.audience_spec == request.audience_spec
     assert response.power_analyses == request.power_analyses
     # Verify assign_summary
     assert response.assign_summary.sample_size == len(participants)
@@ -333,7 +325,7 @@ def test_create_experiment_impl_for_preassigned(
         select(Experiment).where(Experiment.id == response.design_spec.experiment_id)
     ).one()
     assert experiment.experiment_type == "preassigned"
-    assert experiment.participant_type == request.audience_spec.participant_type
+    assert experiment.participant_type == request.design_spec.participant_type
     assert experiment.name == request.design_spec.experiment_name
     assert experiment.description == request.design_spec.description
     assert experiment.state == ExperimentState.ASSIGNED
@@ -341,11 +333,9 @@ def test_create_experiment_impl_for_preassigned(
     # This comparison is dependent on whether the db can store tz or not (sqlite does not).
     assert conftest.dates_equal(experiment.start_date, request.design_spec.start_date)
     assert conftest.dates_equal(experiment.end_date, request.design_spec.end_date)
-    # Verify design_spec and audience_spec were stored correctly
+    # Verify design_spec was stored correctly
     stored_design_spec = experiment.get_design_spec()
     assert stored_design_spec == response.design_spec
-    stored_audience_spec = experiment.get_audience_spec()
-    assert stored_audience_spec == response.audience_spec
     stored_power_analyses = experiment.get_power_analyses()
     assert stored_power_analyses == response.power_analyses
     # Verify assignments were created
@@ -420,7 +410,6 @@ def test_create_experiment_impl_for_online(
     assert response.design_spec.start_date == request.design_spec.start_date
     assert response.design_spec.end_date == request.design_spec.end_date
     assert response.design_spec.strata_field_names == ["gender"]
-    assert response.audience_spec == request.audience_spec
     assert (
         response.power_analyses is None
     )  # Online experiments don't have power analyses by default
@@ -436,7 +425,7 @@ def test_create_experiment_impl_for_online(
         select(Experiment).where(Experiment.id == response.design_spec.experiment_id)
     ).one()
     assert experiment.experiment_type == "online"
-    assert experiment.participant_type == request.audience_spec.participant_type
+    assert experiment.participant_type == request.design_spec.participant_type
     assert experiment.name == request.design_spec.experiment_name
     assert experiment.description == request.design_spec.description
     # Online experiments still go through a review step before being committed
@@ -445,11 +434,9 @@ def test_create_experiment_impl_for_online(
     assert conftest.dates_equal(experiment.start_date, request.design_spec.start_date)
     assert conftest.dates_equal(experiment.end_date, request.design_spec.end_date)
 
-    # Verify design_spec and audience_spec were stored correctly
+    # Verify design_spec was stored correctly
     stored_design_spec = experiment.get_design_spec()
     assert stored_design_spec == response.design_spec
-    stored_audience_spec = experiment.get_audience_spec()
-    assert stored_audience_spec == response.audience_spec
     # Verify no power_analyses for online experiments
     assert experiment.power_analyses is None
 

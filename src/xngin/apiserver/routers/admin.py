@@ -1170,7 +1170,7 @@ def create_experiment(
     if body.design_spec.ids_are_present():
         raise LateValidationError("Invalid DesignSpec: UUIDs must not be set.")
     ds_config = datasource.get_config()
-    participants_cfg = ds_config.find_participants(body.audience_spec.participant_type)
+    participants_cfg = ds_config.find_participants(body.design_spec.participant_type)
     if not isinstance(participants_cfg, ParticipantsDef):
         raise LateValidationError(
             "Invalid ParticipantsConfig: Participants must be of type schema."
@@ -1186,7 +1186,7 @@ def create_experiment(
         )
         if chosen_n is not None:
             participants = query_for_participants(
-                dwh_session, sa_table, body.audience_spec, chosen_n
+                dwh_session, sa_table, body.design_spec.filters, chosen_n
             )
         elif body.design_spec.experiment_type == "preassigned":
             raise HTTPException(
@@ -1224,9 +1224,7 @@ def analyze_experiment(
 
     experiment = get_experiment_via_ds_or_raise(xngin_session, ds, experiment_id)
 
-    participants_cfg = dsconfig.find_participants(
-        experiment.get_audience_spec().participant_type
-    )
+    participants_cfg = dsconfig.find_participants(experiment.participant_type)
     if not isinstance(participants_cfg, ParticipantsDef):
         raise LateValidationError(
             "Invalid ParticipantsConfig: Participants must be of type schema."
@@ -1351,7 +1349,6 @@ def get_experiment(
         datasource_id=experiment.datasource_id,
         state=experiment.state,
         design_spec=experiment.get_design_spec(),
-        audience_spec=experiment.get_audience_spec(),
         power_analyses=experiment.get_power_analyses(),
         assign_summary=experiments.get_assign_summary(session, experiment),
     )
@@ -1455,6 +1452,6 @@ def power_check(
 ) -> PowerResponse:
     ds = get_datasource_or_raise(session, user, datasource_id)
     dsconfig = ds.get_config()
-    participants_cfg = dsconfig.find_participants(body.audience_spec.participant_type)
+    participants_cfg = dsconfig.find_participants(body.design_spec.participant_type)
     validate_schema_metrics_or_raise(body.design_spec, participants_cfg)
     return power_check_impl(body, dsconfig, participants_cfg)

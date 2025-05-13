@@ -23,8 +23,7 @@ from sqlalchemy import (
 from sqlalchemy.orm import DeclarativeBase, Session, mapped_column
 from xngin.apiserver import flags
 from xngin.apiserver.routers.stateless_api_types import (
-    AudienceSpec,
-    AudienceSpecFilter,
+    Filter,
     DesignSpecMetric,
     DesignSpecMetricRequest,
     MetricType,
@@ -36,7 +35,7 @@ from xngin.apiserver.conftest import DbType, get_test_dwh_info
 from xngin.apiserver.dwh.queries import (
     compose_query,
     create_datetime_filter,
-    create_query_filters_from_spec,
+    create_query_filters,
     get_participant_metrics,
     get_stats_on_metrics,
     make_csv_regex,
@@ -164,7 +163,7 @@ SAMPLE_TABLE_ROWS = [
 
 @dataclass
 class Case:
-    filters: list[AudienceSpecFilter]
+    filters: list[Filter]
     matches: list[Row | NullableRow]
     chosen_n: int = 3
 
@@ -230,10 +229,10 @@ def fixture_dwh_session():
 
     Base.metadata.create_all(engine)
     session = Session(engine)
-    for data in SAMPLE_TABLE_ROWS:
-        session.add(SampleTable(**data.__dict__))
-    for data in SAMPLE_NULLABLE_TABLE_ROWS:
-        session.add(SampleNullableTable(**data.__dict__))
+    for row in SAMPLE_TABLE_ROWS:
+        session.add(SampleTable(**row.__dict__))
+    for nullable_row in SAMPLE_NULLABLE_TABLE_ROWS:
+        session.add(SampleNullableTable(**nullable_row.__dict__))
 
     session.commit()
 
@@ -296,7 +295,7 @@ IS_NULLABLE_CASES = [
     # Verify EXCLUDES
     Case(
         filters=[
-            AudienceSpecFilter(
+            Filter(
                 field_name="bool_col",
                 relation=Relation.EXCLUDES,
                 value=[True],
@@ -306,7 +305,7 @@ IS_NULLABLE_CASES = [
     ),
     Case(
         filters=[
-            AudienceSpecFilter(
+            Filter(
                 field_name="bool_col",
                 relation=Relation.EXCLUDES,
                 value=[False, None],
@@ -316,7 +315,7 @@ IS_NULLABLE_CASES = [
     ),
     Case(
         filters=[
-            AudienceSpecFilter(
+            Filter(
                 field_name="int_col",
                 relation=Relation.EXCLUDES,
                 value=[None],
@@ -326,7 +325,7 @@ IS_NULLABLE_CASES = [
     ),
     Case(
         filters=[
-            AudienceSpecFilter(
+            Filter(
                 field_name="float_col",
                 relation=Relation.EXCLUDES,
                 value=[None],
@@ -336,7 +335,7 @@ IS_NULLABLE_CASES = [
     ),
     Case(
         filters=[
-            AudienceSpecFilter(
+            Filter(
                 field_name="string_col",
                 relation=Relation.EXCLUDES,
                 value=[None, ROW_10.string_col],
@@ -346,7 +345,7 @@ IS_NULLABLE_CASES = [
     ),
     Case(
         filters=[
-            AudienceSpecFilter(
+            Filter(
                 field_name="date_col",
                 relation=Relation.EXCLUDES,
                 value=[None, ROW_10.date_col.isoformat()],
@@ -357,7 +356,7 @@ IS_NULLABLE_CASES = [
     # Excluding a single non-null value means NULL is also included.
     Case(
         filters=[
-            AudienceSpecFilter(
+            Filter(
                 field_name="date_col",
                 relation=Relation.EXCLUDES,
                 value=["2025-01-01"],
@@ -367,7 +366,7 @@ IS_NULLABLE_CASES = [
     ),
     Case(
         filters=[
-            AudienceSpecFilter(
+            Filter(
                 field_name="float_col",
                 relation=Relation.EXCLUDES,
                 value=[ROW_10.float_col],
@@ -378,15 +377,13 @@ IS_NULLABLE_CASES = [
     # verify INCLUDES
     Case(
         filters=[
-            AudienceSpecFilter(
-                field_name="bool_col", relation=Relation.INCLUDES, value=[False]
-            )
+            Filter(field_name="bool_col", relation=Relation.INCLUDES, value=[False])
         ],
         matches=[ROW_30],
     ),
     Case(
         filters=[
-            AudienceSpecFilter(
+            Filter(
                 field_name="bool_col",
                 relation=Relation.INCLUDES,
                 value=[True, None],
@@ -396,7 +393,7 @@ IS_NULLABLE_CASES = [
     ),
     Case(
         filters=[
-            AudienceSpecFilter(
+            Filter(
                 field_name="int_col",
                 relation=Relation.INCLUDES,
                 value=[None],
@@ -406,7 +403,7 @@ IS_NULLABLE_CASES = [
     ),
     Case(
         filters=[
-            AudienceSpecFilter(
+            Filter(
                 field_name="float_col",
                 relation=Relation.INCLUDES,
                 value=[None],
@@ -416,7 +413,7 @@ IS_NULLABLE_CASES = [
     ),
     Case(
         filters=[
-            AudienceSpecFilter(
+            Filter(
                 field_name="string_col",
                 relation=Relation.INCLUDES,
                 value=[None, ROW_10.string_col],
@@ -426,7 +423,7 @@ IS_NULLABLE_CASES = [
     ),
     Case(
         filters=[
-            AudienceSpecFilter(
+            Filter(
                 field_name="date_col",
                 relation=Relation.INCLUDES,
                 value=[None, ROW_10.date_col.isoformat()],
@@ -440,14 +437,10 @@ IS_NULLABLE_CASES = [
 @pytest.mark.parametrize("testcase", IS_NULLABLE_CASES, ids=lambda d: str(d))
 def test_is_nullable(testcase, dwh_session, use_deterministic_random):
     testcase.filters = [
-        AudienceSpecFilter.model_validate(filt.model_dump())
-        for filt in testcase.filters
+        Filter.model_validate(filt.model_dump()) for filt in testcase.filters
     ]
     table = SampleNullableTable.get_table()
-    filters = create_query_filters_from_spec(
-        table,
-        AudienceSpec(participant_type=table.name, filters=testcase.filters),
-    )
+    filters = create_query_filters(table, testcase.filters)
     q = compose_query(table, testcase.chosen_n, filters)
     query_results = dwh_session.execute(q).all()
     assert list(sorted([r.id for r in query_results])) == list(
@@ -459,12 +452,12 @@ RELATION_CASES = [
     # compound filters
     Case(
         filters=[
-            AudienceSpecFilter(
+            Filter(
                 field_name="int_col",
                 relation=Relation.INCLUDES,
                 value=[ROW_100.int_col, ROW_200.int_col],
             ),
-            AudienceSpecFilter(
+            Filter(
                 field_name="experiment_ids",
                 relation=Relation.INCLUDES,
                 value=["b", "C"],
@@ -474,12 +467,12 @@ RELATION_CASES = [
     ),
     Case(
         filters=[
-            AudienceSpecFilter(
+            Filter(
                 field_name="int_col",
                 relation=Relation.INCLUDES,
                 value=[ROW_100.int_col, ROW_200.int_col],
             ),
-            AudienceSpecFilter(
+            Filter(
                 field_name="experiment_ids",
                 relation=Relation.EXCLUDES,
                 value=["b", "c"],
@@ -490,7 +483,7 @@ RELATION_CASES = [
     # int_col
     Case(
         filters=[
-            AudienceSpecFilter(
+            Filter(
                 field_name="int_col",
                 relation=Relation.INCLUDES,
                 value=[ROW_100.int_col],
@@ -500,15 +493,13 @@ RELATION_CASES = [
     ),
     Case(
         filters=[
-            AudienceSpecFilter(
-                field_name="int_col", relation=Relation.BETWEEN, value=[-17, 42]
-            )
+            Filter(field_name="int_col", relation=Relation.BETWEEN, value=[-17, 42])
         ],
         matches=[ROW_100, ROW_200],
     ),
     Case(
         filters=[
-            AudienceSpecFilter(
+            Filter(
                 field_name="int_col",
                 relation=Relation.EXCLUDES,
                 value=[ROW_100.int_col],
@@ -519,16 +510,14 @@ RELATION_CASES = [
     # float_col
     Case(
         filters=[
-            AudienceSpecFilter(
-                field_name="float_col", relation=Relation.BETWEEN, value=[2, 3]
-            )
+            Filter(field_name="float_col", relation=Relation.BETWEEN, value=[2, 3])
         ],
         matches=[ROW_200],
     ),
     # bool_col
     Case(
         filters=[
-            AudienceSpecFilter(
+            Filter(
                 field_name="bool_col",
                 relation=Relation.INCLUDES,
                 value=[True],
@@ -539,47 +528,37 @@ RELATION_CASES = [
     # regexp hacks
     Case(
         filters=[
-            AudienceSpecFilter(
-                field_name="experiment_ids", relation=Relation.INCLUDES, value=["a"]
-            )
+            Filter(field_name="experiment_ids", relation=Relation.INCLUDES, value=["a"])
         ],
         matches=[ROW_100, ROW_200, ROW_300],
     ),
     Case(
         filters=[
-            AudienceSpecFilter(
-                field_name="experiment_ids", relation=Relation.INCLUDES, value=["B"]
-            )
+            Filter(field_name="experiment_ids", relation=Relation.INCLUDES, value=["B"])
         ],
         matches=[ROW_200, ROW_300],
     ),
     Case(
         filters=[
-            AudienceSpecFilter(
-                field_name="experiment_ids", relation=Relation.INCLUDES, value=["c"]
-            )
+            Filter(field_name="experiment_ids", relation=Relation.INCLUDES, value=["c"])
         ],
         matches=[ROW_300],
     ),
     Case(
         filters=[
-            AudienceSpecFilter(
-                field_name="experiment_ids", relation=Relation.EXCLUDES, value=["a"]
-            )
+            Filter(field_name="experiment_ids", relation=Relation.EXCLUDES, value=["a"])
         ],
         matches=[],
     ),
     Case(
         filters=[
-            AudienceSpecFilter(
-                field_name="experiment_ids", relation=Relation.EXCLUDES, value=["D"]
-            )
+            Filter(field_name="experiment_ids", relation=Relation.EXCLUDES, value=["D"])
         ],
         matches=[ROW_100, ROW_200, ROW_300],
     ),
     Case(
         filters=[
-            AudienceSpecFilter(
+            Filter(
                 field_name="experiment_ids",
                 relation=Relation.INCLUDES,
                 value=["a", "d"],
@@ -589,7 +568,7 @@ RELATION_CASES = [
     ),
     Case(
         filters=[
-            AudienceSpecFilter(
+            Filter(
                 field_name="experiment_ids",
                 relation=Relation.EXCLUDES,
                 value=["a", "d"],
@@ -599,17 +578,13 @@ RELATION_CASES = [
     ),
     Case(
         filters=[
-            AudienceSpecFilter(
-                field_name="experiment_ids", relation=Relation.INCLUDES, value=["d"]
-            )
+            Filter(field_name="experiment_ids", relation=Relation.INCLUDES, value=["d"])
         ],
         matches=[],
     ),
     Case(
         filters=[
-            AudienceSpecFilter(
-                field_name="experiment_ids", relation=Relation.EXCLUDES, value=["d"]
-            )
+            Filter(field_name="experiment_ids", relation=Relation.EXCLUDES, value=["d"])
         ],
         matches=[ROW_100, ROW_200, ROW_300],
     ),
@@ -619,15 +594,9 @@ RELATION_CASES = [
 @pytest.mark.parametrize("testcase", RELATION_CASES)
 def test_relations(testcase, dwh_session, use_deterministic_random):
     testcase.filters = [
-        AudienceSpecFilter.model_validate(filt.model_dump())
-        for filt in testcase.filters
+        Filter.model_validate(filt.model_dump()) for filt in testcase.filters
     ]
-    filters = create_query_filters_from_spec(
-        SampleTable.get_table(),
-        AudienceSpec(
-            participant_type=SampleTable.__tablename__, filters=testcase.filters
-        ),
-    )
+    filters = create_query_filters(SampleTable.get_table(), testcase.filters)
     q = compose_query(SampleTable.get_table(), testcase.chosen_n, filters)
     query_results = dwh_session.execute(q).all()
     assert list(sorted([r.id for r in query_results])) == list(
@@ -641,16 +610,14 @@ def test_datetime_filter_validation():
     with pytest.raises(LateValidationError) as exc:
         create_datetime_filter(
             col,
-            AudienceSpecFilter(
-                field_name="x", relation=Relation.INCLUDES, value=[123, 456]
-            ),
+            Filter(field_name="x", relation=Relation.INCLUDES, value=[123, 456]),
         )
     assert "ISO8601 formatted date" in str(exc)
 
     with pytest.raises(LateValidationError) as exc:
         create_datetime_filter(
             col,
-            AudienceSpecFilter(
+            Filter(
                 field_name="x",
                 relation=Relation.BETWEEN,
                 value=["2024-01-01 00:00:00", "bark"],
@@ -661,7 +628,7 @@ def test_datetime_filter_validation():
     with pytest.raises(LateValidationError) as exc:
         create_datetime_filter(
             col,
-            AudienceSpecFilter(
+            Filter(
                 field_name="x",
                 relation=Relation.BETWEEN,
                 value=["2024-01-01 00:00:00", "2024-01-01 00:00:00+08:00"],
@@ -675,7 +642,7 @@ def test_allowed_datetime_filter_validation():
 
     create_datetime_filter(
         col,
-        AudienceSpecFilter(
+        Filter(
             field_name="x",
             relation=Relation.EXCLUDES,
             value=[None],
@@ -684,7 +651,7 @@ def test_allowed_datetime_filter_validation():
 
     create_datetime_filter(
         col,
-        AudienceSpecFilter(
+        Filter(
             field_name="x",
             relation=Relation.INCLUDES,
             value=[None],
@@ -695,7 +662,7 @@ def test_allowed_datetime_filter_validation():
     now = datetime.now(UTC).replace(microsecond=0)
     create_datetime_filter(
         col,
-        AudienceSpecFilter(
+        Filter(
             field_name="x",
             relation=Relation.BETWEEN,
             value=[now.isoformat(), now.isoformat()],
@@ -708,7 +675,7 @@ def test_allowed_datetime_filter_validation():
     now_no_tz = now.replace(tzinfo=None)
     create_datetime_filter(
         col,
-        AudienceSpecFilter(
+        Filter(
             field_name="x",
             relation=Relation.BETWEEN,
             value=[now_no_tz.isoformat() + "Z", now_no_tz.isoformat() + "-00:00"],
@@ -719,7 +686,7 @@ def test_allowed_datetime_filter_validation():
     now_with_microsecond = now.replace(microsecond=1)
     create_datetime_filter(
         col,
-        AudienceSpecFilter(
+        Filter(
             field_name="x",
             relation=Relation.BETWEEN,
             value=[now_with_microsecond.isoformat(), None],
@@ -729,15 +696,13 @@ def test_allowed_datetime_filter_validation():
     midnight = "2024-01-01 00:00:00"
     create_datetime_filter(
         col,
-        AudienceSpecFilter(
-            field_name="x", relation=Relation.BETWEEN, value=[None, midnight]
-        ),
+        Filter(field_name="x", relation=Relation.BETWEEN, value=[None, midnight]),
     )
 
     midnight_with_delim = "2024-01-01T00:00:00"
     create_datetime_filter(
         col,
-        AudienceSpecFilter(
+        Filter(
             field_name="x", relation=Relation.BETWEEN, value=[None, midnight_with_delim]
         ),
     )
@@ -746,36 +711,26 @@ def test_allowed_datetime_filter_validation():
     bare_date = "2024-01-01"
     create_datetime_filter(
         col,
-        AudienceSpecFilter(
-            field_name="x", relation=Relation.BETWEEN, value=[None, bare_date]
-        ),
+        Filter(field_name="x", relation=Relation.BETWEEN, value=[None, bare_date]),
     )
 
 
 # TODO: move to api_types
 def test_boolean_filter_validation():
     with pytest.raises(ValueError) as excinfo:
-        AudienceSpecFilter(
-            field_name="bool", relation=Relation.BETWEEN, value=[True, False]
-        )
+        Filter(field_name="bool", relation=Relation.BETWEEN, value=[True, False])
     assert "Values do not support BETWEEN." in str(excinfo.value)
 
     with pytest.raises(ValueError) as excinfo:
-        AudienceSpecFilter(
-            field_name="bool", relation=Relation.INCLUDES, value=[True, True, True]
-        )
+        Filter(field_name="bool", relation=Relation.INCLUDES, value=[True, True, True])
     assert "Duplicate values" in str(excinfo.value)
 
     with pytest.raises(ValueError) as excinfo:
-        AudienceSpecFilter(
-            field_name="bool", relation=Relation.INCLUDES, value=[True, False, None]
-        )
+        Filter(field_name="bool", relation=Relation.INCLUDES, value=[True, False, None])
     assert "allows all possible values" in str(excinfo.value)
 
     with pytest.raises(ValueError) as excinfo:
-        AudienceSpecFilter(
-            field_name="bool", relation=Relation.EXCLUDES, value=[True, False, None]
-        )
+        Filter(field_name="bool", relation=Relation.EXCLUDES, value=[True, False, None])
     assert "rejects all possible values" in str(excinfo.value)
 
 
@@ -812,10 +767,7 @@ def test_get_stats_on_missing_metric_raises_error(dwh_session):
             dwh_session,
             SampleTable.get_table(),
             [DesignSpecMetricRequest(field_name="missing_col", metric_pct_change=0.1)],
-            AudienceSpec(
-                participant_type="ignored",
-                filters=[],
-            ),
+            audience_filters=[],
         )
     assert (
         "Missing metrics (check your Datasource configuration): {'missing_col'}"
@@ -829,10 +781,7 @@ def test_get_stats_on_integer_metric(dwh_session):
         dwh_session,
         SampleTable.get_table(),
         [DesignSpecMetricRequest(field_name="int_col", metric_pct_change=0.1)],
-        AudienceSpec(
-            participant_type="ignored",
-            filters=[],
-        ),
+        audience_filters=[],
     )
 
     expected = DesignSpecMetric(
@@ -865,7 +814,7 @@ def test_get_stats_on_nullable_integer_metric(dwh_session):
         dwh_session,
         SampleNullableTable.get_table(),
         [DesignSpecMetricRequest(field_name="int_col", metric_pct_change=0.1)],
-        AudienceSpec(participant_type="ignored", filters=[]),
+        audience_filters=[],
     )
 
     expected = DesignSpecMetric(
@@ -897,10 +846,7 @@ def test_get_stats_on_boolean_metric(dwh_session):
         dwh_session,
         SampleTable.get_table(),
         [DesignSpecMetricRequest(field_name="bool_col", metric_pct_change=0.1)],
-        AudienceSpec(
-            participant_type="ignored",
-            filters=[],
-        ),
+        audience_filters=[],
     )
 
     expected = DesignSpecMetric(
@@ -931,10 +877,7 @@ def test_get_stats_on_numeric_metric(dwh_session):
         dwh_session,
         SampleTable.get_table(),
         [DesignSpecMetricRequest(field_name="float_col", metric_pct_change=0.1)],
-        AudienceSpec(
-            participant_type="ignored",
-            filters=[],
-        ),
+        audience_filters=[],
     )
 
     expected = DesignSpecMetric(

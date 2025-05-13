@@ -10,7 +10,6 @@ from sqlalchemy.dialects import postgresql
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 from sqlalchemy.types import TypeEngine
 from xngin.apiserver.routers.stateless_api_types import (
-    AudienceSpec,
     BalanceCheck,
     DesignSpec,
     PowerResponse,
@@ -405,8 +404,6 @@ class Experiment(Base):
 
     # JSON serialized form of DesignSpec.
     design_spec: Mapped[dict] = mapped_column(type_=JSONBetter)
-    # JSON serialized form of AudienceSpec.
-    audience_spec: Mapped[dict] = mapped_column(type_=JSONBetter)
     # JSON serialized form of a PowerResponse. Not required since some experiments may not have data to run power analyses.
     power_analyses: Mapped[dict | None] = mapped_column(type_=JSONBetter)
     # JSON serialized form of a BalanceCheck. May be null if the experiment type doesn't support
@@ -435,9 +432,6 @@ class Experiment(Base):
 
     def get_design_spec(self) -> DesignSpec:
         return TypeAdapter(DesignSpec).validate_python(self.design_spec)
-
-    def get_audience_spec(self) -> AudienceSpec:
-        return TypeAdapter(AudienceSpec).validate_python(self.audience_spec)
 
     def get_power_analyses(self) -> PowerResponse | None:
         if self.power_analyses is None:

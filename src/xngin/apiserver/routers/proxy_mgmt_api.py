@@ -58,7 +58,6 @@ async def commit_experiment_wh(
     commit_payload = WebhookCommitRequest(
         creator_user_id=user_id,
         design_spec=body.design_spec,
-        audience_spec=body.audience_spec,
         power_analyses=body.power_analyses,
         experiment_assignment=body.experiment_assignment,
     )

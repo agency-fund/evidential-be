@@ -188,7 +188,7 @@ type FilterValueTypes = (
 )
 
 
-class AudienceSpecFilter(ApiBaseModel):
+class Filter(ApiBaseModel):
     """Defines criteria for filtering rows by value.
 
     ## Examples
@@ -256,7 +256,7 @@ class AudienceSpecFilter(ApiBaseModel):
         raise LateValidationError(f"Unsupported participant ID type: {column_type}")
 
     @model_validator(mode="after")
-    def ensure_experiment_ids_hack_compatible(self) -> "AudienceSpecFilter":
+    def ensure_experiment_ids_hack_compatible(self) -> "Filter":
         """Ensures that the filter is compatible with the "experiment_ids" hack."""
         if not self.field_name.endswith(EXPERIMENT_IDS_SUFFIX):
             return self
@@ -279,7 +279,7 @@ class AudienceSpecFilter(ApiBaseModel):
         return self
 
     @model_validator(mode="after")
-    def ensure_value(self) -> "AudienceSpecFilter":
+    def ensure_value(self) -> "Filter":
         """Ensures that the `value` field is an unambiguous filter and correct for the relation.
 
         Note this happens /after/ Pydantic does its type coercion, so we control some of the
@@ -303,7 +303,7 @@ class AudienceSpecFilter(ApiBaseModel):
         return self
 
     @model_validator(mode="after")
-    def ensure_sane_bool_list(self) -> "AudienceSpecFilter":
+    def ensure_sane_bool_list(self) -> "Filter":
         """Ensures that the `value` field does not include redundant or nonsensical items."""
         n_values = len(self.value)
         # First check if we're dealing with a list of more than one boolean:
@@ -319,15 +319,6 @@ class AudienceSpecFilter(ApiBaseModel):
                 raise ValueError("Boolean filter rejects all possible values.")
 
         return self
-
-
-class AudienceSpec(ApiBaseModel):
-    """Defines target participants for an experiment using filters."""
-
-    participant_type: Annotated[str, Field(max_length=MAX_LENGTH_OF_NAME_VALUE)]
-    filters: Annotated[
-        list[AudienceSpecFilter], Field(max_length=MAX_NUMBER_OF_FILTERS)
-    ]
 
 
 class MetricType(enum.StrEnum):
@@ -538,6 +529,8 @@ ExperimentType = Literal["online", "preassigned"]
 class BaseDesignSpec(ApiBaseModel):
     """Experiment design metadata and target metrics common to all experiment types."""
 
+    participant_type: Annotated[str, Field(max_length=MAX_LENGTH_OF_NAME_VALUE)]
+
     experiment_id: Annotated[
         str | None,
         Field(
@@ -578,6 +571,8 @@ class BaseDesignSpec(ApiBaseModel):
             max_length=MAX_NUMBER_OF_FIELDS,
         ),
     ]
+
+    filters: Annotated[list[Filter], Field(max_length=MAX_NUMBER_OF_FILTERS)]
 
     @field_serializer("start_date", "end_date", when_used="json")
     def serialize_dt(self, dt: datetime.datetime, _info):
@@ -950,14 +945,12 @@ class GetStrataResponse(BaseModel):
     results: Annotated[list[GetStrataResponseElement], Field()]
 
 
-class AssignRequest(ApiBaseModel):
-    design_spec: DesignSpec
-    audience_spec: AudienceSpec
-
-
 class PowerRequest(ApiBaseModel):
     design_spec: DesignSpec
-    audience_spec: AudienceSpec
+
+
+class AssignRequest(ApiBaseModel):
+    design_spec: DesignSpec
 
 
 class PowerResponse(ApiBaseModel):
@@ -970,7 +963,6 @@ class CommitRequest(ApiBaseModel):
     """The complete experiment configuration to persist in an experiment registry."""
 
     design_spec: DesignSpec
-    audience_spec: AudienceSpec
     power_analyses: Annotated[
         PowerResponse | None,
         Field(
