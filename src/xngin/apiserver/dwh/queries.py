@@ -20,7 +20,7 @@ from sqlalchemy import (
 from sqlalchemy.orm import Session
 
 from xngin.apiserver.routers.stateless_api_types import (
-    AudienceSpecFilter,
+    Filter,
     DesignSpecMetric,
     DesignSpecMetricRequest,
     EXPERIMENT_IDS_SUFFIX,
@@ -38,7 +38,7 @@ def get_stats_on_metrics(
     session,
     sa_table: Table,
     metrics: list[DesignSpecMetricRequest],
-    audience_filters: list[AudienceSpecFilter],
+    audience_filters: list[Filter],
 ) -> list[DesignSpecMetric]:
     missing_metrics = {m.field_name for m in metrics if m.field_name not in sa_table.c}
     if len(missing_metrics) > 0:
@@ -139,11 +139,11 @@ def get_participant_metrics(
 
     # create a single filter, filtering on the unique_id_field using
     # participant_ids from the treatment assignment.
-    participant_id_filter = AudienceSpecFilter(
+    participant_id_filter = Filter(
         field_name=unique_id_field,
         relation=Relation.INCLUDES,
         value=[
-            AudienceSpecFilter.cast_participant_id(pid, participant_id_column.type)
+            Filter.cast_participant_id(pid, participant_id_column.type)
             for pid in participant_ids
         ],
     )
@@ -176,7 +176,7 @@ def get_participant_metrics(
 def query_for_participants(
     session: Session,
     sa_table: Table,
-    audience_filters: list[AudienceSpecFilter],
+    audience_filters: list[Filter],
     chosen_n: int,
 ):
     """Samples participants."""
@@ -185,8 +185,8 @@ def query_for_participants(
     return session.execute(query).all()
 
 
-def create_one_filter(filter_: AudienceSpecFilter, sa_table: sqlalchemy.Table):
-    """Converts an AudienceSpecFilter into a SQLAlchemy filter."""
+def create_one_filter(filter_: Filter, sa_table: sqlalchemy.Table):
+    """Converts a Filter into a SQLAlchemy filter."""
     if isinstance(sa_table.columns[filter_.field_name].type, DateTime):
         return create_datetime_filter(sa_table.columns[filter_.field_name], filter_)
     if filter_.field_name.endswith(EXPERIMENT_IDS_SUFFIX):
@@ -196,15 +196,13 @@ def create_one_filter(filter_: AudienceSpecFilter, sa_table: sqlalchemy.Table):
     return create_filter(sa_table.columns[filter_.field_name], filter_)
 
 
-def create_query_filters(
-    sa_table: sqlalchemy.Table, audience_filters: list[AudienceSpecFilter]
-):
-    """Converts a list of AudienceSpecFilter into a list of SQLAlchemy filters."""
+def create_query_filters(sa_table: sqlalchemy.Table, audience_filters: list[Filter]):
+    """Converts a list of Filter into a list of SQLAlchemy filters."""
     return [create_one_filter(filter_, sa_table) for filter_ in audience_filters]
 
 
 def create_special_experiment_id_filter(
-    col: sqlalchemy.Column, filter_: AudienceSpecFilter
+    col: sqlalchemy.Column, filter_: Filter
 ) -> ColumnOperators:
     matching_regex = make_csv_regex(filter_.value)
     match filter_.relation:
@@ -216,7 +214,7 @@ def create_special_experiment_id_filter(
                 func.char_length(col) == 0,
                 not_(func.lower(col).regexp_match(matching_regex)),
             )
-    # This should be impossible as it's caught by the AudienceSpecFilter validator:
+    # This should be impossible as it's caught by the Filter validator:
     raise ValueError(
         f"Experiment id filter on {filter_.field_name} has invalid relation: {filter_.relation}"
     )
@@ -252,10 +250,8 @@ def general_excludes_filter(col: sqlalchemy.Column, value: list[FilterValueTypes
     )
 
 
-def create_datetime_filter(
-    col: sqlalchemy.Column, filter_: AudienceSpecFilter
-) -> ColumnOperators:
-    """Converts a single AudienceSpecFilter for a DateTime-typed column into a sqlalchemy filter."""
+def create_datetime_filter(col: sqlalchemy.Column, filter_: Filter) -> ColumnOperators:
+    """Converts a single Filter for a DateTime-typed column into a sqlalchemy filter."""
 
     def str_to_datetime(s: int | float | str | None) -> datetime | None:
         """Convert an ISO8601 string to a timezone-unaware datetime.
@@ -300,13 +296,11 @@ def create_datetime_filter(
             return col <= right
         case (left, right):
             return col.between(left, right)
-    raise RuntimeError("Bug: invalid AudienceSpecFilter.")
+    raise RuntimeError("Bug: invalid Filter.")
 
 
-def create_filter(
-    col: sqlalchemy.Column, filter_: AudienceSpecFilter
-) -> ColumnOperators:
-    """Converts a single AudienceSpecFilter to a sqlalchemy filter."""
+def create_filter(col: sqlalchemy.Column, filter_: Filter) -> ColumnOperators:
+    """Converts a single Filter to a sqlalchemy filter."""
     match filter_.relation:
         case Relation.BETWEEN:
             match filter_.value:
@@ -330,7 +324,7 @@ def create_filter(
             ])
         case Relation.INCLUDES:
             return sqlalchemy.not_(general_excludes_filter(col, filter_.value))
-    raise RuntimeError("Bug: invalid AudienceSpecFilter.")
+    raise RuntimeError("Bug: invalid Filter.")
 
 
 def compose_query(sa_table: Table, chosen_n: int, filters):

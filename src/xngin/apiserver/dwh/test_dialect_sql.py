@@ -20,7 +20,7 @@ from sqlalchemy.dialects.postgresql import psycopg, psycopg2
 from sqlalchemy.orm import DeclarativeBase, mapped_column
 from sqlalchemy.sql.ddl import CreateTable
 from xngin.apiserver.routers.stateless_api_types import (
-    AudienceSpecFilter,
+    Filter,
     Relation,
 )
 from xngin.apiserver.conftest import DbType
@@ -95,12 +95,12 @@ def test_datetimes(testcase: DateTimeTestCase):
         create_query_filters(
             sa_table,
             [
-                AudienceSpecFilter(
+                Filter(
                     field_name="ts_col",
                     relation=Relation.BETWEEN,
                     value=["2020-01-01 00:00:00", None],
                 ),
-                AudienceSpecFilter(
+                Filter(
                     field_name="dt_col",
                     relation=Relation.BETWEEN,
                     value=["2023-06-01T12:34:56", "2024-01-01 00:00:00Z"],
@@ -124,7 +124,7 @@ def test_datetimes(testcase: DateTimeTestCase):
 
 @dataclass
 class WhereTestCase:
-    filters: list[AudienceSpecFilter]
+    filters: list[Filter]
     where: dict[DbType, str]
 
     def __str__(self):
@@ -149,9 +149,7 @@ class WhereTable(HelpfulBase):
 WHERE_TESTCASES = [
     WhereTestCase(
         filters=[
-            AudienceSpecFilter(
-                field_name="float_col", relation=Relation.EXCLUDES, value=[2, 3]
-            )
+            Filter(field_name="float_col", relation=Relation.EXCLUDES, value=[2, 3])
         ],
         where={
             DbType.RS: "tt.float_col IS NULL OR (tt.float_col NOT IN (2, 3)) ORDER BY random()  LIMIT 3",
@@ -161,7 +159,7 @@ WHERE_TESTCASES = [
     ),
     WhereTestCase(
         filters=[
-            AudienceSpecFilter(
+            Filter(
                 field_name="int_col",
                 relation=Relation.EXCLUDES,
                 value=[None],
@@ -175,7 +173,7 @@ WHERE_TESTCASES = [
     ),
     WhereTestCase(
         filters=[
-            AudienceSpecFilter(
+            Filter(
                 field_name="int_col",
                 relation=Relation.EXCLUDES,
                 value=[1],
@@ -189,7 +187,7 @@ WHERE_TESTCASES = [
     ),
     WhereTestCase(
         filters=[
-            AudienceSpecFilter(
+            Filter(
                 field_name="int_col",
                 relation=Relation.EXCLUDES,
                 value=[None, 1],
@@ -203,7 +201,7 @@ WHERE_TESTCASES = [
     ),
     WhereTestCase(
         filters=[
-            AudienceSpecFilter(
+            Filter(
                 field_name="dt_col",
                 relation=Relation.EXCLUDES,
                 value=["2024-01-01"],
@@ -217,7 +215,7 @@ WHERE_TESTCASES = [
     ),
     WhereTestCase(
         filters=[
-            AudienceSpecFilter(
+            Filter(
                 field_name="dt_col",
                 relation=Relation.EXCLUDES,
                 value=["2024-01-01", None],
@@ -231,7 +229,7 @@ WHERE_TESTCASES = [
     ),
     WhereTestCase(
         filters=[
-            AudienceSpecFilter(
+            Filter(
                 field_name="int_col",
                 relation=Relation.INCLUDES,
                 value=[None],
@@ -245,7 +243,7 @@ WHERE_TESTCASES = [
     ),
     WhereTestCase(
         filters=[
-            AudienceSpecFilter(
+            Filter(
                 field_name="int_col",
                 relation=Relation.INCLUDES,
                 value=[42],
@@ -259,7 +257,7 @@ WHERE_TESTCASES = [
     ),
     WhereTestCase(
         filters=[
-            AudienceSpecFilter(
+            Filter(
                 field_name="int_col",
                 relation=Relation.INCLUDES,
                 value=[None, 1],
@@ -273,7 +271,7 @@ WHERE_TESTCASES = [
     ),
     WhereTestCase(
         filters=[
-            AudienceSpecFilter(
+            Filter(
                 field_name="dt_col",
                 relation=Relation.INCLUDES,
                 value=["2024-01-01"],
@@ -287,7 +285,7 @@ WHERE_TESTCASES = [
     ),
     WhereTestCase(
         filters=[
-            AudienceSpecFilter(
+            Filter(
                 field_name="dt_col",
                 relation=Relation.INCLUDES,
                 value=["2024-01-01", None],
@@ -301,7 +299,7 @@ WHERE_TESTCASES = [
     ),
     WhereTestCase(
         filters=[
-            AudienceSpecFilter(
+            Filter(
                 field_name="dt_col",
                 relation=Relation.BETWEEN,
                 value=["2024-01-01", "2024-01-02"],
@@ -315,7 +313,7 @@ WHERE_TESTCASES = [
     ),
     WhereTestCase(
         filters=[
-            AudienceSpecFilter(
+            Filter(
                 field_name="ts_col",
                 relation=Relation.BETWEEN,
                 value=["2024-01-01", "2024-01-02"],
@@ -329,7 +327,7 @@ WHERE_TESTCASES = [
     ),
     WhereTestCase(
         filters=[
-            AudienceSpecFilter(
+            Filter(
                 field_name="ts_col",
                 relation=Relation.BETWEEN,
                 value=["2024-01-01 01:02:03.100000", "2024-01-02"],
@@ -343,12 +341,12 @@ WHERE_TESTCASES = [
     ),
     WhereTestCase(
         filters=[
-            AudienceSpecFilter(
+            Filter(
                 field_name="int_col",
                 relation=Relation.INCLUDES,
                 value=[42, -17],
             ),
-            AudienceSpecFilter(
+            Filter(
                 field_name="experiment_ids",
                 relation=Relation.INCLUDES,
                 value=["b", "C"],
@@ -362,12 +360,12 @@ WHERE_TESTCASES = [
     ),
     WhereTestCase(
         filters=[
-            AudienceSpecFilter(
+            Filter(
                 field_name="int_col",
                 relation=Relation.INCLUDES,
                 value=[42, -17],
             ),
-            AudienceSpecFilter(
+            Filter(
                 field_name="experiment_ids",
                 relation=Relation.EXCLUDES,
                 value=["b", "c"],
@@ -381,9 +379,7 @@ WHERE_TESTCASES = [
     ),
     WhereTestCase(
         filters=[
-            AudienceSpecFilter(
-                field_name="int_col", relation=Relation.BETWEEN, value=[-17, 42]
-            )
+            Filter(field_name="int_col", relation=Relation.BETWEEN, value=[-17, 42])
         ],
         where={
             DbType.RS: "tt.int_col BETWEEN -17 AND 42 ORDER BY random()  LIMIT 3",
@@ -393,7 +389,7 @@ WHERE_TESTCASES = [
     ),
     WhereTestCase(
         filters=[
-            AudienceSpecFilter(
+            Filter(
                 field_name="bool_col",
                 relation=Relation.INCLUDES,
                 value=[True],
@@ -407,7 +403,7 @@ WHERE_TESTCASES = [
     ),
     WhereTestCase(
         filters=[
-            AudienceSpecFilter(
+            Filter(
                 field_name="bool_col",
                 relation=Relation.EXCLUDES,
                 value=[True],
@@ -421,7 +417,7 @@ WHERE_TESTCASES = [
     ),
     WhereTestCase(
         filters=[
-            AudienceSpecFilter(
+            Filter(
                 field_name="bool_col",
                 relation=Relation.EXCLUDES,
                 value=[None],
@@ -435,7 +431,7 @@ WHERE_TESTCASES = [
     ),
     WhereTestCase(
         filters=[
-            AudienceSpecFilter(
+            Filter(
                 field_name="bool_col",
                 relation=Relation.INCLUDES,
                 value=[None],
@@ -449,9 +445,7 @@ WHERE_TESTCASES = [
     ),
     WhereTestCase(
         filters=[
-            AudienceSpecFilter(
-                field_name="bool_col", relation=Relation.INCLUDES, value=[False]
-            )
+            Filter(field_name="bool_col", relation=Relation.INCLUDES, value=[False])
         ],
         where={
             DbType.BQ: "`tt`.`bool_col` IS false ORDER BY rand() LIMIT 3",
@@ -461,7 +455,7 @@ WHERE_TESTCASES = [
     ),
     WhereTestCase(
         filters=[
-            AudienceSpecFilter(
+            Filter(
                 field_name="bool_col",
                 relation=Relation.EXCLUDES,
                 value=[None, True],
@@ -475,7 +469,7 @@ WHERE_TESTCASES = [
     ),
     WhereTestCase(
         filters=[
-            AudienceSpecFilter(
+            Filter(
                 field_name="bool_col",
                 relation=Relation.INCLUDES,
                 value=[None, False],
@@ -489,7 +483,7 @@ WHERE_TESTCASES = [
     ),
     WhereTestCase(
         filters=[
-            AudienceSpecFilter(
+            Filter(
                 field_name="bool_col",
                 relation=Relation.INCLUDES,
                 value=[True, None],
@@ -503,7 +497,7 @@ WHERE_TESTCASES = [
     ),
     WhereTestCase(
         filters=[
-            AudienceSpecFilter(
+            Filter(
                 field_name="bool_col",
                 relation=Relation.EXCLUDES,
                 value=[False, True],
@@ -517,7 +511,7 @@ WHERE_TESTCASES = [
     ),
     WhereTestCase(
         filters=[
-            AudienceSpecFilter(
+            Filter(
                 field_name="bool_col",
                 relation=Relation.EXCLUDES,
                 value=[False, None],
