@@ -19,3 +19,7 @@ class StatsPowerError(StatsError):
 
 class StatsBalanceError(StatsError):
     """Errors arising from steps in the balance check, e.g. not having usable covariates."""
+
+
+class StatsAnalysisError(StatsError):
+    """Errors arising from steps in the analysis, e.g. not having data."""

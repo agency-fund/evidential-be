@@ -1031,6 +1031,22 @@ def test_experiments_analyze(testing_experiment):
         }
 
 
+def test_experiments_analyze_for_experiment_with_no_participants(
+    db_session, testing_datasource_with_user_added
+):
+    testing_experiment = make_experiment_and_arms(
+        db_session, testing_datasource_with_user_added.ds, "online"
+    )
+    datasource_id = testing_experiment.datasource_id
+    experiment_id = testing_experiment.id
+
+    response = pget(
+        f"/v1/m/datasources/{datasource_id}/experiments/{experiment_id}/analyze"
+    )
+    assert response.status_code == 422, response.content
+    assert response.json()["message"] == "No participants found for experiment."
+
+
 @pytest.mark.parametrize(
     "endpoint,initial_state,expected_status,expected_detail",
     [
