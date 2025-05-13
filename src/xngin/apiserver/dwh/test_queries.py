@@ -767,7 +767,7 @@ def test_get_stats_on_missing_metric_raises_error(dwh_session):
             dwh_session,
             SampleTable.get_table(),
             [DesignSpecMetricRequest(field_name="missing_col", metric_pct_change=0.1)],
-            audience_filters=[],
+            filters=[],
         )
     assert (
         "Missing metrics (check your Datasource configuration): {'missing_col'}"
@@ -781,7 +781,7 @@ def test_get_stats_on_integer_metric(dwh_session):
         dwh_session,
         SampleTable.get_table(),
         [DesignSpecMetricRequest(field_name="int_col", metric_pct_change=0.1)],
-        audience_filters=[],
+        filters=[],
     )
 
     expected = DesignSpecMetric(
@@ -814,7 +814,7 @@ def test_get_stats_on_nullable_integer_metric(dwh_session):
         dwh_session,
         SampleNullableTable.get_table(),
         [DesignSpecMetricRequest(field_name="int_col", metric_pct_change=0.1)],
-        audience_filters=[],
+        filters=[],
     )
 
     expected = DesignSpecMetric(
@@ -846,7 +846,7 @@ def test_get_stats_on_boolean_metric(dwh_session):
         dwh_session,
         SampleTable.get_table(),
         [DesignSpecMetricRequest(field_name="bool_col", metric_pct_change=0.1)],
-        audience_filters=[],
+        filters=[],
     )
 
     expected = DesignSpecMetric(
@@ -877,7 +877,7 @@ def test_get_stats_on_numeric_metric(dwh_session):
         dwh_session,
         SampleTable.get_table(),
         [DesignSpecMetricRequest(field_name="float_col", metric_pct_change=0.1)],
-        audience_filters=[],
+        filters=[],
     )
 
     expected = DesignSpecMetric(
