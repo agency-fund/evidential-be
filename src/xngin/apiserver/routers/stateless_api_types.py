@@ -521,9 +521,12 @@ class ExperimentAnalysis(ApiBaseModel):
 
 
 ExperimentType = Literal["online", "preassigned"]
-# TODO: add bandit and contextual bandit types
-# BANDIT = "bandit"
-# CONTEXTUAL_BANDIT = "contextual_bandit"
+
+
+class Stratum(ApiBaseModel):
+    """Describes a variable used for stratification."""
+
+    field_name: FieldName
 
 
 class BaseDesignSpec(ApiBaseModel):
@@ -549,15 +552,10 @@ class BaseDesignSpec(ApiBaseModel):
     # arms (at least two)
     arms: Annotated[list[Arm], Field(..., min_length=2, max_length=MAX_NUMBER_OF_ARMS)]
 
-    # TODO migrate to a new "strata_spec:" field that holds experiment-wide stratification rules
-    # such as # of buckets to use during quantilization and the name to use for reporting the
-    # stratum_group_id, along with a "strata_field_names:" field or "strata:" objects that lists
-    # variables to use.
-    strata_field_names: Annotated[
-        list[FieldName],
+    strata: Annotated[
+        list[Stratum],
         Field(
-            ...,
-            description="List of participant_type variables to use for stratification.",
+            description="Optional participant_type fields to use for stratified assignment.",
             max_length=MAX_NUMBER_OF_FIELDS,
         ),
     ]
@@ -572,7 +570,13 @@ class BaseDesignSpec(ApiBaseModel):
         ),
     ]
 
-    filters: Annotated[list[Filter], Field(max_length=MAX_NUMBER_OF_FILTERS)]
+    filters: Annotated[
+        list[Filter],
+        Field(
+            description="Optional filters that constrain a general participant_type to a specific subset who can participate in an experiment.",
+            max_length=MAX_NUMBER_OF_FILTERS,
+        ),
+    ]
 
     @field_serializer("start_date", "end_date", when_used="json")
     def serialize_dt(self, dt: datetime.datetime, _info):

@@ -26,6 +26,7 @@ from xngin.apiserver.routers.stateless_api_types import (
     MetricPowerAnalysisMessageType,
     MetricType,
     PowerResponse,
+    Stratum,
 )
 from xngin.apiserver.dependencies import xngin_db_session
 from xngin.apiserver.main import app
@@ -111,7 +112,7 @@ def make_create_preassigned_experiment_request(
             start_date=start_date,
             end_date=end_date,
             filters=[],
-            strata_field_names=["gender"],
+            strata=[Stratum(field_name="gender")],
             metrics=[
                 DesignSpecMetricRequest(
                     field_name="is_onboarded",
@@ -191,7 +192,7 @@ def make_insertable_online_experiment(
         start_date=start_date,
         end_date=end_date,
         filters=[],
-        strata_field_names=["gender"],
+        strata=[Stratum(field_name="gender")],
         metrics=[
             DesignSpecMetricRequest(
                 field_name="is_onboarded",
@@ -312,8 +313,8 @@ def test_create_experiment_impl_for_preassigned(
     assert response.design_spec.start_date == request.design_spec.start_date
     assert response.design_spec.end_date == request.design_spec.end_date
     # although we stratify on target metrics as well in this test, note that the
-    # original strata_field_names are not augmented with the metric names.
-    assert response.design_spec.strata_field_names == ["gender"]
+    # original strata are not augmented with the metric names.
+    assert response.design_spec.strata == [Stratum(field_name="gender")]
     assert response.power_analyses == request.power_analyses
     # Verify assign_summary
     assert response.assign_summary.sample_size == len(participants)
@@ -365,7 +366,7 @@ def test_create_experiment_impl_for_preassigned(
     # Verify strata information
     assert (
         len(sample_assignment.strata) == 2
-    )  # our metric by default and strata_field_names
+    )  # our metric by default and the original strata
     assert sample_assignment.strata[0]["field_name"] == "gender"
     assert sample_assignment.strata[1]["field_name"] == "is_onboarded"
 
@@ -409,7 +410,7 @@ def test_create_experiment_impl_for_online(
     assert response.design_spec.description == request.design_spec.description
     assert response.design_spec.start_date == request.design_spec.start_date
     assert response.design_spec.end_date == request.design_spec.end_date
-    assert response.design_spec.strata_field_names == ["gender"]
+    assert response.design_spec.strata == [Stratum(field_name="gender")]
     assert (
         response.power_analyses is None
     )  # Online experiments don't have power analyses by default
@@ -525,7 +526,7 @@ def test_create_experiment_impl_no_metric_stratification(
     assert response.design_spec.arms[0].arm_id is not None
     # Same as in the stratify_on_metrics=True test.
     # Only the output assignments will also store a snapshot of the metric values as strata.
-    assert response.design_spec.strata_field_names == ["gender"]
+    assert response.design_spec.strata == [Stratum(field_name="gender")]
 
     # Verify database state
     experiment = db_session.scalars(

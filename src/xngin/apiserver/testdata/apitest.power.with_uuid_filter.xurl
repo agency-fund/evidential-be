@@ -30,9 +30,7 @@ Datasource-ID: testing
       "relation": "includes",
       "value": ["1731e17b-88b4-4021-b8c5-77929d53ab9a"]
     }],
-    "strata_field_names": [
-      "is_onboarded"
-    ],
+    "strata": [{ "field_name": "is_onboarded" }],
     "power": 0.8,
     "alpha": 0.05,
     "fstat_thresh": 0.5,

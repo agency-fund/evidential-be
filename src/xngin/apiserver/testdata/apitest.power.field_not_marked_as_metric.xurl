@@ -25,7 +25,7 @@ Datasource-ID: testing
       "relation": "includes",
       "value": ["Asian"]
     }],
-    "strata_field_names": [],
+    "strata": [],
     "power": 0.8,
     "alpha": 0.05,
     "fstat_thresh": 0.5,

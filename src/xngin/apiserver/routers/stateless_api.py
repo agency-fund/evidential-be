@@ -379,10 +379,11 @@ def assign_treatment(
         )
 
     metric_names = [m.field_name for m in body.design_spec.metrics]
+    strata_names = [s.field_name for s in body.design_spec.strata]
     return assign_treatment_actual(
         sa_table=sa_table,
         data=participants,
-        stratum_cols=body.design_spec.strata_field_names + metric_names,
+        stratum_cols=strata_names + metric_names,
         id_col=schema.get_unique_id_field(),
         arms=body.design_spec.arms,
         experiment_id=body.design_spec.experiment_id,

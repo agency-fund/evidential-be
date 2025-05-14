@@ -208,11 +208,8 @@ def create_preassigned_experiment_impl(
     stratify_on_metrics: bool,
 ) -> CreateExperimentResponse:
     metric_names = [m.field_name for m in request.design_spec.metrics]
-    if stratify_on_metrics:
-        stratum_cols = request.design_spec.strata_field_names + metric_names
-    else:
-        stratum_cols = request.design_spec.strata_field_names
-
+    strata_names = [s.field_name for s in request.design_spec.strata]
+    stratum_cols = strata_names + metric_names if stratify_on_metrics else strata_names
     # TODO: directly create ArmAssignments from the pd dataframe instead
     assignment_response = assign_treatment(
         sa_table=dwh_sa_table,
@@ -548,12 +545,12 @@ def experiment_assignments_to_csv_generator(experiment: Experiment):
     arm_id_to_name = {arm.arm_id: arm.arm_name for arm in design_spec.arms}
 
     # Get strata field names from the first assignment
-    strata_field_names = []
+    strata_names = []
     if len(experiment.arm_assignments) > 0:
-        strata_field_names = experiment.arm_assignments[0].strata_names()
+        strata_names = experiment.arm_assignments[0].strata_names()
 
     # Create CSV header
-    header = ["participant_id", "arm_id", "arm_name", *strata_field_names]
+    header = ["participant_id", "arm_id", "arm_name", *strata_names]
 
     def generate_csv(batch_size=100):
         # Use csv.writer with StringIO to format a single row at a time

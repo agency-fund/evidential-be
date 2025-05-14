@@ -5,8 +5,8 @@ Datasource-ID: testing
  "design_spec": {
     "experiment_id": "0897bbd7-dacd-41b4-b164-7a1950fa61f2",
     "experiment_type": "preassigned",
-    "experiment_name": "Sample experiment with no strata_field_names.",
-    "description": "Although there are no strata_field_names, we still implicilty use any metrics as additional strata in the old /assign endpoint.",
+    "experiment_name": "Sample experiment with no strata.",
+    "description": "Although there are no strata, we still implicilty use any metrics as additional strata in the old /assign endpoint.",
     "arms": [
       {
         "arm_name": "Control",
@@ -21,7 +21,7 @@ Datasource-ID: testing
     "end_date": "2024-11-20",
     "participant_type": "test_participant_type",
     "filters": [],
-    "strata_field_names": [],
+    "strata": [],
     "power": 0.8,
     "alpha": 0.05,
     "fstat_thresh": 0.5,
