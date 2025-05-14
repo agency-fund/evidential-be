@@ -106,6 +106,7 @@ from xngin.apiserver.settings import (
 )
 from xngin.apiserver.testing.testing_dwh import create_user_and_first_datasource
 from xngin.stats.analysis import analyze_experiment as analyze_experiment_impl
+from xngin.stats.stats_errors import StatsAnalysisError
 
 GENERIC_SUCCESS = Response(status_code=status.HTTP_204_NO_CONTENT)
 RESPONSE_CACHE_MAX_AGE_SECONDS = timedelta(minutes=15).seconds
@@ -1242,6 +1243,9 @@ def analyze_experiment(
         metrics = design_spec.metrics
         assignments = experiment.arm_assignments
         participant_ids = [assignment.participant_id for assignment in assignments]
+        if len(participant_ids) == 0:
+            raise StatsAnalysisError("No participants found for experiment.")
+
         participant_outcomes = get_participant_metrics(
             dwh_session,
             sa_table,
