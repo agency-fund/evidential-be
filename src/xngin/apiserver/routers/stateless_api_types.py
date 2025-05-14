@@ -521,16 +521,12 @@ class ExperimentAnalysis(ApiBaseModel):
 
 
 ExperimentType = Literal["online", "preassigned"]
-# TODO: add bandit and contextual bandit types
-# BANDIT = "bandit"
-# CONTEXTUAL_BANDIT = "contextual_bandit"
 
 
 class Stratum(ApiBaseModel):
     """Describes a variable used for stratification."""
 
     field_name: FieldName
-    # TODO: add strata_group_name (strata can be grouped by name, but may only be part of one group)
 
 
 class BaseDesignSpec(ApiBaseModel):
@@ -556,9 +552,6 @@ class BaseDesignSpec(ApiBaseModel):
     # arms (at least two)
     arms: Annotated[list[Arm], Field(..., min_length=2, max_length=MAX_NUMBER_OF_ARMS)]
 
-    # TODO add extra "strata_spec:" field that holds experiment-wide stratification rules
-    # such as # of buckets to use during quantilization and the name to use for reporting the
-    # stratum_group_id.
     strata: Annotated[
         list[Stratum],
         Field(
