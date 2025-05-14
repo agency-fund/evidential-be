@@ -188,7 +188,7 @@ def make_createexperimentrequest_json(
                 {"arm_name": "treatment", "arm_description": "treatment"},
             ],
             "filters": [],
-            "strata_field_names": ["gender"],
+            "strata": [{"field_name": "gender"}],
             "metrics": [
                 {
                     "field_name": "current_income",
@@ -1029,6 +1029,22 @@ def test_experiments_analyze(testing_experiment):
         assert {arm.arm_id for arm in analysis.arm_analyses} == {
             arm.id for arm in testing_experiment.arms
         }
+
+
+def test_experiments_analyze_for_experiment_with_no_participants(
+    db_session, testing_datasource_with_user_added
+):
+    testing_experiment = make_experiment_and_arms(
+        db_session, testing_datasource_with_user_added.ds, "online"
+    )
+    datasource_id = testing_experiment.datasource_id
+    experiment_id = testing_experiment.id
+
+    response = pget(
+        f"/v1/m/datasources/{datasource_id}/experiments/{experiment_id}/analyze"
+    )
+    assert response.status_code == 422, response.content
+    assert response.json()["message"] == "No participants found for experiment."
 
 
 @pytest.mark.parametrize(

@@ -20,8 +20,8 @@ Datasource-ID: customer-test
     ],
     "start_date": "2024-11-06",
     "end_date": "2024-11-20",
-    "strata_field_names": [
-      "active_experiment_ids"
+    "strata": [
+      { "field_name": "active_experiment_ids" }
     ],
     "filters": [
       {
