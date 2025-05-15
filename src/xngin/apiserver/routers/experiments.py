@@ -687,59 +687,57 @@ def create_assignment_for_participant(
         raise ExperimentsAssignmentError(
             f"Invalid experiment state: {experiment.state}"
         )
-    design_spec = experiment.get_design_spec()
     available_arms = xngin_session.execute(
         select(ArmTable.id, ArmTable.name).where(
-            ArmTable.experiment_id == design_spec.experiment_id
+            ArmTable.experiment_id == experiment.id
         )
     ).all()
     if len(available_arms) == 0:
         raise ExperimentsAssignmentError("Experiment has no arms")
 
-    if design_spec.experiment_type == "preassigned":
+    experiment_type = experiment.experiment_type
+    if experiment_type == "preassigned":
         # Preassigned experiments are not allowed to have new ones added.
         return None
-    if design_spec.experiment_type == "online":
-        # For online experiments, create a new assignment with simple random assignment.
-        # TODO? consider using a threadsafe permuted random assignment for better balance.
-        if random_state:
-            # Sort by arm name to ensure deterministic assignment with seed for tests.
-            chosen_arm = random_choice(
-                sorted(available_arms, key=lambda a: a.name),
-                seed=random_state,
-            )
-        else:
-            chosen_arm = random_choice(available_arms)
+    if experiment_type != "online":
+        raise ExperimentsAssignmentError(f"Invalid experiment type: {experiment_type}")
 
-        # chosen_arm is an ORM object that will be reloaded via an additional SQL query after the commit(). We cache
-        # the values as Python variables so that we avoid that redundant query.
-        (arm_id, arm_name) = chosen_arm.id, chosen_arm.name
-
-        # Create and save the new assignment
-        new_assignment = ArmAssignment(
-            experiment_id=experiment.id,
-            participant_id=participant_id,
-            participant_type=experiment.participant_type,
-            arm_id=arm_id,
-            strata=[],  # Online assignments don't have strata
+    # For online experiments, create a new assignment with simple random assignment.
+    if random_state:
+        # Sort by arm name to ensure deterministic assignment with seed for tests.
+        chosen_arm = random_choice(
+            sorted(available_arms, key=lambda a: a.name),
+            seed=random_state,
         )
-        try:
-            xngin_session.add(new_assignment)
-            xngin_session.commit()
-        except IntegrityError as e:
-            xngin_session.rollback()
-            raise ExperimentsAssignmentError(
-                f"Failed to assign participant '{participant_id}' to arm '{chosen_arm.id}': {e}"
-            ) from e
+    else:
+        chosen_arm = random_choice(available_arms)
 
-        return Assignment(
-            participant_id=participant_id,
-            arm_id=arm_id,
-            arm_name=arm_name,
-            strata=[],
-        )
-    raise ExperimentsAssignmentError(
-        f"Invalid experiment type: {design_spec.experiment_type}"
+    # chosen_arm is an ORM object that will be reloaded via an additional SQL query after the commit(). We cache
+    # the values as Python variables so that we avoid that redundant query.
+    (arm_id, arm_name) = chosen_arm.id, chosen_arm.name
+
+    # Create and save the new assignment
+    new_assignment = ArmAssignment(
+        experiment_id=experiment.id,
+        participant_id=participant_id,
+        participant_type=experiment.participant_type,
+        arm_id=arm_id,
+        strata=[],  # Online assignments don't have strata
+    )
+    try:
+        xngin_session.add(new_assignment)
+        xngin_session.commit()
+    except IntegrityError as e:
+        xngin_session.rollback()
+        raise ExperimentsAssignmentError(
+            f"Failed to assign participant '{participant_id}' to arm '{chosen_arm.id}': {e}"
+        ) from e
+
+    return Assignment(
+        participant_id=participant_id,
+        arm_id=arm_id,
+        arm_name=arm_name,
+        strata=[],
     )
 
 
