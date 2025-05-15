@@ -1411,13 +1411,13 @@ def get_experiment_assignment_for_participant(
     """Get the assignment for a specific participant in an experiment."""
     # Validate the datasource and experiment exist
     ds = get_datasource_or_raise(session, user, datasource_id)
+    experiment = get_experiment_via_ds_or_raise(session, ds, experiment_id)
 
     # Look up the participant's assignment if it exists
     assignment = experiments.get_existing_assignment_for_participant(
-        session, experiment_id, participant_id
+        session, experiment.id, participant_id
     )
     if not assignment:
-        experiment = get_experiment_via_ds_or_raise(session, ds, experiment_id)
         assignment = experiments.create_assignment_for_participant(
             session, experiment, participant_id, random_state
         )

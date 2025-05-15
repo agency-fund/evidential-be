@@ -4,7 +4,6 @@ from collections.abc import Sequence
 from contextlib import asynccontextmanager
 from itertools import batched
 from typing import Annotated
-
 from fastapi import (
     APIRouter,
     Depends,
@@ -627,13 +626,11 @@ def get_assignment_for_participant_with_apikey(
     xngin_session: Annotated[Session, Depends(xngin_db_session)],
     random_state: Annotated[int | None, Depends(random_seed_dependency)],
 ) -> GetParticipantAssignmentResponse:
+    experiment = get_experiment_or_raise(xngin_session, experiment_id, datasource.id)
     assignment = get_existing_assignment_for_participant(
-        xngin_session, experiment_id, participant_id
+        xngin_session, experiment.id, participant_id
     )
     if not assignment:
-        experiment = get_experiment_or_raise(
-            xngin_session, experiment_id, datasource.id
-        )
         assignment = create_assignment_for_participant(
             xngin_session, experiment, participant_id, random_state
         )
@@ -652,22 +649,28 @@ def get_existing_assignment_for_participant(
 
     Returns: None if no assignment exists.
     """
-    # Look up the participant's assignment if it exists
-    assignment_query = (
-        xngin_session.query(ArmAssignment)
-        .join(ArmTable)
+    existing_assignment = xngin_session.execute(
+        select(
+            ArmAssignment.participant_id,
+            ArmTable.id.label("arm_id"),
+            ArmTable.name.label("arm_name"),
+        )
+        .join(
+            ArmAssignment,
+            (ArmAssignment.arm_id == ArmTable.id)
+            & (ArmAssignment.experiment_id == ArmTable.experiment_id),
+        )
         .filter(
-            ArmAssignment.experiment_id == experiment_id,
+            ArmTable.experiment_id == experiment_id,
             ArmAssignment.participant_id == participant_id,
         )
-    )
-    existing_assignment = assignment_query.one_or_none()
+    ).one_or_none()
     # If the participant already has an assignment for this experiment, return it.
     if existing_assignment:
         return Assignment(
             participant_id=existing_assignment.participant_id,
             arm_id=existing_assignment.arm_id,
-            arm_name=existing_assignment.arm.name,
+            arm_name=existing_assignment.arm_name,
             strata=[],
         )
     return None
@@ -686,53 +689,53 @@ def create_assignment_for_participant(
         raise ExperimentsAssignmentError(
             f"Invalid experiment state: {experiment.state}"
         )
-
-    if len(experiment.arms) == 0:
+    available_arms = xngin_session.execute(
+        select(ArmTable.id, ArmTable.name).where(
+            ArmTable.experiment_id == experiment.id
+        )
+    ).all()
+    if len(available_arms) == 0:
         raise ExperimentsAssignmentError("Experiment has no arms")
 
-    # TODO: Pull type from experiment entity directly when we persist it in its own column.
-    design_spec = experiment.get_design_spec()
-    if design_spec.experiment_type == "preassigned":
+    experiment_type = experiment.experiment_type
+    if experiment_type == "preassigned":
         # Preassigned experiments are not allowed to have new ones added.
         return None
-    if design_spec.experiment_type == "online":
-        # For online experiments, create a new assignment with simple random assignment.
-        # TODO? consider using a threadsafe permuted random assignment for better balance.
-        if random_state:
-            # Sort by arm name to ensure deterministic assignment with seed for tests.
-            chosen_arm = random_choice(
-                sorted(experiment.arms, key=lambda a: a.name),
-                seed=random_state,
-            )
-        else:
-            chosen_arm = random_choice(experiment.arms)
+    if experiment_type != "online":
+        raise ExperimentsAssignmentError(f"Invalid experiment type: {experiment_type}")
 
-        # Create and save the new assignment
-        new_assignment = ArmAssignment(
-            experiment_id=experiment.id,
-            participant_id=participant_id,
-            participant_type=experiment.participant_type,
-            arm_id=chosen_arm.id,
-            strata=[],  # Online assignments don't have strata
+    # For online experiments, create a new assignment with simple random assignment.
+    if random_state:
+        # Sort by arm name to ensure deterministic assignment with seed for tests.
+        chosen_arm = random_choice(
+            sorted(available_arms, key=lambda a: a.name),
+            seed=random_state,
         )
-        try:
-            xngin_session.add(new_assignment)
-            xngin_session.commit()
-        except IntegrityError as e:
-            xngin_session.rollback()
-            raise ExperimentsAssignmentError(
-                f"Failed to assign participant '{participant_id}' to arm '{chosen_arm.id}': {e}"
-            ) from e
+    else:
+        chosen_arm = random_choice(available_arms)
 
-        return Assignment(
-            participant_id=participant_id,
-            arm_id=chosen_arm.id,
-            arm_name=chosen_arm.name,
-            strata=[],
-        )
-    # Else:
-    raise ExperimentsAssignmentError(
-        f"Invalid experiment type: {design_spec.experiment_type}"
+    # Create and save the new assignment
+    new_assignment = ArmAssignment(
+        experiment_id=experiment.id,
+        participant_id=participant_id,
+        participant_type=experiment.participant_type,
+        arm_id=chosen_arm.id,
+        strata=[],  # Online assignments don't have strata
+    )
+    try:
+        xngin_session.add(new_assignment)
+        xngin_session.commit()
+    except IntegrityError as e:
+        xngin_session.rollback()
+        raise ExperimentsAssignmentError(
+            f"Failed to assign participant '{participant_id}' to arm '{chosen_arm.id}': {e}"
+        ) from e
+
+    return Assignment(
+        participant_id=participant_id,
+        arm_id=chosen_arm.id,
+        arm_name=chosen_arm.name,
+        strata=[],
     )
 
 
