@@ -91,5 +91,5 @@ def setup():
             sys.stdout,
             format="<green>{time:HH:mm:ss}</green> | "
             "<level>{level.icon}</level> | "
-            "<cyan>{name}</cyan>:<cyan>{function}</cyan>:<cyan>{line}</cyan> - <level>{message}</level>",
+            "<cyan>{name}</cyan>:<cyan>{function}</cyan>:<cyan>{line}</cyan> - {extra} <level>{message}</level>",
         )
