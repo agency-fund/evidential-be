@@ -622,13 +622,11 @@ def get_assignment_for_participant_with_apikey(
     xngin_session: Annotated[Session, Depends(xngin_db_session)],
     random_state: Annotated[int | None, Depends(random_seed_dependency)],
 ) -> GetParticipantAssignmentResponse:
+    experiment = get_experiment_or_raise(xngin_session, experiment_id, datasource.id)
     assignment = get_existing_assignment_for_participant(
-        xngin_session, experiment_id, participant_id
+        xngin_session, experiment.id, participant_id
     )
     if not assignment:
-        experiment = get_experiment_or_raise(
-            xngin_session, experiment_id, datasource.id
-        )
         assignment = create_assignment_for_participant(
             xngin_session, experiment, participant_id, random_state
         )
