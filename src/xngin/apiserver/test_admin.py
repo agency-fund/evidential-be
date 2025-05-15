@@ -208,6 +208,7 @@ def make_insertable_experiment(
     design_spec: DesignSpec = TypeAdapter(DesignSpec).validate_python(
         request["design_spec"]
     )
+    # TODO(qixotic): Should experiment_id also be set on DesignSpec?
     return tables.Experiment(
         id=tables.experiment_id_factory(),
         datasource_id=datasource_id,
@@ -508,7 +509,7 @@ def test_lifecycle(testing_datasource):
             participant_type="renamedpt"
         ).model_dump_json(),
     )
-    assert response.status_code == 200
+    assert response.status_code == 200, response.content
     update_pt_response = UpdateParticipantsTypeResponse.model_validate(response.json())
     assert update_pt_response.participant_type == "renamedpt"
 
@@ -943,7 +944,7 @@ def test_get_experiment_assignment_for_preassigned_participant(testing_experimen
     response = pget(
         f"/v1/m/datasources/{datasource_id}/experiments/{experiment_id}/assignments/unassigned_id"
     )
-    assert response.status_code == 200
+    assert response.status_code == 200, response.content
     assignment_response = GetParticipantAssignmentResponse.model_validate(
         response.json()
     )
@@ -954,7 +955,7 @@ def test_get_experiment_assignment_for_preassigned_participant(testing_experimen
     response = pget(
         f"/v1/m/datasources/{datasource_id}/experiments/{experiment_id}/assignments/{assignments[0].participant_id}"
     )
-    assert response.status_code == 200
+    assert response.status_code == 200, response.content
     assignment_response = GetParticipantAssignmentResponse.model_validate(
         response.json()
     )
@@ -976,7 +977,7 @@ def test_get_experiment_assignment_for_online_participant(
     response = pget(
         f"/v1/m/datasources/{datasource_id}/experiments/{experiment_id}/assignments/new_id"
     )
-    assert response.status_code == 200
+    assert response.status_code == 200, response.content
     assignment_response = GetParticipantAssignmentResponse.model_validate(
         response.json()
     )
@@ -991,7 +992,7 @@ def test_get_experiment_assignment_for_online_participant(
     response = pget(
         f"/v1/m/datasources/{datasource_id}/experiments/{experiment_id}/assignments/new_id"
     )
-    assert response.status_code == 200
+    assert response.status_code == 200, response.content
     assignment_response2 = GetParticipantAssignmentResponse.model_validate(
         response.json()
     )
