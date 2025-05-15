@@ -710,16 +710,12 @@ def create_assignment_for_participant(
     else:
         chosen_arm = random_choice(available_arms)
 
-    # chosen_arm is an ORM object that will be reloaded via an additional SQL query after the commit(). We cache
-    # the values as Python variables so that we avoid that redundant query.
-    (arm_id, arm_name) = chosen_arm.id, chosen_arm.name
-
     # Create and save the new assignment
     new_assignment = ArmAssignment(
         experiment_id=experiment.id,
         participant_id=participant_id,
         participant_type=experiment.participant_type,
-        arm_id=arm_id,
+        arm_id=chosen_arm.id,
         strata=[],  # Online assignments don't have strata
     )
     try:
@@ -733,8 +729,8 @@ def create_assignment_for_participant(
 
     return Assignment(
         participant_id=participant_id,
-        arm_id=arm_id,
-        arm_name=arm_name,
+        arm_id=chosen_arm.id,
+        arm_name=chosen_arm.name,
         strata=[],
     )
 
