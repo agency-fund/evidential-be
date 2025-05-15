@@ -4,7 +4,6 @@ from collections.abc import Sequence
 from contextlib import asynccontextmanager
 from itertools import batched
 from typing import Annotated
-
 from fastapi import (
     APIRouter,
     Depends,
@@ -648,22 +647,28 @@ def get_existing_assignment_for_participant(
 
     Returns: None if no assignment exists.
     """
-    # Look up the participant's assignment if it exists
-    assignment_query = (
-        xngin_session.query(ArmAssignment)
-        .join(ArmTable)
+    existing_assignment = xngin_session.execute(
+        select(
+            ArmAssignment.participant_id,
+            ArmTable.id.label("arm_id"),
+            ArmTable.name.label("arm_name"),
+        )
+        .join(
+            ArmAssignment,
+            (ArmAssignment.arm_id == ArmTable.id)
+            & (ArmAssignment.experiment_id == ArmTable.experiment_id),
+        )
         .filter(
-            ArmAssignment.experiment_id == experiment_id,
+            ArmTable.experiment_id == experiment_id,
             ArmAssignment.participant_id == participant_id,
         )
-    )
-    existing_assignment = assignment_query.one_or_none()
+    ).one_or_none()
     # If the participant already has an assignment for this experiment, return it.
     if existing_assignment:
         return Assignment(
             participant_id=existing_assignment.participant_id,
             arm_id=existing_assignment.arm_id,
-            arm_name=existing_assignment.arm.name,
+            arm_name=existing_assignment.arm_name,
             strata=[],
         )
     return None
@@ -682,12 +687,15 @@ def create_assignment_for_participant(
         raise ExperimentsAssignmentError(
             f"Invalid experiment state: {experiment.state}"
         )
-
-    if len(experiment.arms) == 0:
+    design_spec = experiment.get_design_spec()
+    available_arms = xngin_session.execute(
+        select(ArmTable.id, ArmTable.name).where(
+            ArmTable.experiment_id == design_spec.experiment_id
+        )
+    ).all()
+    if len(available_arms) == 0:
         raise ExperimentsAssignmentError("Experiment has no arms")
 
-    # TODO: Pull type from experiment entity directly when we persist it in its own column.
-    design_spec = experiment.get_design_spec()
     if design_spec.experiment_type == "preassigned":
         # Preassigned experiments are not allowed to have new ones added.
         return None
@@ -697,18 +705,22 @@ def create_assignment_for_participant(
         if random_state:
             # Sort by arm name to ensure deterministic assignment with seed for tests.
             chosen_arm = random_choice(
-                sorted(experiment.arms, key=lambda a: a.name),
+                sorted(available_arms, key=lambda a: a.name),
                 seed=random_state,
             )
         else:
-            chosen_arm = random_choice(experiment.arms)
+            chosen_arm = random_choice(available_arms)
+
+        # chosen_arm is an ORM object that will be reloaded via an additional SQL query after the commit(). We cache
+        # the values as Python variables so that we avoid that redundant query.
+        (arm_id, arm_name) = chosen_arm.id, chosen_arm.name
 
         # Create and save the new assignment
         new_assignment = ArmAssignment(
             experiment_id=experiment.id,
             participant_id=participant_id,
             participant_type=experiment.participant_type,
-            arm_id=chosen_arm.id,
+            arm_id=arm_id,
             strata=[],  # Online assignments don't have strata
         )
         try:
@@ -722,11 +734,10 @@ def create_assignment_for_participant(
 
         return Assignment(
             participant_id=participant_id,
-            arm_id=chosen_arm.id,
-            arm_name=chosen_arm.name,
+            arm_id=arm_id,
+            arm_name=arm_name,
             strata=[],
         )
-    # Else:
     raise ExperimentsAssignmentError(
         f"Invalid experiment type: {design_spec.experiment_type}"
     )
