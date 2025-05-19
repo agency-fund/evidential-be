@@ -367,6 +367,9 @@ class ArmAssignment(Base):
     )
     # JSON serialized form of a list of Strata objects (from Assignment.strata).
     strata: Mapped[list[dict[str, str]]] = mapped_column(type_=JSONBetter)
+    created_at: Mapped[datetime] = mapped_column(
+        server_default=sqlalchemy.sql.func.now()
+    )
 
     experiment: Mapped["Experiment"] = relationship(back_populates="arm_assignments")
     arm: Mapped["ArmTable"] = relationship(back_populates="arm_assignments")

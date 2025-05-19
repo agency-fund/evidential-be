@@ -1,3 +1,4 @@
+from datetime import UTC, datetime
 import decimal
 from collections import defaultdict
 from collections.abc import Sequence
@@ -244,6 +245,7 @@ def _make_assign_response(
             participant_id=str(row_dict[id_col]),
             arm_id=arms[treatment_assignment].arm_id,
             arm_name=arms[treatment_assignment].arm_name,
+            created_at=datetime.now(UTC),
             strata=strata,
         )
         participants_list.append(participant)
