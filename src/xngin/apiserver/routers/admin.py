@@ -30,18 +30,7 @@ from xngin.apiserver.dependencies import xngin_db_session
 from xngin.apiserver.dns.safe_resolve import DnsLookupError, safe_resolve
 from xngin.apiserver.dwh.queries import get_participant_metrics, query_for_participants
 from xngin.apiserver.exceptions_common import LateValidationError
-from xngin.apiserver.models.tables import (
-    ApiKey,
-    Datasource,
-    DatasourceTablesInspected,
-    Event,
-    Experiment,
-    Organization,
-    ParticipantTypesInspected,
-    User,
-    UserOrganization,
-    Webhook,
-)
+from xngin.apiserver.models import tables
 from xngin.apiserver.routers import experiments_common, experiments_api_types
 from xngin.apiserver.routers.admin_api_types import (
     AddMemberToOrganizationRequest,
@@ -180,12 +169,14 @@ router = APIRouter(
 def user_from_token(
     session: Annotated[Session, Depends(xngin_db_session)],
     token_info: Annotated[TokenInfo, Depends(require_oidc_token)],
-) -> User:
+) -> tables.User:
     """Dependency for fetching the User record matching the authenticated user's email.
 
     This may raise a 400, 401, or 403.
     """
-    user = session.query(User).filter(User.email == token_info.email).first()
+    user = (
+        session.query(tables.User).filter(tables.User.email == token_info.email).first()
+    )
     if not user:
         if token_info.is_privileged():
             user = create_user_and_first_datasource(
@@ -203,13 +194,15 @@ def user_from_token(
     return user
 
 
-def get_organization_or_raise(session: Session, user: User, organization_id: str):
+def get_organization_or_raise(
+    session: Session, user: tables.User, organization_id: str
+):
     """Reads the requested organization from the database. Raises 404 if disallowed or not found."""
     stmt = (
-        select(Organization)
-        .join(UserOrganization)
-        .where(Organization.id == organization_id)
-        .where(UserOrganization.user_id == user.id)
+        select(tables.Organization)
+        .join(tables.UserOrganization)
+        .where(tables.Organization.id == organization_id)
+        .where(tables.UserOrganization.user_id == user.id)
     )
     org = session.execute(stmt).scalar_one_or_none()
     if org is None:
@@ -219,13 +212,16 @@ def get_organization_or_raise(session: Session, user: User, organization_id: str
     return org
 
 
-def get_datasource_or_raise(session: Session, user: User, datasource_id: str):
+def get_datasource_or_raise(session: Session, user: tables.User, datasource_id: str):
     """Reads the requested datasource from the database. Raises 404 if disallowed or not found."""
     stmt = (
-        select(Datasource)
-        .join(Organization)
-        .join(UserOrganization)
-        .where(UserOrganization.user_id == user.id, Datasource.id == datasource_id)
+        select(tables.Datasource)
+        .join(tables.Organization)
+        .join(tables.UserOrganization)
+        .where(
+            tables.UserOrganization.user_id == user.id,
+            tables.Datasource.id == datasource_id,
+        )
     )
     ds = session.execute(stmt).scalar_one_or_none()
     if ds is None:
@@ -236,13 +232,13 @@ def get_datasource_or_raise(session: Session, user: User, datasource_id: str):
 
 
 def get_experiment_via_ds_or_raise(
-    session: Session, ds: Datasource, experiment_id: str
-) -> Experiment:
+    session: Session, ds: tables.Datasource, experiment_id: str
+) -> tables.Experiment:
     """Reads the requested experiment (related to the given datasource) from the database. Raises 404 if not found."""
     stmt = (
-        select(Experiment)
-        .where(Experiment.datasource_id == ds.id)
-        .where(Experiment.id == experiment_id)
+        select(tables.Experiment)
+        .where(tables.Experiment.datasource_id == ds.id)
+        .where(tables.Experiment.id == experiment_id)
     )
     exp = session.execute(stmt).scalar_one_or_none()
     if exp is None:
@@ -263,10 +259,14 @@ def caller_identity(
 @router.get("/organizations")
 def list_organizations(
     session: Annotated[Session, Depends(xngin_db_session)],
-    user: Annotated[User, Depends(user_from_token)],
+    user: Annotated[tables.User, Depends(user_from_token)],
 ) -> ListOrganizationsResponse:
     """Returns a list of organizations that the authenticated user is a member of."""
-    stmt = select(Organization).join(Organization.users).where(User.id == user.id)
+    stmt = (
+        select(tables.Organization)
+        .join(tables.Organization.users)
+        .where(tables.User.id == user.id)
+    )
     result = session.execute(stmt)
     organizations = result.scalars().all()
 
@@ -284,7 +284,7 @@ def list_organizations(
 @router.post("/organizations")
 def create_organizations(
     session: Annotated[Session, Depends(xngin_db_session)],
-    user: Annotated[User, Depends(user_from_token)],
+    user: Annotated[tables.User, Depends(user_from_token)],
     body: Annotated[CreateOrganizationRequest, Body(...)],
 ) -> CreateOrganizationResponse:
     """Creates a new organization.
@@ -297,7 +297,7 @@ def create_organizations(
             detail="Only privileged users can create organizations",
         )
 
-    organization = Organization(name=body.name)
+    organization = tables.Organization(name=body.name)
     session.add(organization)
     organization.users.append(user)  # Add the creating user to the organization
     session.commit()
@@ -309,7 +309,7 @@ def create_organizations(
 def add_webhook_to_organization(
     organization_id: str,
     session: Annotated[Session, Depends(xngin_db_session)],
-    user: Annotated[User, Depends(user_from_token)],
+    user: Annotated[tables.User, Depends(user_from_token)],
     body: Annotated[AddWebhookToOrganizationRequest, Body(...)],
 ) -> AddWebhookToOrganizationResponse:
     """Adds a Webhook to an organization."""
@@ -320,7 +320,7 @@ def add_webhook_to_organization(
     auth_token = secrets.token_hex(16)
 
     # Create and save the webhook
-    webhook = Webhook(
+    webhook = tables.Webhook(
         type=body.type, url=body.url, auth_token=auth_token, organization_id=org.id
     )
     session.add(webhook)
@@ -335,14 +335,14 @@ def add_webhook_to_organization(
 def list_organization_webhooks(
     organization_id: str,
     session: Annotated[Session, Depends(xngin_db_session)],
-    user: Annotated[User, Depends(user_from_token)],
+    user: Annotated[tables.User, Depends(user_from_token)],
 ) -> ListWebhooksResponse:
     """Lists all the webhooks for an organization."""
     # Verify user has access to the organization
     org = get_organization_or_raise(session, user, organization_id)
 
     # Query for webhooks
-    stmt = select(Webhook).where(Webhook.organization_id == org.id)
+    stmt = select(tables.Webhook).where(tables.Webhook.organization_id == org.id)
     webhooks = session.scalars(stmt).all()
 
     # Convert webhooks to WebhookSummary objects
@@ -371,7 +371,7 @@ def delete_webhook_from_organization(
     organization_id: str,
     webhook_id: str,
     session: Annotated[Session, Depends(xngin_db_session)],
-    user: Annotated[User, Depends(user_from_token)],
+    user: Annotated[tables.User, Depends(user_from_token)],
 ):
     """Removes a Webhook from an organization."""
     # Verify user has access to the organization
@@ -379,9 +379,9 @@ def delete_webhook_from_organization(
 
     # Find and delete the webhook
     stmt = (
-        delete(Webhook)
-        .where(Webhook.id == webhook_id)
-        .where(Webhook.organization_id == org.id)
+        delete(tables.Webhook)
+        .where(tables.Webhook.id == webhook_id)
+        .where(tables.Webhook.organization_id == org.id)
     )
     result = session.execute(stmt)
 
@@ -398,7 +398,7 @@ def delete_webhook_from_organization(
 def list_organization_events(
     organization_id: str,
     session: Annotated[Session, Depends(xngin_db_session)],
-    user: Annotated[User, Depends(user_from_token)],
+    user: Annotated[tables.User, Depends(user_from_token)],
 ) -> ListOrganizationEventsResponse:
     """Returns the most recent 200 events in an organization."""
     # Verify user has access to the organization
@@ -406,9 +406,9 @@ def list_organization_events(
 
     # Query for the most recent 200 events
     stmt = (
-        select(Event)
-        .where(Event.organization_id == org.id)
-        .order_by(Event.created_at.desc())
+        select(tables.Event)
+        .where(tables.Event.organization_id == org.id)
+        .order_by(tables.Event.created_at.desc())
         .limit(200)
     )
     events = session.scalars(stmt).all()
@@ -440,7 +440,7 @@ def convert_events_to_eventsummaries(events):
 def add_member_to_organization(
     organization_id: str,
     session: Annotated[Session, Depends(xngin_db_session)],
-    user: Annotated[User, Depends(user_from_token)],
+    user: Annotated[tables.User, Depends(user_from_token)],
     body: Annotated[AddMemberToOrganizationRequest, Body(...)],
 ):
     """Adds a new member to an organization.
@@ -448,7 +448,7 @@ def add_member_to_organization(
     The authenticated user must be part of the organization to add members.
     """
     # Check if the organization exists
-    org = session.get(Organization, organization_id)
+    org = session.get(tables.Organization, organization_id)
     if not org:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail="Organization not found"
@@ -459,9 +459,11 @@ def add_member_to_organization(
         _authz_check = get_organization_or_raise(session, user, organization_id)
 
     # Add the new member
-    new_user = session.query(User).filter(User.email == body.email).first()
+    new_user = (
+        session.query(tables.User).filter(tables.User.email == body.email).first()
+    )
     if not new_user:
-        new_user = User(email=body.email)
+        new_user = tables.User(email=body.email)
         session.add(new_user)
 
     org.users.append(new_user)
@@ -477,7 +479,7 @@ def remove_member_from_organization(
     organization_id: str,
     user_id: str,
     session: Annotated[Session, Depends(xngin_db_session)],
-    user: Annotated[User, Depends(user_from_token)],
+    user: Annotated[tables.User, Depends(user_from_token)],
 ):
     """Removes a member from an organization.
 
@@ -490,9 +492,9 @@ def remove_member_from_organization(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="You cannot remove yourself from an organization",
         )
-    stmt = delete(UserOrganization).where(
-        UserOrganization.organization_id == organization_id,
-        UserOrganization.user_id == user_id,
+    stmt = delete(tables.UserOrganization).where(
+        tables.UserOrganization.organization_id == organization_id,
+        tables.UserOrganization.user_id == user_id,
     )
     result = session.execute(stmt)
     if result.rowcount == 0:
@@ -509,7 +511,7 @@ def remove_member_from_organization(
 def update_organization(
     organization_id: str,
     session: Annotated[Session, Depends(xngin_db_session)],
-    user: Annotated[User, Depends(user_from_token)],
+    user: Annotated[tables.User, Depends(user_from_token)],
     body: Annotated[UpdateOrganizationRequest, Body(...)],
 ):
     """Updates an organization's properties.
@@ -530,7 +532,7 @@ def update_organization(
 def get_organization(
     organization_id: str,
     session: Annotated[Session, Depends(xngin_db_session)],
-    user: Annotated[User, Depends(user_from_token)],
+    user: Annotated[tables.User, Depends(user_from_token)],
 ) -> GetOrganizationResponse:
     """Returns detailed information about a specific organization.
 
@@ -541,14 +543,14 @@ def get_organization(
 
     # Get users and datasources separately
     users = (
-        session.query(User)
-        .join(UserOrganization)
-        .filter(UserOrganization.organization_id == organization_id)
+        session.query(tables.User)
+        .join(tables.UserOrganization)
+        .filter(tables.UserOrganization.organization_id == organization_id)
         .all()
     )
     datasources = (
-        session.query(Datasource)
-        .filter(Datasource.organization_id == organization_id)
+        session.query(tables.Datasource)
+        .filter(tables.Datasource.organization_id == organization_id)
         .all()
     )
 
@@ -578,23 +580,23 @@ def get_organization(
 def list_organization_datasources(
     organization_id: str,
     session: Annotated[Session, Depends(xngin_db_session)],
-    user: Annotated[User, Depends(user_from_token)],
+    user: Annotated[tables.User, Depends(user_from_token)],
 ) -> ListDatasourcesResponse:
     """Returns a list of datasources accessible to the authenticated user for an org."""
     _authz_check = get_organization_or_raise(session, user, organization_id)
     stmt = (
-        select(Datasource)
-        .join(Organization)
-        .join(Organization.users)
-        .where(User.id == user.id)
+        select(tables.Datasource)
+        .join(tables.Organization)
+        .join(tables.Organization.users)
+        .where(tables.User.id == user.id)
     )
     if organization_id is not None:
-        stmt = stmt.where(Organization.id == organization_id)
+        stmt = stmt.where(tables.Organization.id == organization_id)
 
     result = session.execute(stmt)
     datasources = result.scalars().all()
 
-    def convert_ds_to_summary(ds: Datasource) -> DatasourceSummary:
+    def convert_ds_to_summary(ds: tables.Datasource) -> DatasourceSummary:
         config = ds.get_config()
         return DatasourceSummary(
             id=ds.id,
@@ -616,7 +618,7 @@ def list_organization_datasources(
 @router.post("/datasources")
 def create_datasource(
     session: Annotated[Session, Depends(xngin_db_session)],
-    user: Annotated[User, Depends(user_from_token)],
+    user: Annotated[tables.User, Depends(user_from_token)],
     body: Annotated[CreateDatasourceRequest, Body(...)],
 ) -> CreateDatasourceResponse:
     """Creates a new datasource for the specified organization."""
@@ -641,7 +643,9 @@ def create_datasource(
 
     config = RemoteDatabaseConfig(participants=[], type="remote", dwh=body.dwh)
 
-    datasource = Datasource(name=body.name, organization_id=org.id).set_config(config)
+    datasource = tables.Datasource(name=body.name, organization_id=org.id).set_config(
+        config
+    )
     session.add(datasource)
     session.commit()
 
@@ -652,7 +656,7 @@ def create_datasource(
 def update_datasource(
     datasource_id: str,
     body: UpdateDatasourceRequest,
-    user: Annotated[User, Depends(user_from_token)],
+    user: Annotated[tables.User, Depends(user_from_token)],
     session: Annotated[Session, Depends(xngin_db_session)],
 ):
     ds = get_datasource_or_raise(session, user, datasource_id)
@@ -665,11 +669,11 @@ def update_datasource(
         # Invalidate cached inspections.
         ds.set_config(cfg)
         ds.clear_table_list()
-        invalidate_inspect_tables = delete(DatasourceTablesInspected).where(
-            DatasourceTablesInspected.datasource_id == datasource_id
+        invalidate_inspect_tables = delete(tables.DatasourceTablesInspected).where(
+            tables.DatasourceTablesInspected.datasource_id == datasource_id
         )
-        invalidate_inspect_ptype = delete(ParticipantTypesInspected).where(
-            ParticipantTypesInspected.datasource_id == datasource_id
+        invalidate_inspect_ptype = delete(tables.ParticipantTypesInspected).where(
+            tables.ParticipantTypesInspected.datasource_id == datasource_id
         )
         session.execute(invalidate_inspect_tables)
         session.execute(invalidate_inspect_ptype)
@@ -680,7 +684,7 @@ def update_datasource(
 @router.get("/datasources/{datasource_id}")
 def get_datasource(
     datasource_id: str,
-    user: Annotated[User, Depends(user_from_token)],
+    user: Annotated[tables.User, Depends(user_from_token)],
     session: Annotated[Session, Depends(xngin_db_session)],
 ) -> GetDatasourceResponse:
     """Returns detailed information about a specific datasource."""
@@ -698,7 +702,7 @@ def get_datasource(
 @router.get("/datasources/{datasource_id}/inspect")
 def inspect_datasource(
     datasource_id: str,
-    user: Annotated[User, Depends(user_from_token)],
+    user: Annotated[tables.User, Depends(user_from_token)],
     session: Annotated[Session, Depends(xngin_db_session)],
     refresh: Annotated[bool, Query(description="Refresh the cache.")] = False,
 ) -> InspectDatasourceResponse:
@@ -796,8 +800,8 @@ def create_inspect_table_response_from_table(
 def invalidate_inspect_table_cache(session, datasource_id):
     """Invalidates all table inspection cache entries for a datasource."""
     session.execute(
-        delete(DatasourceTablesInspected).where(
-            DatasourceTablesInspected.datasource_id == datasource_id
+        delete(tables.DatasourceTablesInspected).where(
+            tables.DatasourceTablesInspected.datasource_id == datasource_id
         )
     )
 
@@ -806,7 +810,7 @@ def invalidate_inspect_table_cache(session, datasource_id):
 def inspect_table_in_datasource(
     datasource_id: str,
     table_name: str,
-    user: Annotated[User, Depends(user_from_token)],
+    user: Annotated[tables.User, Depends(user_from_token)],
     session: Annotated[Session, Depends(xngin_db_session)],
     refresh: Annotated[bool, Query(description="Refresh the cache.")] = False,
 ) -> InspectDatasourceTableResponse:
@@ -816,7 +820,7 @@ def inspect_table_in_datasource(
         not refresh
         and (
             cached := session.get(
-                DatasourceTablesInspected, (datasource_id, table_name)
+                tables.DatasourceTablesInspected, (datasource_id, table_name)
             )
         )
         and cache_is_fresh(cached.response_last_updated)
@@ -836,7 +840,7 @@ def inspect_table_in_datasource(
     response = create_inspect_table_response_from_table(table)
 
     session.add(
-        DatasourceTablesInspected(
+        tables.DatasourceTablesInspected(
             datasource_id=datasource_id, table_name=table_name
         ).set_response(response)
     )
@@ -848,7 +852,7 @@ def inspect_table_in_datasource(
 @router.delete("/datasources/{datasource_id}", status_code=status.HTTP_204_NO_CONTENT)
 def delete_datasource(
     session: Annotated[Session, Depends(xngin_db_session)],
-    user: Annotated[User, Depends(user_from_token)],
+    user: Annotated[tables.User, Depends(user_from_token)],
     datasource_id: Annotated[str, Path(...)],
 ):
     """Deletes a datasource.
@@ -857,14 +861,14 @@ def delete_datasource(
     """
     # Delete the datasource, but only if the user has access to it
     stmt = (
-        delete(Datasource)
-        .where(Datasource.id == datasource_id)
+        delete(tables.Datasource)
+        .where(tables.Datasource.id == datasource_id)
         .where(
-            Datasource.id.in_(
-                select(Datasource.id)
-                .join(Organization)
-                .join(Organization.users)
-                .where(User.id == user.id)
+            tables.Datasource.id.in_(
+                select(tables.Datasource.id)
+                .join(tables.Organization)
+                .join(tables.Organization.users)
+                .where(tables.User.id == user.id)
             )
         )
     )
@@ -878,7 +882,7 @@ def delete_datasource(
 def list_participant_types(
     datasource_id: str,
     session: Annotated[Session, Depends(xngin_db_session)],
-    user: Annotated[User, Depends(user_from_token)],
+    user: Annotated[tables.User, Depends(user_from_token)],
 ) -> ListParticipantsTypeResponse:
     ds = get_datasource_or_raise(session, user, datasource_id)
     return ListParticipantsTypeResponse(
@@ -892,7 +896,7 @@ def list_participant_types(
 def create_participant_type(
     datasource_id: str,
     session: Annotated[Session, Depends(xngin_db_session)],
-    user: Annotated[User, Depends(user_from_token)],
+    user: Annotated[tables.User, Depends(user_from_token)],
     body: CreateParticipantsTypeRequest,
 ) -> CreateParticipantsTypeResponse:
     ds = get_datasource_or_raise(session, user, datasource_id)
@@ -917,7 +921,7 @@ def inspect_participant_types(
     datasource_id: str,
     participant_id: str,
     session: Annotated[Session, Depends(xngin_db_session)],
-    user: Annotated[User, Depends(user_from_token)],
+    user: Annotated[tables.User, Depends(user_from_token)],
     refresh: Annotated[bool, Query(description="Refresh the cache.")] = False,
 ) -> InspectParticipantTypesResponse:
     """Returns filter, strata, and metric field metadata for a participant type, including exemplars for filter fields."""
@@ -933,7 +937,7 @@ def inspect_participant_types(
         not refresh
         and (
             cached := session.get(
-                ParticipantTypesInspected, (datasource_id, participant_id)
+                tables.ParticipantTypesInspected, (datasource_id, participant_id)
             )
         )
         and cache_is_fresh(cached.response_last_updated)
@@ -941,9 +945,9 @@ def inspect_participant_types(
         return cached.get_response()
 
     session.execute(
-        delete(ParticipantTypesInspected).where(
-            ParticipantTypesInspected.datasource_id == datasource_id,
-            ParticipantTypesInspected.participant_type == participant_id,
+        delete(tables.ParticipantTypesInspected).where(
+            tables.ParticipantTypesInspected.datasource_id == datasource_id,
+            tables.ParticipantTypesInspected.participant_type == participant_id,
         )
     )
     session.commit()
@@ -1004,7 +1008,7 @@ def inspect_participant_types(
     response = inspect_participant_types_impl()
 
     session.add(
-        ParticipantTypesInspected(
+        tables.ParticipantTypesInspected(
             datasource_id=datasource_id, participant_type=participant_id
         ).set_response(response)
     )
@@ -1018,7 +1022,7 @@ def get_participant_types(
     datasource_id: str,
     participant_id: str,
     session: Annotated[Session, Depends(xngin_db_session)],
-    user: Annotated[User, Depends(user_from_token)],
+    user: Annotated[tables.User, Depends(user_from_token)],
 ) -> ParticipantsConfig:
     ds = get_datasource_or_raise(session, user, datasource_id)
     # CannotFindParticipantsError will be handled by exceptionhandlers.
@@ -1033,7 +1037,7 @@ def update_participant_type(
     datasource_id: str,
     participant_id: str,
     session: Annotated[Session, Depends(xngin_db_session)],
-    user: Annotated[User, Depends(user_from_token)],
+    user: Annotated[tables.User, Depends(user_from_token)],
     body: UpdateParticipantsTypeRequest,
 ):
     ds = get_datasource_or_raise(session, user, datasource_id)
@@ -1056,9 +1060,9 @@ def update_participant_type(
     # Invalidate the participant types cached inspections because the configuration may have been updated and they may
     # be stale.
     session.execute(
-        delete(ParticipantTypesInspected).where(
-            ParticipantTypesInspected.datasource_id == datasource_id,
-            ParticipantTypesInspected.participant_type == participant_id,
+        delete(tables.ParticipantTypesInspected).where(
+            tables.ParticipantTypesInspected.datasource_id == datasource_id,
+            tables.ParticipantTypesInspected.participant_type == participant_id,
         )
     )
     session.commit()
@@ -1077,7 +1081,7 @@ def delete_participant(
     datasource_id: str,
     participant_id: str,
     session: Annotated[Session, Depends(xngin_db_session)],
-    user: Annotated[User, Depends(user_from_token)],
+    user: Annotated[tables.User, Depends(user_from_token)],
 ):
     ds = get_datasource_or_raise(session, user, datasource_id)
     config = ds.get_config()
@@ -1092,7 +1096,7 @@ def delete_participant(
 def list_api_keys(
     datasource_id: str,
     session: Annotated[Session, Depends(xngin_db_session)],
-    user: Annotated[User, Depends(user_from_token)],
+    user: Annotated[tables.User, Depends(user_from_token)],
 ) -> ListApiKeysResponse:
     """Returns API keys that have access to the datasource."""
     ds = get_datasource_or_raise(session, user, datasource_id)
@@ -1113,7 +1117,7 @@ def list_api_keys(
 def create_api_key(
     datasource_id: str,
     session: Annotated[Session, Depends(xngin_db_session)],
-    user: Annotated[User, Depends(user_from_token)],
+    user: Annotated[tables.User, Depends(user_from_token)],
 ) -> CreateApiKeyResponse:
     """Creates an API key for the specified datasource.
 
@@ -1122,7 +1126,7 @@ def create_api_key(
     ds = get_datasource_or_raise(session, user, datasource_id)
     label, key = make_key()
     key_hash = hash_key(key)
-    api_key = ApiKey(id=label, key=key_hash, datasource_id=ds.id)
+    api_key = tables.ApiKey(id=label, key=key_hash, datasource_id=ds.id)
     session.add(api_key)
     session.commit()
     return CreateApiKeyResponse(id=label, datasource_id=ds.id, key=key)
@@ -1135,7 +1139,7 @@ def create_api_key(
 def delete_api_key(
     datasource_id: str,
     session: Annotated[Session, Depends(xngin_db_session)],
-    user: Annotated[User, Depends(user_from_token)],
+    user: Annotated[tables.User, Depends(user_from_token)],
     api_key_id: Annotated[str, Path(...)],
 ):
     """Deletes the specified API key."""
@@ -1150,7 +1154,7 @@ def delete_api_key(
 def create_experiment(
     datasource_id: str,
     session: Annotated[Session, Depends(xngin_db_session)],
-    user: Annotated[User, Depends(user_from_token)],
+    user: Annotated[tables.User, Depends(user_from_token)],
     body: experiments_api_types.CreateExperimentRequest,
     chosen_n: Annotated[
         int | None, Query(..., description="Number of participants to assign.")
@@ -1212,7 +1216,7 @@ def analyze_experiment(
     datasource_id: str,
     experiment_id: str,
     xngin_session: Annotated[Session, Depends(xngin_db_session)],
-    user: Annotated[User, Depends(user_from_token)],
+    user: Annotated[tables.User, Depends(user_from_token)],
     baseline_arm_id: Annotated[
         str | None,
         Query(
@@ -1306,7 +1310,7 @@ def commit_experiment(
     datasource_id: str,
     experiment_id: str,
     session: Annotated[Session, Depends(xngin_db_session)],
-    user: Annotated[User, Depends(user_from_token)],
+    user: Annotated[tables.User, Depends(user_from_token)],
 ):
     ds = get_datasource_or_raise(session, user, datasource_id)
     experiment = get_experiment_via_ds_or_raise(session, ds, experiment_id)
@@ -1321,7 +1325,7 @@ def abandon_experiment(
     datasource_id: str,
     experiment_id: str,
     session: Annotated[Session, Depends(xngin_db_session)],
-    user: Annotated[User, Depends(user_from_token)],
+    user: Annotated[tables.User, Depends(user_from_token)],
 ):
     ds = get_datasource_or_raise(session, user, datasource_id)
     experiment = get_experiment_via_ds_or_raise(session, ds, experiment_id)
@@ -1332,7 +1336,7 @@ def abandon_experiment(
 def list_experiments(
     datasource_id: str,
     session: Annotated[Session, Depends(xngin_db_session)],
-    user: Annotated[User, Depends(user_from_token)],
+    user: Annotated[tables.User, Depends(user_from_token)],
 ) -> experiments_api_types.ListExperimentsResponse:
     """Returns the list of experiments in the datasource."""
     ds = get_datasource_or_raise(session, user, datasource_id)
@@ -1344,7 +1348,7 @@ def get_experiment(
     datasource_id: str,
     experiment_id: str,
     session: Annotated[Session, Depends(xngin_db_session)],
-    user: Annotated[User, Depends(user_from_token)],
+    user: Annotated[tables.User, Depends(user_from_token)],
 ) -> experiments_api_types.ExperimentConfig:
     """Returns the experiment with the specified ID."""
     ds = get_datasource_or_raise(session, user, datasource_id)
@@ -1363,7 +1367,7 @@ def get_experiment_assignments(
     datasource_id: str,
     experiment_id: str,
     session: Annotated[Session, Depends(xngin_db_session)],
-    user: Annotated[User, Depends(user_from_token)],
+    user: Annotated[tables.User, Depends(user_from_token)],
 ) -> experiments_api_types.GetExperimentAssignmentsResponse:
     ds = get_datasource_or_raise(session, user, datasource_id)
     experiment = get_experiment_via_ds_or_raise(session, ds, experiment_id)
@@ -1381,7 +1385,7 @@ def get_experiment_assignments_as_csv(
     datasource_id: str,
     experiment_id: str,
     session: Annotated[Session, Depends(xngin_db_session)],
-    user: Annotated[User, Depends(user_from_token)],
+    user: Annotated[tables.User, Depends(user_from_token)],
 ) -> StreamingResponse:
     ds = get_datasource_or_raise(session, user, datasource_id)
     experiment = get_experiment_via_ds_or_raise(session, ds, experiment_id)
@@ -1399,7 +1403,7 @@ def get_experiment_assignment_for_participant(
     experiment_id: str,
     participant_id: str,
     session: Annotated[Session, Depends(xngin_db_session)],
-    user: Annotated[User, Depends(user_from_token)],
+    user: Annotated[tables.User, Depends(user_from_token)],
     random_state: Annotated[
         int | None,
         Query(
@@ -1437,7 +1441,7 @@ def delete_experiment(
     datasource_id: str,
     experiment_id: str,
     session: Annotated[Session, Depends(xngin_db_session)],
-    user: Annotated[User, Depends(user_from_token)],
+    user: Annotated[tables.User, Depends(user_from_token)],
 ):
     """Deletes the experiment with the specified ID."""
     ds = get_datasource_or_raise(session, user, datasource_id)
@@ -1451,7 +1455,7 @@ def delete_experiment(
 def power_check(
     datasource_id: str,
     session: Annotated[Session, Depends(xngin_db_session)],
-    user: Annotated[User, Depends(user_from_token)],
+    user: Annotated[tables.User, Depends(user_from_token)],
     body: PowerRequest,
 ) -> PowerResponse:
     ds = get_datasource_or_raise(session, user, datasource_id)
