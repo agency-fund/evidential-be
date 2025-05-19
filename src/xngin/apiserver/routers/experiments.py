@@ -37,9 +37,7 @@ from xngin.apiserver.routers.experiments_common import (
 from xngin.apiserver.dwh.queries import query_for_participants
 from xngin.apiserver.exceptions_common import LateValidationError
 from xngin.apiserver.gsheet_cache import GSheetCache
-from xngin.apiserver.models.tables import (
-    Experiment,
-)
+from xngin.apiserver.models import tables
 from xngin.apiserver.routers.stateless_api import (
     CommonQueryParams,
     get_participants_config_and_schema,
@@ -129,9 +127,9 @@ def get_experiment_or_raise(
     xngin_session: Session, experiment_id: str, datasource_id: str
 ):
     experiment = xngin_session.scalars(
-        select(Experiment).where(
-            Experiment.id == experiment_id,
-            Experiment.datasource_id == datasource_id,
+        select(tables.Experiment).where(
+            tables.Experiment.id == experiment_id,
+            tables.Experiment.datasource_id == datasource_id,
         )
     ).one_or_none()
     if experiment is None:

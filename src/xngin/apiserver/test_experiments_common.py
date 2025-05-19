@@ -26,14 +26,7 @@ from xngin.apiserver.routers.stateless_api_types import (
     Stratum,
 )
 from xngin.apiserver.models.enums import ExperimentState
-from xngin.apiserver.models.tables import (
-    ArmAssignment,
-    ArmTable,
-    Datasource,
-    Experiment,
-    experiment_id_factory,
-    arm_id_factory,
-)
+from xngin.apiserver.models import tables
 from xngin.apiserver.routers.experiments_common import (
     ExperimentsAssignmentError,
     abandon_experiment_impl,
@@ -60,16 +53,16 @@ def fixture_teardown(xngin_session):
     # Rollback any pending transactions that may have been hanging due to an exception.
     xngin_session.rollback()
     # Clean up objects created in each test by truncating tables and leveraging cascade.
-    xngin_session.query(Datasource).delete()
+    xngin_session.query(tables.Datasource).delete()
     xngin_session.commit()
 
 
 def make_create_preassigned_experiment_request(
     with_uuids: bool = True,
 ) -> CreateExperimentRequest:
-    experiment_id = experiment_id_factory() if with_uuids else None
-    arm1_id = arm_id_factory() if with_uuids else None
-    arm2_id = arm_id_factory() if with_uuids else None
+    experiment_id = tables.experiment_id_factory() if with_uuids else None
+    arm1_id = tables.arm_id_factory() if with_uuids else None
+    arm2_id = tables.arm_id_factory() if with_uuids else None
     # Attach UTC tz, but use dates_equal() to compare to respect db storage support
     start_date = datetime(2025, 1, 1, tzinfo=UTC)
     end_date = datetime(2025, 2, 1, tzinfo=UTC)
@@ -117,7 +110,7 @@ def make_insertable_experiment(state: ExperimentState, datasource_id="testing"):
         p_value=0.91583011,
         balance_ok=True,
     )
-    return Experiment(
+    return tables.Experiment(
         id=request.design_spec.experiment_id,
         datasource_id=datasource_id,
         experiment_type="preassigned",
@@ -156,9 +149,9 @@ def make_insertable_experiment(state: ExperimentState, datasource_id="testing"):
 def make_insertable_online_experiment(
     state=ExperimentState.COMMITTED, datasource_id="testing"
 ):
-    experiment_id = experiment_id_factory()
-    arm1_id = arm_id_factory()
-    arm2_id = arm_id_factory()
+    experiment_id = tables.experiment_id_factory()
+    arm1_id = tables.arm_id_factory()
+    arm2_id = tables.arm_id_factory()
     arm1 = Arm(arm_id=arm1_id, arm_name="control", arm_description="Control")
     arm2 = Arm(arm_id=arm2_id, arm_name="treatment", arm_description="Treatment")
     # Attach UTC tz, but use dates_equal() to compare to respect db storage support
@@ -184,7 +177,7 @@ def make_insertable_online_experiment(
         alpha=0.05,
         fstat_thresh=0.2,
     )
-    return Experiment(
+    return tables.Experiment(
         id=experiment_id,
         datasource_id=datasource_id,
         experiment_type="online",
@@ -198,9 +191,9 @@ def make_insertable_online_experiment(
     )
 
 
-def make_arms_from_experiment(experiment: Experiment, organization_id: str):
+def make_arms_from_experiment(experiment: tables.Experiment, organization_id: str):
     return [
-        ArmTable(
+        tables.ArmTable(
             id=arm["arm_id"],
             experiment_id=experiment.id,
             name=arm["arm_name"],
@@ -303,8 +296,10 @@ def test_create_experiment_impl_for_preassigned(
     assert response.assign_summary.balance_check.balance_ok is True
 
     # Verify database state using the ids in the returned DesignSpec.
-    experiment: Experiment = xngin_session.scalars(
-        select(Experiment).where(Experiment.id == response.design_spec.experiment_id)
+    experiment: tables.Experiment = xngin_session.scalars(
+        select(tables.Experiment).where(
+            tables.Experiment.id == response.design_spec.experiment_id
+        )
     ).one()
     assert experiment.experiment_type == "preassigned"
     assert experiment.participant_type == request.design_spec.participant_type
@@ -322,7 +317,9 @@ def test_create_experiment_impl_for_preassigned(
     assert stored_power_analyses == response.power_analyses
     # Verify assignments were created
     assignments = xngin_session.scalars(
-        select(ArmAssignment).where(ArmAssignment.experiment_id == experiment.id)
+        select(tables.ArmAssignment).where(
+            tables.ArmAssignment.experiment_id == experiment.id
+        )
     ).all()
     assert len(assignments) == len(participants)
     # Verify all participant IDs in the db are the participants in the request
@@ -332,7 +329,7 @@ def test_create_experiment_impl_for_preassigned(
 
     # Verify arms were created in database
     arms = xngin_session.scalars(
-        select(ArmTable).where(ArmTable.experiment_id == experiment.id)
+        select(tables.ArmTable).where(tables.ArmTable.experiment_id == experiment.id)
     ).all()
     assert len(arms) == 2
     arm_ids = {arm.id for arm in arms}
@@ -403,8 +400,10 @@ def test_create_experiment_impl_for_online(
     assert all(arm_size.size == 0 for arm_size in response.assign_summary.arm_sizes)
 
     # Verify database state
-    experiment: Experiment = xngin_session.scalars(
-        select(Experiment).where(Experiment.id == response.design_spec.experiment_id)
+    experiment: tables.Experiment = xngin_session.scalars(
+        select(tables.Experiment).where(
+            tables.Experiment.id == response.design_spec.experiment_id
+        )
     ).one()
     assert experiment.experiment_type == "online"
     assert experiment.participant_type == request.design_spec.participant_type
@@ -424,7 +423,7 @@ def test_create_experiment_impl_for_online(
 
     # Verify arms were created in database
     arms = xngin_session.scalars(
-        select(ArmTable).where(ArmTable.experiment_id == experiment.id)
+        select(tables.ArmTable).where(tables.ArmTable.experiment_id == experiment.id)
     ).all()
     assert len(arms) == 2
     arm_ids = {arm.id for arm in arms}
@@ -433,7 +432,9 @@ def test_create_experiment_impl_for_online(
 
     # Verify that no assignments were created for online experiment
     assignments = xngin_session.scalars(
-        select(ArmAssignment).where(ArmAssignment.experiment_id == experiment.id)
+        select(tables.ArmAssignment).where(
+            tables.ArmAssignment.experiment_id == experiment.id
+        )
     ).all()
     assert len(assignments) == 0
 
@@ -469,12 +470,16 @@ def test_create_experiment_impl_overwrites_uuids(
 
     # Verify database state
     experiment = xngin_session.scalars(
-        select(Experiment).where(Experiment.id == response.design_spec.experiment_id)
+        select(tables.Experiment).where(
+            tables.Experiment.id == response.design_spec.experiment_id
+        )
     ).one()
     assert experiment.state == ExperimentState.ASSIGNED
     # Verify assignments were created with the new UUIDs
     assignments = xngin_session.scalars(
-        select(ArmAssignment).where(ArmAssignment.experiment_id == experiment.id)
+        select(tables.ArmAssignment).where(
+            tables.ArmAssignment.experiment_id == experiment.id
+        )
     ).all()
     # Verify all assignments use the new arm IDs
     assignment_arm_ids = {a.arm_id for a in assignments}
@@ -511,11 +516,15 @@ def test_create_experiment_impl_no_metric_stratification(
 
     # Verify database state
     experiment = xngin_session.scalars(
-        select(Experiment).where(Experiment.id == response.design_spec.experiment_id)
+        select(tables.Experiment).where(
+            tables.Experiment.id == response.design_spec.experiment_id
+        )
     ).one()
     # Verify assignments were created
     assignments = xngin_session.scalars(
-        select(ArmAssignment).where(ArmAssignment.experiment_id == experiment.id)
+        select(tables.ArmAssignment).where(
+            tables.ArmAssignment.experiment_id == experiment.id
+        )
     ).all()
     assert len(assignments) == len(participants)
     # Check strata information only has gender, not is_onboarded
@@ -688,14 +697,14 @@ def test_get_experiment_assignments_impl(xngin_session, testing_datasource):
     arm1_id = experiment.design_spec["arms"][0]["arm_id"]
     arm2_id = experiment.design_spec["arms"][1]["arm_id"]
     arm_assignments = [
-        ArmAssignment(
+        tables.ArmAssignment(
             experiment_id=experiment_id,
             participant_type="test_participant_type",
             participant_id="p1",
             arm_id=arm1_id,
             strata=[{"field_name": "gender", "strata_value": "F"}],
         ),
-        ArmAssignment(
+        tables.ArmAssignment(
             experiment_id=experiment_id,
             participant_type="test_participant_type",
             participant_id="p2",
@@ -734,7 +743,7 @@ def test_get_experiment_assignments_impl(xngin_session, testing_datasource):
     assert assignments[1].strata[0].strata_value == "M"
 
 
-def make_experiment_with_assignments(xngin_session, datasource: Datasource):
+def make_experiment_with_assignments(xngin_session, datasource: tables.Datasource):
     """Helper function for the tests below."""
     # First insert an experiment with assignments
     experiment = make_insertable_experiment(ExperimentState.COMMITTED, datasource.id)
@@ -744,7 +753,7 @@ def make_experiment_with_assignments(xngin_session, datasource: Datasource):
     arm1_id = experiment.design_spec["arms"][0]["arm_id"]
     arm2_id = experiment.design_spec["arms"][1]["arm_id"]
     assignments = [
-        ArmAssignment(
+        tables.ArmAssignment(
             experiment_id=experiment.id,
             participant_type="test_participant_type",
             participant_id="p1",
@@ -754,7 +763,7 @@ def make_experiment_with_assignments(xngin_session, datasource: Datasource):
                 {"field_name": "score", "strata_value": "1.1"},
             ],
         ),
-        ArmAssignment(
+        tables.ArmAssignment(
             experiment_id=experiment.id,
             participant_type="test_participant_type",
             participant_id="p2",
@@ -862,7 +871,9 @@ def test_make_assignment_for_participant(xngin_session, testing_datasource):
 
 def test_experiment_sql():
     pg_sql = str(
-        CreateTable(ArmAssignment.__table__).compile(dialect=postgresql.dialect())
+        CreateTable(tables.ArmAssignment.__table__).compile(
+            dialect=postgresql.dialect()
+        )
     )
     assert "arm_id VARCHAR(36) NOT NULL," in pg_sql
     assert "strata JSONB NOT NULL," in pg_sql

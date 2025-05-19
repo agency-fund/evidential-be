@@ -20,15 +20,7 @@ from xngin.apiserver.routers.stateless_api_types import (
     Strata,
 )
 from xngin.apiserver.models.enums import ExperimentState
-from xngin.apiserver.models.tables import (
-    ArmAssignment,
-    ArmTable,
-    Event,
-    Experiment,
-    experiment_id_factory,
-    arm_id_factory,
-)
-from xngin.apiserver.models.tables import Datasource as DatasourceTable
+from xngin.apiserver.models import tables
 from xngin.apiserver.routers.experiments_api_types import (
     AssignSummary,
     CreateExperimentRequest,
@@ -60,7 +52,7 @@ def create_experiment_impl(
     stratify_on_metrics: bool,
 ) -> CreateExperimentResponse:
     # Get the organization_id from the database
-    db_datasource = xngin_session.get(DatasourceTable, datasource_id)
+    db_datasource = xngin_session.get(tables.Datasource, datasource_id)
     if not db_datasource:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -69,9 +61,9 @@ def create_experiment_impl(
     organization_id = db_datasource.organization_id
 
     # First generate uuids for the experiment and arms, which do_assignment needs.
-    request.design_spec.experiment_id = experiment_id_factory()
+    request.design_spec.experiment_id = tables.experiment_id_factory()
     for arm in request.design_spec.arms:
-        arm.arm_id = arm_id_factory()
+        arm.arm_id = tables.arm_id_factory()
 
     if request.design_spec.experiment_type == "preassigned":
         if dwh_participants is None:
@@ -138,7 +130,7 @@ def create_preassigned_experiment_impl(
         if assignment_response.balance_check
         else None
     )
-    experiment = Experiment(
+    experiment = tables.Experiment(
         id=request.design_spec.experiment_id,
         datasource_id=datasource_id,
         experiment_type="preassigned",
@@ -158,7 +150,7 @@ def create_preassigned_experiment_impl(
 
     # Create arm records
     for arm in request.design_spec.arms:
-        db_arm = ArmTable(
+        db_arm = tables.ArmTable(
             id=arm.arm_id,
             name=arm.arm_name,
             description=arm.arm_description,
@@ -170,7 +162,7 @@ def create_preassigned_experiment_impl(
     # Create assignment records
     for assignment in assignment_response.assignments:
         # TODO: bulk insert https://docs.sqlalchemy.org/en/20/orm/queryguide/dml.html#orm-queryguide-bulk-insert {"dml_strategy": "raw"}
-        db_assignment = ArmAssignment(
+        db_assignment = tables.ArmAssignment(
             experiment_id=experiment.id,
             participant_type=request.design_spec.participant_type,
             participant_id=assignment.participant_id,
@@ -198,7 +190,7 @@ def create_online_experiment_impl(
     organization_id: str,
     xngin_session: Session,
 ) -> CreateExperimentResponse:
-    experiment = Experiment(
+    experiment = tables.Experiment(
         id=request.design_spec.experiment_id,
         datasource_id=datasource_id,
         experiment_type="online",
@@ -215,7 +207,7 @@ def create_online_experiment_impl(
     xngin_session.add(experiment)
     # Create arm records
     for arm in request.design_spec.arms:
-        db_arm = ArmTable(
+        db_arm = tables.ArmTable(
             id=arm.arm_id,
             name=arm.arm_name,
             description=arm.arm_description,
@@ -242,7 +234,7 @@ def create_online_experiment_impl(
     )
 
 
-def commit_experiment_impl(xngin_session: Session, experiment: Experiment):
+def commit_experiment_impl(xngin_session: Session, experiment: tables.Experiment):
     if experiment.state == ExperimentState.COMMITTED:
         return Response(status_code=status.HTTP_304_NOT_MODIFIED)
     if experiment.state != ExperimentState.ASSIGNED:
@@ -254,7 +246,7 @@ def commit_experiment_impl(xngin_session: Session, experiment: Experiment):
     experiment.state = ExperimentState.COMMITTED
 
     experiment_id = experiment.id
-    event = Event(
+    event = tables.Event(
         organization=experiment.datasource.organization,
         type=ExperimentCreatedEvent.TYPE,
     ).set_data(
@@ -291,7 +283,7 @@ def commit_experiment_impl(xngin_session: Session, experiment: Experiment):
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
-def abandon_experiment_impl(xngin_session: Session, experiment: Experiment):
+def abandon_experiment_impl(xngin_session: Session, experiment: tables.Experiment):
     if experiment.state == ExperimentState.ABANDONED:
         return Response(status_code=status.HTTP_304_NOT_MODIFIED)
     if experiment.state not in {ExperimentState.DESIGNING, ExperimentState.ASSIGNED}:
@@ -310,16 +302,16 @@ def list_experiments_impl(
     xngin_session: Session, datasource_id: str
 ) -> ListExperimentsResponse:
     stmt = (
-        select(Experiment)
-        .where(Experiment.datasource_id == datasource_id)
+        select(tables.Experiment)
+        .where(tables.Experiment.datasource_id == datasource_id)
         .where(
-            Experiment.state.in_([
+            tables.Experiment.state.in_([
                 ExperimentState.DESIGNING,
                 ExperimentState.COMMITTED,
                 ExperimentState.ASSIGNED,
             ])
         )
-        .order_by(Experiment.created_at.desc())
+        .order_by(tables.Experiment.created_at.desc())
     )
     result = xngin_session.execute(stmt)
     experiments = result.scalars().all()
@@ -338,7 +330,7 @@ def list_experiments_impl(
 
 
 def get_experiment_assignments_impl(
-    experiment: Experiment,
+    experiment: tables.Experiment,
 ) -> GetExperimentAssignmentsResponse:
     # Map arm IDs to names
     design_spec = PreassignedExperimentSpec.model_validate(experiment.design_spec)
@@ -361,7 +353,7 @@ def get_experiment_assignments_impl(
     )
 
 
-def experiment_assignments_to_csv_generator(experiment: Experiment):
+def experiment_assignments_to_csv_generator(experiment: tables.Experiment):
     """Generator function to yield CSV rows of experiment assignments as strings"""
     # Map arm IDs to names
     design_spec = experiment.get_design_spec()
@@ -406,7 +398,9 @@ def experiment_assignments_to_csv_generator(experiment: Experiment):
     return generate_csv
 
 
-def get_experiment_assignments_as_csv_impl(experiment: Experiment) -> StreamingResponse:
+def get_experiment_assignments_as_csv_impl(
+    experiment: tables.Experiment,
+) -> StreamingResponse:
     csv_generator = experiment_assignments_to_csv_generator(experiment)
     filename = f"experiment_{experiment.id}_assignments.csv"
     return StreamingResponse(
@@ -425,18 +419,18 @@ def get_existing_assignment_for_participant(
     """
     existing_assignment = xngin_session.execute(
         select(
-            ArmAssignment.participant_id,
-            ArmTable.id.label("arm_id"),
-            ArmTable.name.label("arm_name"),
+            tables.ArmAssignment.participant_id,
+            tables.ArmTable.id.label("arm_id"),
+            tables.ArmTable.name.label("arm_name"),
         )
         .join(
-            ArmAssignment,
-            (ArmAssignment.arm_id == ArmTable.id)
-            & (ArmAssignment.experiment_id == ArmTable.experiment_id),
+            tables.ArmAssignment,
+            (tables.ArmAssignment.arm_id == tables.ArmTable.id)
+            & (tables.ArmAssignment.experiment_id == tables.ArmTable.experiment_id),
         )
         .filter(
-            ArmTable.experiment_id == experiment_id,
-            ArmAssignment.participant_id == participant_id,
+            tables.ArmTable.experiment_id == experiment_id,
+            tables.ArmAssignment.participant_id == participant_id,
         )
     ).one_or_none()
     # If the participant already has an assignment for this experiment, return it.
@@ -452,7 +446,7 @@ def get_existing_assignment_for_participant(
 
 def create_assignment_for_participant(
     xngin_session: Session,
-    experiment: Experiment,
+    experiment: tables.Experiment,
     participant_id: str,
     random_state: int | None,
 ) -> Assignment | None:
@@ -464,8 +458,8 @@ def create_assignment_for_participant(
             f"Invalid experiment state: {experiment.state}"
         )
     available_arms = xngin_session.execute(
-        select(ArmTable.id, ArmTable.name).where(
-            ArmTable.experiment_id == experiment.id
+        select(tables.ArmTable.id, tables.ArmTable.name).where(
+            tables.ArmTable.experiment_id == experiment.id
         )
     ).all()
     if len(available_arms) == 0:
@@ -489,7 +483,7 @@ def create_assignment_for_participant(
         chosen_arm = random_choice(available_arms)
 
     # Create and save the new assignment
-    new_assignment = ArmAssignment(
+    new_assignment = tables.ArmAssignment(
         experiment_id=experiment.id,
         participant_id=participant_id,
         participant_type=experiment.participant_type,
@@ -513,13 +507,15 @@ def create_assignment_for_participant(
     )
 
 
-def get_assign_summary(xngin_session: Session, experiment: Experiment) -> AssignSummary:
+def get_assign_summary(
+    xngin_session: Session, experiment: tables.Experiment
+) -> AssignSummary:
     """Constructs an AssignSummary from the experiment's arms and arm_assignments."""
     rows = xngin_session.execute(
-        select(ArmAssignment.arm_id, ArmTable.name, func.count())
-        .join(ArmTable)
-        .where(ArmAssignment.experiment_id == experiment.id)
-        .group_by(ArmAssignment.arm_id, ArmTable.name)
+        select(tables.ArmAssignment.arm_id, tables.ArmTable.name, func.count())
+        .join(tables.ArmTable)
+        .where(tables.ArmAssignment.experiment_id == experiment.id)
+        .group_by(tables.ArmAssignment.arm_id, tables.ArmTable.name)
     ).all()
     arm_sizes = [
         ArmSize(

@@ -8,9 +8,6 @@ from xngin.apiserver.routers.stateless_api_types import (
 )
 from xngin.apiserver.main import app
 from xngin.apiserver.models.enums import ExperimentState
-from xngin.apiserver.models.tables import (
-    experiment_id_factory,
-)
 from xngin.apiserver.routers.experiments_api_types import (
     CreateExperimentResponse,
     GetParticipantAssignmentResponse,
@@ -142,7 +139,7 @@ def test_get_experiment(xngin_session, testing_datasource):
 def test_get_experiment_assignments_not_found():
     """Test getting assignments for a non-existent experiment."""
     response = client.get(
-        f"/experiments/{experiment_id_factory()}/assignments",
+        f"/experiments/{tables.experiment_id_factory()}/assignments",
         headers={constants.HEADER_CONFIG_ID: "testing"},
     )
     assert response.status_code == 404
