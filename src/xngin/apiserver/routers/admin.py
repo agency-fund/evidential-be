@@ -42,7 +42,7 @@ from xngin.apiserver.models.tables import (
     UserOrganization,
     Webhook,
 )
-from xngin.apiserver.routers import experiments, experiments_api_types
+from xngin.apiserver.routers import experiments_common, experiments_api_types
 from xngin.apiserver.routers.admin_api_types import (
     AddMemberToOrganizationRequest,
     AddWebhookToOrganizationRequest,
@@ -1195,7 +1195,7 @@ def create_experiment(
                 detail="Preassigned experiments must have a chosen_n.",
             )
 
-    return experiments.create_experiment_impl(
+    return experiments_common.create_experiment_impl(
         request=body,
         datasource_id=datasource.id,
         participant_unique_id_field=participants_cfg.get_unique_id_field(),
@@ -1310,7 +1310,7 @@ def commit_experiment(
 ):
     ds = get_datasource_or_raise(session, user, datasource_id)
     experiment = get_experiment_via_ds_or_raise(session, ds, experiment_id)
-    return experiments.commit_experiment_impl(session, experiment)
+    return experiments_common.commit_experiment_impl(session, experiment)
 
 
 @router.post(
@@ -1325,7 +1325,7 @@ def abandon_experiment(
 ):
     ds = get_datasource_or_raise(session, user, datasource_id)
     experiment = get_experiment_via_ds_or_raise(session, ds, experiment_id)
-    return experiments.abandon_experiment_impl(session, experiment)
+    return experiments_common.abandon_experiment_impl(session, experiment)
 
 
 @router.get("/datasources/{datasource_id}/experiments")
@@ -1336,7 +1336,7 @@ def list_experiments(
 ) -> experiments_api_types.ListExperimentsResponse:
     """Returns the list of experiments in the datasource."""
     ds = get_datasource_or_raise(session, user, datasource_id)
-    return experiments.list_experiments_impl(session, ds.id)
+    return experiments_common.list_experiments_impl(session, ds.id)
 
 
 @router.get("/datasources/{datasource_id}/experiments/{experiment_id}")
@@ -1354,7 +1354,7 @@ def get_experiment(
         state=experiment.state,
         design_spec=experiment.get_design_spec(),
         power_analyses=experiment.get_power_analyses(),
-        assign_summary=experiments.get_assign_summary(session, experiment),
+        assign_summary=experiments_common.get_assign_summary(session, experiment),
     )
 
 
@@ -1367,7 +1367,7 @@ def get_experiment_assignments(
 ) -> experiments_api_types.GetExperimentAssignmentsResponse:
     ds = get_datasource_or_raise(session, user, datasource_id)
     experiment = get_experiment_via_ds_or_raise(session, ds, experiment_id)
-    return experiments.get_experiment_assignments_impl(experiment)
+    return experiments_common.get_experiment_assignments_impl(experiment)
 
 
 @router.get(
@@ -1385,7 +1385,7 @@ def get_experiment_assignments_as_csv(
 ) -> StreamingResponse:
     ds = get_datasource_or_raise(session, user, datasource_id)
     experiment = get_experiment_via_ds_or_raise(session, ds, experiment_id)
-    return experiments.get_experiment_assignments_as_csv_impl(experiment)
+    return experiments_common.get_experiment_assignments_as_csv_impl(experiment)
 
 
 @router.get(
@@ -1414,11 +1414,11 @@ def get_experiment_assignment_for_participant(
     experiment = get_experiment_via_ds_or_raise(session, ds, experiment_id)
 
     # Look up the participant's assignment if it exists
-    assignment = experiments.get_existing_assignment_for_participant(
+    assignment = experiments_common.get_existing_assignment_for_participant(
         session, experiment.id, participant_id
     )
     if not assignment:
-        assignment = experiments.create_assignment_for_participant(
+        assignment = experiments_common.create_assignment_for_participant(
             session, experiment, participant_id, random_state
         )
 
