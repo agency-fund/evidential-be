@@ -1,7 +1,5 @@
 """
 This module defines the public API for clients to integrate with experiments.
-
-TODO: decide whether to allow users to programmatically modify experiments.
 """
 
 from contextlib import asynccontextmanager
@@ -67,6 +65,7 @@ router = APIRouter(
 )
 
 
+#  TODO? Remove mutating endpoints (except assignment) from public-facing integration API
 @router.post(
     "/experiments/with-assignment",
     summary="Create an experiment and save its assignments to the database.",
@@ -74,7 +73,7 @@ router = APIRouter(
         "The newly created experiment will be in the ASSIGNED state. "
         "To move them to the COMMITTED state, call the /experiments/<id>/commit API."
     ),
-    include_in_schema=True,
+    include_in_schema=False,
 )
 def create_experiment_with_assignment_sl(
     body: CreateExperimentRequest,
@@ -143,7 +142,7 @@ def get_experiment_or_raise(
     "/experiments/{experiment_id}/commit",
     summary="Marks any ASSIGNED experiment as COMMITTED.",
     status_code=status.HTTP_204_NO_CONTENT,
-    include_in_schema=True,
+    include_in_schema=False,
 )
 def commit_experiment_sl(
     datasource: Annotated[Datasource, Depends(datasource_dependency)],
@@ -158,7 +157,7 @@ def commit_experiment_sl(
     "/experiments/{experiment_id}/abandon",
     summary="Marks any DESIGNING or ASSIGNED experiment as ABANDONED.",
     status_code=status.HTTP_204_NO_CONTENT,
-    include_in_schema=True,
+    include_in_schema=False,
 )
 def abandon_experiment_sl(
     datasource: Annotated[Datasource, Depends(datasource_dependency)],
