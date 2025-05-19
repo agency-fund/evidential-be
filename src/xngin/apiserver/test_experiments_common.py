@@ -782,14 +782,13 @@ def make_experiment_with_assignments(xngin_session, datasource: tables.Datasourc
 def test_experiment_assignments_to_csv_generator(xngin_session, testing_datasource):
     experiment = make_experiment_with_assignments(xngin_session, testing_datasource.ds)
 
-    (arm1_id, arm2_id) = experiment.get_arm_ids()
-    (arm1_name, arm2_name) = experiment.get_arm_names()
+    arm_name_to_id = {a.name: a.id for a in experiment.arms}
     batches = list(experiment_assignments_to_csv_generator(experiment)())
     assert len(batches) == 1
     rows = batches[0].splitlines(keepends=True)
     assert rows[0] == "participant_id,arm_id,arm_name,gender,score\r\n"
-    assert rows[1] == f"p1,{arm1_id},{arm1_name},F,1.1\r\n"
-    assert rows[2] == f'p2,{arm2_id},{arm2_name},M,"esc,aped"\r\n'
+    assert rows[1] == f"p1,{arm_name_to_id['control']},control,F,1.1\r\n"
+    assert rows[2] == f'p2,{arm_name_to_id["treatment"]},treatment,M,"esc,aped"\r\n'
 
 
 def test_get_existing_assignment_for_participant(xngin_session, testing_datasource):
