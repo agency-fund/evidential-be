@@ -15,7 +15,7 @@ from sqlalchemy import StaticPool, make_url
 from sqlalchemy.dialects.postgresql import psycopg
 from sqlalchemy.engine.interfaces import Dialect
 from sqlalchemy.engine.url import URL
-from sqlalchemy.orm import Session, sessionmaker
+from sqlalchemy.orm import sessionmaker
 from sqlalchemy_bigquery import dialect as bigquery_dialect
 from xngin.apiserver import database, flags
 from xngin.apiserver.apikeys import hash_key, make_key
@@ -125,6 +125,11 @@ def setup_debug_logging():
     )
 
 
+def get_random_seed_for_test():
+    """Returns a seed for testing."""
+    return 42
+
+
 @pytest.fixture(scope="session", autouse=True)
 def allow_connecting_to_private_ips():
     safe_resolve.ALLOW_CONNECTING_TO_PRIVATE_IPS = True
@@ -148,11 +153,8 @@ def get_test_uri_info(connection_uri: str) -> TestUriInfo:
     )
 
 
-def get_test_sessionmaker():
-    """Returns a session for the XNGIN_TEST_APPDB_URI; the returned database is not guaranteed unique.
-
-    The database will be created if it does not exist.
-    """
+def make_engine():
+    """Returns a SQLA engine for XNGIN_TEST_APPDB_URI; db will be created if it does not exist."""
     appdb_info = get_test_appdb_info()
     match appdb_info.db_type:
         case DbType.PG:
@@ -167,12 +169,25 @@ def get_test_sessionmaker():
         poolclass=StaticPool,
         echo=flags.ECHO_SQL_APP_DB,
     )
-
-    testing_session_local = sessionmaker(bind=db_engine)
-    # Hack: Cause any direct access to production code from code to fail during tests.
-    database.SessionLocal = None
     # Create all the ORM tables.
     tables.Base.metadata.create_all(bind=db_engine)
+
+    return db_engine
+
+
+@pytest.fixture(scope="session")
+def test_engine():
+    db_engine = make_engine()
+    yield db_engine
+    db_engine.dispose()
+
+
+def get_test_sessionmaker(db_engine: sqlalchemy.engine.Engine):
+    """Returns a session bound to the db_engine; the returned database is not guaranteed unique."""
+    # Hack: Cause any direct access to production code from code to fail during tests.
+    database.SessionLocal = None
+
+    testing_session_local = sessionmaker(bind=db_engine)
 
     def get_db_for_test():
         sess = testing_session_local()
@@ -184,17 +199,19 @@ def get_test_sessionmaker():
     return get_db_for_test
 
 
-def get_random_seed_for_test():
-    """Returns a seed for testing."""
-    return 42
-
-
 def setup(app):
     """Configures FastAPI dependencies for testing."""
     # https://fastapi.tiangolo.com/advanced/testing-dependencies/#use-the-appdependency_overrides-attribute
-    app.dependency_overrides[xngin_db_session] = get_test_sessionmaker()
+    app.dependency_overrides[xngin_db_session] = get_test_sessionmaker(make_engine())
     app.dependency_overrides[settings_dependency] = get_settings_for_test
     app.dependency_overrides[random_seed_dependency] = get_random_seed_for_test
+
+
+@pytest.fixture(name="xngin_session")
+def fixture_xngin_db_session(test_engine):
+    """Use this session directly if you don't need to test the FastAPI app itself."""
+    test_sessionmaker = get_test_sessionmaker(test_engine)
+    return next(test_sessionmaker())
 
 
 @pytest.fixture(scope="session", autouse=True)
@@ -265,7 +282,7 @@ class DatasourceMetadata:
 
 
 @pytest.fixture(name="testing_datasource", scope="function")
-def fixture_testing_datasource(db_session) -> DatasourceMetadata:
+def fixture_testing_datasource(xngin_session) -> DatasourceMetadata:
     """
     Generates a new Organization, Datasource, and API key for a test.
 
@@ -274,26 +291,26 @@ def fixture_testing_datasource(db_session) -> DatasourceMetadata:
     Note: The datasource configured in this fixture represents a customer database. This is
     *different* than the xngin server-side database configured by conftest.setup().
     """
-    return make_datasource_metadata(db_session)
+    return make_datasource_metadata(xngin_session)
 
 
 @pytest.fixture(name="testing_datasource_with_user", scope="function")
-def fixture_testing_datasource_with_user(db_session) -> DatasourceMetadata:
+def fixture_testing_datasource_with_user(xngin_session) -> DatasourceMetadata:
     """
     Generates a new Organization, Datasource, and API key. Adds our privileged user to the org.
     """
-    metadata = make_datasource_metadata(db_session)
+    metadata = make_datasource_metadata(xngin_session)
     user = tables.User(
         id="user_" + secrets.token_hex(8), email=PRIVILEGED_EMAIL, is_privileged=True
     )
     user.organizations.append(metadata.org)
-    db_session.add(user)
-    db_session.commit()
+    xngin_session.add(user)
+    xngin_session.commit()
     return metadata
 
 
 def make_datasource_metadata(
-    db_session: Session,
+    xngin_session,
     datasource_id: str | None = None,
     name="test ds",
     datasource_id_for_config="testing-remote",
@@ -328,8 +345,8 @@ def make_datasource_metadata(
     kt = ApiKey(id=key_id, key=hash_key(key))
     kt.datasource = datasource
 
-    db_session.add_all([org, datasource, kt])
-    db_session.commit()
+    xngin_session.add_all([org, datasource, kt])
+    xngin_session.commit()
     return DatasourceMetadata(
         ds=datasource,
         dsn=datasource.get_config().to_sqlalchemy_url().render_as_string(False),

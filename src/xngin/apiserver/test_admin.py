@@ -11,7 +11,6 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 from xngin.apiserver import conftest, flags
 from xngin.apiserver import main as main_module
-from xngin.apiserver.dependencies import xngin_db_session
 from xngin.apiserver.dns import safe_resolve
 from xngin.apiserver.main import app
 from xngin.apiserver.models import tables
@@ -101,24 +100,17 @@ uget = partial(
 )
 
 
-@pytest.fixture(name="db_session", scope="module")
-def fixture_db_session():
-    session = next(app.dependency_overrides[xngin_db_session]())
-    yield session
-
-
 @pytest.fixture(autouse=True, scope="function")
-def fixture_teardown(db_session: Session):
+def fixture_teardown(xngin_session: Session):
     # setup here
     yield
     # teardown here
     # Rollback any pending transactions that may have been hanging due to an exception.
-    db_session.rollback()
+    xngin_session.rollback()
     # Clean up objects created in each test by truncating tables and leveraging cascade.
-    db_session.query(tables.Organization).delete()
-    db_session.query(tables.User).delete()
-    db_session.commit()
-    db_session.close()
+    xngin_session.query(tables.Organization).delete()
+    xngin_session.query(tables.User).delete()
+    xngin_session.commit()
 
 
 @pytest.fixture(scope="module", autouse=True)
@@ -130,7 +122,7 @@ def enable_apis_under_test():
 
 
 @pytest.fixture(name="testing_datasource_with_inline_schema")
-def fixture_testing_datasource_with_inline_schema(db_session):
+def fixture_testing_datasource_with_inline_schema(xngin_session):
     """Create a fake remote datasource using an inline schema for the participants config."""
     # First create a datasource to maintain proper referential integrity, but with a local config
     # so we know we can read our dwh data. Also populate with an inline schema to test admin.
@@ -138,7 +130,7 @@ def fixture_testing_datasource_with_inline_schema(db_session):
         "testing-inline-schema"
     ).config
     return conftest.make_datasource_metadata(
-        db_session,
+        xngin_session,
         datasource_id_for_config="testing",
         participants_def_list=[ds_with_inlined_shema.participants[0]],
     )
@@ -240,7 +232,7 @@ def make_arms_from_experiment(
 
 
 def make_experiment_and_arms(
-    db_session, datasource: tables.Datasource, experiment_type: ExperimentType
+    xngin_session, datasource: tables.Datasource, experiment_type: ExperimentType
 ) -> tables.Experiment:
     experiment = make_insertable_experiment(
         ExperimentState.COMMITTED,
@@ -251,19 +243,19 @@ def make_experiment_and_arms(
     for arm in experiment.design_spec["arms"]:
         if "arm_id" not in arm or arm["arm_id"] is None:
             arm["arm_id"] = tables.arm_id_factory()
-    db_session.add(experiment)
+    xngin_session.add(experiment)
     # Create ArmTable instances for each arm in the experiment
     db_arms = make_arms_from_experiment(experiment, datasource.organization_id)
-    db_session.add_all(db_arms)
-    db_session.commit()
+    xngin_session.add_all(db_arms)
+    xngin_session.commit()
     return experiment
 
 
 @pytest.fixture(name="testing_experiment")
-def fixture_testing_experiment(db_session, testing_datasource_with_user_added):
+def fixture_testing_experiment(xngin_session, testing_datasource_with_user_added):
     """Create an experiment on a test inline schema datasource with proper user permissions."""
     datasource = testing_datasource_with_user_added.ds
-    experiment = make_experiment_and_arms(db_session, datasource, "preassigned")
+    experiment = make_experiment_and_arms(xngin_session, datasource, "preassigned")
     # Add fake assignments for each arm for real participant ids in our test data.
     arm_ids = [arm.id for arm in experiment.arms]
     for i in range(10):
@@ -274,17 +266,17 @@ def fixture_testing_experiment(db_session, testing_datasource_with_user_added):
             arm_id=arm_ids[i % 2],  # Alternate between the two arms
             strata=[],
         )
-        db_session.add(assignment)
-    db_session.commit()
+        xngin_session.add(assignment)
+    xngin_session.commit()
     return experiment
 
 
-def test_user_from_token(db_session):
+def test_user_from_token(xngin_session):
     with pytest.raises(HTTPException, match="No user found with email") as e:
-        user_from_token(db_session, TESTING_TOKENS[UNPRIVILEGED_TOKEN_FOR_TESTING])
+        user_from_token(xngin_session, TESTING_TOKENS[UNPRIVILEGED_TOKEN_FOR_TESTING])
     assert e.value.status_code == 403
 
-    user = user_from_token(db_session, TESTING_TOKENS[PRIVILEGED_TOKEN_FOR_TESTING])
+    user = user_from_token(xngin_session, TESTING_TOKENS[PRIVILEGED_TOKEN_FOR_TESTING])
     assert user.is_privileged
 
     org = user.organizations[0]
@@ -817,7 +809,7 @@ def test_create_experiment_with_assignment_validation_errors(
 
 
 def test_create_preassigned_experiment_using_inline_schema_ds(
-    db_session, testing_datasource_with_user_added, use_deterministic_random
+    xngin_session, testing_datasource_with_user_added, use_deterministic_random
 ):
     datasource_id = testing_datasource_with_user_added.ds.id
     base_request_json = make_createexperimentrequest_json("test_participant_type")
@@ -858,7 +850,7 @@ def test_create_preassigned_experiment_using_inline_schema_ds(
     (arm1_id, arm2_id) = [arm.arm_id for arm in created_experiment.design_spec.arms]
 
     # Verify database state using the ids in the returned DesignSpec.
-    experiment = db_session.scalars(
+    experiment = xngin_session.scalars(
         select(tables.Experiment).where(tables.Experiment.id == experiment_id)
     ).one()
     assert experiment.state == ExperimentState.ASSIGNED
@@ -872,7 +864,7 @@ def test_create_preassigned_experiment_using_inline_schema_ds(
     )
     assert conftest.dates_equal(experiment.end_date, base_request.design_spec.end_date)
     # Verify assignments were created
-    assignments = db_session.scalars(
+    assignments = xngin_session.scalars(
         select(tables.ArmAssignment).where(
             tables.ArmAssignment.experiment_id == experiment_id
         )
@@ -965,10 +957,10 @@ def test_get_experiment_assignment_for_preassigned_participant(testing_experimen
 
 
 def test_get_experiment_assignment_for_online_participant(
-    db_session, testing_datasource_with_user_added
+    xngin_session, testing_datasource_with_user_added
 ):
     testing_experiment = make_experiment_and_arms(
-        db_session, testing_datasource_with_user_added.ds, "online"
+        xngin_session, testing_datasource_with_user_added.ds, "online"
     )
     datasource_id = testing_experiment.datasource_id
     experiment_id = testing_experiment.id
@@ -999,7 +991,7 @@ def test_get_experiment_assignment_for_online_participant(
     assert assignment_response2 == assignment_response
 
     # Make sure there's only one db entry.
-    assignment = db_session.scalars(
+    assignment = xngin_session.scalars(
         select(tables.ArmAssignment).where(
             tables.ArmAssignment.experiment_id == experiment_id
         )
@@ -1033,10 +1025,10 @@ def test_experiments_analyze(testing_experiment):
 
 
 def test_experiments_analyze_for_experiment_with_no_participants(
-    db_session, testing_datasource_with_user_added
+    xngin_session, testing_datasource_with_user_added
 ):
     testing_experiment = make_experiment_and_arms(
-        db_session, testing_datasource_with_user_added.ds, "online"
+        xngin_session, testing_datasource_with_user_added.ds, "online"
     )
     datasource_id = testing_experiment.datasource_id
     experiment_id = testing_experiment.id
@@ -1062,7 +1054,7 @@ def test_experiments_analyze_for_experiment_with_no_participants(
     ],
 )
 def test_admin_experiment_state_setting(
-    db_session,
+    xngin_session,
     testing_datasource_with_user_added,
     endpoint,
     initial_state,
@@ -1072,8 +1064,8 @@ def test_admin_experiment_state_setting(
     # Initialize our state with an existing experiment who's state we want to modify.
     datasource_id = testing_datasource_with_user_added.ds.id
     experiment = make_insertable_experiment(initial_state, datasource_id=datasource_id)
-    db_session.add(experiment)
-    db_session.commit()
+    xngin_session.add(experiment)
+    xngin_session.commit()
 
     response = ppost(
         f"/v1/m/datasources/{datasource_id}/experiments/{experiment.id!s}/{endpoint}"
@@ -1088,7 +1080,7 @@ def test_admin_experiment_state_setting(
             if endpoint == "abandon"
             else ExperimentState.COMMITTED
         )
-        db_session.refresh(experiment)
+        xngin_session.refresh(experiment)
         assert experiment.state == expected_state
     # If failure case, verify the error message
     if expected_detail:
