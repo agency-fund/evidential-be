@@ -177,21 +177,23 @@ def user_from_token(
     user = (
         session.query(tables.User).filter(tables.User.email == token_info.email).first()
     )
-    if not user:
-        if token_info.is_privileged():
-            user = create_user_and_first_datasource(
-                session,
-                email=token_info.email,
-                dsn=flags.XNGIN_DEVDWH_DSN,
-                privileged=True,
-            )
-            session.commit()
-        else:
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail=f"No user found with email: {token_info.email}",
-            )
-    return user
+    if user:
+        return user
+
+    if token_info.is_privileged():
+        new_user: tables.User = create_user_and_first_datasource(
+            session,
+            email=token_info.email,
+            dsn=flags.XNGIN_DEVDWH_DSN,
+            privileged=True,
+        )
+        session.commit()
+        return new_user
+
+    raise HTTPException(
+        status_code=status.HTTP_403_FORBIDDEN,
+        detail=f"No user found with email: {token_info.email}",
+    )
 
 
 def get_organization_or_raise(
