@@ -14,7 +14,7 @@ from xngin.apiserver.testing.xurl import Xurl
 
 conftest.setup(app)
 client = TestClient(app)
-client.base_url = str(client.base_url) + constants.API_PREFIX_V1
+client.base_url = client.base_url.join(constants.API_PREFIX_V1)
 
 
 def load_mock_response_from_xurl(mocker, file):

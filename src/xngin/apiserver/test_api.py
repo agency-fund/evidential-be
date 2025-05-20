@@ -23,7 +23,7 @@ from xngin.apiserver.testing.xurl import Xurl
 
 conftest.setup(app)
 client = TestClient(app)
-client.base_url = str(client.base_url) + constants.API_PREFIX_V1
+client.base_url = client.base_url.join(constants.API_PREFIX_V1)
 
 
 def mark_nondeterministic_tests(c):
@@ -54,14 +54,16 @@ def fixture_update_api_tests_flag(pytestconfig):
 
 @pytest.fixture(autouse=True)
 def fixture_teardown(xngin_session):
-    # setup here
-    yield
-    # teardown here
-    # Rollback any pending transactions that may have been hanging due to an exception.
-    xngin_session.rollback()
-    # Ensure we're not using stale cache settings (possible if not using an ephemeral app db).
-    xngin_session.query(CacheTable).delete()
-    xngin_session.commit()
+    try:
+        # setup here
+        yield
+    finally:
+        # teardown here
+        # Rollback any pending transactions that may have been hanging due to an exception.
+        xngin_session.rollback()
+        # Ensure we're not using stale cache settings (possible if not using an ephemeral app db).
+        xngin_session.query(CacheTable).delete()
+        xngin_session.commit()
 
 
 def test_datasource_dependency_falls_back_to_xngin_db(

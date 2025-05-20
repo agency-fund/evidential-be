@@ -42,14 +42,16 @@ def mock_sheet_config():
     )
 
 
-@pytest.fixture(autouse=True, scope="function")
-def fixture_teardown(xngin_session: Session):
-    # setup here
-    yield
-    # teardown here
-    # Clean the cache after each test.
-    xngin_session.query(CacheTable).delete()
-    xngin_session.commit()
+@pytest.fixture(autouse=True)
+def fixture_teardown(xngin_session):
+    try:
+        # setup here
+        yield
+    finally:
+        # teardown here
+        # Clean the cache after each test.
+        xngin_session.query(CacheTable).delete()
+        xngin_session.commit()
 
 
 def test_get_cached_entry(sheet_cache, mock_session, mock_sheet_config):

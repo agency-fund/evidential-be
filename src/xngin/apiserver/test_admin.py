@@ -8,7 +8,6 @@ from fastapi import HTTPException
 from fastapi.testclient import TestClient
 from pydantic import SecretStr, TypeAdapter
 from sqlalchemy import select
-from sqlalchemy.orm import Session
 from xngin.apiserver import conftest, flags
 from xngin.apiserver import main as main_module
 from xngin.apiserver.dns import safe_resolve
@@ -100,17 +99,19 @@ uget = partial(
 )
 
 
-@pytest.fixture(autouse=True, scope="function")
-def fixture_teardown(xngin_session: Session):
-    # setup here
-    yield
-    # teardown here
-    # Rollback any pending transactions that may have been hanging due to an exception.
-    xngin_session.rollback()
-    # Clean up objects created in each test by truncating tables and leveraging cascade.
-    xngin_session.query(tables.Organization).delete()
-    xngin_session.query(tables.User).delete()
-    xngin_session.commit()
+@pytest.fixture(autouse=True)
+def fixture_teardown(xngin_session):
+    try:
+        # setup here
+        yield
+    finally:
+        # teardown here
+        # Rollback any pending transactions that may have been hanging due to an exception.
+        xngin_session.rollback()
+        # Clean up objects created in each test by truncating tables and leveraging cascade.
+        xngin_session.query(tables.Organization).delete()
+        xngin_session.query(tables.User).delete()
+        xngin_session.commit()
 
 
 @pytest.fixture(scope="module", autouse=True)

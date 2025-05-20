@@ -175,13 +175,6 @@ def make_engine():
     return db_engine
 
 
-@pytest.fixture(scope="session")
-def test_engine():
-    db_engine = make_engine()
-    yield db_engine
-    db_engine.dispose()
-
-
 def get_test_sessionmaker(db_engine: sqlalchemy.engine.Engine):
     """Returns a session bound to the db_engine; the returned database is not guaranteed unique."""
     # Hack: Cause any direct access to production code from code to fail during tests.
@@ -205,6 +198,16 @@ def setup(app):
     app.dependency_overrides[xngin_db_session] = get_test_sessionmaker(make_engine())
     app.dependency_overrides[settings_dependency] = get_settings_for_test
     app.dependency_overrides[random_seed_dependency] = get_random_seed_for_test
+
+
+@pytest.fixture(scope="session", name="test_engine")
+def fixture_test_engine():
+    """Create a SQLA engine for testing that is safely disposed of after all tests are run."""
+    db_engine = make_engine()
+    try:
+        yield db_engine
+    finally:
+        db_engine.dispose()
 
 
 @pytest.fixture(name="xngin_session")

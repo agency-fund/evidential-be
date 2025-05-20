@@ -47,14 +47,16 @@ from xngin.apiserver.routers.experiments_api_types import (
 
 @pytest.fixture(autouse=True)
 def fixture_teardown(xngin_session):
-    # setup here
-    yield
-    # teardown here
-    # Rollback any pending transactions that may have been hanging due to an exception.
-    xngin_session.rollback()
-    # Clean up objects created in each test by truncating tables and leveraging cascade.
-    xngin_session.query(tables.Datasource).delete()
-    xngin_session.commit()
+    try:
+        # setup here
+        yield
+    finally:
+        # teardown here
+        # Rollback any pending transactions that may have been hanging due to an exception.
+        xngin_session.rollback()
+        # Clean up objects created in each test by truncating tables and leveraging cascade.
+        xngin_session.query(tables.Datasource).delete()
+        xngin_session.commit()
 
 
 def make_create_preassigned_experiment_request(

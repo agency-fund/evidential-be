@@ -13,7 +13,7 @@ from xngin.apiserver.routers.experiments_api_types import (
     GetParticipantAssignmentResponse,
     ListExperimentsResponse,
 )
-from xngin.apiserver.test_experiments_common import (
+from xngin.apiserver.test_experiments_common import (  # pylint: disable=unused-import
     fixture_teardown,  # noqa: F401
     make_arms_from_experiment,
     make_create_preassigned_experiment_request,
@@ -23,7 +23,7 @@ from xngin.apiserver.test_experiments_common import (
 
 conftest.setup(app)
 client = TestClient(app)
-client.base_url = str(client.base_url) + constants.API_PREFIX_V1
+client.base_url = client.base_url.join(constants.API_PREFIX_V1)
 
 
 def test_create_experiment_impl_invalid_design_spec():
