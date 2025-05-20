@@ -40,13 +40,13 @@ def make_webhook_outbound_handler(dsn: str):
                     timeout=10.0,
                     headers=request.headers,
                 )
-                logger.debug(f"Response: {response.content}")
 
                 if 200 <= response.status_code < 300:
                     logger.info(
                         f"Successfully sent event data to {request.url}: {response.status_code}"
                     )
-                    logger.debug(f"Response: {response.json()}")
+                    if response.content:
+                        logger.debug(f"Response has content: {response.text}")
                     session.add(
                         tables.Event(
                             organization_id=request.organization_id,
