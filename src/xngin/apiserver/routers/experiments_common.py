@@ -140,12 +140,15 @@ def create_preassigned_experiment_impl(
         state=ExperimentState.ASSIGNED,
         start_date=request.design_spec.start_date,
         end_date=request.design_spec.end_date,
+        power=request.design_spec.power,
+        alpha=request.design_spec.alpha,
+        fstat_thresh=request.design_spec.fstat_thresh,
         design_spec=request.design_spec.model_dump(mode="json"),
         power_analyses=request.power_analyses.model_dump(mode="json")
         if request.power_analyses
         else None,
         balance_check=balance_check,
-    )  # .set_design_spec(body.design_spec)
+    )
     xngin_session.add(experiment)
 
     # Create arm records
@@ -201,6 +204,9 @@ def create_online_experiment_impl(
         state=ExperimentState.ASSIGNED,
         start_date=request.design_spec.start_date,
         end_date=request.design_spec.end_date,
+        power=request.design_spec.power,
+        alpha=request.design_spec.alpha,
+        fstat_thresh=request.design_spec.fstat_thresh,
         design_spec=request.design_spec.model_dump(mode="json"),
         power_analyses=None,
     )
