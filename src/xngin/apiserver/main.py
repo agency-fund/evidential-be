@@ -67,19 +67,19 @@ middleware.setup(app)
 customlogging.setup()
 
 app.include_router(
-    stateless_api.router,
-    prefix=constants.API_PREFIX_V1,
-    tags=["Experiment Design"],
+    experiments.router, prefix=constants.API_PREFIX_V1, tags=["Experiment Integration"]
 )
 
 app.include_router(
-    experiments.router, prefix=constants.API_PREFIX_V1, tags=["Experiment Management"]
+    stateless_api.router,
+    prefix=constants.API_PREFIX_V1,
+    tags=["Stateless Experiment Design"],
 )
 
 app.include_router(
     proxy_mgmt_api.router,
     prefix=constants.API_PREFIX_V1,
-    tags=["Experiment Management"],
+    tags=["Stateless Experiment Design"],
 )
 
 
@@ -133,15 +133,15 @@ def custom_openapi():
         TagDocumentation(
             visible=True,
             definition={
-                "name": "Experiment Design",
-                "description": "Methods for designing experiments.",
+                "name": "Stateless Experiment Design",
+                "description": " (⚠️ New clients: use Experiment Integration APIs.) Methods for designing and saving experiments in which a client manages all state persistence.",
             },
         ),
         TagDocumentation(
             visible=True,
             definition={
-                "name": "Experiment Management",
-                "description": "Methods for managing and running experiments.",
+                "name": "Experiment Integration",
+                "description": "Methods for a client to use when integrating Evidential experiments and assignments with their own serving infrastructure.",
             },
         ),
         TagDocumentation(

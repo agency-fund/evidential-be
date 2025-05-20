@@ -1,8 +1,6 @@
-import pytest
 from fastapi.testclient import TestClient
 
 from xngin.apiserver import conftest, constants
-from xngin.apiserver.dependencies import xngin_db_session
 from xngin.apiserver.main import app
 
 # CONFIG_ID_SECURED refers to a datasource defined in xngin.testing.settings.json
@@ -10,13 +8,7 @@ CONFIG_ID_SECURED = "testing-secured"
 
 conftest.setup(app)
 client = TestClient(app)
-client.base_url = str(client.base_url) + constants.API_PREFIX_V1
-
-
-@pytest.fixture(scope="module")
-def db_session():
-    session = next(app.dependency_overrides[xngin_db_session]())
-    yield session
+client.base_url = client.base_url.join(constants.API_PREFIX_V1)
 
 
 def test_secured_requires_apikey():
