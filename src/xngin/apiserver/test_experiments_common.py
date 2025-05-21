@@ -232,7 +232,7 @@ def insert_experiment_and_arms(
     experiment_type: ExperimentType = "preassigned",
     state=ExperimentState.COMMITTED,
 ):
-    """Creates an experiment and arms, and adds them to the session. You must call commit.
+    """Creates an experiment and arms and commits them to the database.
 
     Returns:
         (experiment, arms)
@@ -244,6 +244,7 @@ def insert_experiment_and_arms(
     xngin_session.add(experiment)
     arms = make_arms_from_experiment(experiment, organization_id)
     xngin_session.add_all(arms)
+    xngin_session.commit()
     return experiment, arms
 
 
@@ -733,15 +734,12 @@ def test_list_experiments_impl(xngin_session, testing_datasource):
 
 def test_get_experiment_assignments_impl(xngin_session, testing_datasource):
     # First insert an experiment with assignments
-    experiment = make_insertable_experiment(
-        ExperimentState.COMMITTED, testing_datasource.ds.id
+    experiment, _ = insert_experiment_and_arms(
+        xngin_session,
+        testing_datasource.ds.id,
+        testing_datasource.ds.organization_id,
     )
     experiment_id = experiment.id
-    xngin_session.add(experiment)
-    db_arms = make_arms_from_experiment(
-        experiment, testing_datasource.ds.organization_id
-    )
-    xngin_session.add_all(db_arms)
 
     arm1_id = experiment.design_spec["arms"][0]["arm_id"]
     arm2_id = experiment.design_spec["arms"][1]["arm_id"]
@@ -797,10 +795,12 @@ def test_get_experiment_assignments_impl(xngin_session, testing_datasource):
 def make_experiment_with_assignments(xngin_session, datasource: tables.Datasource):
     """Helper function for the tests below."""
     # First insert an experiment with assignments
-    experiment = make_insertable_experiment(ExperimentState.COMMITTED, datasource.id)
-    xngin_session.add(experiment)
-    arms = make_arms_from_experiment(experiment, datasource.organization_id)
-    xngin_session.add_all(arms)
+    experiment, _ = insert_experiment_and_arms(
+        xngin_session,
+        datasource.id,
+        datasource.organization_id,
+    )
+
     arm1_id = experiment.design_spec["arms"][0]["arm_id"]
     arm2_id = experiment.design_spec["arms"][1]["arm_id"]
     assignments = [
@@ -884,38 +884,32 @@ def test_make_assignment_for_participant_errors(xngin_session, testing_datasourc
 
 
 def test_make_assignment_for_participant(xngin_session, testing_datasource):
-    preassigned_experiment = make_insertable_experiment(
-        ExperimentState.COMMITTED, testing_datasource.ds.id
+    preassigned_experiment, _ = insert_experiment_and_arms(
+        xngin_session,
+        testing_datasource.ds.id,
+        testing_datasource.ds.organization_id,
     )
-    xngin_session.add(preassigned_experiment)
-    arms = make_arms_from_experiment(
-        preassigned_experiment, testing_datasource.ds.organization_id
-    )
-    xngin_session.add_all(arms)
-    xngin_session.commit()
     # Assert that we won't create new assignments for preassigned experiments
     expect_none = create_assignment_for_participant(
         xngin_session, preassigned_experiment, "new_id", None
     )
     assert expect_none is None
 
-    online_experiment = make_insertable_online_experiment(
-        ExperimentState.COMMITTED, testing_datasource.ds.id
+    online_experiment, online_arms = insert_experiment_and_arms(
+        xngin_session,
+        testing_datasource.ds.id,
+        testing_datasource.ds.organization_id,
+        experiment_type="online",
+        state=ExperimentState.COMMITTED,
     )
-    xngin_session.add(online_experiment)
-    arms = make_arms_from_experiment(
-        online_experiment, testing_datasource.ds.organization_id
-    )
-    xngin_session.add_all(arms)
-    xngin_session.commit()
     # Assert that we do create new assignments for online experiments
     assignment = create_assignment_for_participant(
         xngin_session, online_experiment, "new_id", None
     )
     assert assignment is not None
     assert assignment.participant_id == "new_id"
-    arms = {arm.id: arm.name for arm in arms}
-    assert assignment.arm_name == arms[str(assignment.arm_id)]
+    online_arm_map = {arm.id: arm.name for arm in online_arms}
+    assert assignment.arm_name == online_arm_map[str(assignment.arm_id)]
     assert not assignment.strata
 
     # But that if we try to create an assignment for a participant that already has one, it triggers an error.

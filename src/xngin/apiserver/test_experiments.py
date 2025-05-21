@@ -16,10 +16,8 @@ from xngin.apiserver.routers.experiments_api_types import (
 from xngin.apiserver.test_experiments_common import (  # pylint: disable=unused-import
     fixture_teardown,  # noqa: F401
     insert_experiment_and_arms,
-    make_arms_from_experiment,
     make_create_preassigned_experiment_request,
     make_insertable_experiment,
-    make_insertable_online_experiment,
 )
 
 conftest.setup(app)
@@ -94,7 +92,6 @@ def test_list_experiments_sl_with_api_key(xngin_session, testing_datasource):
         experiment_type="preassigned",
         state=ExperimentState.ASSIGNED,
     )
-    xngin_session.commit()
 
     response = client.get(
         "/experiments",
@@ -121,7 +118,6 @@ def test_get_experiment(xngin_session, testing_datasource):
         experiment_type="preassigned",
         state=ExperimentState.DESIGNING,
     )
-    xngin_session.commit()
 
     response = client.get(
         f"/experiments/{new_experiment.id!s}",
@@ -176,14 +172,13 @@ def test_get_experiment_assignments_wrong_datasource(xngin_session, testing_data
 def test_get_assignment_for_preassigned_participant_with_apikey(
     xngin_session, testing_datasource
 ):
-    preassigned_experiment = make_insertable_experiment(
-        ExperimentState.COMMITTED, testing_datasource.ds.id
+    preassigned_experiment, arms = insert_experiment_and_arms(
+        xngin_session,
+        testing_datasource.ds.id,
+        testing_datasource.ds.organization_id,
+        experiment_type="preassigned",
+        state=ExperimentState.COMMITTED,
     )
-    xngin_session.add(preassigned_experiment)
-    arms = make_arms_from_experiment(
-        preassigned_experiment, testing_datasource.ds.organization_id
-    )
-    xngin_session.add_all(arms)
     assignment = tables.ArmAssignment(
         experiment_id=preassigned_experiment.id,
         participant_id="assigned_id",
@@ -226,15 +221,13 @@ def test_get_assignment_for_online_participant_with_apikey(
     xngin_session, testing_datasource
 ):
     """Test endpoint that gets an assignment for a participant via API key."""
-    online_experiment = make_insertable_online_experiment(
-        ExperimentState.COMMITTED, testing_datasource.ds.id
+    online_experiment, arms = insert_experiment_and_arms(
+        xngin_session,
+        testing_datasource.ds.id,
+        testing_datasource.ds.organization_id,
+        experiment_type="online",
+        state=ExperimentState.COMMITTED,
     )
-    xngin_session.add(online_experiment)
-    arms = make_arms_from_experiment(
-        online_experiment, testing_datasource.ds.organization_id
-    )
-    xngin_session.add_all(arms)
-    xngin_session.commit()
 
     response = client.get(
         f"/experiments/{online_experiment.id!s}/assignments/1",
