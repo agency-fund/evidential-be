@@ -69,7 +69,7 @@ def test_create_experiment_with_assignment_sl(xngin_session, use_deterministic_r
 
 def test_list_experiments_sl_without_api_key(xngin_session, testing_datasource):
     """Tests that listing experiments tied to a db datasource requires an API key."""
-    experiment = make_insertable_experiment(
+    experiment, _ = make_insertable_experiment(
         ExperimentState.ASSIGNED, testing_datasource.ds.id
     )
     xngin_session.add(experiment)
@@ -133,7 +133,9 @@ def test_get_experiment(xngin_session, testing_datasource):
     assert experiment_json["datasource_id"] == new_experiment.datasource_id
     assert experiment_json["state"] == new_experiment.state
     actual = PreassignedExperimentSpec.model_validate(experiment_json["design_spec"])
-    expected = PreassignedExperimentSpec.model_validate(new_experiment.design_spec)
+    expected = PreassignedExperimentSpec.model_validate(
+        new_experiment.get_design_spec()
+    )
     diff = DeepDiff(actual, expected)
     assert not diff, f"Objects differ:\n{diff.pretty()}"
 
@@ -154,7 +156,7 @@ def test_get_experiment_assignments_wrong_datasource(xngin_session, testing_data
     TODO: deprecate this in favor of an admin.py version when ready.
     """
     # Create experiment in one datasource
-    experiment = make_insertable_experiment(
+    experiment, _ = make_insertable_experiment(
         ExperimentState.COMMITTED, testing_datasource.ds.id
     )
     xngin_session.add(experiment)

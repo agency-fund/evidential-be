@@ -16,6 +16,7 @@ from xngin.apiserver.models.storage_types import DesignSpecFields
 from xngin.apiserver.routers.stateless_api_types import (
     Arm,
     BalanceCheck,
+    DesignSpec,
     ExperimentType,
     OnlineExperimentSpec,
     PreassignedExperimentSpec,
@@ -115,24 +116,24 @@ def make_insertable_experiment(state: ExperimentState, datasource_id="testing"):
         p_value=0.91583011,
         balance_ok=True,
     )
-    return tables.Experiment(
-        id=request.design_spec.experiment_id,
+    design_spec = request.design_spec
+    experiment = tables.Experiment(
+        id=design_spec.experiment_id,
         datasource_id=datasource_id,
         experiment_type="preassigned",
-        participant_type=request.design_spec.participant_type,
-        name=request.design_spec.experiment_name,
-        description=request.design_spec.description,
+        participant_type=design_spec.participant_type,
+        name=design_spec.experiment_name,
+        description=design_spec.description,
         state=state,
-        start_date=request.design_spec.start_date,
-        end_date=request.design_spec.end_date,
-        power=request.design_spec.power,
-        alpha=request.design_spec.alpha,
-        fstat_thresh=request.design_spec.fstat_thresh,
-        design_spec=request.design_spec.model_dump(mode="json"),
+        start_date=design_spec.start_date,
+        end_date=design_spec.end_date,
+        power=design_spec.power,
+        alpha=design_spec.alpha,
+        fstat_thresh=design_spec.fstat_thresh,
         design_spec_fields=DesignSpecFields(
-            strata=request.design_spec.strata,
-            metrics=request.design_spec.metrics,
-            filters=request.design_spec.filters,
+            strata=design_spec.strata,
+            metrics=design_spec.metrics,
+            filters=design_spec.filters,
         ).model_dump(mode="json"),
         power_analyses=PowerResponse(
             analyses=[
@@ -157,6 +158,7 @@ def make_insertable_experiment(state: ExperimentState, datasource_id="testing"):
             ]
         ).model_dump(),
     ).set_balance_check(balance_check)
+    return experiment, design_spec
 
 
 def make_insertable_online_experiment(
@@ -203,25 +205,26 @@ def make_insertable_online_experiment(
         power=design_spec.power,
         alpha=design_spec.alpha,
         fstat_thresh=design_spec.fstat_thresh,
-        design_spec=design_spec.model_dump(mode="json"),
         design_spec_fields=DesignSpecFields(
             strata=design_spec.strata,
             metrics=design_spec.metrics,
             filters=design_spec.filters,
         ).model_dump(mode="json"),
-    )
+    ), design_spec
 
 
-def make_arms_from_experiment(experiment: tables.Experiment, organization_id: str):
+def make_arms_from_designspec(
+    experiment_id: str, design_spec: DesignSpec, organization_id: str
+):
     return [
         tables.ArmTable(
-            id=arm["arm_id"],
-            experiment_id=experiment.id,
-            name=arm["arm_name"],
-            description=arm["arm_description"],
+            id=arm.arm_id,
+            experiment_id=experiment_id,
+            name=arm.arm_name,
+            description=arm.arm_description,
             organization_id=organization_id,
         )
-        for arm in experiment.design_spec["arms"]
+        for arm in design_spec.arms
     ]
 
 
@@ -235,14 +238,16 @@ def insert_experiment_and_arms(
     """Creates an experiment and arms and commits them to the database.
 
     Returns:
-        (experiment, arms)
+        (experiment_obj, arms)
     """
     if experiment_type == "preassigned":
-        experiment = make_insertable_experiment(state, datasource_id)
+        experiment, design_spec = make_insertable_experiment(state, datasource_id)
     else:
-        experiment = make_insertable_online_experiment(state, datasource_id)
+        experiment, design_spec = make_insertable_online_experiment(
+            state, datasource_id
+        )
     xngin_session.add(experiment)
-    arms = make_arms_from_experiment(experiment, organization_id)
+    arms = make_arms_from_designspec(experiment.id, design_spec, organization_id)
     xngin_session.add_all(arms)
     xngin_session.commit()
     return experiment, arms
@@ -669,7 +674,7 @@ def test_state_setting_experiment_impl(
     expected_detail,
 ):
     # Initialize our state with an existing experiment who's state we want to modify.
-    experiment = make_insertable_experiment(initial_state, testing_datasource.ds.id)
+    experiment, _ = make_insertable_experiment(initial_state, testing_datasource.ds.id)
     xngin_session.add(experiment)
     xngin_session.commit()
 
@@ -685,31 +690,38 @@ def test_state_setting_experiment_impl(
 
 def test_list_experiments_impl(xngin_session, testing_datasource):
     """Test that we only get experiments in a valid state for the specified datasource."""
-    experiment1 = make_insertable_experiment(
+    experiment1_data = make_insertable_experiment(
         ExperimentState.ASSIGNED, testing_datasource.ds.id
     )
-    experiment2 = make_insertable_experiment(
+    experiment2_data = make_insertable_experiment(
         ExperimentState.COMMITTED, testing_datasource.ds.id
     )
-    experiment3 = make_insertable_experiment(
+    experiment3_data = make_insertable_experiment(
         ExperimentState.DESIGNING, testing_datasource.ds.id
     )
-    experiment4 = make_insertable_experiment(
+    experiment4_data = make_insertable_experiment(
         ExperimentState.ABORTED, testing_datasource.ds.id
     )
     # One more experiment associated with a *different* datasource.
     experiment5_metadata = conftest.make_datasource_metadata(xngin_session)
-    experiment5 = make_insertable_experiment(
+    experiment5_data = make_insertable_experiment(
         ExperimentState.ASSIGNED, datasource_id=experiment5_metadata.ds.id
     )
     # Set the created_at time to test ordering
-    experiment1.created_at = datetime.now(UTC) - timedelta(days=1)
-    experiment2.created_at = datetime.now(UTC)
-    experiment3.created_at = datetime.now(UTC) + timedelta(days=1)
-    for experiment in [experiment1, experiment2, experiment3, experiment4, experiment5]:
+    experiment1_data[0].created_at = datetime.now(UTC) - timedelta(days=1)
+    experiment2_data[0].created_at = datetime.now(UTC)
+    experiment3_data[0].created_at = datetime.now(UTC) + timedelta(days=1)
+    for data in [
+        experiment1_data,
+        experiment2_data,
+        experiment3_data,
+        experiment4_data,
+        experiment5_data,
+    ]:
+        experiment, design_spec = data
         xngin_session.add(experiment)
-        arms = make_arms_from_experiment(
-            experiment, testing_datasource.ds.organization_id
+        arms = make_arms_from_designspec(
+            experiment.id, design_spec, testing_datasource.ds.organization_id
         )
         xngin_session.add_all(arms)
     xngin_session.commit()
@@ -718,17 +730,17 @@ def test_list_experiments_impl(xngin_session, testing_datasource):
 
     # experiment5 excluded due to datasource mismatch
     assert len(experiments.items) == 3
-    actual1 = experiments.items[2]  # experiment1 is last as it's oldest
-    actual2 = experiments.items[1]
-    actual3 = experiments.items[0]
-    assert actual1.state == ExperimentState.ASSIGNED
-    diff = DeepDiff(actual1.design_spec, experiment1.get_design_spec())
+    actual1_config = experiments.items[2]  # experiment1 is last as it's oldest
+    actual2_config = experiments.items[1]
+    actual3_config = experiments.items[0]
+    assert actual1_config.state == ExperimentState.ASSIGNED
+    diff = DeepDiff(actual1_config.design_spec, experiment1_data[0].get_design_spec())
     assert not diff, f"Objects differ:\n{diff.pretty()}"
-    assert actual2.state == ExperimentState.COMMITTED
-    diff = DeepDiff(actual2.design_spec, experiment2.get_design_spec())
+    assert actual2_config.state == ExperimentState.COMMITTED
+    diff = DeepDiff(actual2_config.design_spec, experiment2_data[0].get_design_spec())
     assert not diff, f"Objects differ:\n{diff.pretty()}"
-    assert actual3.state == ExperimentState.DESIGNING
-    diff = DeepDiff(actual3.design_spec, experiment3.get_design_spec())
+    assert actual3_config.state == ExperimentState.DESIGNING
+    diff = DeepDiff(actual3_config.design_spec, experiment3_data[0].get_design_spec())
     assert not diff, f"Objects differ:\n{diff.pretty()}"
 
 
@@ -741,8 +753,8 @@ def test_get_experiment_assignments_impl(xngin_session, testing_datasource):
     )
     experiment_id = experiment.id
 
-    arm1_id = experiment.design_spec["arms"][0]["arm_id"]
-    arm2_id = experiment.design_spec["arms"][1]["arm_id"]
+    arm1_id = experiment.arms[0].id
+    arm2_id = experiment.arms[1].id
     arm_assignments = [
         tables.ArmAssignment(
             experiment_id=experiment_id,
@@ -801,8 +813,8 @@ def make_experiment_with_assignments(xngin_session, datasource: tables.Datasourc
         datasource.organization_id,
     )
 
-    arm1_id = experiment.design_spec["arms"][0]["arm_id"]
-    arm2_id = experiment.design_spec["arms"][1]["arm_id"]
+    arm1_id = experiment.arms[0].id
+    arm2_id = experiment.arms[1].id
     assignments = [
         tables.ArmAssignment(
             experiment_id=experiment.id,
@@ -868,7 +880,7 @@ def test_get_existing_assignment_for_participant(xngin_session, testing_datasour
 
 
 def test_make_assignment_for_participant_errors(xngin_session, testing_datasource):
-    experiment = make_insertable_experiment(
+    experiment, _ = make_insertable_experiment(
         ExperimentState.ASSIGNED, testing_datasource.ds.id
     )
     with pytest.raises(
@@ -876,7 +888,7 @@ def test_make_assignment_for_participant_errors(xngin_session, testing_datasourc
     ):
         create_assignment_for_participant(xngin_session, experiment, "p1", None)
 
-    experiment = make_insertable_experiment(
+    experiment, _ = make_insertable_experiment(
         ExperimentState.COMMITTED, testing_datasource.ds.id
     )
     with pytest.raises(ExperimentsAssignmentError, match="Experiment has no arms"):

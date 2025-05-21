@@ -60,6 +60,7 @@ from xngin.apiserver.settings import (
     SheetParticipantsRef,
     infer_table,
 )
+from xngin.apiserver.test_experiments_common import make_arms_from_designspec
 from xngin.cli.main import create_testing_dwh
 from xngin.schema.schema_types import FieldDescriptor, ParticipantsSchema
 
@@ -197,14 +198,20 @@ def make_insertable_experiment(
     state: ExperimentState,
     datasource_id: str = "testing",
     experiment_type: ExperimentType = "preassigned",
-) -> tables.Experiment:
+    with_ids: bool = True,
+) -> tuple[tables.Experiment, DesignSpec]:
     request = make_createexperimentrequest_json(experiment_type=experiment_type)
     design_spec: DesignSpec = TypeAdapter(DesignSpec).validate_python(
         request["design_spec"]
     )
-    # TODO(qixotic): experiment_id should also be set on DesignSpec
-    return tables.Experiment(
-        id=tables.experiment_id_factory(),
+    experiment_id = tables.experiment_id_factory() if with_ids else None
+    arm1_id = tables.arm_id_factory() if with_ids else None
+    arm2_id = tables.arm_id_factory() if with_ids else None
+    design_spec.arms[0].arm_id = arm1_id
+    design_spec.arms[1].arm_id = arm2_id
+
+    experiment = tables.Experiment(
+        id=experiment_id,
         datasource_id=datasource_id,
         experiment_type=experiment_type,
         participant_type=design_spec.participant_type,
@@ -216,7 +223,6 @@ def make_insertable_experiment(
         power=design_spec.power,
         alpha=design_spec.alpha,
         fstat_thresh=design_spec.fstat_thresh,
-        design_spec=design_spec.model_dump(mode="json"),
         design_spec_fields=DesignSpecFields(
             strata=design_spec.strata,
             metrics=design_spec.metrics,
@@ -224,38 +230,27 @@ def make_insertable_experiment(
         ).model_dump(mode="json"),
         power_analyses=None,
     ).set_balance_check(None)
+    return experiment, design_spec
 
 
-def make_arms_from_experiment(
-    experiment: tables.Experiment, organization_id: str
-) -> list[tables.ArmTable]:
-    return [
-        tables.ArmTable(
-            id=arm["arm_id"],
-            experiment_id=experiment.id,
-            name=arm["arm_name"],
-            description=arm["arm_description"],
-            organization_id=organization_id,
-        )
-        for arm in experiment.design_spec["arms"]
-    ]
-
-
-def make_experiment_and_arms(
+# TODO: consolidate helper functions with test_experiments_common.py
+def insert_experiment_and_arms(
     xngin_session, datasource: tables.Datasource, experiment_type: ExperimentType
 ) -> tables.Experiment:
-    experiment = make_insertable_experiment(
+    experiment, design_spec = make_insertable_experiment(
         ExperimentState.COMMITTED,
         datasource_id=datasource.id,
         experiment_type=experiment_type,
     )
-    # Fake arm_ids in the design_spec since we're not using the admin API to create the experiment.
-    for arm in experiment.design_spec["arms"]:
-        if "arm_id" not in arm or arm["arm_id"] is None:
-            arm["arm_id"] = tables.arm_id_factory()
     xngin_session.add(experiment)
+    # Fake arm_ids in the design_spec since we're not using the admin API to create the experiment.
+    for arm in design_spec.arms:
+        if arm.arm_id is None:
+            arm.arm_id = tables.arm_id_factory()
     # Create ArmTable instances for each arm in the experiment
-    db_arms = make_arms_from_experiment(experiment, datasource.organization_id)
+    db_arms = make_arms_from_designspec(
+        experiment.id, design_spec, datasource.organization_id
+    )
     xngin_session.add_all(db_arms)
     xngin_session.commit()
     return experiment
@@ -265,7 +260,7 @@ def make_experiment_and_arms(
 def fixture_testing_experiment(xngin_session, testing_datasource_with_user_added):
     """Create an experiment on a test inline schema datasource with proper user permissions."""
     datasource = testing_datasource_with_user_added.ds
-    experiment = make_experiment_and_arms(xngin_session, datasource, "preassigned")
+    experiment = insert_experiment_and_arms(xngin_session, datasource, "preassigned")
     # Add fake assignments for each arm for real participant ids in our test data.
     arm_ids = [arm.id for arm in experiment.arms]
     for i in range(10):
@@ -969,7 +964,7 @@ def test_get_experiment_assignment_for_preassigned_participant(testing_experimen
 def test_get_experiment_assignment_for_online_participant(
     xngin_session, testing_datasource_with_user_added
 ):
-    testing_experiment = make_experiment_and_arms(
+    testing_experiment = insert_experiment_and_arms(
         xngin_session, testing_datasource_with_user_added.ds, "online"
     )
     datasource_id = testing_experiment.datasource_id
@@ -1037,7 +1032,7 @@ def test_experiments_analyze(testing_experiment):
 def test_experiments_analyze_for_experiment_with_no_participants(
     xngin_session, testing_datasource_with_user_added
 ):
-    testing_experiment = make_experiment_and_arms(
+    testing_experiment = insert_experiment_and_arms(
         xngin_session, testing_datasource_with_user_added.ds, "online"
     )
     datasource_id = testing_experiment.datasource_id
@@ -1073,7 +1068,9 @@ def test_admin_experiment_state_setting(
 ):
     # Initialize our state with an existing experiment who's state we want to modify.
     datasource_id = testing_datasource_with_user_added.ds.id
-    experiment = make_insertable_experiment(initial_state, datasource_id=datasource_id)
+    experiment, _ = make_insertable_experiment(
+        initial_state, datasource_id=datasource_id
+    )
     xngin_session.add(experiment)
     xngin_session.commit()
 

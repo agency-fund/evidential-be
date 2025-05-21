@@ -17,7 +17,6 @@ from xngin.apiserver.routers.stateless_api_types import (
     Arm,
     ArmSize,
     Assignment,
-    PreassignedExperimentSpec,
     Strata,
 )
 from xngin.apiserver.models.enums import ExperimentState
@@ -144,7 +143,6 @@ def create_preassigned_experiment_impl(
         power=request.design_spec.power,
         alpha=request.design_spec.alpha,
         fstat_thresh=request.design_spec.fstat_thresh,
-        design_spec=request.design_spec.model_dump(mode="json"),
         design_spec_fields=DesignSpecFields(
             strata=request.design_spec.strata,
             metrics=request.design_spec.metrics,
@@ -213,7 +211,6 @@ def create_online_experiment_impl(
         power=request.design_spec.power,
         alpha=request.design_spec.alpha,
         fstat_thresh=request.design_spec.fstat_thresh,
-        design_spec=request.design_spec.model_dump(mode="json"),
         design_spec_fields=DesignSpecFields(
             strata=request.design_spec.strata,
             metrics=request.design_spec.metrics,
@@ -350,8 +347,7 @@ def get_experiment_assignments_impl(
     experiment: tables.Experiment,
 ) -> GetExperimentAssignmentsResponse:
     # Map arm IDs to names
-    design_spec = PreassignedExperimentSpec.model_validate(experiment.design_spec)
-    arm_id_to_name = {arm.arm_id: arm.arm_name for arm in design_spec.arms}
+    arm_id_to_name = {arm.id: arm.name for arm in experiment.arms}
     # Convert ArmAssignment models to Assignment API types
     assignments = [
         Assignment(
@@ -374,8 +370,7 @@ def get_experiment_assignments_impl(
 def experiment_assignments_to_csv_generator(experiment: tables.Experiment):
     """Generator function to yield CSV rows of experiment assignments as strings"""
     # Map arm IDs to names
-    design_spec = experiment.get_design_spec()
-    arm_id_to_name = {arm.arm_id: arm.arm_name for arm in design_spec.arms}
+    arm_id_to_name = {arm.id: arm.name for arm in experiment.arms}
 
     # Get strata field names from the first assignment
     strata_names = []
