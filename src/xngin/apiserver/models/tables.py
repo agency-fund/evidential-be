@@ -406,7 +406,10 @@ class Experiment(Base):
     end_date: Mapped[datetime] = mapped_column()
 
     # JSON serialized form of DesignSpec.
+    #  TODO: rename to original_design_spec and maybe later drop
     design_spec: Mapped[dict] = mapped_column(type_=JSONBetter)
+    # JSON serialized form of an experiment's specified dwh fields used for strata/metrics/filters.
+    design_spec_fields: Mapped[dict | None] = mapped_column(type_=JSONBetter)
     # JSON serialized form of a PowerResponse. Not required since some experiments may not have data to run power analyses.
     power_analyses: Mapped[dict | None] = mapped_column(type_=JSONBetter)
     # JSON serialized form of a BalanceCheck. May be null if the experiment type doesn't support
@@ -440,7 +443,29 @@ class Experiment(Base):
         return [arm.name for arm in self.arms]
 
     def get_design_spec(self) -> DesignSpec:
-        return TypeAdapter(DesignSpec).validate_python(self.design_spec)
+        return TypeAdapter(DesignSpec).validate_python({
+            "participant_type": self.participant_type,
+            "experiment_id": self.id,
+            "experiment_type": self.experiment_type,
+            "experiment_name": self.name,
+            "description": self.description,
+            "start_date": self.start_date,
+            "end_date": self.end_date,
+            "arms": [
+                {
+                    "arm_id": arm.id,
+                    "arm_name": arm.name,
+                    "arm_description": arm.description,
+                }
+                for arm in self.arms
+            ],
+            "strata": self.design_spec_fields.get("strata", []),
+            "metrics": self.design_spec_fields.get("metrics", []),
+            "filters": self.design_spec_fields.get("filters", []),
+            "power": self.power,
+            "alpha": self.alpha,
+            "fstat_thresh": self.fstat_thresh,
+        })
 
     def get_power_analyses(self) -> PowerResponse | None:
         if self.power_analyses is None:

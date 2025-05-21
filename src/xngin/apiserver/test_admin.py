@@ -14,6 +14,7 @@ from xngin.apiserver.dns import safe_resolve
 from xngin.apiserver.main import app
 from xngin.apiserver.models import tables
 from xngin.apiserver.models.enums import ExperimentState
+from xngin.apiserver.models.storage_types import DesignSpecFields
 from xngin.apiserver.routers import oidc_dependencies
 from xngin.apiserver.routers.admin import user_from_token
 from xngin.apiserver.routers.admin_api_types import (
@@ -216,6 +217,11 @@ def make_insertable_experiment(
         alpha=design_spec.alpha,
         fstat_thresh=design_spec.fstat_thresh,
         design_spec=design_spec.model_dump(mode="json"),
+        design_spec_fields=DesignSpecFields(
+            strata=design_spec.strata,
+            metrics=design_spec.metrics,
+            filters=design_spec.filters,
+        ).model_dump(mode="json"),
         power_analyses=None,
     ).set_balance_check(None)
 

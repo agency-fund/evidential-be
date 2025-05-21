@@ -15,6 +15,7 @@ from xngin.apiserver.routers.experiments_api_types import (
 )
 from xngin.apiserver.test_experiments_common import (  # pylint: disable=unused-import
     fixture_teardown,  # noqa: F401
+    insert_experiment_and_arms,
     make_arms_from_experiment,
     make_create_preassigned_experiment_request,
     make_insertable_experiment,
@@ -86,11 +87,13 @@ def test_list_experiments_sl_without_api_key(xngin_session, testing_datasource):
 
 def test_list_experiments_sl_with_api_key(xngin_session, testing_datasource):
     """Tests that listing experiments tied to a db datasource with an API key works."""
-
-    expected_experiment = make_insertable_experiment(
-        ExperimentState.ASSIGNED, testing_datasource.ds.id
+    expected_experiment, _ = insert_experiment_and_arms(
+        xngin_session,
+        testing_datasource.ds.id,
+        testing_datasource.ds.organization_id,
+        experiment_type="preassigned",
+        state=ExperimentState.ASSIGNED,
     )
-    xngin_session.add(expected_experiment)
     xngin_session.commit()
 
     response = client.get(
@@ -111,10 +114,13 @@ def test_list_experiments_sl_with_api_key(xngin_session, testing_datasource):
 
 
 def test_get_experiment(xngin_session, testing_datasource):
-    new_experiment = make_insertable_experiment(
-        ExperimentState.DESIGNING, testing_datasource.ds.id
+    new_experiment, _ = insert_experiment_and_arms(
+        xngin_session,
+        testing_datasource.ds.id,
+        testing_datasource.ds.organization_id,
+        experiment_type="preassigned",
+        state=ExperimentState.DESIGNING,
     )
-    xngin_session.add(new_experiment)
     xngin_session.commit()
 
     response = client.get(

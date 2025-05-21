@@ -9,11 +9,14 @@ from fastapi import HTTPException
 from numpy.random import RandomState, MT19937
 from sqlalchemy import Boolean, Column, MetaData, String, Table, select
 from sqlalchemy.dialects import postgresql
+from sqlalchemy.orm import Session
 from sqlalchemy.schema import CreateTable
 from xngin.apiserver import conftest
+from xngin.apiserver.models.storage_types import DesignSpecFields
 from xngin.apiserver.routers.stateless_api_types import (
     Arm,
     BalanceCheck,
+    ExperimentType,
     OnlineExperimentSpec,
     PreassignedExperimentSpec,
     DesignSpecMetric,
@@ -126,6 +129,11 @@ def make_insertable_experiment(state: ExperimentState, datasource_id="testing"):
         alpha=request.design_spec.alpha,
         fstat_thresh=request.design_spec.fstat_thresh,
         design_spec=request.design_spec.model_dump(mode="json"),
+        design_spec_fields=DesignSpecFields(
+            strata=request.design_spec.strata,
+            metrics=request.design_spec.metrics,
+            filters=request.design_spec.filters,
+        ).model_dump(mode="json"),
         power_analyses=PowerResponse(
             analyses=[
                 MetricPowerAnalysis(
@@ -196,6 +204,11 @@ def make_insertable_online_experiment(
         alpha=design_spec.alpha,
         fstat_thresh=design_spec.fstat_thresh,
         design_spec=design_spec.model_dump(mode="json"),
+        design_spec_fields=DesignSpecFields(
+            strata=design_spec.strata,
+            metrics=design_spec.metrics,
+            filters=design_spec.filters,
+        ).model_dump(mode="json"),
     )
 
 
@@ -210,6 +223,28 @@ def make_arms_from_experiment(experiment: tables.Experiment, organization_id: st
         )
         for arm in experiment.design_spec["arms"]
     ]
+
+
+def insert_experiment_and_arms(
+    xngin_session: Session,
+    datasource_id: str,
+    organization_id: str,
+    experiment_type: ExperimentType = "preassigned",
+    state=ExperimentState.COMMITTED,
+):
+    """Creates an experiment and arms, and adds them to the session. You must call commit.
+
+    Returns:
+        (experiment, arms)
+    """
+    if experiment_type == "preassigned":
+        experiment = make_insertable_experiment(state, datasource_id)
+    else:
+        experiment = make_insertable_online_experiment(state, datasource_id)
+    xngin_session.add(experiment)
+    arms = make_arms_from_experiment(experiment, organization_id)
+    xngin_session.add_all(arms)
+    return experiment, arms
 
 
 @dataclass
@@ -670,13 +705,12 @@ def test_list_experiments_impl(xngin_session, testing_datasource):
     experiment1.created_at = datetime.now(UTC) - timedelta(days=1)
     experiment2.created_at = datetime.now(UTC)
     experiment3.created_at = datetime.now(UTC) + timedelta(days=1)
-    xngin_session.add_all([
-        experiment1,
-        experiment2,
-        experiment3,
-        experiment4,
-        experiment5,
-    ])
+    for experiment in [experiment1, experiment2, experiment3, experiment4, experiment5]:
+        xngin_session.add(experiment)
+        arms = make_arms_from_experiment(
+            experiment, testing_datasource.ds.organization_id
+        )
+        xngin_session.add_all(arms)
     xngin_session.commit()
 
     experiments = list_experiments_impl(xngin_session, testing_datasource.ds.id)
