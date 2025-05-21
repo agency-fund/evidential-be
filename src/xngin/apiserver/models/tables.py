@@ -405,11 +405,8 @@ class Experiment(Base):
     # Target end date of the experiment. Denormalized from design_spec.
     end_date: Mapped[datetime] = mapped_column()
 
-    # JSON serialized form of DesignSpec.
-    #  TODO: rename to original_design_spec and maybe later drop
-    design_spec: Mapped[dict] = mapped_column(type_=JSONBetter)
     # JSON serialized form of an experiment's specified dwh fields used for strata/metrics/filters.
-    design_spec_fields: Mapped[dict | None] = mapped_column(type_=JSONBetter)
+    design_spec_fields: Mapped[dict] = mapped_column(type_=JSONBetter)
     # JSON serialized form of a PowerResponse. Not required since some experiments may not have data to run power analyses.
     power_analyses: Mapped[dict | None] = mapped_column(type_=JSONBetter)
     # JSON serialized form of a BalanceCheck. May be null if the experiment type doesn't support
