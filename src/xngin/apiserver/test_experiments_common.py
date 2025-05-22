@@ -735,6 +735,7 @@ def test_get_experiment_assignments_impl(xngin_session, testing_datasource):
     assert assignments[0].strata is not None and len(assignments[0].strata) == 1
     assert assignments[0].strata[0].field_name == "gender"
     assert assignments[0].strata[0].strata_value == "F"
+    assert assignments[0].created_at is not None
 
     # Verify second assignment
     assert assignments[1].participant_id == "p2"
@@ -743,6 +744,7 @@ def test_get_experiment_assignments_impl(xngin_session, testing_datasource):
     assert assignments[1].strata is not None and len(assignments[1].strata) == 1
     assert assignments[1].strata[0].field_name == "gender"
     assert assignments[1].strata[0].strata_value == "M"
+    assert assignments[1].created_at is not None
 
 
 def make_experiment_with_assignments(xngin_session, datasource: tables.Datasource):
@@ -760,6 +762,7 @@ def make_experiment_with_assignments(xngin_session, datasource: tables.Datasourc
             participant_type="test_participant_type",
             participant_id="p1",
             arm_id=arm1_id,
+            created_at=datetime(2025, 1, 1, tzinfo=UTC),
             strata=[
                 {"field_name": "gender", "strata_value": "F"},
                 {"field_name": "score", "strata_value": "1.1"},
@@ -770,6 +773,7 @@ def make_experiment_with_assignments(xngin_session, datasource: tables.Datasourc
             participant_type="test_participant_type",
             participant_id="p2",
             arm_id=arm2_id,
+            created_at=datetime(2025, 1, 2, tzinfo=UTC),
             strata=[
                 {"field_name": "gender", "strata_value": "M"},
                 {"field_name": "score", "strata_value": "esc,aped"},
@@ -788,9 +792,15 @@ def test_experiment_assignments_to_csv_generator(xngin_session, testing_datasour
     batches = list(experiment_assignments_to_csv_generator(experiment)())
     assert len(batches) == 1
     rows = batches[0].splitlines(keepends=True)
-    assert rows[0] == "participant_id,arm_id,arm_name,gender,score\r\n"
-    assert rows[1] == f"p1,{arm_name_to_id['control']},control,F,1.1\r\n"
-    assert rows[2] == f'p2,{arm_name_to_id["treatment"]},treatment,M,"esc,aped"\r\n'
+    assert rows[0] == "participant_id,arm_id,arm_name,created_at,gender,score\r\n"
+    assert (
+        rows[1]
+        == f"p1,{arm_name_to_id['control']},control,2025-01-01 00:00:00+00:00,F,1.1\r\n"
+    )
+    assert (
+        rows[2]
+        == f'p2,{arm_name_to_id["treatment"]},treatment,2025-01-02 00:00:00+00:00,M,"esc,aped"\r\n'
+    )
 
 
 def test_get_existing_assignment_for_participant(xngin_session, testing_datasource):

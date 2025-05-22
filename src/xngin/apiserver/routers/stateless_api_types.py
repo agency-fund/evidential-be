@@ -776,6 +776,10 @@ class Assignment(ApiBaseModel):
             max_length=MAX_LENGTH_OF_NAME_VALUE,
         ),
     ]
+    created_at: Annotated[
+        datetime.datetime | None,
+        Field(description="The date and time the assignment was created."),
+    ] = None
     strata: Annotated[
         list[Strata] | None,
         Field(

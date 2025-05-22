@@ -341,6 +341,7 @@ def get_experiment_assignments_impl(
             participant_id=arm_assignment.participant_id,
             arm_id=arm_assignment.arm_id,
             arm_name=arm_id_to_name[arm_assignment.arm_id],
+            created_at=arm_assignment.created_at,
             strata=[Strata.model_validate(s) for s in arm_assignment.strata],
         )
         for arm_assignment in experiment.arm_assignments
@@ -365,7 +366,7 @@ def experiment_assignments_to_csv_generator(experiment: tables.Experiment):
         strata_names = experiment.arm_assignments[0].strata_names()
 
     # Create CSV header
-    header = ["participant_id", "arm_id", "arm_name", *strata_names]
+    header = ["participant_id", "arm_id", "arm_name", "created_at", *strata_names]
 
     def generate_csv(batch_size=100):
         # Use csv.writer with StringIO to format a single row at a time
@@ -383,6 +384,7 @@ def experiment_assignments_to_csv_generator(experiment: tables.Experiment):
                         participant.participant_id,
                         participant.arm_id,
                         arm_id_to_name[participant.arm_id],
+                        participant.created_at,
                         *["" if v is None else v for v in participant.strata_values()],
                     ]
                     writer.writerow(row)
@@ -422,6 +424,7 @@ def get_existing_assignment_for_participant(
             tables.ArmAssignment.participant_id,
             tables.ArmTable.id.label("arm_id"),
             tables.ArmTable.name.label("arm_name"),
+            tables.ArmAssignment.created_at,
         )
         .join(
             tables.ArmAssignment,
@@ -439,6 +442,7 @@ def get_existing_assignment_for_participant(
             participant_id=existing_assignment.participant_id,
             arm_id=existing_assignment.arm_id,
             arm_name=existing_assignment.arm_name,
+            created_at=existing_assignment.created_at,
             strata=[],
         )
     return None
@@ -503,6 +507,7 @@ def create_assignment_for_participant(
         participant_id=participant_id,
         arm_id=chosen_arm.id,
         arm_name=chosen_arm.name,
+        created_at=new_assignment.created_at,
         strata=[],
     )
 
