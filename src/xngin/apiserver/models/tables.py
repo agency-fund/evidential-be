@@ -412,12 +412,18 @@ class Experiment(Base):
     # JSON serialized form of a BalanceCheck. May be null if the experiment type doesn't support
     # balance checks.
     balance_check: Mapped[dict | None] = mapped_column(type_=JSONBetter)
+
     created_at: Mapped[datetime] = mapped_column(
         server_default=sqlalchemy.sql.func.now()
     )
     updated_at: Mapped[datetime] = mapped_column(
         server_default=sqlalchemy.sql.func.now(), onupdate=sqlalchemy.sql.func.now()
     )
+
+    # Frequentist experiment types i.e. online and preassigned
+    power: Mapped[float | None] = mapped_column()
+    alpha: Mapped[float | None] = mapped_column()
+    fstat_thresh: Mapped[float | None] = mapped_column()
 
     arm_assignments: Mapped[list["ArmAssignment"]] = relationship(
         back_populates="experiment", cascade="all, delete-orphan"

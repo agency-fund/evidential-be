@@ -201,7 +201,7 @@ def make_insertable_experiment(
     design_spec: DesignSpec = TypeAdapter(DesignSpec).validate_python(
         request["design_spec"]
     )
-    # TODO(qixotic): Should experiment_id also be set on DesignSpec?
+    # TODO(qixotic): experiment_id should also be set on DesignSpec
     return tables.Experiment(
         id=tables.experiment_id_factory(),
         datasource_id=datasource_id,
@@ -212,6 +212,9 @@ def make_insertable_experiment(
         state=state,
         start_date=datetime.datetime.fromisoformat(design_spec.start_date.isoformat()),
         end_date=datetime.datetime.fromisoformat(design_spec.end_date.isoformat()),
+        power=design_spec.power,
+        alpha=design_spec.alpha,
+        fstat_thresh=design_spec.fstat_thresh,
         design_spec=design_spec.model_dump(mode="json"),
         power_analyses=None,
     ).set_balance_check(None)

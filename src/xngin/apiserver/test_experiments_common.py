@@ -122,6 +122,9 @@ def make_insertable_experiment(state: ExperimentState, datasource_id="testing"):
         state=state,
         start_date=request.design_spec.start_date,
         end_date=request.design_spec.end_date,
+        power=request.design_spec.power,
+        alpha=request.design_spec.alpha,
+        fstat_thresh=request.design_spec.fstat_thresh,
         design_spec=request.design_spec.model_dump(mode="json"),
         power_analyses=PowerResponse(
             analyses=[
@@ -189,6 +192,9 @@ def make_insertable_online_experiment(
         state=state,
         start_date=design_spec.start_date,
         end_date=design_spec.end_date,
+        power=design_spec.power,
+        alpha=design_spec.alpha,
+        fstat_thresh=design_spec.fstat_thresh,
         design_spec=design_spec.model_dump(mode="json"),
     )
 
@@ -312,6 +318,10 @@ def test_create_experiment_impl_for_preassigned(
     # This comparison is dependent on whether the db can store tz or not (sqlite does not).
     assert conftest.dates_equal(experiment.start_date, request.design_spec.start_date)
     assert conftest.dates_equal(experiment.end_date, request.design_spec.end_date)
+    # Verify stats parameters were stored correctly
+    assert experiment.power == request.design_spec.power
+    assert experiment.alpha == request.design_spec.alpha
+    assert experiment.fstat_thresh == request.design_spec.fstat_thresh
     # Verify design_spec was stored correctly
     stored_design_spec = experiment.get_design_spec()
     assert stored_design_spec == response.design_spec
@@ -416,7 +426,10 @@ def test_create_experiment_impl_for_online(
     assert experiment.datasource_id == testing_datasource.ds.id
     assert conftest.dates_equal(experiment.start_date, request.design_spec.start_date)
     assert conftest.dates_equal(experiment.end_date, request.design_spec.end_date)
-
+    # Verify stats parameters were stored correctly
+    assert experiment.power == request.design_spec.power
+    assert experiment.alpha == request.design_spec.alpha
+    assert experiment.fstat_thresh == request.design_spec.fstat_thresh
     # Verify design_spec was stored correctly
     stored_design_spec = experiment.get_design_spec()
     assert stored_design_spec == response.design_spec
