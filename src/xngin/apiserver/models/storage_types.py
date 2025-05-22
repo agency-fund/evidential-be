@@ -105,7 +105,7 @@ class DesignSpecFields(StorageBaseModel):
                 StorageFilter(
                     field_name=f.field_name,
                     relation=f.relation,
-                    value=f.value,  # This assumes f.value is compatible with Sequence[Any]
+                    value=f.value,
                 )
                 for f in design_spec.filters
             ]
@@ -118,13 +118,13 @@ class DesignSpecFields(StorageBaseModel):
 
     def get_api_strata(self) -> list[ApiStratum]:
         """Converts stored strata to API Stratum objects."""
-        if not self.strata:
+        if self.strata is None:
             return []
         return [ApiStratum(field_name=s.field_name) for s in self.strata]
 
     def get_api_metrics(self) -> list[ApiDesignSpecMetricRequest]:
         """Converts stored metrics to API DesignSpecMetricRequest objects."""
-        if not self.metrics:
+        if self.metrics is None:
             return []
         return [
             ApiDesignSpecMetricRequest(
@@ -137,7 +137,7 @@ class DesignSpecFields(StorageBaseModel):
 
     def get_api_filters(self) -> list[ApiFilter]:
         """Converts stored filters to API Filter objects."""
-        if not self.filters:
+        if self.filters is None:
             return []
         # The `value` field in StorageFilter is Sequence[Any].
         # Pydantic will validate when creating ApiFilter.
@@ -145,7 +145,7 @@ class DesignSpecFields(StorageBaseModel):
             ApiFilter(
                 field_name=f.field_name,
                 relation=f.relation,
-                value=f.value,  # type: ignore
+                value=f.value,
             )
             for f in self.filters
         ]
