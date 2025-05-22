@@ -34,7 +34,6 @@ from xngin.apiserver.webhooks.webhook_types import ExperimentCreatedWebhookBody
 from xngin.events.experiment_created import ExperimentCreatedEvent
 from xngin.stats.assignment import RowProtocol, assign_treatment
 from xngin.tq.task_payload_types import WEBHOOK_OUTBOUND_TASK_TYPE, WebhookOutboundTask
-from xngin.tq.task_queue import Task
 
 
 class ExperimentsAssignmentError(Exception):
@@ -60,7 +59,7 @@ def create_experiment_impl(
         )
     organization_id = db_datasource.organization_id
 
-    # First generate uuids for the experiment and arms, which do_assignment needs.
+    # First generate ids for the experiment and arms, which do_assignment needs.
     request.design_spec.experiment_id = tables.experiment_id_factory()
     for arm in request.design_spec.arms:
         arm.arm_id = tables.arm_id_factory()
@@ -107,18 +106,25 @@ def create_preassigned_experiment_impl(
     xngin_session: Session,
     stratify_on_metrics: bool,
 ) -> CreateExperimentResponse:
-    metric_names = [m.field_name for m in request.design_spec.metrics]
-    strata_names = [s.field_name for s in request.design_spec.strata]
+    design_spec = request.design_spec
+    metric_names = [m.field_name for m in design_spec.metrics]
+    strata_names = [s.field_name for s in design_spec.strata]
     stratum_cols = strata_names + metric_names if stratify_on_metrics else strata_names
+
+    experiment_id = design_spec.experiment_id
+    if experiment_id is None:
+        # Should not actually happen, but just in case and for the type checker:
+        raise ValueError("Must have an experiment_id before assigning treatments")
+
     # TODO: directly create ArmAssignments from the pd dataframe instead
     assignment_response = assign_treatment(
         sa_table=dwh_sa_table,
         data=dwh_participants,
         stratum_cols=stratum_cols,
         id_col=participant_unique_id_field,
-        arms=request.design_spec.arms,
-        experiment_id=request.design_spec.experiment_id,
-        fstat_thresh=request.design_spec.fstat_thresh,
+        arms=design_spec.arms,
+        experiment_id=experiment_id,
+        fstat_thresh=design_spec.fstat_thresh,
         quantiles=4,  # TODO(qixotic): make this configurable
         stratum_id_name=None,
         random_state=random_state,
@@ -131,23 +137,21 @@ def create_preassigned_experiment_impl(
         else None
     )
     experiment = tables.Experiment(
-        id=request.design_spec.experiment_id,
+        id=experiment_id,
         datasource_id=datasource_id,
         experiment_type="preassigned",
-        participant_type=request.design_spec.participant_type,
-        name=request.design_spec.experiment_name,
-        description=request.design_spec.description,
+        participant_type=design_spec.participant_type,
+        name=design_spec.experiment_name,
+        description=design_spec.description,
         state=ExperimentState.ASSIGNED,
-        start_date=request.design_spec.start_date,
-        end_date=request.design_spec.end_date,
-        power=request.design_spec.power,
-        alpha=request.design_spec.alpha,
-        fstat_thresh=request.design_spec.fstat_thresh,
-        design_spec_fields=DesignSpecFields(
-            strata=request.design_spec.strata,
-            metrics=request.design_spec.metrics,
-            filters=request.design_spec.filters,
-        ).model_dump(mode="json"),
+        start_date=design_spec.start_date,
+        end_date=design_spec.end_date,
+        power=design_spec.power,
+        alpha=design_spec.alpha,
+        fstat_thresh=design_spec.fstat_thresh,
+        design_spec_fields=DesignSpecFields.from_design_spec(design_spec).model_dump(
+            mode="json"
+        ),
         power_analyses=request.power_analyses.model_dump(mode="json")
         if request.power_analyses
         else None,
@@ -156,7 +160,7 @@ def create_preassigned_experiment_impl(
     xngin_session.add(experiment)
 
     # Create arm records
-    for arm in request.design_spec.arms:
+    for arm in design_spec.arms:
         db_arm = tables.ArmTable(
             id=arm.arm_id,
             name=arm.arm_name,
@@ -171,7 +175,7 @@ def create_preassigned_experiment_impl(
         # TODO: bulk insert https://docs.sqlalchemy.org/en/20/orm/queryguide/dml.html#orm-queryguide-bulk-insert {"dml_strategy": "raw"}
         db_assignment = tables.ArmAssignment(
             experiment_id=experiment.id,
-            participant_type=request.design_spec.participant_type,
+            participant_type=design_spec.participant_type,
             participant_id=assignment.participant_id,
             arm_id=str(assignment.arm_id),
             strata=[s.model_dump(mode="json") for s in assignment.strata]
@@ -197,30 +201,29 @@ def create_online_experiment_impl(
     organization_id: str,
     xngin_session: Session,
 ) -> CreateExperimentResponse:
+    design_spec = request.design_spec
     experiment = tables.Experiment(
-        id=request.design_spec.experiment_id,
+        id=design_spec.experiment_id,
         datasource_id=datasource_id,
         experiment_type="online",
-        participant_type=request.design_spec.participant_type,
-        name=request.design_spec.experiment_name,
-        description=request.design_spec.description,
+        participant_type=design_spec.participant_type,
+        name=design_spec.experiment_name,
+        description=design_spec.description,
         # No assignments nor power check (for now), but we still want to allow a review.
         state=ExperimentState.ASSIGNED,
-        start_date=request.design_spec.start_date,
-        end_date=request.design_spec.end_date,
-        power=request.design_spec.power,
-        alpha=request.design_spec.alpha,
-        fstat_thresh=request.design_spec.fstat_thresh,
-        design_spec_fields=DesignSpecFields(
-            strata=request.design_spec.strata,
-            metrics=request.design_spec.metrics,
-            filters=request.design_spec.filters,
-        ).model_dump(mode="json"),
+        start_date=design_spec.start_date,
+        end_date=design_spec.end_date,
+        power=design_spec.power,
+        alpha=design_spec.alpha,
+        fstat_thresh=design_spec.fstat_thresh,
+        design_spec_fields=DesignSpecFields.from_design_spec(design_spec).model_dump(
+            mode="json"
+        ),
         power_analyses=None,
     )
     xngin_session.add(experiment)
     # Create arm records
-    for arm in request.design_spec.arms:
+    for arm in design_spec.arms:
         db_arm = tables.ArmTable(
             id=arm.arm_id,
             name=arm.arm_name,
@@ -235,9 +238,7 @@ def create_online_experiment_impl(
     empty_assign_summary = AssignSummary(
         balance_check=None,
         sample_size=0,
-        arm_sizes=[
-            ArmSize(arm=arm.model_copy(), size=0) for arm in request.design_spec.arms
-        ],
+        arm_sizes=[ArmSize(arm=arm.model_copy(), size=0) for arm in design_spec.arms],
     )
     return CreateExperimentResponse(
         datasource_id=datasource_id,
@@ -287,7 +288,7 @@ def commit_experiment_impl(xngin_session: Session, experiment: tables.Experiment
                 if webhook.auth_token
                 else {},
             )
-            task = Task(
+            task = tables.Task(
                 task_type=WEBHOOK_OUTBOUND_TASK_TYPE,
                 payload=webhook_task.model_dump(),
             )

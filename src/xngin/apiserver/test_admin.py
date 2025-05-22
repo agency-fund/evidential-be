@@ -223,11 +223,9 @@ def make_insertable_experiment(
         power=design_spec.power,
         alpha=design_spec.alpha,
         fstat_thresh=design_spec.fstat_thresh,
-        design_spec_fields=DesignSpecFields(
-            strata=design_spec.strata,
-            metrics=design_spec.metrics,
-            filters=design_spec.filters,
-        ).model_dump(mode="json"),
+        design_spec_fields=DesignSpecFields.from_design_spec(design_spec).model_dump(
+            mode="json"
+        ),
         power_analyses=None,
     ).set_balance_check(None)
     return experiment, design_spec

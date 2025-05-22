@@ -1,7 +1,7 @@
 import dataclasses
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
-from typing import Any
+from typing import Any, cast
 
 import pytest
 from deepdiff import DeepDiff
@@ -130,11 +130,9 @@ def make_insertable_experiment(state: ExperimentState, datasource_id="testing"):
         power=design_spec.power,
         alpha=design_spec.alpha,
         fstat_thresh=design_spec.fstat_thresh,
-        design_spec_fields=DesignSpecFields(
-            strata=design_spec.strata,
-            metrics=design_spec.metrics,
-            filters=design_spec.filters,
-        ).model_dump(mode="json"),
+        design_spec_fields=DesignSpecFields.from_design_spec(design_spec).model_dump(
+            mode="json"
+        ),
         power_analyses=PowerResponse(
             analyses=[
                 MetricPowerAnalysis(
@@ -205,11 +203,9 @@ def make_insertable_online_experiment(
         power=design_spec.power,
         alpha=design_spec.alpha,
         fstat_thresh=design_spec.fstat_thresh,
-        design_spec_fields=DesignSpecFields(
-            strata=design_spec.strata,
-            metrics=design_spec.metrics,
-            filters=design_spec.filters,
-        ).model_dump(mode="json"),
+        design_spec_fields=DesignSpecFields.from_design_spec(design_spec).model_dump(
+            mode="json"
+        ),
     ), design_spec
 
 
@@ -935,7 +931,7 @@ def test_make_assignment_for_participant(xngin_session, testing_datasource):
 
 def test_experiment_sql():
     pg_sql = str(
-        CreateTable(tables.ArmAssignment.__table__).compile(
+        CreateTable(cast(Table, tables.ArmAssignment.__table__)).compile(
             dialect=postgresql.dialect()
         )
     )

@@ -21,6 +21,7 @@ from xngin.apiserver.routers.admin_api_types import (
 )
 from xngin.apiserver.settings import DatasourceConfig
 from xngin.events import EventDataTypes
+from xngin.apiserver.models.storage_types import DesignSpecFields
 
 # JSONBetter is JSON for most databases but JSONB for Postgres.
 JSONBetter = sqlalchemy.JSON().with_variant(postgresql.JSONB(), "postgresql")
@@ -440,6 +441,7 @@ class Experiment(Base):
         return [arm.name for arm in self.arms]
 
     def get_design_spec(self) -> DesignSpec:
+        design_spec_fields = DesignSpecFields.model_validate(self.design_spec_fields)
         return TypeAdapter(DesignSpec).validate_python({
             "participant_type": self.participant_type,
             "experiment_id": self.id,
@@ -456,9 +458,9 @@ class Experiment(Base):
                 }
                 for arm in self.arms
             ],
-            "strata": self.design_spec_fields.get("strata", []),
-            "metrics": self.design_spec_fields.get("metrics", []),
-            "filters": self.design_spec_fields.get("filters", []),
+            "strata": design_spec_fields.get_api_strata(),
+            "metrics": design_spec_fields.get_api_metrics(),
+            "filters": design_spec_fields.get_api_filters(),
             "power": self.power,
             "alpha": self.alpha,
             "fstat_thresh": self.fstat_thresh,
