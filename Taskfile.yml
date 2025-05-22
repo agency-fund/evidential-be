@@ -160,7 +160,8 @@ tasks:
     interactive: true
     env:
       AIRPLANE_MODE: "true"
-    cmd: task start
+    cmds:
+      - task start
   bootstrap-dwh:
     desc: "Loads a sample data warehouse into the localpg server."
     interactive: true
@@ -181,7 +182,8 @@ tasks:
     interactive: true
     env:
       AIRPLANE_MODE: "true"
-    cmd: task test
+    cmds:
+      - task: test
   test-integration:
     desc: "Runs Google integration tests."
     interactive: true
