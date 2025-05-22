@@ -1345,6 +1345,17 @@ def list_experiments(
     return experiments_common.list_experiments_impl(session, ds.id)
 
 
+@router.get("/organizations/{organization_id}/experiments")
+def list_organization_experiments(
+    organization_id: str,
+    session: Annotated[Session, Depends(xngin_db_session)],
+    user: Annotated[tables.User, Depends(user_from_token)],
+) -> experiments_api_types.ListExperimentsResponse:
+    """Returns a list of experiments in the organization."""
+    org = get_organization_or_raise(session, user, organization_id)
+    return experiments_common.list_organization_experiments_impl(session, org.id)
+
+
 @router.get("/datasources/{datasource_id}/experiments/{experiment_id}")
 def get_experiment(
     datasource_id: str,
