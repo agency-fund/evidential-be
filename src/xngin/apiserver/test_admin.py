@@ -636,7 +636,7 @@ def test_lifecycle_with_db(testing_datasource):
     response = ppost(
         f"/v1/m/datasources/{testing_datasource.ds.id}/experiments",
         params={"chosen_n": 100},
-        json=make_createexperimentrequest_json(participant_type, with_ids=False),
+        json=make_createexperimentrequest_json(participant_type),
     )
     assert response.status_code == 200, response.content
     created_experiment = CreateExperimentResponse.model_validate(response.json())
@@ -714,9 +714,7 @@ def test_create_experiment_with_assignment_validation_errors(
     response = ppost(
         f"/v1/m/datasources/{testing_sheet_datasource_with_user_added.ds.id}/experiments",
         params={"chosen_n": 100},
-        content=make_create_preassigned_experiment_request(
-            with_ids=False
-        ).model_dump_json(),
+        content=make_create_preassigned_experiment_request().model_dump_json(),
     )
     assert response.status_code == 422, response.content
     assert "Participants must be of type schema" in response.json()["message"]
@@ -726,7 +724,7 @@ def test_create_preassigned_experiment_using_inline_schema_ds(
     xngin_session, testing_datasource_with_user_added, use_deterministic_random
 ):
     datasource_id = testing_datasource_with_user_added.ds.id
-    request_obj = make_create_preassigned_experiment_request(with_ids=False)
+    request_obj = make_create_preassigned_experiment_request()
 
     response = ppost(
         f"/v1/m/datasources/{datasource_id}/experiments",

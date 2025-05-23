@@ -46,7 +46,7 @@ def test_create_experiment_with_assignment_sl(xngin_session, use_deterministic_r
     ds_metadata = conftest.make_datasource_metadata(
         xngin_session, datasource_id="testing"
     )
-    request = make_create_preassigned_experiment_request(with_ids=False)
+    request = make_create_preassigned_experiment_request()
 
     response = client.post(
         "/experiments/with-assignment",
@@ -89,7 +89,6 @@ def test_list_experiments_sl_with_api_key(xngin_session, testing_datasource):
     expected_experiment, _ = insert_experiment_and_arms(
         xngin_session,
         testing_datasource.ds,
-        "preassigned",
         state=ExperimentState.ASSIGNED,
     )
 
@@ -115,7 +114,6 @@ def test_get_experiment(xngin_session, testing_datasource):
     new_experiment, _ = insert_experiment_and_arms(
         xngin_session,
         testing_datasource.ds,
-        "preassigned",
         state=ExperimentState.DESIGNING,
     )
 
@@ -172,8 +170,6 @@ def test_get_assignment_for_preassigned_participant_with_apikey(
     preassigned_experiment, arms = insert_experiment_and_arms(
         xngin_session,
         testing_datasource.ds,
-        experiment_type="preassigned",
-        state=ExperimentState.COMMITTED,
     )
     assignment = tables.ArmAssignment(
         experiment_id=preassigned_experiment.id,
@@ -221,7 +217,6 @@ def test_get_assignment_for_online_participant_with_apikey(
         xngin_session,
         testing_datasource.ds,
         experiment_type="online",
-        state=ExperimentState.COMMITTED,
     )
 
     response = client.get(

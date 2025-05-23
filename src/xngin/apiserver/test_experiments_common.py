@@ -60,7 +60,7 @@ def fixture_teardown(xngin_session):
 def make_createexperimentrequest_json(
     participant_type: str = "test_participant_type",
     experiment_type: str = "preassigned",
-    with_ids: bool = True,
+    with_ids: bool = False,
 ):
     """Make a basic CreateExperimentRequest JSON object.
 
@@ -108,7 +108,7 @@ def make_createexperimentrequest_json(
 
 
 def make_create_preassigned_experiment_request(
-    with_ids: bool = True,
+    with_ids: bool = False,
 ) -> CreateExperimentRequest:
     request = make_createexperimentrequest_json(
         with_ids=with_ids, experiment_type="preassigned"
@@ -126,11 +126,12 @@ def make_create_online_experiment_request(
 
 
 def make_insertable_experiment(
-    state: ExperimentState,
+    state: ExperimentState = ExperimentState.COMMITTED,
     datasource_id: str = "testing",
     experiment_type: ExperimentType = "preassigned",
     with_ids: bool = True,
 ) -> tuple[tables.Experiment, DesignSpec]:
+    """Make an experiment and arms ready for insertion into the database."""
     request = make_createexperimentrequest_json(
         experiment_type=experiment_type, with_ids=with_ids
     )
@@ -190,7 +191,7 @@ def insert_experiment_and_arms(
         (experiment_obj, arms)
     """
     experiment, design_spec = make_insertable_experiment(
-        state, datasource.id, experiment_type=experiment_type
+        state=state, datasource_id=datasource.id, experiment_type=experiment_type
     )
     xngin_session.add(experiment)
     arms = make_arms_from_designspec(
@@ -246,7 +247,7 @@ def test_create_experiment_impl_for_preassigned(
 ):
     """Test implementation of creating a preassigned experiment."""
     participants = make_sample_data(n=100)
-    request = make_create_preassigned_experiment_request(with_ids=False)
+    request = make_create_preassigned_experiment_request()
     # Add a partial mock PowerResponse just to verify storage
     request.power_analyses = PowerResponse(
         analyses=[
@@ -361,7 +362,7 @@ def test_create_experiment_impl_for_online(
 ):
     """Test implementation of creating an online experiment."""
     # Create online experiment request, modifying the experiment type from the fixture
-    request = make_create_preassigned_experiment_request(with_ids=False)
+    request = make_create_preassigned_experiment_request()
     # Convert the experiment type to online
     request.design_spec.experiment_type = "online"
 
@@ -492,7 +493,7 @@ def test_create_experiment_impl_no_metric_stratification(
 ):
     """Test implementation of creating an experiment without stratifying on metrics."""
     participants = make_sample_data(n=100)
-    request = make_create_preassigned_experiment_request(with_ids=False)
+    request = make_create_preassigned_experiment_request()
 
     # Test with stratify_on_metrics=False
     response = create_experiment_impl(
@@ -857,7 +858,6 @@ def test_make_assignment_for_participant(xngin_session, testing_datasource):
         xngin_session,
         testing_datasource.ds,
         experiment_type="online",
-        state=ExperimentState.COMMITTED,
     )
     # Assert that we do create new assignments for online experiments
     assignment = create_assignment_for_participant(
