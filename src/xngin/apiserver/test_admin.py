@@ -30,7 +30,6 @@ from xngin.apiserver.routers.admin_api_types import (
     UpdateParticipantsTypeResponse,
 )
 from xngin.apiserver.routers.experiments_api_types import (
-    CreateExperimentRequest,
     CreateExperimentResponse,
     ExperimentConfig,
     GetExperimentAssignmentsResponse,
@@ -58,6 +57,8 @@ from xngin.apiserver.settings import (
 )
 from xngin.apiserver.test_experiments_common import (
     insert_experiment_and_arms,
+    make_create_online_experiment_request,
+    make_create_preassigned_experiment_request,
     make_createexperimentrequest_json,
     make_insertable_experiment,
 )
@@ -696,15 +697,13 @@ def test_create_experiment_with_assignment_validation_errors(
     testing_datasource = testing_datasource_with_user_added
 
     # Create a basic experiment request
-    # Test 1: UUIDs present in design spec trigger LateValidationError
-    base_request = make_createexperimentrequest_json(with_ids=True)
-    base_request["design_spec"]["experiment_id"] = (
-        "123e4567-e89b-12d3-a456-426614174000"
-    )
+    # Test 1: IDs present in design spec trigger LateValidationError
+    base_request = make_create_preassigned_experiment_request(with_ids=True)
+    base_request.design_spec.experiment_id = "123e4567-e89b-12d3-a456-426614174000"
     response = ppost(
         f"/v1/m/datasources/{testing_datasource.ds.id}/experiments",
         params={"chosen_n": 100},
-        json=base_request,
+        content=base_request.model_dump_json(),
     )
     assert response.status_code == 422, response.content
     assert "UUIDs must not be set" in response.json()["message"]
@@ -715,7 +714,9 @@ def test_create_experiment_with_assignment_validation_errors(
     response = ppost(
         f"/v1/m/datasources/{testing_sheet_datasource_with_user_added.ds.id}/experiments",
         params={"chosen_n": 100},
-        json=make_createexperimentrequest_json(with_ids=False),
+        content=make_create_preassigned_experiment_request(
+            with_ids=False
+        ).model_dump_json(),
     )
     assert response.status_code == 422, response.content
     assert "Participants must be of type schema" in response.json()["message"]
@@ -725,15 +726,12 @@ def test_create_preassigned_experiment_using_inline_schema_ds(
     xngin_session, testing_datasource_with_user_added, use_deterministic_random
 ):
     datasource_id = testing_datasource_with_user_added.ds.id
-    request_json = make_createexperimentrequest_json(
-        experiment_type="preassigned", with_ids=False
-    )
-    request_obj = CreateExperimentRequest.model_validate(request_json)
+    request_obj = make_create_preassigned_experiment_request(with_ids=False)
 
     response = ppost(
         f"/v1/m/datasources/{datasource_id}/experiments",
         params={"chosen_n": 100, "random_state": 42},
-        json=request_json,
+        content=request_obj.model_dump_json(),
     )
     assert response.status_code == 200, response.content
     created_experiment = CreateExperimentResponse.model_validate(response.json())
@@ -752,14 +750,14 @@ def test_create_preassigned_experiment_using_inline_schema_ds(
     assert assign_summary.balance_check is not None
     assert assign_summary.balance_check.balance_ok is True
 
-    # Check if the representations are equivalent
-    # scrub the ids from the config for comparison
+    # No power check was added in our request_obj.
+    assert created_experiment.power_analyses is None
+    # Check if the representations are equivalent; scrub ids from the config for comparison
     actual_design_spec = created_experiment.design_spec.model_copy(deep=True)
     actual_design_spec.experiment_id = None
     actual_design_spec.arms[0].arm_id = None
     actual_design_spec.arms[1].arm_id = None
     assert actual_design_spec == request_obj.design_spec
-    assert created_experiment.power_analyses is None
 
     experiment_id = created_experiment.design_spec.experiment_id
     (arm1_id, arm2_id) = [arm.arm_id for arm in created_experiment.design_spec.arms]
@@ -806,15 +804,12 @@ def test_create_online_experiment_using_inline_schema_ds(
     testing_datasource_with_user_added, use_deterministic_random
 ):
     datasource_id = testing_datasource_with_user_added.ds.id
-    request_json = make_createexperimentrequest_json(
-        experiment_type="online", with_ids=False
-    )
-    request_obj = CreateExperimentRequest.model_validate(request_json)
+    request_obj = make_create_online_experiment_request()
 
     response = ppost(
         f"/v1/m/datasources/{datasource_id}/experiments",
         params={"random_state": 42},
-        json=request_json,
+        content=request_obj.model_dump_json(),
     )
     assert response.status_code == 200, response.content
     created_experiment = CreateExperimentResponse.model_validate(response.json())

@@ -28,7 +28,7 @@ client.base_url = client.base_url.join(constants.API_PREFIX_V1)
 
 def test_create_experiment_impl_invalid_design_spec():
     """Test creating an experiment and saving assignments to the database."""
-    request = make_create_preassigned_experiment_request(with_uuids=True)
+    request = make_create_preassigned_experiment_request(with_ids=True)
 
     response = client.post(
         "/experiments/with-assignment",
@@ -46,7 +46,7 @@ def test_create_experiment_with_assignment_sl(xngin_session, use_deterministic_r
     ds_metadata = conftest.make_datasource_metadata(
         xngin_session, datasource_id="testing"
     )
-    request = make_create_preassigned_experiment_request(with_uuids=False)
+    request = make_create_preassigned_experiment_request(with_ids=False)
 
     response = client.post(
         "/experiments/with-assignment",
@@ -149,10 +149,7 @@ def test_get_experiment_assignments_not_found():
 
 
 def test_get_experiment_assignments_wrong_datasource(xngin_session, testing_datasource):
-    """Test getting assignments for an experiment from a different datasource.
-
-    TODO: deprecate this in favor of an admin.py version when ready.
-    """
+    """Test getting assignments for an experiment from a different datasource."""
     # Create experiment in one datasource
     experiment, _ = make_insertable_experiment(
         ExperimentState.COMMITTED, testing_datasource.ds.id

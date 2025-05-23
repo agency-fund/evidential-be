@@ -15,12 +15,9 @@ from sqlalchemy.schema import CreateTable
 from xngin.apiserver import conftest
 from xngin.apiserver.models.storage_format_converters import ExperimentStorageConverter
 from xngin.apiserver.routers.stateless_api_types import (
-    Arm,
     DesignSpec,
     ExperimentType,
-    OnlineExperimentSpec,
     DesignSpecMetric,
-    DesignSpecMetricRequest,
     MetricPowerAnalysis,
     MetricType,
     PowerResponse,
@@ -65,6 +62,10 @@ def make_createexperimentrequest_json(
     experiment_type: str = "preassigned",
     with_ids: bool = True,
 ):
+    """Make a basic CreateExperimentRequest JSON object.
+
+    This does not add any power analyses or balance checks, nor do any validation.
+    """
     experiment_id = tables.experiment_id_factory() if with_ids else None
     arm1_id = tables.arm_id_factory() if with_ids else None
     arm2_id = tables.arm_id_factory() if with_ids else None
@@ -107,9 +108,20 @@ def make_createexperimentrequest_json(
 
 
 def make_create_preassigned_experiment_request(
-    with_uuids: bool = True,
+    with_ids: bool = True,
 ) -> CreateExperimentRequest:
-    request = make_createexperimentrequest_json(with_ids=with_uuids)
+    request = make_createexperimentrequest_json(
+        with_ids=with_ids, experiment_type="preassigned"
+    )
+    return TypeAdapter(CreateExperimentRequest).validate_python(request)
+
+
+def make_create_online_experiment_request(
+    with_ids: bool = False,
+) -> CreateExperimentRequest:
+    request = make_createexperimentrequest_json(
+        with_ids=with_ids, experiment_type="online"
+    )
     return TypeAdapter(CreateExperimentRequest).validate_python(request)
 
 
@@ -151,60 +163,6 @@ def make_insertable_experiment(
     return experiment, design_spec
 
 
-def make_insertable_online_experiment(
-    state=ExperimentState.COMMITTED, datasource_id="testing"
-):
-    experiment_id = tables.experiment_id_factory()
-    arm1_id = tables.arm_id_factory()
-    arm2_id = tables.arm_id_factory()
-    arm1 = Arm(arm_id=arm1_id, arm_name="control", arm_description="Control")
-    arm2 = Arm(arm_id=arm2_id, arm_name="treatment", arm_description="Treatment")
-    # Attach UTC tz, but use dates_equal() to compare to respect db storage support
-    start_date = datetime(2025, 1, 1, tzinfo=UTC)
-    end_date = datetime(2025, 2, 1, tzinfo=UTC)
-    design_spec = OnlineExperimentSpec(
-        participant_type="test_participant_type",
-        experiment_id=experiment_id,
-        experiment_name="Test Experiment",
-        description="Test experiment description",
-        arms=[arm1, arm2],
-        start_date=start_date,
-        end_date=end_date,
-        filters=[],
-        strata=[Stratum(field_name="gender")],
-        metrics=[
-            DesignSpecMetricRequest(
-                field_name="is_onboarded",
-                metric_pct_change=0.1,
-            )
-        ],
-        power=0.8,
-        alpha=0.05,
-        fstat_thresh=0.2,
-    )
-    experiment = (
-        ExperimentStorageConverter(
-            tables.Experiment(
-                id=experiment_id,
-                datasource_id=datasource_id,
-                experiment_type="online",
-                participant_type=design_spec.participant_type,
-                name=design_spec.experiment_name,
-                description=design_spec.description,
-                state=state,
-                start_date=design_spec.start_date,
-                end_date=design_spec.end_date,
-                power=design_spec.power,
-                alpha=design_spec.alpha,
-                fstat_thresh=design_spec.fstat_thresh,
-            )
-        )
-        .set_design_spec_fields(design_spec)
-        .get_experiment()
-    )
-    return experiment, design_spec
-
-
 def make_arms_from_designspec(
     experiment_id: str, design_spec: DesignSpec, organization_id: str
 ):
@@ -231,12 +189,9 @@ def insert_experiment_and_arms(
     Returns:
         (experiment_obj, arms)
     """
-    if experiment_type == "preassigned":
-        experiment, design_spec = make_insertable_experiment(state, datasource.id)
-    else:
-        experiment, design_spec = make_insertable_online_experiment(
-            state, datasource.id
-        )
+    experiment, design_spec = make_insertable_experiment(
+        state, datasource.id, experiment_type=experiment_type
+    )
     xngin_session.add(experiment)
     arms = make_arms_from_designspec(
         experiment.id, design_spec, datasource.organization_id
@@ -291,7 +246,7 @@ def test_create_experiment_impl_for_preassigned(
 ):
     """Test implementation of creating a preassigned experiment."""
     participants = make_sample_data(n=100)
-    request = make_create_preassigned_experiment_request(with_uuids=False)
+    request = make_create_preassigned_experiment_request(with_ids=False)
     # Add a partial mock PowerResponse just to verify storage
     request.power_analyses = PowerResponse(
         analyses=[
@@ -406,7 +361,7 @@ def test_create_experiment_impl_for_online(
 ):
     """Test implementation of creating an online experiment."""
     # Create online experiment request, modifying the experiment type from the fixture
-    request = make_create_preassigned_experiment_request(with_uuids=False)
+    request = make_create_preassigned_experiment_request(with_ids=False)
     # Convert the experiment type to online
     request.design_spec.experiment_type = "online"
 
@@ -494,7 +449,7 @@ def test_create_experiment_impl_overwrites_uuids(
     (which would otherwise be caught in the route handler).
     """
     participants = make_sample_data(n=100)
-    request = make_create_preassigned_experiment_request(with_uuids=True)
+    request = make_create_preassigned_experiment_request(with_ids=True)
     original_experiment_id = request.design_spec.experiment_id
     original_arm_ids = [arm.arm_id for arm in request.design_spec.arms]
 
@@ -537,7 +492,7 @@ def test_create_experiment_impl_no_metric_stratification(
 ):
     """Test implementation of creating an experiment without stratifying on metrics."""
     participants = make_sample_data(n=100)
-    request = make_create_preassigned_experiment_request(with_uuids=False)
+    request = make_create_preassigned_experiment_request(with_ids=False)
 
     # Test with stratify_on_metrics=False
     response = create_experiment_impl(

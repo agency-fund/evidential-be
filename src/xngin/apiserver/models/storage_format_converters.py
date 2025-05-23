@@ -1,3 +1,5 @@
+"""Converts between API and jsonb storage models used by our internal database models."""
+
 from typing import Self
 from pydantic import TypeAdapter
 from xngin.apiserver.models.tables import Experiment
