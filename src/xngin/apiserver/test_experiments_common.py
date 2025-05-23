@@ -13,7 +13,7 @@ from sqlalchemy.dialects import postgresql
 from sqlalchemy.orm import Session
 from sqlalchemy.schema import CreateTable
 from xngin.apiserver import conftest
-from xngin.apiserver.models.storage_types import DesignSpecFields
+from xngin.apiserver.models.storage_format_converters import DesignSpecStorageConverter
 from xngin.apiserver.routers.stateless_api_types import (
     Arm,
     DesignSpec,
@@ -141,9 +141,9 @@ def make_insertable_experiment(
         balance_check=None,
         alpha=design_spec.alpha,
         fstat_thresh=design_spec.fstat_thresh,
-        design_spec_fields=DesignSpecFields.from_design_spec(design_spec).model_dump(
-            mode="json"
-        ),
+        design_spec_fields=DesignSpecStorageConverter.to_store_fields(
+            design_spec
+        ).model_dump(mode="json"),
         power_analyses=None,
     )
     return experiment, design_spec
@@ -193,9 +193,9 @@ def make_insertable_online_experiment(
         power=design_spec.power,
         alpha=design_spec.alpha,
         fstat_thresh=design_spec.fstat_thresh,
-        design_spec_fields=DesignSpecFields.from_design_spec(design_spec).model_dump(
-            mode="json"
-        ),
+        design_spec_fields=DesignSpecStorageConverter.to_store_fields(
+            design_spec
+        ).model_dump(mode="json"),
     ), design_spec
 
 
@@ -351,7 +351,7 @@ def test_create_experiment_impl_for_preassigned(
     assert experiment.alpha == request.design_spec.alpha
     assert experiment.fstat_thresh == request.design_spec.fstat_thresh
     # Verify design_spec was stored correctly
-    stored_design_spec = experiment.get_design_spec()
+    stored_design_spec = DesignSpecStorageConverter.get_api_design_spec(experiment)
     assert stored_design_spec == response.design_spec
     stored_power_analyses = experiment.get_power_analyses()
     assert stored_power_analyses == response.power_analyses
@@ -458,7 +458,7 @@ def test_create_experiment_impl_for_online(
     assert experiment.alpha == request.design_spec.alpha
     assert experiment.fstat_thresh == request.design_spec.fstat_thresh
     # Verify design_spec was stored correctly
-    stored_design_spec = experiment.get_design_spec()
+    stored_design_spec = DesignSpecStorageConverter.get_api_design_spec(experiment)
     assert stored_design_spec == response.design_spec
     # Verify no power_analyses for online experiments
     assert experiment.power_analyses is None
@@ -715,17 +715,28 @@ def test_list_experiments_impl(xngin_session, testing_datasource):
 
     # experiment5 excluded due to datasource mismatch
     assert len(experiments.items) == 3
+
+    # Verify that the experiments are in the correct order
     actual1_config = experiments.items[2]  # experiment1 is last as it's oldest
     actual2_config = experiments.items[1]
     actual3_config = experiments.items[0]
     assert actual1_config.state == ExperimentState.ASSIGNED
-    diff = DeepDiff(actual1_config.design_spec, experiment1_data[0].get_design_spec())
+    expected1_design_spec = DesignSpecStorageConverter.get_api_design_spec(
+        experiment1_data[0]
+    )
+    diff = DeepDiff(actual1_config.design_spec, expected1_design_spec)
     assert not diff, f"Objects differ:\n{diff.pretty()}"
     assert actual2_config.state == ExperimentState.COMMITTED
-    diff = DeepDiff(actual2_config.design_spec, experiment2_data[0].get_design_spec())
+    expected2_design_spec = DesignSpecStorageConverter.get_api_design_spec(
+        experiment2_data[0]
+    )
+    diff = DeepDiff(actual2_config.design_spec, expected2_design_spec)
     assert not diff, f"Objects differ:\n{diff.pretty()}"
     assert actual3_config.state == ExperimentState.DESIGNING
-    diff = DeepDiff(actual3_config.design_spec, experiment3_data[0].get_design_spec())
+    expected3_design_spec = DesignSpecStorageConverter.get_api_design_spec(
+        experiment3_data[0]
+    )
+    diff = DeepDiff(actual3_config.design_spec, expected3_design_spec)
     assert not diff, f"Objects differ:\n{diff.pretty()}"
 
 

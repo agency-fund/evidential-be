@@ -12,7 +12,7 @@ from sqlalchemy import Table, func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 from xngin.apiserver import flags
-from xngin.apiserver.models.storage_types import DesignSpecFields
+from xngin.apiserver.models.storage_format_converters import DesignSpecStorageConverter
 from xngin.apiserver.routers.stateless_api_types import (
     Arm,
     ArmSize,
@@ -149,9 +149,9 @@ def create_preassigned_experiment_impl(
         power=design_spec.power,
         alpha=design_spec.alpha,
         fstat_thresh=design_spec.fstat_thresh,
-        design_spec_fields=DesignSpecFields.from_design_spec(design_spec).model_dump(
-            mode="json"
-        ),
+        design_spec_fields=DesignSpecStorageConverter.to_store_fields(
+            design_spec
+        ).model_dump(mode="json"),
         power_analyses=request.power_analyses.model_dump(mode="json")
         if request.power_analyses
         else None,
@@ -189,7 +189,7 @@ def create_preassigned_experiment_impl(
     return CreateExperimentResponse(
         datasource_id=datasource_id,
         state=experiment.state,
-        design_spec=experiment.get_design_spec(),
+        design_spec=DesignSpecStorageConverter.get_api_design_spec(experiment),
         power_analyses=experiment.get_power_analyses(),
         assign_summary=get_assign_summary(xngin_session, experiment),
     )
@@ -216,9 +216,9 @@ def create_online_experiment_impl(
         power=design_spec.power,
         alpha=design_spec.alpha,
         fstat_thresh=design_spec.fstat_thresh,
-        design_spec_fields=DesignSpecFields.from_design_spec(design_spec).model_dump(
-            mode="json"
-        ),
+        design_spec_fields=DesignSpecStorageConverter.to_store_fields(
+            design_spec
+        ).model_dump(mode="json"),
         power_analyses=None,
     )
     xngin_session.add(experiment)
@@ -243,7 +243,7 @@ def create_online_experiment_impl(
     return CreateExperimentResponse(
         datasource_id=datasource_id,
         state=experiment.state,
-        design_spec=experiment.get_design_spec(),
+        design_spec=DesignSpecStorageConverter.get_api_design_spec(experiment),
         power_analyses=None,
         assign_summary=empty_assign_summary,
     )
@@ -335,7 +335,7 @@ def list_experiments_impl(
             ExperimentConfig(
                 datasource_id=e.datasource_id,
                 state=e.state,
-                design_spec=e.get_design_spec(),
+                design_spec=DesignSpecStorageConverter.get_api_design_spec(e),
                 power_analyses=e.get_power_analyses(),
                 assign_summary=get_assign_summary(xngin_session, e),
             )

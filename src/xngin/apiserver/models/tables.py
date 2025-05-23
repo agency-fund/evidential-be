@@ -11,7 +11,6 @@ from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 from sqlalchemy.types import TypeEngine
 from xngin.apiserver.routers.stateless_api_types import (
     BalanceCheck,
-    DesignSpec,
     PowerResponse,
 )
 from xngin.apiserver.models.enums import ExperimentState
@@ -21,7 +20,6 @@ from xngin.apiserver.routers.admin_api_types import (
 )
 from xngin.apiserver.settings import DatasourceConfig
 from xngin.events import EventDataTypes
-from xngin.apiserver.models.storage_types import DesignSpecFields
 
 # JSONBetter is JSON for most databases but JSONB for Postgres.
 JSONBetter = sqlalchemy.JSON().with_variant(postgresql.JSONB(), "postgresql")
@@ -439,32 +437,6 @@ class Experiment(Base):
 
     def get_arm_names(self) -> list[str]:
         return [arm.name for arm in self.arms]
-
-    def get_design_spec(self) -> DesignSpec:
-        design_spec_fields = DesignSpecFields.model_validate(self.design_spec_fields)
-        return TypeAdapter(DesignSpec).validate_python({
-            "participant_type": self.participant_type,
-            "experiment_id": self.id,
-            "experiment_type": self.experiment_type,
-            "experiment_name": self.name,
-            "description": self.description,
-            "start_date": self.start_date,
-            "end_date": self.end_date,
-            "arms": [
-                {
-                    "arm_id": arm.id,
-                    "arm_name": arm.name,
-                    "arm_description": arm.description,
-                }
-                for arm in self.arms
-            ],
-            "strata": design_spec_fields.get_api_strata(),
-            "metrics": design_spec_fields.get_api_metrics(),
-            "filters": design_spec_fields.get_api_filters(),
-            "power": self.power,
-            "alpha": self.alpha,
-            "fstat_thresh": self.fstat_thresh,
-        })
 
     def get_power_analyses(self) -> PowerResponse | None:
         if self.power_analyses is None:
