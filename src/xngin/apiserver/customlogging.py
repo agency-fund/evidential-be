@@ -82,6 +82,7 @@ def setup():
     # Silence some unnecessarily noisy loggers.
     logger.disable("httpcore")
     logger.disable("httpx")
+    logger.disable("watchfiles.main")
 
     # Development environments don't need the date or full level names; this makes it easier to read in terminal output.
     # When this flag isn't set, loguru's default more verbose format is used by default.
