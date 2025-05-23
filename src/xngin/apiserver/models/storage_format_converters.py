@@ -2,7 +2,14 @@
 
 from typing import Self
 from pydantic import TypeAdapter
+from xngin.apiserver.models.enums import ExperimentState
 from xngin.apiserver.models.tables import Experiment
+from xngin.apiserver.routers.experiments_api_types import (
+    AssignSummary,
+    CreateExperimentResponse,
+    ExperimentConfig,
+    GetExperimentResponse,
+)
 from xngin.apiserver.routers.stateless_api_types import (
     BalanceCheck,
     DesignSpec,
@@ -164,3 +171,32 @@ class ExperimentStorageConverter:
         if self.experiment.power_analyses is None:
             return None
         return PowerResponse.model_validate(self.experiment.power_analyses)
+
+    def get_experiment_config(self, assign_summary: AssignSummary) -> ExperimentConfig:
+        """Construct an ExperimentConfig from the internal Experiment and an AssignSummary.
+
+        Expects assign_summary since that typically requires a db lookup."""
+        return ExperimentConfig(
+            datasource_id=self.experiment.datasource_id,
+            state=ExperimentState(self.experiment.state),
+            design_spec=self.get_design_spec(),
+            power_analyses=self.get_power_response(),
+            assign_summary=assign_summary,
+        )
+
+    def get_experiment_response(
+        self, assign_summary: AssignSummary
+    ) -> GetExperimentResponse:
+        # Although ListExperimentsResponse is a subclass of ExperimentConfig, we revalidate the
+        # response in case we ever change the API.
+        return GetExperimentResponse.model_validate(
+            self.get_experiment_config(assign_summary).model_dump()
+        )
+
+    def get_create_experiment_response(
+        self, assign_summary: AssignSummary
+    ) -> CreateExperimentResponse:
+        # Revalidate the response in case we ever change the API.
+        return CreateExperimentResponse.model_validate(
+            self.get_experiment_config(assign_summary).model_dump()
+        )

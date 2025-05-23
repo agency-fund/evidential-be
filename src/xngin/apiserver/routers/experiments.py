@@ -21,7 +21,6 @@ from xngin.apiserver.dependencies import (
     random_seed_dependency,
     xngin_db_session,
 )
-from xngin.apiserver.models.enums import ExperimentState
 from xngin.apiserver.models.storage_format_converters import ExperimentStorageConverter
 from xngin.apiserver.routers.experiments_common import (
     abandon_experiment_impl,
@@ -192,15 +191,9 @@ def get_experiment_sl(
 ) -> GetExperimentResponse:
     experiment = get_experiment_or_raise(xngin_session, experiment_id, datasource.id)
     converter = ExperimentStorageConverter(experiment)
-    return GetExperimentResponse(
-        datasource_id=experiment.datasource_id,
-        state=ExperimentState(experiment.state),
-        design_spec=converter.get_design_spec(),
-        power_analyses=converter.get_power_response(),
-        assign_summary=get_assign_summary(
-            xngin_session, experiment.id, converter.get_balance_check()
-        ),
-    )
+    balance_check = converter.get_balance_check()
+    assign_summary = get_assign_summary(xngin_session, experiment.id, balance_check)
+    return converter.get_experiment_response(assign_summary)
 
 
 # TODO: add a query param to include strata; default to false

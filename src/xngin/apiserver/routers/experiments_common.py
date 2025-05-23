@@ -26,7 +26,6 @@ from xngin.apiserver.routers.experiments_api_types import (
     AssignSummary,
     CreateExperimentRequest,
     CreateExperimentResponse,
-    ExperimentConfig,
     GetExperimentAssignmentsResponse,
     ListExperimentsResponse,
 )
@@ -182,15 +181,9 @@ def create_preassigned_experiment_impl(
 
     xngin_session.commit()
 
-    return CreateExperimentResponse(
-        datasource_id=datasource_id,
-        state=ExperimentState(experiment.state),
-        design_spec=experiment_converter.get_design_spec(),
-        power_analyses=experiment_converter.get_power_response(),
-        assign_summary=get_assign_summary(
-            xngin_session, experiment.id, experiment_converter.get_balance_check()
-        ),
-    )
+    balance_check = experiment_converter.get_balance_check()
+    assign_summary = get_assign_summary(xngin_session, experiment.id, balance_check)
+    return experiment_converter.get_create_experiment_response(assign_summary)
 
 
 def create_online_experiment_impl(
@@ -237,13 +230,7 @@ def create_online_experiment_impl(
         sample_size=0,
         arm_sizes=[ArmSize(arm=arm.model_copy(), size=0) for arm in design_spec.arms],
     )
-    return CreateExperimentResponse(
-        datasource_id=datasource_id,
-        state=ExperimentState(experiment.state),
-        design_spec=experiment_converter.get_design_spec(),
-        power_analyses=None,
-        assign_summary=empty_assign_summary,
-    )
+    return experiment_converter.get_create_experiment_response(empty_assign_summary)
 
 
 def commit_experiment_impl(xngin_session: Session, experiment: tables.Experiment):
@@ -330,17 +317,9 @@ def list_experiments_impl(
     items = []
     for e in experiments:
         converter = ExperimentStorageConverter(e)
-        items.append(
-            ExperimentConfig(
-                datasource_id=e.datasource_id,
-                state=ExperimentState(e.state),
-                design_spec=converter.get_design_spec(),
-                power_analyses=converter.get_power_response(),
-                assign_summary=get_assign_summary(
-                    xngin_session, e.id, converter.get_balance_check()
-                ),
-            )
-        )
+        balance_check = converter.get_balance_check()
+        assign_summary = get_assign_summary(xngin_session, e.id, balance_check)
+        items.append(converter.get_experiment_config(assign_summary))
     return ListExperimentsResponse(items=items)
 
 
