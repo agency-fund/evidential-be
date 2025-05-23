@@ -5,7 +5,6 @@ from collections.abc import Sequence
 from pydantic import BaseModel, ConfigDict, Field
 from xngin.apiserver.limits import MAX_NUMBER_OF_FIELDS, MAX_NUMBER_OF_FILTERS
 from xngin.apiserver.common_field_types import FieldName
-from xngin.apiserver.routers.stateless_api_types import Relation
 
 
 class StorageBaseModel(BaseModel):
@@ -22,9 +21,9 @@ class StorageFilter(StorageBaseModel):
     """Defines criteria for filtering rows by value. See stateless_api_types.Filter"""
 
     field_name: FieldName
-    relation: Relation
-    # Storage-specific simplified version of stateless_api_types.FilterValueTypes.
-    # Detailed type validation is in the API layer.
+    # Relaxed type for storage of stateless_api_types.Relation
+    relation: str
+    # Simplified type for storage of stateless_api_types.FilterValueTypes.
     value: Sequence[Any]
 
 
