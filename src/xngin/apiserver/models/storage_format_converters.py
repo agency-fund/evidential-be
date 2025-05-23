@@ -1,4 +1,7 @@
-"""Converts between API and jsonb storage models used by our internal database models."""
+"""Converts between API and jsonb storage models used by our internal database models.
+
+Use these converters to set/get the different JSONB columns of their respective SQLAlchemy models.
+"""
 
 from typing import Self
 from pydantic import TypeAdapter
