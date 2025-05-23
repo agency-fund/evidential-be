@@ -3,6 +3,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from typing import Any, cast
 
+from pydantic import TypeAdapter
 import pytest
 from deepdiff import DeepDiff
 from fastapi import HTTPException
@@ -15,16 +16,12 @@ from xngin.apiserver import conftest
 from xngin.apiserver.models.storage_types import DesignSpecFields
 from xngin.apiserver.routers.stateless_api_types import (
     Arm,
-    BalanceCheck,
     DesignSpec,
     ExperimentType,
     OnlineExperimentSpec,
-    PreassignedExperimentSpec,
     DesignSpecMetric,
     DesignSpecMetricRequest,
     MetricPowerAnalysis,
-    MetricPowerAnalysisMessage,
-    MetricPowerAnalysisMessageType,
     MetricType,
     PowerResponse,
     Stratum,
@@ -63,99 +60,92 @@ def fixture_teardown(xngin_session):
         xngin_session.commit()
 
 
+def make_createexperimentrequest_json(
+    participant_type: str = "test_participant_type",
+    experiment_type: str = "preassigned",
+    with_ids: bool = True,
+):
+    experiment_id = tables.experiment_id_factory() if with_ids else None
+    arm1_id = tables.arm_id_factory() if with_ids else None
+    arm2_id = tables.arm_id_factory() if with_ids else None
+
+    return {
+        "design_spec": {
+            **({"experiment_id": experiment_id} if experiment_id is not None else {}),
+            "participant_type": participant_type,
+            "experiment_name": "test",
+            "description": "test",
+            "experiment_type": experiment_type,
+            # Attach UTC tz, but use dates_equal() to compare to respect db storage support
+            "start_date": "2024-01-01T00:00:00+00:00",
+            "end_date": "2024-01-02T00:00:00+00:00",
+            "arms": [
+                {
+                    **({"arm_id": arm1_id} if arm1_id is not None else {}),
+                    "arm_name": "control",
+                    "arm_description": "control",
+                },
+                {
+                    **({"arm_id": arm2_id} if arm2_id is not None else {}),
+                    "arm_name": "treatment",
+                    "arm_description": "treatment",
+                },
+            ],
+            "filters": [],
+            "strata": [{"field_name": "gender"}],
+            "metrics": [
+                {
+                    "field_name": "is_onboarded",
+                    "metric_pct_change": 0.1,
+                }
+            ],
+            "power": 0.8,
+            "alpha": 0.05,
+            "fstat_thresh": 0.2,
+        }
+    }
+
+
 def make_create_preassigned_experiment_request(
     with_uuids: bool = True,
 ) -> CreateExperimentRequest:
-    experiment_id = tables.experiment_id_factory() if with_uuids else None
-    arm1_id = tables.arm_id_factory() if with_uuids else None
-    arm2_id = tables.arm_id_factory() if with_uuids else None
-    # Attach UTC tz, but use dates_equal() to compare to respect db storage support
-    start_date = datetime(2025, 1, 1, tzinfo=UTC)
-    end_date = datetime(2025, 2, 1, tzinfo=UTC)
-    # Construct request body
-    return CreateExperimentRequest(
-        design_spec=PreassignedExperimentSpec(
-            participant_type="test_participant_type",
-            experiment_id=experiment_id,
-            experiment_name="Test Experiment",
-            description="Test experiment description",
-            arms=[
-                Arm(
-                    arm_id=arm1_id, arm_name="control", arm_description="Control group"
-                ),
-                Arm(
-                    arm_id=arm2_id,
-                    arm_name="treatment",
-                    arm_description="Treatment group",
-                ),
-            ],
-            start_date=start_date,
-            end_date=end_date,
-            filters=[],
-            strata=[Stratum(field_name="gender")],
-            metrics=[
-                DesignSpecMetricRequest(
-                    field_name="is_onboarded",
-                    metric_pct_change=0.1,
-                )
-            ],
-            power=0.8,
-            alpha=0.05,
-            fstat_thresh=0.2,
-        ),
-    )
+    request = make_createexperimentrequest_json(with_ids=with_uuids)
+    return TypeAdapter(CreateExperimentRequest).validate_python(request)
 
 
-# Insert an experiment with a valid state.
-def make_insertable_experiment(state: ExperimentState, datasource_id="testing"):
-    request = make_create_preassigned_experiment_request()
-    balance_check = BalanceCheck(
-        f_statistic=0.088004147,
-        numerator_df=2,
-        denominator_df=97,
-        p_value=0.91583011,
-        balance_ok=True,
+def make_insertable_experiment(
+    state: ExperimentState,
+    datasource_id: str = "testing",
+    experiment_type: ExperimentType = "preassigned",
+    with_ids: bool = True,
+) -> tuple[tables.Experiment, DesignSpec]:
+    request = make_createexperimentrequest_json(
+        experiment_type=experiment_type, with_ids=with_ids
     )
-    design_spec = request.design_spec
+    design_spec: DesignSpec = TypeAdapter(DesignSpec).validate_python(
+        request["design_spec"]
+    )
+    experiment_id = design_spec.experiment_id
+
     experiment = tables.Experiment(
-        id=design_spec.experiment_id,
+        id=experiment_id,
         datasource_id=datasource_id,
-        experiment_type="preassigned",
+        experiment_type=experiment_type,
         participant_type=design_spec.participant_type,
         name=design_spec.experiment_name,
         description=design_spec.description,
         state=state,
-        start_date=design_spec.start_date,
-        end_date=design_spec.end_date,
+        start_date=datetime.fromisoformat(design_spec.start_date.isoformat()),
+        end_date=datetime.fromisoformat(design_spec.end_date.isoformat()),
         power=design_spec.power,
+        balance_check=None,
         alpha=design_spec.alpha,
         fstat_thresh=design_spec.fstat_thresh,
         design_spec_fields=DesignSpecFields.from_design_spec(design_spec).model_dump(
             mode="json"
         ),
-        power_analyses=PowerResponse(
-            analyses=[
-                MetricPowerAnalysis(
-                    metric_spec=DesignSpecMetric(
-                        field_name="is_onboarded",
-                        metric_type=MetricType.BINARY,
-                        metric_baseline=0.5,
-                        metric_pct_change=0.1,
-                        available_nonnull_n=1000,
-                        available_n=1200,
-                    ),
-                    target_n=800,
-                    sufficient_n=True,
-                    msg=MetricPowerAnalysisMessage(
-                        type=MetricPowerAnalysisMessageType.SUFFICIENT,
-                        msg="Sample size is sufficient to detect the target effect",
-                        source_msg="Sample size of {available_n} is sufficient to detect {target} effect",
-                        values={"available_n": 1200, "target": 0.1},
-                    ),
-                )
-            ]
-        ).model_dump(),
-    ).set_balance_check(balance_check)
+        power_analyses=None,
+    )
     return experiment, design_spec
 
 
@@ -226,8 +216,7 @@ def make_arms_from_designspec(
 
 def insert_experiment_and_arms(
     xngin_session: Session,
-    datasource_id: str,
-    organization_id: str,
+    datasource: tables.Datasource,
     experiment_type: ExperimentType = "preassigned",
     state=ExperimentState.COMMITTED,
 ):
@@ -237,13 +226,15 @@ def insert_experiment_and_arms(
         (experiment_obj, arms)
     """
     if experiment_type == "preassigned":
-        experiment, design_spec = make_insertable_experiment(state, datasource_id)
+        experiment, design_spec = make_insertable_experiment(state, datasource.id)
     else:
         experiment, design_spec = make_insertable_online_experiment(
-            state, datasource_id
+            state, datasource.id
         )
     xngin_session.add(experiment)
-    arms = make_arms_from_designspec(experiment.id, design_spec, organization_id)
+    arms = make_arms_from_designspec(
+        experiment.id, design_spec, datasource.organization_id
+    )
     xngin_session.add_all(arms)
     xngin_session.commit()
     return experiment, arms
@@ -438,9 +429,8 @@ def test_create_experiment_impl_for_online(
     assert response.design_spec.start_date == request.design_spec.start_date
     assert response.design_spec.end_date == request.design_spec.end_date
     assert response.design_spec.strata == [Stratum(field_name="gender")]
-    assert (
-        response.power_analyses is None
-    )  # Online experiments don't have power analyses by default
+    # Online experiments don't have power analyses by default
+    assert response.power_analyses is None
 
     # Verify assign_summary for online experiment
     assert response.assign_summary.sample_size == 0
@@ -503,7 +493,6 @@ def test_create_experiment_impl_overwrites_uuids(
     original_experiment_id = request.design_spec.experiment_id
     original_arm_ids = [arm.arm_id for arm in request.design_spec.arms]
 
-    # Call the function under test
     response = create_experiment_impl(
         request=request,
         datasource_id=testing_datasource.ds.id,
@@ -742,11 +731,7 @@ def test_list_experiments_impl(xngin_session, testing_datasource):
 
 def test_get_experiment_assignments_impl(xngin_session, testing_datasource):
     # First insert an experiment with assignments
-    experiment, _ = insert_experiment_and_arms(
-        xngin_session,
-        testing_datasource.ds.id,
-        testing_datasource.ds.organization_id,
-    )
+    experiment, _ = insert_experiment_and_arms(xngin_session, testing_datasource.ds)
     experiment_id = experiment.id
 
     arm1_id = experiment.arms[0].id
@@ -801,14 +786,8 @@ def test_get_experiment_assignments_impl(xngin_session, testing_datasource):
 
 
 def make_experiment_with_assignments(xngin_session, datasource: tables.Datasource):
-    """Helper function for the tests below."""
-    # First insert an experiment with assignments
-    experiment, _ = insert_experiment_and_arms(
-        xngin_session,
-        datasource.id,
-        datasource.organization_id,
-    )
-
+    """Helper test function that commits a new preassigned experiment with assignments."""
+    experiment, _ = insert_experiment_and_arms(xngin_session, datasource)
     arm1_id = experiment.arms[0].id
     arm2_id = experiment.arms[1].id
     assignments = [
@@ -893,9 +872,7 @@ def test_make_assignment_for_participant_errors(xngin_session, testing_datasourc
 
 def test_make_assignment_for_participant(xngin_session, testing_datasource):
     preassigned_experiment, _ = insert_experiment_and_arms(
-        xngin_session,
-        testing_datasource.ds.id,
-        testing_datasource.ds.organization_id,
+        xngin_session, testing_datasource.ds
     )
     # Assert that we won't create new assignments for preassigned experiments
     expect_none = create_assignment_for_participant(
@@ -905,8 +882,7 @@ def test_make_assignment_for_participant(xngin_session, testing_datasource):
 
     online_experiment, online_arms = insert_experiment_and_arms(
         xngin_session,
-        testing_datasource.ds.id,
-        testing_datasource.ds.organization_id,
+        testing_datasource.ds,
         experiment_type="online",
         state=ExperimentState.COMMITTED,
     )

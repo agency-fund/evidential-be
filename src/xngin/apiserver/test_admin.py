@@ -1,12 +1,11 @@
 import base64
-import datetime
 import json
 from functools import partial
 
 import pytest
 from fastapi import HTTPException
 from fastapi.testclient import TestClient
-from pydantic import SecretStr, TypeAdapter
+from pydantic import SecretStr
 from sqlalchemy import select
 from xngin.apiserver import conftest, flags
 from xngin.apiserver import main as main_module
@@ -14,7 +13,6 @@ from xngin.apiserver.dns import safe_resolve
 from xngin.apiserver.main import app
 from xngin.apiserver.models import tables
 from xngin.apiserver.models.enums import ExperimentState
-from xngin.apiserver.models.storage_types import DesignSpecFields
 from xngin.apiserver.routers import oidc_dependencies
 from xngin.apiserver.routers.admin import user_from_token
 from xngin.apiserver.routers.admin_api_types import (
@@ -48,9 +46,7 @@ from xngin.apiserver.routers.oidc_dependencies import (
 )
 from xngin.apiserver.routers.stateless_api_types import (
     DataType,
-    DesignSpec,
     ExperimentAnalysis,
-    ExperimentType,
 )
 from xngin.apiserver.settings import (
     BqDsn,
@@ -60,7 +56,11 @@ from xngin.apiserver.settings import (
     SheetParticipantsRef,
     infer_table,
 )
-from xngin.apiserver.test_experiments_common import make_arms_from_designspec
+from xngin.apiserver.test_experiments_common import (
+    insert_experiment_and_arms,
+    make_createexperimentrequest_json,
+    make_insertable_experiment,
+)
 from xngin.cli.main import create_testing_dwh
 from xngin.schema.schema_types import FieldDescriptor, ParticipantsSchema
 
@@ -164,101 +164,11 @@ def fixture_testing_sheet_datasource_with_user_added(testing_datasource):
     return testing_datasource
 
 
-def make_createexperimentrequest_json(
-    participant_type: str = "test_participant_type",
-    experiment_type: str = "preassigned",
-):
-    """Create an experiment on the test ds."""
-    return {
-        "design_spec": {
-            "participant_type": participant_type,
-            "experiment_name": "test",
-            "description": "test",
-            "experiment_type": experiment_type,
-            # Attach UTC tz, but use dates_equal() to compare to respect db storage support
-            "start_date": "2024-01-01T00:00:00+00:00",
-            "end_date": "2024-01-02T00:00:00+00:00",
-            "arms": [
-                {"arm_name": "control", "arm_description": "control"},
-                {"arm_name": "treatment", "arm_description": "treatment"},
-            ],
-            "filters": [],
-            "strata": [{"field_name": "gender"}],
-            "metrics": [
-                {
-                    "field_name": "current_income",
-                    "metric_pct_change": 0.1,
-                }
-            ],
-        }
-    }
-
-
-def make_insertable_experiment(
-    state: ExperimentState,
-    datasource_id: str = "testing",
-    experiment_type: ExperimentType = "preassigned",
-    with_ids: bool = True,
-) -> tuple[tables.Experiment, DesignSpec]:
-    request = make_createexperimentrequest_json(experiment_type=experiment_type)
-    design_spec: DesignSpec = TypeAdapter(DesignSpec).validate_python(
-        request["design_spec"]
-    )
-    experiment_id = tables.experiment_id_factory() if with_ids else None
-    arm1_id = tables.arm_id_factory() if with_ids else None
-    arm2_id = tables.arm_id_factory() if with_ids else None
-    design_spec.arms[0].arm_id = arm1_id
-    design_spec.arms[1].arm_id = arm2_id
-
-    experiment = tables.Experiment(
-        id=experiment_id,
-        datasource_id=datasource_id,
-        experiment_type=experiment_type,
-        participant_type=design_spec.participant_type,
-        name=design_spec.experiment_name,
-        description=design_spec.description,
-        state=state,
-        start_date=datetime.datetime.fromisoformat(design_spec.start_date.isoformat()),
-        end_date=datetime.datetime.fromisoformat(design_spec.end_date.isoformat()),
-        power=design_spec.power,
-        alpha=design_spec.alpha,
-        fstat_thresh=design_spec.fstat_thresh,
-        design_spec_fields=DesignSpecFields.from_design_spec(design_spec).model_dump(
-            mode="json"
-        ),
-        power_analyses=None,
-    ).set_balance_check(None)
-    return experiment, design_spec
-
-
-# TODO: consolidate helper functions with test_experiments_common.py
-def insert_experiment_and_arms(
-    xngin_session, datasource: tables.Datasource, experiment_type: ExperimentType
-) -> tables.Experiment:
-    experiment, design_spec = make_insertable_experiment(
-        ExperimentState.COMMITTED,
-        datasource_id=datasource.id,
-        experiment_type=experiment_type,
-    )
-    xngin_session.add(experiment)
-    # Fake arm_ids in the design_spec since we're not using the admin API to create the experiment.
-    for arm in design_spec.arms:
-        if arm.arm_id is None:
-            arm.arm_id = tables.arm_id_factory()
-    # Create ArmTable instances for each arm in the experiment
-    db_arms = make_arms_from_designspec(
-        experiment.id, design_spec, datasource.organization_id
-    )
-    xngin_session.add_all(db_arms)
-    xngin_session.commit()
-    return experiment
-
-
 @pytest.fixture(name="testing_experiment")
 def fixture_testing_experiment(xngin_session, testing_datasource_with_user_added):
     """Create an experiment on a test inline schema datasource with proper user permissions."""
     datasource = testing_datasource_with_user_added.ds
-    experiment = insert_experiment_and_arms(xngin_session, datasource, "preassigned")
+    experiment, _ = insert_experiment_and_arms(xngin_session, datasource, "preassigned")
     # Add fake assignments for each arm for real participant ids in our test data.
     arm_ids = [arm.id for arm in experiment.arms]
     for i in range(10):
@@ -308,7 +218,7 @@ def test_list_orgs_unauthenticated():
     assert response.status_code == 403, response.content
 
 
-def test_list_orgs_privileged(testing_datasource):
+def test_list_orgs_privileged():
     response = pget("/v1/m/organizations")
     assert response.status_code == 200, response.content
 
@@ -317,7 +227,7 @@ def test_list_orgs_privileged(testing_datasource):
     flags.AIRPLANE_MODE,
     reason="This test will fail in airplane mode because airplane mode treats all Admin API calls as authenticated.",
 )
-def test_list_orgs_unprivileged(testing_datasource):
+def test_list_orgs_unprivileged():
     response = uget("/v1/m/organizations")
     assert response.status_code == 403, response.content
 
@@ -725,7 +635,7 @@ def test_lifecycle_with_db(testing_datasource):
     response = ppost(
         f"/v1/m/datasources/{testing_datasource.ds.id}/experiments",
         params={"chosen_n": 100},
-        json=make_createexperimentrequest_json(participant_type),
+        json=make_createexperimentrequest_json(participant_type, with_ids=False),
     )
     assert response.status_code == 200, response.content
     created_experiment = CreateExperimentResponse.model_validate(response.json())
@@ -787,7 +697,7 @@ def test_create_experiment_with_assignment_validation_errors(
 
     # Create a basic experiment request
     # Test 1: UUIDs present in design spec trigger LateValidationError
-    base_request = make_createexperimentrequest_json("test_participant_type")
+    base_request = make_createexperimentrequest_json(with_ids=True)
     base_request["design_spec"]["experiment_id"] = (
         "123e4567-e89b-12d3-a456-426614174000"
     )
@@ -805,7 +715,7 @@ def test_create_experiment_with_assignment_validation_errors(
     response = ppost(
         f"/v1/m/datasources/{testing_sheet_datasource_with_user_added.ds.id}/experiments",
         params={"chosen_n": 100},
-        json=make_createexperimentrequest_json(),
+        json=make_createexperimentrequest_json(with_ids=False),
     )
     assert response.status_code == 422, response.content
     assert "Participants must be of type schema" in response.json()["message"]
@@ -815,13 +725,15 @@ def test_create_preassigned_experiment_using_inline_schema_ds(
     xngin_session, testing_datasource_with_user_added, use_deterministic_random
 ):
     datasource_id = testing_datasource_with_user_added.ds.id
-    base_request_json = make_createexperimentrequest_json("test_participant_type")
-    base_request = CreateExperimentRequest.model_validate(base_request_json)
+    request_json = make_createexperimentrequest_json(
+        experiment_type="preassigned", with_ids=False
+    )
+    request_obj = CreateExperimentRequest.model_validate(request_json)
 
     response = ppost(
         f"/v1/m/datasources/{datasource_id}/experiments",
         params={"chosen_n": 100, "random_state": 42},
-        json=base_request_json,
+        json=request_json,
     )
     assert response.status_code == 200, response.content
     created_experiment = CreateExperimentResponse.model_validate(response.json())
@@ -846,8 +758,8 @@ def test_create_preassigned_experiment_using_inline_schema_ds(
     actual_design_spec.experiment_id = None
     actual_design_spec.arms[0].arm_id = None
     actual_design_spec.arms[1].arm_id = None
-    assert actual_design_spec == base_request.design_spec
-    assert created_experiment.power_analyses == base_request.power_analyses
+    assert actual_design_spec == request_obj.design_spec
+    assert created_experiment.power_analyses is None
 
     experiment_id = created_experiment.design_spec.experiment_id
     (arm1_id, arm2_id) = [arm.arm_id for arm in created_experiment.design_spec.arms]
@@ -860,12 +772,12 @@ def test_create_preassigned_experiment_using_inline_schema_ds(
     assert experiment.datasource_id == datasource_id
     assert experiment.experiment_type == "preassigned"
     assert experiment.participant_type == "test_participant_type"
-    assert experiment.name == base_request.design_spec.experiment_name
-    assert experiment.description == base_request.design_spec.description
+    assert experiment.name == request_obj.design_spec.experiment_name
+    assert experiment.description == request_obj.design_spec.description
     assert conftest.dates_equal(
-        experiment.start_date, base_request.design_spec.start_date
+        experiment.start_date, request_obj.design_spec.start_date
     )
-    assert conftest.dates_equal(experiment.end_date, base_request.design_spec.end_date)
+    assert conftest.dates_equal(experiment.end_date, request_obj.design_spec.end_date)
     # Verify assignments were created
     assignments = xngin_session.scalars(
         select(tables.ArmAssignment).where(
@@ -882,7 +794,7 @@ def test_create_preassigned_experiment_using_inline_schema_ds(
     assert sample_assignment.experiment_id == experiment_id
     assert sample_assignment.arm_id in {arm1_id, arm2_id}
     for stratum in sample_assignment.strata:
-        assert stratum["field_name"] in {"current_income", "gender"}
+        assert stratum["field_name"] in {"is_onboarded", "gender"}
 
     # Check for approximate balance in arm assignment
     num_control = sum(1 for a in assignments if a.arm_id == arm1_id)
@@ -894,15 +806,15 @@ def test_create_online_experiment_using_inline_schema_ds(
     testing_datasource_with_user_added, use_deterministic_random
 ):
     datasource_id = testing_datasource_with_user_added.ds.id
-    base_request_json = make_createexperimentrequest_json(
-        "test_participant_type", "online"
+    request_json = make_createexperimentrequest_json(
+        experiment_type="online", with_ids=False
     )
-    base_request = CreateExperimentRequest.model_validate(base_request_json)
+    request_obj = CreateExperimentRequest.model_validate(request_json)
 
     response = ppost(
         f"/v1/m/datasources/{datasource_id}/experiments",
         params={"random_state": 42},
-        json=base_request_json,
+        json=request_json,
     )
     assert response.status_code == 200, response.content
     created_experiment = CreateExperimentResponse.model_validate(response.json())
@@ -928,7 +840,7 @@ def test_create_online_experiment_using_inline_schema_ds(
     actual_design_spec.experiment_id = None
     actual_design_spec.arms[0].arm_id = None
     actual_design_spec.arms[1].arm_id = None
-    assert actual_design_spec == base_request.design_spec
+    assert actual_design_spec == request_obj.design_spec
 
 
 def test_get_experiment_assignment_for_preassigned_participant(testing_experiment):
@@ -962,7 +874,7 @@ def test_get_experiment_assignment_for_preassigned_participant(testing_experimen
 def test_get_experiment_assignment_for_online_participant(
     xngin_session, testing_datasource_with_user_added
 ):
-    testing_experiment = insert_experiment_and_arms(
+    testing_experiment, _ = insert_experiment_and_arms(
         xngin_session, testing_datasource_with_user_added.ds, "online"
     )
     datasource_id = testing_experiment.datasource_id
@@ -1030,7 +942,7 @@ def test_experiments_analyze(testing_experiment):
 def test_experiments_analyze_for_experiment_with_no_participants(
     xngin_session, testing_datasource_with_user_added
 ):
-    testing_experiment = insert_experiment_and_arms(
+    testing_experiment, _ = insert_experiment_and_arms(
         xngin_session, testing_datasource_with_user_added.ds, "online"
     )
     datasource_id = testing_experiment.datasource_id

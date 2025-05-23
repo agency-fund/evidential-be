@@ -87,9 +87,8 @@ def test_list_experiments_sl_with_api_key(xngin_session, testing_datasource):
     """Tests that listing experiments tied to a db datasource with an API key works."""
     expected_experiment, _ = insert_experiment_and_arms(
         xngin_session,
-        testing_datasource.ds.id,
-        testing_datasource.ds.organization_id,
-        experiment_type="preassigned",
+        testing_datasource.ds,
+        "preassigned",
         state=ExperimentState.ASSIGNED,
     )
 
@@ -113,9 +112,8 @@ def test_list_experiments_sl_with_api_key(xngin_session, testing_datasource):
 def test_get_experiment(xngin_session, testing_datasource):
     new_experiment, _ = insert_experiment_and_arms(
         xngin_session,
-        testing_datasource.ds.id,
-        testing_datasource.ds.organization_id,
-        experiment_type="preassigned",
+        testing_datasource.ds,
+        "preassigned",
         state=ExperimentState.DESIGNING,
     )
 
@@ -176,8 +174,7 @@ def test_get_assignment_for_preassigned_participant_with_apikey(
 ):
     preassigned_experiment, arms = insert_experiment_and_arms(
         xngin_session,
-        testing_datasource.ds.id,
-        testing_datasource.ds.organization_id,
+        testing_datasource.ds,
         experiment_type="preassigned",
         state=ExperimentState.COMMITTED,
     )
@@ -225,8 +222,7 @@ def test_get_assignment_for_online_participant_with_apikey(
     """Test endpoint that gets an assignment for a participant via API key."""
     online_experiment, arms = insert_experiment_and_arms(
         xngin_session,
-        testing_datasource.ds.id,
-        testing_datasource.ds.organization_id,
+        testing_datasource.ds,
         experiment_type="online",
         state=ExperimentState.COMMITTED,
     )
