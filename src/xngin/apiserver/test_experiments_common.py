@@ -731,7 +731,9 @@ def test_get_experiment_assignments_impl(xngin_session, testing_datasource):
 
     # Check the response structure
     assert data.experiment_id == experiment.id
-    assert data.sample_size == get_assign_summary(xngin_session, experiment).sample_size
+    assert (
+        data.sample_size == get_assign_summary(xngin_session, experiment.id).sample_size
+    )
     assert (
         data.balance_check == ExperimentStorageConverter(experiment).get_balance_check()
     )

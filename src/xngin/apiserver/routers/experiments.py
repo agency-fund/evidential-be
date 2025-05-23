@@ -197,7 +197,9 @@ def get_experiment_sl(
         state=ExperimentState(experiment.state),
         design_spec=converter.get_design_spec(),
         power_analyses=converter.get_power_response(),
-        assign_summary=get_assign_summary(xngin_session, experiment),
+        assign_summary=get_assign_summary(
+            xngin_session, experiment.id, converter.get_balance_check()
+        ),
     )
 
 

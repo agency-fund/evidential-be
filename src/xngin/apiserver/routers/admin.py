@@ -1363,7 +1363,9 @@ def get_experiment(
         state=ExperimentState(experiment.state),
         design_spec=converter.get_design_spec(),
         power_analyses=converter.get_power_response(),
-        assign_summary=experiments_common.get_assign_summary(session, experiment),
+        assign_summary=experiments_common.get_assign_summary(
+            session, experiment.id, converter.get_balance_check()
+        ),
     )
 
 

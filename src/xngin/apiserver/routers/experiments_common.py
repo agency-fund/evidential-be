@@ -17,6 +17,7 @@ from xngin.apiserver.routers.stateless_api_types import (
     Arm,
     ArmSize,
     Assignment,
+    BalanceCheck,
     Strata,
 )
 from xngin.apiserver.models.enums import ExperimentState
@@ -186,7 +187,9 @@ def create_preassigned_experiment_impl(
         state=ExperimentState(experiment.state),
         design_spec=experiment_converter.get_design_spec(),
         power_analyses=experiment_converter.get_power_response(),
-        assign_summary=get_assign_summary(xngin_session, experiment),
+        assign_summary=get_assign_summary(
+            xngin_session, experiment.id, experiment_converter.get_balance_check()
+        ),
     )
 
 
@@ -333,7 +336,9 @@ def list_experiments_impl(
                 state=ExperimentState(e.state),
                 design_spec=converter.get_design_spec(),
                 power_analyses=converter.get_power_response(),
-                assign_summary=get_assign_summary(xngin_session, e),
+                assign_summary=get_assign_summary(
+                    xngin_session, e.id, converter.get_balance_check()
+                ),
             )
         )
     return ListExperimentsResponse(items=items)
@@ -521,13 +526,15 @@ def create_assignment_for_participant(
 
 
 def get_assign_summary(
-    xngin_session: Session, experiment: tables.Experiment
+    xngin_session: Session,
+    experiment_id: str,
+    balance_check: BalanceCheck | None = None,
 ) -> AssignSummary:
     """Constructs an AssignSummary from the experiment's arms and arm_assignments."""
     rows = xngin_session.execute(
         select(tables.ArmAssignment.arm_id, tables.ArmTable.name, func.count())
         .join(tables.ArmTable)
-        .where(tables.ArmAssignment.experiment_id == experiment.id)
+        .where(tables.ArmAssignment.experiment_id == experiment_id)
         .group_by(tables.ArmAssignment.arm_id, tables.ArmTable.name)
     ).all()
     arm_sizes = [
@@ -538,7 +545,7 @@ def get_assign_summary(
         for arm_id, name, count in rows
     ]
     return AssignSummary(
-        balance_check=ExperimentStorageConverter(experiment).get_balance_check(),
+        balance_check=balance_check,
         arm_sizes=arm_sizes,
         sample_size=sum(arm_size.size for arm_size in arm_sizes),
     )
