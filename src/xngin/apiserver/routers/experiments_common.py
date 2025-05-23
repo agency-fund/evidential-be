@@ -183,7 +183,7 @@ def create_preassigned_experiment_impl(
 
     return CreateExperimentResponse(
         datasource_id=datasource_id,
-        state=experiment.state,
+        state=ExperimentState(experiment.state),
         design_spec=experiment_converter.get_design_spec(),
         power_analyses=experiment_converter.get_power_response(),
         assign_summary=get_assign_summary(xngin_session, experiment),
@@ -236,7 +236,7 @@ def create_online_experiment_impl(
     )
     return CreateExperimentResponse(
         datasource_id=datasource_id,
-        state=experiment.state,
+        state=ExperimentState(experiment.state),
         design_spec=experiment_converter.get_design_spec(),
         power_analyses=None,
         assign_summary=empty_assign_summary,
@@ -330,7 +330,7 @@ def list_experiments_impl(
         items.append(
             ExperimentConfig(
                 datasource_id=e.datasource_id,
-                state=e.state,
+                state=ExperimentState(e.state),
                 design_spec=converter.get_design_spec(),
                 power_analyses=converter.get_power_response(),
                 assign_summary=get_assign_summary(xngin_session, e),

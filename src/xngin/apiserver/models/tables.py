@@ -9,7 +9,6 @@ from sqlalchemy import ForeignKey, Index, String
 from sqlalchemy.dialects import postgresql
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 from sqlalchemy.types import TypeEngine
-from xngin.apiserver.models.enums import ExperimentState
 from xngin.apiserver.routers.admin_api_types import (
     InspectDatasourceTableResponse,
     InspectParticipantTypesResponse,
@@ -394,7 +393,9 @@ class Experiment(Base):
     name: Mapped[str] = mapped_column(String(255))
     # Describe your experiment and hypothesis here.
     description: Mapped[str] = mapped_column(String(2000))
-    state: Mapped[ExperimentState]
+    # The experiment state should be one of xngin.apiserver.models.enums.ExperimentState.
+    # We use a looser type to decouple the database from the API a little more.
+    state: Mapped[str]
     # Target start date of the experiment. Denormalized from design_spec.
     start_date: Mapped[datetime] = mapped_column()
     # Target end date of the experiment. Denormalized from design_spec.

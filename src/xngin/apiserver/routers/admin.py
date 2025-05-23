@@ -31,6 +31,7 @@ from xngin.apiserver.dns.safe_resolve import DnsLookupError, safe_resolve
 from xngin.apiserver.dwh.queries import get_participant_metrics, query_for_participants
 from xngin.apiserver.exceptions_common import LateValidationError
 from xngin.apiserver.models import tables
+from xngin.apiserver.models.enums import ExperimentState
 from xngin.apiserver.models.storage_format_converters import ExperimentStorageConverter
 from xngin.apiserver.routers import experiments_common, experiments_api_types
 from xngin.apiserver.routers.admin_api_types import (
@@ -1359,7 +1360,7 @@ def get_experiment(
     converter = ExperimentStorageConverter(experiment)
     return ExperimentConfig(
         datasource_id=experiment.datasource_id,
-        state=experiment.state,
+        state=ExperimentState(experiment.state),
         design_spec=converter.get_design_spec(),
         power_analyses=converter.get_power_response(),
         assign_summary=experiments_common.get_assign_summary(session, experiment),
