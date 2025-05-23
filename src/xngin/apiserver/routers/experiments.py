@@ -21,7 +21,7 @@ from xngin.apiserver.dependencies import (
     random_seed_dependency,
     xngin_db_session,
 )
-from xngin.apiserver.models.storage_format_converters import DesignSpecStorageConverter
+from xngin.apiserver.models.storage_format_converters import ExperimentStorageConverter
 from xngin.apiserver.routers.experiments_common import (
     abandon_experiment_impl,
     commit_experiment_impl,
@@ -193,8 +193,8 @@ def get_experiment_sl(
     return GetExperimentResponse(
         datasource_id=experiment.datasource_id,
         state=experiment.state,
-        design_spec=DesignSpecStorageConverter.get_api_design_spec(experiment),
-        power_analyses=experiment.get_power_analyses(),
+        design_spec=ExperimentStorageConverter.get_api_design_spec(experiment),
+        power_analyses=ExperimentStorageConverter(experiment).get_power_response(),
         assign_summary=get_assign_summary(xngin_session, experiment),
     )
 

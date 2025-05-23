@@ -9,10 +9,6 @@ from sqlalchemy import ForeignKey, Index, String
 from sqlalchemy.dialects import postgresql
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 from sqlalchemy.types import TypeEngine
-from xngin.apiserver.routers.stateless_api_types import (
-    BalanceCheck,
-    PowerResponse,
-)
 from xngin.apiserver.models.enums import ExperimentState
 from xngin.apiserver.routers.admin_api_types import (
     InspectDatasourceTableResponse,
@@ -437,24 +433,6 @@ class Experiment(Base):
 
     def get_arm_names(self) -> list[str]:
         return [arm.name for arm in self.arms]
-
-    def get_power_analyses(self) -> PowerResponse | None:
-        if self.power_analyses is None:
-            return None
-        return TypeAdapter(PowerResponse).validate_python(self.power_analyses)
-
-    def set_balance_check(self, value: BalanceCheck | None) -> Self:
-        if value is None:
-            self.balance_check = None
-        else:
-            BalanceCheck.model_validate(value)
-            self.balance_check = value.model_dump()
-        return self
-
-    def get_balance_check(self) -> BalanceCheck | None:
-        if self.balance_check is not None:
-            return TypeAdapter(BalanceCheck).validate_python(self.balance_check)
-        return None
 
 
 class ArmTable(Base):

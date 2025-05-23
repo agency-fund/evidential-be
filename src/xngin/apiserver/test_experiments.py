@@ -3,7 +3,7 @@ from fastapi.testclient import TestClient
 from sqlalchemy import select
 from xngin.apiserver import conftest, constants
 from xngin.apiserver.models import tables
-from xngin.apiserver.models.storage_format_converters import DesignSpecStorageConverter
+from xngin.apiserver.models.storage_format_converters import ExperimentStorageConverter
 from xngin.apiserver.routers.stateless_api_types import (
     PreassignedExperimentSpec,
 )
@@ -104,7 +104,7 @@ def test_list_experiments_sl_with_api_key(xngin_session, testing_datasource):
     experiments = ListExperimentsResponse.model_validate(response.json())
     assert len(experiments.items) == 1
     assert experiments.items[0].state == ExperimentState.ASSIGNED
-    expected_design_spec = DesignSpecStorageConverter.get_api_design_spec(
+    expected_design_spec = ExperimentStorageConverter.get_api_design_spec(
         expected_experiment
     )
     diff = DeepDiff(expected_design_spec, experiments.items[0].design_spec)
@@ -134,7 +134,7 @@ def test_get_experiment(xngin_session, testing_datasource):
     assert experiment_json["state"] == new_experiment.state
     actual = PreassignedExperimentSpec.model_validate(experiment_json["design_spec"])
     expected = PreassignedExperimentSpec.model_validate(
-        DesignSpecStorageConverter.get_api_design_spec(new_experiment)
+        ExperimentStorageConverter.get_api_design_spec(new_experiment)
     )
     diff = DeepDiff(actual, expected)
     assert not diff, f"Objects differ:\n{diff.pretty()}"

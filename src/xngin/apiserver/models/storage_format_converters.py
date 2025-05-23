@@ -1,6 +1,12 @@
+from typing import Self
 from pydantic import TypeAdapter
 from xngin.apiserver.models.tables import Experiment
-from xngin.apiserver.routers.stateless_api_types import DesignSpec
+from xngin.apiserver.routers.stateless_api_types import (
+    BalanceCheck,
+    DesignSpec,
+    PowerResponse,
+    Relation,
+)
 from xngin.apiserver.routers.stateless_api_types import (
     Stratum as ApiStratum,
     DesignSpecMetricRequest as ApiDesignSpecMetricRequest,
@@ -14,8 +20,14 @@ from xngin.apiserver.models.storage_types import (
 )
 
 
-class DesignSpecStorageConverter:
-    """Converts a DesignSpec to storage components and vice versa."""
+class ExperimentStorageConverter:
+    """Converts API components to storage components and vice versa for an Experiment."""
+
+    def __init__(self, experiment: Experiment):
+        self.experiment = experiment
+
+    def get_experiment(self) -> Experiment:
+        return self.experiment
 
     @staticmethod
     def get_api_strata(design_spec_fields: DesignSpecFields) -> list[ApiStratum]:
@@ -50,7 +62,7 @@ class DesignSpecStorageConverter:
         return [
             ApiFilter(
                 field_name=f.field_name,
-                relation=f.relation,
+                relation=Relation(f.relation),
                 value=f.value,
             )
             for f in design_spec_fields.filters
@@ -115,10 +127,38 @@ class DesignSpecStorageConverter:
                 }
                 for arm in experiment.arms
             ],
-            "strata": DesignSpecStorageConverter.get_api_strata(design_spec_fields),
-            "metrics": DesignSpecStorageConverter.get_api_metrics(design_spec_fields),
-            "filters": DesignSpecStorageConverter.get_api_filters(design_spec_fields),
+            "strata": ExperimentStorageConverter.get_api_strata(design_spec_fields),
+            "metrics": ExperimentStorageConverter.get_api_metrics(design_spec_fields),
+            "filters": ExperimentStorageConverter.get_api_filters(design_spec_fields),
             "power": experiment.power,
             "alpha": experiment.alpha,
             "fstat_thresh": experiment.fstat_thresh,
         })
+
+    def set_balance_check(self, value: BalanceCheck | None) -> Self:
+        if value is None:
+            self.experiment.balance_check = None
+        else:
+            self.experiment.balance_check = BalanceCheck.model_validate(
+                value
+            ).model_dump()
+        return self
+
+    def get_balance_check(self) -> BalanceCheck | None:
+        if self.experiment.balance_check is not None:
+            return BalanceCheck.model_validate(self.experiment.balance_check)
+        return None
+
+    def set_power_response(self, value: PowerResponse | None) -> Self:
+        if value is None:
+            self.experiment.power_analyses = None
+        else:
+            self.experiment.power_analyses = PowerResponse.model_validate(
+                value
+            ).model_dump()
+        return self
+
+    def get_power_response(self) -> PowerResponse | None:
+        if self.experiment.power_analyses is None:
+            return None
+        return PowerResponse.model_validate(self.experiment.power_analyses)

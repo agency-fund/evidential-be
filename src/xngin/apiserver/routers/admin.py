@@ -31,7 +31,7 @@ from xngin.apiserver.dns.safe_resolve import DnsLookupError, safe_resolve
 from xngin.apiserver.dwh.queries import get_participant_metrics, query_for_participants
 from xngin.apiserver.exceptions_common import LateValidationError
 from xngin.apiserver.models import tables
-from xngin.apiserver.models.storage_format_converters import DesignSpecStorageConverter
+from xngin.apiserver.models.storage_format_converters import ExperimentStorageConverter
 from xngin.apiserver.routers import experiments_common, experiments_api_types
 from xngin.apiserver.routers.admin_api_types import (
     AddMemberToOrganizationRequest,
@@ -1246,7 +1246,7 @@ def analyze_experiment(
             dsconfig.supports_reflection(),
         )
 
-        design_spec = DesignSpecStorageConverter.get_api_design_spec(experiment)
+        design_spec = ExperimentStorageConverter.get_api_design_spec(experiment)
         metrics = design_spec.metrics
         assignments = experiment.arm_assignments
         participant_ids = [assignment.participant_id for assignment in assignments]
@@ -1359,8 +1359,8 @@ def get_experiment(
     return ExperimentConfig(
         datasource_id=experiment.datasource_id,
         state=experiment.state,
-        design_spec=DesignSpecStorageConverter.get_api_design_spec(experiment),
-        power_analyses=experiment.get_power_analyses(),
+        design_spec=ExperimentStorageConverter.get_api_design_spec(experiment),
+        power_analyses=ExperimentStorageConverter(experiment).get_power_response(),
         assign_summary=experiments_common.get_assign_summary(session, experiment),
     )
 

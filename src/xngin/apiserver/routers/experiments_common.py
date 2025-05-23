@@ -12,7 +12,7 @@ from sqlalchemy import Table, func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 from xngin.apiserver import flags
-from xngin.apiserver.models.storage_format_converters import DesignSpecStorageConverter
+from xngin.apiserver.models.storage_format_converters import ExperimentStorageConverter
 from xngin.apiserver.routers.stateless_api_types import (
     Arm,
     ArmSize,
@@ -131,32 +131,45 @@ def create_preassigned_experiment_impl(
     )
 
     # Create experiment record
-    balance_check = (
-        assignment_response.balance_check.model_dump()
-        if assignment_response.balance_check
-        else None
+    # experiment = tables.Experiment(
+    #     id=experiment_id,
+    #     datasource_id=datasource_id,
+    #     experiment_type="preassigned",
+    #     participant_type=design_spec.participant_type,
+    #     name=design_spec.experiment_name,
+    #     description=design_spec.description,
+    #     state=ExperimentState.ASSIGNED,
+    #     start_date=design_spec.start_date,
+    #     end_date=design_spec.end_date,
+    #     power=design_spec.power,
+    #     alpha=design_spec.alpha,
+    #     fstat_thresh=design_spec.fstat_thresh,
+    #     design_spec_fields=ExperimentStorageConverter.to_store_fields(
+    #         design_spec
+    #     ).model_dump(mode="json"),
+    # )
+    experiment_converter = ExperimentStorageConverter(
+        tables.Experiment(
+            id=experiment_id,
+            datasource_id=datasource_id,
+            experiment_type="preassigned",
+            participant_type=design_spec.participant_type,
+            name=design_spec.experiment_name,
+            description=design_spec.description,
+            state=ExperimentState.ASSIGNED,
+            start_date=design_spec.start_date,
+            end_date=design_spec.end_date,
+            power=design_spec.power,
+            alpha=design_spec.alpha,
+            fstat_thresh=design_spec.fstat_thresh,
+            design_spec_fields=ExperimentStorageConverter.to_store_fields(
+                design_spec
+            ).model_dump(mode="json"),
+        )
     )
-    experiment = tables.Experiment(
-        id=experiment_id,
-        datasource_id=datasource_id,
-        experiment_type="preassigned",
-        participant_type=design_spec.participant_type,
-        name=design_spec.experiment_name,
-        description=design_spec.description,
-        state=ExperimentState.ASSIGNED,
-        start_date=design_spec.start_date,
-        end_date=design_spec.end_date,
-        power=design_spec.power,
-        alpha=design_spec.alpha,
-        fstat_thresh=design_spec.fstat_thresh,
-        design_spec_fields=DesignSpecStorageConverter.to_store_fields(
-            design_spec
-        ).model_dump(mode="json"),
-        power_analyses=request.power_analyses.model_dump(mode="json")
-        if request.power_analyses
-        else None,
-        balance_check=balance_check,
-    )
+    experiment_converter.set_balance_check(assignment_response.balance_check)
+    experiment_converter.set_power_response(request.power_analyses)
+    experiment = experiment_converter.get_experiment()
     xngin_session.add(experiment)
 
     # Create arm records
@@ -189,8 +202,8 @@ def create_preassigned_experiment_impl(
     return CreateExperimentResponse(
         datasource_id=datasource_id,
         state=experiment.state,
-        design_spec=DesignSpecStorageConverter.get_api_design_spec(experiment),
-        power_analyses=experiment.get_power_analyses(),
+        design_spec=ExperimentStorageConverter.get_api_design_spec(experiment),
+        power_analyses=ExperimentStorageConverter(experiment).get_power_response(),
         assign_summary=get_assign_summary(xngin_session, experiment),
     )
 
@@ -216,7 +229,7 @@ def create_online_experiment_impl(
         power=design_spec.power,
         alpha=design_spec.alpha,
         fstat_thresh=design_spec.fstat_thresh,
-        design_spec_fields=DesignSpecStorageConverter.to_store_fields(
+        design_spec_fields=ExperimentStorageConverter.to_store_fields(
             design_spec
         ).model_dump(mode="json"),
         power_analyses=None,
@@ -243,7 +256,7 @@ def create_online_experiment_impl(
     return CreateExperimentResponse(
         datasource_id=datasource_id,
         state=experiment.state,
-        design_spec=DesignSpecStorageConverter.get_api_design_spec(experiment),
+        design_spec=ExperimentStorageConverter.get_api_design_spec(experiment),
         power_analyses=None,
         assign_summary=empty_assign_summary,
     )
@@ -335,8 +348,8 @@ def list_experiments_impl(
             ExperimentConfig(
                 datasource_id=e.datasource_id,
                 state=e.state,
-                design_spec=DesignSpecStorageConverter.get_api_design_spec(e),
-                power_analyses=e.get_power_analyses(),
+                design_spec=ExperimentStorageConverter.get_api_design_spec(e),
+                power_analyses=ExperimentStorageConverter(e).get_power_response(),
                 assign_summary=get_assign_summary(xngin_session, e),
             )
             for e in experiments
@@ -361,7 +374,7 @@ def get_experiment_assignments_impl(
         for arm_assignment in experiment.arm_assignments
     ]
     return GetExperimentAssignmentsResponse(
-        balance_check=experiment.get_balance_check(),
+        balance_check=ExperimentStorageConverter(experiment).get_balance_check(),
         experiment_id=experiment.id,
         sample_size=len(assignments),
         assignments=assignments,
@@ -543,7 +556,7 @@ def get_assign_summary(
         for arm_id, name, count in rows
     ]
     return AssignSummary(
-        balance_check=experiment.get_balance_check(),
+        balance_check=ExperimentStorageConverter(experiment).get_balance_check(),
         arm_sizes=arm_sizes,
         sample_size=sum(arm_size.size for arm_size in arm_sizes),
     )
