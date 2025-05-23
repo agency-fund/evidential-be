@@ -321,7 +321,7 @@ def list_organization_experiments_impl(
                 ExperimentState.ASSIGNED,
             ])
         )
-        .order_by(tables.Experiment.created_at.desc())
+        .order_by(tables.Experiment.start_date.desc())
     )
     result = xngin_session.execute(stmt)
     experiments = result.scalars().all()
