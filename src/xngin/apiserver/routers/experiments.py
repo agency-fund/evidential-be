@@ -190,11 +190,12 @@ def get_experiment_sl(
     experiment_id: str,
 ) -> GetExperimentResponse:
     experiment = get_experiment_or_raise(xngin_session, experiment_id, datasource.id)
+    converter = ExperimentStorageConverter(experiment)
     return GetExperimentResponse(
         datasource_id=experiment.datasource_id,
         state=experiment.state,
-        design_spec=ExperimentStorageConverter.get_api_design_spec(experiment),
-        power_analyses=ExperimentStorageConverter(experiment).get_power_response(),
+        design_spec=converter.get_design_spec(),
+        power_analyses=converter.get_power_response(),
         assign_summary=get_assign_summary(xngin_session, experiment),
     )
 

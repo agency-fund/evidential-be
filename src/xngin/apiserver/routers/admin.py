@@ -1246,7 +1246,7 @@ def analyze_experiment(
             dsconfig.supports_reflection(),
         )
 
-        design_spec = ExperimentStorageConverter.get_api_design_spec(experiment)
+        design_spec = ExperimentStorageConverter(experiment).get_design_spec()
         metrics = design_spec.metrics
         assignments = experiment.arm_assignments
         participant_ids = [assignment.participant_id for assignment in assignments]
@@ -1356,11 +1356,12 @@ def get_experiment(
     """Returns the experiment with the specified ID."""
     ds = get_datasource_or_raise(session, user, datasource_id)
     experiment = get_experiment_via_ds_or_raise(session, ds, experiment_id)
+    converter = ExperimentStorageConverter(experiment)
     return ExperimentConfig(
         datasource_id=experiment.datasource_id,
         state=experiment.state,
-        design_spec=ExperimentStorageConverter.get_api_design_spec(experiment),
-        power_analyses=ExperimentStorageConverter(experiment).get_power_response(),
+        design_spec=converter.get_design_spec(),
+        power_analyses=converter.get_power_response(),
         assign_summary=experiments_common.get_assign_summary(session, experiment),
     )
 

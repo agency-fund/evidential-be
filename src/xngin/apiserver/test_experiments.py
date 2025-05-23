@@ -104,9 +104,9 @@ def test_list_experiments_sl_with_api_key(xngin_session, testing_datasource):
     experiments = ListExperimentsResponse.model_validate(response.json())
     assert len(experiments.items) == 1
     assert experiments.items[0].state == ExperimentState.ASSIGNED
-    expected_design_spec = ExperimentStorageConverter.get_api_design_spec(
+    expected_design_spec = ExperimentStorageConverter(
         expected_experiment
-    )
+    ).get_design_spec()
     diff = DeepDiff(expected_design_spec, experiments.items[0].design_spec)
     assert not diff, f"Objects differ:\n{diff.pretty()}"
 
@@ -133,9 +133,7 @@ def test_get_experiment(xngin_session, testing_datasource):
     assert experiment_json["datasource_id"] == new_experiment.datasource_id
     assert experiment_json["state"] == new_experiment.state
     actual = PreassignedExperimentSpec.model_validate(experiment_json["design_spec"])
-    expected = PreassignedExperimentSpec.model_validate(
-        ExperimentStorageConverter.get_api_design_spec(new_experiment)
-    )
+    expected = ExperimentStorageConverter(new_experiment).get_design_spec()
     diff = DeepDiff(actual, expected)
     assert not diff, f"Objects differ:\n{diff.pretty()}"
 

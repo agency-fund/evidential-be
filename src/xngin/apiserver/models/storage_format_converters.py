@@ -57,9 +57,9 @@ class ExperimentStorageConverter:
         """Converts stored filters to API Filter objects."""
         if design_spec_fields.filters is None:
             return []
-        # The `value` field in StorageFilter is Sequence[Any].
-        # Pydantic will validate when creating ApiFilter.
         return [
+            # The `value` field in StorageFilter is Sequence[Any].
+            # Pydantic will validate when creating ApiFilter.
             ApiFilter(
                 field_name=f.field_name,
                 relation=Relation(f.relation),
@@ -68,9 +68,8 @@ class ExperimentStorageConverter:
             for f in design_spec_fields.filters
         ]
 
-    @staticmethod
-    def to_store_fields(design_spec: DesignSpec) -> DesignSpecFields:
-        """Converts a DesignSpec to a DesignSpecFields object."""
+    def set_design_spec_fields(self, design_spec: DesignSpec) -> Self:
+        """Saves the components of a DesignSpec to the experiment."""
         storage_strata = None
         if design_spec.strata:
             storage_strata = [
@@ -99,40 +98,41 @@ class ExperimentStorageConverter:
                 for f in design_spec.filters
             ]
 
-        return DesignSpecFields(
+        self.experiment.design_spec_fields = DesignSpecFields(
             strata=storage_strata,
             metrics=storage_metrics,
             filters=storage_filters,
-        )
+        ).model_dump(mode="json")
+        return self
 
-    @staticmethod
-    def get_api_design_spec(experiment: Experiment) -> DesignSpec:
+    def get_design_spec_fields(self) -> DesignSpecFields:
+        return DesignSpecFields.model_validate(self.experiment.design_spec_fields)
+
+    def get_design_spec(self) -> DesignSpec:
         """Converts a DesignSpecFields to a DesignSpec object."""
-        design_spec_fields = DesignSpecFields.model_validate(
-            experiment.design_spec_fields
-        )
+        design_spec_fields = self.get_design_spec_fields()
         return TypeAdapter(DesignSpec).validate_python({
-            "participant_type": experiment.participant_type,
-            "experiment_id": experiment.id,
-            "experiment_type": experiment.experiment_type,
-            "experiment_name": experiment.name,
-            "description": experiment.description,
-            "start_date": experiment.start_date,
-            "end_date": experiment.end_date,
+            "participant_type": self.experiment.participant_type,
+            "experiment_id": self.experiment.id,
+            "experiment_type": self.experiment.experiment_type,
+            "experiment_name": self.experiment.name,
+            "description": self.experiment.description,
+            "start_date": self.experiment.start_date,
+            "end_date": self.experiment.end_date,
             "arms": [
                 {
                     "arm_id": arm.id,
                     "arm_name": arm.name,
                     "arm_description": arm.description,
                 }
-                for arm in experiment.arms
+                for arm in self.experiment.arms
             ],
             "strata": ExperimentStorageConverter.get_api_strata(design_spec_fields),
             "metrics": ExperimentStorageConverter.get_api_metrics(design_spec_fields),
             "filters": ExperimentStorageConverter.get_api_filters(design_spec_fields),
-            "power": experiment.power,
-            "alpha": experiment.alpha,
-            "fstat_thresh": experiment.fstat_thresh,
+            "power": self.experiment.power,
+            "alpha": self.experiment.alpha,
+            "fstat_thresh": self.experiment.fstat_thresh,
         })
 
     def set_balance_check(self, value: BalanceCheck | None) -> Self:

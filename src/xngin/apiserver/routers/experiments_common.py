@@ -130,45 +130,27 @@ def create_preassigned_experiment_impl(
         random_state=random_state,
     )
 
-    # Create experiment record
-    # experiment = tables.Experiment(
-    #     id=experiment_id,
-    #     datasource_id=datasource_id,
-    #     experiment_type="preassigned",
-    #     participant_type=design_spec.participant_type,
-    #     name=design_spec.experiment_name,
-    #     description=design_spec.description,
-    #     state=ExperimentState.ASSIGNED,
-    #     start_date=design_spec.start_date,
-    #     end_date=design_spec.end_date,
-    #     power=design_spec.power,
-    #     alpha=design_spec.alpha,
-    #     fstat_thresh=design_spec.fstat_thresh,
-    #     design_spec_fields=ExperimentStorageConverter.to_store_fields(
-    #         design_spec
-    #     ).model_dump(mode="json"),
-    # )
-    experiment_converter = ExperimentStorageConverter(
-        tables.Experiment(
-            id=experiment_id,
-            datasource_id=datasource_id,
-            experiment_type="preassigned",
-            participant_type=design_spec.participant_type,
-            name=design_spec.experiment_name,
-            description=design_spec.description,
-            state=ExperimentState.ASSIGNED,
-            start_date=design_spec.start_date,
-            end_date=design_spec.end_date,
-            power=design_spec.power,
-            alpha=design_spec.alpha,
-            fstat_thresh=design_spec.fstat_thresh,
-            design_spec_fields=ExperimentStorageConverter.to_store_fields(
-                design_spec
-            ).model_dump(mode="json"),
+    experiment_converter = (
+        ExperimentStorageConverter(
+            tables.Experiment(
+                id=experiment_id,
+                datasource_id=datasource_id,
+                experiment_type="preassigned",
+                participant_type=design_spec.participant_type,
+                name=design_spec.experiment_name,
+                description=design_spec.description,
+                state=ExperimentState.ASSIGNED,
+                start_date=design_spec.start_date,
+                end_date=design_spec.end_date,
+                power=design_spec.power,
+                alpha=design_spec.alpha,
+                fstat_thresh=design_spec.fstat_thresh,
+            )
         )
+        .set_design_spec_fields(design_spec)
+        .set_balance_check(assignment_response.balance_check)
+        .set_power_response(request.power_analyses)
     )
-    experiment_converter.set_balance_check(assignment_response.balance_check)
-    experiment_converter.set_power_response(request.power_analyses)
     experiment = experiment_converter.get_experiment()
     xngin_session.add(experiment)
 
@@ -202,8 +184,8 @@ def create_preassigned_experiment_impl(
     return CreateExperimentResponse(
         datasource_id=datasource_id,
         state=experiment.state,
-        design_spec=ExperimentStorageConverter.get_api_design_spec(experiment),
-        power_analyses=ExperimentStorageConverter(experiment).get_power_response(),
+        design_spec=experiment_converter.get_design_spec(),
+        power_analyses=experiment_converter.get_power_response(),
         assign_summary=get_assign_summary(xngin_session, experiment),
     )
 
@@ -215,25 +197,24 @@ def create_online_experiment_impl(
     xngin_session: Session,
 ) -> CreateExperimentResponse:
     design_spec = request.design_spec
-    experiment = tables.Experiment(
-        id=design_spec.experiment_id,
-        datasource_id=datasource_id,
-        experiment_type="online",
-        participant_type=design_spec.participant_type,
-        name=design_spec.experiment_name,
-        description=design_spec.description,
-        # No assignments nor power check (for now), but we still want to allow a review.
-        state=ExperimentState.ASSIGNED,
-        start_date=design_spec.start_date,
-        end_date=design_spec.end_date,
-        power=design_spec.power,
-        alpha=design_spec.alpha,
-        fstat_thresh=design_spec.fstat_thresh,
-        design_spec_fields=ExperimentStorageConverter.to_store_fields(
-            design_spec
-        ).model_dump(mode="json"),
-        power_analyses=None,
-    )
+    experiment_converter = ExperimentStorageConverter(
+        tables.Experiment(
+            id=design_spec.experiment_id,
+            datasource_id=datasource_id,
+            experiment_type="online",
+            participant_type=design_spec.participant_type,
+            name=design_spec.experiment_name,
+            description=design_spec.description,
+            # No assignments nor power check (for now), but we still want to allow a review.
+            state=ExperimentState.ASSIGNED,
+            start_date=design_spec.start_date,
+            end_date=design_spec.end_date,
+            power=design_spec.power,
+            alpha=design_spec.alpha,
+            fstat_thresh=design_spec.fstat_thresh,
+        )
+    ).set_design_spec_fields(design_spec)
+    experiment = experiment_converter.get_experiment()
     xngin_session.add(experiment)
     # Create arm records
     for arm in design_spec.arms:
@@ -256,7 +237,7 @@ def create_online_experiment_impl(
     return CreateExperimentResponse(
         datasource_id=datasource_id,
         state=experiment.state,
-        design_spec=ExperimentStorageConverter.get_api_design_spec(experiment),
+        design_spec=experiment_converter.get_design_spec(),
         power_analyses=None,
         assign_summary=empty_assign_summary,
     )
@@ -343,18 +324,19 @@ def list_experiments_impl(
     )
     result = xngin_session.execute(stmt)
     experiments = result.scalars().all()
-    return ListExperimentsResponse(
-        items=[
+    items = []
+    for e in experiments:
+        converter = ExperimentStorageConverter(e)
+        items.append(
             ExperimentConfig(
                 datasource_id=e.datasource_id,
                 state=e.state,
-                design_spec=ExperimentStorageConverter.get_api_design_spec(e),
-                power_analyses=ExperimentStorageConverter(e).get_power_response(),
+                design_spec=converter.get_design_spec(),
+                power_analyses=converter.get_power_response(),
                 assign_summary=get_assign_summary(xngin_session, e),
             )
-            for e in experiments
-        ]
-    )
+        )
+    return ListExperimentsResponse(items=items)
 
 
 def get_experiment_assignments_impl(

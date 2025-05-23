@@ -127,24 +127,26 @@ def make_insertable_experiment(
     )
     experiment_id = design_spec.experiment_id
 
-    experiment = tables.Experiment(
-        id=experiment_id,
-        datasource_id=datasource_id,
-        experiment_type=experiment_type,
-        participant_type=design_spec.participant_type,
-        name=design_spec.experiment_name,
-        description=design_spec.description,
-        state=state,
-        start_date=datetime.fromisoformat(design_spec.start_date.isoformat()),
-        end_date=datetime.fromisoformat(design_spec.end_date.isoformat()),
-        power=design_spec.power,
-        balance_check=None,
-        alpha=design_spec.alpha,
-        fstat_thresh=design_spec.fstat_thresh,
-        design_spec_fields=ExperimentStorageConverter.to_store_fields(
-            design_spec
-        ).model_dump(mode="json"),
-        power_analyses=None,
+    experiment = (
+        ExperimentStorageConverter(
+            tables.Experiment(
+                id=experiment_id,
+                datasource_id=datasource_id,
+                experiment_type=experiment_type,
+                participant_type=design_spec.participant_type,
+                name=design_spec.experiment_name,
+                description=design_spec.description,
+                state=state,
+                start_date=design_spec.start_date,
+                end_date=design_spec.end_date,
+                power=design_spec.power,
+                balance_check=None,
+                alpha=design_spec.alpha,
+                fstat_thresh=design_spec.fstat_thresh,
+            )
+        )
+        .set_design_spec_fields(design_spec)
+        .get_experiment()
     )
     return experiment, design_spec
 
@@ -180,23 +182,27 @@ def make_insertable_online_experiment(
         alpha=0.05,
         fstat_thresh=0.2,
     )
-    return tables.Experiment(
-        id=experiment_id,
-        datasource_id=datasource_id,
-        experiment_type="online",
-        participant_type=design_spec.participant_type,
-        name=design_spec.experiment_name,
-        description=design_spec.description,
-        state=state,
-        start_date=design_spec.start_date,
-        end_date=design_spec.end_date,
-        power=design_spec.power,
-        alpha=design_spec.alpha,
-        fstat_thresh=design_spec.fstat_thresh,
-        design_spec_fields=ExperimentStorageConverter.to_store_fields(
-            design_spec
-        ).model_dump(mode="json"),
-    ), design_spec
+    experiment = (
+        ExperimentStorageConverter(
+            tables.Experiment(
+                id=experiment_id,
+                datasource_id=datasource_id,
+                experiment_type="online",
+                participant_type=design_spec.participant_type,
+                name=design_spec.experiment_name,
+                description=design_spec.description,
+                state=state,
+                start_date=design_spec.start_date,
+                end_date=design_spec.end_date,
+                power=design_spec.power,
+                alpha=design_spec.alpha,
+                fstat_thresh=design_spec.fstat_thresh,
+            )
+        )
+        .set_design_spec_fields(design_spec)
+        .get_experiment()
+    )
+    return experiment, design_spec
 
 
 def make_arms_from_designspec(
@@ -351,10 +357,9 @@ def test_create_experiment_impl_for_preassigned(
     assert experiment.alpha == request.design_spec.alpha
     assert experiment.fstat_thresh == request.design_spec.fstat_thresh
     # Verify design_spec was stored correctly
-    stored_design_spec = ExperimentStorageConverter.get_api_design_spec(experiment)
-    assert stored_design_spec == response.design_spec
-    stored_power_analyses = ExperimentStorageConverter(experiment).get_power_response()
-    assert stored_power_analyses == response.power_analyses
+    converter = ExperimentStorageConverter(experiment)
+    assert converter.get_design_spec() == response.design_spec
+    assert converter.get_power_response() == response.power_analyses
     # Verify assignments were created
     assignments = xngin_session.scalars(
         select(tables.ArmAssignment).where(
@@ -458,8 +463,8 @@ def test_create_experiment_impl_for_online(
     assert experiment.alpha == request.design_spec.alpha
     assert experiment.fstat_thresh == request.design_spec.fstat_thresh
     # Verify design_spec was stored correctly
-    stored_design_spec = ExperimentStorageConverter.get_api_design_spec(experiment)
-    assert stored_design_spec == response.design_spec
+    converter = ExperimentStorageConverter(experiment)
+    assert converter.get_design_spec() == response.design_spec
     # Verify no power_analyses for online experiments
     assert experiment.power_analyses is None
 
@@ -721,21 +726,21 @@ def test_list_experiments_impl(xngin_session, testing_datasource):
     actual2_config = experiments.items[1]
     actual3_config = experiments.items[0]
     assert actual1_config.state == ExperimentState.ASSIGNED
-    expected1_design_spec = ExperimentStorageConverter.get_api_design_spec(
+    expected1_design_spec = ExperimentStorageConverter(
         experiment1_data[0]
-    )
+    ).get_design_spec()
     diff = DeepDiff(actual1_config.design_spec, expected1_design_spec)
     assert not diff, f"Objects differ:\n{diff.pretty()}"
     assert actual2_config.state == ExperimentState.COMMITTED
-    expected2_design_spec = ExperimentStorageConverter.get_api_design_spec(
+    expected2_design_spec = ExperimentStorageConverter(
         experiment2_data[0]
-    )
+    ).get_design_spec()
     diff = DeepDiff(actual2_config.design_spec, expected2_design_spec)
     assert not diff, f"Objects differ:\n{diff.pretty()}"
     assert actual3_config.state == ExperimentState.DESIGNING
-    expected3_design_spec = ExperimentStorageConverter.get_api_design_spec(
+    expected3_design_spec = ExperimentStorageConverter(
         experiment3_data[0]
-    )
+    ).get_design_spec()
     diff = DeepDiff(actual3_config.design_spec, expected3_design_spec)
     assert not diff, f"Objects differ:\n{diff.pretty()}"
 
