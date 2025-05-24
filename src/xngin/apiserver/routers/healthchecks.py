@@ -12,7 +12,7 @@ from loguru import logger
 
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
-    logger.info(f"Starting router: {__name__}")
+    logger.info(f"Starting router: {__name__} (prefix={router.prefix})")
     yield
 
 

@@ -25,7 +25,7 @@ from pydantic import BaseModel
 from sqlalchemy import delete, select, text
 from sqlalchemy.exc import OperationalError
 from sqlalchemy.orm import Session
-from xngin.apiserver import flags, settings
+from xngin.apiserver import flags, settings, constants
 from xngin.apiserver.apikeys import hash_key, make_key
 from xngin.apiserver.dependencies import xngin_db_session
 from xngin.apiserver.dns.safe_resolve import DnsLookupError, safe_resolve
@@ -154,13 +154,13 @@ def cache_is_fresh(updated: datetime | None):
 
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
-    logger.info(f"Starting router: {__name__}")
+    logger.info(f"Starting router: {__name__} (prefix={router.prefix})")
     yield
 
 
 router = APIRouter(
     lifespan=lifespan,
-    prefix="/m",
+    prefix=constants.API_PREFIX_V1 + "/m",
     responses=STANDARD_ADMIN_RESPONSES,
     dependencies=[
         Depends(require_oidc_token)

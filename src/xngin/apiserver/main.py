@@ -6,7 +6,6 @@ from fastapi import FastAPI
 from fastapi.openapi.utils import get_openapi
 from fastapi.routing import APIRoute
 from xngin.apiserver import (
-    constants,
     customlogging,
     exceptionhandlers,
     middleware,
@@ -78,19 +77,15 @@ exceptionhandlers.setup(app)
 middleware.setup(app)
 customlogging.setup()
 
-app.include_router(
-    experiments.router, prefix=constants.API_PREFIX_V1, tags=["Experiment Integration"]
-)
+app.include_router(experiments.router, tags=["Experiment Integration"])
 
 app.include_router(
     stateless_api.router,
-    prefix=constants.API_PREFIX_V1,
     tags=["Stateless Experiment Design"],
 )
 
 app.include_router(
     proxy_mgmt_api.router,
-    prefix=constants.API_PREFIX_V1,
     tags=["Stateless Experiment Design"],
 )
 
@@ -100,7 +95,6 @@ app.include_router(healthchecks.router, tags=["Health Checks"], include_in_schem
 def enable_oidc_api():
     app.include_router(
         oidc.router,
-        prefix=constants.API_PREFIX_V1,
         tags=["Auth"],
         include_in_schema=PUBLISH_ALL_DOCS,
     )
@@ -109,7 +103,6 @@ def enable_oidc_api():
 def enable_admin_api():
     app.include_router(
         admin.router,
-        prefix=constants.API_PREFIX_V1,
         tags=["Admin"],
         include_in_schema=PUBLISH_ALL_DOCS,
     )

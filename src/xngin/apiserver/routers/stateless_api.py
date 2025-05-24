@@ -11,6 +11,8 @@ from fastapi import (
 )
 from sqlalchemy import distinct
 from sqlalchemy.orm import Session
+
+from xngin.apiserver import constants
 from xngin.apiserver.dependencies import (
     datasource_config_required,
     gsheet_cache,
@@ -53,13 +55,13 @@ from loguru import logger
 # TODO: move into its own module re: https://github.com/agency-fund/xngin/pull/188/
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
-    logger.info(f"Starting router: {__name__}")
+    logger.info(f"Starting router: {__name__} (prefix={router.prefix})")
     yield
 
 
 router = APIRouter(
     lifespan=lifespan,
-    prefix="",
+    prefix=constants.API_PREFIX_V1,
 )
 
 

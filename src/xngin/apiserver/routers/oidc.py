@@ -7,7 +7,7 @@ import httpx
 from fastapi import APIRouter, Depends, FastAPI, HTTPException, Query
 from loguru import logger
 from pydantic import BaseModel, Field
-from xngin.apiserver import flags
+from xngin.apiserver import flags, constants
 from xngin.apiserver.routers.oidc_dependencies import get_google_configuration
 
 
@@ -32,13 +32,13 @@ def is_enabled():
 
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
-    logger.info(f"Starting router: {__name__}")
+    logger.info(f"Starting router: {__name__} (prefix={router.prefix})")
     yield
 
 
 router = APIRouter(
     lifespan=lifespan,
-    prefix="/a/oidc",
+    prefix=constants.API_PREFIX_V1 + "/a/oidc",
 )
 
 
