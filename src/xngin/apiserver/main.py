@@ -20,6 +20,7 @@ from xngin.apiserver.routers import (
     oidc,
     oidc_dependencies,
     stateless_api,
+    healthchecks,
 )
 
 if sentry_dsn := os.environ.get("SENTRY_DSN"):
@@ -81,6 +82,8 @@ app.include_router(
     prefix=constants.API_PREFIX_V1,
     tags=["Stateless Experiment Design"],
 )
+
+app.include_router(healthchecks.router, tags=["Health Checks"], include_in_schema=False)
 
 
 def enable_oidc_api():
