@@ -213,7 +213,9 @@ def run(
             if db_created and if_created:
                 console.print(f"\n🔄 [info]Running command: {if_created}[/]")
                 try:
-                    subprocess.run(if_created, shell=True, check=True)
+                    subprocess.run(
+                        if_created, shell=True, check=True, env={"VIRTUAL_ENV": ""}
+                    )
                     console.print("✅ [info]Command completed successfully[/]")
                 except subprocess.CalledProcessError as e:
                     console.print(
