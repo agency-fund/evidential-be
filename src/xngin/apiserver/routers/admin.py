@@ -1,5 +1,6 @@
 """Implements a basic Admin API."""
 
+from loguru import logger
 import secrets
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime, timedelta
@@ -153,6 +154,7 @@ def cache_is_fresh(updated: datetime | None):
 
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
+    logger.info(f"Starting router: {__name__}")
     yield
 
 

@@ -32,6 +32,7 @@ def is_enabled():
 
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
+    logger.info(f"Starting router: {__name__}")
     yield
 
 

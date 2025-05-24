@@ -52,10 +52,12 @@ from xngin.apiserver.settings import (
     Datasource,
     infer_table,
 )
+from loguru import logger
 
 
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
+    logger.info(f"Starting router: {__name__}")
     yield
 
 

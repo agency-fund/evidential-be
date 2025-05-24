@@ -43,7 +43,6 @@ from xngin.apiserver.settings import (
     ParticipantsConfig,
     ParticipantsMixin,
     XnginSettings,
-    get_settings_for_server,
     infer_table,
 )
 from xngin.schema.schema_types import FieldDescriptor, ParticipantsSchema
@@ -53,12 +52,13 @@ from xngin.sheets.config_sheet import (
 )
 from xngin.stats.assignment import assign_treatment as assign_treatment_actual
 from xngin.stats.power import check_power
+from loguru import logger
 
 
 # TODO: move into its own module re: https://github.com/agency-fund/xngin/pull/188/
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
-    get_settings_for_server()
+    logger.info(f"Starting router: {__name__}")
     yield
 
 
