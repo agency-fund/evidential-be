@@ -17,17 +17,14 @@ class OidcMisconfiguredError(Exception):
 
 def is_enabled():
     """Feature flag: Returns true iff OIDC is enabled."""
-    enabled = flags.ENABLE_OIDC
-    if enabled:
-        if not flags.CLIENT_ID:
-            raise OidcMisconfiguredError(
-                f"{flags.ENV_GOOGLE_OIDC_CLIENT_ID} environment variable is not set."
-            )
-        if not flags.CLIENT_SECRET:
-            logger.warning(
-                f"{flags.ENV_GOOGLE_OIDC_CLIENT_SECRET} environment variable is not set."
-            )
-    return enabled
+    if not flags.CLIENT_ID:
+        raise OidcMisconfiguredError(
+            f"{flags.ENV_GOOGLE_OIDC_CLIENT_ID} environment variable is not set."
+        )
+    if not flags.CLIENT_SECRET:
+        logger.warning(
+            f"{flags.ENV_GOOGLE_OIDC_CLIENT_SECRET} environment variable is not set."
+        )
 
 
 @asynccontextmanager

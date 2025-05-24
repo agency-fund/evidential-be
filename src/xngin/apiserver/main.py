@@ -91,28 +91,18 @@ app.include_router(
 
 app.include_router(healthchecks.router, tags=["Health Checks"], include_in_schema=False)
 
-
-def enable_oidc_api():
-    app.include_router(
-        oidc.router,
-        tags=["Auth"],
-        include_in_schema=PUBLISH_ALL_DOCS,
-    )
+app.include_router(
+    oidc.router,
+    tags=["Auth"],
+    include_in_schema=PUBLISH_ALL_DOCS,
+)
 
 
-def enable_admin_api():
-    app.include_router(
-        admin.router,
-        tags=["Admin"],
-        include_in_schema=PUBLISH_ALL_DOCS,
-    )
-
-
-if oidc.is_enabled():
-    enable_oidc_api()
-
-if oidc.is_enabled() and admin.is_enabled():
-    enable_admin_api()
+app.include_router(
+    admin.router,
+    tags=["Admin"],
+    include_in_schema=PUBLISH_ALL_DOCS,
+)
 
 oidc_dependencies.setup(app)
 

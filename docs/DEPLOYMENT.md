@@ -29,14 +29,7 @@ limited-access https://github.com/agency-fund/xngin-settings repository.
 
 The Admin API supports the [xngin-dash](https://github.com/agency-fund/xngin-dash) frontend.
 
-The API is enabled with these variables:
-
-| Environment Variable | Purpose                                                                   | Example |
-| -------------------- | ------------------------------------------------------------------------- | ------- |
-| ENABLE_OIDC          | Enables the OIDC endpoints. Must be `true` for the Admin API to function. | `true`  |
-| ENABLE_ADMIN         | Enables the Admin API.                                                    | `true`  |
-
-If the Admin API is enabled, OIDC must be configured with additional environment variables (see below).
+The Admin API is authenticated via OIDC. OIDC must be configured with additional environment variables (see below).
 
 ## OIDC<a name="oidc"></a>
 
