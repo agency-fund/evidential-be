@@ -6,18 +6,14 @@ from fastapi import (
     APIRouter,
     Depends,
     FastAPI,
-    HTTPException,
     Query,
-    Request,
     Response,
 )
 from sqlalchemy import distinct
 from sqlalchemy.orm import Session
-from xngin.apiserver import constants
 from xngin.apiserver.dependencies import (
     datasource_config_required,
     gsheet_cache,
-    settings_dependency,
 )
 from xngin.apiserver.dwh.queries import get_stats_on_metrics, query_for_participants
 from xngin.apiserver.exceptions_common import LateValidationError
@@ -42,7 +38,6 @@ from xngin.apiserver.settings import (
     DatasourceConfig,
     ParticipantsConfig,
     ParticipantsMixin,
-    XnginSettings,
     infer_table,
 )
 from xngin.schema.schema_types import FieldDescriptor, ParticipantsSchema
@@ -400,22 +395,6 @@ def authcheck(
 ):
     """Returns 204 if the request is allowed to use the requested datasource."""
     return Response(status_code=204)
-
-
-@router.get("/_settings", include_in_schema=False)
-def debug_settings(
-    request: Request,
-    settings: Annotated[XnginSettings, Depends(settings_dependency)],
-):
-    """Endpoint for testing purposes. Returns the current server configuration and optionally the config ID."""
-    # Secrets will not be returned because they are stored as SecretStrs, but nonetheless this method
-    # should only be invoked from trusted IP addresses.
-    if request.client is None or request.client.host not in settings.trusted_ips:
-        raise HTTPException(403)
-    response: dict[str, str | XnginSettings] = {"settings": settings}
-    if config_id := request.headers.get(constants.HEADER_CONFIG_ID):
-        response["config_id"] = config_id
-    return response
 
 
 def generate_field_descriptors(table: sqlalchemy.Table, unique_id_col: str):
