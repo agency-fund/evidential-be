@@ -146,7 +146,8 @@ def run(
     if_created: str = typer.Option(
         None,
         "--if-created",
-        help="Shell command to run if the database specified by --create-db doesn't already exist",
+        help="Shell command to run if the database specified by --create-db doesn't already exist. This is intended to "
+        "be used for creating the database schema using migration tools.",
         envvar="LOCALPG_IF_CREATED",
     ),
 ):
