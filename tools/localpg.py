@@ -146,7 +146,8 @@ def run(
     if_created: str = typer.Option(
         None,
         "--if-created",
-        help="Shell command to run if the database specified by --create-db doesn't already exist",
+        help="Shell command to run if the database specified by --create-db doesn't already exist. This is intended to "
+        "be used for creating the database schema using migration tools.",
         envvar="LOCALPG_IF_CREATED",
     ),
 ):
@@ -213,7 +214,9 @@ def run(
             if db_created and if_created:
                 console.print(f"\n🔄 [info]Running command: {if_created}[/]")
                 try:
-                    subprocess.run(if_created, shell=True, check=True)
+                    subprocess.run(
+                        if_created, shell=True, check=True, env={"VIRTUAL_ENV": ""}
+                    )
                     console.print("✅ [info]Command completed successfully[/]")
                 except subprocess.CalledProcessError as e:
                     console.print(
