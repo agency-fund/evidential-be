@@ -21,9 +21,13 @@ class ExperimentStorageConverter:
     """Converts API components to storage components and vice versa for an Experiment."""
 
     def __init__(self, experiment: tables.Experiment):
+        """
+        Assemble a partial experiment with setters, and get the final object or derived API objects.
+        """
         self.experiment = experiment
 
     def get_experiment(self) -> tables.Experiment:
+        """When you're done assembling the experiment, use this to get the final object."""
         return self.experiment
 
     @staticmethod
@@ -191,4 +195,53 @@ class ExperimentStorageConverter:
         # Revalidate the response in case we ever change the API.
         return eapi.CreateExperimentResponse.model_validate(
             self.get_experiment_config(assign_summary).model_dump()
+        )
+
+    @classmethod
+    def init_from_components(
+        cls,
+        datasource_id: str,
+        organization_id: str,
+        experiment_type: sapi.ExperimentType,
+        design_spec: sapi.DesignSpec,
+        state: ExperimentState = ExperimentState.ASSIGNED,
+        balance_check: sapi.BalanceCheck | None = None,
+        power_analyses: sapi.PowerResponse | None = None,
+    ) -> Self:
+        """Init experiment with arms from components. Get the final object with get_experiment().
+
+        Raises:
+            ValueError: If the experiment_id is not set in the design_spec.
+        """
+        if design_spec.experiment_id is None:
+            raise ValueError("experiment_id is required in the design_spec")
+        experiment = tables.Experiment(
+            id=design_spec.experiment_id,
+            datasource_id=datasource_id,
+            experiment_type=experiment_type,
+            state=state.value,
+            participant_type=design_spec.participant_type,
+            name=design_spec.experiment_name,
+            description=design_spec.description,
+            start_date=design_spec.start_date,
+            end_date=design_spec.end_date,
+            power=design_spec.power,
+            alpha=design_spec.alpha,
+            fstat_thresh=design_spec.fstat_thresh,
+        )
+        experiment.arms = [
+            tables.ArmTable(
+                id=arm.arm_id,
+                name=arm.arm_name,
+                description=arm.arm_description,
+                experiment_id=experiment.id,
+                organization_id=organization_id,
+            )
+            for arm in design_spec.arms
+        ]
+        return (
+            cls(experiment)
+            .set_design_spec_fields(design_spec)
+            .set_balance_check(balance_check)
+            .set_power_response(power_analyses)
         )

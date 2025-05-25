@@ -970,15 +970,13 @@ def test_admin_experiment_state_setting(
     expected_detail,
 ):
     # Initialize our state with an existing experiment who's state we want to modify.
-    datasource_id = testing_datasource_with_user_added.ds.id
-    experiment, _ = make_insertable_experiment(
-        initial_state, datasource_id=datasource_id
-    )
+    datasource = testing_datasource_with_user_added.ds
+    experiment, _ = make_insertable_experiment(datasource, initial_state)
     xngin_session.add(experiment)
     xngin_session.commit()
 
     response = ppost(
-        f"/v1/m/datasources/{datasource_id}/experiments/{experiment.id!s}/{endpoint}"
+        f"/v1/m/datasources/{datasource.id}/experiments/{experiment.id!s}/{endpoint}"
     )
 
     # Verify

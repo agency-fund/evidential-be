@@ -126,42 +126,30 @@ def make_create_online_experiment_request(
 
 
 def make_insertable_experiment(
+    datasource: tables.Datasource,
     state: ExperimentState = ExperimentState.COMMITTED,
-    datasource_id: str = "testing",
     experiment_type: ExperimentType = "preassigned",
     with_ids: bool = True,
 ) -> tuple[tables.Experiment, DesignSpec]:
-    """Make an experiment and arms ready for insertion into the database."""
+    """Make a minimal experiment with arms ready for insertion into the database for tests.
+
+    This does not add any power analyses or balance checks.
+    """
     request = make_createexperimentrequest_json(
         experiment_type=experiment_type, with_ids=with_ids
     )
     design_spec: DesignSpec = TypeAdapter(DesignSpec).validate_python(
         request["design_spec"]
     )
-    experiment_id = design_spec.experiment_id
-
-    experiment = (
-        ExperimentStorageConverter(
-            tables.Experiment(
-                id=experiment_id,
-                datasource_id=datasource_id,
-                experiment_type=experiment_type,
-                participant_type=design_spec.participant_type,
-                name=design_spec.experiment_name,
-                description=design_spec.description,
-                state=state,
-                start_date=design_spec.start_date,
-                end_date=design_spec.end_date,
-                power=design_spec.power,
-                balance_check=None,
-                alpha=design_spec.alpha,
-                fstat_thresh=design_spec.fstat_thresh,
-            )
-        )
-        .set_design_spec_fields(design_spec)
-        .get_experiment()
+    experiment_converter = ExperimentStorageConverter.init_from_components(
+        datasource_id=datasource.id,
+        organization_id=datasource.organization_id,
+        experiment_type=experiment_type,
+        design_spec=design_spec,
+        state=state,
     )
-    return experiment, design_spec
+    experiment = experiment_converter.get_experiment()
+    return experiment, experiment_converter.get_design_spec()
 
 
 def make_arms_from_designspec(
@@ -190,16 +178,12 @@ def insert_experiment_and_arms(
     Returns:
         (experiment_obj, arms)
     """
-    experiment, design_spec = make_insertable_experiment(
-        state=state, datasource_id=datasource.id, experiment_type=experiment_type
+    experiment, _ = make_insertable_experiment(
+        datasource=datasource, state=state, experiment_type=experiment_type
     )
     xngin_session.add(experiment)
-    arms = make_arms_from_designspec(
-        experiment.id, design_spec, datasource.organization_id
-    )
-    xngin_session.add_all(arms)
     xngin_session.commit()
-    return experiment, arms
+    return experiment, experiment.arms
 
 
 @dataclass
@@ -620,9 +604,9 @@ def test_state_setting_experiment_impl(
     expected_detail,
 ):
     # Initialize our state with an existing experiment who's state we want to modify.
-    experiment, _ = make_insertable_experiment(initial_state, testing_datasource.ds.id)
-    xngin_session.add(experiment)
-    xngin_session.commit()
+    experiment, _ = insert_experiment_and_arms(
+        xngin_session, testing_datasource.ds, state=initial_state
+    )
 
     try:
         response = method_under_test(xngin_session, experiment)
@@ -637,39 +621,34 @@ def test_state_setting_experiment_impl(
 def test_list_experiments_impl(xngin_session, testing_datasource):
     """Test that we only get experiments in a valid state for the specified datasource."""
     experiment1_data = make_insertable_experiment(
-        ExperimentState.ASSIGNED, testing_datasource.ds.id
+        testing_datasource.ds, ExperimentState.ASSIGNED
     )
     experiment2_data = make_insertable_experiment(
-        ExperimentState.COMMITTED, testing_datasource.ds.id
+        testing_datasource.ds, ExperimentState.COMMITTED
     )
     experiment3_data = make_insertable_experiment(
-        ExperimentState.DESIGNING, testing_datasource.ds.id
+        testing_datasource.ds, ExperimentState.DESIGNING
     )
     experiment4_data = make_insertable_experiment(
-        ExperimentState.ABORTED, testing_datasource.ds.id
+        testing_datasource.ds, ExperimentState.ABORTED
     )
     # One more experiment associated with a *different* datasource.
     experiment5_metadata = conftest.make_datasource_metadata(xngin_session)
     experiment5_data = make_insertable_experiment(
-        ExperimentState.ASSIGNED, datasource_id=experiment5_metadata.ds.id
+        experiment5_metadata.ds, ExperimentState.ASSIGNED
     )
     # Set the created_at time to test ordering
     experiment1_data[0].created_at = datetime.now(UTC) - timedelta(days=1)
     experiment2_data[0].created_at = datetime.now(UTC)
     experiment3_data[0].created_at = datetime.now(UTC) + timedelta(days=1)
-    for data in [
+    experiment_data = [
         experiment1_data,
         experiment2_data,
         experiment3_data,
         experiment4_data,
         experiment5_data,
-    ]:
-        experiment, design_spec = data
-        xngin_session.add(experiment)
-        arms = make_arms_from_designspec(
-            experiment.id, design_spec, testing_datasource.ds.organization_id
-        )
-        xngin_session.add_all(arms)
+    ]
+    xngin_session.add_all([data[0] for data in experiment_data])
     xngin_session.commit()
 
     experiments = list_experiments_impl(xngin_session, testing_datasource.ds.id)
@@ -682,22 +661,14 @@ def test_list_experiments_impl(xngin_session, testing_datasource):
     actual2_config = experiments.items[1]
     actual3_config = experiments.items[0]
     assert actual1_config.state == ExperimentState.ASSIGNED
-    expected1_design_spec = ExperimentStorageConverter(
-        experiment1_data[0]
-    ).get_design_spec()
-    diff = DeepDiff(actual1_config.design_spec, expected1_design_spec)
+    diff = DeepDiff(actual1_config.design_spec, experiment1_data[1])
     assert not diff, f"Objects differ:\n{diff.pretty()}"
+    print(experiment1_data[1])
     assert actual2_config.state == ExperimentState.COMMITTED
-    expected2_design_spec = ExperimentStorageConverter(
-        experiment2_data[0]
-    ).get_design_spec()
-    diff = DeepDiff(actual2_config.design_spec, expected2_design_spec)
+    diff = DeepDiff(actual2_config.design_spec, experiment2_data[1])
     assert not diff, f"Objects differ:\n{diff.pretty()}"
     assert actual3_config.state == ExperimentState.DESIGNING
-    expected3_design_spec = ExperimentStorageConverter(
-        experiment3_data[0]
-    ).get_design_spec()
-    diff = DeepDiff(actual3_config.design_spec, expected3_design_spec)
+    diff = DeepDiff(actual3_config.design_spec, experiment3_data[1])
     assert not diff, f"Objects differ:\n{diff.pretty()}"
 
 
@@ -832,7 +803,7 @@ def test_get_existing_assignment_for_participant(xngin_session, testing_datasour
 
 def test_make_assignment_for_participant_errors(xngin_session, testing_datasource):
     experiment, _ = make_insertable_experiment(
-        ExperimentState.ASSIGNED, testing_datasource.ds.id
+        testing_datasource.ds, ExperimentState.ASSIGNED
     )
     with pytest.raises(
         ExperimentsAssignmentError, match="Invalid experiment state: assigned"
@@ -840,8 +811,9 @@ def test_make_assignment_for_participant_errors(xngin_session, testing_datasourc
         create_assignment_for_participant(xngin_session, experiment, "p1", None)
 
     experiment, _ = make_insertable_experiment(
-        ExperimentState.COMMITTED, testing_datasource.ds.id
+        testing_datasource.ds, ExperimentState.COMMITTED
     )
+    experiment.arms = []
     with pytest.raises(ExperimentsAssignmentError, match="Experiment has no arms"):
         create_assignment_for_participant(xngin_session, experiment, "p1", None)
 
@@ -857,9 +829,7 @@ def test_make_assignment_for_participant(xngin_session, testing_datasource):
     assert expect_none is None
 
     online_experiment, online_arms = insert_experiment_and_arms(
-        xngin_session,
-        testing_datasource.ds,
-        experiment_type="online",
+        xngin_session, testing_datasource.ds, experiment_type="online"
     )
     # Assert that we do create new assignments for online experiments
     assignment = create_assignment_for_participant(

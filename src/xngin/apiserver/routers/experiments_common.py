@@ -130,40 +130,17 @@ def create_preassigned_experiment_impl(
         random_state=random_state,
     )
 
-    experiment_converter = (
-        ExperimentStorageConverter(
-            tables.Experiment(
-                id=experiment_id,
-                datasource_id=datasource_id,
-                experiment_type="preassigned",
-                participant_type=design_spec.participant_type,
-                name=design_spec.experiment_name,
-                description=design_spec.description,
-                state=ExperimentState.ASSIGNED,
-                start_date=design_spec.start_date,
-                end_date=design_spec.end_date,
-                power=design_spec.power,
-                alpha=design_spec.alpha,
-                fstat_thresh=design_spec.fstat_thresh,
-            )
-        )
-        .set_design_spec_fields(design_spec)
-        .set_balance_check(assignment_response.balance_check)
-        .set_power_response(request.power_analyses)
+    experiment_converter = ExperimentStorageConverter.init_from_components(
+        datasource_id=datasource_id,
+        organization_id=organization_id,
+        experiment_type="preassigned",
+        design_spec=design_spec,
+        state=ExperimentState.ASSIGNED,
+        balance_check=assignment_response.balance_check,
+        power_analyses=request.power_analyses,
     )
     experiment = experiment_converter.get_experiment()
     xngin_session.add(experiment)
-
-    # Create arm records
-    for arm in design_spec.arms:
-        db_arm = tables.ArmTable(
-            id=arm.arm_id,
-            name=arm.arm_name,
-            description=arm.arm_description,
-            experiment_id=experiment.id,
-            organization_id=organization_id,
-        )
-        xngin_session.add(db_arm)
 
     # Create assignment records
     for assignment in assignment_response.assignments:
@@ -181,8 +158,9 @@ def create_preassigned_experiment_impl(
 
     xngin_session.commit()
 
-    balance_check = experiment_converter.get_balance_check()
-    assign_summary = get_assign_summary(xngin_session, experiment.id, balance_check)
+    assign_summary = get_assign_summary(
+        xngin_session, experiment.id, assignment_response.balance_check
+    )
     return experiment_converter.get_create_experiment_response(assign_summary)
 
 
@@ -193,37 +171,14 @@ def create_online_experiment_impl(
     xngin_session: Session,
 ) -> CreateExperimentResponse:
     design_spec = request.design_spec
-    experiment_converter = ExperimentStorageConverter(
-        tables.Experiment(
-            id=design_spec.experiment_id,
-            datasource_id=datasource_id,
-            experiment_type="online",
-            participant_type=design_spec.participant_type,
-            name=design_spec.experiment_name,
-            description=design_spec.description,
-            # No assignments nor power check (for now), but we still want to allow a review.
-            state=ExperimentState.ASSIGNED,
-            start_date=design_spec.start_date,
-            end_date=design_spec.end_date,
-            power=design_spec.power,
-            alpha=design_spec.alpha,
-            fstat_thresh=design_spec.fstat_thresh,
-        )
-    ).set_design_spec_fields(design_spec)
-    experiment = experiment_converter.get_experiment()
-    xngin_session.add(experiment)
-    # Create arm records
-    for arm in design_spec.arms:
-        db_arm = tables.ArmTable(
-            id=arm.arm_id,
-            name=arm.arm_name,
-            description=arm.arm_description,
-            experiment_id=experiment.id,
-            organization_id=organization_id,
-        )
-        xngin_session.add(db_arm)
+    experiment_converter = ExperimentStorageConverter.init_from_components(
+        datasource_id=datasource_id,
+        organization_id=organization_id,
+        experiment_type="online",
+        design_spec=design_spec,
+    )
+    xngin_session.add(experiment_converter.get_experiment())
     xngin_session.commit()
-    # Return the committed experiment config with no assignments.
     # Online experiments start with no assignments.
     empty_assign_summary = AssignSummary(
         balance_check=None,

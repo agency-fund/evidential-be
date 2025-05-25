@@ -18,7 +18,6 @@ from xngin.apiserver.test_experiments_common import (  # pylint: disable=unused-
     fixture_teardown,  # noqa: F401
     insert_experiment_and_arms,
     make_create_preassigned_experiment_request,
-    make_insertable_experiment,
 )
 
 conftest.setup(app)
@@ -70,11 +69,9 @@ def test_create_experiment_with_assignment_sl(xngin_session, use_deterministic_r
 
 def test_list_experiments_sl_without_api_key(xngin_session, testing_datasource):
     """Tests that listing experiments tied to a db datasource requires an API key."""
-    experiment, _ = make_insertable_experiment(
-        ExperimentState.ASSIGNED, testing_datasource.ds.id
+    insert_experiment_and_arms(
+        xngin_session, testing_datasource.ds, state=ExperimentState.ASSIGNED
     )
-    xngin_session.add(experiment)
-    xngin_session.commit()
 
     response = client.get(
         "/experiments",
@@ -87,9 +84,7 @@ def test_list_experiments_sl_without_api_key(xngin_session, testing_datasource):
 def test_list_experiments_sl_with_api_key(xngin_session, testing_datasource):
     """Tests that listing experiments tied to a db datasource with an API key works."""
     expected_experiment, _ = insert_experiment_and_arms(
-        xngin_session,
-        testing_datasource.ds,
-        state=ExperimentState.ASSIGNED,
+        xngin_session, testing_datasource.ds, state=ExperimentState.ASSIGNED
     )
 
     response = client.get(
@@ -149,11 +144,9 @@ def test_get_experiment_assignments_not_found():
 def test_get_experiment_assignments_wrong_datasource(xngin_session, testing_datasource):
     """Test getting assignments for an experiment from a different datasource."""
     # Create experiment in one datasource
-    experiment, _ = make_insertable_experiment(
-        ExperimentState.COMMITTED, testing_datasource.ds.id
+    experiment, _ = insert_experiment_and_arms(
+        xngin_session, testing_datasource.ds, state=ExperimentState.COMMITTED
     )
-    xngin_session.add(experiment)
-    xngin_session.commit()
 
     # Try to get it from another datasource
     response = client.get(
