@@ -273,18 +273,13 @@ def list_organization_experiments_impl(
     )
     result = xngin_session.execute(stmt)
     experiments = result.scalars().all()
-    return ListExperimentsResponse(
-        items=[
-            ExperimentConfig(
-                datasource_id=e.datasource_id,
-                state=e.state,
-                design_spec=e.get_design_spec(),
-                power_analyses=e.get_power_analyses(),
-                assign_summary=get_assign_summary(xngin_session, e),
-            )
-            for e in experiments
-        ]
-    )
+    items = []
+    for e in experiments:
+        converter = ExperimentStorageConverter(e)
+        balance_check = converter.get_balance_check()
+        assign_summary = get_assign_summary(xngin_session, e.id, balance_check)
+        items.append(converter.get_experiment_config(assign_summary))
+    return ListExperimentsResponse(items=items)
 
 
 def list_experiments_impl(

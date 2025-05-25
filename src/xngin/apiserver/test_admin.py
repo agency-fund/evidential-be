@@ -661,6 +661,14 @@ def test_lifecycle_with_db(testing_datasource):
     experiment_config = experiment_list.items[0]
     assert experiment_config.design_spec.experiment_id == parsed_experiment_id
 
+    # List org experiments.
+    response = pget(f"/v1/m/organizations/{testing_datasource.org.id}/experiments")
+    assert response.status_code == 200, response.content
+    experiment_list = ListExperimentsResponse.model_validate(response.json())
+    assert len(experiment_list.items) == 1, experiment_list
+    experiment_config = experiment_list.items[0]
+    assert experiment_config.design_spec.experiment_id == parsed_experiment_id
+
     # Analyze experiment
     response = pget(
         f"/v1/m/datasources/{testing_datasource.ds.id}/experiments/{parsed_experiment_id}/analyze"
