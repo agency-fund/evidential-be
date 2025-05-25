@@ -7,7 +7,7 @@ from sqlalchemy.orm import Session
 from sqlalchemy.exc import IntegrityError
 
 from xngin.apiserver.routers.stateless_api_types import DataType
-from xngin.apiserver.models.tables import CacheTable
+from xngin.apiserver.models import tables
 from xngin.apiserver.gsheet_cache import GSheetCache
 from xngin.apiserver.settings import SheetRef
 from xngin.schema.schema_types import FieldDescriptor, ParticipantsSchema
@@ -50,7 +50,7 @@ def fixture_teardown(xngin_session):
     finally:
         # teardown here
         # Clean the cache after each test.
-        xngin_session.query(CacheTable).delete()
+        xngin_session.query(tables.CacheTable).delete()
         xngin_session.commit()
 
 
@@ -59,7 +59,7 @@ def test_get_cached_entry(sheet_cache, mock_session, mock_sheet_config):
     cache_key = f"{key.url}!{key.worksheet}"
 
     # Mock the session.get to return a cached entry
-    mock_session.get.return_value = CacheTable(
+    mock_session.get.return_value = tables.CacheTable(
         key=cache_key, value=mock_sheet_config.model_dump_json()
     )
 
@@ -69,7 +69,7 @@ def test_get_cached_entry(sheet_cache, mock_session, mock_sheet_config):
 
     assert isinstance(result, ParticipantsSchema)
     assert result.model_dump() == mock_sheet_config.model_dump()
-    mock_session.get.assert_called_once_with(CacheTable, cache_key)
+    mock_session.get.assert_called_once_with(tables.CacheTable, cache_key)
     fetcher.assert_not_called()
 
 
@@ -86,7 +86,7 @@ def test_get_new_entry(sheet_cache, mock_session, mock_sheet_config):
 
     assert isinstance(result, ParticipantsSchema)
     assert result.model_dump() == mock_sheet_config.model_dump()
-    mock_session.get.assert_called_once_with(CacheTable, cache_key)
+    mock_session.get.assert_called_once_with(tables.CacheTable, cache_key)
     fetcher.assert_called_once()
     mock_session.add.assert_called_once()
     mock_session.commit.assert_called_once()
@@ -176,7 +176,7 @@ def test_cache_key_generation(
 
     sheet_cache.get(key, fetcher)
 
-    mock_session.get.assert_called_once_with(CacheTable, cache_key)
+    mock_session.get.assert_called_once_with(tables.CacheTable, cache_key)
     mock_session.add.assert_called_once()
     added_cache_entry = mock_session.add.call_args[0][0]
     assert added_cache_entry.key == cache_key

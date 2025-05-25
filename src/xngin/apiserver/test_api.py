@@ -12,7 +12,7 @@ from loguru import logger
 from xngin.apiserver import conftest, constants, flags
 from xngin.apiserver.gsheet_cache import GSheetCache
 from xngin.apiserver.main import app
-from xngin.apiserver.models.tables import CacheTable
+from xngin.apiserver.models import tables
 from xngin.apiserver.routers.stateless_api import (
     CommonQueryParams,
     get_participants_config_and_schema,
@@ -62,7 +62,7 @@ def fixture_teardown(xngin_session):
         # Rollback any pending transactions that may have been hanging due to an exception.
         xngin_session.rollback()
         # Ensure we're not using stale cache settings (possible if not using an ephemeral app db).
-        xngin_session.query(CacheTable).delete()
+        xngin_session.query(tables.CacheTable).delete()
         xngin_session.commit()
 
 

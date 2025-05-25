@@ -6,7 +6,7 @@ from patsy.eval import EvalFactor
 from xngin.apiserver.routers.stateless_api_types import (
     ParticipantOutcome,
 )
-from xngin.apiserver.models.tables import ArmAssignment
+from xngin.apiserver.models import tables
 
 
 @dataclasses.dataclass(slots=True)  # slots=True for performance
@@ -19,7 +19,7 @@ class ArmAnalysisResult:
 
 
 def analyze_experiment(
-    treatment_assignments: list[ArmAssignment],
+    treatment_assignments: list[tables.ArmAssignment],
     participant_outcomes: list[ParticipantOutcome],
     baseline_arm_id: str | None = None,
 ) -> dict[str, dict[str, ArmAnalysisResult]]:

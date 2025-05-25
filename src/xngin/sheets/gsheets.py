@@ -1,7 +1,7 @@
 import os
 
 import gspread
-import pandas
+import pandas as pd
 from loguru import logger
 
 DEFAULT_GSPREAD_CREDENTIALS = "~/.config/gspread/service_account.json"
@@ -42,10 +42,10 @@ def read_sheet_from_gsheet(url, worksheet):
     return fetch_sheet(url, worksheet).get_all_records()
 
 
-def read_sheet_df(url: str, worksheet: str) -> pandas.DataFrame:
+def read_sheet_df(url: str, worksheet: str) -> pd.DataFrame:
     """Reads a Google Spreadsheet into a Pandas DataFrame.
 
     See the docs for worksheet.get_all_records() to understand how the spreadsheet data will be represented.
     """
     ws = fetch_sheet(url, worksheet)
-    return pandas.DataFrame(ws.get_all_records())
+    return pd.DataFrame(ws.get_all_records())

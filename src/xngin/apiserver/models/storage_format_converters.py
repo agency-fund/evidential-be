@@ -6,7 +6,7 @@ Use these converters to set/get the different JSONB columns of their respective 
 from typing import Self
 from pydantic import TypeAdapter
 from xngin.apiserver.models.enums import ExperimentState
-from xngin.apiserver.models.tables import Experiment
+from xngin.apiserver.models import tables
 from xngin.apiserver.routers.experiments_api_types import (
     AssignSummary,
     CreateExperimentResponse,
@@ -35,10 +35,10 @@ from xngin.apiserver.models.storage_types import (
 class ExperimentStorageConverter:
     """Converts API components to storage components and vice versa for an Experiment."""
 
-    def __init__(self, experiment: Experiment):
+    def __init__(self, experiment: tables.Experiment):
         self.experiment = experiment
 
-    def get_experiment(self) -> Experiment:
+    def get_experiment(self) -> tables.Experiment:
         return self.experiment
 
     @staticmethod
