@@ -7,23 +7,8 @@ from typing import Self
 from pydantic import TypeAdapter
 from xngin.apiserver.models.enums import ExperimentState
 from xngin.apiserver.models import tables
-from xngin.apiserver.routers.experiments_api_types import (
-    AssignSummary,
-    CreateExperimentResponse,
-    ExperimentConfig,
-    GetExperimentResponse,
-)
-from xngin.apiserver.routers.stateless_api_types import (
-    BalanceCheck,
-    DesignSpec,
-    PowerResponse,
-    Relation,
-)
-from xngin.apiserver.routers.stateless_api_types import (
-    Stratum as ApiStratum,
-    DesignSpecMetricRequest as ApiDesignSpecMetricRequest,
-    Filter as ApiFilter,
-)
+from xngin.apiserver.routers import experiments_api_types as eapi
+from xngin.apiserver.routers import stateless_api_types as sapi
 from xngin.apiserver.models.storage_types import (
     DesignSpecFields,
     StorageFilter,
@@ -42,21 +27,23 @@ class ExperimentStorageConverter:
         return self.experiment
 
     @staticmethod
-    def get_api_strata(design_spec_fields: DesignSpecFields) -> list[ApiStratum]:
+    def get_api_strata(design_spec_fields: DesignSpecFields) -> list[sapi.Stratum]:
         """Converts stored strata to API Stratum objects."""
         if design_spec_fields.strata is None:
             return []
-        return [ApiStratum(field_name=s.field_name) for s in design_spec_fields.strata]
+        return [
+            sapi.Stratum(field_name=s.field_name) for s in design_spec_fields.strata
+        ]
 
     @staticmethod
     def get_api_metrics(
         design_spec_fields: DesignSpecFields,
-    ) -> list[ApiDesignSpecMetricRequest]:
+    ) -> list[sapi.DesignSpecMetricRequest]:
         """Converts stored metrics to API DesignSpecMetricRequest objects."""
         if design_spec_fields.metrics is None:
             return []
         return [
-            ApiDesignSpecMetricRequest(
+            sapi.DesignSpecMetricRequest(
                 field_name=m.field_name,
                 metric_pct_change=m.metric_pct_change,
                 metric_target=m.metric_target,
@@ -65,22 +52,22 @@ class ExperimentStorageConverter:
         ]
 
     @staticmethod
-    def get_api_filters(design_spec_fields: DesignSpecFields) -> list[ApiFilter]:
+    def get_api_filters(design_spec_fields: DesignSpecFields) -> list[sapi.Filter]:
         """Converts stored filters to API Filter objects."""
         if design_spec_fields.filters is None:
             return []
         return [
             # The `value` field in StorageFilter is Sequence[Any].
-            # Pydantic will validate when creating ApiFilter.
-            ApiFilter(
+            # Pydantic will validate when creating Filter.
+            sapi.Filter(
                 field_name=f.field_name,
-                relation=Relation(f.relation),
+                relation=sapi.Relation(f.relation),
                 value=f.value,
             )
             for f in design_spec_fields.filters
         ]
 
-    def set_design_spec_fields(self, design_spec: DesignSpec) -> Self:
+    def set_design_spec_fields(self, design_spec: sapi.DesignSpec) -> Self:
         """Saves the components of a DesignSpec to the experiment."""
         storage_strata = None
         if design_spec.strata:
@@ -120,10 +107,10 @@ class ExperimentStorageConverter:
     def get_design_spec_fields(self) -> DesignSpecFields:
         return DesignSpecFields.model_validate(self.experiment.design_spec_fields)
 
-    def get_design_spec(self) -> DesignSpec:
+    def get_design_spec(self) -> sapi.DesignSpec:
         """Converts a DesignSpecFields to a DesignSpec object."""
         design_spec_fields = self.get_design_spec_fields()
-        return TypeAdapter(DesignSpec).validate_python({
+        return TypeAdapter(sapi.DesignSpec).validate_python({
             "participant_type": self.experiment.participant_type,
             "experiment_id": self.experiment.id,
             "experiment_type": self.experiment.experiment_type,
@@ -147,39 +134,41 @@ class ExperimentStorageConverter:
             "fstat_thresh": self.experiment.fstat_thresh,
         })
 
-    def set_balance_check(self, value: BalanceCheck | None) -> Self:
+    def set_balance_check(self, value: sapi.BalanceCheck | None) -> Self:
         if value is None:
             self.experiment.balance_check = None
         else:
-            self.experiment.balance_check = BalanceCheck.model_validate(
+            self.experiment.balance_check = sapi.BalanceCheck.model_validate(
                 value
             ).model_dump()
         return self
 
-    def get_balance_check(self) -> BalanceCheck | None:
+    def get_balance_check(self) -> sapi.BalanceCheck | None:
         if self.experiment.balance_check is not None:
-            return BalanceCheck.model_validate(self.experiment.balance_check)
+            return sapi.BalanceCheck.model_validate(self.experiment.balance_check)
         return None
 
-    def set_power_response(self, value: PowerResponse | None) -> Self:
+    def set_power_response(self, value: sapi.PowerResponse | None) -> Self:
         if value is None:
             self.experiment.power_analyses = None
         else:
-            self.experiment.power_analyses = PowerResponse.model_validate(
+            self.experiment.power_analyses = sapi.PowerResponse.model_validate(
                 value
             ).model_dump()
         return self
 
-    def get_power_response(self) -> PowerResponse | None:
+    def get_power_response(self) -> sapi.PowerResponse | None:
         if self.experiment.power_analyses is None:
             return None
-        return PowerResponse.model_validate(self.experiment.power_analyses)
+        return sapi.PowerResponse.model_validate(self.experiment.power_analyses)
 
-    def get_experiment_config(self, assign_summary: AssignSummary) -> ExperimentConfig:
+    def get_experiment_config(
+        self, assign_summary: eapi.AssignSummary
+    ) -> eapi.ExperimentConfig:
         """Construct an ExperimentConfig from the internal Experiment and an AssignSummary.
 
         Expects assign_summary since that typically requires a db lookup."""
-        return ExperimentConfig(
+        return eapi.ExperimentConfig(
             datasource_id=self.experiment.datasource_id,
             state=ExperimentState(self.experiment.state),
             design_spec=self.get_design_spec(),
@@ -188,18 +177,18 @@ class ExperimentStorageConverter:
         )
 
     def get_experiment_response(
-        self, assign_summary: AssignSummary
-    ) -> GetExperimentResponse:
+        self, assign_summary: eapi.AssignSummary
+    ) -> eapi.GetExperimentResponse:
         # Although ListExperimentsResponse is a subclass of ExperimentConfig, we revalidate the
         # response in case we ever change the API.
-        return GetExperimentResponse.model_validate(
+        return eapi.GetExperimentResponse.model_validate(
             self.get_experiment_config(assign_summary).model_dump()
         )
 
     def get_create_experiment_response(
-        self, assign_summary: AssignSummary
-    ) -> CreateExperimentResponse:
+        self, assign_summary: eapi.AssignSummary
+    ) -> eapi.CreateExperimentResponse:
         # Revalidate the response in case we ever change the API.
-        return CreateExperimentResponse.model_validate(
+        return eapi.CreateExperimentResponse.model_validate(
             self.get_experiment_config(assign_summary).model_dump()
         )
