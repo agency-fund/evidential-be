@@ -169,7 +169,7 @@ def fixture_testing_sheet_datasource_with_user_added(testing_datasource):
 def fixture_testing_experiment(xngin_session, testing_datasource_with_user_added):
     """Create an experiment on a test inline schema datasource with proper user permissions."""
     datasource = testing_datasource_with_user_added.ds
-    experiment, _ = insert_experiment_and_arms(xngin_session, datasource, "preassigned")
+    experiment = insert_experiment_and_arms(xngin_session, datasource, "preassigned")
     # Add fake assignments for each arm for real participant ids in our test data.
     arm_ids = [arm.id for arm in experiment.arms]
     for i in range(10):
@@ -867,7 +867,7 @@ def test_get_experiment_assignment_for_preassigned_participant(testing_experimen
 def test_get_experiment_assignment_for_online_participant(
     xngin_session, testing_datasource_with_user_added
 ):
-    testing_experiment, _ = insert_experiment_and_arms(
+    testing_experiment = insert_experiment_and_arms(
         xngin_session, testing_datasource_with_user_added.ds, "online"
     )
     datasource_id = testing_experiment.datasource_id
@@ -935,7 +935,7 @@ def test_experiments_analyze(testing_experiment):
 def test_experiments_analyze_for_experiment_with_no_participants(
     xngin_session, testing_datasource_with_user_added
 ):
-    testing_experiment, _ = insert_experiment_and_arms(
+    testing_experiment = insert_experiment_and_arms(
         xngin_session, testing_datasource_with_user_added.ds, "online"
     )
     datasource_id = testing_experiment.datasource_id

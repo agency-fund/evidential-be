@@ -175,15 +175,14 @@ def insert_experiment_and_arms(
 ):
     """Creates an experiment and arms and commits them to the database.
 
-    Returns:
-        (experiment_obj, arms)
+    Returns the new ORM experiment object.
     """
     experiment, _ = make_insertable_experiment(
         datasource=datasource, state=state, experiment_type=experiment_type
     )
     xngin_session.add(experiment)
     xngin_session.commit()
-    return experiment, experiment.arms
+    return experiment
 
 
 @dataclass
@@ -604,7 +603,7 @@ def test_state_setting_experiment_impl(
     expected_detail,
 ):
     # Initialize our state with an existing experiment who's state we want to modify.
-    experiment, _ = insert_experiment_and_arms(
+    experiment = insert_experiment_and_arms(
         xngin_session, testing_datasource.ds, state=initial_state
     )
 
@@ -674,7 +673,7 @@ def test_list_experiments_impl(xngin_session, testing_datasource):
 
 def test_get_experiment_assignments_impl(xngin_session, testing_datasource):
     # First insert an experiment with assignments
-    experiment, _ = insert_experiment_and_arms(xngin_session, testing_datasource.ds)
+    experiment = insert_experiment_and_arms(xngin_session, testing_datasource.ds)
     experiment_id = experiment.id
 
     arm1_id = experiment.arms[0].id
@@ -734,7 +733,7 @@ def test_get_experiment_assignments_impl(xngin_session, testing_datasource):
 
 def make_experiment_with_assignments(xngin_session, datasource: tables.Datasource):
     """Helper test function that commits a new preassigned experiment with assignments."""
-    experiment, _ = insert_experiment_and_arms(xngin_session, datasource)
+    experiment = insert_experiment_and_arms(xngin_session, datasource)
     arm1_id = experiment.arms[0].id
     arm2_id = experiment.arms[1].id
     assignments = [
@@ -819,7 +818,7 @@ def test_make_assignment_for_participant_errors(xngin_session, testing_datasourc
 
 
 def test_make_assignment_for_participant(xngin_session, testing_datasource):
-    preassigned_experiment, _ = insert_experiment_and_arms(
+    preassigned_experiment = insert_experiment_and_arms(
         xngin_session, testing_datasource.ds
     )
     # Assert that we won't create new assignments for preassigned experiments
@@ -828,7 +827,7 @@ def test_make_assignment_for_participant(xngin_session, testing_datasource):
     )
     assert expect_none is None
 
-    online_experiment, online_arms = insert_experiment_and_arms(
+    online_experiment = insert_experiment_and_arms(
         xngin_session, testing_datasource.ds, experiment_type="online"
     )
     # Assert that we do create new assignments for online experiments
@@ -837,7 +836,7 @@ def test_make_assignment_for_participant(xngin_session, testing_datasource):
     )
     assert assignment is not None
     assert assignment.participant_id == "new_id"
-    online_arm_map = {arm.id: arm.name for arm in online_arms}
+    online_arm_map = {arm.id: arm.name for arm in online_experiment.arms}
     assert assignment.arm_name == online_arm_map[str(assignment.arm_id)]
     assert not assignment.strata
 

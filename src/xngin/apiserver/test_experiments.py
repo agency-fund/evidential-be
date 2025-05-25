@@ -83,7 +83,7 @@ def test_list_experiments_sl_without_api_key(xngin_session, testing_datasource):
 
 def test_list_experiments_sl_with_api_key(xngin_session, testing_datasource):
     """Tests that listing experiments tied to a db datasource with an API key works."""
-    expected_experiment, _ = insert_experiment_and_arms(
+    expected_experiment = insert_experiment_and_arms(
         xngin_session, testing_datasource.ds, state=ExperimentState.ASSIGNED
     )
 
@@ -106,7 +106,7 @@ def test_list_experiments_sl_with_api_key(xngin_session, testing_datasource):
 
 
 def test_get_experiment(xngin_session, testing_datasource):
-    new_experiment, _ = insert_experiment_and_arms(
+    new_experiment = insert_experiment_and_arms(
         xngin_session,
         testing_datasource.ds,
         state=ExperimentState.DESIGNING,
@@ -144,7 +144,7 @@ def test_get_experiment_assignments_not_found():
 def test_get_experiment_assignments_wrong_datasource(xngin_session, testing_datasource):
     """Test getting assignments for an experiment from a different datasource."""
     # Create experiment in one datasource
-    experiment, _ = insert_experiment_and_arms(
+    experiment = insert_experiment_and_arms(
         xngin_session, testing_datasource.ds, state=ExperimentState.COMMITTED
     )
 
@@ -160,15 +160,14 @@ def test_get_experiment_assignments_wrong_datasource(xngin_session, testing_data
 def test_get_assignment_for_preassigned_participant_with_apikey(
     xngin_session, testing_datasource
 ):
-    preassigned_experiment, arms = insert_experiment_and_arms(
-        xngin_session,
-        testing_datasource.ds,
+    preassigned_experiment = insert_experiment_and_arms(
+        xngin_session, testing_datasource.ds
     )
     assignment = tables.ArmAssignment(
         experiment_id=preassigned_experiment.id,
         participant_id="assigned_id",
         participant_type=preassigned_experiment.participant_type,
-        arm_id=arms[0].id,
+        arm_id=preassigned_experiment.arms[0].id,
         strata=[],
     )
     xngin_session.add(assignment)
@@ -206,7 +205,7 @@ def test_get_assignment_for_online_participant_with_apikey(
     xngin_session, testing_datasource
 ):
     """Test endpoint that gets an assignment for a participant via API key."""
-    online_experiment, arms = insert_experiment_and_arms(
+    online_experiment = insert_experiment_and_arms(
         xngin_session,
         testing_datasource.ds,
         experiment_type="online",
@@ -223,7 +222,7 @@ def test_get_assignment_for_online_participant_with_apikey(
     parsed = GetParticipantAssignmentResponse.model_validate_json(response.text)
     assert parsed.experiment_id == online_experiment.id
     assert parsed.participant_id == "1"
-    arms_map = {arm.id: arm.name for arm in arms}
+    arms_map = {arm.id: arm.name for arm in online_experiment.arms}
     assert parsed.assignment is not None
     assert parsed.assignment.arm_name == arms_map[str(parsed.assignment.arm_id)]
     assert parsed.assignment.arm_name == "control"
