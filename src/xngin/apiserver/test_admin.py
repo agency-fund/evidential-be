@@ -261,8 +261,8 @@ def test_create_datasource_invalid_dns(testing_datasource):
     assert "DNS resolution failed" in str(response.content)
 
 
-def test_lifecycle(testing_datasource):
-    """Exercises the admin API methods that can operate purely in-process w/o an external dwh."""
+def test_add_member_to_org(testing_datasource):
+    """Test adding a user to an org."""
     # Add privileged user to existing organization
     response = ppost(
         f"/v1/m/organizations/{testing_datasource.org.id}/members",
@@ -277,20 +277,29 @@ def test_lifecycle(testing_datasource):
     )
     assert response.status_code == 204, response.content
 
-    # List organizations
+
+def test_list_orgs(testing_datasource_with_user):
+    """Test listing the orgs the user is a member of."""
     response = pget(
         "/v1/m/organizations",
     )
     assert response.status_code == 200, response.content
-    # user has their own org created upon account creation, and we created another for it.
-    assert len(response.json()["items"]) == 2
-    assert testing_datasource.org.id in {o["id"] for o in response.json()["items"]}
+    # Note: user was added to the test fixture org already, so no org was created.
+    assert len(response.json()["items"]) == 1, response.json()
+    assert testing_datasource_with_user.org.id in {
+        o["id"] for o in response.json()["items"]
+    }
+
+
+def test_datasource_lifecycle(testing_datasource_with_user):
+    """Test creating, listing, updating a datasource."""
+    org_id = testing_datasource_with_user.org.id
 
     # Create datasource
     response = ppost(
         "/v1/m/datasources",
         content=CreateDatasourceRequest(
-            organization_id=testing_datasource.org.id,
+            organization_id=org_id,
             name="test remote ds",
             # These settings correspond to the Postgres spun up in GHA or via localpg.py.
             dwh=Dsn(
@@ -309,7 +318,7 @@ def test_lifecycle(testing_datasource):
     datasource_id = datasource_response.id
 
     # List datasources
-    response = pget(f"/v1/m/organizations/{testing_datasource.org.id}/datasources")
+    response = pget(f"/v1/m/organizations/{org_id}/datasources")
     assert response.status_code == 200, response.content
     list_ds_response = ListDatasourcesResponse.model_validate(response.json())
     assert len(list_ds_response.items) == 2
@@ -332,7 +341,7 @@ def test_lifecycle(testing_datasource):
     assert response.status_code == 204, response.content
 
     # List datasources to confirm update
-    response = pget(f"/v1/m/organizations/{testing_datasource.org.id}/datasources")
+    response = pget(f"/v1/m/organizations/{org_id}/datasources")
     assert response.status_code == 200, response.content
     assert "updated name" in {i["name"] for i in response.json()["items"]}, (
         response.json()
@@ -359,16 +368,38 @@ def test_lifecycle(testing_datasource):
 
     # List datasources to confirm update
     response = pget(
-        f"/v1/m/organizations/{testing_datasource.org.id}/datasources",
+        f"/v1/m/organizations/{org_id}/datasources",
     )
     assert response.status_code == 200, response.content
     assert "bigquery" in {i["driver"] for i in response.json()["items"]}, (
         response.json()
     )
 
+
+def test_delete_datasource(testing_datasource_with_user):
+    """Test deleting a datasource a few different ways."""
+    ds_id = testing_datasource_with_user.ds.id
+
+    # Delete the datasource as an unprivileged user.
+    response = udelete(f"/v1/m/datasources/{ds_id}")
+    assert response.status_code == 403, response.content
+
+    # Delete the datasource as a privileged user.
+    response = pdelete(f"/v1/m/datasources/{ds_id}")
+    assert response.status_code == 204, response.content
+
+    # Delete the datasource a 2nd time.
+    response = pdelete(f"/v1/m/datasources/{ds_id}")
+    assert response.status_code == 204, response.content
+
+
+def test_participants_lifecycle(testing_datasource_with_user):
+    """Test getting, creating, listing, updating, and deleting a participant type."""
+    ds_id = testing_datasource_with_user.ds.id
+
     # Get participants (sheet version)
     response = pget(
-        f"/v1/m/datasources/{testing_datasource.ds.id}/participants/test_participant_type",
+        f"/v1/m/datasources/{ds_id}/participants/test_participant_type",
     )
     assert response.status_code == 200, response.content
     parsed = SheetParticipantsRef.model_validate(response.json())
@@ -377,7 +408,7 @@ def test_lifecycle(testing_datasource):
 
     # Create participant
     response = ppost(
-        f"/v1/m/datasources/{testing_datasource.ds.id}/participants",
+        f"/v1/m/datasources/{ds_id}/participants",
         content=CreateParticipantsTypeRequest(
             participant_type="newpt",
             schema_def=ParticipantsSchema(
@@ -402,7 +433,7 @@ def test_lifecycle(testing_datasource):
 
     # List participants
     response = pget(
-        f"/v1/m/datasources/{testing_datasource.ds.id}/participants",
+        f"/v1/m/datasources/{ds_id}/participants",
     )
     assert response.status_code == 200, response.content
     list_pt_response = ListParticipantsTypeResponse.model_validate(response.json())
@@ -410,7 +441,7 @@ def test_lifecycle(testing_datasource):
 
     # Update participant
     response = ppatch(
-        f"/v1/m/datasources/{testing_datasource.ds.id}/participants/newpt",
+        f"/v1/m/datasources/{ds_id}/participants/newpt",
         content=UpdateParticipantsTypeRequest(
             participant_type="renamedpt"
         ).model_dump_json(),
@@ -420,56 +451,38 @@ def test_lifecycle(testing_datasource):
     assert update_pt_response.participant_type == "renamedpt"
 
     # List participants (again)
-    response = pget(f"/v1/m/datasources/{testing_datasource.ds.id}/participants")
+    response = pget(f"/v1/m/datasources/{ds_id}/participants")
     assert response.status_code == 200, response.content
     list_pt_response = ListParticipantsTypeResponse.model_validate(response.json())
     assert len(list_pt_response.items) == 2, list_pt_response
 
     # Get the named participant type
     response = pget(
-        f"/v1/m/datasources/{testing_datasource.ds.id}/participants/renamedpt",
+        f"/v1/m/datasources/{ds_id}/participants/renamedpt",
     )
     assert response.status_code == 200, response.content
     participants_def = ParticipantsDef.model_validate(response.json())
     assert participants_def.participant_type == "renamedpt"
 
     # Delete the renamed participant type.
-    response = pdelete(
-        f"/v1/m/datasources/{testing_datasource.ds.id}/participants/renamedpt"
-    )
+    response = pdelete(f"/v1/m/datasources/{ds_id}/participants/renamedpt")
     assert response.status_code == 204, response.content
 
     # Get the named participant type after it has been deleted
-    response = pget(
-        f"/v1/m/datasources/{testing_datasource.ds.id}/participants/renamedpt"
-    )
+    response = pget(f"/v1/m/datasources/{ds_id}/participants/renamedpt")
     assert response.status_code == 404, response.content
 
     # Delete the testing participant type.
     response = pdelete(
-        f"/v1/m/datasources/{testing_datasource.ds.id}/participants/test_participant_type",
+        f"/v1/m/datasources/{ds_id}/participants/test_participant_type",
     )
     assert response.status_code == 204, response.content
 
     # Delete the testing participant type a 2nd time.
     response = pdelete(
-        f"/v1/m/datasources/{testing_datasource.ds.id}/participants/test_participant_type",
+        f"/v1/m/datasources/{ds_id}/participants/test_participant_type",
     )
     assert response.status_code == 404, response.content
-
-
-def test_delete_datasource(testing_datasource_with_user):
-    # Delete the datasource as an unprivileged user.
-    response = udelete(f"/v1/m/datasources/{testing_datasource_with_user.ds.id}")
-    assert response.status_code == 403, response.content
-
-    # Delete the datasource as a privileged user.
-    response = pdelete(f"/v1/m/datasources/{testing_datasource_with_user.ds.id}")
-    assert response.status_code == 204, response.content
-
-    # Delete the datasource a 2nd time.
-    response = pdelete(f"/v1/m/datasources/{testing_datasource_with_user.ds.id}")
-    assert response.status_code == 204, response.content
 
 
 def test_create_participants_type_invalid(testing_datasource):
