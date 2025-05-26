@@ -2,11 +2,12 @@ import secrets
 from dataclasses import dataclass
 from typing import Annotated
 
+import httpx
 from fastapi import Depends, HTTPException, Security, status
 from fastapi.security import OpenIdConnect
-import httpx
 from jose import JWTError, jwt
 from loguru import logger
+
 from xngin.apiserver import flags
 
 # JWTs generated for domains other than @agency.fund are considered untrusted.

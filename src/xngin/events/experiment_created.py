@@ -1,6 +1,7 @@
 from typing import Annotated, ClassVar, Literal
 
 from pydantic import Field
+
 from xngin.events.common import BaseEventModel
 
 

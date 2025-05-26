@@ -1,6 +1,9 @@
 from typing import Annotated
 
 from pydantic import BaseModel, ConfigDict, Field
+
+from xngin.apiserver.limits import MAX_NUMBER_OF_ARMS
+from xngin.apiserver.models.enums import ExperimentState
 from xngin.apiserver.routers.stateless_api_types import (
     ArmSize,
     Assignment,
@@ -8,8 +11,6 @@ from xngin.apiserver.routers.stateless_api_types import (
     DesignSpec,
     PowerResponse,
 )
-from xngin.apiserver.limits import MAX_NUMBER_OF_ARMS
-from xngin.apiserver.models.enums import ExperimentState
 
 
 class ExperimentsBaseModel(BaseModel):

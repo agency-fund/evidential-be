@@ -5,20 +5,21 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.openapi.utils import get_openapi
 from fastapi.routing import APIRoute
+
 from xngin.apiserver import (
     constants,
     customlogging,
+    database,
     exceptionhandlers,
     middleware,
-    database,
 )
 from xngin.apiserver.flags import PUBLISH_ALL_DOCS
 from xngin.apiserver.routers import (
     admin,
     experiments,
-    proxy_mgmt_api,
     oidc,
     oidc_dependencies,
+    proxy_mgmt_api,
     stateless_api,
 )
 

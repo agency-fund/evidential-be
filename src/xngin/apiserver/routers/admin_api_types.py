@@ -2,13 +2,7 @@ from datetime import datetime
 from typing import Annotated, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
-from xngin.apiserver.routers.stateless_api_types import (
-    ApiBaseModel,
-    DataType,
-    GetFiltersResponseElement,
-    GetMetricsResponseElement,
-    GetStrataResponseElement,
-)
+
 from xngin.apiserver.common_field_types import FieldName
 from xngin.apiserver.limits import (
     MAX_LENGTH_OF_DESCRIPTION_VALUE,
@@ -17,6 +11,13 @@ from xngin.apiserver.limits import (
     MAX_LENGTH_OF_NAME_VALUE,
     MAX_LENGTH_OF_WEBHOOK_URL_VALUE,
     MAX_NUMBER_OF_FIELDS,
+)
+from xngin.apiserver.routers.stateless_api_types import (
+    ApiBaseModel,
+    DataType,
+    GetFiltersResponseElement,
+    GetMetricsResponseElement,
+    GetStrataResponseElement,
 )
 from xngin.apiserver.settings import DatasourceConfig, Dwh, ParticipantsConfig
 from xngin.schema.schema_types import FieldDescriptor, ParticipantsSchema

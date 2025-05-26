@@ -21,16 +21,8 @@ from sqlalchemy import (
     text,
 )
 from sqlalchemy.orm import DeclarativeBase, Session, mapped_column
+
 from xngin.apiserver import flags
-from xngin.apiserver.routers.stateless_api_types import (
-    Filter,
-    DesignSpecMetric,
-    DesignSpecMetricRequest,
-    MetricType,
-    MetricValue,
-    ParticipantOutcome,
-    Relation,
-)
 from xngin.apiserver.conftest import DbType, get_test_dwh_info
 from xngin.apiserver.dwh.queries import (
     compose_query,
@@ -41,6 +33,15 @@ from xngin.apiserver.dwh.queries import (
     make_csv_regex,
 )
 from xngin.apiserver.exceptions_common import LateValidationError
+from xngin.apiserver.routers.stateless_api_types import (
+    DesignSpecMetric,
+    DesignSpecMetricRequest,
+    Filter,
+    MetricType,
+    MetricValue,
+    ParticipantOutcome,
+    Relation,
+)
 
 SA_LOGGER_NAME_FOR_DWH = "xngin_dwh"
 SA_LOGGING_PREFIX_FOR_DWH = "dwh"
