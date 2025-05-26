@@ -8,7 +8,7 @@ from xngin.apiserver import constants
 from xngin.apiserver.apikeys import require_valid_api_key
 from xngin.apiserver.database import SessionLocal
 from xngin.apiserver.gsheet_cache import GSheetCache
-from xngin.apiserver.models.tables import Datasource as DatasourceTable
+from xngin.apiserver.models import tables
 from xngin.apiserver.settings import (
     Datasource,
     DatasourceConfig,
@@ -67,7 +67,9 @@ def datasource_dependency(
     from_json = settings.get_datasource(datasource_id)
 
     # Datasources from the database always require an API key.
-    if from_json is None and (from_db := xngin_db.get(DatasourceTable, datasource_id)):
+    if from_json is None and (
+        from_db := xngin_db.get(tables.Datasource, datasource_id)
+    ):
         require_valid_api_key(xngin_db, api_key, datasource_id)
         dsconfig = from_db.get_config()
         return Datasource(id=datasource_id, config=dsconfig)

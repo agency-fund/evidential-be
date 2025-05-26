@@ -9,12 +9,6 @@ from sqlalchemy import ForeignKey, Index, String
 from sqlalchemy.dialects import postgresql
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 from sqlalchemy.types import TypeEngine
-from xngin.apiserver.routers.stateless_api_types import (
-    BalanceCheck,
-    DesignSpec,
-    PowerResponse,
-)
-from xngin.apiserver.models.enums import ExperimentState
 from xngin.apiserver.routers.admin_api_types import (
     InspectDatasourceTableResponse,
     InspectParticipantTypesResponse,
@@ -384,7 +378,11 @@ class ArmAssignment(Base):
 
 
 class Experiment(Base):
-    """Stores experiment metadata."""
+    """Stores experiment metadata.
+
+    Use the ExperimentStorageConverter to set/get the different JSONB columns with the appropriate
+    storage models, as well as derive other API types from the Experiment db record.
+    """
 
     __tablename__ = "experiments"
 
@@ -399,14 +397,16 @@ class Experiment(Base):
     name: Mapped[str] = mapped_column(String(255))
     # Describe your experiment and hypothesis here.
     description: Mapped[str] = mapped_column(String(2000))
-    state: Mapped[ExperimentState]
+    # The experiment state should be one of xngin.apiserver.models.enums.ExperimentState.
+    # We use a looser type to decouple the database from the API a little more.
+    state: Mapped[str]
     # Target start date of the experiment. Denormalized from design_spec.
     start_date: Mapped[datetime] = mapped_column()
     # Target end date of the experiment. Denormalized from design_spec.
     end_date: Mapped[datetime] = mapped_column()
 
-    # JSON serialized form of DesignSpec.
-    design_spec: Mapped[dict] = mapped_column(type_=JSONBetter)
+    # JSON serialized form of an experiment's specified dwh fields used for strata/metrics/filters.
+    design_spec_fields: Mapped[dict] = mapped_column(type_=JSONBetter)
     # JSON serialized form of a PowerResponse. Not required since some experiments may not have data to run power analyses.
     power_analyses: Mapped[dict | None] = mapped_column(type_=JSONBetter)
     # JSON serialized form of a BalanceCheck. May be null if the experiment type doesn't support
@@ -438,27 +438,6 @@ class Experiment(Base):
 
     def get_arm_names(self) -> list[str]:
         return [arm.name for arm in self.arms]
-
-    def get_design_spec(self) -> DesignSpec:
-        return TypeAdapter(DesignSpec).validate_python(self.design_spec)
-
-    def get_power_analyses(self) -> PowerResponse | None:
-        if self.power_analyses is None:
-            return None
-        return TypeAdapter(PowerResponse).validate_python(self.power_analyses)
-
-    def set_balance_check(self, value: BalanceCheck | None) -> Self:
-        if value is None:
-            self.balance_check = None
-        else:
-            BalanceCheck.model_validate(value)
-            self.balance_check = value.model_dump()
-        return self
-
-    def get_balance_check(self) -> BalanceCheck | None:
-        if self.balance_check is not None:
-            return TypeAdapter(BalanceCheck).validate_python(self.balance_check)
-        return None
 
 
 class ArmTable(Base):

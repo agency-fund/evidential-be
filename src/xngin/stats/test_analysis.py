@@ -2,7 +2,7 @@ import random
 import uuid
 
 import pytest
-from xngin.apiserver.models.tables import ArmAssignment
+from xngin.apiserver.models import tables
 from xngin.apiserver.routers.stateless_api_types import MetricValue, ParticipantOutcome
 from xngin.stats.analysis import analyze_experiment
 
@@ -23,7 +23,7 @@ def test_assignments(n=1000, seed=42):
             # TODO: test Assignment for old stateless api
             # re: https://github.com/agency-fund/xngin/pull/306 since arm_id is a
             #  sqlalchemy.Uuid(as_uuid=False), must assign to it with a string
-            ArmAssignment(participant_id=str(i), arm_id=str(arm_id), strata=[])
+            tables.ArmAssignment(participant_id=str(i), arm_id=str(arm_id), strata=[])
         )
     return assignments
 

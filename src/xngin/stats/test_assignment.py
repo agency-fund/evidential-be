@@ -9,7 +9,7 @@ import pandas as pd
 import pytest
 from numpy.random import MT19937, RandomState
 from sqlalchemy import DECIMAL, Boolean, Column, Float, Integer, MetaData, String, Table
-from xngin.apiserver.models.tables import arm_id_factory
+from xngin.apiserver.models import tables
 from xngin.apiserver.routers.stateless_api_types import Arm, Assignment, Strata
 from xngin.stats.assignment import assign_treatment, simple_random_assignment
 
@@ -82,7 +82,7 @@ def fixture_sample_rows(sample_data):
 
 
 def make_arms(names: list[str]):
-    return [Arm(arm_id=arm_id_factory(), arm_name=name) for name in names]
+    return [Arm(arm_id=tables.arm_id_factory(), arm_name=name) for name in names]
 
 
 def test_assign_treatment(sample_table, sample_rows):
