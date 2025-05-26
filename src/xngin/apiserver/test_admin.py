@@ -280,15 +280,21 @@ def test_add_member_to_org(testing_datasource):
 
 def test_list_orgs(testing_datasource_with_user):
     """Test listing the orgs the user is a member of."""
-    response = pget(
-        "/v1/m/organizations",
-    )
+    response = pget("/v1/m/organizations")
     assert response.status_code == 200, response.content
-    # Note: user was added to the test fixture org already, so no org was created.
+    # User was added to the test fixture org already, so no extra org was created.
+    response_json = response.json()
+    assert len(response_json["items"]) == 1
+    assert response_json["items"][0]["id"] == testing_datasource_with_user.org.id
+    assert response_json["items"][0]["name"] == "test organization"
+
+
+def test_list_orgs_with_new_privileged_user():
+    """Test listing the orgs of a new privileged user."""
+    response = pget("/v1/m/organizations")
+    assert response.status_code == 200, response.content
     assert len(response.json()["items"]) == 1, response.json()
-    assert testing_datasource_with_user.org.id in {
-        o["id"] for o in response.json()["items"]
-    }
+    assert response.json()["items"][0]["name"] == "My Organization"
 
 
 def test_datasource_lifecycle(testing_datasource_with_user):

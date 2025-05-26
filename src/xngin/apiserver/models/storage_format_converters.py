@@ -1,6 +1,9 @@
 """Converts between API and jsonb storage models used by our internal database models.
 
-Use these converters to set/get the different JSONB columns of their respective SQLAlchemy models.
+To better decouple the API from the storage models, this file defines helpers to set/get JSONB
+columns of their respective SQLALchemy models, and construct API types from SQLA/jsonb storage
+types. Our SQLA tables ideally shouldn't depend on xngin/apiserver/*; but for those that declare
+JSONB type columns for multi-value/complex types, use the converters to get/set them properly.
 """
 
 from typing import Self

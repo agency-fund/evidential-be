@@ -152,21 +152,6 @@ def make_insertable_experiment(
     return experiment, experiment_converter.get_design_spec()
 
 
-def make_arms_from_designspec(
-    experiment_id: str, design_spec: DesignSpec, organization_id: str
-):
-    return [
-        tables.ArmTable(
-            id=arm.arm_id,
-            experiment_id=experiment_id,
-            name=arm.arm_name,
-            description=arm.arm_description,
-            organization_id=organization_id,
-        )
-        for arm in design_spec.arms
-    ]
-
-
 def insert_experiment_and_arms(
     xngin_session: Session,
     datasource: tables.Datasource,
