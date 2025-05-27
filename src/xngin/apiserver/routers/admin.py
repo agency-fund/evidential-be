@@ -143,11 +143,6 @@ def responses_factory(*codes):
     }
 
 
-def is_enabled():
-    """Feature flag: Returns true iff OIDC is enabled."""
-    return flags.ENABLE_ADMIN
-
-
 def cache_is_fresh(updated: datetime | None):
     return updated and datetime.now(UTC) - updated < timedelta(minutes=5)
 

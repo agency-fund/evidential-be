@@ -15,8 +15,8 @@ class OidcMisconfiguredError(Exception):
     pass
 
 
-def is_enabled():
-    """Feature flag: Returns true iff OIDC is enabled."""
+def validate_environment_variables():
+    """Raises informative exceptions if environment variables critical for OIDC functioning are not set."""
     if not flags.CLIENT_ID:
         raise OidcMisconfiguredError(
             f"{flags.ENV_GOOGLE_OIDC_CLIENT_ID} environment variable is not set."
@@ -30,6 +30,7 @@ def is_enabled():
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
     logger.info(f"Starting router: {__name__} (prefix={router.prefix})")
+    validate_environment_variables()
     yield
 
 
