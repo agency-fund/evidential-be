@@ -8,7 +8,7 @@ from fastapi import APIRouter, Depends, FastAPI, HTTPException, Query
 from loguru import logger
 from pydantic import BaseModel, Field
 
-from xngin.apiserver import flags
+from xngin.apiserver import constants, flags
 from xngin.apiserver.routers.oidc_dependencies import get_google_configuration
 
 
@@ -16,29 +16,28 @@ class OidcMisconfiguredError(Exception):
     pass
 
 
-def is_enabled():
-    """Feature flag: Returns true iff OIDC is enabled."""
-    enabled = flags.ENABLE_OIDC
-    if enabled:
-        if not flags.CLIENT_ID:
-            raise OidcMisconfiguredError(
-                f"{flags.ENV_GOOGLE_OIDC_CLIENT_ID} environment variable is not set."
-            )
-        if not flags.CLIENT_SECRET:
-            logger.warning(
-                f"{flags.ENV_GOOGLE_OIDC_CLIENT_SECRET} environment variable is not set."
-            )
-    return enabled
+def validate_environment_variables():
+    """Raises informative exceptions if environment variables critical for OIDC functioning are not set."""
+    if not flags.CLIENT_ID:
+        raise OidcMisconfiguredError(
+            f"{flags.ENV_GOOGLE_OIDC_CLIENT_ID} environment variable is not set."
+        )
+    if not flags.CLIENT_SECRET:
+        logger.warning(
+            f"{flags.ENV_GOOGLE_OIDC_CLIENT_SECRET} environment variable is not set."
+        )
 
 
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
+    logger.info(f"Starting router: {__name__} (prefix={router.prefix})")
+    validate_environment_variables()
     yield
 
 
 router = APIRouter(
     lifespan=lifespan,
-    prefix="/a/oidc",
+    prefix=constants.API_PREFIX_V1 + "/a/oidc",
 )
 
 

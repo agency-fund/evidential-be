@@ -14,9 +14,11 @@ from fastapi import (
     status,
 )
 from fastapi.responses import StreamingResponse
+from loguru import logger
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from xngin.apiserver import constants
 from xngin.apiserver.dependencies import (
     datasource_dependency,
     gsheet_cache,
@@ -59,12 +61,13 @@ from xngin.apiserver.settings import (
 
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
+    logger.info(f"Starting router: {__name__} (prefix={router.prefix})")
     yield
 
 
 router = APIRouter(
     lifespan=lifespan,
-    prefix="",
+    prefix=constants.API_PREFIX_V1,
 )
 
 

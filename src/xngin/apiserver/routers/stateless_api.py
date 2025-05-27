@@ -6,11 +6,10 @@ from fastapi import (
     APIRouter,
     Depends,
     FastAPI,
-    HTTPException,
     Query,
-    Request,
     Response,
 )
+from loguru import logger
 from sqlalchemy import distinct
 from sqlalchemy.orm import Session
 
@@ -18,7 +17,6 @@ from xngin.apiserver import constants
 from xngin.apiserver.dependencies import (
     datasource_config_required,
     gsheet_cache,
-    settings_dependency,
 )
 from xngin.apiserver.dwh.queries import get_stats_on_metrics, query_for_participants
 from xngin.apiserver.exceptions_common import LateValidationError
@@ -43,8 +41,6 @@ from xngin.apiserver.settings import (
     DatasourceConfig,
     ParticipantsConfig,
     ParticipantsMixin,
-    XnginSettings,
-    get_settings_for_server,
     infer_table,
 )
 from xngin.schema.schema_types import FieldDescriptor, ParticipantsSchema
@@ -59,13 +55,13 @@ from xngin.stats.power import check_power
 # TODO: move into its own module re: https://github.com/agency-fund/xngin/pull/188/
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
-    get_settings_for_server()
+    logger.info(f"Starting router: {__name__} (prefix={router.prefix})")
     yield
 
 
 router = APIRouter(
     lifespan=lifespan,
-    prefix="",
+    prefix=constants.API_PREFIX_V1,
 )
 
 
@@ -401,22 +397,6 @@ def authcheck(
 ):
     """Returns 204 if the request is allowed to use the requested datasource."""
     return Response(status_code=204)
-
-
-@router.get("/_settings", include_in_schema=False)
-def debug_settings(
-    request: Request,
-    settings: Annotated[XnginSettings, Depends(settings_dependency)],
-):
-    """Endpoint for testing purposes. Returns the current server configuration and optionally the config ID."""
-    # Secrets will not be returned because they are stored as SecretStrs, but nonetheless this method
-    # should only be invoked from trusted IP addresses.
-    if request.client is None or request.client.host not in settings.trusted_ips:
-        raise HTTPException(403)
-    response: dict[str, str | XnginSettings] = {"settings": settings}
-    if config_id := request.headers.get(constants.HEADER_CONFIG_ID):
-        response["config_id"] = config_id
-    return response
 
 
 def generate_field_descriptors(table: sqlalchemy.Table, unique_id_col: str):

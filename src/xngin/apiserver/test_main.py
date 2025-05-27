@@ -13,7 +13,6 @@ from xngin.apiserver.settings import (
 
 conftest.setup(app)
 client = TestClient(app)
-client.base_url = client.base_url.join(constants.API_PREFIX_V1)
 
 
 def test_get_settings_for_test():
@@ -23,7 +22,9 @@ def test_get_settings_for_test():
 
 
 def test_settings_can_be_overridden_by_tests():
-    response = client.get("/_settings", headers={constants.HEADER_CONFIG_ID: "testing"})
+    response = client.get(
+        "/_healthchecks/settings", headers={constants.HEADER_CONFIG_ID: "testing"}
+    )
     assert response.status_code == 200, response.content
     settings = XnginSettings.model_validate(response.json()["settings"])
     assert settings.get_datasource("customer-test").config.dwh.user == "user"
@@ -32,7 +33,8 @@ def test_settings_can_be_overridden_by_tests():
 
 def test_config_injection():
     response = client.get(
-        "/_settings", headers={constants.HEADER_CONFIG_ID: "customer-test"}
+        "/_healthchecks/settings",
+        headers={constants.HEADER_CONFIG_ID: "customer-test"},
     )
     assert response.status_code == 200, response.content
     assert response.json()["config_id"] == "customer-test"

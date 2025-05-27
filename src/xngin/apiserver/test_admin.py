@@ -9,7 +9,6 @@ from pydantic import SecretStr
 from sqlalchemy import select
 
 from xngin.apiserver import conftest, flags
-from xngin.apiserver import main as main_module
 from xngin.apiserver.dns import safe_resolve
 from xngin.apiserver.main import app
 from xngin.apiserver.models import tables
@@ -120,9 +119,6 @@ def fixture_teardown(xngin_session):
 
 @pytest.fixture(scope="module", autouse=True)
 def enable_apis_under_test():
-    # TODO: Calling enable_*() has the minor side effect of enabling these APIs for all subsequent unit tests.
-    main_module.enable_oidc_api()
-    main_module.enable_admin_api()
     oidc_dependencies.TESTING_TOKENS_ENABLED = True
 
 

@@ -144,11 +144,6 @@ tasks:
       - .env
     env:
       XNGIN_DB: "{{.XNGIN_DEVAPP_DSN}}"
-
-      # Admin API settings. These need to be set for interaction with the dash web UI.
-      # Also see instructions for .env above.
-      ENABLE_ADMIN: "true"
-      ENABLE_OIDC: "true"
     deps:
       - bootstrap-app
     cmds:

@@ -5,9 +5,9 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.openapi.utils import get_openapi
 from fastapi.routing import APIRoute
+from loguru import logger
 
 from xngin.apiserver import (
-    constants,
     customlogging,
     database,
     exceptionhandlers,
@@ -17,11 +17,13 @@ from xngin.apiserver.flags import PUBLISH_ALL_DOCS
 from xngin.apiserver.routers import (
     admin,
     experiments,
+    healthchecks,
     oidc,
     oidc_dependencies,
     proxy_mgmt_api,
     stateless_api,
 )
+from xngin.apiserver.settings import get_settings_for_server
 
 if sentry_dsn := os.environ.get("SENTRY_DSN"):
     import sentry_sdk
@@ -42,6 +44,14 @@ class MisconfiguredError(Exception):
 
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
+    logger.info(f"Starting server: {__name__}")
+
+    settings = get_settings_for_server()
+    logger.info(f"trusted_ips: {settings.trusted_ips}")
+    logger.info(
+        f"database connection timeout (seconds): {settings.db_connect_timeout_secs}"
+    )
+
     # Security: Disable the Google Cloud SDK's use of GCE metadata service by pointing it at localhost. This service
     # operates on behalf of customers who provide their own credentials. By setting these variables (and aborting if
     # GOOGLE_APPLICATION_CREDENTIALS) is set, we can reduce the chance that an implementation bug would result in
@@ -67,46 +77,32 @@ exceptionhandlers.setup(app)
 middleware.setup(app)
 customlogging.setup()
 
-app.include_router(
-    experiments.router, prefix=constants.API_PREFIX_V1, tags=["Experiment Integration"]
-)
+app.include_router(experiments.router, tags=["Experiment Integration"])
 
 app.include_router(
     stateless_api.router,
-    prefix=constants.API_PREFIX_V1,
     tags=["Stateless Experiment Design"],
 )
 
 app.include_router(
     proxy_mgmt_api.router,
-    prefix=constants.API_PREFIX_V1,
     tags=["Stateless Experiment Design"],
 )
 
+app.include_router(healthchecks.router, tags=["Health Checks"], include_in_schema=False)
 
-def enable_oidc_api():
-    app.include_router(
-        oidc.router,
-        prefix=constants.API_PREFIX_V1,
-        tags=["Auth"],
-        include_in_schema=PUBLISH_ALL_DOCS,
-    )
-
-
-def enable_admin_api():
-    app.include_router(
-        admin.router,
-        prefix=constants.API_PREFIX_V1,
-        tags=["Admin"],
-        include_in_schema=PUBLISH_ALL_DOCS,
-    )
+app.include_router(
+    oidc.router,
+    tags=["Auth"],
+    include_in_schema=PUBLISH_ALL_DOCS,
+)
 
 
-if oidc.is_enabled():
-    enable_oidc_api()
-
-if oidc.is_enabled() and admin.is_enabled():
-    enable_admin_api()
+app.include_router(
+    admin.router,
+    tags=["Admin"],
+    include_in_schema=PUBLISH_ALL_DOCS,
+)
 
 oidc_dependencies.setup(app)
 

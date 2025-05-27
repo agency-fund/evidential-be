@@ -6,6 +6,7 @@ from fastapi import APIRouter, Depends, FastAPI, HTTPException, Query, Response
 from loguru import logger
 from pydantic import BaseModel
 
+from xngin.apiserver import constants
 from xngin.apiserver.dependencies import (
     datasource_config_required,
     httpx_dependency,
@@ -28,12 +29,13 @@ from xngin.apiserver.settings import (
 
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
+    logger.info(f"Starting router: {__name__} (prefix={router.prefix})")
     yield
 
 
 router = APIRouter(
     lifespan=lifespan,
-    prefix="",
+    prefix=constants.API_PREFIX_V1,
 )
 
 
