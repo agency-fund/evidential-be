@@ -1,11 +1,11 @@
-from .power import check_power
 from .assignment import assign_treatment
 from .balance import (
+    check_balance_of_preprocessed_df,
     preprocess_for_balance_and_stratification,
     restore_original_numeric_columns,
-    check_balance_of_preprocessed_df,
 )
-from .stats_errors import StatsError, StatsPowerError, StatsBalanceError
+from .power import check_power
+from .stats_errors import StatsBalanceError, StatsError, StatsPowerError
 
 __all__ = [
     "StatsBalanceError",

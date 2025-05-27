@@ -4,10 +4,10 @@ from collections.abc import Generator
 import sqlalchemy
 from pydantic import BaseModel, ValidationError
 
-from xngin.apiserver.settings import SheetRef
-from xngin.sheets.gsheets import read_sheet_from_gsheet
 from xngin.apiserver.routers.stateless_api_types import DataType
+from xngin.apiserver.settings import SheetRef
 from xngin.schema.schema_types import FieldDescriptor, ParticipantsSchema
+from xngin.sheets.gsheets import read_sheet_from_gsheet
 
 GOOGLE_SHEET_PREFIX = "https://docs.google.com/spreadsheets/"
 

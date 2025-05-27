@@ -1,14 +1,14 @@
 from pathlib import Path
 
-from pydantic import ValidationError
 import pytest
-
+from pydantic import ValidationError
 from sqlalchemy import BigInteger, Column, Integer, MetaData, String, Table
+
 from xngin.apiserver.routers.stateless_api_types import DataType
+from xngin.schema.schema_types import FieldDescriptor, ParticipantsSchema
 from xngin.sheets.config_sheet import (
     create_schema_from_table,
 )
-from xngin.schema.schema_types import FieldDescriptor, ParticipantsSchema
 from xngin.sheets.gsheets import google_app_credentials_file, read_sheet_df
 
 

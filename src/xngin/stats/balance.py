@@ -1,8 +1,9 @@
 from dataclasses import dataclass
 
 import pandas as pd
-from pandas.api.types import is_any_real_numeric_dtype
 import statsmodels.formula.api as smf
+from pandas.api.types import is_any_real_numeric_dtype
+
 from xngin.stats.stats_errors import StatsBalanceError
 
 

@@ -1,7 +1,9 @@
 import json
 import tempfile
-import requests
+
 import pytest
+import requests
+
 from xngin.apiserver.testing.assertions import assert_same
 
 

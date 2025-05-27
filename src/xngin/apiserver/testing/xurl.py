@@ -1,7 +1,6 @@
 import re
 
-
-from parsy import regex, string, seq, alt, generate, whitespace
+from parsy import alt, generate, regex, seq, string, whitespace
 from pydantic import BaseModel
 
 

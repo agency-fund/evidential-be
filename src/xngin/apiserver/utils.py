@@ -1,8 +1,8 @@
-from collections.abc import Sequence
 import copy
 import random
 import secrets
-from urllib.parse import urlparse, urlunparse, quote
+from collections.abc import Sequence
+from urllib.parse import quote, urlparse, urlunparse
 
 STRIP_UNSAFE_HEADER_CHARS = str.maketrans("", "", "\r\n")
 

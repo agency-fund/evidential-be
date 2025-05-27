@@ -4,6 +4,7 @@ import string
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
+
 from xngin.apiserver.models import tables
 
 API_KEY_PREFIX = "xat"

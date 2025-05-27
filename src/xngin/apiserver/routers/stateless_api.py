@@ -9,6 +9,7 @@ from fastapi import (
     Query,
     Response,
 )
+from loguru import logger
 from sqlalchemy import distinct
 from sqlalchemy.orm import Session
 
@@ -49,7 +50,6 @@ from xngin.sheets.config_sheet import (
 )
 from xngin.stats.assignment import assign_treatment as assign_treatment_actual
 from xngin.stats.power import check_power
-from loguru import logger
 
 
 # TODO: move into its own module re: https://github.com/agency-fund/xngin/pull/188/

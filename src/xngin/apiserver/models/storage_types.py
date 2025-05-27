@@ -1,10 +1,12 @@
 """Internal models stored as json data in our app db. Used to decouple API types from storage."""
 
-from typing import Annotated, Any
 from collections.abc import Sequence
+from typing import Annotated, Any
+
 from pydantic import BaseModel, ConfigDict, Field
-from xngin.apiserver.limits import MAX_NUMBER_OF_FIELDS, MAX_NUMBER_OF_FILTERS
+
 from xngin.apiserver.common_field_types import FieldName
+from xngin.apiserver.limits import MAX_NUMBER_OF_FIELDS, MAX_NUMBER_OF_FILTERS
 
 
 class StorageBaseModel(BaseModel):

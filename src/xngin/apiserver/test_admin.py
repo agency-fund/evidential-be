@@ -7,6 +7,7 @@ from fastapi import HTTPException
 from fastapi.testclient import TestClient
 from pydantic import SecretStr
 from sqlalchemy import select
+
 from xngin.apiserver import conftest, flags
 from xngin.apiserver.dns import safe_resolve
 from xngin.apiserver.main import app

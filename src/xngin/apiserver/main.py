@@ -5,24 +5,24 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.openapi.utils import get_openapi
 from fastapi.routing import APIRoute
+from loguru import logger
+
 from xngin.apiserver import (
     customlogging,
+    database,
     exceptionhandlers,
     middleware,
-    database,
 )
 from xngin.apiserver.flags import PUBLISH_ALL_DOCS
 from xngin.apiserver.routers import (
     admin,
     experiments,
-    proxy_mgmt_api,
+    healthchecks,
     oidc,
     oidc_dependencies,
+    proxy_mgmt_api,
     stateless_api,
-    healthchecks,
 )
-from loguru import logger
-
 from xngin.apiserver.settings import get_settings_for_server
 
 if sentry_dsn := os.environ.get("SENTRY_DSN"):

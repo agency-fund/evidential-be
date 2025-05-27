@@ -1,6 +1,7 @@
 from typing import Annotated
 
 from pydantic import Field
+
 from xngin.events.experiment_created import ExperimentCreatedEvent
 from xngin.events.webhook_sent import WebhookSentEvent
 

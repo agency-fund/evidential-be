@@ -1,13 +1,14 @@
 from contextlib import asynccontextmanager
 from typing import Annotated
-from fastapi import Request, HTTPException
-from fastapi import APIRouter, Depends, FastAPI
-from sqlalchemy.orm.session import Session
+
 import sqlalchemy
-from xngin.apiserver.settings import XnginSettings
-from xngin.apiserver import constants
-from xngin.apiserver.dependencies import xngin_db_session, settings_dependency
+from fastapi import APIRouter, Depends, FastAPI, HTTPException, Request
 from loguru import logger
+from sqlalchemy.orm.session import Session
+
+from xngin.apiserver import constants
+from xngin.apiserver.dependencies import settings_dependency, xngin_db_session
+from xngin.apiserver.settings import XnginSettings
 
 
 @asynccontextmanager
