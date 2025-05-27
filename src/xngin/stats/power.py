@@ -4,10 +4,10 @@ import statsmodels.stats.api as sms
 
 from xngin.apiserver.routers.stateless_api_types import (
     DesignSpecMetric,
-    MetricType,
     MetricPowerAnalysis,
     MetricPowerAnalysisMessage,
     MetricPowerAnalysisMessageType,
+    MetricType,
 )
 from xngin.stats.stats_errors import StatsPowerError
 

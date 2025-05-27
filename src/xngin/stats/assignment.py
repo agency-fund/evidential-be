@@ -1,7 +1,7 @@
-from datetime import UTC, datetime
 import decimal
 from collections import defaultdict
 from collections.abc import Sequence
+from datetime import UTC, datetime
 from typing import Any, Protocol
 
 import numpy as np
@@ -9,6 +9,7 @@ import pandas as pd
 from pandas import DataFrame
 from sqlalchemy import Table
 from stochatreat import stochatreat
+
 from xngin.apiserver.routers.stateless_api_types import (
     Arm,
     Assignment,

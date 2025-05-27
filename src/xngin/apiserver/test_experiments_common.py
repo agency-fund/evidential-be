@@ -3,43 +3,44 @@ from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from typing import Any, cast
 
-from pydantic import TypeAdapter
 import pytest
 from deepdiff import DeepDiff
 from fastapi import HTTPException
-from numpy.random import RandomState, MT19937
+from numpy.random import MT19937, RandomState
+from pydantic import TypeAdapter
 from sqlalchemy import Boolean, Column, MetaData, String, Table, select
 from sqlalchemy.dialects import postgresql
 from sqlalchemy.orm import Session
 from sqlalchemy.schema import CreateTable
+
 from xngin.apiserver import conftest
-from xngin.apiserver.models.storage_format_converters import ExperimentStorageConverter
-from xngin.apiserver.routers.stateless_api_types import (
-    DesignSpec,
-    ExperimentType,
-    DesignSpecMetric,
-    MetricPowerAnalysis,
-    MetricType,
-    PowerResponse,
-    Stratum,
-)
-from xngin.apiserver.models.enums import ExperimentState
 from xngin.apiserver.models import tables
+from xngin.apiserver.models.enums import ExperimentState
+from xngin.apiserver.models.storage_format_converters import ExperimentStorageConverter
+from xngin.apiserver.routers.experiments_api_types import (
+    CreateExperimentRequest,
+    GetExperimentAssignmentsResponse,
+)
 from xngin.apiserver.routers.experiments_common import (
     ExperimentsAssignmentError,
     abandon_experiment_impl,
     commit_experiment_impl,
+    create_assignment_for_participant,
     create_experiment_impl,
     experiment_assignments_to_csv_generator,
     get_assign_summary,
     get_existing_assignment_for_participant,
     get_experiment_assignments_impl,
     list_experiments_impl,
-    create_assignment_for_participant,
 )
-from xngin.apiserver.routers.experiments_api_types import (
-    CreateExperimentRequest,
-    GetExperimentAssignmentsResponse,
+from xngin.apiserver.routers.stateless_api_types import (
+    DesignSpec,
+    DesignSpecMetric,
+    ExperimentType,
+    MetricPowerAnalysis,
+    MetricType,
+    PowerResponse,
+    Stratum,
 )
 
 

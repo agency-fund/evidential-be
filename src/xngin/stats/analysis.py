@@ -1,12 +1,13 @@
 import dataclasses
+
 import pandas as pd
 import statsmodels.formula.api as smf
-
 from patsy.eval import EvalFactor
+
+from xngin.apiserver.models import tables
 from xngin.apiserver.routers.stateless_api_types import (
     ParticipantOutcome,
 )
-from xngin.apiserver.models import tables
 
 
 @dataclasses.dataclass(slots=True)  # slots=True for performance

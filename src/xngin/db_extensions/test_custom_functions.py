@@ -12,6 +12,7 @@ from sqlalchemy import (
 )
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 from sqlalchemy.sql.functions import func
+
 from xngin.db_extensions import custom_functions
 
 # Suppress for tests that create an engine with "bigquery" dialect

@@ -3,6 +3,7 @@ import pandas as pd
 import pytest
 from numpy.random import MT19937, RandomState
 from stochatreat import stochatreat
+
 from xngin.stats.balance import (
     BalanceResult,
     check_balance_of_preprocessed_df,

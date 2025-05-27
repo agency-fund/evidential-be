@@ -7,6 +7,7 @@ import httpx
 from fastapi import APIRouter, Depends, FastAPI, HTTPException, Query
 from loguru import logger
 from pydantic import BaseModel, Field
+
 from xngin.apiserver import flags
 from xngin.apiserver.routers.oidc_dependencies import get_google_configuration
 

@@ -76,6 +76,7 @@ select = [
     "F",
     "FAST",
     "FURB",
+    "I",
     "ICN",
     "N",
     "NPY",

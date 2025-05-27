@@ -2,7 +2,6 @@ from xngin.apiserver.routers.stateless_api_types import DataType
 from xngin.apiserver.settings import ParticipantsDef
 from xngin.schema.schema_types import FieldDescriptor
 
-
 TESTING_PARTICIPANT_DEF = ParticipantsDef(
     type="schema",
     participant_type="users",

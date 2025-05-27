@@ -4,6 +4,7 @@ from sys import platform
 
 import dns.resolver
 from dns.resolver import resolve
+
 from xngin.apiserver.flags import ALLOW_CONNECTING_TO_PRIVATE_IPS
 
 DNS_TIMEOUT_SECS = 5
