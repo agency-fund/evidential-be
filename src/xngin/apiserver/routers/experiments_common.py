@@ -12,11 +12,12 @@ from sqlalchemy import Table, func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 from xngin.apiserver import flags
+from xngin.apiserver.models.storage_format_converters import ExperimentStorageConverter
 from xngin.apiserver.routers.stateless_api_types import (
     Arm,
     ArmSize,
     Assignment,
-    PreassignedExperimentSpec,
+    BalanceCheck,
     Strata,
 )
 from xngin.apiserver.models.enums import ExperimentState
@@ -25,7 +26,6 @@ from xngin.apiserver.routers.experiments_api_types import (
     AssignSummary,
     CreateExperimentRequest,
     CreateExperimentResponse,
-    ExperimentConfig,
     GetExperimentAssignmentsResponse,
     ListExperimentsResponse,
 )
@@ -34,7 +34,6 @@ from xngin.apiserver.webhooks.webhook_types import ExperimentCreatedWebhookBody
 from xngin.events.experiment_created import ExperimentCreatedEvent
 from xngin.stats.assignment import RowProtocol, assign_treatment
 from xngin.tq.task_payload_types import WEBHOOK_OUTBOUND_TASK_TYPE, WebhookOutboundTask
-from xngin.tq.task_queue import Task
 
 
 class ExperimentsAssignmentError(Exception):
@@ -60,7 +59,7 @@ def create_experiment_impl(
         )
     organization_id = db_datasource.organization_id
 
-    # First generate uuids for the experiment and arms, which do_assignment needs.
+    # First generate ids for the experiment and arms, which do_assignment needs.
     request.design_spec.experiment_id = tables.experiment_id_factory()
     for arm in request.design_spec.arms:
         arm.arm_id = tables.arm_id_factory()
@@ -107,67 +106,48 @@ def create_preassigned_experiment_impl(
     xngin_session: Session,
     stratify_on_metrics: bool,
 ) -> CreateExperimentResponse:
-    metric_names = [m.field_name for m in request.design_spec.metrics]
-    strata_names = [s.field_name for s in request.design_spec.strata]
+    design_spec = request.design_spec
+    metric_names = [m.field_name for m in design_spec.metrics]
+    strata_names = [s.field_name for s in design_spec.strata]
     stratum_cols = strata_names + metric_names if stratify_on_metrics else strata_names
+
+    experiment_id = design_spec.experiment_id
+    if experiment_id is None:
+        # Should not actually happen, but just in case and for the type checker:
+        raise ValueError("Must have an experiment_id before assigning treatments")
+
     # TODO: directly create ArmAssignments from the pd dataframe instead
     assignment_response = assign_treatment(
         sa_table=dwh_sa_table,
         data=dwh_participants,
         stratum_cols=stratum_cols,
         id_col=participant_unique_id_field,
-        arms=request.design_spec.arms,
-        experiment_id=request.design_spec.experiment_id,
-        fstat_thresh=request.design_spec.fstat_thresh,
+        arms=design_spec.arms,
+        experiment_id=experiment_id,
+        fstat_thresh=design_spec.fstat_thresh,
         quantiles=4,  # TODO(qixotic): make this configurable
         stratum_id_name=None,
         random_state=random_state,
     )
 
-    # Create experiment record
-    balance_check = (
-        assignment_response.balance_check.model_dump()
-        if assignment_response.balance_check
-        else None
-    )
-    experiment = tables.Experiment(
-        id=request.design_spec.experiment_id,
+    experiment_converter = ExperimentStorageConverter.init_from_components(
         datasource_id=datasource_id,
+        organization_id=organization_id,
         experiment_type="preassigned",
-        participant_type=request.design_spec.participant_type,
-        name=request.design_spec.experiment_name,
-        description=request.design_spec.description,
+        design_spec=design_spec,
         state=ExperimentState.ASSIGNED,
-        start_date=request.design_spec.start_date,
-        end_date=request.design_spec.end_date,
-        power=request.design_spec.power,
-        alpha=request.design_spec.alpha,
-        fstat_thresh=request.design_spec.fstat_thresh,
-        design_spec=request.design_spec.model_dump(mode="json"),
-        power_analyses=request.power_analyses.model_dump(mode="json")
-        if request.power_analyses
-        else None,
-        balance_check=balance_check,
+        balance_check=assignment_response.balance_check,
+        power_analyses=request.power_analyses,
     )
+    experiment = experiment_converter.get_experiment()
     xngin_session.add(experiment)
-
-    # Create arm records
-    for arm in request.design_spec.arms:
-        db_arm = tables.ArmTable(
-            id=arm.arm_id,
-            name=arm.arm_name,
-            description=arm.arm_description,
-            experiment_id=experiment.id,
-            organization_id=organization_id,
-        )
-        xngin_session.add(db_arm)
 
     # Create assignment records
     for assignment in assignment_response.assignments:
         # TODO: bulk insert https://docs.sqlalchemy.org/en/20/orm/queryguide/dml.html#orm-queryguide-bulk-insert {"dml_strategy": "raw"}
         db_assignment = tables.ArmAssignment(
             experiment_id=experiment.id,
-            participant_type=request.design_spec.participant_type,
+            participant_type=design_spec.participant_type,
             participant_id=assignment.participant_id,
             arm_id=str(assignment.arm_id),
             strata=[s.model_dump(mode="json") for s in assignment.strata]
@@ -178,13 +158,10 @@ def create_preassigned_experiment_impl(
 
     xngin_session.commit()
 
-    return CreateExperimentResponse(
-        datasource_id=datasource_id,
-        state=experiment.state,
-        design_spec=experiment.get_design_spec(),
-        power_analyses=experiment.get_power_analyses(),
-        assign_summary=get_assign_summary(xngin_session, experiment),
+    assign_summary = get_assign_summary(
+        xngin_session, experiment.id, assignment_response.balance_check
     )
+    return experiment_converter.get_create_experiment_response(assign_summary)
 
 
 def create_online_experiment_impl(
@@ -193,51 +170,22 @@ def create_online_experiment_impl(
     organization_id: str,
     xngin_session: Session,
 ) -> CreateExperimentResponse:
-    experiment = tables.Experiment(
-        id=request.design_spec.experiment_id,
+    design_spec = request.design_spec
+    experiment_converter = ExperimentStorageConverter.init_from_components(
         datasource_id=datasource_id,
+        organization_id=organization_id,
         experiment_type="online",
-        participant_type=request.design_spec.participant_type,
-        name=request.design_spec.experiment_name,
-        description=request.design_spec.description,
-        # No assignments nor power check (for now), but we still want to allow a review.
-        state=ExperimentState.ASSIGNED,
-        start_date=request.design_spec.start_date,
-        end_date=request.design_spec.end_date,
-        power=request.design_spec.power,
-        alpha=request.design_spec.alpha,
-        fstat_thresh=request.design_spec.fstat_thresh,
-        design_spec=request.design_spec.model_dump(mode="json"),
-        power_analyses=None,
+        design_spec=design_spec,
     )
-    xngin_session.add(experiment)
-    # Create arm records
-    for arm in request.design_spec.arms:
-        db_arm = tables.ArmTable(
-            id=arm.arm_id,
-            name=arm.arm_name,
-            description=arm.arm_description,
-            experiment_id=experiment.id,
-            organization_id=organization_id,
-        )
-        xngin_session.add(db_arm)
+    xngin_session.add(experiment_converter.get_experiment())
     xngin_session.commit()
-    # Return the committed experiment config with no assignments.
     # Online experiments start with no assignments.
     empty_assign_summary = AssignSummary(
         balance_check=None,
         sample_size=0,
-        arm_sizes=[
-            ArmSize(arm=arm.model_copy(), size=0) for arm in request.design_spec.arms
-        ],
+        arm_sizes=[ArmSize(arm=arm.model_copy(), size=0) for arm in design_spec.arms],
     )
-    return CreateExperimentResponse(
-        datasource_id=datasource_id,
-        state=experiment.state,
-        design_spec=experiment.get_design_spec(),
-        power_analyses=None,
-        assign_summary=empty_assign_summary,
-    )
+    return experiment_converter.get_create_experiment_response(empty_assign_summary)
 
 
 def commit_experiment_impl(xngin_session: Session, experiment: tables.Experiment):
@@ -279,7 +227,7 @@ def commit_experiment_impl(xngin_session: Session, experiment: tables.Experiment
                 if webhook.auth_token
                 else {},
             )
-            task = Task(
+            task = tables.Task(
                 task_type=WEBHOOK_OUTBOUND_TASK_TYPE,
                 payload=webhook_task.model_dump(),
             )
@@ -325,18 +273,13 @@ def list_organization_experiments_impl(
     )
     result = xngin_session.execute(stmt)
     experiments = result.scalars().all()
-    return ListExperimentsResponse(
-        items=[
-            ExperimentConfig(
-                datasource_id=e.datasource_id,
-                state=e.state,
-                design_spec=e.get_design_spec(),
-                power_analyses=e.get_power_analyses(),
-                assign_summary=get_assign_summary(xngin_session, e),
-            )
-            for e in experiments
-        ]
-    )
+    items = []
+    for e in experiments:
+        converter = ExperimentStorageConverter(e)
+        balance_check = converter.get_balance_check()
+        assign_summary = get_assign_summary(xngin_session, e.id, balance_check)
+        items.append(converter.get_experiment_config(assign_summary))
+    return ListExperimentsResponse(items=items)
 
 
 def list_experiments_impl(
@@ -356,26 +299,20 @@ def list_experiments_impl(
     )
     result = xngin_session.execute(stmt)
     experiments = result.scalars().all()
-    return ListExperimentsResponse(
-        items=[
-            ExperimentConfig(
-                datasource_id=e.datasource_id,
-                state=e.state,
-                design_spec=e.get_design_spec(),
-                power_analyses=e.get_power_analyses(),
-                assign_summary=get_assign_summary(xngin_session, e),
-            )
-            for e in experiments
-        ]
-    )
+    items = []
+    for e in experiments:
+        converter = ExperimentStorageConverter(e)
+        balance_check = converter.get_balance_check()
+        assign_summary = get_assign_summary(xngin_session, e.id, balance_check)
+        items.append(converter.get_experiment_config(assign_summary))
+    return ListExperimentsResponse(items=items)
 
 
 def get_experiment_assignments_impl(
     experiment: tables.Experiment,
 ) -> GetExperimentAssignmentsResponse:
     # Map arm IDs to names
-    design_spec = PreassignedExperimentSpec.model_validate(experiment.design_spec)
-    arm_id_to_name = {arm.arm_id: arm.arm_name for arm in design_spec.arms}
+    arm_id_to_name = {arm.id: arm.name for arm in experiment.arms}
     # Convert ArmAssignment models to Assignment API types
     assignments = [
         Assignment(
@@ -388,7 +325,7 @@ def get_experiment_assignments_impl(
         for arm_assignment in experiment.arm_assignments
     ]
     return GetExperimentAssignmentsResponse(
-        balance_check=experiment.get_balance_check(),
+        balance_check=ExperimentStorageConverter(experiment).get_balance_check(),
         experiment_id=experiment.id,
         sample_size=len(assignments),
         assignments=assignments,
@@ -398,8 +335,7 @@ def get_experiment_assignments_impl(
 def experiment_assignments_to_csv_generator(experiment: tables.Experiment):
     """Generator function to yield CSV rows of experiment assignments as strings"""
     # Map arm IDs to names
-    design_spec = experiment.get_design_spec()
-    arm_id_to_name = {arm.arm_id: arm.arm_name for arm in design_spec.arms}
+    arm_id_to_name = {arm.id: arm.name for arm in experiment.arms}
 
     # Get strata field names from the first assignment
     strata_names = []
@@ -554,13 +490,15 @@ def create_assignment_for_participant(
 
 
 def get_assign_summary(
-    xngin_session: Session, experiment: tables.Experiment
+    xngin_session: Session,
+    experiment_id: str,
+    balance_check: BalanceCheck | None = None,
 ) -> AssignSummary:
     """Constructs an AssignSummary from the experiment's arms and arm_assignments."""
     rows = xngin_session.execute(
         select(tables.ArmAssignment.arm_id, tables.ArmTable.name, func.count())
         .join(tables.ArmTable)
-        .where(tables.ArmAssignment.experiment_id == experiment.id)
+        .where(tables.ArmAssignment.experiment_id == experiment_id)
         .group_by(tables.ArmAssignment.arm_id, tables.ArmTable.name)
     ).all()
     arm_sizes = [
@@ -571,7 +509,7 @@ def get_assign_summary(
         for arm_id, name, count in rows
     ]
     return AssignSummary(
-        balance_check=experiment.get_balance_check(),
+        balance_check=balance_check,
         arm_sizes=arm_sizes,
         sample_size=sum(arm_size.size for arm_size in arm_sizes),
     )

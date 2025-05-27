@@ -26,7 +26,6 @@ from xngin.apiserver.dependencies import (
 )
 from xngin.apiserver.dns import safe_resolve
 from xngin.apiserver.models import tables
-from xngin.apiserver.models.tables import ApiKey, Datasource, Organization
 from xngin.apiserver.routers.oidc_dependencies import PRIVILEGED_EMAIL
 from xngin.apiserver.settings import ParticipantsDef, SettingsForTesting, XnginSettings
 from xngin.apiserver.testing.pg_helpers import create_database_if_not_exists_pg
@@ -274,8 +273,8 @@ def get_settings_datasource(datasource_id: str):
 class DatasourceMetadata:
     """Describes an ephemeral datasource, organization, and API key."""
 
-    org: Organization
-    ds: Datasource
+    org: tables.Organization
+    ds: tables.Datasource
 
     # The SQLAlchemy DSN
     dsn: str
@@ -339,13 +338,13 @@ def make_datasource_metadata(
     if participants_def_list:
         test_ds.participants = participants_def_list
 
-    org = Organization(id="org" + run_id, name="test organization")
-    datasource = Datasource(id=datasource_id, name=name)
+    org = tables.Organization(id="org" + run_id, name="test organization")
+    datasource = tables.Datasource(id=datasource_id, name=name)
     datasource.set_config(test_ds)
     datasource.organization = org
 
     key_id, key = make_key()
-    kt = ApiKey(id=key_id, key=hash_key(key))
+    kt = tables.ApiKey(id=key_id, key=hash_key(key))
     kt.datasource = datasource
 
     xngin_session.add_all([org, datasource, kt])

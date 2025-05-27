@@ -3,7 +3,7 @@ import os
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from xngin.apiserver import flags
-from xngin.apiserver.models.tables import Base
+from xngin.apiserver.models import tables
 
 # SQLAlchemy's logger will append this to the name of its loggers used for the application database; e.g.
 # sqlalchemy.engine.Engine.xngin_app.
@@ -46,4 +46,4 @@ SessionLocal = sessionmaker(bind=engine)
 
 
 def setup():
-    Base.metadata.create_all(bind=engine)
+    tables.Base.metadata.create_all(bind=engine)

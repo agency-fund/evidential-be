@@ -4,7 +4,7 @@ import string
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
-from xngin.apiserver.models.tables import ApiKey, Datasource
+from xngin.apiserver.models import tables
 
 API_KEY_PREFIX = "xat"
 HASH_PURPOSE = b"xnginapikey1"
@@ -55,10 +55,10 @@ def require_valid_api_key(session: Session, api_key: str | None, datasource_id: 
         raise InvalidApiKeyError()
     key_hash = hash_key(api_key)
     stmt = (
-        select(ApiKey.id)
-        .join(Datasource)
-        .where(ApiKey.datasource_id == datasource_id)
-        .where(ApiKey.key == key_hash)
+        select(tables.ApiKey.id)
+        .join(tables.Datasource)
+        .where(tables.ApiKey.datasource_id == datasource_id)
+        .where(tables.ApiKey.key == key_hash)
     )
     result = session.execute(stmt)
     row = result.scalar_one_or_none()

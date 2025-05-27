@@ -64,7 +64,7 @@ env = [
 
 [tool.ruff]
 preview = true
-exclude = ["*.ipynb"]
+exclude = ["*.ipynb", "tmp/**"]
 
 [tool.ruff.lint]
 # Rules: https://docs.astral.sh/ruff/rules/
@@ -76,6 +76,7 @@ select = [
     "F",
     "FAST",
     "FURB",
+    "ICN",
     "N",
     "NPY",
     "PD",
@@ -115,6 +116,10 @@ ignore = [
     "RUF029",
     "TRY003",
 ]
+
+[tool.ruff.lint.flake8-import-conventions]
+# https://docs.astral.sh/ruff/settings/#lintflake8-import-conventions
+banned-from = ["xngin.apiserver.models.tables"]
 
 [tool.uv]
 dev-dependencies = [

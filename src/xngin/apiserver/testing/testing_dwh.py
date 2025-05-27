@@ -7,7 +7,7 @@ import hashlib
 from pathlib import Path
 
 from sqlalchemy.orm import Session
-from xngin.apiserver.models.tables import Datasource, Organization, User
+from xngin.apiserver.models import tables
 from xngin.apiserver.settings import Dsn, RemoteDatabaseConfig
 from xngin.apiserver.testing.testing_dwh_def import TESTING_PARTICIPANT_DEF
 
@@ -31,17 +31,17 @@ def create_user_and_first_datasource(
 
     Assumes dsn refers to a testing_dwh instance.
     """
-    user = User(email=email, is_privileged=privileged)
+    user = tables.User(email=email, is_privileged=privileged)
     session.add(user)
-    organization = Organization(name="My Organization")
+    organization = tables.Organization(name="My Organization")
     session.add(organization)
     organization.users.append(user)
     if dsn:
         config = RemoteDatabaseConfig(
             participants=[TESTING_PARTICIPANT_DEF], type="remote", dwh=Dsn.from_url(dsn)
         )
-        datasource = Datasource(name="Local DWH", organization=organization).set_config(
-            config
-        )
+        datasource = tables.Datasource(
+            name="Local DWH", organization=organization
+        ).set_config(config)
         session.add(datasource)
     return user

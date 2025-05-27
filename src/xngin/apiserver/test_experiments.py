@@ -3,6 +3,7 @@ from fastapi.testclient import TestClient
 from sqlalchemy import select
 from xngin.apiserver import conftest, constants
 from xngin.apiserver.models import tables
+from xngin.apiserver.models.storage_format_converters import ExperimentStorageConverter
 from xngin.apiserver.routers.stateless_api_types import (
     PreassignedExperimentSpec,
 )
@@ -15,10 +16,8 @@ from xngin.apiserver.routers.experiments_api_types import (
 )
 from xngin.apiserver.test_experiments_common import (  # pylint: disable=unused-import
     fixture_teardown,  # noqa: F401
-    make_arms_from_experiment,
+    insert_experiment_and_arms,
     make_create_preassigned_experiment_request,
-    make_insertable_experiment,
-    make_insertable_online_experiment,
 )
 
 conftest.setup(app)
@@ -28,7 +27,7 @@ client.base_url = client.base_url.join(constants.API_PREFIX_V1)
 
 def test_create_experiment_impl_invalid_design_spec():
     """Test creating an experiment and saving assignments to the database."""
-    request = make_create_preassigned_experiment_request(with_uuids=True)
+    request = make_create_preassigned_experiment_request(with_ids=True)
 
     response = client.post(
         "/experiments/with-assignment",
@@ -46,7 +45,7 @@ def test_create_experiment_with_assignment_sl(xngin_session, use_deterministic_r
     ds_metadata = conftest.make_datasource_metadata(
         xngin_session, datasource_id="testing"
     )
-    request = make_create_preassigned_experiment_request(with_uuids=False)
+    request = make_create_preassigned_experiment_request()
 
     response = client.post(
         "/experiments/with-assignment",
@@ -70,11 +69,9 @@ def test_create_experiment_with_assignment_sl(xngin_session, use_deterministic_r
 
 def test_list_experiments_sl_without_api_key(xngin_session, testing_datasource):
     """Tests that listing experiments tied to a db datasource requires an API key."""
-    experiment = make_insertable_experiment(
-        ExperimentState.ASSIGNED, testing_datasource.ds.id
+    insert_experiment_and_arms(
+        xngin_session, testing_datasource.ds, state=ExperimentState.ASSIGNED
     )
-    xngin_session.add(experiment)
-    xngin_session.commit()
 
     response = client.get(
         "/experiments",
@@ -86,12 +83,9 @@ def test_list_experiments_sl_without_api_key(xngin_session, testing_datasource):
 
 def test_list_experiments_sl_with_api_key(xngin_session, testing_datasource):
     """Tests that listing experiments tied to a db datasource with an API key works."""
-
-    expected_experiment = make_insertable_experiment(
-        ExperimentState.ASSIGNED, testing_datasource.ds.id
+    expected_experiment = insert_experiment_and_arms(
+        xngin_session, testing_datasource.ds, state=ExperimentState.ASSIGNED
     )
-    xngin_session.add(expected_experiment)
-    xngin_session.commit()
 
     response = client.get(
         "/experiments",
@@ -104,18 +98,19 @@ def test_list_experiments_sl_with_api_key(xngin_session, testing_datasource):
     experiments = ListExperimentsResponse.model_validate(response.json())
     assert len(experiments.items) == 1
     assert experiments.items[0].state == ExperimentState.ASSIGNED
-    diff = DeepDiff(
-        expected_experiment.get_design_spec(), experiments.items[0].design_spec
-    )
+    expected_design_spec = ExperimentStorageConverter(
+        expected_experiment
+    ).get_design_spec()
+    diff = DeepDiff(expected_design_spec, experiments.items[0].design_spec)
     assert not diff, f"Objects differ:\n{diff.pretty()}"
 
 
 def test_get_experiment(xngin_session, testing_datasource):
-    new_experiment = make_insertable_experiment(
-        ExperimentState.DESIGNING, testing_datasource.ds.id
+    new_experiment = insert_experiment_and_arms(
+        xngin_session,
+        testing_datasource.ds,
+        state=ExperimentState.DESIGNING,
     )
-    xngin_session.add(new_experiment)
-    xngin_session.commit()
 
     response = client.get(
         f"/experiments/{new_experiment.id!s}",
@@ -131,7 +126,7 @@ def test_get_experiment(xngin_session, testing_datasource):
     assert experiment_json["datasource_id"] == new_experiment.datasource_id
     assert experiment_json["state"] == new_experiment.state
     actual = PreassignedExperimentSpec.model_validate(experiment_json["design_spec"])
-    expected = PreassignedExperimentSpec.model_validate(new_experiment.design_spec)
+    expected = ExperimentStorageConverter(new_experiment).get_design_spec()
     diff = DeepDiff(actual, expected)
     assert not diff, f"Objects differ:\n{diff.pretty()}"
 
@@ -147,16 +142,11 @@ def test_get_experiment_assignments_not_found():
 
 
 def test_get_experiment_assignments_wrong_datasource(xngin_session, testing_datasource):
-    """Test getting assignments for an experiment from a different datasource.
-
-    TODO: deprecate this in favor of an admin.py version when ready.
-    """
+    """Test getting assignments for an experiment from a different datasource."""
     # Create experiment in one datasource
-    experiment = make_insertable_experiment(
-        ExperimentState.COMMITTED, testing_datasource.ds.id
+    experiment = insert_experiment_and_arms(
+        xngin_session, testing_datasource.ds, state=ExperimentState.COMMITTED
     )
-    xngin_session.add(experiment)
-    xngin_session.commit()
 
     # Try to get it from another datasource
     response = client.get(
@@ -170,19 +160,14 @@ def test_get_experiment_assignments_wrong_datasource(xngin_session, testing_data
 def test_get_assignment_for_preassigned_participant_with_apikey(
     xngin_session, testing_datasource
 ):
-    preassigned_experiment = make_insertable_experiment(
-        ExperimentState.COMMITTED, testing_datasource.ds.id
+    preassigned_experiment = insert_experiment_and_arms(
+        xngin_session, testing_datasource.ds
     )
-    xngin_session.add(preassigned_experiment)
-    arms = make_arms_from_experiment(
-        preassigned_experiment, testing_datasource.ds.organization_id
-    )
-    xngin_session.add_all(arms)
     assignment = tables.ArmAssignment(
         experiment_id=preassigned_experiment.id,
         participant_id="assigned_id",
         participant_type=preassigned_experiment.participant_type,
-        arm_id=arms[0].id,
+        arm_id=preassigned_experiment.arms[0].id,
         strata=[],
     )
     xngin_session.add(assignment)
@@ -220,15 +205,11 @@ def test_get_assignment_for_online_participant_with_apikey(
     xngin_session, testing_datasource
 ):
     """Test endpoint that gets an assignment for a participant via API key."""
-    online_experiment = make_insertable_online_experiment(
-        ExperimentState.COMMITTED, testing_datasource.ds.id
+    online_experiment = insert_experiment_and_arms(
+        xngin_session,
+        testing_datasource.ds,
+        experiment_type="online",
     )
-    xngin_session.add(online_experiment)
-    arms = make_arms_from_experiment(
-        online_experiment, testing_datasource.ds.organization_id
-    )
-    xngin_session.add_all(arms)
-    xngin_session.commit()
 
     response = client.get(
         f"/experiments/{online_experiment.id!s}/assignments/1",
@@ -241,7 +222,7 @@ def test_get_assignment_for_online_participant_with_apikey(
     parsed = GetParticipantAssignmentResponse.model_validate_json(response.text)
     assert parsed.experiment_id == online_experiment.id
     assert parsed.participant_id == "1"
-    arms_map = {arm.id: arm.name for arm in arms}
+    arms_map = {arm.id: arm.name for arm in online_experiment.arms}
     assert parsed.assignment is not None
     assert parsed.assignment.arm_name == arms_map[str(parsed.assignment.arm_id)]
     assert parsed.assignment.arm_name == "control"
