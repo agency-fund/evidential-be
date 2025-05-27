@@ -32,6 +32,9 @@ env:
   # Tests should never connect to this DSN but it (or XNGIN_DB) must be set.
   DATABASE_URL: "postgresql://fail:fail@127.0.0.2:5499/fail"
 
+  # Server startup will fail without these values being set.
+  GOOGLE_OIDC_CLIENT_ID: "unset-google-oidc-client-id"
+  GOOGLE_OIDC_CLIENT_SECRET: "unset-google-oidc-client-secret"
 jobs:
   osx-setup:
     timeout-minutes: 15
