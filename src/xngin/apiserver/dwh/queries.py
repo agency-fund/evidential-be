@@ -121,7 +121,7 @@ def get_participant_metrics(
     participant_id_column = sa_table.c[unique_id_field]
     # We always store participant_id as a string, so select it back as such.
     select_columns: list[Label] = [
-        cast(participant_id_column.label("participant_id"), String)
+        cast(participant_id_column, String).label("participant_id")
     ]
 
     field_names = ["participant_id"]
@@ -135,7 +135,7 @@ def get_participant_metrics(
             cast_column = cast(col, Float)
         else:  # re: avg(boolean) doesn't work on pg-like backends
             cast_column = cast(cast(col, Integer), Float)
-        select_columns.append(cast_column)
+        select_columns.append(cast_column.label(field_name))
 
     # create a single filter, filtering on the unique_id_field using
     # participant_ids from the treatment assignment.

@@ -474,6 +474,12 @@ class ArmAnalysis(Arm):
     std_error: Annotated[
         float, Field(description="The standard error of the treatment effect estimate.")
     ]
+    missing_values: Annotated[
+        int,
+        Field(
+            description="The number of participants assigned to this arm with missing values (NaNs) for this metric. These rows are excluded from the analysis."
+        ),
+    ]
 
     @field_serializer("t_stat", "p_value", when_used="json")
     def serialize_float(self, v: float, _info):
@@ -798,7 +804,7 @@ class MetricValue(ApiBaseModel):
         ),
     ]
     metric_value: Annotated[
-        float, Field(description="The queried value for this field_name.")
+        float | None, Field(description="The queried value for this field_name.")
     ]
 
 

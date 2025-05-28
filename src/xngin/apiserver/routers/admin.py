@@ -1280,6 +1280,7 @@ def analyze_experiment(
                     p_value=arm_result.p_value,
                     t_stat=arm_result.t_stat,
                     std_error=arm_result.std_error,
+                    missing_values=arm_result.missing_values,
                 )
             )
         metric_analyses.append(
