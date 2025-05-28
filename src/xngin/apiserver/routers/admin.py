@@ -1250,6 +1250,8 @@ def analyze_experiment(
         if len(participant_ids) == 0:
             raise StatsAnalysisError("No participants found for experiment.")
 
+        # Mark the start of the analysis as when we begin pulling outcomes.
+        created_at = datetime.now(UTC)
         participant_outcomes = get_participant_metrics(
             dwh_session,
             sa_table,
@@ -1257,6 +1259,12 @@ def analyze_experiment(
             unique_id_field,
             participant_ids,
         )
+
+    # We want to notify to the user if there are participants assigned to the experiment that are
+    # not in the data warehouse. E.g. in an online experiment, perhaps a new user was assigned
+    # before their info was synced to the dwh.
+    num_participants = len(participant_ids)
+    num_missing_participants = num_participants - len(participant_outcomes)
 
     # Always assume the first arm is the baseline; UI can override this.
     baseline_arm_id = baseline_arm_id or design_spec.arms[0].arm_id
@@ -1280,7 +1288,7 @@ def analyze_experiment(
                     p_value=arm_result.p_value,
                     t_stat=arm_result.t_stat,
                     std_error=arm_result.std_error,
-                    missing_values=arm_result.missing_values,
+                    num_missing_values=arm_result.num_missing_values,
                 )
             )
         metric_analyses.append(
@@ -1289,7 +1297,11 @@ def analyze_experiment(
             )
         )
     return ExperimentAnalysis(
-        experiment_id=experiment.id, metric_analyses=metric_analyses
+        experiment_id=experiment.id,
+        metric_analyses=metric_analyses,
+        num_participants=num_participants,
+        num_missing_participants=num_missing_participants,
+        created_at=created_at,
     )
 
 

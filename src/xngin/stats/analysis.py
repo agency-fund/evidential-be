@@ -17,7 +17,7 @@ class ArmAnalysisResult:
     p_value: float
     t_stat: float
     std_error: float
-    missing_values: int
+    num_missing_values: int
 
 
 def analyze_experiment(
@@ -69,10 +69,12 @@ def analyze_experiment(
         col for col in merged_df.columns if col not in {"arm_id", "participant_id"}
     ]
 
-    # Calculate NaN counts for all metrics.
-    nan_counts_df = merged_df.groupby("arm_id")[metric_columns].apply(
-        lambda x: x.isna().sum()
+    # Calculate NaN counts for all metrics. Since assignments_df may have participants that are not
+    # yet in the dwh (e.g. in an online experiment) we're also counting missing participants as having NaN as well.
+    nan_counts_df = merged_df.groupby("arm_id", observed=False)[metric_columns].agg(
+        lambda s: s.isna().sum()
     )
+    print(nan_counts_df)
 
     for metric_name in metric_columns:
         # smf.ols internally actually drops missing values by default (see Model.from_formula),
@@ -91,7 +93,7 @@ def analyze_experiment(
                 p_value=float(model.pvalues.iloc[i]),
                 t_stat=float(model.tvalues.iloc[i]),
                 std_error=float(list(model.bse)[i]),
-                missing_values=nan_counts_df.loc[arm_id, metric_name],
+                num_missing_values=nan_counts_df.loc[arm_id, metric_name],
             )
         metric_analyses[metric_name] = arm_analyses
     return metric_analyses

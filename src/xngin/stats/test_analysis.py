@@ -180,13 +180,16 @@ def test_analysis_with_missing_outcomes(test_assignments, test_outcomes):
     for arm_id in bool_field_results:
         assert (
             pytest.approx(
-                bool_field_results[arm_id].missing_values,
+                bool_field_results[arm_id].num_missing_values,
                 abs=10,
             )
             == 200 // 3
         )
 
     assert (
-        sum(arm_results.missing_values for arm_results in bool_field_results.values())
+        sum(
+            arm_results.num_missing_values
+            for arm_results in bool_field_results.values()
+        )
         == 200
     )
