@@ -1332,17 +1332,6 @@ def abandon_experiment(
     return experiments_common.abandon_experiment_impl(session, experiment)
 
 
-@router.get("/datasources/{datasource_id}/experiments")
-def list_experiments(
-    datasource_id: str,
-    session: Annotated[Session, Depends(xngin_db_session)],
-    user: Annotated[tables.User, Depends(user_from_token)],
-) -> experiments_api_types.ListExperimentsResponse:
-    """Returns the list of experiments in the datasource."""
-    ds = get_datasource_or_raise(session, user, datasource_id)
-    return experiments_common.list_experiments_impl(session, ds.id)
-
-
 @router.get("/organizations/{organization_id}/experiments")
 def list_organization_experiments(
     organization_id: str,
