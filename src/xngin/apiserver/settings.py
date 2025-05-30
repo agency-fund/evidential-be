@@ -49,6 +49,15 @@ class RemoteSettingsClientError(Exception):
     """Raised when we fail to fetch remote settings due to our misconfiguration."""
 
 
+def safe_url(url: sqlalchemy.engine.url.URL) -> sqlalchemy.engine.url.URL:
+    """Prepares a URL for presentation or capture in logs by stripping sensitive values."""
+    cleaned = url.set(password="redacted")
+    for qp in ("credentials_base64", "credentials_info"):
+        if cleaned.query.get(qp):
+            cleaned = cleaned.update_query_dict({qp: "redacted"})
+    return cleaned
+
+
 @lru_cache
 def get_settings_for_server():
     """Constructs an XnginSettings for use by the API server."""
@@ -465,8 +474,8 @@ class RemoteDatabaseConfig(ParticipantsMixin, ConfigBaseModel):
             # https://www.postgresql.org/docs/current/libpq-connect.html#LIBPQ-PARAMKEYWORDS
             connect_args["hostaddr"] = safe_resolve(url.host)
 
-        logger.warning(
-            f"Connecting to customer dwh: url={url}, "
+        logger.info(
+            f"Connecting to customer dwh: url={safe_url(url)}, "
             f"backend={url.get_backend_name()}, connect_args={connect_args}"
         )
         engine = sqlalchemy.create_engine(
