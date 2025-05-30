@@ -1,5 +1,6 @@
 import base64
 import json
+from datetime import UTC, datetime, timedelta
 from functools import partial
 
 import pytest
@@ -169,6 +170,7 @@ def fixture_testing_experiment(xngin_session, testing_datasource_with_user_added
     experiment = insert_experiment_and_arms(xngin_session, datasource, "preassigned")
     # Add fake assignments for each arm for real participant ids in our test data.
     arm_ids = [arm.id for arm in experiment.arms]
+    # NOTE: id = 0 doesn't exist in the test data, so we'll have 1 missing participant.
     for i in range(10):
         assignment = tables.ArmAssignment(
             experiment_id=experiment.id,
@@ -936,6 +938,10 @@ def test_experiments_analyze(testing_experiment):
     experiment_analysis = ExperimentAnalysis.model_validate(response.json())
     assert experiment_analysis.experiment_id == experiment_id
     assert len(experiment_analysis.metric_analyses) == 1
+    assert experiment_analysis.num_participants == 10
+    # testing_experiment assignment ids start from 0, but id=0 doesn't exist in our test data.
+    assert experiment_analysis.num_missing_participants == 1
+    assert datetime.now(UTC) - experiment_analysis.created_at < timedelta(seconds=5)
     # Verify that only the first arm is marked as baseline by default
     metric_analysis = experiment_analysis.metric_analyses[0]
     baseline_arms = [arm for arm in metric_analysis.arm_analyses if arm.is_baseline]
@@ -946,6 +952,8 @@ def test_experiments_analyze(testing_experiment):
         assert {arm.arm_id for arm in analysis.arm_analyses} == {
             arm.id for arm in testing_experiment.arms
         }
+        # id=0 doesn't exist in our test data, so we'll have 1 missing value across all arms.
+        assert sum([arm.num_missing_values for arm in analysis.arm_analyses]) == 1
 
 
 def test_experiments_analyze_for_experiment_with_no_participants(

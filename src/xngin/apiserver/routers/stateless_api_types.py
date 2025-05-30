@@ -474,6 +474,12 @@ class ArmAnalysis(Arm):
     std_error: Annotated[
         float, Field(description="The standard error of the treatment effect estimate.")
     ]
+    num_missing_values: Annotated[
+        int,
+        Field(
+            description="The number of participants assigned to this arm with missing values (NaNs) for this metric. These rows are excluded from the analysis."
+        ),
+    ]
 
     @field_serializer("t_stat", "p_value", when_used="json")
     def serialize_float(self, v: float, _info):
@@ -518,6 +524,22 @@ class ExperimentAnalysis(ApiBaseModel):
         Field(
             description="Contains one analysis per metric targeted by the experiment."
         ),
+    ]
+    num_participants: Annotated[
+        int,
+        Field(
+            description="The number of participants assigned to the experiment pulled from the dwh across all arms. Metric outcomes are not guaranteed to be present for all participants."
+        ),
+    ]
+    num_missing_participants: Annotated[
+        int | None,
+        Field(
+            description="The number of participants assigned to the experiment across all arms that are not found in the data warehouse when pulling metrics."
+        ),
+    ] = None
+    created_at: Annotated[
+        datetime.datetime,
+        Field(description="The date and time the experiment analysis was created."),
     ]
 
 
@@ -798,7 +820,7 @@ class MetricValue(ApiBaseModel):
         ),
     ]
     metric_value: Annotated[
-        float, Field(description="The queried value for this field_name.")
+        float | None, Field(description="The queried value for this field_name.")
     ]
 
 

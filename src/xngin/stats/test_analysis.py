@@ -1,5 +1,6 @@
 import random
 import uuid
+from typing import Any
 
 import pytest
 
@@ -126,4 +127,69 @@ def test_analysis_with_custom_baseline(test_assignments, test_outcomes):
             abs=1e-4,
         )
         == 0.0209
+    )
+
+
+def test_analysis_with_missing_outcomes(test_assignments, test_outcomes):
+    # Replace a portion of the outcomes with None
+    none: Any = None
+    for i in range(200):
+        test_outcomes[i] = ParticipantOutcome(
+            participant_id=test_outcomes[i].participant_id,
+            metric_values=[MetricValue(metric_name="bool_field", metric_value=none)],
+        )
+    result = analyze_experiment(test_assignments, test_outcomes)
+    assert len(result.keys()) == 1  # One metric
+    assert len(next(iter(result.values())).keys()) == 3  # Three arms
+
+    bool_field_results = result["bool_field"]
+    # Test using the fixed UUIDs
+    assert (
+        bool_field_results["0ffe0995-6404-4622-934a-0d5cccfe3a59"].is_baseline is True
+    )
+    assert (
+        bool_field_results["b1d90769-6e6e-4973-a7eb-d9da1c6ddcd5"].is_baseline is False
+    )
+    assert (
+        bool_field_results["df84e3ae-f5df-4dc8-9ba6-fa0743e1c895"].is_baseline is False
+    )
+
+    # Test approximate values since floating point math may have small variations
+    assert (
+        pytest.approx(
+            bool_field_results["0ffe0995-6404-4622-934a-0d5cccfe3a59"].estimate,
+            abs=1e-4,
+        )
+        == 0.4888
+    ), bool_field_results
+    assert (
+        pytest.approx(
+            bool_field_results["b1d90769-6e6e-4973-a7eb-d9da1c6ddcd5"].estimate,
+            abs=1e-4,
+        )
+        == 0.0149
+    )
+    assert (
+        pytest.approx(
+            bool_field_results["df84e3ae-f5df-4dc8-9ba6-fa0743e1c895"].estimate,
+            abs=1e-4,
+        )
+        == 0.0453
+    )
+
+    for arm_id in bool_field_results:
+        assert (
+            pytest.approx(
+                bool_field_results[arm_id].num_missing_values,
+                abs=10,
+            )
+            == 200 // 3
+        )
+
+    assert (
+        sum(
+            arm_results.num_missing_values
+            for arm_results in bool_field_results.values()
+        )
+        == 200
     )
