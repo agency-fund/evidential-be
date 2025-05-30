@@ -74,7 +74,6 @@ def analyze_experiment(
     nan_counts_df = merged_df.groupby("arm_id", observed=False)[metric_columns].agg(
         lambda s: s.isna().sum()
     )
-    print(nan_counts_df)
 
     for metric_name in metric_columns:
         # smf.ols internally actually drops missing values by default (see Model.from_formula),

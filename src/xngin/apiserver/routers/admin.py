@@ -1260,8 +1260,8 @@ def analyze_experiment(
             participant_ids,
         )
 
-    # We want to notify to the user if there are participants assigned to the experiment that are
-    # not in the data warehouse. E.g. in an online experiment, perhaps a new user was assigned
+    # We want to notify the user if there are participants assigned to the experiment that are not
+    # in the data warehouse. E.g. in an online experiment, perhaps a new user was assigned
     # before their info was synced to the dwh.
     num_participants = len(participant_ids)
     num_missing_participants = num_participants - len(participant_outcomes)
