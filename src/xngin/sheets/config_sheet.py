@@ -1,10 +1,8 @@
 import csv
 from collections.abc import Generator
 
-import sqlalchemy
 from pydantic import BaseModel, ValidationError
 
-from xngin.apiserver.routers.stateless_api_types import DataType
 from xngin.apiserver.settings import SheetRef
 from xngin.schema.schema_types import FieldDescriptor, ParticipantsSchema
 from xngin.sheets.gsheets import read_sheet_from_gsheet
@@ -115,40 +113,3 @@ def fetch_and_parse_sheet(ref: SheetRef):
     else:
         return parsed
     raise InvalidSheetError(errors)
-
-
-def create_schema_from_table(table: sqlalchemy.Table, unique_id_col: str | None = None):
-    """Attempts to get name and type info from the database Table itself (formerly done via gsheets).
-
-    If unique_id_col is explicitly set to None, we will look for a primary key else assume "id".
-    (This mode should only be used if bootstrapping a sheet config from a table's schema.)
-    """
-
-    collected = []
-    if unique_id_col is None:
-        unique_id_col = next(
-            (c.name for c in table.columns.values() if c.primary_key), "id"
-        )
-    for column in table.columns.values():
-        type_hint = column.type
-        collected.append(
-            FieldDescriptor(
-                field_name=column.name,
-                data_type=DataType.match(type_hint),
-                description="",
-                is_unique_id=column.name == unique_id_col,
-                is_strata=False,
-                is_filter=False,
-                is_metric=False,
-            )
-        )
-    # Sort order is: unique ID first, then string fields, then the rest by name.
-    rows = sorted(
-        collected,
-        key=lambda r: (
-            not r.is_unique_id,
-            r.data_type != DataType.CHARACTER_VARYING,
-            r.field_name,
-        ),
-    )
-    return ParticipantsSchema(table_name=table.name, fields=rows)

@@ -31,6 +31,7 @@ from xngin.apiserver.apikeys import hash_key, make_key
 from xngin.apiserver.dependencies import xngin_db_session
 from xngin.apiserver.dns.safe_resolve import DnsLookupError, safe_resolve
 from xngin.apiserver.dwh.queries import get_participant_metrics, query_for_participants
+from xngin.apiserver.dwh.reflect_schemas import create_inspect_table_response_from_table
 from xngin.apiserver.exceptions_common import LateValidationError
 from xngin.apiserver.models import tables
 from xngin.apiserver.models.storage_format_converters import ExperimentStorageConverter
@@ -49,7 +50,6 @@ from xngin.apiserver.routers.admin_api_types import (
     CreateParticipantsTypeResponse,
     DatasourceSummary,
     EventSummary,
-    FieldMetadata,
     GetDatasourceResponse,
     GetOrganizationResponse,
     InspectDatasourceResponse,
@@ -81,7 +81,6 @@ from xngin.apiserver.routers.stateless_api import (
 )
 from xngin.apiserver.routers.stateless_api_types import (
     ArmAnalysis,
-    DataType,
     ExperimentAnalysis,
     GetMetricsResponseElement,
     GetStrataResponseElement,
@@ -757,43 +756,6 @@ def is_postgres_database_not_found_error(exc):
         and isinstance(exc.args[0], str)
         and "FATAL:  database" in exc.args[0]
         and "does not exist" in exc.args[0]
-    )
-
-
-def create_inspect_table_response_from_table(
-    table: sqlalchemy.Table,
-) -> InspectDatasourceTableResponse:
-    """Creates an InspectDatasourceTableResponse from a sqlalchemy.Table.
-
-    This is similar to config_sheet.create_schema_from_table but tailored to use in the API.
-    """
-    possible_id_columns = {
-        c.name
-        for c in table.columns.values()
-        if c.name.endswith("id") or isinstance(c.type, sqlalchemy.sql.sqltypes.UUID)
-    }
-    primary_key_columns = {c.name for c in table.columns.values() if c.primary_key}
-    if len(primary_key_columns) > 1:
-        # If there is more than one PK, it probably isn't usable for experiments.
-        primary_key_columns = set()
-    possible_id_columns |= primary_key_columns
-
-    collected = []
-    for column in table.columns.values():
-        type_hint = column.type
-        data_type = DataType.match(type_hint)
-        if data_type.is_supported():
-            collected.append(
-                FieldMetadata(
-                    field_name=column.name,
-                    data_type=data_type,
-                    description=column.comment or "",
-                )
-            )
-
-    return InspectDatasourceTableResponse(
-        detected_unique_id_fields=list(sorted(possible_id_columns)),
-        fields=list(sorted(collected, key=lambda f: f.field_name)),
     )
 
 
