@@ -84,6 +84,7 @@ def setup():
     logger.disable("httpcore")
     logger.disable("httpx")
     logger.disable("watchfiles.main")
+    logger.disable("sentry_sdk.integrations.logging")
 
     # Development environments don't need the date or full level names; this makes it easier to read in terminal output.
     # When this flag isn't set, loguru's default more verbose format is used by default.
