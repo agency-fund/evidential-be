@@ -19,6 +19,7 @@ from xngin.apiserver.dependencies import (
     gsheet_cache,
 )
 from xngin.apiserver.dwh.queries import get_stats_on_metrics, query_for_participants
+from xngin.apiserver.dwh.reflect_schemas import create_schema_from_table
 from xngin.apiserver.exceptions_common import LateValidationError
 from xngin.apiserver.gsheet_cache import GSheetCache
 from xngin.apiserver.routers.stateless_api_types import (
@@ -44,10 +45,7 @@ from xngin.apiserver.settings import (
     infer_table,
 )
 from xngin.schema.schema_types import FieldDescriptor, ParticipantsSchema
-from xngin.sheets.config_sheet import (
-    create_schema_from_table,
-    fetch_and_parse_sheet,
-)
+from xngin.sheets.config_sheet import fetch_and_parse_sheet
 from xngin.stats.assignment import assign_treatment as assign_treatment_actual
 from xngin.stats.power import check_power
 
