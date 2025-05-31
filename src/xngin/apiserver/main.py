@@ -29,6 +29,7 @@ if sentry_dsn := os.environ.get("SENTRY_DSN"):
     import sentry_sdk
 
     sentry_sdk.init(
+        db_query_source_threshold_ms=10,  # Capture origin of queries that exceed this time (default 100).
         dsn=sentry_dsn,
         environment=os.environ.get("ENVIRONMENT", "local"),
         traces_sample_rate=1.0,
