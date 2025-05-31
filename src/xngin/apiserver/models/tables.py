@@ -456,7 +456,7 @@ class ArmTable(Base):
     name: Mapped[str] = mapped_column(String(255))
     description: Mapped[str] = mapped_column(String(2000))
     experiment_id: Mapped[str] = mapped_column(
-        String(36), ForeignKey("experiments.id", ondelete="CASCADE")
+        String(36), ForeignKey("experiments.id", ondelete="CASCADE"), index=True
     )
     organization_id: Mapped[str] = mapped_column(
         ForeignKey("organizations.id", ondelete="CASCADE")
