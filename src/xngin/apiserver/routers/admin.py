@@ -1377,6 +1377,12 @@ def get_experiment_assignment_for_participant(
     participant_id: str,
     session: Annotated[Session, Depends(xngin_db_session)],
     user: Annotated[tables.User, Depends(user_from_token)],
+    create_if_none: Annotated[
+        bool,
+        Query(
+            description="Create an assignment if none exists. Does nothing for preassigned experiments. Override if you just want to check if an assignment exists."
+        ),
+    ] = True,
     random_state: Annotated[
         int | None,
         Query(
@@ -1394,7 +1400,7 @@ def get_experiment_assignment_for_participant(
     assignment = experiments_common.get_existing_assignment_for_participant(
         session, experiment.id, participant_id
     )
-    if not assignment:
+    if not assignment and create_if_none:
         assignment = experiments_common.create_assignment_for_participant(
             session, experiment, participant_id, random_state
         )

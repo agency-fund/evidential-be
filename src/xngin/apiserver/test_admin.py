@@ -891,6 +891,18 @@ def test_get_experiment_assignment_for_online_participant(
     datasource_id = testing_experiment.datasource_id
     experiment_id = testing_experiment.id
 
+    # Check for an assignment that doesn't exist, but don't create it.
+    response = pget(
+        f"/v1/m/datasources/{datasource_id}/experiments/{experiment_id}/assignments/new_id?create_if_none=false"
+    )
+    assert response.status_code == 200, response.content
+    assignment_response = GetParticipantAssignmentResponse.model_validate(
+        response.json()
+    )
+    assert assignment_response.experiment_id == experiment_id
+    assert assignment_response.participant_id == "new_id"
+    assert assignment_response.assignment is None
+
     # Create a new participant assignment.
     response = pget(
         f"/v1/m/datasources/{datasource_id}/experiments/{experiment_id}/assignments/new_id"
