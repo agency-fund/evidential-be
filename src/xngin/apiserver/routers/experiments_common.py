@@ -1,6 +1,7 @@
 import csv
 import io
 from collections.abc import Sequence
+from datetime import UTC, datetime
 from itertools import batched
 
 from fastapi import (
@@ -15,7 +16,7 @@ from sqlalchemy.orm import Session
 
 from xngin.apiserver import flags
 from xngin.apiserver.models import tables
-from xngin.apiserver.models.enums import ExperimentState
+from xngin.apiserver.models.enums import AssignmentStopReason, ExperimentState
 from xngin.apiserver.models.storage_format_converters import ExperimentStorageConverter
 from xngin.apiserver.routers.experiments_api_types import (
     AssignSummary,
@@ -331,6 +332,9 @@ def get_experiment_assignments_impl(
         experiment_id=experiment.id,
         sample_size=len(assignments),
         assignments=assignments,
+        stopped_reason=AssignmentStopReason(experiment.stopped_reason)
+        if experiment.stopped_reason
+        else None,
     )
 
 
@@ -433,8 +437,13 @@ def create_assignment_for_participant(
     participant_id: str,
     random_state: int | None,
 ) -> Assignment | None:
-    """Internal helper to make and persist an assignment for a participant depending on the
-    experiment type. Excludes strata."""
+    """Helper to persist a new assignment for a participant. Returned value excludes strata.
+
+    Has side effect of updating the experiment's stopped_at and stopped_reason if we discover we should stop assigning.
+    """
+    if experiment.stopped_at is not None:
+        # Experiment is stopped, so no new assignments can be made.
+        return None
 
     if experiment.state != ExperimentState.COMMITTED:
         raise ExperimentsAssignmentError(
@@ -454,6 +463,13 @@ def create_assignment_for_participant(
         return None
     if experiment_type != "online":
         raise ExperimentsAssignmentError(f"Invalid experiment type: {experiment_type}")
+
+    # Don't allow new assignments for experiments that have ended.
+    if experiment.end_date < datetime.now(UTC):
+        experiment.stopped_at = datetime.now(UTC)
+        experiment.stopped_reason = AssignmentStopReason.END_DATE
+        xngin_session.commit()
+        return None
 
     # For online experiments, create a new assignment with simple random assignment.
     if random_state:

@@ -34,6 +34,7 @@ from xngin.apiserver.dwh.queries import get_participant_metrics, query_for_parti
 from xngin.apiserver.dwh.reflect_schemas import create_inspect_table_response_from_table
 from xngin.apiserver.exceptions_common import LateValidationError
 from xngin.apiserver.models import tables
+from xngin.apiserver.models.enums import AssignmentStopReason
 from xngin.apiserver.models.storage_format_converters import ExperimentStorageConverter
 from xngin.apiserver.routers import experiments_api_types, experiments_common
 from xngin.apiserver.routers.admin_api_types import (
@@ -1400,7 +1401,7 @@ def get_experiment_assignment_for_participant(
     assignment = experiments_common.get_existing_assignment_for_participant(
         session, experiment.id, participant_id
     )
-    if not assignment and create_if_none:
+    if not assignment and create_if_none and experiment.stopped_at is None:
         assignment = experiments_common.create_assignment_for_participant(
             session, experiment, participant_id, random_state
         )
@@ -1409,6 +1410,9 @@ def get_experiment_assignment_for_participant(
         experiment_id=experiment_id,
         participant_id=participant_id,
         assignment=assignment,
+        stopped_reason=AssignmentStopReason(experiment.stopped_reason)
+        if experiment.stopped_reason
+        else None,
     )
 
 

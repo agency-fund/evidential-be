@@ -19,3 +19,11 @@ class ExperimentState(enum.StrEnum):
     # Add a COMPLETE state that is only derived in a View when the state is COMMITTED and query time
     # is after experiment end.
     ABORTED = "aborted"
+
+
+class AssignmentStopReason(enum.StrEnum):
+    """The reason assignments were stopped."""
+
+    END_DATE = "end_date"  # end date reached
+    MANUAL = "manual"  # manually stopped by user
+    TARGET_N = "target_n"  # target total number of participants across all arms reached

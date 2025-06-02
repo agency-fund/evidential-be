@@ -3,7 +3,7 @@ from typing import Annotated
 from pydantic import BaseModel, ConfigDict, Field
 
 from xngin.apiserver.limits import MAX_NUMBER_OF_ARMS
-from xngin.apiserver.models.enums import ExperimentState
+from xngin.apiserver.models.enums import AssignmentStopReason, ExperimentState
 from xngin.apiserver.routers.stateless_api_types import (
     ArmSize,
     Assignment,
@@ -81,6 +81,12 @@ class GetExperimentAssignmentsResponse(ExperimentsBaseModel):
     experiment_id: str
     sample_size: int
     assignments: list[Assignment]
+    stopped_reason: Annotated[
+        AssignmentStopReason | None,
+        Field(
+            description="The reason assignments were stopped if applicable. Null if assignments are still being made or this is a preassigned experiment."
+        ),
+    ]
 
 
 class GetParticipantAssignmentResponse(ExperimentsBaseModel):
@@ -92,3 +98,9 @@ class GetParticipantAssignmentResponse(ExperimentsBaseModel):
         Assignment | None,
         Field(description="Null if no assignment. assignment.strata are not included."),
     ]
+    stopped_reason: Annotated[
+        AssignmentStopReason | None,
+        Field(
+            description="The reason assignments were stopped if applicable. Null if assignments are still being made or this is a preassigned experiment."
+        ),
+    ] = None

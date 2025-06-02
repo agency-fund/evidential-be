@@ -29,6 +29,7 @@ from xngin.apiserver.dwh.queries import query_for_participants
 from xngin.apiserver.exceptions_common import LateValidationError
 from xngin.apiserver.gsheet_cache import GSheetCache
 from xngin.apiserver.models import tables
+from xngin.apiserver.models.enums import AssignmentStopReason
 from xngin.apiserver.models.storage_format_converters import ExperimentStorageConverter
 from xngin.apiserver.routers.experiments_api_types import (
     CreateExperimentRequest,
@@ -265,4 +266,7 @@ def get_assignment_for_participant_with_apikey(
         experiment_id=experiment_id,
         participant_id=participant_id,
         assignment=assignment,
+        stopped_reason=AssignmentStopReason(experiment.stopped_reason)
+        if experiment.stopped_reason
+        else None,
     )
