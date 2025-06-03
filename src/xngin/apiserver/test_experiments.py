@@ -115,10 +115,7 @@ def test_get_experiment(xngin_session, testing_datasource):
 
     response = client.get(
         f"/experiments/{new_experiment.id!s}",
-        headers={
-            constants.HEADER_CONFIG_ID: testing_datasource.ds.id,
-            constants.HEADER_API_KEY: testing_datasource.key,
-        },
+        headers={constants.HEADER_API_KEY: testing_datasource.key},
     )
 
     assert response.status_code == 200, response.content
@@ -132,14 +129,14 @@ def test_get_experiment(xngin_session, testing_datasource):
     assert not diff, f"Objects differ:\n{diff.pretty()}"
 
 
-def test_get_experiment_assignments_not_found():
+def test_get_experiment_assignments_not_found(testing_datasource):
     """Test getting assignments for a non-existent experiment."""
     response = client.get(
         f"/experiments/{tables.experiment_id_factory()}/assignments",
-        headers={constants.HEADER_CONFIG_ID: "testing"},
+        headers={constants.HEADER_API_KEY: testing_datasource.key},
     )
-    assert response.status_code == 404
-    assert response.json()["detail"] == "Experiment not found"
+    assert response.status_code == 404, response.json()
+    assert response.json()["detail"] == "Experiment not found or not authorized."
 
 
 def test_get_experiment_assignments_wrong_datasource(xngin_session, testing_datasource):
@@ -148,14 +145,16 @@ def test_get_experiment_assignments_wrong_datasource(xngin_session, testing_data
     experiment = insert_experiment_and_arms(
         xngin_session, testing_datasource.ds, state=ExperimentState.COMMITTED
     )
+    # Make a *different* datasource and API key to query with
+    metadata = conftest.make_datasource_metadata(xngin_session, name="wrong ds")
 
-    # Try to get it from another datasource
+    # Try to get testing_datasource's experiment from another datasource's key.
     response = client.get(
         f"/experiments/{experiment.id!s}/assignments",
-        headers={constants.HEADER_CONFIG_ID: "testing-inline-schema"},
+        headers={constants.HEADER_API_KEY: metadata.key},
     )
-    assert response.status_code == 404
-    assert response.json()["detail"] == "Experiment not found"
+    assert response.status_code == 404, response.json()
+    assert response.json()["detail"] == "Experiment not found or not authorized."
 
 
 def test_get_assignment_for_preassigned_participant_with_apikey(
@@ -176,10 +175,7 @@ def test_get_assignment_for_preassigned_participant_with_apikey(
 
     response = client.get(
         f"/experiments/{preassigned_experiment.id!s}/assignments/unassigned_id?random_state=42",
-        headers={
-            constants.HEADER_CONFIG_ID: testing_datasource.ds.id,
-            constants.HEADER_API_KEY: testing_datasource.key,
-        },
+        headers={constants.HEADER_API_KEY: testing_datasource.key},
     )
     assert response.status_code == 200
     parsed = GetParticipantAssignmentResponse.model_validate_json(response.text)
@@ -189,10 +185,7 @@ def test_get_assignment_for_preassigned_participant_with_apikey(
 
     response = client.get(
         f"/experiments/{preassigned_experiment.id!s}/assignments/assigned_id",
-        headers={
-            constants.HEADER_CONFIG_ID: testing_datasource.ds.id,
-            constants.HEADER_API_KEY: testing_datasource.key,
-        },
+        headers={constants.HEADER_API_KEY: testing_datasource.key},
     )
     assert response.status_code == 200
     parsed = GetParticipantAssignmentResponse.model_validate_json(response.text)
@@ -214,10 +207,7 @@ def test_get_assignment_for_online_participant_with_apikey(
 
     response = client.get(
         f"/experiments/{online_experiment.id!s}/assignments/1",
-        headers={
-            constants.HEADER_CONFIG_ID: testing_datasource.ds.id,
-            constants.HEADER_API_KEY: testing_datasource.key,
-        },
+        headers={constants.HEADER_API_KEY: testing_datasource.key},
     )
     assert response.status_code == 200
     parsed = GetParticipantAssignmentResponse.model_validate_json(response.text)
@@ -232,10 +222,7 @@ def test_get_assignment_for_online_participant_with_apikey(
     # Test that we get the same assignment for the same participant.
     response2 = client.get(
         f"/experiments/{online_experiment.id!s}/assignments/1",
-        headers={
-            constants.HEADER_CONFIG_ID: testing_datasource.ds.id,
-            constants.HEADER_API_KEY: testing_datasource.key,
-        },
+        headers={constants.HEADER_API_KEY: testing_datasource.key},
     )
     assert response2.status_code == 200
     assert response2.json() == response.json()

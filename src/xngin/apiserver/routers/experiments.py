@@ -21,6 +21,7 @@ from sqlalchemy.orm import Session
 from xngin.apiserver import constants
 from xngin.apiserver.dependencies import (
     datasource_dependency,
+    experiment_dependency,
     gsheet_cache,
     random_seed_dependency,
     xngin_db_session,
@@ -151,11 +152,9 @@ def get_experiment_or_raise(
     include_in_schema=False,
 )
 def commit_experiment_sl(
-    datasource: Annotated[Datasource, Depends(datasource_dependency)],
+    experiment: Annotated[tables.Experiment, Depends(experiment_dependency)],
     xngin_session: Annotated[Session, Depends(xngin_db_session)],
-    experiment_id: str,
 ):
-    experiment = get_experiment_or_raise(xngin_session, experiment_id, datasource.id)
     return commit_experiment_impl(xngin_session, experiment)
 
 
@@ -166,11 +165,9 @@ def commit_experiment_sl(
     include_in_schema=False,
 )
 def abandon_experiment_sl(
-    datasource: Annotated[Datasource, Depends(datasource_dependency)],
+    experiment: Annotated[tables.Experiment, Depends(experiment_dependency)],
     xngin_session: Annotated[Session, Depends(xngin_db_session)],
-    experiment_id: str,
 ):
-    experiment = get_experiment_or_raise(xngin_session, experiment_id, datasource.id)
     return abandon_experiment_impl(xngin_session, experiment)
 
 
@@ -190,11 +187,9 @@ def list_experiments_sl(
     summary="Get experiment metadata (design & assignment specs) for a single experiment.",
 )
 def get_experiment_sl(
-    datasource: Annotated[Datasource, Depends(datasource_dependency)],
+    experiment: Annotated[tables.Experiment, Depends(experiment_dependency)],
     xngin_session: Annotated[Session, Depends(xngin_db_session)],
-    experiment_id: str,
 ) -> GetExperimentResponse:
-    experiment = get_experiment_or_raise(xngin_session, experiment_id, datasource.id)
     converter = ExperimentStorageConverter(experiment)
     balance_check = converter.get_balance_check()
     assign_summary = get_assign_summary(xngin_session, experiment.id, balance_check)
@@ -207,12 +202,8 @@ def get_experiment_sl(
     summary="Fetch list of participant=>arm assignments for the given experiment id.",
 )
 def get_experiment_assignments_sl(
-    datasource: Annotated[Datasource, Depends(datasource_dependency)],
-    xngin_session: Annotated[Session, Depends(xngin_db_session)],
-    experiment_id: str,
+    experiment: Annotated[tables.Experiment, Depends(experiment_dependency)],
 ) -> GetExperimentAssignmentsResponse:
-    experiment = get_experiment_or_raise(xngin_session, experiment_id, datasource.id)
-
     return get_experiment_assignments_impl(experiment)
 
 
@@ -221,15 +212,12 @@ def get_experiment_assignments_sl(
     summary="Export experiment assignments as CSV file.",
 )
 def get_experiment_assignments_as_csv_sl(
-    datasource: Annotated[Datasource, Depends(datasource_dependency)],
-    xngin_session: Annotated[Session, Depends(xngin_db_session)],
-    experiment_id: str,
+    experiment: Annotated[tables.Experiment, Depends(experiment_dependency)],
 ) -> StreamingResponse:
     """Exports the assignments info with header row as CSV. BalanceCheck not included.
 
     csv header form: participant_id,arm_id,arm_name,strata_name1,strata_name2,...
     """
-    experiment = get_experiment_or_raise(xngin_session, experiment_id, datasource.id)
     return get_experiment_assignments_as_csv_impl(experiment)
 
 
@@ -240,13 +228,11 @@ def get_experiment_assignments_as_csv_sl(
     exists.  For 'online', returns the assignment if it exists, else generates an assignment""",
 )
 def get_assignment_for_participant_with_apikey(
-    experiment_id: str,
+    experiment: Annotated[tables.Experiment, Depends(experiment_dependency)],
     participant_id: str,
-    datasource: Annotated[Datasource, Depends(datasource_dependency)],
     xngin_session: Annotated[Session, Depends(xngin_db_session)],
     random_state: Annotated[int | None, Depends(random_seed_dependency)],
 ) -> GetParticipantAssignmentResponse:
-    experiment = get_experiment_or_raise(xngin_session, experiment_id, datasource.id)
     assignment = get_existing_assignment_for_participant(
         xngin_session, experiment.id, participant_id
     )
@@ -256,7 +242,7 @@ def get_assignment_for_participant_with_apikey(
         )
 
     return GetParticipantAssignmentResponse(
-        experiment_id=experiment_id,
+        experiment_id=experiment.id,
         participant_id=participant_id,
         assignment=assignment,
     )

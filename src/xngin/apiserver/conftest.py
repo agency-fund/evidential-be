@@ -19,7 +19,7 @@ from sqlalchemy.orm import sessionmaker
 from sqlalchemy_bigquery import dialect as bigquery_dialect
 
 from xngin.apiserver import database, flags
-from xngin.apiserver.apikeys import hash_key, make_key
+from xngin.apiserver.apikeys import hash_key_or_raise, make_key
 from xngin.apiserver.dependencies import (
     random_seed_dependency,
     settings_dependency,
@@ -345,7 +345,7 @@ def make_datasource_metadata(
     datasource.organization = org
 
     key_id, key = make_key()
-    kt = tables.ApiKey(id=key_id, key=hash_key(key))
+    kt = tables.ApiKey(id=key_id, key=hash_key_or_raise(key))
     kt.datasource = datasource
 
     xngin_session.add_all([org, datasource, kt])
