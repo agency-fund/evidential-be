@@ -188,7 +188,7 @@ class ExperimentStorageConverter:
     def get_experiment_response(
         self, assign_summary: eapi.AssignSummary
     ) -> eapi.GetExperimentResponse:
-        # Although ListExperimentsResponse is a subclass of ExperimentConfig, we revalidate the
+        # Although GetExperimentResponse is a subclass of ExperimentConfig, we revalidate the
         # response in case we ever change the API.
         return eapi.GetExperimentResponse.model_validate(
             self.get_experiment_config(assign_summary).model_dump()

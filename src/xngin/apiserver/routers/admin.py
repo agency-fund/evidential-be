@@ -27,7 +27,7 @@ from sqlalchemy.exc import OperationalError
 from sqlalchemy.orm import Session
 
 from xngin.apiserver import constants, flags, settings
-from xngin.apiserver.apikeys import hash_key, make_key
+from xngin.apiserver.apikeys import hash_key_or_raise, make_key
 from xngin.apiserver.dependencies import xngin_db_session
 from xngin.apiserver.dns.safe_resolve import DnsLookupError, safe_resolve
 from xngin.apiserver.dwh.queries import get_participant_metrics, query_for_participants
@@ -1088,7 +1088,7 @@ def create_api_key(
     """
     ds = get_datasource_or_raise(session, user, datasource_id)
     label, key = make_key()
-    key_hash = hash_key(key)
+    key_hash = hash_key_or_raise(key)
     api_key = tables.ApiKey(id=label, key=key_hash, datasource_id=ds.id)
     session.add(api_key)
     session.commit()
