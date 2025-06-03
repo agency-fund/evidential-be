@@ -240,7 +240,7 @@ def test_get_assignment_for_online_participant_with_apikey(
 def test_get_assignment_for_online_participant_with_apikey_dont_create(
     xngin_session, testing_datasource
 ):
-    """Verify endpoint doesn't create an assignmentif it doesn't exist when create_if_none=False."""
+    """Verify endpoint doesn't create an assignment when create_if_none=False."""
     online_experiment = insert_experiment_and_arms(
         xngin_session,
         testing_datasource.ds,
@@ -249,10 +249,7 @@ def test_get_assignment_for_online_participant_with_apikey_dont_create(
 
     response = client.get(
         f"/experiments/{online_experiment.id!s}/assignments/1",
-        headers={
-            constants.HEADER_CONFIG_ID: testing_datasource.ds.id,
-            constants.HEADER_API_KEY: testing_datasource.key,
-        },
+        headers={constants.HEADER_API_KEY: testing_datasource.key},
         params={"create_if_none": False},
     )
     assert response.status_code == 200
