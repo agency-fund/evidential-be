@@ -26,10 +26,19 @@ class InvalidApiKeyError(ApiKeyError):
 KEY_ALPHABET = [*string.ascii_lowercase, *string.ascii_uppercase, *string.digits]
 
 
-def hash_key(key: str | bytes):
+def hash_key_or_raise(key: str | bytes | None) -> str:
     """Transforms the plain API key to the hashed (stored) value."""
+    if not key:
+        raise ApiKeyRequiredError()
     if isinstance(key, str):
+        if not key.startswith(API_KEY_PREFIX):
+            raise InvalidApiKeyError()
         key = key.encode()
+    elif isinstance(key, bytes):
+        if not key.startswith(API_KEY_PREFIX.encode()):
+            raise InvalidApiKeyError()
+    else:
+        raise InvalidApiKeyError()
     return hashlib.blake2b(key, person=HASH_PURPOSE).hexdigest()
 
 
@@ -50,11 +59,7 @@ def make_key() -> tuple[str, str]:
 
 def require_valid_api_key(session: Session, api_key: str | None, datasource_id: str):
     """Queries the database for a matching API key with privileges on the config referenced by config_id."""
-    if not api_key:
-        raise ApiKeyRequiredError()
-    if not api_key.startswith(API_KEY_PREFIX):
-        raise InvalidApiKeyError()
-    key_hash = hash_key(api_key)
+    key_hash = hash_key_or_raise(api_key)
     stmt = (
         select(tables.ApiKey.id)
         .join(tables.Datasource)
