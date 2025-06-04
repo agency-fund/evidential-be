@@ -660,8 +660,11 @@ def test_lifecycle_with_db(testing_datasource):
     created_experiment = CreateExperimentResponse.model_validate(response.json())
     parsed_experiment_id = created_experiment.design_spec.experiment_id
     assert parsed_experiment_id is not None
-    assert created_experiment.stopped_assignments_at is None
-    assert created_experiment.stopped_assignments_reason is None
+    assert created_experiment.stopped_assignments_at is not None
+    assert (
+        created_experiment.stopped_assignments_reason
+        == StopAssignmentReason.PREASSIGNED
+    )
     parsed_arm_ids = {arm.arm_id for arm in created_experiment.design_spec.arms}
     assert len(parsed_arm_ids) == 2
 
@@ -759,8 +762,11 @@ def test_create_preassigned_experiment_using_inline_schema_ds(
     assert len(parsed_arm_ids) == 2
 
     # Verify basic response
-    assert created_experiment.stopped_assignments_at is None
-    assert created_experiment.stopped_assignments_reason is None
+    assert created_experiment.stopped_assignments_at is not None
+    assert (
+        created_experiment.stopped_assignments_reason
+        == StopAssignmentReason.PREASSIGNED
+    )
     assert created_experiment.design_spec.experiment_id is not None
     assert created_experiment.design_spec.arms[0].arm_id is not None
     assert created_experiment.design_spec.arms[1].arm_id is not None

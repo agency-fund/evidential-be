@@ -139,6 +139,8 @@ def create_preassigned_experiment_impl(
         experiment_type="preassigned",
         design_spec=design_spec,
         state=ExperimentState.ASSIGNED,
+        stopped_assignments_at=datetime.now(UTC),
+        stopped_assignments_reason=StopAssignmentReason.PREASSIGNED,
         balance_check=assignment_response.balance_check,
         power_analyses=request.power_analyses,
     )
@@ -446,6 +448,7 @@ def create_assignment_for_participant(
         raise ExperimentsAssignmentError(
             f"Invalid experiment state: {experiment.state}"
         )
+
     available_arms = xngin_session.execute(
         select(tables.ArmTable.id, tables.ArmTable.name).where(
             tables.ArmTable.experiment_id == experiment.id

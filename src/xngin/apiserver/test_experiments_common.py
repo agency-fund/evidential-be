@@ -143,12 +143,19 @@ def make_insertable_experiment(
     design_spec: DesignSpec = TypeAdapter(DesignSpec).validate_python(
         request["design_spec"]
     )
+    stopped_assignments_at: datetime | None = None
+    stopped_assignments_reason: StopAssignmentReason | None = None
+    if experiment_type == "preassigned":
+        stopped_assignments_at = datetime.now(UTC)
+        stopped_assignments_reason = StopAssignmentReason.PREASSIGNED
     experiment_converter = ExperimentStorageConverter.init_from_components(
         datasource_id=datasource.id,
         organization_id=datasource.organization_id,
         experiment_type=experiment_type,
         design_spec=design_spec,
         state=state,
+        stopped_assignments_at=stopped_assignments_at,
+        stopped_assignments_reason=stopped_assignments_reason,
     )
     experiment = experiment_converter.get_experiment()
     return experiment, experiment_converter.get_design_spec()
@@ -793,16 +800,27 @@ def test_get_existing_assignment_for_participant(xngin_session, testing_datasour
 
 
 def test_create_assignment_for_participant_errors(xngin_session, testing_datasource):
+    # Test assignment while in an experiment state not valid for assignments.
+    # Preassigned will short circuit before the invalid state check so will NOT raise.
     experiment, _ = make_insertable_experiment(
-        testing_datasource.ds, ExperimentState.ASSIGNED
+        testing_datasource.ds, ExperimentState.ASSIGNED, experiment_type="preassigned"
+    )
+    experiment.arms = []
+    response = create_assignment_for_participant(xngin_session, experiment, "p1", None)
+    assert response is None
+
+    # But an online experiment in this invalid state will raise.
+    experiment, _ = make_insertable_experiment(
+        testing_datasource.ds, ExperimentState.ASSIGNED, experiment_type="online"
     )
     with pytest.raises(
         ExperimentsAssignmentError, match="Invalid experiment state: assigned"
     ):
         create_assignment_for_participant(xngin_session, experiment, "p1", None)
 
+    # Test that an online experiment with no arms will raise.
     experiment, _ = make_insertable_experiment(
-        testing_datasource.ds, ExperimentState.COMMITTED
+        testing_datasource.ds, ExperimentState.COMMITTED, experiment_type="online"
     )
     experiment.arms = []
     with pytest.raises(ExperimentsAssignmentError, match="Experiment has no arms"):
@@ -843,7 +861,10 @@ def test_create_assignment_for_participant(xngin_session, testing_datasource):
 
 @pytest.mark.parametrize(
     "experiment_type,stopped_reason",
-    [("preassigned", None), ("online", StopAssignmentReason.END_DATE)],
+    [
+        ("preassigned", StopAssignmentReason.PREASSIGNED),
+        ("online", StopAssignmentReason.END_DATE),
+    ],
 )
 def test_create_assignment_for_participant_stopped_reason(
     xngin_session, testing_datasource, experiment_type, stopped_reason
