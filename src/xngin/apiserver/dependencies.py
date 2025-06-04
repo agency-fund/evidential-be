@@ -4,7 +4,7 @@ import httpx
 from fastapi import Depends, Header, HTTPException, Path, status
 from fastapi.security import APIKeyHeader
 from sqlalchemy import select
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 
 from xngin.apiserver import constants
 from xngin.apiserver.apikeys import hash_key_or_raise, require_valid_api_key
@@ -124,18 +124,21 @@ def experiment_dependency(
         HTTPException: 404 if the experiment is not found or the API key is invalid for the experiment's datasource.
     """
     key_hash = hash_key_or_raise(api_key)
+    # We use joinedload(arms) because we anticipate that inspecting the arms of the experiment will be common, and it
+    # is also used in the online experiment assignment flow which is sensitive to database roundtrips.
     query = (
         select(tables.Experiment)
         .join(
             tables.ApiKey,
             tables.Experiment.datasource_id == tables.ApiKey.datasource_id,
         )
+        .options(joinedload(tables.Experiment.arms))
         .where(
             tables.Experiment.id == experiment_id,
             tables.ApiKey.key == key_hash,
         )
     )
-    experiment = xngin_db.scalars(query).one_or_none()
+    experiment = xngin_db.scalars(query).unique().one_or_none()
 
     if not experiment:
         raise HTTPException(

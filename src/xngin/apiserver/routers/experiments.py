@@ -239,8 +239,11 @@ def get_assignment_for_participant_with_apikey(
     ] = True,
     random_state: Annotated[int | None, Depends(random_seed_dependency)] = None,
 ) -> GetParticipantAssignmentResponse:
+    # We cache the experiment ID as a local variable because the commit in create_assignment_for_participant will
+    # invalidate the experiment object and cause further references to the ID to trigger another database call.
+    experiment_id = experiment.id
     assignment = get_existing_assignment_for_participant(
-        xngin_session, experiment.id, participant_id
+        xngin_session, experiment_id, participant_id
     )
     if not assignment and create_if_none:
         assignment = create_assignment_for_participant(
@@ -248,7 +251,7 @@ def get_assignment_for_participant_with_apikey(
         )
 
     return GetParticipantAssignmentResponse(
-        experiment_id=experiment.id,
+        experiment_id=experiment_id,
         participant_id=participant_id,
         assignment=assignment,
     )
