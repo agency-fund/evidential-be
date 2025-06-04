@@ -1,4 +1,5 @@
 import os
+from pathlib import Path
 
 from sqlalchemy import create_engine, event
 from sqlalchemy.orm import sessionmaker
@@ -54,20 +55,15 @@ if flags.LOG_SQL_APP_DB:
     import inspect
 
     @event.listens_for(engine, "before_cursor_execute", retval=True)
-    def _apply_comment(connection, cursor, statement, parameters, context, executemany):
-        filename = "unknown"
-        lineno = "unknown"
+    def _apply_comment(
+        _connection, _cursor, statement, parameters, _context, _executemany
+    ):
+        annotation = "unknown"
         frame = inspect.stack()
-        # Find the first frame that is likely to be in our project, but skip database.py because it will
-        # show up in the stack frame due to this decorator.
-        for f in frame:
-            if "src/xngin/apiserver/" in f.filename and not f.filename.endswith(
-                "database.py"
-            ):
-                filename = f.filename
-                lineno = f"{f.lineno}"
+        # Find the first frame that is likely to be in our project, but skip the current frame.
+        for f in frame[1:]:
+            if Path(__file__).is_relative_to(Path(f.filename).parent.parent):
+                annotation = f"{f.filename}:{f.lineno}"
                 break
-
-        comment = f"\n--- {filename}:{lineno}"
-        statement = statement + " " + comment
+        statement = statement + " " + f"\n--- {annotation}"
         return statement, parameters
