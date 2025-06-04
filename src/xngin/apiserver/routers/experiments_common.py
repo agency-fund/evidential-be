@@ -12,6 +12,7 @@ from fastapi import (
 from fastapi.responses import StreamingResponse
 from sqlalchemy import Table, func, insert, select
 from sqlalchemy.exc import IntegrityError
+from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import Session
 
 from xngin.apiserver import flags
@@ -394,14 +395,14 @@ def get_experiment_assignments_as_csv_impl(
     )
 
 
-def get_existing_assignment_for_participant(
-    xngin_session: Session, experiment_id: str, participant_id: str
+async def get_existing_assignment_for_participant(
+    xngin_session: AsyncSession, experiment_id: str, participant_id: str
 ) -> Assignment | None:
     """Internal helper to look up an existing assignment for a participant.  Excludes strata.
 
     Returns: None if no assignment exists.
     """
-    existing_assignment = xngin_session.execute(
+    stmt = (
         select(
             tables.ArmAssignment.participant_id,
             tables.ArmTable.id.label("arm_id"),
@@ -417,7 +418,9 @@ def get_existing_assignment_for_participant(
             tables.ArmTable.experiment_id == experiment_id,
             tables.ArmAssignment.participant_id == participant_id,
         )
-    ).one_or_none()
+    )
+    res = await xngin_session.execute(stmt)
+    existing_assignment = res.one_or_none()
     # If the participant already has an assignment for this experiment, return it.
     if existing_assignment:
         return Assignment(
@@ -430,8 +433,8 @@ def get_existing_assignment_for_participant(
     return None
 
 
-def create_assignment_for_participant(
-    xngin_session: Session,
+async def create_assignment_for_participant(
+    a_xngin_session: AsyncSession,
     experiment: tables.Experiment,
     participant_id: str,
     random_state: int | None,
@@ -479,20 +482,22 @@ def create_assignment_for_participant(
     # Create and save the new assignment. We use the insert() API because it allows us to read
     # the database-generated created_at value without needing to refresh the object in the SQLAlchemy cache.
     try:
-        created_at = xngin_session.execute(
-            insert(tables.ArmAssignment)
-            .values(
-                experiment_id=experiment.id,
-                participant_id=participant_id,
-                participant_type=experiment.participant_type,
-                arm_id=chosen_arm.id,
-                strata=[],
+        created_at = (
+            await a_xngin_session.execute(
+                insert(tables.ArmAssignment)
+                .values(
+                    experiment_id=experiment.id,
+                    participant_id=participant_id,
+                    participant_type=experiment.participant_type,
+                    arm_id=chosen_arm.id,
+                    strata=[],
+                )
+                .returning(tables.ArmAssignment.created_at)
             )
-            .returning(tables.ArmAssignment.created_at)
         ).fetchone()[0]
-        xngin_session.commit()
+        await a_xngin_session.commit()
     except IntegrityError as e:
-        xngin_session.rollback()
+        await a_xngin_session.rollback()
         raise ExperimentsAssignmentError(
             f"Failed to assign participant '{participant_id}' to arm '{chosen_arm.id}': {e}"
         ) from e

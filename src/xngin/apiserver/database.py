@@ -2,6 +2,7 @@ import os
 from pathlib import Path
 
 from sqlalchemy import create_engine, event
+from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 from sqlalchemy.orm import sessionmaker
 
 from xngin.apiserver import flags
@@ -43,8 +44,16 @@ engine = create_engine(
     echo=flags.ECHO_SQL_APP_DB,
 )
 
+async_engine = create_async_engine(
+    SQLALCHEMY_DATABASE_URL,
+    execution_options={"logging_token": "app_async"},
+    logging_name=SA_LOGGER_NAME_FOR_APP,
+    echo=flags.ECHO_SQL_APP_DB,
+)
 
 SessionLocal = sessionmaker(bind=engine, expire_on_commit=False)
+
+AsyncSessionLocal = async_sessionmaker(bind=async_engine)
 
 
 def setup():
@@ -55,6 +64,20 @@ if flags.LOG_SQL_APP_DB:
     import inspect
 
     @event.listens_for(engine, "before_cursor_execute", retval=True)
+    def _apply_comment(
+        _connection, _cursor, statement, parameters, _context, _executemany
+    ):
+        annotation = "unknown"
+        frame = inspect.stack()
+        # Find the first frame that is likely to be in our project, but skip the current frame.
+        for f in frame[1:]:
+            if Path(__file__).is_relative_to(Path(f.filename).parent.parent):
+                annotation = f"{f.filename}:{f.lineno}"
+                break
+        statement = statement + " " + f"\n--- {annotation}"
+        return statement, parameters
+
+    @event.listens_for(async_engine.sync_engine, "before_cursor_execute", retval=True)
     def _apply_comment(
         _connection, _cursor, statement, parameters, _context, _executemany
     ):

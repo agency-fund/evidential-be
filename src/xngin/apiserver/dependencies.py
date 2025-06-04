@@ -4,11 +4,12 @@ import httpx
 from fastapi import Depends, Header, HTTPException, Path, status
 from fastapi.security import APIKeyHeader
 from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import Session, joinedload
 
 from xngin.apiserver import constants
 from xngin.apiserver.apikeys import hash_key_or_raise, require_valid_api_key
-from xngin.apiserver.database import SessionLocal
+from xngin.apiserver.database import AsyncSessionLocal, SessionLocal
 from xngin.apiserver.gsheet_cache import GSheetCache
 from xngin.apiserver.models import tables
 from xngin.apiserver.settings import (
@@ -43,6 +44,15 @@ def xngin_db_session():
         yield session
     finally:
         session.close()
+
+
+async def async_xngin_db_session():
+    """Returns a database connection to the xngin app database (not customer data warehouse)."""
+    session = AsyncSessionLocal()
+    try:
+        yield session
+    finally:
+        await session.close()
 
 
 def datasource_dependency(
@@ -103,6 +113,51 @@ async def httpx_dependency():
     """Returns a new httpx client with default configuration, to be used with each request"""
     async with httpx.AsyncClient(timeout=15.0) as client:
         yield client
+
+
+async def async_experiment_dependency(
+    experiment_id: Annotated[
+        str, Path(..., description="The ID of the experiment to fetch.")
+    ],
+    a_xngin_db: Annotated[AsyncSession, Depends(async_xngin_db_session)],
+    api_key: Annotated[
+        str | None,
+        Depends(APIKeyHeader(name=constants.HEADER_API_KEY, auto_error=False)),
+    ],
+) -> tables.Experiment:
+    """
+    Returns the Experiment db object for experiment_id, if the API key grants access to its
+    datasource.
+
+    Raises:
+        ApiKeyError: If the API key is invalid/missing.
+        HTTPException: 404 if the experiment is not found or the API key is invalid for the experiment's datasource.
+    """
+    key_hash = hash_key_or_raise(api_key)
+    # We use joinedload(arms) because we anticipate that inspecting the arms of the experiment will be common, and it
+    # is also used in the online experiment assignment flow which is sensitive to database roundtrips.
+    query = (
+        select(tables.Experiment)
+        .join(
+            tables.ApiKey,
+            tables.Experiment.datasource_id == tables.ApiKey.datasource_id,
+        )
+        .options(joinedload(tables.Experiment.arms))
+        .where(
+            tables.Experiment.id == experiment_id,
+            tables.ApiKey.key == key_hash,
+        )
+    )
+    awaitable = await a_xngin_db.scalars(query)
+    experiment = awaitable.unique().one_or_none()
+
+    if not experiment:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Experiment not found or not authorized.",
+        )
+
+    return experiment
 
 
 def experiment_dependency(
