@@ -1,6 +1,6 @@
 import os
 
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, event
 from sqlalchemy.orm import sessionmaker
 
 from xngin.apiserver import flags
@@ -48,3 +48,26 @@ SessionLocal = sessionmaker(bind=engine)
 
 def setup():
     tables.Base.metadata.create_all(bind=engine)
+
+
+if flags.LOG_SQL_APP_DB:
+    import inspect
+
+    @event.listens_for(engine, "before_cursor_execute", retval=True)
+    def _apply_comment(connection, cursor, statement, parameters, context, executemany):
+        filename = "unknown"
+        lineno = "unknown"
+        frame = inspect.stack()
+        # Find the first frame that is likely to be in our project, but skip database.py because it will
+        # show up in the stack frame due to this decorator.
+        for f in frame:
+            if "src/xngin/apiserver/" in f.filename and not f.filename.endswith(
+                "database.py"
+            ):
+                filename = f.filename
+                lineno = f"{f.lineno}"
+                break
+
+        comment = f"\n--- {filename}:{lineno}"
+        statement = statement + " " + comment
+        return statement, parameters
