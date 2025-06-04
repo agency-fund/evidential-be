@@ -9,7 +9,7 @@ from fastapi import (
     status,
 )
 from fastapi.responses import StreamingResponse
-from sqlalchemy import Table, func, select
+from sqlalchemy import Table, func, insert, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -465,16 +465,20 @@ def create_assignment_for_participant(
     else:
         chosen_arm = random_choice(available_arms)
 
-    # Create and save the new assignment
-    new_assignment = tables.ArmAssignment(
-        experiment_id=experiment.id,
-        participant_id=participant_id,
-        participant_type=experiment.participant_type,
-        arm_id=chosen_arm.id,
-        strata=[],  # Online assignments don't have strata
-    )
+    # Create and save the new assignment. We use the insert() API because it allows us to read
+    # the created_at value without needing to refresh the object in the SQLAlchemy cache.
     try:
-        xngin_session.add(new_assignment)
+        created_at = xngin_session.execute(
+            insert(tables.ArmAssignment)
+            .values(
+                experiment_id=experiment.id,
+                participant_id=participant_id,
+                participant_type=experiment.participant_type,
+                arm_id=chosen_arm.id,
+                strata=[],
+            )
+            .returning(tables.ArmAssignment.created_at)
+        ).fetchone()[0]
         xngin_session.commit()
     except IntegrityError as e:
         xngin_session.rollback()
@@ -486,7 +490,7 @@ def create_assignment_for_participant(
         participant_id=participant_id,
         arm_id=chosen_arm.id,
         arm_name=chosen_arm.name,
-        created_at=new_assignment.created_at,
+        created_at=created_at,
         strata=[],
     )
 
