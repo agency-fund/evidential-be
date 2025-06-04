@@ -7,7 +7,7 @@ from sqlalchemy import select
 from xngin.apiserver import conftest, constants
 from xngin.apiserver.main import app
 from xngin.apiserver.models import tables
-from xngin.apiserver.models.enums import AssignmentStopReason, ExperimentState
+from xngin.apiserver.models.enums import ExperimentState, StopAssignmentReason
 from xngin.apiserver.models.storage_format_converters import ExperimentStorageConverter
 from xngin.apiserver.routers.experiments_api_types import (
     CreateExperimentResponse,
@@ -184,7 +184,6 @@ def test_get_assignment_for_participant_with_apikey_preassigned(
     assert parsed.experiment_id == preassigned_experiment.id
     assert parsed.participant_id == "unassigned_id"
     assert parsed.assignment is None
-    assert parsed.stopped_reason is None
 
     response = client.get(
         f"/experiments/{preassigned_experiment.id!s}/assignments/assigned_id",
@@ -196,7 +195,6 @@ def test_get_assignment_for_participant_with_apikey_preassigned(
     assert parsed.participant_id == "assigned_id"
     assert parsed.assignment is not None
     assert parsed.assignment.arm_name == "control"
-    assert parsed.stopped_reason is None
 
 
 def test_get_assignment_for_participant_with_apikey_online(
@@ -222,7 +220,6 @@ def test_get_assignment_for_participant_with_apikey_online(
     assert parsed.assignment.arm_name == arms_map[str(parsed.assignment.arm_id)]
     assert parsed.assignment.arm_name == "control"
     assert not parsed.assignment.strata
-    assert parsed.stopped_reason is None
 
     # Test that we get the same assignment for the same participant.
     response2 = client.get(
@@ -240,6 +237,10 @@ def test_get_assignment_for_participant_with_apikey_online(
     ).one()
     assert assignment.participant_id == "1"
     assert assignment.arm_id == str(parsed.assignment.arm_id)
+
+    # Verify no update to experiment lifecycle info.
+    assert assignment.experiment.stopped_assignments_at is None
+    assert assignment.experiment.stopped_assignments_reason is None
 
 
 def test_get_assignment_for_participant_with_apikey_online_dont_create(
@@ -287,4 +288,8 @@ def test_get_assignment_for_participant_with_apikey_online_past_end_date(
     assert parsed.experiment_id == online_experiment.id
     assert parsed.participant_id == "1"
     assert parsed.assignment is None
-    assert parsed.stopped_reason == AssignmentStopReason.END_DATE
+
+    # Verify side effect to experiment lifecycle info.
+    xngin_session.refresh(online_experiment)
+    assert online_experiment.stopped_assignments_at is not None
+    assert online_experiment.stopped_assignments_reason == StopAssignmentReason.END_DATE

@@ -15,7 +15,7 @@ from sqlalchemy.schema import CreateTable
 
 from xngin.apiserver import conftest
 from xngin.apiserver.models import tables
-from xngin.apiserver.models.enums import AssignmentStopReason, ExperimentState
+from xngin.apiserver.models.enums import ExperimentState, StopAssignmentReason
 from xngin.apiserver.models.storage_format_converters import ExperimentStorageConverter
 from xngin.apiserver.routers.experiments_api_types import (
     CreateExperimentRequest,
@@ -662,14 +662,9 @@ def test_list_experiments_impl(xngin_session, testing_datasource):
     assert not diff, f"Objects differ:\n{diff.pretty()}"
 
 
-@pytest.mark.parametrize("stopped_reason", [None, AssignmentStopReason.END_DATE])
-def test_get_experiment_assignments_impl(
-    xngin_session, testing_datasource, stopped_reason
-):
+def test_get_experiment_assignments_impl(xngin_session, testing_datasource):
     # First insert an experiment with assignments
     experiment = insert_experiment_and_arms(xngin_session, testing_datasource.ds)
-    # Want to verify that the response contains the stopped_reason from the experiment.
-    experiment.stopped_reason = stopped_reason
     xngin_session.commit()
 
     experiment_id = experiment.id
@@ -704,7 +699,6 @@ def test_get_experiment_assignments_impl(
     assert (
         data.balance_check == ExperimentStorageConverter(experiment).get_balance_check()
     )
-    assert data.stopped_reason == stopped_reason
 
     # Check assignments
     assignments = data.assignments
@@ -837,7 +831,6 @@ def test_create_assignment_for_participant(xngin_session, testing_datasource):
     online_arm_map = {arm.id: arm.name for arm in online_experiment.arms}
     assert assignment.arm_name == online_arm_map[str(assignment.arm_id)]
     assert not assignment.strata
-    assert online_experiment.stopped_at is None
 
     # But that if we try to create an assignment for a participant that already has one, it triggers an error.
     with pytest.raises(
@@ -850,7 +843,7 @@ def test_create_assignment_for_participant(xngin_session, testing_datasource):
 
 @pytest.mark.parametrize(
     "experiment_type,stopped_reason",
-    [("preassigned", None), ("online", AssignmentStopReason.END_DATE)],
+    [("preassigned", None), ("online", StopAssignmentReason.END_DATE)],
 )
 def test_create_assignment_for_participant_stopped_reason(
     xngin_session, testing_datasource, experiment_type, stopped_reason
@@ -868,11 +861,13 @@ def test_create_assignment_for_participant_stopped_reason(
         xngin_session, experiment, "new_id", None
     )
     assert assignment is None
-    assert experiment.stopped_reason == stopped_reason
+    assert experiment.stopped_assignments_reason == stopped_reason
     if stopped_reason is not None:
-        assert datetime.now(UTC) - experiment.stopped_at < timedelta(seconds=1)
+        assert datetime.now(UTC) - experiment.stopped_assignments_at < timedelta(
+            seconds=1
+        )
     else:
-        assert experiment.stopped_at is None
+        assert experiment.stopped_assignments_at is None
 
 
 def test_experiment_sql():

@@ -1,4 +1,5 @@
 import enum
+from typing import Self
 
 
 class ExperimentState(enum.StrEnum):
@@ -21,8 +22,13 @@ class ExperimentState(enum.StrEnum):
     ABORTED = "aborted"
 
 
-class AssignmentStopReason(enum.StrEnum):
+class StopAssignmentReason(enum.StrEnum):
     """The reason assignments were stopped."""
+
+    @classmethod
+    def from_str(cls, value: str | None) -> Self | None:
+        """Create StopAssignmentReason from string. Returns None if value is None."""
+        return None if value is None else cls(value)
 
     END_DATE = "end_date"  # end date reached
     MANUAL = "manual"  # manually stopped by user

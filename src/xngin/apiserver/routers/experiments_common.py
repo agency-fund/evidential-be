@@ -16,7 +16,7 @@ from sqlalchemy.orm import Session
 
 from xngin.apiserver import flags
 from xngin.apiserver.models import tables
-from xngin.apiserver.models.enums import AssignmentStopReason, ExperimentState
+from xngin.apiserver.models.enums import ExperimentState, StopAssignmentReason
 from xngin.apiserver.models.storage_format_converters import ExperimentStorageConverter
 from xngin.apiserver.routers.experiments_api_types import (
     AssignSummary,
@@ -332,9 +332,6 @@ def get_experiment_assignments_impl(
         experiment_id=experiment.id,
         sample_size=len(assignments),
         assignments=assignments,
-        stopped_reason=AssignmentStopReason(experiment.stopped_reason)
-        if experiment.stopped_reason
-        else None,
     )
 
 
@@ -441,7 +438,7 @@ def create_assignment_for_participant(
 
     Has side effect of updating the experiment's stopped_at and stopped_reason if we discover we should stop assigning.
     """
-    if experiment.stopped_at is not None:
+    if experiment.stopped_assignments_at is not None:
         # Experiment is stopped, so no new assignments can be made.
         return None
 
@@ -466,8 +463,8 @@ def create_assignment_for_participant(
 
     # Don't allow new assignments for experiments that have ended.
     if experiment.end_date < datetime.now(UTC):
-        experiment.stopped_at = datetime.now(UTC)
-        experiment.stopped_reason = AssignmentStopReason.END_DATE
+        experiment.stopped_assignments_at = datetime.now(UTC)
+        experiment.stopped_assignments_reason = StopAssignmentReason.END_DATE
         xngin_session.commit()
         return None
 

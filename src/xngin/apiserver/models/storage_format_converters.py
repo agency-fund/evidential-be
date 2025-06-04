@@ -11,7 +11,7 @@ from typing import Self
 from pydantic import TypeAdapter
 
 from xngin.apiserver.models import tables
-from xngin.apiserver.models.enums import ExperimentState
+from xngin.apiserver.models.enums import ExperimentState, StopAssignmentReason
 from xngin.apiserver.models.storage_types import (
     DesignSpecFields,
     StorageFilter,
@@ -180,6 +180,10 @@ class ExperimentStorageConverter:
         return eapi.ExperimentConfig(
             datasource_id=self.experiment.datasource_id,
             state=ExperimentState(self.experiment.state),
+            stopped_assignments_at=self.experiment.stopped_assignments_at,
+            stopped_assignments_reason=StopAssignmentReason.from_str(
+                self.experiment.stopped_assignments_reason
+            ),
             design_spec=self.get_design_spec(),
             power_analyses=self.get_power_response(),
             assign_summary=assign_summary,
