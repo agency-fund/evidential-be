@@ -180,7 +180,7 @@ def get_test_sessionmaker(db_engine: sqlalchemy.engine.Engine):
     # Hack: Cause any direct access to production code from code to fail during tests.
     database.SessionLocal = None
 
-    testing_session_local = sessionmaker(bind=db_engine)
+    testing_session_local = sessionmaker(bind=db_engine, expire_on_commit=False)
 
     def get_db_for_test():
         sess = testing_session_local()
