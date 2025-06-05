@@ -1,3 +1,5 @@
+from datetime import UTC, datetime, timedelta
+
 from deepdiff import DeepDiff
 from fastapi.testclient import TestClient
 from sqlalchemy import select
@@ -5,7 +7,7 @@ from sqlalchemy import select
 from xngin.apiserver import conftest, constants
 from xngin.apiserver.main import app
 from xngin.apiserver.models import tables
-from xngin.apiserver.models.enums import ExperimentState
+from xngin.apiserver.models.enums import ExperimentState, StopAssignmentReason
 from xngin.apiserver.models.storage_format_converters import ExperimentStorageConverter
 from xngin.apiserver.routers.experiments_api_types import (
     CreateExperimentResponse,
@@ -157,7 +159,7 @@ def test_get_experiment_assignments_wrong_datasource(xngin_session, testing_data
     assert response.json()["detail"] == "Experiment not found or not authorized."
 
 
-def test_get_assignment_for_preassigned_participant_with_apikey(
+def test_get_assignment_for_participant_with_apikey_preassigned(
     xngin_session, testing_datasource
 ):
     preassigned_experiment = insert_experiment_and_arms(
@@ -195,7 +197,7 @@ def test_get_assignment_for_preassigned_participant_with_apikey(
     assert parsed.assignment.arm_name == "control"
 
 
-def test_get_assignment_for_online_participant_with_apikey(
+def test_get_assignment_for_participant_with_apikey_online(
     xngin_session, testing_datasource
 ):
     """Test endpoint that gets an assignment for a participant via API key."""
@@ -236,8 +238,12 @@ def test_get_assignment_for_online_participant_with_apikey(
     assert assignment.participant_id == "1"
     assert assignment.arm_id == str(parsed.assignment.arm_id)
 
+    # Verify no update to experiment lifecycle info.
+    assert assignment.experiment.stopped_assignments_at is None
+    assert assignment.experiment.stopped_assignments_reason is None
 
-def test_get_assignment_for_online_participant_with_apikey_dont_create(
+
+def test_get_assignment_for_participant_with_apikey_online_dont_create(
     xngin_session, testing_datasource
 ):
     """Verify endpoint doesn't create an assignment when create_if_none=False."""
@@ -257,3 +263,33 @@ def test_get_assignment_for_online_participant_with_apikey_dont_create(
     assert parsed.experiment_id == online_experiment.id
     assert parsed.participant_id == "1"
     assert parsed.assignment is None
+
+
+def test_get_assignment_for_participant_with_apikey_online_past_end_date(
+    xngin_session, testing_datasource
+):
+    """Verify endpoint doesn't create an assignment for an online experiment that has ended."""
+    online_experiment = insert_experiment_and_arms(
+        xngin_session,
+        testing_datasource.ds,
+        experiment_type="online",
+        end_date=datetime.now(UTC) - timedelta(days=1),
+    )
+
+    response = client.get(
+        f"/experiments/{online_experiment.id!s}/assignments/1",
+        headers={
+            constants.HEADER_CONFIG_ID: testing_datasource.ds.id,
+            constants.HEADER_API_KEY: testing_datasource.key,
+        },
+    )
+    assert response.status_code == 200
+    parsed = GetParticipantAssignmentResponse.model_validate_json(response.text)
+    assert parsed.experiment_id == online_experiment.id
+    assert parsed.participant_id == "1"
+    assert parsed.assignment is None
+
+    # Verify side effect to experiment lifecycle info.
+    xngin_session.refresh(online_experiment)
+    assert online_experiment.stopped_assignments_at is not None
+    assert online_experiment.stopped_assignments_reason == StopAssignmentReason.END_DATE

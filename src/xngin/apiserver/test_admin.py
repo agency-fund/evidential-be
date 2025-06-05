@@ -13,7 +13,7 @@ from xngin.apiserver import conftest, flags
 from xngin.apiserver.dns import safe_resolve
 from xngin.apiserver.main import app
 from xngin.apiserver.models import tables
-from xngin.apiserver.models.enums import ExperimentState
+from xngin.apiserver.models.enums import ExperimentState, StopAssignmentReason
 from xngin.apiserver.routers import oidc_dependencies
 from xngin.apiserver.routers.admin import user_from_token
 from xngin.apiserver.routers.admin_api_types import (
@@ -660,6 +660,11 @@ def test_lifecycle_with_db(testing_datasource):
     created_experiment = CreateExperimentResponse.model_validate(response.json())
     parsed_experiment_id = created_experiment.design_spec.experiment_id
     assert parsed_experiment_id is not None
+    assert created_experiment.stopped_assignments_at is not None
+    assert (
+        created_experiment.stopped_assignments_reason
+        == StopAssignmentReason.PREASSIGNED
+    )
     parsed_arm_ids = {arm.arm_id for arm in created_experiment.design_spec.arms}
     assert len(parsed_arm_ids) == 2
 
@@ -757,6 +762,11 @@ def test_create_preassigned_experiment_using_inline_schema_ds(
     assert len(parsed_arm_ids) == 2
 
     # Verify basic response
+    assert created_experiment.stopped_assignments_at is not None
+    assert (
+        created_experiment.stopped_assignments_reason
+        == StopAssignmentReason.PREASSIGNED
+    )
     assert created_experiment.design_spec.experiment_id is not None
     assert created_experiment.design_spec.arms[0].arm_id is not None
     assert created_experiment.design_spec.arms[1].arm_id is not None
@@ -835,6 +845,8 @@ def test_create_online_experiment_using_inline_schema_ds(
     assert len(parsed_arm_ids) == 2
 
     # Verify basic response
+    assert created_experiment.stopped_assignments_at is None
+    assert created_experiment.stopped_assignments_reason is None
     assert created_experiment.design_spec.experiment_id is not None
     assert created_experiment.design_spec.arms[0].arm_id is not None
     assert created_experiment.design_spec.arms[1].arm_id is not None
@@ -936,6 +948,37 @@ def test_get_experiment_assignment_for_online_participant(
     ).one()
     assert assignment.participant_id == "new_id"
     assert assignment.arm_id == str(assignment_response.assignment.arm_id)
+
+
+def test_get_experiment_assignment_for_online_participant_past_end_date(
+    xngin_session, testing_datasource_with_user_added
+):
+    testing_experiment = insert_experiment_and_arms(
+        xngin_session,
+        testing_datasource_with_user_added.ds,
+        "online",
+        end_date=datetime.now(UTC) - timedelta(days=1),
+    )
+    datasource_id = testing_experiment.datasource_id
+    experiment_id = testing_experiment.id
+
+    # Verify no new assignment is created for the ended experiment.
+    response = pget(
+        f"/v1/m/datasources/{datasource_id}/experiments/{experiment_id}/assignments/new_id"
+    )
+    assert response.status_code == 200, response.content
+    assignment_response = GetParticipantAssignmentResponse.model_validate(
+        response.json()
+    )
+    assert assignment_response.experiment_id == experiment_id
+    assert assignment_response.participant_id == "new_id"
+    assert assignment_response.assignment is None
+    # Verify that the experiment state was updated.
+    xngin_session.refresh(testing_experiment)
+    assert testing_experiment.stopped_assignments_at is not None
+    assert (
+        testing_experiment.stopped_assignments_reason == StopAssignmentReason.END_DATE
+    )
 
 
 def test_experiments_analyze(testing_experiment):

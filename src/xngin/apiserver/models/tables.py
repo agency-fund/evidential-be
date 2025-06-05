@@ -405,6 +405,10 @@ class Experiment(Base):
     start_date: Mapped[datetime] = mapped_column()
     # Target end date of the experiment. Denormalized from design_spec.
     end_date: Mapped[datetime] = mapped_column()
+    # The timestamp when experiment assignment was stopped. New participants cannot be assigned.
+    stopped_assignments_at: Mapped[datetime | None] = mapped_column()
+    # The reason assignments were stopped. See xngin.apiserver.models.enums.StopAssignmentReason.
+    stopped_assignments_reason: Mapped[str | None] = mapped_column()
 
     # JSON serialized form of an experiment's specified dwh fields used for strata/metrics/filters.
     design_spec_fields: Mapped[dict] = mapped_column(type_=JSONBetter)

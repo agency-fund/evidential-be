@@ -15,7 +15,7 @@ from sqlalchemy.schema import CreateTable
 
 from xngin.apiserver import conftest
 from xngin.apiserver.models import tables
-from xngin.apiserver.models.enums import ExperimentState
+from xngin.apiserver.models.enums import ExperimentState, StopAssignmentReason
 from xngin.apiserver.models.storage_format_converters import ExperimentStorageConverter
 from xngin.apiserver.routers.experiments_api_types import (
     CreateExperimentRequest,
@@ -80,7 +80,8 @@ def make_createexperimentrequest_json(
             "experiment_type": experiment_type,
             # Attach UTC tz, but use dates_equal() to compare to respect db storage support
             "start_date": "2024-01-01T00:00:00+00:00",
-            "end_date": "2024-01-02T00:00:00+00:00",
+            # default our experiment to end in the future
+            "end_date": (datetime.now(UTC) + timedelta(days=1)).isoformat(),
             "arms": [
                 {
                     **({"arm_id": arm1_id} if arm1_id is not None else {}),
@@ -142,12 +143,19 @@ def make_insertable_experiment(
     design_spec: DesignSpec = TypeAdapter(DesignSpec).validate_python(
         request["design_spec"]
     )
+    stopped_assignments_at: datetime | None = None
+    stopped_assignments_reason: StopAssignmentReason | None = None
+    if experiment_type == "preassigned":
+        stopped_assignments_at = datetime.now(UTC)
+        stopped_assignments_reason = StopAssignmentReason.PREASSIGNED
     experiment_converter = ExperimentStorageConverter.init_from_components(
         datasource_id=datasource.id,
         organization_id=datasource.organization_id,
         experiment_type=experiment_type,
         design_spec=design_spec,
         state=state,
+        stopped_assignments_at=stopped_assignments_at,
+        stopped_assignments_reason=stopped_assignments_reason,
     )
     experiment = experiment_converter.get_experiment()
     return experiment, experiment_converter.get_design_spec()
@@ -158,6 +166,7 @@ def insert_experiment_and_arms(
     datasource: tables.Datasource,
     experiment_type: ExperimentType = "preassigned",
     state=ExperimentState.COMMITTED,
+    end_date: datetime | None = None,
 ):
     """Creates an experiment and arms and commits them to the database.
 
@@ -166,6 +175,9 @@ def insert_experiment_and_arms(
     experiment, _ = make_insertable_experiment(
         datasource=datasource, state=state, experiment_type=experiment_type
     )
+    # Override the end date if provided.
+    if end_date is not None:
+        experiment.end_date = end_date
     xngin_session.add(experiment)
     xngin_session.commit()
     return experiment
@@ -660,8 +672,9 @@ def test_list_experiments_impl(xngin_session, testing_datasource):
 def test_get_experiment_assignments_impl(xngin_session, testing_datasource):
     # First insert an experiment with assignments
     experiment = insert_experiment_and_arms(xngin_session, testing_datasource.ds)
-    experiment_id = experiment.id
+    xngin_session.commit()
 
+    experiment_id = experiment.id
     arm1_id = experiment.arms[0].id
     arm2_id = experiment.arms[1].id
     arm_assignments = [
@@ -786,24 +799,35 @@ def test_get_existing_assignment_for_participant(xngin_session, testing_datasour
     assert assignment is None
 
 
-def test_make_assignment_for_participant_errors(xngin_session, testing_datasource):
+def test_create_assignment_for_participant_errors(xngin_session, testing_datasource):
+    # Test assignment while in an experiment state not valid for assignments.
+    # Preassigned will short circuit before the invalid state check so will NOT raise.
     experiment, _ = make_insertable_experiment(
-        testing_datasource.ds, ExperimentState.ASSIGNED
+        testing_datasource.ds, ExperimentState.ASSIGNED, experiment_type="preassigned"
+    )
+    experiment.arms = []
+    response = create_assignment_for_participant(xngin_session, experiment, "p1", None)
+    assert response is None
+
+    # But an online experiment in this invalid state will raise.
+    experiment, _ = make_insertable_experiment(
+        testing_datasource.ds, ExperimentState.ASSIGNED, experiment_type="online"
     )
     with pytest.raises(
         ExperimentsAssignmentError, match="Invalid experiment state: assigned"
     ):
         create_assignment_for_participant(xngin_session, experiment, "p1", None)
 
+    # Test that an online experiment with no arms will raise.
     experiment, _ = make_insertable_experiment(
-        testing_datasource.ds, ExperimentState.COMMITTED
+        testing_datasource.ds, ExperimentState.COMMITTED, experiment_type="online"
     )
     experiment.arms = []
     with pytest.raises(ExperimentsAssignmentError, match="Experiment has no arms"):
         create_assignment_for_participant(xngin_session, experiment, "p1", None)
 
 
-def test_make_assignment_for_participant(xngin_session, testing_datasource):
+def test_create_assignment_for_participant(xngin_session, testing_datasource):
     preassigned_experiment = insert_experiment_and_arms(
         xngin_session, testing_datasource.ds
     )
@@ -833,6 +857,38 @@ def test_make_assignment_for_participant(xngin_session, testing_datasource):
         create_assignment_for_participant(
             xngin_session, online_experiment, "new_id", None
         )
+
+
+@pytest.mark.parametrize(
+    "experiment_type,stopped_reason",
+    [
+        ("preassigned", StopAssignmentReason.PREASSIGNED),
+        ("online", StopAssignmentReason.END_DATE),
+    ],
+)
+def test_create_assignment_for_participant_stopped_reason(
+    xngin_session, testing_datasource, experiment_type, stopped_reason
+):
+    experiment = insert_experiment_and_arms(
+        xngin_session,
+        testing_datasource.ds,
+        experiment_type=experiment_type,
+        end_date=datetime.now(UTC) - timedelta(days=1),
+    )
+
+    # Assert that we don't create assignments for experiments in the past,
+    # but for preassigned experiments we don't set a stopped_reason.
+    assignment = create_assignment_for_participant(
+        xngin_session, experiment, "new_id", None
+    )
+    assert assignment is None
+    assert experiment.stopped_assignments_reason == stopped_reason
+    if stopped_reason is not None:
+        assert datetime.now(UTC) - experiment.stopped_assignments_at < timedelta(
+            seconds=1
+        )
+    else:
+        assert experiment.stopped_assignments_at is None
 
 
 def test_experiment_sql():

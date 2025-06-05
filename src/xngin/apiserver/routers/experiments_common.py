@@ -1,6 +1,7 @@
 import csv
 import io
 from collections.abc import Sequence
+from datetime import UTC, datetime
 from itertools import batched
 
 from fastapi import (
@@ -15,7 +16,7 @@ from sqlalchemy.orm import Session
 
 from xngin.apiserver import flags
 from xngin.apiserver.models import tables
-from xngin.apiserver.models.enums import ExperimentState
+from xngin.apiserver.models.enums import ExperimentState, StopAssignmentReason
 from xngin.apiserver.models.storage_format_converters import ExperimentStorageConverter
 from xngin.apiserver.routers.experiments_api_types import (
     AssignSummary,
@@ -138,6 +139,8 @@ def create_preassigned_experiment_impl(
         experiment_type="preassigned",
         design_spec=design_spec,
         state=ExperimentState.ASSIGNED,
+        stopped_assignments_at=datetime.now(UTC),
+        stopped_assignments_reason=StopAssignmentReason.PREASSIGNED,
         balance_check=assignment_response.balance_check,
         power_analyses=request.power_analyses,
     )
@@ -433,22 +436,35 @@ def create_assignment_for_participant(
     participant_id: str,
     random_state: int | None,
 ) -> Assignment | None:
-    """Internal helper to make and persist an assignment for a participant depending on the
-    experiment type. Excludes strata."""
+    """Helper to persist a new assignment for a participant. Returned value excludes strata.
+
+    Has side effect of updating the experiment's stopped_at and stopped_reason if we discover we should stop assigning.
+    """
+    if experiment.stopped_assignments_at is not None:
+        # Experiment is stopped, so no new assignments can be made.
+        return None
 
     if experiment.state != ExperimentState.COMMITTED:
         raise ExperimentsAssignmentError(
             f"Invalid experiment state: {experiment.state}"
         )
+
     if len(experiment.arms) == 0:
         raise ExperimentsAssignmentError("Experiment has no arms")
 
     experiment_type = experiment.experiment_type
     if experiment_type == "preassigned":
-        # Preassigned experiments are not allowed to have new ones added.
+        # Preassigned experiments are not allowed to have new assignmentsadded.
         return None
     if experiment_type != "online":
         raise ExperimentsAssignmentError(f"Invalid experiment type: {experiment_type}")
+
+    # Don't allow new assignments for experiments that have ended.
+    if experiment.end_date < datetime.now(UTC):
+        experiment.stopped_assignments_at = datetime.now(UTC)
+        experiment.stopped_assignments_reason = StopAssignmentReason.END_DATE
+        xngin_session.commit()
+        return None
 
     # For online experiments, create a new assignment with simple random assignment.
     if random_state:

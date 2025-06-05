@@ -6,12 +6,13 @@ types. Our SQLA tables ideally shouldn't depend on xngin/apiserver/*; but for th
 JSONB type columns for multi-value/complex types, use the converters to get/set them properly.
 """
 
+from datetime import datetime
 from typing import Self
 
 from pydantic import TypeAdapter
 
 from xngin.apiserver.models import tables
-from xngin.apiserver.models.enums import ExperimentState
+from xngin.apiserver.models.enums import ExperimentState, StopAssignmentReason
 from xngin.apiserver.models.storage_types import (
     DesignSpecFields,
     StorageFilter,
@@ -180,6 +181,10 @@ class ExperimentStorageConverter:
         return eapi.ExperimentConfig(
             datasource_id=self.experiment.datasource_id,
             state=ExperimentState(self.experiment.state),
+            stopped_assignments_at=self.experiment.stopped_assignments_at,
+            stopped_assignments_reason=StopAssignmentReason.from_str(
+                self.experiment.stopped_assignments_reason
+            ),
             design_spec=self.get_design_spec(),
             power_analyses=self.get_power_response(),
             assign_summary=assign_summary,
@@ -210,6 +215,8 @@ class ExperimentStorageConverter:
         experiment_type: sapi.ExperimentType,
         design_spec: sapi.DesignSpec,
         state: ExperimentState = ExperimentState.ASSIGNED,
+        stopped_assignments_at: datetime | None = None,
+        stopped_assignments_reason: StopAssignmentReason | str | None = None,
         balance_check: sapi.BalanceCheck | None = None,
         power_analyses: sapi.PowerResponse | None = None,
     ) -> Self:
@@ -224,12 +231,14 @@ class ExperimentStorageConverter:
             id=design_spec.experiment_id,
             datasource_id=datasource_id,
             experiment_type=experiment_type,
-            state=state.value,
             participant_type=design_spec.participant_type,
             name=design_spec.experiment_name,
             description=design_spec.description,
+            state=state.value,
             start_date=design_spec.start_date,
             end_date=design_spec.end_date,
+            stopped_assignments_at=stopped_assignments_at,
+            stopped_assignments_reason=stopped_assignments_reason,
             power=design_spec.power,
             alpha=design_spec.alpha,
             fstat_thresh=design_spec.fstat_thresh,
