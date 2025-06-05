@@ -10,7 +10,7 @@ from fastapi import (
     status,
 )
 from fastapi.responses import StreamingResponse
-from sqlalchemy import Table, func, select
+from sqlalchemy import Table, func, insert, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -449,17 +449,12 @@ def create_assignment_for_participant(
             f"Invalid experiment state: {experiment.state}"
         )
 
-    available_arms = xngin_session.execute(
-        select(tables.ArmTable.id, tables.ArmTable.name).where(
-            tables.ArmTable.experiment_id == experiment.id
-        )
-    ).all()
-    if len(available_arms) == 0:
+    if len(experiment.arms) == 0:
         raise ExperimentsAssignmentError("Experiment has no arms")
 
     experiment_type = experiment.experiment_type
     if experiment_type == "preassigned":
-        # Preassigned experiments are not allowed to have new ones added.
+        # Preassigned experiments are not allowed to have new assignmentsadded.
         return None
     if experiment_type != "online":
         raise ExperimentsAssignmentError(f"Invalid experiment type: {experiment_type}")
@@ -475,22 +470,26 @@ def create_assignment_for_participant(
     if random_state:
         # Sort by arm name to ensure deterministic assignment with seed for tests.
         chosen_arm = random_choice(
-            sorted(available_arms, key=lambda a: a.name),
+            sorted(experiment.arms, key=lambda a: a.name),
             seed=random_state,
         )
     else:
-        chosen_arm = random_choice(available_arms)
+        chosen_arm = random_choice(experiment.arms)
 
-    # Create and save the new assignment
-    new_assignment = tables.ArmAssignment(
-        experiment_id=experiment.id,
-        participant_id=participant_id,
-        participant_type=experiment.participant_type,
-        arm_id=chosen_arm.id,
-        strata=[],  # Online assignments don't have strata
-    )
+    # Create and save the new assignment. We use the insert() API because it allows us to read
+    # the database-generated created_at value without needing to refresh the object in the SQLAlchemy cache.
     try:
-        xngin_session.add(new_assignment)
+        created_at = xngin_session.execute(
+            insert(tables.ArmAssignment)
+            .values(
+                experiment_id=experiment.id,
+                participant_id=participant_id,
+                participant_type=experiment.participant_type,
+                arm_id=chosen_arm.id,
+                strata=[],
+            )
+            .returning(tables.ArmAssignment.created_at)
+        ).fetchone()[0]
         xngin_session.commit()
     except IntegrityError as e:
         xngin_session.rollback()
@@ -502,7 +501,7 @@ def create_assignment_for_participant(
         participant_id=participant_id,
         arm_id=chosen_arm.id,
         arm_name=chosen_arm.name,
-        created_at=new_assignment.created_at,
+        created_at=created_at,
         strata=[],
     )
 
