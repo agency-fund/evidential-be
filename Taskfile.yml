@@ -164,6 +164,9 @@ tasks:
       - uv run xngin-cli create-testing-dwh --dsn "$XNGIN_DEVDWH_DSN" --allow-existing --create-db
   test:
     desc: "Runs unit tests"
+    summary: |
+      Runs all the unit tests. To run only a subset of tests, pass pytest arguments after a -- argument;
+      e.g. `task test -- src/xngin/apiserver/test_admin.py`
     interactive: true
     env:
       # Tests should never connect to this URL.

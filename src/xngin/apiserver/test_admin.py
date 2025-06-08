@@ -6,7 +6,6 @@ from functools import partial
 import pytest
 from fastapi import HTTPException
 from fastapi.testclient import TestClient
-from pydantic import SecretStr
 from sqlalchemy import select
 
 from xngin.apiserver import conftest, flags
@@ -250,7 +249,7 @@ def test_create_datasource_invalid_dns(testing_datasource):
                 host=safe_resolve.UNSAFE_IP_FOR_TESTING,
                 user="postgres",
                 port=5499,
-                password=SecretStr("postgres"),
+                password="postgres",
                 dbname="postgres",
                 sslmode="disable",
             ),
@@ -312,7 +311,7 @@ def test_datasource_lifecycle(testing_datasource_with_user):
                 host="127.0.0.1",
                 user="postgres",
                 port=5499,
-                password=SecretStr("postgres"),
+                password="postgres",
                 dbname="postgres",
                 sslmode="disable",
             ),

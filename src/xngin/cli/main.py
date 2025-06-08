@@ -1,5 +1,6 @@
 """Command line tool for various xngin-related operations."""
 
+import base64
 import csv
 import json
 import logging
@@ -16,6 +17,8 @@ import pandas_gbq
 import psycopg
 import psycopg2
 import sqlalchemy
+import tink
+import tink.aead
 import typer
 import zstandard
 from email_validator import EmailNotValidError, validate_email
@@ -31,6 +34,7 @@ from sqlalchemy import create_engine, make_url
 from sqlalchemy.exc import IntegrityError, OperationalError
 from sqlalchemy.orm import Session
 from sqlalchemy.sql.compiler import IdentifierPreparer
+from tink import secret_key_access
 
 from xngin.apiserver import settings
 from xngin.apiserver.dwh.reflect_schemas import create_schema_from_table
@@ -48,6 +52,7 @@ from xngin.sheets.config_sheet import (
     fetch_and_parse_sheet,
 )
 from xngin.sheets.gsheets import GSheetsPermissionError
+from xngin.xsecrets import secretservice
 
 SA_LOGGER_NAME_FOR_CLI = "cli_dwh"
 
@@ -734,6 +739,44 @@ def add_user(
                 f"[bold red]Error:[/bold red] User with email '{email}' already exists."
             )
             raise typer.Exit(1) from err
+
+
+@app.command()
+def create_tink_key():
+    """Generate an encryption key for the "local" secret storage backend.
+
+    The encoded encryption keyset (specifically, a Tink keyset with a single key) will be written to stdout. This value
+    is suitable for use as the XNGIN_SECRETS_TINK_KEYSET environment variable.
+    """
+    tink.aead.register()
+    keyset_handle = tink.new_keyset_handle(tink.aead.aead_key_templates.AES128_GCM)
+    # Remove superfluous spaces by decoding and re-encoding.
+    keyset = json.dumps(
+        json.loads(
+            tink.json_proto_keyset_format.serialize(
+                keyset_handle, secret_key_access.TOKEN
+            )
+        )
+    )
+    print(base64.standard_b64encode(keyset.encode("utf-8")).decode("utf-8"))
+
+
+@app.command()
+def encrypt(
+    aad: Annotated[str, typer.Option()] = "cli",
+):
+    """Encrypts a string using the same encryption configuration that the API server does."""
+    secretservice.setup()
+    plaintext = sys.stdin.read()
+    print(secretservice.get_symmetric().encrypt(plaintext, aad))
+
+
+@app.command()
+def decrypt(aad: Annotated[str, typer.Option()] = "cli"):
+    """Decrypts a string using the same encryption configuration that the API server does."""
+    secretservice.setup()
+    ciphertext = sys.stdin.read()
+    print(secretservice.get_symmetric().decrypt(ciphertext, aad))
 
 
 if __name__ == "__main__":

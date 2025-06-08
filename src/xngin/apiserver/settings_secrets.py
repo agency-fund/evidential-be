@@ -1,3 +1,5 @@
+"""Implements helper methods for replacing secret references in the static JSON settings files."""
+
 import os
 import re
 from collections.abc import Callable
