@@ -1,3 +1,5 @@
+import asyncio
+import datetime
 import secrets
 from dataclasses import dataclass
 from typing import Annotated
@@ -9,20 +11,12 @@ from jose import JWTError, jwt
 from loguru import logger
 
 from xngin.apiserver import flags
+from xngin.apiserver.dependencies import retrying_httpx_dependency
 
 # JWTs generated for domains other than @agency.fund are considered untrusted.
 PRIVILEGED_DOMAINS = ("agency.fund",)
 
 GOOGLE_DISCOVERY_URL = "https://accounts.google.com/.well-known/openid-configuration"
-oidc_google = OpenIdConnect(openIdConnectUrl=GOOGLE_DISCOVERY_URL)
-
-# TODO: refresh these occasionally
-google_jwks = None
-google_config = None
-
-
-class ServerAppearsOfflineError(Exception):
-    pass
 
 
 @dataclass
@@ -57,37 +51,88 @@ TESTING_TOKENS = {
 }
 
 
-async def get_google_configuration():
-    """Fetch and cache Google's OpenID configuration"""
-    global google_config
-    if google_config is None:
+class GoogleOidcError(Exception):
+    pass
+
+
+class ServerAppearsOfflineError(Exception):
+    pass
+
+
+@dataclass
+class GoogleOidcConfig:
+    last_refreshed: datetime
+    config: dict
+    jwks: dict
+
+    def should_refresh(self):
+        return self.last_refreshed < datetime.datetime.now() - datetime.timedelta(
+            hours=1
+        )
+
+
+# _google_config and _google_config_stampede_lock are managed by get_google_configuration().
+_google_config: GoogleOidcConfig | None = None
+_google_config_stampede_lock = asyncio.Lock()
+
+
+async def _fetch_object_200(client: httpx.AsyncClient, url: str):
+    """Fetches a URL using the given httpx client, parses the response as a JSON dictionary.
+
+    Raises GoogleOidcError when the response is not a 200 status or when the response is not a dict.
+    """
+    response = await client.get(url)
+    if response.status_code != 200:
+        raise GoogleOidcError(
+            f"Fetching {url} failed with an unexpected status code: {response.status_code}"
+        )
+    parsed = response.json()
+    if not isinstance(parsed, dict):
+        raise GoogleOidcError(f"{url} returned a non-dictionary response")
+    return parsed
+
+
+async def get_google_configuration(
+    httpx_client: Annotated[httpx.AsyncClient, Depends(retrying_httpx_dependency)],
+) -> GoogleOidcConfig:
+    """Fetch and cache Google's OpenID configuration."""
+    global _google_config
+    # When config is fresh, we can use it immediately.
+    if _google_config and not _google_config.should_refresh():
+        return _google_config
+
+    # Send only one outbound request even if there are many waiting.
+    async with _google_config_stampede_lock:
+        if _google_config and not _google_config.should_refresh():
+            return _google_config
+
+        logger.info("Fetching Google OpenID configuration")
         try:
-            async with httpx.AsyncClient() as client:
-                response = await client.get(GOOGLE_DISCOVERY_URL)
-                response.raise_for_status()
-                google_config = response.json()
+            config = await _fetch_object_200(httpx_client, GOOGLE_DISCOVERY_URL)
+            jwks_url = config.get("jwks_uri")
+            if not jwks_url:
+                raise GoogleOidcError("config object does not have a jwks_uri field")
+            jwks_response = await _fetch_object_200(httpx_client, jwks_url)
+            if not isinstance(jwks_response, dict) or not jwks_response.get("keys"):
+                raise GoogleOidcError(
+                    "JWKS response does not contain keys in expected format"
+                )
+            _google_config = GoogleOidcConfig(
+                last_refreshed=datetime.datetime.now(),
+                config=config,
+                jwks=jwks_response,
+            )
         except httpx.ConnectError as exc:
             raise ServerAppearsOfflineError("We appear to be offline.") from exc
-
-    return google_config
-
-
-async def get_google_jwks():
-    """Fetch and cache Google's JWKS"""
-    global google_jwks
-    if google_jwks is None:
-        config = await get_google_configuration()
-        async with httpx.AsyncClient() as client:
-            response = await client.get(config["jwks_uri"])
-            response.raise_for_status()
-            google_jwks = response.json()
-    return google_jwks
+        else:
+            return _google_config
 
 
 async def require_oidc_token(
-    token: Annotated[str, Security(oidc_google)],
-    oidc_config: Annotated[dict, Depends(get_google_configuration)],
-    jwks: Annotated[dict, Depends(get_google_jwks)],
+    token: Annotated[
+        str, Security(OpenIdConnect(openIdConnectUrl=GOOGLE_DISCOVERY_URL))
+    ],
+    oidc_config: Annotated[GoogleOidcConfig, Depends(get_google_configuration)],
 ) -> TokenInfo:
     """Dependency for validating that the Authorization: header is a valid Google JWT.
 
@@ -114,7 +159,9 @@ async def require_oidc_token(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail=f"Invalid authentication credentials: {e}",
         ) from e
-    key = next((jwk for jwk in jwks["keys"] if jwk["kid"] == header["kid"]), None)
+    key = next(
+        (jwk for jwk in oidc_config.jwks["keys"] if jwk["kid"] == header["kid"]), None
+    )
     if not key:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
@@ -126,7 +173,7 @@ async def require_oidc_token(
             key,
             algorithms=["RS256"],
             audience=flags.CLIENT_ID,
-            issuer=oidc_config.get("issuer"),
+            issuer=oidc_config.config.get("issuer"),
             options={
                 "require_iss": True,
                 "require_aud": True,
@@ -170,5 +217,4 @@ def setup(app):
         return TESTING_TOKENS[PRIVILEGED_TOKEN_FOR_TESTING]
 
     app.dependency_overrides[get_google_configuration] = noop
-    app.dependency_overrides[get_google_jwks] = noop
     app.dependency_overrides[require_oidc_token] = get_privileged_token
