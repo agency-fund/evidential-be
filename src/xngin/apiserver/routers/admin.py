@@ -29,7 +29,7 @@ from sqlalchemy.orm import QueryableAttribute, selectinload
 
 from xngin.apiserver import constants, flags, settings
 from xngin.apiserver.apikeys import hash_key_or_raise, make_key
-from xngin.apiserver.dependencies import async_xngin_db_session
+from xngin.apiserver.dependencies import xngin_db_session
 from xngin.apiserver.dns.safe_resolve import DnsLookupError, safe_resolve
 from xngin.apiserver.dwh.queries import get_participant_metrics, query_for_participants
 from xngin.apiserver.dwh.reflect_schemas import create_inspect_table_response_from_table
@@ -165,7 +165,7 @@ router = APIRouter(
 
 
 async def user_from_token(
-    session: Annotated[AsyncSession, Depends(async_xngin_db_session)],
+    session: Annotated[AsyncSession, Depends(xngin_db_session)],
     token_info: Annotated[TokenInfo, Depends(require_oidc_token)],
 ) -> tables.User:
     """Dependency for fetching the User record matching the authenticated user's email.
@@ -284,7 +284,7 @@ async def caller_identity(
 
 @router.get("/organizations")
 async def list_organizations(
-    session: Annotated[AsyncSession, Depends(async_xngin_db_session)],
+    session: Annotated[AsyncSession, Depends(xngin_db_session)],
     user: Annotated[tables.User, Depends(user_from_token)],
 ) -> ListOrganizationsResponse:
     """Returns a list of organizations that the authenticated user is a member of."""
@@ -309,7 +309,7 @@ async def list_organizations(
 
 @router.post("/organizations")
 async def create_organizations(
-    session: Annotated[AsyncSession, Depends(async_xngin_db_session)],
+    session: Annotated[AsyncSession, Depends(xngin_db_session)],
     user: Annotated[tables.User, Depends(user_from_token)],
     body: Annotated[CreateOrganizationRequest, Body(...)],
 ) -> CreateOrganizationResponse:
@@ -334,7 +334,7 @@ async def create_organizations(
 @router.post("/organizations/{organization_id}/webhooks")
 async def add_webhook_to_organization(
     organization_id: str,
-    session: Annotated[AsyncSession, Depends(async_xngin_db_session)],
+    session: Annotated[AsyncSession, Depends(xngin_db_session)],
     user: Annotated[tables.User, Depends(user_from_token)],
     body: Annotated[AddWebhookToOrganizationRequest, Body(...)],
 ) -> AddWebhookToOrganizationResponse:
@@ -360,7 +360,7 @@ async def add_webhook_to_organization(
 @router.get("/organizations/{organization_id}/webhooks")
 async def list_organization_webhooks(
     organization_id: str,
-    session: Annotated[AsyncSession, Depends(async_xngin_db_session)],
+    session: Annotated[AsyncSession, Depends(xngin_db_session)],
     user: Annotated[tables.User, Depends(user_from_token)],
 ) -> ListWebhooksResponse:
     """Lists all the webhooks for an organization."""
@@ -397,7 +397,7 @@ def convert_webhooks_to_webhooksummaries(webhooks):
 async def delete_webhook_from_organization(
     organization_id: str,
     webhook_id: str,
-    session: Annotated[AsyncSession, Depends(async_xngin_db_session)],
+    session: Annotated[AsyncSession, Depends(xngin_db_session)],
     user: Annotated[tables.User, Depends(user_from_token)],
 ):
     """Removes a Webhook from an organization."""
@@ -424,7 +424,7 @@ async def delete_webhook_from_organization(
 @router.get("/organizations/{organization_id}/events")
 async def list_organization_events(
     organization_id: str,
-    session: Annotated[AsyncSession, Depends(async_xngin_db_session)],
+    session: Annotated[AsyncSession, Depends(xngin_db_session)],
     user: Annotated[tables.User, Depends(user_from_token)],
 ) -> ListOrganizationEventsResponse:
     """Returns the most recent 200 events in an organization."""
@@ -467,7 +467,7 @@ def convert_events_to_eventsummaries(events):
 )
 async def add_member_to_organization(
     organization_id: str,
-    session: Annotated[AsyncSession, Depends(async_xngin_db_session)],
+    session: Annotated[AsyncSession, Depends(xngin_db_session)],
     user: Annotated[tables.User, Depends(user_from_token)],
     body: Annotated[AddMemberToOrganizationRequest, Body(...)],
 ):
@@ -511,7 +511,7 @@ async def add_member_to_organization(
 async def remove_member_from_organization(
     organization_id: str,
     user_id: str,
-    session: Annotated[AsyncSession, Depends(async_xngin_db_session)],
+    session: Annotated[AsyncSession, Depends(xngin_db_session)],
     user: Annotated[tables.User, Depends(user_from_token)],
 ):
     """Removes a member from an organization.
@@ -543,7 +543,7 @@ async def remove_member_from_organization(
 @router.patch("/organizations/{organization_id}")
 async def update_organization(
     organization_id: str,
-    session: Annotated[AsyncSession, Depends(async_xngin_db_session)],
+    session: Annotated[AsyncSession, Depends(xngin_db_session)],
     user: Annotated[tables.User, Depends(user_from_token)],
     body: Annotated[UpdateOrganizationRequest, Body(...)],
 ):
@@ -564,7 +564,7 @@ async def update_organization(
 @router.get("/organizations/{organization_id}")
 async def get_organization(
     organization_id: str,
-    session: Annotated[AsyncSession, Depends(async_xngin_db_session)],
+    session: Annotated[AsyncSession, Depends(xngin_db_session)],
     user: Annotated[tables.User, Depends(user_from_token)],
 ) -> GetOrganizationResponse:
     """Returns detailed information about a specific organization.
@@ -614,7 +614,7 @@ async def get_organization(
 @router.get("/organizations/{organization_id}/datasources")
 async def list_organization_datasources(
     organization_id: str,
-    session: Annotated[AsyncSession, Depends(async_xngin_db_session)],
+    session: Annotated[AsyncSession, Depends(xngin_db_session)],
     user: Annotated[tables.User, Depends(user_from_token)],
 ) -> ListDatasourcesResponse:
     """Returns a list of datasources accessible to the authenticated user for an org."""
@@ -652,7 +652,7 @@ async def list_organization_datasources(
 
 @router.post("/datasources")
 async def create_datasource(
-    session: Annotated[AsyncSession, Depends(async_xngin_db_session)],
+    session: Annotated[AsyncSession, Depends(xngin_db_session)],
     user: Annotated[tables.User, Depends(user_from_token)],
     body: Annotated[CreateDatasourceRequest, Body(...)],
 ) -> CreateDatasourceResponse:
@@ -692,7 +692,7 @@ async def update_datasource(
     datasource_id: str,
     body: UpdateDatasourceRequest,
     user: Annotated[tables.User, Depends(user_from_token)],
-    session: Annotated[AsyncSession, Depends(async_xngin_db_session)],
+    session: Annotated[AsyncSession, Depends(xngin_db_session)],
 ):
     ds = await get_datasource_or_raise(session, user, datasource_id)
     if body.name is not None:
@@ -720,7 +720,7 @@ async def update_datasource(
 async def get_datasource(
     datasource_id: str,
     user: Annotated[tables.User, Depends(user_from_token)],
-    session: Annotated[AsyncSession, Depends(async_xngin_db_session)],
+    session: Annotated[AsyncSession, Depends(xngin_db_session)],
 ) -> GetDatasourceResponse:
     """Returns detailed information about a specific datasource."""
     ds = await get_datasource_or_raise(session, user, datasource_id)
@@ -738,7 +738,7 @@ async def get_datasource(
 async def inspect_datasource(
     datasource_id: str,
     user: Annotated[tables.User, Depends(user_from_token)],
-    session: Annotated[AsyncSession, Depends(async_xngin_db_session)],
+    session: Annotated[AsyncSession, Depends(xngin_db_session)],
     refresh: Annotated[bool, Query(description="Refresh the cache.")] = False,
 ) -> InspectDatasourceResponse:
     """Verifies connectivity to a datasource and returns a list of readable tables."""
@@ -809,7 +809,7 @@ async def inspect_table_in_datasource(
     datasource_id: str,
     table_name: str,
     user: Annotated[tables.User, Depends(user_from_token)],
-    session: Annotated[AsyncSession, Depends(async_xngin_db_session)],
+    session: Annotated[AsyncSession, Depends(xngin_db_session)],
     refresh: Annotated[bool, Query(description="Refresh the cache.")] = False,
 ) -> InspectDatasourceTableResponse:
     """Inspects a single table in a datasource and returns a summary of its fields."""
@@ -849,7 +849,7 @@ async def inspect_table_in_datasource(
 
 @router.delete("/datasources/{datasource_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_datasource(
-    session: Annotated[AsyncSession, Depends(async_xngin_db_session)],
+    session: Annotated[AsyncSession, Depends(xngin_db_session)],
     user: Annotated[tables.User, Depends(user_from_token)],
     datasource_id: Annotated[str, Path(...)],
 ):
@@ -879,7 +879,7 @@ async def delete_datasource(
 @router.get("/datasources/{datasource_id}/participants")
 async def list_participant_types(
     datasource_id: str,
-    session: Annotated[AsyncSession, Depends(async_xngin_db_session)],
+    session: Annotated[AsyncSession, Depends(xngin_db_session)],
     user: Annotated[tables.User, Depends(user_from_token)],
 ) -> ListParticipantsTypeResponse:
     ds = await get_datasource_or_raise(session, user, datasource_id)
@@ -893,7 +893,7 @@ async def list_participant_types(
 @router.post("/datasources/{datasource_id}/participants")
 async def create_participant_type(
     datasource_id: str,
-    session: Annotated[AsyncSession, Depends(async_xngin_db_session)],
+    session: Annotated[AsyncSession, Depends(xngin_db_session)],
     user: Annotated[tables.User, Depends(user_from_token)],
     body: CreateParticipantsTypeRequest,
 ) -> CreateParticipantsTypeResponse:
@@ -918,7 +918,7 @@ async def create_participant_type(
 async def inspect_participant_types(
     datasource_id: str,
     participant_id: str,
-    session: Annotated[AsyncSession, Depends(async_xngin_db_session)],
+    session: Annotated[AsyncSession, Depends(xngin_db_session)],
     user: Annotated[tables.User, Depends(user_from_token)],
     refresh: Annotated[bool, Query(description="Refresh the cache.")] = False,
 ) -> InspectParticipantTypesResponse:
@@ -1020,7 +1020,7 @@ async def inspect_participant_types(
 async def get_participant_types(
     datasource_id: str,
     participant_id: str,
-    session: Annotated[AsyncSession, Depends(async_xngin_db_session)],
+    session: Annotated[AsyncSession, Depends(xngin_db_session)],
     user: Annotated[tables.User, Depends(user_from_token)],
 ) -> ParticipantsConfig:
     ds = await get_datasource_or_raise(session, user, datasource_id)
@@ -1035,7 +1035,7 @@ async def get_participant_types(
 async def update_participant_type(
     datasource_id: str,
     participant_id: str,
-    session: Annotated[AsyncSession, Depends(async_xngin_db_session)],
+    session: Annotated[AsyncSession, Depends(xngin_db_session)],
     user: Annotated[tables.User, Depends(user_from_token)],
     body: UpdateParticipantsTypeRequest,
 ):
@@ -1079,7 +1079,7 @@ async def update_participant_type(
 async def delete_participant(
     datasource_id: str,
     participant_id: str,
-    session: Annotated[AsyncSession, Depends(async_xngin_db_session)],
+    session: Annotated[AsyncSession, Depends(xngin_db_session)],
     user: Annotated[tables.User, Depends(user_from_token)],
 ):
     ds = await get_datasource_or_raise(session, user, datasource_id)
@@ -1094,7 +1094,7 @@ async def delete_participant(
 @router.get("/datasources/{datasource_id}/apikeys")
 async def list_api_keys(
     datasource_id: str,
-    session: Annotated[AsyncSession, Depends(async_xngin_db_session)],
+    session: Annotated[AsyncSession, Depends(xngin_db_session)],
     user: Annotated[tables.User, Depends(user_from_token)],
 ) -> ListApiKeysResponse:
     """Returns API keys that have access to the datasource."""
@@ -1115,7 +1115,7 @@ async def list_api_keys(
 @router.post("/datasources/{datasource_id}/apikeys")
 async def create_api_key(
     datasource_id: str,
-    session: Annotated[AsyncSession, Depends(async_xngin_db_session)],
+    session: Annotated[AsyncSession, Depends(xngin_db_session)],
     user: Annotated[tables.User, Depends(user_from_token)],
 ) -> CreateApiKeyResponse:
     """Creates an API key for the specified datasource.
@@ -1137,7 +1137,7 @@ async def create_api_key(
 )
 async def delete_api_key(
     datasource_id: str,
-    session: Annotated[AsyncSession, Depends(async_xngin_db_session)],
+    session: Annotated[AsyncSession, Depends(xngin_db_session)],
     user: Annotated[tables.User, Depends(user_from_token)],
     api_key_id: Annotated[str, Path(...)],
 ):
@@ -1152,7 +1152,7 @@ async def delete_api_key(
 @router.post("/datasources/{datasource_id}/experiments")
 async def create_experiment(
     datasource_id: str,
-    session: Annotated[AsyncSession, Depends(async_xngin_db_session)],
+    session: Annotated[AsyncSession, Depends(xngin_db_session)],
     user: Annotated[tables.User, Depends(user_from_token)],
     body: experiments_api_types.CreateExperimentRequest,
     chosen_n: Annotated[
@@ -1214,7 +1214,7 @@ async def create_experiment(
 async def analyze_experiment(
     datasource_id: str,
     experiment_id: str,
-    xngin_session: Annotated[AsyncSession, Depends(async_xngin_db_session)],
+    xngin_session: Annotated[AsyncSession, Depends(xngin_db_session)],
     user: Annotated[tables.User, Depends(user_from_token)],
     baseline_arm_id: Annotated[
         str | None,
@@ -1326,7 +1326,7 @@ EXPERIMENT_STATE_TRANSITION_RESPONSES: dict[int | str, dict[str, Any]] = {
 async def commit_experiment(
     datasource_id: str,
     experiment_id: str,
-    session: Annotated[AsyncSession, Depends(async_xngin_db_session)],
+    session: Annotated[AsyncSession, Depends(xngin_db_session)],
     user: Annotated[tables.User, Depends(user_from_token)],
 ):
     ds = await get_datasource_or_raise(session, user, datasource_id)
@@ -1341,7 +1341,7 @@ async def commit_experiment(
 async def abandon_experiment(
     datasource_id: str,
     experiment_id: str,
-    session: Annotated[AsyncSession, Depends(async_xngin_db_session)],
+    session: Annotated[AsyncSession, Depends(xngin_db_session)],
     user: Annotated[tables.User, Depends(user_from_token)],
 ):
     ds = await get_datasource_or_raise(session, user, datasource_id)
@@ -1352,7 +1352,7 @@ async def abandon_experiment(
 @router.get("/organizations/{organization_id}/experiments")
 async def list_organization_experiments(
     organization_id: str,
-    session: Annotated[AsyncSession, Depends(async_xngin_db_session)],
+    session: Annotated[AsyncSession, Depends(xngin_db_session)],
     user: Annotated[tables.User, Depends(user_from_token)],
 ) -> experiments_api_types.ListExperimentsResponse:
     """Returns a list of experiments in the organization."""
@@ -1364,7 +1364,7 @@ async def list_organization_experiments(
 async def get_experiment(
     datasource_id: str,
     experiment_id: str,
-    session: Annotated[AsyncSession, Depends(async_xngin_db_session)],
+    session: Annotated[AsyncSession, Depends(xngin_db_session)],
     user: Annotated[tables.User, Depends(user_from_token)],
 ) -> experiments_api_types.ExperimentConfig:
     """Returns the experiment with the specified ID."""
@@ -1381,7 +1381,7 @@ async def get_experiment(
 async def get_experiment_assignments(
     datasource_id: str,
     experiment_id: str,
-    session: Annotated[AsyncSession, Depends(async_xngin_db_session)],
+    session: Annotated[AsyncSession, Depends(xngin_db_session)],
     user: Annotated[tables.User, Depends(user_from_token)],
 ) -> experiments_api_types.GetExperimentAssignmentsResponse:
     ds = await get_datasource_or_raise(session, user, datasource_id)
@@ -1401,7 +1401,7 @@ async def get_experiment_assignments(
 async def get_experiment_assignments_as_csv(
     datasource_id: str,
     experiment_id: str,
-    session: Annotated[AsyncSession, Depends(async_xngin_db_session)],
+    session: Annotated[AsyncSession, Depends(xngin_db_session)],
     user: Annotated[tables.User, Depends(user_from_token)],
 ) -> StreamingResponse:
     ds = await get_datasource_or_raise(session, user, datasource_id)
@@ -1424,7 +1424,7 @@ async def get_experiment_assignment_for_participant(
     datasource_id: str,
     experiment_id: str,
     participant_id: str,
-    session: Annotated[AsyncSession, Depends(async_xngin_db_session)],
+    session: Annotated[AsyncSession, Depends(xngin_db_session)],
     user: Annotated[tables.User, Depends(user_from_token)],
     create_if_none: Annotated[
         bool,
@@ -1468,7 +1468,7 @@ async def get_experiment_assignment_for_participant(
 async def delete_experiment(
     datasource_id: str,
     experiment_id: str,
-    session: Annotated[AsyncSession, Depends(async_xngin_db_session)],
+    session: Annotated[AsyncSession, Depends(xngin_db_session)],
     user: Annotated[tables.User, Depends(user_from_token)],
 ):
     """Deletes the experiment with the specified ID."""
@@ -1482,7 +1482,7 @@ async def delete_experiment(
 @router.post("/datasources/{datasource_id}/power")
 async def power_check(
     datasource_id: str,
-    session: Annotated[AsyncSession, Depends(async_xngin_db_session)],
+    session: Annotated[AsyncSession, Depends(xngin_db_session)],
     user: Annotated[tables.User, Depends(user_from_token)],
     body: PowerRequest,
 ) -> PowerResponse:

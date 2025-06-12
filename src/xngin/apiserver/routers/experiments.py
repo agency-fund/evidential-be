@@ -20,13 +20,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from xngin.apiserver import constants
 from xngin.apiserver.dependencies import (
-    async_experiment_dependency,
-    async_xngin_db_session,
-    gsheet_cache,
-    random_seed_dependency,
+    datasource_dependency as async_datasource_dependency,
 )
 from xngin.apiserver.dependencies import (
-    datasource_dependency as async_datasource_dependency,
+    experiment_dependency,
+    gsheet_cache,
+    random_seed_dependency,
+    xngin_db_session,
 )
 from xngin.apiserver.dwh.queries import query_for_participants
 from xngin.apiserver.exceptions_common import LateValidationError
@@ -91,7 +91,7 @@ async def create_experiment_with_assignment_sl(
     ],
     gsheets: Annotated[GSheetCache, Depends(gsheet_cache)],
     datasource: Annotated[Datasource, Depends(async_datasource_dependency)],
-    xngin_session: Annotated[AsyncSession, Depends(async_xngin_db_session)],
+    xngin_session: Annotated[AsyncSession, Depends(xngin_db_session)],
     random_state: Annotated[int | None, Depends(random_seed_dependency)],
     refresh: Annotated[bool, Query(description="Refresh the cache.")] = False,
 ) -> CreateExperimentResponse:
@@ -155,8 +155,8 @@ async def get_experiment_or_raise(
     include_in_schema=False,
 )
 async def commit_experiment_sl(
-    experiment: Annotated[tables.Experiment, Depends(async_experiment_dependency)],
-    xngin_session: Annotated[AsyncSession, Depends(async_xngin_db_session)],
+    experiment: Annotated[tables.Experiment, Depends(experiment_dependency)],
+    xngin_session: Annotated[AsyncSession, Depends(xngin_db_session)],
 ):
     return await commit_experiment_impl(xngin_session, experiment)
 
@@ -168,8 +168,8 @@ async def commit_experiment_sl(
     include_in_schema=False,
 )
 async def abandon_experiment_sl(
-    experiment: Annotated[tables.Experiment, Depends(async_experiment_dependency)],
-    xngin_session: Annotated[AsyncSession, Depends(async_xngin_db_session)],
+    experiment: Annotated[tables.Experiment, Depends(experiment_dependency)],
+    xngin_session: Annotated[AsyncSession, Depends(xngin_db_session)],
 ):
     return await abandon_experiment_impl(xngin_session, experiment)
 
@@ -180,7 +180,7 @@ async def abandon_experiment_sl(
 )
 async def list_experiments_sl(
     datasource: Annotated[Datasource, Depends(async_datasource_dependency)],
-    xngin_session: Annotated[AsyncSession, Depends(async_xngin_db_session)],
+    xngin_session: Annotated[AsyncSession, Depends(xngin_db_session)],
 ) -> ListExperimentsResponse:
     return await list_experiments_impl(xngin_session, datasource.id)
 
@@ -190,8 +190,8 @@ async def list_experiments_sl(
     summary="Get experiment metadata (design & assignment specs) for a single experiment.",
 )
 async def get_experiment_sl(
-    experiment: Annotated[tables.Experiment, Depends(async_experiment_dependency)],
-    xngin_session: Annotated[AsyncSession, Depends(async_xngin_db_session)],
+    experiment: Annotated[tables.Experiment, Depends(experiment_dependency)],
+    xngin_session: Annotated[AsyncSession, Depends(xngin_db_session)],
 ) -> GetExperimentResponse:
     converter = ExperimentStorageConverter(experiment)
     balance_check = converter.get_balance_check()
@@ -207,7 +207,7 @@ async def get_experiment_sl(
     summary="Fetch list of participant=>arm assignments for the given experiment id.",
 )
 async def get_experiment_assignments_sl(
-    experiment: Annotated[tables.Experiment, Depends(async_experiment_dependency)],
+    experiment: Annotated[tables.Experiment, Depends(experiment_dependency)],
 ) -> GetExperimentAssignmentsResponse:
     return get_experiment_assignments_impl(experiment)
 
@@ -217,7 +217,7 @@ async def get_experiment_assignments_sl(
     summary="Export experiment assignments as CSV file.",
 )
 async def get_experiment_assignments_as_csv_sl(
-    experiment: Annotated[tables.Experiment, Depends(async_experiment_dependency)],
+    experiment: Annotated[tables.Experiment, Depends(experiment_dependency)],
 ) -> StreamingResponse:
     """Exports the assignments info with header row as CSV. BalanceCheck not included.
 
@@ -233,9 +233,9 @@ async def get_experiment_assignments_as_csv_sl(
     exists.  For 'online', returns the assignment if it exists, else generates an assignment""",
 )
 async def get_assignment_for_participant_with_apikey(
-    experiment: Annotated[tables.Experiment, Depends(async_experiment_dependency)],
+    experiment: Annotated[tables.Experiment, Depends(experiment_dependency)],
     participant_id: str,
-    xngin_session: Annotated[AsyncSession, Depends(async_xngin_db_session)],
+    xngin_session: Annotated[AsyncSession, Depends(xngin_db_session)],
     create_if_none: Annotated[
         bool,
         Query(

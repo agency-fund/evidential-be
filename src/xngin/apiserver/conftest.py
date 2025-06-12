@@ -28,9 +28,9 @@ from sqlalchemy_bigquery import dialect as bigquery_dialect
 from xngin.apiserver import database, flags
 from xngin.apiserver.apikeys import hash_key_or_raise, make_key
 from xngin.apiserver.dependencies import (
-    async_xngin_db_session,
     random_seed_dependency,
     settings_dependency,
+    xngin_db_session,
 )
 from xngin.apiserver.dns import safe_resolve
 from xngin.apiserver.models import tables
@@ -213,7 +213,7 @@ def get_test_sessionmaker(db_engine: AsyncEngine):
 def setup(app):
     """Configures FastAPI dependencies for testing."""
     # https://fastapi.tiangolo.com/advanced/testing-dependencies/#use-the-appdependency_overrides-attribute
-    app.dependency_overrides[async_xngin_db_session] = get_test_sessionmaker(
+    app.dependency_overrides[xngin_db_session] = get_test_sessionmaker(
         make_async_engine()
     )
     app.dependency_overrides[settings_dependency] = get_settings_for_test

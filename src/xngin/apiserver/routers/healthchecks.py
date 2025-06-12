@@ -7,7 +7,7 @@ from loguru import logger
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from xngin.apiserver import constants
-from xngin.apiserver.dependencies import async_xngin_db_session, settings_dependency
+from xngin.apiserver.dependencies import settings_dependency, xngin_db_session
 from xngin.apiserver.settings import XnginSettings
 
 
@@ -22,7 +22,7 @@ router = APIRouter(lifespan=lifespan, prefix="/_healthchecks", dependencies=[])
 
 @router.get("/db")
 async def healthcheck_db(
-    session: Annotated[AsyncSession, Depends(async_xngin_db_session)],
+    session: Annotated[AsyncSession, Depends(xngin_db_session)],
 ):
     """Endpoint to confirm that we can make a connection to the database and issue a query."""
     now = (
