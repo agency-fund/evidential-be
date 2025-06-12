@@ -5,11 +5,11 @@ from fastapi import Depends, Header, HTTPException, Path, status
 from fastapi.security import APIKeyHeader
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import Session, joinedload
+from sqlalchemy.orm import joinedload
 
 from xngin.apiserver import constants
 from xngin.apiserver.apikeys import hash_key_or_raise, require_valid_api_key
-from xngin.apiserver.database import AsyncSessionLocal, SessionLocal
+from xngin.apiserver.database import AsyncSessionLocal
 from xngin.apiserver.gsheet_cache import GSheetCache
 from xngin.apiserver.models import tables
 from xngin.apiserver.settings import (
@@ -37,15 +37,6 @@ def settings_dependency():
     return get_settings_for_server()
 
 
-def xngin_db_session():
-    """Returns a database connection to the xngin app database (not customer data warehouse)."""
-    session = SessionLocal()
-    try:
-        yield session
-    finally:
-        session.close()
-
-
 async def async_xngin_db_session():
     """Returns a database connection to the xngin app database (not customer data warehouse)."""
     session = AsyncSessionLocal()
@@ -55,7 +46,7 @@ async def async_xngin_db_session():
         await session.close()
 
 
-def datasource_dependency(
+async def datasource_dependency(
     settings: Annotated[XnginSettings, Depends(settings_dependency)],
     datasource_id: Annotated[
         str,
@@ -65,7 +56,7 @@ def datasource_dependency(
             description="The ID of the datasource to operate on.",
         ),
     ],
-    xngin_db: Annotated[Session, Depends(xngin_db_session)],
+    xngin_db: Annotated[AsyncSession, Depends(async_xngin_db_session)],
     api_key: Annotated[
         str | None,
         Depends(APIKeyHeader(name=constants.HEADER_API_KEY, auto_error=False)),
@@ -80,15 +71,15 @@ def datasource_dependency(
 
     # Datasources from the database always require an API key.
     if from_json is None and (
-        from_db := xngin_db.get(tables.Datasource, datasource_id)
+        from_db := await xngin_db.get(tables.Datasource, datasource_id)
     ):
-        require_valid_api_key(xngin_db, api_key, datasource_id)
+        await require_valid_api_key(xngin_db, api_key, datasource_id)
         dsconfig = from_db.get_config()
         return Datasource(id=datasource_id, config=dsconfig)
 
     # Datasources from the static JSON settings optionally require an API key.
     if from_json and from_json.require_api_key:
-        require_valid_api_key(xngin_db, api_key, datasource_id)
+        await require_valid_api_key(xngin_db, api_key, datasource_id)
 
     if from_json is None:
         raise CannotFindDatasourceError("Invalid datasource.")
@@ -105,7 +96,7 @@ def datasource_config_required(
     return ds.config
 
 
-def gsheet_cache(xngin_db: Annotated[Session, Depends(xngin_db_session)]):
+def gsheet_cache(xngin_db: Annotated[AsyncSession, Depends(async_xngin_db_session)]):
     return GSheetCache(xngin_db)
 
 
@@ -160,11 +151,11 @@ async def async_experiment_dependency(
     return experiment
 
 
-def experiment_dependency(
+async def experiment_dependency(
     experiment_id: Annotated[
         str, Path(..., description="The ID of the experiment to fetch.")
     ],
-    xngin_db: Annotated[Session, Depends(xngin_db_session)],
+    xngin_db: Annotated[AsyncSession, Depends(async_xngin_db_session)],
     api_key: Annotated[
         str | None,
         Depends(APIKeyHeader(name=constants.HEADER_API_KEY, auto_error=False)),
@@ -193,7 +184,7 @@ def experiment_dependency(
             tables.ApiKey.key == key_hash,
         )
     )
-    experiment = xngin_db.scalars(query).unique().one_or_none()
+    experiment = (await xngin_db.scalars(query)).unique().one_or_none()
 
     if not experiment:
         raise HTTPException(

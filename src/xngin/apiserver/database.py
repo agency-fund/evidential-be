@@ -52,8 +52,6 @@ async_engine = create_async_engine(
 )
 
 # expire_on_commit is useful for two reasons: more async support, and less database loads.
-SessionLocal = sessionmaker(bind=engine, expire_on_commit=False)
-
 AsyncSessionLocal = async_sessionmaker(bind=async_engine, expire_on_commit=False)
 
 

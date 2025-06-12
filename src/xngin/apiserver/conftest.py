@@ -15,15 +15,15 @@ from sqlalchemy import StaticPool, make_url
 from sqlalchemy.dialects.postgresql import psycopg
 from sqlalchemy.engine.interfaces import Dialect
 from sqlalchemy.engine.url import URL
-from sqlalchemy.orm import sessionmaker
+from sqlalchemy.ext.asyncio import AsyncEngine, async_sessionmaker, create_async_engine
 from sqlalchemy_bigquery import dialect as bigquery_dialect
 
 from xngin.apiserver import database, flags
 from xngin.apiserver.apikeys import hash_key_or_raise, make_key
 from xngin.apiserver.dependencies import (
+    async_xngin_db_session,
     random_seed_dependency,
     settings_dependency,
-    xngin_db_session,
 )
 from xngin.apiserver.dns import safe_resolve
 from xngin.apiserver.models import tables
@@ -153,7 +153,7 @@ def get_test_uri_info(connection_uri: str) -> TestUriInfo:
     )
 
 
-def make_engine():
+async def make_async_engine():
     """Returns a SQLA engine for XNGIN_TEST_APPDB_URI; db will be created if it does not exist."""
     appdb_info = get_test_appdb_info()
     match appdb_info.db_type:
@@ -161,7 +161,7 @@ def make_engine():
             create_database_if_not_exists_pg(appdb_info.connect_url)
         case _:
             raise ValueError("XNGIN_TEST_APPDB_URI must be postgres.")
-    db_engine = sqlalchemy.create_engine(
+    db_engine = create_async_engine(
         appdb_info.connect_url,
         logging_name=SA_LOGGER_NAME_FOR_APP,
         execution_options={"logging_token": "app"},
@@ -170,17 +170,18 @@ def make_engine():
         echo=flags.ECHO_SQL_APP_DB,
     )
     # Create all the ORM tables.
-    tables.Base.metadata.create_all(bind=db_engine)
+    async with db_engine.begin() as conn:
+        await conn.run_sync(tables.Base.metadata.create_all)
 
     return db_engine
 
 
-def get_test_sessionmaker(db_engine: sqlalchemy.engine.Engine):
+def get_test_sessionmaker(db_engine: AsyncEngine):
     """Returns a session bound to the db_engine; the returned database is not guaranteed unique."""
     # Hack: Cause any direct access to production code from code to fail during tests.
-    database.SessionLocal = None
+    database.AsyncSessionLocal = None
 
-    testing_session_local = sessionmaker(bind=db_engine, expire_on_commit=False)
+    testing_session_local = async_sessionmaker(bind=db_engine, expire_on_commit=False)
 
     def get_db_for_test():
         sess = testing_session_local()
@@ -195,19 +196,19 @@ def get_test_sessionmaker(db_engine: sqlalchemy.engine.Engine):
 def setup(app):
     """Configures FastAPI dependencies for testing."""
     # https://fastapi.tiangolo.com/advanced/testing-dependencies/#use-the-appdependency_overrides-attribute
-    app.dependency_overrides[xngin_db_session] = get_test_sessionmaker(make_engine())
+    app.dependency_overrides[async_xngin_db_session] = get_test_sessionmaker(make_async_engine())
     app.dependency_overrides[settings_dependency] = get_settings_for_test
     app.dependency_overrides[random_seed_dependency] = get_random_seed_for_test
 
 
 @pytest.fixture(scope="session", name="test_engine")
-def fixture_test_engine():
+async def fixture_test_engine():
     """Create a SQLA engine for testing that is safely disposed of after all tests are run."""
-    db_engine = make_engine()
+    db_engine = await make_async_engine()
     try:
         yield db_engine
     finally:
-        db_engine.dispose()
+        await db_engine.dispose()
 
 
 @pytest.fixture(name="xngin_session")
