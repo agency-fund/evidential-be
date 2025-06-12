@@ -1127,9 +1127,9 @@ async def delete_api_key(
 
 
 @router.post("/datasources/{datasource_id}/experiments")
-def create_experiment(
+async def create_experiment(
     datasource_id: str,
-    session: Annotated[Session, Depends(xngin_db_session)],
+    session: Annotated[AsyncSession, Depends(async_xngin_db_session)],
     user: Annotated[tables.User, Depends(user_from_token)],
     body: experiments_api_types.CreateExperimentRequest,
     chosen_n: Annotated[
@@ -1147,7 +1147,7 @@ def create_experiment(
         ),
     ] = None,
 ) -> experiments_api_types.CreateExperimentResponse:
-    datasource = get_datasource_or_raise(session, user, datasource_id)
+    datasource = await get_datasource_or_raise(session, user, datasource_id)
     if body.design_spec.ids_are_present():
         raise LateValidationError("Invalid DesignSpec: UUIDs must not be set.")
     ds_config = datasource.get_config()
@@ -1175,7 +1175,7 @@ def create_experiment(
                 detail="Preassigned experiments must have a chosen_n.",
             )
 
-    return experiments_common.create_experiment_impl(
+    return await experiments_common.create_experiment_impl(
         request=body,
         datasource_id=datasource.id,
         participant_unique_id_field=participants_cfg.get_unique_id_field(),
@@ -1188,10 +1188,10 @@ def create_experiment(
 
 
 @router.get("/datasources/{datasource_id}/experiments/{experiment_id}/analyze")
-def analyze_experiment(
+async def analyze_experiment(
     datasource_id: str,
     experiment_id: str,
-    xngin_session: Annotated[Session, Depends(xngin_db_session)],
+    xngin_session: Annotated[AsyncSession, Depends(async_xngin_db_session)],
     user: Annotated[tables.User, Depends(user_from_token)],
     baseline_arm_id: Annotated[
         str | None,
@@ -1200,10 +1200,10 @@ def analyze_experiment(
         ),
     ] = None,
 ) -> ExperimentAnalysis:
-    ds = get_datasource_or_raise(xngin_session, user, datasource_id)
+    ds = await get_datasource_or_raise(xngin_session, user, datasource_id)
     dsconfig = ds.get_config()
 
-    experiment = get_experiment_via_ds_or_raise(xngin_session, ds, experiment_id)
+    experiment = await get_experiment_via_ds_or_raise(xngin_session, ds, experiment_id)
 
     participants_cfg = dsconfig.find_participants(experiment.participant_type)
     if not isinstance(participants_cfg, ParticipantsDef):
