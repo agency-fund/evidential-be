@@ -13,6 +13,7 @@ from fastapi.responses import StreamingResponse
 from sqlalchemy import Table, func, insert, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import Session
 
 from xngin.apiserver import flags
@@ -44,18 +45,18 @@ class ExperimentsAssignmentError(Exception):
     """Wrapper for errors raised by our xngin.apiserver.routers.experiments_common module."""
 
 
-def create_experiment_impl(
+async def create_experiment_impl(
     request: CreateExperimentRequest,
     datasource_id: str,
     participant_unique_id_field: str,
     dwh_sa_table: Table,
     dwh_participants: Sequence[RowProtocol] | None,
     random_state: int | None,
-    xngin_session: Session,
+    xngin_session: AsyncSession,
     stratify_on_metrics: bool,
 ) -> CreateExperimentResponse:
     # Get the organization_id from the database
-    db_datasource = xngin_session.get(tables.Datasource, datasource_id)
+    db_datasource = await xngin_session.get(tables.Datasource, datasource_id)
     if not db_datasource:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -99,7 +100,7 @@ def create_experiment_impl(
     )
 
 
-def create_preassigned_experiment_impl(
+async def create_preassigned_experiment_impl(
     request: CreateExperimentRequest,
     datasource_id: str,
     organization_id: str,
@@ -107,7 +108,7 @@ def create_preassigned_experiment_impl(
     dwh_sa_table: Table,
     dwh_participants: Sequence[RowProtocol],
     random_state: int | None,
-    xngin_session: Session,
+    xngin_session: AsyncSession,
     stratify_on_metrics: bool,
 ) -> CreateExperimentResponse:
     design_spec = request.design_spec
@@ -162,7 +163,7 @@ def create_preassigned_experiment_impl(
         )
         xngin_session.add(db_assignment)
 
-    xngin_session.commit()
+    await xngin_session.commit()
 
     assign_summary = get_assign_summary(
         xngin_session, experiment.id, assignment_response.balance_check
@@ -170,11 +171,11 @@ def create_preassigned_experiment_impl(
     return experiment_converter.get_create_experiment_response(assign_summary)
 
 
-def create_online_experiment_impl(
+async def create_online_experiment_impl(
     request: CreateExperimentRequest,
     datasource_id: str,
     organization_id: str,
-    xngin_session: Session,
+    xngin_session: AsyncSession,
 ) -> CreateExperimentResponse:
     design_spec = request.design_spec
     experiment_converter = ExperimentStorageConverter.init_from_components(
@@ -184,7 +185,7 @@ def create_online_experiment_impl(
         design_spec=design_spec,
     )
     xngin_session.add(experiment_converter.get_experiment())
-    xngin_session.commit()
+    await xngin_session.commit()
     # Online experiments start with no assignments.
     empty_assign_summary = AssignSummary(
         balance_check=None,
@@ -194,7 +195,7 @@ def create_online_experiment_impl(
     return experiment_converter.get_create_experiment_response(empty_assign_summary)
 
 
-def commit_experiment_impl(xngin_session: Session, experiment: tables.Experiment):
+async def commit_experiment_impl(xngin_session: AsyncSession, experiment: tables.Experiment):
     if experiment.state == ExperimentState.COMMITTED:
         return Response(status_code=status.HTTP_304_NOT_MODIFIED)
     if experiment.state != ExperimentState.ASSIGNED:
@@ -238,12 +239,12 @@ def commit_experiment_impl(xngin_session: Session, experiment: tables.Experiment
                 payload=webhook_task.model_dump(),
             )
             xngin_session.add(task)
-    xngin_session.commit()
+    await xngin_session.commit()
 
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
-def abandon_experiment_impl(xngin_session: Session, experiment: tables.Experiment):
+async def abandon_experiment_impl(xngin_session: AsyncSession, experiment: tables.Experiment):
     if experiment.state == ExperimentState.ABANDONED:
         return Response(status_code=status.HTTP_304_NOT_MODIFIED)
     if experiment.state not in {ExperimentState.DESIGNING, ExperimentState.ASSIGNED}:
@@ -253,13 +254,13 @@ def abandon_experiment_impl(xngin_session: Session, experiment: tables.Experimen
         )
 
     experiment.state = ExperimentState.ABANDONED
-    xngin_session.commit()
+    await xngin_session.commit()
 
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
-def list_organization_experiments_impl(
-    xngin_session: Session, organization_id: str
+async def list_organization_experiments_impl(
+    xngin_session: AsyncSession, organization_id: str
 ) -> ListExperimentsResponse:
     stmt = (
         select(tables.Experiment)
@@ -277,7 +278,7 @@ def list_organization_experiments_impl(
         )
         .order_by(tables.Experiment.start_date.desc())
     )
-    result = xngin_session.execute(stmt)
+    result = await xngin_session.execute(stmt)
     experiments = result.scalars().all()
     items = []
     for e in experiments:
@@ -288,8 +289,8 @@ def list_organization_experiments_impl(
     return ListExperimentsResponse(items=items)
 
 
-def list_experiments_impl(
-    xngin_session: Session, datasource_id: str
+async def list_experiments_impl(
+    xngin_session: AsyncSession, datasource_id: str
 ) -> ListExperimentsResponse:
     stmt = (
         select(tables.Experiment)
@@ -303,7 +304,7 @@ def list_experiments_impl(
         )
         .order_by(tables.Experiment.created_at.desc())
     )
-    result = xngin_session.execute(stmt)
+    result = await xngin_session.execute(stmt)
     experiments = result.scalars().all()
     items = []
     for e in experiments:
@@ -466,7 +467,7 @@ async def create_assignment_for_participant(
     if experiment.end_date < datetime.now(UTC):
         experiment.stopped_assignments_at = datetime.now(UTC)
         experiment.stopped_assignments_reason = StopAssignmentReason.END_DATE
-        xngin_session.commit()
+        a_xngin_session.commit()
         return None
 
     # For online experiments, create a new assignment with simple random assignment.
@@ -511,18 +512,19 @@ async def create_assignment_for_participant(
     )
 
 
-def get_assign_summary(
-    xngin_session: Session,
+async def get_assign_summary(
+    xngin_session: AsyncSession,
     experiment_id: str,
     balance_check: BalanceCheck | None = None,
 ) -> AssignSummary:
     """Constructs an AssignSummary from the experiment's arms and arm_assignments."""
-    rows = xngin_session.execute(
+    result = await xngin_session.execute(
         select(tables.ArmAssignment.arm_id, tables.ArmTable.name, func.count())
         .join(tables.ArmTable)
         .where(tables.ArmAssignment.experiment_id == experiment_id)
         .group_by(tables.ArmAssignment.arm_id, tables.ArmTable.name)
-    ).all()
+    )
+    rows = result.all()
     arm_sizes = [
         ArmSize(
             arm=Arm(arm_id=arm_id, arm_name=name),

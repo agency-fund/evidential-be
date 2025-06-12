@@ -24,11 +24,12 @@ from loguru import logger
 from pydantic import BaseModel
 from sqlalchemy import delete, select, text
 from sqlalchemy.exc import OperationalError
-from sqlalchemy.orm import Session
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import Session, selectinload
 
 from xngin.apiserver import constants, flags, settings
 from xngin.apiserver.apikeys import hash_key_or_raise, make_key
-from xngin.apiserver.dependencies import xngin_db_session
+from xngin.apiserver.dependencies import async_xngin_db_session, xngin_db_session
 from xngin.apiserver.dns.safe_resolve import DnsLookupError, safe_resolve
 from xngin.apiserver.dwh.queries import get_participant_metrics, query_for_participants
 from xngin.apiserver.dwh.reflect_schemas import create_inspect_table_response_from_table
@@ -163,17 +164,18 @@ router = APIRouter(
 )
 
 
-def user_from_token(
-    session: Annotated[Session, Depends(xngin_db_session)],
+async def user_from_token(
+    session: Annotated[AsyncSession, Depends(async_xngin_db_session)],
     token_info: Annotated[TokenInfo, Depends(require_oidc_token)],
 ) -> tables.User:
     """Dependency for fetching the User record matching the authenticated user's email.
 
     This may raise a 400, 401, or 403.
     """
-    user = (
-        session.query(tables.User).filter(tables.User.email == token_info.email).first()
+    result = await session.execute(
+        select(tables.User).filter(tables.User.email == token_info.email)
     )
+    user = result.scalars().first()
     if user:
         return user
 
@@ -184,7 +186,7 @@ def user_from_token(
             dsn=flags.XNGIN_DEVDWH_DSN,
             privileged=True,
         )
-        session.commit()
+        await session.commit()
         return new_user
 
     raise HTTPException(
@@ -193,8 +195,8 @@ def user_from_token(
     )
 
 
-def get_organization_or_raise(
-    session: Session, user: tables.User, organization_id: str
+async def get_organization_or_raise(
+    session: AsyncSession, user: tables.User, organization_id: str
 ):
     """Reads the requested organization from the database. Raises 404 if disallowed or not found."""
     stmt = (
@@ -203,7 +205,8 @@ def get_organization_or_raise(
         .where(tables.Organization.id == organization_id)
         .where(tables.UserOrganization.user_id == user.id)
     )
-    org = session.execute(stmt).scalar_one_or_none()
+    result = await session.execute(stmt)
+    org = result.scalar_one_or_none()
     if org is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail="Organization not found."
@@ -211,10 +214,11 @@ def get_organization_or_raise(
     return org
 
 
-def get_datasource_or_raise(session: Session, user: tables.User, datasource_id: str):
+async def get_datasource_or_raise(session: AsyncSession, user: tables.User, datasource_id: str):
     """Reads the requested datasource from the database. Raises 404 if disallowed or not found."""
     stmt = (
         select(tables.Datasource)
+        .options(selectinload(tables.Datasource.organization))  # Preload the datasource's organization to avoid implicit I/O
         .join(tables.Organization)
         .join(tables.UserOrganization)
         .where(
@@ -222,7 +226,8 @@ def get_datasource_or_raise(session: Session, user: tables.User, datasource_id: 
             tables.Datasource.id == datasource_id,
         )
     )
-    ds = session.execute(stmt).scalar_one_or_none()
+    result = await session.execute(stmt)
+    ds = result.scalar_one_or_none()
     if ds is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail="Datasource not found."
@@ -230,8 +235,8 @@ def get_datasource_or_raise(session: Session, user: tables.User, datasource_id: 
     return ds
 
 
-def get_experiment_via_ds_or_raise(
-    session: Session, ds: tables.Datasource, experiment_id: str
+async def get_experiment_via_ds_or_raise(
+    session: AsyncSession, ds: tables.Datasource, experiment_id: str
 ) -> tables.Experiment:
     """Reads the requested experiment (related to the given datasource) from the database. Raises 404 if not found."""
     stmt = (
@@ -239,7 +244,8 @@ def get_experiment_via_ds_or_raise(
         .where(tables.Experiment.datasource_id == ds.id)
         .where(tables.Experiment.id == experiment_id)
     )
-    exp = session.execute(stmt).scalar_one_or_none()
+    result = await session.execute(stmt)
+    exp = result.scalar_one_or_none()
     if exp is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail="Experiment not found."
@@ -248,7 +254,7 @@ def get_experiment_via_ds_or_raise(
 
 
 @router.get("/caller-identity")
-def caller_identity(
+async def caller_identity(
     token_info: Annotated[TokenInfo, Depends(require_oidc_token)],
 ) -> TokenInfo:
     """Returns basic metadata about the authenticated caller of this method."""
@@ -256,8 +262,8 @@ def caller_identity(
 
 
 @router.get("/organizations")
-def list_organizations(
-    session: Annotated[Session, Depends(xngin_db_session)],
+async def list_organizations(
+    session: Annotated[AsyncSession, Depends(async_xngin_db_session)],
     user: Annotated[tables.User, Depends(user_from_token)],
 ) -> ListOrganizationsResponse:
     """Returns a list of organizations that the authenticated user is a member of."""
@@ -266,7 +272,7 @@ def list_organizations(
         .join(tables.Organization.users)
         .where(tables.User.id == user.id)
     )
-    result = session.execute(stmt)
+    result = await session.execute(stmt)
     organizations = result.scalars().all()
 
     return ListOrganizationsResponse(
@@ -281,8 +287,8 @@ def list_organizations(
 
 
 @router.post("/organizations")
-def create_organizations(
-    session: Annotated[Session, Depends(xngin_db_session)],
+async def create_organizations(
+    session: Annotated[AsyncSession, Depends(async_xngin_db_session)],
     user: Annotated[tables.User, Depends(user_from_token)],
     body: Annotated[CreateOrganizationRequest, Body(...)],
 ) -> CreateOrganizationResponse:
@@ -299,21 +305,21 @@ def create_organizations(
     organization = tables.Organization(name=body.name)
     session.add(organization)
     organization.users.append(user)  # Add the creating user to the organization
-    session.commit()
+    await session.commit()
 
     return CreateOrganizationResponse(id=organization.id)
 
 
 @router.post("/organizations/{organization_id}/webhooks")
-def add_webhook_to_organization(
+async def add_webhook_to_organization(
     organization_id: str,
-    session: Annotated[Session, Depends(xngin_db_session)],
+    session: Annotated[AsyncSession, Depends(async_xngin_db_session)],
     user: Annotated[tables.User, Depends(user_from_token)],
     body: Annotated[AddWebhookToOrganizationRequest, Body(...)],
 ) -> AddWebhookToOrganizationResponse:
     """Adds a Webhook to an organization."""
     # Verify user has access to the organization
-    org = get_organization_or_raise(session, user, organization_id)
+    org = await get_organization_or_raise(session, user, organization_id)
 
     # Generate a secure auth token
     auth_token = secrets.token_hex(16)
@@ -323,7 +329,7 @@ def add_webhook_to_organization(
         type=body.type, url=body.url, auth_token=auth_token, organization_id=org.id
     )
     session.add(webhook)
-    session.commit()
+    await session.commit()
 
     return AddWebhookToOrganizationResponse(
         id=webhook.id, type=webhook.type, url=webhook.url, auth_token=auth_token
@@ -331,18 +337,19 @@ def add_webhook_to_organization(
 
 
 @router.get("/organizations/{organization_id}/webhooks")
-def list_organization_webhooks(
+async def list_organization_webhooks(
     organization_id: str,
-    session: Annotated[Session, Depends(xngin_db_session)],
+    session: Annotated[AsyncSession, Depends(async_xngin_db_session)],
     user: Annotated[tables.User, Depends(user_from_token)],
 ) -> ListWebhooksResponse:
     """Lists all the webhooks for an organization."""
     # Verify user has access to the organization
-    org = get_organization_or_raise(session, user, organization_id)
+    org = await get_organization_or_raise(session, user, organization_id)
 
     # Query for webhooks
     stmt = select(tables.Webhook).where(tables.Webhook.organization_id == org.id)
-    webhooks = session.scalars(stmt).all()
+    result = await session.execute(stmt)
+    webhooks = result.scalars().all()
 
     # Convert webhooks to WebhookSummary objects
     webhook_summaries = convert_webhooks_to_webhooksummaries(webhooks)
@@ -366,15 +373,15 @@ def convert_webhooks_to_webhooksummaries(webhooks):
     "/organizations/{organization_id}/webhooks/{webhook_id}",
     status_code=status.HTTP_204_NO_CONTENT,
 )
-def delete_webhook_from_organization(
+async def delete_webhook_from_organization(
     organization_id: str,
     webhook_id: str,
-    session: Annotated[Session, Depends(xngin_db_session)],
+    session: Annotated[AsyncSession, Depends(async_xngin_db_session)],
     user: Annotated[tables.User, Depends(user_from_token)],
 ):
     """Removes a Webhook from an organization."""
     # Verify user has access to the organization
-    org = get_organization_or_raise(session, user, organization_id)
+    org = await get_organization_or_raise(session, user, organization_id)
 
     # Find and delete the webhook
     stmt = (
@@ -382,26 +389,26 @@ def delete_webhook_from_organization(
         .where(tables.Webhook.id == webhook_id)
         .where(tables.Webhook.organization_id == org.id)
     )
-    result = session.execute(stmt)
+    result = await session.execute(stmt)
 
     if result.rowcount == 0:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail="Webhook not found"
         )
 
-    session.commit()
+    await session.commit()
     return GENERIC_SUCCESS
 
 
 @router.get("/organizations/{organization_id}/events")
-def list_organization_events(
+async def list_organization_events(
     organization_id: str,
-    session: Annotated[Session, Depends(xngin_db_session)],
+    session: Annotated[AsyncSession, Depends(async_xngin_db_session)],
     user: Annotated[tables.User, Depends(user_from_token)],
 ) -> ListOrganizationEventsResponse:
     """Returns the most recent 200 events in an organization."""
     # Verify user has access to the organization
-    org = get_organization_or_raise(session, user, organization_id)
+    org = await get_organization_or_raise(session, user, organization_id)
 
     # Query for the most recent 200 events
     stmt = (
@@ -410,7 +417,8 @@ def list_organization_events(
         .order_by(tables.Event.created_at.desc())
         .limit(200)
     )
-    events = session.scalars(stmt).all()
+    result = await session.execute(stmt)
+    events = result.scalars().all()
 
     event_summaries = convert_events_to_eventsummaries(events)
     return ListOrganizationEventsResponse(items=event_summaries)
@@ -436,9 +444,9 @@ def convert_events_to_eventsummaries(events):
 @router.post(
     "/organizations/{organization_id}/members", status_code=status.HTTP_204_NO_CONTENT
 )
-def add_member_to_organization(
+async def add_member_to_organization(
     organization_id: str,
-    session: Annotated[Session, Depends(xngin_db_session)],
+    session: Annotated[AsyncSession, Depends(async_xngin_db_session)],
     user: Annotated[tables.User, Depends(user_from_token)],
     body: Annotated[AddMemberToOrganizationRequest, Body(...)],
 ):
@@ -447,7 +455,7 @@ def add_member_to_organization(
     The authenticated user must be part of the organization to add members.
     """
     # Check if the organization exists
-    org = session.get(tables.Organization, organization_id)
+    org = await session.get(tables.Organization, organization_id)
     if not org:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail="Organization not found"
@@ -455,18 +463,19 @@ def add_member_to_organization(
 
     if not user.is_privileged:
         # Verify user is a member of the organization
-        _authz_check = get_organization_or_raise(session, user, organization_id)
+        _authz_check = await get_organization_or_raise(session, user, organization_id)
 
     # Add the new member
-    new_user = (
-        session.query(tables.User).filter(tables.User.email == body.email).first()
+    result = await session.execute(
+        select(tables.User).filter(tables.User.email == body.email)
     )
+    new_user = result.scalars().first()
     if not new_user:
         new_user = tables.User(email=body.email)
         session.add(new_user)
 
     org.users.append(new_user)
-    session.commit()
+    await session.commit()
     return GENERIC_SUCCESS
 
 
@@ -474,17 +483,17 @@ def add_member_to_organization(
     "/organizations/{organization_id}/members/{user_id}",
     status_code=status.HTTP_204_NO_CONTENT,
 )
-def remove_member_from_organization(
+async def remove_member_from_organization(
     organization_id: str,
     user_id: str,
-    session: Annotated[Session, Depends(xngin_db_session)],
+    session: Annotated[AsyncSession, Depends(async_xngin_db_session)],
     user: Annotated[tables.User, Depends(user_from_token)],
 ):
     """Removes a member from an organization.
 
     The authenticated user must be part of the organization to remove members.
     """
-    _authz_check = get_organization_or_raise(session, user, organization_id)
+    _authz_check = await get_organization_or_raise(session, user, organization_id)
     # Prevent users from removing themselves from an organization
     if user_id == user.id:
         raise HTTPException(
@@ -495,21 +504,21 @@ def remove_member_from_organization(
         tables.UserOrganization.organization_id == organization_id,
         tables.UserOrganization.user_id == user_id,
     )
-    result = session.execute(stmt)
+    result = await session.execute(stmt)
     if result.rowcount == 0:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="User is not a member of this organization",
         )
 
-    session.commit()
+    await session.commit()
     return GENERIC_SUCCESS
 
 
 @router.patch("/organizations/{organization_id}")
-def update_organization(
+async def update_organization(
     organization_id: str,
-    session: Annotated[Session, Depends(xngin_db_session)],
+    session: Annotated[AsyncSession, Depends(async_xngin_db_session)],
     user: Annotated[tables.User, Depends(user_from_token)],
     body: Annotated[UpdateOrganizationRequest, Body(...)],
 ):
@@ -518,19 +527,19 @@ def update_organization(
     The authenticated user must be a member of the organization.
     Currently only supports updating the organization name.
     """
-    org = get_organization_or_raise(session, user, organization_id)
+    org = await get_organization_or_raise(session, user, organization_id)
 
     if body.name is not None:
         org.name = body.name
 
-    session.commit()
+    await session.commit()
     return GENERIC_SUCCESS
 
 
 @router.get("/organizations/{organization_id}")
-def get_organization(
+async def get_organization(
     organization_id: str,
-    session: Annotated[Session, Depends(xngin_db_session)],
+    session: Annotated[AsyncSession, Depends(async_xngin_db_session)],
     user: Annotated[tables.User, Depends(user_from_token)],
 ) -> GetOrganizationResponse:
     """Returns detailed information about a specific organization.
@@ -538,20 +547,23 @@ def get_organization(
     The authenticated user must be a member of the organization.
     """
     # First get the organization and verify user has access
-    org = get_organization_or_raise(session, user, organization_id)
+    org = await get_organization_or_raise(session, user, organization_id)
 
     # Get users and datasources separately
-    users = (
-        session.query(tables.User)
+    users_stmt = (
+        select(tables.User)
         .join(tables.UserOrganization)
         .filter(tables.UserOrganization.organization_id == organization_id)
-        .all()
     )
-    datasources = (
-        session.query(tables.Datasource)
+    users_result = await session.execute(users_stmt)
+    users = users_result.scalars().all()
+
+    datasources_stmt = (
+        select(tables.Datasource)
         .filter(tables.Datasource.organization_id == organization_id)
-        .all()
     )
+    datasources_result = await session.execute(datasources_stmt)
+    datasources = datasources_result.scalars().all()
 
     return GetOrganizationResponse(
         id=org.id,
@@ -576,13 +588,13 @@ def get_organization(
 
 
 @router.get("/organizations/{organization_id}/datasources")
-def list_organization_datasources(
+async def list_organization_datasources(
     organization_id: str,
-    session: Annotated[Session, Depends(xngin_db_session)],
+    session: Annotated[AsyncSession, Depends(async_xngin_db_session)],
     user: Annotated[tables.User, Depends(user_from_token)],
 ) -> ListDatasourcesResponse:
     """Returns a list of datasources accessible to the authenticated user for an org."""
-    _authz_check = get_organization_or_raise(session, user, organization_id)
+    _authz_check = await get_organization_or_raise(session, user, organization_id)
     stmt = (
         select(tables.Datasource)
         .join(tables.Organization)
@@ -592,7 +604,7 @@ def list_organization_datasources(
     if organization_id is not None:
         stmt = stmt.where(tables.Organization.id == organization_id)
 
-    result = session.execute(stmt)
+    result = await session.execute(stmt)
     datasources = result.scalars().all()
 
     def convert_ds_to_summary(ds: tables.Datasource) -> DatasourceSummary:
@@ -615,13 +627,13 @@ def list_organization_datasources(
 
 
 @router.post("/datasources")
-def create_datasource(
-    session: Annotated[Session, Depends(xngin_db_session)],
+async def create_datasource(
+    session: Annotated[AsyncSession, Depends(async_xngin_db_session)],
     user: Annotated[tables.User, Depends(user_from_token)],
     body: Annotated[CreateDatasourceRequest, Body(...)],
 ) -> CreateDatasourceResponse:
     """Creates a new datasource for the specified organization."""
-    org = get_organization_or_raise(session, user, body.organization_id)
+    org = await get_organization_or_raise(session, user, body.organization_id)
 
     if (
         body.dwh.driver == "bigquery"
@@ -646,19 +658,19 @@ def create_datasource(
         config
     )
     session.add(datasource)
-    session.commit()
+    await session.commit()
 
     return CreateDatasourceResponse(id=datasource.id)
 
 
 @router.patch("/datasources/{datasource_id}")
-def update_datasource(
+async def update_datasource(
     datasource_id: str,
     body: UpdateDatasourceRequest,
     user: Annotated[tables.User, Depends(user_from_token)],
-    session: Annotated[Session, Depends(xngin_db_session)],
+    session: Annotated[AsyncSession, Depends(async_xngin_db_session)],
 ):
-    ds = get_datasource_or_raise(session, user, datasource_id)
+    ds = await get_datasource_or_raise(session, user, datasource_id)
     if body.name is not None:
         ds.name = body.name
     if body.dwh is not None:
@@ -674,20 +686,20 @@ def update_datasource(
         invalidate_inspect_ptype = delete(tables.ParticipantTypesInspected).where(
             tables.ParticipantTypesInspected.datasource_id == datasource_id
         )
-        session.execute(invalidate_inspect_tables)
-        session.execute(invalidate_inspect_ptype)
-    session.commit()
+        await session.execute(invalidate_inspect_tables)
+        await session.execute(invalidate_inspect_ptype)
+    await session.commit()
     return GENERIC_SUCCESS
 
 
 @router.get("/datasources/{datasource_id}")
-def get_datasource(
+async def get_datasource(
     datasource_id: str,
     user: Annotated[tables.User, Depends(user_from_token)],
-    session: Annotated[Session, Depends(xngin_db_session)],
+    session: Annotated[AsyncSession, Depends(async_xngin_db_session)],
 ) -> GetDatasourceResponse:
     """Returns detailed information about a specific datasource."""
-    ds = get_datasource_or_raise(session, user, datasource_id)
+    ds = await get_datasource_or_raise(session, user, datasource_id)
     config = ds.get_config()
     return GetDatasourceResponse(
         id=ds.id,
@@ -759,9 +771,9 @@ def is_postgres_database_not_found_error(exc):
     )
 
 
-def invalidate_inspect_table_cache(session, datasource_id):
+async def invalidate_inspect_table_cache(session, datasource_id):
     """Invalidates all table inspection cache entries for a datasource."""
-    session.execute(
+    await session.execute(
         delete(tables.DatasourceTablesInspected).where(
             tables.DatasourceTablesInspected.datasource_id == datasource_id
         )
@@ -812,8 +824,8 @@ def inspect_table_in_datasource(
 
 
 @router.delete("/datasources/{datasource_id}", status_code=status.HTTP_204_NO_CONTENT)
-def delete_datasource(
-    session: Annotated[Session, Depends(xngin_db_session)],
+async def delete_datasource(
+    session: Annotated[AsyncSession, Depends(async_xngin_db_session)],
     user: Annotated[tables.User, Depends(user_from_token)],
     datasource_id: Annotated[str, Path(...)],
 ):
@@ -834,19 +846,19 @@ def delete_datasource(
             )
         )
     )
-    session.execute(stmt)
-    session.commit()
+    await session.execute(stmt)
+    await session.commit()
 
     return GENERIC_SUCCESS
 
 
 @router.get("/datasources/{datasource_id}/participants")
-def list_participant_types(
+async def list_participant_types(
     datasource_id: str,
-    session: Annotated[Session, Depends(xngin_db_session)],
+    session: Annotated[AsyncSession, Depends(async_xngin_db_session)],
     user: Annotated[tables.User, Depends(user_from_token)],
 ) -> ListParticipantsTypeResponse:
-    ds = get_datasource_or_raise(session, user, datasource_id)
+    ds = await get_datasource_or_raise(session, user, datasource_id)
     return ListParticipantsTypeResponse(
         items=list(
             sorted(ds.get_config().participants, key=lambda p: p.participant_type)
@@ -855,13 +867,13 @@ def list_participant_types(
 
 
 @router.post("/datasources/{datasource_id}/participants")
-def create_participant_type(
+async def create_participant_type(
     datasource_id: str,
-    session: Annotated[Session, Depends(xngin_db_session)],
+    session: Annotated[AsyncSession, Depends(async_xngin_db_session)],
     user: Annotated[tables.User, Depends(user_from_token)],
     body: CreateParticipantsTypeRequest,
 ) -> CreateParticipantsTypeResponse:
-    ds = get_datasource_or_raise(session, user, datasource_id)
+    ds = await get_datasource_or_raise(session, user, datasource_id)
     participants_def = ParticipantsDef(
         type="schema",
         participant_type=body.participant_type,
@@ -871,7 +883,7 @@ def create_participant_type(
     config = ds.get_config()
     config.participants.append(participants_def)
     ds.set_config(config)
-    session.commit()
+    await session.commit()
     return CreateParticipantsTypeResponse(
         participant_type=participants_def.participant_type,
         schema_def=body.schema_def,
@@ -980,13 +992,13 @@ def inspect_participant_types(
 
 
 @router.get("/datasources/{datasource_id}/participants/{participant_id}")
-def get_participant_types(
+async def get_participant_types(
     datasource_id: str,
     participant_id: str,
-    session: Annotated[Session, Depends(xngin_db_session)],
+    session: Annotated[AsyncSession, Depends(async_xngin_db_session)],
     user: Annotated[tables.User, Depends(user_from_token)],
 ) -> ParticipantsConfig:
-    ds = get_datasource_or_raise(session, user, datasource_id)
+    ds = await get_datasource_or_raise(session, user, datasource_id)
     # CannotFindParticipantsError will be handled by exceptionhandlers.
     return ds.get_config().find_participants(participant_id)
 
@@ -995,14 +1007,14 @@ def get_participant_types(
     "/datasources/{datasource_id}/participants/{participant_id}",
     response_model=UpdateParticipantsTypeResponse,
 )
-def update_participant_type(
+async def update_participant_type(
     datasource_id: str,
     participant_id: str,
-    session: Annotated[Session, Depends(xngin_db_session)],
+    session: Annotated[AsyncSession, Depends(async_xngin_db_session)],
     user: Annotated[tables.User, Depends(user_from_token)],
     body: UpdateParticipantsTypeRequest,
 ):
-    ds = get_datasource_or_raise(session, user, datasource_id)
+    ds = await get_datasource_or_raise(session, user, datasource_id)
     config = ds.get_config()
     participant = config.find_participants(participant_id)
     config.participants.remove(participant)
@@ -1021,13 +1033,13 @@ def update_participant_type(
 
     # Invalidate the participant types cached inspections because the configuration may have been updated and they may
     # be stale.
-    session.execute(
+    await session.execute(
         delete(tables.ParticipantTypesInspected).where(
             tables.ParticipantTypesInspected.datasource_id == datasource_id,
             tables.ParticipantTypesInspected.participant_type == participant_id,
         )
     )
-    session.commit()
+    await session.commit()
     return UpdateParticipantsTypeResponse(
         participant_type=participant.participant_type,
         table_name=participant.table_name,
@@ -1039,29 +1051,29 @@ def update_participant_type(
     "/datasources/{datasource_id}/participants/{participant_id}",
     status_code=status.HTTP_204_NO_CONTENT,
 )
-def delete_participant(
+async def delete_participant(
     datasource_id: str,
     participant_id: str,
-    session: Annotated[Session, Depends(xngin_db_session)],
+    session: Annotated[AsyncSession, Depends(async_xngin_db_session)],
     user: Annotated[tables.User, Depends(user_from_token)],
 ):
-    ds = get_datasource_or_raise(session, user, datasource_id)
+    ds = await get_datasource_or_raise(session, user, datasource_id)
     config = ds.get_config()
     participant = config.find_participants(participant_id)
     config.participants.remove(participant)
     ds.set_config(config)
-    session.commit()
+    await session.commit()
     return GENERIC_SUCCESS
 
 
 @router.get("/datasources/{datasource_id}/apikeys")
-def list_api_keys(
+async def list_api_keys(
     datasource_id: str,
-    session: Annotated[Session, Depends(xngin_db_session)],
+    session: Annotated[AsyncSession, Depends(async_xngin_db_session)],
     user: Annotated[tables.User, Depends(user_from_token)],
 ) -> ListApiKeysResponse:
     """Returns API keys that have access to the datasource."""
-    ds = get_datasource_or_raise(session, user, datasource_id)
+    ds = await get_datasource_or_raise(session, user, datasource_id)
     return ListApiKeysResponse(
         items=[
             ApiKeySummary(
@@ -1076,21 +1088,21 @@ def list_api_keys(
 
 
 @router.post("/datasources/{datasource_id}/apikeys")
-def create_api_key(
+async def create_api_key(
     datasource_id: str,
-    session: Annotated[Session, Depends(xngin_db_session)],
+    session: Annotated[AsyncSession, Depends(async_xngin_db_session)],
     user: Annotated[tables.User, Depends(user_from_token)],
 ) -> CreateApiKeyResponse:
     """Creates an API key for the specified datasource.
 
     The user must belong to the organization that owns the requested datasource.
     """
-    ds = get_datasource_or_raise(session, user, datasource_id)
+    ds = await get_datasource_or_raise(session, user, datasource_id)
     label, key = make_key()
     key_hash = hash_key_or_raise(key)
     api_key = tables.ApiKey(id=label, key=key_hash, datasource_id=ds.id)
     session.add(api_key)
-    session.commit()
+    await session.commit()
     return CreateApiKeyResponse(id=label, datasource_id=ds.id, key=key)
 
 
@@ -1098,17 +1110,17 @@ def create_api_key(
     "/datasources/{datasource_id}/apikeys/{api_key_id}",
     status_code=status.HTTP_204_NO_CONTENT,
 )
-def delete_api_key(
+async def delete_api_key(
     datasource_id: str,
-    session: Annotated[Session, Depends(xngin_db_session)],
+    session: Annotated[AsyncSession, Depends(async_xngin_db_session)],
     user: Annotated[tables.User, Depends(user_from_token)],
     api_key_id: Annotated[str, Path(...)],
 ):
     """Deletes the specified API key."""
-    ds = get_datasource_or_raise(session, user, datasource_id)
+    ds = await get_datasource_or_raise(session, user, datasource_id)
     ds.api_keys = [a for a in ds.api_keys if a.id != api_key_id]
     session.add(ds)
-    session.commit()
+    await session.commit()
     return GENERIC_SUCCESS
 
 
@@ -1281,41 +1293,41 @@ EXPERIMENT_STATE_TRANSITION_RESPONSES: dict[int | str, dict[str, Any]] = {
     "/datasources/{datasource_id}/experiments/{experiment_id}/commit",
     responses=EXPERIMENT_STATE_TRANSITION_RESPONSES,
 )
-def commit_experiment(
+async def commit_experiment(
     datasource_id: str,
     experiment_id: str,
-    session: Annotated[Session, Depends(xngin_db_session)],
+    session: Annotated[AsyncSession, Depends(async_xngin_db_session)],
     user: Annotated[tables.User, Depends(user_from_token)],
 ):
-    ds = get_datasource_or_raise(session, user, datasource_id)
-    experiment = get_experiment_via_ds_or_raise(session, ds, experiment_id)
-    return experiments_common.commit_experiment_impl(session, experiment)
+    ds = await get_datasource_or_raise(session, user, datasource_id)
+    experiment = await get_experiment_via_ds_or_raise(session, ds, experiment_id)
+    return await experiments_common.commit_experiment_impl(session, experiment)
 
 
 @router.post(
     "/datasources/{datasource_id}/experiments/{experiment_id}/abandon",
     responses=EXPERIMENT_STATE_TRANSITION_RESPONSES,
 )
-def abandon_experiment(
+async def abandon_experiment(
     datasource_id: str,
     experiment_id: str,
-    session: Annotated[Session, Depends(xngin_db_session)],
+    session: Annotated[AsyncSession, Depends(async_xngin_db_session)],
     user: Annotated[tables.User, Depends(user_from_token)],
 ):
-    ds = get_datasource_or_raise(session, user, datasource_id)
-    experiment = get_experiment_via_ds_or_raise(session, ds, experiment_id)
-    return experiments_common.abandon_experiment_impl(session, experiment)
+    ds = await get_datasource_or_raise(session, user, datasource_id)
+    experiment = await get_experiment_via_ds_or_raise(session, ds, experiment_id)
+    return await experiments_common.abandon_experiment_impl(session, experiment)
 
 
 @router.get("/organizations/{organization_id}/experiments")
-def list_organization_experiments(
+async def list_organization_experiments(
     organization_id: str,
-    session: Annotated[Session, Depends(xngin_db_session)],
+    session: Annotated[AsyncSession, Depends(async_xngin_db_session)],
     user: Annotated[tables.User, Depends(user_from_token)],
 ) -> experiments_api_types.ListExperimentsResponse:
     """Returns a list of experiments in the organization."""
-    org = get_organization_or_raise(session, user, organization_id)
-    return experiments_common.list_organization_experiments_impl(session, org.id)
+    org = await get_organization_or_raise(session, user, organization_id)
+    return await experiments_common.list_organization_experiments_impl(session, org.id)
 
 
 @router.get("/datasources/{datasource_id}/experiments/{experiment_id}")
