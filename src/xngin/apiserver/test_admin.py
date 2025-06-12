@@ -994,6 +994,7 @@ async def test_get_experiment_assignment_for_online_participant_past_end_date(
     assert assignment_response.participant_id == "new_id"
     assert assignment_response.assignment is None, assignment_response.model_dump_json()
     # Verify that the experiment state was updated.
+    await xngin_session.refresh(new_exp)
     assert new_exp.stopped_assignments_at is not None
     assert new_exp.stopped_assignments_reason == StopAssignmentReason.END_DATE
 
@@ -1029,7 +1030,7 @@ def test_experiments_analyze(testing_experiment):
 
 
 async def test_experiments_analyze_for_experiment_with_no_participants(
-    xngin_session, testing_datasource_with_user_added
+    xngin_session: AsyncSession, testing_datasource_with_user_added
 ):
     testing_experiment = await insert_experiment_and_arms(
         xngin_session, testing_datasource_with_user_added.ds, "online"

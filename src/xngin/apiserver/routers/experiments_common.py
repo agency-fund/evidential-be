@@ -475,7 +475,7 @@ async def create_assignment_for_participant(
     if experiment.end_date < datetime.now(UTC):
         experiment.stopped_assignments_at = datetime.now(UTC)
         experiment.stopped_assignments_reason = StopAssignmentReason.END_DATE
-        xngin_session.commit()
+        await xngin_session.commit()
         return None
 
     # For online experiments, create a new assignment with simple random assignment.
