@@ -56,7 +56,7 @@ async def datasource_dependency(
             description="The ID of the datasource to operate on.",
         ),
     ],
-    xngin_db: Annotated[AsyncSession, Depends(xngin_db_session)],
+    xngin_session: Annotated[AsyncSession, Depends(xngin_db_session)],
     api_key: Annotated[
         str | None,
         Depends(APIKeyHeader(name=constants.HEADER_API_KEY, auto_error=False)),
@@ -71,15 +71,15 @@ async def datasource_dependency(
 
     # Datasources from the database always require an API key.
     if from_json is None and (
-        from_db := await xngin_db.get(tables.Datasource, datasource_id)
+        from_db := await xngin_session.get(tables.Datasource, datasource_id)
     ):
-        await require_valid_api_key(xngin_db, api_key, datasource_id)
+        await require_valid_api_key(xngin_session, api_key, datasource_id)
         dsconfig = from_db.get_config()
         return Datasource(id=datasource_id, config=dsconfig)
 
     # Datasources from the static JSON settings optionally require an API key.
     if from_json and from_json.require_api_key:
-        await require_valid_api_key(xngin_db, api_key, datasource_id)
+        await require_valid_api_key(xngin_session, api_key, datasource_id)
 
     if from_json is None:
         raise CannotFindDatasourceError("Invalid datasource.")
@@ -96,8 +96,8 @@ def datasource_config_required(
     return ds.config
 
 
-def gsheet_cache(xngin_db: Annotated[AsyncSession, Depends(xngin_db_session)]):
-    return GSheetCache(xngin_db)
+def gsheet_cache(xngin_session: Annotated[AsyncSession, Depends(xngin_db_session)]):
+    return GSheetCache(xngin_session)
 
 
 async def httpx_dependency():
@@ -110,7 +110,7 @@ async def experiment_dependency(
     experiment_id: Annotated[
         str, Path(..., description="The ID of the experiment to fetch.")
     ],
-    xngin_db: Annotated[AsyncSession, Depends(xngin_db_session)],
+    xngin_session: Annotated[AsyncSession, Depends(xngin_db_session)],
     api_key: Annotated[
         str | None,
         Depends(APIKeyHeader(name=constants.HEADER_API_KEY, auto_error=False)),
@@ -139,7 +139,7 @@ async def experiment_dependency(
             tables.ApiKey.key == key_hash,
         )
     )
-    experiment = (await xngin_db.scalars(query)).unique().one_or_none()
+    experiment = (await xngin_session.scalars(query)).unique().one_or_none()
 
     if not experiment:
         raise HTTPException(
