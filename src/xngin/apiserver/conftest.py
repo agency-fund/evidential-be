@@ -237,14 +237,6 @@ async def fixture_xngin_db_session(test_engine):
     return await anext(session_generator())
 
 
-@pytest_asyncio.fixture(name="sync_xngin_session")
-async def sync_fixture_xngin_db_session(test_engine):
-    """Use this session directly if you don't need to test the FastAPI app itself."""
-    session_generator = get_test_sessionmaker(test_engine)
-    session = await anext(session_generator())
-    return session.sync_session
-
-
 @pytest.fixture(scope="session", autouse=True)
 def ensure_correct_working_directory():
     """Ensures the tests are being run from the root of the repo.
