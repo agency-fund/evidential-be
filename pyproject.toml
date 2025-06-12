@@ -30,6 +30,7 @@ dependencies = [
     "typer>=0.15.4,<0.16.0",
     "uvicorn[standard]>=0.32.0",
     "zstandard>=0.23.0,<0.24",
+    "pytest-asyncio>=1.0.0",
 ]
 requires-python = ">=3.12,<3.13"
 
@@ -43,6 +44,7 @@ xngin-cli = "xngin.cli.main:app"
 xngin-tq = "xngin.tq.cli:app"
 
 [tool.pytest.ini_options]
+asyncio_mode = "auto"  # https://pytest-asyncio.readthedocs.io/en/latest/reference/configuration.html
 log_cli = 0  # set to 1 for live logs
 log_cli_level = "warn"
 markers = [
