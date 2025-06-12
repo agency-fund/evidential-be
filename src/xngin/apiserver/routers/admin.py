@@ -1445,13 +1445,13 @@ async def delete_experiment(
 
 
 @router.post("/datasources/{datasource_id}/power")
-def power_check(
+async def power_check(
     datasource_id: str,
-    session: Annotated[Session, Depends(xngin_db_session)],
+    session: Annotated[AsyncSession, Depends(async_xngin_db_session)],
     user: Annotated[tables.User, Depends(user_from_token)],
     body: PowerRequest,
 ) -> PowerResponse:
-    ds = get_datasource_or_raise(session, user, datasource_id)
+    ds = await get_datasource_or_raise(session, user, datasource_id)
     dsconfig = ds.get_config()
     participants_cfg = dsconfig.find_participants(body.design_spec.participant_type)
     validate_schema_metrics_or_raise(body.design_spec, participants_cfg)
