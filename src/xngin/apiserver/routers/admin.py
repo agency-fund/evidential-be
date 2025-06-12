@@ -218,7 +218,8 @@ async def get_datasource_or_raise(session: AsyncSession, user: tables.User, data
     """Reads the requested datasource from the database. Raises 404 if disallowed or not found."""
     stmt = (
         select(tables.Datasource)
-        .options(selectinload(tables.Datasource.organization))  # Preload the datasource's organization to avoid implicit I/O
+        .options(selectinload(tables.Datasource.organization))  # async avoid implicit I/O: get_datasource
+        .options(selectinload(tables.Datasource.api_keys))  # async avoid implicit I/O: list_api_keys
         .join(tables.Organization)
         .join(tables.UserOrganization)
         .where(
