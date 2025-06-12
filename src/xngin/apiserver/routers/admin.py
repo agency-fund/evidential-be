@@ -1430,17 +1430,17 @@ def get_experiment_assignment_for_participant(
     "/datasources/{datasource_id}/experiments/{experiment_id}",
     status_code=status.HTTP_204_NO_CONTENT,
 )
-def delete_experiment(
+async def delete_experiment(
     datasource_id: str,
     experiment_id: str,
-    session: Annotated[Session, Depends(xngin_db_session)],
+    session: Annotated[AsyncSession, Depends(async_xngin_db_session)],
     user: Annotated[tables.User, Depends(user_from_token)],
 ):
     """Deletes the experiment with the specified ID."""
-    ds = get_datasource_or_raise(session, user, datasource_id)
-    experiment = get_experiment_via_ds_or_raise(session, ds, experiment_id)
+    ds = await get_datasource_or_raise(session, user, datasource_id)
+    experiment = await get_experiment_via_ds_or_raise(session, ds, experiment_id)
     session.delete(experiment)
-    session.commit()
+    await session.commit()
     return GENERIC_SUCCESS
 
 
