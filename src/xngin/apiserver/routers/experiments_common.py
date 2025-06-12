@@ -13,8 +13,6 @@ from fastapi.responses import StreamingResponse
 from sqlalchemy import Table, func, insert, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import Session
 
 from xngin.apiserver import flags
 from xngin.apiserver.models import tables
