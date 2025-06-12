@@ -476,7 +476,11 @@ async def add_member_to_organization(
     The authenticated user must be part of the organization to add members.
     """
     # Check if the organization exists
-    org = await session.get(tables.Organization, organization_id)
+    org = await session.get(
+        tables.Organization,
+        organization_id,
+        options=[selectinload(tables.Organization.users)],
+    )
     if not org:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail="Organization not found"
@@ -1468,7 +1472,7 @@ async def delete_experiment(
     """Deletes the experiment with the specified ID."""
     ds = await get_datasource_or_raise(session, user, datasource_id)
     experiment = await get_experiment_via_ds_or_raise(session, ds, experiment_id)
-    session.delete(experiment)
+    await session.delete(experiment)
     await session.commit()
     return GENERIC_SUCCESS
 
