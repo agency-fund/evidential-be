@@ -8,7 +8,7 @@ from deepdiff import DeepDiff
 from fastapi import HTTPException
 from numpy.random import MT19937, RandomState
 from pydantic import TypeAdapter
-from sqlalchemy import Boolean, Column, MetaData, String, Table, select
+from sqlalchemy import Boolean, Column, MetaData, String, Table, delete, select
 from sqlalchemy.dialects import postgresql
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.schema import CreateTable
@@ -19,7 +19,6 @@ from xngin.apiserver.models.enums import ExperimentState, StopAssignmentReason
 from xngin.apiserver.models.storage_format_converters import ExperimentStorageConverter
 from xngin.apiserver.routers.experiments_api_types import (
     CreateExperimentRequest,
-    GetExperimentAssignmentsResponse,
 )
 from xngin.apiserver.routers.experiments_common import (
     ExperimentsAssignmentError,
@@ -45,17 +44,17 @@ from xngin.apiserver.routers.stateless_api_types import (
 
 
 @pytest.fixture(autouse=True)
-def fixture_teardown(xngin_session):
+async def fixture_teardown(xngin_session: AsyncSession):
     try:
         # setup here
         yield
     finally:
         # teardown here
         # Rollback any pending transactions that may have been hanging due to an exception.
-        xngin_session.rollback()
+        await xngin_session.rollback()
         # Clean up objects created in each test by truncating tables and leveraging cascade.
-        xngin_session.query(tables.Datasource).delete()
-        xngin_session.commit()
+        await xngin_session.execute(delete(tables.Datasource))
+        await xngin_session.commit()
 
 
 def make_createexperimentrequest_json(
@@ -244,7 +243,7 @@ async def test_create_experiment_impl_for_preassigned(
     )
 
     # Test!
-    response = create_experiment_impl(
+    response = await create_experiment_impl(
         request=request.model_copy(
             deep=True
         ),  # we'll use the original request for assertions
@@ -299,9 +298,11 @@ async def test_create_experiment_impl_for_preassigned(
     assert converter.get_design_spec() == response.design_spec
     assert converter.get_power_response() == response.power_analyses
     # Verify assignments were created
-    assignments = xngin_session.scalars(
-        select(tables.ArmAssignment).where(
-            tables.ArmAssignment.experiment_id == experiment.id
+    assignments = (
+        await xngin_session.scalars(
+            select(tables.ArmAssignment).where(
+                tables.ArmAssignment.experiment_id == experiment.id
+            )
         )
     ).all()
     assert len(assignments) == len(participants)
@@ -311,8 +312,12 @@ async def test_create_experiment_impl_for_preassigned(
     assert len(assignment_participant_ids) == len(participants)
 
     # Verify arms were created in database
-    arms = xngin_session.scalars(
-        select(tables.ArmTable).where(tables.ArmTable.experiment_id == experiment.id)
+    arms = (
+        await xngin_session.scalars(
+            select(tables.ArmTable).where(
+                tables.ArmTable.experiment_id == experiment.id
+            )
+        )
     ).all()
     assert len(arms) == 2
     arm_ids = {arm.id for arm in arms}
@@ -348,7 +353,7 @@ async def test_create_experiment_impl_for_online(
     # Convert the experiment type to online
     request.design_spec.experiment_type = "online"
 
-    response = create_experiment_impl(
+    response = await create_experiment_impl(
         request=request.model_copy(deep=True),
         datasource_id=testing_datasource.ds.id,
         participant_unique_id_field="participant_id",
@@ -405,8 +410,12 @@ async def test_create_experiment_impl_for_online(
     assert experiment.power_analyses is None
 
     # Verify arms were created in database
-    arms = xngin_session.scalars(
-        select(tables.ArmTable).where(tables.ArmTable.experiment_id == experiment.id)
+    arms = (
+        await xngin_session.scalars(
+            select(tables.ArmTable).where(
+                tables.ArmTable.experiment_id == experiment.id
+            )
+        )
     ).all()
     assert len(arms) == 2
     arm_ids = {arm.id for arm in arms}
@@ -414,15 +423,17 @@ async def test_create_experiment_impl_for_online(
     assert arm_ids == expected_arm_ids
 
     # Verify that no assignments were created for online experiment
-    assignments = xngin_session.scalars(
-        select(tables.ArmAssignment).where(
-            tables.ArmAssignment.experiment_id == experiment.id
+    assignments = (
+        await xngin_session.scalars(
+            select(tables.ArmAssignment).where(
+                tables.ArmAssignment.experiment_id == experiment.id
+            )
         )
     ).all()
     assert len(assignments) == 0
 
 
-def test_create_experiment_impl_overwrites_uuids(
+async def test_create_experiment_impl_overwrites_uuids(
     xngin_session, testing_datasource, sample_table, use_deterministic_random
 ):
     """
@@ -434,7 +445,7 @@ def test_create_experiment_impl_overwrites_uuids(
     original_experiment_id = request.design_spec.experiment_id
     original_arm_ids = [arm.arm_id for arm in request.design_spec.arms]
 
-    response = create_experiment_impl(
+    response = await create_experiment_impl(
         request=request,
         datasource_id=testing_datasource.ds.id,
         participant_unique_id_field="participant_id",
@@ -451,16 +462,20 @@ def test_create_experiment_impl_overwrites_uuids(
     assert set(new_arm_ids) != set(original_arm_ids)
 
     # Verify database state
-    experiment = xngin_session.scalars(
-        select(tables.Experiment).where(
-            tables.Experiment.id == response.design_spec.experiment_id
+    experiment = (
+        await xngin_session.scalars(
+            select(tables.Experiment).where(
+                tables.Experiment.id == response.design_spec.experiment_id
+            )
         )
     ).one()
     assert experiment.state == ExperimentState.ASSIGNED
     # Verify assignments were created with the new UUIDs
-    assignments = xngin_session.scalars(
-        select(tables.ArmAssignment).where(
-            tables.ArmAssignment.experiment_id == experiment.id
+    assignments = (
+        await xngin_session.scalars(
+            select(tables.ArmAssignment).where(
+                tables.ArmAssignment.experiment_id == experiment.id
+            )
         )
     ).all()
     # Verify all assignments use the new arm IDs
@@ -468,7 +483,7 @@ def test_create_experiment_impl_overwrites_uuids(
     assert assignment_arm_ids == set(new_arm_ids)
 
 
-def test_create_experiment_impl_no_metric_stratification(
+async def test_create_experiment_impl_no_metric_stratification(
     xngin_session, testing_datasource, sample_table, use_deterministic_random
 ):
     """Test implementation of creating an experiment without stratifying on metrics."""
@@ -476,7 +491,7 @@ def test_create_experiment_impl_no_metric_stratification(
     request = make_create_preassigned_experiment_request()
 
     # Test with stratify_on_metrics=False
-    response = create_experiment_impl(
+    response = await create_experiment_impl(
         request=request.model_copy(deep=True),
         datasource_id=testing_datasource.ds.id,
         participant_unique_id_field="participant_id",
@@ -497,15 +512,19 @@ def test_create_experiment_impl_no_metric_stratification(
     assert response.design_spec.strata == [Stratum(field_name="gender")]
 
     # Verify database state
-    experiment = xngin_session.scalars(
-        select(tables.Experiment).where(
-            tables.Experiment.id == response.design_spec.experiment_id
+    experiment = (
+        await xngin_session.scalars(
+            select(tables.Experiment).where(
+                tables.Experiment.id == response.design_spec.experiment_id
+            )
         )
     ).one()
     # Verify assignments were created
-    assignments = xngin_session.scalars(
-        select(tables.ArmAssignment).where(
-            tables.ArmAssignment.experiment_id == experiment.id
+    assignments = (
+        await xngin_session.scalars(
+            select(tables.ArmAssignment).where(
+                tables.ArmAssignment.experiment_id == experiment.id
+            )
         )
     ).all()
     assert len(assignments) == len(participants)
@@ -590,7 +609,7 @@ def test_create_experiment_impl_no_metric_stratification(
         ),
     ],
 )
-def test_state_setting_experiment_impl(
+async def test_state_setting_experiment_impl(
     xngin_session,
     testing_datasource,
     method_under_test,
@@ -600,12 +619,12 @@ def test_state_setting_experiment_impl(
     expected_detail,
 ):
     # Initialize our state with an existing experiment who's state we want to modify.
-    experiment = insert_experiment_and_arms(
+    experiment = await insert_experiment_and_arms(
         xngin_session, testing_datasource.ds, state=initial_state
     )
 
     try:
-        response = method_under_test(xngin_session, experiment)
+        response = await method_under_test(xngin_session, experiment)
     except HTTPException as e:
         assert e.status_code == expected_status
         assert e.detail == expected_detail
@@ -614,7 +633,7 @@ def test_state_setting_experiment_impl(
         assert experiment.state == expected_state
 
 
-def test_list_experiments_impl(xngin_session, testing_datasource):
+async def test_list_experiments_impl(xngin_session, testing_datasource):
     """Test that we only get experiments in a valid state for the specified datasource."""
     experiment1_data = make_insertable_experiment(
         testing_datasource.ds, ExperimentState.ASSIGNED
@@ -629,7 +648,7 @@ def test_list_experiments_impl(xngin_session, testing_datasource):
         testing_datasource.ds, ExperimentState.ABORTED
     )
     # One more experiment associated with a *different* datasource.
-    experiment5_metadata = conftest.make_datasource_metadata(xngin_session)
+    experiment5_metadata = await conftest.make_datasource_metadata(xngin_session)
     experiment5_data = make_insertable_experiment(
         experiment5_metadata.ds, ExperimentState.ASSIGNED
     )
@@ -645,9 +664,9 @@ def test_list_experiments_impl(xngin_session, testing_datasource):
         experiment5_data,
     ]
     xngin_session.add_all([data[0] for data in experiment_data])
-    xngin_session.commit()
+    await xngin_session.commit()
 
-    experiments = list_experiments_impl(xngin_session, testing_datasource.ds.id)
+    experiments = await list_experiments_impl(xngin_session, testing_datasource.ds.id)
 
     # experiment5 excluded due to datasource mismatch
     assert len(experiments.items) == 3
@@ -668,10 +687,10 @@ def test_list_experiments_impl(xngin_session, testing_datasource):
     assert not diff, f"Objects differ:\n{diff.pretty()}"
 
 
-def test_get_experiment_assignments_impl(xngin_session, testing_datasource):
+async def test_get_experiment_assignments_impl(xngin_session, testing_datasource):
     # First insert an experiment with assignments
-    experiment = insert_experiment_and_arms(xngin_session, testing_datasource.ds)
-    xngin_session.commit()
+    experiment = await insert_experiment_and_arms(xngin_session, testing_datasource.ds)
+    await xngin_session.commit()
 
     experiment_id = experiment.id
     arm1_id = experiment.arms[0].id
@@ -693,14 +712,16 @@ def test_get_experiment_assignments_impl(xngin_session, testing_datasource):
         ),
     ]
     xngin_session.add_all(arm_assignments)
-    xngin_session.commit()
+    await xngin_session.commit()
+    await xngin_session.refresh(experiment, ["arms", "arm_assignments"])
 
-    data: GetExperimentAssignmentsResponse = get_experiment_assignments_impl(experiment)
+    data = get_experiment_assignments_impl(experiment)
 
     # Check the response structure
     assert data.experiment_id == experiment.id
     assert (
-        data.sample_size == get_assign_summary(xngin_session, experiment.id).sample_size
+        data.sample_size
+        == (await get_assign_summary(xngin_session, experiment.id)).sample_size
     )
     assert (
         data.balance_check == ExperimentStorageConverter(experiment).get_balance_check()
@@ -729,9 +750,11 @@ def test_get_experiment_assignments_impl(xngin_session, testing_datasource):
     assert assignments[1].created_at is not None
 
 
-def make_experiment_with_assignments(xngin_session, datasource: tables.Datasource):
+async def make_experiment_with_assignments(
+    xngin_session, datasource: tables.Datasource
+):
     """Helper test function that commits a new preassigned experiment with assignments."""
-    experiment = insert_experiment_and_arms(xngin_session, datasource)
+    experiment = await insert_experiment_and_arms(xngin_session, datasource)
     arm1_id = experiment.arms[0].id
     arm2_id = experiment.arms[1].id
     assignments = [
@@ -759,12 +782,17 @@ def make_experiment_with_assignments(xngin_session, datasource: tables.Datasourc
         ),
     ]
     xngin_session.add_all(assignments)
-    xngin_session.commit()
+    await xngin_session.commit()
     return experiment
 
 
-def test_experiment_assignments_to_csv_generator(xngin_session, testing_datasource):
-    experiment = make_experiment_with_assignments(xngin_session, testing_datasource.ds)
+async def test_experiment_assignments_to_csv_generator(
+    xngin_session, testing_datasource
+):
+    experiment = await make_experiment_with_assignments(
+        xngin_session, testing_datasource.ds
+    )
+    await xngin_session.refresh(experiment, ["arms", "arm_assignments"])
 
     arm_name_to_id = {a.name: a.id for a in experiment.arms}
     batches = list(experiment_assignments_to_csv_generator(experiment)())
@@ -781,31 +809,40 @@ def test_experiment_assignments_to_csv_generator(xngin_session, testing_datasour
     )
 
 
-def test_get_existing_assignment_for_participant(xngin_session, testing_datasource):
-    experiment = make_experiment_with_assignments(xngin_session, testing_datasource.ds)
+async def test_get_existing_assignment_for_participant(
+    xngin_session, testing_datasource
+):
+    experiment = await make_experiment_with_assignments(
+        xngin_session, testing_datasource.ds
+    )
+    await xngin_session.refresh(experiment, ["arm_assignments"])
     expected_assignment = experiment.arm_assignments[0]
 
-    assignment = get_existing_assignment_for_participant(
+    assignment = await get_existing_assignment_for_participant(
         xngin_session, experiment.id, expected_assignment.participant_id
     )
     assert assignment is not None
     assert assignment.participant_id == expected_assignment.participant_id
     assert str(assignment.arm_id) == expected_assignment.arm_id
 
-    assignment = get_existing_assignment_for_participant(
+    assignment = await get_existing_assignment_for_participant(
         xngin_session, experiment.id, "new_id"
     )
     assert assignment is None
 
 
-def test_create_assignment_for_participant_errors(xngin_session, testing_datasource):
+async def test_create_assignment_for_participant_errors(
+    xngin_session, testing_datasource
+):
     # Test assignment while in an experiment state not valid for assignments.
     # Preassigned will short circuit before the invalid state check so will NOT raise.
     experiment, _ = make_insertable_experiment(
         testing_datasource.ds, ExperimentState.ASSIGNED, experiment_type="preassigned"
     )
     experiment.arms = []
-    response = create_assignment_for_participant(xngin_session, experiment, "p1", None)
+    response = await create_assignment_for_participant(
+        xngin_session, experiment, "p1", None
+    )
     assert response is None
 
     # But an online experiment in this invalid state will raise.
@@ -815,7 +852,7 @@ def test_create_assignment_for_participant_errors(xngin_session, testing_datasou
     with pytest.raises(
         ExperimentsAssignmentError, match="Invalid experiment state: assigned"
     ):
-        create_assignment_for_participant(xngin_session, experiment, "p1", None)
+        await create_assignment_for_participant(xngin_session, experiment, "p1", None)
 
     # Test that an online experiment with no arms will raise.
     experiment, _ = make_insertable_experiment(
@@ -823,24 +860,24 @@ def test_create_assignment_for_participant_errors(xngin_session, testing_datasou
     )
     experiment.arms = []
     with pytest.raises(ExperimentsAssignmentError, match="Experiment has no arms"):
-        create_assignment_for_participant(xngin_session, experiment, "p1", None)
+        await create_assignment_for_participant(xngin_session, experiment, "p1", None)
 
 
-def test_create_assignment_for_participant(xngin_session, testing_datasource):
-    preassigned_experiment = insert_experiment_and_arms(
+async def test_create_assignment_for_participant(xngin_session, testing_datasource):
+    preassigned_experiment = await insert_experiment_and_arms(
         xngin_session, testing_datasource.ds
     )
     # Assert that we won't create new assignments for preassigned experiments
-    expect_none = create_assignment_for_participant(
+    expect_none = await create_assignment_for_participant(
         xngin_session, preassigned_experiment, "new_id", None
     )
     assert expect_none is None
 
-    online_experiment = insert_experiment_and_arms(
+    online_experiment = await insert_experiment_and_arms(
         xngin_session, testing_datasource.ds, experiment_type="online"
     )
     # Assert that we do create new assignments for online experiments
-    assignment = create_assignment_for_participant(
+    assignment = await create_assignment_for_participant(
         xngin_session, online_experiment, "new_id", None
     )
     assert assignment is not None
@@ -853,7 +890,7 @@ def test_create_assignment_for_participant(xngin_session, testing_datasource):
     with pytest.raises(
         ExperimentsAssignmentError, match="Failed to assign participant"
     ):
-        create_assignment_for_participant(
+        await create_assignment_for_participant(
             xngin_session, online_experiment, "new_id", None
         )
 
@@ -865,10 +902,10 @@ def test_create_assignment_for_participant(xngin_session, testing_datasource):
         ("online", StopAssignmentReason.END_DATE),
     ],
 )
-def test_create_assignment_for_participant_stopped_reason(
+async def test_create_assignment_for_participant_stopped_reason(
     xngin_session, testing_datasource, experiment_type, stopped_reason
 ):
-    experiment = insert_experiment_and_arms(
+    experiment = await insert_experiment_and_arms(
         xngin_session,
         testing_datasource.ds,
         experiment_type=experiment_type,
@@ -877,7 +914,7 @@ def test_create_assignment_for_participant_stopped_reason(
 
     # Assert that we don't create assignments for experiments in the past,
     # but for preassigned experiments we don't set a stopped_reason.
-    assignment = create_assignment_for_participant(
+    assignment = await create_assignment_for_participant(
         xngin_session, experiment, "new_id", None
     )
     assert assignment is None

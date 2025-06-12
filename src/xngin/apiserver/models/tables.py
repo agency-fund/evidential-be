@@ -432,10 +432,10 @@ class Experiment(Base):
     fstat_thresh: Mapped[float | None] = mapped_column()
 
     arm_assignments: Mapped[list["ArmAssignment"]] = relationship(
-        back_populates="experiment", cascade="all, delete-orphan"
+        back_populates="experiment", cascade="all, delete-orphan", lazy="raise"
     )
     arms: Mapped[list["ArmTable"]] = relationship(
-        back_populates="experiment", cascade="all, delete-orphan"
+        back_populates="experiment", cascade="all, delete-orphan", lazy="raise"
     )
     datasource: Mapped["Datasource"] = relationship(back_populates="experiments")
 

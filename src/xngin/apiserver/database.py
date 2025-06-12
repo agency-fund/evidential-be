@@ -50,7 +50,7 @@ async_engine = create_async_engine(
     echo=flags.ECHO_SQL_APP_DB,
 )
 
-# expire_on_commit is useful for two reasons: more async support, and less database loads.
+# We use expire_on_commit for reasons described in docs/SQLALCHEMY.md.
 AsyncSessionLocal = async_sessionmaker(bind=async_engine, expire_on_commit=False)
 
 

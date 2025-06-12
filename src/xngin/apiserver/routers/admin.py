@@ -180,7 +180,7 @@ async def user_from_token(
         return user
 
     if token_info.is_privileged():
-        new_user: tables.User = create_user_and_first_datasource(
+        new_user = create_user_and_first_datasource(
             session,
             email=token_info.email,
             dsn=flags.XNGIN_DEVDWH_DSN,
@@ -222,15 +222,12 @@ async def get_datasource_or_raise(
     *,
     preload: list[QueryableAttribute] | None = None,
 ):
-    """Reads the requested datasource from the database. Raises 404 if disallowed or not found."""
+    """Reads the requested datasource from the database.
+
+    Raises 404 if disallowed or not found.
+    """
     stmt = (
         select(tables.Datasource)
-        .options(
-            selectinload(tables.Datasource.organization)
-        )  # async avoid implicit I/O: get_datasource
-        .options(
-            selectinload(tables.Datasource.api_keys)
-        )  # async avoid implicit I/O: list_api_keys
         .join(tables.Organization)
         .join(tables.UserOrganization)
         .where(
@@ -256,7 +253,12 @@ async def get_experiment_via_ds_or_raise(
     *,
     preload: list[QueryableAttribute] | None = None,
 ) -> tables.Experiment:
-    """Reads the requested experiment (related to the given datasource) from the database. Raises 404 if not found."""
+    """Reads the requested experiment (related to the given datasource) from the database.
+
+    The .arms attribute will be eagerly loaded due to its frequent use and small size.
+
+    Raises 404 if not found.
+    """
     stmt = (
         select(tables.Experiment)
         .options(selectinload(tables.Experiment.arms))
@@ -723,7 +725,9 @@ async def get_datasource(
     session: Annotated[AsyncSession, Depends(xngin_db_session)],
 ) -> GetDatasourceResponse:
     """Returns detailed information about a specific datasource."""
-    ds = await get_datasource_or_raise(session, user, datasource_id)
+    ds = await get_datasource_or_raise(
+        session, user, datasource_id, preload=[tables.Datasource.organization]
+    )
     config = ds.get_config()
     return GetDatasourceResponse(
         id=ds.id,
@@ -1098,7 +1102,9 @@ async def list_api_keys(
     user: Annotated[tables.User, Depends(user_from_token)],
 ) -> ListApiKeysResponse:
     """Returns API keys that have access to the datasource."""
-    ds = await get_datasource_or_raise(session, user, datasource_id)
+    ds = await get_datasource_or_raise(
+        session, user, datasource_id, preload=[tables.Datasource.api_keys]
+    )
     return ListApiKeysResponse(
         items=[
             ApiKeySummary(

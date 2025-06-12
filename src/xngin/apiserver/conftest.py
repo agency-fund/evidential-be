@@ -34,7 +34,10 @@ from xngin.apiserver.dependencies import (
 )
 from xngin.apiserver.dns import safe_resolve
 from xngin.apiserver.models import tables
-from xngin.apiserver.routers.oidc_dependencies import PRIVILEGED_EMAIL
+from xngin.apiserver.routers import oidc_dependencies
+from xngin.apiserver.routers.oidc_dependencies import (
+    PRIVILEGED_EMAIL,
+)
 from xngin.apiserver.settings import ParticipantsDef, SettingsForTesting, XnginSettings
 from xngin.apiserver.testing.pg_helpers import create_database_if_not_exists_pg
 from xngin.db_extensions import custom_functions
@@ -168,7 +171,8 @@ def make_async_engine():
             create_database_if_not_exists_pg(appdb_info.connect_url)
         case _:
             raise ValueError("XNGIN_TEST_APPDB_URI must be postgres.")
-    # Create the tables using a synchronous engine.
+
+    # Create the tables using a synchronous engine so that this method can remain sync.
     sync_db_engine = create_engine(
         appdb_info.connect_url,
         logging_name=SA_LOGGER_NAME_FOR_APP,
@@ -177,10 +181,7 @@ def make_async_engine():
         poolclass=StaticPool,
         echo=flags.ECHO_SQL_APP_DB,
     )
-
-    # Create all the ORM tables.
     tables.Base.metadata.create_all(sync_db_engine)
-
     sync_db_engine.dispose()
 
     return create_async_engine(
@@ -218,6 +219,8 @@ def setup(app):
     )
     app.dependency_overrides[settings_dependency] = get_settings_for_test
     app.dependency_overrides[random_seed_dependency] = get_random_seed_for_test
+
+    oidc_dependencies.disable(app)
 
 
 @pytest.fixture(scope="session", name="test_engine")

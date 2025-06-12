@@ -20,9 +20,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from xngin.apiserver import constants
 from xngin.apiserver.dependencies import (
-    datasource_dependency as async_datasource_dependency,
-)
-from xngin.apiserver.dependencies import (
+    datasource_dependency,
     experiment_dependency,
     gsheet_cache,
     random_seed_dependency,
@@ -90,7 +88,7 @@ async def create_experiment_with_assignment_sl(
         int, Query(..., description="Number of participants to assign.")
     ],
     gsheets: Annotated[GSheetCache, Depends(gsheet_cache)],
-    datasource: Annotated[Datasource, Depends(async_datasource_dependency)],
+    datasource: Annotated[Datasource, Depends(datasource_dependency)],
     xngin_session: Annotated[AsyncSession, Depends(xngin_db_session)],
     random_state: Annotated[int | None, Depends(random_seed_dependency)],
     refresh: Annotated[bool, Query(description="Refresh the cache.")] = False,
@@ -103,7 +101,7 @@ async def create_experiment_with_assignment_sl(
     commons = CommonQueryParams(
         participant_type=body.design_spec.participant_type, refresh=refresh
     )
-    participants_cfg, schema = get_participants_config_and_schema(
+    participants_cfg, schema = await get_participants_config_and_schema(
         commons, ds_config, gsheets
     )
 
@@ -179,7 +177,7 @@ async def abandon_experiment_sl(
     summary="List experiments on the datasource.",
 )
 async def list_experiments_sl(
-    datasource: Annotated[Datasource, Depends(async_datasource_dependency)],
+    datasource: Annotated[Datasource, Depends(datasource_dependency)],
     xngin_session: Annotated[AsyncSession, Depends(xngin_db_session)],
 ) -> ListExperimentsResponse:
     return await list_experiments_impl(xngin_session, datasource.id)
@@ -223,7 +221,7 @@ async def get_experiment_assignments_as_csv_sl(
 
     csv header form: participant_id,arm_id,arm_name,strata_name1,strata_name2,...
     """
-    return get_experiment_assignments_as_csv_impl(experiment)
+    return await get_experiment_assignments_as_csv_impl(experiment)
 
 
 @router.get(

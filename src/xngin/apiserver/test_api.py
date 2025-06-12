@@ -9,6 +9,7 @@ from pathlib import Path
 import pytest
 from fastapi.testclient import TestClient
 from loguru import logger
+from sqlalchemy import delete
 
 from xngin.apiserver import conftest, constants, flags
 from xngin.apiserver.gsheet_cache import GSheetCache
@@ -54,25 +55,25 @@ def fixture_update_api_tests_flag(pytestconfig):
 
 
 @pytest.fixture(autouse=True)
-def fixture_teardown(xngin_session):
+async def fixture_teardown(xngin_session):
     try:
         # setup here
         yield
     finally:
         # teardown here
         # Rollback any pending transactions that may have been hanging due to an exception.
-        xngin_session.rollback()
+        await xngin_session.rollback()
         # Ensure we're not using stale cache settings (possible if not using an ephemeral app db).
-        xngin_session.query(tables.CacheTable).delete()
-        xngin_session.commit()
+        await xngin_session.execute(delete(tables.CacheTable))
+        await xngin_session.commit()
 
 
-def test_datasource_dependency_falls_back_to_xngin_db(
+async def test_datasource_dependency_falls_back_to_xngin_db(
     xngin_session, testing_datasource
 ):
     local_cache = GSheetCache(xngin_session)
 
-    participants_cfg_sheet, schema_sheet = get_participants_config_and_schema(
+    participants_cfg_sheet, schema_sheet = await get_participants_config_and_schema(
         commons=CommonQueryParams("test_participant_type"),
         datasource_config=conftest.get_settings_for_test()
         .get_datasource("testing-remote")
@@ -91,9 +92,9 @@ def test_datasource_dependency_falls_back_to_xngin_db(
     config = testing_datasource.ds.get_config()
     config.participants = [participants_def]
     testing_datasource.ds.set_config(config)
-    xngin_session.commit()
+    await xngin_session.commit()
     # ...and verify we retrieve that correctly.
-    participants_cfg, schema = get_participants_config_and_schema(
+    participants_cfg, schema = await get_participants_config_and_schema(
         commons=CommonQueryParams("test_participant_type"),
         datasource_config=testing_datasource.ds.get_config(),
         gsheets=local_cache,

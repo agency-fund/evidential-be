@@ -154,6 +154,17 @@ async def require_oidc_token(
     )
 
 
+def disable(app):
+    """Disables interaction with internet-dependent authentication resources."""
+
+    def noop():
+        pass
+
+    # Disable fetching of OIDC configuration data.
+    app.dependency_overrides[get_google_configuration] = noop
+    app.dependency_overrides[get_google_jwks] = noop
+
+
 def setup(app):
     """Configures FastAPI dependencies for OIDC."""
 
@@ -163,12 +174,9 @@ def setup(app):
 
     logger.warning("AIRPLANE_MODE is set.")
 
-    def noop():
-        pass
+    disable(app)
 
     def get_privileged_token():
         return TESTING_TOKENS[PRIVILEGED_TOKEN_FOR_TESTING]
 
-    app.dependency_overrides[get_google_configuration] = noop
-    app.dependency_overrides[get_google_jwks] = noop
     app.dependency_overrides[require_oidc_token] = get_privileged_token

@@ -6,7 +6,7 @@ This corresponds to the "testing" config specified in xngin.testing.settings.jso
 import hashlib
 from pathlib import Path
 
-from sqlalchemy.orm import Session
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from xngin.apiserver.models import tables
 from xngin.apiserver.settings import Dsn, RemoteDatabaseConfig
@@ -26,7 +26,7 @@ def compact_hash(path: Path):
 
 
 def create_user_and_first_datasource(
-    session: Session, *, email: str, dsn: str | None, privileged: bool
+    session: AsyncSession, *, email: str, dsn: str | None, privileged: bool
 ):
     """Creates a User with an organization, a datasource, and a participant type.
 

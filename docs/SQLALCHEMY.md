@@ -4,7 +4,6 @@
 
 https://docs.sqlalchemy.org/en/20/orm/extensions/asyncio.html#asyncio-orm-avoid-lazyloads
 
-
 ## expire_on_commit
 
 The SQLAlchemy sessions connecting our application to the database are configured with the `expire_on_commit` setting

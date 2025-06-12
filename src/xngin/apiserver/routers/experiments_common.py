@@ -208,6 +208,10 @@ async def commit_experiment_impl(
     experiment.state = ExperimentState.COMMITTED
 
     experiment_id = experiment.id
+    datasource = await experiment.awaitable_attrs.datasource
+    organization = await datasource.awaitable_attrs.organization
+    webhooks = await organization.awaitable_attrs.webhooks
+
     event = tables.Event(
         organization=experiment.datasource.organization,
         type=ExperimentCreatedEvent.TYPE,
@@ -217,10 +221,7 @@ async def commit_experiment_impl(
         )
     )
     xngin_session.add(event)
-
-    for webhook in await (
-        await experiment.awaitable_attrs.datasource
-    ).organization.awaitable_attrs.webhooks:
+    for webhook in webhooks:
         # If the organization has a webhook for experiment.created, enqueue a task for it.
         # In the future, this may be replaced by a standalone queuing service.
         if webhook.type == ExperimentCreatedEvent.TYPE:
@@ -302,6 +303,7 @@ async def list_experiments_impl(
 ) -> ListExperimentsResponse:
     stmt = (
         select(tables.Experiment)
+        .options(selectinload(tables.Experiment.arms))
         .where(tables.Experiment.datasource_id == datasource_id)
         .where(
             tables.Experiment.state.in_([
@@ -318,7 +320,7 @@ async def list_experiments_impl(
     for e in experiments:
         converter = ExperimentStorageConverter(e)
         balance_check = converter.get_balance_check()
-        assign_summary = get_assign_summary(xngin_session, e.id, balance_check)
+        assign_summary = await get_assign_summary(xngin_session, e.id, balance_check)
         items.append(converter.get_experiment_config(assign_summary))
     return ListExperimentsResponse(items=items)
 
@@ -488,6 +490,8 @@ async def create_assignment_for_participant(
     else:
         chosen_arm = random_choice(experiment.arms)
 
+    chosen_arm_id = chosen_arm.id
+
     # Create and save the new assignment. We use the insert() API because it allows us to read
     # the database-generated created_at value without needing to refresh the object in the SQLAlchemy cache.
     try:
@@ -498,7 +502,7 @@ async def create_assignment_for_participant(
                     experiment_id=experiment.id,
                     participant_id=participant_id,
                     participant_type=experiment.participant_type,
-                    arm_id=chosen_arm.id,
+                    arm_id=chosen_arm_id,
                     strata=[],
                 )
                 .returning(tables.ArmAssignment.created_at)
@@ -508,12 +512,12 @@ async def create_assignment_for_participant(
     except IntegrityError as e:
         await xngin_session.rollback()
         raise ExperimentsAssignmentError(
-            f"Failed to assign participant '{participant_id}' to arm '{chosen_arm.id}': {e}"
+            f"Failed to assign participant '{participant_id}' to arm '{chosen_arm_id}': {e}"
         ) from e
 
     return Assignment(
         participant_id=participant_id,
-        arm_id=chosen_arm.id,
+        arm_id=chosen_arm_id,
         arm_name=chosen_arm.name,
         created_at=created_at,
         strata=[],
