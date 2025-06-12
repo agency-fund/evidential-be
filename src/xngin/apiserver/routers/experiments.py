@@ -16,15 +16,15 @@ from fastapi import (
 from fastapi.responses import StreamingResponse
 from loguru import logger
 from sqlalchemy import select
-from sqlalchemy.orm import Session
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from xngin.apiserver import constants
 from xngin.apiserver.dependencies import (
-    datasource_dependency,
-    experiment_dependency,
+    async_datasource_dependency,
+    async_experiment_dependency,
+    async_xngin_db_session,
     gsheet_cache,
     random_seed_dependency,
-    xngin_db_session,
 )
 from xngin.apiserver.dwh.queries import query_for_participants
 from xngin.apiserver.exceptions_common import LateValidationError
@@ -82,14 +82,14 @@ router = APIRouter(
     ),
     include_in_schema=False,
 )
-def create_experiment_with_assignment_sl(
+async def create_experiment_with_assignment_sl(
     body: CreateExperimentRequest,
     chosen_n: Annotated[
         int, Query(..., description="Number of participants to assign.")
     ],
     gsheets: Annotated[GSheetCache, Depends(gsheet_cache)],
-    datasource: Annotated[Datasource, Depends(datasource_dependency)],
-    xngin_session: Annotated[Session, Depends(xngin_db_session)],
+    datasource: Annotated[Datasource, Depends(async_datasource_dependency)],
+    xngin_session: Annotated[AsyncSession, Depends(async_xngin_db_session)],
     random_state: Annotated[int | None, Depends(random_seed_dependency)],
     refresh: Annotated[bool, Query(description="Refresh the cache.")] = False,
 ) -> CreateExperimentResponse:
@@ -117,7 +117,7 @@ def create_experiment_with_assignment_sl(
         )
 
     # Persist the experiment and assignments in the xngin database
-    return create_experiment_impl(
+    return await create_experiment_impl(
         request=body,
         datasource_id=datasource.id,
         participant_unique_id_field=schema.get_unique_id_field(),
@@ -129,15 +129,16 @@ def create_experiment_with_assignment_sl(
     )
 
 
-def get_experiment_or_raise(
-    xngin_session: Session, experiment_id: str, datasource_id: str
+async def get_experiment_or_raise(
+    xngin_session: AsyncSession, experiment_id: str, datasource_id: str
 ):
-    experiment = xngin_session.scalars(
+    result = await xngin_session.execute(
         select(tables.Experiment).where(
             tables.Experiment.id == experiment_id,
             tables.Experiment.datasource_id == datasource_id,
         )
-    ).one_or_none()
+    )
+    experiment = result.scalars().one_or_none()
     if experiment is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail="Experiment not found"
@@ -151,11 +152,11 @@ def get_experiment_or_raise(
     status_code=status.HTTP_204_NO_CONTENT,
     include_in_schema=False,
 )
-def commit_experiment_sl(
-    experiment: Annotated[tables.Experiment, Depends(experiment_dependency)],
-    xngin_session: Annotated[Session, Depends(xngin_db_session)],
+async def commit_experiment_sl(
+    experiment: Annotated[tables.Experiment, Depends(async_experiment_dependency)],
+    xngin_session: Annotated[AsyncSession, Depends(async_xngin_db_session)],
 ):
-    return commit_experiment_impl(xngin_session, experiment)
+    return await commit_experiment_impl(xngin_session, experiment)
 
 
 @router.post(
@@ -164,35 +165,35 @@ def commit_experiment_sl(
     status_code=status.HTTP_204_NO_CONTENT,
     include_in_schema=False,
 )
-def abandon_experiment_sl(
-    experiment: Annotated[tables.Experiment, Depends(experiment_dependency)],
-    xngin_session: Annotated[Session, Depends(xngin_db_session)],
+async def abandon_experiment_sl(
+    experiment: Annotated[tables.Experiment, Depends(async_experiment_dependency)],
+    xngin_session: Annotated[AsyncSession, Depends(async_xngin_db_session)],
 ):
-    return abandon_experiment_impl(xngin_session, experiment)
+    return await abandon_experiment_impl(xngin_session, experiment)
 
 
 @router.get(
     "/experiments",
     summary="List experiments on the datasource.",
 )
-def list_experiments_sl(
-    datasource: Annotated[Datasource, Depends(datasource_dependency)],
-    xngin_session: Annotated[Session, Depends(xngin_db_session)],
+async def list_experiments_sl(
+    datasource: Annotated[Datasource, Depends(async_datasource_dependency)],
+    xngin_session: Annotated[AsyncSession, Depends(async_xngin_db_session)],
 ) -> ListExperimentsResponse:
-    return list_experiments_impl(xngin_session, datasource.id)
+    return await list_experiments_impl(xngin_session, datasource.id)
 
 
 @router.get(
     "/experiments/{experiment_id}",
     summary="Get experiment metadata (design & assignment specs) for a single experiment.",
 )
-def get_experiment_sl(
-    experiment: Annotated[tables.Experiment, Depends(experiment_dependency)],
-    xngin_session: Annotated[Session, Depends(xngin_db_session)],
+async def get_experiment_sl(
+    experiment: Annotated[tables.Experiment, Depends(async_experiment_dependency)],
+    xngin_session: Annotated[AsyncSession, Depends(async_xngin_db_session)],
 ) -> GetExperimentResponse:
     converter = ExperimentStorageConverter(experiment)
     balance_check = converter.get_balance_check()
-    assign_summary = get_assign_summary(xngin_session, experiment.id, balance_check)
+    assign_summary = await get_assign_summary(xngin_session, experiment.id, balance_check)
     return converter.get_experiment_response(assign_summary)
 
 
@@ -201,8 +202,8 @@ def get_experiment_sl(
     "/experiments/{experiment_id}/assignments",
     summary="Fetch list of participant=>arm assignments for the given experiment id.",
 )
-def get_experiment_assignments_sl(
-    experiment: Annotated[tables.Experiment, Depends(experiment_dependency)],
+async def get_experiment_assignments_sl(
+    experiment: Annotated[tables.Experiment, Depends(async_experiment_dependency)],
 ) -> GetExperimentAssignmentsResponse:
     return get_experiment_assignments_impl(experiment)
 
@@ -211,8 +212,8 @@ def get_experiment_assignments_sl(
     "/experiments/{experiment_id}/assignments/csv",
     summary="Export experiment assignments as CSV file.",
 )
-def get_experiment_assignments_as_csv_sl(
-    experiment: Annotated[tables.Experiment, Depends(experiment_dependency)],
+async def get_experiment_assignments_as_csv_sl(
+    experiment: Annotated[tables.Experiment, Depends(async_experiment_dependency)],
 ) -> StreamingResponse:
     """Exports the assignments info with header row as CSV. BalanceCheck not included.
 
@@ -227,10 +228,10 @@ def get_experiment_assignments_as_csv_sl(
     description="""For 'preassigned' experiments, the participant's Assignment is returned if it
     exists.  For 'online', returns the assignment if it exists, else generates an assignment""",
 )
-def get_assignment_for_participant_with_apikey(
-    experiment: Annotated[tables.Experiment, Depends(experiment_dependency)],
+async def get_assignment_for_participant_with_apikey(
+    experiment: Annotated[tables.Experiment, Depends(async_experiment_dependency)],
     participant_id: str,
-    xngin_session: Annotated[Session, Depends(xngin_db_session)],
+    xngin_session: Annotated[AsyncSession, Depends(async_xngin_db_session)],
     create_if_none: Annotated[
         bool,
         Query(
@@ -239,11 +240,11 @@ def get_assignment_for_participant_with_apikey(
     ] = True,
     random_state: Annotated[int | None, Depends(random_seed_dependency)] = None,
 ) -> GetParticipantAssignmentResponse:
-    assignment = get_existing_assignment_for_participant(
+    assignment = await get_existing_assignment_for_participant(
         xngin_session, experiment.id, participant_id
     )
     if not assignment and create_if_none:
-        assignment = create_assignment_for_participant(
+        assignment = await create_assignment_for_participant(
             xngin_session, experiment, participant_id, random_state
         )
 
