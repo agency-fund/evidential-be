@@ -711,14 +711,14 @@ async def get_datasource(
 
 
 @router.get("/datasources/{datasource_id}/inspect")
-def inspect_datasource(
+async def inspect_datasource(
     datasource_id: str,
     user: Annotated[tables.User, Depends(user_from_token)],
-    session: Annotated[Session, Depends(xngin_db_session)],
+    session: Annotated[AsyncSession, Depends(async_xngin_db_session)],
     refresh: Annotated[bool, Query(description="Refresh the cache.")] = False,
 ) -> InspectDatasourceResponse:
     """Verifies connectivity to a datasource and returns a list of readable tables."""
-    ds = get_datasource_or_raise(session, user, datasource_id)
+    ds = await get_datasource_or_raise(session, user, datasource_id)
     if not refresh and cache_is_fresh(ds.table_list_updated):
         return InspectDatasourceResponse(tables=ds.table_list)
     try:
@@ -743,7 +743,7 @@ def inspect_datasource(
                 )
 
             ds.set_table_list(tables)
-            session.commit()
+            await session.commit()
             return InspectDatasourceResponse(tables=tables)
         except OperationalError as exc:
             if is_postgres_database_not_found_error(exc):
@@ -758,7 +758,7 @@ def inspect_datasource(
             ) from exc
     except:
         ds.clear_table_list()
-        session.commit()
+        await session.commit()
         raise
 
 
@@ -781,19 +781,19 @@ async def invalidate_inspect_table_cache(session, datasource_id):
 
 
 @router.get("/datasources/{datasource_id}/inspect/{table_name}")
-def inspect_table_in_datasource(
+async def inspect_table_in_datasource(
     datasource_id: str,
     table_name: str,
     user: Annotated[tables.User, Depends(user_from_token)],
-    session: Annotated[Session, Depends(xngin_db_session)],
+    session: Annotated[AsyncSession, Depends(async_xngin_db_session)],
     refresh: Annotated[bool, Query(description="Refresh the cache.")] = False,
 ) -> InspectDatasourceTableResponse:
     """Inspects a single table in a datasource and returns a summary of its fields."""
-    ds = get_datasource_or_raise(session, user, datasource_id)
+    ds = await get_datasource_or_raise(session, user, datasource_id)
     if (
         not refresh
         and (
-            cached := session.get(
+            cached := await session.get(
                 tables.DatasourceTablesInspected, (datasource_id, table_name)
             )
         )
@@ -803,8 +803,8 @@ def inspect_table_in_datasource(
 
     config = ds.get_config()
 
-    invalidate_inspect_table_cache(session, datasource_id)
-    session.commit()
+    await invalidate_inspect_table_cache(session, datasource_id)
+    await session.commit()
 
     engine = config.dbengine()
     # CannotFindTableError will be handled by exceptionhandlers.py.
@@ -818,7 +818,7 @@ def inspect_table_in_datasource(
             datasource_id=datasource_id, table_name=table_name
         ).set_response(response)
     )
-    session.commit()
+    await session.commit()
 
     return response
 
@@ -891,15 +891,16 @@ async def create_participant_type(
 
 
 @router.get("/datasources/{datasource_id}/participants/{participant_id}/inspect")
-def inspect_participant_types(
+async def inspect_participant_types(
     datasource_id: str,
     participant_id: str,
-    session: Annotated[Session, Depends(xngin_db_session)],
+    session: Annotated[AsyncSession, Depends(async_xngin_db_session)],
     user: Annotated[tables.User, Depends(user_from_token)],
     refresh: Annotated[bool, Query(description="Refresh the cache.")] = False,
 ) -> InspectParticipantTypesResponse:
     """Returns filter, strata, and metric field metadata for a participant type, including exemplars for filter fields."""
-    dsconfig = get_datasource_or_raise(session, user, datasource_id).get_config()
+    ds = await get_datasource_or_raise(session, user, datasource_id)
+    dsconfig = ds.get_config()
     # CannotFindParticipantsError will be handled by exceptionhandlers.
     pconfig = dsconfig.find_participants(participant_id)
     if pconfig.type == "sheet":
@@ -910,7 +911,7 @@ def inspect_participant_types(
     if (
         not refresh
         and (
-            cached := session.get(
+            cached := await session.get(
                 tables.ParticipantTypesInspected, (datasource_id, participant_id)
             )
         )
@@ -918,13 +919,13 @@ def inspect_participant_types(
     ):
         return cached.get_response()
 
-    session.execute(
+    await session.execute(
         delete(tables.ParticipantTypesInspected).where(
             tables.ParticipantTypesInspected.datasource_id == datasource_id,
             tables.ParticipantTypesInspected.participant_type == participant_id,
         )
     )
-    session.commit()
+    await session.commit()
 
     def inspect_participant_types_impl() -> InspectParticipantTypesResponse:
         with dsconfig.dbsession() as dwh_session:
@@ -986,7 +987,7 @@ def inspect_participant_types(
             datasource_id=datasource_id, participant_type=participant_id
         ).set_response(response)
     )
-    session.commit()
+    await session.commit()
 
     return response
 
