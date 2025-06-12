@@ -11,7 +11,6 @@ from jose import JWTError, jwt
 from loguru import logger
 
 from xngin.apiserver import flags
-from xngin.apiserver.dependencies import retrying_httpx_dependency
 
 # JWTs generated for domains other than @agency.fund are considered untrusted.
 PRIVILEGED_DOMAINS = ("agency.fund",)
@@ -92,9 +91,7 @@ async def _fetch_object_200(client: httpx.AsyncClient, url: str):
     return parsed
 
 
-async def get_google_configuration(
-    httpx_client: Annotated[httpx.AsyncClient, Depends(retrying_httpx_dependency)],
-) -> GoogleOidcConfig:
+async def get_google_configuration() -> GoogleOidcConfig:
     """Fetch and cache Google's OpenID configuration."""
     global _google_config
     # When config is fresh, we can use it immediately.
@@ -108,20 +105,24 @@ async def get_google_configuration(
 
         logger.info("Fetching Google OpenID configuration")
         try:
-            config = await _fetch_object_200(httpx_client, GOOGLE_DISCOVERY_URL)
-            jwks_url = config.get("jwks_uri")
-            if not jwks_url:
-                raise GoogleOidcError("config object does not have a jwks_uri field")
-            jwks_response = await _fetch_object_200(httpx_client, jwks_url)
-            if not isinstance(jwks_response, dict) or not jwks_response.get("keys"):
-                raise GoogleOidcError(
-                    "JWKS response does not contain keys in expected format"
+            transport = httpx.AsyncHTTPTransport(retries=2)
+            async with httpx.AsyncClient(transport=transport, timeout=15.0) as client:
+                config = await _fetch_object_200(client, GOOGLE_DISCOVERY_URL)
+                jwks_url = config.get("jwks_uri")
+                if not jwks_url:
+                    raise GoogleOidcError(
+                        "config object does not have a jwks_uri field"
+                    )
+                jwks_response = await _fetch_object_200(client, jwks_url)
+                if not isinstance(jwks_response, dict) or not jwks_response.get("keys"):
+                    raise GoogleOidcError(
+                        "JWKS response does not contain keys in expected format"
+                    )
+                _google_config = GoogleOidcConfig(
+                    last_refreshed=datetime.datetime.now(),
+                    config=config,
+                    jwks=jwks_response,
                 )
-            _google_config = GoogleOidcConfig(
-                last_refreshed=datetime.datetime.now(),
-                config=config,
-                jwks=jwks_response,
-            )
         except httpx.ConnectError as exc:
             raise ServerAppearsOfflineError("We appear to be offline.") from exc
         else:
