@@ -1333,31 +1333,31 @@ async def list_organization_experiments(
 
 
 @router.get("/datasources/{datasource_id}/experiments/{experiment_id}")
-def get_experiment(
+async def get_experiment(
     datasource_id: str,
     experiment_id: str,
-    session: Annotated[Session, Depends(xngin_db_session)],
+    session: Annotated[AsyncSession, Depends(async_xngin_db_session)],
     user: Annotated[tables.User, Depends(user_from_token)],
 ) -> experiments_api_types.ExperimentConfig:
     """Returns the experiment with the specified ID."""
-    ds = get_datasource_or_raise(session, user, datasource_id)
-    experiment = get_experiment_via_ds_or_raise(session, ds, experiment_id)
+    ds = await get_datasource_or_raise(session, user, datasource_id)
+    experiment = await get_experiment_via_ds_or_raise(session, ds, experiment_id)
     converter = ExperimentStorageConverter(experiment)
-    assign_summary = experiments_common.get_assign_summary(
+    assign_summary = await experiments_common.get_assign_summary(
         session, experiment.id, converter.get_balance_check()
     )
     return converter.get_experiment_config(assign_summary)
 
 
 @router.get("/datasources/{datasource_id}/experiments/{experiment_id}/assignments")
-def get_experiment_assignments(
+async def get_experiment_assignments(
     datasource_id: str,
     experiment_id: str,
-    session: Annotated[Session, Depends(xngin_db_session)],
+    session: Annotated[AsyncSession, Depends(async_xngin_db_session)],
     user: Annotated[tables.User, Depends(user_from_token)],
 ) -> experiments_api_types.GetExperimentAssignmentsResponse:
-    ds = get_datasource_or_raise(session, user, datasource_id)
-    experiment = get_experiment_via_ds_or_raise(session, ds, experiment_id)
+    ds = await get_datasource_or_raise(session, user, datasource_id)
+    experiment = await get_experiment_via_ds_or_raise(session, ds, experiment_id)
     return experiments_common.get_experiment_assignments_impl(experiment)
 
 
@@ -1368,14 +1368,14 @@ def get_experiment_assignments(
         "csv header form: participant_id,arm_id,arm_name,strata_name1,strata_name2,..."
     ),
 )
-def get_experiment_assignments_as_csv(
+async def get_experiment_assignments_as_csv(
     datasource_id: str,
     experiment_id: str,
-    session: Annotated[Session, Depends(xngin_db_session)],
+    session: Annotated[AsyncSession, Depends(async_xngin_db_session)],
     user: Annotated[tables.User, Depends(user_from_token)],
 ) -> StreamingResponse:
-    ds = get_datasource_or_raise(session, user, datasource_id)
-    experiment = get_experiment_via_ds_or_raise(session, ds, experiment_id)
+    ds = await get_datasource_or_raise(session, user, datasource_id)
+    experiment = await get_experiment_via_ds_or_raise(session, ds, experiment_id)
     return experiments_common.get_experiment_assignments_as_csv_impl(experiment)
 
 
@@ -1385,11 +1385,11 @@ def get_experiment_assignments_as_csv(
     For 'preassigned' experiments, the participant's Assignment is returned if it exists.
     For 'online', returns the assignment if it exists, else generates an assignment.""",
 )
-def get_experiment_assignment_for_participant(
+async def get_experiment_assignment_for_participant(
     datasource_id: str,
     experiment_id: str,
     participant_id: str,
-    session: Annotated[Session, Depends(xngin_db_session)],
+    session: Annotated[AsyncSession, Depends(async_xngin_db_session)],
     user: Annotated[tables.User, Depends(user_from_token)],
     create_if_none: Annotated[
         bool,
@@ -1407,15 +1407,15 @@ def get_experiment_assignment_for_participant(
 ) -> experiments_api_types.GetParticipantAssignmentResponse:
     """Get the assignment for a specific participant in an experiment."""
     # Validate the datasource and experiment exist
-    ds = get_datasource_or_raise(session, user, datasource_id)
-    experiment = get_experiment_via_ds_or_raise(session, ds, experiment_id)
+    ds = await get_datasource_or_raise(session, user, datasource_id)
+    experiment = await get_experiment_via_ds_or_raise(session, ds, experiment_id)
 
     # Look up the participant's assignment if it exists
-    assignment = experiments_common.get_existing_assignment_for_participant(
+    assignment = await experiments_common.get_existing_assignment_for_participant(
         session, experiment.id, participant_id
     )
     if not assignment and create_if_none and experiment.stopped_assignments_at is None:
-        assignment = experiments_common.create_assignment_for_participant(
+        assignment = await experiments_common.create_assignment_for_participant(
             session, experiment, participant_id, random_state
         )
 
