@@ -25,11 +25,11 @@ from pydantic import BaseModel
 from sqlalchemy import delete, select, text
 from sqlalchemy.exc import OperationalError
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import Session, selectinload
+from sqlalchemy.orm import QueryableAttribute, selectinload
 
 from xngin.apiserver import constants, flags, settings
 from xngin.apiserver.apikeys import hash_key_or_raise, make_key
-from xngin.apiserver.dependencies import async_xngin_db_session, xngin_db_session
+from xngin.apiserver.dependencies import async_xngin_db_session
 from xngin.apiserver.dns.safe_resolve import DnsLookupError, safe_resolve
 from xngin.apiserver.dwh.queries import get_participant_metrics, query_for_participants
 from xngin.apiserver.dwh.reflect_schemas import create_inspect_table_response_from_table
@@ -214,12 +214,23 @@ async def get_organization_or_raise(
     return org
 
 
-async def get_datasource_or_raise(session: AsyncSession, user: tables.User, datasource_id: str):
+async def get_datasource_or_raise(
+    session: AsyncSession,
+    user: tables.User,
+    datasource_id: str,
+    /,
+    *,
+    preload: list[QueryableAttribute] | None = None,
+):
     """Reads the requested datasource from the database. Raises 404 if disallowed or not found."""
     stmt = (
         select(tables.Datasource)
-        .options(selectinload(tables.Datasource.organization))  # async avoid implicit I/O: get_datasource
-        .options(selectinload(tables.Datasource.api_keys))  # async avoid implicit I/O: list_api_keys
+        .options(
+            selectinload(tables.Datasource.organization)
+        )  # async avoid implicit I/O: get_datasource
+        .options(
+            selectinload(tables.Datasource.api_keys)
+        )  # async avoid implicit I/O: list_api_keys
         .join(tables.Organization)
         .join(tables.UserOrganization)
         .where(
@@ -227,6 +238,8 @@ async def get_datasource_or_raise(session: AsyncSession, user: tables.User, data
             tables.Datasource.id == datasource_id,
         )
     )
+    if preload:
+        stmt = stmt.options(*[selectinload(f) for f in preload])
     result = await session.execute(stmt)
     ds = result.scalar_one_or_none()
     if ds is None:
@@ -237,14 +250,21 @@ async def get_datasource_or_raise(session: AsyncSession, user: tables.User, data
 
 
 async def get_experiment_via_ds_or_raise(
-    session: AsyncSession, ds: tables.Datasource, experiment_id: str
+    session: AsyncSession,
+    ds: tables.Datasource,
+    experiment_id: str,
+    *,
+    preload: list[QueryableAttribute] | None = None,
 ) -> tables.Experiment:
     """Reads the requested experiment (related to the given datasource) from the database. Raises 404 if not found."""
     stmt = (
         select(tables.Experiment)
+        .options(selectinload(tables.Experiment.arms))
         .where(tables.Experiment.datasource_id == ds.id)
         .where(tables.Experiment.id == experiment_id)
     )
+    if preload:
+        stmt = stmt.options(*[selectinload(f) for f in preload])
     result = await session.execute(stmt)
     exp = result.scalar_one_or_none()
     if exp is None:
@@ -559,9 +579,8 @@ async def get_organization(
     users_result = await session.execute(users_stmt)
     users = users_result.scalars().all()
 
-    datasources_stmt = (
-        select(tables.Datasource)
-        .filter(tables.Datasource.organization_id == organization_id)
+    datasources_stmt = select(tables.Datasource).filter(
+        tables.Datasource.organization_id == organization_id
     )
     datasources_result = await session.execute(datasources_stmt)
     datasources = datasources_result.scalars().all()
@@ -1203,7 +1222,12 @@ async def analyze_experiment(
     ds = await get_datasource_or_raise(xngin_session, user, datasource_id)
     dsconfig = ds.get_config()
 
-    experiment = await get_experiment_via_ds_or_raise(xngin_session, ds, experiment_id)
+    experiment = await get_experiment_via_ds_or_raise(
+        xngin_session,
+        ds,
+        experiment_id,
+        preload=[tables.Experiment.arm_assignments],
+    )
 
     participants_cfg = dsconfig.find_participants(experiment.participant_type)
     if not isinstance(participants_cfg, ParticipantsDef):
@@ -1375,8 +1399,13 @@ async def get_experiment_assignments_as_csv(
     user: Annotated[tables.User, Depends(user_from_token)],
 ) -> StreamingResponse:
     ds = await get_datasource_or_raise(session, user, datasource_id)
-    experiment = await get_experiment_via_ds_or_raise(session, ds, experiment_id)
-    return experiments_common.get_experiment_assignments_as_csv_impl(experiment)
+    experiment = await get_experiment_via_ds_or_raise(
+        session,
+        ds,
+        experiment_id,
+        preload=[tables.Experiment.arms, tables.Experiment.arm_assignments],
+    )
+    return await experiments_common.get_experiment_assignments_as_csv_impl(experiment)
 
 
 @router.get(

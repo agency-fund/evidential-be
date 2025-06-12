@@ -13,6 +13,7 @@ from fastapi.responses import StreamingResponse
 from sqlalchemy import Table, func, insert, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
 from xngin.apiserver import flags
 from xngin.apiserver.models import tables
@@ -73,7 +74,7 @@ async def create_experiment_impl(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Preassigned experiments must have participants data",
             )
-        return create_preassigned_experiment_impl(
+        return await create_preassigned_experiment_impl(
             request=request,
             datasource_id=datasource_id,
             organization_id=organization_id,
@@ -163,7 +164,7 @@ async def create_preassigned_experiment_impl(
 
     await xngin_session.commit()
 
-    assign_summary = get_assign_summary(
+    assign_summary = await get_assign_summary(
         xngin_session, experiment.id, assignment_response.balance_check
     )
     return experiment_converter.get_create_experiment_response(assign_summary)
@@ -193,7 +194,9 @@ async def create_online_experiment_impl(
     return experiment_converter.get_create_experiment_response(empty_assign_summary)
 
 
-async def commit_experiment_impl(xngin_session: AsyncSession, experiment: tables.Experiment):
+async def commit_experiment_impl(
+    xngin_session: AsyncSession, experiment: tables.Experiment
+):
     if experiment.state == ExperimentState.COMMITTED:
         return Response(status_code=status.HTTP_304_NOT_MODIFIED)
     if experiment.state != ExperimentState.ASSIGNED:
@@ -215,7 +218,9 @@ async def commit_experiment_impl(xngin_session: AsyncSession, experiment: tables
     )
     xngin_session.add(event)
 
-    for webhook in experiment.datasource.organization.webhooks:
+    for webhook in await (
+        await experiment.awaitable_attrs.datasource
+    ).organization.awaitable_attrs.webhooks:
         # If the organization has a webhook for experiment.created, enqueue a task for it.
         # In the future, this may be replaced by a standalone queuing service.
         if webhook.type == ExperimentCreatedEvent.TYPE:
@@ -242,7 +247,9 @@ async def commit_experiment_impl(xngin_session: AsyncSession, experiment: tables
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
-async def abandon_experiment_impl(xngin_session: AsyncSession, experiment: tables.Experiment):
+async def abandon_experiment_impl(
+    xngin_session: AsyncSession, experiment: tables.Experiment
+):
     if experiment.state == ExperimentState.ABANDONED:
         return Response(status_code=status.HTTP_304_NOT_MODIFIED)
     if experiment.state not in {ExperimentState.DESIGNING, ExperimentState.ASSIGNED}:
@@ -262,6 +269,9 @@ async def list_organization_experiments_impl(
 ) -> ListExperimentsResponse:
     stmt = (
         select(tables.Experiment)
+        .options(
+            selectinload(tables.Experiment.arms)
+        )  # async: ExperimentStorageConverter requires .arms
         .join(
             tables.Datasource,
             (tables.Experiment.datasource_id == tables.Datasource.id)
@@ -282,7 +292,7 @@ async def list_organization_experiments_impl(
     for e in experiments:
         converter = ExperimentStorageConverter(e)
         balance_check = converter.get_balance_check()
-        assign_summary = get_assign_summary(xngin_session, e.id, balance_check)
+        assign_summary = await get_assign_summary(xngin_session, e.id, balance_check)
         items.append(converter.get_experiment_config(assign_summary))
     return ListExperimentsResponse(items=items)
 
@@ -382,7 +392,7 @@ def experiment_assignments_to_csv_generator(experiment: tables.Experiment):
     return generate_csv
 
 
-def get_experiment_assignments_as_csv_impl(
+async def get_experiment_assignments_as_csv_impl(
     experiment: tables.Experiment,
 ) -> StreamingResponse:
     csv_generator = experiment_assignments_to_csv_generator(experiment)

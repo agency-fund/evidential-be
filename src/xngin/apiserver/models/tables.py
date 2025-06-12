@@ -7,6 +7,7 @@ import sqlalchemy
 from pydantic import TypeAdapter
 from sqlalchemy import ForeignKey, Index, String
 from sqlalchemy.dialects import postgresql
+from sqlalchemy.ext.asyncio import AsyncAttrs
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 from sqlalchemy.types import TypeEngine
 
@@ -34,7 +35,7 @@ experiment_id_factory = unique_id_factory("exp")
 arm_id_factory = unique_id_factory("arm")
 
 
-class Base(DeclarativeBase):
+class Base(AsyncAttrs, DeclarativeBase):
     # See https://docs.sqlalchemy.org/en/20/orm/declarative_tables.html#customizing-the-type-map
     type_annotation_map: ClassVar[dict[type, TypeEngine]] = {
         # For pg specifically, use the binary form
