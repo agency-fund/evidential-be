@@ -86,7 +86,7 @@ async def create_experiment_impl(
             stratify_on_metrics=stratify_on_metrics,
         )
     if request.design_spec.experiment_type == "online":
-        return create_online_experiment_impl(
+        return await create_online_experiment_impl(
             request=request,
             datasource_id=datasource_id,
             organization_id=organization_id,
@@ -443,7 +443,7 @@ async def get_existing_assignment_for_participant(
 
 
 async def create_assignment_for_participant(
-    a_xngin_session: AsyncSession,
+    xngin_session: AsyncSession,
     experiment: tables.Experiment,
     participant_id: str,
     random_state: int | None,
@@ -475,7 +475,7 @@ async def create_assignment_for_participant(
     if experiment.end_date < datetime.now(UTC):
         experiment.stopped_assignments_at = datetime.now(UTC)
         experiment.stopped_assignments_reason = StopAssignmentReason.END_DATE
-        a_xngin_session.commit()
+        xngin_session.commit()
         return None
 
     # For online experiments, create a new assignment with simple random assignment.
@@ -492,7 +492,7 @@ async def create_assignment_for_participant(
     # the database-generated created_at value without needing to refresh the object in the SQLAlchemy cache.
     try:
         created_at = (
-            await a_xngin_session.execute(
+            await xngin_session.execute(
                 insert(tables.ArmAssignment)
                 .values(
                     experiment_id=experiment.id,
@@ -504,9 +504,9 @@ async def create_assignment_for_participant(
                 .returning(tables.ArmAssignment.created_at)
             )
         ).fetchone()[0]
-        await a_xngin_session.commit()
+        await xngin_session.commit()
     except IntegrityError as e:
-        await a_xngin_session.rollback()
+        await xngin_session.rollback()
         raise ExperimentsAssignmentError(
             f"Failed to assign participant '{participant_id}' to arm '{chosen_arm.id}': {e}"
         ) from e

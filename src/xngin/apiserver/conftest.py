@@ -3,19 +3,26 @@
 import enum
 import os
 import secrets
+from collections.abc import AsyncGenerator
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 from typing import Any, assert_never, cast
 
 import pytest
+import pytest_asyncio
 import sqlalchemy
 from pydantic import TypeAdapter, ValidationError
-from sqlalchemy import StaticPool, make_url
+from sqlalchemy import StaticPool, create_engine, make_url
 from sqlalchemy.dialects.postgresql import psycopg
 from sqlalchemy.engine.interfaces import Dialect
 from sqlalchemy.engine.url import URL
-from sqlalchemy.ext.asyncio import AsyncEngine, async_sessionmaker, create_async_engine
+from sqlalchemy.ext.asyncio import (
+    AsyncEngine,
+    AsyncSession,
+    async_sessionmaker,
+    create_async_engine,
+)
 from sqlalchemy_bigquery import dialect as bigquery_dialect
 
 from xngin.apiserver import database, flags
@@ -153,7 +160,7 @@ def get_test_uri_info(connection_uri: str) -> TestUriInfo:
     )
 
 
-async def make_async_engine():
+def make_async_engine():
     """Returns a SQLA engine for XNGIN_TEST_APPDB_URI; db will be created if it does not exist."""
     appdb_info = get_test_appdb_info()
     match appdb_info.db_type:
@@ -161,7 +168,8 @@ async def make_async_engine():
             create_database_if_not_exists_pg(appdb_info.connect_url)
         case _:
             raise ValueError("XNGIN_TEST_APPDB_URI must be postgres.")
-    db_engine = create_async_engine(
+    # Create the tables using a synchronous engine.
+    sync_db_engine = create_engine(
         appdb_info.connect_url,
         logging_name=SA_LOGGER_NAME_FOR_APP,
         execution_options={"logging_token": "app"},
@@ -169,11 +177,20 @@ async def make_async_engine():
         poolclass=StaticPool,
         echo=flags.ECHO_SQL_APP_DB,
     )
-    # Create all the ORM tables.
-    async with db_engine.begin() as conn:
-        await conn.run_sync(tables.Base.metadata.create_all)
 
-    return db_engine
+    # Create all the ORM tables.
+    tables.Base.metadata.create_all(sync_db_engine)
+
+    sync_db_engine.dispose()
+
+    return create_async_engine(
+        appdb_info.connect_url,
+        logging_name=SA_LOGGER_NAME_FOR_APP,
+        execution_options={"logging_token": "app"},
+        connect_args=appdb_info.connect_args,
+        poolclass=StaticPool,
+        echo=flags.ECHO_SQL_APP_DB,
+    )
 
 
 def get_test_sessionmaker(db_engine: AsyncEngine):
@@ -183,12 +200,12 @@ def get_test_sessionmaker(db_engine: AsyncEngine):
 
     testing_session_local = async_sessionmaker(bind=db_engine, expire_on_commit=False)
 
-    def get_db_for_test():
+    async def get_db_for_test():
         sess = testing_session_local()
         try:
             yield sess
         finally:
-            sess.close()
+            await sess.close()
 
     return get_db_for_test
 
@@ -196,26 +213,36 @@ def get_test_sessionmaker(db_engine: AsyncEngine):
 def setup(app):
     """Configures FastAPI dependencies for testing."""
     # https://fastapi.tiangolo.com/advanced/testing-dependencies/#use-the-appdependency_overrides-attribute
-    app.dependency_overrides[async_xngin_db_session] = get_test_sessionmaker(make_async_engine())
+    app.dependency_overrides[async_xngin_db_session] = get_test_sessionmaker(
+        make_async_engine()
+    )
     app.dependency_overrides[settings_dependency] = get_settings_for_test
     app.dependency_overrides[random_seed_dependency] = get_random_seed_for_test
 
 
 @pytest.fixture(scope="session", name="test_engine")
-async def fixture_test_engine():
+async def fixture_test_engine() -> AsyncGenerator[AsyncEngine]:
     """Create a SQLA engine for testing that is safely disposed of after all tests are run."""
-    db_engine = await make_async_engine()
+    db_engine = make_async_engine()
     try:
         yield db_engine
     finally:
         await db_engine.dispose()
 
 
-@pytest.fixture(name="xngin_session")
-def fixture_xngin_db_session(test_engine):
+@pytest_asyncio.fixture(name="xngin_session")
+async def fixture_xngin_db_session(test_engine):
     """Use this session directly if you don't need to test the FastAPI app itself."""
-    test_sessionmaker = get_test_sessionmaker(test_engine)
-    return next(test_sessionmaker())
+    session_generator = get_test_sessionmaker(test_engine)
+    return await anext(session_generator())
+
+
+@pytest_asyncio.fixture(name="sync_xngin_session")
+async def sync_fixture_xngin_db_session(test_engine):
+    """Use this session directly if you don't need to test the FastAPI app itself."""
+    session_generator = get_test_sessionmaker(test_engine)
+    session = await anext(session_generator())
+    return session.sync_session
 
 
 @pytest.fixture(scope="session", autouse=True)
@@ -286,7 +313,7 @@ class DatasourceMetadata:
 
 
 @pytest.fixture(name="testing_datasource", scope="function")
-def fixture_testing_datasource(xngin_session) -> DatasourceMetadata:
+async def fixture_testing_datasource(xngin_session: AsyncSession) -> DatasourceMetadata:
     """
     Generates a new Organization, Datasource, and API key for a test.
 
@@ -295,26 +322,26 @@ def fixture_testing_datasource(xngin_session) -> DatasourceMetadata:
     Note: The datasource configured in this fixture represents a customer database. This is
     *different* than the xngin server-side database configured by conftest.setup().
     """
-    return make_datasource_metadata(xngin_session)
+    return await make_datasource_metadata(xngin_session)
 
 
 @pytest.fixture(name="testing_datasource_with_user", scope="function")
-def fixture_testing_datasource_with_user(xngin_session) -> DatasourceMetadata:
+async def fixture_testing_datasource_with_user(xngin_session) -> DatasourceMetadata:
     """
     Generates a new Organization, Datasource, and API key. Adds our privileged user to the org.
     """
-    metadata = make_datasource_metadata(xngin_session)
+    metadata = await make_datasource_metadata(xngin_session)
     user = tables.User(
         id="user_" + secrets.token_hex(8), email=PRIVILEGED_EMAIL, is_privileged=True
     )
     user.organizations.append(metadata.org)
     xngin_session.add(user)
-    xngin_session.commit()
+    await xngin_session.commit()
     return metadata
 
 
-def make_datasource_metadata(
-    xngin_session,
+async def make_datasource_metadata(
+    xngin_session: AsyncSession,
     datasource_id: str | None = None,
     name="test ds",
     datasource_id_for_config="testing-remote",
@@ -350,7 +377,7 @@ def make_datasource_metadata(
     kt.datasource = datasource
 
     xngin_session.add_all([org, datasource, kt])
-    xngin_session.commit()
+    await xngin_session.commit()
     return DatasourceMetadata(
         ds=datasource,
         dsn=datasource.get_config().to_sqlalchemy_url().render_as_string(False),

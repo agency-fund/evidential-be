@@ -3,7 +3,6 @@ from collections.abc import Callable
 from sqlalchemy import update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import Session
 
 from xngin.apiserver.models import tables
 from xngin.apiserver.settings import SheetRef

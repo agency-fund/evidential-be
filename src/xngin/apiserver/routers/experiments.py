@@ -20,11 +20,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from xngin.apiserver import constants
 from xngin.apiserver.dependencies import (
-    async_datasource_dependency,
     async_experiment_dependency,
     async_xngin_db_session,
     gsheet_cache,
     random_seed_dependency,
+)
+from xngin.apiserver.dependencies import (
+    datasource_dependency as async_datasource_dependency,
 )
 from xngin.apiserver.dwh.queries import query_for_participants
 from xngin.apiserver.exceptions_common import LateValidationError
@@ -193,7 +195,9 @@ async def get_experiment_sl(
 ) -> GetExperimentResponse:
     converter = ExperimentStorageConverter(experiment)
     balance_check = converter.get_balance_check()
-    assign_summary = await get_assign_summary(xngin_session, experiment.id, balance_check)
+    assign_summary = await get_assign_summary(
+        xngin_session, experiment.id, balance_check
+    )
     return converter.get_experiment_response(assign_summary)
 
 

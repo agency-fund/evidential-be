@@ -4,10 +4,10 @@ from typing import Annotated
 import sqlalchemy
 from fastapi import APIRouter, Depends, FastAPI, HTTPException, Request
 from loguru import logger
-from sqlalchemy.orm.session import Session
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from xngin.apiserver import constants
-from xngin.apiserver.dependencies import settings_dependency, xngin_db_session
+from xngin.apiserver.dependencies import async_xngin_db_session, settings_dependency
 from xngin.apiserver.settings import XnginSettings
 
 
@@ -21,10 +21,12 @@ router = APIRouter(lifespan=lifespan, prefix="/_healthchecks", dependencies=[])
 
 
 @router.get("/db")
-def healthcheck_db(session: Annotated[Session, Depends(xngin_db_session)]):
+async def healthcheck_db(
+    session: Annotated[AsyncSession, Depends(async_xngin_db_session)],
+):
     """Endpoint to confirm that we can make a connection to the database and issue a query."""
-    now = session.execute(
-        sqlalchemy.select(sqlalchemy.sql.func.now())
+    now = (
+        await session.execute(sqlalchemy.select(sqlalchemy.sql.func.now()))
     ).scalar_one_or_none()
     return {"status": "ok", "db_time": now}
 

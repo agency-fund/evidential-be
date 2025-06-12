@@ -10,7 +10,7 @@ from numpy.random import MT19937, RandomState
 from pydantic import TypeAdapter
 from sqlalchemy import Boolean, Column, MetaData, String, Table, select
 from sqlalchemy.dialects import postgresql
-from sqlalchemy.orm import Session
+from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.schema import CreateTable
 
 from xngin.apiserver import conftest
@@ -161,8 +161,8 @@ def make_insertable_experiment(
     return experiment, experiment_converter.get_design_spec()
 
 
-def insert_experiment_and_arms(
-    xngin_session: Session,
+async def insert_experiment_and_arms(
+    xngin_session: AsyncSession,
     datasource: tables.Datasource,
     experiment_type: ExperimentType = "preassigned",
     state=ExperimentState.COMMITTED,
@@ -179,7 +179,7 @@ def insert_experiment_and_arms(
     if end_date is not None:
         experiment.end_date = end_date
     xngin_session.add(experiment)
-    xngin_session.commit()
+    await xngin_session.commit()
     return experiment
 
 
@@ -223,8 +223,11 @@ def make_sample_data(n=100):
     ]
 
 
-def test_create_experiment_impl_for_preassigned(
-    xngin_session, testing_datasource, sample_table, use_deterministic_random
+async def test_create_experiment_impl_for_preassigned(
+    xngin_session: AsyncSession,
+    testing_datasource,
+    sample_table,
+    use_deterministic_random,
 ):
     """Test implementation of creating a preassigned experiment."""
     participants = make_sample_data(n=100)
@@ -275,11 +278,9 @@ def test_create_experiment_impl_for_preassigned(
     assert response.assign_summary.balance_check.balance_ok is True
 
     # Verify database state using the ids in the returned DesignSpec.
-    experiment: tables.Experiment = xngin_session.scalars(
-        select(tables.Experiment).where(
-            tables.Experiment.id == response.design_spec.experiment_id
-        )
-    ).one()
+    experiment = await xngin_session.get(
+        tables.Experiment, response.design_spec.experiment_id
+    )
     assert experiment.experiment_type == "preassigned"
     assert experiment.participant_type == request.design_spec.participant_type
     assert experiment.name == request.design_spec.experiment_name
@@ -338,7 +339,7 @@ def test_create_experiment_impl_for_preassigned(
     assert abs(num_control - num_treat) <= 1
 
 
-def test_create_experiment_impl_for_online(
+async def test_create_experiment_impl_for_online(
     xngin_session, testing_datasource, sample_table, use_deterministic_random
 ):
     """Test implementation of creating an online experiment."""
@@ -381,11 +382,9 @@ def test_create_experiment_impl_for_online(
     assert all(arm_size.size == 0 for arm_size in response.assign_summary.arm_sizes)
 
     # Verify database state
-    experiment: tables.Experiment = xngin_session.scalars(
-        select(tables.Experiment).where(
-            tables.Experiment.id == response.design_spec.experiment_id
-        )
-    ).one()
+    experiment = experiment = await xngin_session.get(
+        tables.Experiment, response.design_spec.experiment_id
+    )
     assert experiment.experiment_type == "online"
     assert experiment.participant_type == request.design_spec.participant_type
     assert experiment.name == request.design_spec.experiment_name

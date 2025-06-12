@@ -1385,7 +1385,9 @@ async def get_experiment_assignments(
     user: Annotated[tables.User, Depends(user_from_token)],
 ) -> experiments_api_types.GetExperimentAssignmentsResponse:
     ds = await get_datasource_or_raise(session, user, datasource_id)
-    experiment = await get_experiment_via_ds_or_raise(session, ds, experiment_id)
+    experiment = await get_experiment_via_ds_or_raise(
+        session, ds, experiment_id, preload=[tables.Experiment.arm_assignments]
+    )
     return experiments_common.get_experiment_assignments_impl(experiment)
 
 

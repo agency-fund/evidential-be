@@ -3,7 +3,6 @@ from pathlib import Path
 
 from sqlalchemy import create_engine, event
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
-from sqlalchemy.orm import sessionmaker
 
 from xngin.apiserver import flags
 from xngin.apiserver.models import tables
