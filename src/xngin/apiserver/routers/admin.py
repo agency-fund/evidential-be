@@ -172,10 +172,10 @@ async def user_from_token(
 
     This may raise a 400, 401, or 403.
     """
-    result = await session.execute(
+    result = await session.scalars(
         select(tables.User).filter(tables.User.email == token_info.email)
     )
-    user = result.scalars().first()
+    user = result.first()
     if user:
         return user
 
@@ -295,8 +295,8 @@ async def list_organizations(
         .join(tables.Organization.users)
         .where(tables.User.id == user.id)
     )
-    result = await session.execute(stmt)
-    organizations = result.scalars().all()
+    result = await session.scalars(stmt)
+    organizations = result.all()
 
     return ListOrganizationsResponse(
         items=[
@@ -371,8 +371,8 @@ async def list_organization_webhooks(
 
     # Query for webhooks
     stmt = select(tables.Webhook).where(tables.Webhook.organization_id == org.id)
-    result = await session.execute(stmt)
-    webhooks = result.scalars().all()
+    result = await session.scalars(stmt)
+    webhooks = result.all()
 
     # Convert webhooks to WebhookSummary objects
     webhook_summaries = convert_webhooks_to_webhooksummaries(webhooks)
@@ -440,8 +440,8 @@ async def list_organization_events(
         .order_by(tables.Event.created_at.desc())
         .limit(200)
     )
-    result = await session.execute(stmt)
-    events = result.scalars().all()
+    result = await session.scalars(stmt)
+    events = result.all()
 
     event_summaries = convert_events_to_eventsummaries(events)
     return ListOrganizationEventsResponse(items=event_summaries)
@@ -493,10 +493,10 @@ async def add_member_to_organization(
         _authz_check = await get_organization_or_raise(session, user, organization_id)
 
     # Add the new member
-    result = await session.execute(
+    result = await session.scalars(
         select(tables.User).filter(tables.User.email == body.email)
     )
-    new_user = result.scalars().first()
+    new_user = result.first()
     if not new_user:
         new_user = tables.User(email=body.email)
         session.add(new_user)
@@ -582,14 +582,14 @@ async def get_organization(
         .join(tables.UserOrganization)
         .filter(tables.UserOrganization.organization_id == organization_id)
     )
-    users_result = await session.execute(users_stmt)
-    users = users_result.scalars().all()
+    users_result = await session.scalars(users_stmt)
+    users = users_result.all()
 
     datasources_stmt = select(tables.Datasource).filter(
         tables.Datasource.organization_id == organization_id
     )
-    datasources_result = await session.execute(datasources_stmt)
-    datasources = datasources_result.scalars().all()
+    datasources_result = await session.scalars(datasources_stmt)
+    datasources = datasources_result.all()
 
     return GetOrganizationResponse(
         id=org.id,
@@ -630,8 +630,8 @@ async def list_organization_datasources(
     if organization_id is not None:
         stmt = stmt.where(tables.Organization.id == organization_id)
 
-    result = await session.execute(stmt)
-    datasources = result.scalars().all()
+    result = await session.scalars(stmt)
+    datasources = result.all()
 
     def convert_ds_to_summary(ds: tables.Datasource) -> DatasourceSummary:
         config = ds.get_config()
