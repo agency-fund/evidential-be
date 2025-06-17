@@ -35,9 +35,7 @@ from xngin.apiserver.dependencies import (
 from xngin.apiserver.dns import safe_resolve
 from xngin.apiserver.models import tables
 from xngin.apiserver.routers import oidc_dependencies
-from xngin.apiserver.routers.oidc_dependencies import (
-    PRIVILEGED_EMAIL,
-)
+from xngin.apiserver.routers.oidc_dependencies import PRIVILEGED_EMAIL
 from xngin.apiserver.settings import ParticipantsDef, SettingsForTesting, XnginSettings
 from xngin.apiserver.testing.pg_helpers import create_database_if_not_exists_pg
 from xngin.db_extensions import custom_functions
