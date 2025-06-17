@@ -20,7 +20,6 @@ from xngin.apiserver.routers import (
     healthchecks,
     oidc,
     oidc_dependencies,
-    proxy_mgmt_api,
     stateless_api,
 )
 from xngin.apiserver.settings import get_settings_for_server
@@ -82,11 +81,6 @@ app.include_router(experiments.router, tags=["Experiment Integration"])
 
 app.include_router(
     stateless_api.router,
-    tags=["Stateless Experiment Design"],
-)
-
-app.include_router(
-    proxy_mgmt_api.router,
     tags=["Stateless Experiment Design"],
 )
 
