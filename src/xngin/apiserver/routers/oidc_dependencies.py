@@ -114,7 +114,7 @@ async def get_google_configuration() -> GoogleOidcConfig:
                         "config object does not have a jwks_uri field"
                     )
                 jwks_response = await _fetch_object_200(client, jwks_url)
-                if not isinstance(jwks_response, dict) or not jwks_response.get("keys"):
+                if not jwks_response.get("keys"):
                     raise GoogleOidcError(
                         "JWKS response does not contain keys in expected format"
                     )
