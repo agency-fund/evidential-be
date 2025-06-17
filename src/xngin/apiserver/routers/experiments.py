@@ -132,13 +132,13 @@ async def create_experiment_with_assignment_sl(
 async def get_experiment_or_raise(
     xngin_session: AsyncSession, experiment_id: str, datasource_id: str
 ):
-    result = await xngin_session.execute(
+    result = await xngin_session.scalars(
         select(tables.Experiment).where(
             tables.Experiment.id == experiment_id,
             tables.Experiment.datasource_id == datasource_id,
         )
     )
-    experiment = result.scalars().one_or_none()
+    experiment = result.one_or_none()
     if experiment is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail="Experiment not found"

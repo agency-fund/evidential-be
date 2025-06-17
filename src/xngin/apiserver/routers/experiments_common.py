@@ -287,8 +287,7 @@ async def list_organization_experiments_impl(
         )
         .order_by(tables.Experiment.start_date.desc())
     )
-    result = await xngin_session.execute(stmt)
-    experiments = result.scalars().all()
+    experiments = await xngin_session.scalars(stmt)
     items = []
     for e in experiments:
         converter = ExperimentStorageConverter(e)
@@ -314,8 +313,7 @@ async def list_experiments_impl(
         )
         .order_by(tables.Experiment.created_at.desc())
     )
-    result = await xngin_session.execute(stmt)
-    experiments = result.scalars().all()
+    experiments = await xngin_session.scalars(stmt)
     items = []
     for e in experiments:
         converter = ExperimentStorageConverter(e)
@@ -536,13 +534,12 @@ async def get_assign_summary(
         .where(tables.ArmAssignment.experiment_id == experiment_id)
         .group_by(tables.ArmAssignment.arm_id, tables.ArmTable.name)
     )
-    rows = result.all()
     arm_sizes = [
         ArmSize(
             arm=Arm(arm_id=arm_id, arm_name=name),
             size=count,
         )
-        for arm_id, name, count in rows
+        for arm_id, name, count in result
     ]
     return AssignSummary(
         balance_check=balance_check,

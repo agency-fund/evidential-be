@@ -443,7 +443,7 @@ def test_is_nullable(testcase, dwh_session, use_deterministic_random):
     table = SampleNullableTable.get_table()
     filters = create_query_filters(table, testcase.filters)
     q = compose_query(table, testcase.chosen_n, filters)
-    query_results = dwh_session.execute(q).all()
+    query_results = dwh_session.execute(q)
     assert list(sorted([r.id for r in query_results])) == list(
         sorted(r.id for r in testcase.matches)
     ), testcase
@@ -599,7 +599,7 @@ def test_relations(testcase, dwh_session, use_deterministic_random):
     ]
     filters = create_query_filters(SampleTable.get_table(), testcase.filters)
     q = compose_query(SampleTable.get_table(), testcase.chosen_n, filters)
-    query_results = dwh_session.execute(q).all()
+    query_results = dwh_session.execute(q)
     assert list(sorted([r.id for r in query_results])) == list(
         sorted(r.id for r in testcase.matches)
     ), testcase

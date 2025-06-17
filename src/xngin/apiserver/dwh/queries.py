@@ -149,7 +149,7 @@ def get_participant_metrics(
     )
     participant_filter = create_one_filter(participant_id_filter, sa_table)
     query = select(*select_columns).filter(participant_filter)
-    results = session.execute(query).all()
+    results = session.execute(query)
 
     participant_outcomes: list[ParticipantOutcome] = []
     for result in results:

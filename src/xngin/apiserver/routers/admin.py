@@ -294,9 +294,9 @@ async def list_organizations(
         select(tables.Organization)
         .join(tables.Organization.users)
         .where(tables.User.id == user.id)
+        .order_by(tables.Organization.name)
     )
-    result = await session.scalars(stmt)
-    organizations = result.all()
+    organizations = await session.scalars(stmt)
 
     return ListOrganizationsResponse(
         items=[
@@ -304,7 +304,7 @@ async def list_organizations(
                 id=org.id,
                 name=org.name,
             )
-            for org in sorted(organizations, key=lambda o: o.name)
+            for org in organizations
         ]
     )
 
@@ -371,8 +371,7 @@ async def list_organization_webhooks(
 
     # Query for webhooks
     stmt = select(tables.Webhook).where(tables.Webhook.organization_id == org.id)
-    result = await session.scalars(stmt)
-    webhooks = result.all()
+    webhooks = await session.scalars(stmt)
 
     # Convert webhooks to WebhookSummary objects
     webhook_summaries = convert_webhooks_to_webhooksummaries(webhooks)
@@ -440,8 +439,7 @@ async def list_organization_events(
         .order_by(tables.Event.created_at.desc())
         .limit(200)
     )
-    result = await session.scalars(stmt)
-    events = result.all()
+    events = await session.scalars(stmt)
 
     event_summaries = convert_events_to_eventsummaries(events)
     return ListOrganizationEventsResponse(items=event_summaries)
@@ -582,14 +580,12 @@ async def get_organization(
         .join(tables.UserOrganization)
         .filter(tables.UserOrganization.organization_id == organization_id)
     )
-    users_result = await session.scalars(users_stmt)
-    users = users_result.all()
+    users = await session.scalars(users_stmt)
 
     datasources_stmt = select(tables.Datasource).filter(
         tables.Datasource.organization_id == organization_id
     )
-    datasources_result = await session.scalars(datasources_stmt)
-    datasources = datasources_result.all()
+    datasources = await session.scalars(datasources_stmt)
 
     return GetOrganizationResponse(
         id=org.id,
@@ -630,8 +626,7 @@ async def list_organization_datasources(
     if organization_id is not None:
         stmt = stmt.where(tables.Organization.id == organization_id)
 
-    result = await session.scalars(stmt)
-    datasources = result.all()
+    datasources = await session.scalars(stmt)
 
     def convert_ds_to_summary(ds: tables.Datasource) -> DatasourceSummary:
         config = ds.get_config()
