@@ -60,14 +60,6 @@ class DbType(enum.StrEnum):
                 return cast(Dialect, bigquery_dialect())
         assert_never(self)
 
-    def is_supported_dwh(self) -> bool:
-        """Returns True if this DbType is supported as a DWH backend."""
-        return self in {DbType.RS, DbType.PG, DbType.BQ}
-
-    def is_supported_appdb(self) -> bool:
-        """Returns True if this DbType is supported as an app database."""
-        return self == DbType.PG
-
 
 @dataclass
 class TestUriInfo:
@@ -95,7 +87,7 @@ def get_test_appdb_info() -> TestUriInfo:
     if not connection_uri:
         raise ValueError("XNGIN_TEST_APPDB_URI must be set")
     info = get_test_uri_info(connection_uri)
-    if not info.db_type.is_supported_appdb():
+    if info.db_type != DbType.PG:
         raise ValueError(
             f"{info.db_type} is not a supported app database: {connection_uri}"
         )
@@ -110,10 +102,7 @@ def get_test_dwh_info() -> TestUriInfo:
     connection_uri = os.environ.get("XNGIN_TEST_DWH_URI", "")
     if not connection_uri:
         raise ValueError("XNGIN_TEST_DWH_URI must be set.")
-    info = get_test_uri_info(connection_uri)
-    if not info.db_type.is_supported_dwh():
-        raise ValueError(f"{info.db_type} is not a supported DWH: {connection_uri}")
-    return info
+    return get_test_uri_info(connection_uri)
 
 
 @pytest.fixture(scope="session", autouse=True)
@@ -156,11 +145,7 @@ def get_test_uri_info(connection_uri: str) -> TestUriInfo:
 def make_engine():
     """Returns a SQLA engine for XNGIN_TEST_APPDB_URI; db will be created if it does not exist."""
     appdb_info = get_test_appdb_info()
-    match appdb_info.db_type:
-        case DbType.PG:
-            create_database_if_not_exists_pg(appdb_info.connect_url)
-        case _:
-            raise ValueError("XNGIN_TEST_APPDB_URI must be postgres.")
+    create_database_if_not_exists_pg(appdb_info.connect_url)
     db_engine = sqlalchemy.create_engine(
         appdb_info.connect_url,
         logging_name=SA_LOGGER_NAME_FOR_APP,
