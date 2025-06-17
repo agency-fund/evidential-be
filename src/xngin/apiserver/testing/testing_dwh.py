@@ -7,6 +7,7 @@ import hashlib
 from pathlib import Path
 
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm.session import Session
 
 from xngin.apiserver.models import tables
 from xngin.apiserver.settings import Dsn, RemoteDatabaseConfig
@@ -26,7 +27,7 @@ def compact_hash(path: Path):
 
 
 def create_user_and_first_datasource(
-    session: AsyncSession, *, email: str, dsn: str | None, privileged: bool
+    session: Session | AsyncSession, *, email: str, dsn: str | None, privileged: bool
 ):
     """Creates a User with an organization, a datasource, and a participant type.
 
