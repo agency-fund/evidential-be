@@ -29,7 +29,7 @@ env:
   FORCE_COLOR: "1"
   PYTHONUNBUFFERED: "1"
 
-  # Tests should never connect to this DSN but it (or XNGIN_DB) must be set.
+  # Tests should never connect to this DSN but it must be set.
   DATABASE_URL: "postgresql://fail:fail@127.0.0.2:5499/fail"
 
   # Server startup will fail without these values being set.
