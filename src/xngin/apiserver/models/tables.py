@@ -435,7 +435,7 @@ class Experiment(Base):
         back_populates="experiment", cascade="all, delete-orphan", lazy="raise"
     )
     arms: Mapped[list["ArmTable"]] = relationship(
-        back_populates="experiment", cascade="all, delete-orphan", lazy="raise"
+        back_populates="experiment", cascade="all, delete-orphan"
     )
     datasource: Mapped["Datasource"] = relationship(back_populates="experiments")
 
