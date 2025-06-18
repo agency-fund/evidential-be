@@ -15,7 +15,7 @@ from sqlalchemy import StaticPool, make_url
 from sqlalchemy.dialects.postgresql import psycopg
 from sqlalchemy.engine.interfaces import Dialect
 from sqlalchemy.engine.url import URL
-from sqlalchemy.orm import sessionmaker
+from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy_bigquery import dialect as bigquery_dialect
 
 from xngin.apiserver import database, flags
@@ -265,7 +265,7 @@ class DatasourceMetadata:
 
 
 @pytest.fixture(name="testing_datasource", scope="function")
-def fixture_testing_datasource(xngin_session) -> DatasourceMetadata:
+def fixture_testing_datasource(xngin_session: Session) -> DatasourceMetadata:
     """
     Generates a new Organization, Datasource, and API key for a test.
 
@@ -278,7 +278,7 @@ def fixture_testing_datasource(xngin_session) -> DatasourceMetadata:
 
 
 @pytest.fixture(name="testing_datasource_with_user", scope="function")
-def fixture_testing_datasource_with_user(xngin_session) -> DatasourceMetadata:
+def fixture_testing_datasource_with_user(xngin_session: Session) -> DatasourceMetadata:
     """
     Generates a new Organization, Datasource, and API key. Adds our privileged user to the org.
     """
@@ -293,7 +293,8 @@ def fixture_testing_datasource_with_user(xngin_session) -> DatasourceMetadata:
 
 
 def make_datasource_metadata(
-    xngin_session,
+    xngin_session: Session,
+    *,
     datasource_id: str | None = None,
     name="test ds",
     datasource_id_for_config="testing-remote",
