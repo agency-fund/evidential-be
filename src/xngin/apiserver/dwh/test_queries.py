@@ -186,7 +186,6 @@ def fixture_dwh_session():
     dwh_info = get_test_dwh_info()
     connect_url = dwh_info.connect_url
     db_type = dwh_info.db_type
-    connect_args = dwh_info.connect_args
 
     default_url = make_url(connect_url)._replace(database=None)
     temporary_database_name = None
@@ -196,7 +195,6 @@ def fixture_dwh_session():
         temporary_database_name = f"fixture_dwh_session_{secrets.token_hex(16)}"
         default_engine = create_engine(
             default_url,
-            connect_args=connect_args,
             echo=flags.ECHO_SQL,
             logging_name=SA_LOGGER_NAME_FOR_DWH,
             poolclass=sqlalchemy.pool.NullPool,
@@ -219,7 +217,6 @@ def fixture_dwh_session():
     engine = create_engine(
         connect_url,
         logging_name=SA_LOGGER_NAME_FOR_DWH,
-        connect_args=connect_args,
         echo=flags.ECHO_SQL,
         execution_options={"logging_token": SA_LOGGING_PREFIX_FOR_DWH},
     )
@@ -249,7 +246,6 @@ def fixture_dwh_session():
             default_url,
             logging_name=SA_LOGGER_NAME_FOR_DWH,
             execution_options={"logging_token": SA_LOGGING_PREFIX_FOR_DWH},
-            connect_args=connect_args,
             echo=flags.ECHO_SQL,
             poolclass=sqlalchemy.pool.NullPool,
         )

@@ -6,7 +6,7 @@ import secrets
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
-from typing import Any, assert_never, cast
+from typing import assert_never, cast
 
 import pytest
 import sqlalchemy
@@ -67,7 +67,6 @@ class TestUriInfo:
 
     connect_url: URL
     db_type: DbType
-    connect_args: dict[str, Any]
 
 
 def get_settings_for_test() -> XnginSettings:
@@ -82,7 +81,7 @@ def get_settings_for_test() -> XnginSettings:
 
 
 def get_test_appdb_info() -> TestUriInfo:
-    """Use this for tests of our application db, e.g. for caching user table confgs."""
+    """Gets the DSN of the application database to use in tests."""
     connection_uri = os.environ.get("XNGIN_TEST_APPDB_URI", "")
     if not connection_uri:
         raise ValueError("XNGIN_TEST_APPDB_URI must be set")
@@ -95,7 +94,7 @@ def get_test_appdb_info() -> TestUriInfo:
 
 
 def get_test_dwh_info() -> TestUriInfo:
-    """Use this for tests that skip settings.json and directly connect to a simulated DWH.
+    """Gets the DSN of the testing data warehouse to use in tests.
 
     See xngin.apiserver.dwh.test_queries.fixture_dwh_session.
     """
@@ -126,7 +125,6 @@ def allow_connecting_to_private_ips():
 
 def get_test_uri_info(connection_uri: str) -> TestUriInfo:
     """Returns a TestUriInfo dataclass about a test database given its connection_uri."""
-    connect_args: dict[str, Any] = {}
     if connection_uri.startswith("bigquery"):
         dbtype = DbType.BQ
     elif "redshift.amazonaws.com" in connection_uri:
@@ -137,9 +135,7 @@ def get_test_uri_info(connection_uri: str) -> TestUriInfo:
         raise ValueError(
             f"connection_uri is not recognized as a BigQuery, Redshift, or Postgres database: {connection_uri}"
         )
-    return TestUriInfo(
-        connect_url=make_url(connection_uri), db_type=dbtype, connect_args=connect_args
-    )
+    return TestUriInfo(connect_url=make_url(connection_uri), db_type=dbtype)
 
 
 def make_engine():
@@ -150,7 +146,6 @@ def make_engine():
         appdb_info.connect_url,
         logging_name=SA_LOGGER_NAME_FOR_APP,
         execution_options={"logging_token": "app"},
-        connect_args=appdb_info.connect_args,
         poolclass=StaticPool,
         echo=flags.ECHO_SQL_APP_DB,
     )
