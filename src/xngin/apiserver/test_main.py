@@ -11,7 +11,6 @@ from xngin.apiserver.settings import (
     infer_table,
 )
 
-conftest.setup(app)
 client = TestClient(app)
 
 

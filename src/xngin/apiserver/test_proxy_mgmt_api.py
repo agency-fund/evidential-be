@@ -3,7 +3,7 @@ from pathlib import Path
 
 from fastapi.testclient import TestClient
 
-from xngin.apiserver import conftest, constants
+from xngin.apiserver import constants
 from xngin.apiserver.main import app
 from xngin.apiserver.routers.proxy_mgmt_api_types import (
     WebhookResponse,
@@ -13,7 +13,6 @@ from xngin.apiserver.routers.stateless_api_types import (
 )
 from xngin.apiserver.testing.xurl import Xurl
 
-conftest.setup(app)
 client = TestClient(app)
 client.base_url = client.base_url.join(constants.API_PREFIX_V1)
 

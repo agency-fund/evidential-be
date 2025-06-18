@@ -26,6 +26,7 @@ from xngin.apiserver.dependencies import (
     xngin_db_session,
 )
 from xngin.apiserver.dns import safe_resolve
+from xngin.apiserver.main import app
 from xngin.apiserver.models import tables
 from xngin.apiserver.routers.oidc_dependencies import PRIVILEGED_EMAIL
 from xngin.apiserver.settings import ParticipantsDef, SettingsForTesting, XnginSettings
@@ -172,7 +173,8 @@ def get_test_sessionmaker(db_engine: sqlalchemy.engine.Engine):
     return get_db_for_test
 
 
-def setup(app):
+@pytest.fixture(autouse=True)
+def fixture_override_app_dependencies():
     """Configures FastAPI dependencies for testing."""
     # https://fastapi.tiangolo.com/advanced/testing-dependencies/#use-the-appdependency_overrides-attribute
     app.dependency_overrides[xngin_db_session] = get_test_sessionmaker(make_engine())

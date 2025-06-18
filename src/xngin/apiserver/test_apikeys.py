@@ -1,12 +1,12 @@
 from fastapi.testclient import TestClient
 
-from xngin.apiserver import conftest, constants
+from xngin.apiserver import constants
 from xngin.apiserver.main import app
 
 # CONFIG_ID_SECURED refers to a datasource defined in xngin.testing.settings.json
 CONFIG_ID_SECURED = "testing-secured"
 
-conftest.setup(app)
+
 client = TestClient(app)
 client.base_url = client.base_url.join(constants.API_PREFIX_V1)
 

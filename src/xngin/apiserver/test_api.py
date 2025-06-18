@@ -22,7 +22,6 @@ from xngin.apiserver.settings import ParticipantsDef
 from xngin.apiserver.testing.assertions import assert_same
 from xngin.apiserver.testing.xurl import Xurl
 
-conftest.setup(app)
 client = TestClient(app)
 client.base_url = client.base_url.join(constants.API_PREFIX_V1)
 

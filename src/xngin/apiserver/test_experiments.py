@@ -23,7 +23,6 @@ from xngin.apiserver.test_experiments_common import (  # pylint: disable=unused-
     make_create_preassigned_experiment_request,
 )
 
-conftest.setup(app)
 client = TestClient(app)
 client.base_url = client.base_url.join(constants.API_PREFIX_V1)
 

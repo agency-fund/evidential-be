@@ -80,7 +80,7 @@ SAMPLE_GCLOUD_SERVICE_ACCOUNT_KEY = {
     "universe_domain": "googleapis.com",
 }
 
-conftest.setup(app)
+
 client = TestClient(app)
 
 pget = partial(
