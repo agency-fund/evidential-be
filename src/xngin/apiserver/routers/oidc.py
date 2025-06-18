@@ -9,7 +9,11 @@ from loguru import logger
 from pydantic import BaseModel, Field
 
 from xngin.apiserver import constants, flags
-from xngin.apiserver.routers.oidc_dependencies import get_google_configuration
+from xngin.apiserver.dependencies import retrying_httpx_dependency
+from xngin.apiserver.routers.oidc_dependencies import (
+    GoogleOidcConfig,
+    get_google_configuration,
+)
 
 
 class OidcMisconfiguredError(Exception):
@@ -59,30 +63,34 @@ async def auth_callback(
     code_verifier: Annotated[
         str, Query(min_length=43, max_length=128, pattern=r"^[A-Za-z0-9._~-]+$")
     ],
-    oidc_config: Annotated[dict, Depends(get_google_configuration)],
+    oidc_config: Annotated[GoogleOidcConfig, Depends(get_google_configuration)],
+    httpx_client: Annotated[httpx.AsyncClient, Depends(retrying_httpx_dependency)],
 ) -> CallbackResponse:
     """OAuth callback endpoint that exchanges the authorization code for tokens, and returns the id_token to the client.
 
     Only relevant for PKCE.
     """
-    async with httpx.AsyncClient() as client:
-        token_endpoint = oidc_config["token_endpoint"]
-        token_response = await client.post(
-            token_endpoint,
-            data={
-                "client_id": flags.CLIENT_ID,
-                # client_secret is not strictly required by PKCE spec but Google requires it.
-                "client_secret": flags.CLIENT_SECRET,
-                "code": code,
-                "code_verifier": code_verifier,
-                "redirect_uri": flags.OIDC_REDIRECT_URI,
-                "grant_type": "authorization_code",
-            },
+    token_endpoint = oidc_config.config["token_endpoint"]
+    token_response = await httpx_client.post(
+        token_endpoint,
+        data={
+            "client_id": flags.CLIENT_ID,
+            # client_secret is not strictly required by PKCE spec but Google requires it.
+            "client_secret": flags.CLIENT_SECRET,
+            "code": code,
+            "code_verifier": code_verifier,
+            "redirect_uri": flags.OIDC_REDIRECT_URI,
+            "grant_type": "authorization_code",
+        },
+    )
+    if token_response.status_code != 200:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Unexpected status code from token endpoint: {token_response.status_code}",
         )
-        token_response.raise_for_status()
-        response = token_response.json()
-        if not isinstance(response, dict) or response.get("id_token") is None:
-            raise HTTPException(
-                status_code=500, detail=f"Unexpected response from {token_endpoint}"
-            )
-        return CallbackResponse(id_token=response.get("id_token"))
+    response = token_response.json()
+    if not isinstance(response, dict) or response.get("id_token") is None:
+        raise HTTPException(
+            status_code=500, detail=f"Unexpected response from {token_endpoint}"
+        )
+    return CallbackResponse(id_token=response.get("id_token"))
