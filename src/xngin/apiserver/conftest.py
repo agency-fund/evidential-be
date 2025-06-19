@@ -5,6 +5,7 @@ import os
 import secrets
 from dataclasses import dataclass
 from datetime import datetime
+from functools import partial
 from pathlib import Path
 from typing import assert_never, cast
 
@@ -17,8 +18,9 @@ from sqlalchemy.engine.interfaces import Dialect
 from sqlalchemy.engine.url import URL
 from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy_bigquery import dialect as bigquery_dialect
+from starlette.testclient import TestClient
 
-from xngin.apiserver import database, flags
+from xngin.apiserver import constants, database, flags
 from xngin.apiserver.apikeys import hash_key_or_raise, make_key
 from xngin.apiserver.dependencies import (
     random_seed_dependency,
@@ -28,7 +30,11 @@ from xngin.apiserver.dependencies import (
 from xngin.apiserver.dns import safe_resolve
 from xngin.apiserver.main import app
 from xngin.apiserver.models import tables
-from xngin.apiserver.routers.oidc_dependencies import PRIVILEGED_EMAIL
+from xngin.apiserver.routers.oidc_dependencies import (
+    PRIVILEGED_EMAIL,
+    PRIVILEGED_TOKEN_FOR_TESTING,
+    UNPRIVILEGED_TOKEN_FOR_TESTING,
+)
 from xngin.apiserver.settings import ParticipantsDef, SettingsForTesting, XnginSettings
 from xngin.apiserver.testing.pg_helpers import create_database_if_not_exists_pg
 from xngin.db_extensions import custom_functions
@@ -173,13 +179,71 @@ def get_test_sessionmaker(db_engine: sqlalchemy.engine.Engine):
     return get_db_for_test
 
 
-@pytest.fixture(autouse=True)
+@pytest.fixture(scope="session", autouse=True)
 def fixture_override_app_dependencies():
     """Configures FastAPI dependencies for testing."""
     # https://fastapi.tiangolo.com/advanced/testing-dependencies/#use-the-appdependency_overrides-attribute
     app.dependency_overrides[xngin_db_session] = get_test_sessionmaker(make_engine())
     app.dependency_overrides[settings_dependency] = get_settings_for_test
     app.dependency_overrides[random_seed_dependency] = get_random_seed_for_test
+
+
+@pytest.fixture(scope="session", name="client")
+def fixture_client():
+    return TestClient(app)
+
+
+@pytest.fixture(scope="session", name="client_v1")
+def fixture_client_v1():
+    client = TestClient(app)
+    client.base_url = client.base_url.join(constants.API_PREFIX_V1)
+    return client
+
+
+@pytest.fixture(scope="session", name="pget")
+def fixture_pget(client):
+    return partial(
+        client.get, headers={"Authorization": f"Bearer {PRIVILEGED_TOKEN_FOR_TESTING}"}
+    )
+
+
+@pytest.fixture(scope="session", name="ppost")
+def fixture_ppost(client):
+    return partial(
+        client.post, headers={"Authorization": f"Bearer {PRIVILEGED_TOKEN_FOR_TESTING}"}
+    )
+
+
+@pytest.fixture(scope="session", name="ppatch")
+def fixture_ppatch(client):
+    return partial(
+        client.patch,
+        headers={"Authorization": f"Bearer {PRIVILEGED_TOKEN_FOR_TESTING}"},
+    )
+
+
+@pytest.fixture(scope="session", name="pdelete")
+def fixture_pdelete(client):
+    return partial(
+        client.delete,
+        headers={"Authorization": f"Bearer {PRIVILEGED_TOKEN_FOR_TESTING}"},
+    )
+
+
+@pytest.fixture(scope="session", name="udelete")
+def fixture_udelete(client):
+    return partial(
+        client.delete,
+        headers={"Authorization": f"Bearer {UNPRIVILEGED_TOKEN_FOR_TESTING}"},
+    )
+
+
+@pytest.fixture(scope="session", name="uget")
+def fixture_uget(client):
+    return partial(
+        client.get,
+        headers={"Authorization": f"Bearer {UNPRIVILEGED_TOKEN_FOR_TESTING}"},
+    )
 
 
 @pytest.fixture(scope="session", name="test_engine")
