@@ -425,9 +425,7 @@ def test_webhook_lifecycle(testing_datasource_with_user_added):
     assert webhooks[0]["auth_token"] == original_auth_token
 
     # Regenerate the auth token
-    response = ppost(
-        f"/v1/m/organizations/{org_id}/webhooks/{webhook_id}/authtoken"
-    )
+    response = ppost(f"/v1/m/organizations/{org_id}/webhooks/{webhook_id}/authtoken")
     assert response.status_code == 204, response.content
 
     # List webhooks to verify auth token was changed
@@ -463,9 +461,7 @@ def test_webhook_lifecycle(testing_datasource_with_user_added):
     assert len(webhooks) == 0
 
     # Try to regenerate auth token for a non-existent webhook
-    response = ppost(
-        f"/v1/m/organizations/{org_id}/webhooks/{webhook_id}/authtoken"
-    )
+    response = ppost(f"/v1/m/organizations/{org_id}/webhooks/{webhook_id}/authtoken")
     assert response.status_code == 404, response.content
 
     # Try to update a non-existent webhook
