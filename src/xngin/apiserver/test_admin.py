@@ -413,6 +413,7 @@ def test_webhook_lifecycle(testing_datasource_with_user_added):
     assert webhook_data["url"] == "https://example.com/webhook"
     assert webhook_data["auth_token"] is not None
     webhook_id = webhook_data["id"]
+    original_auth_token = webhook_data["auth_token"]
 
     # List webhooks to verify creation
     response = pget(f"/v1/m/organizations/{org_id}/webhooks")
@@ -421,6 +422,21 @@ def test_webhook_lifecycle(testing_datasource_with_user_added):
     assert len(webhooks) == 1
     assert webhooks[0]["id"] == webhook_id
     assert webhooks[0]["url"] == "https://example.com/webhook"
+    assert webhooks[0]["auth_token"] == original_auth_token
+
+    # Regenerate the auth token
+    response = ppost(
+        f"/v1/m/organizations/{org_id}/webhooks/{webhook_id}/authtoken"
+    )
+    assert response.status_code == 204, response.content
+
+    # List webhooks to verify auth token was changed
+    response = pget(f"/v1/m/organizations/{org_id}/webhooks")
+    assert response.status_code == 200, response.content
+    webhooks = response.json()["items"]
+    assert len(webhooks) == 1
+    assert webhooks[0]["auth_token"] != original_auth_token
+    assert webhooks[0]["auth_token"] is not None
 
     # Update the webhook URL
     new_url = "https://updated-example.com/webhook"
@@ -445,6 +461,12 @@ def test_webhook_lifecycle(testing_datasource_with_user_added):
     assert response.status_code == 200, response.content
     webhooks = response.json()["items"]
     assert len(webhooks) == 0
+
+    # Try to regenerate auth token for a non-existent webhook
+    response = ppost(
+        f"/v1/m/organizations/{org_id}/webhooks/{webhook_id}/authtoken"
+    )
+    assert response.status_code == 404, response.content
 
     # Try to update a non-existent webhook
     response = ppatch(
