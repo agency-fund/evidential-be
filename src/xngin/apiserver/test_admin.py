@@ -1,17 +1,14 @@
 import base64
 import json
 from datetime import UTC, datetime, timedelta
-from functools import partial
 
 import pytest
 from fastapi import HTTPException
-from fastapi.testclient import TestClient
 from pydantic import SecretStr
 from sqlalchemy import select
 
 from xngin.apiserver import conftest, flags
 from xngin.apiserver.dns import safe_resolve
-from xngin.apiserver.main import app
 from xngin.apiserver.models import tables
 from xngin.apiserver.models.enums import ExperimentState, StopAssignmentReason
 from xngin.apiserver.routers import oidc_dependencies
@@ -63,6 +60,7 @@ from xngin.apiserver.test_experiments_common import (
     make_createexperimentrequest_json,
     make_insertable_experiment,
 )
+from xngin.apiserver.testing.assertions import assert_dates_equal
 from xngin.cli.main import create_testing_dwh
 from xngin.schema.schema_types import FieldDescriptor, ParticipantsSchema
 
@@ -79,28 +77,6 @@ SAMPLE_GCLOUD_SERVICE_ACCOUNT_KEY = {
     "type": "service_account",
     "universe_domain": "googleapis.com",
 }
-
-conftest.setup(app)
-client = TestClient(app)
-
-pget = partial(
-    client.get, headers={"Authorization": f"Bearer {PRIVILEGED_TOKEN_FOR_TESTING}"}
-)
-ppost = partial(
-    client.post, headers={"Authorization": f"Bearer {PRIVILEGED_TOKEN_FOR_TESTING}"}
-)
-ppatch = partial(
-    client.patch, headers={"Authorization": f"Bearer {PRIVILEGED_TOKEN_FOR_TESTING}"}
-)
-pdelete = partial(
-    client.delete, headers={"Authorization": f"Bearer {PRIVILEGED_TOKEN_FOR_TESTING}"}
-)
-udelete = partial(
-    client.delete, headers={"Authorization": f"Bearer {UNPRIVILEGED_TOKEN_FOR_TESTING}"}
-)
-uget = partial(
-    client.get, headers={"Authorization": f"Bearer {UNPRIVILEGED_TOKEN_FOR_TESTING}"}
-)
 
 
 @pytest.fixture(autouse=True)
@@ -139,7 +115,9 @@ def fixture_testing_datasource_with_inline_schema(xngin_session):
 
 
 @pytest.fixture(name="testing_datasource_with_user_added")
-def fixture_testing_datasource_with_user_added(testing_datasource_with_inline_schema):
+def fixture_testing_datasource_with_user_added(
+    testing_datasource_with_inline_schema, ppost
+):
     """Add the privileged user to the test ds's organization so we can access the ds."""
     response = ppost(
         f"/v1/m/organizations/{testing_datasource_with_inline_schema.org.id}/members",
@@ -150,7 +128,7 @@ def fixture_testing_datasource_with_user_added(testing_datasource_with_inline_sc
 
 
 @pytest.fixture(name="testing_sheet_datasource_with_user_added")
-def fixture_testing_sheet_datasource_with_user_added(testing_datasource):
+def fixture_testing_sheet_datasource_with_user_added(testing_datasource, ppost):
     """
     Add the privileged user to the test ds's organization so we can access the ds.
     This uses a sheet participant type; most tests should use testing_datasource_with_user_added.
@@ -213,12 +191,12 @@ def test_user_from_token(xngin_session):
     flags.AIRPLANE_MODE,
     reason="This test will fail in airplane mode because airplane mode treats all Admin API calls as authenticated.",
 )
-def test_list_orgs_unauthenticated():
+def test_list_orgs_unauthenticated(client):
     response = client.get("/v1/m/organizations")
     assert response.status_code == 403, response.content
 
 
-def test_list_orgs_privileged():
+def test_list_orgs_privileged(pget):
     response = pget("/v1/m/organizations")
     assert response.status_code == 200, response.content
 
@@ -227,12 +205,12 @@ def test_list_orgs_privileged():
     flags.AIRPLANE_MODE,
     reason="This test will fail in airplane mode because airplane mode treats all Admin API calls as authenticated.",
 )
-def test_list_orgs_unprivileged():
+def test_list_orgs_unprivileged(uget):
     response = uget("/v1/m/organizations")
     assert response.status_code == 403, response.content
 
 
-def test_create_datasource_invalid_dns(testing_datasource):
+def test_create_datasource_invalid_dns(testing_datasource, ppost):
     """Tests that we reject insecure hostnames with a 400."""
     response = ppost(
         f"/v1/m/organizations/{testing_datasource.org.id}/members",
@@ -260,7 +238,7 @@ def test_create_datasource_invalid_dns(testing_datasource):
     assert "DNS resolution failed" in str(response.content)
 
 
-def test_add_member_to_org(testing_datasource):
+def test_add_member_to_org(testing_datasource, ppost):
     """Test adding a user to an org."""
     # Add privileged user to existing organization
     response = ppost(
@@ -277,7 +255,7 @@ def test_add_member_to_org(testing_datasource):
     assert response.status_code == 204, response.content
 
 
-def test_list_orgs(testing_datasource_with_user):
+def test_list_orgs(testing_datasource_with_user, pget):
     """Test listing the orgs the user is a member of."""
     response = pget("/v1/m/organizations")
     assert response.status_code == 200, response.content
@@ -288,7 +266,7 @@ def test_list_orgs(testing_datasource_with_user):
     assert response_json["items"][0]["name"] == "test organization"
 
 
-def test_list_orgs_with_new_privileged_user():
+def test_list_orgs_with_new_privileged_user(pget):
     """Test listing the orgs of a new privileged user."""
     response = pget("/v1/m/organizations")
     assert response.status_code == 200, response.content
@@ -296,7 +274,7 @@ def test_list_orgs_with_new_privileged_user():
     assert response.json()["items"][0]["name"] == "My Organization"
 
 
-def test_datasource_lifecycle(testing_datasource_with_user):
+def test_datasource_lifecycle(testing_datasource_with_user, ppost, pget, ppatch):
     """Test creating, listing, updating a datasource."""
     org_id = testing_datasource_with_user.org.id
 
@@ -381,7 +359,7 @@ def test_datasource_lifecycle(testing_datasource_with_user):
     )
 
 
-def test_delete_datasource(testing_datasource_with_user):
+def test_delete_datasource(testing_datasource_with_user, udelete, pdelete):
     """Test deleting a datasource a few different ways."""
     ds_id = testing_datasource_with_user.ds.id
 
@@ -398,7 +376,9 @@ def test_delete_datasource(testing_datasource_with_user):
     assert response.status_code == 204, response.content
 
 
-def test_webhook_lifecycle(testing_datasource_with_user_added):
+def test_webhook_lifecycle(
+    testing_datasource_with_user_added, pdelete, ppost, ppatch, pget
+):
     """Test creating, updating, and deleting a webhook."""
     org_id = testing_datasource_with_user_added.org.id
 
@@ -458,7 +438,9 @@ def test_webhook_lifecycle(testing_datasource_with_user_added):
     assert response.status_code == 404, response.content
 
 
-def test_participants_lifecycle(testing_datasource_with_user):
+def test_participants_lifecycle(
+    testing_datasource_with_user, pget, ppost, ppatch, pdelete
+):
     """Test getting, creating, listing, updating, and deleting a participant type."""
     ds_id = testing_datasource_with_user.ds.id
 
@@ -550,7 +532,7 @@ def test_participants_lifecycle(testing_datasource_with_user):
     assert response.status_code == 404, response.content
 
 
-def test_create_participants_type_invalid(testing_datasource):
+def test_create_participants_type_invalid(testing_datasource, ppost):
     response = ppost(
         f"/v1/m/datasources/{testing_datasource.ds.id}/participants",
         content=CreateParticipantsTypeRequest.model_construct(
@@ -577,7 +559,7 @@ def test_create_participants_type_invalid(testing_datasource):
     )
 
 
-def test_lifecycle_with_db(testing_datasource):
+def test_lifecycle_with_db(testing_datasource, ppost, pget, pdelete):
     """Exercises the admin API methods that require an external database."""
     # Add the privileged user to the organization.
     response = ppost(
@@ -773,8 +755,7 @@ def test_lifecycle_with_db(testing_datasource):
 
 
 def test_create_experiment_with_assignment_validation_errors(
-    testing_datasource_with_user_added,
-    testing_sheet_datasource_with_user_added,
+    testing_datasource_with_user_added, testing_sheet_datasource_with_user_added, ppost
 ):
     """Test LateValidationError cases in create_experiment_with_assignment."""
     testing_datasource = testing_datasource_with_user_added
@@ -804,7 +785,7 @@ def test_create_experiment_with_assignment_validation_errors(
 
 
 def test_create_preassigned_experiment_using_inline_schema_ds(
-    xngin_session, testing_datasource_with_user_added, use_deterministic_random
+    xngin_session, testing_datasource_with_user_added, use_deterministic_random, ppost
 ):
     datasource_id = testing_datasource_with_user_added.ds.id
     request_obj = make_create_preassigned_experiment_request()
@@ -858,10 +839,8 @@ def test_create_preassigned_experiment_using_inline_schema_ds(
     assert experiment.participant_type == "test_participant_type"
     assert experiment.name == request_obj.design_spec.experiment_name
     assert experiment.description == request_obj.design_spec.description
-    assert conftest.dates_equal(
-        experiment.start_date, request_obj.design_spec.start_date
-    )
-    assert conftest.dates_equal(experiment.end_date, request_obj.design_spec.end_date)
+    assert_dates_equal(experiment.start_date, request_obj.design_spec.start_date)
+    assert_dates_equal(experiment.end_date, request_obj.design_spec.end_date)
     # Verify assignments were created
     assignments = xngin_session.scalars(
         select(tables.ArmAssignment).where(
@@ -887,7 +866,7 @@ def test_create_preassigned_experiment_using_inline_schema_ds(
 
 
 def test_create_online_experiment_using_inline_schema_ds(
-    testing_datasource_with_user_added, use_deterministic_random
+    testing_datasource_with_user_added, use_deterministic_random, ppost
 ):
     datasource_id = testing_datasource_with_user_added.ds.id
     request_obj = make_create_online_experiment_request()
@@ -926,7 +905,9 @@ def test_create_online_experiment_using_inline_schema_ds(
     assert actual_design_spec == request_obj.design_spec
 
 
-def test_get_experiment_assignment_for_preassigned_participant(testing_experiment):
+def test_get_experiment_assignment_for_preassigned_participant(
+    testing_experiment, pget
+):
     datasource_id = testing_experiment.datasource_id
     experiment_id = testing_experiment.id
     assignments = testing_experiment.arm_assignments
@@ -955,7 +936,7 @@ def test_get_experiment_assignment_for_preassigned_participant(testing_experimen
 
 
 def test_get_experiment_assignment_for_online_participant(
-    xngin_session, testing_datasource_with_user_added
+    xngin_session, testing_datasource_with_user_added, pget
 ):
     testing_experiment = insert_experiment_and_arms(
         xngin_session, testing_datasource_with_user_added.ds, "online"
@@ -1011,7 +992,7 @@ def test_get_experiment_assignment_for_online_participant(
 
 
 def test_get_experiment_assignment_for_online_participant_past_end_date(
-    xngin_session, testing_datasource_with_user_added
+    xngin_session, testing_datasource_with_user_added, pget
 ):
     testing_experiment = insert_experiment_and_arms(
         xngin_session,
@@ -1041,7 +1022,7 @@ def test_get_experiment_assignment_for_online_participant_past_end_date(
     )
 
 
-def test_experiments_analyze(testing_experiment):
+def test_experiments_analyze(testing_experiment, pget):
     datasource_id = testing_experiment.datasource_id
     experiment_id = testing_experiment.id
 
@@ -1072,7 +1053,7 @@ def test_experiments_analyze(testing_experiment):
 
 
 def test_experiments_analyze_for_experiment_with_no_participants(
-    xngin_session, testing_datasource_with_user_added
+    xngin_session, testing_datasource_with_user_added, pget
 ):
     testing_experiment = insert_experiment_and_arms(
         xngin_session, testing_datasource_with_user_added.ds, "online"
@@ -1107,6 +1088,7 @@ def test_admin_experiment_state_setting(
     initial_state,
     expected_status,
     expected_detail,
+    ppost,
 ):
     # Initialize our state with an existing experiment who's state we want to modify.
     datasource = testing_datasource_with_user_added.ds

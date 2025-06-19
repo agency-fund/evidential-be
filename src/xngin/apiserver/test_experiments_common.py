@@ -42,6 +42,7 @@ from xngin.apiserver.routers.stateless_api_types import (
     PowerResponse,
     Stratum,
 )
+from xngin.apiserver.testing.assertions import assert_dates_equal
 
 
 @pytest.fixture(autouse=True)
@@ -287,8 +288,8 @@ def test_create_experiment_impl_for_preassigned(
     assert experiment.state == ExperimentState.ASSIGNED
     assert experiment.datasource_id == testing_datasource.ds.id
     # This comparison is dependent on whether the db can store tz or not (sqlite does not).
-    assert conftest.dates_equal(experiment.start_date, request.design_spec.start_date)
-    assert conftest.dates_equal(experiment.end_date, request.design_spec.end_date)
+    assert_dates_equal(experiment.start_date, request.design_spec.start_date)
+    assert_dates_equal(experiment.end_date, request.design_spec.end_date)
     # Verify stats parameters were stored correctly
     assert experiment.power == request.design_spec.power
     assert experiment.alpha == request.design_spec.alpha
@@ -393,8 +394,8 @@ def test_create_experiment_impl_for_online(
     # Online experiments still go through a review step before being committed
     assert experiment.state == ExperimentState.ASSIGNED
     assert experiment.datasource_id == testing_datasource.ds.id
-    assert conftest.dates_equal(experiment.start_date, request.design_spec.start_date)
-    assert conftest.dates_equal(experiment.end_date, request.design_spec.end_date)
+    assert_dates_equal(experiment.start_date, request.design_spec.start_date)
+    assert_dates_equal(experiment.end_date, request.design_spec.end_date)
     # Verify stats parameters were stored correctly
     assert experiment.power == request.design_spec.power
     assert experiment.alpha == request.design_spec.alpha
