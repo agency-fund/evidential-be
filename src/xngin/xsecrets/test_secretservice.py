@@ -2,9 +2,16 @@ import base64
 import json
 
 import pytest
+from tink import TinkError
 
+from xngin.xsecrets import local_provider
 from xngin.xsecrets.constants import SERIALIZED_ENCRYPTED_VALUE_PREFIX
-from xngin.xsecrets.secretservice import _deserialize, _serialize  # noqa: PLC2701
+from xngin.xsecrets.provider import Registry
+from xngin.xsecrets.secretservice import (
+    SecretService,
+    _deserialize,  # noqa: PLC2701
+    _serialize,  # noqa: PLC2701
+)
 
 
 def test_serialize_basic():
@@ -124,3 +131,101 @@ def test_deserialize_invalid_structure():
     ])
     with pytest.raises(ValueError, match="does not match expected format"):
         _deserialize(invalid_serialized)
+
+
+SAMPLE_TINK_KEY = base64.standard_b64encode(
+    json.dumps({
+        "primaryKeyId": 791033902,
+        "key": [
+            {
+                "keyData": {
+                    "typeUrl": "type.googleapis.com/google.crypto.tink.AesGcmKey",
+                    "value": "GhBkcDg+TK2y1NiO/jPT6P96",
+                    "keyMaterialType": "SYMMETRIC",
+                },
+                "status": "ENABLED",
+                "keyId": 791033902,
+                "outputPrefixType": "TINK",
+            }
+        ],
+    }).encode("utf-8")
+).decode("utf-8")
+
+
+@pytest.fixture
+def secretservice():
+    registry = Registry()
+    local_provider.initialize(registry, static_key=SAMPLE_TINK_KEY)
+    return SecretService(registry.get("local"), registry)
+
+
+def test_secretservice_encrypt_decrypt(secretservice):
+    """Test that SecretService can encrypt and decrypt values."""
+    plaintext = "This is a secret value"
+    aad = "test_context"
+
+    # Encrypt the value
+    encrypted = secretservice.encrypt(plaintext, aad)
+
+    # Verify it has the expected format
+    assert encrypted.startswith(SERIALIZED_ENCRYPTED_VALUE_PREFIX)
+
+    # Decrypt the value
+    decrypted = secretservice.decrypt(encrypted, aad)
+
+    # Verify we got the original plaintext back
+    assert decrypted == plaintext
+
+
+def test_secretservice_encrypt_decrypt_with_unicode(secretservice):
+    """Test that SecretService can handle Unicode characters."""
+    plaintext = "Unicode text with emojis 😀🔑🌍 and special chars €£¥"
+    aad = "unicode_test"
+
+    encrypted = secretservice.encrypt(plaintext, aad)
+    decrypted = secretservice.decrypt(encrypted, aad)
+
+    assert decrypted == plaintext
+
+
+def test_secretservice_decrypt_unencrypted_value(secretservice):
+    """Test that SecretService.decrypt returns unencrypted values as-is."""
+    plaintext = "This is not an encrypted value"
+    aad = "any_context"
+
+    # Since the value doesn't have the prefix, it should be returned as-is
+    result = secretservice.decrypt(plaintext, aad)
+
+    assert result == plaintext
+
+
+def test_secretservice_decrypt_with_wrong_aad(secretservice):
+    """Test that decryption fails when using the wrong AAD."""
+    plaintext = "Secret message"
+    correct_aad = "correct_context"
+    wrong_aad = "wrong_context"
+
+    encrypted = secretservice.encrypt(plaintext, correct_aad)
+
+    # Attempting to decrypt with the wrong AAD should raise an exception
+    with pytest.raises(TinkError):
+        secretservice.decrypt(encrypted, wrong_aad)
+
+
+def test_secretservice_provider_selection(secretservice):
+    """Test that SecretService uses the correct provider based on the serialized data."""
+    # The fixture uses the LocalProvider
+    plaintext = "Test provider selection"
+    aad = "provider_test"
+
+    encrypted = secretservice.encrypt(plaintext, aad)
+
+    # Verify the provider name in the serialized data
+    _, serialized_json = encrypted.split(SERIALIZED_ENCRYPTED_VALUE_PREFIX, 1)
+    data = json.loads(serialized_json)
+
+    # The provider name should be "local"
+    assert data[0][0] == "local"
+
+    # Decryption should work
+    assert secretservice.decrypt(encrypted, aad) == plaintext

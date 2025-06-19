@@ -10,15 +10,18 @@ from xngin.xsecrets.provider import Provider, Registry
 NAME = "local"
 
 
-def initialize(registry: Registry):
-    if key := os.environ.get(constants.ENV_XNGIN_SECRETS_TINK_KEYSET):
+def initialize(registry: Registry, *, static_key: str | None = None):
+    key = os.environ.get(constants.ENV_XNGIN_SECRETS_TINK_KEYSET)
+    if static_key:
+        key = static_key
+    if key:
         aead.register()
         instance = LocalProvider(key)
         registry.register(instance.name(), instance)
 
 
 class LocalProvider(Provider):
-    def __init__(self, key):
+    def __init__(self, key: str):
         key = base64.standard_b64decode(key).decode("utf-8")
         keyset_handle = tink.json_proto_keyset_format.parse(
             key, secret_key_access.TOKEN
