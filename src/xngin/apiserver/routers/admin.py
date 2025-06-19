@@ -379,16 +379,19 @@ def update_organization_webhook(
     org = get_organization_or_raise(session, user, organization_id)
 
     # Find the webhook
-    webhook = session.query(tables.Webhook).filter(
-        tables.Webhook.id == webhook_id,
-        tables.Webhook.organization_id == org.id
-    ).first()
-    
+    webhook = (
+        session.query(tables.Webhook)
+        .filter(
+            tables.Webhook.id == webhook_id, tables.Webhook.organization_id == org.id
+        )
+        .first()
+    )
+
     if webhook is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail="Webhook not found"
         )
-    
+
     # Update the webhook URL
     webhook.url = body.url
     session.commit()
