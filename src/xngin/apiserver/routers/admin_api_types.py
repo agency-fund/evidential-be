@@ -133,6 +133,11 @@ class WebhookSummary(AdminApiBaseModel):
     ]
 
 
+class UpdateOrganizationWebhookRequest(AdminApiBaseModel):
+    """Request to update a webhook's URL."""
+    url: Annotated[str, Field(max_length=MAX_LENGTH_OF_WEBHOOK_URL_VALUE)]
+
+
 class ListWebhooksResponse(AdminApiBaseModel):
     items: list[WebhookSummary]
 
