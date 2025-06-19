@@ -1,4 +1,5 @@
 import base64
+import json
 import os
 from typing import Optional
 
@@ -53,7 +54,13 @@ def setup():
 
 def _serialize(backend: str, ciphertext: bytes):
     """Serializes the encrypted secret as a string."""
-    return f"{SERIALIZED_ENCRYPTED_VALUE_PREFIX}{backend}:{base64.standard_b64encode(ciphertext).decode()}"
+    serialized = json.dumps(
+        [
+            [backend, base64.standard_b64encode(ciphertext).decode()],
+        ],
+        separators=(",", ":"),
+    )
+    return f"{SERIALIZED_ENCRYPTED_VALUE_PREFIX}{serialized}"
 
 
 def _deserialize(serialized: str) -> (str, bytes):
@@ -62,11 +69,20 @@ def _deserialize(serialized: str) -> (str, bytes):
     if len(serialized) < len(prefix) or not serialized.startswith(prefix):
         raise ValueError(f"String must start with '{prefix}' prefix")
     start_pos = len(prefix)
-    separator_pos = serialized.find(":", start_pos)
-    if separator_pos == -1:
-        raise ValueError("Missing separator colon between kms and ciphertext")
-    kms = serialized[start_pos:separator_pos]
-    ciphertext = serialized[separator_pos + 1 :]
+    try:
+        arr = json.loads(serialized[start_pos:])
+    except json.decoder.JSONDecodeError as exc:
+        raise ValueError(
+            "Serialized encrypted data does not match expected format."
+        ) from exc
+    if not isinstance(arr, list) or not (
+        len(arr) > 0
+        and isinstance(arr[0], list)
+        and len(arr[0]) == 2
+        and all(isinstance(v, str) for v in arr[0])
+    ):
+        raise ValueError("Serialized encrypted data does not match expected format.")
+    kms, ciphertext = arr[0][0], arr[0][1]
     return kms, base64.standard_b64decode(ciphertext)
 
 

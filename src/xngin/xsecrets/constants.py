@@ -17,5 +17,4 @@ ENV_XNGIN_SECRETS_TINK_KEYSET = "XNGIN_SECRETS_TINK_KEYSET"
 
 # Serialized ciphertexts are prefixed with this value so that it is easily recognizable as
 # an encrypted value similar to the ${secret:ENV} syntax we use in the static JSON settings files.
-# There is no trailing "}" on the serialized value.
-SERIALIZED_ENCRYPTED_VALUE_PREFIX = "${secret:x:"
+SERIALIZED_ENCRYPTED_VALUE_PREFIX = "$secret$:"
