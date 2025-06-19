@@ -532,7 +532,7 @@ def test_where(testcase: WhereTestCase):
     # When adding new cases, we want to cover all of our target databases, so provide some default
     # values to compare against. This makes it easier to add new supported backends (and port
     # existing tests).
-    for variant in [dbtype for dbtype in DbType if dbtype.is_supported_dwh()]:
+    for variant in DbType:
         if variant not in testcase.where:
             testcase.where[variant] = ""
 

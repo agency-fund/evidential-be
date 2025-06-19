@@ -106,6 +106,13 @@ async def httpx_dependency():
         yield client
 
 
+async def retrying_httpx_dependency():
+    """Returns a new httpx client that will retry on connection errors"""
+    transport = httpx.AsyncHTTPTransport(retries=2)
+    async with httpx.AsyncClient(transport=transport, timeout=15.0) as client:
+        yield client
+
+
 async def experiment_dependency(
     experiment_id: Annotated[
         str, Path(..., description="The ID of the experiment to fetch.")

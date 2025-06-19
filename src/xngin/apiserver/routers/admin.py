@@ -65,6 +65,7 @@ from xngin.apiserver.routers.admin_api_types import (
     OrganizationSummary,
     UpdateDatasourceRequest,
     UpdateOrganizationRequest,
+    UpdateOrganizationWebhookRequest,
     UpdateParticipantsTypeRequest,
     UpdateParticipantsTypeResponse,
     UserSummary,
@@ -389,6 +390,75 @@ def convert_webhooks_to_webhooksummaries(webhooks):
         )
         for webhook in webhooks
     ]
+
+
+@router.patch(
+    "/organizations/{organization_id}/webhooks/{webhook_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+)
+def update_organization_webhook(
+    organization_id: str,
+    webhook_id: str,
+    session: Annotated[Session, Depends(xngin_db_session)],
+    user: Annotated[tables.User, Depends(user_from_token)],
+    body: Annotated[UpdateOrganizationWebhookRequest, Body(...)],
+):
+    """Updates a webhook's URL in an organization."""
+    # Verify user has access to the organization
+    org = get_organization_or_raise(session, user, organization_id)
+
+    # Find the webhook
+    webhook = (
+        session.query(tables.Webhook)
+        .filter(
+            tables.Webhook.id == webhook_id, tables.Webhook.organization_id == org.id
+        )
+        .first()
+    )
+
+    if webhook is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Webhook not found"
+        )
+
+    # Update the webhook URL
+    webhook.url = body.url
+    session.commit()
+    return GENERIC_SUCCESS
+
+
+@router.post(
+    "/organizations/{organization_id}/webhooks/{webhook_id}/authtoken",
+    status_code=status.HTTP_204_NO_CONTENT,
+)
+def regenerate_webhook_auth_token(
+    organization_id: str,
+    webhook_id: str,
+    session: Annotated[Session, Depends(xngin_db_session)],
+    user: Annotated[tables.User, Depends(user_from_token)],
+):
+    """Regenerates the auth token for a webhook in an organization."""
+    # Verify user has access to the organization
+    org = get_organization_or_raise(session, user, organization_id)
+
+    # Find the webhook
+    webhook = (
+        session.query(tables.Webhook)
+        .filter(
+            tables.Webhook.id == webhook_id, tables.Webhook.organization_id == org.id
+        )
+        .first()
+    )
+
+    if webhook is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Webhook not found"
+        )
+
+    # Generate a new secure auth token
+    webhook.auth_token = secrets.token_hex(16)
+    session.commit()
+    return GENERIC_SUCCESS
 
 
 @router.delete(
