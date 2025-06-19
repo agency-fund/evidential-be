@@ -396,25 +396,26 @@ def convert_webhooks_to_webhooksummaries(webhooks):
     "/organizations/{organization_id}/webhooks/{webhook_id}",
     status_code=status.HTTP_204_NO_CONTENT,
 )
-def update_organization_webhook(
+async def update_organization_webhook(
     organization_id: str,
     webhook_id: str,
-    session: Annotated[Session, Depends(xngin_db_session)],
+    session: Annotated[AsyncSession, Depends(xngin_db_session)],
     user: Annotated[tables.User, Depends(user_from_token)],
     body: Annotated[UpdateOrganizationWebhookRequest, Body(...)],
 ):
     """Updates a webhook's URL in an organization."""
     # Verify user has access to the organization
-    org = get_organization_or_raise(session, user, organization_id)
+    org = await get_organization_or_raise(session, user, organization_id)
 
     # Find the webhook
     webhook = (
-        session.query(tables.Webhook)
-        .filter(
-            tables.Webhook.id == webhook_id, tables.Webhook.organization_id == org.id
+        await session.execute(
+            select(tables.Webhook).filter(
+                tables.Webhook.id == webhook_id,
+                tables.Webhook.organization_id == org.id,
+            )
         )
-        .first()
-    )
+    ).scalar_one_or_none()
 
     if webhook is None:
         raise HTTPException(
@@ -423,7 +424,7 @@ def update_organization_webhook(
 
     # Update the webhook URL
     webhook.url = body.url
-    session.commit()
+    await session.commit()
     return GENERIC_SUCCESS
 
 
@@ -431,24 +432,25 @@ def update_organization_webhook(
     "/organizations/{organization_id}/webhooks/{webhook_id}/authtoken",
     status_code=status.HTTP_204_NO_CONTENT,
 )
-def regenerate_webhook_auth_token(
+async def regenerate_webhook_auth_token(
     organization_id: str,
     webhook_id: str,
-    session: Annotated[Session, Depends(xngin_db_session)],
+    session: Annotated[AsyncSession, Depends(xngin_db_session)],
     user: Annotated[tables.User, Depends(user_from_token)],
 ):
     """Regenerates the auth token for a webhook in an organization."""
     # Verify user has access to the organization
-    org = get_organization_or_raise(session, user, organization_id)
+    org = await get_organization_or_raise(session, user, organization_id)
 
     # Find the webhook
     webhook = (
-        session.query(tables.Webhook)
-        .filter(
-            tables.Webhook.id == webhook_id, tables.Webhook.organization_id == org.id
+        await session.execute(
+            select(tables.Webhook).filter(
+                tables.Webhook.id == webhook_id,
+                tables.Webhook.organization_id == org.id,
+            )
         )
-        .first()
-    )
+    ).scalar_one_or_none()
 
     if webhook is None:
         raise HTTPException(
@@ -457,7 +459,7 @@ def regenerate_webhook_auth_token(
 
     # Generate a new secure auth token
     webhook.auth_token = secrets.token_hex(16)
-    session.commit()
+    await session.commit()
     return GENERIC_SUCCESS
 
 

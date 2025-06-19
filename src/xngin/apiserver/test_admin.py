@@ -389,7 +389,7 @@ def test_delete_datasource(testing_datasource_with_user, udelete, pdelete):
     assert response.status_code == 204, response.content
 
 
-def test_webhook_lifecycle(
+async def test_webhook_lifecycle(
     testing_datasource_with_user_added, pdelete, ppost, ppatch, pget
 ):
     """Test creating, updating, and deleting a webhook."""
