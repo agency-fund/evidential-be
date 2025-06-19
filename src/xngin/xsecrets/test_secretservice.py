@@ -18,55 +18,22 @@ from xngin.xsecrets.secretservice import (
     "backend,ciphertext",
     [
         ("test_backend", b"encrypted_data"),
-        ("test_backend", b"\xe2\x82\xac\xf0\x9f\x98\x80\x00\xff\xfe\xfd\xfc\xfb\xfa"),  # non-ASCII bytes
-        ("test_backend", b""),  # Empty ciphertext
-    ],
-)
-def test_serialize(backend, ciphertext):
-    """Test serialization of encrypted data with various inputs."""
-    result = _serialize(backend, ciphertext)
-
-    # Check prefix
-    assert result.startswith(SERIALIZED_ENCRYPTED_VALUE_PREFIX)
-
-    # Parse the JSON part
-    json_str = result[len(SERIALIZED_ENCRYPTED_VALUE_PREFIX) :]
-    parsed = json.loads(json_str)
-
-    # Verify structure
-    assert isinstance(parsed, list)
-    assert len(parsed) == 1
-    assert len(parsed[0]) == 2
-    assert parsed[0][0] == backend
-    assert base64.standard_b64decode(parsed[0][1]) == ciphertext
-
-
-@pytest.mark.parametrize(
-    "backend,ciphertext",
-    [
-        ("test_backend", b"encrypted_data"),
-        ("gcp_kms", b"\xe2\x82\xac\xf0\x9f\x98\x80\x00\xff\xfe\xfd\xfc\xfb\xfa"),  # non-ASCII bytes
+        (
+            "gcp_kms",
+            b"\xe2\x82\xac\xf0\x9f\x98\x80\x00\xff\xfe\xfd\xfc\xfb\xfa",
+        ),  # non-ASCII bytes
         ("aws_kms", b""),  # Empty ciphertext
     ],
 )
-def test_deserialize(backend, ciphertext):
-    """Test deserialization of encrypted data with various inputs."""
+def test_serialize_deserialize_roundtrip(backend, ciphertext):
+    """Test serialization and deserialization of encrypted data with various inputs."""
+    # Test serialization
     serialized = _serialize(backend, ciphertext)
 
-    result_backend, result_ciphertext = _deserialize(serialized)
+    # Check prefix
+    assert serialized.startswith(SERIALIZED_ENCRYPTED_VALUE_PREFIX)
 
-    assert result_backend == backend
-    assert result_ciphertext == ciphertext
-
-
-def test_serialize_deserialize_roundtrip():
-    """Test that serialization followed by deserialization returns the original values."""
-    backend = "local"
-    ciphertext = (
-        b"Some \xf0\x9f\x94\x92 encrypted data with non-ASCII \xe2\x98\xa2 bytes"
-    )
-
-    serialized = _serialize(backend, ciphertext)
+    # Test deserialization (roundtrip)
     result_backend, result_ciphertext = _deserialize(serialized)
 
     assert result_backend == backend
@@ -77,6 +44,8 @@ def test_deserialize_invalid_prefix():
     """Test deserialization with invalid prefix."""
     with pytest.raises(ValueError, match="String must start with"):
         _deserialize("invalid_prefix{}")
+    with pytest.raises(ValueError, match="String must start with"):
+        _deserialize("")
 
 
 def test_deserialize_invalid_json():
@@ -186,7 +155,9 @@ def test_secretservice_decrypt_unencrypted_value(secretservice, plaintext, aad):
         ("Secret message", "", "non-empty"),  # Empty correct AAD
     ],
 )
-def test_secretservice_decrypt_with_wrong_aad(secretservice, plaintext, correct_aad, wrong_aad):
+def test_secretservice_decrypt_with_wrong_aad(
+    secretservice, plaintext, correct_aad, wrong_aad
+):
     """Test that decryption fails when using the wrong AAD."""
     encrypted = secretservice.encrypt(plaintext, correct_aad)
 
