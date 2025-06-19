@@ -14,11 +14,16 @@ from xngin.xsecrets.secretservice import (
 )
 
 
-def test_serialize_basic():
-    """Test basic serialization of encrypted data."""
-    backend = "test_backend"
-    ciphertext = b"encrypted_data"
-
+@pytest.mark.parametrize(
+    "backend,ciphertext",
+    [
+        ("test_backend", b"encrypted_data"),
+        ("test_backend", b"\xe2\x82\xac\xf0\x9f\x98\x80\x00\xff\xfe\xfd\xfc\xfb\xfa"),  # non-ASCII bytes
+        ("test_backend", b""),  # Empty ciphertext
+    ],
+)
+def test_serialize(backend, ciphertext):
+    """Test serialization of encrypted data with various inputs."""
     result = _serialize(backend, ciphertext)
 
     # Check prefix
@@ -36,43 +41,16 @@ def test_serialize_basic():
     assert base64.standard_b64decode(parsed[0][1]) == ciphertext
 
 
-def test_serialize_with_non_ascii_bytes():
-    """Test serialization with non-ASCII bytes in ciphertext."""
-    backend = "test_backend"
-    # Include various non-ASCII bytes and special characters
-    ciphertext = b"\xe2\x82\xac\xf0\x9f\x98\x80\x00\xff\xfe\xfd\xfc\xfb\xfa"
-
-    result = _serialize(backend, ciphertext)
-
-    # Check prefix
-    assert result.startswith(SERIALIZED_ENCRYPTED_VALUE_PREFIX)
-
-    # Parse the JSON part
-    json_str = result[len(SERIALIZED_ENCRYPTED_VALUE_PREFIX) :]
-    parsed = json.loads(json_str)
-
-    # Verify structure and content
-    assert parsed[0][0] == backend
-    assert base64.standard_b64decode(parsed[0][1]) == ciphertext
-
-
-def test_deserialize_basic():
-    """Test basic deserialization of encrypted data."""
-    backend = "test_backend"
-    ciphertext = b"encrypted_data"
-    serialized = _serialize(backend, ciphertext)
-
-    result_backend, result_ciphertext = _deserialize(serialized)
-
-    assert result_backend == backend
-    assert result_ciphertext == ciphertext
-
-
-def test_deserialize_with_non_ascii_bytes():
-    """Test deserialization with non-ASCII bytes in ciphertext."""
-    backend = "gcp_kms"
-    # Include various non-ASCII bytes and special characters
-    ciphertext = b"\xe2\x82\xac\xf0\x9f\x98\x80\x00\xff\xfe\xfd\xfc\xfb\xfa"
+@pytest.mark.parametrize(
+    "backend,ciphertext",
+    [
+        ("test_backend", b"encrypted_data"),
+        ("gcp_kms", b"\xe2\x82\xac\xf0\x9f\x98\x80\x00\xff\xfe\xfd\xfc\xfb\xfa"),  # non-ASCII bytes
+        ("aws_kms", b""),  # Empty ciphertext
+    ],
+)
+def test_deserialize(backend, ciphertext):
+    """Test deserialization of encrypted data with various inputs."""
     serialized = _serialize(backend, ciphertext)
 
     result_backend, result_ciphertext = _deserialize(serialized)
@@ -159,11 +137,18 @@ def secretservice():
     return SecretService(registry.get("local"), registry)
 
 
-def test_secretservice_encrypt_decrypt(secretservice):
-    """Test that SecretService can encrypt and decrypt values."""
-    plaintext = "This is a secret value"
-    aad = "test_context"
-
+@pytest.mark.parametrize(
+    "plaintext,aad",
+    [
+        ("This is a secret value", "test_context"),
+        ("Unicode text with emojis 😀🔑🌍 and special chars €£¥", "unicode_test"),
+        ("", "empty_plaintext_test"),  # Test with empty plaintext
+        ("non-empty plaintext", ""),  # Test with empty AAD
+        ("", ""),  # Test with both empty
+    ],
+)
+def test_secretservice_encrypt_decrypt(secretservice, plaintext, aad):
+    """Test that SecretService can encrypt and decrypt values with various inputs."""
     # Encrypt the value
     encrypted = secretservice.encrypt(plaintext, aad)
 
@@ -177,34 +162,32 @@ def test_secretservice_encrypt_decrypt(secretservice):
     assert decrypted == plaintext
 
 
-def test_secretservice_encrypt_decrypt_with_unicode(secretservice):
-    """Test that SecretService can handle Unicode characters."""
-    plaintext = "Unicode text with emojis 😀🔑🌍 and special chars €£¥"
-    aad = "unicode_test"
-
-    encrypted = secretservice.encrypt(plaintext, aad)
-    decrypted = secretservice.decrypt(encrypted, aad)
-
-    assert decrypted == plaintext
-
-
-def test_secretservice_decrypt_unencrypted_value(secretservice):
+@pytest.mark.parametrize(
+    "plaintext,aad",
+    [
+        ("This is not an encrypted value", "any_context"),
+        ("", "empty_plaintext_test"),  # Test with empty plaintext
+        ("non-empty plaintext", ""),  # Test with empty AAD
+    ],
+)
+def test_secretservice_decrypt_unencrypted_value(secretservice, plaintext, aad):
     """Test that SecretService.decrypt returns unencrypted values as-is."""
-    plaintext = "This is not an encrypted value"
-    aad = "any_context"
-
     # Since the value doesn't have the prefix, it should be returned as-is
     result = secretservice.decrypt(plaintext, aad)
 
     assert result == plaintext
 
 
-def test_secretservice_decrypt_with_wrong_aad(secretservice):
+@pytest.mark.parametrize(
+    "plaintext,correct_aad,wrong_aad",
+    [
+        ("Secret message", "correct_context", "wrong_context"),
+        ("", "correct_context", "wrong_context"),  # Empty plaintext
+        ("Secret message", "", "non-empty"),  # Empty correct AAD
+    ],
+)
+def test_secretservice_decrypt_with_wrong_aad(secretservice, plaintext, correct_aad, wrong_aad):
     """Test that decryption fails when using the wrong AAD."""
-    plaintext = "Secret message"
-    correct_aad = "correct_context"
-    wrong_aad = "wrong_context"
-
     encrypted = secretservice.encrypt(plaintext, correct_aad)
 
     # Attempting to decrypt with the wrong AAD should raise an exception
