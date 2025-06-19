@@ -7,6 +7,7 @@ import logging
 import re
 import sys
 import uuid
+from enum import StrEnum
 from pathlib import Path
 from typing import Annotated
 
@@ -741,8 +742,20 @@ def add_user(
             raise typer.Exit(1) from err
 
 
+class OutputFormat(StrEnum):
+    base64 = "base64"
+    json = "json"
+
+
 @app.command()
-def create_tink_key():
+def create_tink_key(
+    output: Annotated[
+        OutputFormat,
+        typer.Option(
+            help="Output format. Use base64 when generating a key for use in an environment variable."
+        ),
+    ] = OutputFormat.base64,
+):
     """Generate an encryption key for the "local" secret storage backend.
 
     The encoded encryption keyset (specifically, a Tink keyset with a single key) will be written to stdout. This value
@@ -756,9 +769,13 @@ def create_tink_key():
             tink.json_proto_keyset_format.serialize(
                 keyset_handle, secret_key_access.TOKEN
             )
-        )
+        ),
+        separators=(",", ":"),
     )
-    print(base64.standard_b64encode(keyset.encode("utf-8")).decode("utf-8"))
+    if output == "base64":
+        print(base64.standard_b64encode(keyset.encode("utf-8")).decode("utf-8"))
+    else:
+        print(keyset)
 
 
 @app.command()
