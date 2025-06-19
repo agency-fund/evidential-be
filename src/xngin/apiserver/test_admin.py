@@ -398,6 +398,66 @@ def test_delete_datasource(testing_datasource_with_user):
     assert response.status_code == 204, response.content
 
 
+def test_webhook_lifecycle(testing_datasource_with_user_added):
+    """Test creating, updating, and deleting a webhook."""
+    org_id = testing_datasource_with_user_added.org.id
+
+    # Create a webhook
+    response = ppost(
+        f"/v1/m/organizations/{org_id}/webhooks",
+        json={"type": "experiment.created", "url": "https://example.com/webhook"},
+    )
+    assert response.status_code == 200, response.content
+    webhook_data = response.json()
+    assert webhook_data["type"] == "experiment.created"
+    assert webhook_data["url"] == "https://example.com/webhook"
+    assert webhook_data["auth_token"] is not None
+    webhook_id = webhook_data["id"]
+
+    # List webhooks to verify creation
+    response = pget(f"/v1/m/organizations/{org_id}/webhooks")
+    assert response.status_code == 200, response.content
+    webhooks = response.json()["items"]
+    assert len(webhooks) == 1
+    assert webhooks[0]["id"] == webhook_id
+    assert webhooks[0]["url"] == "https://example.com/webhook"
+
+    # Update the webhook URL
+    new_url = "https://updated-example.com/webhook"
+    response = ppatch(
+        f"/v1/m/organizations/{org_id}/webhooks/{webhook_id}", json={"url": new_url}
+    )
+    assert response.status_code == 204, response.content
+
+    # List webhooks to verify update
+    response = pget(f"/v1/m/organizations/{org_id}/webhooks")
+    assert response.status_code == 200, response.content
+    webhooks = response.json()["items"]
+    assert len(webhooks) == 1
+    assert webhooks[0]["url"] == new_url
+
+    # Delete the webhook
+    response = pdelete(f"/v1/m/organizations/{org_id}/webhooks/{webhook_id}")
+    assert response.status_code == 204, response.content
+
+    # List webhooks to verify deletion
+    response = pget(f"/v1/m/organizations/{org_id}/webhooks")
+    assert response.status_code == 200, response.content
+    webhooks = response.json()["items"]
+    assert len(webhooks) == 0
+
+    # Try to update a non-existent webhook
+    response = ppatch(
+        f"/v1/m/organizations/{org_id}/webhooks/{webhook_id}",
+        json={"url": "https://should-fail.com/webhook"},
+    )
+    assert response.status_code == 404, response.content
+
+    # Try to delete a non-existent webhook
+    response = pdelete(f"/v1/m/organizations/{org_id}/webhooks/{webhook_id}")
+    assert response.status_code == 404, response.content
+
+
 def test_participants_lifecycle(testing_datasource_with_user):
     """Test getting, creating, listing, updating, and deleting a participant type."""
     ds_id = testing_datasource_with_user.ds.id
