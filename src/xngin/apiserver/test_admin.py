@@ -60,6 +60,7 @@ from xngin.apiserver.test_experiments_common import (
     make_createexperimentrequest_json,
     make_insertable_experiment,
 )
+from xngin.apiserver.testing.assertions import assert_dates_equal
 from xngin.cli.main import create_testing_dwh
 from xngin.schema.schema_types import FieldDescriptor, ParticipantsSchema
 
@@ -776,10 +777,8 @@ def test_create_preassigned_experiment_using_inline_schema_ds(
     assert experiment.participant_type == "test_participant_type"
     assert experiment.name == request_obj.design_spec.experiment_name
     assert experiment.description == request_obj.design_spec.description
-    assert conftest.dates_equal(
-        experiment.start_date, request_obj.design_spec.start_date
-    )
-    assert conftest.dates_equal(experiment.end_date, request_obj.design_spec.end_date)
+    assert_dates_equal(experiment.start_date, request_obj.design_spec.start_date)
+    assert_dates_equal(experiment.end_date, request_obj.design_spec.end_date)
     # Verify assignments were created
     assignments = xngin_session.scalars(
         select(tables.ArmAssignment).where(

@@ -4,7 +4,6 @@ import enum
 import os
 import secrets
 from dataclasses import dataclass
-from datetime import datetime
 from functools import partial
 from pathlib import Path
 from typing import assert_never, cast
@@ -403,10 +402,3 @@ def make_datasource_metadata(
         key=key,
         org=org,
     )
-
-
-def dates_equal(db_date: datetime, request_date: datetime):
-    """Compare dates with or without timezone info, honoring the db_date's timezone."""
-    if db_date.tzinfo is None:
-        return db_date == request_date.replace(tzinfo=None)
-    return db_date == request_date
