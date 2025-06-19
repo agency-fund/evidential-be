@@ -266,13 +266,7 @@ def fixture_xngin_db_session(test_engine):
 def ensure_correct_working_directory():
     """Ensures the tests are being run from the root of the repo.
 
-    This is important because the tests generate some temporary data on disk and we want the paths to be right.
-    """
-    cwd_or_raise_unless_running_from_top_directory()
-
-
-def cwd_or_raise_unless_running_from_top_directory():
-    """Helper to manage the current working directory of unit tests.
+    This is important because the tests generate and consume some temporary data on disk using relative paths.
 
     When the code is located under the home directory, this will automatically change the working directory to the root
     of the repository. This is helpful for developers because they can now run the tests from any directory without
