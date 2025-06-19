@@ -351,6 +351,7 @@ def fixture_testing_datasource_with_user(xngin_session: Session) -> DatasourceMe
     return metadata
 
 
+# TODO: The arguments on this method aren't used consistently; replace this with a fixture.
 def make_datasource_metadata(
     xngin_session: Session,
     *,
