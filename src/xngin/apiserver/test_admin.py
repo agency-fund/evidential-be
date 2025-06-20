@@ -1151,3 +1151,116 @@ async def test_admin_experiment_state_setting(
     # If failure case, verify the error message
     if expected_detail:
         assert response.json()["detail"] == expected_detail
+
+
+async def test_experiment_webhook_integration(
+    testing_datasource_with_user_added, ppost, pget
+):
+    """Test creating an experiment with webhook associations and verifying webhook IDs in response."""
+    org_id = testing_datasource_with_user_added.org.id
+    datasource_id = testing_datasource_with_user_added.datasource.id
+
+    # Create two webhooks in the organization
+    webhook1_response = ppost(
+        f"/v1/m/organizations/{org_id}/webhooks",
+        json={
+            "type": "experiment.created",
+            "name": "Test Webhook 1", 
+            "url": "https://example.com/webhook1"
+        },
+    )
+    assert webhook1_response.status_code == 200, webhook1_response.content
+    webhook1_id = webhook1_response.json()["id"]
+
+    webhook2_response = ppost(
+        f"/v1/m/organizations/{org_id}/webhooks",
+        json={
+            "type": "experiment.created",
+            "name": "Test Webhook 2",
+            "url": "https://example.com/webhook2"
+        },
+    )
+    assert webhook2_response.status_code == 200, webhook2_response.content
+    webhook2_id = webhook2_response.json()["id"]
+
+    # Create an experiment with only the first webhook
+    experiment_data = {
+        "design_spec": {
+            "experiment_type": "online",
+            "participant_type": "user",
+            "name": "Test Experiment with Webhook",
+            "description": "Testing webhook integration",
+            "start_date": "2024-01-01T00:00:00Z",
+            "end_date": "2024-01-31T23:59:59Z",
+            "arms": [
+                {"arm_name": "control", "description": "Control group"},
+                {"arm_name": "treatment", "description": "Treatment group"}
+            ],
+            "metrics": [
+                {"field_name": "conversion_rate", "description": "Conversion rate"}
+            ],
+            "strata": [],
+            "filters": []
+        },
+        "webhooks": [webhook1_id]  # Only include the first webhook
+    }
+
+    create_response = ppost(
+        f"/v1/m/datasources/{datasource_id}/experiments",
+        json=experiment_data
+    )
+    assert create_response.status_code == 200, create_response.content
+    
+    # Verify the create response includes the webhook
+    created_experiment = create_response.json()
+    assert "webhooks" in created_experiment
+    assert len(created_experiment["webhooks"]) == 1
+    assert created_experiment["webhooks"][0] == webhook1_id
+
+    # Get the experiment ID for further testing
+    experiment_id = created_experiment["design_spec"]["experiment_id"]
+
+    # Get the experiment and verify webhook is included
+    get_response = pget(f"/v1/m/datasources/{datasource_id}/experiments/{experiment_id}")
+    assert get_response.status_code == 200, get_response.content
+    
+    retrieved_experiment = get_response.json()
+    assert "webhooks" in retrieved_experiment
+    assert len(retrieved_experiment["webhooks"]) == 1
+    assert retrieved_experiment["webhooks"][0] == webhook1_id
+    
+    # Verify the second webhook is not included
+    assert webhook2_id not in retrieved_experiment["webhooks"]
+
+    # Test creating an experiment with no webhooks
+    experiment_data_no_webhooks = {
+        "design_spec": {
+            "experiment_type": "online",
+            "participant_type": "user",
+            "name": "Test Experiment without Webhooks",
+            "description": "Testing no webhook integration",
+            "start_date": "2024-01-01T00:00:00Z",
+            "end_date": "2024-01-31T23:59:59Z",
+            "arms": [
+                {"arm_name": "control", "description": "Control group"},
+                {"arm_name": "treatment", "description": "Treatment group"}
+            ],
+            "metrics": [
+                {"field_name": "conversion_rate", "description": "Conversion rate"}
+            ],
+            "strata": [],
+            "filters": []
+        }
+        # No webhooks field - should default to empty list
+    }
+
+    create_response_no_webhooks = ppost(
+        f"/v1/m/datasources/{datasource_id}/experiments",
+        json=experiment_data_no_webhooks
+    )
+    assert create_response_no_webhooks.status_code == 200, create_response_no_webhooks.content
+    
+    # Verify no webhooks are associated
+    created_experiment_no_webhooks = create_response_no_webhooks.json()
+    assert "webhooks" in created_experiment_no_webhooks
+    assert len(created_experiment_no_webhooks["webhooks"]) == 0

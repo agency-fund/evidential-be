@@ -173,7 +173,7 @@ class ExperimentStorageConverter:
         return sapi.PowerResponse.model_validate(self.experiment.power_analyses)
 
     def get_experiment_config(
-        self, assign_summary: eapi.AssignSummary
+        self, assign_summary: eapi.AssignSummary, webhook_ids: list[str] | None = None
     ) -> eapi.ExperimentConfig:
         """Construct an ExperimentConfig from the internal Experiment and an AssignSummary.
 
@@ -188,6 +188,7 @@ class ExperimentStorageConverter:
             design_spec=self.get_design_spec(),
             power_analyses=self.get_power_response(),
             assign_summary=assign_summary,
+            webhooks=webhook_ids or [],
         )
 
     def get_experiment_response(
@@ -200,11 +201,11 @@ class ExperimentStorageConverter:
         )
 
     def get_create_experiment_response(
-        self, assign_summary: eapi.AssignSummary
+        self, assign_summary: eapi.AssignSummary, webhook_ids: list[str] | None = None
     ) -> eapi.CreateExperimentResponse:
         # Revalidate the response in case we ever change the API.
         return eapi.CreateExperimentResponse.model_validate(
-            self.get_experiment_config(assign_summary).model_dump()
+            self.get_experiment_config(assign_summary, webhook_ids).model_dump()
         )
 
     @classmethod

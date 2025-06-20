@@ -350,13 +350,13 @@ async def add_webhook_to_organization(
 
     # Create and save the webhook
     webhook = tables.Webhook(
-        type=body.type, url=body.url, auth_token=auth_token, organization_id=org.id
+        type=body.type, name=body.name, url=body.url, auth_token=auth_token, organization_id=org.id
     )
     session.add(webhook)
     await session.commit()
 
     return AddWebhookToOrganizationResponse(
-        id=webhook.id, type=webhook.type, url=webhook.url, auth_token=auth_token
+        id=webhook.id, type=webhook.type, name=webhook.name, url=webhook.url, auth_token=auth_token
     )
 
 
@@ -385,6 +385,7 @@ def convert_webhooks_to_webhooksummaries(webhooks):
         WebhookSummary(
             id=webhook.id,
             type=webhook.type,
+            name=webhook.name,
             url=webhook.url,
             auth_token=webhook.auth_token,
         )
@@ -1280,6 +1281,7 @@ async def create_experiment(
         random_state=random_state,
         xngin_session=session,
         stratify_on_metrics=stratify_on_metrics,
+        webhook_ids=body.webhooks,
     )
 
 
@@ -1442,12 +1444,15 @@ async def get_experiment(
 ) -> experiments_api_types.ExperimentConfig:
     """Returns the experiment with the specified ID."""
     ds = await get_datasource_or_raise(session, user, datasource_id)
-    experiment = await get_experiment_via_ds_or_raise(session, ds, experiment_id)
+    experiment = await get_experiment_via_ds_or_raise(
+        session, ds, experiment_id, preload=[tables.Experiment.webhooks]
+    )
     converter = ExperimentStorageConverter(experiment)
     assign_summary = await experiments_common.get_assign_summary(
         session, experiment.id, converter.get_balance_check()
     )
-    return converter.get_experiment_config(assign_summary)
+    webhook_ids = [webhook.id for webhook in experiment.webhooks]
+    return converter.get_experiment_config(assign_summary, webhook_ids)
 
 
 @router.get("/datasources/{datasource_id}/experiments/{experiment_id}/assignments")

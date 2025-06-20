@@ -21,6 +21,7 @@ class ExperimentsBaseModel(BaseModel):
 class CreateExperimentRequest(ExperimentsBaseModel):
     design_spec: DesignSpec
     power_analyses: PowerResponse | None = None
+    webhooks: list[str] = []
 
 
 class AssignSummary(ExperimentsBaseModel):
@@ -67,6 +68,7 @@ class ExperimentConfig(ExperimentsBaseModel):
     design_spec: DesignSpec
     power_analyses: PowerResponse | None
     assign_summary: AssignSummary
+    webhooks: list[str] = []
 
 
 class CreateExperimentResponse(ExperimentConfig):
