@@ -126,6 +126,7 @@ async def create_experiment_with_assignment_sl(
         random_state=random_state,
         xngin_session=xngin_session,
         stratify_on_metrics=True,
+        webhook_ids=[]
     )
 
 

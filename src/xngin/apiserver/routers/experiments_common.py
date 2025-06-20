@@ -235,10 +235,11 @@ async def commit_experiment_impl(
     experiment.state = ExperimentState.COMMITTED
 
     experiment_id = experiment.id
+    datasource = await experiment.awaitable_attrs.datasource
     webhooks = await experiment.awaitable_attrs.webhooks
 
     event = tables.Event(
-        organization=experiment.datasource.organization,
+        organization_id=datasource.organization_id,
         type=ExperimentCreatedEvent.TYPE,
     ).set_data(
         ExperimentCreatedEvent(
@@ -251,11 +252,11 @@ async def commit_experiment_impl(
         # In the future, this may be replaced by a standalone queuing service.
         if webhook.type == ExperimentCreatedEvent.TYPE:
             webhook_task = WebhookOutboundTask(
-                organization_id=experiment.datasource.organization_id,
+                organization_id=datasource.organization_id,
                 url=webhook.url,
                 body=ExperimentCreatedWebhookBody(
-                    organization_id=experiment.datasource.organization_id,
-                    datasource_id=experiment.datasource.id,
+                    organization_id=datasource.organization_id,
+                    datasource_id=datasource.id,
                     experiment_id=experiment_id,
                     experiment_url=f"{flags.XNGIN_PUBLIC_PROTOCOL}://{flags.XNGIN_PUBLIC_HOSTNAME}/v1/experiments/{experiment_id}",
                 ).model_dump(),

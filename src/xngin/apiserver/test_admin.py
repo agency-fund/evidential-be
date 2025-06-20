@@ -15,6 +15,7 @@ from xngin.apiserver.models.enums import ExperimentState, StopAssignmentReason
 from xngin.apiserver.routers import oidc_dependencies
 from xngin.apiserver.routers.admin import user_from_token
 from xngin.apiserver.routers.admin_api_types import (
+    AddWebhookToOrganizationRequest,
     CreateDatasourceRequest,
     CreateDatasourceResponse,
     CreateParticipantsTypeRequest,
@@ -398,7 +399,11 @@ async def test_webhook_lifecycle(
     # Create a webhook
     response = ppost(
         f"/v1/m/organizations/{org_id}/webhooks",
-        json={"type": "experiment.created", "url": "https://example.com/webhook"},
+        json=AddWebhookToOrganizationRequest(
+            type="experiment.created",
+            url="https://example.com/webhook",
+            name="test wehbook",
+        ).model_dump(),
     )
     assert response.status_code == 200, response.content
     webhook_data = response.json()
@@ -1158,15 +1163,15 @@ async def test_experiment_webhook_integration(
 ):
     """Test creating an experiment with webhook associations and verifying webhook IDs in response."""
     org_id = testing_datasource_with_user_added.org.id
-    datasource_id = testing_datasource_with_user_added.datasource.id
+    datasource_id = testing_datasource_with_user_added.ds.id
 
     # Create two webhooks in the organization
     webhook1_response = ppost(
         f"/v1/m/organizations/{org_id}/webhooks",
         json={
             "type": "experiment.created",
-            "name": "Test Webhook 1", 
-            "url": "https://example.com/webhook1"
+            "name": "Test Webhook 1",
+            "url": "https://example.com/webhook1",
         },
     )
     assert webhook1_response.status_code == 200, webhook1_response.content
@@ -1177,7 +1182,7 @@ async def test_experiment_webhook_integration(
         json={
             "type": "experiment.created",
             "name": "Test Webhook 2",
-            "url": "https://example.com/webhook2"
+            "url": "https://example.com/webhook2",
         },
     )
     assert webhook2_response.status_code == 200, webhook2_response.content
@@ -1194,23 +1199,22 @@ async def test_experiment_webhook_integration(
             "end_date": "2024-01-31T23:59:59Z",
             "arms": [
                 {"arm_name": "control", "description": "Control group"},
-                {"arm_name": "treatment", "description": "Treatment group"}
+                {"arm_name": "treatment", "description": "Treatment group"},
             ],
             "metrics": [
                 {"field_name": "conversion_rate", "description": "Conversion rate"}
             ],
             "strata": [],
-            "filters": []
+            "filters": [],
         },
-        "webhooks": [webhook1_id]  # Only include the first webhook
+        "webhooks": [webhook1_id],  # Only include the first webhook
     }
 
     create_response = ppost(
-        f"/v1/m/datasources/{datasource_id}/experiments",
-        json=experiment_data
+        f"/v1/m/datasources/{datasource_id}/experiments", json=experiment_data
     )
     assert create_response.status_code == 200, create_response.content
-    
+
     # Verify the create response includes the webhook
     created_experiment = create_response.json()
     assert "webhooks" in created_experiment
@@ -1221,14 +1225,16 @@ async def test_experiment_webhook_integration(
     experiment_id = created_experiment["design_spec"]["experiment_id"]
 
     # Get the experiment and verify webhook is included
-    get_response = pget(f"/v1/m/datasources/{datasource_id}/experiments/{experiment_id}")
+    get_response = pget(
+        f"/v1/m/datasources/{datasource_id}/experiments/{experiment_id}"
+    )
     assert get_response.status_code == 200, get_response.content
-    
+
     retrieved_experiment = get_response.json()
     assert "webhooks" in retrieved_experiment
     assert len(retrieved_experiment["webhooks"]) == 1
     assert retrieved_experiment["webhooks"][0] == webhook1_id
-    
+
     # Verify the second webhook is not included
     assert webhook2_id not in retrieved_experiment["webhooks"]
 
@@ -1243,23 +1249,25 @@ async def test_experiment_webhook_integration(
             "end_date": "2024-01-31T23:59:59Z",
             "arms": [
                 {"arm_name": "control", "description": "Control group"},
-                {"arm_name": "treatment", "description": "Treatment group"}
+                {"arm_name": "treatment", "description": "Treatment group"},
             ],
             "metrics": [
                 {"field_name": "conversion_rate", "description": "Conversion rate"}
             ],
             "strata": [],
-            "filters": []
+            "filters": [],
         }
         # No webhooks field - should default to empty list
     }
 
     create_response_no_webhooks = ppost(
         f"/v1/m/datasources/{datasource_id}/experiments",
-        json=experiment_data_no_webhooks
+        json=experiment_data_no_webhooks,
     )
-    assert create_response_no_webhooks.status_code == 200, create_response_no_webhooks.content
-    
+    assert create_response_no_webhooks.status_code == 200, (
+        create_response_no_webhooks.content
+    )
+
     # Verify no webhooks are associated
     created_experiment_no_webhooks = create_response_no_webhooks.json()
     assert "webhooks" in created_experiment_no_webhooks
