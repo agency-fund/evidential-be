@@ -7,6 +7,7 @@ import sqlalchemy
 from pydantic import TypeAdapter
 from sqlalchemy import ForeignKey, Index, String
 from sqlalchemy.dialects import postgresql
+from sqlalchemy.ext.asyncio import AsyncAttrs
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 from sqlalchemy.types import TypeEngine
 
@@ -40,7 +41,7 @@ user_id_factory = unique_id_factory("u")
 webhook_id_factory = unique_id_factory("wh")
 
 
-class Base(DeclarativeBase):
+class Base(AsyncAttrs, DeclarativeBase):
     # See https://docs.sqlalchemy.org/en/20/orm/declarative_tables.html#customizing-the-type-map
     type_annotation_map: ClassVar[dict[type, TypeEngine]] = {
         # For pg specifically, use the binary form
@@ -441,7 +442,7 @@ class Experiment(Base):
     fstat_thresh: Mapped[float | None] = mapped_column()
 
     arm_assignments: Mapped[list["ArmAssignment"]] = relationship(
-        back_populates="experiment", cascade="all, delete-orphan"
+        back_populates="experiment", cascade="all, delete-orphan", lazy="raise"
     )
     arms: Mapped[list["ArmTable"]] = relationship(
         back_populates="experiment", cascade="all, delete-orphan"

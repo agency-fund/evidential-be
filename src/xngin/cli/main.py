@@ -661,7 +661,7 @@ def add_user(
         str,
         typer.Option(
             help="The SQLAlchemy DSN of the database where the user should be added.",
-            envvar="XNGIN_DEVAPP_DSN",
+            envvar="DATABASE_URL",
         ),
     ],
     email: Annotated[

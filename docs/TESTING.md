@@ -93,7 +93,7 @@ Use the CLI command:
 
 ```shell
 uv run xngin-cli create-testing-dwh \
-   --dsn=$XNGIN_DB \
+   --dsn=$DATABASE_URL \
    --password=$PASSWORD \
    --table-name=test_participant_type \
    --schema-name=alt

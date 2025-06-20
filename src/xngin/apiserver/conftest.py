@@ -3,22 +3,30 @@
 import enum
 import os
 import secrets
+from collections.abc import AsyncGenerator
 from dataclasses import dataclass
-from datetime import datetime
+from functools import partial
 from pathlib import Path
-from typing import Any, assert_never, cast
+from typing import assert_never, cast
 
 import pytest
+import pytest_asyncio
 import sqlalchemy
 from pydantic import TypeAdapter, ValidationError
-from sqlalchemy import StaticPool, make_url
+from sqlalchemy import StaticPool, create_engine, make_url
 from sqlalchemy.dialects.postgresql import psycopg
 from sqlalchemy.engine.interfaces import Dialect
 from sqlalchemy.engine.url import URL
-from sqlalchemy.orm import sessionmaker
+from sqlalchemy.ext.asyncio import (
+    AsyncEngine,
+    AsyncSession,
+    async_sessionmaker,
+    create_async_engine,
+)
 from sqlalchemy_bigquery import dialect as bigquery_dialect
+from starlette.testclient import TestClient
 
-from xngin.apiserver import database, flags
+from xngin.apiserver import constants, database, flags
 from xngin.apiserver.apikeys import hash_key_or_raise, make_key
 from xngin.apiserver.dependencies import (
     random_seed_dependency,
@@ -26,8 +34,14 @@ from xngin.apiserver.dependencies import (
     xngin_db_session,
 )
 from xngin.apiserver.dns import safe_resolve
+from xngin.apiserver.main import app
 from xngin.apiserver.models import tables
-from xngin.apiserver.routers.oidc_dependencies import PRIVILEGED_EMAIL
+from xngin.apiserver.routers import oidc_dependencies
+from xngin.apiserver.routers.oidc_dependencies import (
+    PRIVILEGED_EMAIL,
+    PRIVILEGED_TOKEN_FOR_TESTING,
+    UNPRIVILEGED_TOKEN_FOR_TESTING,
+)
 from xngin.apiserver.settings import ParticipantsDef, SettingsForTesting, XnginSettings
 from xngin.apiserver.testing.pg_helpers import create_database_if_not_exists_pg
 from xngin.db_extensions import custom_functions
@@ -60,14 +74,6 @@ class DbType(enum.StrEnum):
                 return cast(Dialect, bigquery_dialect())
         assert_never(self)
 
-    def is_supported_dwh(self) -> bool:
-        """Returns True if this DbType is supported as a DWH backend."""
-        return self in {DbType.RS, DbType.PG, DbType.BQ}
-
-    def is_supported_appdb(self) -> bool:
-        """Returns True if this DbType is supported as an app database."""
-        return self == DbType.PG
-
 
 @dataclass
 class TestUriInfo:
@@ -75,7 +81,6 @@ class TestUriInfo:
 
     connect_url: URL
     db_type: DbType
-    connect_args: dict[str, Any]
 
 
 def get_settings_for_test() -> XnginSettings:
@@ -90,12 +95,12 @@ def get_settings_for_test() -> XnginSettings:
 
 
 def get_test_appdb_info() -> TestUriInfo:
-    """Use this for tests of our application db, e.g. for caching user table confgs."""
+    """Gets the DSN of the application database to use in tests."""
     connection_uri = os.environ.get("XNGIN_TEST_APPDB_URI", "")
     if not connection_uri:
         raise ValueError("XNGIN_TEST_APPDB_URI must be set")
     info = get_test_uri_info(connection_uri)
-    if not info.db_type.is_supported_appdb():
+    if info.db_type != DbType.PG:
         raise ValueError(
             f"{info.db_type} is not a supported app database: {connection_uri}"
         )
@@ -103,17 +108,14 @@ def get_test_appdb_info() -> TestUriInfo:
 
 
 def get_test_dwh_info() -> TestUriInfo:
-    """Use this for tests that skip settings.json and directly connect to a simulated DWH.
+    """Gets the DSN of the testing data warehouse to use in tests.
 
     See xngin.apiserver.dwh.test_queries.fixture_dwh_session.
     """
     connection_uri = os.environ.get("XNGIN_TEST_DWH_URI", "")
     if not connection_uri:
         raise ValueError("XNGIN_TEST_DWH_URI must be set.")
-    info = get_test_uri_info(connection_uri)
-    if not info.db_type.is_supported_dwh():
-        raise ValueError(f"{info.db_type} is not a supported DWH: {connection_uri}")
-    return info
+    return get_test_uri_info(connection_uri)
 
 
 @pytest.fixture(scope="session", autouse=True)
@@ -137,7 +139,6 @@ def allow_connecting_to_private_ips():
 
 def get_test_uri_info(connection_uri: str) -> TestUriInfo:
     """Returns a TestUriInfo dataclass about a test database given its connection_uri."""
-    connect_args: dict[str, Any] = {}
     if connection_uri.startswith("bigquery"):
         dbtype = DbType.BQ
     elif "redshift.amazonaws.com" in connection_uri:
@@ -148,86 +149,143 @@ def get_test_uri_info(connection_uri: str) -> TestUriInfo:
         raise ValueError(
             f"connection_uri is not recognized as a BigQuery, Redshift, or Postgres database: {connection_uri}"
         )
-    return TestUriInfo(
-        connect_url=make_url(connection_uri), db_type=dbtype, connect_args=connect_args
-    )
+    return TestUriInfo(connect_url=make_url(connection_uri), db_type=dbtype)
 
 
-def make_engine():
+def make_async_engine():
     """Returns a SQLA engine for XNGIN_TEST_APPDB_URI; db will be created if it does not exist."""
     appdb_info = get_test_appdb_info()
-    match appdb_info.db_type:
-        case DbType.PG:
-            create_database_if_not_exists_pg(appdb_info.connect_url)
-        case _:
-            raise ValueError("XNGIN_TEST_APPDB_URI must be postgres.")
-    db_engine = sqlalchemy.create_engine(
+    create_database_if_not_exists_pg(appdb_info.connect_url)
+    # Create the tables using a synchronous engine so that this method can remain sync.
+    sync_db_engine = create_engine(
         appdb_info.connect_url,
         logging_name=SA_LOGGER_NAME_FOR_APP,
         execution_options={"logging_token": "app"},
-        connect_args=appdb_info.connect_args,
         poolclass=StaticPool,
         echo=flags.ECHO_SQL_APP_DB,
     )
-    # Create all the ORM tables.
-    tables.Base.metadata.create_all(bind=db_engine)
+    tables.Base.metadata.create_all(sync_db_engine)
+    sync_db_engine.dispose()
 
-    return db_engine
+    return create_async_engine(
+        appdb_info.connect_url,
+        logging_name=SA_LOGGER_NAME_FOR_APP,
+        execution_options={"logging_token": "app"},
+        poolclass=StaticPool,
+        echo=flags.ECHO_SQL_APP_DB,
+    )
 
 
-def get_test_sessionmaker(db_engine: sqlalchemy.engine.Engine):
+def get_test_sessionmaker(db_engine: AsyncEngine):
     """Returns a session bound to the db_engine; the returned database is not guaranteed unique."""
     # Hack: Cause any direct access to production code from code to fail during tests.
-    database.SessionLocal = None
+    database.AsyncSessionLocal = None
 
-    testing_session_local = sessionmaker(bind=db_engine, expire_on_commit=False)
+    testing_session_local = async_sessionmaker(bind=db_engine, expire_on_commit=False)
 
-    def get_db_for_test():
+    async def get_db_for_test():
         sess = testing_session_local()
         try:
             yield sess
         finally:
-            sess.close()
+            await sess.close()
 
     return get_db_for_test
 
 
-def setup(app):
+@pytest.fixture(scope="session", autouse=True)
+def fixture_override_app_dependencies():
     """Configures FastAPI dependencies for testing."""
     # https://fastapi.tiangolo.com/advanced/testing-dependencies/#use-the-appdependency_overrides-attribute
-    app.dependency_overrides[xngin_db_session] = get_test_sessionmaker(make_engine())
+    app.dependency_overrides[xngin_db_session] = get_test_sessionmaker(
+        make_async_engine()
+    )
     app.dependency_overrides[settings_dependency] = get_settings_for_test
     app.dependency_overrides[random_seed_dependency] = get_random_seed_for_test
 
+    oidc_dependencies.disable(app)
+
+
+@pytest.fixture(scope="session", name="client")
+def fixture_client():
+    return TestClient(app)
+
+
+@pytest.fixture(scope="session", name="client_v1")
+def fixture_client_v1():
+    client = TestClient(app)
+    client.base_url = client.base_url.join(constants.API_PREFIX_V1)
+    return client
+
+
+@pytest.fixture(scope="session", name="pget")
+def fixture_pget(client):
+    return partial(
+        client.get, headers={"Authorization": f"Bearer {PRIVILEGED_TOKEN_FOR_TESTING}"}
+    )
+
+
+@pytest.fixture(scope="session", name="ppost")
+def fixture_ppost(client):
+    return partial(
+        client.post, headers={"Authorization": f"Bearer {PRIVILEGED_TOKEN_FOR_TESTING}"}
+    )
+
+
+@pytest.fixture(scope="session", name="ppatch")
+def fixture_ppatch(client):
+    return partial(
+        client.patch,
+        headers={"Authorization": f"Bearer {PRIVILEGED_TOKEN_FOR_TESTING}"},
+    )
+
+
+@pytest.fixture(scope="session", name="pdelete")
+def fixture_pdelete(client):
+    return partial(
+        client.delete,
+        headers={"Authorization": f"Bearer {PRIVILEGED_TOKEN_FOR_TESTING}"},
+    )
+
+
+@pytest.fixture(scope="session", name="udelete")
+def fixture_udelete(client):
+    return partial(
+        client.delete,
+        headers={"Authorization": f"Bearer {UNPRIVILEGED_TOKEN_FOR_TESTING}"},
+    )
+
+
+@pytest.fixture(scope="session", name="uget")
+def fixture_uget(client):
+    return partial(
+        client.get,
+        headers={"Authorization": f"Bearer {UNPRIVILEGED_TOKEN_FOR_TESTING}"},
+    )
+
 
 @pytest.fixture(scope="session", name="test_engine")
-def fixture_test_engine():
+async def fixture_test_engine() -> AsyncGenerator[AsyncEngine]:
     """Create a SQLA engine for testing that is safely disposed of after all tests are run."""
-    db_engine = make_engine()
+    db_engine = make_async_engine()
     try:
         yield db_engine
     finally:
-        db_engine.dispose()
+        await db_engine.dispose()
 
 
-@pytest.fixture(name="xngin_session")
-def fixture_xngin_db_session(test_engine):
+@pytest_asyncio.fixture(name="xngin_session")
+async def fixture_xngin_db_session(test_engine):
     """Use this session directly if you don't need to test the FastAPI app itself."""
-    test_sessionmaker = get_test_sessionmaker(test_engine)
-    return next(test_sessionmaker())
+    session_generator = get_test_sessionmaker(test_engine)
+    return await anext(session_generator())
 
 
 @pytest.fixture(scope="session", autouse=True)
 def ensure_correct_working_directory():
     """Ensures the tests are being run from the root of the repo.
 
-    This is important because the tests generate some temporary data on disk and we want the paths to be right.
-    """
-    cwd_or_raise_unless_running_from_top_directory()
-
-
-def cwd_or_raise_unless_running_from_top_directory():
-    """Helper to manage the current working directory of unit tests.
+    This is important because the tests generate and consume some temporary data on disk using relative paths.
 
     When the code is located under the home directory, this will automatically change the working directory to the root
     of the repository. This is helpful for developers because they can now run the tests from any directory without
@@ -285,7 +343,7 @@ class DatasourceMetadata:
 
 
 @pytest.fixture(name="testing_datasource", scope="function")
-def fixture_testing_datasource(xngin_session) -> DatasourceMetadata:
+async def fixture_testing_datasource(xngin_session: AsyncSession) -> DatasourceMetadata:
     """
     Generates a new Organization, Datasource, and API key for a test.
 
@@ -294,26 +352,28 @@ def fixture_testing_datasource(xngin_session) -> DatasourceMetadata:
     Note: The datasource configured in this fixture represents a customer database. This is
     *different* than the xngin server-side database configured by conftest.setup().
     """
-    return make_datasource_metadata(xngin_session)
+    return await make_datasource_metadata(xngin_session)
 
 
 @pytest.fixture(name="testing_datasource_with_user", scope="function")
-def fixture_testing_datasource_with_user(xngin_session) -> DatasourceMetadata:
+async def fixture_testing_datasource_with_user(xngin_session) -> DatasourceMetadata:
     """
     Generates a new Organization, Datasource, and API key. Adds our privileged user to the org.
     """
-    metadata = make_datasource_metadata(xngin_session)
+    metadata = await make_datasource_metadata(xngin_session)
     user = tables.User(
         id="user_" + secrets.token_hex(8), email=PRIVILEGED_EMAIL, is_privileged=True
     )
     user.organizations.append(metadata.org)
     xngin_session.add(user)
-    xngin_session.commit()
+    await xngin_session.commit()
     return metadata
 
 
-def make_datasource_metadata(
-    xngin_session,
+# TODO: The arguments on this method aren't used consistently; replace this with a fixture.
+async def make_datasource_metadata(
+    xngin_session: AsyncSession,
+    *,
     datasource_id: str | None = None,
     name="test ds",
     datasource_id_for_config="testing-remote",
@@ -349,17 +409,10 @@ def make_datasource_metadata(
     kt.datasource = datasource
 
     xngin_session.add_all([org, datasource, kt])
-    xngin_session.commit()
+    await xngin_session.commit()
     return DatasourceMetadata(
         ds=datasource,
         dsn=datasource.get_config().to_sqlalchemy_url().render_as_string(False),
         key=key,
         org=org,
     )
-
-
-def dates_equal(db_date: datetime, request_date: datetime):
-    """Compare dates with or without timezone info, honoring the db_date's timezone."""
-    if db_date.tzinfo is None:
-        return db_date == request_date.replace(tzinfo=None)
-    return db_date == request_date

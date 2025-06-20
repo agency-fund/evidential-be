@@ -1,7 +1,8 @@
 from datetime import datetime
 from typing import Annotated, Literal
+from urllib.parse import urlparse
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from xngin.apiserver.common_field_types import FieldName
 from xngin.apiserver.limits import (
@@ -21,6 +22,16 @@ from xngin.apiserver.routers.stateless_api_types import (
 )
 from xngin.apiserver.settings import DatasourceConfig, Dwh, ParticipantsConfig
 from xngin.schema.schema_types import FieldDescriptor, ParticipantsSchema
+
+
+def validate_webhook_url(url: str) -> str:
+    """Validates that a URL is a properly formatted HTTP or HTTPS URL."""
+    parsed = urlparse(url)
+    if not parsed.scheme or parsed.scheme not in {"http", "https"}:
+        raise ValueError("URL must use http or https scheme")
+    if not parsed.netloc:
+        raise ValueError("URL must include a valid domain")
+    return url
 
 
 class AdminApiBaseModel(BaseModel):
@@ -100,6 +111,11 @@ class AddWebhookToOrganizationRequest(AdminApiBaseModel):
     type: Literal["experiment.created"]
     url: Annotated[str, Field(max_length=MAX_LENGTH_OF_WEBHOOK_URL_VALUE)]
 
+    @field_validator("url")
+    @classmethod
+    def validate_url(cls, v: str) -> str:
+        return validate_webhook_url(v)
+
 
 class AddWebhookToOrganizationResponse(AdminApiBaseModel):
     """Information on the successfully created webhook."""
@@ -131,6 +147,17 @@ class WebhookSummary(AdminApiBaseModel):
             description="The value of the Authorization: header that will be sent with the request to the configured URL."
         ),
     ]
+
+
+class UpdateOrganizationWebhookRequest(AdminApiBaseModel):
+    """Request to update a webhook's URL."""
+
+    url: Annotated[str, Field(max_length=MAX_LENGTH_OF_WEBHOOK_URL_VALUE)]
+
+    @field_validator("url")
+    @classmethod
+    def validate_url(cls, v: str) -> str:
+        return validate_webhook_url(v)
 
 
 class ListWebhooksResponse(AdminApiBaseModel):

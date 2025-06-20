@@ -1,8 +1,6 @@
 import pytest
-from fastapi.testclient import TestClient
 
 from xngin.apiserver import conftest, constants
-from xngin.apiserver.main import app
 from xngin.apiserver.routers.stateless_api import generate_field_descriptors
 from xngin.apiserver.routers.stateless_api_types import DataType
 from xngin.apiserver.settings import (
@@ -11,9 +9,6 @@ from xngin.apiserver.settings import (
     infer_table,
 )
 
-conftest.setup(app)
-client = TestClient(app)
-
 
 def test_get_settings_for_test():
     settings = conftest.get_settings_for_test()
@@ -21,7 +16,7 @@ def test_get_settings_for_test():
     assert settings.trusted_ips == ["testclient"]
 
 
-def test_settings_can_be_overridden_by_tests():
+def test_settings_can_be_overridden_by_tests(client):
     response = client.get(
         "/_healthchecks/settings", headers={constants.HEADER_CONFIG_ID: "testing"}
     )
@@ -31,7 +26,7 @@ def test_settings_can_be_overridden_by_tests():
     assert settings.trusted_ips == ["testclient"]
 
 
-def test_config_injection():
+def test_config_injection(client):
     response = client.get(
         "/_healthchecks/settings",
         headers={constants.HEADER_CONFIG_ID: "customer-test"},
@@ -40,7 +35,7 @@ def test_config_injection():
     assert response.json()["config_id"] == "customer-test"
 
 
-def test_root_get_api():
+def test_root_get_api(client):
     response = client.get("/")
     assert response.status_code == 404
 

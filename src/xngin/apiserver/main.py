@@ -69,7 +69,7 @@ async def lifespan(_app: FastAPI):
             "Please unset GOOGLE_APPLICATION_CREDENTIALS and try again."
         )
     else:
-        database.setup()
+        await database.setup()
         yield
 
 
