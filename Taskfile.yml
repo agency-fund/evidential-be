@@ -11,8 +11,8 @@ vars:
   # whereas the xngin database does not.
   XNGIN_DEVAPP_DDL_DSN: "postgresql://postgres:postgres@localhost:5499/postgres?sslmode=disable"
 
-  # The DSN used for anything using a plain db URI, e.g. Atlas migrations of the xngin database, or
-  # using psycopg directly in the task queue.
+  # The DSN used for anything using a plain db URI, without +driver syntax, e.g. Atlas migrations of the xngin database,
+  # or using psycopg directly in the task queue.
   XNGIN_DEVAPP_STANDARD_DSN: '{{replace "+psycopg" "" .XNGIN_DEVAPP_DSN}}'
   XNGIN_DEVAPP_MIGRATIONS_LINT_DSN: "postgresql://postgres:postgres@localhost:5499/migration_lint?sslmode=disable"
 
@@ -143,7 +143,7 @@ tasks:
       # Populate BQ_SERVICE_ACCOUNT (optional) and GOOGLE_OIDC_CLIENT_SECRET (optional).
       - .env
     env:
-      XNGIN_DB: "{{.XNGIN_DEVAPP_DSN}}"
+      DATABASE_URL: "{{.XNGIN_DEVAPP_DSN}}"
     deps:
       - bootstrap-app
     cmds:
@@ -239,7 +239,7 @@ tasks:
     deps:
       - bootstrap-app
     env:
-      XNGIN_DEVAPP_DSN: "{{.XNGIN_DEVAPP_DSN}}"
+      DATABASE_URL: "{{.XNGIN_DEVAPP_DSN}}"
     cmd: |
       uv run xngin-cli add-user
   start-tq:

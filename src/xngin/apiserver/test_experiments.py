@@ -35,12 +35,12 @@ def test_create_experiment_impl_invalid_design_spec(client_v1):
     assert "UUIDs must not be set" in response.json()["message"]
 
 
-def test_create_experiment_with_assignment_sl(
+async def test_create_experiment_with_assignment_sl(
     xngin_session, use_deterministic_random, client_v1
 ):
     """Test creating an experiment and saving assignments to the database."""
     # First create a datasource to maintain proper referential integrity, but with a local config so we know we can read our dwh data.
-    ds_metadata = conftest.make_datasource_metadata(
+    ds_metadata = await conftest.make_datasource_metadata(
         xngin_session, datasource_id="testing"
     )
     request = make_create_preassigned_experiment_request()
@@ -65,11 +65,11 @@ def test_create_experiment_with_assignment_sl(
     assert experiment_config.state == ExperimentState.ASSIGNED
 
 
-def test_list_experiments_sl_without_api_key(
+async def test_list_experiments_sl_without_api_key(
     xngin_session, testing_datasource, client_v1
 ):
     """Tests that listing experiments tied to a db datasource requires an API key."""
-    insert_experiment_and_arms(
+    await insert_experiment_and_arms(
         xngin_session, testing_datasource.ds, state=ExperimentState.ASSIGNED
     )
 
@@ -81,9 +81,11 @@ def test_list_experiments_sl_without_api_key(
     assert response.json()["message"] == "API key missing or invalid."
 
 
-def test_list_experiments_sl_with_api_key(xngin_session, testing_datasource, client_v1):
+async def test_list_experiments_sl_with_api_key(
+    xngin_session, testing_datasource, client_v1
+):
     """Tests that listing experiments tied to a db datasource with an API key works."""
-    expected_experiment = insert_experiment_and_arms(
+    expected_experiment = await insert_experiment_and_arms(
         xngin_session, testing_datasource.ds, state=ExperimentState.ASSIGNED
     )
 
@@ -105,8 +107,8 @@ def test_list_experiments_sl_with_api_key(xngin_session, testing_datasource, cli
     assert not diff, f"Objects differ:\n{diff.pretty()}"
 
 
-def test_get_experiment(xngin_session, testing_datasource, client_v1):
-    new_experiment = insert_experiment_and_arms(
+async def test_get_experiment(xngin_session, testing_datasource, client_v1):
+    new_experiment = await insert_experiment_and_arms(
         xngin_session,
         testing_datasource.ds,
         state=ExperimentState.DESIGNING,
@@ -138,16 +140,16 @@ def test_get_experiment_assignments_not_found(testing_datasource, client_v1):
     assert response.json()["detail"] == "Experiment not found or not authorized."
 
 
-def test_get_experiment_assignments_wrong_datasource(
+async def test_get_experiment_assignments_wrong_datasource(
     xngin_session, testing_datasource, client_v1
 ):
     """Test getting assignments for an experiment from a different datasource."""
     # Create experiment in one datasource
-    experiment = insert_experiment_and_arms(
+    experiment = await insert_experiment_and_arms(
         xngin_session, testing_datasource.ds, state=ExperimentState.COMMITTED
     )
     # Make a *different* datasource and API key to query with
-    metadata = conftest.make_datasource_metadata(xngin_session, name="wrong ds")
+    metadata = await conftest.make_datasource_metadata(xngin_session, name="wrong ds")
 
     # Try to get testing_datasource's experiment from another datasource's key.
     response = client_v1.get(
@@ -158,10 +160,10 @@ def test_get_experiment_assignments_wrong_datasource(
     assert response.json()["detail"] == "Experiment not found or not authorized."
 
 
-def test_get_assignment_for_participant_with_apikey_preassigned(
+async def test_get_assignment_for_participant_with_apikey_preassigned(
     xngin_session, testing_datasource, client_v1
 ):
-    preassigned_experiment = insert_experiment_and_arms(
+    preassigned_experiment = await insert_experiment_and_arms(
         xngin_session, testing_datasource.ds
     )
     assignment = tables.ArmAssignment(
@@ -172,7 +174,7 @@ def test_get_assignment_for_participant_with_apikey_preassigned(
         strata=[],
     )
     xngin_session.add(assignment)
-    xngin_session.commit()
+    await xngin_session.commit()
 
     response = client_v1.get(
         f"/experiments/{preassigned_experiment.id!s}/assignments/unassigned_id?random_state=42",
@@ -196,11 +198,11 @@ def test_get_assignment_for_participant_with_apikey_preassigned(
     assert parsed.assignment.arm_name == "control"
 
 
-def test_get_assignment_for_participant_with_apikey_online(
+async def test_get_assignment_for_participant_with_apikey_online(
     xngin_session, testing_datasource, client_v1
 ):
     """Test endpoint that gets an assignment for a participant via API key."""
-    online_experiment = insert_experiment_and_arms(
+    online_experiment = await insert_experiment_and_arms(
         xngin_session,
         testing_datasource.ds,
         experiment_type="online",
@@ -229,9 +231,11 @@ def test_get_assignment_for_participant_with_apikey_online(
     assert response2.json() == response.json()
 
     # Make sure there's only one db entry.
-    assignment = xngin_session.scalars(
-        select(tables.ArmAssignment).where(
-            tables.ArmAssignment.experiment_id == online_experiment.id
+    assignment = (
+        await xngin_session.scalars(
+            select(tables.ArmAssignment).where(
+                tables.ArmAssignment.experiment_id == online_experiment.id
+            )
         )
     ).one()
     assert assignment.participant_id == "1"
@@ -242,11 +246,11 @@ def test_get_assignment_for_participant_with_apikey_online(
     assert assignment.experiment.stopped_assignments_reason is None
 
 
-def test_get_assignment_for_participant_with_apikey_online_dont_create(
+async def test_get_assignment_for_participant_with_apikey_online_dont_create(
     xngin_session, testing_datasource, client_v1
 ):
     """Verify endpoint doesn't create an assignment when create_if_none=False."""
-    online_experiment = insert_experiment_and_arms(
+    online_experiment = await insert_experiment_and_arms(
         xngin_session,
         testing_datasource.ds,
         experiment_type="online",
@@ -264,11 +268,11 @@ def test_get_assignment_for_participant_with_apikey_online_dont_create(
     assert parsed.assignment is None
 
 
-def test_get_assignment_for_participant_with_apikey_online_past_end_date(
+async def test_get_assignment_for_participant_with_apikey_online_past_end_date(
     xngin_session, testing_datasource, client_v1
 ):
     """Verify endpoint doesn't create an assignment for an online experiment that has ended."""
-    online_experiment = insert_experiment_and_arms(
+    online_experiment = await insert_experiment_and_arms(
         xngin_session,
         testing_datasource.ds,
         experiment_type="online",
@@ -289,6 +293,6 @@ def test_get_assignment_for_participant_with_apikey_online_past_end_date(
     assert parsed.assignment is None
 
     # Verify side effect to experiment lifecycle info.
-    xngin_session.refresh(online_experiment)
+    await xngin_session.refresh(online_experiment)
     assert online_experiment.stopped_assignments_at is not None
     assert online_experiment.stopped_assignments_reason == StopAssignmentReason.END_DATE

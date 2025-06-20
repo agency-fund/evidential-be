@@ -82,7 +82,7 @@ class CommonQueryParams:
         self.refresh = refresh
 
 
-def get_participants_config_and_schema(
+async def get_participants_config_and_schema(
     commons: CommonQueryParams,
     datasource_config: ParticipantsMixin,
     gsheets: GSheetCache,
@@ -92,7 +92,7 @@ def get_participants_config_and_schema(
     cached_schema = participants_cfg  # assume type == "schema"
     if participants_cfg.type == "sheet":
         sheet_ref = participants_cfg.sheet
-        cached_schema = gsheets.get(
+        cached_schema = await gsheets.get(
             sheet_ref,
             lambda: fetch_and_parse_sheet(sheet_ref),
             refresh=commons.refresh,
@@ -105,13 +105,13 @@ def get_participants_config_and_schema(
     "/strata",
     summary="Get possible strata covariates.",
 )
-def get_strata(
+async def get_strata(
     commons: Annotated[CommonQueryParams, Depends()],
     gsheets: Annotated[GSheetCache, Depends(gsheet_cache)],
     config: Annotated[DatasourceConfig, Depends(datasource_config_required)],
 ) -> GetStrataResponse:
     """Get possible strata covariates for a given participant type."""
-    participants_cfg, schema = get_participants_config_and_schema(
+    participants_cfg, schema = await get_participants_config_and_schema(
         commons, config, gsheets
     )
     strata_fields = {c.field_name: c for c in schema.fields if c.is_strata}
@@ -145,12 +145,12 @@ def get_strata(
 @router.get(
     "/filters", summary="Get possible filters covariates for a given participant type."
 )
-def get_filters(
+async def get_filters(
     commons: Annotated[CommonQueryParams, Depends()],
     gsheets: Annotated[GSheetCache, Depends(gsheet_cache)],
     config: Annotated[DatasourceConfig, Depends(datasource_config_required)],
 ) -> GetFiltersResponse:
-    participants_cfg, schema = get_participants_config_and_schema(
+    participants_cfg, schema = await get_participants_config_and_schema(
         commons, config, gsheets
     )
     filter_fields = {c.field_name: c for c in schema.fields if c.is_filter}
@@ -228,13 +228,13 @@ def create_col_to_filter_meta_mapper(
 @router.get(
     "/metrics", summary="Get possible metric covariates for a given participant type."
 )
-def get_metrics(
+async def get_metrics(
     commons: Annotated[CommonQueryParams, Depends()],
     gsheets: Annotated[GSheetCache, Depends(gsheet_cache)],
     config: Annotated[DatasourceConfig, Depends(datasource_config_required)],
 ) -> GetMetricsResponse:
     """Get possible metrics for a given participant type."""
-    participants_cfg, schema = get_participants_config_and_schema(
+    participants_cfg, schema = await get_participants_config_and_schema(
         commons, config, gsheets
     )
     metric_cols = {c.field_name: c for c in schema.fields if c.is_metric}
@@ -279,7 +279,7 @@ def validate_schema_metrics_or_raise(
 @router.post(
     "/power", summary="Check power given an experiment and audience specification."
 )
-def powercheck(
+async def powercheck(
     body: PowerRequest,
     gsheets: Annotated[GSheetCache, Depends(gsheet_cache)],
     config: Annotated[DatasourceConfig, Depends(datasource_config_required)],
@@ -289,7 +289,7 @@ def powercheck(
     commons = CommonQueryParams(
         participant_type=body.design_spec.participant_type, refresh=refresh
     )
-    participants_cfg, schema = get_participants_config_and_schema(
+    participants_cfg, schema = await get_participants_config_and_schema(
         commons, config, gsheets
     )
     validate_schema_metrics_or_raise(body.design_spec, schema)
@@ -327,7 +327,7 @@ def power_check_impl(
 @router.post(
     "/assign", summary="Assign treatment given experiment and audience specification."
 )
-def assign_treatment(
+async def assign_treatment(
     body: AssignRequest,
     chosen_n: Annotated[
         int, Query(..., description="Number of participants to assign.")
@@ -358,7 +358,7 @@ def assign_treatment(
     commons = CommonQueryParams(
         participant_type=body.design_spec.participant_type, refresh=refresh
     )
-    participants_cfg, schema = get_participants_config_and_schema(
+    participants_cfg, schema = await get_participants_config_and_schema(
         commons, config, gsheets
     )
     validate_schema_metrics_or_raise(body.design_spec, schema)

@@ -5,7 +5,8 @@ from datetime import UTC, datetime, timedelta
 import pytest
 from fastapi import HTTPException
 from pydantic import SecretStr
-from sqlalchemy import select
+from sqlalchemy import delete, select
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from xngin.apiserver import conftest, flags
 from xngin.apiserver.dns import safe_resolve
@@ -80,18 +81,18 @@ SAMPLE_GCLOUD_SERVICE_ACCOUNT_KEY = {
 
 
 @pytest.fixture(autouse=True)
-def fixture_teardown(xngin_session):
+async def fixture_teardown(xngin_session: AsyncSession):
     try:
         # setup here
         yield
     finally:
         # teardown here
         # Rollback any pending transactions that may have been hanging due to an exception.
-        xngin_session.rollback()
+        await xngin_session.rollback()
         # Clean up objects created in each test by truncating tables and leveraging cascade.
-        xngin_session.query(tables.Organization).delete()
-        xngin_session.query(tables.User).delete()
-        xngin_session.commit()
+        await xngin_session.execute(delete(tables.Organization))
+        await xngin_session.execute(delete(tables.User))
+        await xngin_session.commit()
 
 
 @pytest.fixture(scope="module", autouse=True)
@@ -100,14 +101,14 @@ def enable_apis_under_test():
 
 
 @pytest.fixture(name="testing_datasource_with_inline_schema")
-def fixture_testing_datasource_with_inline_schema(xngin_session):
+async def fixture_testing_datasource_with_inline_schema(xngin_session: AsyncSession):
     """Create a fake remote datasource using an inline schema for the participants config."""
     # First create a datasource to maintain proper referential integrity, but with a local config
     # so we know we can read our dwh data. Also populate with an inline schema to test admin.
     ds_with_inlined_shema = conftest.get_settings_datasource(
         "testing-inline-schema"
     ).config
-    return conftest.make_datasource_metadata(
+    return await conftest.make_datasource_metadata(
         xngin_session,
         datasource_id_for_config="testing",
         participants_def_list=[ds_with_inlined_shema.participants[0]],
@@ -142,10 +143,14 @@ def fixture_testing_sheet_datasource_with_user_added(testing_datasource, ppost):
 
 
 @pytest.fixture(name="testing_experiment")
-def fixture_testing_experiment(xngin_session, testing_datasource_with_user_added):
+async def fixture_testing_experiment(
+    xngin_session: AsyncSession, testing_datasource_with_user_added
+):
     """Create an experiment on a test inline schema datasource with proper user permissions."""
     datasource = testing_datasource_with_user_added.ds
-    experiment = insert_experiment_and_arms(xngin_session, datasource, "preassigned")
+    experiment = await insert_experiment_and_arms(
+        xngin_session, datasource, "preassigned"
+    )
     # Add fake assignments for each arm for real participant ids in our test data.
     arm_ids = [arm.id for arm in experiment.arms]
     # NOTE: id = 0 doesn't exist in the test data, so we'll have 1 missing participant.
@@ -158,20 +163,28 @@ def fixture_testing_experiment(xngin_session, testing_datasource_with_user_added
             strata=[],
         )
         xngin_session.add(assignment)
-    xngin_session.commit()
+    await xngin_session.commit()
+    await xngin_session.refresh(experiment, ["arm_assignments"])
     return experiment
 
 
-def test_user_from_token(xngin_session):
+async def test_user_from_token(xngin_session: AsyncSession):
     with pytest.raises(HTTPException, match="No user found with email") as e:
-        user_from_token(xngin_session, TESTING_TOKENS[UNPRIVILEGED_TOKEN_FOR_TESTING])
+        await user_from_token(
+            xngin_session, TESTING_TOKENS[UNPRIVILEGED_TOKEN_FOR_TESTING]
+        )
     assert e.value.status_code == 403
 
-    user = user_from_token(xngin_session, TESTING_TOKENS[PRIVILEGED_TOKEN_FOR_TESTING])
+    user = await user_from_token(
+        xngin_session, TESTING_TOKENS[PRIVILEGED_TOKEN_FOR_TESTING]
+    )
     assert user.is_privileged
+    await xngin_session.refresh(user, ["organizations"])
 
     org = user.organizations[0]
+    await xngin_session.refresh(org, ["datasources"])
     ds = org.datasources[0]
+
     ds_config = ds.get_config()
     pt_def = ds_config.participants[0]
     # Assert it's a "schema" type, not the old "sheets" type.
@@ -376,7 +389,7 @@ def test_delete_datasource(testing_datasource_with_user, udelete, pdelete):
     assert response.status_code == 204, response.content
 
 
-def test_webhook_lifecycle(
+async def test_webhook_lifecycle(
     testing_datasource_with_user_added, pdelete, ppost, ppatch, pget
 ):
     """Test creating, updating, and deleting a webhook."""
@@ -577,7 +590,7 @@ def test_create_participants_type_invalid(testing_datasource, ppost):
     )
 
 
-def test_lifecycle_with_db(testing_datasource, ppost, pget, pdelete):
+async def test_lifecycle_with_db(testing_datasource, ppost, pget, pdelete):
     """Exercises the admin API methods that require an external database."""
     # Add the privileged user to the organization.
     response = ppost(
@@ -802,8 +815,11 @@ def test_create_experiment_with_assignment_validation_errors(
     assert "Participants must be of type schema" in response.json()["message"]
 
 
-def test_create_preassigned_experiment_using_inline_schema_ds(
-    xngin_session, testing_datasource_with_user_added, use_deterministic_random, ppost
+async def test_create_preassigned_experiment_using_inline_schema_ds(
+    xngin_session: AsyncSession,
+    testing_datasource_with_user_added,
+    use_deterministic_random,
+    ppost,
 ):
     datasource_id = testing_datasource_with_user_added.ds.id
     request_obj = make_create_preassigned_experiment_request()
@@ -848,8 +864,10 @@ def test_create_preassigned_experiment_using_inline_schema_ds(
     (arm1_id, arm2_id) = [arm.arm_id for arm in created_experiment.design_spec.arms]
 
     # Verify database state using the ids in the returned DesignSpec.
-    experiment = xngin_session.scalars(
-        select(tables.Experiment).where(tables.Experiment.id == experiment_id)
+    experiment = (
+        await xngin_session.scalars(
+            select(tables.Experiment).where(tables.Experiment.id == experiment_id)
+        )
     ).one()
     assert experiment.state == ExperimentState.ASSIGNED
     assert experiment.datasource_id == datasource_id
@@ -860,9 +878,11 @@ def test_create_preassigned_experiment_using_inline_schema_ds(
     assert_dates_equal(experiment.start_date, request_obj.design_spec.start_date)
     assert_dates_equal(experiment.end_date, request_obj.design_spec.end_date)
     # Verify assignments were created
-    assignments = xngin_session.scalars(
-        select(tables.ArmAssignment).where(
-            tables.ArmAssignment.experiment_id == experiment_id
+    assignments = (
+        await xngin_session.scalars(
+            select(tables.ArmAssignment).where(
+                tables.ArmAssignment.experiment_id == experiment_id
+            )
         )
     ).all()
     assert len(assignments) == 100, {
@@ -953,10 +973,10 @@ def test_get_experiment_assignment_for_preassigned_participant(
     assert assignment_response.assignment is not None
 
 
-def test_get_experiment_assignment_for_online_participant(
-    xngin_session, testing_datasource_with_user_added, pget
+async def test_get_experiment_assignment_for_online_participant(
+    xngin_session: AsyncSession, testing_datasource_with_user_added, pget
 ):
-    testing_experiment = insert_experiment_and_arms(
+    testing_experiment = await insert_experiment_and_arms(
         xngin_session, testing_datasource_with_user_added.ds, "online"
     )
     datasource_id = testing_experiment.datasource_id
@@ -1000,26 +1020,27 @@ def test_get_experiment_assignment_for_online_participant(
     assert assignment_response2 == assignment_response
 
     # Make sure there's only one db entry.
-    assignment = xngin_session.scalars(
+    scalars = await xngin_session.scalars(
         select(tables.ArmAssignment).where(
             tables.ArmAssignment.experiment_id == experiment_id
         )
-    ).one()
+    )
+    assignment = scalars.one()
     assert assignment.participant_id == "new_id"
     assert assignment.arm_id == str(assignment_response.assignment.arm_id)
 
 
-def test_get_experiment_assignment_for_online_participant_past_end_date(
-    xngin_session, testing_datasource_with_user_added, pget
+async def test_get_experiment_assignment_for_online_participant_past_end_date(
+    xngin_session: AsyncSession, testing_datasource_with_user_added, pget
 ):
-    testing_experiment = insert_experiment_and_arms(
+    new_exp = await insert_experiment_and_arms(
         xngin_session,
         testing_datasource_with_user_added.ds,
         "online",
         end_date=datetime.now(UTC) - timedelta(days=1),
     )
-    datasource_id = testing_experiment.datasource_id
-    experiment_id = testing_experiment.id
+    datasource_id = new_exp.datasource_id
+    experiment_id = new_exp.id
 
     # Verify no new assignment is created for the ended experiment.
     response = pget(
@@ -1031,13 +1052,11 @@ def test_get_experiment_assignment_for_online_participant_past_end_date(
     )
     assert assignment_response.experiment_id == experiment_id
     assert assignment_response.participant_id == "new_id"
-    assert assignment_response.assignment is None
+    assert assignment_response.assignment is None, assignment_response.model_dump_json()
     # Verify that the experiment state was updated.
-    xngin_session.refresh(testing_experiment)
-    assert testing_experiment.stopped_assignments_at is not None
-    assert (
-        testing_experiment.stopped_assignments_reason == StopAssignmentReason.END_DATE
-    )
+    await xngin_session.refresh(new_exp)
+    assert new_exp.stopped_assignments_at is not None
+    assert new_exp.stopped_assignments_reason == StopAssignmentReason.END_DATE
 
 
 def test_experiments_analyze(testing_experiment, pget):
@@ -1070,10 +1089,10 @@ def test_experiments_analyze(testing_experiment, pget):
         assert sum([arm.num_missing_values for arm in analysis.arm_analyses]) == 1
 
 
-def test_experiments_analyze_for_experiment_with_no_participants(
-    xngin_session, testing_datasource_with_user_added, pget
+async def test_experiments_analyze_for_experiment_with_no_participants(
+    xngin_session: AsyncSession, testing_datasource_with_user_added, pget
 ):
-    testing_experiment = insert_experiment_and_arms(
+    testing_experiment = await insert_experiment_and_arms(
         xngin_session, testing_datasource_with_user_added.ds, "online"
     )
     datasource_id = testing_experiment.datasource_id
@@ -1099,8 +1118,8 @@ def test_experiments_analyze_for_experiment_with_no_participants(
         ("abandon", ExperimentState.COMMITTED, 400, "Invalid state: committed"),
     ],
 )
-def test_admin_experiment_state_setting(
-    xngin_session,
+async def test_admin_experiment_state_setting(
+    xngin_session: AsyncSession,
     testing_datasource_with_user_added,
     endpoint,
     initial_state,
@@ -1112,7 +1131,7 @@ def test_admin_experiment_state_setting(
     datasource = testing_datasource_with_user_added.ds
     experiment, _ = make_insertable_experiment(datasource, initial_state)
     xngin_session.add(experiment)
-    xngin_session.commit()
+    await xngin_session.commit()
 
     response = ppost(
         f"/v1/m/datasources/{datasource.id}/experiments/{experiment.id!s}/{endpoint}"
@@ -1127,7 +1146,7 @@ def test_admin_experiment_state_setting(
             if endpoint == "abandon"
             else ExperimentState.COMMITTED
         )
-        xngin_session.refresh(experiment)
+        await xngin_session.refresh(experiment)
         assert experiment.state == expected_state
     # If failure case, verify the error message
     if expected_detail:

@@ -29,7 +29,7 @@ env:
   FORCE_COLOR: "1"
   PYTHONUNBUFFERED: "1"
 
-  # Tests should never connect to this DSN but it (or XNGIN_DB) must be set.
+  # Tests should never connect to this DSN but it must be set.
   DATABASE_URL: "postgresql://fail:fail@127.0.0.2:5499/fail"
 
   # Server startup will fail without these values being set.
@@ -122,7 +122,7 @@ jobs:
           uv run xngin-cli validate-settings xngin.settings.json
       - name: xngin-cli smoke tests
         env:
-          DATABASE_URL: "postgresql://postgres:postgres@localhost:5499/postgres?sslmode=disable"
+          DATABASE_URL: "postgresql+psycopg://postgres:postgres@localhost:5499/postgres?sslmode=disable"
         run: |
           set -x
 
@@ -136,7 +136,7 @@ jobs:
           uv run xngin-cli parse-config-spreadsheet file://./config.csv test_participant_type
       - name: Run xngin.gha.settings.json tests
         env:
-          DATABASE_URL: "postgresql://postgres:postgres@localhost:5499/postgres?sslmode=disable"
+          DATABASE_URL: "postgresql+psycopg://postgres:postgres@localhost:5499/postgres?sslmode=disable"
           PGPASSWORD: postgres
         run: |
           set -x
@@ -224,7 +224,7 @@ jobs:
     runs-on: ubuntu-22.04
     timeout-minutes: 15
     env:
-      DATABASE_URL: "postgresql://postgres:postgres@localhost:5499/postgres?sslmode=disable"
+      DATABASE_URL: "postgresql+psycopg://postgres:postgres@localhost:5499/postgres?sslmode=disable"
       XNGIN_CLI_TABLE_NAME: smoke_${{ github.run_id }}_${{ github.run_attempt }}
     services:
       postgres:
@@ -254,7 +254,7 @@ jobs:
           openssl sha256 service_account.json
       - name: bq smoke tests
         env:
-          DATABASE_URL: "postgresql://postgres:postgres@localhost:5499/postgres?sslmode=disable"
+          DATABASE_URL: "postgresql+psycopg://postgres:postgres@localhost:5499/postgres?sslmode=disable"
         run: |
           set -x
 
