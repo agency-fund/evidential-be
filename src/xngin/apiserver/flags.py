@@ -29,6 +29,9 @@ UPDATE_API_TESTS = truthy_env("UPDATE_API_TESTS")
 
 XNGIN_DEVDWH_DSN = os.environ.get("XNGIN_DEVDWH_DSN", "")
 
+# Hosting providers may set hosted database URL as DATABASE_URL, so we use the same.
+DATABASE_URL = os.environ.get("DATABASE_URL")
+
 # XNGIN_PUBLIC_PROTOCOL defines the protocol clients should use on our public URL. This should always be "https",
 # except in dev environments.
 XNGIN_PUBLIC_PROTOCOL = os.environ.get("XNGIN_PUBLIC_PROTOCOL", "https")
