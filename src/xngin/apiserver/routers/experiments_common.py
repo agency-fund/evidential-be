@@ -64,6 +64,23 @@ async def create_experiment_impl(
         )
     organization_id = db_datasource.organization_id
 
+    # Validate webhook IDs exist and belong to organization
+    validated_webhooks = []
+    if webhook_ids:
+        webhooks = await xngin_session.scalars(
+            select(tables.Webhook)
+            .where(tables.Webhook.id.in_(webhook_ids))
+            .where(tables.Webhook.organization_id == organization_id)
+        )
+        validated_webhooks = list(webhooks)
+        found_webhook_ids = {w.id for w in validated_webhooks}
+        missing_webhook_ids = set(webhook_ids) - found_webhook_ids
+        if missing_webhook_ids:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Invalid webhook IDs: {sorted(missing_webhook_ids)}",
+            )
+
     # First generate ids for the experiment and arms, which do_assignment needs.
     request.design_spec.experiment_id = tables.experiment_id_factory()
     for arm in request.design_spec.arms:
@@ -85,7 +102,7 @@ async def create_experiment_impl(
             random_state=random_state,
             xngin_session=xngin_session,
             stratify_on_metrics=stratify_on_metrics,
-            webhook_ids=webhook_ids,
+            validated_webhooks=validated_webhooks,
         )
     if request.design_spec.experiment_type == "online":
         return await create_online_experiment_impl(
@@ -93,7 +110,7 @@ async def create_experiment_impl(
             datasource_id=datasource_id,
             organization_id=organization_id,
             xngin_session=xngin_session,
-            webhook_ids=webhook_ids,
+            validated_webhooks=validated_webhooks,
         )
 
     raise HTTPException(
@@ -112,7 +129,7 @@ async def create_preassigned_experiment_impl(
     random_state: int | None,
     xngin_session: AsyncSession,
     stratify_on_metrics: bool,
-    webhook_ids: list[str],
+    validated_webhooks: list[tables.Webhook],
 ) -> CreateExperimentResponse:
     design_spec = request.design_spec
     metric_names = [m.field_name for m in design_spec.metrics]
@@ -151,14 +168,8 @@ async def create_preassigned_experiment_impl(
     )
     experiment = experiment_converter.get_experiment()
     # Associate webhooks with the experiment
-    if webhook_ids:
-        webhooks = await xngin_session.scalars(
-            select(tables.Webhook)
-            .where(tables.Webhook.id.in_(webhook_ids))
-            .where(tables.Webhook.organization_id == organization_id)
-        )
-        for webhook in webhooks:
-            experiment.webhooks.append(webhook)
+    for webhook in validated_webhooks:
+        experiment.webhooks.append(webhook)
     xngin_session.add(experiment)
 
     # Create assignment records
@@ -180,6 +191,7 @@ async def create_preassigned_experiment_impl(
     assign_summary = await get_assign_summary(
         xngin_session, experiment.id, assignment_response.balance_check
     )
+    webhook_ids = [webhook.id for webhook in validated_webhooks]
     return experiment_converter.get_create_experiment_response(
         assign_summary, webhook_ids
     )
@@ -190,7 +202,7 @@ async def create_online_experiment_impl(
     datasource_id: str,
     organization_id: str,
     xngin_session: AsyncSession,
-    webhook_ids: list[str],
+    validated_webhooks: list[tables.Webhook],
 ) -> CreateExperimentResponse:
     design_spec = request.design_spec
     experiment_converter = ExperimentStorageConverter.init_from_components(
@@ -201,14 +213,8 @@ async def create_online_experiment_impl(
     )
     experiment = experiment_converter.get_experiment()
     # Associate webhooks with the experiment
-    if webhook_ids:
-        webhooks = await xngin_session.scalars(
-            select(tables.Webhook)
-            .where(tables.Webhook.id.in_(webhook_ids))
-            .where(tables.Webhook.organization_id == organization_id)
-        )
-        for webhook in webhooks:
-            experiment.webhooks.append(webhook)
+    for webhook in validated_webhooks:
+        experiment.webhooks.append(webhook)
     xngin_session.add(experiment)
 
     await xngin_session.commit()
@@ -218,6 +224,7 @@ async def create_online_experiment_impl(
         sample_size=0,
         arm_sizes=[ArmSize(arm=arm.model_copy(), size=0) for arm in design_spec.arms],
     )
+    webhook_ids = [webhook.id for webhook in validated_webhooks]
     return experiment_converter.get_create_experiment_response(
         empty_assign_summary, webhook_ids
     )

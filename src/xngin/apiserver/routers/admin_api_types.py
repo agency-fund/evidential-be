@@ -112,7 +112,8 @@ class AddWebhookToOrganizationRequest(AdminApiBaseModel):
     name: Annotated[
         str,
         Field(
-            description="User-friendly name for the webhook. This name is displayed in the UI and helps identify the webhook's purpose."
+            max_length=MAX_LENGTH_OF_NAME_VALUE,
+            description="User-friendly name for the webhook. This name is displayed in the UI and helps identify the webhook's purpose.",
         ),
     ]
     url: Annotated[
@@ -136,7 +137,10 @@ class AddWebhookToOrganizationResponse(AdminApiBaseModel):
     type: Annotated[
         str, Field(description="The type of webhook; e.g. experiment.created")
     ]
-    name: Annotated[str, Field(description="User-friendly name for the webhook.")]
+    name: Annotated[
+        str,
+        Field(description="User-friendly name for the webhook."),
+    ]
     url: Annotated[str, Field(description="The URL to notify.")]
     auth_token: Annotated[
         str | None,
@@ -153,7 +157,10 @@ class WebhookSummary(AdminApiBaseModel):
     type: Annotated[
         str, Field(description="The type of webhook; e.g. experiment.created")
     ]
-    name: Annotated[str, Field(description="User-friendly name for the webhook.")]
+    name: Annotated[
+        str,
+        Field(description="User-friendly name for the webhook."),
+    ]
     url: Annotated[str, Field(description="The URL to notify.")]
     auth_token: Annotated[
         str | None,

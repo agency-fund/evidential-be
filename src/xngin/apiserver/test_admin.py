@@ -1172,22 +1172,22 @@ async def test_experiment_webhook_integration(
     # Create two webhooks in the organization
     webhook1_response = ppost(
         f"/v1/m/organizations/{org_id}/webhooks",
-        json={
-            "type": "experiment.created",
-            "name": "Test Webhook 1",
-            "url": "https://example.com/webhook1",
-        },
+        json=AddWebhookToOrganizationRequest(
+            type="experiment.created",
+            name="Test Webhook 1",
+            url="https://example.com/webhook1",
+        ).model_dump(),
     )
     assert webhook1_response.status_code == 200, webhook1_response.content
     webhook1_id = webhook1_response.json()["id"]
 
     webhook2_response = ppost(
         f"/v1/m/organizations/{org_id}/webhooks",
-        json={
-            "type": "experiment.created",
-            "name": "Test Webhook 2",
-            "url": "https://example.com/webhook2",
-        },
+        json=AddWebhookToOrganizationRequest(
+            type="experiment.created",
+            name="Test Webhook 2",
+            url="https://example.com/webhook2",
+        ).model_dump(),
     )
     assert webhook2_response.status_code == 200, webhook2_response.content
     webhook2_id = webhook2_response.json()["id"]
