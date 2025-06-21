@@ -350,13 +350,21 @@ async def add_webhook_to_organization(
 
     # Create and save the webhook
     webhook = tables.Webhook(
-        type=body.type, name=body.name, url=body.url, auth_token=auth_token, organization_id=org.id
+        type=body.type,
+        name=body.name,
+        url=body.url,
+        auth_token=auth_token,
+        organization_id=org.id,
     )
     session.add(webhook)
     await session.commit()
 
     return AddWebhookToOrganizationResponse(
-        id=webhook.id, type=webhook.type, name=webhook.name, url=webhook.url, auth_token=auth_token
+        id=webhook.id,
+        type=webhook.type,
+        name=webhook.name,
+        url=webhook.url,
+        auth_token=auth_token,
     )
 
 

@@ -180,7 +180,9 @@ async def create_preassigned_experiment_impl(
     assign_summary = await get_assign_summary(
         xngin_session, experiment.id, assignment_response.balance_check
     )
-    return experiment_converter.get_create_experiment_response(assign_summary, webhook_ids)
+    return experiment_converter.get_create_experiment_response(
+        assign_summary, webhook_ids
+    )
 
 
 async def create_online_experiment_impl(
@@ -216,7 +218,9 @@ async def create_online_experiment_impl(
         sample_size=0,
         arm_sizes=[ArmSize(arm=arm.model_copy(), size=0) for arm in design_spec.arms],
     )
-    return experiment_converter.get_create_experiment_response(empty_assign_summary, webhook_ids)
+    return experiment_converter.get_create_experiment_response(
+        empty_assign_summary, webhook_ids
+    )
 
 
 async def commit_experiment_impl(
@@ -296,7 +300,7 @@ async def list_organization_experiments_impl(
         select(tables.Experiment)
         .options(
             selectinload(tables.Experiment.arms),
-            selectinload(tables.Experiment.webhooks)
+            selectinload(tables.Experiment.webhooks),
         )  # async: ExperimentStorageConverter requires .arms
         .join(
             tables.Datasource,
@@ -330,7 +334,7 @@ async def list_experiments_impl(
         select(tables.Experiment)
         .options(
             selectinload(tables.Experiment.arms),
-            selectinload(tables.Experiment.webhooks)
+            selectinload(tables.Experiment.webhooks),
         )
         .where(tables.Experiment.datasource_id == datasource_id)
         .where(

@@ -49,9 +49,7 @@ from xngin.apiserver.routers.stateless_api_types import (
     DataType,
     DesignSpecMetricRequest,
     ExperimentAnalysis,
-    Filter,
     PreassignedExperimentSpec,
-    Stratum,
 )
 from xngin.apiserver.settings import (
     BqDsn,
@@ -1206,9 +1204,7 @@ async def test_experiment_webhook_integration(
                 Arm(arm_name="control", arm_description="Control group"),
                 Arm(arm_name="treatment", arm_description="Treatment group"),
             ],
-            metrics=[
-                DesignSpecMetricRequest(field_name="income", metric_pct_change=5)
-            ],
+            metrics=[DesignSpecMetricRequest(field_name="income", metric_pct_change=5)],
             strata=[],
             filters=[],
         ),
@@ -1217,7 +1213,7 @@ async def test_experiment_webhook_integration(
 
     create_response = ppost(
         f"/v1/m/datasources/{datasource_id}/experiments?chosen_n=100",
-        json=experiment_request.model_dump(mode="json")
+        json=experiment_request.model_dump(mode="json"),
     )
     assert create_response.status_code == 200, create_response.content
 
@@ -1256,9 +1252,7 @@ async def test_experiment_webhook_integration(
                 Arm(arm_name="control", arm_description="Control group"),
                 Arm(arm_name="treatment", arm_description="Treatment group"),
             ],
-            metrics=[
-                DesignSpecMetricRequest(field_name="income", metric_pct_change=5)
-            ],
+            metrics=[DesignSpecMetricRequest(field_name="income", metric_pct_change=5)],
             strata=[],
             filters=[],
         )

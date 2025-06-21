@@ -255,7 +255,7 @@ async def test_create_experiment_impl_for_preassigned(
         random_state=42,
         xngin_session=xngin_session,
         stratify_on_metrics=True,
-        webhook_ids=[]
+        webhook_ids=[],
     )
 
     # Verify response
@@ -364,7 +364,7 @@ async def test_create_experiment_impl_for_online(
         random_state=42,
         xngin_session=xngin_session,
         stratify_on_metrics=True,
-        webhook_ids=[]
+        webhook_ids=[],
     )
 
     # Verify response
@@ -457,7 +457,7 @@ async def test_create_experiment_impl_overwrites_uuids(
         random_state=42,
         xngin_session=xngin_session,
         stratify_on_metrics=True,
-        webhook_ids=[]
+        webhook_ids=[],
     )
 
     # Verify that new UUIDs were generated
@@ -504,7 +504,7 @@ async def test_create_experiment_impl_no_metric_stratification(
         random_state=42,
         xngin_session=xngin_session,
         stratify_on_metrics=False,
-        webhook_ids=[]
+        webhook_ids=[],
     )
 
     # Verify basic response
