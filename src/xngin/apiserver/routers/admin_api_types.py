@@ -109,8 +109,19 @@ class ListDatasourcesResponse(AdminApiBaseModel):
 
 class AddWebhookToOrganizationRequest(AdminApiBaseModel):
     type: Literal["experiment.created"]
-    name: Annotated[str, Field(...)]
-    url: Annotated[str, Field(max_length=MAX_LENGTH_OF_WEBHOOK_URL_VALUE)]
+    name: Annotated[
+        str,
+        Field(
+            description="User-friendly name for the webhook. This name is displayed in the UI and helps identify the webhook's purpose."
+        ),
+    ]
+    url: Annotated[
+        str,
+        Field(
+            max_length=MAX_LENGTH_OF_WEBHOOK_URL_VALUE,
+            description="The HTTP or HTTPS URL that will receive webhook notifications when events occur.",
+        ),
+    ]
 
     @field_validator("url")
     @classmethod
