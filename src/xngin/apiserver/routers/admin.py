@@ -379,7 +379,11 @@ async def list_organization_webhooks(
     org = await get_organization_or_raise(session, user, organization_id)
 
     # Query for webhooks
-    stmt = select(tables.Webhook).where(tables.Webhook.organization_id == org.id)
+    stmt = (
+        select(tables.Webhook)
+        .where(tables.Webhook.organization_id == org.id)
+        .order_by(tables.Webhook.name, tables.Webhook.id)
+    )
     webhooks = await session.scalars(stmt)
 
     # Convert webhooks to WebhookSummary objects
