@@ -412,7 +412,7 @@ async def update_organization_webhook(
     user: Annotated[tables.User, Depends(user_from_token)],
     body: Annotated[UpdateOrganizationWebhookRequest, Body(...)],
 ):
-    """Updates a webhook's URL in an organization."""
+    """Updates a webhook's name and URL in an organization."""
     # Verify user has access to the organization
     org = await get_organization_or_raise(session, user, organization_id)
 
@@ -431,7 +431,7 @@ async def update_organization_webhook(
             status_code=status.HTTP_404_NOT_FOUND, detail="Webhook not found"
         )
 
-    # Update the webhook URL
+    webhook.name = body.name
     webhook.url = body.url
     await session.commit()
     return GENERIC_SUCCESS

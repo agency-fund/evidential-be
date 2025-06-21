@@ -26,6 +26,7 @@ from xngin.apiserver.routers.admin_api_types import (
     ListDatasourcesResponse,
     ListParticipantsTypeResponse,
     UpdateDatasourceRequest,
+    UpdateOrganizationWebhookRequest,
     UpdateParticipantsTypeRequest,
     UpdateParticipantsTypeResponse,
 )
@@ -440,8 +441,10 @@ async def test_webhook_lifecycle(
 
     # Update the webhook URL
     new_url = "https://updated-example.com/webhook"
+    new_name = "new name"
     response = ppatch(
-        f"/v1/m/organizations/{org_id}/webhooks/{webhook_id}", json={"url": new_url}
+        f"/v1/m/organizations/{org_id}/webhooks/{webhook_id}",
+        json=UpdateOrganizationWebhookRequest(url=new_url, name=new_name).model_dump(),
     )
     assert response.status_code == 204, response.content
 
@@ -451,6 +454,7 @@ async def test_webhook_lifecycle(
     webhooks = response.json()["items"]
     assert len(webhooks) == 1
     assert webhooks[0]["url"] == new_url
+    assert webhooks[0]["name"] == new_name
 
     # Delete the webhook
     response = pdelete(f"/v1/m/organizations/{org_id}/webhooks/{webhook_id}")
@@ -469,7 +473,9 @@ async def test_webhook_lifecycle(
     # Try to update a non-existent webhook
     response = ppatch(
         f"/v1/m/organizations/{org_id}/webhooks/{webhook_id}",
-        json={"url": "https://should-fail.com/webhook"},
+        json=UpdateOrganizationWebhookRequest(
+            url="https://should-fail.com/webhook", name="fail"
+        ).model_dump(),
     )
     assert response.status_code == 404, response.content
 
