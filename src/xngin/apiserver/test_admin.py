@@ -15,6 +15,7 @@ from xngin.apiserver.models.enums import ExperimentState, StopAssignmentReason
 from xngin.apiserver.routers import oidc_dependencies
 from xngin.apiserver.routers.admin import user_from_token
 from xngin.apiserver.routers.admin_api_types import (
+    CreateApiKeyResponse,
     CreateDatasourceRequest,
     CreateDatasourceResponse,
     CreateParticipantsTypeRequest,
@@ -22,6 +23,7 @@ from xngin.apiserver.routers.admin_api_types import (
     FieldMetadata,
     InspectDatasourceResponse,
     InspectDatasourceTableResponse,
+    ListApiKeysResponse,
     ListDatasourcesResponse,
     ListParticipantsTypeResponse,
     UpdateDatasourceRequest,
@@ -1151,3 +1153,31 @@ async def test_admin_experiment_state_setting(
     # If failure case, verify the error message
     if expected_detail:
         assert response.json()["detail"] == expected_detail
+
+
+async def test_manage_apikeys(testing_datasource_with_user_added, ppost, pget, pdelete):
+    ds = testing_datasource_with_user_added.ds
+
+    response = pget(f"/v1/m/datasources/{ds.id}/apikeys")
+    assert response.status_code == 200
+    list_api_keys_response = ListApiKeysResponse.model_validate(response.json())
+    assert len(list_api_keys_response.items) == 1
+
+    response = ppost(f"/v1/m/datasources/{ds.id}/apikeys/")
+    assert response.status_code == 200
+    create_api_key_response = CreateApiKeyResponse.model_validate(response.json())
+    assert create_api_key_response.datasource_id == ds.id
+    created_api_key_id = create_api_key_response.id
+
+    response = pget(f"/v1/m/datasources/{ds.id}/apikeys")
+    assert response.status_code == 200
+    list_api_keys_response = ListApiKeysResponse.model_validate(response.json())
+    assert len(list_api_keys_response.items) == 2
+
+    response = pdelete(f"/v1/m/datasources/{ds.id}/apikeys/{created_api_key_id}")
+    assert response.status_code == 204
+
+    response = pget(f"/v1/m/datasources/{ds.id}/apikeys")
+    assert response.status_code == 200
+    list_api_keys_response = ListApiKeysResponse.model_validate(response.json())
+    assert len(list_api_keys_response.items) == 1
