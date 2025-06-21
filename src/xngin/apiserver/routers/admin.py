@@ -1170,15 +1170,18 @@ async def list_api_keys(
 ) -> ListApiKeysResponse:
     """Returns API keys that have access to the datasource."""
     ds = await get_datasource_or_raise(
-        session, user, datasource_id, preload=[tables.Datasource.api_keys]
+        session,
+        user,
+        datasource_id,
+        preload=[tables.Datasource.api_keys, tables.Datasource.organization],
     )
     return ListApiKeysResponse(
         items=[
             ApiKeySummary(
                 id=api_key.id,
                 datasource_id=api_key.datasource_id,
-                organization_id=api_key.datasource.organization_id,
-                organization_name=api_key.datasource.organization.name,
+                organization_id=ds.organization_id,
+                organization_name=ds.organization.name,
             )
             for api_key in sorted(ds.api_keys, key=lambda a: a.id)
         ]
@@ -1215,7 +1218,9 @@ async def delete_api_key(
     api_key_id: Annotated[str, Path(...)],
 ):
     """Deletes the specified API key."""
-    ds = await get_datasource_or_raise(session, user, datasource_id)
+    ds = await get_datasource_or_raise(
+        session, user, datasource_id, preload=[tables.Datasource.api_keys]
+    )
     ds.api_keys = [a for a in ds.api_keys if a.id != api_key_id]
     session.add(ds)
     await session.commit()
