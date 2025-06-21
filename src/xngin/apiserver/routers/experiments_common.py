@@ -234,7 +234,7 @@ async def commit_experiment_impl(
                     experiment_id=experiment_id,
                     experiment_url=f"{flags.XNGIN_PUBLIC_PROTOCOL}://{flags.XNGIN_PUBLIC_HOSTNAME}/v1/experiments/{experiment_id}",
                 ).model_dump(),
-                headers={"Authorization": webhook.auth_token}
+                headers={"Webhook-Token": webhook.auth_token}
                 if webhook.auth_token
                 else {},
             )

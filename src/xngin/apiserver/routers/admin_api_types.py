@@ -128,7 +128,7 @@ class AddWebhookToOrganizationResponse(AdminApiBaseModel):
     auth_token: Annotated[
         str | None,
         Field(
-            description="The value of the Authorization: header that will be sent with the request to the configured URL."
+            description="The value of the Webhook-Token: header that will be sent with the request to the configured URL."
         ),
     ]
 
@@ -144,7 +144,7 @@ class WebhookSummary(AdminApiBaseModel):
     auth_token: Annotated[
         str | None,
         Field(
-            description="The value of the Authorization: header that will be sent with the request to the configured URL."
+            description="The value of the Webhook-Token: header that will be sent with the request to the configured URL."
         ),
     ]
 
