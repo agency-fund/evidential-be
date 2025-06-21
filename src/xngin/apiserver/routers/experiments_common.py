@@ -150,8 +150,6 @@ async def create_preassigned_experiment_impl(
         power_analyses=request.power_analyses,
     )
     experiment = experiment_converter.get_experiment()
-    xngin_session.add(experiment)
-
     # Associate webhooks with the experiment
     if webhook_ids:
         webhooks = await xngin_session.scalars(
@@ -161,6 +159,7 @@ async def create_preassigned_experiment_impl(
         )
         for webhook in webhooks:
             experiment.webhooks.append(webhook)
+    xngin_session.add(experiment)
 
     # Create assignment records
     for assignment in assignment_response.assignments:
@@ -199,8 +198,6 @@ async def create_online_experiment_impl(
         design_spec=design_spec,
     )
     experiment = experiment_converter.get_experiment()
-    xngin_session.add(experiment)
-
     # Associate webhooks with the experiment
     if webhook_ids:
         webhooks = await xngin_session.scalars(
@@ -210,6 +207,7 @@ async def create_online_experiment_impl(
         )
         for webhook in webhooks:
             experiment.webhooks.append(webhook)
+    xngin_session.add(experiment)
 
     await xngin_session.commit()
     # Online experiments start with no assignments.

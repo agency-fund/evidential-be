@@ -30,6 +30,7 @@ from xngin.apiserver.routers.admin_api_types import (
     UpdateParticipantsTypeResponse,
 )
 from xngin.apiserver.routers.experiments_api_types import (
+    CreateExperimentRequest,
     CreateExperimentResponse,
     ExperimentConfig,
     GetExperimentAssignmentsResponse,
@@ -44,8 +45,13 @@ from xngin.apiserver.routers.oidc_dependencies import (
     UNPRIVILEGED_TOKEN_FOR_TESTING,
 )
 from xngin.apiserver.routers.stateless_api_types import (
+    Arm,
     DataType,
+    DesignSpecMetricRequest,
     ExperimentAnalysis,
+    Filter,
+    PreassignedExperimentSpec,
+    Stratum,
 )
 from xngin.apiserver.settings import (
     BqDsn,
@@ -1188,30 +1194,30 @@ async def test_experiment_webhook_integration(
     assert webhook2_response.status_code == 200, webhook2_response.content
     webhook2_id = webhook2_response.json()["id"]
 
-    # Create an experiment with only the first webhook
-    experiment_data = {
-        "design_spec": {
-            "experiment_type": "online",
-            "participant_type": "user",
-            "name": "Test Experiment with Webhook",
-            "description": "Testing webhook integration",
-            "start_date": "2024-01-01T00:00:00Z",
-            "end_date": "2024-01-31T23:59:59Z",
-            "arms": [
-                {"arm_name": "control", "description": "Control group"},
-                {"arm_name": "treatment", "description": "Treatment group"},
+    # Create an experiment with only the first webhook using proper Pydantic models
+    experiment_request = CreateExperimentRequest(
+        design_spec=PreassignedExperimentSpec(
+            participant_type="test_participant_type",
+            experiment_name="Test Experiment with Webhook",
+            description="Testing webhook integration",
+            start_date=datetime(2024, 1, 1, tzinfo=UTC),
+            end_date=datetime(2024, 1, 31, 23, 59, 59, tzinfo=UTC),
+            arms=[
+                Arm(arm_name="control", arm_description="Control group"),
+                Arm(arm_name="treatment", arm_description="Treatment group"),
             ],
-            "metrics": [
-                {"field_name": "conversion_rate", "description": "Conversion rate"}
+            metrics=[
+                DesignSpecMetricRequest(field_name="income", metric_pct_change=5)
             ],
-            "strata": [],
-            "filters": [],
-        },
-        "webhooks": [webhook1_id],  # Only include the first webhook
-    }
+            strata=[],
+            filters=[],
+        ),
+        webhooks=[webhook1_id],  # Only include the first webhook
+    )
 
     create_response = ppost(
-        f"/v1/m/datasources/{datasource_id}/experiments", json=experiment_data
+        f"/v1/m/datasources/{datasource_id}/experiments?chosen_n=100",
+        json=experiment_request.model_dump(mode="json")
     )
     assert create_response.status_code == 200, create_response.content
 
@@ -1238,31 +1244,30 @@ async def test_experiment_webhook_integration(
     # Verify the second webhook is not included
     assert webhook2_id not in retrieved_experiment["webhooks"]
 
-    # Test creating an experiment with no webhooks
-    experiment_data_no_webhooks = {
-        "design_spec": {
-            "experiment_type": "online",
-            "participant_type": "user",
-            "name": "Test Experiment without Webhooks",
-            "description": "Testing no webhook integration",
-            "start_date": "2024-01-01T00:00:00Z",
-            "end_date": "2024-01-31T23:59:59Z",
-            "arms": [
-                {"arm_name": "control", "description": "Control group"},
-                {"arm_name": "treatment", "description": "Treatment group"},
+    # Test creating an experiment with no webhooks using proper Pydantic models
+    experiment_request_no_webhooks = CreateExperimentRequest(
+        design_spec=PreassignedExperimentSpec(
+            participant_type="test_participant_type",
+            experiment_name="Test Experiment without Webhooks",
+            description="Testing no webhook integration",
+            start_date=datetime(2024, 1, 1, tzinfo=UTC),
+            end_date=datetime(2024, 1, 31, 23, 59, 59, tzinfo=UTC),
+            arms=[
+                Arm(arm_name="control", arm_description="Control group"),
+                Arm(arm_name="treatment", arm_description="Treatment group"),
             ],
-            "metrics": [
-                {"field_name": "conversion_rate", "description": "Conversion rate"}
+            metrics=[
+                DesignSpecMetricRequest(field_name="income", metric_pct_change=5)
             ],
-            "strata": [],
-            "filters": [],
-        }
+            strata=[],
+            filters=[],
+        )
         # No webhooks field - should default to empty list
-    }
+    )
 
     create_response_no_webhooks = ppost(
-        f"/v1/m/datasources/{datasource_id}/experiments",
-        json=experiment_data_no_webhooks,
+        f"/v1/m/datasources/{datasource_id}/experiments?chosen_n=100",
+        json=experiment_request_no_webhooks.model_dump(mode="json"),
     )
     assert create_response_no_webhooks.status_code == 200, (
         create_response_no_webhooks.content
