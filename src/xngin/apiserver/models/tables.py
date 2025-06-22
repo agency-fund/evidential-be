@@ -113,7 +113,7 @@ class Webhook(Base):
     type: Mapped[str] = mapped_column()
     # The URL to post the event to. The payload body depends on the type of webhook.
     url: Mapped[str] = mapped_column()
-    # The token that will be sent in the Authorization header.
+    # The token that will be sent in the Webhook-Token header.
     auth_token: Mapped[str | None] = mapped_column()
 
     organization_id: Mapped[str] = mapped_column(
