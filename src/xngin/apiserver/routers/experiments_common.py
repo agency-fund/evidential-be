@@ -15,7 +15,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from xngin.apiserver import flags
+from xngin.apiserver import constants, flags
 from xngin.apiserver.models import tables
 from xngin.apiserver.models.enums import ExperimentState, StopAssignmentReason
 from xngin.apiserver.models.storage_format_converters import ExperimentStorageConverter
@@ -234,7 +234,7 @@ async def commit_experiment_impl(
                     experiment_id=experiment_id,
                     experiment_url=f"{flags.XNGIN_PUBLIC_PROTOCOL}://{flags.XNGIN_PUBLIC_HOSTNAME}/v1/experiments/{experiment_id}",
                 ).model_dump(),
-                headers={"Webhook-Token": webhook.auth_token}
+                headers={constants.HEADER_WEBHOOK_TOKEN: webhook.auth_token}
                 if webhook.auth_token
                 else {},
             )
