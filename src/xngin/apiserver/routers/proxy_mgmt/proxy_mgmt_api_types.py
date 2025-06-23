@@ -7,7 +7,7 @@ from typing import Any
 import httpx
 from pydantic import BaseModel, ConfigDict, Field, field_serializer
 
-from xngin.apiserver.routers.stateless_api_types import (
+from xngin.apiserver.routers.stateless.stateless_api_types import (
     AssignResponse,
     DesignSpec,
     PowerResponse,

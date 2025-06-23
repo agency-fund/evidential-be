@@ -36,8 +36,7 @@ from xngin.apiserver.dwh.reflect_schemas import create_inspect_table_response_fr
 from xngin.apiserver.exceptions_common import LateValidationError
 from xngin.apiserver.models import tables
 from xngin.apiserver.models.storage_format_converters import ExperimentStorageConverter
-from xngin.apiserver.routers import experiments_api_types, experiments_common
-from xngin.apiserver.routers.admin_api_types import (
+from xngin.apiserver.routers.admin.admin_api_types import (
     AddMemberToOrganizationRequest,
     AddWebhookToOrganizationRequest,
     AddWebhookToOrganizationResponse,
@@ -71,17 +70,21 @@ from xngin.apiserver.routers.admin_api_types import (
     UserSummary,
     WebhookSummary,
 )
-from xngin.apiserver.routers.experiments_api_types import (
+from xngin.apiserver.routers.auth.oidc_dependencies import TokenInfo, require_oidc_token
+from xngin.apiserver.routers.experiments import (
+    experiments_api_types,
+    experiments_common,
+)
+from xngin.apiserver.routers.experiments.experiments_api_types import (
     GetParticipantAssignmentResponse,
 )
-from xngin.apiserver.routers.oidc_dependencies import TokenInfo, require_oidc_token
-from xngin.apiserver.routers.stateless_api import (
+from xngin.apiserver.routers.stateless.stateless_api import (
     create_col_to_filter_meta_mapper,
     generate_field_descriptors,
     power_check_impl,
     validate_schema_metrics_or_raise,
 )
-from xngin.apiserver.routers.stateless_api_types import (
+from xngin.apiserver.routers.stateless.stateless_api_types import (
     ArmAnalysis,
     ExperimentAnalysis,
     GetMetricsResponseElement,

@@ -19,8 +19,8 @@ from xngin.apiserver.models.storage_types import (
     StorageMetric,
     StorageStratum,
 )
-from xngin.apiserver.routers import experiments_api_types as eapi
-from xngin.apiserver.routers import stateless_api_types as sapi
+from xngin.apiserver.routers.experiments import experiments_api_types as eapi
+from xngin.apiserver.routers.stateless import stateless_api_types as sapi
 
 
 class ExperimentStorageConverter:

@@ -7,12 +7,12 @@ from xngin.apiserver import conftest, constants
 from xngin.apiserver.models import tables
 from xngin.apiserver.models.enums import ExperimentState, StopAssignmentReason
 from xngin.apiserver.models.storage_format_converters import ExperimentStorageConverter
-from xngin.apiserver.routers.experiments_api_types import (
+from xngin.apiserver.routers.experiments.experiments_api_types import (
     CreateExperimentResponse,
     GetParticipantAssignmentResponse,
     ListExperimentsResponse,
 )
-from xngin.apiserver.routers.stateless_api_types import (
+from xngin.apiserver.routers.stateless.stateless_api_types import (
     PreassignedExperimentSpec,
 )
 from xngin.apiserver.test_experiments_common import (  # pylint: disable=unused-import

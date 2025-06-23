@@ -17,10 +17,10 @@ from xngin.apiserver import conftest
 from xngin.apiserver.models import tables
 from xngin.apiserver.models.enums import ExperimentState, StopAssignmentReason
 from xngin.apiserver.models.storage_format_converters import ExperimentStorageConverter
-from xngin.apiserver.routers.experiments_api_types import (
+from xngin.apiserver.routers.experiments.experiments_api_types import (
     CreateExperimentRequest,
 )
-from xngin.apiserver.routers.experiments_common import (
+from xngin.apiserver.routers.experiments.experiments_common import (
     ExperimentsAssignmentError,
     abandon_experiment_impl,
     commit_experiment_impl,
@@ -32,7 +32,7 @@ from xngin.apiserver.routers.experiments_common import (
     get_experiment_assignments_impl,
     list_experiments_impl,
 )
-from xngin.apiserver.routers.stateless_api_types import (
+from xngin.apiserver.routers.stateless.stateless_api_types import (
     DesignSpec,
     DesignSpecMetric,
     ExperimentType,

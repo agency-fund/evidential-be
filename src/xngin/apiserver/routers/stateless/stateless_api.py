@@ -22,7 +22,7 @@ from xngin.apiserver.dwh.queries import get_stats_on_metrics, query_for_particip
 from xngin.apiserver.dwh.reflect_schemas import create_schema_from_table
 from xngin.apiserver.exceptions_common import LateValidationError
 from xngin.apiserver.gsheet_cache import GSheetCache
-from xngin.apiserver.routers.stateless_api_types import (
+from xngin.apiserver.routers.stateless.stateless_api_types import (
     AssignRequest,
     AssignResponse,
     DesignSpec,

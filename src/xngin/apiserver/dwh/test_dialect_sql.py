@@ -22,7 +22,7 @@ from sqlalchemy.sql.ddl import CreateTable
 
 from xngin.apiserver.conftest import DbType
 from xngin.apiserver.dwh.queries import compose_query, create_query_filters
-from xngin.apiserver.routers.stateless_api_types import (
+from xngin.apiserver.routers.stateless.stateless_api_types import (
     Filter,
     Relation,
 )

@@ -12,9 +12,8 @@ from xngin.apiserver import conftest, flags
 from xngin.apiserver.dns import safe_resolve
 from xngin.apiserver.models import tables
 from xngin.apiserver.models.enums import ExperimentState, StopAssignmentReason
-from xngin.apiserver.routers import oidc_dependencies
-from xngin.apiserver.routers.admin import user_from_token
-from xngin.apiserver.routers.admin_api_types import (
+from xngin.apiserver.routers.admin.admin import user_from_token
+from xngin.apiserver.routers.admin.admin_api_types import (
     CreateApiKeyResponse,
     CreateDatasourceRequest,
     CreateDatasourceResponse,
@@ -30,21 +29,22 @@ from xngin.apiserver.routers.admin_api_types import (
     UpdateParticipantsTypeRequest,
     UpdateParticipantsTypeResponse,
 )
-from xngin.apiserver.routers.experiments_api_types import (
-    CreateExperimentResponse,
-    ExperimentConfig,
-    GetExperimentAssignmentsResponse,
-    GetParticipantAssignmentResponse,
-    ListExperimentsResponse,
-)
-from xngin.apiserver.routers.oidc_dependencies import (
+from xngin.apiserver.routers.auth import oidc_dependencies
+from xngin.apiserver.routers.auth.oidc_dependencies import (
     PRIVILEGED_EMAIL,
     PRIVILEGED_TOKEN_FOR_TESTING,
     TESTING_TOKENS,
     UNPRIVILEGED_EMAIL,
     UNPRIVILEGED_TOKEN_FOR_TESTING,
 )
-from xngin.apiserver.routers.stateless_api_types import (
+from xngin.apiserver.routers.experiments.experiments_api_types import (
+    CreateExperimentResponse,
+    ExperimentConfig,
+    GetExperimentAssignmentsResponse,
+    GetParticipantAssignmentResponse,
+    ListExperimentsResponse,
+)
+from xngin.apiserver.routers.stateless.stateless_api_types import (
     DataType,
     ExperimentAnalysis,
 )

@@ -9,7 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from xngin.apiserver.gsheet_cache import GSheetCache
 from xngin.apiserver.models import tables
-from xngin.apiserver.routers.stateless_api_types import DataType
+from xngin.apiserver.routers.stateless.stateless_api_types import DataType
 from xngin.apiserver.settings import SheetRef
 from xngin.schema.schema_types import FieldDescriptor, ParticipantsSchema
 

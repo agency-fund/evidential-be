@@ -5,7 +5,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from xngin.apiserver.limits import MAX_NUMBER_OF_ARMS
 from xngin.apiserver.models.enums import ExperimentState, StopAssignmentReason
-from xngin.apiserver.routers.stateless_api_types import (
+from xngin.apiserver.routers.stateless.stateless_api_types import (
     ArmSize,
     Assignment,
     BalanceCheck,

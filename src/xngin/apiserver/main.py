@@ -18,11 +18,10 @@ from xngin.apiserver.routers import (
     admin,
     experiments,
     healthchecks,
-    oidc,
-    oidc_dependencies,
-    proxy_mgmt_api,
-    stateless_api,
 )
+from xngin.apiserver.routers.auth import oidc, oidc_dependencies
+from xngin.apiserver.routers.proxy_mgmt import proxy_mgmt_api
+from xngin.apiserver.routers.stateless import stateless_api
 from xngin.apiserver.settings import get_settings_for_server
 
 if sentry_dsn := os.environ.get("SENTRY_DSN"):

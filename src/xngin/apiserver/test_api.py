@@ -13,7 +13,7 @@ from sqlalchemy import delete
 from xngin.apiserver import conftest, constants, flags
 from xngin.apiserver.gsheet_cache import GSheetCache
 from xngin.apiserver.models import tables
-from xngin.apiserver.routers.stateless_api import (
+from xngin.apiserver.routers.stateless.stateless_api import (
     CommonQueryParams,
     get_participants_config_and_schema,
 )

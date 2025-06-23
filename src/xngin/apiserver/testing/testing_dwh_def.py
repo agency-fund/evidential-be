@@ -1,4 +1,4 @@
-from xngin.apiserver.routers.stateless_api_types import DataType
+from xngin.apiserver.routers.stateless.stateless_api_types import DataType
 from xngin.apiserver.settings import ParticipantsDef
 from xngin.schema.schema_types import FieldDescriptor
 

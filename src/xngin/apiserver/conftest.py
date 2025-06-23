@@ -36,8 +36,8 @@ from xngin.apiserver.dependencies import (
 from xngin.apiserver.dns import safe_resolve
 from xngin.apiserver.main import app
 from xngin.apiserver.models import tables
-from xngin.apiserver.routers import oidc_dependencies
-from xngin.apiserver.routers.oidc_dependencies import (
+from xngin.apiserver.routers.auth import oidc_dependencies
+from xngin.apiserver.routers.auth.oidc_dependencies import (
     PRIVILEGED_EMAIL,
     PRIVILEGED_TOKEN_FOR_TESTING,
     UNPRIVILEGED_TOKEN_FOR_TESTING,

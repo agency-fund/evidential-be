@@ -13,7 +13,7 @@ from xngin.apiserver.limits import (
     MAX_LENGTH_OF_WEBHOOK_URL_VALUE,
     MAX_NUMBER_OF_FIELDS,
 )
-from xngin.apiserver.routers.stateless_api_types import (
+from xngin.apiserver.routers.stateless.stateless_api_types import (
     ApiBaseModel,
     DataType,
     GetFiltersResponseElement,

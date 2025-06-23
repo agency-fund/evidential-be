@@ -3,7 +3,7 @@ from pydantic import ValidationError
 from sqlalchemy import BigInteger, Column, Integer, MetaData, String, Table
 
 from xngin.apiserver.dwh.reflect_schemas import create_schema_from_table
-from xngin.apiserver.routers.stateless_api_types import DataType
+from xngin.apiserver.routers.stateless.stateless_api_types import DataType
 
 
 def test_create_schema_from_table_success():

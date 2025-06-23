@@ -1,8 +1,8 @@
 import pytest
 
 from xngin.apiserver import conftest, constants
-from xngin.apiserver.routers.stateless_api import generate_field_descriptors
-from xngin.apiserver.routers.stateless_api_types import DataType
+from xngin.apiserver.routers.stateless.stateless_api import generate_field_descriptors
+from xngin.apiserver.routers.stateless.stateless_api_types import DataType
 from xngin.apiserver.settings import (
     CannotFindParticipantsError,
     XnginSettings,

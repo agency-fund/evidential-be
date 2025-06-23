@@ -11,7 +11,11 @@ from numpy.random import MT19937, RandomState
 from sqlalchemy import DECIMAL, Boolean, Column, Float, Integer, MetaData, String, Table
 
 from xngin.apiserver.models import tables
-from xngin.apiserver.routers.stateless_api_types import Arm, Assignment, Strata
+from xngin.apiserver.routers.stateless.stateless_api_types import (
+    Arm,
+    Assignment,
+    Strata,
+)
 from xngin.stats.assignment import assign_treatment, simple_random_assignment
 
 

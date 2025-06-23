@@ -11,7 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncAttrs
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 from sqlalchemy.types import TypeEngine
 
-from xngin.apiserver.routers.admin_api_types import (
+from xngin.apiserver.routers.admin.admin_api_types import (
     InspectDatasourceTableResponse,
     InspectParticipantTypesResponse,
 )
