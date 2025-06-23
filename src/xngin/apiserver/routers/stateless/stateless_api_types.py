@@ -19,7 +19,6 @@ from xngin.apiserver.routers.common_api_types import (
     GetFiltersResponseElement,
     GetMetricsResponseElement,
     GetStrataResponseElement,
-    PowerResponse,
 )
 
 VALID_SQL_COLUMN_REGEX = r"^[a-zA-Z_][a-zA-Z0-9_]*$"
@@ -114,16 +113,3 @@ class GetStrataResponse(BaseModel):
 
 class AssignRequest(ApiBaseModel):
     design_spec: DesignSpec
-
-
-class CommitRequest(ApiBaseModel):
-    """The complete experiment configuration to persist in an experiment registry."""
-
-    design_spec: DesignSpec
-    power_analyses: Annotated[
-        PowerResponse | None,
-        Field(
-            description="Optionally include the power analyses of your tracking metrics if performed."
-        ),
-    ] = None
-    experiment_assignment: AssignResponse

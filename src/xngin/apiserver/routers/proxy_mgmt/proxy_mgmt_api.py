@@ -13,11 +13,9 @@ from xngin.apiserver.dependencies import (
 )
 from xngin.apiserver.routers.proxy_mgmt.proxy_mgmt_api_types import (
     STANDARD_WEBHOOK_RESPONSES,
+    CommitRequest,
     WebhookCommitRequest,
     WebhookResponse,
-)
-from xngin.apiserver.routers.stateless.stateless_api_types import (
-    CommitRequest,
 )
 from xngin.apiserver.settings import (
     DatasourceConfig,

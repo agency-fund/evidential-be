@@ -2,16 +2,17 @@
 
 import uuid
 from datetime import UTC, datetime
-from typing import Any
+from typing import Annotated, Any
 
 import httpx
 from pydantic import BaseModel, ConfigDict, Field, field_serializer
 
-from xngin.apiserver.routers.common_api_types import PowerResponse
-from xngin.apiserver.routers.stateless.stateless_api_types import (
-    AssignResponse,
+from xngin.apiserver.routers.common_api_types import (
+    ApiBaseModel,
     DesignSpec,
+    PowerResponse,
 )
+from xngin.apiserver.routers.stateless.stateless_api_types import AssignResponse
 
 
 class WebhookBaseModel(BaseModel):
@@ -66,3 +67,16 @@ class WebhookCommitRequest(WebhookBaseModel):
     def serialize_dt(self, dt: datetime, _info):
         """Convert dates to iso strings in model_dump_json()/model_dump(mode='json')"""
         return dt.isoformat()
+
+
+class CommitRequest(ApiBaseModel):
+    """The complete experiment configuration to persist in an experiment registry."""
+
+    design_spec: DesignSpec
+    power_analyses: Annotated[
+        PowerResponse | None,
+        Field(
+            description="Optionally include the power analyses of your tracking metrics if performed."
+        ),
+    ] = None
+    experiment_assignment: AssignResponse
