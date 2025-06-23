@@ -1,3 +1,5 @@
+"""Handles SQLAlchemy connections to the application database."""
+
 import os
 from pathlib import Path
 
