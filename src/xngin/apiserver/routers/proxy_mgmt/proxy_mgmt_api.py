@@ -7,10 +7,8 @@ from loguru import logger
 from pydantic import BaseModel
 
 from xngin.apiserver import constants
-from xngin.apiserver.dependencies import (
-    datasource_config_required,
-    httpx_dependency,
-)
+from xngin.apiserver.dependencies import datasource_config_required
+from xngin.apiserver.routers.proxy_mgmt.dependencies import httpx_dependency
 from xngin.apiserver.routers.proxy_mgmt.proxy_mgmt_api_types import (
     STANDARD_WEBHOOK_RESPONSES,
     CommitRequest,

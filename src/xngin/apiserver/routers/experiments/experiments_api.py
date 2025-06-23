@@ -21,7 +21,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from xngin.apiserver import constants
 from xngin.apiserver.dependencies import (
     datasource_dependency,
-    experiment_dependency,
     gsheet_cache,
     random_seed_dependency,
     xngin_db_session,
@@ -39,6 +38,7 @@ from xngin.apiserver.routers.common_api_types import (
     GetParticipantAssignmentResponse,
     ListExperimentsResponse,
 )
+from xngin.apiserver.routers.experiments.dependencies import experiment_dependency
 from xngin.apiserver.routers.experiments.experiments_common import (
     abandon_experiment_impl,
     commit_experiment_impl,
