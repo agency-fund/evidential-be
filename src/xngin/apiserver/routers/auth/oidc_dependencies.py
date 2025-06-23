@@ -11,25 +11,9 @@ from jose import JWTError, jwt
 from loguru import logger
 
 from xngin.apiserver import flags
-
-# JWTs generated for domains other than @agency.fund are considered untrusted.
-PRIVILEGED_DOMAINS = ("agency.fund",)
+from xngin.apiserver.routers.auth.principal import Principal
 
 GOOGLE_DISCOVERY_URL = "https://accounts.google.com/.well-known/openid-configuration"
-
-
-@dataclass
-class TokenInfo:
-    """Information extracted from a validated OIDC token."""
-
-    email: str
-    iss: str  # issuer
-    sub: str  # subject identifier
-    hd: str  # hosted domain
-
-    def is_privileged(self):
-        return self.hd in PRIVILEGED_DOMAINS
-
 
 # Set TESTING_TOKENS_ENABLED to allow statically defined bearer tokens to skip the JWT validation.
 PRIVILEGED_EMAIL = "testing@agency.fund"
@@ -38,10 +22,10 @@ TESTING_TOKENS_ENABLED = False
 UNPRIVILEGED_EMAIL = "testing@agencyfund.org"
 UNPRIVILEGED_TOKEN_FOR_TESTING = secrets.token_urlsafe(32)
 TESTING_TOKENS = {
-    UNPRIVILEGED_TOKEN_FOR_TESTING: TokenInfo(
+    UNPRIVILEGED_TOKEN_FOR_TESTING: Principal(
         email=UNPRIVILEGED_EMAIL, iss="testing", sub="testing", hd="agencyfund.org"
     ),
-    PRIVILEGED_TOKEN_FOR_TESTING: TokenInfo(
+    PRIVILEGED_TOKEN_FOR_TESTING: Principal(
         email=PRIVILEGED_EMAIL,
         iss="testing",
         sub="testing",
@@ -134,7 +118,7 @@ async def require_oidc_token(
         str, Security(OpenIdConnect(openIdConnectUrl=GOOGLE_DISCOVERY_URL))
     ],
     oidc_config: Annotated[GoogleOidcConfig, Depends(get_google_configuration)],
-) -> TokenInfo:
+) -> Principal:
     """Dependency for validating that the Authorization: header is a valid Google JWT.
 
     This method may raise a 400 or 401, and the oidc_google dependency may raise a 403.
@@ -194,7 +178,7 @@ async def require_oidc_token(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail=f"Invalid authentication credentials: {e}",
         ) from e
-    return TokenInfo(
+    return Principal(
         email=decoded["email"],
         iss=decoded["iss"],
         sub=decoded["sub"],

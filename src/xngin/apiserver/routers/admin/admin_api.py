@@ -70,7 +70,8 @@ from xngin.apiserver.routers.admin.admin_api_types import (
     UserSummary,
     WebhookSummary,
 )
-from xngin.apiserver.routers.auth.oidc_dependencies import TokenInfo, require_oidc_token
+from xngin.apiserver.routers.auth.oidc_dependencies import require_oidc_token
+from xngin.apiserver.routers.auth.principal import Principal
 from xngin.apiserver.routers.common_api_types import (
     ArmAnalysis,
     CreateExperimentRequest,
@@ -170,7 +171,7 @@ router = APIRouter(
 
 async def user_from_token(
     session: Annotated[AsyncSession, Depends(xngin_db_session)],
-    token_info: Annotated[TokenInfo, Depends(require_oidc_token)],
+    token_info: Annotated[Principal, Depends(require_oidc_token)],
 ) -> tables.User:
     """Dependency for fetching the User record matching the authenticated user's email.
 
@@ -282,8 +283,8 @@ async def get_experiment_via_ds_or_raise(
 
 @router.get("/caller-identity")
 async def caller_identity(
-    token_info: Annotated[TokenInfo, Depends(require_oidc_token)],
-) -> TokenInfo:
+    token_info: Annotated[Principal, Depends(require_oidc_token)],
+) -> Principal:
     """Returns basic metadata about the authenticated caller of this method."""
     return token_info
 
