@@ -78,7 +78,7 @@ You can also trigger the BigQuery integration tests to run in GHA by putting `ru
 
 ## API Test Scripts<a name="api-test-scripts"></a>
 
-See [apitest.strata.xurl](../src/xngin/apiserver/routers/experiments/testdata/apitest.strata.xurl) for a complete example of how to write an
+See [apitest.strata.xurl](../src/xngin/apiserver/routers/stateless/testdata/apitest.strata.xurl) for a complete example of how to write an
 API test script. We use a small custom
 file format called [Xurl](../src/xngin/apiserver/testing/xurl.py).
 
