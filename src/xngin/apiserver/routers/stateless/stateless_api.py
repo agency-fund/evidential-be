@@ -7,7 +7,6 @@ from fastapi import (
     Depends,
     FastAPI,
     Query,
-    Response,
 )
 from loguru import logger
 from sqlalchemy import distinct
@@ -388,11 +387,3 @@ async def assign_treatment(
         stratum_id_name=stratum_id_name,
         random_state=random_state,
     )
-
-
-@router.get("/_authcheck", include_in_schema=False, status_code=204)
-def authcheck(
-    _config: Annotated[DatasourceConfig, Depends(datasource_config_required)],
-):
-    """Returns 204 if the request is allowed to use the requested datasource."""
-    return Response(status_code=204)
