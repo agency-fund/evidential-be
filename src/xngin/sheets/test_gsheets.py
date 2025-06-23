@@ -2,7 +2,7 @@ from pathlib import Path
 
 import pytest
 
-from xngin.apiserver.routers.stateless.stateless_api_types import DataType
+from xngin.apiserver.routers.common_api_types import DataType
 from xngin.schema.schema_types import FieldDescriptor, ParticipantsSchema
 from xngin.sheets.gsheets import google_app_credentials_file, read_sheet_df
 

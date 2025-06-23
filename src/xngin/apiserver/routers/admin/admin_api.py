@@ -71,27 +71,27 @@ from xngin.apiserver.routers.admin.admin_api_types import (
     WebhookSummary,
 )
 from xngin.apiserver.routers.auth.oidc_dependencies import TokenInfo, require_oidc_token
-from xngin.apiserver.routers.experiments import (
-    experiments_api_types,
-    experiments_common,
-)
-from xngin.apiserver.routers.experiments.experiments_api_types import (
+from xngin.apiserver.routers.common_api_types import (
+    ArmAnalysis,
+    CreateExperimentRequest,
+    CreateExperimentResponse,
+    ExperimentAnalysis,
+    ExperimentConfig,
+    GetExperimentAssignmentsResponse,
+    GetMetricsResponseElement,
     GetParticipantAssignmentResponse,
+    GetStrataResponseElement,
+    ListExperimentsResponse,
+    MetricAnalysis,
+    PowerRequest,
+    PowerResponse,
 )
+from xngin.apiserver.routers.experiments import experiments_common
 from xngin.apiserver.routers.stateless.stateless_api import (
     create_col_to_filter_meta_mapper,
     generate_field_descriptors,
     power_check_impl,
     validate_schema_metrics_or_raise,
-)
-from xngin.apiserver.routers.stateless.stateless_api_types import (
-    ArmAnalysis,
-    ExperimentAnalysis,
-    GetMetricsResponseElement,
-    GetStrataResponseElement,
-    MetricAnalysis,
-    PowerRequest,
-    PowerResponse,
 )
 from xngin.apiserver.settings import (
     ParticipantsConfig,
@@ -1235,7 +1235,7 @@ async def create_experiment(
     datasource_id: str,
     session: Annotated[AsyncSession, Depends(xngin_db_session)],
     user: Annotated[tables.User, Depends(user_from_token)],
-    body: experiments_api_types.CreateExperimentRequest,
+    body: CreateExperimentRequest,
     chosen_n: Annotated[
         int | None, Query(..., description="Number of participants to assign.")
     ] = None,
@@ -1250,7 +1250,7 @@ async def create_experiment(
             include_in_schema=False,
         ),
     ] = None,
-) -> experiments_api_types.CreateExperimentResponse:
+) -> CreateExperimentResponse:
     datasource = await get_datasource_or_raise(session, user, datasource_id)
     if body.design_spec.ids_are_present():
         raise LateValidationError("Invalid DesignSpec: UUIDs must not be set.")
@@ -1435,7 +1435,7 @@ async def list_organization_experiments(
     organization_id: str,
     session: Annotated[AsyncSession, Depends(xngin_db_session)],
     user: Annotated[tables.User, Depends(user_from_token)],
-) -> experiments_api_types.ListExperimentsResponse:
+) -> ListExperimentsResponse:
     """Returns a list of experiments in the organization."""
     org = await get_organization_or_raise(session, user, organization_id)
     return await experiments_common.list_organization_experiments_impl(session, org.id)
@@ -1447,7 +1447,7 @@ async def get_experiment(
     experiment_id: str,
     session: Annotated[AsyncSession, Depends(xngin_db_session)],
     user: Annotated[tables.User, Depends(user_from_token)],
-) -> experiments_api_types.ExperimentConfig:
+) -> ExperimentConfig:
     """Returns the experiment with the specified ID."""
     ds = await get_datasource_or_raise(session, user, datasource_id)
     experiment = await get_experiment_via_ds_or_raise(session, ds, experiment_id)
@@ -1464,7 +1464,7 @@ async def get_experiment_assignments(
     experiment_id: str,
     session: Annotated[AsyncSession, Depends(xngin_db_session)],
     user: Annotated[tables.User, Depends(user_from_token)],
-) -> experiments_api_types.GetExperimentAssignmentsResponse:
+) -> GetExperimentAssignmentsResponse:
     ds = await get_datasource_or_raise(session, user, datasource_id)
     experiment = await get_experiment_via_ds_or_raise(
         session, ds, experiment_id, preload=[tables.Experiment.arm_assignments]
@@ -1520,7 +1520,7 @@ async def get_experiment_assignment_for_participant(
             include_in_schema=False,
         ),
     ] = None,
-) -> experiments_api_types.GetParticipantAssignmentResponse:
+) -> GetParticipantAssignmentResponse:
     """Get the assignment for a specific participant in an experiment."""
     # Validate the datasource and experiment exist
     ds = await get_datasource_or_raise(session, user, datasource_id)

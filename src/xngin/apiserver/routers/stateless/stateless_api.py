@@ -22,21 +22,23 @@ from xngin.apiserver.dwh.queries import get_stats_on_metrics, query_for_particip
 from xngin.apiserver.dwh.reflect_schemas import create_schema_from_table
 from xngin.apiserver.exceptions_common import LateValidationError
 from xngin.apiserver.gsheet_cache import GSheetCache
+from xngin.apiserver.routers.common_api_types import (
+    FilterClass,
+    GetMetricsResponseElement,
+    GetStrataResponseElement,
+    PowerRequest,
+    PowerResponse,
+)
 from xngin.apiserver.routers.stateless.stateless_api_types import (
     AssignRequest,
     AssignResponse,
     DesignSpec,
-    FilterClass,
     GetFiltersResponse,
     GetFiltersResponseDiscrete,
     GetFiltersResponseElement,
     GetFiltersResponseNumericOrDate,
     GetMetricsResponse,
-    GetMetricsResponseElement,
     GetStrataResponse,
-    GetStrataResponseElement,
-    PowerRequest,
-    PowerResponse,
 )
 from xngin.apiserver.settings import (
     DatasourceConfig,

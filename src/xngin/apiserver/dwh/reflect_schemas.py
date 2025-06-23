@@ -6,7 +6,7 @@ from xngin.apiserver.routers.admin.admin_api_types import (
     FieldMetadata,
     InspectDatasourceTableResponse,
 )
-from xngin.apiserver.routers.stateless.stateless_api_types import DataType
+from xngin.apiserver.routers.common_api_types import DataType
 from xngin.schema.schema_types import FieldDescriptor, ParticipantsSchema
 
 

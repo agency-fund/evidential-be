@@ -34,7 +34,7 @@ from sqlalchemy.sql.compiler import IdentifierPreparer
 
 from xngin.apiserver import settings
 from xngin.apiserver.dwh.reflect_schemas import create_schema_from_table
-from xngin.apiserver.routers.stateless.stateless_api_types import DataType
+from xngin.apiserver.routers.common_api_types import DataType
 from xngin.apiserver.settings import (
     CannotFindTableError,
     Datasource,

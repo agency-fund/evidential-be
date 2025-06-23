@@ -17,8 +17,14 @@ from xngin.apiserver import conftest
 from xngin.apiserver.models import tables
 from xngin.apiserver.models.enums import ExperimentState, StopAssignmentReason
 from xngin.apiserver.models.storage_format_converters import ExperimentStorageConverter
-from xngin.apiserver.routers.experiments.experiments_api_types import (
+from xngin.apiserver.routers.common_api_types import (
     CreateExperimentRequest,
+    DesignSpecMetric,
+    ExperimentType,
+    MetricPowerAnalysis,
+    MetricType,
+    PowerResponse,
+    Stratum,
 )
 from xngin.apiserver.routers.experiments.experiments_common import (
     ExperimentsAssignmentError,
@@ -34,12 +40,6 @@ from xngin.apiserver.routers.experiments.experiments_common import (
 )
 from xngin.apiserver.routers.stateless.stateless_api_types import (
     DesignSpec,
-    DesignSpecMetric,
-    ExperimentType,
-    MetricPowerAnalysis,
-    MetricType,
-    PowerResponse,
-    Stratum,
 )
 from xngin.apiserver.testing.assertions import assert_dates_equal
 

@@ -37,16 +37,14 @@ from xngin.apiserver.routers.auth.oidc_dependencies import (
     UNPRIVILEGED_EMAIL,
     UNPRIVILEGED_TOKEN_FOR_TESTING,
 )
-from xngin.apiserver.routers.experiments.experiments_api_types import (
+from xngin.apiserver.routers.common_api_types import (
     CreateExperimentResponse,
+    DataType,
+    ExperimentAnalysis,
     ExperimentConfig,
     GetExperimentAssignmentsResponse,
     GetParticipantAssignmentResponse,
     ListExperimentsResponse,
-)
-from xngin.apiserver.routers.stateless.stateless_api_types import (
-    DataType,
-    ExperimentAnalysis,
 )
 from xngin.apiserver.settings import (
     BqDsn,

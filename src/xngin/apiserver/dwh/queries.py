@@ -20,16 +20,18 @@ from sqlalchemy import (
 from sqlalchemy.orm import Session
 
 from xngin.apiserver.exceptions_common import LateValidationError
-from xngin.apiserver.routers.stateless.stateless_api_types import (
+from xngin.apiserver.routers.common_api_types import (
     EXPERIMENT_IDS_SUFFIX,
     DesignSpecMetric,
     DesignSpecMetricRequest,
     Filter,
-    FilterValueTypes,
     MetricType,
+    Relation,
+)
+from xngin.apiserver.routers.stateless.stateless_api_types import (
+    FilterValueTypes,
     MetricValue,
     ParticipantOutcome,
-    Relation,
 )
 from xngin.db_extensions import custom_functions
 

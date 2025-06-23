@@ -19,18 +19,16 @@ from xngin.apiserver import constants, flags
 from xngin.apiserver.models import tables
 from xngin.apiserver.models.enums import ExperimentState, StopAssignmentReason
 from xngin.apiserver.models.storage_format_converters import ExperimentStorageConverter
-from xngin.apiserver.routers.experiments.experiments_api_types import (
+from xngin.apiserver.routers.common_api_types import (
+    Arm,
+    ArmSize,
+    Assignment,
     AssignSummary,
+    BalanceCheck,
     CreateExperimentRequest,
     CreateExperimentResponse,
     GetExperimentAssignmentsResponse,
     ListExperimentsResponse,
-)
-from xngin.apiserver.routers.stateless.stateless_api_types import (
-    Arm,
-    ArmSize,
-    Assignment,
-    BalanceCheck,
     Strata,
 )
 from xngin.apiserver.utils import random_choice
