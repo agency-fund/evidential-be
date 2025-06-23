@@ -186,6 +186,12 @@ async def require_oidc_token(
     )
 
 
+def enable_testing_tokens():
+    """Configures the authentication system to enable tokens used in unit tests."""
+    global TESTING_TOKENS_ENABLED
+    TESTING_TOKENS_ENABLED = True
+
+
 def disable(app):
     """Disables interaction with internet-dependent authentication resources."""
 

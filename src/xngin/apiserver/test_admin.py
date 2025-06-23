@@ -29,8 +29,7 @@ from xngin.apiserver.routers.admin.admin_api_types import (
     UpdateParticipantsTypeRequest,
     UpdateParticipantsTypeResponse,
 )
-from xngin.apiserver.routers.auth import oidc_dependencies
-from xngin.apiserver.routers.auth.oidc_dependencies import (
+from xngin.apiserver.routers.auth.auth_dependencies import (
     PRIVILEGED_EMAIL,
     PRIVILEGED_TOKEN_FOR_TESTING,
     TESTING_TOKENS,
@@ -93,11 +92,6 @@ async def fixture_teardown(xngin_session: AsyncSession):
         await xngin_session.execute(delete(tables.Organization))
         await xngin_session.execute(delete(tables.User))
         await xngin_session.commit()
-
-
-@pytest.fixture(scope="module", autouse=True)
-def enable_apis_under_test():
-    oidc_dependencies.TESTING_TOKENS_ENABLED = True
 
 
 @pytest.fixture(name="testing_datasource_with_inline_schema")

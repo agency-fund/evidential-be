@@ -70,7 +70,7 @@ from xngin.apiserver.routers.admin.admin_api_types import (
     UserSummary,
     WebhookSummary,
 )
-from xngin.apiserver.routers.auth.oidc_dependencies import require_oidc_token
+from xngin.apiserver.routers.auth.auth_dependencies import require_oidc_token
 from xngin.apiserver.routers.auth.principal import Principal
 from xngin.apiserver.routers.common_api_types import (
     ArmAnalysis,

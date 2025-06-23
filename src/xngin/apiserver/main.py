@@ -16,7 +16,7 @@ from xngin.apiserver import (
 from xngin.apiserver.flags import PUBLISH_ALL_DOCS
 from xngin.apiserver.routers import healthchecks_api
 from xngin.apiserver.routers.admin import admin_api
-from xngin.apiserver.routers.auth import oidc_api, oidc_dependencies
+from xngin.apiserver.routers.auth import auth_api, auth_dependencies
 from xngin.apiserver.routers.experiments import experiments_api
 from xngin.apiserver.routers.proxy_mgmt import proxy_mgmt_api
 from xngin.apiserver.routers.stateless import stateless_api
@@ -89,7 +89,7 @@ app.include_router(
 )
 
 app.include_router(
-    oidc_api.router,
+    auth_api.router,
     tags=["Auth"],
     include_in_schema=PUBLISH_ALL_DOCS,
 )
@@ -101,7 +101,7 @@ app.include_router(
     include_in_schema=PUBLISH_ALL_DOCS,
 )
 
-oidc_dependencies.setup(app)
+auth_dependencies.setup(app)
 
 
 @dataclasses.dataclass

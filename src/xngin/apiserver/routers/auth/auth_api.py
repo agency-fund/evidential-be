@@ -10,7 +10,7 @@ from loguru import logger
 from xngin.apiserver import constants, flags
 from xngin.apiserver.dependencies import retrying_httpx_dependency
 from xngin.apiserver.routers.auth.auth_api_types import CallbackResponse
-from xngin.apiserver.routers.auth.oidc_dependencies import (
+from xngin.apiserver.routers.auth.auth_dependencies import (
     GoogleOidcConfig,
     get_google_configuration,
 )
