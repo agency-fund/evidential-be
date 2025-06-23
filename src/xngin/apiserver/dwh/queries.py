@@ -25,11 +25,11 @@ from xngin.apiserver.routers.common_api_types import (
     DesignSpecMetric,
     DesignSpecMetricRequest,
     Filter,
+    FilterValueTypes,
     MetricType,
     Relation,
 )
 from xngin.apiserver.routers.stateless.stateless_api_types import (
-    FilterValueTypes,
     MetricValue,
     ParticipantOutcome,
 )

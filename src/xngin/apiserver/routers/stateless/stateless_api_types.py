@@ -1,4 +1,3 @@
-import datetime
 import enum
 from typing import Annotated
 
@@ -9,21 +8,18 @@ from pydantic import (
 
 from xngin.apiserver.common_field_types import FieldName
 from xngin.apiserver.limits import (
-    MAX_LENGTH_OF_DESCRIPTION_VALUE,
     MAX_LENGTH_OF_PARTICIPANT_ID_VALUE,
     MAX_NUMBER_OF_FIELDS,
-    MAX_NUMBER_OF_FILTERS,
 )
 from xngin.apiserver.routers.common_api_types import (
     ApiBaseModel,
     Assignment,
     BalanceCheck,
-    DataType,
     DesignSpec,
+    GetFiltersResponseElement,
     GetMetricsResponseElement,
     GetStrataResponseElement,
     PowerResponse,
-    Relation,
 )
 
 VALID_SQL_COLUMN_REGEX = r"^[a-zA-Z_][a-zA-Z0-9_]*$"
@@ -96,41 +92,6 @@ class AssignResponse(ApiBaseModel):
 class AnalysisRequest(ApiBaseModel):
     design: DesignSpec
     assignment: AssignResponse
-
-
-class GetFiltersResponseBase(ApiBaseModel):
-    field_name: Annotated[FieldName, Field(..., description="Name of the field.")]
-    data_type: DataType
-    relations: Annotated[
-        list[Relation], Field(..., min_length=1, max_length=MAX_NUMBER_OF_FILTERS)
-    ]
-    description: Annotated[str, Field(max_length=MAX_LENGTH_OF_DESCRIPTION_VALUE)]
-
-
-class GetFiltersResponseNumericOrDate(GetFiltersResponseBase):
-    """Describes a numeric or date filter variable."""
-
-    min: datetime.datetime | datetime.date | float | int | None = Field(
-        ...,
-        description="The minimum observed value.",
-    )
-    max: datetime.datetime | datetime.date | float | int | None = Field(
-        ...,
-        description="The maximum observed value.",
-    )
-
-
-class GetFiltersResponseDiscrete(GetFiltersResponseBase):
-    """Describes a discrete filter variable."""
-
-    distinct_values: Annotated[
-        list[str] | None, Field(..., description="Sorted list of unique values.")
-    ]
-
-
-type GetFiltersResponseElement = (
-    GetFiltersResponseNumericOrDate | GetFiltersResponseDiscrete
-)
 
 
 class GetFiltersResponse(ApiBaseModel):

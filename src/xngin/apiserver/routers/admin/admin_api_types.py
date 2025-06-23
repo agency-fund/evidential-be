@@ -16,11 +16,9 @@ from xngin.apiserver.limits import (
 from xngin.apiserver.routers.common_api_types import (
     ApiBaseModel,
     DataType,
+    GetFiltersResponseElement,
     GetMetricsResponseElement,
     GetStrataResponseElement,
-)
-from xngin.apiserver.routers.stateless.stateless_api_types import (
-    GetFiltersResponseElement,
 )
 from xngin.apiserver.settings import DatasourceConfig, Dwh, ParticipantsConfig
 from xngin.schema.schema_types import FieldDescriptor, ParticipantsSchema
