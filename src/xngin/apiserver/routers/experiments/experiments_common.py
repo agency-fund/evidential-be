@@ -1,5 +1,7 @@
 import csv
 import io
+import random
+import secrets
 from collections.abc import Sequence
 from datetime import UTC, datetime
 from itertools import batched
@@ -31,7 +33,6 @@ from xngin.apiserver.routers.common_api_types import (
     ListExperimentsResponse,
     Strata,
 )
-from xngin.apiserver.utils import random_choice
 from xngin.apiserver.webhooks.webhook_types import ExperimentCreatedWebhookBody
 from xngin.events.experiment_created import ExperimentCreatedEvent
 from xngin.stats.assignment import RowProtocol, assign_treatment
@@ -40,6 +41,18 @@ from xngin.tq.task_payload_types import WEBHOOK_OUTBOUND_TASK_TYPE, WebhookOutbo
 
 class ExperimentsAssignmentError(Exception):
     """Wrapper for errors raised by our xngin.apiserver.routers.experiments_common module."""
+
+
+def random_choice[T](choices: Sequence[T], seed: int | None = None) -> T:
+    """Choose a random value from choices."""
+    if seed:
+        if not isinstance(seed, int):
+            raise ValueError("seed must be an integer")
+        # use a predictable random
+        r = random.Random(seed)
+        return r.choice(choices)
+    # Use very strong random by default
+    return secrets.choice(choices)
 
 
 async def create_experiment_impl(
