@@ -322,7 +322,9 @@ async def test_create_experiment_impl_for_preassigned(
     ).all()
     assert len(arms) == 2
     arm_ids = {arm.id for arm in arms}
-    expected_arm_ids = {arm.arm_id for arm in response.design_spec.arms}
+    expected_arm_ids = {
+        response_arm.arm_id for response_arm in response.design_spec.arms
+    }
     assert arm_ids == expected_arm_ids
 
     # Check one assignment to see if it looks roughly right
@@ -388,7 +390,7 @@ async def test_create_experiment_impl_for_online(
     assert all(arm_size.size == 0 for arm_size in response.assign_summary.arm_sizes)
 
     # Verify database state
-    experiment = experiment = await xngin_session.get(
+    experiment = await xngin_session.get(
         tables.Experiment, response.design_spec.experiment_id
     )
     assert experiment.experiment_type == "online"
