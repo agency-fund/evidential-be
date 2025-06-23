@@ -14,12 +14,10 @@ from xngin.apiserver import (
     middleware,
 )
 from xngin.apiserver.flags import PUBLISH_ALL_DOCS
-from xngin.apiserver.routers import (
-    admin,
-    experiments,
-    healthchecks,
-)
-from xngin.apiserver.routers.auth import oidc, oidc_dependencies
+from xngin.apiserver.routers import healthchecks_api
+from xngin.apiserver.routers.admin import admin_api
+from xngin.apiserver.routers.auth import oidc_api, oidc_dependencies
+from xngin.apiserver.routers.experiments import experiments_api
 from xngin.apiserver.routers.proxy_mgmt import proxy_mgmt_api
 from xngin.apiserver.routers.stateless import stateless_api
 from xngin.apiserver.settings import get_settings_for_server
@@ -77,7 +75,7 @@ exceptionhandlers.setup(app)
 middleware.setup(app)
 customlogging.setup()
 
-app.include_router(experiments.router, tags=["Experiment Integration"])
+app.include_router(experiments_api.router, tags=["Experiment Integration"])
 
 app.include_router(
     stateless_api.router,
@@ -89,17 +87,19 @@ app.include_router(
     tags=["Stateless Experiment Design"],
 )
 
-app.include_router(healthchecks.router, tags=["Health Checks"], include_in_schema=False)
+app.include_router(
+    healthchecks_api.router, tags=["Health Checks"], include_in_schema=False
+)
 
 app.include_router(
-    oidc.router,
+    oidc_api.router,
     tags=["Auth"],
     include_in_schema=PUBLISH_ALL_DOCS,
 )
 
 
 app.include_router(
-    admin.router,
+    admin_api.router,
     tags=["Admin"],
     include_in_schema=PUBLISH_ALL_DOCS,
 )
