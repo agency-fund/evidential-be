@@ -95,7 +95,7 @@ def analyze_metric_power(
         return _power_analysis_error(
             metric,
             MetricPowerAnalysisMessageType.ZERO_EFFECT_SIZE,
-            ("Cannot detect an effect-size of 0. Try changing your effect-size."),
+            "Cannot detect an effect-size of 0. Try changing your effect-size.",
         )
 
     power_analysis = sms.TTestIndPower()
