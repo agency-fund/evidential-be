@@ -836,16 +836,16 @@ async def inspect_datasource(
                     result = dwh_session.execute(
                         query, {"search_path": config.dwh.search_path or "public"}
                     )
-                    tables = result.scalars().all()
+                    tablenames = result.scalars().all()
             else:
                 inspected = sqlalchemy.inspect(config.dbengine())
-                tables = list(
+                tablenames = list(
                     sorted(inspected.get_table_names() + inspected.get_view_names())
                 )
 
-            ds.set_table_list(tables)
+            ds.set_table_list(tablenames)
             await session.commit()
-            return InspectDatasourceResponse(tables=tables)
+            return InspectDatasourceResponse(tables=tablenames)
         except OperationalError as exc:
             if is_postgres_database_not_found_error(exc):
                 raise HTTPException(
