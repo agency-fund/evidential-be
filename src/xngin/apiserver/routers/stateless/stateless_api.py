@@ -7,7 +7,6 @@ from fastapi import (
     Depends,
     FastAPI,
     Query,
-    Response,
 )
 from loguru import logger
 from sqlalchemy import distinct
@@ -18,25 +17,28 @@ from xngin.apiserver.dependencies import (
     datasource_config_required,
     gsheet_cache,
 )
+from xngin.apiserver.dwh.inspection_types import FieldDescriptor, ParticipantsSchema
+from xngin.apiserver.dwh.inspections import generate_field_descriptors
 from xngin.apiserver.dwh.queries import get_stats_on_metrics, query_for_participants
-from xngin.apiserver.dwh.reflect_schemas import create_schema_from_table
 from xngin.apiserver.exceptions_common import LateValidationError
 from xngin.apiserver.gsheet_cache import GSheetCache
-from xngin.apiserver.routers.stateless_api_types import (
-    AssignRequest,
-    AssignResponse,
+from xngin.apiserver.routers.common_api_types import (
     DesignSpec,
     FilterClass,
-    GetFiltersResponse,
     GetFiltersResponseDiscrete,
     GetFiltersResponseElement,
     GetFiltersResponseNumericOrDate,
-    GetMetricsResponse,
     GetMetricsResponseElement,
-    GetStrataResponse,
     GetStrataResponseElement,
     PowerRequest,
     PowerResponse,
+)
+from xngin.apiserver.routers.stateless.stateless_api_types import (
+    AssignRequest,
+    AssignResponse,
+    GetFiltersResponse,
+    GetMetricsResponse,
+    GetStrataResponse,
 )
 from xngin.apiserver.settings import (
     DatasourceConfig,
@@ -44,13 +46,11 @@ from xngin.apiserver.settings import (
     ParticipantsMixin,
     infer_table,
 )
-from xngin.schema.schema_types import FieldDescriptor, ParticipantsSchema
 from xngin.sheets.config_sheet import fetch_and_parse_sheet
 from xngin.stats.assignment import assign_treatment as assign_treatment_actual
 from xngin.stats.power import check_power
 
 
-# TODO: move into its own module re: https://github.com/agency-fund/xngin/pull/188/
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
     logger.info(f"Starting router: {__name__} (prefix={router.prefix})")
@@ -387,21 +387,3 @@ async def assign_treatment(
         stratum_id_name=stratum_id_name,
         random_state=random_state,
     )
-
-
-@router.get("/_authcheck", include_in_schema=False, status_code=204)
-def authcheck(
-    _config: Annotated[DatasourceConfig, Depends(datasource_config_required)],
-):
-    """Returns 204 if the request is allowed to use the requested datasource."""
-    return Response(status_code=204)
-
-
-def generate_field_descriptors(table: sqlalchemy.Table, unique_id_col: str):
-    """Fetches a map of column name to schema metadata.
-
-    Uniqueness of the values in the column unique_id_col is assumed, not verified!
-    """
-    return {
-        c.field_name: c for c in create_schema_from_table(table, unique_id_col).fields
-    }

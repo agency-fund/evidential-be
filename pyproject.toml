@@ -124,6 +124,12 @@ ignore = [
 # https://docs.astral.sh/ruff/settings/#lintflake8-import-conventions
 banned-from = ["xngin.apiserver.models.tables"]
 
+[tool.ruff.lint.flake8-import-conventions.extend-aliases]
+# https://docs.astral.sh/ruff/settings/#lint_flake8-import-conventions_extend-aliases
+"xngin.apiserver.routers.admin.admin_api_types" = "aapi"
+"xngin.apiserver.routers.common_api_types" = "capi"
+"xngin.apiserver.routers.stateless.stateless_api_types" = "sapi"
+
 [tool.uv]
 dev-dependencies = [
     "pre-commit>=4.0.1,<4.1.0",

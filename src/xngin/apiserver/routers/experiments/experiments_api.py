@@ -21,7 +21,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from xngin.apiserver import constants
 from xngin.apiserver.dependencies import (
     datasource_dependency,
-    experiment_dependency,
     gsheet_cache,
     random_seed_dependency,
     xngin_db_session,
@@ -31,7 +30,7 @@ from xngin.apiserver.exceptions_common import LateValidationError
 from xngin.apiserver.gsheet_cache import GSheetCache
 from xngin.apiserver.models import tables
 from xngin.apiserver.models.storage_format_converters import ExperimentStorageConverter
-from xngin.apiserver.routers.experiments_api_types import (
+from xngin.apiserver.routers.common_api_types import (
     CreateExperimentRequest,
     CreateExperimentResponse,
     GetExperimentAssignmentsResponse,
@@ -39,7 +38,8 @@ from xngin.apiserver.routers.experiments_api_types import (
     GetParticipantAssignmentResponse,
     ListExperimentsResponse,
 )
-from xngin.apiserver.routers.experiments_common import (
+from xngin.apiserver.routers.experiments.dependencies import experiment_dependency
+from xngin.apiserver.routers.experiments.experiments_common import (
     abandon_experiment_impl,
     commit_experiment_impl,
     create_assignment_for_participant,
@@ -50,7 +50,7 @@ from xngin.apiserver.routers.experiments_common import (
     get_experiment_assignments_impl,
     list_experiments_impl,
 )
-from xngin.apiserver.routers.stateless_api import (
+from xngin.apiserver.routers.stateless.stateless_api import (
     CommonQueryParams,
     get_participants_config_and_schema,
 )

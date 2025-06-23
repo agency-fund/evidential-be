@@ -1,9 +1,11 @@
 import pytest
 
-from xngin.apiserver.routers.stateless_api_types import MetricPowerAnalysisMessageType
-from xngin.stats.power import (
+from xngin.apiserver.routers.common_api_types import (
     DesignSpecMetric,
+    MetricPowerAnalysisMessageType,
     MetricType,
+)
+from xngin.stats.power import (
     analyze_metric_power,
     check_power,
 )

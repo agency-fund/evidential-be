@@ -10,11 +10,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from xngin.apiserver import conftest, flags
 from xngin.apiserver.dns import safe_resolve
+from xngin.apiserver.dwh.inspection_types import FieldDescriptor, ParticipantsSchema
 from xngin.apiserver.models import tables
 from xngin.apiserver.models.enums import ExperimentState, StopAssignmentReason
-from xngin.apiserver.routers import oidc_dependencies
-from xngin.apiserver.routers.admin import user_from_token
-from xngin.apiserver.routers.admin_api_types import (
+from xngin.apiserver.routers.admin.admin_api import user_from_token
+from xngin.apiserver.routers.admin.admin_api_types import (
     CreateApiKeyResponse,
     CreateDatasourceRequest,
     CreateDatasourceResponse,
@@ -30,23 +30,28 @@ from xngin.apiserver.routers.admin_api_types import (
     UpdateParticipantsTypeRequest,
     UpdateParticipantsTypeResponse,
 )
-from xngin.apiserver.routers.experiments_api_types import (
-    CreateExperimentResponse,
-    ExperimentConfig,
-    GetExperimentAssignmentsResponse,
-    GetParticipantAssignmentResponse,
-    ListExperimentsResponse,
-)
-from xngin.apiserver.routers.oidc_dependencies import (
+from xngin.apiserver.routers.auth.auth_dependencies import (
     PRIVILEGED_EMAIL,
     PRIVILEGED_TOKEN_FOR_TESTING,
     TESTING_TOKENS,
     UNPRIVILEGED_EMAIL,
     UNPRIVILEGED_TOKEN_FOR_TESTING,
 )
-from xngin.apiserver.routers.stateless_api_types import (
+from xngin.apiserver.routers.common_api_types import (
+    CreateExperimentResponse,
     DataType,
     ExperimentAnalysis,
+    ExperimentConfig,
+    GetExperimentAssignmentsResponse,
+    GetParticipantAssignmentResponse,
+    ListExperimentsResponse,
+)
+from xngin.apiserver.routers.experiments.test_experiments_common import (
+    insert_experiment_and_arms,
+    make_create_online_experiment_request,
+    make_create_preassigned_experiment_request,
+    make_createexperimentrequest_json,
+    make_insertable_experiment,
 )
 from xngin.apiserver.settings import (
     BqDsn,
@@ -56,16 +61,8 @@ from xngin.apiserver.settings import (
     SheetParticipantsRef,
     infer_table,
 )
-from xngin.apiserver.test_experiments_common import (
-    insert_experiment_and_arms,
-    make_create_online_experiment_request,
-    make_create_preassigned_experiment_request,
-    make_createexperimentrequest_json,
-    make_insertable_experiment,
-)
 from xngin.apiserver.testing.assertions import assert_dates_equal
 from xngin.cli.main import create_testing_dwh
-from xngin.schema.schema_types import FieldDescriptor, ParticipantsSchema
 
 SAMPLE_GCLOUD_SERVICE_ACCOUNT_KEY = {
     "auth_provider_x509_cert_url": "",
@@ -95,11 +92,6 @@ async def fixture_teardown(xngin_session: AsyncSession):
         await xngin_session.execute(delete(tables.Organization))
         await xngin_session.execute(delete(tables.User))
         await xngin_session.commit()
-
-
-@pytest.fixture(scope="module", autouse=True)
-def enable_apis_under_test():
-    oidc_dependencies.TESTING_TOKENS_ENABLED = True
 
 
 @pytest.fixture(name="testing_datasource_with_inline_schema")
@@ -978,11 +970,11 @@ def test_get_experiment_assignment_for_preassigned_participant(
 async def test_get_experiment_assignment_for_online_participant(
     xngin_session: AsyncSession, testing_datasource_with_user_added, pget
 ):
-    testing_experiment = await insert_experiment_and_arms(
+    test_experiment = await insert_experiment_and_arms(
         xngin_session, testing_datasource_with_user_added.ds, "online"
     )
-    datasource_id = testing_experiment.datasource_id
-    experiment_id = testing_experiment.id
+    datasource_id = test_experiment.datasource_id
+    experiment_id = test_experiment.id
 
     # Check for an assignment that doesn't exist, but don't create it.
     response = pget(
@@ -1008,7 +1000,7 @@ async def test_get_experiment_assignment_for_online_participant(
     assert assignment_response.participant_id == "new_id"
     assert assignment_response.assignment is not None
     assert str(assignment_response.assignment.arm_id) in {
-        arm.id for arm in testing_experiment.arms
+        arm.id for arm in test_experiment.arms
     }
 
     # Get back the same assignment.
@@ -1094,11 +1086,11 @@ def test_experiments_analyze(testing_experiment, pget):
 async def test_experiments_analyze_for_experiment_with_no_participants(
     xngin_session: AsyncSession, testing_datasource_with_user_added, pget
 ):
-    testing_experiment = await insert_experiment_and_arms(
+    test_experiment = await insert_experiment_and_arms(
         xngin_session, testing_datasource_with_user_added.ds, "online"
     )
-    datasource_id = testing_experiment.datasource_id
-    experiment_id = testing_experiment.id
+    datasource_id = test_experiment.datasource_id
+    experiment_id = test_experiment.id
 
     response = pget(
         f"/v1/m/datasources/{datasource_id}/experiments/{experiment_id}/analyze"

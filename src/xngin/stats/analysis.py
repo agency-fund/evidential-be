@@ -5,7 +5,7 @@ import statsmodels.formula.api as smf
 from patsy.eval import EvalFactor
 
 from xngin.apiserver.models import tables
-from xngin.apiserver.routers.stateless_api_types import (
+from xngin.apiserver.routers.stateless.stateless_api_types import (
     ParticipantOutcome,
 )
 

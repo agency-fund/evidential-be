@@ -189,7 +189,7 @@ connect to the data warehouse (see `BaseDsn` and descendants) along with all the
 each type of unit of experimentation, e.g. a WhatsApp group, or individual phone numbers, hospitals, schools, ...).
 
 Within a datasource, we also store **Participant type-level** configuration with schema
-[`schema_types.py:ParticipantsSchema`](src/xngin/schema/schema_types.py), including column and type info derived from
+[`inspection_types.py:ParticipantsSchema`](src/xngin/apiserver/dwh/inspection_types.py), including column and type info derived from
 the warehouse via introspection (see
 [`config_sheet.py:create_schema_from_table`](src/xngin/sheets/config_sheet.py),
 [`main.py:get_sqlalchemy_table_from_engine`](src/xngin/apiserver/main.py)), as well as extra metadata about columns

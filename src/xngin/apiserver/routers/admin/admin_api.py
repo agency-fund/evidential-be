@@ -1,6 +1,6 @@
 """Implements a basic Admin API."""
 
-import secrets
+import secrets  # noqa: I001
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime, timedelta
 from typing import Annotated, Any
@@ -32,12 +32,14 @@ from xngin.apiserver.apikeys import hash_key_or_raise, make_key
 from xngin.apiserver.dependencies import xngin_db_session
 from xngin.apiserver.dns.safe_resolve import DnsLookupError, safe_resolve
 from xngin.apiserver.dwh.queries import get_participant_metrics, query_for_participants
-from xngin.apiserver.dwh.reflect_schemas import create_inspect_table_response_from_table
+from xngin.apiserver.dwh.inspections import (
+    create_inspect_table_response_from_table,
+    generate_field_descriptors,
+)
 from xngin.apiserver.exceptions_common import LateValidationError
 from xngin.apiserver.models import tables
 from xngin.apiserver.models.storage_format_converters import ExperimentStorageConverter
-from xngin.apiserver.routers import experiments_api_types, experiments_common
-from xngin.apiserver.routers.admin_api_types import (
+from xngin.apiserver.routers.admin.admin_api_types import (
     AddMemberToOrganizationRequest,
     AddWebhookToOrganizationRequest,
     AddWebhookToOrganizationResponse,
@@ -71,24 +73,28 @@ from xngin.apiserver.routers.admin_api_types import (
     UserSummary,
     WebhookSummary,
 )
-from xngin.apiserver.routers.experiments_api_types import (
-    GetParticipantAssignmentResponse,
-)
-from xngin.apiserver.routers.oidc_dependencies import TokenInfo, require_oidc_token
-from xngin.apiserver.routers.stateless_api import (
-    create_col_to_filter_meta_mapper,
-    generate_field_descriptors,
-    power_check_impl,
-    validate_schema_metrics_or_raise,
-)
-from xngin.apiserver.routers.stateless_api_types import (
+from xngin.apiserver.routers.auth.auth_dependencies import require_oidc_token
+from xngin.apiserver.routers.auth.principal import Principal
+from xngin.apiserver.routers.common_api_types import (
     ArmAnalysis,
+    CreateExperimentRequest,
+    CreateExperimentResponse,
     ExperimentAnalysis,
+    ExperimentConfig,
+    GetExperimentAssignmentsResponse,
     GetMetricsResponseElement,
+    GetParticipantAssignmentResponse,
     GetStrataResponseElement,
+    ListExperimentsResponse,
     MetricAnalysis,
     PowerRequest,
     PowerResponse,
+)
+from xngin.apiserver.routers.experiments import experiments_common
+from xngin.apiserver.routers.stateless.stateless_api import (
+    create_col_to_filter_meta_mapper,
+    power_check_impl,
+    validate_schema_metrics_or_raise,
 )
 from xngin.apiserver.settings import (
     ParticipantsConfig,
@@ -167,7 +173,7 @@ router = APIRouter(
 
 async def user_from_token(
     session: Annotated[AsyncSession, Depends(xngin_db_session)],
-    token_info: Annotated[TokenInfo, Depends(require_oidc_token)],
+    token_info: Annotated[Principal, Depends(require_oidc_token)],
 ) -> tables.User:
     """Dependency for fetching the User record matching the authenticated user's email.
 
@@ -279,8 +285,8 @@ async def get_experiment_via_ds_or_raise(
 
 @router.get("/caller-identity")
 async def caller_identity(
-    token_info: Annotated[TokenInfo, Depends(require_oidc_token)],
-) -> TokenInfo:
+    token_info: Annotated[Principal, Depends(require_oidc_token)],
+) -> Principal:
     """Returns basic metadata about the authenticated caller of this method."""
     return token_info
 
@@ -830,16 +836,16 @@ async def inspect_datasource(
                     result = dwh_session.execute(
                         query, {"search_path": config.dwh.search_path or "public"}
                     )
-                    tables = result.scalars().all()
+                    tablenames = result.scalars().all()
             else:
                 inspected = sqlalchemy.inspect(config.dbengine())
-                tables = list(
+                tablenames = list(
                     sorted(inspected.get_table_names() + inspected.get_view_names())
                 )
 
-            ds.set_table_list(tables)
+            ds.set_table_list(tablenames)
             await session.commit()
-            return InspectDatasourceResponse(tables=tables)
+            return InspectDatasourceResponse(tables=tablenames)
         except OperationalError as exc:
             if is_postgres_database_not_found_error(exc):
                 raise HTTPException(
@@ -1232,7 +1238,7 @@ async def create_experiment(
     datasource_id: str,
     session: Annotated[AsyncSession, Depends(xngin_db_session)],
     user: Annotated[tables.User, Depends(user_from_token)],
-    body: experiments_api_types.CreateExperimentRequest,
+    body: CreateExperimentRequest,
     chosen_n: Annotated[
         int | None, Query(..., description="Number of participants to assign.")
     ] = None,
@@ -1247,7 +1253,7 @@ async def create_experiment(
             include_in_schema=False,
         ),
     ] = None,
-) -> experiments_api_types.CreateExperimentResponse:
+) -> CreateExperimentResponse:
     datasource = await get_datasource_or_raise(session, user, datasource_id)
     if body.design_spec.ids_are_present():
         raise LateValidationError("Invalid DesignSpec: UUIDs must not be set.")
@@ -1432,7 +1438,7 @@ async def list_organization_experiments(
     organization_id: str,
     session: Annotated[AsyncSession, Depends(xngin_db_session)],
     user: Annotated[tables.User, Depends(user_from_token)],
-) -> experiments_api_types.ListExperimentsResponse:
+) -> ListExperimentsResponse:
     """Returns a list of experiments in the organization."""
     org = await get_organization_or_raise(session, user, organization_id)
     return await experiments_common.list_organization_experiments_impl(session, org.id)
@@ -1444,7 +1450,7 @@ async def get_experiment(
     experiment_id: str,
     session: Annotated[AsyncSession, Depends(xngin_db_session)],
     user: Annotated[tables.User, Depends(user_from_token)],
-) -> experiments_api_types.ExperimentConfig:
+) -> ExperimentConfig:
     """Returns the experiment with the specified ID."""
     ds = await get_datasource_or_raise(session, user, datasource_id)
     experiment = await get_experiment_via_ds_or_raise(session, ds, experiment_id)
@@ -1461,7 +1467,7 @@ async def get_experiment_assignments(
     experiment_id: str,
     session: Annotated[AsyncSession, Depends(xngin_db_session)],
     user: Annotated[tables.User, Depends(user_from_token)],
-) -> experiments_api_types.GetExperimentAssignmentsResponse:
+) -> GetExperimentAssignmentsResponse:
     ds = await get_datasource_or_raise(session, user, datasource_id)
     experiment = await get_experiment_via_ds_or_raise(
         session, ds, experiment_id, preload=[tables.Experiment.arm_assignments]
@@ -1517,7 +1523,7 @@ async def get_experiment_assignment_for_participant(
             include_in_schema=False,
         ),
     ] = None,
-) -> experiments_api_types.GetParticipantAssignmentResponse:
+) -> GetParticipantAssignmentResponse:
     """Get the assignment for a specific participant in an experiment."""
     # Validate the datasource and experiment exist
     ds = await get_datasource_or_raise(session, user, datasource_id)
