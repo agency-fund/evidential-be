@@ -44,11 +44,8 @@ class MisconfiguredError(Exception):
 async def lifespan(_app: FastAPI):
     logger.info(f"Starting server: {__name__}")
 
-    settings = get_settings_for_server()
-    logger.info(f"trusted_ips: {settings.trusted_ips}")
-    logger.info(
-        f"database connection timeout (seconds): {settings.db_connect_timeout_secs}"
-    )
+    # verify that the soon-to-be-obsoleted JSON file settings can be loaded
+    _ = get_settings_for_server()
 
     # Security: Disable the Google Cloud SDK's use of GCE metadata service by pointing it at localhost. This service
     # operates on behalf of customers who provide their own credentials. By setting these variables (and aborting if

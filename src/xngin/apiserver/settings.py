@@ -526,8 +526,8 @@ class Datasource(ConfigBaseModel):
 
 
 class XnginSettings(ConfigBaseModel):
-    trusted_ips: Annotated[list[str], Field(default_factory=list)]
-    db_connect_timeout_secs: int = 3
+    trusted_ips: Annotated[list[str], Field(default_factory=list, deprecated=True)]
+    db_connect_timeout_secs: Annotated[int, Field(deprecated=True)] = 3
     datasources: list[Datasource]
 
     def get_datasource(self, datasource_id):

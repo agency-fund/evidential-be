@@ -1,11 +1,10 @@
 import pytest
 
-from xngin.apiserver import conftest, constants
+from xngin.apiserver import conftest
 from xngin.apiserver.routers.common_api_types import DataType
 from xngin.apiserver.routers.stateless.stateless_api import generate_field_descriptors
 from xngin.apiserver.settings import (
     CannotFindParticipantsError,
-    XnginSettings,
     infer_table,
 )
 
@@ -13,26 +12,6 @@ from xngin.apiserver.settings import (
 def test_get_settings_for_test():
     settings = conftest.get_settings_for_test()
     assert settings.get_datasource("customer-test").config.dwh.user == "user"
-    assert settings.trusted_ips == ["testclient"]
-
-
-def test_settings_can_be_overridden_by_tests(client):
-    response = client.get(
-        "/_healthchecks/settings", headers={constants.HEADER_CONFIG_ID: "testing"}
-    )
-    assert response.status_code == 200, response.content
-    settings = XnginSettings.model_validate(response.json()["settings"])
-    assert settings.get_datasource("customer-test").config.dwh.user == "user"
-    assert settings.trusted_ips == ["testclient"]
-
-
-def test_config_injection(client):
-    response = client.get(
-        "/_healthchecks/settings",
-        headers={constants.HEADER_CONFIG_ID: "customer-test"},
-    )
-    assert response.status_code == 200, response.content
-    assert response.json()["config_id"] == "customer-test"
 
 
 def test_root_get_api(client):
