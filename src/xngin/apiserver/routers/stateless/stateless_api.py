@@ -52,7 +52,6 @@ from xngin.stats.assignment import assign_treatment as assign_treatment_actual
 from xngin.stats.power import check_power
 
 
-# TODO: move into its own module re: https://github.com/agency-fund/xngin/pull/188/
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
     logger.info(f"Starting router: {__name__} (prefix={router.prefix})")
