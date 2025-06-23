@@ -19,7 +19,7 @@ from xngin.apiserver.dependencies import (
     gsheet_cache,
 )
 from xngin.apiserver.dwh.queries import get_stats_on_metrics, query_for_participants
-from xngin.apiserver.dwh.reflect_schemas import create_schema_from_table
+from xngin.apiserver.dwh.reflect_schemas import generate_field_descriptors
 from xngin.apiserver.exceptions_common import LateValidationError
 from xngin.apiserver.gsheet_cache import GSheetCache
 from xngin.apiserver.routers.common_api_types import (
@@ -396,13 +396,3 @@ def authcheck(
 ):
     """Returns 204 if the request is allowed to use the requested datasource."""
     return Response(status_code=204)
-
-
-def generate_field_descriptors(table: sqlalchemy.Table, unique_id_col: str):
-    """Fetches a map of column name to schema metadata.
-
-    Uniqueness of the values in the column unique_id_col is assumed, not verified!
-    """
-    return {
-        c.field_name: c for c in create_schema_from_table(table, unique_id_col).fields
-    }

@@ -32,7 +32,10 @@ from xngin.apiserver.apikeys import hash_key_or_raise, make_key
 from xngin.apiserver.dependencies import xngin_db_session
 from xngin.apiserver.dns.safe_resolve import DnsLookupError, safe_resolve
 from xngin.apiserver.dwh.queries import get_participant_metrics, query_for_participants
-from xngin.apiserver.dwh.reflect_schemas import create_inspect_table_response_from_table
+from xngin.apiserver.dwh.reflect_schemas import (
+    create_inspect_table_response_from_table,
+    generate_field_descriptors,
+)
 from xngin.apiserver.exceptions_common import LateValidationError
 from xngin.apiserver.models import tables
 from xngin.apiserver.models.storage_format_converters import ExperimentStorageConverter
@@ -90,7 +93,6 @@ from xngin.apiserver.routers.common_api_types import (
 from xngin.apiserver.routers.experiments import experiments_common
 from xngin.apiserver.routers.stateless.stateless_api import (
     create_col_to_filter_meta_mapper,
-    generate_field_descriptors,
     power_check_impl,
     validate_schema_metrics_or_raise,
 )
