@@ -412,17 +412,17 @@ async def get_existing_assignment_for_participant(
     stmt = (
         select(
             tables.ArmAssignment.participant_id,
-            tables.ArmTable.id.label("arm_id"),
-            tables.ArmTable.name.label("arm_name"),
+            tables.Arm.id.label("arm_id"),
+            tables.Arm.name.label("arm_name"),
             tables.ArmAssignment.created_at,
         )
         .join(
             tables.ArmAssignment,
-            (tables.ArmAssignment.arm_id == tables.ArmTable.id)
-            & (tables.ArmAssignment.experiment_id == tables.ArmTable.experiment_id),
+            (tables.ArmAssignment.arm_id == tables.Arm.id)
+            & (tables.ArmAssignment.experiment_id == tables.Arm.experiment_id),
         )
         .filter(
-            tables.ArmTable.experiment_id == experiment_id,
+            tables.Arm.experiment_id == experiment_id,
             tables.ArmAssignment.participant_id == participant_id,
         )
     )
@@ -527,10 +527,10 @@ async def get_assign_summary(
 ) -> AssignSummary:
     """Constructs an AssignSummary from the experiment's arms and arm_assignments."""
     result = await xngin_session.execute(
-        select(tables.ArmAssignment.arm_id, tables.ArmTable.name, func.count())
-        .join(tables.ArmTable)
+        select(tables.ArmAssignment.arm_id, tables.Arm.name, func.count())
+        .join(tables.Arm)
         .where(tables.ArmAssignment.experiment_id == experiment_id)
-        .group_by(tables.ArmAssignment.arm_id, tables.ArmTable.name)
+        .group_by(tables.ArmAssignment.arm_id, tables.Arm.name)
     )
     arm_sizes = [
         ArmSize(

@@ -315,9 +315,7 @@ async def test_create_experiment_impl_for_preassigned(
     # Verify arms were created in database
     arms = (
         await xngin_session.scalars(
-            select(tables.ArmTable).where(
-                tables.ArmTable.experiment_id == experiment.id
-            )
+            select(tables.Arm).where(tables.Arm.experiment_id == experiment.id)
         )
     ).all()
     assert len(arms) == 2
@@ -415,9 +413,7 @@ async def test_create_experiment_impl_for_online(
     # Verify arms were created in database
     arms = (
         await xngin_session.scalars(
-            select(tables.ArmTable).where(
-                tables.ArmTable.experiment_id == experiment.id
-            )
+            select(tables.Arm).where(tables.Arm.experiment_id == experiment.id)
         )
     ).all()
     assert len(arms) == 2

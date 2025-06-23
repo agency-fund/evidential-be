@@ -83,7 +83,7 @@ class Organization(Base):
     name: Mapped[str] = mapped_column(String(255))
 
     # Relationships
-    arms: Mapped[list["ArmTable"]] = relationship(
+    arms: Mapped[list["Arm"]] = relationship(
         back_populates="organization", cascade="all, delete-orphan"
     )
     users: Mapped[list["User"]] = relationship(
@@ -368,7 +368,7 @@ class ArmAssignment(Base):
     )
 
     experiment: Mapped["Experiment"] = relationship(back_populates="arm_assignments")
-    arm: Mapped["ArmTable"] = relationship(back_populates="arm_assignments")
+    arm: Mapped["Arm"] = relationship(back_populates="arm_assignments")
 
     def strata_names(self) -> list[str]:
         """Returns the names of the strata fields."""
@@ -434,7 +434,7 @@ class Experiment(Base):
     arm_assignments: Mapped[list["ArmAssignment"]] = relationship(
         back_populates="experiment", cascade="all, delete-orphan", lazy="raise"
     )
-    arms: Mapped[list["ArmTable"]] = relationship(
+    arms: Mapped[list["Arm"]] = relationship(
         back_populates="experiment", cascade="all, delete-orphan"
     )
     datasource: Mapped["Datasource"] = relationship(back_populates="experiments")
@@ -446,7 +446,7 @@ class Experiment(Base):
         return [arm.name for arm in self.arms]
 
 
-class ArmTable(Base):
+class Arm(Base):
     """Representation of arms of an experiment."""
 
     __tablename__ = "arms"

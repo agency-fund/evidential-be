@@ -250,7 +250,7 @@ class ExperimentStorageConverter:
             fstat_thresh=design_spec.fstat_thresh,
         )
         experiment.arms = [
-            tables.ArmTable(
+            tables.Arm(
                 id=arm.arm_id,
                 name=arm.arm_name,
                 description=arm.arm_description,
