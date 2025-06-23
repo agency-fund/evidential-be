@@ -970,11 +970,11 @@ def test_get_experiment_assignment_for_preassigned_participant(
 async def test_get_experiment_assignment_for_online_participant(
     xngin_session: AsyncSession, testing_datasource_with_user_added, pget
 ):
-    testing_experiment = await insert_experiment_and_arms(
+    test_experiment = await insert_experiment_and_arms(
         xngin_session, testing_datasource_with_user_added.ds, "online"
     )
-    datasource_id = testing_experiment.datasource_id
-    experiment_id = testing_experiment.id
+    datasource_id = test_experiment.datasource_id
+    experiment_id = test_experiment.id
 
     # Check for an assignment that doesn't exist, but don't create it.
     response = pget(
@@ -1000,7 +1000,7 @@ async def test_get_experiment_assignment_for_online_participant(
     assert assignment_response.participant_id == "new_id"
     assert assignment_response.assignment is not None
     assert str(assignment_response.assignment.arm_id) in {
-        arm.id for arm in testing_experiment.arms
+        arm.id for arm in test_experiment.arms
     }
 
     # Get back the same assignment.
@@ -1086,11 +1086,11 @@ def test_experiments_analyze(testing_experiment, pget):
 async def test_experiments_analyze_for_experiment_with_no_participants(
     xngin_session: AsyncSession, testing_datasource_with_user_added, pget
 ):
-    testing_experiment = await insert_experiment_and_arms(
+    test_experiment = await insert_experiment_and_arms(
         xngin_session, testing_datasource_with_user_added.ds, "online"
     )
-    datasource_id = testing_experiment.datasource_id
-    experiment_id = testing_experiment.id
+    datasource_id = test_experiment.datasource_id
+    experiment_id = test_experiment.id
 
     response = pget(
         f"/v1/m/datasources/{datasource_id}/experiments/{experiment_id}/analyze"
