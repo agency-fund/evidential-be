@@ -39,8 +39,8 @@ from tenacity import (
 from xngin.apiserver import flags
 from xngin.apiserver.certs import get_amazon_trust_ca_bundle_path
 from xngin.apiserver.dns.safe_resolve import safe_resolve
+from xngin.apiserver.dwh.inspection_types import ParticipantsSchema
 from xngin.apiserver.settings_secrets import replace_secrets
-from xngin.schema.schema_types import ParticipantsSchema
 
 DEFAULT_SETTINGS_FILE = "xngin.settings.json"
 SA_LOGGER_NAME_FOR_DWH = "xngin_dwh"

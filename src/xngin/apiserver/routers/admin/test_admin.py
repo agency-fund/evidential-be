@@ -10,6 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from xngin.apiserver import conftest, flags
 from xngin.apiserver.dns import safe_resolve
+from xngin.apiserver.dwh.inspection_types import FieldDescriptor, ParticipantsSchema
 from xngin.apiserver.models import tables
 from xngin.apiserver.models.enums import ExperimentState, StopAssignmentReason
 from xngin.apiserver.routers.admin.admin_api import user_from_token
@@ -62,7 +63,6 @@ from xngin.apiserver.settings import (
 )
 from xngin.apiserver.testing.assertions import assert_dates_equal
 from xngin.cli.main import create_testing_dwh
-from xngin.schema.schema_types import FieldDescriptor, ParticipantsSchema
 
 SAMPLE_GCLOUD_SERVICE_ACCOUNT_KEY = {
     "auth_provider_x509_cert_url": "",

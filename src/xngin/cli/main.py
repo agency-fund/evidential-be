@@ -33,7 +33,8 @@ from sqlalchemy.orm import Session
 from sqlalchemy.sql.compiler import IdentifierPreparer
 
 from xngin.apiserver import settings
-from xngin.apiserver.dwh.reflect_schemas import create_schema_from_table
+from xngin.apiserver.dwh.inspection_types import FieldDescriptor, ParticipantsSchema
+from xngin.apiserver.dwh.inspections import create_schema_from_table
 from xngin.apiserver.routers.common_api_types import DataType
 from xngin.apiserver.settings import (
     CannotFindTableError,
@@ -42,7 +43,6 @@ from xngin.apiserver.settings import (
     XnginSettings,
 )
 from xngin.apiserver.testing import testing_dwh
-from xngin.schema.schema_types import FieldDescriptor, ParticipantsSchema
 from xngin.sheets.config_sheet import (
     InvalidSheetError,
     fetch_and_parse_sheet,

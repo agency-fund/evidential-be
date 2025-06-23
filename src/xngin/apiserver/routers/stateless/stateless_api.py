@@ -18,8 +18,9 @@ from xngin.apiserver.dependencies import (
     datasource_config_required,
     gsheet_cache,
 )
+from xngin.apiserver.dwh.inspection_types import FieldDescriptor, ParticipantsSchema
+from xngin.apiserver.dwh.inspections import generate_field_descriptors
 from xngin.apiserver.dwh.queries import get_stats_on_metrics, query_for_participants
-from xngin.apiserver.dwh.reflect_schemas import generate_field_descriptors
 from xngin.apiserver.exceptions_common import LateValidationError
 from xngin.apiserver.gsheet_cache import GSheetCache
 from xngin.apiserver.routers.common_api_types import (
@@ -46,7 +47,6 @@ from xngin.apiserver.settings import (
     ParticipantsMixin,
     infer_table,
 )
-from xngin.schema.schema_types import FieldDescriptor, ParticipantsSchema
 from xngin.sheets.config_sheet import fetch_and_parse_sheet
 from xngin.stats.assignment import assign_treatment as assign_treatment_actual
 from xngin.stats.power import check_power

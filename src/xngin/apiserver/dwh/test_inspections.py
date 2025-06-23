@@ -3,7 +3,7 @@ from pydantic import ValidationError
 from sqlalchemy import BigInteger, Column, Integer, MetaData, String, Table
 
 from xngin.apiserver import conftest
-from xngin.apiserver.dwh.reflect_schemas import (
+from xngin.apiserver.dwh.inspections import (
     create_schema_from_table,
     generate_field_descriptors,
 )

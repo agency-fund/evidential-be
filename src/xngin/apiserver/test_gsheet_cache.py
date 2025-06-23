@@ -7,11 +7,11 @@ from sqlalchemy import Update, delete
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from xngin.apiserver.dwh.inspection_types import FieldDescriptor, ParticipantsSchema
 from xngin.apiserver.gsheet_cache import GSheetCache
 from xngin.apiserver.models import tables
 from xngin.apiserver.routers.common_api_types import DataType
 from xngin.apiserver.settings import SheetRef
-from xngin.schema.schema_types import FieldDescriptor, ParticipantsSchema
 
 
 @pytest.fixture
