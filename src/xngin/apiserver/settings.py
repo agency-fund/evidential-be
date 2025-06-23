@@ -1,3 +1,9 @@
+"""Settings describe customer configuration data loaded at startup from static JSON files (obsolete)
+or read from the database (see tables.Datasource.get_config()).
+
+The Pydantic classes herein also provide some methods for connecting to the customer databases.
+"""
+
 import base64
 import binascii
 import json
