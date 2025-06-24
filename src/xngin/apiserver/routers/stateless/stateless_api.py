@@ -1,7 +1,6 @@
 from contextlib import asynccontextmanager
 from typing import Annotated
 
-import sqlalchemy
 from fastapi import (
     APIRouter,
     Depends,
@@ -9,8 +8,6 @@ from fastapi import (
     Query,
 )
 from loguru import logger
-from sqlalchemy import distinct
-from sqlalchemy.orm import Session
 
 from xngin.apiserver import constants
 from xngin.apiserver.dependencies import (
@@ -18,17 +15,13 @@ from xngin.apiserver.dependencies import (
     gsheet_cache,
 )
 from xngin.apiserver.dwh.dwh_session import DwhSession
-from xngin.apiserver.dwh.inspection_types import FieldDescriptor, ParticipantsSchema
+from xngin.apiserver.dwh.inspection_types import ParticipantsSchema
 from xngin.apiserver.dwh.inspections import generate_field_descriptors
 from xngin.apiserver.dwh.queries import get_stats_on_metrics, query_for_participants
 from xngin.apiserver.exceptions_common import LateValidationError
 from xngin.apiserver.gsheet_cache import GSheetCache
 from xngin.apiserver.routers.common_api_types import (
     DesignSpec,
-    FilterClass,
-    GetFiltersResponseDiscrete,
-    GetFiltersResponseElement,
-    GetFiltersResponseNumericOrDate,
     GetMetricsResponseElement,
     GetStrataResponseElement,
     PowerRequest,
@@ -155,7 +148,7 @@ async def get_filters(
         sa_table = dwh.infer_table(participants_cfg.table_name)
         db_schema = generate_field_descriptors(sa_table, schema.get_unique_id_field())
 
-        mapper = create_col_to_filter_meta_mapper(db_schema, sa_table, dwh.session)
+        mapper = dwh.create_filter_meta_mapper(db_schema, sa_table)
 
         return GetFiltersResponse(
             results=sorted(
@@ -167,54 +160,6 @@ async def get_filters(
                 key=lambda item: item.field_name,
             )
         )
-
-
-def create_col_to_filter_meta_mapper(
-    db_schema: dict[str, FieldDescriptor], sa_table, session: Session
-):
-    # TODO: implement caching, respecting commons.refresh
-    def mapper(col_name, column_descriptor) -> GetFiltersResponseElement:
-        db_col = db_schema.get(col_name)
-        filter_class = db_col.data_type.filter_class(col_name)
-
-        # Collect metadata on the values in the database.
-        sa_col = sa_table.columns[col_name]
-        match filter_class:
-            case FilterClass.DISCRETE:
-                distinct_values = [
-                    str(v)
-                    for v in session.execute(
-                        sqlalchemy.select(distinct(sa_col))
-                        .where(sa_col.is_not(None))
-                        .limit(1000)
-                        .order_by(sa_col)
-                    ).scalars()
-                ]
-                return GetFiltersResponseDiscrete(
-                    field_name=col_name,
-                    data_type=db_col.data_type,
-                    relations=filter_class.valid_relations(),
-                    description=column_descriptor.description,
-                    distinct_values=distinct_values,
-                )
-            case FilterClass.NUMERIC:
-                min_, max_ = session.execute(
-                    sqlalchemy.select(
-                        sqlalchemy.func.min(sa_col), sqlalchemy.func.max(sa_col)
-                    ).where(sa_col.is_not(None))
-                ).first()
-                return GetFiltersResponseNumericOrDate(
-                    field_name=col_name,
-                    data_type=db_col.data_type,
-                    relations=filter_class.valid_relations(),
-                    description=column_descriptor.description,
-                    min=min_,
-                    max=max_,
-                )
-            case _:
-                raise RuntimeError("unexpected filter class")
-
-    return mapper
 
 
 @router.get(

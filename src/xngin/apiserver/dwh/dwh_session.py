@@ -1,14 +1,23 @@
 """Data warehouse session context manager for database connections."""
 
+from collections.abc import Callable
+
 import google.api_core.exceptions
 import sqlalchemy
 from loguru import logger
-from sqlalchemy import Engine, event, text
+from sqlalchemy import Engine, distinct, event, text
 from sqlalchemy.exc import OperationalError
 from sqlalchemy.orm import Session
 
 from xngin.apiserver import flags
 from xngin.apiserver.dns.safe_resolve import safe_resolve
+from xngin.apiserver.dwh.inspection_types import FieldDescriptor
+from xngin.apiserver.routers.common_api_types import (
+    FilterClass,
+    GetFiltersResponseDiscrete,
+    GetFiltersResponseElement,
+    GetFiltersResponseNumericOrDate,
+)
 from xngin.apiserver.settings import (
     SA_LOGGER_NAME_FOR_DWH,
     TIMEOUT_SECS_FOR_CUSTOMER_POSTGRES,
@@ -123,6 +132,65 @@ class DwhSession:
             and "FATAL:  database" in exc.args[0]
             and "does not exist" in exc.args[0]
         )
+
+    def create_filter_meta_mapper(
+        self, db_schema: dict[str, FieldDescriptor], sa_table
+    ) -> Callable[[str, FieldDescriptor], GetFiltersResponseElement]:
+        """Create a mapper function for generating filter metadata from database columns.
+
+        Args:
+            db_schema: Dictionary mapping column names to FieldDescriptor objects
+            sa_table: SQLAlchemy Table object
+
+        Returns:
+            A mapper function that takes (column_name, column_descriptor) and returns GetFiltersResponseElement
+        """
+
+        # TODO: implement caching, respecting commons.refresh
+        def mapper(
+            col_name: str, column_descriptor: FieldDescriptor
+        ) -> GetFiltersResponseElement:
+            db_col = db_schema.get(col_name)
+            filter_class = db_col.data_type.filter_class(col_name)
+
+            # Collect metadata on the values in the database.
+            sa_col = sa_table.columns[col_name]
+            match filter_class:
+                case FilterClass.DISCRETE:
+                    distinct_values = [
+                        str(v)
+                        for v in self.session.execute(
+                            sqlalchemy.select(distinct(sa_col))
+                            .where(sa_col.is_not(None))
+                            .limit(1000)
+                            .order_by(sa_col)
+                        ).scalars()
+                    ]
+                    return GetFiltersResponseDiscrete(
+                        field_name=col_name,
+                        data_type=db_col.data_type,
+                        relations=filter_class.valid_relations(),
+                        description=column_descriptor.description,
+                        distinct_values=distinct_values,
+                    )
+                case FilterClass.NUMERIC:
+                    min_, max_ = self.session.execute(
+                        sqlalchemy.select(
+                            sqlalchemy.func.min(sa_col), sqlalchemy.func.max(sa_col)
+                        ).where(sa_col.is_not(None))
+                    ).first()
+                    return GetFiltersResponseNumericOrDate(
+                        field_name=col_name,
+                        data_type=db_col.data_type,
+                        relations=filter_class.valid_relations(),
+                        description=column_descriptor.description,
+                        min=min_,
+                        max=max_,
+                    )
+                case _:
+                    raise RuntimeError("unexpected filter class")
+
+        return mapper
 
     def _create_engine(self) -> Engine:
         """Create a SQLAlchemy Engine for the customer database.

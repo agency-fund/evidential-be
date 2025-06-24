@@ -88,7 +88,6 @@ from xngin.apiserver.routers.common_api_types import (
 )
 from xngin.apiserver.routers.experiments import experiments_common
 from xngin.apiserver.routers.stateless.stateless_api import (
-    create_col_to_filter_meta_mapper,
     power_check_impl,
     validate_schema_metrics_or_raise,
 )
@@ -997,7 +996,7 @@ async def inspect_participant_types(
             db_schema = generate_field_descriptors(
                 sa_table, pconfig.get_unique_id_field()
             )
-            mapper = create_col_to_filter_meta_mapper(db_schema, sa_table, dwh.session)
+            mapper = dwh.create_filter_meta_mapper(db_schema, sa_table)
 
         filter_fields = {c.field_name: c for c in pconfig.fields if c.is_filter}
         strata_fields = {c.field_name: c for c in pconfig.fields if c.is_strata}
