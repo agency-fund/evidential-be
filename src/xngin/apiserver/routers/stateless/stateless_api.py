@@ -242,14 +242,14 @@ def power_check_impl(
             body.design_spec.filters,
         )
 
-        return PowerResponse(
-            analyses=check_power(
-                metrics=metric_stats,
-                n_arms=len(body.design_spec.arms),
-                power=body.design_spec.power,
-                alpha=body.design_spec.alpha,
-            )
+    return PowerResponse(
+        analyses=check_power(
+            metrics=metric_stats,
+            n_arms=len(body.design_spec.arms),
+            power=body.design_spec.power,
+            alpha=body.design_spec.alpha,
         )
+    )
 
 
 @router.post(

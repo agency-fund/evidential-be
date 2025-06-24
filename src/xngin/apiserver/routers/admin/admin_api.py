@@ -873,7 +873,7 @@ async def inspect_table_in_datasource(
     with DwhSession(config.dwh) as dwh:
         # CannotFindTableError will be handled by exceptionhandlers.py.
         table = dwh.infer_table(table_name)
-        response = create_inspect_table_response_from_table(table)
+    response = create_inspect_table_response_from_table(table)
 
     session.add(
         tables.DatasourceTablesInspected(
@@ -1277,22 +1277,21 @@ async def analyze_experiment(
         )
     unique_id_field = participants_cfg.get_unique_id_field()
 
+    design_spec = ExperimentStorageConverter(experiment).get_design_spec()
+    assignments = experiment.arm_assignments
+    participant_ids = [assignment.participant_id for assignment in assignments]
+    if len(participant_ids) == 0:
+        raise StatsAnalysisError("No participants found for experiment.")
+
     with DwhSession(dsconfig.dwh) as dwh:
         sa_table = dwh.infer_table(participants_cfg.table_name)
-
-        design_spec = ExperimentStorageConverter(experiment).get_design_spec()
-        metrics = design_spec.metrics
-        assignments = experiment.arm_assignments
-        participant_ids = [assignment.participant_id for assignment in assignments]
-        if len(participant_ids) == 0:
-            raise StatsAnalysisError("No participants found for experiment.")
 
         # Mark the start of the analysis as when we begin pulling outcomes.
         created_at = datetime.now(UTC)
         participant_outcomes = get_participant_metrics(
             dwh.session,
             sa_table,
-            metrics,
+            design_spec.metrics,
             unique_id_field,
             participant_ids,
         )

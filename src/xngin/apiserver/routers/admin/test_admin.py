@@ -186,12 +186,12 @@ async def test_user_from_token(xngin_session: AsyncSession):
     # Check auto-generated ParticipantsDef is aligned with the test dwh.
     with DwhSession(ds_config.dwh) as dwh:
         sa_table = dwh.infer_table(pt_def.table_name)
-        col_names = {c.name for c in sa_table.columns}
-        field_names = {f.field_name for f in pt_def.fields}
-        assert col_names == field_names
-        for field in pt_def.fields:
-            col = sa_table.columns[field.field_name]
-            assert DataType.match(col.type) == field.data_type
+    col_names = {c.name for c in sa_table.columns}
+    field_names = {f.field_name for f in pt_def.fields}
+    assert col_names == field_names
+    for field in pt_def.fields:
+        col = sa_table.columns[field.field_name]
+        assert DataType.match(col.type) == field.data_type
 
 
 @pytest.mark.skipif(
