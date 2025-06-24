@@ -295,16 +295,15 @@ async def assign_treatment(
     validate_schema_metrics_or_raise(body.design_spec, schema)
 
     with DwhSession(config.dwh) as dwh:
-        sa_table = dwh.infer_table(participants_cfg.table_name)
-        participants = dwh.get_participants(
+        result = dwh.get_participants(
             participants_cfg.table_name, body.design_spec.filters, chosen_n
         )
 
     metric_names = [m.field_name for m in body.design_spec.metrics]
     strata_names = [s.field_name for s in body.design_spec.strata]
     return assign_treatment_actual(
-        sa_table=sa_table,
-        data=participants,
+        sa_table=result.sa_table,
+        data=result.participants,
         stratum_cols=strata_names + metric_names,
         id_col=schema.get_unique_id_field(),
         arms=body.design_spec.arms,

@@ -1,6 +1,7 @@
 """Data warehouse session context manager for database connections."""
 
 from collections.abc import Callable
+from dataclasses import dataclass
 
 import google.api_core.exceptions
 import sqlalchemy
@@ -29,6 +30,14 @@ from xngin.apiserver.settings import (
 
 class DwhDatabaseDoesNotExistError(Exception):
     """Raised when the target database or dataset does not exist."""
+
+
+@dataclass
+class GetParticipantsResult:
+    """Result of getting participants from a data warehouse table."""
+
+    sa_table: sqlalchemy.Table
+    participants: list
 
 
 class CannotFindTableError(Exception):
@@ -145,7 +154,7 @@ class DwhSession:
 
     def get_participants(
         self, table_name: str, filters, n: int, use_reflection: bool | None = None
-    ):
+    ) -> GetParticipantsResult:
         """Get participants by combining table inference and querying.
 
         Args:
@@ -155,10 +164,11 @@ class DwhSession:
             use_reflection: Whether to use SQLAlchemy reflection. If None, uses config default.
 
         Returns:
-            Query results for participants matching the filters
+            GetParticipantsResult containing both the SQLAlchemy table and participant query results
         """
         sa_table = self.infer_table(table_name, use_reflection)
-        return query_for_participants(self.session, sa_table, filters, n)
+        participants = query_for_participants(self.session, sa_table, filters, n)
+        return GetParticipantsResult(sa_table=sa_table, participants=participants)
 
     def list_tables(self) -> list[str]:
         """Get a list of table names from the data warehouse.

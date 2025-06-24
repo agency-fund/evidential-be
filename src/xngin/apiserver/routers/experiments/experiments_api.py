@@ -106,8 +106,7 @@ async def create_experiment_with_assignment_sl(
 
     # Get participants and their schema info from the client dwh
     with DwhSession(ds_config.dwh) as dwh:
-        sa_table = dwh.infer_table(participants_cfg.table_name)
-        participants = dwh.get_participants(
+        result = dwh.get_participants(
             participants_cfg.table_name, body.design_spec.filters, chosen_n
         )
 
@@ -116,8 +115,8 @@ async def create_experiment_with_assignment_sl(
         request=body,
         datasource_id=datasource.id,
         participant_unique_id_field=schema.get_unique_id_field(),
-        dwh_sa_table=sa_table,
-        dwh_participants=participants,
+        dwh_sa_table=result.sa_table,
+        dwh_participants=result.participants,
         random_state=random_state,
         xngin_session=xngin_session,
         stratify_on_metrics=True,
