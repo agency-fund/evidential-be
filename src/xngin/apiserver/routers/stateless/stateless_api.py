@@ -17,6 +17,7 @@ from xngin.apiserver.dependencies import (
     datasource_config_required,
     gsheet_cache,
 )
+from xngin.apiserver.dwh.dwh_session import DwhSession
 from xngin.apiserver.dwh.inspection_types import FieldDescriptor, ParticipantsSchema
 from xngin.apiserver.dwh.inspections import generate_field_descriptors
 from xngin.apiserver.dwh.queries import get_stats_on_metrics, query_for_participants
@@ -44,7 +45,6 @@ from xngin.apiserver.settings import (
     DatasourceConfig,
     ParticipantsConfig,
     ParticipantsMixin,
-    infer_table,
 )
 from xngin.sheets.config_sheet import fetch_and_parse_sheet
 from xngin.stats.assignment import assign_treatment as assign_treatment_actual
@@ -116,12 +116,8 @@ async def get_strata(
     )
     strata_fields = {c.field_name: c for c in schema.fields if c.is_strata}
 
-    with config.dbsession() as dwh_session:
-        sa_table = infer_table(
-            dwh_session.get_bind(),
-            participants_cfg.table_name,
-            config.supports_reflection(),
-        )
+    with DwhSession(config.dwh) as dwh:
+        sa_table = dwh.infer_table(participants_cfg.table_name)
         db_schema = generate_field_descriptors(sa_table, schema.get_unique_id_field())
 
     return GetStrataResponse(
@@ -155,15 +151,11 @@ async def get_filters(
     )
     filter_fields = {c.field_name: c for c in schema.fields if c.is_filter}
 
-    with config.dbsession() as dwh_session:
-        sa_table = infer_table(
-            dwh_session.get_bind(),
-            participants_cfg.table_name,
-            config.supports_reflection(),
-        )
+    with DwhSession(config.dwh) as dwh:
+        sa_table = dwh.infer_table(participants_cfg.table_name)
         db_schema = generate_field_descriptors(sa_table, schema.get_unique_id_field())
 
-        mapper = create_col_to_filter_meta_mapper(db_schema, sa_table, dwh_session)
+        mapper = create_col_to_filter_meta_mapper(db_schema, sa_table, dwh.session)
 
         return GetFiltersResponse(
             results=sorted(
@@ -239,12 +231,8 @@ async def get_metrics(
     )
     metric_cols = {c.field_name: c for c in schema.fields if c.is_metric}
 
-    with config.dbsession() as dwh_session:
-        sa_table = infer_table(
-            dwh_session.get_bind(),
-            participants_cfg.table_name,
-            config.supports_reflection(),
-        )
+    with DwhSession(config.dwh) as dwh:
+        sa_table = dwh.infer_table(participants_cfg.table_name)
         db_schema = generate_field_descriptors(sa_table, schema.get_unique_id_field())
 
     # Merge data type info above with the columns to be used as metrics:
@@ -300,15 +288,11 @@ async def powercheck(
 def power_check_impl(
     body: PowerRequest, config: DatasourceConfig, participants_cfg: ParticipantsConfig
 ) -> PowerResponse:
-    with config.dbsession() as dwh_session:
-        sa_table = infer_table(
-            dwh_session.get_bind(),
-            participants_cfg.table_name,
-            config.supports_reflection(),
-        )
+    with DwhSession(config.dwh) as dwh:
+        sa_table = dwh.infer_table(participants_cfg.table_name)
 
         metric_stats = get_stats_on_metrics(
-            dwh_session,
+            dwh.session,
             sa_table,
             body.design_spec.metrics,
             body.design_spec.filters,
@@ -363,14 +347,10 @@ async def assign_treatment(
     )
     validate_schema_metrics_or_raise(body.design_spec, schema)
 
-    with config.dbsession() as dwh_session:
-        sa_table = infer_table(
-            dwh_session.get_bind(),
-            participants_cfg.table_name,
-            config.supports_reflection(),
-        )
+    with DwhSession(config.dwh) as dwh:
+        sa_table = dwh.infer_table(participants_cfg.table_name)
         participants = query_for_participants(
-            dwh_session, sa_table, body.design_spec.filters, chosen_n
+            dwh.session, sa_table, body.design_spec.filters, chosen_n
         )
 
     metric_names = [m.field_name for m in body.design_spec.metrics]

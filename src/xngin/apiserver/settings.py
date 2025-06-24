@@ -26,9 +26,8 @@ from pydantic import (
     field_validator,
     model_validator,
 )
-from sqlalchemy import Engine, event, make_url, text
+from sqlalchemy import make_url, text
 from sqlalchemy.exc import NoSuchTableError
-from sqlalchemy.orm import Session
 from tenacity import (
     retry,
     retry_if_not_exception_type,
@@ -36,9 +35,7 @@ from tenacity import (
     wait_random,
 )
 
-from xngin.apiserver import flags
 from xngin.apiserver.certs import get_amazon_trust_ca_bundle_path
-from xngin.apiserver.dns.safe_resolve import safe_resolve
 from xngin.apiserver.dwh.inspection_types import ParticipantsSchema
 from xngin.apiserver.settings_secrets import replace_secrets
 
@@ -455,68 +452,6 @@ class RemoteDatabaseConfig(ParticipantsMixin, ConfigBaseModel):
 
     def supports_reflection(self):
         return self.dwh.supports_table_reflection()
-
-    def dbsession(self):
-        """Returns a Session to be used to send queries to the customer database.
-
-        Use this in a `with` block to ensure correct transaction handling. If you need the
-        sqlalchemy Engine, call .get_bind().
-        """
-        engine = self.dbengine()
-        return Session(engine)
-
-    def dbengine(self):
-        """Returns a SQLAlchemy Engine for the customer database.
-
-        Use this when reflecting. If you're doing any queries on the tables, prefer dbsession().
-        """
-        url = self.dwh.to_sqlalchemy_url()
-        connect_args: dict = {}
-        if url.get_backend_name() == "postgresql":
-            connect_args["connect_timeout"] = TIMEOUT_SECS_FOR_CUSTOMER_POSTGRES
-            # Replace the Postgres' client default DNS lookup with one that applies security checks first; this prevents
-            # us from connecting to addresses like 127.0.0.1 or addresses that are on our hosting provider's internal
-            # network.
-            # https://www.postgresql.org/docs/current/libpq-connect.html#LIBPQ-PARAMKEYWORDS
-            connect_args["hostaddr"] = safe_resolve(url.host)
-
-        logger.info(
-            f"Connecting to customer dwh: url={safe_url(url)}, "
-            f"backend={url.get_backend_name()}, connect_args={connect_args}"
-        )
-        engine = sqlalchemy.create_engine(
-            url,
-            connect_args=connect_args,
-            logging_name=SA_LOGGER_NAME_FOR_DWH,
-            execution_options={"logging_token": "dwh"},
-            echo=flags.ECHO_SQL,
-            poolclass=sqlalchemy.pool.NullPool,
-        )
-        self._extra_engine_setup(engine)
-        return engine
-
-    def _extra_engine_setup(self, engine: Engine):
-        """Do any extra configuration if needed before a connection is made."""
-
-        if isinstance(self.dwh, Dsn) and self.dwh.search_path:
-            # Avoid explicitly setting schema whenever we build a Table.
-            #   https://docs.sqlalchemy.org/en/20/dialects/postgresql.html#setting-alternate-search-paths-on-connect
-            # If possible, have the client also consider setting that as a default on the role, e.g.:
-            #   ALTER USER username SET search_path = schema1, schema2, public;
-
-            @event.listens_for(engine, "connect", insert=True)
-            def set_search_path(dbapi_connection, _connection_record):
-                existing_autocommit = dbapi_connection.autocommit
-                dbapi_connection.autocommit = True
-                cursor = dbapi_connection.cursor()
-                cursor.execute(f"SET SESSION search_path={self.dwh.search_path}")  # type: ignore[union-attr]
-                cursor.close()
-                dbapi_connection.autocommit = existing_autocommit
-
-        # Partially address any Redshift incompatibilities
-        # re: https://github.com/sqlalchemy-redshift/sqlalchemy-redshift/issues/264#issuecomment-2181124071
-        if self.dwh.is_redshift() and hasattr(engine.dialect, "_set_backslash_escapes"):
-            engine.dialect._set_backslash_escapes = lambda _: None
 
 
 # TODO: use a Field(discriminator="type") when we support more than just "remote" databases.

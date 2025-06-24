@@ -27,7 +27,7 @@ from sqlalchemy.exc import OperationalError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import QueryableAttribute, selectinload
 
-from xngin.apiserver import constants, flags, settings
+from xngin.apiserver import constants, flags
 from xngin.apiserver.apikeys import hash_key_or_raise, make_key
 from xngin.apiserver.dependencies import xngin_db_session
 from xngin.apiserver.dns.safe_resolve import DnsLookupError, safe_resolve
@@ -96,11 +96,11 @@ from xngin.apiserver.routers.stateless.stateless_api import (
     power_check_impl,
     validate_schema_metrics_or_raise,
 )
+from xngin.apiserver.dwh.dwh_session import DwhSession
 from xngin.apiserver.settings import (
     ParticipantsConfig,
     ParticipantsDef,
     RemoteDatabaseConfig,
-    infer_table,
 )
 from xngin.apiserver.testing.testing_dwh import create_user_and_first_datasource
 from xngin.stats.analysis import analyze_experiment as analyze_experiment_impl
@@ -832,16 +832,17 @@ async def inspect_datasource(
                     "SELECT table_name FROM information_schema.tables "
                     "WHERE table_schema IN (:search_path) ORDER BY table_name"
                 )
-                with config.dbsession() as dwh_session:
-                    result = dwh_session.execute(
+                with DwhSession(config.dwh) as dwh:
+                    result = dwh.session.execute(
                         query, {"search_path": config.dwh.search_path or "public"}
                     )
                     tablenames = result.scalars().all()
             else:
-                inspected = sqlalchemy.inspect(config.dbengine())
-                tablenames = list(
-                    sorted(inspected.get_table_names() + inspected.get_view_names())
-                )
+                with DwhSession(config.dwh) as dwh:
+                    inspected = sqlalchemy.inspect(dwh.engine)
+                    tablenames = list(
+                        sorted(inspected.get_table_names() + inspected.get_view_names())
+                    )
 
             ds.set_table_list(tablenames)
             await session.commit()
@@ -907,12 +908,10 @@ async def inspect_table_in_datasource(
     await invalidate_inspect_table_cache(session, datasource_id)
     await session.commit()
 
-    engine = config.dbengine()
-    # CannotFindTableError will be handled by exceptionhandlers.py.
-    table = settings.infer_table(
-        engine, table_name, use_reflection=config.supports_reflection()
-    )
-    response = create_inspect_table_response_from_table(table)
+    with DwhSession(config.dwh) as dwh:
+        # CannotFindTableError will be handled by exceptionhandlers.py.
+        table = dwh.infer_table(table_name)
+        response = create_inspect_table_response_from_table(table)
 
     session.add(
         tables.DatasourceTablesInspected(
@@ -1029,16 +1028,12 @@ async def inspect_participant_types(
     await session.commit()
 
     def inspect_participant_types_impl() -> InspectParticipantTypesResponse:
-        with dsconfig.dbsession() as dwh_session:
-            sa_table = infer_table(
-                dwh_session.get_bind(),
-                pconfig.table_name,
-                dsconfig.supports_reflection(),
-            )
+        with DwhSession(dsconfig.dwh) as dwh:
+            sa_table = dwh.infer_table(pconfig.table_name)
             db_schema = generate_field_descriptors(
                 sa_table, pconfig.get_unique_id_field()
             )
-            mapper = create_col_to_filter_meta_mapper(db_schema, sa_table, dwh_session)
+            mapper = create_col_to_filter_meta_mapper(db_schema, sa_table, dwh.session)
 
         filter_fields = {c.field_name: c for c in pconfig.fields if c.is_filter}
         strata_fields = {c.field_name: c for c in pconfig.fields if c.is_strata}
@@ -1266,15 +1261,11 @@ async def create_experiment(
 
     # Get participants and their schema info from the client dwh
     participants = None
-    with ds_config.dbsession() as dwh_session:
-        sa_table = infer_table(
-            dwh_session.get_bind(),
-            participants_cfg.table_name,
-            ds_config.supports_reflection(),
-        )
+    with DwhSession(ds_config.dwh) as dwh:
+        sa_table = dwh.infer_table(participants_cfg.table_name)
         if chosen_n is not None:
             participants = query_for_participants(
-                dwh_session, sa_table, body.design_spec.filters, chosen_n
+                dwh.session, sa_table, body.design_spec.filters, chosen_n
             )
         elif body.design_spec.experiment_type == "preassigned":
             raise HTTPException(
@@ -1324,12 +1315,8 @@ async def analyze_experiment(
         )
     unique_id_field = participants_cfg.get_unique_id_field()
 
-    with dsconfig.dbsession() as dwh_session:
-        sa_table = infer_table(
-            dwh_session.get_bind(),
-            participants_cfg.table_name,
-            dsconfig.supports_reflection(),
-        )
+    with DwhSession(dsconfig.dwh) as dwh:
+        sa_table = dwh.infer_table(participants_cfg.table_name)
 
         design_spec = ExperimentStorageConverter(experiment).get_design_spec()
         metrics = design_spec.metrics
@@ -1341,7 +1328,7 @@ async def analyze_experiment(
         # Mark the start of the analysis as when we begin pulling outcomes.
         created_at = datetime.now(UTC)
         participant_outcomes = get_participant_metrics(
-            dwh_session,
+            dwh.session,
             sa_table,
             metrics,
             unique_id_field,
