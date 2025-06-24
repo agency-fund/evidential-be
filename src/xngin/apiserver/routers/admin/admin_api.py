@@ -5,9 +5,6 @@ from contextlib import asynccontextmanager
 from datetime import UTC, datetime, timedelta
 from typing import Annotated, Any
 
-import google.api_core.exceptions
-import sqlalchemy
-import sqlalchemy.orm
 from fastapi import (
     APIRouter,
     Body,
@@ -22,8 +19,7 @@ from fastapi import (
 from fastapi.responses import StreamingResponse
 from loguru import logger
 from pydantic import BaseModel
-from sqlalchemy import delete, select, text
-from sqlalchemy.exc import OperationalError
+from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import QueryableAttribute, selectinload
 
@@ -96,7 +92,7 @@ from xngin.apiserver.routers.stateless.stateless_api import (
     power_check_impl,
     validate_schema_metrics_or_raise,
 )
-from xngin.apiserver.dwh.dwh_session import DwhSession
+from xngin.apiserver.dwh.dwh_session import DwhSession, DwhDatabaseDoesNotExistError
 from xngin.apiserver.settings import (
     ParticipantsConfig,
     ParticipantsDef,
@@ -825,36 +821,13 @@ async def inspect_datasource(
     try:
         try:
             config = ds.get_config()
-
-            # Hack for redshift's lack of reflection support.
-            if config.dwh.is_redshift():
-                query = text(
-                    "SELECT table_name FROM information_schema.tables "
-                    "WHERE table_schema IN (:search_path) ORDER BY table_name"
-                )
-                with DwhSession(config.dwh) as dwh:
-                    result = dwh.session.execute(
-                        query, {"search_path": config.dwh.search_path or "public"}
-                    )
-                    tablenames = result.scalars().all()
-            else:
-                with DwhSession(config.dwh) as dwh:
-                    inspected = sqlalchemy.inspect(dwh.engine)
-                    tablenames = list(
-                        sorted(inspected.get_table_names() + inspected.get_view_names())
-                    )
+            with DwhSession(config.dwh) as dwh:
+                tablenames = dwh.list_tables()
 
             ds.set_table_list(tablenames)
             await session.commit()
             return InspectDatasourceResponse(tables=tablenames)
-        except OperationalError as exc:
-            if is_postgres_database_not_found_error(exc):
-                raise HTTPException(
-                    status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)
-                ) from exc
-            raise
-        except google.api_core.exceptions.NotFound as exc:
-            # Google returns a 404 when authentication succeeds but when the specified datasource does not exist.
+        except DwhDatabaseDoesNotExistError as exc:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)
             ) from exc
@@ -862,15 +835,6 @@ async def inspect_datasource(
         ds.clear_table_list()
         await session.commit()
         raise
-
-
-def is_postgres_database_not_found_error(exc):
-    return (
-        exc.args
-        and isinstance(exc.args[0], str)
-        and "FATAL:  database" in exc.args[0]
-        and "does not exist" in exc.args[0]
-    )
 
 
 async def invalidate_inspect_table_cache(session, datasource_id):

@@ -1,8 +1,10 @@
 """Data warehouse session context manager for database connections."""
 
+import google.api_core.exceptions
 import sqlalchemy
 from loguru import logger
-from sqlalchemy import Engine, event
+from sqlalchemy import Engine, event, text
+from sqlalchemy.exc import OperationalError
 from sqlalchemy.orm import Session
 
 from xngin.apiserver import flags
@@ -14,6 +16,10 @@ from xngin.apiserver.settings import (
     infer_table,
     safe_url,
 )
+
+
+class DwhDatabaseDoesNotExistError(Exception):
+    """Raised when the target database or dataset does not exist."""
 
 
 class DwhSession:
@@ -75,6 +81,47 @@ class DwhSession:
         """
         return infer_table(
             self.engine, table_name, self.dwh_config.supports_table_reflection()
+        )
+
+    def list_tables(self) -> list[str]:
+        """Get a list of table names from the data warehouse.
+
+        Returns:
+            List of table names (strings) available in the data warehouse
+
+        Raises:
+            DwhDatabaseDoesNotExistError: When the target database/dataset does not exist
+        """
+        try:
+            # Hack for redshift's lack of reflection support.
+            if self.dwh_config.is_redshift():
+                query = text(
+                    "SELECT table_name FROM information_schema.tables "
+                    "WHERE table_schema IN (:search_path) ORDER BY table_name"
+                )
+                result = self.session.execute(
+                    query, {"search_path": self.dwh_config.search_path or "public"}
+                )
+                return result.scalars().all()
+            inspected = sqlalchemy.inspect(self.engine)
+            return list(
+                sorted(inspected.get_table_names() + inspected.get_view_names())
+            )
+        except OperationalError as exc:
+            if self._is_postgres_database_not_found_error(exc):
+                raise DwhDatabaseDoesNotExistError(str(exc)) from exc
+            raise
+        except google.api_core.exceptions.NotFound as exc:
+            # Google returns a 404 when authentication succeeds but when the specified datasource does not exist.
+            raise DwhDatabaseDoesNotExistError(str(exc)) from exc
+
+    def _is_postgres_database_not_found_error(self, exc: OperationalError) -> bool:
+        """Check if the exception indicates a Postgres database does not exist."""
+        return (
+            exc.args
+            and isinstance(exc.args[0], str)
+            and "FATAL:  database" in exc.args[0]
+            and "does not exist" in exc.args[0]
         )
 
     def _create_engine(self) -> Engine:
