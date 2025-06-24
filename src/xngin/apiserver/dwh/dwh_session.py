@@ -6,7 +6,7 @@ import google.api_core.exceptions
 import sqlalchemy
 from loguru import logger
 from sqlalchemy import Engine, distinct, event, text
-from sqlalchemy.exc import OperationalError
+from sqlalchemy.exc import NoSuchTableError, OperationalError
 from sqlalchemy.orm import Session
 
 from xngin.apiserver import flags
@@ -22,13 +22,26 @@ from xngin.apiserver.settings import (
     SA_LOGGER_NAME_FOR_DWH,
     TIMEOUT_SECS_FOR_CUSTOMER_POSTGRES,
     Dwh,
-    infer_table,
-    safe_url,
 )
 
 
 class DwhDatabaseDoesNotExistError(Exception):
     """Raised when the target database or dataset does not exist."""
+
+
+class CannotFindTableError(Exception):
+    """Raised when we cannot find a table in the database."""
+
+    def __init__(self, table_name, existing_tables):
+        self.table_name = table_name
+        self.alternatives = existing_tables
+        if existing_tables:
+            self.message = f"The table '{table_name}' does not exist. Known tables: {', '.join(sorted(existing_tables))}"
+        else:
+            self.message = f"The table '{table_name}' does not exist; the database does not contain any tables."
+
+    def __str__(self):
+        return self.message
 
 
 class DwhSession:
@@ -79,18 +92,37 @@ class DwhSession:
             )
         return self._engine
 
-    def infer_table(self, table_name: str) -> sqlalchemy.Table:
+    def infer_table(
+        self, table_name: str, use_reflection: bool | None = None
+    ) -> sqlalchemy.Table:
         """Infer table structure with built-in reflection support.
 
         Args:
             table_name: Name of the table to infer
+            use_reflection: Whether to use SQLAlchemy reflection. If None, uses config default.
 
         Returns:
             SQLAlchemy Table object with inferred schema
         """
-        return infer_table(
-            self.engine, table_name, self.dwh_config.supports_table_reflection()
-        )
+        if use_reflection is None:
+            use_reflection = self.dwh_config.supports_table_reflection()
+        metadata = sqlalchemy.MetaData()
+        try:
+            if use_reflection:
+                return sqlalchemy.Table(
+                    table_name, metadata, autoload_with=self.engine, quote=False
+                )
+            # This method of introspection should only be used if the db dialect doesn't support Sqlalchemy2 reflection.
+            return self._infer_table_from_cursor(self.engine, table_name)
+        except sqlalchemy.exc.ProgrammingError:
+            logger.exception(
+                "Failed to create a Table! use_reflection: {}", use_reflection
+            )
+            raise
+        except NoSuchTableError as nste:
+            metadata.reflect(self.engine)
+            existing_tables = metadata.tables.keys()
+            raise CannotFindTableError(table_name, existing_tables) from nste
 
     def list_tables(self) -> list[str]:
         """Get a list of table names from the data warehouse.
@@ -206,7 +238,7 @@ class DwhSession:
             connect_args["hostaddr"] = safe_resolve(url.host)
 
         logger.info(
-            f"Connecting to customer dwh: url={safe_url(url)}, "
+            f"Connecting to customer dwh: url={self.safe_url(url)}, "
             f"backend={url.get_backend_name()}, connect_args={connect_args}"
         )
 
@@ -244,3 +276,79 @@ class DwhSession:
             engine.dialect, "_set_backslash_escapes"
         ):
             engine.dialect._set_backslash_escapes = lambda _: None
+
+    @staticmethod
+    def safe_url(url: sqlalchemy.engine.url.URL) -> sqlalchemy.engine.url.URL:
+        """Prepares a URL for presentation or capture in logs by stripping sensitive values."""
+        cleaned = url.set(password="redacted")
+        for qp in ("credentials_base64", "credentials_info"):
+            if cleaned.query.get(qp):
+                cleaned = cleaned.update_query_dict({qp: "redacted"})
+        return cleaned
+
+    def _infer_table_from_cursor(
+        self, engine: sqlalchemy.engine.Engine, table_name: str
+    ) -> sqlalchemy.Table:
+        """Creates a SQLAlchemy Table instance from cursor description metadata."""
+
+        columns = []
+        metadata = sqlalchemy.MetaData()
+        try:
+            with engine.begin() as connection:
+                safe_table = sqlalchemy.quoted_name(table_name, quote=True)
+                # Create a select statement - this is safe from SQL injection
+                query = (
+                    sqlalchemy.select(text("*")).select_from(text(safe_table)).limit(0)
+                )
+                result = connection.execute(query)
+                description = result.cursor.description
+                # print("CURSOR DESC: ", result.cursor.description)
+                for col in description:
+                    # Unpack cursor.description tuple
+                    (
+                        name,
+                        type_code,
+                        _,  # display_size,
+                        internal_size,
+                        precision,
+                        scale,
+                        null_ok,
+                    ) = col
+
+                    # Map Redshift type codes to SQLAlchemy types. Not comprehensive.
+                    # https://docs.sqlalchemy.org/en/20/core/types.html
+                    # Comment shows both pg_type.typename / information_schema.data_type
+                    sa_type: type[sqlalchemy.TypeEngine] | sqlalchemy.TypeEngine
+                    match type_code:
+                        case 16:  # BOOL / boolean
+                            sa_type = sqlalchemy.Boolean
+                        case 20:  # INT8 / bigint
+                            sa_type = sqlalchemy.BigInteger
+                        case 23:  # INT4 / integer
+                            sa_type = sqlalchemy.Integer
+                        case 701:  # FLOAT8 / double precision
+                            sa_type = sqlalchemy.Double
+                        case 1043:  # VARCHAR / character varying
+                            sa_type = sqlalchemy.String(internal_size)
+                        case 1082:  # DATE / date
+                            sa_type = sqlalchemy.Date
+                        case 1114:  # TIMESTAMP / timestamp without time zone
+                            sa_type = sqlalchemy.DateTime
+                        case 1700:  # NUMERIC / numeric
+                            sa_type = sqlalchemy.Numeric(precision, scale)
+                        case _:  # type_code == 25
+                            # Default to Text for unknown types
+                            sa_type = sqlalchemy.Text
+
+                    columns.append(
+                        sqlalchemy.Column(
+                            name,
+                            sa_type,
+                            nullable=null_ok if null_ok is not None else True,
+                        )
+                    )
+                return sqlalchemy.Table(table_name, metadata, *columns, quote=False)
+        except NoSuchTableError as nste:
+            metadata.reflect(engine)
+            existing_tables = metadata.tables.keys()
+            raise CannotFindTableError(table_name, existing_tables) from nste

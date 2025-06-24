@@ -32,13 +32,13 @@ from sqlalchemy.exc import IntegrityError, OperationalError
 from sqlalchemy.orm import Session
 from sqlalchemy.sql.compiler import IdentifierPreparer
 
-from xngin.apiserver import settings
+from xngin.apiserver.dwh.dwh_session import CannotFindTableError, DwhSession
 from xngin.apiserver.dwh.inspection_types import FieldDescriptor, ParticipantsSchema
 from xngin.apiserver.dwh.inspections import create_schema_from_table
 from xngin.apiserver.routers.common_api_types import DataType
 from xngin.apiserver.settings import (
-    CannotFindTableError,
     Datasource,
+    Dsn,
     SheetRef,
     XnginSettings,
 )
@@ -73,18 +73,15 @@ def infer_config_from_schema(
     :param unique_id_col The column name in the table to use as a participant's unique identifier.
     """
     try:
-        dwh = settings.infer_table(
-            sqlalchemy.create_engine(
-                sqlalchemy.engine.make_url(dsn),
-                logging_name=SA_LOGGER_NAME_FOR_CLI,
-            ),
-            table,
-            use_reflection=use_reflection,
-        )
+        # Create a Dsn from the URL string to use with DwhSession
+        dwh_config = Dsn.from_url(dsn)
+
+        with DwhSession(dwh_config) as dwh:
+            dwh_table = dwh.infer_table(table, use_reflection=use_reflection)
     except CannotFindTableError as cfte:
         err_console.print(cfte.message)
         raise typer.Exit(1) from cfte
-    return create_schema_from_table(dwh, unique_id_col=unique_id_col)
+    return create_schema_from_table(dwh_table, unique_id_col=unique_id_col)
 
 
 def df_to_ddl(
