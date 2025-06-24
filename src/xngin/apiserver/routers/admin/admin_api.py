@@ -991,10 +991,10 @@ async def inspect_participant_types(
 
     def inspect_participant_types_impl() -> InspectParticipantTypesResponse:
         with DwhSession(dsconfig.dwh) as dwh:
-            sa_table, db_schema = dwh.infer_table_with_descriptors(
+            result = dwh.infer_table_with_descriptors(
                 pconfig.table_name, pconfig.get_unique_id_field()
             )
-            mapper = dwh.create_filter_meta_mapper(db_schema, sa_table)
+            mapper = dwh.create_filter_meta_mapper(result.db_schema, result.sa_table)
 
         filter_fields = {c.field_name: c for c in pconfig.fields if c.is_filter}
         strata_fields = {c.field_name: c for c in pconfig.fields if c.is_strata}
@@ -1004,26 +1004,26 @@ async def inspect_participant_types(
             metrics=sorted(
                 [
                     GetMetricsResponseElement(
-                        data_type=db_schema.get(col_name).data_type,
+                        data_type=result.db_schema.get(col_name).data_type,
                         field_name=col_name,
                         description=col_descriptor.description,
                     )
                     for col_name, col_descriptor in metric_cols.items()
-                    if db_schema.get(col_name)
+                    if result.db_schema.get(col_name)
                 ],
                 key=lambda item: item.field_name,
             ),
             strata=sorted(
                 [
                     GetStrataResponseElement(
-                        data_type=db_schema.get(field_name).data_type,
+                        data_type=result.db_schema.get(field_name).data_type,
                         field_name=field_name,
                         description=field_descriptor.description,
                         # For strata columns, we will echo back any extra annotations
                         extra=field_descriptor.extra,
                     )
                     for field_name, field_descriptor in strata_fields.items()
-                    if db_schema.get(field_name)
+                    if result.db_schema.get(field_name)
                 ],
                 key=lambda item: item.field_name,
             ),
@@ -1031,7 +1031,7 @@ async def inspect_participant_types(
                 [
                     mapper(field_name, field_descriptor)
                     for field_name, field_descriptor in filter_fields.items()
-                    if db_schema.get(field_name)
+                    if result.db_schema.get(field_name)
                 ],
                 key=lambda item: item.field_name,
             ),

@@ -109,7 +109,7 @@ async def get_strata(
     strata_fields = {c.field_name: c for c in schema.fields if c.is_strata}
 
     with DwhSession(config.dwh) as dwh:
-        _, db_schema = dwh.infer_table_with_descriptors(
+        result = dwh.infer_table_with_descriptors(
             participants_cfg.table_name, schema.get_unique_id_field()
         )
 
@@ -117,14 +117,14 @@ async def get_strata(
         results=sorted(
             [
                 GetStrataResponseElement(
-                    data_type=db_schema.get(field_name).data_type,
+                    data_type=result.db_schema.get(field_name).data_type,
                     field_name=field_name,
                     description=field_descriptor.description,
                     # For strata columns, we will echo back any extra annotations
                     extra=field_descriptor.extra,
                 )
                 for field_name, field_descriptor in strata_fields.items()
-                if db_schema.get(field_name)
+                if result.db_schema.get(field_name)
             ],
             key=lambda item: item.field_name,
         )
@@ -145,18 +145,18 @@ async def get_filters(
     filter_fields = {c.field_name: c for c in schema.fields if c.is_filter}
 
     with DwhSession(config.dwh) as dwh:
-        sa_table, db_schema = dwh.infer_table_with_descriptors(
+        result = dwh.infer_table_with_descriptors(
             participants_cfg.table_name, schema.get_unique_id_field()
         )
 
-        mapper = dwh.create_filter_meta_mapper(db_schema, sa_table)
+        mapper = dwh.create_filter_meta_mapper(result.db_schema, result.sa_table)
 
         return GetFiltersResponse(
             results=sorted(
                 [
                     mapper(field_name, field_descriptor)
                     for field_name, field_descriptor in filter_fields.items()
-                    if db_schema.get(field_name)
+                    if result.db_schema.get(field_name)
                 ],
                 key=lambda item: item.field_name,
             )
@@ -178,7 +178,7 @@ async def get_metrics(
     metric_cols = {c.field_name: c for c in schema.fields if c.is_metric}
 
     with DwhSession(config.dwh) as dwh:
-        _, db_schema = dwh.infer_table_with_descriptors(
+        result = dwh.infer_table_with_descriptors(
             participants_cfg.table_name, schema.get_unique_id_field()
         )
 
@@ -187,12 +187,12 @@ async def get_metrics(
         results=sorted(
             [
                 GetMetricsResponseElement(
-                    data_type=db_schema.get(col_name).data_type,
+                    data_type=result.db_schema.get(col_name).data_type,
                     field_name=col_name,
                     description=col_descriptor.description,
                 )
                 for col_name, col_descriptor in metric_cols.items()
-                if db_schema.get(col_name)
+                if result.db_schema.get(col_name)
             ],
             key=lambda item: item.field_name,
         )
