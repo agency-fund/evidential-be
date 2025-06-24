@@ -148,13 +148,10 @@ async def get_filters(
         result = dwh.infer_table_with_descriptors(
             participants_cfg.table_name, schema.get_unique_id_field()
         )
-
-        mapper = dwh.create_filter_meta_mapper(result.db_schema, result.sa_table)
-
         return GetFiltersResponse(
             results=sorted(
                 [
-                    mapper(field_name, field_descriptor)
+                    result.mapper(field_name, field_descriptor)
                     for field_name, field_descriptor in filter_fields.items()
                     if result.db_schema.get(field_name)
                 ],

@@ -994,7 +994,6 @@ async def inspect_participant_types(
             result = dwh.infer_table_with_descriptors(
                 pconfig.table_name, pconfig.get_unique_id_field()
             )
-            mapper = dwh.create_filter_meta_mapper(result.db_schema, result.sa_table)
 
         filter_fields = {c.field_name: c for c in pconfig.fields if c.is_filter}
         strata_fields = {c.field_name: c for c in pconfig.fields if c.is_strata}
@@ -1029,7 +1028,7 @@ async def inspect_participant_types(
             ),
             filters=sorted(
                 [
-                    mapper(field_name, field_descriptor)
+                    result.mapper(field_name, field_descriptor)
                     for field_name, field_descriptor in filter_fields.items()
                     if result.db_schema.get(field_name)
                 ],

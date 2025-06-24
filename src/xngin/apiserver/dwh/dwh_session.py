@@ -46,6 +46,7 @@ class InferTableWithDescriptorsResult:
 
     sa_table: sqlalchemy.Table
     db_schema: dict[str, FieldDescriptor]
+    mapper: Callable[[str, FieldDescriptor], GetFiltersResponseElement]
 
 
 class CannotFindTableError(Exception):
@@ -225,7 +226,10 @@ class DwhSession:
         """
         sa_table = self.infer_table(table_name, use_reflection)
         db_schema = generate_field_descriptors(sa_table, unique_id_field)
-        return InferTableWithDescriptorsResult(sa_table=sa_table, db_schema=db_schema)
+        mapper = self.create_filter_meta_mapper(db_schema, sa_table)
+        return InferTableWithDescriptorsResult(
+            sa_table=sa_table, db_schema=db_schema, mapper=mapper
+        )
 
     def get_participants(
         self, table_name: str, filters, n: int, use_reflection: bool | None = None
