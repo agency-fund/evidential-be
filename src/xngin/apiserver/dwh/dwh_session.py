@@ -12,6 +12,8 @@ from sqlalchemy.orm import Session
 from xngin.apiserver import flags
 from xngin.apiserver.dns.safe_resolve import safe_resolve
 from xngin.apiserver.dwh.inspection_types import FieldDescriptor
+from xngin.apiserver.dwh.inspections import generate_field_descriptors
+from xngin.apiserver.dwh.queries import query_for_participants
 from xngin.apiserver.routers.common_api_types import (
     FilterClass,
     GetFiltersResponseDiscrete,
@@ -123,6 +125,40 @@ class DwhSession:
             metadata.reflect(self.engine)
             existing_tables = metadata.tables.keys()
             raise CannotFindTableError(table_name, existing_tables) from nste
+
+    def infer_table_with_descriptors(
+        self, table_name: str, unique_id_field: str, use_reflection: bool | None = None
+    ) -> tuple[sqlalchemy.Table, dict[str, FieldDescriptor]]:
+        """Convenience method combining table inference and field descriptor generation.
+
+        Args:
+            table_name: Name of the table to infer
+            unique_id_field: The column name to use as a participant's unique identifier
+            use_reflection: Whether to use SQLAlchemy reflection. If None, uses config default.
+
+        Returns:
+            Tuple of (SQLAlchemy Table object, field descriptors dict)
+        """
+        sa_table = self.infer_table(table_name, use_reflection)
+        db_schema = generate_field_descriptors(sa_table, unique_id_field)
+        return sa_table, db_schema
+
+    def get_participants(
+        self, table_name: str, filters, n: int, use_reflection: bool | None = None
+    ):
+        """Get participants by combining table inference and querying.
+
+        Args:
+            table_name: Name of the table to query
+            filters: Filter conditions to apply
+            n: Number of participants to retrieve
+            use_reflection: Whether to use SQLAlchemy reflection. If None, uses config default.
+
+        Returns:
+            Query results for participants matching the filters
+        """
+        sa_table = self.infer_table(table_name, use_reflection)
+        return query_for_participants(self.session, sa_table, filters, n)
 
     def list_tables(self) -> list[str]:
         """Get a list of table names from the data warehouse.

@@ -26,7 +26,6 @@ from xngin.apiserver.dependencies import (
     xngin_db_session,
 )
 from xngin.apiserver.dwh.dwh_session import DwhSession
-from xngin.apiserver.dwh.queries import query_for_participants
 from xngin.apiserver.exceptions_common import LateValidationError
 from xngin.apiserver.gsheet_cache import GSheetCache
 from xngin.apiserver.models import tables
@@ -108,8 +107,8 @@ async def create_experiment_with_assignment_sl(
     # Get participants and their schema info from the client dwh
     with DwhSession(ds_config.dwh) as dwh:
         sa_table = dwh.infer_table(participants_cfg.table_name)
-        participants = query_for_participants(
-            dwh.session, sa_table, body.design_spec.filters, chosen_n
+        participants = dwh.get_participants(
+            participants_cfg.table_name, body.design_spec.filters, chosen_n
         )
 
     # Persist the experiment and assignments in the xngin database

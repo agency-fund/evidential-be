@@ -16,8 +16,7 @@ from xngin.apiserver.dependencies import (
 )
 from xngin.apiserver.dwh.dwh_session import DwhSession
 from xngin.apiserver.dwh.inspection_types import ParticipantsSchema
-from xngin.apiserver.dwh.inspections import generate_field_descriptors
-from xngin.apiserver.dwh.queries import get_stats_on_metrics, query_for_participants
+from xngin.apiserver.dwh.queries import get_stats_on_metrics
 from xngin.apiserver.exceptions_common import LateValidationError
 from xngin.apiserver.gsheet_cache import GSheetCache
 from xngin.apiserver.routers.common_api_types import (
@@ -110,8 +109,9 @@ async def get_strata(
     strata_fields = {c.field_name: c for c in schema.fields if c.is_strata}
 
     with DwhSession(config.dwh) as dwh:
-        sa_table = dwh.infer_table(participants_cfg.table_name)
-        db_schema = generate_field_descriptors(sa_table, schema.get_unique_id_field())
+        _, db_schema = dwh.infer_table_with_descriptors(
+            participants_cfg.table_name, schema.get_unique_id_field()
+        )
 
     return GetStrataResponse(
         results=sorted(
@@ -145,8 +145,9 @@ async def get_filters(
     filter_fields = {c.field_name: c for c in schema.fields if c.is_filter}
 
     with DwhSession(config.dwh) as dwh:
-        sa_table = dwh.infer_table(participants_cfg.table_name)
-        db_schema = generate_field_descriptors(sa_table, schema.get_unique_id_field())
+        sa_table, db_schema = dwh.infer_table_with_descriptors(
+            participants_cfg.table_name, schema.get_unique_id_field()
+        )
 
         mapper = dwh.create_filter_meta_mapper(db_schema, sa_table)
 
@@ -177,8 +178,9 @@ async def get_metrics(
     metric_cols = {c.field_name: c for c in schema.fields if c.is_metric}
 
     with DwhSession(config.dwh) as dwh:
-        sa_table = dwh.infer_table(participants_cfg.table_name)
-        db_schema = generate_field_descriptors(sa_table, schema.get_unique_id_field())
+        _, db_schema = dwh.infer_table_with_descriptors(
+            participants_cfg.table_name, schema.get_unique_id_field()
+        )
 
     # Merge data type info above with the columns to be used as metrics:
     return GetMetricsResponse(
@@ -294,8 +296,8 @@ async def assign_treatment(
 
     with DwhSession(config.dwh) as dwh:
         sa_table = dwh.infer_table(participants_cfg.table_name)
-        participants = query_for_participants(
-            dwh.session, sa_table, body.design_spec.filters, chosen_n
+        participants = dwh.get_participants(
+            participants_cfg.table_name, body.design_spec.filters, chosen_n
         )
 
     metric_names = [m.field_name for m in body.design_spec.metrics]

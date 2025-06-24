@@ -30,7 +30,6 @@ from xngin.apiserver.dns.safe_resolve import DnsLookupError, safe_resolve
 from xngin.apiserver.dwh.queries import get_participant_metrics, query_for_participants
 from xngin.apiserver.dwh.inspections import (
     create_inspect_table_response_from_table,
-    generate_field_descriptors,
 )
 from xngin.apiserver.exceptions_common import LateValidationError
 from xngin.apiserver.models import tables
@@ -992,9 +991,8 @@ async def inspect_participant_types(
 
     def inspect_participant_types_impl() -> InspectParticipantTypesResponse:
         with DwhSession(dsconfig.dwh) as dwh:
-            sa_table = dwh.infer_table(pconfig.table_name)
-            db_schema = generate_field_descriptors(
-                sa_table, pconfig.get_unique_id_field()
+            sa_table, db_schema = dwh.infer_table_with_descriptors(
+                pconfig.table_name, pconfig.get_unique_id_field()
             )
             mapper = dwh.create_filter_meta_mapper(db_schema, sa_table)
 
