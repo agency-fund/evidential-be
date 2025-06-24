@@ -27,7 +27,7 @@ from xngin.apiserver import constants, flags
 from xngin.apiserver.apikeys import hash_key_or_raise, make_key
 from xngin.apiserver.dependencies import xngin_db_session
 from xngin.apiserver.dns.safe_resolve import DnsLookupError, safe_resolve
-from xngin.apiserver.dwh.queries import get_participant_metrics, query_for_participants
+from xngin.apiserver.dwh.queries import get_participant_metrics
 from xngin.apiserver.dwh.inspections import (
     create_inspect_table_response_from_table,
 )
@@ -1223,16 +1223,18 @@ async def create_experiment(
     # Get participants and their schema info from the client dwh
     participants = None
     with DwhSession(ds_config.dwh) as dwh:
-        sa_table = dwh.infer_table(participants_cfg.table_name)
         if chosen_n is not None:
-            participants = query_for_participants(
-                dwh.session, sa_table, body.design_spec.filters, chosen_n
+            result = dwh.get_participants(
+                participants_cfg.table_name, body.design_spec.filters, chosen_n
             )
+            sa_table, participants = result.sa_table, result.participants
         elif body.design_spec.experiment_type == "preassigned":
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Preassigned experiments must have a chosen_n.",
             )
+        else:
+            sa_table = dwh.infer_table(participants_cfg.table_name)
 
     return await experiments_common.create_experiment_impl(
         request=body,
