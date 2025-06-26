@@ -54,8 +54,8 @@ class GetParticipantsResult:
 
 
 @dataclass
-class InferTableWithDescriptorsResult:
-    """Result of inferring table structure with field descriptors."""
+class InspectTableWithDescriptorsResult:
+    """Result of inspecting table structure."""
 
     sa_table: sqlalchemy.Table
     db_schema: dict[str, FieldDescriptor]
@@ -126,7 +126,7 @@ class DwhSession:
             )
         return self._session
 
-    def _infer_table_blocking(
+    def _inspect_table_blocking(
         self, table_name: str, use_reflection: bool | None = None
     ) -> sqlalchemy.Table:
         if use_reflection is None:
@@ -138,7 +138,7 @@ class DwhSession:
                     table_name, metadata, autoload_with=self._engine, quote=False
                 )
             # This method of introspection should only be used if the db dialect doesn't support Sqlalchemy2 reflection.
-            return self._infer_table_from_cursor_blocking(self._engine, table_name)
+            return self._inspect_table_from_cursor_blocking(self._engine, table_name)
         except sqlalchemy.exc.ProgrammingError:
             logger.exception(
                 "Failed to create a Table! use_reflection: {}", use_reflection
@@ -149,7 +149,7 @@ class DwhSession:
             existing_tables = metadata.tables.keys()
             raise CannotFindTableError(table_name, existing_tables) from nste
 
-    def _infer_table_from_cursor_blocking(
+    def _inspect_table_from_cursor_blocking(
         self, engine: sqlalchemy.engine.Engine, table_name: str
     ) -> sqlalchemy.Table:
         """Creates a SQLAlchemy Table instance from cursor description metadata."""
@@ -165,7 +165,6 @@ class DwhSession:
                 )
                 result = connection.execute(query)
                 description = result.cursor.description
-                # print("CURSOR DESC: ", result.cursor.description)
                 for col in description:
                     # Unpack cursor.description tuple
                     (
@@ -216,33 +215,38 @@ class DwhSession:
             existing_tables = metadata.tables.keys()
             raise CannotFindTableError(table_name, existing_tables) from nste
 
-    async def infer_table(
+    async def inspect_table(
         self, table_name: str, use_reflection: bool | None = None
     ) -> sqlalchemy.Table:
-        """Infer table structure with built-in reflection support.
+        """Inspect table structure using a variety of backend-specific workarounds.
+
+        The only fields guaranteed to be set on the the returned Table.columns field are
+        .name, .type, and .nullable.
+
+        TODO: replace with our own return type
 
         Args:
-            table_name: Name of the table to infer
+            table_name: Name of the table to inspect
             use_reflection: Whether to use SQLAlchemy reflection. If None, uses config default.
 
         Returns:
-            SQLAlchemy Table object with inferred schema
+            SQLAlchemy Table object
         """
         return await asyncio.get_event_loop().run_in_executor(
-            None, self._infer_table_blocking, table_name, use_reflection
+            None, self._inspect_table_blocking, table_name, use_reflection
         )
 
-    def _infer_table_with_descriptors_blocking(
+    def _inspect_table_with_descriptors_blocking(
         self, table_name: str, unique_id_field: str, use_reflection: bool | None = None
-    ) -> InferTableWithDescriptorsResult:
-        sa_table = self._infer_table_blocking(table_name, use_reflection)
+    ) -> InspectTableWithDescriptorsResult:
+        sa_table = self._inspect_table_blocking(table_name, use_reflection)
         db_schema = generate_field_descriptors(sa_table, unique_id_field)
-        return InferTableWithDescriptorsResult(sa_table=sa_table, db_schema=db_schema)
+        return InspectTableWithDescriptorsResult(sa_table=sa_table, db_schema=db_schema)
 
-    async def infer_table_with_descriptors(
+    async def inspect_table_with_descriptors(
         self, table_name: str, unique_id_field: str, use_reflection: bool | None = None
-    ) -> InferTableWithDescriptorsResult:
-        """Convenience method combining table inference and field descriptor generation.
+    ) -> InspectTableWithDescriptorsResult:
+        """Convenience method combining table inspection and field descriptor generation.
 
         Args:
             table_name: Name of the table to inspect
@@ -250,11 +254,11 @@ class DwhSession:
             use_reflection: If not None, overrides the configuration's default behavior.
 
         Returns:
-            InferTableWithDescriptorsResult containing both the SQLAlchemy Table and field descriptors
+            InspectTableWithDescriptorsResult containing both the SQLAlchemy Table and field descriptors
         """
         return await asyncio.get_event_loop().run_in_executor(
             None,
-            self._infer_table_with_descriptors_blocking,
+            self._inspect_table_with_descriptors_blocking,
             table_name,
             unique_id_field,
             use_reflection,
@@ -263,14 +267,16 @@ class DwhSession:
     def _get_participants_blocking(
         self, table_name: str, filters, n: int, use_reflection: bool | None = None
     ) -> GetParticipantsResult:
-        sa_table = self._infer_table_blocking(table_name, use_reflection)
+        sa_table = self._inspect_table_blocking(table_name, use_reflection)
         participants = query_for_participants(self.session, sa_table, filters, n)
         return GetParticipantsResult(sa_table=sa_table, participants=participants)
 
     async def get_participants(
         self, table_name: str, filters, n: int, use_reflection: bool | None = None
     ) -> GetParticipantsResult:
-        """Get participants by combining table inference and querying.
+        """Get participants by combining table inspection and querying.
+
+        Caveats documented on inspect_table() apply to the returned Table.
 
         Args:
             table_name: Name of the table to query

@@ -71,7 +71,7 @@ async def test_generate_column_descriptors():
     settings = conftest.get_settings_for_test()
     config = settings.get_datasource("testing").config
     async with DwhSession(config.dwh) as dwh:
-        sa_table = await dwh.infer_table("dwh")
+        sa_table = await dwh.inspect_table("dwh")
 
     db_schema = generate_field_descriptors(sa_table, "last_name")
 

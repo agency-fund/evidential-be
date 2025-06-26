@@ -110,7 +110,7 @@ async def get_strata(
     strata_fields = {c.field_name: c for c in schema.fields if c.is_strata}
 
     async with DwhSession(config.dwh) as dwh:
-        result = await dwh.infer_table_with_descriptors(
+        result = await dwh.inspect_table_with_descriptors(
             participants_cfg.table_name, schema.get_unique_id_field()
         )
 
@@ -146,7 +146,7 @@ async def get_filters(
     filter_fields = {c.field_name: c for c in schema.fields if c.is_filter}
 
     async with DwhSession(config.dwh) as dwh:
-        result = await dwh.infer_table_with_descriptors(
+        result = await dwh.inspect_table_with_descriptors(
             participants_cfg.table_name, schema.get_unique_id_field()
         )
         # Note on skew: The participant type schema may refer to fields that no longer exist in the database, so we
@@ -177,7 +177,7 @@ async def get_metrics(
     metric_cols = {c.field_name: c for c in schema.fields if c.is_metric}
 
     async with DwhSession(config.dwh) as dwh:
-        result = await dwh.infer_table_with_descriptors(
+        result = await dwh.inspect_table_with_descriptors(
             participants_cfg.table_name, schema.get_unique_id_field()
         )
 
@@ -235,7 +235,7 @@ async def power_check_impl(
     body: PowerRequest, config: DatasourceConfig, participants_cfg: ParticipantsConfig
 ) -> PowerResponse:
     async with DwhSession(config.dwh) as dwh:
-        sa_table = await dwh.infer_table(participants_cfg.table_name)
+        sa_table = await dwh.inspect_table(participants_cfg.table_name)
 
         metric_stats = await asyncio.get_event_loop().run_in_executor(
             None,

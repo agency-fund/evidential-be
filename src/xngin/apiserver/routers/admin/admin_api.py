@@ -873,7 +873,7 @@ async def inspect_table_in_datasource(
 
     async with DwhSession(config.dwh) as dwh:
         # CannotFindTableError will be handled by exceptionhandlers.py.
-        table = await dwh.infer_table(table_name)
+        table = await dwh.inspect_table(table_name)
     response = create_inspect_table_response_from_table(table)
 
     session.add(
@@ -996,7 +996,7 @@ async def inspect_participant_types(
 
     async def inspect_participant_types_impl() -> InspectParticipantTypesResponse:
         async with DwhSession(dsconfig.dwh) as dwh:
-            result = await dwh.infer_table_with_descriptors(
+            result = await dwh.inspect_table_with_descriptors(
                 pconfig.table_name, pconfig.get_unique_id_field()
             )
             filter_data = await get_stats_on_filters(
@@ -1233,7 +1233,7 @@ async def create_experiment(
                 detail="Preassigned experiments must have a chosen_n.",
             )
         else:
-            sa_table = await dwh.infer_table(participants_cfg.table_name)
+            sa_table = await dwh.inspect_table(participants_cfg.table_name)
 
     return await experiments_common.create_experiment_impl(
         request=body,
@@ -1284,7 +1284,7 @@ async def analyze_experiment(
         raise StatsAnalysisError("No participants found for experiment.")
 
     async with DwhSession(dsconfig.dwh) as dwh:
-        sa_table = await dwh.infer_table(participants_cfg.table_name)
+        sa_table = await dwh.inspect_table(participants_cfg.table_name)
 
         # Mark the start of the analysis as when we begin pulling outcomes.
         created_at = datetime.now(UTC)
