@@ -1,13 +1,12 @@
-"""Data warehouse session context manager for database connections."""
+"""Async context manager for data warehouse connections."""
 
 import asyncio
-from collections.abc import Callable
 from dataclasses import dataclass
 
 import google.api_core.exceptions
 import sqlalchemy
 from loguru import logger
-from sqlalchemy import Engine, distinct, event, text
+from sqlalchemy import Engine, event, text
 from sqlalchemy.exc import NoSuchTableError, OperationalError
 from sqlalchemy.orm import Session
 
@@ -16,12 +15,6 @@ from xngin.apiserver.dns.safe_resolve import safe_resolve
 from xngin.apiserver.dwh.inspection_types import FieldDescriptor
 from xngin.apiserver.dwh.inspections import generate_field_descriptors
 from xngin.apiserver.dwh.queries import query_for_participants
-from xngin.apiserver.routers.common_api_types import (
-    FilterClass,
-    GetFiltersResponseDiscrete,
-    GetFiltersResponseElement,
-    GetFiltersResponseNumericOrDate,
-)
 from xngin.apiserver.settings import (
     SA_LOGGER_NAME_FOR_DWH,
     TIMEOUT_SECS_FOR_CUSTOMER_POSTGRES,
@@ -66,7 +59,6 @@ class InferTableWithDescriptorsResult:
 
     sa_table: sqlalchemy.Table
     db_schema: dict[str, FieldDescriptor]
-    mapper: Callable[[str, FieldDescriptor], GetFiltersResponseElement]
 
 
 class CannotFindTableError(Exception):
@@ -245,10 +237,7 @@ class DwhSession:
     ) -> InferTableWithDescriptorsResult:
         sa_table = self._infer_table_blocking(table_name, use_reflection)
         db_schema = generate_field_descriptors(sa_table, unique_id_field)
-        mapper = self.create_filter_meta_mapper(db_schema, sa_table)
-        return InferTableWithDescriptorsResult(
-            sa_table=sa_table, db_schema=db_schema, mapper=mapper
-        )
+        return InferTableWithDescriptorsResult(sa_table=sa_table, db_schema=db_schema)
 
     async def infer_table_with_descriptors(
         self, table_name: str, unique_id_field: str, use_reflection: bool | None = None
@@ -337,67 +326,6 @@ class DwhSession:
         return await asyncio.get_event_loop().run_in_executor(
             None, self._list_tables_blocking
         )
-
-    def create_filter_meta_mapper(
-        self, db_schema: dict[str, FieldDescriptor], sa_table
-    ) -> Callable[[str, FieldDescriptor], GetFiltersResponseElement]:
-        """Create a mapper function for generating filter metadata from database columns.
-
-        # TODO: replace this with something cleaner
-
-        Args:
-            db_schema: Dictionary mapping column names to FieldDescriptor objects
-            sa_table: SQLAlchemy Table object
-
-        Returns:
-            A mapper function that takes (column_name, column_descriptor) and returns GetFiltersResponseElement
-        """
-
-        # TODO: implement caching, respecting commons.refresh
-        def mapper(
-            col_name: str, column_descriptor: FieldDescriptor
-        ) -> GetFiltersResponseElement:
-            db_col = db_schema.get(col_name)
-            filter_class = db_col.data_type.filter_class(col_name)
-
-            # Collect metadata on the values in the database.
-            sa_col = sa_table.columns[col_name]
-            match filter_class:
-                case FilterClass.DISCRETE:
-                    distinct_values = [
-                        str(v)
-                        for v in self.session.execute(
-                            sqlalchemy.select(distinct(sa_col))
-                            .where(sa_col.is_not(None))
-                            .limit(1000)
-                            .order_by(sa_col)
-                        ).scalars()
-                    ]
-                    return GetFiltersResponseDiscrete(
-                        field_name=col_name,
-                        data_type=db_col.data_type,
-                        relations=filter_class.valid_relations(),
-                        description=column_descriptor.description,
-                        distinct_values=distinct_values,
-                    )
-                case FilterClass.NUMERIC:
-                    min_, max_ = self.session.execute(
-                        sqlalchemy.select(
-                            sqlalchemy.func.min(sa_col), sqlalchemy.func.max(sa_col)
-                        ).where(sa_col.is_not(None))
-                    ).first()
-                    return GetFiltersResponseNumericOrDate(
-                        field_name=col_name,
-                        data_type=db_col.data_type,
-                        relations=filter_class.valid_relations(),
-                        description=column_descriptor.description,
-                        min=min_,
-                        max=max_,
-                    )
-                case _:
-                    raise RuntimeError("unexpected filter class")
-
-        return mapper
 
     def _create_engine(self) -> Engine:
         """Create a SQLAlchemy Engine for the customer database.

@@ -73,7 +73,6 @@ async def infer_config_from_schema(
     :param unique_id_col The column name in the table to use as a participant's unique identifier.
     """
     try:
-        # Create a Dsn from the URL string to use async with DwhSession
         dwh_config = Dsn.from_url(dsn)
 
         async with DwhSession(dwh_config) as dwh:

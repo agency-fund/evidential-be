@@ -28,7 +28,7 @@ def create_schema_from_table(table: sqlalchemy.Table, unique_id_col: str | None 
             FieldDescriptor(
                 field_name=column.name,
                 data_type=DataType.match(type_hint),
-                description="",
+                description="",  # Note: we ignore column.comment
                 is_unique_id=column.name == unique_id_col,
                 is_strata=False,
                 is_filter=False,

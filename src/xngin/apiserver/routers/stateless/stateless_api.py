@@ -17,7 +17,7 @@ from xngin.apiserver.dependencies import (
 )
 from xngin.apiserver.dwh.dwh_session import DwhSession
 from xngin.apiserver.dwh.inspection_types import ParticipantsSchema
-from xngin.apiserver.dwh.queries import get_stats_on_metrics
+from xngin.apiserver.dwh.queries import get_stats_on_filters, get_stats_on_metrics
 from xngin.apiserver.exceptions_common import LateValidationError
 from xngin.apiserver.gsheet_cache import GSheetCache
 from xngin.apiserver.routers.common_api_types import (
@@ -149,13 +149,14 @@ async def get_filters(
         result = await dwh.infer_table_with_descriptors(
             participants_cfg.table_name, schema.get_unique_id_field()
         )
+        # Note on skew: The participant type schema may refer to fields that no longer exist in the database, so we
+        # only issue queries against fields known to exist in the database.
+        column_metadata = await get_stats_on_filters(
+            dwh.session, result.sa_table, result.db_schema, filter_fields
+        )
     return GetFiltersResponse(
         results=sorted(
-            [
-                result.mapper(field_name, field_descriptor)
-                for field_name, field_descriptor in filter_fields.items()
-                if result.db_schema.get(field_name)
-            ],
+            column_metadata,
             key=lambda item: item.field_name,
         )
     )

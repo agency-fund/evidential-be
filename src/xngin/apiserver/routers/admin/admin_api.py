@@ -32,7 +32,7 @@ from xngin.apiserver.dwh.dwh_session import DwhDatabaseDoesNotExistError, DwhSes
 from xngin.apiserver.dwh.inspections import (
     create_inspect_table_response_from_table,
 )
-from xngin.apiserver.dwh.queries import get_participant_metrics
+from xngin.apiserver.dwh.queries import get_participant_metrics, get_stats_on_filters
 from xngin.apiserver.exceptions_common import LateValidationError
 from xngin.apiserver.models import tables
 from xngin.apiserver.models.storage_format_converters import ExperimentStorageConverter
@@ -990,15 +990,18 @@ async def inspect_participant_types(
     )
     await session.commit()
 
+    filter_fields = {c.field_name: c for c in pconfig.fields if c.is_filter}
+    strata_fields = {c.field_name: c for c in pconfig.fields if c.is_strata}
+    metric_cols = {c.field_name: c for c in pconfig.fields if c.is_metric}
+
     async def inspect_participant_types_impl() -> InspectParticipantTypesResponse:
         async with DwhSession(dsconfig.dwh) as dwh:
             result = await dwh.infer_table_with_descriptors(
                 pconfig.table_name, pconfig.get_unique_id_field()
             )
-
-        filter_fields = {c.field_name: c for c in pconfig.fields if c.is_filter}
-        strata_fields = {c.field_name: c for c in pconfig.fields if c.is_strata}
-        metric_cols = {c.field_name: c for c in pconfig.fields if c.is_metric}
+            filter_data = await get_stats_on_filters(
+                dwh.session, result.sa_table, result.db_schema, filter_fields
+            )
 
         return InspectParticipantTypesResponse(
             metrics=sorted(
@@ -1028,11 +1031,7 @@ async def inspect_participant_types(
                 key=lambda item: item.field_name,
             ),
             filters=sorted(
-                [
-                    result.mapper(field_name, field_descriptor)
-                    for field_name, field_descriptor in filter_fields.items()
-                    if result.db_schema.get(field_name)
-                ],
+                filter_data,
                 key=lambda item: item.field_name,
             ),
         )
