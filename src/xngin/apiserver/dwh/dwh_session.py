@@ -33,13 +33,23 @@ class DwhDatabaseDoesNotExistError(Exception):
     """Raised when the target database or dataset does not exist."""
 
 
-def safe_url(url: sqlalchemy.engine.url.URL) -> sqlalchemy.engine.url.URL:
+def _safe_url(url: sqlalchemy.engine.url.URL) -> sqlalchemy.engine.url.URL:
     """Prepares a URL for presentation or capture in logs by stripping sensitive values."""
     cleaned = url.set(password="redacted")
     for qp in ("credentials_base64", "credentials_info"):
         if cleaned.query.get(qp):
             cleaned = cleaned.update_query_dict({qp: "redacted"})
     return cleaned
+
+
+def _is_postgres_database_not_found_error(exc: OperationalError) -> bool:
+    """Returns true when the exception indicates a Postgres database does not exist."""
+    return (
+        exc.args
+        and isinstance(exc.args[0], str)
+        and "FATAL:  database" in exc.args[0]
+        and "does not exist" in exc.args[0]
+    )
 
 
 @dataclass
@@ -308,7 +318,7 @@ class DwhSession:
                 sorted(inspected.get_table_names() + inspected.get_view_names())
             )
         except OperationalError as exc:
-            if self._is_postgres_database_not_found_error(exc):
+            if _is_postgres_database_not_found_error(exc):
                 raise DwhDatabaseDoesNotExistError(str(exc)) from exc
             raise
         except google.api_core.exceptions.NotFound as exc:
@@ -326,15 +336,6 @@ class DwhSession:
         """
         return await asyncio.get_event_loop().run_in_executor(
             None, self._list_tables_blocking
-        )
-
-    def _is_postgres_database_not_found_error(self, exc: OperationalError) -> bool:
-        """Check if the exception indicates a Postgres database does not exist."""
-        return (
-            exc.args
-            and isinstance(exc.args[0], str)
-            and "FATAL:  database" in exc.args[0]
-            and "does not exist" in exc.args[0]
         )
 
     def create_filter_meta_mapper(
@@ -412,7 +413,7 @@ class DwhSession:
             connect_args["hostaddr"] = safe_resolve(url.host)
 
         logger.info(
-            f"Connecting to customer dwh: url={safe_url(url)}, "
+            f"Connecting to customer dwh: url={_safe_url(url)}, "
             f"backend={url.get_backend_name()}, connect_args={connect_args}"
         )
 
