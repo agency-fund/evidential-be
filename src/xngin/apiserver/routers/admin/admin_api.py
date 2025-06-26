@@ -999,8 +999,12 @@ async def inspect_participant_types(
             result = await dwh.inspect_table_with_descriptors(
                 pconfig.table_name, pconfig.get_unique_id_field()
             )
-            filter_data = await get_stats_on_filters(
-                dwh.session, result.sa_table, result.db_schema, filter_fields
+            filter_data = await asyncio.to_thread(
+                get_stats_on_filters,
+                dwh.session,
+                result.sa_table,
+                result.db_schema,
+                filter_fields,
             )
 
         return InspectParticipantTypesResponse(

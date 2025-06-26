@@ -1,4 +1,3 @@
-import asyncio
 import re
 from datetime import datetime, timedelta
 
@@ -103,7 +102,7 @@ def get_stats_on_metrics(
     return metrics_to_return
 
 
-async def get_stats_on_filters(
+def get_stats_on_filters(
     session: Session,
     sa_table: Table,
     db_schema: dict[str, FieldDescriptor],
@@ -123,57 +122,52 @@ async def get_stats_on_filters(
         A mapper function that takes (column_name, column_descriptor) and returns GetFiltersResponseElement
     """
 
-    def queries():
-        def query(
-            col_name: str, ptype_fd: FieldDescriptor
-        ) -> GetFiltersResponseElement:
-            db_col = db_schema.get(col_name)
-            filter_class = db_col.data_type.filter_class(col_name)
+    def query(col_name: str, ptype_fd: FieldDescriptor) -> GetFiltersResponseElement:
+        db_col = db_schema.get(col_name)
+        filter_class = db_col.data_type.filter_class(col_name)
 
-            # Collect metadata on the values in the database.
-            sa_col = sa_table.columns[col_name]
-            match filter_class:
-                case FilterClass.DISCRETE:
-                    distinct_values = [
-                        str(v)
-                        for v in session.execute(
-                            sqlalchemy.select(distinct(sa_col))
-                            .where(sa_col.is_not(None))
-                            .limit(1000)
-                            .order_by(sa_col)
-                        ).scalars()
-                    ]
-                    return GetFiltersResponseDiscrete(
-                        field_name=col_name,
-                        data_type=db_col.data_type,
-                        relations=filter_class.valid_relations(),
-                        description=ptype_fd.description,
-                        distinct_values=distinct_values,
-                    )
-                case FilterClass.NUMERIC:
-                    min_, max_ = session.execute(
-                        sqlalchemy.select(
-                            sqlalchemy.func.min(sa_col), sqlalchemy.func.max(sa_col)
-                        ).where(sa_col.is_not(None))
-                    ).first()
-                    return GetFiltersResponseNumericOrDate(
-                        field_name=col_name,
-                        data_type=db_col.data_type,
-                        relations=filter_class.valid_relations(),
-                        description=ptype_fd.description,
-                        min=min_,
-                        max=max_,
-                    )
-                case _:
-                    raise RuntimeError("unexpected filter class")
+        # Collect metadata on the values in the database.
+        sa_col = sa_table.columns[col_name]
+        match filter_class:
+            case FilterClass.DISCRETE:
+                distinct_values = [
+                    str(v)
+                    for v in session.execute(
+                        sqlalchemy.select(distinct(sa_col))
+                        .where(sa_col.is_not(None))
+                        .limit(1000)
+                        .order_by(sa_col)
+                    ).scalars()
+                ]
+                return GetFiltersResponseDiscrete(
+                    field_name=col_name,
+                    data_type=db_col.data_type,
+                    relations=filter_class.valid_relations(),
+                    description=ptype_fd.description,
+                    distinct_values=distinct_values,
+                )
+            case FilterClass.NUMERIC:
+                min_, max_ = session.execute(
+                    sqlalchemy.select(
+                        sqlalchemy.func.min(sa_col), sqlalchemy.func.max(sa_col)
+                    ).where(sa_col.is_not(None))
+                ).first()
+                return GetFiltersResponseNumericOrDate(
+                    field_name=col_name,
+                    data_type=db_col.data_type,
+                    relations=filter_class.valid_relations(),
+                    description=ptype_fd.description,
+                    min=min_,
+                    max=max_,
+                )
+            case _:
+                raise RuntimeError("unexpected filter class")
 
-        return [
-            query(col_name, ptype_fd)
-            for col_name, ptype_fd in filter_schema.items()
-            if db_schema.get(col_name)
-        ]
-
-    return await asyncio.to_thread(queries)
+    return [
+        query(col_name, ptype_fd)
+        for col_name, ptype_fd in filter_schema.items()
+        if db_schema.get(col_name)
+    ]
 
 
 def get_participant_metrics(

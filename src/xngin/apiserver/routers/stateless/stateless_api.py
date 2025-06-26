@@ -151,8 +151,12 @@ async def get_filters(
         )
         # Note on skew: The participant type schema may refer to fields that no longer exist in the database, so we
         # only issue queries against fields known to exist in the database.
-        column_metadata = await get_stats_on_filters(
-            dwh.session, result.sa_table, result.db_schema, filter_fields
+        column_metadata = await asyncio.to_thread(
+            get_stats_on_filters,
+            dwh.session,
+            result.sa_table,
+            result.db_schema,
+            filter_fields,
         )
     return GetFiltersResponse(
         results=sorted(
