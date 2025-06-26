@@ -1,5 +1,6 @@
 """Command line tool for various xngin-related operations."""
 
+import asyncio
 import csv
 import json
 import logging
@@ -62,21 +63,21 @@ logging.basicConfig(
 )
 
 
-async def infer_config_from_schema(
+async def create_participants_schema_from_table(
     dsn: str, table: str, use_reflection: bool, unique_id_col: str | None = None
 ):
-    """Infers a configuration from a SQLAlchemy schema.
+    """Creates a ParticipantsSchema from a SQLAlchemy table.
 
     :param dsn The SQLAlchemy-compatible DSN.
     :param table The name of the table to inspect.
-    :param use_reflection True if you want to use SQLAlchemy's reflection, else infer from cursor.
+    :param use_reflection True if you want to use SQLAlchemy's reflection, else infer from a SQL SELECT cursor.
     :param unique_id_col The column name in the table to use as a participant's unique identifier.
     """
     try:
         dwh_config = Dsn.from_url(dsn)
 
         async with DwhSession(dwh_config) as dwh:
-            dwh_table = await dwh.infer_table(table, use_reflection=use_reflection)
+            dwh_table = await dwh.inspect_table(table, use_reflection=use_reflection)
     except CannotFindTableError as cfte:
         err_console.print(cfte.message)
         raise typer.Exit(1) from cfte
@@ -395,7 +396,7 @@ def create_testing_dwh(
 
 
 @app.command()
-async def bootstrap_spreadsheet(
+def bootstrap_spreadsheet(
     dsn: Annotated[
         str, typer.Argument(..., help="The SQLAlchemy DSN of a data warehouse.")
     ],
@@ -447,8 +448,10 @@ async def bootstrap_spreadsheet(
 
     Use this to get a customer started on configuring an experiment.
     """
-    config = await infer_config_from_schema(
-        dsn, table_name, use_reflection, unique_id_col
+    config = asyncio.get_event_loop().run_until_complete(
+        create_participants_schema_from_table(
+            dsn, table_name, use_reflection, unique_id_col
+        )
     )
 
     # Exclude the `extra` field.
