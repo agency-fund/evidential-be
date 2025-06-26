@@ -237,8 +237,7 @@ async def power_check_impl(
     async with DwhSession(config.dwh) as dwh:
         sa_table = await dwh.inspect_table(participants_cfg.table_name)
 
-        metric_stats = await asyncio.get_event_loop().run_in_executor(
-            None,
+        metric_stats = await asyncio.to_thread(
             get_stats_on_metrics,
             dwh.session,
             sa_table,

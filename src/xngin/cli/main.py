@@ -448,7 +448,7 @@ def bootstrap_spreadsheet(
 
     Use this to get a customer started on configuring an experiment.
     """
-    config = asyncio.get_event_loop().run_until_complete(
+    config = asyncio.run(
         create_participants_schema_from_table(
             dsn, table_name, use_sa_autoload, unique_id_col
         )

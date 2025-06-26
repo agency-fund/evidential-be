@@ -100,7 +100,7 @@ class DwhSession:
 
     async def __aenter__(self) -> "DwhSession":
         """Enter the context manager and create database connections."""
-        await asyncio.get_event_loop().run_in_executor(None, self._enter_blocking)
+        await asyncio.to_thread(self._enter_blocking)
         return self
 
     def _exit_blocking(self):
@@ -111,7 +111,7 @@ class DwhSession:
 
     async def __aexit__(self, exc_type, exc_val, exc_tb):
         """Exit the context manager and clean up database connections."""
-        await asyncio.get_event_loop().run_in_executor(None, self._exit_blocking)
+        await asyncio.to_thread(self._exit_blocking)
 
     @property
     def session(self) -> Session:
@@ -232,8 +232,8 @@ class DwhSession:
         Returns:
             SQLAlchemy Table object
         """
-        return await asyncio.get_event_loop().run_in_executor(
-            None, self._inspect_table_blocking, table_name, use_sa_autoload
+        return await asyncio.to_thread(
+            self._inspect_table_blocking, table_name, use_sa_autoload
         )
 
     def _inspect_table_with_descriptors_blocking(
@@ -256,8 +256,7 @@ class DwhSession:
         Returns:
             InspectTableWithDescriptorsResult containing both the SQLAlchemy Table and field descriptors
         """
-        return await asyncio.get_event_loop().run_in_executor(
-            None,
+        return await asyncio.to_thread(
             self._inspect_table_with_descriptors_blocking,
             table_name,
             unique_id_field,
@@ -287,8 +286,7 @@ class DwhSession:
         Returns:
             GetParticipantsResult containing both the SQLAlchemy table and participant query results
         """
-        return await asyncio.get_event_loop().run_in_executor(
-            None,
+        return await asyncio.to_thread(
             self._get_participants_blocking,
             table_name,
             filters,
@@ -329,9 +327,7 @@ class DwhSession:
         Raises:
             DwhDatabaseDoesNotExistError: When the target database/dataset does not exist
         """
-        return await asyncio.get_event_loop().run_in_executor(
-            None, self._list_tables_blocking
-        )
+        return await asyncio.to_thread(self._list_tables_blocking)
 
     def _create_engine(self) -> Engine:
         """Create a SQLAlchemy Engine for the customer database.

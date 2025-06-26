@@ -173,7 +173,7 @@ async def get_stats_on_filters(
             if db_schema.get(col_name)
         ]
 
-    return await asyncio.get_event_loop().run_in_executor(None, queries)
+    return await asyncio.to_thread(queries)
 
 
 def get_participant_metrics(

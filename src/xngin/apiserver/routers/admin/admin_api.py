@@ -1288,8 +1288,7 @@ async def analyze_experiment(
 
         # Mark the start of the analysis as when we begin pulling outcomes.
         created_at = datetime.now(UTC)
-        participant_outcomes = await asyncio.get_event_loop().run_in_executor(
-            None,
+        participant_outcomes = await asyncio.to_thread(
             get_participant_metrics,
             dwh.session,
             sa_table,
