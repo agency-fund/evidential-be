@@ -356,22 +356,42 @@ class Dsn(ConfigBaseModel, BaseDsn):
 
     @staticmethod
     def from_url(url: str):
-        """Constructs a Dsn from a SQLAlchemy-compatible URL (Postgres only). Use only in trusted code paths."""
-        if not url.startswith("postgresql"):
-            raise NotImplementedError(
-                "Dsn.from_url() only supports postgres databases."
+        """Constructs a Dsn from a SQLAlchemy-compatible URL (Postgres or BigQuery only).
+
+        Use only in trusted code paths. If url is BigQuery, credentials are assumed to be in a file referenced by
+        the GOOGLE_APPLICATION_CREDENTIALS environment variable.
+        """
+
+        if url.startswith("bigquery"):
+            # TODO: support URL-encoded bigquery credentials from the query string
+            url = make_url(url)
+            credentials = os.environ.get("GOOGLE_APPLICATION_CREDENTIALS", None)
+            if credentials is None:
+                raise ValueError(
+                    "GOOGLE_APPLICATION_CREDENTIALS must be set when using Dsn.from_url."
+                )
+            return BqDsn(
+                driver="bigquery",
+                project_id=url.host,
+                dataset_id=url.database,
+                credentials=GcpServiceAccountFile(
+                    type="serviceaccountfile", path=credentials
+                ),
             )
-        url = make_url(url)
-        return Dsn(
-            driver=f"postgresql+{url.get_driver_name()}",
-            host=url.host,
-            port=url.port,
-            user=url.username,
-            password=url.password,
-            dbname=url.database,
-            sslmode=url.query.get("sslmode", "verify-ca"),
-            search_path=url.query.get("search_path", None),
-        )
+
+        if url.startswith("postgres"):
+            url = make_url(url)
+            return Dsn(
+                driver=f"postgresql+{url.get_driver_name()}",
+                host=url.host,
+                port=url.port,
+                user=url.username,
+                password=url.password,
+                dbname=url.database,
+                sslmode=url.query.get("sslmode", "verify-ca"),
+                search_path=url.query.get("search_path", None),
+            )
+        raise NotImplementedError("Dsn.from_url() only supports postgres databases.")
 
     @field_serializer("password", when_used="json")
     def reveal_password(self, v):
