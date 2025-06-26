@@ -157,22 +157,6 @@ class DwhSession:
             existing_tables = metadata.tables.keys()
             raise CannotFindTableError(table_name, existing_tables) from nste
 
-    async def infer_table(
-        self, table_name: str, use_reflection: bool | None = None
-    ) -> sqlalchemy.Table:
-        """Infer table structure with built-in reflection support.
-
-        Args:
-            table_name: Name of the table to infer
-            use_reflection: Whether to use SQLAlchemy reflection. If None, uses config default.
-
-        Returns:
-            SQLAlchemy Table object with inferred schema
-        """
-        return await asyncio.get_event_loop().run_in_executor(
-            None, self._infer_table_blocking, table_name, use_reflection
-        )
-
     def _infer_table_from_cursor_blocking(
         self, engine: sqlalchemy.engine.Engine, table_name: str
     ) -> sqlalchemy.Table:
@@ -239,6 +223,22 @@ class DwhSession:
             metadata.reflect(engine)
             existing_tables = metadata.tables.keys()
             raise CannotFindTableError(table_name, existing_tables) from nste
+
+    async def infer_table(
+        self, table_name: str, use_reflection: bool | None = None
+    ) -> sqlalchemy.Table:
+        """Infer table structure with built-in reflection support.
+
+        Args:
+            table_name: Name of the table to infer
+            use_reflection: Whether to use SQLAlchemy reflection. If None, uses config default.
+
+        Returns:
+            SQLAlchemy Table object with inferred schema
+        """
+        return await asyncio.get_event_loop().run_in_executor(
+            None, self._infer_table_blocking, table_name, use_reflection
+        )
 
     def _infer_table_with_descriptors_blocking(
         self, table_name: str, unique_id_field: str, use_reflection: bool | None = None
