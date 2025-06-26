@@ -87,7 +87,7 @@ def assign_treatment(
     # didn't originally recognize when creating the dataframe. This does NOT handle Decimal types!
     df = DataFrame(data).infer_objects()
 
-    # Now convert any Decimal types to float (possible if the Table was created with reflection instead of cursor).
+    # Now convert any Decimal types to float (possible if the Table was created with SA's autoload instead of cursor).
     decimal_columns = [
         c.name for c in sa_table.columns if c.type.python_type is decimal.Decimal
     ]

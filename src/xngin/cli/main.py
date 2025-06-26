@@ -64,20 +64,20 @@ logging.basicConfig(
 
 
 async def create_participants_schema_from_table(
-    dsn: str, table: str, use_reflection: bool, unique_id_col: str | None = None
+    dsn: str, table: str, use_sa_autoload: bool, unique_id_col: str | None = None
 ):
     """Creates a ParticipantsSchema from a SQLAlchemy table.
 
     :param dsn The SQLAlchemy-compatible DSN.
     :param table The name of the table to inspect.
-    :param use_reflection True if you want to use SQLAlchemy's reflection, else infer from a SQL SELECT cursor.
+    :param use_sa_autoload True if you want to use SQLAlchemy's reflection, else infer from a SQL SELECT cursor.
     :param unique_id_col The column name in the table to use as a participant's unique identifier.
     """
     try:
         dwh_config = Dsn.from_url(dsn)
 
         async with DwhSession(dwh_config) as dwh:
-            dwh_table = await dwh.inspect_table(table, use_reflection=use_reflection)
+            dwh_table = await dwh.inspect_table(table, use_sa_autoload=use_sa_autoload)
     except CannotFindTableError as cfte:
         err_console.print(cfte.message)
         raise typer.Exit(1) from cfte
@@ -437,7 +437,7 @@ def bootstrap_spreadsheet(
             help="Share the newly created Google Sheet with one or more email addresses.",
         ),
     ] = None,
-    use_reflection: Annotated[
+    use_sa_autoload: Annotated[
         bool,
         typer.Option(
             help="True to use SQLAlchemy's table reflection, else use a cursor to infer types",
@@ -450,7 +450,7 @@ def bootstrap_spreadsheet(
     """
     config = asyncio.get_event_loop().run_until_complete(
         create_participants_schema_from_table(
-            dsn, table_name, use_reflection, unique_id_col
+            dsn, table_name, use_sa_autoload, unique_id_col
         )
     )
 

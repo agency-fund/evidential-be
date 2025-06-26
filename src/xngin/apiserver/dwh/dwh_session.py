@@ -127,13 +127,13 @@ class DwhSession:
         return self._session
 
     def _inspect_table_blocking(
-        self, table_name: str, use_reflection: bool | None = None
+        self, table_name: str, use_sa_autoload: bool | None = None
     ) -> sqlalchemy.Table:
-        if use_reflection is None:
-            use_reflection = self.dwh_config.supports_table_reflection()
+        if use_sa_autoload is None:
+            use_sa_autoload = self.dwh_config.supports_sa_autoload()
         metadata = sqlalchemy.MetaData()
         try:
-            if use_reflection:
+            if use_sa_autoload:
                 return sqlalchemy.Table(
                     table_name, metadata, autoload_with=self._engine, quote=False
                 )
@@ -141,7 +141,7 @@ class DwhSession:
             return self._inspect_table_from_cursor_blocking(self._engine, table_name)
         except sqlalchemy.exc.ProgrammingError:
             logger.exception(
-                "Failed to create a Table! use_reflection: {}", use_reflection
+                "Failed to create a Table! use_sa_autoload: {}", use_sa_autoload
             )
             raise
         except NoSuchTableError as nste:
@@ -216,7 +216,7 @@ class DwhSession:
             raise CannotFindTableError(table_name, existing_tables) from nste
 
     async def inspect_table(
-        self, table_name: str, use_reflection: bool | None = None
+        self, table_name: str, use_sa_autoload: bool | None = None
     ) -> sqlalchemy.Table:
         """Inspect table structure using a variety of backend-specific workarounds.
 
@@ -227,31 +227,31 @@ class DwhSession:
 
         Args:
             table_name: Name of the table to inspect
-            use_reflection: Whether to use SQLAlchemy reflection. If None, uses config default.
+            use_sa_autoload: Whether to use SQLAlchemy reflection. If None, uses config default.
 
         Returns:
             SQLAlchemy Table object
         """
         return await asyncio.get_event_loop().run_in_executor(
-            None, self._inspect_table_blocking, table_name, use_reflection
+            None, self._inspect_table_blocking, table_name, use_sa_autoload
         )
 
     def _inspect_table_with_descriptors_blocking(
-        self, table_name: str, unique_id_field: str, use_reflection: bool | None = None
+        self, table_name: str, unique_id_field: str, use_sa_autoload: bool | None = None
     ) -> InspectTableWithDescriptorsResult:
-        sa_table = self._inspect_table_blocking(table_name, use_reflection)
+        sa_table = self._inspect_table_blocking(table_name, use_sa_autoload)
         db_schema = generate_field_descriptors(sa_table, unique_id_field)
         return InspectTableWithDescriptorsResult(sa_table=sa_table, db_schema=db_schema)
 
     async def inspect_table_with_descriptors(
-        self, table_name: str, unique_id_field: str, use_reflection: bool | None = None
+        self, table_name: str, unique_id_field: str, use_sa_autoload: bool | None = None
     ) -> InspectTableWithDescriptorsResult:
         """Convenience method combining table inspection and field descriptor generation.
 
         Args:
             table_name: Name of the table to inspect
             unique_id_field: The column name to use as a participant's unique identifier
-            use_reflection: If not None, overrides the configuration's default behavior.
+            use_sa_autoload: If not None, overrides the configuration's default behavior.
 
         Returns:
             InspectTableWithDescriptorsResult containing both the SQLAlchemy Table and field descriptors
@@ -261,18 +261,18 @@ class DwhSession:
             self._inspect_table_with_descriptors_blocking,
             table_name,
             unique_id_field,
-            use_reflection,
+            use_sa_autoload,
         )
 
     def _get_participants_blocking(
-        self, table_name: str, filters, n: int, use_reflection: bool | None = None
+        self, table_name: str, filters, n: int, use_sa_autoload: bool | None = None
     ) -> GetParticipantsResult:
-        sa_table = self._inspect_table_blocking(table_name, use_reflection)
+        sa_table = self._inspect_table_blocking(table_name, use_sa_autoload)
         participants = query_for_participants(self.session, sa_table, filters, n)
         return GetParticipantsResult(sa_table=sa_table, participants=participants)
 
     async def get_participants(
-        self, table_name: str, filters, n: int, use_reflection: bool | None = None
+        self, table_name: str, filters, n: int, use_sa_autoload: bool | None = None
     ) -> GetParticipantsResult:
         """Get participants by combining table inspection and querying.
 
@@ -282,7 +282,7 @@ class DwhSession:
             table_name: Name of the table to query
             filters: Filter conditions to apply
             n: Number of participants to retrieve
-            use_reflection: Whether to use SQLAlchemy reflection. If None, uses config default.
+            use_sa_autoload: Whether to use SQLAlchemy reflection. If None, uses config default.
 
         Returns:
             GetParticipantsResult containing both the SQLAlchemy table and participant query results
@@ -293,7 +293,7 @@ class DwhSession:
             table_name,
             filters,
             n,
-            use_reflection,
+            use_sa_autoload,
         )
 
     def _list_tables_blocking(self) -> list[str]:

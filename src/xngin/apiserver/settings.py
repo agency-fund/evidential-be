@@ -224,7 +224,7 @@ class BaseDsn:
         """Return true iff the hostname indicates that this is connecting to Redshift."""
         return False
 
-    def supports_table_reflection(self):
+    def supports_sa_autoload(self):
         return not self.is_redshift()
 
 
@@ -440,8 +440,8 @@ class RemoteDatabaseConfig(ParticipantsMixin, ConfigBaseModel):
     def to_sqlalchemy_url(self):
         return self.dwh.to_sqlalchemy_url()
 
-    def supports_reflection(self):
-        return self.dwh.supports_table_reflection()
+    def supports_sa_autoload(self):
+        return self.dwh.supports_sa_autoload()
 
 
 # TODO: use a Field(discriminator="type") when we support more than just "remote" databases.
