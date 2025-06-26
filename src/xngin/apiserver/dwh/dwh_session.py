@@ -1,5 +1,6 @@
 """Data warehouse session context manager for database connections."""
 
+import asyncio
 from collections.abc import Callable
 from dataclasses import dataclass
 
@@ -30,6 +31,15 @@ from xngin.apiserver.settings import (
 
 class DwhDatabaseDoesNotExistError(Exception):
     """Raised when the target database or dataset does not exist."""
+
+
+def safe_url(url: sqlalchemy.engine.url.URL) -> sqlalchemy.engine.url.URL:
+    """Prepares a URL for presentation or capture in logs by stripping sensitive values."""
+    cleaned = url.set(password="redacted")
+    for qp in ("credentials_base64", "credentials_info"):
+        if cleaned.query.get(qp):
+            cleaned = cleaned.update_query_dict({qp: "redacted"})
+    return cleaned
 
 
 @dataclass
@@ -65,10 +75,11 @@ class CannotFindTableError(Exception):
 
 
 class DwhSession:
-    """Context manager for data warehouse database connections.
+    """Async context manager for data warehouse database connections.
 
-    Encapsulates database connection logic and provides convenient access
-    to both SQLAlchemy Session and Engine objects.
+    This class defines most of the interactions we have with customer data warehouses. The underlying connections to
+    the DWH are using blocking SQLAlchemy drivers, and this class wraps them in threads and adapts them to async so that
+    we can call them without blocking the request thread.
     """
 
     def __init__(self, dwh_config: Dwh):
@@ -78,41 +89,65 @@ class DwhSession:
             dwh_config: The data warehouse configuration (Dsn or BqDsn)
         """
         self.dwh_config = dwh_config
-        self._engine = None
-        self._session = None
+        self._engine: Engine | None = None
+        self._session: Session | None = None
 
-    def __enter__(self) -> "DwhSession":
-        """Enter the context manager and create database connections."""
+    def _enter_blocking(self):
         self._engine = self._create_engine()
         self._session = Session(self._engine)
+
+    async def __aenter__(self) -> "DwhSession":
+        """Enter the context manager and create database connections."""
+        await asyncio.get_event_loop().run_in_executor(None, self._enter_blocking)
         return self
 
-    def __exit__(self, exc_type, exc_val, exc_tb):
-        """Exit the context manager and clean up database connections."""
+    def _exit_blocking(self):
         if self._session:
             self._session.close()
         if self._engine:
             self._engine.dispose()
 
+    async def __aexit__(self, exc_type, exc_val, exc_tb):
+        """Exit the context manager and clean up database connections."""
+        await asyncio.get_event_loop().run_in_executor(None, self._exit_blocking)
+
     @property
     def session(self) -> Session:
-        """Get the SQLAlchemy session."""
+        """Get the synchronous SQLAlchemy session.
+
+        The returned Session is synchronous. When the returned session is used on the API server, take care to wrap it
+        in a thread so that it doesn't block FastAPI's request thread.
+        """
         if self._session is None:
             raise RuntimeError(
-                "DwhSession not entered - use 'with DwhSession(...) as dwh:'"
+                "DwhSession not entered - use 'async with DwhSession(...) as dwh:'"
             )
         return self._session
 
-    @property
-    def engine(self) -> Engine:
-        """Get the SQLAlchemy engine."""
-        if self._engine is None:
-            raise RuntimeError(
-                "DwhSession not entered - use 'with DwhSession(...) as dwh:'"
+    def _infer_table_blocking(
+        self, table_name: str, use_reflection: bool | None = None
+    ) -> sqlalchemy.Table:
+        if use_reflection is None:
+            use_reflection = self.dwh_config.supports_table_reflection()
+        metadata = sqlalchemy.MetaData()
+        try:
+            if use_reflection:
+                return sqlalchemy.Table(
+                    table_name, metadata, autoload_with=self._engine, quote=False
+                )
+            # This method of introspection should only be used if the db dialect doesn't support Sqlalchemy2 reflection.
+            return self._infer_table_from_cursor_blocking(self._engine, table_name)
+        except sqlalchemy.exc.ProgrammingError:
+            logger.exception(
+                "Failed to create a Table! use_reflection: {}", use_reflection
             )
-        return self._engine
+            raise
+        except NoSuchTableError as nste:
+            metadata.reflect(self._engine)
+            existing_tables = metadata.tables.keys()
+            raise CannotFindTableError(table_name, existing_tables) from nste
 
-    def infer_table(
+    async def infer_table(
         self, table_name: str, use_reflection: bool | None = None
     ) -> sqlalchemy.Table:
         """Infer table structure with built-in reflection support.
@@ -124,27 +159,11 @@ class DwhSession:
         Returns:
             SQLAlchemy Table object with inferred schema
         """
-        if use_reflection is None:
-            use_reflection = self.dwh_config.supports_table_reflection()
-        metadata = sqlalchemy.MetaData()
-        try:
-            if use_reflection:
-                return sqlalchemy.Table(
-                    table_name, metadata, autoload_with=self.engine, quote=False
-                )
-            # This method of introspection should only be used if the db dialect doesn't support Sqlalchemy2 reflection.
-            return self._infer_table_from_cursor(self.engine, table_name)
-        except sqlalchemy.exc.ProgrammingError:
-            logger.exception(
-                "Failed to create a Table! use_reflection: {}", use_reflection
-            )
-            raise
-        except NoSuchTableError as nste:
-            metadata.reflect(self.engine)
-            existing_tables = metadata.tables.keys()
-            raise CannotFindTableError(table_name, existing_tables) from nste
+        return await asyncio.get_event_loop().run_in_executor(
+            None, self._infer_table_blocking, table_name, use_reflection
+        )
 
-    def _infer_table_from_cursor(
+    def _infer_table_from_cursor_blocking(
         self, engine: sqlalchemy.engine.Engine, table_name: str
     ) -> sqlalchemy.Table:
         """Creates a SQLAlchemy Table instance from cursor description metadata."""
@@ -211,27 +230,45 @@ class DwhSession:
             existing_tables = metadata.tables.keys()
             raise CannotFindTableError(table_name, existing_tables) from nste
 
-    def infer_table_with_descriptors(
+    def _infer_table_with_descriptors_blocking(
         self, table_name: str, unique_id_field: str, use_reflection: bool | None = None
     ) -> InferTableWithDescriptorsResult:
-        """Convenience method combining table inference and field descriptor generation.
-
-        Args:
-            table_name: Name of the table to infer
-            unique_id_field: The column name to use as a participant's unique identifier
-            use_reflection: Whether to use SQLAlchemy reflection. If None, uses config default.
-
-        Returns:
-            InferTableWithDescriptorsResult containing both the SQLAlchemy table and field descriptors
-        """
-        sa_table = self.infer_table(table_name, use_reflection)
+        sa_table = self._infer_table_blocking(table_name, use_reflection)
         db_schema = generate_field_descriptors(sa_table, unique_id_field)
         mapper = self.create_filter_meta_mapper(db_schema, sa_table)
         return InferTableWithDescriptorsResult(
             sa_table=sa_table, db_schema=db_schema, mapper=mapper
         )
 
-    def get_participants(
+    async def infer_table_with_descriptors(
+        self, table_name: str, unique_id_field: str, use_reflection: bool | None = None
+    ) -> InferTableWithDescriptorsResult:
+        """Convenience method combining table inference and field descriptor generation.
+
+        Args:
+            table_name: Name of the table to inspect
+            unique_id_field: The column name to use as a participant's unique identifier
+            use_reflection: If not None, overrides the configuration's default behavior.
+
+        Returns:
+            InferTableWithDescriptorsResult containing both the SQLAlchemy Table and field descriptors
+        """
+        return await asyncio.get_event_loop().run_in_executor(
+            None,
+            self._infer_table_with_descriptors_blocking,
+            table_name,
+            unique_id_field,
+            use_reflection,
+        )
+
+    def _get_participants_blocking(
+        self, table_name: str, filters, n: int, use_reflection: bool | None = None
+    ) -> GetParticipantsResult:
+        sa_table = self._infer_table_blocking(table_name, use_reflection)
+        participants = query_for_participants(self.session, sa_table, filters, n)
+        return GetParticipantsResult(sa_table=sa_table, participants=participants)
+
+    async def get_participants(
         self, table_name: str, filters, n: int, use_reflection: bool | None = None
     ) -> GetParticipantsResult:
         """Get participants by combining table inference and querying.
@@ -245,19 +282,16 @@ class DwhSession:
         Returns:
             GetParticipantsResult containing both the SQLAlchemy table and participant query results
         """
-        sa_table = self.infer_table(table_name, use_reflection)
-        participants = query_for_participants(self.session, sa_table, filters, n)
-        return GetParticipantsResult(sa_table=sa_table, participants=participants)
+        return await asyncio.get_event_loop().run_in_executor(
+            None,
+            self._get_participants_blocking,
+            table_name,
+            filters,
+            n,
+            use_reflection,
+        )
 
-    def list_tables(self) -> list[str]:
-        """Get a list of table names from the data warehouse.
-
-        Returns:
-            List of table names (strings) available in the data warehouse
-
-        Raises:
-            DwhDatabaseDoesNotExistError: When the target database/dataset does not exist
-        """
+    def _list_tables_blocking(self) -> list[str]:
         try:
             # Hack for redshift's lack of reflection support.
             if self.dwh_config.is_redshift():
@@ -269,7 +303,7 @@ class DwhSession:
                     query, {"search_path": self.dwh_config.search_path or "public"}
                 )
                 return result.scalars().all()
-            inspected = sqlalchemy.inspect(self.engine)
+            inspected = sqlalchemy.inspect(self._engine)
             return list(
                 sorted(inspected.get_table_names() + inspected.get_view_names())
             )
@@ -280,6 +314,19 @@ class DwhSession:
         except google.api_core.exceptions.NotFound as exc:
             # Google returns a 404 when authentication succeeds but when the specified datasource does not exist.
             raise DwhDatabaseDoesNotExistError(str(exc)) from exc
+
+    async def list_tables(self) -> list[str]:
+        """Get a list of table names from the data warehouse.
+
+        Returns:
+            List of table names (strings) available in the data warehouse
+
+        Raises:
+            DwhDatabaseDoesNotExistError: When the target database/dataset does not exist
+        """
+        return await asyncio.get_event_loop().run_in_executor(
+            None, self._list_tables_blocking
+        )
 
     def _is_postgres_database_not_found_error(self, exc: OperationalError) -> bool:
         """Check if the exception indicates a Postgres database does not exist."""
@@ -294,6 +341,8 @@ class DwhSession:
         self, db_schema: dict[str, FieldDescriptor], sa_table
     ) -> Callable[[str, FieldDescriptor], GetFiltersResponseElement]:
         """Create a mapper function for generating filter metadata from database columns.
+
+        # TODO: replace this with something cleaner
 
         Args:
             db_schema: Dictionary mapping column names to FieldDescriptor objects
@@ -363,7 +412,7 @@ class DwhSession:
             connect_args["hostaddr"] = safe_resolve(url.host)
 
         logger.info(
-            f"Connecting to customer dwh: url={self.safe_url(url)}, "
+            f"Connecting to customer dwh: url={safe_url(url)}, "
             f"backend={url.get_backend_name()}, connect_args={connect_args}"
         )
 
@@ -401,12 +450,3 @@ class DwhSession:
             engine.dialect, "_set_backslash_escapes"
         ):
             engine.dialect._set_backslash_escapes = lambda _: None
-
-    @staticmethod
-    def safe_url(url: sqlalchemy.engine.url.URL) -> sqlalchemy.engine.url.URL:
-        """Prepares a URL for presentation or capture in logs by stripping sensitive values."""
-        cleaned = url.set(password="redacted")
-        for qp in ("credentials_base64", "credentials_info"):
-            if cleaned.query.get(qp):
-                cleaned = cleaned.update_query_dict({qp: "redacted"})
-        return cleaned

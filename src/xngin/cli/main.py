@@ -62,7 +62,7 @@ logging.basicConfig(
 )
 
 
-def infer_config_from_schema(
+async def infer_config_from_schema(
     dsn: str, table: str, use_reflection: bool, unique_id_col: str | None = None
 ):
     """Infers a configuration from a SQLAlchemy schema.
@@ -73,11 +73,11 @@ def infer_config_from_schema(
     :param unique_id_col The column name in the table to use as a participant's unique identifier.
     """
     try:
-        # Create a Dsn from the URL string to use with DwhSession
+        # Create a Dsn from the URL string to use async with DwhSession
         dwh_config = Dsn.from_url(dsn)
 
-        with DwhSession(dwh_config) as dwh:
-            dwh_table = dwh.infer_table(table, use_reflection=use_reflection)
+        async with DwhSession(dwh_config) as dwh:
+            dwh_table = await dwh.infer_table(table, use_reflection=use_reflection)
     except CannotFindTableError as cfte:
         err_console.print(cfte.message)
         raise typer.Exit(1) from cfte
@@ -396,7 +396,7 @@ def create_testing_dwh(
 
 
 @app.command()
-def bootstrap_spreadsheet(
+async def bootstrap_spreadsheet(
     dsn: Annotated[
         str, typer.Argument(..., help="The SQLAlchemy DSN of a data warehouse.")
     ],
@@ -448,7 +448,9 @@ def bootstrap_spreadsheet(
 
     Use this to get a customer started on configuring an experiment.
     """
-    config = infer_config_from_schema(dsn, table_name, use_reflection, unique_id_col)
+    config = await infer_config_from_schema(
+        dsn, table_name, use_reflection, unique_id_col
+    )
 
     # Exclude the `extra` field.
     field_names = [c for c in FieldDescriptor.model_fields if c != "extra"]

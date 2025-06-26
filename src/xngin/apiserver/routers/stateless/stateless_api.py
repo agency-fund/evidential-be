@@ -1,3 +1,4 @@
+import asyncio
 from contextlib import asynccontextmanager
 from typing import Annotated
 
@@ -108,8 +109,8 @@ async def get_strata(
     )
     strata_fields = {c.field_name: c for c in schema.fields if c.is_strata}
 
-    with DwhSession(config.dwh) as dwh:
-        result = dwh.infer_table_with_descriptors(
+    async with DwhSession(config.dwh) as dwh:
+        result = await dwh.infer_table_with_descriptors(
             participants_cfg.table_name, schema.get_unique_id_field()
         )
 
@@ -144,20 +145,20 @@ async def get_filters(
     )
     filter_fields = {c.field_name: c for c in schema.fields if c.is_filter}
 
-    with DwhSession(config.dwh) as dwh:
-        result = dwh.infer_table_with_descriptors(
+    async with DwhSession(config.dwh) as dwh:
+        result = await dwh.infer_table_with_descriptors(
             participants_cfg.table_name, schema.get_unique_id_field()
         )
-        return GetFiltersResponse(
-            results=sorted(
-                [
-                    result.mapper(field_name, field_descriptor)
-                    for field_name, field_descriptor in filter_fields.items()
-                    if result.db_schema.get(field_name)
-                ],
-                key=lambda item: item.field_name,
-            )
+    return GetFiltersResponse(
+        results=sorted(
+            [
+                result.mapper(field_name, field_descriptor)
+                for field_name, field_descriptor in filter_fields.items()
+                if result.db_schema.get(field_name)
+            ],
+            key=lambda item: item.field_name,
         )
+    )
 
 
 @router.get(
@@ -174,8 +175,8 @@ async def get_metrics(
     )
     metric_cols = {c.field_name: c for c in schema.fields if c.is_metric}
 
-    with DwhSession(config.dwh) as dwh:
-        result = dwh.infer_table_with_descriptors(
+    async with DwhSession(config.dwh) as dwh:
+        result = await dwh.infer_table_with_descriptors(
             participants_cfg.table_name, schema.get_unique_id_field()
         )
 
@@ -226,16 +227,18 @@ async def powercheck(
     )
     validate_schema_metrics_or_raise(body.design_spec, schema)
 
-    return power_check_impl(body, config, participants_cfg)
+    return await power_check_impl(body, config, participants_cfg)
 
 
-def power_check_impl(
+async def power_check_impl(
     body: PowerRequest, config: DatasourceConfig, participants_cfg: ParticipantsConfig
 ) -> PowerResponse:
-    with DwhSession(config.dwh) as dwh:
-        sa_table = dwh.infer_table(participants_cfg.table_name)
+    async with DwhSession(config.dwh) as dwh:
+        sa_table = await dwh.infer_table(participants_cfg.table_name)
 
-        metric_stats = get_stats_on_metrics(
+        metric_stats = await asyncio.get_event_loop().run_in_executor(
+            None,
+            get_stats_on_metrics,
             dwh.session,
             sa_table,
             body.design_spec.metrics,
@@ -291,8 +294,8 @@ async def assign_treatment(
     )
     validate_schema_metrics_or_raise(body.design_spec, schema)
 
-    with DwhSession(config.dwh) as dwh:
-        result = dwh.get_participants(
+    async with DwhSession(config.dwh) as dwh:
+        result = await dwh.get_participants(
             participants_cfg.table_name, body.design_spec.filters, chosen_n
         )
 

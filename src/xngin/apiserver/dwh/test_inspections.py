@@ -67,11 +67,11 @@ def test_create_schema_from_table_fails_if_no_unique_id():
         create_schema_from_table(my_table, None)
 
 
-def test_generate_column_descriptors():
+async def test_generate_column_descriptors():
     settings = conftest.get_settings_for_test()
     config = settings.get_datasource("testing").config
-    with DwhSession(config.dwh) as dwh:
-        sa_table = dwh.infer_table("dwh")
+    async with DwhSession(config.dwh) as dwh:
+        sa_table = await dwh.infer_table("dwh")
 
     db_schema = generate_field_descriptors(sa_table, "last_name")
 

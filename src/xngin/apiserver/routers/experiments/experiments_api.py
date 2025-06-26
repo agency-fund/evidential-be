@@ -105,8 +105,8 @@ async def create_experiment_with_assignment_sl(
     )
 
     # Get participants and their schema info from the client dwh
-    with DwhSession(ds_config.dwh) as dwh:
-        result = dwh.get_participants(
+    async with DwhSession(ds_config.dwh) as dwh:
+        result = await dwh.get_participants(
             participants_cfg.table_name, body.design_spec.filters, chosen_n
         )
 

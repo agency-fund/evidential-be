@@ -1,6 +1,7 @@
 """Implements a basic Admin API."""
 
-import secrets  # noqa: I001
+import asyncio
+import secrets
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime, timedelta
 from typing import Annotated, Any
@@ -27,10 +28,11 @@ from xngin.apiserver import constants, flags
 from xngin.apiserver.apikeys import hash_key_or_raise, make_key
 from xngin.apiserver.dependencies import xngin_db_session
 from xngin.apiserver.dns.safe_resolve import DnsLookupError, safe_resolve
-from xngin.apiserver.dwh.queries import get_participant_metrics
+from xngin.apiserver.dwh.dwh_session import DwhDatabaseDoesNotExistError, DwhSession
 from xngin.apiserver.dwh.inspections import (
     create_inspect_table_response_from_table,
 )
+from xngin.apiserver.dwh.queries import get_participant_metrics
 from xngin.apiserver.exceptions_common import LateValidationError
 from xngin.apiserver.models import tables
 from xngin.apiserver.models.storage_format_converters import ExperimentStorageConverter
@@ -90,7 +92,6 @@ from xngin.apiserver.routers.stateless.stateless_api import (
     power_check_impl,
     validate_schema_metrics_or_raise,
 )
-from xngin.apiserver.dwh.dwh_session import DwhSession, DwhDatabaseDoesNotExistError
 from xngin.apiserver.settings import (
     ParticipantsConfig,
     ParticipantsDef,
@@ -819,8 +820,8 @@ async def inspect_datasource(
     try:
         try:
             config = ds.get_config()
-            with DwhSession(config.dwh) as dwh:
-                tablenames = dwh.list_tables()
+            async with DwhSession(config.dwh) as dwh:
+                tablenames = await dwh.list_tables()
 
             ds.set_table_list(tablenames)
             await session.commit()
@@ -870,9 +871,9 @@ async def inspect_table_in_datasource(
     await invalidate_inspect_table_cache(session, datasource_id)
     await session.commit()
 
-    with DwhSession(config.dwh) as dwh:
+    async with DwhSession(config.dwh) as dwh:
         # CannotFindTableError will be handled by exceptionhandlers.py.
-        table = dwh.infer_table(table_name)
+        table = await dwh.infer_table(table_name)
     response = create_inspect_table_response_from_table(table)
 
     session.add(
@@ -989,9 +990,9 @@ async def inspect_participant_types(
     )
     await session.commit()
 
-    def inspect_participant_types_impl() -> InspectParticipantTypesResponse:
-        with DwhSession(dsconfig.dwh) as dwh:
-            result = dwh.infer_table_with_descriptors(
+    async def inspect_participant_types_impl() -> InspectParticipantTypesResponse:
+        async with DwhSession(dsconfig.dwh) as dwh:
+            result = await dwh.infer_table_with_descriptors(
                 pconfig.table_name, pconfig.get_unique_id_field()
             )
 
@@ -1036,7 +1037,7 @@ async def inspect_participant_types(
             ),
         )
 
-    response = inspect_participant_types_impl()
+    response = await inspect_participant_types_impl()
 
     session.add(
         tables.ParticipantTypesInspected(
@@ -1221,9 +1222,9 @@ async def create_experiment(
 
     # Get participants and their schema info from the client dwh
     participants = None
-    with DwhSession(ds_config.dwh) as dwh:
+    async with DwhSession(ds_config.dwh) as dwh:
         if chosen_n is not None:
-            result = dwh.get_participants(
+            result = await dwh.get_participants(
                 participants_cfg.table_name, body.design_spec.filters, chosen_n
             )
             sa_table, participants = result.sa_table, result.participants
@@ -1233,7 +1234,7 @@ async def create_experiment(
                 detail="Preassigned experiments must have a chosen_n.",
             )
         else:
-            sa_table = dwh.infer_table(participants_cfg.table_name)
+            sa_table = await dwh.infer_table(participants_cfg.table_name)
 
     return await experiments_common.create_experiment_impl(
         request=body,
@@ -1283,12 +1284,14 @@ async def analyze_experiment(
     if len(participant_ids) == 0:
         raise StatsAnalysisError("No participants found for experiment.")
 
-    with DwhSession(dsconfig.dwh) as dwh:
-        sa_table = dwh.infer_table(participants_cfg.table_name)
+    async with DwhSession(dsconfig.dwh) as dwh:
+        sa_table = await dwh.infer_table(participants_cfg.table_name)
 
         # Mark the start of the analysis as when we begin pulling outcomes.
         created_at = datetime.now(UTC)
-        participant_outcomes = get_participant_metrics(
+        participant_outcomes = await asyncio.get_event_loop().run_in_executor(
+            None,
+            get_participant_metrics,
             dwh.session,
             sa_table,
             design_spec.metrics,
@@ -1522,4 +1525,4 @@ async def power_check(
     dsconfig = ds.get_config()
     participants_cfg = dsconfig.find_participants(body.design_spec.participant_type)
     validate_schema_metrics_or_raise(body.design_spec, participants_cfg)
-    return power_check_impl(body, dsconfig, participants_cfg)
+    return await power_check_impl(body, dsconfig, participants_cfg)
