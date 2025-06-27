@@ -49,7 +49,7 @@ SA_LOGGER_NAME_FOR_DWH = "xngin_dwh"
 TIMEOUT_SECS_FOR_CUSTOMER_POSTGRES = 10
 
 
-def encrypt_string(plaintext: str, aad: str) -> str:
+def _encrypt_string(plaintext: str, aad: str) -> str:
     """Encrypts a string and returns the serialized ciphertext.
 
     Raises ValueError if plaintext already resembles encrypted text.
@@ -60,7 +60,7 @@ def encrypt_string(plaintext: str, aad: str) -> str:
 
 
 @ttl_cache(maxsize=128, ttl=600)
-def decrypt_string(ciphertext: str, aad: str) -> str:
+def _decrypt_string(ciphertext: str, aad: str) -> str:
     """Decrypts a serialized ciphertext string.
 
     This method is cached because it can avoid a remote API call to the key management service.
@@ -297,7 +297,7 @@ class GcpServiceAccountInfo(ConfigBaseModel):
     def encrypt(self, datasource_id):
         return self.model_copy(
             update={
-                "content_base64": encrypt_string(
+                "content_base64": _encrypt_string(
                     self.content_base64, aad=f"dsn.{datasource_id}"
                 )
             }
@@ -306,7 +306,7 @@ class GcpServiceAccountInfo(ConfigBaseModel):
     def decrypt(self, datasource_id):
         return self.model_copy(
             update={
-                "content_base64": decrypt_string(
+                "content_base64": _decrypt_string(
                     self.content_base64, aad=f"dsn.{datasource_id}"
                 )
             }
@@ -446,7 +446,7 @@ class Dsn(ConfigBaseModel, BaseDsn, EncryptedDsn):
     def encrypt(self, datasource_id):
         return self.model_copy(
             update={
-                "password": encrypt_string(
+                "password": _encrypt_string(
                     self.password,
                     aad=f"dsn.{datasource_id}",
                 )
@@ -456,7 +456,7 @@ class Dsn(ConfigBaseModel, BaseDsn, EncryptedDsn):
     def decrypt(self, datasource_id):
         return self.model_copy(
             update={
-                "password": decrypt_string(
+                "password": _decrypt_string(
                     self.password,
                     aad=f"dsn.{datasource_id}",
                 )
