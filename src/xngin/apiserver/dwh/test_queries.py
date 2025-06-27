@@ -33,14 +33,16 @@ from xngin.apiserver.dwh.queries import (
     make_csv_regex,
 )
 from xngin.apiserver.exceptions_common import LateValidationError
-from xngin.apiserver.routers.stateless_api_types import (
+from xngin.apiserver.routers.common_api_types import (
     DesignSpecMetric,
     DesignSpecMetricRequest,
     Filter,
     MetricType,
+    Relation,
+)
+from xngin.apiserver.routers.stateless.stateless_api_types import (
     MetricValue,
     ParticipantOutcome,
-    Relation,
 )
 
 SA_LOGGER_NAME_FOR_DWH = "xngin_dwh"

@@ -5,6 +5,7 @@ from urllib.parse import urlparse
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from xngin.apiserver.common_field_types import FieldName
+from xngin.apiserver.dwh.inspection_types import FieldDescriptor, ParticipantsSchema
 from xngin.apiserver.limits import (
     MAX_LENGTH_OF_DESCRIPTION_VALUE,
     MAX_LENGTH_OF_EMAIL_VALUE,
@@ -13,7 +14,7 @@ from xngin.apiserver.limits import (
     MAX_LENGTH_OF_WEBHOOK_URL_VALUE,
     MAX_NUMBER_OF_FIELDS,
 )
-from xngin.apiserver.routers.stateless_api_types import (
+from xngin.apiserver.routers.common_api_types import (
     ApiBaseModel,
     DataType,
     GetFiltersResponseElement,
@@ -21,7 +22,6 @@ from xngin.apiserver.routers.stateless_api_types import (
     GetStrataResponseElement,
 )
 from xngin.apiserver.settings import DatasourceConfig, Dwh, ParticipantsConfig
-from xngin.schema.schema_types import FieldDescriptor, ParticipantsSchema
 
 
 def validate_webhook_url(url: str) -> str:
@@ -145,7 +145,7 @@ class AddWebhookToOrganizationResponse(AdminApiBaseModel):
     auth_token: Annotated[
         str | None,
         Field(
-            description="The value of the Authorization: header that will be sent with the request to the configured URL."
+            description="The value of the Webhook-Token: header that will be sent with the request to the configured URL."
         ),
     ]
 
@@ -165,7 +165,7 @@ class WebhookSummary(AdminApiBaseModel):
     auth_token: Annotated[
         str | None,
         Field(
-            description="The value of the Authorization: header that will be sent with the request to the configured URL."
+            description="The value of the Webhook-Token: header that will be sent with the request to the configured URL."
         ),
     ]
 

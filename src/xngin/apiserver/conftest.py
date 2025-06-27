@@ -36,8 +36,8 @@ from xngin.apiserver.dependencies import (
 from xngin.apiserver.dns import safe_resolve
 from xngin.apiserver.main import app
 from xngin.apiserver.models import tables
-from xngin.apiserver.routers import oidc_dependencies
-from xngin.apiserver.routers.oidc_dependencies import (
+from xngin.apiserver.routers.auth import auth_dependencies
+from xngin.apiserver.routers.auth.auth_dependencies import (
     PRIVILEGED_EMAIL,
     PRIVILEGED_TOKEN_FOR_TESTING,
     UNPRIVILEGED_TOKEN_FOR_TESTING,
@@ -203,7 +203,8 @@ def fixture_override_app_dependencies():
     app.dependency_overrides[settings_dependency] = get_settings_for_test
     app.dependency_overrides[random_seed_dependency] = get_random_seed_for_test
 
-    oidc_dependencies.disable(app)
+    auth_dependencies.disable(app)
+    auth_dependencies.enable_testing_tokens()
 
 
 @pytest.fixture(scope="session", name="client")

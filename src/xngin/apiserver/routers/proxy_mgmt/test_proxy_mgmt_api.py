@@ -5,11 +5,9 @@ from fastapi.testclient import TestClient
 
 from xngin.apiserver import constants
 from xngin.apiserver.main import app
-from xngin.apiserver.routers.proxy_mgmt_api_types import (
-    WebhookResponse,
-)
-from xngin.apiserver.routers.stateless_api_types import (
+from xngin.apiserver.routers.proxy_mgmt.proxy_mgmt_api_types import (
     CommitRequest,
+    WebhookResponse,
 )
 from xngin.apiserver.testing.xurl import Xurl
 
@@ -21,7 +19,7 @@ def load_mock_response_from_xurl(mocker, file):
     """Returns a tuple with the Xurl obj specified in file and a mock response."""
 
     # Set up the mock response - first load our test data.
-    data_file = str(Path(__file__).parent / "testdata" / "nonbulk" / file)
+    data_file = str(Path(__file__).parent / "testdata" / file)
     with open(data_file, encoding="utf-8") as f:
         contents = f.read()
     xurl = Xurl.from_script(contents)

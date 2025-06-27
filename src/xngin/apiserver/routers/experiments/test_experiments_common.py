@@ -17,10 +17,16 @@ from xngin.apiserver import conftest
 from xngin.apiserver.models import tables
 from xngin.apiserver.models.enums import ExperimentState, StopAssignmentReason
 from xngin.apiserver.models.storage_format_converters import ExperimentStorageConverter
-from xngin.apiserver.routers.experiments_api_types import (
+from xngin.apiserver.routers.common_api_types import (
     CreateExperimentRequest,
+    DesignSpecMetric,
+    ExperimentType,
+    MetricPowerAnalysis,
+    MetricType,
+    PowerResponse,
+    Stratum,
 )
-from xngin.apiserver.routers.experiments_common import (
+from xngin.apiserver.routers.experiments.experiments_common import (
     ExperimentsAssignmentError,
     abandon_experiment_impl,
     commit_experiment_impl,
@@ -32,14 +38,8 @@ from xngin.apiserver.routers.experiments_common import (
     get_experiment_assignments_impl,
     list_experiments_impl,
 )
-from xngin.apiserver.routers.stateless_api_types import (
+from xngin.apiserver.routers.stateless.stateless_api_types import (
     DesignSpec,
-    DesignSpecMetric,
-    ExperimentType,
-    MetricPowerAnalysis,
-    MetricType,
-    PowerResponse,
-    Stratum,
 )
 from xngin.apiserver.testing.assertions import assert_dates_equal
 
@@ -316,14 +316,14 @@ async def test_create_experiment_impl_for_preassigned(
     # Verify arms were created in database
     arms = (
         await xngin_session.scalars(
-            select(tables.ArmTable).where(
-                tables.ArmTable.experiment_id == experiment.id
-            )
+            select(tables.Arm).where(tables.Arm.experiment_id == experiment.id)
         )
     ).all()
     assert len(arms) == 2
     arm_ids = {arm.id for arm in arms}
-    expected_arm_ids = {arm.arm_id for arm in response.design_spec.arms}
+    expected_arm_ids = {
+        response_arm.arm_id for response_arm in response.design_spec.arms
+    }
     assert arm_ids == expected_arm_ids
 
     # Check one assignment to see if it looks roughly right
@@ -390,7 +390,7 @@ async def test_create_experiment_impl_for_online(
     assert all(arm_size.size == 0 for arm_size in response.assign_summary.arm_sizes)
 
     # Verify database state
-    experiment = experiment = await xngin_session.get(
+    experiment = await xngin_session.get(
         tables.Experiment, response.design_spec.experiment_id
     )
     assert experiment.experiment_type == "online"
@@ -415,9 +415,7 @@ async def test_create_experiment_impl_for_online(
     # Verify arms were created in database
     arms = (
         await xngin_session.scalars(
-            select(tables.ArmTable).where(
-                tables.ArmTable.experiment_id == experiment.id
-            )
+            select(tables.Arm).where(tables.Arm.experiment_id == experiment.id)
         )
     ).all()
     assert len(arms) == 2
