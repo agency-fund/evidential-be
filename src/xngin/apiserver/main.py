@@ -14,15 +14,12 @@ from xngin.apiserver import (
     middleware,
 )
 from xngin.apiserver.flags import PUBLISH_ALL_DOCS
-from xngin.apiserver.routers import (
-    admin,
-    experiments,
-    healthchecks,
-    oidc,
-    oidc_dependencies,
-    proxy_mgmt_api,
-    stateless_api,
-)
+from xngin.apiserver.routers import healthchecks_api
+from xngin.apiserver.routers.admin import admin_api
+from xngin.apiserver.routers.auth import auth_api, auth_dependencies
+from xngin.apiserver.routers.experiments import experiments_api
+from xngin.apiserver.routers.proxy_mgmt import proxy_mgmt_api
+from xngin.apiserver.routers.stateless import stateless_api
 from xngin.apiserver.settings import get_settings_for_server
 from xngin.xsecrets import secretservice
 
@@ -48,11 +45,8 @@ class MisconfiguredError(Exception):
 async def lifespan(_app: FastAPI):
     logger.info(f"Starting server: {__name__}")
 
-    settings = get_settings_for_server()
-    logger.info(f"trusted_ips: {settings.trusted_ips}")
-    logger.info(
-        f"database connection timeout (seconds): {settings.db_connect_timeout_secs}"
-    )
+    # verify that the soon-to-be-obsoleted JSON file settings can be loaded
+    _ = get_settings_for_server()
 
     # Security: Disable the Google Cloud SDK's use of GCE metadata service by pointing it at localhost. This service
     # operates on behalf of customers who provide their own credentials. By setting these variables (and aborting if
@@ -80,7 +74,7 @@ middleware.setup(app)
 customlogging.setup()
 secretservice.setup()
 
-app.include_router(experiments.router, tags=["Experiment Integration"])
+app.include_router(experiments_api.router, tags=["Experiment Integration"])
 
 app.include_router(
     stateless_api.router,
@@ -92,22 +86,24 @@ app.include_router(
     tags=["Stateless Experiment Design"],
 )
 
-app.include_router(healthchecks.router, tags=["Health Checks"], include_in_schema=False)
+app.include_router(
+    healthchecks_api.router, tags=["Health Checks"], include_in_schema=False
+)
 
 app.include_router(
-    oidc.router,
+    auth_api.router,
     tags=["Auth"],
     include_in_schema=PUBLISH_ALL_DOCS,
 )
 
 
 app.include_router(
-    admin.router,
+    admin_api.router,
     tags=["Admin"],
     include_in_schema=PUBLISH_ALL_DOCS,
 )
 
-oidc_dependencies.setup(app)
+auth_dependencies.setup(app)
 
 
 @dataclasses.dataclass

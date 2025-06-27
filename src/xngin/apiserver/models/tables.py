@@ -11,7 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncAttrs
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 from sqlalchemy.types import TypeEngine
 
-from xngin.apiserver.routers.admin_api_types import (
+from xngin.apiserver.routers.admin.admin_api_types import (
     InspectDatasourceTableResponse,
     InspectParticipantTypesResponse,
 )
@@ -89,7 +89,7 @@ class Organization(Base):
     name: Mapped[str] = mapped_column(String(255))
 
     # Relationships
-    arms: Mapped[list["ArmTable"]] = relationship(
+    arms: Mapped[list["Arm"]] = relationship(
         back_populates="organization", cascade="all, delete-orphan"
     )
     users: Mapped[list["User"]] = relationship(
@@ -119,7 +119,7 @@ class Webhook(Base):
     type: Mapped[str] = mapped_column()
     # The URL to post the event to. The payload body depends on the type of webhook.
     url: Mapped[str] = mapped_column()
-    # The token that will be sent in the Authorization header.
+    # The token that will be sent in the Webhook-Token header.
     auth_token: Mapped[str | None] = mapped_column()
 
     organization_id: Mapped[str] = mapped_column(
@@ -378,7 +378,7 @@ class ArmAssignment(Base):
     )
 
     experiment: Mapped["Experiment"] = relationship(back_populates="arm_assignments")
-    arm: Mapped["ArmTable"] = relationship(back_populates="arm_assignments")
+    arm: Mapped["Arm"] = relationship(back_populates="arm_assignments")
 
     def strata_names(self) -> list[str]:
         """Returns the names of the strata fields."""
@@ -444,7 +444,7 @@ class Experiment(Base):
     arm_assignments: Mapped[list["ArmAssignment"]] = relationship(
         back_populates="experiment", cascade="all, delete-orphan", lazy="raise"
     )
-    arms: Mapped[list["ArmTable"]] = relationship(
+    arms: Mapped[list["Arm"]] = relationship(
         back_populates="experiment", cascade="all, delete-orphan"
     )
     datasource: Mapped["Datasource"] = relationship(back_populates="experiments")
@@ -456,7 +456,7 @@ class Experiment(Base):
         return [arm.name for arm in self.arms]
 
 
-class ArmTable(Base):
+class Arm(Base):
     """Representation of arms of an experiment."""
 
     __tablename__ = "arms"

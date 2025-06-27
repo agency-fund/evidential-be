@@ -1,5 +1,4 @@
 {
-  "trusted_ips": [],
   "datasources": [
     {
       "id": "customer",

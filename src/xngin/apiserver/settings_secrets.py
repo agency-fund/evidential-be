@@ -1,4 +1,7 @@
-"""Implements helper methods for replacing secret references in the static JSON settings files."""
+"""Replaces indirect references to secret values in static dicts with the actual values.
+
+This is used only by the obsolete static JSON settings files.
+"""
 
 import os
 import re

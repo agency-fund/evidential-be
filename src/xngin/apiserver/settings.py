@@ -1,10 +1,16 @@
+"""Settings describe customer configuration data loaded at startup from static JSON files (obsolete)
+or read from the database (see tables.Datasource.get_config()).
+
+The Pydantic classes herein also provide some methods for connecting to the customer databases.
+"""
+
 import base64
 import binascii
 import json
 import os
 from collections import Counter
 from functools import lru_cache
-from typing import Annotated, Literal
+from typing import Annotated, Literal, Protocol
 from urllib.parse import urlparse
 
 import httpx
@@ -33,8 +39,8 @@ from tenacity import (
 from xngin.apiserver import flags
 from xngin.apiserver.certs import get_amazon_trust_ca_bundle_path
 from xngin.apiserver.dns.safe_resolve import safe_resolve
+from xngin.apiserver.dwh.inspection_types import ParticipantsSchema
 from xngin.apiserver.settings_secrets import replace_secrets
-from xngin.schema.schema_types import ParticipantsSchema
 from xngin.xsecrets import secretservice
 from xngin.xsecrets.constants import SERIALIZED_ENCRYPTED_VALUE_PREFIX
 
@@ -239,6 +245,11 @@ class WebhookConfig(ConfigBaseModel):
 
     actions: WebhookActions
     common_headers: WebhookCommonHeaders
+
+
+class ToSqlalchemyUrl(Protocol):
+    def to_sqlalchemy_url(self) -> sqlalchemy.URL:
+        """Creates a sqlalchemy.URL from this Dsn."""
 
 
 class EncryptedDsn:
@@ -613,8 +624,8 @@ class Datasource(ConfigBaseModel):
 
 
 class XnginSettings(ConfigBaseModel):
-    trusted_ips: Annotated[list[str], Field(default_factory=list)]
-    db_connect_timeout_secs: int = 3
+    trusted_ips: Annotated[list[str], Field(default_factory=list, deprecated=True)]
+    db_connect_timeout_secs: Annotated[int, Field(deprecated=True)] = 3
     datasources: list[Datasource]
 
     def get_datasource(self, datasource_id):

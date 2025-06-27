@@ -4,9 +4,9 @@ from sqlalchemy import update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from xngin.apiserver.dwh.inspection_types import ParticipantsSchema
 from xngin.apiserver.models import tables
 from xngin.apiserver.settings import SheetRef
-from xngin.schema.schema_types import ParticipantsSchema
 
 
 class GSheetCache:

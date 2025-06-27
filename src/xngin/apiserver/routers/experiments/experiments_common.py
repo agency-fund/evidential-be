@@ -1,5 +1,7 @@
 import csv
 import io
+import random
+import secrets
 from collections.abc import Sequence
 from datetime import UTC, datetime
 from itertools import batched
@@ -15,25 +17,22 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from xngin.apiserver import flags
+from xngin.apiserver import constants, flags
 from xngin.apiserver.models import tables
 from xngin.apiserver.models.enums import ExperimentState, StopAssignmentReason
 from xngin.apiserver.models.storage_format_converters import ExperimentStorageConverter
-from xngin.apiserver.routers.experiments_api_types import (
+from xngin.apiserver.routers.common_api_types import (
+    Arm,
+    ArmSize,
+    Assignment,
     AssignSummary,
+    BalanceCheck,
     CreateExperimentRequest,
     CreateExperimentResponse,
     GetExperimentAssignmentsResponse,
     ListExperimentsResponse,
-)
-from xngin.apiserver.routers.stateless_api_types import (
-    Arm,
-    ArmSize,
-    Assignment,
-    BalanceCheck,
     Strata,
 )
-from xngin.apiserver.utils import random_choice
 from xngin.apiserver.webhooks.webhook_types import ExperimentCreatedWebhookBody
 from xngin.events.experiment_created import ExperimentCreatedEvent
 from xngin.stats.assignment import RowProtocol, assign_treatment
@@ -42,6 +41,18 @@ from xngin.tq.task_payload_types import WEBHOOK_OUTBOUND_TASK_TYPE, WebhookOutbo
 
 class ExperimentsAssignmentError(Exception):
     """Wrapper for errors raised by our xngin.apiserver.routers.experiments_common module."""
+
+
+def random_choice[T](choices: Sequence[T], seed: int | None = None) -> T:
+    """Choose a random value from choices."""
+    if seed:
+        if not isinstance(seed, int):
+            raise ValueError("seed must be an integer")
+        # use a predictable random
+        r = random.Random(seed)
+        return r.choice(choices)
+    # Use very strong random by default
+    return secrets.choice(choices)
 
 
 async def create_experiment_impl(
@@ -234,7 +245,7 @@ async def commit_experiment_impl(
                     experiment_id=experiment_id,
                     experiment_url=f"{flags.XNGIN_PUBLIC_PROTOCOL}://{flags.XNGIN_PUBLIC_HOSTNAME}/v1/experiments/{experiment_id}",
                 ).model_dump(),
-                headers={"Authorization": webhook.auth_token}
+                headers={constants.HEADER_WEBHOOK_TOKEN: webhook.auth_token}
                 if webhook.auth_token
                 else {},
             )
@@ -414,17 +425,17 @@ async def get_existing_assignment_for_participant(
     stmt = (
         select(
             tables.ArmAssignment.participant_id,
-            tables.ArmTable.id.label("arm_id"),
-            tables.ArmTable.name.label("arm_name"),
+            tables.Arm.id.label("arm_id"),
+            tables.Arm.name.label("arm_name"),
             tables.ArmAssignment.created_at,
         )
         .join(
             tables.ArmAssignment,
-            (tables.ArmAssignment.arm_id == tables.ArmTable.id)
-            & (tables.ArmAssignment.experiment_id == tables.ArmTable.experiment_id),
+            (tables.ArmAssignment.arm_id == tables.Arm.id)
+            & (tables.ArmAssignment.experiment_id == tables.Arm.experiment_id),
         )
         .filter(
-            tables.ArmTable.experiment_id == experiment_id,
+            tables.Arm.experiment_id == experiment_id,
             tables.ArmAssignment.participant_id == participant_id,
         )
     )
@@ -529,10 +540,10 @@ async def get_assign_summary(
 ) -> AssignSummary:
     """Constructs an AssignSummary from the experiment's arms and arm_assignments."""
     result = await xngin_session.execute(
-        select(tables.ArmAssignment.arm_id, tables.ArmTable.name, func.count())
-        .join(tables.ArmTable)
+        select(tables.ArmAssignment.arm_id, tables.Arm.name, func.count())
+        .join(tables.Arm)
         .where(tables.ArmAssignment.experiment_id == experiment_id)
-        .group_by(tables.ArmAssignment.arm_id, tables.ArmTable.name)
+        .group_by(tables.ArmAssignment.arm_id, tables.Arm.name)
     )
     arm_sizes = [
         ArmSize(

@@ -1,7 +1,4 @@
 {
-  "trusted_ips": [
-    "testclient"
-  ],
   "datasources": [
     {
       "id": "customer-test",

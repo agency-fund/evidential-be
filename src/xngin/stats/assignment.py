@@ -10,12 +10,14 @@ from pandas import DataFrame
 from sqlalchemy import Table
 from stochatreat import stochatreat
 
-from xngin.apiserver.routers.stateless_api_types import (
+from xngin.apiserver.routers.common_api_types import (
     Arm,
     Assignment,
-    AssignResponse,
     BalanceCheck,
     Strata,
+)
+from xngin.apiserver.routers.stateless.stateless_api_types import (
+    AssignResponse,
 )
 from xngin.stats.balance import (
     check_balance_of_preprocessed_df,
