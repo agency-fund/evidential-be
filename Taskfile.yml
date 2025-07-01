@@ -183,6 +183,8 @@ tasks:
   test-integration:
     desc: "Runs Google integration tests."
     interactive: true
+    env:
+      DATABASE_URL: "{{.DATABASE_URL_FOR_TEST}}"
     cmds:
       - uv run pytest -m integration
   update-api-tests:
@@ -190,7 +192,7 @@ tasks:
     interactive: true
     env:
       UPDATE_API_TESTS: "1"
-      DATABASE_URL: "postgres://fail:fail@127.0.0.1:5499/fail"
+      DATABASE_URL: "{{.DATABASE_URL_FOR_TEST}}"
     cmd: uv run pytest src/xngin/apiserver/test_api.py
   make-migrations:
     desc: "Build Postgres migrations"
