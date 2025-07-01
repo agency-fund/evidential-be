@@ -37,6 +37,7 @@ from xngin.apiserver.routers.auth.auth_dependencies import (
     UNPRIVILEGED_TOKEN_FOR_TESTING,
 )
 from xngin.apiserver.settings import ParticipantsDef, SettingsForTesting, XnginSettings
+from xngin.apiserver.testing.pg_helpers import create_database_if_not_exists_pg
 from xngin.db_extensions import custom_functions
 
 # SQLAlchemy's logger will append this to the name of its loggers used for the application database; e.g.
@@ -228,6 +229,7 @@ async def fixture_xngin_db_session():
 
     This fixture is marked autouse=True because we want every test to start with a fresh database.
     """
+    create_database_if_not_exists_pg(database.SQLALCHEMY_DATABASE_URL)
     sessionmaker = database.AsyncSessionLocal
     async with database.async_engine.begin() as conn:
         await conn.run_sync(tables.Base.metadata.drop_all)
