@@ -5,7 +5,7 @@ from datetime import UTC, datetime, timedelta
 import pytest
 from fastapi import HTTPException
 from pydantic import SecretStr
-from sqlalchemy import delete, select
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from xngin.apiserver import conftest, flags
@@ -77,21 +77,6 @@ SAMPLE_GCLOUD_SERVICE_ACCOUNT_KEY = {
     "type": "service_account",
     "universe_domain": "googleapis.com",
 }
-
-
-@pytest.fixture(autouse=True)
-async def fixture_teardown(xngin_session: AsyncSession):
-    try:
-        # setup here
-        yield
-    finally:
-        # teardown here
-        # Rollback any pending transactions that may have been hanging due to an exception.
-        await xngin_session.rollback()
-        # Clean up objects created in each test by truncating tables and leveraging cascade.
-        await xngin_session.execute(delete(tables.Organization))
-        await xngin_session.execute(delete(tables.User))
-        await xngin_session.commit()
 
 
 @pytest.fixture(name="testing_datasource_with_inline_schema")
