@@ -16,6 +16,7 @@ from xngin.apiserver.models.enums import ExperimentState, StopAssignmentReason
 from xngin.apiserver.routers.admin.admin_api import user_from_token
 from xngin.apiserver.routers.admin.admin_api_types import (
     AddWebhookToOrganizationRequest,
+    AddWebhookToOrganizationResponse,
     CreateApiKeyResponse,
     CreateDatasourceRequest,
     CreateDatasourceResponse,
@@ -27,6 +28,7 @@ from xngin.apiserver.routers.admin.admin_api_types import (
     ListApiKeysResponse,
     ListDatasourcesResponse,
     ListParticipantsTypeResponse,
+    ListWebhooksResponse,
     UpdateDatasourceRequest,
     UpdateOrganizationWebhookRequest,
     UpdateParticipantsTypeRequest,
@@ -401,25 +403,26 @@ async def test_webhook_lifecycle(
         json=AddWebhookToOrganizationRequest(
             type="experiment.created",
             url="https://example.com/webhook",
-            name="test wehbook",
+            name="test webhook",
         ).model_dump(),
     )
     assert response.status_code == 200, response.content
-    webhook_data = response.json()
-    assert webhook_data["type"] == "experiment.created"
-    assert webhook_data["url"] == "https://example.com/webhook"
-    assert webhook_data["auth_token"] is not None
-    webhook_id = webhook_data["id"]
-    original_auth_token = webhook_data["auth_token"]
+    webhook_data = AddWebhookToOrganizationResponse.model_validate(response.json())
+    assert webhook_data.name == "test webhook"
+    assert webhook_data.type == "experiment.created"
+    assert webhook_data.url == "https://example.com/webhook"
+    assert webhook_data.auth_token is not None
+    webhook_id = webhook_data.id
+    original_auth_token = webhook_data.auth_token
 
     # List webhooks to verify creation
     response = pget(f"/v1/m/organizations/{org_id}/webhooks")
     assert response.status_code == 200, response.content
-    webhooks = response.json()["items"]
+    webhooks = ListWebhooksResponse.model_validate(response.json()).items
     assert len(webhooks) == 1
-    assert webhooks[0]["id"] == webhook_id
-    assert webhooks[0]["url"] == "https://example.com/webhook"
-    assert webhooks[0]["auth_token"] == original_auth_token
+    assert webhooks[0].id == webhook_id
+    assert webhooks[0].url == "https://example.com/webhook"
+    assert webhooks[0].auth_token == original_auth_token
 
     # Regenerate the auth token
     response = ppost(f"/v1/m/organizations/{org_id}/webhooks/{webhook_id}/authtoken")
@@ -428,10 +431,10 @@ async def test_webhook_lifecycle(
     # List webhooks to verify auth token was changed
     response = pget(f"/v1/m/organizations/{org_id}/webhooks")
     assert response.status_code == 200, response.content
-    webhooks = response.json()["items"]
+    webhooks = ListWebhooksResponse.model_validate(response.json()).items
     assert len(webhooks) == 1
-    assert webhooks[0]["auth_token"] != original_auth_token
-    assert webhooks[0]["auth_token"] is not None
+    assert webhooks[0].auth_token != original_auth_token
+    assert webhooks[0].auth_token is not None
 
     # Update the webhook URL
     new_url = "https://updated-example.com/webhook"
@@ -445,10 +448,10 @@ async def test_webhook_lifecycle(
     # List webhooks to verify update
     response = pget(f"/v1/m/organizations/{org_id}/webhooks")
     assert response.status_code == 200, response.content
-    webhooks = response.json()["items"]
+    webhooks = ListWebhooksResponse.model_validate(response.json()).items
     assert len(webhooks) == 1
-    assert webhooks[0]["url"] == new_url
-    assert webhooks[0]["name"] == new_name
+    assert webhooks[0].url == new_url
+    assert webhooks[0].name == new_name
 
     # Delete the webhook
     response = pdelete(f"/v1/m/organizations/{org_id}/webhooks/{webhook_id}")
@@ -457,7 +460,7 @@ async def test_webhook_lifecycle(
     # List webhooks to verify deletion
     response = pget(f"/v1/m/organizations/{org_id}/webhooks")
     assert response.status_code == 200, response.content
-    webhooks = response.json()["items"]
+    webhooks = ListWebhooksResponse.model_validate(response.json()).items
     assert len(webhooks) == 0
 
     # Try to regenerate auth token for a non-existent webhook
