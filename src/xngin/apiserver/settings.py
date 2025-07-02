@@ -570,7 +570,7 @@ class CannotFindParticipantsError(Exception):
         self.participant_type = participant_type
         self.message = (
             f"The participant type '{participant_type}' does not exist."
-            "(Possible typo in request, or server settings for your dwh may be"
+            "(Possible typo in request, or server settings for your dwh may be "
             "misconfigured.)"
         )
 
