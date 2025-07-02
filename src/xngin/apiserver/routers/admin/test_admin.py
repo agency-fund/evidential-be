@@ -15,6 +15,8 @@ from xngin.apiserver.models import tables
 from xngin.apiserver.models.enums import ExperimentState, StopAssignmentReason
 from xngin.apiserver.routers.admin.admin_api import user_from_token
 from xngin.apiserver.routers.admin.admin_api_types import (
+    AddWebhookToOrganizationRequest,
+    AddWebhookToOrganizationResponse,
     CreateApiKeyResponse,
     CreateDatasourceRequest,
     CreateDatasourceResponse,
@@ -26,7 +28,9 @@ from xngin.apiserver.routers.admin.admin_api_types import (
     ListApiKeysResponse,
     ListDatasourcesResponse,
     ListParticipantsTypeResponse,
+    ListWebhooksResponse,
     UpdateDatasourceRequest,
+    UpdateOrganizationWebhookRequest,
     UpdateParticipantsTypeRequest,
     UpdateParticipantsTypeResponse,
 )
@@ -38,13 +42,17 @@ from xngin.apiserver.routers.auth.auth_dependencies import (
     UNPRIVILEGED_TOKEN_FOR_TESTING,
 )
 from xngin.apiserver.routers.common_api_types import (
+    Arm,
+    CreateExperimentRequest,
     CreateExperimentResponse,
     DataType,
+    DesignSpecMetricRequest,
     ExperimentAnalysis,
     ExperimentConfig,
     GetExperimentAssignmentsResponse,
     GetParticipantAssignmentResponse,
     ListExperimentsResponse,
+    PreassignedExperimentSpec,
 )
 from xngin.apiserver.routers.experiments.test_experiments_common import (
     insert_experiment_and_arms,
@@ -392,24 +400,29 @@ async def test_webhook_lifecycle(
     # Create a webhook
     response = ppost(
         f"/v1/m/organizations/{org_id}/webhooks",
-        json={"type": "experiment.created", "url": "https://example.com/webhook"},
+        json=AddWebhookToOrganizationRequest(
+            type="experiment.created",
+            url="https://example.com/webhook",
+            name="test webhook",
+        ).model_dump(),
     )
     assert response.status_code == 200, response.content
-    webhook_data = response.json()
-    assert webhook_data["type"] == "experiment.created"
-    assert webhook_data["url"] == "https://example.com/webhook"
-    assert webhook_data["auth_token"] is not None
-    webhook_id = webhook_data["id"]
-    original_auth_token = webhook_data["auth_token"]
+    webhook_data = AddWebhookToOrganizationResponse.model_validate(response.json())
+    assert webhook_data.name == "test webhook"
+    assert webhook_data.type == "experiment.created"
+    assert webhook_data.url == "https://example.com/webhook"
+    assert webhook_data.auth_token is not None
+    webhook_id = webhook_data.id
+    original_auth_token = webhook_data.auth_token
 
     # List webhooks to verify creation
     response = pget(f"/v1/m/organizations/{org_id}/webhooks")
     assert response.status_code == 200, response.content
-    webhooks = response.json()["items"]
+    webhooks = ListWebhooksResponse.model_validate(response.json()).items
     assert len(webhooks) == 1
-    assert webhooks[0]["id"] == webhook_id
-    assert webhooks[0]["url"] == "https://example.com/webhook"
-    assert webhooks[0]["auth_token"] == original_auth_token
+    assert webhooks[0].id == webhook_id
+    assert webhooks[0].url == "https://example.com/webhook"
+    assert webhooks[0].auth_token == original_auth_token
 
     # Regenerate the auth token
     response = ppost(f"/v1/m/organizations/{org_id}/webhooks/{webhook_id}/authtoken")
@@ -418,24 +431,27 @@ async def test_webhook_lifecycle(
     # List webhooks to verify auth token was changed
     response = pget(f"/v1/m/organizations/{org_id}/webhooks")
     assert response.status_code == 200, response.content
-    webhooks = response.json()["items"]
+    webhooks = ListWebhooksResponse.model_validate(response.json()).items
     assert len(webhooks) == 1
-    assert webhooks[0]["auth_token"] != original_auth_token
-    assert webhooks[0]["auth_token"] is not None
+    assert webhooks[0].auth_token != original_auth_token
+    assert webhooks[0].auth_token is not None
 
     # Update the webhook URL
     new_url = "https://updated-example.com/webhook"
+    new_name = "new name"
     response = ppatch(
-        f"/v1/m/organizations/{org_id}/webhooks/{webhook_id}", json={"url": new_url}
+        f"/v1/m/organizations/{org_id}/webhooks/{webhook_id}",
+        json=UpdateOrganizationWebhookRequest(url=new_url, name=new_name).model_dump(),
     )
     assert response.status_code == 204, response.content
 
     # List webhooks to verify update
     response = pget(f"/v1/m/organizations/{org_id}/webhooks")
     assert response.status_code == 200, response.content
-    webhooks = response.json()["items"]
+    webhooks = ListWebhooksResponse.model_validate(response.json()).items
     assert len(webhooks) == 1
-    assert webhooks[0]["url"] == new_url
+    assert webhooks[0].url == new_url
+    assert webhooks[0].name == new_name
 
     # Delete the webhook
     response = pdelete(f"/v1/m/organizations/{org_id}/webhooks/{webhook_id}")
@@ -444,7 +460,7 @@ async def test_webhook_lifecycle(
     # List webhooks to verify deletion
     response = pget(f"/v1/m/organizations/{org_id}/webhooks")
     assert response.status_code == 200, response.content
-    webhooks = response.json()["items"]
+    webhooks = ListWebhooksResponse.model_validate(response.json()).items
     assert len(webhooks) == 0
 
     # Try to regenerate auth token for a non-existent webhook
@@ -454,7 +470,9 @@ async def test_webhook_lifecycle(
     # Try to update a non-existent webhook
     response = ppatch(
         f"/v1/m/organizations/{org_id}/webhooks/{webhook_id}",
-        json={"url": "https://should-fail.com/webhook"},
+        json=UpdateOrganizationWebhookRequest(
+            url="https://should-fail.com/webhook", name="fail"
+        ).model_dump(),
     )
     assert response.status_code == 404, response.content
 
@@ -1173,3 +1191,114 @@ async def test_manage_apikeys(testing_datasource_with_user_added, ppost, pget, p
     assert response.status_code == 200
     list_api_keys_response = ListApiKeysResponse.model_validate(response.json())
     assert len(list_api_keys_response.items) == 1
+
+
+async def test_experiment_webhook_integration(
+    testing_datasource_with_user_added, ppost, pget
+):
+    """Test creating an experiment with webhook associations and verifying webhook IDs in response."""
+    org_id = testing_datasource_with_user_added.org.id
+    datasource_id = testing_datasource_with_user_added.ds.id
+
+    # Create two webhooks in the organization
+    webhook1_response = ppost(
+        f"/v1/m/organizations/{org_id}/webhooks",
+        json=AddWebhookToOrganizationRequest(
+            type="experiment.created",
+            name="Test Webhook 1",
+            url="https://example.com/webhook1",
+        ).model_dump(),
+    )
+    assert webhook1_response.status_code == 200, webhook1_response.content
+    webhook1_id = webhook1_response.json()["id"]
+
+    webhook2_response = ppost(
+        f"/v1/m/organizations/{org_id}/webhooks",
+        json=AddWebhookToOrganizationRequest(
+            type="experiment.created",
+            name="Test Webhook 2",
+            url="https://example.com/webhook2",
+        ).model_dump(),
+    )
+    assert webhook2_response.status_code == 200, webhook2_response.content
+    webhook2_id = webhook2_response.json()["id"]
+
+    # Create an experiment with only the first webhook using proper Pydantic models
+    experiment_request = CreateExperimentRequest(
+        design_spec=PreassignedExperimentSpec(
+            participant_type="test_participant_type",
+            experiment_name="Test Experiment with Webhook",
+            description="Testing webhook integration",
+            start_date=datetime(2024, 1, 1, tzinfo=UTC),
+            end_date=datetime(2024, 1, 31, 23, 59, 59, tzinfo=UTC),
+            arms=[
+                Arm(arm_name="control", arm_description="Control group"),
+                Arm(arm_name="treatment", arm_description="Treatment group"),
+            ],
+            metrics=[DesignSpecMetricRequest(field_name="income", metric_pct_change=5)],
+            strata=[],
+            filters=[],
+        ),
+        webhooks=[webhook1_id],  # Only include the first webhook
+    )
+
+    create_response = ppost(
+        f"/v1/m/datasources/{datasource_id}/experiments?chosen_n=100",
+        json=experiment_request.model_dump(mode="json"),
+    )
+    assert create_response.status_code == 200, create_response.content
+
+    # Verify the create response includes the webhook
+    created_experiment = create_response.json()
+    assert "webhooks" in created_experiment
+    assert len(created_experiment["webhooks"]) == 1
+    assert created_experiment["webhooks"][0] == webhook1_id
+
+    # Get the experiment ID for further testing
+    experiment_id = created_experiment["design_spec"]["experiment_id"]
+
+    # Get the experiment and verify webhook is included
+    get_response = pget(
+        f"/v1/m/datasources/{datasource_id}/experiments/{experiment_id}"
+    )
+    assert get_response.status_code == 200, get_response.content
+
+    retrieved_experiment = get_response.json()
+    assert "webhooks" in retrieved_experiment
+    assert len(retrieved_experiment["webhooks"]) == 1
+    assert retrieved_experiment["webhooks"][0] == webhook1_id
+
+    # Verify the second webhook is not included
+    assert webhook2_id not in retrieved_experiment["webhooks"]
+
+    # Test creating an experiment with no webhooks using proper Pydantic models
+    experiment_request_no_webhooks = CreateExperimentRequest(
+        design_spec=PreassignedExperimentSpec(
+            participant_type="test_participant_type",
+            experiment_name="Test Experiment without Webhooks",
+            description="Testing no webhook integration",
+            start_date=datetime(2024, 1, 1, tzinfo=UTC),
+            end_date=datetime(2024, 1, 31, 23, 59, 59, tzinfo=UTC),
+            arms=[
+                Arm(arm_name="control", arm_description="Control group"),
+                Arm(arm_name="treatment", arm_description="Treatment group"),
+            ],
+            metrics=[DesignSpecMetricRequest(field_name="income", metric_pct_change=5)],
+            strata=[],
+            filters=[],
+        )
+        # No webhooks field - should default to empty list
+    )
+
+    create_response_no_webhooks = ppost(
+        f"/v1/m/datasources/{datasource_id}/experiments?chosen_n=100",
+        json=experiment_request_no_webhooks.model_dump(mode="json"),
+    )
+    assert create_response_no_webhooks.status_code == 200, (
+        create_response_no_webhooks.content
+    )
+
+    # Verify no webhooks are associated
+    created_experiment_no_webhooks = create_response_no_webhooks.json()
+    assert "webhooks" in created_experiment_no_webhooks
+    assert len(created_experiment_no_webhooks["webhooks"]) == 0
