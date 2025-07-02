@@ -81,6 +81,8 @@ jobs:
         env:
           GCLOUD_SERVICE_ACCOUNT_CREDENTIALS: ${{ secrets.GOOGLE_APPLICATION_CREDENTIALS_CONTENT }}
       - run: task test
+        env:
+          DATABASE_URL: "postgresql+psycopg://postgres:postgres@localhost:5499/test_xngin?sslmode=disable"
       - name: integration tests
         run: |
           export GOOGLE_APPLICATION_CREDENTIALS=$HOME/.config/gspread/service_account.json
@@ -203,7 +205,7 @@ jobs:
           mkdir -p ~/.config/gspread && echo "${GCLOUD_SERVICE_ACCOUNT_CREDENTIALS}" > ~/.config/gspread/service_account.json
           export GOOGLE_APPLICATION_CREDENTIALS=$HOME/.config/gspread/service_account.json
           export XNGIN_TEST_DWH_URI="bigquery://xngin-development-dc/${DATASET_NAME}?credentials_base64=$(cat ${GOOGLE_APPLICATION_CREDENTIALS} | base64 -w 0)"
-          export XNGIN_TEST_APPDB_URI="postgresql+psycopg://postgres:postgres@localhost:5499/test_xngin?sslmode=disable"
+          export DATABASE_URL="postgresql+psycopg://postgres:postgres@localhost:5499/test_xngin?sslmode=disable"
           uv run pytest -rA src/xngin/apiserver/dwh/test_queries.py
       - name: bq cleanup
         if: failure() || success()

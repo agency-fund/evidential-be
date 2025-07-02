@@ -37,11 +37,8 @@ def settings_dependency():
 
 async def xngin_db_session():
     """Returns a database connection to the xngin app database (not customer data warehouse)."""
-    session = AsyncSessionLocal()
-    try:
+    async with AsyncSessionLocal() as session:
         yield session
-    finally:
-        await session.close()
 
 
 async def datasource_dependency(

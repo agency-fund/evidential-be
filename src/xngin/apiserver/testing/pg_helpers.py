@@ -2,9 +2,11 @@ import psycopg as psycopg3
 import sqlalchemy
 
 
-def create_database_if_not_exists_pg(connect_url: sqlalchemy.URL):
+def create_database_if_not_exists_pg(connect_url: sqlalchemy.URL | str):
     # Derive a psycopg3-compatible Postgres DSN from the SQLAlchemy URL by stripping the drivername.
     # Also, connect to the postgres database because we know it exists already.
+    if isinstance(connect_url, str):
+        connect_url = sqlalchemy.engine.url.make_url(connect_url)
     tmpl_url = connect_url.set(database="postgres", drivername="postgres")
     psycopg3_compatible = tmpl_url.render_as_string(hide_password=False)
     try:
