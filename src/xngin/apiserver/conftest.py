@@ -227,7 +227,9 @@ async def fixture_xngin_db_session():
     Where possible, prefer using the API methods to test functionality rather than touching the database
     directly.
 
-    This fixture is marked autouse=True because we want every test to start with a fresh database.
+    This fixture uses autouse=True to ensure all tests begin with a clean database state. Since some tests only
+    interact with the API server through API methods (without explicitly using the xngin_session fixture),
+    autouse=True guarantees this cleanup runs for every test, preventing any shared state between test runs.
     """
     create_database_if_not_exists_pg(database.SQLALCHEMY_DATABASE_URL)
     sessionmaker = database.AsyncSessionLocal
