@@ -44,7 +44,7 @@ class ServerAppearsOfflineError(Exception):
 
 @dataclass
 class GoogleOidcConfig:
-    last_refreshed: datetime
+    last_refreshed: datetime.datetime
     config: dict
     jwks: dict
 

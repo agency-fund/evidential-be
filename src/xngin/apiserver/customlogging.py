@@ -31,7 +31,7 @@ logging.getLogger("sqlalchemy.engine.Engine.xngin_app").setLevel(
 # explicitly configured loggers.
 if flags.ECHO_SQL or flags.ECHO_SQL_APP_DB:
     print("----- DISABLING SQLALCHEMY LOGGER DEFAULT HANDLER ----- ")
-    sqlalchemy_log._add_default_handler = lambda x: None
+    sqlalchemy_log._add_default_handler = lambda logger: None
 
 
 def dlog(msg: str):

@@ -97,10 +97,10 @@ def test_deterministic_random():
 
     # deterministic random enabled and no primary key
     custom_functions.USE_DETERMINISTIC_RANDOM = True
-    query = select(SampleTableNoPK).order_by(
+    query_nopk = select(SampleTableNoPK).order_by(
         custom_functions.Random(sa_table=SampleTableNoPK.__table__)
     )
-    sql_text = str(query.compile(engine))
+    sql_text = str(query_nopk.compile(engine))
     assert "ORDER BY nopk_table.int_col, nopk_table.string_col" in sql_text
 
     # normal case

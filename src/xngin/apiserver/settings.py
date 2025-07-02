@@ -374,17 +374,29 @@ class Dsn(ConfigBaseModel, BaseDsn):
             raise NotImplementedError(
                 "Dsn.from_url() only supports postgres databases."
             )
-        url = make_url(url)
-        return Dsn(
-            driver=f"postgresql+{url.get_driver_name()}",
-            host=url.host,
-            port=url.port,
-            user=url.username,
-            password=url.password,
-            dbname=url.database,
-            sslmode=url.query.get("sslmode", "verify-ca"),
-            search_path=url.query.get("search_path", None),
-        )
+        parsed_url = make_url(url)
+
+        parsed_url_params = {
+            "driver": f"postgresql+{parsed_url.get_driver_name()}",
+            "host": parsed_url.host,
+            "port": parsed_url.port,
+            "user": parsed_url.username,
+            "password": parsed_url.password,
+            "dbname": parsed_url.database,
+            "sslmode": parsed_url.query.get("sslmode", "verify-ca"),
+            "search_path": parsed_url.query.get("search_path"),
+        }
+        missing_params = [
+            name
+            for name, val in parsed_url_params.items()
+            if val is None and name != "search_path"
+        ]
+        if missing_params:
+            raise ValueError(
+                f"DSN is missing required parameters: {', '.join(missing_params)}"
+            )
+
+        return Dsn.model_validate(parsed_url_params)
 
     @field_serializer("password", when_used="json")
     def reveal_password(self, v):
@@ -478,6 +490,10 @@ class RemoteDatabaseConfig(ParticipantsMixin, ConfigBaseModel):
             # us from connecting to addresses like 127.0.0.1 or addresses that are on our hosting provider's internal
             # network.
             # https://www.postgresql.org/docs/current/libpq-connect.html#LIBPQ-PARAMKEYWORDS
+            if not url.host:
+                raise ValueError(
+                    "Cannot connect to a Postgres database without a host in the URL."
+                )
             connect_args["hostaddr"] = safe_resolve(url.host)
 
         logger.info(
@@ -608,7 +624,7 @@ def infer_table_from_cursor(
                 # Map Redshift type codes to SQLAlchemy types. Not comprehensive.
                 # https://docs.sqlalchemy.org/en/20/core/types.html
                 # Comment shows both pg_type.typename / information_schema.data_type
-                sa_type: type[sqlalchemy.TypeEngine] | sqlalchemy.TypeEngine
+                sa_type: type[sqlalchemy.types.TypeEngine] | sqlalchemy.types.TypeEngine
                 match type_code:
                     case 16:  # BOOL / boolean
                         sa_type = sqlalchemy.Boolean
