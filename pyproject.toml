@@ -122,7 +122,7 @@ ignore = [
 
 [tool.ruff.lint.flake8-import-conventions]
 # https://docs.astral.sh/ruff/settings/#lintflake8-import-conventions
-banned-from = ["xngin.apiserver.models.tables"]
+banned-from = ["xngin.apiserver.models.tables", "datetime"]
 
 [tool.ruff.lint.flake8-import-conventions.extend-aliases]
 # https://docs.astral.sh/ruff/settings/#lint_flake8-import-conventions_extend-aliases
@@ -164,6 +164,7 @@ disallow_untyped_defs = false
 exclude = [
   '^(.*/)?test_.*\.py$'
 ]
+plugins = ['pydantic.mypy']
 
 [[tool.mypy.overrides]]
 module = ["deepdiff", "parsy", "statsmodels.*", "patsy.*", "sqlalchemy_bigquery.*"]

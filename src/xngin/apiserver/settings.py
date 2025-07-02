@@ -376,27 +376,16 @@ class Dsn(ConfigBaseModel, BaseDsn):
             )
         parsed_url = make_url(url)
 
-        parsed_url_params = {
-            "driver": f"postgresql+{parsed_url.get_driver_name()}",
-            "host": parsed_url.host,
-            "port": parsed_url.port,
-            "user": parsed_url.username,
-            "password": parsed_url.password,
-            "dbname": parsed_url.database,
-            "sslmode": parsed_url.query.get("sslmode", "verify-ca"),
-            "search_path": parsed_url.query.get("search_path"),
-        }
-        missing_params = [
-            name
-            for name, val in parsed_url_params.items()
-            if val is None and name != "search_path"
-        ]
-        if missing_params:
-            raise ValueError(
-                f"DSN is missing required parameters: {', '.join(missing_params)}"
-            )
-
-        return Dsn.model_validate(parsed_url_params)
+        return Dsn(
+            driver=f"postgresql+{parsed_url.get_driver_name()}",
+            host=parsed_url.host,
+            port=parsed_url.port,
+            user=parsed_url.username,
+            password=parsed_url.password,
+            dbname=parsed_url.database,
+            sslmode=parsed_url.query.get("sslmode", "verify-ca"),
+            search_path=parsed_url.query.get("search_path", None),
+        )
 
     @field_serializer("password", when_used="json")
     def reveal_password(self, v):

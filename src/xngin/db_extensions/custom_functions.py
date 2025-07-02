@@ -3,7 +3,11 @@ from typing import Any
 from sqlalchemy import Numeric, inspect
 from sqlalchemy.ext import compiler
 from sqlalchemy.sql._typing import _ColumnExpressionOrLiteralArgument
-from sqlalchemy.sql.functions import FunctionElement, GenericFunction, func
+from sqlalchemy.sql.functions import (
+    FunctionElement,
+    GenericFunction,
+    func,
+)
 
 # Set this to True to override the our_random() behavior to return a deterministic value instead.
 USE_DETERMINISTIC_RANDOM = False
