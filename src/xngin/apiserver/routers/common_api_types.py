@@ -869,6 +869,21 @@ class ExperimentsBaseModel(BaseModel):
 class CreateExperimentRequest(ExperimentsBaseModel):
     design_spec: DesignSpec
     power_analyses: PowerResponse | None = None
+    webhooks: Annotated[
+        list[str],
+        Field(
+            default=[],
+            description="List of webhook IDs to associate with this experiment. When the experiment is committed, these webhooks will be triggered with experiment details. Must contain unique values.",
+        ),
+    ]
+
+    @field_validator("webhooks")
+    @classmethod
+    def validate_unique_webhooks(cls, v: list[str]) -> list[str]:
+        """Ensure all webhook IDs are unique."""
+        if len(v) != len(set(v)):
+            raise ValueError("Webhook IDs must be unique")
+        return v
 
 
 class AssignSummary(ExperimentsBaseModel):
@@ -915,6 +930,13 @@ class ExperimentConfig(ExperimentsBaseModel):
     design_spec: DesignSpec
     power_analyses: PowerResponse | None
     assign_summary: AssignSummary
+    webhooks: Annotated[
+        list[str],
+        Field(
+            default=[],
+            description="List of webhook IDs associated with this experiment. These webhooks are triggered when the experiment is committed.",
+        ),
+    ]
 
 
 class GetExperimentResponse(ExperimentConfig):

@@ -351,13 +351,21 @@ async def add_webhook_to_organization(
 
     # Create and save the webhook
     webhook = tables.Webhook(
-        type=body.type, url=body.url, auth_token=auth_token, organization_id=org.id
+        type=body.type,
+        name=body.name,
+        url=body.url,
+        auth_token=auth_token,
+        organization_id=org.id,
     )
     session.add(webhook)
     await session.commit()
 
     return AddWebhookToOrganizationResponse(
-        id=webhook.id, type=webhook.type, url=webhook.url, auth_token=auth_token
+        id=webhook.id,
+        type=webhook.type,
+        name=webhook.name,
+        url=webhook.url,
+        auth_token=auth_token,
     )
 
 
@@ -372,7 +380,11 @@ async def list_organization_webhooks(
     org = await get_organization_or_raise(session, user, organization_id)
 
     # Query for webhooks
-    stmt = select(tables.Webhook).where(tables.Webhook.organization_id == org.id)
+    stmt = (
+        select(tables.Webhook)
+        .where(tables.Webhook.organization_id == org.id)
+        .order_by(tables.Webhook.name, tables.Webhook.id)
+    )
     webhooks = await session.scalars(stmt)
 
     # Convert webhooks to WebhookSummary objects
@@ -386,6 +398,7 @@ def convert_webhooks_to_webhooksummaries(webhooks):
         WebhookSummary(
             id=webhook.id,
             type=webhook.type,
+            name=webhook.name,
             url=webhook.url,
             auth_token=webhook.auth_token,
         )
@@ -404,7 +417,7 @@ async def update_organization_webhook(
     user: Annotated[tables.User, Depends(user_from_token)],
     body: Annotated[UpdateOrganizationWebhookRequest, Body(...)],
 ):
-    """Updates a webhook's URL in an organization."""
+    """Updates a webhook's name and URL in an organization."""
     # Verify user has access to the organization
     org = await get_organization_or_raise(session, user, organization_id)
 
@@ -423,7 +436,7 @@ async def update_organization_webhook(
             status_code=status.HTTP_404_NOT_FOUND, detail="Webhook not found"
         )
 
-    # Update the webhook URL
+    webhook.name = body.name
     webhook.url = body.url
     await session.commit()
     return GENERIC_SUCCESS
@@ -1248,6 +1261,7 @@ async def create_experiment(
         random_state=random_state,
         xngin_session=session,
         stratify_on_metrics=stratify_on_metrics,
+        webhook_ids=body.webhooks,
     )
 
 
@@ -1406,12 +1420,15 @@ async def get_experiment(
 ) -> ExperimentConfig:
     """Returns the experiment with the specified ID."""
     ds = await get_datasource_or_raise(session, user, datasource_id)
-    experiment = await get_experiment_via_ds_or_raise(session, ds, experiment_id)
+    experiment = await get_experiment_via_ds_or_raise(
+        session, ds, experiment_id, preload=[tables.Experiment.webhooks]
+    )
     converter = ExperimentStorageConverter(experiment)
     assign_summary = await experiments_common.get_assign_summary(
         session, experiment.id, converter.get_balance_check()
     )
-    return converter.get_experiment_config(assign_summary)
+    webhook_ids = [webhook.id for webhook in experiment.webhooks]
+    return converter.get_experiment_config(assign_summary, webhook_ids)
 
 
 @router.get("/datasources/{datasource_id}/experiments/{experiment_id}/assignments")

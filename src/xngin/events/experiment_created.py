@@ -22,6 +22,4 @@ class ExperimentCreatedEvent(BaseEventModel):
             # Some of the initial ExperimentCreatedEvent messages do not have a datasource_id field so we
             # cannot construct an unambiguous URL for them.
             return None
-        return (
-            f"/datasources/{self.datasource_id}/experiments/view/{self.experiment_id}"
-        )
+        return f"/datasources/{self.datasource_id}/experiments/{self.experiment_id}"
