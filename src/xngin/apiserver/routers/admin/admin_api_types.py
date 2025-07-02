@@ -34,6 +34,10 @@ def validate_webhook_url(url: str) -> str:
     return url
 
 
+class HTTPExceptionError(BaseModel):
+    detail: str
+
+
 class AdminApiBaseModel(BaseModel):
     model_config = ConfigDict(extra="forbid")
 

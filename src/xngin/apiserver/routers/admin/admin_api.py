@@ -21,7 +21,6 @@ from fastapi import (
 )
 from fastapi.responses import StreamingResponse
 from loguru import logger
-from pydantic import BaseModel
 from sqlalchemy import delete, select, text
 from sqlalchemy.exc import OperationalError
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -75,6 +74,7 @@ from xngin.apiserver.routers.admin.admin_api_types import (
 )
 from xngin.apiserver.routers.auth.auth_dependencies import require_oidc_token
 from xngin.apiserver.routers.auth.principal import Principal
+from xngin.apiserver.routers.admin.admin_api_types import HTTPExceptionError
 from xngin.apiserver.routers.common_api_types import (
     ArmAnalysis,
     CreateExperimentRequest,
@@ -110,10 +110,6 @@ GENERIC_SUCCESS = Response(status_code=status.HTTP_204_NO_CONTENT)
 RESPONSE_CACHE_MAX_AGE_SECONDS = timedelta(minutes=15).seconds
 
 
-class HTTPExceptionError(BaseModel):
-    detail: str
-
-
 # This defines the response codes we can expect our API to return in the normal course of operation and would be
 # useful for our developers to think about.
 #
@@ -141,14 +137,6 @@ STANDARD_ADMIN_RESPONSES: dict[str | int, dict[str, Any]] = {
         "description": "Requested content was not found.",
     },
 }
-
-
-def responses_factory(*codes):
-    return {
-        code: config
-        for code, config in STANDARD_ADMIN_RESPONSES.items()
-        if code in {str(c) for c in codes}
-    }
 
 
 def cache_is_fresh(updated: datetime | None):
@@ -198,7 +186,7 @@ async def user_from_token(
 
     raise HTTPException(
         status_code=status.HTTP_403_FORBIDDEN,
-        detail=f"No user found with email: {token_info.email}",
+        detail=f"User with email {token_info.email} does not have permission to access this resource.",
     )
 
 
@@ -491,6 +479,7 @@ async def delete_webhook_from_organization(
     webhook_id: str,
     session: Annotated[AsyncSession, Depends(xngin_db_session)],
     user: Annotated[tables.User, Depends(user_from_token)],
+    allow_missing: Annotated[bool, Query()] = False,
 ):
     """Removes a Webhook from an organization."""
     # Verify user has access to the organization
@@ -504,7 +493,7 @@ async def delete_webhook_from_organization(
     )
     result = await session.execute(stmt)
 
-    if result.rowcount == 0:
+    if result.rowcount == 0 and not allow_missing:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail="Webhook not found"
         )
@@ -604,24 +593,27 @@ async def remove_member_from_organization(
     user_id: str,
     session: Annotated[AsyncSession, Depends(xngin_db_session)],
     user: Annotated[tables.User, Depends(user_from_token)],
+    allow_missing: Annotated[bool, Query()] = False,
 ):
     """Removes a member from an organization.
 
     The authenticated user must be part of the organization to remove members.
     """
-    _authz_check = await get_organization_or_raise(session, user, organization_id)
+    _ = await get_organization_or_raise(session, user, organization_id)
+
     # Prevent users from removing themselves from an organization
     if user_id == user.id:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="You cannot remove yourself from an organization",
         )
+
     stmt = delete(tables.UserOrganization).where(
         tables.UserOrganization.organization_id == organization_id,
         tables.UserOrganization.user_id == user_id,
     )
     result = await session.execute(stmt)
-    if result.rowcount == 0:
+    if result.rowcount == 0 and not allow_missing:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="User is not a member of this organization",
@@ -942,12 +934,23 @@ async def delete_datasource(
     session: Annotated[AsyncSession, Depends(xngin_db_session)],
     user: Annotated[tables.User, Depends(user_from_token)],
     datasource_id: Annotated[str, Path(...)],
+    allow_missing: Annotated[bool, Query()] = False,
 ):
     """Deletes a datasource.
 
     The user must be a member of the organization that owns the datasource.
     """
-    # Delete the datasource, but only if the user has access to it
+    # Check if user has access to the datasource, raise 403 error if not
+    datasource_ids = [
+        datasource.id for org in user.organizations for datasource in org.datasources
+    ]
+    if datasource_id not in datasource_ids:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=f"User with email {user.email} does not have permission to delete this datasource.",
+        )
+
+    # Delete the datasource,
     stmt = (
         delete(tables.Datasource)
         .where(tables.Datasource.id == datasource_id)
@@ -960,7 +963,14 @@ async def delete_datasource(
             )
         )
     )
-    await session.execute(stmt)
+    result = await session.execute(stmt)
+
+    if result.rowcount == 0 and not allow_missing:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Datasource not found.",
+        )
+
     await session.commit()
 
     return GENERIC_SUCCESS
@@ -1171,10 +1181,30 @@ async def delete_participant(
     participant_id: str,
     session: Annotated[AsyncSession, Depends(xngin_db_session)],
     user: Annotated[tables.User, Depends(user_from_token)],
+    allow_missing: Annotated[bool, Query()] = False,
 ):
+    """Deletes a participant type from a datasource.
+    The user must be a member of the organization that owns the datasource.
+    """
+    # Check if user has access to the datasource, raise 403 error if not
+    datasource_ids = [
+        datasource.id for org in user.organizations for datasource in org.datasources
+    ]
+    if datasource_id not in datasource_ids:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=f"User with email {user.email} does not have permission to delete this participant",
+        )
     ds = await get_datasource_or_raise(session, user, datasource_id)
     config = ds.get_config()
     participant = config.find_participants(participant_id)
+
+    if not participant and not allow_missing:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Participant type {participant_id} not found in datasource {datasource_id}.",
+        )
+
     config.participants.remove(participant)
     ds.set_config(config)
     await session.commit()
@@ -1235,14 +1265,36 @@ async def delete_api_key(
     session: Annotated[AsyncSession, Depends(xngin_db_session)],
     user: Annotated[tables.User, Depends(user_from_token)],
     api_key_id: Annotated[str, Path(...)],
+    allow_missing: Annotated[bool, Query()] = False,
 ):
     """Deletes the specified API key."""
+    # Check if user has access to the datasource, raise 403 error if not
+    datasource_ids = [
+        datasource.id for org in user.organizations for datasource in org.datasources
+    ]
+    if datasource_id not in datasource_ids:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=f"User with email {user.email} does not have permission to delete this API key.",
+        )
+
     ds = await get_datasource_or_raise(
         session, user, datasource_id, preload=[tables.Datasource.api_keys]
     )
-    ds.api_keys = [a for a in ds.api_keys if a.id != api_key_id]
+    # Check that the API key exists
+    ds_api_key_ids = [a.id for a in ds.api_keys]
+    if api_key_id not in ds_api_key_ids and not allow_missing:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"API key {api_key_id} not found in datasource {datasource_id}.",
+        )
+
+    # Remove the API key from the datasource
+    ds_api_key_ids.pop(ds_api_key_ids.index(api_key_id))
+    ds.api_keys = ds_api_key_ids
     session.add(ds)
     await session.commit()
+
     return GENERIC_SUCCESS
 
 
@@ -1571,8 +1623,18 @@ async def delete_experiment(
     experiment_id: str,
     session: Annotated[AsyncSession, Depends(xngin_db_session)],
     user: Annotated[tables.User, Depends(user_from_token)],
+    allow_missing: Annotated[bool, Query()] = False,
 ):
     """Deletes the experiment with the specified ID."""
+    experiment_ids = [
+        experiment.id for org in user.organizations for experiment in org.experiments
+    ]
+    if experiment_id not in experiment_ids and not allow_missing:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=f"User with email {user.email} cannot delete experiment {experiment_id}",
+        )
+
     ds = await get_datasource_or_raise(session, user, datasource_id)
     experiment = await get_experiment_via_ds_or_raise(session, ds, experiment_id)
     await session.delete(experiment)
