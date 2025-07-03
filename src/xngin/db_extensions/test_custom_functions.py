@@ -72,7 +72,7 @@ def test_random_compilation_on_different_engine_dialects():
 def test_stddev_pop_compilation_on_different_engine_dialects():
     expected_results = {
         "postgresql": "SELECT STDDEV_POP(test_table.float_col) AS stddev_pop_1 FROM test_table",
-        "bigquery": "SELECT STDDEV_POP(`test_table`.`float_col`) AS `stddev_pop_1` FROM `test_table`",
+        "bigquery": "SELECT stddev_pop(`test_table`.`float_col`) AS `stddev_pop_1` FROM `test_table`",
     }
 
     for dialect, expected in expected_results.items():

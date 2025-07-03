@@ -122,7 +122,7 @@ ignore = [
 
 [tool.ruff.lint.flake8-import-conventions]
 # https://docs.astral.sh/ruff/settings/#lintflake8-import-conventions
-banned-from = ["xngin.apiserver.models.tables", "datetime"]
+banned-from = ["xngin.apiserver.models.tables"]
 
 [tool.ruff.lint.flake8-import-conventions.extend-aliases]
 # https://docs.astral.sh/ruff/settings/#lint_flake8-import-conventions_extend-aliases
