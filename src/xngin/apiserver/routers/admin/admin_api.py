@@ -757,7 +757,7 @@ async def create_datasource(
         )
     if body.dwh.driver in {"postgresql+psycopg", "postgresql+psycopg2"}:
         try:
-            safe_resolve(body.dwh.host)
+            safe_resolve(body.dwh.host)  # type: ignore[union-attr]
         except DnsLookupError as err:
             raise HTTPException(
                 status_code=400,
@@ -847,7 +847,8 @@ async def inspect_datasource(
                 )
                 with config.dbsession() as dwh_session:
                     result = dwh_session.execute(
-                        query, {"search_path": config.dwh.search_path or "public"}
+                        query,
+                        {"search_path": config.dwh.search_path or "public"},  # type: ignore[union-attr]
                     )
                     tablenames = result.scalars().all()
             else:
@@ -1590,5 +1591,5 @@ async def power_check(
     ds = await get_datasource_or_raise(session, user, datasource_id)
     dsconfig = ds.get_config()
     participants_cfg = dsconfig.find_participants(body.design_spec.participant_type)
-    validate_schema_metrics_or_raise(body.design_spec, participants_cfg)
+    validate_schema_metrics_or_raise(body.design_spec, participants_cfg)  # type: ignore[arg-type]
     return power_check_impl(body, dsconfig, participants_cfg)
