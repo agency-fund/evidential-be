@@ -330,10 +330,7 @@ class DwhSession:
         return await asyncio.to_thread(self._list_tables_blocking)
 
     def _create_engine(self) -> Engine:
-        """Create a SQLAlchemy Engine for the customer database.
-
-        This method replicates the logic from RemoteDatabaseConfig.dbengine().
-        """
+        """Create a SQLAlchemy Engine for the customer database."""
         url = self.dwh_config.to_sqlalchemy_url()
         connect_args: dict = {}
 
