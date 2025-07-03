@@ -162,10 +162,10 @@ warn_return_any = true
 strict_optional = true
 disallow_untyped_defs = false
 exclude = [
-  '^(.*/)?test_.*\.py$'
+  '^(.*/)?test_.*\.py$',
 ]
 plugins = ['pydantic.mypy']
 
 [[tool.mypy.overrides]]
-module = ["deepdiff", "parsy", "statsmodels.*", "patsy.*", "sqlalchemy_bigquery.*"]
+module = ["deepdiff", "parsy", "statsmodels.*", "patsy.*", "sqlalchemy_bigquery.*", "pandas_gbq.*"]
 ignore_missing_imports = true
