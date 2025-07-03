@@ -46,13 +46,13 @@ repos:
   #       exclude: '^(.*/)?test_.*\.py$'
   #       entry: interrogate
   #       args: [-v, --fail-under=95, --ignore-module]
-  # - repo: https://github.com/pre-commit/mirrors-mypy
-  #   rev: v1.16.1
-  #   hooks:
-  #     - id: mypy
-  #       entry: uv run mypy
-  #       exclude: '(^|/)(test_.*\.py)$'
-  #       pass_filenames: false
-  #       args:
-  #         - src
-  #         - --config-file=pyproject.toml
+  - repo: https://github.com/pre-commit/mirrors-mypy
+    rev: v1.16.1
+    hooks:
+      - id: mypy
+        entry: uv run mypy
+        exclude: '(^|/)(test_.*\.py)$'
+        pass_filenames: false
+        args:
+          - src
+          - --config-file=pyproject.toml
