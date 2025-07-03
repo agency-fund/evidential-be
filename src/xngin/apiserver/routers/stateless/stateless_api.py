@@ -11,6 +11,7 @@ from fastapi import (
 from loguru import logger
 from sqlalchemy import distinct
 from sqlalchemy.orm import Session
+from sqlalchemy.sql import Select
 
 from xngin.apiserver import constants
 from xngin.apiserver.dependencies import (
@@ -86,7 +87,7 @@ async def get_participants_config_and_schema(
     commons: CommonQueryParams,
     datasource_config: ParticipantsMixin,
     gsheets: GSheetCache,
-) -> tuple[ParticipantsConfig, ParticipantsSchema]:
+) -> tuple[ParticipantsConfig, ParticipantsConfig]:
     """Get common configuration info for various endpoints."""
     participants_cfg = datasource_config.find_participants(commons.participant_type)
     cached_schema = participants_cfg  # assume type == "schema"
@@ -114,7 +115,7 @@ async def get_strata(
     participants_cfg, schema = await get_participants_config_and_schema(
         commons, config, gsheets
     )
-    strata_fields = {c.field_name: c for c in schema.fields if c.is_strata}
+    strata_fields = {c.field_name: c for c in schema.fields if c.is_strata}  # type: ignore[union-attr]
 
     with config.dbsession() as dwh_session:
         sa_table = infer_table(
@@ -122,7 +123,7 @@ async def get_strata(
             participants_cfg.table_name,
             config.supports_reflection(),
         )
-        db_schema = generate_field_descriptors(sa_table, schema.get_unique_id_field())
+        db_schema = generate_field_descriptors(sa_table, schema.get_unique_id_field())  # type: ignore[union-attr]
 
     return GetStrataResponse(
         results=sorted(
@@ -153,7 +154,7 @@ async def get_filters(
     participants_cfg, schema = await get_participants_config_and_schema(
         commons, config, gsheets
     )
-    filter_fields = {c.field_name: c for c in schema.fields if c.is_filter}
+    filter_fields = {c.field_name: c for c in schema.fields if c.is_filter}  # type: ignore[union-attr]
 
     with config.dbsession() as dwh_session:
         sa_table = infer_table(
@@ -161,7 +162,7 @@ async def get_filters(
             participants_cfg.table_name,
             config.supports_reflection(),
         )
-        db_schema = generate_field_descriptors(sa_table, schema.get_unique_id_field())
+        db_schema = generate_field_descriptors(sa_table, schema.get_unique_id_field())  # type: ignore[union-attr]
 
         mapper = create_col_to_filter_meta_mapper(db_schema, sa_table, dwh_session)
 
@@ -183,21 +184,23 @@ def create_col_to_filter_meta_mapper(
     # TODO: implement caching, respecting commons.refresh
     def mapper(col_name, column_descriptor) -> GetFiltersResponseElement:
         db_col = db_schema.get(col_name)
+        if not db_col:
+            raise ValueError(f"Column {col_name} not found in schema.")
+
         filter_class = db_col.data_type.filter_class(col_name)
 
         # Collect metadata on the values in the database.
         sa_col = sa_table.columns[col_name]
         match filter_class:
             case FilterClass.DISCRETE:
-                distinct_values = [
-                    str(v)
-                    for v in session.execute(
-                        sqlalchemy.select(distinct(sa_col))
-                        .where(sa_col.is_not(None))
-                        .limit(1000)
-                        .order_by(sa_col)
-                    ).scalars()
-                ]
+                stmt: Select = (
+                    sqlalchemy.select(distinct(sa_col))
+                    .where(sa_col.is_not(None))
+                    .limit(1000)
+                    .order_by(sa_col)
+                )
+                result_discrete = session.execute(stmt).scalars()
+                distinct_values = [str(v) for v in result_discrete]
                 return GetFiltersResponseDiscrete(
                     field_name=col_name,
                     data_type=db_col.data_type,
@@ -206,11 +209,16 @@ def create_col_to_filter_meta_mapper(
                     distinct_values=distinct_values,
                 )
             case FilterClass.NUMERIC:
-                min_, max_ = session.execute(
+                result = session.execute(
                     sqlalchemy.select(
                         sqlalchemy.func.min(sa_col), sqlalchemy.func.max(sa_col)
                     ).where(sa_col.is_not(None))
                 ).first()
+                if result is None:
+                    min_, max_ = None, None
+                else:
+                    min_, max_ = result
+
                 return GetFiltersResponseNumericOrDate(
                     field_name=col_name,
                     data_type=db_col.data_type,
@@ -237,7 +245,7 @@ async def get_metrics(
     participants_cfg, schema = await get_participants_config_and_schema(
         commons, config, gsheets
     )
-    metric_cols = {c.field_name: c for c in schema.fields if c.is_metric}
+    metric_cols = {c.field_name: c for c in schema.fields if c.is_metric}  # type: ignore[union-attr]
 
     with config.dbsession() as dwh_session:
         sa_table = infer_table(
@@ -245,7 +253,7 @@ async def get_metrics(
             participants_cfg.table_name,
             config.supports_reflection(),
         )
-        db_schema = generate_field_descriptors(sa_table, schema.get_unique_id_field())
+        db_schema = generate_field_descriptors(sa_table, schema.get_unique_id_field())  # type: ignore[union-attr]
 
     # Merge data type info above with the columns to be used as metrics:
     return GetMetricsResponse(
@@ -292,7 +300,7 @@ async def powercheck(
     participants_cfg, schema = await get_participants_config_and_schema(
         commons, config, gsheets
     )
-    validate_schema_metrics_or_raise(body.design_spec, schema)
+    validate_schema_metrics_or_raise(body.design_spec, schema)  # type: ignore[arg-type]
 
     return power_check_impl(body, config, participants_cfg)
 
@@ -361,7 +369,7 @@ async def assign_treatment(
     participants_cfg, schema = await get_participants_config_and_schema(
         commons, config, gsheets
     )
-    validate_schema_metrics_or_raise(body.design_spec, schema)
+    validate_schema_metrics_or_raise(body.design_spec, schema)  # type: ignore[arg-type]
 
     with config.dbsession() as dwh_session:
         sa_table = infer_table(
@@ -379,9 +387,9 @@ async def assign_treatment(
         sa_table=sa_table,
         data=participants,
         stratum_cols=strata_names + metric_names,
-        id_col=schema.get_unique_id_field(),
+        id_col=schema.get_unique_id_field(),  # type: ignore[union-attr]
         arms=body.design_spec.arms,
-        experiment_id=body.design_spec.experiment_id,
+        experiment_id=body.design_spec.experiment_id,  # type: ignore[arg-type]
         fstat_thresh=body.design_spec.fstat_thresh,
         quantiles=quantiles,
         stratum_id_name=stratum_id_name,
