@@ -380,16 +380,16 @@ class Dsn(ConfigBaseModel, BaseDsn):
             )
 
         if url.startswith("postgres"):
-            url = make_url(url)
+            parsed_url = make_url(url)
             return Dsn(
-                driver=f"postgresql+{url.get_driver_name()}",
-                host=url.host,
-                port=url.port,
-                user=url.username,
-                password=url.password,
-                dbname=url.database,
-                sslmode=url.query.get("sslmode", "verify-ca"),
-                search_path=url.query.get("search_path", None),
+                driver=f"postgresql+{parsed_url.get_driver_name()}",
+                host=parsed_url.host,
+                port=parsed_url.port,
+                user=parsed_url.username,
+                password=parsed_url.password,
+                dbname=parsed_url.database,
+                sslmode=parsed_url.query.get("sslmode", "verify-ca"),
+                search_path=parsed_url.query.get("search_path", None),
             )
         raise NotImplementedError("Dsn.from_url() only supports postgres databases.")
 

@@ -142,6 +142,9 @@ dev-dependencies = [
     "pandas-stubs>=2.2.3.241126",
     "pytest-asyncio>=1.0.0",
     "pytest-env>=1.1.5,<1.2",
+    "pynvim>=0.4.0,<0.5.0",
+    "types-python-jose>=3.5.0.20250531",
+    "boto3-stubs>=1.39.1",
 ]
 environments = [
     "sys_platform == 'darwin'",
@@ -159,7 +162,11 @@ warn_unused_ignores = true
 warn_return_any = true
 strict_optional = true
 disallow_untyped_defs = false
+exclude = [
+  '^(.*/)?test_.*\.py$'
+]
+plugins = ['pydantic.mypy']
 
 [[tool.mypy.overrides]]
-module = "deepdiff"
+module = ["deepdiff", "parsy", "statsmodels.*", "patsy.*", "sqlalchemy_bigquery.*"]
 ignore_missing_imports = true

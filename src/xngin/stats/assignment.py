@@ -202,7 +202,7 @@ def simple_random_assignment(
     treatment_ids = list(range(n_arms))
     treatment_mask = np.repeat(treatment_ids, np.ceil(len(data) / n_arms))
     rng.shuffle(treatment_mask)
-    return treatment_mask[: len(data)].tolist()
+    return [int(x) for x in treatment_mask[: len(data)]]
 
 
 def _make_assign_response(
