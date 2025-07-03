@@ -16,6 +16,7 @@ from pydantic import (
     field_validator,
     model_validator,
 )
+from sqlalchemy.dialects.postgresql.json import JSON, JSONB
 
 from xngin.apiserver.common_field_types import FieldName
 from xngin.apiserver.exceptions_common import LateValidationError
@@ -29,11 +30,12 @@ from xngin.apiserver.limits import (
 )
 from xngin.apiserver.models.enums import ExperimentState, StopAssignmentReason
 
-type FilterValueTypes = (
+FilterValueTypes = (
     Sequence[Annotated[int, Field(strict=True)] | None]
     | Sequence[Annotated[float, Field(strict=True, allow_inf_nan=False)] | None]
     | Sequence[str | None]
     | Sequence[bool | None]
+    | Sequence[Annotated[datetime.datetime, Field(strict=True)] | None]
 )
 
 type DesignSpec = Annotated[
@@ -96,9 +98,9 @@ class DataType(enum.StrEnum):
             return DataType.TIMESTAMP_WITH_TIMEZONE
         if isinstance(value, sqlalchemy.sql.sqltypes.DateTime) and not value.timezone:
             return DataType.TIMESTAMP_WITHOUT_TIMEZONE
-        if isinstance(value, sqlalchemy.dialects.postgresql.json.JSONB):
+        if isinstance(value, JSONB):
             return DataType.JSONB
-        if isinstance(value, sqlalchemy.dialects.postgresql.json.JSON):
+        if isinstance(value, JSON):
             return DataType.JSON
         if value is int:
             return DataType.INTEGER
@@ -421,6 +423,7 @@ class MetricPowerAnalysisMessageType(enum.StrEnum):
     INSUFFICIENT = "insufficient"
     NO_BASELINE = "no baseline"
     NO_AVAILABLE_N = "no available n"
+    NO_AVAILABLE_NONNULL_N = "no available non-null n"
     ZERO_EFFECT_SIZE = "zero effect size"
     ZERO_STDDEV = "zero variation"
 

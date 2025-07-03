@@ -238,7 +238,7 @@ def make_csv_regex(values):
 
 
 def general_excludes_filter(
-    col: sqlalchemy.Column, value: list[FilterValueTypes]
+    col: sqlalchemy.Column, value: FilterValueTypes
 ) -> ColumnElement[bool]:
     if None in value:
         non_null_list = [v for v in value if v is not None]
@@ -258,15 +258,19 @@ def general_excludes_filter(
 def create_datetime_filter(col: sqlalchemy.Column, filter_: Filter) -> ColumnOperators:
     """Converts a single Filter for a DateTime-typed column into a sqlalchemy filter."""
 
-    def str_to_datetime(s: int | float | str | None) -> datetime | None:
+    def str_to_datetime(s: int | float | str | datetime | None) -> datetime | None:
         """Convert an ISO8601 string to a timezone-unaware datetime.
 
         LateValidationError is raised if the ISO8601 string specifies a non-UTC timezone.
 
         For maximum compatibility between backends, any microseconds value, if specified, is truncated to zero.
+
+        If `s` is already a datetime, it is returned as-is, but with microseconds set to zero.
         """
         if s is None:
             return None
+        if isinstance(s, datetime):
+            return s.replace(microsecond=0)
         if not isinstance(s, str):
             raise LateValidationError(
                 "{col.name}: datetime-type filter values must be strings containing an ISO8601 formatted date."
@@ -284,6 +288,11 @@ def create_datetime_filter(col: sqlalchemy.Column, filter_: Filter) -> ColumnOpe
             return parsed.replace(tzinfo=None)
         raise LateValidationError(
             f"{col.name}: datetime-type filter values must be in UTC, or not be tagged with an explicit timezone: {s}"
+        )
+
+    if not isinstance(col.type, DateTime):
+        raise LateValidationError(
+            f"Column {col.name} is not a DateTime type, cannot apply datetime filter."
         )
 
     parsed_values = list(map(str_to_datetime, filter_.value))

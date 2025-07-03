@@ -228,7 +228,7 @@ async def get_datasource_or_raise(
     /,
     *,
     preload: list[QueryableAttribute] | None = None,
-):
+) -> tables.Datasource:
     """Reads the requested datasource from the database.
 
     Raises 404 if disallowed or not found.
