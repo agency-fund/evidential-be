@@ -23,6 +23,7 @@ from pydantic import BaseModel
 from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import QueryableAttribute, selectinload
+from sqlalchemy.sql.functions import count
 
 from xngin.apiserver import constants, flags
 from xngin.apiserver.apikeys import hash_key_or_raise, make_key
@@ -181,7 +182,10 @@ async def user_from_token(
     if user:
         return user
 
-    if token_info.is_privileged():
+    # When there are no users, we accept the first successful authentication and create a privileged user for
+    # them.
+    user_count = await session.scalar(select(count(tables.User.id)))
+    if user_count == 0:
         new_user = create_user_and_first_datasource(
             session,
             email=token_info.email,
