@@ -153,6 +153,9 @@ jobs:
           uv run xngin-cli create-testing-dwh --dsn postgresql+psycopg2://postgres@127.0.0.1:5499/postgres \
             --schema-name alt2 --table-name=alt_table2
 
+          # Create the application database.
+          uv run xngin-cli create-application-database
+
           # Verify the sources in xngin.gha.settings.json are still readable (uses the psycopg imports).
           XNGIN_SETTINGS=src/xngin/apiserver/testdata/xngin.gha.settings.json uv run fastapi run \
             src/xngin/apiserver/main.py &
@@ -274,6 +277,9 @@ jobs:
           # Unset the environment variable because we want to ensure the server is authenticating with the credentials
           # configured in the settings file and not relying on fallback behavior.
           unset GOOGLE_APPLICATION_CREDENTIALS
+
+          # Create the application database.
+          uv run xngin-cli create-application-database
 
           # Start a server using the gha-bq profile.
           XNGIN_SETTINGS=src/xngin/apiserver/testdata/xngin.gha.settings.json uv run fastapi run \
