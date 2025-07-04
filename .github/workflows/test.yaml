@@ -51,19 +51,6 @@ jobs:
   unittests:
     timeout-minutes: 15
     runs-on: ubuntu-22.04
-    services:
-      postgres:
-        image: postgres:17
-        env:
-          POSTGRES_DB: postgres
-          POSTGRES_PASSWORD: postgres
-        options: >-
-          --health-cmd pg_isready
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 5
-        ports:
-          - 5499:5432
     steps:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v4
