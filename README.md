@@ -12,7 +12,6 @@
   - [Documentation on our Dependencies](#documentation-on-our-dependencies)
   - [Settings](#settings)
   - [API Keys](#api-keys)
-  - [FAQ](#faq)
 
 <!-- mdformat-toc end -->
 
@@ -222,36 +221,3 @@ curl --header "x-api-key: xat_..." \
   --header "Datasource-ID: my-secure-config" \
   'http://localhost:8000/v1/filters?participant_type=test_participant_type'
 ```
-
-## FAQ<a name="faq"></a>
-
-### How do I hide the generated SQL from the logs?
-
-Set the ECHO_SQL=0 environment variable, e.g.:
-
-```shell
-ECHO_SQL=0 XNGIN_SETTINGS=xngin.settings.json \
-   uv run fastapi dev src/xngin/apiserver/main.py --port 8144
-```
-
-If you're using the helpers [Taskfile.yml](Taskfile.yml), you can edit the ECHO_SQL variable there.
-
-### psycopg2 module does not install correctly.
-
-You might see this error:
-
-> Error: pg_config executable not found.
->
-> pg_config is required to build psycopg2 from source.
-
-The fix will depend on your specific environment.
-
-#### Linux
-
-1. If on Linux, try: `sudo apt install -y libpq-dev` and then re-install dependencies.
-1. See https://www.psycopg.org/docs/install.html.
-1. See https://www.psycopg.org/docs/faq.html.
-
-#### OSX<a name="osx"></a>
-
-Run `brew install postgresql@14`.
