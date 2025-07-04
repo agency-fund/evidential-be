@@ -273,7 +273,7 @@ def create_datetime_filter(col: sqlalchemy.Column, filter_: Filter) -> ColumnOpe
             return s.replace(microsecond=0)
         if not isinstance(s, str):
             raise LateValidationError(
-                "{col.name}: datetime-type filter values must be strings containing an ISO8601 formatted date."
+                f"{col.name}: datetime-type filter values must be strings containing an ISO8601 formatted date."
             )
         try:
             parsed = datetime.fromisoformat(s).replace(microsecond=0)
