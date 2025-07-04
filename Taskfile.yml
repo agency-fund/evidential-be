@@ -71,7 +71,6 @@ env:
   XNGIN_PUBLISH_ALL_DOCS: "true"
 
   # Generally useful settings.
-  XNGIN_SETTINGS: "src/xngin/apiserver/testdata/xngin.testing.settings.json"
   XNGIN_DEBUG: "true"
 
   # Data warehouse available for use by the local dev environment (see task bootstrap-dwh-database) and also referenced
