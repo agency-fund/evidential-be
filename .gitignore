@@ -190,7 +190,9 @@ config.csv
 # Exclude the atlas binary.
 atlas
 
-# Ignore Aider data.
+# Ignore AI tool data
 .aider*
 CONVENTIONS.md
 prompts
+.claude
+CLAUDE.local.md

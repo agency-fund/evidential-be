@@ -7,14 +7,12 @@ from pydantic import ValidationError
 
 from xngin.apiserver.apikeys import ApiKeyError
 from xngin.apiserver.dependencies import CannotFindDatasourceError
+from xngin.apiserver.dwh.dwh_session import CannotFindTableError
 from xngin.apiserver.exceptions_common import LateValidationError
 from xngin.apiserver.routers.experiments.experiments_common import (
     ExperimentsAssignmentError,
 )
-from xngin.apiserver.settings import (
-    CannotFindParticipantsError,
-    CannotFindTableError,
-)
+from xngin.apiserver.settings import CannotFindParticipantsError
 from xngin.sheets.gsheets import GSheetsPermissionError
 from xngin.stats.stats_errors import StatsError
 
