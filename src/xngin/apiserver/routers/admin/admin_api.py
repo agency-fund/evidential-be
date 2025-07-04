@@ -71,6 +71,7 @@ from xngin.apiserver.routers.admin.admin_api_types import (
     UserSummary,
     WebhookSummary,
 )
+from xngin.apiserver.routers.auth.auth_api_types import CallerIdentity
 from xngin.apiserver.routers.auth.auth_dependencies import require_oidc_token
 from xngin.apiserver.routers.auth.principal import Principal
 from xngin.apiserver.routers.common_api_types import (
@@ -285,10 +286,23 @@ async def get_experiment_via_ds_or_raise(
 
 @router.get("/caller-identity")
 async def caller_identity(
+    session: Annotated[AsyncSession, Depends(xngin_db_session)],
     token_info: Annotated[Principal, Depends(require_oidc_token)],
-) -> Principal:
+) -> CallerIdentity:
     """Returns basic metadata about the authenticated caller of this method."""
-    return token_info
+    user = (
+        await session.scalars(
+            select(tables.User).filter(tables.User.email == token_info.email)
+        )
+    ).first()
+
+    return CallerIdentity(
+        email=token_info.email,
+        iss=token_info.iss,
+        sub=token_info.sub,
+        hd=token_info.hd,
+        is_privileged=user.is_privileged if user else False,
+    )
 
 
 @router.get("/organizations")
