@@ -242,7 +242,10 @@ tasks:
     desc: "Apply Postgres migrations locally (requires localpg instance to be running, to have an xngin database, and to have been previously migrated)"
     cmds:
       - uv run atlas migrate diff --env sa_postgres
-      - uv run atlas migrate apply --env sa_postgres --url "{{.XNGIN_DEVAPP_STANDARD_DSN}}" || (echo "⚠️ Something is awry with your development database. This can happen when switching branches. You can reset the database to the default state by running \"task drop-app\" before running \"task start\" again."; exit 1)
+      - >
+        uv run atlas migrate apply --env sa_postgres --url "{{.XNGIN_DEVAPP_STANDARD_DSN}}" ||
+          (echo "⚠️ Something is awry with your development database. This can happen when switching branches. You can
+            reset the database to the default state by running \"task drop-databases\"."; exit 1)
   create-user:
     desc: "Create a user: task create-user -- username@example.com"
     interactive: true
@@ -262,6 +265,8 @@ tasks:
   psql:
     desc: "Start interactive psql"
     interactive: true
+    deps:
+      - bootstrap-app-database
     cmd: psql "{{.XNGIN_DEVAPP_STANDARD_DSN}}"
   drop-databases:
     desc: "Forcibly remove the local development databases."
