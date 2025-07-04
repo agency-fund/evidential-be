@@ -225,41 +225,6 @@ curl --header "x-api-key: xat_..." \
 
 ## FAQ<a name="faq"></a>
 
-### How do we manage schema migrations?<a name="schema-migration"></a>
-
-We are using [Atlas](https://atlasgo.io/) (non-Pro) to manage database schema migrations.
-
-When you make a change to the SQLAlchemy tables in src/xngin/apiserver/models, run this command to generate migration
-files for Postgres:
-
-```shell
-task make-migrations
-```
-
-The files will be created in migrations/sa_postgres. Commit any new files alongside your changes to the models.
-Migrations in the Railway environments happen automatically upon deployment. See [railway.json](railway.json)
-and [Dockerfile.railway](Dockerfile.railway) for more information.
-
-> Note: Your pushes will fail if you have changed the models but have not generated migrations. There is a GitHub Action
-> check in [.github/workflows/migration.yaml](migration.yaml) to ensure that pushes have
-> migrations that match the models.
-
-Then, apply them to your local Postgres instance:
-
-```shell
-task apply-migrations-pg
-```
-
-If you tweak a migration file by hand because atlas's generated SQL was unable to fully handle it,
-or because you created a custom one from scratch (`atlas migrate new <name> --env sa_postgres`),
-you'll also need to recompute migration hashes in our `atlas.sum` file with:
-
-```shell
-task hash-migrations
-```
-
-⚠️ _Please create a separate follow-on migration file to the atlas-generated one for custom changes whenever possible._
-
 ### How do I hide the generated SQL from the logs?
 
 Set the ECHO_SQL=0 environment variable, e.g.:
