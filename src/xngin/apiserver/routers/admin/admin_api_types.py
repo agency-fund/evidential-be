@@ -1,9 +1,11 @@
 from datetime import datetime
 from typing import Annotated, Literal
+from urllib.parse import urlparse
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from xngin.apiserver.common_field_types import FieldName
+from xngin.apiserver.dwh.inspection_types import FieldDescriptor, ParticipantsSchema
 from xngin.apiserver.limits import (
     MAX_LENGTH_OF_DESCRIPTION_VALUE,
     MAX_LENGTH_OF_EMAIL_VALUE,
@@ -12,7 +14,7 @@ from xngin.apiserver.limits import (
     MAX_LENGTH_OF_WEBHOOK_URL_VALUE,
     MAX_NUMBER_OF_FIELDS,
 )
-from xngin.apiserver.routers.stateless_api_types import (
+from xngin.apiserver.routers.common_api_types import (
     ApiBaseModel,
     DataType,
     GetFiltersResponseElement,
@@ -20,7 +22,16 @@ from xngin.apiserver.routers.stateless_api_types import (
     GetStrataResponseElement,
 )
 from xngin.apiserver.settings import DatasourceConfig, Dwh, ParticipantsConfig
-from xngin.schema.schema_types import FieldDescriptor, ParticipantsSchema
+
+
+def validate_webhook_url(url: str) -> str:
+    """Validates that a URL is a properly formatted HTTP or HTTPS URL."""
+    parsed = urlparse(url)
+    if not parsed.scheme or parsed.scheme not in {"http", "https"}:
+        raise ValueError("URL must use http or https scheme")
+    if not parsed.netloc:
+        raise ValueError("URL must include a valid domain")
+    return url
 
 
 class AdminApiBaseModel(BaseModel):
@@ -98,7 +109,25 @@ class ListDatasourcesResponse(AdminApiBaseModel):
 
 class AddWebhookToOrganizationRequest(AdminApiBaseModel):
     type: Literal["experiment.created"]
-    url: Annotated[str, Field(max_length=MAX_LENGTH_OF_WEBHOOK_URL_VALUE)]
+    name: Annotated[
+        str,
+        Field(
+            max_length=MAX_LENGTH_OF_NAME_VALUE,
+            description="User-friendly name for the webhook. This name is displayed in the UI and helps identify the webhook's purpose.",
+        ),
+    ]
+    url: Annotated[
+        str,
+        Field(
+            max_length=MAX_LENGTH_OF_WEBHOOK_URL_VALUE,
+            description="The HTTP or HTTPS URL that will receive webhook notifications when events occur.",
+        ),
+    ]
+
+    @field_validator("url")
+    @classmethod
+    def validate_url(cls, v: str) -> str:
+        return validate_webhook_url(v)
 
 
 class AddWebhookToOrganizationResponse(AdminApiBaseModel):
@@ -108,11 +137,15 @@ class AddWebhookToOrganizationResponse(AdminApiBaseModel):
     type: Annotated[
         str, Field(description="The type of webhook; e.g. experiment.created")
     ]
+    name: Annotated[
+        str,
+        Field(description="User-friendly name for the webhook."),
+    ]
     url: Annotated[str, Field(description="The URL to notify.")]
     auth_token: Annotated[
         str | None,
         Field(
-            description="The value of the Authorization: header that will be sent with the request to the configured URL."
+            description="The value of the Webhook-Token: header that will be sent with the request to the configured URL."
         ),
     ]
 
@@ -124,13 +157,41 @@ class WebhookSummary(AdminApiBaseModel):
     type: Annotated[
         str, Field(description="The type of webhook; e.g. experiment.created")
     ]
+    name: Annotated[
+        str,
+        Field(description="User-friendly name for the webhook."),
+    ]
     url: Annotated[str, Field(description="The URL to notify.")]
     auth_token: Annotated[
         str | None,
         Field(
-            description="The value of the Authorization: header that will be sent with the request to the configured URL."
+            description="The value of the Webhook-Token: header that will be sent with the request to the configured URL."
         ),
     ]
+
+
+class UpdateOrganizationWebhookRequest(AdminApiBaseModel):
+    """Request to update a webhook's name and URL."""
+
+    name: Annotated[
+        str,
+        Field(
+            max_length=MAX_LENGTH_OF_NAME_VALUE,
+            description="User-friendly name for the webhook. This name is displayed in the UI and helps identify the webhook's purpose.",
+        ),
+    ]
+    url: Annotated[
+        str,
+        Field(
+            max_length=MAX_LENGTH_OF_WEBHOOK_URL_VALUE,
+            description="The HTTP or HTTPS URL that will receive webhook notifications when events occur.",
+        ),
+    ]
+
+    @field_validator("url")
+    @classmethod
+    def validate_url(cls, v: str) -> str:
+        return validate_webhook_url(v)
 
 
 class ListWebhooksResponse(AdminApiBaseModel):

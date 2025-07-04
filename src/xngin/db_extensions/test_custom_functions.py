@@ -71,7 +71,7 @@ def test_random_compilation_on_different_engine_dialects():
 @pytest.mark.integration
 def test_stddev_pop_compilation_on_different_engine_dialects():
     expected_results = {
-        "postgresql": "SELECT stddev_pop(test_table.float_col) AS stddev_pop_1 FROM test_table",
+        "postgresql": "SELECT STDDEV_POP(test_table.float_col) AS stddev_pop_1 FROM test_table",
         "bigquery": "SELECT stddev_pop(`test_table`.`float_col`) AS `stddev_pop_1` FROM `test_table`",
     }
 
@@ -97,10 +97,10 @@ def test_deterministic_random():
 
     # deterministic random enabled and no primary key
     custom_functions.USE_DETERMINISTIC_RANDOM = True
-    query = select(SampleTableNoPK).order_by(
+    query_nopk = select(SampleTableNoPK).order_by(
         custom_functions.Random(sa_table=SampleTableNoPK.__table__)
     )
-    sql_text = str(query.compile(engine))
+    sql_text = str(query_nopk.compile(engine))
     assert "ORDER BY nopk_table.int_col, nopk_table.string_col" in sql_text
 
     # normal case

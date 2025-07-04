@@ -2,12 +2,12 @@
 
 import sqlalchemy
 
-from xngin.apiserver.routers.admin_api_types import (
+from xngin.apiserver.dwh.inspection_types import FieldDescriptor, ParticipantsSchema
+from xngin.apiserver.routers.admin.admin_api_types import (
     FieldMetadata,
     InspectDatasourceTableResponse,
 )
-from xngin.apiserver.routers.stateless_api_types import DataType
-from xngin.schema.schema_types import FieldDescriptor, ParticipantsSchema
+from xngin.apiserver.routers.common_api_types import DataType
 
 
 def create_schema_from_table(table: sqlalchemy.Table, unique_id_col: str | None = None):
@@ -82,3 +82,13 @@ def create_inspect_table_response_from_table(
         detected_unique_id_fields=list(sorted(possible_id_columns)),
         fields=list(sorted(collected, key=lambda f: f.field_name)),
     )
+
+
+def generate_field_descriptors(table: sqlalchemy.Table, unique_id_col: str):
+    """Fetches a map of column name to schema metadata.
+
+    Uniqueness of the values in the column unique_id_col is assumed, not verified!
+    """
+    return {
+        c.field_name: c for c in create_schema_from_table(table, unique_id_col).fields
+    }

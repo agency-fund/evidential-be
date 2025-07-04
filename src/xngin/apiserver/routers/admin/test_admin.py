@@ -1,22 +1,23 @@
 import base64
 import json
 from datetime import UTC, datetime, timedelta
-from functools import partial
 
 import pytest
 from fastapi import HTTPException
-from fastapi.testclient import TestClient
 from pydantic import SecretStr
 from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from xngin.apiserver import conftest, flags
 from xngin.apiserver.dns import safe_resolve
-from xngin.apiserver.main import app
+from xngin.apiserver.dwh.inspection_types import FieldDescriptor, ParticipantsSchema
 from xngin.apiserver.models import tables
 from xngin.apiserver.models.enums import ExperimentState, StopAssignmentReason
-from xngin.apiserver.routers import oidc_dependencies
-from xngin.apiserver.routers.admin import user_from_token
-from xngin.apiserver.routers.admin_api_types import (
+from xngin.apiserver.routers.admin.admin_api import user_from_token
+from xngin.apiserver.routers.admin.admin_api_types import (
+    AddWebhookToOrganizationRequest,
+    AddWebhookToOrganizationResponse,
+    CreateApiKeyResponse,
     CreateDatasourceRequest,
     CreateDatasourceResponse,
     CreateParticipantsTypeRequest,
@@ -24,29 +25,41 @@ from xngin.apiserver.routers.admin_api_types import (
     FieldMetadata,
     InspectDatasourceResponse,
     InspectDatasourceTableResponse,
+    ListApiKeysResponse,
     ListDatasourcesResponse,
     ListParticipantsTypeResponse,
+    ListWebhooksResponse,
     UpdateDatasourceRequest,
+    UpdateOrganizationWebhookRequest,
     UpdateParticipantsTypeRequest,
     UpdateParticipantsTypeResponse,
 )
-from xngin.apiserver.routers.experiments_api_types import (
-    CreateExperimentResponse,
-    ExperimentConfig,
-    GetExperimentAssignmentsResponse,
-    GetParticipantAssignmentResponse,
-    ListExperimentsResponse,
-)
-from xngin.apiserver.routers.oidc_dependencies import (
+from xngin.apiserver.routers.auth.auth_dependencies import (
     PRIVILEGED_EMAIL,
     PRIVILEGED_TOKEN_FOR_TESTING,
     TESTING_TOKENS,
     UNPRIVILEGED_EMAIL,
     UNPRIVILEGED_TOKEN_FOR_TESTING,
 )
-from xngin.apiserver.routers.stateless_api_types import (
+from xngin.apiserver.routers.common_api_types import (
+    Arm,
+    CreateExperimentRequest,
+    CreateExperimentResponse,
     DataType,
+    DesignSpecMetricRequest,
     ExperimentAnalysis,
+    ExperimentConfig,
+    GetExperimentAssignmentsResponse,
+    GetParticipantAssignmentResponse,
+    ListExperimentsResponse,
+    PreassignedExperimentSpec,
+)
+from xngin.apiserver.routers.experiments.test_experiments_common import (
+    insert_experiment_and_arms,
+    make_create_online_experiment_request,
+    make_create_preassigned_experiment_request,
+    make_createexperimentrequest_json,
+    make_insertable_experiment,
 )
 from xngin.apiserver.settings import (
     BqDsn,
@@ -56,15 +69,8 @@ from xngin.apiserver.settings import (
     SheetParticipantsRef,
     infer_table,
 )
-from xngin.apiserver.test_experiments_common import (
-    insert_experiment_and_arms,
-    make_create_online_experiment_request,
-    make_create_preassigned_experiment_request,
-    make_createexperimentrequest_json,
-    make_insertable_experiment,
-)
+from xngin.apiserver.testing.assertions import assert_dates_equal
 from xngin.cli.main import create_testing_dwh
-from xngin.schema.schema_types import FieldDescriptor, ParticipantsSchema
 
 SAMPLE_GCLOUD_SERVICE_ACCOUNT_KEY = {
     "auth_provider_x509_cert_url": "",
@@ -80,58 +86,16 @@ SAMPLE_GCLOUD_SERVICE_ACCOUNT_KEY = {
     "universe_domain": "googleapis.com",
 }
 
-conftest.setup(app)
-client = TestClient(app)
-
-pget = partial(
-    client.get, headers={"Authorization": f"Bearer {PRIVILEGED_TOKEN_FOR_TESTING}"}
-)
-ppost = partial(
-    client.post, headers={"Authorization": f"Bearer {PRIVILEGED_TOKEN_FOR_TESTING}"}
-)
-ppatch = partial(
-    client.patch, headers={"Authorization": f"Bearer {PRIVILEGED_TOKEN_FOR_TESTING}"}
-)
-pdelete = partial(
-    client.delete, headers={"Authorization": f"Bearer {PRIVILEGED_TOKEN_FOR_TESTING}"}
-)
-udelete = partial(
-    client.delete, headers={"Authorization": f"Bearer {UNPRIVILEGED_TOKEN_FOR_TESTING}"}
-)
-uget = partial(
-    client.get, headers={"Authorization": f"Bearer {UNPRIVILEGED_TOKEN_FOR_TESTING}"}
-)
-
-
-@pytest.fixture(autouse=True)
-def fixture_teardown(xngin_session):
-    try:
-        # setup here
-        yield
-    finally:
-        # teardown here
-        # Rollback any pending transactions that may have been hanging due to an exception.
-        xngin_session.rollback()
-        # Clean up objects created in each test by truncating tables and leveraging cascade.
-        xngin_session.query(tables.Organization).delete()
-        xngin_session.query(tables.User).delete()
-        xngin_session.commit()
-
-
-@pytest.fixture(scope="module", autouse=True)
-def enable_apis_under_test():
-    oidc_dependencies.TESTING_TOKENS_ENABLED = True
-
 
 @pytest.fixture(name="testing_datasource_with_inline_schema")
-def fixture_testing_datasource_with_inline_schema(xngin_session):
+async def fixture_testing_datasource_with_inline_schema(xngin_session: AsyncSession):
     """Create a fake remote datasource using an inline schema for the participants config."""
     # First create a datasource to maintain proper referential integrity, but with a local config
     # so we know we can read our dwh data. Also populate with an inline schema to test admin.
     ds_with_inlined_shema = conftest.get_settings_datasource(
         "testing-inline-schema"
     ).config
-    return conftest.make_datasource_metadata(
+    return await conftest.make_datasource_metadata(
         xngin_session,
         datasource_id_for_config="testing",
         participants_def_list=[ds_with_inlined_shema.participants[0]],
@@ -139,7 +103,9 @@ def fixture_testing_datasource_with_inline_schema(xngin_session):
 
 
 @pytest.fixture(name="testing_datasource_with_user_added")
-def fixture_testing_datasource_with_user_added(testing_datasource_with_inline_schema):
+def fixture_testing_datasource_with_user_added(
+    testing_datasource_with_inline_schema, ppost
+):
     """Add the privileged user to the test ds's organization so we can access the ds."""
     response = ppost(
         f"/v1/m/organizations/{testing_datasource_with_inline_schema.org.id}/members",
@@ -150,7 +116,7 @@ def fixture_testing_datasource_with_user_added(testing_datasource_with_inline_sc
 
 
 @pytest.fixture(name="testing_sheet_datasource_with_user_added")
-def fixture_testing_sheet_datasource_with_user_added(testing_datasource):
+def fixture_testing_sheet_datasource_with_user_added(testing_datasource, ppost):
     """
     Add the privileged user to the test ds's organization so we can access the ds.
     This uses a sheet participant type; most tests should use testing_datasource_with_user_added.
@@ -164,10 +130,14 @@ def fixture_testing_sheet_datasource_with_user_added(testing_datasource):
 
 
 @pytest.fixture(name="testing_experiment")
-def fixture_testing_experiment(xngin_session, testing_datasource_with_user_added):
+async def fixture_testing_experiment(
+    xngin_session: AsyncSession, testing_datasource_with_user_added
+):
     """Create an experiment on a test inline schema datasource with proper user permissions."""
     datasource = testing_datasource_with_user_added.ds
-    experiment = insert_experiment_and_arms(xngin_session, datasource, "preassigned")
+    experiment = await insert_experiment_and_arms(
+        xngin_session, datasource, "preassigned"
+    )
     # Add fake assignments for each arm for real participant ids in our test data.
     arm_ids = [arm.id for arm in experiment.arms]
     # NOTE: id = 0 doesn't exist in the test data, so we'll have 1 missing participant.
@@ -180,20 +150,28 @@ def fixture_testing_experiment(xngin_session, testing_datasource_with_user_added
             strata=[],
         )
         xngin_session.add(assignment)
-    xngin_session.commit()
+    await xngin_session.commit()
+    await xngin_session.refresh(experiment, ["arm_assignments"])
     return experiment
 
 
-def test_user_from_token(xngin_session):
+async def test_user_from_token(xngin_session: AsyncSession):
     with pytest.raises(HTTPException, match="No user found with email") as e:
-        user_from_token(xngin_session, TESTING_TOKENS[UNPRIVILEGED_TOKEN_FOR_TESTING])
+        await user_from_token(
+            xngin_session, TESTING_TOKENS[UNPRIVILEGED_TOKEN_FOR_TESTING]
+        )
     assert e.value.status_code == 403
 
-    user = user_from_token(xngin_session, TESTING_TOKENS[PRIVILEGED_TOKEN_FOR_TESTING])
+    user = await user_from_token(
+        xngin_session, TESTING_TOKENS[PRIVILEGED_TOKEN_FOR_TESTING]
+    )
     assert user.is_privileged
+    await xngin_session.refresh(user, ["organizations"])
 
     org = user.organizations[0]
+    await xngin_session.refresh(org, ["datasources"])
     ds = org.datasources[0]
+
     ds_config = ds.get_config()
     pt_def = ds_config.participants[0]
     # Assert it's a "schema" type, not the old "sheets" type.
@@ -213,12 +191,12 @@ def test_user_from_token(xngin_session):
     flags.AIRPLANE_MODE,
     reason="This test will fail in airplane mode because airplane mode treats all Admin API calls as authenticated.",
 )
-def test_list_orgs_unauthenticated():
+def test_list_orgs_unauthenticated(client):
     response = client.get("/v1/m/organizations")
     assert response.status_code == 403, response.content
 
 
-def test_list_orgs_privileged():
+def test_list_orgs_privileged(pget):
     response = pget("/v1/m/organizations")
     assert response.status_code == 200, response.content
 
@@ -227,12 +205,12 @@ def test_list_orgs_privileged():
     flags.AIRPLANE_MODE,
     reason="This test will fail in airplane mode because airplane mode treats all Admin API calls as authenticated.",
 )
-def test_list_orgs_unprivileged():
+def test_list_orgs_unprivileged(uget):
     response = uget("/v1/m/organizations")
     assert response.status_code == 403, response.content
 
 
-def test_create_datasource_invalid_dns(testing_datasource):
+def test_create_datasource_invalid_dns(testing_datasource, ppost):
     """Tests that we reject insecure hostnames with a 400."""
     response = ppost(
         f"/v1/m/organizations/{testing_datasource.org.id}/members",
@@ -260,7 +238,7 @@ def test_create_datasource_invalid_dns(testing_datasource):
     assert "DNS resolution failed" in str(response.content)
 
 
-def test_add_member_to_org(testing_datasource):
+def test_add_member_to_org(testing_datasource, ppost):
     """Test adding a user to an org."""
     # Add privileged user to existing organization
     response = ppost(
@@ -277,7 +255,7 @@ def test_add_member_to_org(testing_datasource):
     assert response.status_code == 204, response.content
 
 
-def test_list_orgs(testing_datasource_with_user):
+def test_list_orgs(testing_datasource_with_user, pget):
     """Test listing the orgs the user is a member of."""
     response = pget("/v1/m/organizations")
     assert response.status_code == 200, response.content
@@ -288,7 +266,7 @@ def test_list_orgs(testing_datasource_with_user):
     assert response_json["items"][0]["name"] == "test organization"
 
 
-def test_list_orgs_with_new_privileged_user():
+def test_list_orgs_with_new_privileged_user(pget):
     """Test listing the orgs of a new privileged user."""
     response = pget("/v1/m/organizations")
     assert response.status_code == 200, response.content
@@ -296,7 +274,7 @@ def test_list_orgs_with_new_privileged_user():
     assert response.json()["items"][0]["name"] == "My Organization"
 
 
-def test_datasource_lifecycle(testing_datasource_with_user):
+def test_datasource_lifecycle(testing_datasource_with_user, ppost, pget, ppatch):
     """Test creating, listing, updating a datasource."""
     org_id = testing_datasource_with_user.org.id
 
@@ -381,7 +359,7 @@ def test_datasource_lifecycle(testing_datasource_with_user):
     )
 
 
-def test_delete_datasource(testing_datasource_with_user):
+def test_delete_datasource(testing_datasource_with_user, udelete, pdelete):
     """Test deleting a datasource a few different ways."""
     ds_id = testing_datasource_with_user.ds.id
 
@@ -398,7 +376,99 @@ def test_delete_datasource(testing_datasource_with_user):
     assert response.status_code == 204, response.content
 
 
-def test_participants_lifecycle(testing_datasource_with_user):
+async def test_webhook_lifecycle(
+    testing_datasource_with_user_added, pdelete, ppost, ppatch, pget
+):
+    """Test creating, updating, and deleting a webhook."""
+    org_id = testing_datasource_with_user_added.org.id
+
+    # Create a webhook
+    response = ppost(
+        f"/v1/m/organizations/{org_id}/webhooks",
+        json=AddWebhookToOrganizationRequest(
+            type="experiment.created",
+            url="https://example.com/webhook",
+            name="test webhook",
+        ).model_dump(),
+    )
+    assert response.status_code == 200, response.content
+    webhook_data = AddWebhookToOrganizationResponse.model_validate(response.json())
+    assert webhook_data.name == "test webhook"
+    assert webhook_data.type == "experiment.created"
+    assert webhook_data.url == "https://example.com/webhook"
+    assert webhook_data.auth_token is not None
+    webhook_id = webhook_data.id
+    original_auth_token = webhook_data.auth_token
+
+    # List webhooks to verify creation
+    response = pget(f"/v1/m/organizations/{org_id}/webhooks")
+    assert response.status_code == 200, response.content
+    webhooks = ListWebhooksResponse.model_validate(response.json()).items
+    assert len(webhooks) == 1
+    assert webhooks[0].id == webhook_id
+    assert webhooks[0].url == "https://example.com/webhook"
+    assert webhooks[0].auth_token == original_auth_token
+
+    # Regenerate the auth token
+    response = ppost(f"/v1/m/organizations/{org_id}/webhooks/{webhook_id}/authtoken")
+    assert response.status_code == 204, response.content
+
+    # List webhooks to verify auth token was changed
+    response = pget(f"/v1/m/organizations/{org_id}/webhooks")
+    assert response.status_code == 200, response.content
+    webhooks = ListWebhooksResponse.model_validate(response.json()).items
+    assert len(webhooks) == 1
+    assert webhooks[0].auth_token != original_auth_token
+    assert webhooks[0].auth_token is not None
+
+    # Update the webhook URL
+    new_url = "https://updated-example.com/webhook"
+    new_name = "new name"
+    response = ppatch(
+        f"/v1/m/organizations/{org_id}/webhooks/{webhook_id}",
+        json=UpdateOrganizationWebhookRequest(url=new_url, name=new_name).model_dump(),
+    )
+    assert response.status_code == 204, response.content
+
+    # List webhooks to verify update
+    response = pget(f"/v1/m/organizations/{org_id}/webhooks")
+    assert response.status_code == 200, response.content
+    webhooks = ListWebhooksResponse.model_validate(response.json()).items
+    assert len(webhooks) == 1
+    assert webhooks[0].url == new_url
+    assert webhooks[0].name == new_name
+
+    # Delete the webhook
+    response = pdelete(f"/v1/m/organizations/{org_id}/webhooks/{webhook_id}")
+    assert response.status_code == 204, response.content
+
+    # List webhooks to verify deletion
+    response = pget(f"/v1/m/organizations/{org_id}/webhooks")
+    assert response.status_code == 200, response.content
+    webhooks = ListWebhooksResponse.model_validate(response.json()).items
+    assert len(webhooks) == 0
+
+    # Try to regenerate auth token for a non-existent webhook
+    response = ppost(f"/v1/m/organizations/{org_id}/webhooks/{webhook_id}/authtoken")
+    assert response.status_code == 404, response.content
+
+    # Try to update a non-existent webhook
+    response = ppatch(
+        f"/v1/m/organizations/{org_id}/webhooks/{webhook_id}",
+        json=UpdateOrganizationWebhookRequest(
+            url="https://should-fail.com/webhook", name="fail"
+        ).model_dump(),
+    )
+    assert response.status_code == 404, response.content
+
+    # Try to delete a non-existent webhook
+    response = pdelete(f"/v1/m/organizations/{org_id}/webhooks/{webhook_id}")
+    assert response.status_code == 404, response.content
+
+
+def test_participants_lifecycle(
+    testing_datasource_with_user, pget, ppost, ppatch, pdelete
+):
     """Test getting, creating, listing, updating, and deleting a participant type."""
     ds_id = testing_datasource_with_user.ds.id
 
@@ -490,7 +560,7 @@ def test_participants_lifecycle(testing_datasource_with_user):
     assert response.status_code == 404, response.content
 
 
-def test_create_participants_type_invalid(testing_datasource):
+def test_create_participants_type_invalid(testing_datasource, ppost):
     response = ppost(
         f"/v1/m/datasources/{testing_datasource.ds.id}/participants",
         content=CreateParticipantsTypeRequest.model_construct(
@@ -517,7 +587,7 @@ def test_create_participants_type_invalid(testing_datasource):
     )
 
 
-def test_lifecycle_with_db(testing_datasource):
+async def test_lifecycle_with_db(testing_datasource, ppost, pget, pdelete):
     """Exercises the admin API methods that require an external database."""
     # Add the privileged user to the organization.
     response = ppost(
@@ -713,8 +783,7 @@ def test_lifecycle_with_db(testing_datasource):
 
 
 def test_create_experiment_with_assignment_validation_errors(
-    testing_datasource_with_user_added,
-    testing_sheet_datasource_with_user_added,
+    testing_datasource_with_user_added, testing_sheet_datasource_with_user_added, ppost
 ):
     """Test LateValidationError cases in create_experiment_with_assignment."""
     testing_datasource = testing_datasource_with_user_added
@@ -743,8 +812,11 @@ def test_create_experiment_with_assignment_validation_errors(
     assert "Participants must be of type schema" in response.json()["message"]
 
 
-def test_create_preassigned_experiment_using_inline_schema_ds(
-    xngin_session, testing_datasource_with_user_added, use_deterministic_random
+async def test_create_preassigned_experiment_using_inline_schema_ds(
+    xngin_session: AsyncSession,
+    testing_datasource_with_user_added,
+    use_deterministic_random,
+    ppost,
 ):
     datasource_id = testing_datasource_with_user_added.ds.id
     request_obj = make_create_preassigned_experiment_request()
@@ -789,8 +861,10 @@ def test_create_preassigned_experiment_using_inline_schema_ds(
     (arm1_id, arm2_id) = [arm.arm_id for arm in created_experiment.design_spec.arms]
 
     # Verify database state using the ids in the returned DesignSpec.
-    experiment = xngin_session.scalars(
-        select(tables.Experiment).where(tables.Experiment.id == experiment_id)
+    experiment = (
+        await xngin_session.scalars(
+            select(tables.Experiment).where(tables.Experiment.id == experiment_id)
+        )
     ).one()
     assert experiment.state == ExperimentState.ASSIGNED
     assert experiment.datasource_id == datasource_id
@@ -798,14 +872,14 @@ def test_create_preassigned_experiment_using_inline_schema_ds(
     assert experiment.participant_type == "test_participant_type"
     assert experiment.name == request_obj.design_spec.experiment_name
     assert experiment.description == request_obj.design_spec.description
-    assert conftest.dates_equal(
-        experiment.start_date, request_obj.design_spec.start_date
-    )
-    assert conftest.dates_equal(experiment.end_date, request_obj.design_spec.end_date)
+    assert_dates_equal(experiment.start_date, request_obj.design_spec.start_date)
+    assert_dates_equal(experiment.end_date, request_obj.design_spec.end_date)
     # Verify assignments were created
-    assignments = xngin_session.scalars(
-        select(tables.ArmAssignment).where(
-            tables.ArmAssignment.experiment_id == experiment_id
+    assignments = (
+        await xngin_session.scalars(
+            select(tables.ArmAssignment).where(
+                tables.ArmAssignment.experiment_id == experiment_id
+            )
         )
     ).all()
     assert len(assignments) == 100, {
@@ -827,7 +901,7 @@ def test_create_preassigned_experiment_using_inline_schema_ds(
 
 
 def test_create_online_experiment_using_inline_schema_ds(
-    testing_datasource_with_user_added, use_deterministic_random
+    testing_datasource_with_user_added, use_deterministic_random, ppost
 ):
     datasource_id = testing_datasource_with_user_added.ds.id
     request_obj = make_create_online_experiment_request()
@@ -866,7 +940,9 @@ def test_create_online_experiment_using_inline_schema_ds(
     assert actual_design_spec == request_obj.design_spec
 
 
-def test_get_experiment_assignment_for_preassigned_participant(testing_experiment):
+def test_get_experiment_assignment_for_preassigned_participant(
+    testing_experiment, pget
+):
     datasource_id = testing_experiment.datasource_id
     experiment_id = testing_experiment.id
     assignments = testing_experiment.arm_assignments
@@ -894,14 +970,14 @@ def test_get_experiment_assignment_for_preassigned_participant(testing_experimen
     assert assignment_response.assignment is not None
 
 
-def test_get_experiment_assignment_for_online_participant(
-    xngin_session, testing_datasource_with_user_added
+async def test_get_experiment_assignment_for_online_participant(
+    xngin_session: AsyncSession, testing_datasource_with_user_added, pget
 ):
-    testing_experiment = insert_experiment_and_arms(
+    test_experiment = await insert_experiment_and_arms(
         xngin_session, testing_datasource_with_user_added.ds, "online"
     )
-    datasource_id = testing_experiment.datasource_id
-    experiment_id = testing_experiment.id
+    datasource_id = test_experiment.datasource_id
+    experiment_id = test_experiment.id
 
     # Check for an assignment that doesn't exist, but don't create it.
     response = pget(
@@ -927,7 +1003,7 @@ def test_get_experiment_assignment_for_online_participant(
     assert assignment_response.participant_id == "new_id"
     assert assignment_response.assignment is not None
     assert str(assignment_response.assignment.arm_id) in {
-        arm.id for arm in testing_experiment.arms
+        arm.id for arm in test_experiment.arms
     }
 
     # Get back the same assignment.
@@ -941,26 +1017,27 @@ def test_get_experiment_assignment_for_online_participant(
     assert assignment_response2 == assignment_response
 
     # Make sure there's only one db entry.
-    assignment = xngin_session.scalars(
+    scalars = await xngin_session.scalars(
         select(tables.ArmAssignment).where(
             tables.ArmAssignment.experiment_id == experiment_id
         )
-    ).one()
+    )
+    assignment = scalars.one()
     assert assignment.participant_id == "new_id"
     assert assignment.arm_id == str(assignment_response.assignment.arm_id)
 
 
-def test_get_experiment_assignment_for_online_participant_past_end_date(
-    xngin_session, testing_datasource_with_user_added
+async def test_get_experiment_assignment_for_online_participant_past_end_date(
+    xngin_session: AsyncSession, testing_datasource_with_user_added, pget
 ):
-    testing_experiment = insert_experiment_and_arms(
+    new_exp = await insert_experiment_and_arms(
         xngin_session,
         testing_datasource_with_user_added.ds,
         "online",
         end_date=datetime.now(UTC) - timedelta(days=1),
     )
-    datasource_id = testing_experiment.datasource_id
-    experiment_id = testing_experiment.id
+    datasource_id = new_exp.datasource_id
+    experiment_id = new_exp.id
 
     # Verify no new assignment is created for the ended experiment.
     response = pget(
@@ -972,16 +1049,14 @@ def test_get_experiment_assignment_for_online_participant_past_end_date(
     )
     assert assignment_response.experiment_id == experiment_id
     assert assignment_response.participant_id == "new_id"
-    assert assignment_response.assignment is None
+    assert assignment_response.assignment is None, assignment_response.model_dump_json()
     # Verify that the experiment state was updated.
-    xngin_session.refresh(testing_experiment)
-    assert testing_experiment.stopped_assignments_at is not None
-    assert (
-        testing_experiment.stopped_assignments_reason == StopAssignmentReason.END_DATE
-    )
+    await xngin_session.refresh(new_exp)
+    assert new_exp.stopped_assignments_at is not None
+    assert new_exp.stopped_assignments_reason == StopAssignmentReason.END_DATE
 
 
-def test_experiments_analyze(testing_experiment):
+def test_experiments_analyze(testing_experiment, pget):
     datasource_id = testing_experiment.datasource_id
     experiment_id = testing_experiment.id
 
@@ -1011,14 +1086,14 @@ def test_experiments_analyze(testing_experiment):
         assert sum([arm.num_missing_values for arm in analysis.arm_analyses]) == 1
 
 
-def test_experiments_analyze_for_experiment_with_no_participants(
-    xngin_session, testing_datasource_with_user_added
+async def test_experiments_analyze_for_experiment_with_no_participants(
+    xngin_session: AsyncSession, testing_datasource_with_user_added, pget
 ):
-    testing_experiment = insert_experiment_and_arms(
+    test_experiment = await insert_experiment_and_arms(
         xngin_session, testing_datasource_with_user_added.ds, "online"
     )
-    datasource_id = testing_experiment.datasource_id
-    experiment_id = testing_experiment.id
+    datasource_id = test_experiment.datasource_id
+    experiment_id = test_experiment.id
 
     response = pget(
         f"/v1/m/datasources/{datasource_id}/experiments/{experiment_id}/analyze"
@@ -1040,19 +1115,20 @@ def test_experiments_analyze_for_experiment_with_no_participants(
         ("abandon", ExperimentState.COMMITTED, 400, "Invalid state: committed"),
     ],
 )
-def test_admin_experiment_state_setting(
-    xngin_session,
+async def test_admin_experiment_state_setting(
+    xngin_session: AsyncSession,
     testing_datasource_with_user_added,
     endpoint,
     initial_state,
     expected_status,
     expected_detail,
+    ppost,
 ):
     # Initialize our state with an existing experiment who's state we want to modify.
     datasource = testing_datasource_with_user_added.ds
     experiment, _ = make_insertable_experiment(datasource, initial_state)
     xngin_session.add(experiment)
-    xngin_session.commit()
+    await xngin_session.commit()
 
     response = ppost(
         f"/v1/m/datasources/{datasource.id}/experiments/{experiment.id!s}/{endpoint}"
@@ -1067,8 +1143,147 @@ def test_admin_experiment_state_setting(
             if endpoint == "abandon"
             else ExperimentState.COMMITTED
         )
-        xngin_session.refresh(experiment)
+        await xngin_session.refresh(experiment)
         assert experiment.state == expected_state
     # If failure case, verify the error message
     if expected_detail:
         assert response.json()["detail"] == expected_detail
+
+
+async def test_manage_apikeys(testing_datasource_with_user_added, ppost, pget, pdelete):
+    ds = testing_datasource_with_user_added.ds
+
+    response = pget(f"/v1/m/datasources/{ds.id}/apikeys")
+    assert response.status_code == 200
+    list_api_keys_response = ListApiKeysResponse.model_validate(response.json())
+    assert len(list_api_keys_response.items) == 1
+
+    response = ppost(f"/v1/m/datasources/{ds.id}/apikeys/")
+    assert response.status_code == 200
+    create_api_key_response = CreateApiKeyResponse.model_validate(response.json())
+    assert create_api_key_response.datasource_id == ds.id
+    created_api_key_id = create_api_key_response.id
+
+    response = pget(f"/v1/m/datasources/{ds.id}/apikeys")
+    assert response.status_code == 200
+    list_api_keys_response = ListApiKeysResponse.model_validate(response.json())
+    assert len(list_api_keys_response.items) == 2
+
+    response = pdelete(f"/v1/m/datasources/{ds.id}/apikeys/{created_api_key_id}")
+    assert response.status_code == 204
+
+    response = pget(f"/v1/m/datasources/{ds.id}/apikeys")
+    assert response.status_code == 200
+    list_api_keys_response = ListApiKeysResponse.model_validate(response.json())
+    assert len(list_api_keys_response.items) == 1
+
+
+async def test_experiment_webhook_integration(
+    testing_datasource_with_user_added, ppost, pget
+):
+    """Test creating an experiment with webhook associations and verifying webhook IDs in response."""
+    org_id = testing_datasource_with_user_added.org.id
+    datasource_id = testing_datasource_with_user_added.ds.id
+
+    # Create two webhooks in the organization
+    webhook1_response = ppost(
+        f"/v1/m/organizations/{org_id}/webhooks",
+        json=AddWebhookToOrganizationRequest(
+            type="experiment.created",
+            name="Test Webhook 1",
+            url="https://example.com/webhook1",
+        ).model_dump(),
+    )
+    assert webhook1_response.status_code == 200, webhook1_response.content
+    webhook1_id = webhook1_response.json()["id"]
+
+    webhook2_response = ppost(
+        f"/v1/m/organizations/{org_id}/webhooks",
+        json=AddWebhookToOrganizationRequest(
+            type="experiment.created",
+            name="Test Webhook 2",
+            url="https://example.com/webhook2",
+        ).model_dump(),
+    )
+    assert webhook2_response.status_code == 200, webhook2_response.content
+    webhook2_id = webhook2_response.json()["id"]
+
+    # Create an experiment with only the first webhook using proper Pydantic models
+    experiment_request = CreateExperimentRequest(
+        design_spec=PreassignedExperimentSpec(
+            participant_type="test_participant_type",
+            experiment_name="Test Experiment with Webhook",
+            description="Testing webhook integration",
+            start_date=datetime(2024, 1, 1, tzinfo=UTC),
+            end_date=datetime(2024, 1, 31, 23, 59, 59, tzinfo=UTC),
+            arms=[
+                Arm(arm_name="control", arm_description="Control group"),
+                Arm(arm_name="treatment", arm_description="Treatment group"),
+            ],
+            metrics=[DesignSpecMetricRequest(field_name="income", metric_pct_change=5)],
+            strata=[],
+            filters=[],
+        ),
+        webhooks=[webhook1_id],  # Only include the first webhook
+    )
+
+    create_response = ppost(
+        f"/v1/m/datasources/{datasource_id}/experiments?chosen_n=100",
+        json=experiment_request.model_dump(mode="json"),
+    )
+    assert create_response.status_code == 200, create_response.content
+
+    # Verify the create response includes the webhook
+    created_experiment = create_response.json()
+    assert "webhooks" in created_experiment
+    assert len(created_experiment["webhooks"]) == 1
+    assert created_experiment["webhooks"][0] == webhook1_id
+
+    # Get the experiment ID for further testing
+    experiment_id = created_experiment["design_spec"]["experiment_id"]
+
+    # Get the experiment and verify webhook is included
+    get_response = pget(
+        f"/v1/m/datasources/{datasource_id}/experiments/{experiment_id}"
+    )
+    assert get_response.status_code == 200, get_response.content
+
+    retrieved_experiment = get_response.json()
+    assert "webhooks" in retrieved_experiment
+    assert len(retrieved_experiment["webhooks"]) == 1
+    assert retrieved_experiment["webhooks"][0] == webhook1_id
+
+    # Verify the second webhook is not included
+    assert webhook2_id not in retrieved_experiment["webhooks"]
+
+    # Test creating an experiment with no webhooks using proper Pydantic models
+    experiment_request_no_webhooks = CreateExperimentRequest(
+        design_spec=PreassignedExperimentSpec(
+            participant_type="test_participant_type",
+            experiment_name="Test Experiment without Webhooks",
+            description="Testing no webhook integration",
+            start_date=datetime(2024, 1, 1, tzinfo=UTC),
+            end_date=datetime(2024, 1, 31, 23, 59, 59, tzinfo=UTC),
+            arms=[
+                Arm(arm_name="control", arm_description="Control group"),
+                Arm(arm_name="treatment", arm_description="Treatment group"),
+            ],
+            metrics=[DesignSpecMetricRequest(field_name="income", metric_pct_change=5)],
+            strata=[],
+            filters=[],
+        )
+        # No webhooks field - should default to empty list
+    )
+
+    create_response_no_webhooks = ppost(
+        f"/v1/m/datasources/{datasource_id}/experiments?chosen_n=100",
+        json=experiment_request_no_webhooks.model_dump(mode="json"),
+    )
+    assert create_response_no_webhooks.status_code == 200, (
+        create_response_no_webhooks.content
+    )
+
+    # Verify no webhooks are associated
+    created_experiment_no_webhooks = create_response_no_webhooks.json()
+    assert "webhooks" in created_experiment_no_webhooks
+    assert len(created_experiment_no_webhooks["webhooks"]) == 0

@@ -1,3 +1,9 @@
+"""Settings describe customer configuration data loaded at startup from static JSON files (obsolete)
+or read from the database (see tables.Datasource.get_config()).
+
+The Pydantic classes herein also provide some methods for connecting to the customer databases.
+"""
+
 import base64
 import binascii
 import json
@@ -33,8 +39,8 @@ from tenacity import (
 from xngin.apiserver import flags
 from xngin.apiserver.certs import get_amazon_trust_ca_bundle_path
 from xngin.apiserver.dns.safe_resolve import safe_resolve
+from xngin.apiserver.dwh.inspection_types import ParticipantsSchema
 from xngin.apiserver.settings_secrets import replace_secrets
-from xngin.schema.schema_types import ParticipantsSchema
 
 DEFAULT_SETTINGS_FILE = "xngin.settings.json"
 SA_LOGGER_NAME_FOR_DWH = "xngin_dwh"
@@ -368,16 +374,17 @@ class Dsn(ConfigBaseModel, BaseDsn):
             raise NotImplementedError(
                 "Dsn.from_url() only supports postgres databases."
             )
-        url = make_url(url)
+        parsed_url = make_url(url)
+
         return Dsn(
-            driver=f"postgresql+{url.get_driver_name()}",
-            host=url.host,
-            port=url.port,
-            user=url.username,
-            password=url.password,
-            dbname=url.database,
-            sslmode=url.query.get("sslmode", "verify-ca"),
-            search_path=url.query.get("search_path", None),
+            driver=f"postgresql+{parsed_url.get_driver_name()}",
+            host=parsed_url.host,
+            port=parsed_url.port,
+            user=parsed_url.username,
+            password=parsed_url.password,
+            dbname=parsed_url.database,
+            sslmode=parsed_url.query.get("sslmode", "verify-ca"),
+            search_path=parsed_url.query.get("search_path", None),
         )
 
     @field_serializer("password", when_used="json")
@@ -472,6 +479,10 @@ class RemoteDatabaseConfig(ParticipantsMixin, ConfigBaseModel):
             # us from connecting to addresses like 127.0.0.1 or addresses that are on our hosting provider's internal
             # network.
             # https://www.postgresql.org/docs/current/libpq-connect.html#LIBPQ-PARAMKEYWORDS
+            if not url.host:
+                raise ValueError(
+                    "Cannot connect to a Postgres database without a host in the URL."
+                )
             connect_args["hostaddr"] = safe_resolve(url.host)
 
         logger.info(
@@ -526,8 +537,8 @@ class Datasource(ConfigBaseModel):
 
 
 class XnginSettings(ConfigBaseModel):
-    trusted_ips: Annotated[list[str], Field(default_factory=list)]
-    db_connect_timeout_secs: int = 3
+    trusted_ips: Annotated[list[str], Field(default_factory=list, deprecated=True)]
+    db_connect_timeout_secs: Annotated[int, Field(deprecated=True)] = 3
     datasources: list[Datasource]
 
     def get_datasource(self, datasource_id):
@@ -564,7 +575,7 @@ class CannotFindParticipantsError(Exception):
         self.participant_type = participant_type
         self.message = (
             f"The participant type '{participant_type}' does not exist."
-            "(Possible typo in request, or server settings for your dwh may be"
+            "(Possible typo in request, or server settings for your dwh may be "
             "misconfigured.)"
         )
 
@@ -602,7 +613,7 @@ def infer_table_from_cursor(
                 # Map Redshift type codes to SQLAlchemy types. Not comprehensive.
                 # https://docs.sqlalchemy.org/en/20/core/types.html
                 # Comment shows both pg_type.typename / information_schema.data_type
-                sa_type: type[sqlalchemy.TypeEngine] | sqlalchemy.TypeEngine
+                sa_type: type[sqlalchemy.types.TypeEngine] | sqlalchemy.types.TypeEngine
                 match type_code:
                     case 16:  # BOOL / boolean
                         sa_type = sqlalchemy.Boolean

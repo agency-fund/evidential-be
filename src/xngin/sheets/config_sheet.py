@@ -3,8 +3,8 @@ from collections.abc import Generator
 
 from pydantic import BaseModel, ValidationError
 
+from xngin.apiserver.dwh.inspection_types import FieldDescriptor, ParticipantsSchema
 from xngin.apiserver.settings import SheetRef
-from xngin.schema.schema_types import FieldDescriptor, ParticipantsSchema
 from xngin.sheets.gsheets import read_sheet_from_gsheet
 
 GOOGLE_SHEET_PREFIX = "https://docs.google.com/spreadsheets/"

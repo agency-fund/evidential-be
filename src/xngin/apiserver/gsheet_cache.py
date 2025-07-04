@@ -2,20 +2,20 @@ from collections.abc import Callable
 
 from sqlalchemy import update
 from sqlalchemy.exc import IntegrityError
-from sqlalchemy.orm import Session
+from sqlalchemy.ext.asyncio import AsyncSession
 
+from xngin.apiserver.dwh.inspection_types import ParticipantsSchema
 from xngin.apiserver.models import tables
 from xngin.apiserver.settings import SheetRef
-from xngin.schema.schema_types import ParticipantsSchema
 
 
 class GSheetCache:
     """Implements a simple read-through cache for Google Sheets data backed by a database."""
 
-    def __init__(self, session: Session):
+    def __init__(self, session: AsyncSession):
         self.session = session
 
-    def get(
+    async def get(
         self,
         key: SheetRef,
         fetcher: Callable[[], ParticipantsSchema],
@@ -24,19 +24,19 @@ class GSheetCache:
         cache_key = f"{key.url}!{key.worksheet}"
         entry = None
         if not refresh:
-            entry = self.session.get(tables.CacheTable, cache_key)
+            entry = await self.session.get(tables.CacheTable, cache_key)
         if not entry:
             result = fetcher()
             entry = tables.CacheTable(key=cache_key, value=result.model_dump_json())
             try:
                 self.session.add(entry)
-                self.session.commit()
+                await self.session.commit()
             except IntegrityError:
-                self.session.rollback()
-                self.session.execute(
+                await self.session.rollback()
+                await self.session.execute(
                     update(tables.CacheTable)
                     .where(tables.CacheTable.key == entry.key)
                     .values(value=entry.value)
                 )
-                self.session.commit()
+                await self.session.commit()
         return ParticipantsSchema.model_validate_json(entry.value)

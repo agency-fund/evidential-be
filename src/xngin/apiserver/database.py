@@ -1,11 +1,13 @@
+"""Handles SQLAlchemy connections to the application database."""
+
 import os
 from pathlib import Path
 
-from sqlalchemy import create_engine, event
-from sqlalchemy.orm import sessionmaker
+from loguru import logger
+from sqlalchemy import event
+from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
 from xngin.apiserver import flags
-from xngin.apiserver.models import tables
 
 # SQLAlchemy's logger will append this to the name of its loggers used for the application database; e.g.
 # sqlalchemy.engine.Engine.xngin_app.
@@ -14,47 +16,45 @@ SA_LOGGER_NAME_FOR_APP = "xngin_app"
 DEFAULT_POSTGRES_DIALECT = "postgresql+psycopg"
 
 
+def generic_url_to_sa_url(database_url):
+    """Converts postgres:// to a SQLAlchemy-compatible value that includes a dialect."""
+    if database_url.startswith(("postgres://", "postgresql://")):
+        database_url = (
+            DEFAULT_POSTGRES_DIALECT
+            + "://"
+            + database_url[database_url.find("://") + 3 :]
+        )
+    return database_url
+
+
 def get_server_database_url():
     """Gets a SQLAlchemy-compatible URL string from the environment."""
     # Hosting providers may set hosted database URL as DATABASE_URL.
     if database_url := os.environ.get("DATABASE_URL"):
-        return generic_url_to_sa_url(database_url)
-    if xngin_db := os.environ.get("XNGIN_DB"):
-        return xngin_db
-    raise ValueError("DATABASE_URL or XNGIN_DB not set")
-
-
-def generic_url_to_sa_url(database_url):
-    """Converts postgres:// to a SQLAlchemy-compatible value that includes a dialect."""
-    if database_url.startswith("postgres://"):
-        database_url = (
-            DEFAULT_POSTGRES_DIALECT + "://" + database_url[len("postgres://") :]
-        )
-    return database_url
+        with_dialect = generic_url_to_sa_url(database_url)
+        logger.info(f"Using application database DSN: {with_dialect}")
+        return with_dialect
+    raise ValueError("DATABASE_URL is not set")
 
 
 SQLALCHEMY_DATABASE_URL = get_server_database_url()
 
 
-engine = create_engine(
+async_engine = create_async_engine(
     SQLALCHEMY_DATABASE_URL,
-    execution_options={"logging_token": "app"},
+    execution_options={"logging_token": "app_async"},
     logging_name=SA_LOGGER_NAME_FOR_APP,
     echo=flags.ECHO_SQL_APP_DB,
 )
 
-
-SessionLocal = sessionmaker(bind=engine, expire_on_commit=False)
-
-
-def setup():
-    tables.Base.metadata.create_all(bind=engine)
+# We use expire_on_commit for reasons described in docs/SQLALCHEMY.md.
+AsyncSessionLocal = async_sessionmaker(bind=async_engine, expire_on_commit=False)
 
 
 if flags.LOG_SQL_APP_DB:
     import inspect
 
-    @event.listens_for(engine, "before_cursor_execute", retval=True)
+    @event.listens_for(async_engine.sync_engine, "before_cursor_execute", retval=True)
     def _apply_comment(
         _connection, _cursor, statement, parameters, _context, _executemany
     ):

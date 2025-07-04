@@ -3,6 +3,7 @@ from datetime import datetime, timedelta
 
 import sqlalchemy
 from sqlalchemy import (
+    ColumnElement,
     ColumnOperators,
     DateTime,
     Float,
@@ -20,16 +21,18 @@ from sqlalchemy import (
 from sqlalchemy.orm import Session
 
 from xngin.apiserver.exceptions_common import LateValidationError
-from xngin.apiserver.routers.stateless_api_types import (
+from xngin.apiserver.routers.common_api_types import (
     EXPERIMENT_IDS_SUFFIX,
     DesignSpecMetric,
     DesignSpecMetricRequest,
     Filter,
     FilterValueTypes,
     MetricType,
+    Relation,
+)
+from xngin.apiserver.routers.stateless.stateless_api_types import (
     MetricValue,
     ParticipantOutcome,
-    Relation,
 )
 from xngin.db_extensions import custom_functions
 
@@ -67,8 +70,8 @@ def get_stats_on_metrics(
             custom_functions.stddev_pop(cast_column).label(f"{field_name}__stddev"),
             func.count(col).label(f"{field_name}__count"),
         ))
-    filters = create_query_filters(sa_table, filters)
-    query = select(*select_columns).filter(*filters)
+    filters_expr = create_query_filters(sa_table, filters)
+    query = select(*select_columns).where(*filters_expr)
     stats = session.execute(query).mappings().fetchone()
 
     # finally backfill with the stats
@@ -149,7 +152,7 @@ def get_participant_metrics(
     )
     participant_filter = create_one_filter(participant_id_filter, sa_table)
     query = select(*select_columns).filter(participant_filter)
-    results = session.execute(query).all()
+    results = session.execute(query)
 
     participant_outcomes: list[ParticipantOutcome] = []
     for result in results:
@@ -234,7 +237,9 @@ def make_csv_regex(values):
     return r"(^x$)|(^x,)|(,x$)|(,x,)".replace("x", value_regexp)
 
 
-def general_excludes_filter(col: sqlalchemy.Column, value: list[FilterValueTypes]):
+def general_excludes_filter(
+    col: sqlalchemy.Column, value: list[FilterValueTypes]
+) -> ColumnElement[bool]:
     if None in value:
         non_null_list = [v for v in value if v is not None]
         if len(non_null_list) == 0:

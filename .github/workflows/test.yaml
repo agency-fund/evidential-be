@@ -29,7 +29,7 @@ env:
   FORCE_COLOR: "1"
   PYTHONUNBUFFERED: "1"
 
-  # Tests should never connect to this DSN but it (or XNGIN_DB) must be set.
+  # Tests should never connect to this DSN but it must be set.
   DATABASE_URL: "postgresql://fail:fail@127.0.0.2:5499/fail"
 
   # Server startup will fail without these values being set.
@@ -43,7 +43,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v4
         with:
-          version: "0.6.14"
+          version: "0.7.13"
           enable-cache: true
       - name: Install dependencies
         run: |
@@ -51,24 +51,11 @@ jobs:
   unittests:
     timeout-minutes: 15
     runs-on: ubuntu-22.04
-    services:
-      postgres:
-        image: postgres:17
-        env:
-          POSTGRES_DB: postgres
-          POSTGRES_PASSWORD: postgres
-        options: >-
-          --health-cmd pg_isready
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 5
-        ports:
-          - 5499:5432
     steps:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v4
         with:
-          version: "0.6.14"
+          version: "0.7.13"
           enable-cache: true
       - uses: arduino/setup-task@v2
         with:
@@ -81,6 +68,8 @@ jobs:
         env:
           GCLOUD_SERVICE_ACCOUNT_CREDENTIALS: ${{ secrets.GOOGLE_APPLICATION_CREDENTIALS_CONTENT }}
       - run: task test
+        env:
+          DATABASE_URL: "postgresql+psycopg://postgres:postgres@localhost:5499/test_xngin?sslmode=disable"
       - name: integration tests
         run: |
           export GOOGLE_APPLICATION_CREDENTIALS=$HOME/.config/gspread/service_account.json
@@ -105,7 +94,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v4
         with:
-          version: "0.6.14"
+          version: "0.7.13"
           enable-cache: true
       - name: Install Task
         uses: arduino/setup-task@v2
@@ -122,7 +111,7 @@ jobs:
           uv run xngin-cli validate-settings xngin.settings.json
       - name: xngin-cli smoke tests
         env:
-          DATABASE_URL: "postgresql://postgres:postgres@localhost:5499/postgres?sslmode=disable"
+          DATABASE_URL: "postgresql+psycopg://postgres:postgres@localhost:5499/postgres?sslmode=disable"
         run: |
           set -x
 
@@ -136,7 +125,7 @@ jobs:
           uv run xngin-cli parse-config-spreadsheet file://./config.csv test_participant_type
       - name: Run xngin.gha.settings.json tests
         env:
-          DATABASE_URL: "postgresql://postgres:postgres@localhost:5499/postgres?sslmode=disable"
+          DATABASE_URL: "postgresql+psycopg://postgres:postgres@localhost:5499/postgres?sslmode=disable"
           PGPASSWORD: postgres
         run: |
           set -x
@@ -151,11 +140,13 @@ jobs:
           uv run xngin-cli create-testing-dwh --dsn postgresql+psycopg2://postgres@127.0.0.1:5499/postgres \
             --schema-name alt2 --table-name=alt_table2
 
+          # Create the application database.
+          uv run xngin-cli create-apiserver-db
+
           # Verify the sources in xngin.gha.settings.json are still readable (uses the psycopg imports).
           XNGIN_SETTINGS=src/xngin/apiserver/testdata/xngin.gha.settings.json uv run fastapi run \
             src/xngin/apiserver/main.py &
           sleep 10
-          curl -v --fail-with-body http://localhost:8000/_healthchecks/settings
           # Verify we can get data from a table in the default schema
           curl -v --fail-with-body -H "Datasource-ID: gha-postgres" 'http://localhost:8000/v1/filters?participant_type=dwh'
           # Now verify search_path can override defaults
@@ -184,7 +175,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v4
         with:
-          version: "0.6.14"
+          version: "0.7.13"
           enable-cache: true
       - run: uv sync --locked
       - uses: google-github-actions/auth@v2
@@ -203,8 +194,8 @@ jobs:
           export ECHO_SQL="1"
           mkdir -p ~/.config/gspread && echo "${GCLOUD_SERVICE_ACCOUNT_CREDENTIALS}" > ~/.config/gspread/service_account.json
           export GOOGLE_APPLICATION_CREDENTIALS=$HOME/.config/gspread/service_account.json
-          export XNGIN_TEST_DWH_URI="bigquery://xngin-development-dc/${DATASET_NAME}?credentials_base64=$(cat ${GOOGLE_APPLICATION_CREDENTIALS} | base64 -w 0)"
-          export XNGIN_TEST_APPDB_URI="postgresql+psycopg://postgres:postgres@localhost:5499/test_xngin?sslmode=disable"
+          export XNGIN_QUERIES_TEST_URI="bigquery://xngin-development-dc/${DATASET_NAME}?credentials_base64=$(cat ${GOOGLE_APPLICATION_CREDENTIALS} | base64 -w 0)"
+          export DATABASE_URL="postgresql+psycopg://postgres:postgres@localhost:5499/test_xngin?sslmode=disable"
           uv run pytest -rA src/xngin/apiserver/dwh/test_queries.py
       - name: bq cleanup
         if: failure() || success()
@@ -224,7 +215,7 @@ jobs:
     runs-on: ubuntu-22.04
     timeout-minutes: 15
     env:
-      DATABASE_URL: "postgresql://postgres:postgres@localhost:5499/postgres?sslmode=disable"
+      DATABASE_URL: "postgresql+psycopg://postgres:postgres@localhost:5499/postgres?sslmode=disable"
       XNGIN_CLI_TABLE_NAME: smoke_${{ github.run_id }}_${{ github.run_attempt }}
     services:
       postgres:
@@ -243,7 +234,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v4
         with:
-          version: "0.6.14"
+          version: "0.7.13"
           enable-cache: true
       - run: uv sync --locked
       - name: write secrets
@@ -254,7 +245,7 @@ jobs:
           openssl sha256 service_account.json
       - name: bq smoke tests
         env:
-          DATABASE_URL: "postgresql://postgres:postgres@localhost:5499/postgres?sslmode=disable"
+          DATABASE_URL: "postgresql+psycopg://postgres:postgres@localhost:5499/postgres?sslmode=disable"
         run: |
           set -x
 
@@ -274,11 +265,13 @@ jobs:
           # configured in the settings file and not relying on fallback behavior.
           unset GOOGLE_APPLICATION_CREDENTIALS
 
+          # Create the application database.
+          uv run xngin-cli create-apiserver-db
+
           # Start a server using the gha-bq profile.
           XNGIN_SETTINGS=src/xngin/apiserver/testdata/xngin.gha.settings.json uv run fastapi run \
             src/xngin/apiserver/main.py &
           sleep 10
-          curl -v --fail-with-body http://localhost:8000/_healthchecks/settings
           curl -v --fail-with-body -H "Datasource-ID: gha-bq" 'http://localhost:8000/v1/filters?participant_type=warehouse'
           curl -v --fail-with-body \
             -H "Datasource-ID: gha-bq" \

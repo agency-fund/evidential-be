@@ -1,28 +1,21 @@
-from fastapi.testclient import TestClient
-
-from xngin.apiserver import conftest, constants
-from xngin.apiserver.main import app
+from xngin.apiserver import constants
 
 # CONFIG_ID_SECURED refers to a datasource defined in xngin.testing.settings.json
 CONFIG_ID_SECURED = "testing-secured"
 
-conftest.setup(app)
-client = TestClient(app)
-client.base_url = client.base_url.join(constants.API_PREFIX_V1)
 
-
-def test_secured_requires_apikey():
+def test_secured_requires_apikey(client_v1):
     """Tests that a config marked as requiring an API key rejects requests w/o API keys."""
-    response = client.get(
+    response = client_v1.get(
         "/filters?participant_type=test_participant_type",
         headers={constants.HEADER_CONFIG_ID: CONFIG_ID_SECURED},
     )
     assert response.status_code == 403, response.content
 
 
-def test_secured_wrong_apikey():
+def test_secured_wrong_apikey(client_v1):
     """Tests that a config marked as requiring an API key rejects requests when no API keys defined."""
-    response = client.get(
+    response = client_v1.get(
         "/filters?participant_type=test_participant_type",
         headers={
             constants.HEADER_CONFIG_ID: CONFIG_ID_SECURED,
@@ -32,16 +25,16 @@ def test_secured_wrong_apikey():
     assert response.status_code == 403, response.content
 
 
-def test_secured_correct_apikey(testing_datasource):
+def test_secured_correct_apikey(testing_datasource, client_v1):
     """Tests that a config with API keys allows valid API keys and rejects invalid keys."""
-    response = client.get(
-        "/_authcheck",
+    response = client_v1.get(
+        "/filters?participant_type=test_participant_type",
         headers={
             constants.HEADER_CONFIG_ID: testing_datasource.ds.id,
             constants.HEADER_API_KEY: testing_datasource.key,
         },
     )
-    assert response.status_code == 204, response.content
+    assert response.status_code == 200, response.content
 
     for bad_key in (
         "",
@@ -49,8 +42,8 @@ def test_secured_correct_apikey(testing_datasource):
         testing_datasource.key.lower(),
         testing_datasource.key.upper(),
     ):
-        response = client.get(
-            "/_authcheck",
+        response = client_v1.get(
+            "/filters?participant_type=test_participant_type",
             headers={
                 constants.HEADER_CONFIG_ID: testing_datasource.ds.id,
                 constants.HEADER_API_KEY: bad_key,

@@ -1,4 +1,4 @@
-from xngin.apiserver.routers.stateless_api_types import DesignSpecMetric
+from xngin.apiserver.routers.common_api_types import DesignSpecMetric
 
 
 class StatsError(Exception):

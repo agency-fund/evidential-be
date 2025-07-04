@@ -17,6 +17,10 @@ repos:
         exclude: ^migrations/
       - id: check-added-large-files
         exclude: ^src/xngin/apiserver/testdata/testing_dwh.csv.zst$
+  - repo: https://github.com/astral-sh/uv-pre-commit
+    rev: 0.7.18
+    hooks:
+      - id: uv-lock
   - repo: https://github.com/astral-sh/ruff-pre-commit
     rev: v0.11.11
     hooks:
@@ -34,3 +38,21 @@ repos:
           - mdformat-gfm-alerts
           - mdformat-ruff
           - mdformat-toc
+  # - repo: https://github.com/econchick/interrogate
+  #   rev: 1.7.0
+  #   hooks:
+  #     - id: interrogate
+  #       name: interrogate
+  #       exclude: '^(.*/)?test_.*\.py$'
+  #       entry: interrogate
+  #       args: [-v, --fail-under=95, --ignore-module]
+  # - repo: https://github.com/pre-commit/mirrors-mypy
+  #   rev: v1.16.1
+  #   hooks:
+  #     - id: mypy
+  #       entry: uv run mypy
+  #       exclude: '(^|/)(test_.*\.py)$'
+  #       pass_filenames: false
+  #       args:
+  #         - src
+  #         - --config-file=pyproject.toml

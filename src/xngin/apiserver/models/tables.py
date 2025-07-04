@@ -7,10 +7,11 @@ import sqlalchemy
 from pydantic import TypeAdapter
 from sqlalchemy import ForeignKey, Index, String
 from sqlalchemy.dialects import postgresql
+from sqlalchemy.ext.asyncio import AsyncAttrs
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 from sqlalchemy.types import TypeEngine
 
-from xngin.apiserver.routers.admin_api_types import (
+from xngin.apiserver.routers.admin.admin_api_types import (
     InspectDatasourceTableResponse,
     InspectParticipantTypesResponse,
 )
@@ -34,7 +35,7 @@ experiment_id_factory = unique_id_factory("exp")
 arm_id_factory = unique_id_factory("arm")
 
 
-class Base(DeclarativeBase):
+class Base(AsyncAttrs, DeclarativeBase):
     # See https://docs.sqlalchemy.org/en/20/orm/declarative_tables.html#customizing-the-type-map
     type_annotation_map: ClassVar[dict[type, TypeEngine]] = {
         # For pg specifically, use the binary form
@@ -82,7 +83,7 @@ class Organization(Base):
     name: Mapped[str] = mapped_column(String(255))
 
     # Relationships
-    arms: Mapped[list["ArmTable"]] = relationship(
+    arms: Mapped[list["Arm"]] = relationship(
         back_populates="organization", cascade="all, delete-orphan"
     )
     users: Mapped[list["User"]] = relationship(
@@ -108,17 +109,22 @@ class Webhook(Base):
     __tablename__ = "webhooks"
 
     id: Mapped[str] = mapped_column(primary_key=True, default=unique_id_factory("wh"))
+    # User-friendly name for the webhook
+    name: Mapped[str] = mapped_column(server_default="")
     # The type of webhook; e.g. experiment.created. These are user-visible arbitrary strings.
     type: Mapped[str] = mapped_column()
     # The URL to post the event to. The payload body depends on the type of webhook.
     url: Mapped[str] = mapped_column()
-    # The token that will be sent in the Authorization header.
+    # The token that will be sent in the Webhook-Token header.
     auth_token: Mapped[str | None] = mapped_column()
 
     organization_id: Mapped[str] = mapped_column(
         ForeignKey("organizations.id", ondelete="CASCADE")
     )
     organization: Mapped["Organization"] = relationship(back_populates="webhooks")
+    experiments: Mapped[list["Experiment"]] = relationship(
+        secondary="experiment_webhooks", back_populates="webhooks"
+    )
 
 
 class Event(Base):
@@ -226,6 +232,22 @@ class UserOrganization(Base):
 
     organization: Mapped["Organization"] = relationship(viewonly=True)
     user: Mapped["User"] = relationship(viewonly=True)
+
+
+class ExperimentWebhook(Base):
+    """Maps an Experiment to a Webhook for many-to-many relationship."""
+
+    __tablename__ = "experiment_webhooks"
+
+    experiment_id: Mapped[str] = mapped_column(
+        ForeignKey("experiments.id", ondelete="CASCADE"), primary_key=True
+    )
+    webhook_id: Mapped[str] = mapped_column(
+        ForeignKey("webhooks.id", ondelete="CASCADE"), primary_key=True
+    )
+
+    experiment: Mapped["Experiment"] = relationship(viewonly=True)
+    webhook: Mapped["Webhook"] = relationship(viewonly=True)
 
 
 class Datasource(Base):
@@ -367,7 +389,7 @@ class ArmAssignment(Base):
     )
 
     experiment: Mapped["Experiment"] = relationship(back_populates="arm_assignments")
-    arm: Mapped["ArmTable"] = relationship(back_populates="arm_assignments")
+    arm: Mapped["Arm"] = relationship(back_populates="arm_assignments")
 
     def strata_names(self) -> list[str]:
         """Returns the names of the strata fields."""
@@ -431,12 +453,15 @@ class Experiment(Base):
     fstat_thresh: Mapped[float | None] = mapped_column()
 
     arm_assignments: Mapped[list["ArmAssignment"]] = relationship(
-        back_populates="experiment", cascade="all, delete-orphan"
+        back_populates="experiment", cascade="all, delete-orphan", lazy="raise"
     )
-    arms: Mapped[list["ArmTable"]] = relationship(
+    arms: Mapped[list["Arm"]] = relationship(
         back_populates="experiment", cascade="all, delete-orphan"
     )
     datasource: Mapped["Datasource"] = relationship(back_populates="experiments")
+    webhooks: Mapped[list["Webhook"]] = relationship(
+        secondary="experiment_webhooks", back_populates="experiments"
+    )
 
     def get_arm_ids(self) -> list[str]:
         return [arm.id for arm in self.arms]
@@ -445,7 +470,7 @@ class Experiment(Base):
         return [arm.name for arm in self.arms]
 
 
-class ArmTable(Base):
+class Arm(Base):
     """Representation of arms of an experiment."""
 
     __tablename__ = "arms"

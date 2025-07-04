@@ -5,18 +5,18 @@ from unittest.mock import Mock
 import pytest
 from sqlalchemy import Update
 from sqlalchemy.exc import IntegrityError
-from sqlalchemy.orm import Session
+from sqlalchemy.ext.asyncio import AsyncSession
 
+from xngin.apiserver.dwh.inspection_types import FieldDescriptor, ParticipantsSchema
 from xngin.apiserver.gsheet_cache import GSheetCache
 from xngin.apiserver.models import tables
-from xngin.apiserver.routers.stateless_api_types import DataType
+from xngin.apiserver.routers.common_api_types import DataType
 from xngin.apiserver.settings import SheetRef
-from xngin.schema.schema_types import FieldDescriptor, ParticipantsSchema
 
 
 @pytest.fixture
 def mock_session():
-    return Mock(spec=Session)
+    return Mock(spec=AsyncSession)
 
 
 @pytest.fixture
@@ -43,19 +43,7 @@ def mock_sheet_config():
     )
 
 
-@pytest.fixture(autouse=True)
-def fixture_teardown(xngin_session):
-    try:
-        # setup here
-        yield
-    finally:
-        # teardown here
-        # Clean the cache after each test.
-        xngin_session.query(tables.CacheTable).delete()
-        xngin_session.commit()
-
-
-def test_get_cached_entry(sheet_cache, mock_session, mock_sheet_config):
+async def test_get_cached_entry(sheet_cache, mock_session, mock_sheet_config):
     key = SheetRef(url="https://example.com", worksheet="Sheet1")
     cache_key = f"{key.url}!{key.worksheet}"
 
@@ -66,7 +54,7 @@ def test_get_cached_entry(sheet_cache, mock_session, mock_sheet_config):
 
     fetcher = Mock()  # This shouldn't be called
 
-    result = sheet_cache.get(key, fetcher)
+    result = await sheet_cache.get(key, fetcher)
 
     assert isinstance(result, ParticipantsSchema)
     assert result.model_dump() == mock_sheet_config.model_dump()
@@ -74,7 +62,7 @@ def test_get_cached_entry(sheet_cache, mock_session, mock_sheet_config):
     fetcher.assert_not_called()
 
 
-def test_get_new_entry(sheet_cache, mock_session, mock_sheet_config):
+async def test_get_new_entry(sheet_cache, mock_session, mock_sheet_config):
     key = SheetRef(url="https://example.com", worksheet="Sheet1")
     cache_key = f"{key.url}!{key.worksheet}"
 
@@ -83,7 +71,7 @@ def test_get_new_entry(sheet_cache, mock_session, mock_sheet_config):
 
     fetcher = Mock(return_value=mock_sheet_config)
 
-    result = sheet_cache.get(key, fetcher)
+    result = await sheet_cache.get(key, fetcher)
 
     assert isinstance(result, ParticipantsSchema)
     assert result.model_dump() == mock_sheet_config.model_dump()
@@ -93,12 +81,12 @@ def test_get_new_entry(sheet_cache, mock_session, mock_sheet_config):
     mock_session.commit.assert_called_once()
 
 
-def test_get_refresh(sheet_cache, mock_session, mock_sheet_config):
+async def test_get_refresh(sheet_cache, mock_session, mock_sheet_config):
     key = SheetRef(url="https://example.com", worksheet="Sheet1")
 
     fetcher = Mock(return_value=mock_sheet_config)
 
-    result = sheet_cache.get(key, fetcher, refresh=True)
+    result = await sheet_cache.get(key, fetcher, refresh=True)
 
     assert isinstance(result, ParticipantsSchema)
     assert result.model_dump() == mock_sheet_config.model_dump()
@@ -108,7 +96,9 @@ def test_get_refresh(sheet_cache, mock_session, mock_sheet_config):
     mock_session.commit.assert_called_once()
 
 
-def test_get_refresh_with_integrityerror(sheet_cache, mock_session, mock_sheet_config):
+async def test_get_refresh_with_integrityerror(
+    sheet_cache, mock_session, mock_sheet_config
+):
     key = SheetRef(url="https://example.com", worksheet="Sheet1")
 
     fetcher = Mock(return_value=mock_sheet_config)
@@ -117,7 +107,7 @@ def test_get_refresh_with_integrityerror(sheet_cache, mock_session, mock_sheet_c
         statement="SQL", params=None, orig=Exception()
     )
 
-    result = sheet_cache.get(key, fetcher, refresh=True)
+    result = await sheet_cache.get(key, fetcher, refresh=True)
 
     assert isinstance(result, ParticipantsSchema)
     assert result.model_dump() == mock_sheet_config.model_dump()
@@ -130,7 +120,7 @@ def test_get_refresh_with_integrityerror(sheet_cache, mock_session, mock_sheet_c
     mock_session.commit.assert_called_once()
 
 
-def test_get_cache_and_refresh(mock_sheet_config, xngin_session):
+async def test_get_cache_and_refresh(mock_sheet_config, xngin_session):
     """Tests the full cycle against a real in-mem db."""
     local_cache = GSheetCache(xngin_session)
 
@@ -138,14 +128,14 @@ def test_get_cache_and_refresh(mock_sheet_config, xngin_session):
     fetcher = Mock(return_value=mock_sheet_config)
 
     # cache miss
-    result = local_cache.get(key, fetcher)
+    result = await local_cache.get(key, fetcher)
     assert isinstance(result, ParticipantsSchema)
     assert result.model_dump() == mock_sheet_config.model_dump()
     fetcher.assert_called_once()
 
     # cache hit
     fetcher = Mock(return_value=None)
-    result = local_cache.get(key, fetcher)
+    result = await local_cache.get(key, fetcher)
     assert isinstance(result, ParticipantsSchema)
     assert result.model_dump() == mock_sheet_config.model_dump()
     fetcher.assert_not_called()
@@ -153,7 +143,7 @@ def test_get_cache_and_refresh(mock_sheet_config, xngin_session):
     # Now test an update
     modified_sheet = mock_sheet_config.model_copy(update={"is_strata": True}, deep=True)
     fetcher = Mock(return_value=modified_sheet)
-    result = local_cache.get(key, fetcher, refresh=True)
+    result = await local_cache.get(key, fetcher, refresh=True)
     assert isinstance(result, ParticipantsSchema)
     assert result.model_dump() == modified_sheet.model_dump()
     fetcher.assert_called_once()
@@ -166,7 +156,7 @@ def test_get_cache_and_refresh(mock_sheet_config, xngin_session):
         ("https://another.com", "DataSheet"),
     ],
 )
-def test_cache_key_generation(
+async def test_cache_key_generation(
     sheet_cache, mock_session, mock_sheet_config, url, worksheet
 ):
     key = SheetRef(url=url, worksheet=worksheet)
@@ -175,7 +165,7 @@ def test_cache_key_generation(
     mock_session.get.return_value = None
     fetcher = Mock(return_value=mock_sheet_config)
 
-    sheet_cache.get(key, fetcher)
+    await sheet_cache.get(key, fetcher)
 
     mock_session.get.assert_called_once_with(tables.CacheTable, cache_key)
     mock_session.add.assert_called_once()

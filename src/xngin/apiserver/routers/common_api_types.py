@@ -6,7 +6,7 @@ import uuid
 from collections.abc import Sequence
 from typing import Annotated, Literal, Self, get_args
 
-import sqlalchemy.sql.sqltypes
+import sqlalchemy.sql
 from loguru import logger
 from pydantic import (
     BaseModel,
@@ -27,14 +27,22 @@ from xngin.apiserver.limits import (
     MAX_NUMBER_OF_FIELDS,
     MAX_NUMBER_OF_FILTERS,
 )
+from xngin.apiserver.models.enums import ExperimentState, StopAssignmentReason
 
-VALID_SQL_COLUMN_REGEX = r"^[a-zA-Z_][a-zA-Z0-9_]*$"
+type FilterValueTypes = (
+    Sequence[Annotated[int, Field(strict=True)] | None]
+    | Sequence[Annotated[float, Field(strict=True, allow_inf_nan=False)] | None]
+    | Sequence[str | None]
+    | Sequence[bool | None]
+)
 
-EXPERIMENT_IDS_SUFFIX = "experiment_ids"
-
-
-class ApiBaseModel(BaseModel):
-    model_config = ConfigDict(extra="forbid")
+type DesignSpec = Annotated[
+    PreassignedExperimentSpec | OnlineExperimentSpec,
+    Field(
+        discriminator="experiment_type",
+        description="Concrete type of experiment to run.",
+    ),
+]
 
 
 class DataType(enum.StrEnum):
@@ -181,147 +189,6 @@ class Relation(enum.StrEnum):
     BETWEEN = "between"
 
 
-type FilterValueTypes = (
-    Sequence[Annotated[int, Field(strict=True)] | None]
-    | Sequence[Annotated[float, Field(strict=True, allow_inf_nan=False)] | None]
-    | Sequence[str | None]
-    | Sequence[bool | None]
-)
-
-
-class Filter(ApiBaseModel):
-    """Defines criteria for filtering rows by value.
-
-    ## Examples
-
-    | Relation | Value       | logical Result                                    |
-    |----------|-------------|---------------------------------------------------|
-    | INCLUDES | [None]      | Match when `x IS NULL`                            |
-    | INCLUDES | ["a"]       | Match when `x IN ("a")`                           |
-    | INCLUDES | ["a", None] | Match when `x IS NULL OR x IN ("a")`              |
-    | INCLUDES | ["a", "b"]  | Match when `x IN ("a", "b")`                      |
-    | EXCLUDES | [None]      | Match `x IS NOT NULL`                             |
-    | EXCLUDES | ["a", None] | Match `x IS NOT NULL AND x NOT IN ("a")`          |
-    | EXCLUDES | ["a", "b"]  | Match `x IS NULL OR (x NOT IN ("a", "b"))`        |
-    | BETWEEN  | ["a", "z"]  | Match `"a" <= x <= "z"`                           |
-    | BETWEEN  | ["a", None] | Match `x >= "a"`                                  |
-
-    String comparisons are case-sensitive.
-
-    ## Special Handling for Comma-Separated Fields
-
-    When the filter name ends in "experiment_ids", the filter is interpreted as follows:
-
-    | Value | Filter         | Result   |
-    |-------|----------------|----------|
-    | "a,b" | INCLUDES ["a"] | Match    |
-    | "a,b" | INCLUDES ["d"] | No match |
-    | "a,b" | EXCLUDES ["d"] | Match    |
-    | "a,b" | EXCLUDES ["b"] | No match |
-
-    Note: The BETWEEN relation is not supported for comma-separated values.
-
-    Note: CSV field comparisons are case-insensitive.
-
-    ## Handling of datetime and timestamp values
-
-    DATETIME or TIMESTAMP-type columns support INCLUDES/EXCLUDES/BETWEEN, similar to numerics.
-
-    Values must be expressed as ISO8601 datetime strings compatible with Python's datetime.fromisoformat()
-    (https://docs.python.org/3/library/datetime.html#datetime.datetime.fromisoformat).
-
-    If a timezone is provided, it must be UTC.
-    """
-
-    field_name: FieldName
-    relation: Relation
-    value: FilterValueTypes
-
-    @classmethod
-    def cast_participant_id(
-        cls, pid: str, column_type: sqlalchemy.sql.sqltypes.TypeEngine
-    ) -> int | uuid.UUID | str:
-        """Casts a participant ID string to an appropriate type based on the column type.
-
-        Only supports INTEGER, BIGINT, UUID and STRING types as defined in DataType.supported_participant_id_types().
-        """
-        if isinstance(
-            column_type,
-            sqlalchemy.sql.sqltypes.Integer | sqlalchemy.sql.sqltypes.BigInteger,
-        ):
-            return int(pid)
-        if isinstance(
-            column_type, sqlalchemy.sql.sqltypes.UUID | sqlalchemy.sql.sqltypes.String
-        ):
-            return pid
-        raise LateValidationError(f"Unsupported participant ID type: {column_type}")
-
-    @model_validator(mode="after")
-    def ensure_experiment_ids_hack_compatible(self) -> "Filter":
-        """Ensures that the filter is compatible with the "experiment_ids" hack."""
-        if not self.field_name.endswith(EXPERIMENT_IDS_SUFFIX):
-            return self
-        allowed_relations = (Relation.INCLUDES, Relation.EXCLUDES)
-        if self.relation not in allowed_relations:
-            raise ValueError(
-                f"filters on experiment_id fields must have relations of type {', '.join(sorted(allowed_relations))}"
-            )
-        for v in self.value:
-            if not isinstance(v, str):
-                continue
-            if "," in v:
-                raise ValueError(
-                    "values in an experiment_id filter may not contain commas"
-                )
-            if v.strip() != v:
-                raise ValueError(
-                    "values in an experiment_id filter may not contain leading or trailing whitespace"
-                )
-        return self
-
-    @model_validator(mode="after")
-    def ensure_value(self) -> "Filter":
-        """Ensures that the `value` field is an unambiguous filter and correct for the relation.
-
-        Note this happens /after/ Pydantic does its type coercion, so we control some of the
-        built-in type coercion using the strict=True annotations on the value field. There
-        are probably some bugs in this.
-        """
-        if self.relation == Relation.BETWEEN:
-            if len(self.value) != 2:
-                raise ValueError("BETWEEN relation requires exactly 2 values")
-
-            none_count = sum(1 for v in self.value if v is None)
-            if none_count > 1:
-                raise ValueError("BETWEEN relation can have at most one None value")
-            if none_count == 0 and type(self.value[0]) is not type(self.value[1]):
-                raise ValueError(
-                    "BETWEEN relation requires same values to be of the same type"
-                )
-        elif not self.value:
-            raise ValueError("value must be a non-empty list")
-
-        return self
-
-    @model_validator(mode="after")
-    def ensure_sane_bool_list(self) -> "Filter":
-        """Ensures that the `value` field does not include redundant or nonsensical items."""
-        n_values = len(self.value)
-        # First check if we're dealing with a list of more than one boolean:
-        if n_values > 1 and all([v is None or isinstance(v, bool) for v in self.value]):
-            # First two technically would also catch non-bool [None, None]
-            if self.relation == Relation.BETWEEN:
-                raise ValueError("Values do not support BETWEEN.")
-            if n_values != len(set(self.value)):
-                raise ValueError("Duplicate values detected.")
-            if n_values == 3 and self.relation == Relation.INCLUDES:
-                raise ValueError("Boolean filter allows all possible values.")
-            if n_values == 3 and self.relation == Relation.EXCLUDES:
-                raise ValueError("Boolean filter rejects all possible values.")
-
-        return self
-
-
 class MetricType(enum.StrEnum):
     """Classifies metrics by their value type."""
 
@@ -337,6 +204,10 @@ class MetricType(enum.StrEnum):
         if python_type is bool:
             return MetricType.BINARY
         raise ValueError(f"Unsupported type: {python_type}")
+
+
+class ApiBaseModel(BaseModel):
+    model_config = ConfigDict(extra="forbid")
 
 
 class DesignSpecMetricBase(ApiBaseModel):
@@ -543,6 +414,242 @@ class ExperimentAnalysis(ApiBaseModel):
     ]
 
 
+class MetricPowerAnalysisMessageType(enum.StrEnum):
+    """Classifies metric power analysis results."""
+
+    SUFFICIENT = "sufficient"
+    INSUFFICIENT = "insufficient"
+    NO_BASELINE = "no baseline"
+    NO_AVAILABLE_N = "no available n"
+    ZERO_EFFECT_SIZE = "zero effect size"
+    ZERO_STDDEV = "zero variation"
+
+
+class MetricPowerAnalysisMessage(ApiBaseModel):
+    """Describes interpretation of power analysis results."""
+
+    type: MetricPowerAnalysisMessageType
+    msg: Annotated[
+        str,
+        Field(
+            description="Main power analysis result stated in human-friendly English."
+        ),
+    ]
+    source_msg: Annotated[
+        str,
+        Field(
+            description="Power analysis result formatted as a template string with curly-braced {} named placeholders. Use with the dictionary of values to support localization of messages."
+        ),
+    ]
+    values: dict[str, float | int] | None = None
+
+
+class MetricPowerAnalysis(ApiBaseModel):
+    """Describes analysis results of a single metric."""
+
+    # Store the original request+baseline info here
+    metric_spec: DesignSpecMetric
+
+    # The initial result of the power calculation
+    target_n: Annotated[
+        int | None,
+        Field(description="Minimum sample size needed to meet the design specs."),
+    ] = None
+
+    sufficient_n: Annotated[
+        bool | None,
+        Field(
+            description="Whether or not there are enough available units to sample from to meet target_n."
+        ),
+    ] = None
+
+    target_possible: Annotated[
+        float | None,
+        Field(
+            description="If there is an insufficient sample size to meet the desired metric_target, we report what is possible given the available_n. This value is equivalent to the relative pct_change_possible. This is None when there is a sufficient sample size to detect the desired change."
+        ),
+    ] = None
+
+    pct_change_possible: Annotated[
+        float | None,
+        Field(
+            description="If there is an insufficient sample size to meet the desired metric_pct_change, we report what is possible given the available_n. This value is equivalent to the absolute target_possible. This is None when there is a sufficient sample size to detect the desired change."
+        ),
+    ] = None
+
+    msg: Annotated[
+        MetricPowerAnalysisMessage | None,
+        Field(description="Human friendly message about the above results."),
+    ] = None
+
+
+class GetStrataResponseElement(ApiBaseModel):
+    """Describes a stratification variable."""
+
+    data_type: DataType
+    field_name: FieldName
+    description: Annotated[str, Field(max_length=MAX_LENGTH_OF_DESCRIPTION_VALUE)]
+    # Extra fields will be stored here in case a user configured their worksheet with extra metadata for their own
+    # downstream use, e.g. to group strata with a friendly identifier.
+    extra: Annotated[dict[str, str] | None, Field(max_length=MAX_NUMBER_OF_FIELDS)] = (
+        None
+    )
+
+
+class GetMetricsResponseElement(ApiBaseModel):
+    """Describes a metric."""
+
+    field_name: FieldName
+    data_type: DataType
+    description: Annotated[str, Field(max_length=MAX_LENGTH_OF_DESCRIPTION_VALUE)]
+
+
+class PowerRequest(ApiBaseModel):
+    design_spec: DesignSpec
+
+
+class PowerResponse(ApiBaseModel):
+    analyses: Annotated[
+        list[MetricPowerAnalysis], Field(max_length=MAX_NUMBER_OF_FIELDS)
+    ]
+
+
+EXPERIMENT_IDS_SUFFIX = "experiment_ids"
+
+
+class Filter(ApiBaseModel):
+    """Defines criteria for filtering rows by value.
+
+    ## Examples
+
+    | Relation | Value       | logical Result                                    |
+    |----------|-------------|---------------------------------------------------|
+    | INCLUDES | [None]      | Match when `x IS NULL`                            |
+    | INCLUDES | ["a"]       | Match when `x IN ("a")`                           |
+    | INCLUDES | ["a", None] | Match when `x IS NULL OR x IN ("a")`              |
+    | INCLUDES | ["a", "b"]  | Match when `x IN ("a", "b")`                      |
+    | EXCLUDES | [None]      | Match `x IS NOT NULL`                             |
+    | EXCLUDES | ["a", None] | Match `x IS NOT NULL AND x NOT IN ("a")`          |
+    | EXCLUDES | ["a", "b"]  | Match `x IS NULL OR (x NOT IN ("a", "b"))`        |
+    | BETWEEN  | ["a", "z"]  | Match `"a" <= x <= "z"`                           |
+    | BETWEEN  | ["a", None] | Match `x >= "a"`                                  |
+
+    String comparisons are case-sensitive.
+
+    ## Special Handling for Comma-Separated Fields
+
+    When the filter name ends in "experiment_ids", the filter is interpreted as follows:
+
+    | Value | Filter         | Result   |
+    |-------|----------------|----------|
+    | "a,b" | INCLUDES ["a"] | Match    |
+    | "a,b" | INCLUDES ["d"] | No match |
+    | "a,b" | EXCLUDES ["d"] | Match    |
+    | "a,b" | EXCLUDES ["b"] | No match |
+
+    Note: The BETWEEN relation is not supported for comma-separated values.
+
+    Note: CSV field comparisons are case-insensitive.
+
+    ## Handling of datetime and timestamp values
+
+    DATETIME or TIMESTAMP-type columns support INCLUDES/EXCLUDES/BETWEEN, similar to numerics.
+
+    Values must be expressed as ISO8601 datetime strings compatible with Python's datetime.fromisoformat()
+    (https://docs.python.org/3/library/datetime.html#datetime.datetime.fromisoformat).
+
+    If a timezone is provided, it must be UTC.
+    """
+
+    field_name: FieldName
+    relation: Relation
+    value: FilterValueTypes
+
+    @classmethod
+    def cast_participant_id(
+        cls, pid: str, column_type: sqlalchemy.sql.sqltypes.TypeEngine
+    ) -> int | uuid.UUID | str:
+        """Casts a participant ID string to an appropriate type based on the column type.
+
+        Only supports INTEGER, BIGINT, UUID and STRING types as defined in DataType.supported_participant_id_types().
+        """
+        if isinstance(
+            column_type,
+            sqlalchemy.sql.sqltypes.Integer | sqlalchemy.sql.sqltypes.BigInteger,
+        ):
+            return int(pid)
+        if isinstance(
+            column_type, sqlalchemy.sql.sqltypes.UUID | sqlalchemy.sql.sqltypes.String
+        ):
+            return pid
+        raise LateValidationError(f"Unsupported participant ID type: {column_type}")
+
+    @model_validator(mode="after")
+    def ensure_experiment_ids_hack_compatible(self) -> "Filter":
+        """Ensures that the filter is compatible with the "experiment_ids" hack."""
+        if not self.field_name.endswith(EXPERIMENT_IDS_SUFFIX):
+            return self
+        allowed_relations = (Relation.INCLUDES, Relation.EXCLUDES)
+        if self.relation not in allowed_relations:
+            raise ValueError(
+                f"filters on experiment_id fields must have relations of type {', '.join(sorted(allowed_relations))}"
+            )
+        for v in self.value:
+            if not isinstance(v, str):
+                continue
+            if "," in v:
+                raise ValueError(
+                    "values in an experiment_id filter may not contain commas"
+                )
+            if v.strip() != v:
+                raise ValueError(
+                    "values in an experiment_id filter may not contain leading or trailing whitespace"
+                )
+        return self
+
+    @model_validator(mode="after")
+    def ensure_value(self) -> "Filter":
+        """Ensures that the `value` field is an unambiguous filter and correct for the relation.
+
+        Note this happens /after/ Pydantic does its type coercion, so we control some of the
+        built-in type coercion using the strict=True annotations on the value field. There
+        are probably some bugs in this.
+        """
+        if self.relation == Relation.BETWEEN:
+            if len(self.value) != 2:
+                raise ValueError("BETWEEN relation requires exactly 2 values")
+
+            none_count = sum(1 for v in self.value if v is None)
+            if none_count > 1:
+                raise ValueError("BETWEEN relation can have at most one None value")
+            if none_count == 0 and type(self.value[0]) is not type(self.value[1]):
+                raise ValueError(
+                    "BETWEEN relation requires same values to be of the same type"
+                )
+        elif not self.value:
+            raise ValueError("value must be a non-empty list")
+
+        return self
+
+    @model_validator(mode="after")
+    def ensure_sane_bool_list(self) -> "Filter":
+        """Ensures that the `value` field does not include redundant or nonsensical items."""
+        n_values = len(self.value)
+        # First check if we're dealing with a list of more than one boolean:
+        if n_values > 1 and all([v is None or isinstance(v, bool) for v in self.value]):
+            # First two technically would also catch non-bool [None, None]
+            if self.relation == Relation.BETWEEN:
+                raise ValueError("Values do not support BETWEEN.")
+            if n_values != len(set(self.value)):
+                raise ValueError("Duplicate values detected.")
+            if n_values == 3 and self.relation == Relation.INCLUDES:
+                raise ValueError("Boolean filter allows all possible values.")
+            if n_values == 3 and self.relation == Relation.EXCLUDES:
+                raise ValueError("Boolean filter rejects all possible values.")
+
+        return self
+
+
 ExperimentType = Literal["online", "preassigned"]
 
 
@@ -672,105 +779,6 @@ class OnlineExperimentSpec(FrequentistExperimentSpec):
     ] = "online"
 
 
-type DesignSpec = Annotated[
-    PreassignedExperimentSpec | OnlineExperimentSpec,
-    Field(
-        discriminator="experiment_type",
-        description="Concrete type of experiment to run.",
-    ),
-]
-
-
-class MetricPowerAnalysisMessageType(enum.StrEnum):
-    """Classifies metric power analysis results."""
-
-    SUFFICIENT = "sufficient"
-    INSUFFICIENT = "insufficient"
-    NO_BASELINE = "no baseline"
-    NO_AVAILABLE_N = "no available n"
-    ZERO_EFFECT_SIZE = "zero effect size"
-    ZERO_STDDEV = "zero variation"
-
-
-class MetricPowerAnalysisMessage(ApiBaseModel):
-    """Describes interpretation of power analysis results."""
-
-    type: MetricPowerAnalysisMessageType
-    msg: Annotated[
-        str,
-        Field(
-            description="Main power analysis result stated in human-friendly English."
-        ),
-    ]
-    source_msg: Annotated[
-        str,
-        Field(
-            description="Power analysis result formatted as a template string with curly-braced {} named placeholders. Use with the dictionary of values to support localization of messages."
-        ),
-    ]
-    values: dict[str, float | int] | None = None
-
-
-class MetricPowerAnalysis(ApiBaseModel):
-    """Describes analysis results of a single metric."""
-
-    # Store the original request+baseline info here
-    metric_spec: DesignSpecMetric
-
-    # The initial result of the power calculation
-    target_n: Annotated[
-        int | None,
-        Field(description="Minimum sample size needed to meet the design specs."),
-    ] = None
-
-    sufficient_n: Annotated[
-        bool | None,
-        Field(
-            description="Whether or not there are enough available units to sample from to meet target_n."
-        ),
-    ] = None
-
-    target_possible: Annotated[
-        float | None,
-        Field(
-            description="If there is an insufficient sample size to meet the desired metric_target, we report what is possible given the available_n. This value is equivalent to the relative pct_change_possible. This is None when there is a sufficient sample size to detect the desired change."
-        ),
-    ] = None
-
-    pct_change_possible: Annotated[
-        float | None,
-        Field(
-            description="If there is an insufficient sample size to meet the desired metric_pct_change, we report what is possible given the available_n. This value is equivalent to the absolute target_possible. This is None when there is a sufficient sample size to detect the desired change."
-        ),
-    ] = None
-
-    msg: Annotated[
-        MetricPowerAnalysisMessage | None,
-        Field(description="Human friendly message about the above results."),
-    ] = None
-
-
-class StrataType(enum.StrEnum):
-    """Classifies strata by their value type."""
-
-    BINARY = "binary"
-    NUMERIC = "numeric"
-    CATEGORICAL = "categorical"
-
-    @classmethod
-    def from_python_type(cls, python_type: type):
-        """ "Maps Python types to strata types."""
-
-        if python_type in {int, float}:
-            return StrataType.NUMERIC
-        if python_type is bool:
-            return StrataType.BINARY
-        if python_type is str:
-            return StrataType.CATEGORICAL
-
-        raise ValueError(f"Unsupported type: {python_type}")
-
-
 class Strata(ApiBaseModel):
     """Describes stratification for an experiment participant."""
 
@@ -810,23 +818,6 @@ class Assignment(ApiBaseModel):
             max_length=MAX_NUMBER_OF_FIELDS,
         ),
     ] = None
-
-
-class MetricValue(ApiBaseModel):
-    metric_name: Annotated[
-        FieldName,
-        Field(
-            description="The field_name from the datasource which this analysis models as the dependent variable (y)."
-        ),
-    ]
-    metric_value: Annotated[
-        float | None, Field(description="The queried value for this field_name.")
-    ]
-
-
-class ParticipantOutcome(ApiBaseModel):
-    participant_id: Annotated[str, Field(max_length=MAX_LENGTH_OF_PARTICIPANT_ID_VALUE)]
-    metric_values: Annotated[list[MetricValue], Field(max_length=MAX_NUMBER_OF_FIELDS)]
 
 
 class BalanceCheck(ApiBaseModel):
@@ -871,48 +862,119 @@ class ArmSize(ApiBaseModel):
     size: int = 0
 
 
-class AssignResponse(ApiBaseModel):
-    """Describes assignments for all participants and balance test results."""
+class ExperimentsBaseModel(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+
+class CreateExperimentRequest(ExperimentsBaseModel):
+    design_spec: DesignSpec
+    power_analyses: PowerResponse | None = None
+    webhooks: Annotated[
+        list[str],
+        Field(
+            default=[],
+            description="List of webhook IDs to associate with this experiment. When the experiment is committed, these webhooks will be triggered with experiment details. Must contain unique values.",
+        ),
+    ]
+
+    @field_validator("webhooks")
+    @classmethod
+    def validate_unique_webhooks(cls, v: list[str]) -> list[str]:
+        """Ensure all webhook IDs are unique."""
+        if len(v) != len(set(v)):
+            raise ValueError("Webhook IDs must be unique")
+        return v
+
+
+class AssignSummary(ExperimentsBaseModel):
+    """Key pieces of an AssignResponse without the assignments."""
 
     balance_check: Annotated[
         BalanceCheck | None,
         Field(
-            description="Result of checking that the arms are balanced. May not be present if we are not able to stratify on any design metrics or other fields specified for stratification. (Fields used must be supported data types whose values are NOT all unique or all the same)."
+            description="Balance test results if available. 'online' experiments do not have balance checks."
+        ),
+    ] = None
+    sample_size: Annotated[
+        int, Field(description="The number of participants across all arms in total.")
+    ]
+    arm_sizes: Annotated[
+        list[ArmSize] | None,
+        Field(
+            description="For each arm, the number of participants assigned. "
+            "TODO: make required once development has stabilized. May be None if unknown due to persisting prior versions of an AssignSummary.",
+            max_length=MAX_NUMBER_OF_ARMS,
+        ),
+    ] = None
+
+
+class ExperimentConfig(ExperimentsBaseModel):
+    """Representation of our stored Experiment information."""
+
+    datasource_id: str
+    state: Annotated[
+        ExperimentState, Field(description="Current state of this experiment.")
+    ]
+    stopped_assignments_at: Annotated[
+        datetime.datetime | None,
+        Field(
+            description="The date and time assignments were stopped. Null if assignments are still allowed to be made."
+        ),
+    ]
+    stopped_assignments_reason: Annotated[
+        StopAssignmentReason | None,
+        Field(
+            description="The reason assignments were stopped. Null if assignments are still allowed to be made."
+        ),
+    ]
+    design_spec: DesignSpec
+    power_analyses: PowerResponse | None
+    assign_summary: AssignSummary
+    webhooks: Annotated[
+        list[str],
+        Field(
+            default=[],
+            description="List of webhook IDs associated with this experiment. These webhooks are triggered when the experiment is committed.",
+        ),
+    ]
+
+
+class GetExperimentResponse(ExperimentConfig):
+    """An experiment configuration capturing all info at design time when assignment was made."""
+
+
+class ListExperimentsResponse(ExperimentsBaseModel):
+    items: list[ExperimentConfig]
+
+
+class GetParticipantAssignmentResponse(ExperimentsBaseModel):
+    """Describes assignment for a single <experiment, participant> pair."""
+
+    experiment_id: str
+    participant_id: str
+    assignment: Annotated[
+        Assignment | None,
+        Field(description="Null if no assignment. assignment.strata are not included."),
+    ]
+
+
+class CreateExperimentResponse(ExperimentConfig):
+    """Same as the request but with ids filled for the experiment and arms, and summary info on the assignment."""
+
+
+class GetExperimentAssignmentsResponse(ExperimentsBaseModel):
+    """Describes assignments for all participants and balance test results if available."""
+
+    balance_check: Annotated[
+        BalanceCheck | None,
+        Field(
+            description="Balance test results if available. 'online' experiments do not have balance checks."
         ),
     ] = None
 
     experiment_id: str
-    sample_size: Annotated[
-        int,
-        Field(description="The number of participants across all arms in total."),
-    ]
-    unique_id_field: Annotated[
-        str,
-        Field(
-            description="Name of the datasource field used as the unique identifier for the participant_id value stored in each Assignment, as configured in the datasource settings. Included for frontend convenience."
-        ),
-    ]
-    # TODO(qixotic): Consider lifting up Assignment.arm_id & arm_name to the AssignResponse level
-    # and organize assignments into lists by arm. Be less bulky and arm sizes come naturally.
-    assignments: Annotated[list[Assignment], Field()]
-
-
-class AnalysisRequest(ApiBaseModel):
-    design: DesignSpec
-    assignment: AssignResponse
-
-
-class GetStrataResponseElement(ApiBaseModel):
-    """Describes a stratification variable."""
-
-    data_type: DataType
-    field_name: FieldName
-    description: Annotated[str, Field(max_length=MAX_LENGTH_OF_DESCRIPTION_VALUE)]
-    # Extra fields will be stored here in case a user configured their worksheet with extra metadata for their own
-    # downstream use, e.g. to group strata with a friendly identifier.
-    extra: Annotated[dict[str, str] | None, Field(max_length=MAX_NUMBER_OF_FIELDS)] = (
-        None
-    )
+    sample_size: int
+    assignments: list[Assignment]
 
 
 class GetFiltersResponseBase(ApiBaseModel):
@@ -945,59 +1007,6 @@ class GetFiltersResponseDiscrete(GetFiltersResponseBase):
     ]
 
 
-class GetMetricsResponseElement(ApiBaseModel):
-    """Describes a metric."""
-
-    field_name: FieldName
-    data_type: DataType
-    description: Annotated[str, Field(max_length=MAX_LENGTH_OF_DESCRIPTION_VALUE)]
-
-
 type GetFiltersResponseElement = (
     GetFiltersResponseNumericOrDate | GetFiltersResponseDiscrete
 )
-
-
-class GetFiltersResponse(ApiBaseModel):
-    """Response model for the /filters endpoint."""
-
-    results: list[GetFiltersResponseElement]
-
-
-class GetMetricsResponse(ApiBaseModel):
-    """Response model for the /metrics endpoint."""
-
-    results: Annotated[list[GetMetricsResponseElement], Field()]
-
-
-class GetStrataResponse(BaseModel):
-    """Response model for the /strata endpoint."""
-
-    results: Annotated[list[GetStrataResponseElement], Field()]
-
-
-class PowerRequest(ApiBaseModel):
-    design_spec: DesignSpec
-
-
-class AssignRequest(ApiBaseModel):
-    design_spec: DesignSpec
-
-
-class PowerResponse(ApiBaseModel):
-    analyses: Annotated[
-        list[MetricPowerAnalysis], Field(max_length=MAX_NUMBER_OF_FIELDS)
-    ]
-
-
-class CommitRequest(ApiBaseModel):
-    """The complete experiment configuration to persist in an experiment registry."""
-
-    design_spec: DesignSpec
-    power_analyses: Annotated[
-        PowerResponse | None,
-        Field(
-            description="Optionally include the power analyses of your tracking metrics if performed."
-        ),
-    ] = None
-    experiment_assignment: AssignResponse

@@ -1,3 +1,5 @@
+"""Flags describes values that are read from the environment."""
+
 import os
 
 from xngin.apiserver import constants

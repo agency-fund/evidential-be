@@ -1,7 +1,6 @@
 """Stand-alone test cases for basic dynamic query generation."""
 
 import re
-import secrets
 from dataclasses import dataclass
 from datetime import UTC, datetime
 
@@ -23,7 +22,7 @@ from sqlalchemy import (
 from sqlalchemy.orm import DeclarativeBase, Session, mapped_column
 
 from xngin.apiserver import flags
-from xngin.apiserver.conftest import DbType, get_test_dwh_info
+from xngin.apiserver.conftest import DbType, get_queries_test_uri
 from xngin.apiserver.dwh.queries import (
     compose_query,
     create_datetime_filter,
@@ -33,14 +32,16 @@ from xngin.apiserver.dwh.queries import (
     make_csv_regex,
 )
 from xngin.apiserver.exceptions_common import LateValidationError
-from xngin.apiserver.routers.stateless_api_types import (
+from xngin.apiserver.routers.common_api_types import (
     DesignSpecMetric,
     DesignSpecMetricRequest,
     Filter,
     MetricType,
+    Relation,
+)
+from xngin.apiserver.routers.stateless.stateless_api_types import (
     MetricValue,
     ParticipantOutcome,
-    Relation,
 )
 
 SA_LOGGER_NAME_FOR_DWH = "xngin_dwh"
@@ -174,29 +175,20 @@ class Case:
         ])
 
 
-@pytest.fixture(name="dwh_session")
-def fixture_dwh_session():
+@pytest.fixture(name="queries_session")
+def fixture_queries_session():
     """Yields a session that tests can use to operate on a testing database.
 
-    On Postgres databases: a new database will be created and deleted for each use of this fixture.
+    The testing data warehouse is specified by the XNGIN_QUERIES_TEST_URI environment variable. Usually this is a local
+    Postgres instance, but some integration tests may point these tests at a BigQuery dataset (see CI for example).
 
-    SampleTable and SampleNullableTable are created and populated on each invocation, and destroyed after the yield
-    completes.
+    SampleTable and SampleNullableTable are recreated and populated on each invocation.
     """
-    dwh_info = get_test_dwh_info()
-    connect_url = dwh_info.connect_url
-    db_type = dwh_info.db_type
-    connect_args = dwh_info.connect_args
-
-    default_url = make_url(connect_url)._replace(database=None)
-    temporary_database_name = None
-    use_temporary_database = db_type == DbType.PG
-
-    if use_temporary_database:
-        temporary_database_name = f"fixture_dwh_session_{secrets.token_hex(16)}"
+    test_db = get_queries_test_uri()
+    management_db = make_url(test_db.connect_url)._replace(database=None)
+    if test_db.db_type == DbType.PG:
         default_engine = create_engine(
-            default_url,
-            connect_args=connect_args,
+            management_db,
             echo=flags.ECHO_SQL,
             logging_name=SA_LOGGER_NAME_FOR_DWH,
             poolclass=sqlalchemy.pool.NullPool,
@@ -207,56 +199,38 @@ def fixture_dwh_session():
             isolation_level="AUTOCOMMIT"
         ) as conn:
             for stmt in (
-                f"DROP DATABASE IF EXISTS {temporary_database_name}",
-                f"CREATE DATABASE {temporary_database_name}",
+                f"DROP DATABASE IF EXISTS {test_db.connect_url.database}",
+                f"CREATE DATABASE {test_db.connect_url.database}",
             ):
                 conn.execute(text(stmt))
         default_engine.dispose()
-        # Override the connect_url with our new database name.
-        connect_url = connect_url.set(database=temporary_database_name)
 
-    # Now we can connect to the target database
     engine = create_engine(
-        connect_url,
+        test_db.connect_url,
         logging_name=SA_LOGGER_NAME_FOR_DWH,
-        connect_args=connect_args,
         echo=flags.ECHO_SQL,
         execution_options={"logging_token": SA_LOGGING_PREFIX_FOR_DWH},
     )
+    try:
+        # TODO: consider trying to consolidate dwh-conditional config with that in settings.py
+        if test_db.db_type is DbType.RS and hasattr(
+            engine.dialect, "_set_backslash_escapes"
+        ):
+            engine.dialect._set_backslash_escapes = lambda _: None
 
-    # TODO: consider trying to consolidate dwh-conditional config with that in settings.py
-    if db_type is DbType.RS and hasattr(engine.dialect, "_set_backslash_escapes"):
-        engine.dialect._set_backslash_escapes = lambda _: None
-
-    Base.metadata.create_all(engine)
-    session = Session(engine)
-    for row in SAMPLE_TABLE_ROWS:
-        session.add(SampleTable(**row.__dict__))
-    for nullable_row in SAMPLE_NULLABLE_TABLE_ROWS:
-        session.add(SampleNullableTable(**nullable_row.__dict__))
-
-    session.commit()
-
-    yield session
-
-    session.close()
-    engine.dispose()
-
-    if not use_temporary_database:
         Base.metadata.drop_all(engine)
-    else:
-        default_engine = create_engine(
-            default_url,
-            logging_name=SA_LOGGER_NAME_FOR_DWH,
-            execution_options={"logging_token": SA_LOGGING_PREFIX_FOR_DWH},
-            connect_args=connect_args,
-            echo=flags.ECHO_SQL,
-            poolclass=sqlalchemy.pool.NullPool,
-        )
-        with default_engine.connect().execution_options(
-            isolation_level="AUTOCOMMIT"
-        ) as conn:
-            conn.execute(text(f"DROP DATABASE {temporary_database_name}"))
+        Base.metadata.create_all(engine)
+        with Session(engine) as session:
+            for row in SAMPLE_TABLE_ROWS:
+                session.add(SampleTable(**row.__dict__))
+            for nullable_row in SAMPLE_NULLABLE_TABLE_ROWS:
+                session.add(SampleNullableTable(**nullable_row.__dict__))
+            session.commit()
+
+        with Session(engine) as session:
+            yield session
+    finally:
+        engine.dispose()
 
 
 def test_compile_query_without_filters_pg():
@@ -436,14 +410,14 @@ IS_NULLABLE_CASES = [
 
 
 @pytest.mark.parametrize("testcase", IS_NULLABLE_CASES, ids=lambda d: str(d))
-def test_is_nullable(testcase, dwh_session, use_deterministic_random):
+def test_is_nullable(testcase, queries_session, use_deterministic_random):
     testcase.filters = [
         Filter.model_validate(filt.model_dump()) for filt in testcase.filters
     ]
     table = SampleNullableTable.get_table()
     filters = create_query_filters(table, testcase.filters)
     q = compose_query(table, testcase.chosen_n, filters)
-    query_results = dwh_session.execute(q).all()
+    query_results = queries_session.execute(q)
     assert list(sorted([r.id for r in query_results])) == list(
         sorted(r.id for r in testcase.matches)
     ), testcase
@@ -593,13 +567,13 @@ RELATION_CASES = [
 
 
 @pytest.mark.parametrize("testcase", RELATION_CASES)
-def test_relations(testcase, dwh_session, use_deterministic_random):
+def test_relations(testcase, queries_session, use_deterministic_random):
     testcase.filters = [
         Filter.model_validate(filt.model_dump()) for filt in testcase.filters
     ]
     filters = create_query_filters(SampleTable.get_table(), testcase.filters)
     q = compose_query(SampleTable.get_table(), testcase.chosen_n, filters)
-    query_results = dwh_session.execute(q).all()
+    query_results = queries_session.execute(q)
     assert list(sorted([r.id for r in query_results])) == list(
         sorted(r.id for r in testcase.matches)
     ), testcase
@@ -762,10 +736,10 @@ def test_make_csv_regex(csv, values, expected):
     )
 
 
-def test_get_stats_on_missing_metric_raises_error(dwh_session):
+def test_get_stats_on_missing_metric_raises_error(queries_session):
     with pytest.raises(LateValidationError) as exc:
         get_stats_on_metrics(
-            dwh_session,
+            queries_session,
             SampleTable.get_table(),
             [DesignSpecMetricRequest(field_name="missing_col", metric_pct_change=0.1)],
             filters=[],
@@ -776,10 +750,10 @@ def test_get_stats_on_missing_metric_raises_error(dwh_session):
     )
 
 
-def test_get_stats_on_integer_metric(dwh_session):
+def test_get_stats_on_integer_metric(queries_session):
     """Test would fail on postgres and redshift without a cast to float for different reasons."""
     rows = get_stats_on_metrics(
-        dwh_session,
+        queries_session,
         SampleTable.get_table(),
         [DesignSpecMetricRequest(field_name="int_col", metric_pct_change=0.1)],
         filters=[],
@@ -810,9 +784,9 @@ def test_get_stats_on_integer_metric(dwh_session):
     )
 
 
-def test_get_stats_on_nullable_integer_metric(dwh_session):
+def test_get_stats_on_nullable_integer_metric(queries_session):
     rows = get_stats_on_metrics(
-        dwh_session,
+        queries_session,
         SampleNullableTable.get_table(),
         [DesignSpecMetricRequest(field_name="int_col", metric_pct_change=0.1)],
         filters=[],
@@ -841,10 +815,10 @@ def test_get_stats_on_nullable_integer_metric(dwh_session):
     )
 
 
-def test_get_stats_on_boolean_metric(dwh_session):
+def test_get_stats_on_boolean_metric(queries_session):
     """Test would fail on postgres and redshift without casting to int to float."""
     rows = get_stats_on_metrics(
-        dwh_session,
+        queries_session,
         SampleTable.get_table(),
         [DesignSpecMetricRequest(field_name="bool_col", metric_pct_change=0.1)],
         filters=[],
@@ -873,9 +847,9 @@ def test_get_stats_on_boolean_metric(dwh_session):
     )
 
 
-def test_get_stats_on_numeric_metric(dwh_session):
+def test_get_stats_on_numeric_metric(queries_session):
     rows = get_stats_on_metrics(
-        dwh_session,
+        queries_session,
         SampleTable.get_table(),
         [DesignSpecMetricRequest(field_name="float_col", metric_pct_change=0.1)],
         filters=[],
@@ -905,10 +879,10 @@ def test_get_stats_on_numeric_metric(dwh_session):
     )
 
 
-def test_get_participant_metrics(dwh_session):
+def test_get_participant_metrics(queries_session):
     participant_ids = ["100", "200"]
     rows = get_participant_metrics(
-        dwh_session,
+        queries_session,
         SampleTable.get_table(),
         [
             DesignSpecMetricRequest(field_name="float_col", metric_pct_change=0.1),

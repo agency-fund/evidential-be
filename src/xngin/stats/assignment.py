@@ -10,12 +10,14 @@ from pandas import DataFrame
 from sqlalchemy import Table
 from stochatreat import stochatreat
 
-from xngin.apiserver.routers.stateless_api_types import (
+from xngin.apiserver.routers.common_api_types import (
     Arm,
     Assignment,
-    AssignResponse,
     BalanceCheck,
     Strata,
+)
+from xngin.apiserver.routers.stateless.stateless_api_types import (
+    AssignResponse,
 )
 from xngin.stats.balance import (
     check_balance_of_preprocessed_df,
@@ -200,7 +202,7 @@ def simple_random_assignment(
     treatment_ids = list(range(n_arms))
     treatment_mask = np.repeat(treatment_ids, np.ceil(len(data) / n_arms))
     rng.shuffle(treatment_mask)
-    return treatment_mask[: len(data)].tolist()
+    return [int(x) for x in treatment_mask[: len(data)]]
 
 
 def _make_assign_response(

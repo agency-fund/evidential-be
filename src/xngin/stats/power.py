@@ -2,7 +2,7 @@
 import numpy as np
 import statsmodels.stats.api as sms
 
-from xngin.apiserver.routers.stateless_api_types import (
+from xngin.apiserver.routers.common_api_types import (
     DesignSpecMetric,
     MetricPowerAnalysis,
     MetricPowerAnalysisMessage,
@@ -95,7 +95,7 @@ def analyze_metric_power(
         return _power_analysis_error(
             metric,
             MetricPowerAnalysisMessageType.ZERO_EFFECT_SIZE,
-            ("Cannot detect an effect-size of 0. Try changing your effect-size."),
+            "Cannot detect an effect-size of 0. Try changing your effect-size.",
         )
 
     power_analysis = sms.TTestIndPower()
