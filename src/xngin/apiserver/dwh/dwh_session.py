@@ -12,9 +12,10 @@ from sqlalchemy.orm import Session
 
 from xngin.apiserver import flags
 from xngin.apiserver.dns.safe_resolve import safe_resolve
+from xngin.apiserver.dwh import queries
 from xngin.apiserver.dwh.inspection_types import FieldDescriptor
 from xngin.apiserver.dwh.inspections import generate_field_descriptors
-from xngin.apiserver.dwh.queries import query_for_participants
+from xngin.apiserver.routers.common_api_types import Filter
 from xngin.apiserver.settings import (
     SA_LOGGER_NAME_FOR_DWH,
     TIMEOUT_SECS_FOR_CUSTOMER_POSTGRES,
@@ -263,11 +264,22 @@ class DwhSession:
             use_sa_autoload,
         )
 
+    def _query_for_participants_blocking(
+        self,
+        sa_table: sqlalchemy.Table,
+        filters: list[Filter],
+        chosen_n: int,
+    ):
+        """Samples participants."""
+        filters = queries.create_query_filters(sa_table, filters)
+        query = queries.compose_query(sa_table, chosen_n, filters)
+        return self._session.execute(query).all()
+
     def _get_participants_blocking(
         self, table_name: str, filters, n: int, use_sa_autoload: bool | None = None
     ) -> GetParticipantsResult:
         sa_table = self._inspect_table_blocking(table_name, use_sa_autoload)
-        participants = query_for_participants(self.session, sa_table, filters, n)
+        participants = self._query_for_participants_blocking(sa_table, filters, n)
         return GetParticipantsResult(sa_table=sa_table, participants=participants)
 
     async def get_participants(

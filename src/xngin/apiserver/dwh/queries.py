@@ -250,18 +250,6 @@ def get_participant_metrics(
     return participant_outcomes
 
 
-def query_for_participants(
-    session: Session,
-    sa_table: Table,
-    filters: list[Filter],
-    chosen_n: int,
-):
-    """Samples participants."""
-    filters = create_query_filters(sa_table, filters)
-    query = compose_query(sa_table, chosen_n, filters)
-    return session.execute(query).all()
-
-
 def create_one_filter(filter_: Filter, sa_table: sqlalchemy.Table):
     """Converts a Filter into a SQLAlchemy filter."""
     if isinstance(sa_table.columns[filter_.field_name].type, DateTime):
