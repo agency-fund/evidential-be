@@ -16,12 +16,16 @@ from xngin.apiserver.routers.auth.principal import Principal
 GOOGLE_DISCOVERY_URL = "https://accounts.google.com/.well-known/openid-configuration"
 
 # Set TESTING_TOKENS_ENABLED to allow statically defined bearer tokens to skip the JWT validation.
+AIRPLANE_TOKEN = "airplane-mode-token"
 PRIVILEGED_EMAIL = "testing-privileged@example.com"
 PRIVILEGED_TOKEN_FOR_TESTING = secrets.token_urlsafe(32)
 TESTING_TOKENS_ENABLED = False
 UNPRIVILEGED_EMAIL = "testing-unprivileged@example.com"
 UNPRIVILEGED_TOKEN_FOR_TESTING = secrets.token_urlsafe(32)
 TESTING_TOKENS = {
+    AIRPLANE_TOKEN: Principal(
+        email="testing@example.com", iss="airplane", sub="airplane", hd="example.com"
+    ),
     UNPRIVILEGED_TOKEN_FOR_TESTING: Principal(
         email=UNPRIVILEGED_EMAIL, iss="testing", sub="testing", hd="example.com"
     ),
@@ -137,6 +141,8 @@ async def require_oidc_token(
     token = token[len(expected_prefix) :]
     if TESTING_TOKENS_ENABLED and token in TESTING_TOKENS:
         return TESTING_TOKENS[token]
+    if flags.AIRPLANE_MODE and token == "airplane-mode-token":
+        return TESTING_TOKENS[AIRPLANE_TOKEN]
     try:
         header = jwt.get_unverified_header(token)
     except JWTError as e:
@@ -212,8 +218,3 @@ def setup(app):
     logger.warning("AIRPLANE_MODE is set.")
 
     disable(app)
-
-    def get_privileged_token():
-        return TESTING_TOKENS[PRIVILEGED_TOKEN_FOR_TESTING]
-
-    app.dependency_overrides[require_oidc_token] = get_privileged_token

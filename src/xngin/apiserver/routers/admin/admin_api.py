@@ -182,10 +182,11 @@ async def user_from_token(
     if user:
         return user
 
-    # When there are no users, we accept the first successful authentication and create a privileged user for
-    # them.
+    # There are two cases when we create a user on an authenticated request:
+    # 1. Airplane mode: We are in airplane mode and the request is coming from the UI in airplane mode.
+    # 2. First use of installation by a developer: There are no users in the database, and this is the first request.
     user_count = await session.scalar(select(count(tables.User.id)))
-    if user_count == 0:
+    if user_count == 0 or (flags.AIRPLANE_MODE and token_info.iss == "airplane"):
         new_user = create_user_and_first_datasource(
             session,
             email=token_info.email,

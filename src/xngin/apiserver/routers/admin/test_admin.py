@@ -407,9 +407,9 @@ def test_delete_datasource(testing_datasource_with_user, pget, udelete, pdelete)
 
     response = pget(f"/v1/m/organizations/{org_id}/datasources")
     assert response.status_code == 200, response.content
-    assert ListDatasourcesResponse.model_validate(
-        response.json()
-    ).items  # non-empty list
+    assert ListDatasourcesResponse.model_validate(response.json()).items, (
+        response.content
+    )  # non-empty list
 
     # Delete the datasource as a privileged user.
     response = pdelete(f"/v1/m/datasources/{ds_id}")
