@@ -193,7 +193,7 @@ tasks:
     env:
       UPDATE_API_TESTS: "1"
       DATABASE_URL: "{{.DATABASE_URL_FOR_TEST}}"
-    cmd: uv run pytest src/xngin/apiserver/test_api.py
+    cmd: uv run pytest -m xurl
   make-migrations:
     desc: "Build Postgres migrations"
     cmd: |
