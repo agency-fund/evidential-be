@@ -425,11 +425,15 @@ def test_delete_datasource(testing_datasource_with_user, pget, udelete, pdelete)
     assert response.status_code == 204, response.content
 
 
-async def test_webhook_lifecycle(
-    testing_datasource_with_user_added, pdelete, ppost, ppatch, pget
-):
+async def test_webhook_lifecycle(pdelete, ppost, ppatch, pget):
     """Test creating, updating, and deleting a webhook."""
-    org_id = testing_datasource_with_user_added.org.id
+    # Create an organization.
+    response = ppost(
+        "/v1/m/organizations",
+        json=CreateOrganizationRequest(name="test_webhook_lifecycle").model_dump(),
+    )
+    assert response.status_code == 200, response.content
+    org_id = CreateOrganizationResponse.model_validate(response.json()).id
 
     # Create a webhook
     response = ppost(
