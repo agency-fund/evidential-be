@@ -236,19 +236,6 @@ ECHO_SQL=0 XNGIN_SETTINGS=xngin.settings.json \
 
 If you're using the helpers [Taskfile.yml](Taskfile.yml), you can edit the ECHO_SQL variable there.
 
-### How do I add a Python dependency?
-
-1. Add the dependency to [pyproject.toml](pyproject.toml) (replace httpx with whatever dependency you are adding). Try
-   to pin it to a narrow version range, if possible.
-   ```shell
-   uv add httpx
-   ```
-1. Run the unit tests to ensure everything still works.
-   ```shell
-   uv run pytest
-   ```
-1. Commit the changed uv.lock and pyproject.toml files.
-
 ### psycopg2 module does not install correctly.
 
 You might see this error:
