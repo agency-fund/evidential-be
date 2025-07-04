@@ -162,7 +162,7 @@ tasks:
     cmds:
       - uv run fastapi dev src/xngin/apiserver/main.py
   start-airplane:
-    desc: "Like start, but runs the backend in airplane mode. All Admin API interactions will be authenticated as testing@agency.fund automatically."
+    desc: "Like start, but runs the backend in airplane mode. All Admin API interactions will be authenticated as testing@example.com automatically."
     interactive: true
     env:
       AIRPLANE_MODE: "true"

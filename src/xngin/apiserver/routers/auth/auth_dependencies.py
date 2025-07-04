@@ -16,20 +16,20 @@ from xngin.apiserver.routers.auth.principal import Principal
 GOOGLE_DISCOVERY_URL = "https://accounts.google.com/.well-known/openid-configuration"
 
 # Set TESTING_TOKENS_ENABLED to allow statically defined bearer tokens to skip the JWT validation.
-PRIVILEGED_EMAIL = "testing@agency.fund"
+PRIVILEGED_EMAIL = "testing-privileged@example.com"
 PRIVILEGED_TOKEN_FOR_TESTING = secrets.token_urlsafe(32)
 TESTING_TOKENS_ENABLED = False
-UNPRIVILEGED_EMAIL = "testing@agencyfund.org"
+UNPRIVILEGED_EMAIL = "testing-unprivileged@example.com"
 UNPRIVILEGED_TOKEN_FOR_TESTING = secrets.token_urlsafe(32)
 TESTING_TOKENS = {
     UNPRIVILEGED_TOKEN_FOR_TESTING: Principal(
-        email=UNPRIVILEGED_EMAIL, iss="testing", sub="testing", hd="agencyfund.org"
+        email=UNPRIVILEGED_EMAIL, iss="testing", sub="testing", hd="example.com"
     ),
     PRIVILEGED_TOKEN_FOR_TESTING: Principal(
         email=PRIVILEGED_EMAIL,
         iss="testing",
         sub="testing",
-        hd="agency.fund",
+        hd="example.com",
     ),
 }
 

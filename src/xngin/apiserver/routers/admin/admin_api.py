@@ -323,7 +323,7 @@ async def create_organizations(
 ) -> CreateOrganizationResponse:
     """Creates a new organization.
 
-    Only users with an @agency.fund email address can create organizations.
+    Only privileged users can create organizations.
     """
     if not user.is_privileged:
         raise HTTPException(
