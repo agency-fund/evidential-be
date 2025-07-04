@@ -83,6 +83,21 @@ class DwhSession:
     This class defines most of the interactions we have with customer data warehouses. The underlying connections to
     the DWH are using blocking SQLAlchemy drivers, and this class wraps them in threads and adapts them to async so that
     we can call them without blocking the request thread.
+
+    Do not share a DwhSession between concurrent async tasks. It must only be used in one task at a time otherwise
+    we will be violating SQLAlchemy's rules about how to use Sessions.
+
+    If you want to run queries against the dwh that are not implemented in this method, wrap them in asyncio.to_thread
+    to avoid blocking the request thread. E.g.:
+
+        def my_custom_dwh_method(session: Session):
+           # r = session.execute(...)
+           return r
+
+        with DwhSession(dwh_session) as dwh:
+            results = await asyncio.to_thread(
+                my_custom_dwh_method,
+                dwh.session,
     """
 
     def __init__(self, dwh_config: Dwh):
