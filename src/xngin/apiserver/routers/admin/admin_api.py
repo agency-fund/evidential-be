@@ -97,6 +97,7 @@ from xngin.apiserver.routers.stateless.stateless_api import (
     validate_schema_metrics_or_raise,
 )
 from xngin.apiserver.settings import (
+    Dsn,
     ParticipantsConfig,
     ParticipantsDef,
     RemoteDatabaseConfig,
@@ -757,7 +758,8 @@ async def create_datasource(
         )
     if body.dwh.driver in {"postgresql+psycopg", "postgresql+psycopg2"}:
         try:
-            safe_resolve(body.dwh.host)  # type: ignore[union-attr]
+            if isinstance(body.dwh, Dsn):
+                safe_resolve(body.dwh.host)
         except DnsLookupError as err:
             raise HTTPException(
                 status_code=400,

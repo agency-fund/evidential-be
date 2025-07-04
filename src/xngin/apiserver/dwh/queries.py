@@ -1,4 +1,5 @@
 import re
+from collections.abc import Sequence
 from datetime import datetime, timedelta
 
 import sqlalchemy
@@ -238,7 +239,7 @@ def make_csv_regex(values):
 
 
 def general_excludes_filter(
-    col: sqlalchemy.Column, value: FilterValueTypes
+    col: sqlalchemy.Column, value: FilterValueTypes | Sequence[datetime | None]
 ) -> ColumnElement[bool]:
     if None in value:
         non_null_list = [v for v in value if v is not None]

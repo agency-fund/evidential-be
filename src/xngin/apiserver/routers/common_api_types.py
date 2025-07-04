@@ -35,7 +35,6 @@ FilterValueTypes = (
     | Sequence[Annotated[float, Field(strict=True, allow_inf_nan=False)] | None]
     | Sequence[str | None]
     | Sequence[bool | None]
-    | Sequence[Annotated[datetime.datetime, Field(strict=True)] | None]
 )
 
 type DesignSpec = Annotated[
