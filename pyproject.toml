@@ -49,7 +49,8 @@ log_cli = 0  # set to 1 for live logs
 log_cli_level = "warn"
 markers = [
     "integration: integration tests that rely on remote resources",
-    "nondeterministic: tests that are nondeterministic (but should be)"
+    "nondeterministic: tests that are nondeterministic (but should be)",
+    "xurl: tests that use xurl scripts and can be updated with UPDATE_API_TESTS"
 ]
 addopts = "-m 'not integration and not nondeterministic'"
 # filtewarnings can be used to silence warnings during tests.

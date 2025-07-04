@@ -88,14 +88,14 @@ def get_settings_for_test() -> XnginSettings:
             raise
 
 
-def get_test_dwh_info() -> TestUriInfo:
+def get_queries_test_uri() -> TestUriInfo:
     """Gets the DSN of the testing data warehouse to use in tests.
 
-    See xngin.apiserver.dwh.test_queries.fixture_dwh_session.
+    See xngin.apiserver.dwh.test_queries.fixture_queries_session.
     """
-    connection_uri = os.environ.get("XNGIN_TEST_DWH_URI", "")
+    connection_uri = os.environ.get("XNGIN_QUERIES_TEST_URI", "")
     if not connection_uri:
-        raise ValueError("XNGIN_TEST_DWH_URI must be set.")
+        raise ValueError("XNGIN_QUERIES_TEST_URI must be set.")
     return get_test_uri_info(connection_uri)
 
 
@@ -104,7 +104,7 @@ def setup_debug_logging():
     print(
         "Running tests with "
         f"\n\tDATABASE_URL: {database.SQLALCHEMY_DATABASE_URL} "
-        f"\n\tXNGIN_TEST_DWH_URI  : {get_test_dwh_info()}"
+        f"\n\tXNGIN_QUERIES_TEST_URI  : {get_queries_test_uri()}"
     )
 
 

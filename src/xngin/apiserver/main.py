@@ -9,7 +9,6 @@ from loguru import logger
 
 from xngin.apiserver import (
     customlogging,
-    database,
     exceptionhandlers,
     middleware,
 )
@@ -62,7 +61,6 @@ async def lifespan(_app: FastAPI):
             "Please unset GOOGLE_APPLICATION_CREDENTIALS and try again."
         )
     else:
-        await database.setup()
         yield
 
 

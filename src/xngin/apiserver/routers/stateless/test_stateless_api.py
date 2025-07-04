@@ -92,6 +92,7 @@ API_TESTS_X_DATASOURCE = zip(
 )
 
 
+@pytest.mark.xurl
 @pytest.mark.parametrize("script,datasource_id", API_TESTS_X_DATASOURCE)
 def test_api(
     script,
