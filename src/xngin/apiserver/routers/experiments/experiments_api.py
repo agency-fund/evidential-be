@@ -120,7 +120,7 @@ async def create_experiment_with_assignment_sl(
     return await create_experiment_impl(
         request=body,
         datasource_id=datasource.id,
-        participant_unique_id_field=schema.get_unique_id_field(),  # type: ignore[union-attr]
+        participant_unique_id_field=schema.get_unique_id_field(),
         dwh_sa_table=sa_table,
         dwh_participants=participants,
         random_state=random_state,
