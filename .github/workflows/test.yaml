@@ -141,7 +141,7 @@ jobs:
             --schema-name alt2 --table-name=alt_table2
 
           # Create the application database.
-          uv run xngin-cli create-application-database
+          uv run xngin-cli create-apiserver-db
 
           # Verify the sources in xngin.gha.settings.json are still readable (uses the psycopg imports).
           XNGIN_SETTINGS=src/xngin/apiserver/testdata/xngin.gha.settings.json uv run fastapi run \
@@ -266,7 +266,7 @@ jobs:
           unset GOOGLE_APPLICATION_CREDENTIALS
 
           # Create the application database.
-          uv run xngin-cli create-application-database
+          uv run xngin-cli create-apiserver-db
 
           # Start a server using the gha-bq profile.
           XNGIN_SETTINGS=src/xngin/apiserver/testdata/xngin.gha.settings.json uv run fastapi run \
