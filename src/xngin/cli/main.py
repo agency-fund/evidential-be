@@ -36,6 +36,7 @@ from sqlalchemy.sql.compiler import IdentifierPreparer
 from xngin.apiserver.dwh.dwh_session import CannotFindTableError, DwhSession
 from xngin.apiserver.dwh.inspection_types import FieldDescriptor, ParticipantsSchema
 from xngin.apiserver.dwh.inspections import create_schema_from_table
+from xngin.apiserver.models import tables
 from xngin.apiserver.routers.common_api_types import DataType
 from xngin.apiserver.settings import (
     Datasource,
@@ -61,6 +62,39 @@ app = typer.Typer(help=__doc__)
 logging.basicConfig(
     level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s - %(message)s"
 )
+
+
+def create_engine_and_database(url: sqlalchemy.URL):
+    """Connects to a SQLAlchemy URL and creates the database if it doesn't exist.
+
+    Only implemented for psycopg/psycopg2.
+    """
+    try:
+        engine = create_engine(url, logging_name=SA_LOGGER_NAME_FOR_CLI)
+        with engine.connect():
+            print("Connected.")
+    except OperationalError as exc:
+        if "postgres" not in url.drivername or (
+            # 1st case: psycopg2 driver
+            "does not exist" not in str(exc)
+            # 2nd case: psycopg driver
+            and "Connection refused" not in str(exc)
+        ):
+            raise
+        print(f"Creating database {url.database}...")
+        engine = create_engine(
+            url.set(database="postgres"),
+            logging_name=SA_LOGGER_NAME_FOR_CLI,
+        )
+        with engine.connect().execution_options(isolation_level="AUTOCOMMIT") as conn:
+            conn.execute(sqlalchemy.text(f"CREATE DATABASE {url.database}"))
+        print("Reconnecting.")
+        return create_engine(
+            url,
+            logging_name=SA_LOGGER_NAME_FOR_CLI,
+        )
+    else:
+        return engine
 
 
 async def create_participants_schema_from_table(
@@ -133,6 +167,20 @@ def validate_create_testing_dwh_src(v: Path):
         if str(v).endswith(ext):
             return v
     raise typer.BadParameter("--src must end in .csv or .csv.zst")
+
+
+@app.command()
+def create_apiserver_db(
+    dsn: Annotated[
+        str,
+        typer.Option(
+            help="The SQLAlchemy URL for the database.", envvar="DATABASE_URL"
+        ),
+    ],
+):
+    console.print(f"DSN: [cyan]{dsn}[/cyan]")
+    engine = create_engine_and_database(make_url(dsn))
+    tables.Base.metadata.create_all(bind=engine)
 
 
 @app.command()
@@ -231,40 +279,6 @@ def create_testing_dwh(
 
     def read_csv():
         return pd.read_csv(src, nrows=nrows)
-
-    def create_engine_and_database(url: sqlalchemy.URL):
-        """Connects to a SQLAlchemy URL and creates the database if it doesn't exist.
-
-        Only implemented for psycopg/psycopg2.
-        """
-        try:
-            engine = create_engine(url, logging_name=SA_LOGGER_NAME_FOR_CLI)
-            with engine.connect():
-                print("Connected.")
-        except OperationalError as exc:
-            if "postgres" not in url.drivername or (
-                # 1st case: psycopg2 driver
-                "does not exist" not in str(exc)
-                # 2nd case: psycopg driver
-                and "Connection refused" not in str(exc)
-            ):
-                raise
-            print(f"Creating database {url.database}...")
-            engine = create_engine(
-                url.set(database="postgres"),
-                logging_name=SA_LOGGER_NAME_FOR_CLI,
-            )
-            with engine.connect().execution_options(
-                isolation_level="AUTOCOMMIT"
-            ) as conn:
-                conn.execute(sqlalchemy.text(f"CREATE DATABASE {url.database}"))
-            print("Reconnecting.")
-            return create_engine(
-                url,
-                logging_name=SA_LOGGER_NAME_FOR_CLI,
-            )
-        else:
-            return engine
 
     def drop_and_create(cur, create_table_ddl: str):
         cur.execute(drop_table_ddl)
