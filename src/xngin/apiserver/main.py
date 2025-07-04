@@ -10,6 +10,7 @@ from loguru import logger
 from xngin.apiserver import (
     customlogging,
     exceptionhandlers,
+    flags,
     middleware,
 )
 from xngin.apiserver.flags import PUBLISH_ALL_DOCS
@@ -152,9 +153,9 @@ def custom_openapi():
         title="xngin: Experiments API",
         version="0.9.0",
         contact={
-            "name": "Agency Fund",
-            "url": "https://www.agency.fund",
-            "email": "evidential-support@agency.fund",
+            "name": "Evidential Developers",
+            "url": flags.XNGIN_PRODUCT_HOMEPAGE,
+            "email": flags.XNGIN_SUPPORT_EMAIL,
         },
         summary="",
         description="",
