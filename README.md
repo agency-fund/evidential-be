@@ -8,8 +8,7 @@
 
 - [Evidential](#evidential)
   - [Getting Started](#getting-started)
-  - [Documentation for Evidential](#documentation-for-evidential)
-  - [Documentation on our Dependencies](#documentation-on-our-dependencies)
+  - [Documentation](#documentation)
 
 <!-- mdformat-toc end -->
 
@@ -80,8 +79,6 @@ Follow the steps below to get a local development environment running.
    curl -H "Datasource-ID: testing" 'http://localhost:8000/v1/strata?participant_type=test_participant_type'
    ```
 
-   See [TESTING.md](docs/TESTING.md) for instructions on how we use API test scripts.
-
 1. Familiarize yourself with the xngin-cli:
 
 ```shell
@@ -114,36 +111,6 @@ Follow the steps below to get a local development environment running.
    - Ensure that the [Google Sheets API](https://console.developers.google.com/apis/api/sheets.googleapis.com/overview)
      is enabled for your Google Cloud project.
 
-## Documentation for Evidential<a name="documentation-for-evidential"></a>
+## Documentation<a name="documentation"></a>
 
-See [docs/](docs/) for detailed more detailed documentation.
-
-## Documentation on our Dependencies<a name="documentation-on-our-dependencies"></a>
-
-We use many advanced features of Pydantic, FastAPI, and SQLAlchemy. Before digging into the code, familiarize yourself
-with these concepts:
-
-- Pydantic:
-  - [Pydantic models](https://docs.pydantic.dev/2.8/concepts/models/)
-  - [Custom validation](https://docs.pydantic.dev/2.8/concepts/validators/)
-  - [Serialization](https://docs.pydantic.dev/2.8/concepts/serialization/)
-  - [Annotated Type](https://docs.pydantic.dev/2.8/concepts/fields/#using-annotated)
-  - [Composing Types](https://docs.pydantic.dev/2.8/concepts/types/#composing-types-via-annotated)
-- FastAPI:
-  - [FastAPI Tutorial](https://fastapi.tiangolo.com/tutorial/first-steps/)
-  - [Adding metadata using
-    `Annotated`](https://fastapi.tiangolo.com/python-types/#type-hints-with-metadata-annotations)
-  - [Dependency Injection](https://fastapi.tiangolo.com/tutorial/dependencies/)
-- OpenAPI:
-  - The metadata annotations on FastAPI handlers and Pydantic type produce an OpenAPI specification document which we
-    share with customers and use to generate a client library for the frontend.
-  - [Generated API Documentation](https://main.dev.agencyfund.org/docs)
-- [SQLAlchemy 2.0](https://docs.sqlalchemy.org/en/20/tutorial/index.html):
-  - We use SQLAlchemy to manage our application database and connect to customer data warehouses.
-- Other dev tooling:
-  - [Atlas](https://atlasgo.io/) for schema migrations.
-  - [ruff](https://github.com/astral-sh/ruff) for linting and formatting (configured
-    with [pyproject.toml](pyproject.toml)
-  - [pre-commit](https://pre-commit.com/) for invoking automatic checks (configured
-    with [.pre-commit-config.yaml](.pre-commit-config.yaml).
-- To understand the frontend, see https://github.com/agency-fund/xngin-dash.
+See [docs/](docs/) for more documentation.
