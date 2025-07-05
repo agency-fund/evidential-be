@@ -10,7 +10,6 @@
   - [Getting Started](#getting-started)
   - [Documentation for Evidential](#documentation-for-evidential)
   - [Documentation on our Dependencies](#documentation-on-our-dependencies)
-  - [Settings](#settings)
 
 <!-- mdformat-toc end -->
 
@@ -148,7 +147,3 @@ with these concepts:
   - [pre-commit](https://pre-commit.com/) for invoking automatic checks (configured
     with [.pre-commit-config.yaml](.pre-commit-config.yaml).
 - To understand the frontend, see https://github.com/agency-fund/xngin-dash.
-
-## Settings<a name="settings"></a>
-
-> Note: This section needs updates.
