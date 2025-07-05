@@ -38,7 +38,6 @@ from xngin.apiserver.certs import get_amazon_trust_ca_bundle_path
 from xngin.apiserver.dwh.inspection_types import ParticipantsSchema
 from xngin.apiserver.settings_secrets import replace_secrets
 
-DEFAULT_SETTINGS_FILE = "xngin.settings.json"
 SA_LOGGER_NAME_FOR_DWH = "xngin_dwh"
 TIMEOUT_SECS_FOR_CUSTOMER_POSTGRES = 10
 
@@ -54,7 +53,9 @@ class RemoteSettingsClientError(Exception):
 @lru_cache
 def get_settings_for_server():
     """Constructs an XnginSettings for use by the API server."""
-    settings_path = os.environ.get("XNGIN_SETTINGS", DEFAULT_SETTINGS_FILE)
+    settings_path = os.environ.get("XNGIN_SETTINGS")
+    if settings_path is None:
+        return XnginSettings(datasources=[])
 
     if settings_path.startswith("https://"):
         settings_raw = get_remote_settings(settings_path)
@@ -477,9 +478,9 @@ class Datasource(ConfigBaseModel):
 
 
 class XnginSettings(ConfigBaseModel):
-    trusted_ips: Annotated[list[str], Field(default_factory=list, deprecated=True)]
-    db_connect_timeout_secs: Annotated[int, Field(deprecated=True)] = 3
     datasources: list[Datasource]
+    trusted_ips: Annotated[list[str], Field(default_factory=list, deprecated=True)] = []
+    db_connect_timeout_secs: Annotated[int, Field(deprecated=True)] = 3
 
     def get_datasource(self, datasource_id):
         """Finds the datasource for a specific ID if it exists, or returns None."""
