@@ -365,7 +365,7 @@ class Dsn(ConfigBaseModel, BaseDsn):
 
         if url.startswith("bigquery"):
             # TODO: support URL-encoded bigquery credentials from the query string
-            url = make_url(url)
+            parsed_url = make_url(url)
             credentials = os.environ.get("GOOGLE_APPLICATION_CREDENTIALS", None)
             if credentials is None:
                 raise ValueError(
@@ -373,8 +373,8 @@ class Dsn(ConfigBaseModel, BaseDsn):
                 )
             return BqDsn(
                 driver="bigquery",
-                project_id=url.host,
-                dataset_id=url.database,
+                project_id=parsed_url.host,
+                dataset_id=parsed_url.database,
                 credentials=GcpServiceAccountFile(
                     type="serviceaccountfile", path=credentials
                 ),
