@@ -141,7 +141,7 @@ async def require_oidc_token(
     token = token[len(expected_prefix) :]
     if TESTING_TOKENS_ENABLED and token in TESTING_TOKENS:
         return TESTING_TOKENS[token]
-    if flags.AIRPLANE_MODE and token == "airplane-mode-token":
+    if flags.AIRPLANE_MODE and token == AIRPLANE_TOKEN:
         return TESTING_TOKENS[AIRPLANE_TOKEN]
     try:
         header = jwt.get_unverified_header(token)
