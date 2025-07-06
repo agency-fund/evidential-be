@@ -422,7 +422,6 @@ class MetricPowerAnalysisMessageType(enum.StrEnum):
     INSUFFICIENT = "insufficient"
     NO_BASELINE = "no baseline"
     NO_AVAILABLE_N = "no available n"
-    NO_AVAILABLE_NONNULL_N = "no available non-null n"
     ZERO_EFFECT_SIZE = "zero effect size"
     ZERO_STDDEV = "zero variation"
 

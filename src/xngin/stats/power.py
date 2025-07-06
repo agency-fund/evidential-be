@@ -61,15 +61,6 @@ def analyze_metric_power(
                 "Adjust your filters to target more units."
             ),
         )
-    if metric.available_nonnull_n is None or metric.available_nonnull_n <= 0:
-        return _power_analysis_error(
-            metric,
-            MetricPowerAnalysisMessageType.NO_AVAILABLE_NONNULL_N,
-            (
-                "You have no available units with a non-null value to run the power calculation. "
-                "Adjust your filters to target more units."
-            ),
-        )
 
     if metric.metric_target is None or metric.metric_baseline is None:
         return _power_analysis_error(
@@ -129,7 +120,7 @@ def analyze_metric_power(
     values_map: dict[str, float | int] = {
         "available_n": metric.available_n,
         "target_n": analysis.target_n,
-        "available_nonnull_n": metric.available_nonnull_n,
+        "available_nonnull_n": metric.available_nonnull_n or 0,
     }
 
     msg_base_stats = (
