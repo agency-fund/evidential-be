@@ -6,7 +6,7 @@ from dataclasses import dataclass
 import google.api_core.exceptions
 import sqlalchemy
 from loguru import logger
-from sqlalchemy import Engine, event, text
+from sqlalchemy import Engine, Inspector, event, text
 from sqlalchemy.exc import NoSuchTableError, OperationalError
 from sqlalchemy.orm import Session
 
@@ -19,6 +19,7 @@ from xngin.apiserver.routers.common_api_types import Filter
 from xngin.apiserver.settings import (
     SA_LOGGER_NAME_FOR_DWH,
     TIMEOUT_SECS_FOR_CUSTOMER_POSTGRES,
+    Dsn,
     Dwh,
 )
 
@@ -39,7 +40,7 @@ def _safe_url(url: sqlalchemy.engine.url.URL) -> sqlalchemy.engine.url.URL:
 def _is_postgres_database_not_found_error(exc: OperationalError) -> bool:
     """Returns true when the exception indicates a Postgres database does not exist."""
     return (
-        exc.args
+        len(exc.args) > 0
         and isinstance(exc.args[0], str)
         and "FATAL:  database" in exc.args[0]
         and "does not exist" in exc.args[0]
@@ -142,6 +143,14 @@ class DwhSession:
             )
         return self._session
 
+    def _safe_engine(self) -> Engine:
+        """Get the type-checked synchronous SQLAlchemy engine."""
+        if self._engine is None:
+            raise RuntimeError(
+                "DwhSession not entered - use 'async with DwhSession(...) as dwh:'"
+            )
+        return self._engine
+
     def _inspect_table_blocking(
         self, table_name: str, use_sa_autoload: bool | None = None
     ) -> sqlalchemy.Table:
@@ -151,17 +160,19 @@ class DwhSession:
         try:
             if use_sa_autoload:
                 return sqlalchemy.Table(
-                    table_name, metadata, autoload_with=self._engine, quote=False
+                    table_name, metadata, autoload_with=self._safe_engine(), quote=False
                 )
             # This method of introspection should only be used if the db dialect doesn't support Sqlalchemy2 reflection.
-            return self._inspect_table_from_cursor_blocking(self._engine, table_name)
+            return self._inspect_table_from_cursor_blocking(
+                self._safe_engine(), table_name
+            )
         except sqlalchemy.exc.ProgrammingError:
             logger.exception(
                 "Failed to create a Table! use_sa_autoload: {}", use_sa_autoload
             )
             raise
         except NoSuchTableError as nste:
-            metadata.reflect(self._engine)
+            metadata.reflect(self._safe_engine())
             existing_tables = metadata.tables.keys()
             raise CannotFindTableError(table_name, existing_tables) from nste
 
@@ -196,7 +207,9 @@ class DwhSession:
                     # Map Redshift type codes to SQLAlchemy types. Not comprehensive.
                     # https://docs.sqlalchemy.org/en/20/core/types.html
                     # Comment shows both pg_type.typename / information_schema.data_type
-                    sa_type: type[sqlalchemy.TypeEngine] | sqlalchemy.TypeEngine
+                    sa_type: (
+                        type[sqlalchemy.types.TypeEngine] | sqlalchemy.types.TypeEngine
+                    )
                     match type_code:
                         case 16:  # BOOL / boolean
                             sa_type = sqlalchemy.Boolean
@@ -288,7 +301,7 @@ class DwhSession:
         """Samples participants."""
         filters = queries.create_query_filters(sa_table, filters)
         query = queries.compose_query(sa_table, chosen_n, filters)
-        return self._session.execute(query).all()
+        return self.session.execute(query).all()
 
     def _get_participants_blocking(
         self, table_name: str, filters, n: int, use_sa_autoload: bool | None = None
@@ -324,7 +337,7 @@ class DwhSession:
     def _list_tables_blocking(self) -> list[str]:
         try:
             # Hack for redshift's lack of reflection support.
-            if self.dwh_config.is_redshift():
+            if isinstance(self.dwh_config, Dsn) and self.dwh_config.is_redshift():
                 query = text(
                     "SELECT table_name FROM information_schema.tables "
                     "WHERE table_schema IN (:search_path) ORDER BY table_name"
@@ -332,8 +345,10 @@ class DwhSession:
                 result = self.session.execute(
                     query, {"search_path": self.dwh_config.search_path or "public"}
                 )
-                return result.scalars().all()
-            inspected = sqlalchemy.inspect(self._engine)
+                return list(result.scalars().all())
+            inspected = sqlalchemy.inspect(self._safe_engine())
+            if not isinstance(inspected, Inspector):
+                raise TypeError(f"Unexpected type of inspector: {type(inspected)}")
             return list(
                 sorted(inspected.get_table_names() + inspected.get_view_names())
             )
@@ -359,6 +374,10 @@ class DwhSession:
     def _create_engine(self) -> Engine:
         """Create a SQLAlchemy Engine for the customer database."""
         url = self.dwh_config.to_sqlalchemy_url()
+        if url.host is None:
+            # This should never happen, but check just in case.
+            raise DwhDatabaseDoesNotExistError(f"No host found in URL: {url}")
+
         connect_args: dict = {}
 
         if url.get_backend_name() == "postgresql":
@@ -389,14 +408,14 @@ class DwhSession:
         This method replicates the logic from RemoteDatabaseConfig._extra_engine_setup().
         """
         # Handle search_path for PostgreSQL
-        if hasattr(self.dwh_config, "search_path") and self.dwh_config.search_path:
+        if isinstance(self.dwh_config, Dsn) and self.dwh_config.search_path:
 
             @event.listens_for(engine, "connect", insert=True)
             def set_search_path(dbapi_connection, _connection_record):
                 existing_autocommit = dbapi_connection.autocommit
                 dbapi_connection.autocommit = True
                 cursor = dbapi_connection.cursor()
-                cursor.execute(f"SET SESSION search_path={self.dwh_config.search_path}")
+                cursor.execute(f"SET SESSION search_path={self.dwh_config.search_path}")  # type: ignore[union-attr]
                 cursor.close()
                 dbapi_connection.autocommit = existing_autocommit
 

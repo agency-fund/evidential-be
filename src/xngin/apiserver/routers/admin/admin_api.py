@@ -95,6 +95,7 @@ from xngin.apiserver.routers.stateless.stateless_api import (
     validate_schema_metrics_or_raise,
 )
 from xngin.apiserver.settings import (
+    Dsn,
     ParticipantsConfig,
     ParticipantsDef,
     RemoteDatabaseConfig,
@@ -229,7 +230,7 @@ async def get_datasource_or_raise(
     /,
     *,
     preload: list[QueryableAttribute] | None = None,
-):
+) -> tables.Datasource:
     """Reads the requested datasource from the database.
 
     Raises 404 if disallowed or not found.
@@ -771,7 +772,8 @@ async def create_datasource(
         )
     if body.dwh.driver in {"postgresql+psycopg", "postgresql+psycopg2"}:
         try:
-            safe_resolve(body.dwh.host)
+            if isinstance(body.dwh, Dsn):
+                safe_resolve(body.dwh.host)
         except DnsLookupError as err:
             raise HTTPException(
                 status_code=400,
@@ -1043,7 +1045,7 @@ async def inspect_participant_types(
             metrics=sorted(
                 [
                     GetMetricsResponseElement(
-                        data_type=result.db_schema.get(col_name).data_type,
+                        data_type=result.db_schema.get(col_name).data_type,  # type: ignore[union-attr]
                         field_name=col_name,
                         description=col_descriptor.description,
                     )
@@ -1055,7 +1057,7 @@ async def inspect_participant_types(
             strata=sorted(
                 [
                     GetStrataResponseElement(
-                        data_type=result.db_schema.get(field_name).data_type,
+                        data_type=result.db_schema.get(field_name).data_type,  # type: ignore[union-attr]
                         field_name=field_name,
                         description=field_descriptor.description,
                         # For strata columns, we will echo back any extra annotations
@@ -1562,5 +1564,5 @@ async def power_check(
     ds = await get_datasource_or_raise(session, user, datasource_id)
     dsconfig = ds.get_config()
     participants_cfg = dsconfig.find_participants(body.design_spec.participant_type)
-    validate_schema_metrics_or_raise(body.design_spec, participants_cfg)
+    validate_schema_metrics_or_raise(body.design_spec, participants_cfg)  # type: ignore[arg-type]
     return await power_check_impl(body, dsconfig, participants_cfg)

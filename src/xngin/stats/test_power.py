@@ -146,7 +146,7 @@ def test_analyze_metric_missing_baseline_returns_friendly_error():
         metric_baseline=None,
         metric_target=None,
         available_n=1000,
-        available_nonnull_n=0,
+        available_nonnull_n=100,
     )
 
     result = analyze_metric_power(metric, n_arms=2)
@@ -154,6 +154,27 @@ def test_analyze_metric_missing_baseline_returns_friendly_error():
     assert result.msg is not None
     assert result.msg.type == MetricPowerAnalysisMessageType.NO_BASELINE
     assert "Could not calculate metric baseline" in result.msg.msg
+
+
+def test_analyze_metric_with_no_available_nonnull_n_returns_ok():
+    metric = DesignSpecMetric(
+        field_name="no_available_nonnull_n",
+        metric_type=MetricType.BINARY,
+        metric_baseline=0.5,
+        metric_target=0.6,
+        available_n=1000,
+        available_nonnull_n=0,
+    )
+
+    result = analyze_metric_power(metric, n_arms=2)
+
+    assert result.msg.type == MetricPowerAnalysisMessageType.SUFFICIENT
+    assert "There are enough units available." in result.msg.msg
+    assert result.msg.values == {
+        "available_n": 1000,
+        "available_nonnull_n": 0,
+        "target_n": 778,
+    }
 
 
 def test_analyze_metric_zero_effect_size_returns_friendly_error():

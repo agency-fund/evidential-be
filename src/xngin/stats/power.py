@@ -120,7 +120,7 @@ def analyze_metric_power(
     values_map: dict[str, float | int] = {
         "available_n": metric.available_n,
         "target_n": analysis.target_n,
-        "available_nonnull_n": metric.available_nonnull_n,
+        "available_nonnull_n": metric.available_nonnull_n or 0,
     }
 
     msg_base_stats = (

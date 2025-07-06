@@ -82,7 +82,6 @@ async def get_participants_config_and_schema(
 ) -> tuple[ParticipantsConfig, ParticipantsSchema]:
     """Get common configuration info for various endpoints."""
     participants_cfg = datasource_config.find_participants(commons.participant_type)
-    cached_schema = participants_cfg  # assume type == "schema"
     if participants_cfg.type == "sheet":
         sheet_ref = participants_cfg.sheet
         cached_schema = await gsheets.get(
@@ -90,7 +89,8 @@ async def get_participants_config_and_schema(
             lambda: fetch_and_parse_sheet(sheet_ref),
             refresh=commons.refresh,
         )
-    return participants_cfg, cached_schema
+        return participants_cfg, cached_schema
+    return participants_cfg, participants_cfg
 
 
 # API Endpoints
@@ -118,7 +118,7 @@ async def get_strata(
         results=sorted(
             [
                 GetStrataResponseElement(
-                    data_type=result.db_schema.get(field_name).data_type,
+                    data_type=result.db_schema.get(field_name).data_type,  # type: ignore[union-attr]
                     field_name=field_name,
                     description=field_descriptor.description,
                     # For strata columns, we will echo back any extra annotations
@@ -190,7 +190,7 @@ async def get_metrics(
         results=sorted(
             [
                 GetMetricsResponseElement(
-                    data_type=result.db_schema.get(col_name).data_type,
+                    data_type=result.db_schema.get(col_name).data_type,  # type: ignore[union-attr]
                     field_name=col_name,
                     description=col_descriptor.description,
                 )
@@ -311,7 +311,7 @@ async def assign_treatment(
         stratum_cols=strata_names + metric_names,
         id_col=schema.get_unique_id_field(),
         arms=body.design_spec.arms,
-        experiment_id=body.design_spec.experiment_id,
+        experiment_id=body.design_spec.experiment_id,  # type: ignore[arg-type]
         fstat_thresh=body.design_spec.fstat_thresh,
         quantiles=quantiles,
         stratum_id_name=stratum_id_name,
