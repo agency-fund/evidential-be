@@ -10,6 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from xngin.apiserver import conftest, flags
 from xngin.apiserver.dns import safe_resolve
+from xngin.apiserver.dwh.dwh_session import DwhSession
 from xngin.apiserver.dwh.inspection_types import FieldDescriptor, ParticipantsSchema
 from xngin.apiserver.models import tables
 from xngin.apiserver.models.enums import ExperimentState, StopAssignmentReason
@@ -67,7 +68,6 @@ from xngin.apiserver.settings import (
     GcpServiceAccountInfo,
     ParticipantsDef,
     SheetParticipantsRef,
-    infer_table,
 )
 from xngin.apiserver.testing.assertions import assert_dates_equal
 from xngin.cli.main import create_testing_dwh
@@ -177,8 +177,8 @@ async def test_user_from_token(xngin_session: AsyncSession):
     # Assert it's a "schema" type, not the old "sheets" type.
     assert isinstance(pt_def, ParticipantsDef)
     # Check auto-generated ParticipantsDef is aligned with the test dwh.
-    session = ds_config.dbsession()
-    sa_table = infer_table(session.get_bind(), pt_def.table_name)
+    async with DwhSession(ds_config.dwh) as dwh:
+        sa_table = await dwh.inspect_table(pt_def.table_name)
     col_names = {c.name for c in sa_table.columns}
     field_names = {f.field_name for f in pt_def.fields}
     assert col_names == field_names

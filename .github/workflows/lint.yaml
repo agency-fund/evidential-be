@@ -30,7 +30,7 @@ jobs:
       - name: Setup UV
         uses: astral-sh/setup-uv@v4
         with:
-          version: "0.7.13"
+          version: "0.7.18"
           enable-cache: true
 
       - name: Run ruff

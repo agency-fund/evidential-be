@@ -35,7 +35,7 @@ typical table configuration for the participant type data above.
 
 [Various tests](../.github/workflows/test.yaml) are also run as part of our GitHub action test workflow.
 
-[conftest.py](../src/xngin/apiserver/conftest.py) defines fixtures used by many of the tests .
+[conftest.py](../src/xngin/apiserver/conftest.py) defines fixtures used by many of the tests.
 
 ## Google Integration Tests<a name="google-integration-tests"></a>
 
@@ -43,7 +43,7 @@ Some of our pytests have a test marked as 'integration'. These are only usually 
 by setting `GOOGLE_APPLICATION_CREDENTIALS` and running:
 
 ```shell
-pytest -m integration
+uv run pytest -m integration
 ```
 
 ## BigQuery Integration Tests<a name="bigquery-integration-tests"></a>
@@ -78,7 +78,8 @@ You can also trigger the BigQuery integration tests to run in GHA by putting `ru
 
 ## API Test Scripts<a name="api-test-scripts"></a>
 
-See [apitest.strata.xurl](../src/xngin/apiserver/routers/stateless/testdata/apitest.strata.xurl) for a complete example of how to write an
+See [apitest.strata.xurl](../src/xngin/apiserver/routers/stateless/testdata/apitest.strata.xurl) for a complete example
+of how to write an
 API test script. We use a small custom
 file format called [Xurl](../src/xngin/apiserver/testing/xurl.py).
 
@@ -99,29 +100,16 @@ uv run xngin-cli create-testing-dwh \
    --schema-name=alt
 ```
 
-Now you can edit your `XNGIN_SETTINGS` json to add a ClientConfig that points to your local pg and
-new table.
-
-One way to manually query pg is using the `psql` terminal included with Postgres, e.g.:
-
-```shell
-psql -h localhost -p 5432 -d xngin -U xnginwebserver -c "select count(*) from alt.test_participant_type"
-```
-
 ### How can I run the unittests against an arbitrary data warehouse?<a name="how-can-i-run-the-unittests-that-use-my-pgbq-instance-as-the-test-dwh"></a>
 
-Tests that rely on the testing warehouse do so via references in xngin.testing.settings.json or via the
-XNGIN_TEST_DWH_URI environment variable.
+Tests that exercise integration with a data warehouse do so via two mechanisms:
 
-You can populate another datasource (such as BigQuery) with the testing dataset and run some of the tests against it.
-Here's an example with BigQuery:
+1. xngin.testing.settings.json defines some static configuration for stable databases.
+1. The XNGIN_QUERIES_TEST_URI environment variable defines a SQLAlchemy URI that some of the apiserver.dwh tests are run
+   against.
 
-```shell
-$ export GSHEET_GOOGLE_APPLICATION_CREDENTIALS=credentials.json
-$ uv run xngin-cli create-testing-dwh --dsn bigquery://xngin-development-dc/ds
-$ XNGIN_TEST_DWH_URI="bigquery://xngin-development-dc/ds"
-  uv run pytest -vv src/xngin/apiserver/dwh/test_queries.py::test_boolean_filter
-```
+By default, `task test` will run all the tests against Postgres. See the bq-integration GHA job for an example of how
+to run some of the tests against BigQuery.
 
 ## Testing environment for BigQuery as the Service Provider<a name="testing-environment-for-bigquery-as-the-service-provider"></a>
 

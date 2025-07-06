@@ -1,7 +1,7 @@
+import asyncio
 from contextlib import asynccontextmanager
 from typing import Annotated
 
-import sqlalchemy
 from fastapi import (
     APIRouter,
     Depends,
@@ -9,26 +9,19 @@ from fastapi import (
     Query,
 )
 from loguru import logger
-from sqlalchemy import distinct
-from sqlalchemy.orm import Session
-from sqlalchemy.sql import Select
 
 from xngin.apiserver import constants
 from xngin.apiserver.dependencies import (
     datasource_config_required,
     gsheet_cache,
 )
-from xngin.apiserver.dwh.inspection_types import FieldDescriptor, ParticipantsSchema
-from xngin.apiserver.dwh.inspections import generate_field_descriptors
-from xngin.apiserver.dwh.queries import get_stats_on_metrics, query_for_participants
+from xngin.apiserver.dwh.dwh_session import DwhSession
+from xngin.apiserver.dwh.inspection_types import ParticipantsSchema
+from xngin.apiserver.dwh.queries import get_stats_on_filters, get_stats_on_metrics
 from xngin.apiserver.exceptions_common import LateValidationError
 from xngin.apiserver.gsheet_cache import GSheetCache
 from xngin.apiserver.routers.common_api_types import (
     DesignSpec,
-    FilterClass,
-    GetFiltersResponseDiscrete,
-    GetFiltersResponseElement,
-    GetFiltersResponseNumericOrDate,
     GetMetricsResponseElement,
     GetStrataResponseElement,
     PowerRequest,
@@ -45,7 +38,6 @@ from xngin.apiserver.settings import (
     DatasourceConfig,
     ParticipantsConfig,
     ParticipantsMixin,
-    infer_table,
 )
 from xngin.sheets.config_sheet import fetch_and_parse_sheet
 from xngin.stats.assignment import assign_treatment as assign_treatment_actual
@@ -117,26 +109,23 @@ async def get_strata(
     )
     strata_fields = {c.field_name: c for c in schema.fields if c.is_strata}
 
-    with config.dbsession() as dwh_session:
-        sa_table = infer_table(
-            dwh_session.get_bind(),
-            participants_cfg.table_name,
-            config.supports_reflection(),
+    async with DwhSession(config.dwh) as dwh:
+        result = await dwh.inspect_table_with_descriptors(
+            participants_cfg.table_name, schema.get_unique_id_field()
         )
-        db_schema = generate_field_descriptors(sa_table, schema.get_unique_id_field())
 
     return GetStrataResponse(
         results=sorted(
             [
                 GetStrataResponseElement(
-                    data_type=db_schema.get(field_name).data_type,
+                    data_type=result.db_schema.get(field_name).data_type,
                     field_name=field_name,
                     description=field_descriptor.description,
                     # For strata columns, we will echo back any extra annotations
                     extra=field_descriptor.extra,
                 )
                 for field_name, field_descriptor in strata_fields.items()
-                if db_schema.get(field_name)
+                if result.db_schema.get(field_name)
             ],
             key=lambda item: item.field_name,
         )
@@ -156,76 +145,25 @@ async def get_filters(
     )
     filter_fields = {c.field_name: c for c in schema.fields if c.is_filter}
 
-    with config.dbsession() as dwh_session:
-        sa_table = infer_table(
-            dwh_session.get_bind(),
-            participants_cfg.table_name,
-            config.supports_reflection(),
+    async with DwhSession(config.dwh) as dwh:
+        result = await dwh.inspect_table_with_descriptors(
+            participants_cfg.table_name, schema.get_unique_id_field()
         )
-        db_schema = generate_field_descriptors(sa_table, schema.get_unique_id_field())
-
-        mapper = create_col_to_filter_meta_mapper(db_schema, sa_table, dwh_session)
-
-        return GetFiltersResponse(
-            results=sorted(
-                [
-                    mapper(field_name, field_descriptor)
-                    for field_name, field_descriptor in filter_fields.items()
-                    if db_schema.get(field_name)
-                ],
-                key=lambda item: item.field_name,
-            )
+        # Note on skew: The participant type schema may refer to fields that no longer exist in the database, so we
+        # only issue queries against fields known to exist in the database.
+        column_metadata = await asyncio.to_thread(
+            get_stats_on_filters,
+            dwh.session,
+            result.sa_table,
+            result.db_schema,
+            filter_fields,
         )
-
-
-def create_col_to_filter_meta_mapper(
-    db_schema: dict[str, FieldDescriptor], sa_table, session: Session
-):
-    # TODO: implement caching, respecting commons.refresh
-    def mapper(col_name, column_descriptor) -> GetFiltersResponseElement:
-        db_col = db_schema.get(col_name)
-        if not db_col:
-            raise ValueError(f"Column {col_name} not found in schema.")
-
-        filter_class = db_col.data_type.filter_class(col_name)
-
-        # Collect metadata on the values in the database.
-        sa_col = sa_table.columns[col_name]
-        match filter_class:
-            case FilterClass.DISCRETE:
-                stmt: Select = (
-                    sqlalchemy.select(distinct(sa_col))
-                    .where(sa_col.is_not(None))
-                    .limit(1000)
-                    .order_by(sa_col)
-                )
-                result_discrete = session.execute(stmt).scalars()
-                distinct_values = [str(v) for v in result_discrete]
-                return GetFiltersResponseDiscrete(
-                    field_name=col_name,
-                    data_type=db_col.data_type,
-                    relations=filter_class.valid_relations(),
-                    description=column_descriptor.description,
-                    distinct_values=distinct_values,
-                )
-            case FilterClass.NUMERIC:
-                min_, max_ = session.execute(
-                    sqlalchemy.select(
-                        sqlalchemy.func.min(sa_col), sqlalchemy.func.max(sa_col)
-                    ).where(sa_col.is_not(None))
-                ).one()
-                return GetFiltersResponseNumericOrDate(
-                    field_name=col_name,
-                    data_type=db_col.data_type,
-                    relations=filter_class.valid_relations(),
-                    description=column_descriptor.description,
-                    min=min_,
-                    max=max_,
-                )
-            case _:
-                raise RuntimeError("unexpected filter class")
-
-    return mapper
+    return GetFiltersResponse(
+        results=sorted(
+            column_metadata,
+            key=lambda item: item.field_name,
+        )
+    )
 
 
 @router.get(
@@ -242,25 +180,22 @@ async def get_metrics(
     )
     metric_cols = {c.field_name: c for c in schema.fields if c.is_metric}
 
-    with config.dbsession() as dwh_session:
-        sa_table = infer_table(
-            dwh_session.get_bind(),
-            participants_cfg.table_name,
-            config.supports_reflection(),
+    async with DwhSession(config.dwh) as dwh:
+        result = await dwh.inspect_table_with_descriptors(
+            participants_cfg.table_name, schema.get_unique_id_field()
         )
-        db_schema = generate_field_descriptors(sa_table, schema.get_unique_id_field())
 
     # Merge data type info above with the columns to be used as metrics:
     return GetMetricsResponse(
         results=sorted(
             [
                 GetMetricsResponseElement(
-                    data_type=db_schema.get(col_name).data_type,
+                    data_type=result.db_schema.get(col_name).data_type,
                     field_name=col_name,
                     description=col_descriptor.description,
                 )
                 for col_name, col_descriptor in metric_cols.items()
-                if db_schema.get(col_name)
+                if result.db_schema.get(col_name)
             ],
             key=lambda item: item.field_name,
         )
@@ -297,34 +232,31 @@ async def powercheck(
     )
     validate_schema_metrics_or_raise(body.design_spec, schema)
 
-    return power_check_impl(body, config, participants_cfg)
+    return await power_check_impl(body, config, participants_cfg)
 
 
-def power_check_impl(
+async def power_check_impl(
     body: PowerRequest, config: DatasourceConfig, participants_cfg: ParticipantsConfig
 ) -> PowerResponse:
-    with config.dbsession() as dwh_session:
-        sa_table = infer_table(
-            dwh_session.get_bind(),
-            participants_cfg.table_name,
-            config.supports_reflection(),
-        )
+    async with DwhSession(config.dwh) as dwh:
+        sa_table = await dwh.inspect_table(participants_cfg.table_name)
 
-        metric_stats = get_stats_on_metrics(
-            dwh_session,
+        metric_stats = await asyncio.to_thread(
+            get_stats_on_metrics,
+            dwh.session,
             sa_table,
             body.design_spec.metrics,
             body.design_spec.filters,
         )
 
-        return PowerResponse(
-            analyses=check_power(
-                metrics=metric_stats,
-                n_arms=len(body.design_spec.arms),
-                power=body.design_spec.power,
-                alpha=body.design_spec.alpha,
-            )
+    return PowerResponse(
+        analyses=check_power(
+            metrics=metric_stats,
+            n_arms=len(body.design_spec.arms),
+            power=body.design_spec.power,
+            alpha=body.design_spec.alpha,
         )
+    )
 
 
 @router.post(
@@ -366,21 +298,16 @@ async def assign_treatment(
     )
     validate_schema_metrics_or_raise(body.design_spec, schema)
 
-    with config.dbsession() as dwh_session:
-        sa_table = infer_table(
-            dwh_session.get_bind(),
-            participants_cfg.table_name,
-            config.supports_reflection(),
-        )
-        participants = query_for_participants(
-            dwh_session, sa_table, body.design_spec.filters, chosen_n
+    async with DwhSession(config.dwh) as dwh:
+        result = await dwh.get_participants(
+            participants_cfg.table_name, body.design_spec.filters, chosen_n
         )
 
     metric_names = [m.field_name for m in body.design_spec.metrics]
     strata_names = [s.field_name for s in body.design_spec.strata]
     return assign_treatment_actual(
-        sa_table=sa_table,
-        data=participants,
+        sa_table=result.sa_table,
+        data=result.participants,
         stratum_cols=strata_names + metric_names,
         id_col=schema.get_unique_id_field(),
         arms=body.design_spec.arms,
