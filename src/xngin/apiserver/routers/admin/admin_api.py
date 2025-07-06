@@ -23,6 +23,7 @@ from pydantic import BaseModel
 from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import QueryableAttribute, selectinload
+from sqlalchemy.sql.functions import count
 
 from xngin.apiserver import constants, flags
 from xngin.apiserver.apikeys import hash_key_or_raise, make_key
@@ -70,6 +71,7 @@ from xngin.apiserver.routers.admin.admin_api_types import (
     UserSummary,
     WebhookSummary,
 )
+from xngin.apiserver.routers.auth.auth_api_types import CallerIdentity
 from xngin.apiserver.routers.auth.auth_dependencies import require_oidc_token
 from xngin.apiserver.routers.auth.principal import Principal
 from xngin.apiserver.routers.common_api_types import (
@@ -182,7 +184,11 @@ async def user_from_token(
     if user:
         return user
 
-    if token_info.is_privileged():
+    # There are two cases when we create a user on an authenticated request:
+    # 1. Airplane mode: We are in airplane mode and the request is coming from the UI in airplane mode.
+    # 2. First use of installation by a developer: There are no users in the database, and this is the first request.
+    user_count = await session.scalar(select(count(tables.User.id)))
+    if user_count == 0 or (flags.AIRPLANE_MODE and token_info.iss == "airplane"):
         new_user = create_user_and_first_datasource(
             session,
             email=token_info.email,
@@ -281,10 +287,23 @@ async def get_experiment_via_ds_or_raise(
 
 @router.get("/caller-identity")
 async def caller_identity(
+    session: Annotated[AsyncSession, Depends(xngin_db_session)],
     token_info: Annotated[Principal, Depends(require_oidc_token)],
-) -> Principal:
+) -> CallerIdentity:
     """Returns basic metadata about the authenticated caller of this method."""
-    return token_info
+    user = (
+        await session.scalars(
+            select(tables.User).filter(tables.User.email == token_info.email)
+        )
+    ).first()
+
+    return CallerIdentity(
+        email=token_info.email,
+        iss=token_info.iss,
+        sub=token_info.sub,
+        hd=token_info.hd,
+        is_privileged=user.is_privileged if user else False,
+    )
 
 
 @router.get("/organizations")
@@ -320,7 +339,7 @@ async def create_organizations(
 ) -> CreateOrganizationResponse:
     """Creates a new organization.
 
-    Only users with an @agency.fund email address can create organizations.
+    Only privileged users can create organizations.
     """
     if not user.is_privileged:
         raise HTTPException(

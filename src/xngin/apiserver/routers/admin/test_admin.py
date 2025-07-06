@@ -5,10 +5,11 @@ from datetime import UTC, datetime, timedelta
 import pytest
 from fastapi import HTTPException
 from pydantic import SecretStr
-from sqlalchemy import select
+from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from xngin.apiserver import conftest, flags
+from xngin.apiserver.conftest import delete_seeded_users
 from xngin.apiserver.dns import safe_resolve
 from xngin.apiserver.dwh.dwh_session import DwhSession
 from xngin.apiserver.dwh.inspection_types import FieldDescriptor, ParticipantsSchema
@@ -21,6 +22,8 @@ from xngin.apiserver.routers.admin.admin_api_types import (
     CreateApiKeyResponse,
     CreateDatasourceRequest,
     CreateDatasourceResponse,
+    CreateOrganizationRequest,
+    CreateOrganizationResponse,
     CreateParticipantsTypeRequest,
     CreateParticipantsTypeResponse,
     FieldMetadata,
@@ -28,6 +31,7 @@ from xngin.apiserver.routers.admin.admin_api_types import (
     InspectDatasourceTableResponse,
     ListApiKeysResponse,
     ListDatasourcesResponse,
+    ListOrganizationsResponse,
     ListParticipantsTypeResponse,
     ListWebhooksResponse,
     UpdateDatasourceRequest,
@@ -42,6 +46,7 @@ from xngin.apiserver.routers.auth.auth_dependencies import (
     UNPRIVILEGED_EMAIL,
     UNPRIVILEGED_TOKEN_FOR_TESTING,
 )
+from xngin.apiserver.routers.auth.principal import Principal
 from xngin.apiserver.routers.common_api_types import (
     Arm,
     CreateExperimentRequest,
@@ -155,22 +160,51 @@ async def fixture_testing_experiment(
     return experiment
 
 
-async def test_user_from_token(xngin_session: AsyncSession):
+async def test_user_from_token_when_users_exist(xngin_session: AsyncSession):
+    unpriv = await user_from_token(
+        xngin_session, TESTING_TOKENS[UNPRIVILEGED_TOKEN_FOR_TESTING]
+    )
+    assert not unpriv.is_privileged
+    priv = await user_from_token(
+        xngin_session, TESTING_TOKENS[PRIVILEGED_TOKEN_FOR_TESTING]
+    )
+    assert priv.is_privileged
+
     with pytest.raises(HTTPException, match="No user found with email") as e:
         await user_from_token(
-            xngin_session, TESTING_TOKENS[UNPRIVILEGED_TOKEN_FOR_TESTING]
+            xngin_session,
+            Principal(email="usernotfound@example.com", iss="", sub="", hd=""),
         )
     assert e.value.status_code == 403
 
-    user = await user_from_token(
-        xngin_session, TESTING_TOKENS[PRIVILEGED_TOKEN_FOR_TESTING]
-    )
-    assert user.is_privileged
-    await xngin_session.refresh(user, ["organizations"])
 
-    org = user.organizations[0]
-    await xngin_session.refresh(org, ["datasources"])
-    ds = org.datasources[0]
+async def test_user_from_token_initial_setup(xngin_session: AsyncSession):
+    # emulate first time developer experience by deleting the seeded users
+    await delete_seeded_users(xngin_session)
+
+    first_user = await user_from_token(
+        xngin_session, Principal(email="firstuser@example.com", iss="", sub="", hd="")
+    )
+    assert first_user.is_privileged
+    await xngin_session.refresh(first_user, ["organizations"])
+    assert len(first_user.organizations) == 1
+
+    with pytest.raises(HTTPException, match="No user found with email") as e:
+        await user_from_token(
+            xngin_session,
+            Principal(email="seconduser@example.com", iss="", sub="", hd=""),
+        )
+    assert e.value.status_code == 403
+
+
+async def test_initial_user_setup_matches_testing_dwh(xngin_session):
+    await delete_seeded_users(xngin_session)
+    first_user = await user_from_token(
+        xngin_session, Principal(email="firstuser@example.com", iss="", sub="", hd="")
+    )
+
+    await xngin_session.refresh(first_user, ["organizations"])
+    ds = first_user.organizations[0].datasources[0]
 
     ds_config = ds.get_config()
     pt_def = ds_config.participants[0]
@@ -199,6 +233,7 @@ def test_list_orgs_unauthenticated(client):
 def test_list_orgs_privileged(pget):
     response = pget("/v1/m/organizations")
     assert response.status_code == 200, response.content
+    assert ListOrganizationsResponse.model_validate(response.json()).items == []
 
 
 @pytest.mark.skipif(
@@ -207,7 +242,8 @@ def test_list_orgs_privileged(pget):
 )
 def test_list_orgs_unprivileged(uget):
     response = uget("/v1/m/organizations")
-    assert response.status_code == 403, response.content
+    assert response.status_code == 200, response.content
+    assert ListOrganizationsResponse.model_validate(response.json()).items == []
 
 
 def test_create_datasource_invalid_dns(testing_datasource, ppost):
@@ -266,17 +302,44 @@ def test_list_orgs(testing_datasource_with_user, pget):
     assert response_json["items"][0]["name"] == "test organization"
 
 
-def test_list_orgs_with_new_privileged_user(pget):
-    """Test listing the orgs of a new privileged user."""
+async def test_first_user_has_an_organization_created_at_login(xngin_session, pget):
+    """Test listing the orgs by the first user of the system using pget."""
+    await delete_seeded_users(xngin_session)
+
     response = pget("/v1/m/organizations")
     assert response.status_code == 200, response.content
     assert len(response.json()["items"]) == 1, response.json()
     assert response.json()["items"][0]["name"] == "My Organization"
 
 
-def test_datasource_lifecycle(testing_datasource_with_user, ppost, pget, ppatch):
+async def test_first_user_has_an_organization_created_at_login_unprivileged(
+    xngin_session, uget
+):
+    """Test listing the orgs by the first user of the system using uget."""
+    await xngin_session.execute(delete(tables.User))
+    await xngin_session.commit()
+    await xngin_session.reset()
+
+    response = uget("/v1/m/organizations")
+    assert response.status_code == 200, response.content
+    assert len(response.json()["items"]) == 1, response.json()
+    assert response.json()["items"][0]["name"] == "My Organization"
+
+
+def test_datasource_lifecycle(ppost, pget, ppatch):
     """Test creating, listing, updating a datasource."""
-    org_id = testing_datasource_with_user.org.id
+    # The user does not initially have any organizations.
+    response = pget("/v1/m/organizations")
+    assert response.status_code == 200, response.content
+    assert not ListOrganizationsResponse.model_validate(response.json()).items
+
+    # Create an organization.
+    response = ppost(
+        "/v1/m/organizations",
+        json=CreateOrganizationRequest(name="test_datasource_lifecycle").model_dump(),
+    )
+    assert response.status_code == 200, response.content
+    org_id = CreateOrganizationResponse.model_validate(response.json()).id
 
     # Create datasource
     response = ppost(
@@ -304,15 +367,11 @@ def test_datasource_lifecycle(testing_datasource_with_user, ppost, pget, ppatch)
     response = pget(f"/v1/m/organizations/{org_id}/datasources")
     assert response.status_code == 200, response.content
     list_ds_response = ListDatasourcesResponse.model_validate(response.json())
-    assert len(list_ds_response.items) == 2
-    assert {i.driver for i in list_ds_response.items} == {
-        "postgresql+psycopg2",
-        "postgresql+psycopg",
-    }
-    assert (
-        list_ds_response.items[0].organization_id
-        == list_ds_response.items[1].organization_id
-    )
+    assert len(list_ds_response.items) == 1
+    assert list_ds_response.items[0].id == datasource_id
+    assert list_ds_response.items[0].name == "test remote ds"
+    assert list_ds_response.items[0].organization_id == org_id
+    assert list_ds_response.items[0].driver == "postgresql+psycopg"
 
     # Update datasource name
     response = ppatch(
@@ -326,8 +385,9 @@ def test_datasource_lifecycle(testing_datasource_with_user, ppost, pget, ppatch)
     # List datasources to confirm update
     response = pget(f"/v1/m/organizations/{org_id}/datasources")
     assert response.status_code == 200, response.content
-    assert "updated name" in {i["name"] for i in response.json()["items"]}, (
-        response.json()
+    assert (
+        ListDatasourcesResponse.model_validate(response.json()).items[0].name
+        == "updated name"
     )
 
     # Update DWH on the datasource
@@ -354,33 +414,51 @@ def test_datasource_lifecycle(testing_datasource_with_user, ppost, pget, ppatch)
         f"/v1/m/organizations/{org_id}/datasources",
     )
     assert response.status_code == 200, response.content
-    assert "bigquery" in {i["driver"] for i in response.json()["items"]}, (
-        response.json()
+    assert (
+        ListDatasourcesResponse.model_validate(response.json()).items[0].driver
+        == "bigquery"
     )
 
 
-def test_delete_datasource(testing_datasource_with_user, udelete, pdelete):
+def test_delete_datasource(testing_datasource_with_user, pget, udelete, pdelete):
     """Test deleting a datasource a few different ways."""
     ds_id = testing_datasource_with_user.ds.id
+    org_id = testing_datasource_with_user.org.id
 
-    # Delete the datasource as an unprivileged user.
+    # udelete() authenticates as a user that is not in the same organization as the datasource but the delete
+    # endpoint always sends a 204.
     response = udelete(f"/v1/m/datasources/{ds_id}")
-    assert response.status_code == 403, response.content
+    assert response.status_code == 204, response.content
+
+    response = pget(f"/v1/m/organizations/{org_id}/datasources")
+    assert response.status_code == 200, response.content
+    assert ListDatasourcesResponse.model_validate(response.json()).items, (
+        response.content
+    )  # non-empty list
 
     # Delete the datasource as a privileged user.
     response = pdelete(f"/v1/m/datasources/{ds_id}")
     assert response.status_code == 204, response.content
 
-    # Delete the datasource a 2nd time.
+    # Assure the datasource was deleted.
+    response = pget(f"/v1/m/organizations/{org_id}/datasources")
+    assert response.status_code == 200, response.content
+    assert ListDatasourcesResponse.model_validate(response.json()).items == []
+
+    # Delete the datasource a 2nd time returns same code.
     response = pdelete(f"/v1/m/datasources/{ds_id}")
     assert response.status_code == 204, response.content
 
 
-async def test_webhook_lifecycle(
-    testing_datasource_with_user_added, pdelete, ppost, ppatch, pget
-):
+async def test_webhook_lifecycle(pdelete, ppost, ppatch, pget):
     """Test creating, updating, and deleting a webhook."""
-    org_id = testing_datasource_with_user_added.org.id
+    # Create an organization.
+    response = ppost(
+        "/v1/m/organizations",
+        json=CreateOrganizationRequest(name="test_webhook_lifecycle").model_dump(),
+    )
+    assert response.status_code == 200, response.content
+    org_id = CreateOrganizationResponse.model_validate(response.json()).id
 
     # Create a webhook
     response = ppost(

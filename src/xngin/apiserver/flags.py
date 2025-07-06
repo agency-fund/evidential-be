@@ -35,9 +35,13 @@ XNGIN_PUBLIC_PROTOCOL = os.environ.get("XNGIN_PUBLIC_PROTOCOL", "https")
 
 # XNGIN_PUBLIC_HOSTNAME defines the base hostname (and optional port) we use when constructing URLs to send to
 # external systems (such as via outbound webhooks).
-XNGIN_PUBLIC_HOSTNAME = os.environ.get(
-    "XNGIN_PUBLIC_HOSTNAME", "main.dev.agencyfund.org"
-)
+XNGIN_PUBLIC_HOSTNAME = os.environ.get("XNGIN_PUBLIC_HOSTNAME", "example.com")
+
+# XNGIN_PRODUCT_HOMEPAGE defines the homepage of the product.
+XNGIN_PRODUCT_HOMEPAGE = os.environ.get("XNGIN_PRODUCT_HOMEPAGE", "https://example.com")
+
+# XNGIN_SUPPORT_EMAIL defines the email address that end-users can message for support.
+XNGIN_SUPPORT_EMAIL = os.environ.get("XNGIN_SUPPORT_EMAIL", "support@example.com")
 
 LOG_SQL = truthy_env("LOG_SQL")
 LOG_SQL_APP_DB = truthy_env("LOG_SQL_APP_DB")
