@@ -118,7 +118,7 @@ async def get_strata(
         results=sorted(
             [
                 GetStrataResponseElement(
-                    data_type=result.db_schema.get(field_name).data_type,
+                    data_type=result.db_schema.get(field_name).data_type,  # type: ignore[union-attr]
                     field_name=field_name,
                     description=field_descriptor.description,
                     # For strata columns, we will echo back any extra annotations
@@ -190,7 +190,7 @@ async def get_metrics(
         results=sorted(
             [
                 GetMetricsResponseElement(
-                    data_type=result.db_schema.get(col_name).data_type,
+                    data_type=result.db_schema.get(col_name).data_type,  # type: ignore[union-attr]
                     field_name=col_name,
                     description=col_descriptor.description,
                 )
