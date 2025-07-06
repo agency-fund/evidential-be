@@ -11,6 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from xngin.apiserver import conftest, flags
 from xngin.apiserver.conftest import delete_seeded_users
 from xngin.apiserver.dns import safe_resolve
+from xngin.apiserver.dwh.dwh_session import DwhSession
 from xngin.apiserver.dwh.inspection_types import FieldDescriptor, ParticipantsSchema
 from xngin.apiserver.models import tables
 from xngin.apiserver.models.enums import ExperimentState, StopAssignmentReason
@@ -194,6 +195,30 @@ async def test_user_from_token_initial_setup(xngin_session: AsyncSession):
             Principal(email="seconduser@example.com", iss="", sub="", hd=""),
         )
     assert e.value.status_code == 403
+
+
+async def test_initial_user_setup_matches_testing_dwh(xngin_session):
+    await delete_seeded_users(xngin_session)
+    first_user = await user_from_token(
+        xngin_session, Principal(email="firstuser@example.com", iss="", sub="", hd="")
+    )
+
+    await xngin_session.refresh(first_user, ["organizations"])
+    ds = first_user.organizations[0].datasources[0]
+
+    ds_config = ds.get_config()
+    pt_def = ds_config.participants[0]
+    # Assert it's a "schema" type, not the old "sheets" type.
+    assert isinstance(pt_def, ParticipantsDef)
+    # Check auto-generated ParticipantsDef is aligned with the test dwh.
+    async with DwhSession(ds_config.dwh) as dwh:
+        sa_table = await dwh.inspect_table(pt_def.table_name)
+    col_names = {c.name for c in sa_table.columns}
+    field_names = {f.field_name for f in pt_def.fields}
+    assert col_names == field_names
+    for field in pt_def.fields:
+        col = sa_table.columns[field.field_name]
+        assert DataType.match(col.type) == field.data_type
 
 
 @pytest.mark.skipif(
