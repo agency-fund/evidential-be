@@ -30,20 +30,14 @@ from xngin.apiserver.limits import (
 )
 from xngin.apiserver.models.enums import ExperimentState, StopAssignmentReason
 
-FilterValueTypes = (
-    Sequence[Annotated[int, Field(strict=True)] | None]
-    | Sequence[Annotated[float, Field(strict=True, allow_inf_nan=False)] | None]
+type StrictInt = Annotated[int | None, Field(strict=True)]
+type StrictFloat = Annotated[float | None, Field(strict=True, allow_inf_nan=False)]
+type FilterValueTypes = (
+    Sequence[StrictInt]
+    | Sequence[StrictFloat]
     | Sequence[str | None]
     | Sequence[bool | None]
 )
-
-type DesignSpec = Annotated[
-    PreassignedExperimentSpec | OnlineExperimentSpec,
-    Field(
-        discriminator="experiment_type",
-        description="Concrete type of experiment to run.",
-    ),
-]
 
 
 class DataType(enum.StrEnum):
@@ -505,16 +499,6 @@ class GetMetricsResponseElement(ApiBaseModel):
     description: Annotated[str, Field(max_length=MAX_LENGTH_OF_DESCRIPTION_VALUE)]
 
 
-class PowerRequest(ApiBaseModel):
-    design_spec: DesignSpec
-
-
-class PowerResponse(ApiBaseModel):
-    analyses: Annotated[
-        list[MetricPowerAnalysis], Field(max_length=MAX_NUMBER_OF_FIELDS)
-    ]
-
-
 EXPERIMENT_IDS_SUFFIX = "experiment_ids"
 
 
@@ -778,6 +762,25 @@ class OnlineExperimentSpec(FrequentistExperimentSpec):
         Literal["online"],
         Field(description="Experiment type identifier for online experiments"),
     ] = "online"
+
+
+type DesignSpec = Annotated[
+    PreassignedExperimentSpec | OnlineExperimentSpec,
+    Field(
+        discriminator="experiment_type",
+        description="Concrete type of experiment to run.",
+    ),
+]
+
+
+class PowerRequest(ApiBaseModel):
+    design_spec: DesignSpec
+
+
+class PowerResponse(ApiBaseModel):
+    analyses: Annotated[
+        list[MetricPowerAnalysis], Field(max_length=MAX_NUMBER_OF_FIELDS)
+    ]
 
 
 class Strata(ApiBaseModel):
