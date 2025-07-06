@@ -131,15 +131,6 @@ class DwhSession:
         await asyncio.to_thread(self._exit_blocking)
 
     @property
-    def engine(self) -> Engine:
-        """Get the synchronous SQLAlchemy engine."""
-        if self._engine is None:
-            raise RuntimeError(
-                "DwhSession not entered - use 'async with DwhSession(...) as dwh:'"
-            )
-        return self._engine
-
-    @property
     def session(self) -> Session:
         """Get the synchronous SQLAlchemy session.
 
@@ -152,6 +143,14 @@ class DwhSession:
             )
         return self._session
 
+    def _safe_engine(self) -> Engine:
+        """Get the type-checked synchronous SQLAlchemy engine."""
+        if self._engine is None:
+            raise RuntimeError(
+                "DwhSession not entered - use 'async with DwhSession(...) as dwh:'"
+            )
+        return self._engine
+
     def _inspect_table_blocking(
         self, table_name: str, use_sa_autoload: bool | None = None
     ) -> sqlalchemy.Table:
@@ -161,17 +160,19 @@ class DwhSession:
         try:
             if use_sa_autoload:
                 return sqlalchemy.Table(
-                    table_name, metadata, autoload_with=self.engine, quote=False
+                    table_name, metadata, autoload_with=self._safe_engine(), quote=False
                 )
             # This method of introspection should only be used if the db dialect doesn't support Sqlalchemy2 reflection.
-            return self._inspect_table_from_cursor_blocking(self.engine, table_name)
+            return self._inspect_table_from_cursor_blocking(
+                self._safe_engine(), table_name
+            )
         except sqlalchemy.exc.ProgrammingError:
             logger.exception(
                 "Failed to create a Table! use_sa_autoload: {}", use_sa_autoload
             )
             raise
         except NoSuchTableError as nste:
-            metadata.reflect(self.engine)
+            metadata.reflect(self._safe_engine())
             existing_tables = metadata.tables.keys()
             raise CannotFindTableError(table_name, existing_tables) from nste
 
@@ -345,7 +346,7 @@ class DwhSession:
                     query, {"search_path": self.dwh_config.search_path or "public"}
                 )
                 return list(result.scalars().all())
-            inspected = sqlalchemy.inspect(self.engine)
+            inspected = sqlalchemy.inspect(self._safe_engine())
             if not isinstance(inspected, Inspector):
                 raise TypeError(f"Unexpected type of inspector: {type(inspected)}")
             return list(
