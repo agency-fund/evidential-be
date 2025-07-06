@@ -39,7 +39,7 @@ class WebhookResponse(WebhookBaseModel):
 # Dict of extra responses to use with all webhook-related endpoints. See:
 # https://fastapi.tiangolo.com/advanced/additional-responses/?h=responses#additional-response-with-model
 # for how to use with path operation decorators.
-STANDARD_WEBHOOK_RESPONSES: dict[int, dict[str, Any]] = {
+STANDARD_WEBHOOK_RESPONSES: dict[int | str, dict[str, Any]] = {
     502: {
         "model": WebhookResponse,
         "description": "Webhook service returned a non-200 code.",

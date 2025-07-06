@@ -155,7 +155,7 @@ def df_to_ddl(
                 pass  # Not a UUID
     # Now generate the DDL.
     columns = [
-        f"{quoter.quote(col)} {type_map.get(str(dtype), default_sql_type)}"
+        f"{quoter.quote(str(col))} {type_map.get(str(dtype), default_sql_type)}"
         for col, dtype in df_dtypes.items()
     ]
     return f"""CREATE TABLE {table_name} ({",\n    ".join(columns)});"""
