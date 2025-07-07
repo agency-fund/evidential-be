@@ -11,13 +11,14 @@ from typing import assert_never, cast
 import pytest
 import sqlalchemy
 from pydantic import TypeAdapter, ValidationError
-from sqlalchemy import make_url
+from sqlalchemy import delete, make_url, select
 from sqlalchemy.dialects.postgresql import psycopg
 from sqlalchemy.engine.interfaces import Dialect
 from sqlalchemy.engine.url import URL
 from sqlalchemy.ext.asyncio import (
     AsyncSession,
 )
+from sqlalchemy.orm import selectinload
 from sqlalchemy_bigquery import dialect as bigquery_dialect
 from starlette.testclient import TestClient
 
@@ -34,6 +35,7 @@ from xngin.apiserver.routers.auth import auth_dependencies
 from xngin.apiserver.routers.auth.auth_dependencies import (
     PRIVILEGED_EMAIL,
     PRIVILEGED_TOKEN_FOR_TESTING,
+    UNPRIVILEGED_EMAIL,
     UNPRIVILEGED_TOKEN_FOR_TESTING,
 )
 from xngin.apiserver.settings import ParticipantsDef, SettingsForTesting, XnginSettings
@@ -88,14 +90,14 @@ def get_settings_for_test() -> XnginSettings:
             raise
 
 
-def get_test_dwh_info() -> TestUriInfo:
+def get_queries_test_uri() -> TestUriInfo:
     """Gets the DSN of the testing data warehouse to use in tests.
 
-    See xngin.apiserver.dwh.test_queries.fixture_dwh_session.
+    See xngin.apiserver.dwh.test_queries.fixture_queries_session.
     """
-    connection_uri = os.environ.get("XNGIN_TEST_DWH_URI", "")
+    connection_uri = os.environ.get("XNGIN_QUERIES_TEST_URI", "")
     if not connection_uri:
-        raise ValueError("XNGIN_TEST_DWH_URI must be set.")
+        raise ValueError("XNGIN_QUERIES_TEST_URI must be set.")
     return get_test_uri_info(connection_uri)
 
 
@@ -104,7 +106,7 @@ def setup_debug_logging():
     print(
         "Running tests with "
         f"\n\tDATABASE_URL: {database.SQLALCHEMY_DATABASE_URL} "
-        f"\n\tXNGIN_TEST_DWH_URI  : {get_test_dwh_info()}"
+        f"\n\tXNGIN_QUERIES_TEST_URI  : {get_queries_test_uri()}"
     )
 
 
@@ -222,7 +224,9 @@ def fixture_uget(client):
 async def fixture_xngin_db_session():
     """Yields a SQLAlchemy session suitable for direct interaction with the database.
 
-    This will drop and recreate all tables at the beginning of every test.
+    This will drop and recreate all tables at the beginning of every test. The users table will be seeded with
+    a privileged user (pget, ppost, ...) and an unprivileged user (uget, upost, ...). These users can be removed by
+    individual tests by calling delete_seeded_users().
 
     Where possible, prefer using the API methods to test functionality rather than touching the database
     directly.
@@ -236,8 +240,21 @@ async def fixture_xngin_db_session():
     async with database.async_engine.begin() as conn:
         await conn.run_sync(tables.Base.metadata.drop_all)
         await conn.run_sync(tables.Base.metadata.create_all)
+    async with sessionmaker() as session:
+        session.add_all([
+            tables.User(email=PRIVILEGED_EMAIL, is_privileged=True),
+            tables.User(email=UNPRIVILEGED_EMAIL, is_privileged=False),
+        ])
+        await session.commit()
     async with sessionmaker() as sess:
         yield sess
+
+
+async def delete_seeded_users(xngin_session: AsyncSession):
+    """Deletes users created by the xngin_session fixture."""
+    await xngin_session.execute(delete(tables.User))
+    await xngin_session.commit()
+    await xngin_session.reset()
 
 
 @pytest.fixture(scope="session", autouse=True)
@@ -303,28 +320,24 @@ class DatasourceMetadata:
 
 @pytest.fixture(name="testing_datasource", scope="function")
 async def fixture_testing_datasource(xngin_session: AsyncSession) -> DatasourceMetadata:
-    """
-    Generates a new Organization, Datasource, and API key for a test.
-
-    This is NOT the same as the default Org+Datasource auto-generated for privileged users (i.e. cases where we use PRIVILEGED_TOKEN_FOR_TESTING+PRIVILEGED_EMAIL).
-
-    Note: The datasource configured in this fixture represents a customer database. This is
-    *different* than the xngin server-side database configured by conftest.setup().
-    """
+    """Generates a new Organization, Datasource, and API key for a test."""
     return await make_datasource_metadata(xngin_session)
 
 
 @pytest.fixture(name="testing_datasource_with_user", scope="function")
 async def fixture_testing_datasource_with_user(xngin_session) -> DatasourceMetadata:
     """
-    Generates a new Organization, Datasource, and API key. Adds our privileged user to the org.
+    Generates a new Organization, Datasource, and API key. Adds the PRIVILEGED_EMAIL user to the org.
     """
     metadata = await make_datasource_metadata(xngin_session)
-    user = tables.User(
-        id="user_" + secrets.token_hex(8), email=PRIVILEGED_EMAIL, is_privileged=True
-    )
+    user = (
+        await xngin_session.execute(
+            select(tables.User)
+            .options(selectinload(tables.User.organizations))
+            .where(tables.User.email == PRIVILEGED_EMAIL)
+        )
+    ).scalar_one()
     user.organizations.append(metadata.org)
-    xngin_session.add(user)
     await xngin_session.commit()
     return metadata
 

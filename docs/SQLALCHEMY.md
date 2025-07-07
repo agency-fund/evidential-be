@@ -20,7 +20,11 @@ raised when it occurs.
 
 To maintain async correctness, implicit I/O on the application database should be considered a bug.
 
-> Note: I/O to customer data warehouses is not async. This is a bug.
+## Interactions with Customer Data Warehouses
+
+We support multiple data warehouse backends but not all of them have async drivers for SQLAlchemy. Thus we
+have adopted a convention of running all queries against customer databases in a thread. This allows our request
+threads to remain non-blocking. See [DwhSession](../src/xngin/apiserver/dwh/dwh_session.py) for additional details.
 
 ## expire_on_commit
 

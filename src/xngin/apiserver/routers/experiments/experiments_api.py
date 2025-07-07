@@ -25,7 +25,7 @@ from xngin.apiserver.dependencies import (
     random_seed_dependency,
     xngin_db_session,
 )
-from xngin.apiserver.dwh.queries import query_for_participants
+from xngin.apiserver.dwh.dwh_session import DwhSession
 from xngin.apiserver.exceptions_common import LateValidationError
 from xngin.apiserver.gsheet_cache import GSheetCache
 from xngin.apiserver.models import tables
@@ -56,7 +56,6 @@ from xngin.apiserver.routers.stateless.stateless_api import (
 )
 from xngin.apiserver.settings import (
     Datasource,
-    infer_table,
 )
 
 
@@ -106,14 +105,9 @@ async def create_experiment_with_assignment_sl(
     )
 
     # Get participants and their schema info from the client dwh
-    with ds_config.dbsession() as dwh_session:
-        sa_table = infer_table(
-            dwh_session.get_bind(),
-            participants_cfg.table_name,
-            ds_config.supports_reflection(),
-        )
-        participants = query_for_participants(
-            dwh_session, sa_table, body.design_spec.filters, chosen_n
+    async with DwhSession(ds_config.dwh) as dwh:
+        result = await dwh.get_participants(
+            participants_cfg.table_name, body.design_spec.filters, chosen_n
         )
 
     # Persist the experiment and assignments in the xngin database
@@ -121,8 +115,8 @@ async def create_experiment_with_assignment_sl(
         request=body,
         datasource_id=datasource.id,
         participant_unique_id_field=schema.get_unique_id_field(),
-        dwh_sa_table=sa_table,
-        dwh_participants=participants,
+        dwh_sa_table=result.sa_table,
+        dwh_participants=result.participants,
         random_state=random_state,
         xngin_session=xngin_session,
         stratify_on_metrics=True,

@@ -26,7 +26,7 @@ def lookup_v4(host: str) -> list[str] | None:
     if platform == "darwin":
         # dnspython doesn't function properly on OSX machines so call socket.getaddrinfo directly.
         answer = socket.getaddrinfo(host, None, socket.AF_INET)
-        return [a[4][0] for a in answer]
+        return [str(a[4][0]) for a in answer]
     try:
         dns_answer = resolve(host, "A", lifetime=DNS_TIMEOUT_SECS)
         return [r.to_text() for r in dns_answer]

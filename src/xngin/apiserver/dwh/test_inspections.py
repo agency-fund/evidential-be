@@ -3,12 +3,12 @@ from pydantic import ValidationError
 from sqlalchemy import BigInteger, Column, Integer, MetaData, String, Table
 
 from xngin.apiserver import conftest
+from xngin.apiserver.dwh.dwh_session import DwhSession
 from xngin.apiserver.dwh.inspections import (
     create_schema_from_table,
     generate_field_descriptors,
 )
 from xngin.apiserver.routers.common_api_types import DataType
-from xngin.apiserver.settings import infer_table
 
 
 def test_create_schema_from_table_success():
@@ -67,11 +67,11 @@ def test_create_schema_from_table_fails_if_no_unique_id():
         create_schema_from_table(my_table, None)
 
 
-def test_generate_column_descriptors():
+async def test_generate_column_descriptors():
     settings = conftest.get_settings_for_test()
     config = settings.get_datasource("testing").config
-    with config.dbsession() as session:
-        sa_table = infer_table(session.get_bind(), "dwh", config.supports_reflection())
+    async with DwhSession(config.dwh) as dwh:
+        sa_table = await dwh.inspect_table("dwh")
 
     db_schema = generate_field_descriptors(sa_table, "last_name")
 

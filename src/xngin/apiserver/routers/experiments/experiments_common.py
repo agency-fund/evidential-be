@@ -545,7 +545,7 @@ async def create_assignment_for_participant(
     # Create and save the new assignment. We use the insert() API because it allows us to read
     # the database-generated created_at value without needing to refresh the object in the SQLAlchemy cache.
     try:
-        created_at = (
+        result = (
             await xngin_session.execute(
                 insert(tables.ArmAssignment)
                 .values(
@@ -557,7 +557,12 @@ async def create_assignment_for_participant(
                 )
                 .returning(tables.ArmAssignment.created_at)
             )
-        ).fetchone()[0]
+        ).fetchone()
+        if result is None:
+            raise ExperimentsAssignmentError(
+                f"Failed to create assignment for participant '{participant_id}'"
+            )
+        created_at = result[0]
         await xngin_session.commit()
     except IntegrityError as e:
         await xngin_session.rollback()

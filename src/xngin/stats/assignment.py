@@ -87,7 +87,7 @@ def assign_treatment(
     # didn't originally recognize when creating the dataframe. This does NOT handle Decimal types!
     df = DataFrame(data).infer_objects()
 
-    # Now convert any Decimal types to float (possible if the Table was created with reflection instead of cursor).
+    # Now convert any Decimal types to float (possible if the Table was created with SA's autoload instead of cursor).
     decimal_columns = [
         c.name for c in sa_table.columns if c.type.python_type is decimal.Decimal
     ]
@@ -202,7 +202,7 @@ def simple_random_assignment(
     treatment_ids = list(range(n_arms))
     treatment_mask = np.repeat(treatment_ids, np.ceil(len(data) / n_arms))
     rng.shuffle(treatment_mask)
-    return treatment_mask[: len(data)].tolist()
+    return [int(x) for x in treatment_mask[: len(data)]]
 
 
 def _make_assign_response(

@@ -1,5 +1,6 @@
 """Command line tool for various xngin-related operations."""
 
+import asyncio
 import csv
 import json
 import logging
@@ -32,13 +33,14 @@ from sqlalchemy.exc import IntegrityError, OperationalError
 from sqlalchemy.orm import Session
 from sqlalchemy.sql.compiler import IdentifierPreparer
 
-from xngin.apiserver import settings
+from xngin.apiserver.dwh.dwh_session import CannotFindTableError, DwhSession
 from xngin.apiserver.dwh.inspection_types import FieldDescriptor, ParticipantsSchema
 from xngin.apiserver.dwh.inspections import create_schema_from_table
+from xngin.apiserver.models import tables
 from xngin.apiserver.routers.common_api_types import DataType
 from xngin.apiserver.settings import (
-    CannotFindTableError,
     Datasource,
+    Dsn,
     SheetRef,
     XnginSettings,
 )
@@ -62,29 +64,58 @@ logging.basicConfig(
 )
 
 
-def infer_config_from_schema(
-    dsn: str, table: str, use_reflection: bool, unique_id_col: str | None = None
+def create_engine_and_database(url: sqlalchemy.URL):
+    """Connects to a SQLAlchemy URL and creates the database if it doesn't exist.
+
+    Only implemented for psycopg/psycopg2.
+    """
+    try:
+        engine = create_engine(url, logging_name=SA_LOGGER_NAME_FOR_CLI)
+        with engine.connect():
+            print("Connected.")
+    except OperationalError as exc:
+        if "postgres" not in url.drivername or (
+            # 1st case: psycopg2 driver
+            "does not exist" not in str(exc)
+            # 2nd case: psycopg driver
+            and "Connection refused" not in str(exc)
+        ):
+            raise
+        print(f"Creating database {url.database}...")
+        engine = create_engine(
+            url.set(database="postgres"),
+            logging_name=SA_LOGGER_NAME_FOR_CLI,
+        )
+        with engine.connect().execution_options(isolation_level="AUTOCOMMIT") as conn:
+            conn.execute(sqlalchemy.text(f"CREATE DATABASE {url.database}"))
+        print("Reconnecting.")
+        return create_engine(
+            url,
+            logging_name=SA_LOGGER_NAME_FOR_CLI,
+        )
+    else:
+        return engine
+
+
+async def create_participants_schema_from_table(
+    dsn: str, table: str, use_sa_autoload: bool, unique_id_col: str | None = None
 ):
-    """Infers a configuration from a SQLAlchemy schema.
+    """Creates a ParticipantsSchema from a SQLAlchemy table.
 
     :param dsn The SQLAlchemy-compatible DSN.
     :param table The name of the table to inspect.
-    :param use_reflection True if you want to use SQLAlchemy's reflection, else infer from cursor.
+    :param use_sa_autoload True if you want to use SQLAlchemy's reflection, else infer from a SQL SELECT cursor.
     :param unique_id_col The column name in the table to use as a participant's unique identifier.
     """
     try:
-        dwh = settings.infer_table(
-            sqlalchemy.create_engine(
-                sqlalchemy.engine.make_url(dsn),
-                logging_name=SA_LOGGER_NAME_FOR_CLI,
-            ),
-            table,
-            use_reflection=use_reflection,
-        )
+        dwh_config = Dsn.from_url(dsn)
+
+        async with DwhSession(dwh_config) as dwh:
+            dwh_table = await dwh.inspect_table(table, use_sa_autoload=use_sa_autoload)
     except CannotFindTableError as cfte:
         err_console.print(cfte.message)
         raise typer.Exit(1) from cfte
-    return create_schema_from_table(dwh, unique_id_col=unique_id_col)
+    return create_schema_from_table(dwh_table, unique_id_col=unique_id_col)
 
 
 def df_to_ddl(
@@ -124,7 +155,7 @@ def df_to_ddl(
                 pass  # Not a UUID
     # Now generate the DDL.
     columns = [
-        f"{quoter.quote(col)} {type_map.get(str(dtype), default_sql_type)}"
+        f"{quoter.quote(str(col))} {type_map.get(str(dtype), default_sql_type)}"
         for col, dtype in df_dtypes.items()
     ]
     return f"""CREATE TABLE {table_name} ({",\n    ".join(columns)});"""
@@ -136,6 +167,20 @@ def validate_create_testing_dwh_src(v: Path):
         if str(v).endswith(ext):
             return v
     raise typer.BadParameter("--src must end in .csv or .csv.zst")
+
+
+@app.command()
+def create_apiserver_db(
+    dsn: Annotated[
+        str,
+        typer.Option(
+            help="The SQLAlchemy URL for the database.", envvar="DATABASE_URL"
+        ),
+    ],
+):
+    console.print(f"DSN: [cyan]{dsn}[/cyan]")
+    engine = create_engine_and_database(make_url(dsn))
+    tables.Base.metadata.create_all(bind=engine)
 
 
 @app.command()
@@ -234,40 +279,6 @@ def create_testing_dwh(
 
     def read_csv():
         return pd.read_csv(src, nrows=nrows)
-
-    def create_engine_and_database(url: sqlalchemy.URL):
-        """Connects to a SQLAlchemy URL and creates the database if it doesn't exist.
-
-        Only implemented for psycopg/psycopg2.
-        """
-        try:
-            engine = create_engine(url, logging_name=SA_LOGGER_NAME_FOR_CLI)
-            with engine.connect():
-                print("Connected.")
-        except OperationalError as exc:
-            if "postgres" not in url.drivername or (
-                # 1st case: psycopg2 driver
-                "does not exist" not in str(exc)
-                # 2nd case: psycopg driver
-                and "Connection refused" not in str(exc)
-            ):
-                raise
-            print(f"Creating database {url.database}...")
-            engine = create_engine(
-                url.set(database="postgres"),
-                logging_name=SA_LOGGER_NAME_FOR_CLI,
-            )
-            with engine.connect().execution_options(
-                isolation_level="AUTOCOMMIT"
-            ) as conn:
-                conn.execute(sqlalchemy.text(f"CREATE DATABASE {url.database}"))
-            print("Reconnecting.")
-            return create_engine(
-                url,
-                logging_name=SA_LOGGER_NAME_FOR_CLI,
-            )
-        else:
-            return engine
 
     def drop_and_create(cur, create_table_ddl: str):
         cur.execute(drop_table_ddl)
@@ -440,7 +451,7 @@ def bootstrap_spreadsheet(
             help="Share the newly created Google Sheet with one or more email addresses.",
         ),
     ] = None,
-    use_reflection: Annotated[
+    use_sa_autoload: Annotated[
         bool,
         typer.Option(
             help="True to use SQLAlchemy's table reflection, else use a cursor to infer types",
@@ -451,7 +462,11 @@ def bootstrap_spreadsheet(
 
     Use this to get a customer started on configuring an experiment.
     """
-    config = infer_config_from_schema(dsn, table_name, use_reflection, unique_id_col)
+    config = asyncio.run(
+        create_participants_schema_from_table(
+            dsn, table_name, use_sa_autoload, unique_id_col
+        )
+    )
 
     # Exclude the `extra` field.
     field_names = [c for c in FieldDescriptor.model_fields if c != "extra"]

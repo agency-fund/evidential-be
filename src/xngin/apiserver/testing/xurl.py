@@ -1,4 +1,5 @@
 import re
+from typing import Any
 
 from parsy import alt, generate, regex, seq, string, whitespace
 from pydantic import BaseModel
@@ -46,7 +47,7 @@ class Xurl(BaseModel):
         ])
 
     @staticmethod
-    def from_script(script: str) -> "Xurl":
+    def from_script(script: str) -> Any:
         """Constructs a Xurl from a string."""
 
         @generate

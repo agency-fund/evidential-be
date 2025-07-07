@@ -143,13 +143,6 @@ def run(
         help="Drop the database specified by --create-db if it already exists",
         envvar="LOCALPG_DROP_DB_FIRST",
     ),
-    if_created: str = typer.Option(
-        None,
-        "--if-created",
-        help="Shell command to run if the database specified by --create-db doesn't already exist. This is intended to "
-        "be used for creating the database schema using migration tools.",
-        envvar="LOCALPG_IF_CREATED",
-    ),
 ):
     """
     Start a local ephemeral PostgreSQL instance using Docker.
@@ -210,18 +203,7 @@ def run(
 
         # Create the database if requested even if the container was already running.
         if daemon and create_db:
-            db_created = create_database(create_db, port, drop_db_first)
-            if db_created and if_created:
-                console.print(f"\n🔄 [info]Running command: {if_created}[/]")
-                try:
-                    subprocess.run(
-                        if_created, shell=True, check=True, env={"VIRTUAL_ENV": ""}
-                    )
-                    console.print("✅ [info]Command completed successfully[/]")
-                except subprocess.CalledProcessError as e:
-                    console.print(
-                        f"❌ [warning]Command failed with exit code {e.returncode}[/]"
-                    )
+            create_database(create_db, port, drop_db_first)
             console.print(
                 f"🔌 Connection string:\n   [url]postgresql://postgres:postgres@localhost:{port}/{create_db}?sslmode=disable[/]"
             )

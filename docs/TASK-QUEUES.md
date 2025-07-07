@@ -119,8 +119,9 @@ in [src/xngin/tq/cli.py](../src/xngin/tq/cli.py). Example:
 ```python
 def webhook_handler(task: Task):
     payload = json.loads(task.payload)
-    response = httpx.post(payload["method"], payload["url")
+    response = httpx.post(payload["method"], payload["url"])
     response.raise_for_status()
+
 
 # register the handler before queue.run().
 queue.register_handler("webhook.outbound", webhook_handler)
