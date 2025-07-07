@@ -79,6 +79,11 @@ def test_deserialize_invalid_structure():
     with pytest.raises(ValueError, match="does not match expected format"):
         _deserialize(invalid_serialized)
 
+    # Test with a nested list with numbers instead of strings
+    invalid_serialized = f"{SERIALIZED_ENCRYPTED_VALUE_PREFIX}" + json.dumps([[2, 3]])
+    with pytest.raises(ValueError, match="does not match expected format"):
+        _deserialize(invalid_serialized)
+
 
 SAMPLE_TINK_KEY = base64.standard_b64encode(
     json.dumps({
