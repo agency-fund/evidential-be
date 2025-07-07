@@ -104,8 +104,8 @@ SAMPLE_TINK_KEY = base64.standard_b64encode(
 ).decode("utf-8")
 
 
-@pytest.fixture
-def secretservice():
+@pytest.fixture(name="local_secretservice")
+def fixture_local_secretservice():
     registry = Registry()
     local_provider.initialize(registry, static_key=SAMPLE_TINK_KEY)
     return SecretService(registry.get("local"), registry)
@@ -121,16 +121,16 @@ def secretservice():
         ("", ""),  # Test with both empty
     ],
 )
-def test_secretservice_encrypt_decrypt(secretservice, plaintext, aad):
+def test_secretservice_encrypt_decrypt(local_secretservice, plaintext, aad):
     """Test that SecretService can encrypt and decrypt values with various inputs."""
     # Encrypt the value
-    encrypted = secretservice.encrypt(plaintext, aad)
+    encrypted = local_secretservice.encrypt(plaintext, aad)
 
     # Verify it has the expected format
     assert encrypted.startswith(SERIALIZED_ENCRYPTED_VALUE_PREFIX)
 
     # Decrypt the value
-    decrypted = secretservice.decrypt(encrypted, aad)
+    decrypted = local_secretservice.decrypt(encrypted, aad)
 
     # Verify we got the original plaintext back
     assert decrypted == plaintext
@@ -144,10 +144,10 @@ def test_secretservice_encrypt_decrypt(secretservice, plaintext, aad):
         ("non-empty plaintext", ""),  # Test with empty AAD
     ],
 )
-def test_secretservice_decrypt_unencrypted_value(secretservice, plaintext, aad):
+def test_secretservice_decrypt_unencrypted_value(local_secretservice, plaintext, aad):
     """Test that SecretService.decrypt returns unencrypted values as-is."""
     # Since the value doesn't have the prefix, it should be returned as-is
-    result = secretservice.decrypt(plaintext, aad)
+    result = local_secretservice.decrypt(plaintext, aad)
 
     assert result == plaintext
 
@@ -161,23 +161,23 @@ def test_secretservice_decrypt_unencrypted_value(secretservice, plaintext, aad):
     ],
 )
 def test_secretservice_decrypt_with_wrong_aad(
-    secretservice, plaintext, correct_aad, wrong_aad
+    local_secretservice, plaintext, correct_aad, wrong_aad
 ):
     """Test that decryption fails when using the wrong AAD."""
-    encrypted = secretservice.encrypt(plaintext, correct_aad)
+    encrypted = local_secretservice.encrypt(plaintext, correct_aad)
 
     # Attempting to decrypt with the wrong AAD should raise an exception
     with pytest.raises(TinkError):
-        secretservice.decrypt(encrypted, wrong_aad)
+        local_secretservice.decrypt(encrypted, wrong_aad)
 
 
-def test_secretservice_provider_selection(secretservice):
+def test_secretservice_provider_selection(local_secretservice):
     """Test that SecretService uses the correct provider based on the serialized data."""
     # The fixture uses the LocalProvider
     plaintext = "Test provider selection"
     aad = "provider_test"
 
-    encrypted = secretservice.encrypt(plaintext, aad)
+    encrypted = local_secretservice.encrypt(plaintext, aad)
 
     # Verify the provider name in the serialized data
     _, serialized_json = encrypted.split(SERIALIZED_ENCRYPTED_VALUE_PREFIX, 1)
@@ -187,4 +187,4 @@ def test_secretservice_provider_selection(secretservice):
     assert data[0][0] == "local"
 
     # Decryption should work
-    assert secretservice.decrypt(encrypted, aad) == plaintext
+    assert local_secretservice.decrypt(encrypted, aad) == plaintext
