@@ -7,6 +7,7 @@ from tink import aead
 from tink.integration import awskms
 
 from xngin.xsecrets import constants
+from xngin.xsecrets.exceptions import InvalidSecretStoreConfigurationError
 from xngin.xsecrets.kms_provider import KmsProvider
 from xngin.xsecrets.provider import Registry
 
@@ -20,25 +21,37 @@ class AwsKmsConfiguration:
 
 
 def _read_aws_env():
-    key_uri = os.environ.get(constants.ENV_XNGIN_SECRETS_AWS_KEY_URI)
-    access_key_id = os.environ.get(constants.ENV_XNGIN_SECRETS_AWS_ACCESS_KEY_ID)
-    secret_access_key = os.environ.get(
-        constants.ENV_XNGIN_SECRETS_AWS_SECRET_ACCESS_KEY
-    )
-    if not (key_uri and access_key_id and secret_access_key):
+    aws_vars = {
+        k: os.environ.get(k, "")
+        for k in (
+            constants.ENV_XNGIN_SECRETS_AWS_KEY_URI,
+            constants.ENV_XNGIN_SECRETS_AWS_ACCESS_KEY_ID,
+            constants.ENV_XNGIN_SECRETS_AWS_SECRET_ACCESS_KEY,
+        )
+    }
+    if any(aws_vars.values()) and not all(aws_vars.values()):
+        raise InvalidSecretStoreConfigurationError(
+            f"Incomplete {NAME} configuration: {', '.join(k for k, v in aws_vars.items() if not v)}"
+        )
+    if not all(aws_vars.values()):
         return None
 
     # Write out the config file that Tink wants its credentials in.
     config = configparser.ConfigParser()
     config["default"] = {
-        "aws_access_key_id": access_key_id,
-        "aws_secret_access_key": secret_access_key,
+        "aws_access_key_id": aws_vars[constants.ENV_XNGIN_SECRETS_AWS_ACCESS_KEY_ID],
+        "aws_secret_access_key": aws_vars[
+            constants.ENV_XNGIN_SECRETS_AWS_SECRET_ACCESS_KEY
+        ],
     }
     temp_file = tempfile.NamedTemporaryFile(delete=False)  # noqa: SIM115
     credentials_path = temp_file.name
     with open(credentials_path, "w") as credentials_file:
         config.write(credentials_file)
-    return AwsKmsConfiguration(key_uri=key_uri, credentials_path=credentials_path)
+    return AwsKmsConfiguration(
+        key_uri=aws_vars[constants.ENV_XNGIN_SECRETS_AWS_KEY_URI],
+        credentials_path=credentials_path,
+    )
 
 
 def initialize(registry: Registry):
