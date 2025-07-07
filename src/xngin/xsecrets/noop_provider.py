@@ -12,7 +12,7 @@ class NoopProvider(Provider):
     """Implements a Kms that doesn't perform any cryptographic operations."""
 
     def name(self) -> str:
-        return "noop"
+        return NAME
 
     def encrypt(self, pt: bytes, aad: bytes) -> bytes:
         return pt
