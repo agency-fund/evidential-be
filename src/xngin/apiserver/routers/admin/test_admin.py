@@ -425,10 +425,10 @@ def test_delete_datasource(testing_datasource_with_user, pget, udelete, pdelete)
     ds_id = testing_datasource_with_user.ds.id
     org_id = testing_datasource_with_user.org.id
 
-    # udelete() authenticates as a user that is not in the same organization as the datasource but the delete
-    # endpoint always sends a 204.
+    # udelete() authenticates as a user that is not in the same organization as the datasource,
+    # but the delete endpoint sends a 403.
     response = udelete(f"/v1/m/datasources/{ds_id}")
-    assert response.status_code == 204, response.content
+    assert response.status_code == 403, response.content
 
     response = pget(f"/v1/m/organizations/{org_id}/datasources")
     assert response.status_code == 200, response.content
@@ -445,8 +445,12 @@ def test_delete_datasource(testing_datasource_with_user, pget, udelete, pdelete)
     assert response.status_code == 200, response.content
     assert ListDatasourcesResponse.model_validate(response.json()).items == []
 
-    # Delete the datasource a 2nd time returns same code.
-    response = pdelete(f"/v1/m/datasources/{ds_id}")
+    # Delete the datasource a 2nd time returns a 404 code.
+    response = pdelete(f"/v1/m/datasources/{ds_id}?allow_missing=false")
+    assert response.status_code == 404, response.content
+
+    # Delete the datasource a 2nd time with missing allowed returns a 204 code.
+    response = pdelete(f"/v1/m/datasources/{ds_id}?allow_missing=true")
     assert response.status_code == 204, response.content
 
 
@@ -540,8 +544,16 @@ async def test_webhook_lifecycle(pdelete, ppost, ppatch, pget):
     assert response.status_code == 404, response.content
 
     # Try to delete a non-existent webhook
-    response = pdelete(f"/v1/m/organizations/{org_id}/webhooks/{webhook_id}")
+    response = pdelete(
+        f"/v1/m/organizations/{org_id}/webhooks/{webhook_id}?allow_missing=false"
+    )
     assert response.status_code == 404, response.content
+
+    # Try to delete a non-existent webhook with allow_missing=true
+    response = pdelete(
+        f"/v1/m/organizations/{org_id}/webhooks/{webhook_id}?allow_missing=true"
+    )
+    assert response.status_code == 204, response.content
 
 
 def test_participants_lifecycle(
@@ -633,9 +645,15 @@ def test_participants_lifecycle(
 
     # Delete the testing participant type a 2nd time.
     response = pdelete(
-        f"/v1/m/datasources/{ds_id}/participants/test_participant_type",
+        f"/v1/m/datasources/{ds_id}/participants/test_participant_type?allow_missing=false",
     )
     assert response.status_code == 404, response.content
+
+    # Delete the testing participant type a 2nd time with allow_missing=true.
+    response = pdelete(
+        f"/v1/m/datasources/{ds_id}/participants/test_participant_type?allow_missing=true",
+    )
+    assert response.status_code == 204, response.content
 
 
 def test_create_participants_type_invalid(testing_datasource, ppost):
