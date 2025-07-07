@@ -288,7 +288,9 @@ class Datasource(Base):
 
     def get_config(self) -> DatasourceConfig:
         """Deserializes the config field into a DatasourceConfig."""
-        config = TypeAdapter(DatasourceConfig).validate_python(self.config)
+        config: DatasourceConfig = TypeAdapter(DatasourceConfig).validate_python(
+            self.config
+        )
         if isinstance(config.dwh, EncryptedDsn):
             config = config.model_copy(update={"dwh": config.dwh.decrypt(self.id)})
         return config
