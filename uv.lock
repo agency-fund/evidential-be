@@ -1495,6 +1495,15 @@ wheels = [
 ]
 
 [[package]]
+name = "types-cachetools"
+version = "6.0.0.20250525"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/03/d0/55ff0eeda141436c1bd2142cd026906870c661b3f7755070d6da7ea7210f/types_cachetools-6.0.0.20250525.tar.gz", hash = "sha256:baf06f234cac3aeb44c07893447ba03ecdb6c0742ba2607e28a35d38e6821b02", size = 8925, upload-time = "2025-05-25T03:13:53.498Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/47/8c/4ab0a17ece30fe608270b89cf066387051862899fff9f54ab12511fc7fdd/types_cachetools-6.0.0.20250525-py3-none-any.whl", hash = "sha256:1de8f0fe4bdcb187a48d2026c1e3672830f67943ad2bf3486abe031b632f1252", size = 8938, upload-time = "2025-05-25T03:13:52.406Z" },
+]
+
+[[package]]
 name = "types-psycopg2"
 version = "2.9.21.20241019"
 source = { registry = "https://pypi.org/simple" }
@@ -1720,6 +1729,7 @@ dev = [
     { name = "pytest-env", marker = "sys_platform == 'darwin' or sys_platform == 'linux'" },
     { name = "pytest-mock", marker = "sys_platform == 'darwin' or sys_platform == 'linux'" },
     { name = "ruff", marker = "sys_platform == 'darwin' or sys_platform == 'linux'" },
+    { name = "types-cachetools", marker = "sys_platform == 'darwin' or sys_platform == 'linux'" },
     { name = "types-psycopg2", marker = "sys_platform == 'darwin' or sys_platform == 'linux'" },
     { name = "types-python-jose", marker = "sys_platform == 'darwin' or sys_platform == 'linux'" },
 ]
@@ -1770,6 +1780,7 @@ dev = [
     { name = "pytest-env", specifier = ">=1.1.5,<1.2" },
     { name = "pytest-mock", specifier = ">=3.14.0,<4" },
     { name = "ruff", specifier = ">=0.11.11,<0.12.0" },
+    { name = "types-cachetools", specifier = ">=6.0.0.20250525" },
     { name = "types-psycopg2", specifier = ">=2.9.10,<3" },
     { name = "types-python-jose", specifier = ">=3.5.0.20250531" },
 ]
