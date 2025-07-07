@@ -30,10 +30,10 @@ To support diverse deployment configurations, we support the following configura
 | Google Cloud KMS (`gcpkms`) | When deploying on GCP.                               | Credentials are encrypted using GCP KMS envelope encryption. The encryption key is only usable by our server when the runtime infrastructure has access to the cloud service. |
 
 Our encryption is implemented using industry standard AES128-GCM as implemented by
-Google's [Tink](https://developers.google.com/tink) library with AAD binding to appropriate server-generated database
-identifiers. When using the KMS backends, we use
-Tink's [Envelope Encryption](https://cloud.google.com/kms/docs/envelope-encryption) implementation. Customer data is
-never sent to the cloud providers.
+Google's [Tink](https://developers.google.com/tink) library with additional authenticated data (AAD) binding to
+appropriate server-generated database identifiers. When using the KMS backends, we use
+Tink's [Envelope Encryption](https://cloud.google.com/kms/docs/envelope-encryption)
+implementation. Customer data is never sent to the cloud providers.
 
 ## How are the encrypted fields encoded into stored Pydantic types?<a name="how-are-the-encrypted-fields-encoded-into-stored-pydantic-types"></a>
 
@@ -52,7 +52,8 @@ credentials.
 
 The various providers will initialize themselves automatically based on the presence
 or absence of environment variables specific to that backend (see below). This allows the code to **decrypt** secrets
-written by any of the properly configured backends, such that we could decrypt AWS KMS and GCP KMS and locally encrypted values in a
+written by any of the properly configured backends, such that we could decrypt AWS KMS and GCP KMS and locally encrypted
+values in a
 single instance.
 
 The encryption algorithm for new secrets is determined by the `XNGIN_SECRETS_BACKEND` environment variable.
@@ -182,7 +183,8 @@ export XNGIN_SECRETS_GCP_KMS_KEY_URI=$KEY_URI
 
 1. If you are keeping these credentials locally, you can test these values with the `xngin-cli encrypt` and
    `xngin-cli decrypt` tools. These commands read the same
-   environment variables that the API server does. Here's an example that demonstrates how to encrypt and decrypt "secretvalue":
+   environment variables that the API server does. Here's an example that demonstrates how to encrypt and decrypt "
+   secretvalue":
 
 ```shell
 # Encrypt the string "secretvalue" and then immediately decrypt it.
