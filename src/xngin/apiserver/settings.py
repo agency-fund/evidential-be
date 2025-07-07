@@ -38,20 +38,9 @@ from xngin.apiserver.certs import get_amazon_trust_ca_bundle_path
 from xngin.apiserver.dwh.inspection_types import ParticipantsSchema
 from xngin.apiserver.settings_secrets import replace_secrets
 from xngin.xsecrets import secretservice
-from xngin.xsecrets.constants import SERIALIZED_ENCRYPTED_VALUE_PREFIX
 
 SA_LOGGER_NAME_FOR_DWH = "xngin_dwh"
 TIMEOUT_SECS_FOR_CUSTOMER_POSTGRES = 10
-
-
-def _encrypt_string(plaintext: str, aad: str) -> str:
-    """Encrypts a string and returns the serialized ciphertext.
-
-    Raises ValueError if plaintext already resembles encrypted text.
-    """
-    if plaintext.startswith(SERIALIZED_ENCRYPTED_VALUE_PREFIX):
-        raise ValueError("The value being encrypted is already encrypted.")
-    return secretservice.get_symmetric().encrypt(plaintext, aad)
 
 
 @ttl_cache(maxsize=128, ttl=600)
@@ -285,8 +274,8 @@ class GcpServiceAccountInfo(ConfigBaseModel):
     def encrypt(self, datasource_id):
         return self.model_copy(
             update={
-                "content_base64": _encrypt_string(
-                    self.content_base64, aad=f"dsn.{datasource_id}"
+                "content_base64": secretservice.get_symmetric().encrypt(
+                    self.content_base64, f"dsn.{datasource_id}"
                 )
             }
         )
@@ -305,7 +294,7 @@ class GcpServiceAccountInfo(ConfigBaseModel):
     def validate_base64(cls, value: str) -> str:
         """Validates that content_base64 contains valid base64 data."""
         # Hack: do not validate encrypted values
-        if value.startswith(SERIALIZED_ENCRYPTED_VALUE_PREFIX):
+        if secretservice.is_encrypted(value):
             return value
 
         try:
@@ -434,9 +423,8 @@ class Dsn(ConfigBaseModel, BaseDsn, EncryptedDsn):
     def encrypt(self, datasource_id):
         return self.model_copy(
             update={
-                "password": _encrypt_string(
-                    self.password,
-                    aad=f"dsn.{datasource_id}",
+                "password": secretservice.get_symmetric().encrypt(
+                    self.password, f"dsn.{datasource_id}"
                 )
             }
         )
