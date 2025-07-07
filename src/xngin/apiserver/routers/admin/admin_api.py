@@ -36,6 +36,7 @@ from xngin.apiserver.dwh.inspections import (
     generate_field_descriptors,
 )
 from xngin.apiserver.exceptions_common import LateValidationError
+from xngin.apiserver.exceptionhandlers import CannotFindParticipantsError
 from xngin.apiserver.models import tables
 from xngin.apiserver.models.storage_format_converters import ExperimentStorageConverter
 from xngin.apiserver.routers.admin.admin_api_types import (
@@ -213,31 +214,54 @@ async def get_datasource_or_raise(
     session: AsyncSession,
     user: tables.User,
     datasource_id: str,
+    allow_missing: bool = False,
     /,
     *,
     preload: list[QueryableAttribute] | None = None,
-):
+) -> tables.Datasource:
     """Reads the requested datasource from the database.
 
-    Raises 404 if disallowed or not found.
+    Args:
+        session: The database session
+        user: The authenticated user
+        datasource_id: ID of the datasource to fetch
+        preload: Optional list of relationships to eager load
+
+    Returns:
+        The requested datasource if found and user has access
+
+    Raises:
+        HTTPException: 404 if not found, 403 if user lacks permission
     """
+    # Build base query
     stmt = (
         select(tables.Datasource)
-        .join(tables.Organization)
-        .join(tables.UserOrganization)
-        .where(
-            tables.UserOrganization.user_id == user.id,
-            tables.Datasource.id == datasource_id,
-        )
+        .outerjoin(tables.Organization)
+        .outerjoin(tables.UserOrganization)
+        .where(tables.Datasource.id == datasource_id)
     )
-    if preload:
-        stmt = stmt.options(*[selectinload(f) for f in preload])
+    preload = [] if not preload else preload.copy()
+    preload.append(tables.Datasource.organization)
+    stmt = stmt.options(*[selectinload(f) for f in preload])
+
+    # Execute query and get result
     result = await session.execute(stmt)
     ds = result.scalar_one_or_none()
-    if ds is None:
+    if ds is None and not allow_missing:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail="Datasource not found."
         )
+    if ds is None and allow_missing:
+        return None
+
+    # Check if user has access by looking at organizations
+    await user.awaitable_attrs.organizations  # Ensure organizations are loaded
+    if not any(org.id == ds.organization_id for org in user.organizations):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="User does not have permission to access this datasource.",
+        )
+
     return ds
 
 
@@ -245,6 +269,7 @@ async def get_experiment_via_ds_or_raise(
     session: AsyncSession,
     ds: tables.Datasource,
     experiment_id: str,
+    allow_missing: bool = False,
     *,
     preload: list[QueryableAttribute] | None = None,
 ) -> tables.Experiment:
@@ -264,7 +289,7 @@ async def get_experiment_via_ds_or_raise(
         stmt = stmt.options(*[selectinload(f) for f in preload])
     result = await session.execute(stmt)
     exp = result.scalar_one_or_none()
-    if exp is None:
+    if exp is None and not allow_missing:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail="Experiment not found."
         )
@@ -940,15 +965,14 @@ async def delete_datasource(
 
     The user must be a member of the organization that owns the datasource.
     """
-    # Check if user has access to the datasource, raise 403 error if not
-    datasource_ids = [
-        datasource.id for org in user.organizations for datasource in org.datasources
-    ]
-    if datasource_id not in datasource_ids:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail=f"User with email {user.email} does not have permission to delete this datasource.",
-        )
+    # Check if datasource exists
+    await get_datasource_or_raise(
+        session,
+        user,
+        datasource_id,
+        allow_missing,
+        preload=[tables.Datasource.organization],
+    )
 
     # Delete the datasource,
     stmt = (
@@ -963,13 +987,7 @@ async def delete_datasource(
             )
         )
     )
-    result = await session.execute(stmt)
-
-    if result.rowcount == 0 and not allow_missing:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Datasource not found.",
-        )
+    await session.execute(stmt)
 
     await session.commit()
 
@@ -1187,27 +1205,19 @@ async def delete_participant(
     The user must be a member of the organization that owns the datasource.
     """
     # Check if user has access to the datasource, raise 403 error if not
-    datasource_ids = [
-        datasource.id for org in user.organizations for datasource in org.datasources
-    ]
-    if datasource_id not in datasource_ids:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail=f"User with email {user.email} does not have permission to delete this participant",
-        )
     ds = await get_datasource_or_raise(session, user, datasource_id)
+
     config = ds.get_config()
-    participant = config.find_participants(participant_id)
+    try:
+        participant = config.find_participants(participant_id)
+        config.participants.remove(participant)
+        ds.set_config(config)
+        await session.commit()
+    except CannotFindParticipantsError:
+        if allow_missing:
+            return GENERIC_SUCCESS
+        raise
 
-    if not participant and not allow_missing:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Participant type {participant_id} not found in datasource {datasource_id}.",
-        )
-
-    config.participants.remove(participant)
-    ds.set_config(config)
-    await session.commit()
     return GENERIC_SUCCESS
 
 
@@ -1269,25 +1279,22 @@ async def delete_api_key(
 ):
     """Deletes the specified API key."""
     # Check if user has access to the datasource, raise 403 error if not
-    datasource_ids = [
-        datasource.id for org in user.organizations for datasource in org.datasources
-    ]
-    if datasource_id not in datasource_ids:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail=f"User with email {user.email} does not have permission to delete this API key.",
-        )
+    await user.awaitable_attrs.organizations  # Ensure organizations are loaded
 
     ds = await get_datasource_or_raise(
         session, user, datasource_id, preload=[tables.Datasource.api_keys]
     )
-    # Check that the API key exists
+
     ds_api_key_ids = [a.id for a in ds.api_keys]
-    if api_key_id not in ds_api_key_ids and not allow_missing:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"API key {api_key_id} not found in datasource {datasource_id}.",
-        )
+
+    # Check that the API key exists
+    if api_key_id not in ds_api_key_ids:
+        if not allow_missing:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"API key {api_key_id} not found in datasource {datasource_id}.",
+            )
+        return GENERIC_SUCCESS
 
     # Remove the API key from the datasource
     ds_api_key_ids.pop(ds_api_key_ids.index(api_key_id))
@@ -1626,19 +1633,13 @@ async def delete_experiment(
     allow_missing: Annotated[bool, Query()] = False,
 ):
     """Deletes the experiment with the specified ID."""
-    experiment_ids = [
-        experiment.id for org in user.organizations for experiment in org.experiments
-    ]
-    if experiment_id not in experiment_ids and not allow_missing:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail=f"User with email {user.email} cannot delete experiment {experiment_id}",
-        )
-
     ds = await get_datasource_or_raise(session, user, datasource_id)
-    experiment = await get_experiment_via_ds_or_raise(session, ds, experiment_id)
-    await session.delete(experiment)
-    await session.commit()
+    experiment = await get_experiment_via_ds_or_raise(
+        session, ds, experiment_id, allow_missing
+    )
+    if experiment:
+        await session.delete(experiment)
+        await session.commit()
     return GENERIC_SUCCESS
 
 
