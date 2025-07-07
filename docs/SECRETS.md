@@ -65,10 +65,14 @@ new provider, and then re-read and re-write all the encrypted values.
 Choose **one** of these settings for your deployment:
 
 ```
+XNGIN_SECRETS_BACKEND=noop
 XNGIN_SECRETS_BACKEND=local
 XNGIN_SECRETS_BACKEND=awskms
 XNGIN_SECRETS_BACKEND=gcpkms
 ```
+
+> Note: Our ciphertext serialization format supports encrypting to multiple backends, but we haven't implemented support
+> for that yet.
 
 ### Enabling "local" encryption<a name="enabling-local-encryption"></a>
 
