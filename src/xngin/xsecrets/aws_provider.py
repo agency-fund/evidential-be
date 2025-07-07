@@ -3,6 +3,7 @@ import dataclasses
 import os
 import tempfile
 
+from loguru import logger
 from tink import aead
 from tink.integration import awskms
 
@@ -48,8 +49,12 @@ def _read_aws_env():
     credentials_path = temp_file.name
     with open(credentials_path, "w") as credentials_file:
         config.write(credentials_file)
+    key_uri = aws_vars[constants.ENV_XNGIN_SECRETS_AWS_KEY_URI]
+    logger.info(
+        f"Secrets: AWS credentials and key URI configured from environment: {key_uri}"
+    )
     return AwsKmsConfiguration(
-        key_uri=aws_vars[constants.ENV_XNGIN_SECRETS_AWS_KEY_URI],
+        key_uri=key_uri,
         credentials_path=credentials_path,
     )
 
