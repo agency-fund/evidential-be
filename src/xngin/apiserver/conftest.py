@@ -3,35 +3,30 @@
 import enum
 import os
 import secrets
-from collections.abc import AsyncGenerator
 from dataclasses import dataclass
 from functools import partial
 from pathlib import Path
 from typing import assert_never, cast
 
 import pytest
-import pytest_asyncio
 import sqlalchemy
 from pydantic import TypeAdapter, ValidationError
-from sqlalchemy import StaticPool, create_engine, make_url
+from sqlalchemy import delete, make_url, select
 from sqlalchemy.dialects.postgresql import psycopg
 from sqlalchemy.engine.interfaces import Dialect
 from sqlalchemy.engine.url import URL
 from sqlalchemy.ext.asyncio import (
-    AsyncEngine,
     AsyncSession,
-    async_sessionmaker,
-    create_async_engine,
 )
+from sqlalchemy.orm import selectinload
 from sqlalchemy_bigquery import dialect as bigquery_dialect
 from starlette.testclient import TestClient
 
-from xngin.apiserver import constants, database, flags
+from xngin.apiserver import constants, database
 from xngin.apiserver.apikeys import hash_key_or_raise, make_key
 from xngin.apiserver.dependencies import (
     random_seed_dependency,
     settings_dependency,
-    xngin_db_session,
 )
 from xngin.apiserver.dns import safe_resolve
 from xngin.apiserver.main import app
@@ -40,6 +35,7 @@ from xngin.apiserver.routers.auth import auth_dependencies
 from xngin.apiserver.routers.auth.auth_dependencies import (
     PRIVILEGED_EMAIL,
     PRIVILEGED_TOKEN_FOR_TESTING,
+    UNPRIVILEGED_EMAIL,
     UNPRIVILEGED_TOKEN_FOR_TESTING,
 )
 from xngin.apiserver.settings import ParticipantsDef, SettingsForTesting, XnginSettings
@@ -94,27 +90,14 @@ def get_settings_for_test() -> XnginSettings:
             raise
 
 
-def get_test_appdb_info() -> TestUriInfo:
-    """Gets the DSN of the application database to use in tests."""
-    connection_uri = os.environ.get("XNGIN_TEST_APPDB_URI", "")
-    if not connection_uri:
-        raise ValueError("XNGIN_TEST_APPDB_URI must be set")
-    info = get_test_uri_info(connection_uri)
-    if info.db_type != DbType.PG:
-        raise ValueError(
-            f"{info.db_type} is not a supported app database: {connection_uri}"
-        )
-    return info
-
-
-def get_test_dwh_info() -> TestUriInfo:
+def get_queries_test_uri() -> TestUriInfo:
     """Gets the DSN of the testing data warehouse to use in tests.
 
-    See xngin.apiserver.dwh.test_queries.fixture_dwh_session.
+    See xngin.apiserver.dwh.test_queries.fixture_queries_session.
     """
-    connection_uri = os.environ.get("XNGIN_TEST_DWH_URI", "")
+    connection_uri = os.environ.get("XNGIN_QUERIES_TEST_URI", "")
     if not connection_uri:
-        raise ValueError("XNGIN_TEST_DWH_URI must be set.")
+        raise ValueError("XNGIN_QUERIES_TEST_URI must be set.")
     return get_test_uri_info(connection_uri)
 
 
@@ -122,8 +105,8 @@ def get_test_dwh_info() -> TestUriInfo:
 def setup_debug_logging():
     print(
         "Running tests with "
-        f"\n\tXNGIN_TEST_APPDB_URI: {get_test_appdb_info()} "
-        f"\n\tXNGIN_TEST_DWH_URI  : {get_test_dwh_info()}"
+        f"\n\tDATABASE_URL: {database.SQLALCHEMY_DATABASE_URL} "
+        f"\n\tXNGIN_QUERIES_TEST_URI  : {get_queries_test_uri()}"
     )
 
 
@@ -152,55 +135,17 @@ def get_test_uri_info(connection_uri: str) -> TestUriInfo:
     return TestUriInfo(connect_url=make_url(connection_uri), db_type=dbtype)
 
 
-def make_async_engine():
-    """Returns a SQLA engine for XNGIN_TEST_APPDB_URI; db will be created if it does not exist."""
-    appdb_info = get_test_appdb_info()
-    create_database_if_not_exists_pg(appdb_info.connect_url)
-    # Create the tables using a synchronous engine so that this method can remain sync.
-    sync_db_engine = create_engine(
-        appdb_info.connect_url,
-        logging_name=SA_LOGGER_NAME_FOR_APP,
-        execution_options={"logging_token": "app"},
-        poolclass=StaticPool,
-        echo=flags.ECHO_SQL_APP_DB,
-    )
-    tables.Base.metadata.create_all(sync_db_engine)
-    sync_db_engine.dispose()
-
-    return create_async_engine(
-        appdb_info.connect_url,
-        logging_name=SA_LOGGER_NAME_FOR_APP,
-        execution_options={"logging_token": "app"},
-        poolclass=StaticPool,
-        echo=flags.ECHO_SQL_APP_DB,
-    )
-
-
-def get_test_sessionmaker(db_engine: AsyncEngine):
-    """Returns a session bound to the db_engine; the returned database is not guaranteed unique."""
-    # Hack: Cause any direct access to production code from code to fail during tests.
-    database.AsyncSessionLocal = None
-
-    testing_session_local = async_sessionmaker(bind=db_engine, expire_on_commit=False)
-
-    async def get_db_for_test():
-        sess = testing_session_local()
-        try:
-            yield sess
-        finally:
-            await sess.close()
-
-    return get_db_for_test
-
-
 @pytest.fixture(scope="session", autouse=True)
 def fixture_override_app_dependencies():
-    """Configures FastAPI dependencies for testing."""
-    # https://fastapi.tiangolo.com/advanced/testing-dependencies/#use-the-appdependency_overrides-attribute
-    app.dependency_overrides[xngin_db_session] = get_test_sessionmaker(
-        make_async_engine()
-    )
+    """Configures FastAPI dependencies for testing.
+
+    This uses FastAPI's dependency override mechanism: https://fastapi.tiangolo.com/advanced/testing-dependencies/#use-the-appdependency_overrides-attribute
+    """
+
+    # Deprecated: we no longer need to support the static JSON settings files. Future tests should be implemented using
+    # the API methods to create configurations.
     app.dependency_overrides[settings_dependency] = get_settings_for_test
+
     app.dependency_overrides[random_seed_dependency] = get_random_seed_for_test
 
     auth_dependencies.disable(app)
@@ -209,14 +154,24 @@ def fixture_override_app_dependencies():
 
 @pytest.fixture(scope="session", name="client")
 def fixture_client():
-    return TestClient(app)
+    """Returns a FastAPI TestClient.
+
+    TestClient manages the lifecycle of the app and will invoke the FastAPI app and router @lifespan methods.
+    """
+    with TestClient(app) as client:
+        yield client
 
 
 @pytest.fixture(scope="session", name="client_v1")
 def fixture_client_v1():
-    client = TestClient(app)
-    client.base_url = client.base_url.join(constants.API_PREFIX_V1)
-    return client
+    """Returns a FastAPI TestClient with the {constants.API_PREFIX_V1} as a prefix on the request path.
+
+    TestClient manages the lifecycle of the app and will invoke the FastAPI app and router @lifespan methods.
+    """
+    with TestClient(
+        app, base_url=f"http://testserver{constants.API_PREFIX_V1}"
+    ) as client:
+        yield client
 
 
 @pytest.fixture(scope="session", name="pget")
@@ -265,21 +220,41 @@ def fixture_uget(client):
     )
 
 
-@pytest.fixture(scope="session", name="test_engine")
-async def fixture_test_engine() -> AsyncGenerator[AsyncEngine]:
-    """Create a SQLA engine for testing that is safely disposed of after all tests are run."""
-    db_engine = make_async_engine()
-    try:
-        yield db_engine
-    finally:
-        await db_engine.dispose()
+@pytest.fixture(scope="function", name="xngin_session", autouse=True)
+async def fixture_xngin_db_session():
+    """Yields a SQLAlchemy session suitable for direct interaction with the database.
+
+    This will drop and recreate all tables at the beginning of every test. The users table will be seeded with
+    a privileged user (pget, ppost, ...) and an unprivileged user (uget, upost, ...). These users can be removed by
+    individual tests by calling delete_seeded_users().
+
+    Where possible, prefer using the API methods to test functionality rather than touching the database
+    directly.
+
+    This fixture uses autouse=True to ensure all tests begin with a clean database state. Since some tests only
+    interact with the API server through API methods (without explicitly using the xngin_session fixture),
+    autouse=True guarantees this cleanup runs for every test, preventing any shared state between test runs.
+    """
+    create_database_if_not_exists_pg(database.SQLALCHEMY_DATABASE_URL)
+    sessionmaker = database.AsyncSessionLocal
+    async with database.async_engine.begin() as conn:
+        await conn.run_sync(tables.Base.metadata.drop_all)
+        await conn.run_sync(tables.Base.metadata.create_all)
+    async with sessionmaker() as session:
+        session.add_all([
+            tables.User(email=PRIVILEGED_EMAIL, is_privileged=True),
+            tables.User(email=UNPRIVILEGED_EMAIL, is_privileged=False),
+        ])
+        await session.commit()
+    async with sessionmaker() as sess:
+        yield sess
 
 
-@pytest_asyncio.fixture(name="xngin_session")
-async def fixture_xngin_db_session(test_engine):
-    """Use this session directly if you don't need to test the FastAPI app itself."""
-    session_generator = get_test_sessionmaker(test_engine)
-    return await anext(session_generator())
+async def delete_seeded_users(xngin_session: AsyncSession):
+    """Deletes users created by the xngin_session fixture."""
+    await xngin_session.execute(delete(tables.User))
+    await xngin_session.commit()
+    await xngin_session.reset()
 
 
 @pytest.fixture(scope="session", autouse=True)
@@ -345,28 +320,24 @@ class DatasourceMetadata:
 
 @pytest.fixture(name="testing_datasource", scope="function")
 async def fixture_testing_datasource(xngin_session: AsyncSession) -> DatasourceMetadata:
-    """
-    Generates a new Organization, Datasource, and API key for a test.
-
-    This is NOT the same as the default Org+Datasource auto-generated for privileged users (i.e. cases where we use PRIVILEGED_TOKEN_FOR_TESTING+PRIVILEGED_EMAIL).
-
-    Note: The datasource configured in this fixture represents a customer database. This is
-    *different* than the xngin server-side database configured by conftest.setup().
-    """
+    """Generates a new Organization, Datasource, and API key for a test."""
     return await make_datasource_metadata(xngin_session)
 
 
 @pytest.fixture(name="testing_datasource_with_user", scope="function")
 async def fixture_testing_datasource_with_user(xngin_session) -> DatasourceMetadata:
     """
-    Generates a new Organization, Datasource, and API key. Adds our privileged user to the org.
+    Generates a new Organization, Datasource, and API key. Adds the PRIVILEGED_EMAIL user to the org.
     """
     metadata = await make_datasource_metadata(xngin_session)
-    user = tables.User(
-        id="user_" + secrets.token_hex(8), email=PRIVILEGED_EMAIL, is_privileged=True
-    )
+    user = (
+        await xngin_session.execute(
+            select(tables.User)
+            .options(selectinload(tables.User.organizations))
+            .where(tables.User.email == PRIVILEGED_EMAIL)
+        )
+    ).scalar_one()
     user.organizations.append(metadata.org)
-    xngin_session.add(user)
     await xngin_session.commit()
     return metadata
 

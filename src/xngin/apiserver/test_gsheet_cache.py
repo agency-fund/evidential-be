@@ -3,7 +3,7 @@
 from unittest.mock import Mock
 
 import pytest
-from sqlalchemy import Update, delete
+from sqlalchemy import Update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -41,18 +41,6 @@ def mock_sheet_config():
             )
         ],
     )
-
-
-@pytest.fixture(autouse=True)
-async def fixture_teardown(xngin_session):
-    try:
-        # setup here
-        yield
-    finally:
-        # teardown here
-        # Clean the cache after each test.
-        await xngin_session.execute(delete(tables.CacheTable))
-        await xngin_session.commit()
 
 
 async def test_get_cached_entry(sheet_cache, mock_session, mock_sheet_config):

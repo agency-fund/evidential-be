@@ -43,7 +43,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v4
         with:
-          version: "0.7.13"
+          version: "0.7.18"
           enable-cache: true
       - name: Install dependencies
         run: |
@@ -51,24 +51,11 @@ jobs:
   unittests:
     timeout-minutes: 15
     runs-on: ubuntu-22.04
-    services:
-      postgres:
-        image: postgres:17
-        env:
-          POSTGRES_DB: postgres
-          POSTGRES_PASSWORD: postgres
-        options: >-
-          --health-cmd pg_isready
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 5
-        ports:
-          - 5499:5432
     steps:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v4
         with:
-          version: "0.7.13"
+          version: "0.7.18"
           enable-cache: true
       - uses: arduino/setup-task@v2
         with:
@@ -81,6 +68,8 @@ jobs:
         env:
           GCLOUD_SERVICE_ACCOUNT_CREDENTIALS: ${{ secrets.GOOGLE_APPLICATION_CREDENTIALS_CONTENT }}
       - run: task test
+        env:
+          DATABASE_URL: "postgresql+psycopg://postgres:postgres@localhost:5499/test_xngin?sslmode=disable"
       - name: integration tests
         run: |
           export GOOGLE_APPLICATION_CREDENTIALS=$HOME/.config/gspread/service_account.json
@@ -105,7 +94,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v4
         with:
-          version: "0.7.13"
+          version: "0.7.18"
           enable-cache: true
       - name: Install Task
         uses: arduino/setup-task@v2
@@ -151,6 +140,9 @@ jobs:
           uv run xngin-cli create-testing-dwh --dsn postgresql+psycopg2://postgres@127.0.0.1:5499/postgres \
             --schema-name alt2 --table-name=alt_table2
 
+          # Create the application database.
+          uv run xngin-cli create-apiserver-db
+
           # Verify the sources in xngin.gha.settings.json are still readable (uses the psycopg imports).
           XNGIN_SETTINGS=src/xngin/apiserver/testdata/xngin.gha.settings.json uv run fastapi run \
             src/xngin/apiserver/main.py &
@@ -183,7 +175,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v4
         with:
-          version: "0.7.13"
+          version: "0.7.18"
           enable-cache: true
       - run: uv sync --locked
       - uses: google-github-actions/auth@v2
@@ -202,8 +194,8 @@ jobs:
           export ECHO_SQL="1"
           mkdir -p ~/.config/gspread && echo "${GCLOUD_SERVICE_ACCOUNT_CREDENTIALS}" > ~/.config/gspread/service_account.json
           export GOOGLE_APPLICATION_CREDENTIALS=$HOME/.config/gspread/service_account.json
-          export XNGIN_TEST_DWH_URI="bigquery://xngin-development-dc/${DATASET_NAME}?credentials_base64=$(cat ${GOOGLE_APPLICATION_CREDENTIALS} | base64 -w 0)"
-          export XNGIN_TEST_APPDB_URI="postgresql+psycopg://postgres:postgres@localhost:5499/test_xngin?sslmode=disable"
+          export XNGIN_QUERIES_TEST_URI="bigquery://xngin-development-dc/${DATASET_NAME}?credentials_base64=$(cat ${GOOGLE_APPLICATION_CREDENTIALS} | base64 -w 0)"
+          export DATABASE_URL="postgresql+psycopg://postgres:postgres@localhost:5499/test_xngin?sslmode=disable"
           uv run pytest -rA src/xngin/apiserver/dwh/test_queries.py
       - name: bq cleanup
         if: failure() || success()
@@ -242,7 +234,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v4
         with:
-          version: "0.7.13"
+          version: "0.7.18"
           enable-cache: true
       - run: uv sync --locked
       - name: write secrets
@@ -272,6 +264,9 @@ jobs:
           # Unset the environment variable because we want to ensure the server is authenticating with the credentials
           # configured in the settings file and not relying on fallback behavior.
           unset GOOGLE_APPLICATION_CREDENTIALS
+
+          # Create the application database.
+          uv run xngin-cli create-apiserver-db
 
           # Start a server using the gha-bq profile.
           XNGIN_SETTINGS=src/xngin/apiserver/testdata/xngin.gha.settings.json uv run fastapi run \

@@ -51,7 +51,8 @@ log_cli = 0  # set to 1 for live logs
 log_cli_level = "warn"
 markers = [
     "integration: integration tests that rely on remote resources",
-    "nondeterministic: tests that are nondeterministic (but should be)"
+    "nondeterministic: tests that are nondeterministic (but should be)",
+    "xurl: tests that use xurl scripts and can be updated with UPDATE_API_TESTS"
 ]
 addopts = "-m 'not integration and not nondeterministic'"
 # filtewarnings can be used to silence warnings during tests.
@@ -102,6 +103,7 @@ ignore = [
     "E501", # redundant line length warnings
     "FURB101", # `open` and `read` should be replaced by `Path(file).read_text()`
     "FURB103", # `open` and `write` should be replaced by `Path(filename)....`
+    "FURB140", # Use `itertools.starmap` instead of the generator
     "FURB152", # replace values that resemble mathemematical constants with constants (e.g. 3.14 => math.pi)
     "PD002", # `inplace=True` should be avoided; it has inconsistent behavior
     "PD003", # `.isna` is preferred to `.isnull`; functionality is equivalent"
@@ -139,10 +141,13 @@ dev-dependencies = [
     "ruff>=0.11.11,<0.12.0",
     "pytest-mock>=3.14.0,<4",
     "types-psycopg2>=2.9.10,<3",
-    "mypy>=1.13.0",
+    "mypy>=1.16.0",
     "pandas-stubs>=2.2.3.241126",
     "pytest-asyncio>=1.0.0",
     "pytest-env>=1.1.5,<1.2",
+    "pynvim>=0.4.0,<0.5.0",
+    "types-python-jose>=3.5.0.20250531",
+    "boto3-stubs>=1.39.1",
 ]
 environments = [
     "sys_platform == 'darwin'",
@@ -160,7 +165,11 @@ warn_unused_ignores = true
 warn_return_any = true
 strict_optional = true
 disallow_untyped_defs = false
+exclude = [
+  '^(.*/)?test_.*\.py$',
+]
+plugins = ['pydantic.mypy']
 
 [[tool.mypy.overrides]]
-module = "deepdiff"
+module = ["deepdiff", "parsy", "statsmodels.*", "patsy.*", "sqlalchemy_bigquery.*", "pandas_gbq.*"]
 ignore_missing_imports = true

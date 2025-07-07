@@ -8,7 +8,6 @@ from sqlalchemy import event
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
 from xngin.apiserver import flags
-from xngin.apiserver.models import tables
 
 # SQLAlchemy's logger will append this to the name of its loggers used for the application database; e.g.
 # sqlalchemy.engine.Engine.xngin_app.
@@ -50,11 +49,6 @@ async_engine = create_async_engine(
 
 # We use expire_on_commit for reasons described in docs/SQLALCHEMY.md.
 AsyncSessionLocal = async_sessionmaker(bind=async_engine, expire_on_commit=False)
-
-
-async def setup():
-    async with async_engine.begin() as conn:
-        await conn.run_sync(tables.Base.metadata.create_all)
 
 
 if flags.LOG_SQL_APP_DB:

@@ -9,7 +9,7 @@ vars:
 
   # The DSN used for managing the Postgres instance. This refers to the postgres database because it reliably exists,
   # whereas the xngin database does not.
-  XNGIN_DEVAPP_DDL_DSN: "postgresql://postgres:postgres@localhost:5499/postgres?sslmode=disable"
+  XNGIN_LOCALPG_DSN: "postgresql://postgres:postgres@localhost:5499/postgres?sslmode=disable"
 
   # The DSN used for anything using a plain db URI, without +driver syntax, e.g. Atlas migrations of the xngin database,
   # or using psycopg directly in the task queue.
@@ -39,15 +39,6 @@ env:
   #GOOGLE_OIDC_CLIENT_ID: "314428509782-j8fgiq5dvoic01432s2bcu3isinc9kam.apps.googleusercontent.com"
   #GOOGLE_OIDC_REDIRECT_URI: "http://localhost:3000/"
 
-  # These are values used in the xngin.railway.settings.json and are present for when testing the Railway configs.
-  # (optional)
-  DWH_PGHOST: "127.0.0.1"
-  DWH_PGPASSWORD: "pgpass"
-  DWH_PGPORT: "5632"
-  DWH_PGUSER: "pguser"
-  CUSTOMER_API_TOKEN: ""
-  CUSTOMER_DWH_PASSWORD: ""
-
   # Configure SQLAlchemy to log the generated SQL statements used on customer DWH via its own logger.
   ECHO_SQL: "false"
 
@@ -70,21 +61,17 @@ env:
   # Publish the OpenAPI spec for the admin and OIDC APIs
   XNGIN_PUBLISH_ALL_DOCS: "true"
 
-  # Generally useful settings.
-  XNGIN_SETTINGS: "src/xngin/apiserver/testdata/xngin.testing.settings.json"
-  XNGIN_DEBUG: "true"
-
-  # Data warehouse available for use by the local dev environment (see task bootstrap-dwh) and also referenced
+  # Data warehouse available for use by the local dev environment (see task bootstrap-dwh-database) and also referenced
   # by unit tests via xngin.testing.settings.json. It is bootstrapped with the testing datawarehouse when
   # `task start` is used.
   XNGIN_DEVDWH_DSN: "postgresql+psycopg://postgres:postgres@localhost:5499/dwh?sslmode=disable"
 
-  # Datasource for tests of the xngin app database that use the xngin_db_session dependency.
-  XNGIN_TEST_APPDB_URI: "postgresql+psycopg://postgres:postgres@localhost:5499/test_xngin?sslmode=disable"
+  # Datasource for tests of the xngin app database that use the xngin_db_session dependency or the xngin_session
+  # test fixture.
+  DATABASE_URL_FOR_TEST: "postgresql+psycopg://postgres:postgres@localhost:5499/test_xngin?sslmode=disable"
 
-  # Datasource for the tests using the xngin.apiserver.dwh.test_queries.fixture_dwh_session fixture. The database name
-  # is ignored because test_queries creates a random database name for each test (see fixture_dwh_session).
-  XNGIN_TEST_DWH_URI: "postgresql+psycopg://postgres:postgres@localhost:5499/test_dwh?sslmode=disable"
+  # Datasource for the tests using the xngin.apiserver.dwh.test_queries.fixture_queries_session fixture.
+  XNGIN_QUERIES_TEST_URI: "postgresql+psycopg://postgres:postgres@localhost:5499/test_queries?sslmode=disable"
 
   # XNGIN_PUBLIC_HOSTNAME defines the base hostname (and optional port) we use when constructing URLs to send to
   # external systems (such as via outbound webhooks).
@@ -127,17 +114,29 @@ tasks:
           task --version
       - cmd: uv sync --compile-bytecode
       - task: check-docker
-  bootstrap-app:
+  start-localpg:
+    desc: "Starts a local Postgres server."
+    run: once
+    cmds:
+      - ./tools/localpg.py --allow-existing -d --wait --create-db {{.XNGIN_DEVAPPDB_NAME}}
+  bootstrap-dwh-database:
+    desc: "Loads a sample data warehouse into the localpg server."
+    interactive: true
+    deps:
+      - start-localpg
+    cmds:
+      - uv run xngin-cli create-testing-dwh --dsn "$XNGIN_DEVDWH_DSN" --allow-existing --create-db
+  bootstrap-app-database:
     interactive: true
     desc: >-
       Ensure the localpg server is running and has an "xngin" database. If the database doesn't already exist, it will
-      be created, and Atlas will create the tables so that subsequent table migrations behave as expected.
+      be created, and Atlas will create the tables as described by migration files.
+    deps:
+      - start-localpg
     cmds:
-      - >
-        ./tools/localpg.py --allow-existing -d --wait --create-db {{.XNGIN_DEVAPPDB_NAME}}
-        --if-created "uv run task apply-migrations"
+      - task: apply-migrations
   start:
-    desc: "Starts apiserver locally with settings compatible with local dash dev server (using PostgreSQL)"
+    desc: "Starts apiserver locally with settings compatible with local dash dev server."
     interactive: true
     dotenv:
       # Populate BQ_SERVICE_ACCOUNT (optional) and GOOGLE_OIDC_CLIENT_SECRET (optional).
@@ -145,23 +144,17 @@ tasks:
     env:
       DATABASE_URL: "{{.XNGIN_DEVAPP_DSN}}"
     deps:
-      - bootstrap-app
+      - bootstrap-dwh-database
+      - bootstrap-app-database
     cmds:
-      - task: bootstrap-dwh
-      - task: apply-migrations
       - uv run fastapi dev src/xngin/apiserver/main.py
   start-airplane:
-    desc: "Like start, but runs the backend in airplane mode. All Admin API interactions will be authenticated as testing@agency.fund automatically."
+    desc: "Like start, but runs the backend in airplane mode. All Admin API interactions will be authenticated as testing@example.com automatically."
     interactive: true
     env:
       AIRPLANE_MODE: "true"
     cmds:
       - task start
-  bootstrap-dwh:
-    desc: "Loads a sample data warehouse into the localpg server."
-    interactive: true
-    cmds:
-      - uv run xngin-cli create-testing-dwh --dsn "$XNGIN_DEVDWH_DSN" --allow-existing --create-db
   test:
     desc: "Runs unit tests"
     summary: |
@@ -169,10 +162,9 @@ tasks:
       e.g. `task test -- src/xngin/apiserver/test_admin.py`
     interactive: true
     env:
-      # Tests should never connect to this URL.
-      DATABASE_URL: "postgres://fail:fail@127.0.0.1:5499/fail"
+      DATABASE_URL: "{{.DATABASE_URL_FOR_TEST}}"
     deps:
-      - bootstrap-dwh
+      - bootstrap-dwh-database
     cmds:
       - uv run pytest {{.CLI_ARGS}}
   test-airplane:
@@ -181,10 +173,12 @@ tasks:
     env:
       AIRPLANE_MODE: "true"
     cmds:
-      - task: test
+      - task test
   test-integration:
-    desc: "Runs Google integration tests."
+    desc: "Runs Google integration tests. Requires GOOGLE_APPLICATION_CREDENTIALS environment variable to be set."
     interactive: true
+    env:
+      DATABASE_URL: "{{.DATABASE_URL_FOR_TEST}}"
     cmds:
       - uv run pytest -m integration
   update-api-tests:
@@ -192,8 +186,10 @@ tasks:
     interactive: true
     env:
       UPDATE_API_TESTS: "1"
-      DATABASE_URL: "postgres://fail:fail@127.0.0.1:5499/fail"
-    cmd: uv run pytest src/xngin/apiserver/test_api.py
+      DATABASE_URL: "{{.DATABASE_URL_FOR_TEST}}"
+    deps:
+      - bootstrap-dwh-database
+    cmd: uv run pytest -m xurl
   make-migrations:
     desc: "Build Postgres migrations"
     cmd: |
@@ -235,12 +231,15 @@ tasks:
     desc: "Apply Postgres migrations locally (requires localpg instance to be running, to have an xngin database, and to have been previously migrated)"
     cmds:
       - uv run atlas migrate diff --env sa_postgres
-      - uv run atlas migrate apply --env sa_postgres --url "{{.XNGIN_DEVAPP_STANDARD_DSN}}" || (echo "⚠️ Something is awry with your development database. This can happen when switching branches. You can reset the database to the default state by running \"task drop-app\" before running \"task start\" again."; exit 1)
+      - >
+        uv run atlas migrate apply --env sa_postgres --url "{{.XNGIN_DEVAPP_STANDARD_DSN}}" ||
+          (echo "⚠️ Something is awry with your development database. This can happen when switching branches. You can
+            reset the database to the default state by running \"task drop-databases\"."; exit 1)
   create-user:
     desc: "Create a user: task create-user -- username@example.com"
     interactive: true
     deps:
-      - bootstrap-app
+      - bootstrap-app-database
     env:
       DATABASE_URL: "{{.XNGIN_DEVAPP_DSN}}"
     cmd: |
@@ -248,13 +247,21 @@ tasks:
   start-tq:
     desc: "Start the task queue."
     env:
-      DATABASE_URL: "{{.XNGIN_DEVAPP_STANDARD_DSN}}"
+      DATABASE_URL: "{{.XNGIN_DEVAPP_STANDARD_DSN}}"  # tq uses psycopg3 directly (not SQLAlchemy).
+    deps:
+      - bootstrap-app-database
     cmd: uv run xngin-tq
   psql:
     desc: "Start interactive psql"
     interactive: true
+    deps:
+      - bootstrap-app-database
     cmd: psql "{{.XNGIN_DEVAPP_STANDARD_DSN}}"
-  drop-app:
-    desc: "Forcibly remove the local development application database."
+  drop-databases:
+    desc: "Forcibly remove the local development databases."
     interactive: true
-    cmd: psql "{{.XNGIN_DEVAPP_DDL_DSN}}" -c "DROP DATABASE {{.XNGIN_DEVAPPDB_NAME}} WITH (FORCE);" || /bin/true
+    cmds:
+      - psql "{{.XNGIN_LOCALPG_DSN}}" -c "DROP DATABASE dwh WITH (FORCE);" || /bin/true
+      - psql "{{.XNGIN_LOCALPG_DSN}}" -c "DROP DATABASE migration_lint WITH (FORCE);" || /bin/true
+      - psql "{{.XNGIN_LOCALPG_DSN}}" -c "DROP DATABASE test_xngin WITH (FORCE);" || /bin/true
+      - psql "{{.XNGIN_LOCALPG_DSN}}" -c "DROP DATABASE {{.XNGIN_DEVAPPDB_NAME}} WITH (FORCE);" || /bin/true

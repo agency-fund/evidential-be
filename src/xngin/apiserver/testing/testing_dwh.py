@@ -28,7 +28,7 @@ def compact_hash(path: Path):
 
 def create_user_and_first_datasource(
     session: Session | AsyncSession, *, email: str, dsn: str | None, privileged: bool
-):
+) -> tables.User:
     """Creates a User with an organization, a datasource, and a participant type.
 
     Assumes dsn refers to a testing_dwh instance.

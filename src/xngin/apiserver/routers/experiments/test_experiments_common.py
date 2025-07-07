@@ -8,7 +8,7 @@ from deepdiff import DeepDiff
 from fastapi import HTTPException
 from numpy.random import MT19937, RandomState
 from pydantic import TypeAdapter
-from sqlalchemy import Boolean, Column, MetaData, String, Table, delete, select
+from sqlalchemy import Boolean, Column, MetaData, String, Table, select
 from sqlalchemy.dialects import postgresql
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.schema import CreateTable
@@ -42,20 +42,6 @@ from xngin.apiserver.routers.stateless.stateless_api_types import (
     DesignSpec,
 )
 from xngin.apiserver.testing.assertions import assert_dates_equal
-
-
-@pytest.fixture(autouse=True)
-async def fixture_teardown(xngin_session: AsyncSession):
-    try:
-        # setup here
-        yield
-    finally:
-        # teardown here
-        # Rollback any pending transactions that may have been hanging due to an exception.
-        await xngin_session.rollback()
-        # Clean up objects created in each test by truncating tables and leveraging cascade.
-        await xngin_session.execute(delete(tables.Datasource))
-        await xngin_session.commit()
 
 
 def make_createexperimentrequest_json(
@@ -255,6 +241,7 @@ async def test_create_experiment_impl_for_preassigned(
         random_state=42,
         xngin_session=xngin_session,
         stratify_on_metrics=True,
+        webhook_ids=[],
     )
 
     # Verify response
@@ -363,6 +350,7 @@ async def test_create_experiment_impl_for_online(
         random_state=42,
         xngin_session=xngin_session,
         stratify_on_metrics=True,
+        webhook_ids=[],
     )
 
     # Verify response
@@ -453,6 +441,7 @@ async def test_create_experiment_impl_overwrites_uuids(
         random_state=42,
         xngin_session=xngin_session,
         stratify_on_metrics=True,
+        webhook_ids=[],
     )
 
     # Verify that new UUIDs were generated
@@ -499,6 +488,7 @@ async def test_create_experiment_impl_no_metric_stratification(
         random_state=42,
         xngin_session=xngin_session,
         stratify_on_metrics=False,
+        webhook_ids=[],
     )
 
     # Verify basic response

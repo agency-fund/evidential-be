@@ -1,8 +1,5 @@
 from dataclasses import dataclass
 
-# JWTs generated for domains other than @agency.fund are considered untrusted.
-PRIVILEGED_DOMAINS = ("agency.fund",)
-
 
 @dataclass
 class Principal:
@@ -15,6 +12,3 @@ class Principal:
     iss: str  # issuer
     sub: str  # subject identifier
     hd: str  # hosted domain
-
-    def is_privileged(self):
-        return self.hd in PRIVILEGED_DOMAINS

@@ -64,6 +64,7 @@ async def create_experiment_impl(
     random_state: int | None,
     xngin_session: AsyncSession,
     stratify_on_metrics: bool,
+    webhook_ids: list[str],
 ) -> CreateExperimentResponse:
     # Get the organization_id from the database
     db_datasource = await xngin_session.get(tables.Datasource, datasource_id)
@@ -73,6 +74,23 @@ async def create_experiment_impl(
             detail=f"Datasource {datasource_id} not found in database",
         )
     organization_id = db_datasource.organization_id
+
+    # Validate webhook IDs exist and belong to organization
+    validated_webhooks = []
+    if webhook_ids:
+        webhooks = await xngin_session.scalars(
+            select(tables.Webhook)
+            .where(tables.Webhook.id.in_(webhook_ids))
+            .where(tables.Webhook.organization_id == organization_id)
+        )
+        validated_webhooks = list(webhooks)
+        found_webhook_ids = {w.id for w in validated_webhooks}
+        missing_webhook_ids = set(webhook_ids) - found_webhook_ids
+        if missing_webhook_ids:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Invalid webhook IDs: {sorted(missing_webhook_ids)}",
+            )
 
     # First generate ids for the experiment and arms, which do_assignment needs.
     request.design_spec.experiment_id = tables.experiment_id_factory()
@@ -95,6 +113,7 @@ async def create_experiment_impl(
             random_state=random_state,
             xngin_session=xngin_session,
             stratify_on_metrics=stratify_on_metrics,
+            validated_webhooks=validated_webhooks,
         )
     if request.design_spec.experiment_type == "online":
         return await create_online_experiment_impl(
@@ -102,6 +121,7 @@ async def create_experiment_impl(
             datasource_id=datasource_id,
             organization_id=organization_id,
             xngin_session=xngin_session,
+            validated_webhooks=validated_webhooks,
         )
 
     raise HTTPException(
@@ -120,6 +140,7 @@ async def create_preassigned_experiment_impl(
     random_state: int | None,
     xngin_session: AsyncSession,
     stratify_on_metrics: bool,
+    validated_webhooks: list[tables.Webhook],
 ) -> CreateExperimentResponse:
     design_spec = request.design_spec
     metric_names = [m.field_name for m in design_spec.metrics]
@@ -157,6 +178,9 @@ async def create_preassigned_experiment_impl(
         power_analyses=request.power_analyses,
     )
     experiment = experiment_converter.get_experiment()
+    # Associate webhooks with the experiment
+    for webhook in validated_webhooks:
+        experiment.webhooks.append(webhook)
     xngin_session.add(experiment)
 
     # Create assignment records
@@ -178,7 +202,10 @@ async def create_preassigned_experiment_impl(
     assign_summary = await get_assign_summary(
         xngin_session, experiment.id, assignment_response.balance_check
     )
-    return experiment_converter.get_create_experiment_response(assign_summary)
+    webhook_ids = [webhook.id for webhook in validated_webhooks]
+    return experiment_converter.get_create_experiment_response(
+        assign_summary, webhook_ids
+    )
 
 
 async def create_online_experiment_impl(
@@ -186,6 +213,7 @@ async def create_online_experiment_impl(
     datasource_id: str,
     organization_id: str,
     xngin_session: AsyncSession,
+    validated_webhooks: list[tables.Webhook],
 ) -> CreateExperimentResponse:
     design_spec = request.design_spec
     experiment_converter = ExperimentStorageConverter.init_from_components(
@@ -194,7 +222,12 @@ async def create_online_experiment_impl(
         experiment_type="online",
         design_spec=design_spec,
     )
-    xngin_session.add(experiment_converter.get_experiment())
+    experiment = experiment_converter.get_experiment()
+    # Associate webhooks with the experiment
+    for webhook in validated_webhooks:
+        experiment.webhooks.append(webhook)
+    xngin_session.add(experiment)
+
     await xngin_session.commit()
     # Online experiments start with no assignments.
     empty_assign_summary = AssignSummary(
@@ -202,7 +235,10 @@ async def create_online_experiment_impl(
         sample_size=0,
         arm_sizes=[ArmSize(arm=arm.model_copy(), size=0) for arm in design_spec.arms],
     )
-    return experiment_converter.get_create_experiment_response(empty_assign_summary)
+    webhook_ids = [webhook.id for webhook in validated_webhooks]
+    return experiment_converter.get_create_experiment_response(
+        empty_assign_summary, webhook_ids
+    )
 
 
 async def commit_experiment_impl(
@@ -220,11 +256,10 @@ async def commit_experiment_impl(
 
     experiment_id = experiment.id
     datasource = await experiment.awaitable_attrs.datasource
-    organization = await datasource.awaitable_attrs.organization
-    webhooks = await organization.awaitable_attrs.webhooks
+    webhooks = await experiment.awaitable_attrs.webhooks
 
     event = tables.Event(
-        organization=experiment.datasource.organization,
+        organization_id=datasource.organization_id,
         type=ExperimentCreatedEvent.TYPE,
     ).set_data(
         ExperimentCreatedEvent(
@@ -237,11 +272,11 @@ async def commit_experiment_impl(
         # In the future, this may be replaced by a standalone queuing service.
         if webhook.type == ExperimentCreatedEvent.TYPE:
             webhook_task = WebhookOutboundTask(
-                organization_id=experiment.datasource.organization_id,
+                organization_id=datasource.organization_id,
                 url=webhook.url,
                 body=ExperimentCreatedWebhookBody(
-                    organization_id=experiment.datasource.organization_id,
-                    datasource_id=experiment.datasource.id,
+                    organization_id=datasource.organization_id,
+                    datasource_id=datasource.id,
                     experiment_id=experiment_id,
                     experiment_url=f"{flags.XNGIN_PUBLIC_PROTOCOL}://{flags.XNGIN_PUBLIC_HOSTNAME}/v1/experiments/{experiment_id}",
                 ).model_dump(),
@@ -282,7 +317,8 @@ async def list_organization_experiments_impl(
     stmt = (
         select(tables.Experiment)
         .options(
-            selectinload(tables.Experiment.arms)
+            selectinload(tables.Experiment.arms),
+            selectinload(tables.Experiment.webhooks),
         )  # async: ExperimentStorageConverter requires .arms
         .join(
             tables.Datasource,
@@ -304,7 +340,8 @@ async def list_organization_experiments_impl(
         converter = ExperimentStorageConverter(e)
         balance_check = converter.get_balance_check()
         assign_summary = await get_assign_summary(xngin_session, e.id, balance_check)
-        items.append(converter.get_experiment_config(assign_summary))
+        webhook_ids = [webhook.id for webhook in e.webhooks]
+        items.append(converter.get_experiment_config(assign_summary, webhook_ids))
     return ListExperimentsResponse(items=items)
 
 
@@ -313,7 +350,10 @@ async def list_experiments_impl(
 ) -> ListExperimentsResponse:
     stmt = (
         select(tables.Experiment)
-        .options(selectinload(tables.Experiment.arms))
+        .options(
+            selectinload(tables.Experiment.arms),
+            selectinload(tables.Experiment.webhooks),
+        )
         .where(tables.Experiment.datasource_id == datasource_id)
         .where(
             tables.Experiment.state.in_([
@@ -330,7 +370,8 @@ async def list_experiments_impl(
         converter = ExperimentStorageConverter(e)
         balance_check = converter.get_balance_check()
         assign_summary = await get_assign_summary(xngin_session, e.id, balance_check)
-        items.append(converter.get_experiment_config(assign_summary))
+        webhook_ids = [webhook.id for webhook in e.webhooks]
+        items.append(converter.get_experiment_config(assign_summary, webhook_ids))
     return ListExperimentsResponse(items=items)
 
 
@@ -504,7 +545,7 @@ async def create_assignment_for_participant(
     # Create and save the new assignment. We use the insert() API because it allows us to read
     # the database-generated created_at value without needing to refresh the object in the SQLAlchemy cache.
     try:
-        created_at = (
+        result = (
             await xngin_session.execute(
                 insert(tables.ArmAssignment)
                 .values(
@@ -516,7 +557,12 @@ async def create_assignment_for_participant(
                 )
                 .returning(tables.ArmAssignment.created_at)
             )
-        ).fetchone()[0]
+        ).fetchone()
+        if result is None:
+            raise ExperimentsAssignmentError(
+                f"Failed to create assignment for participant '{participant_id}'"
+            )
+        created_at = result[0]
         await xngin_session.commit()
     except IntegrityError as e:
         await xngin_session.rollback()

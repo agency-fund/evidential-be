@@ -26,9 +26,7 @@ from pydantic import (
     field_validator,
     model_validator,
 )
-from sqlalchemy import Engine, event, make_url, text
-from sqlalchemy.exc import NoSuchTableError
-from sqlalchemy.orm import Session
+from sqlalchemy import make_url
 from tenacity import (
     retry,
     retry_if_not_exception_type,
@@ -36,15 +34,12 @@ from tenacity import (
     wait_random,
 )
 
-from xngin.apiserver import flags
 from xngin.apiserver.certs import get_amazon_trust_ca_bundle_path
-from xngin.apiserver.dns.safe_resolve import safe_resolve
 from xngin.apiserver.dwh.inspection_types import ParticipantsSchema
 from xngin.apiserver.settings_secrets import replace_secrets
 from xngin.xsecrets import secretservice
 from xngin.xsecrets.constants import SERIALIZED_ENCRYPTED_VALUE_PREFIX
 
-DEFAULT_SETTINGS_FILE = "xngin.settings.json"
 SA_LOGGER_NAME_FOR_DWH = "xngin_dwh"
 TIMEOUT_SECS_FOR_CUSTOMER_POSTGRES = 10
 
@@ -76,19 +71,12 @@ class RemoteSettingsClientError(Exception):
     """Raised when we fail to fetch remote settings due to our misconfiguration."""
 
 
-def safe_url(url: sqlalchemy.engine.url.URL) -> sqlalchemy.engine.url.URL:
-    """Prepares a URL for presentation or capture in logs by stripping sensitive values."""
-    cleaned = url.set(password="redacted")
-    for qp in ("credentials_base64", "credentials_info"):
-        if cleaned.query.get(qp):
-            cleaned = cleaned.update_query_dict({qp: "redacted"})
-    return cleaned
-
-
 @lru_cache
 def get_settings_for_server():
     """Constructs an XnginSettings for use by the API server."""
-    settings_path = os.environ.get("XNGIN_SETTINGS", DEFAULT_SETTINGS_FILE)
+    settings_path = os.environ.get("XNGIN_SETTINGS")
+    if settings_path is None:
+        return XnginSettings(datasources=[])
 
     if settings_path.startswith("https://"):
         settings_raw = get_remote_settings(settings_path)
@@ -275,7 +263,7 @@ class BaseDsn:
         """Return true iff the hostname indicates that this is connecting to Redshift."""
         return False
 
-    def supports_table_reflection(self):
+    def supports_sa_autoload(self):
         return not self.is_redshift()
 
 
@@ -465,22 +453,42 @@ class Dsn(ConfigBaseModel, BaseDsn, EncryptedDsn):
 
     @staticmethod
     def from_url(url: str):
-        """Constructs a Dsn from a SQLAlchemy-compatible URL (Postgres only). Use only in trusted code paths."""
-        if not url.startswith("postgresql"):
-            raise NotImplementedError(
-                "Dsn.from_url() only supports postgres databases."
+        """Constructs a Dsn from a SQLAlchemy-compatible URL (Postgres or BigQuery only).
+
+        Use only in trusted code paths. If url is BigQuery, credentials are assumed to be in a file referenced by
+        the GOOGLE_APPLICATION_CREDENTIALS environment variable.
+        """
+
+        if url.startswith("bigquery"):
+            # TODO: support URL-encoded bigquery credentials from the query string
+            parsed_url = make_url(url)
+            credentials = os.environ.get("GOOGLE_APPLICATION_CREDENTIALS", None)
+            if credentials is None:
+                raise ValueError(
+                    "GOOGLE_APPLICATION_CREDENTIALS must be set when using Dsn.from_url."
+                )
+            return BqDsn(
+                driver="bigquery",
+                project_id=parsed_url.host,
+                dataset_id=parsed_url.database,
+                credentials=GcpServiceAccountFile(
+                    type="serviceaccountfile", path=credentials
+                ),
             )
-        url = make_url(url)
-        return Dsn(
-            driver=f"postgresql+{url.get_driver_name()}",
-            host=url.host,
-            port=url.port,
-            user=url.username,
-            password=url.password,
-            dbname=url.database,
-            sslmode=url.query.get("sslmode", "verify-ca"),
-            search_path=url.query.get("search_path", None),
-        )
+
+        if url.startswith("postgres"):
+            parsed_url = make_url(url)
+            return Dsn(
+                driver=f"postgresql+{parsed_url.get_driver_name()}",
+                host=parsed_url.host,
+                port=parsed_url.port,
+                user=parsed_url.username,
+                password=parsed_url.password,
+                dbname=parsed_url.database,
+                sslmode=parsed_url.query.get("sslmode", "verify-ca"),
+                search_path=parsed_url.query.get("search_path", None),
+            )
+        raise NotImplementedError("Dsn.from_url() only supports postgres databases.")
 
     def is_redshift(self):
         return self.host.endswith("redshift.amazonaws.com")
@@ -545,70 +553,8 @@ class RemoteDatabaseConfig(ParticipantsMixin, ConfigBaseModel):
     def to_sqlalchemy_url(self):
         return self.dwh.to_sqlalchemy_url()
 
-    def supports_reflection(self):
-        return self.dwh.supports_table_reflection()
-
-    def dbsession(self):
-        """Returns a Session to be used to send queries to the customer database.
-
-        Use this in a `with` block to ensure correct transaction handling. If you need the
-        sqlalchemy Engine, call .get_bind().
-        """
-        engine = self.dbengine()
-        return Session(engine)
-
-    def dbengine(self):
-        """Returns a SQLAlchemy Engine for the customer database.
-
-        Use this when reflecting. If you're doing any queries on the tables, prefer dbsession().
-        """
-        url = self.dwh.to_sqlalchemy_url()
-        connect_args: dict = {}
-        if url.get_backend_name() == "postgresql":
-            connect_args["connect_timeout"] = TIMEOUT_SECS_FOR_CUSTOMER_POSTGRES
-            # Replace the Postgres' client default DNS lookup with one that applies security checks first; this prevents
-            # us from connecting to addresses like 127.0.0.1 or addresses that are on our hosting provider's internal
-            # network.
-            # https://www.postgresql.org/docs/current/libpq-connect.html#LIBPQ-PARAMKEYWORDS
-            connect_args["hostaddr"] = safe_resolve(url.host)
-
-        logger.info(
-            f"Connecting to customer dwh: url={safe_url(url)}, "
-            f"backend={url.get_backend_name()}, connect_args={connect_args}"
-        )
-        engine = sqlalchemy.create_engine(
-            url,
-            connect_args=connect_args,
-            logging_name=SA_LOGGER_NAME_FOR_DWH,
-            execution_options={"logging_token": "dwh"},
-            echo=flags.ECHO_SQL,
-            poolclass=sqlalchemy.pool.NullPool,
-        )
-        self._extra_engine_setup(engine)
-        return engine
-
-    def _extra_engine_setup(self, engine: Engine):
-        """Do any extra configuration if needed before a connection is made."""
-
-        if isinstance(self.dwh, Dsn) and self.dwh.search_path:
-            # Avoid explicitly setting schema whenever we build a Table.
-            #   https://docs.sqlalchemy.org/en/20/dialects/postgresql.html#setting-alternate-search-paths-on-connect
-            # If possible, have the client also consider setting that as a default on the role, e.g.:
-            #   ALTER USER username SET search_path = schema1, schema2, public;
-
-            @event.listens_for(engine, "connect", insert=True)
-            def set_search_path(dbapi_connection, _connection_record):
-                existing_autocommit = dbapi_connection.autocommit
-                dbapi_connection.autocommit = True
-                cursor = dbapi_connection.cursor()
-                cursor.execute(f"SET SESSION search_path={self.dwh.search_path}")  # type: ignore[union-attr]
-                cursor.close()
-                dbapi_connection.autocommit = existing_autocommit
-
-        # Partially address any Redshift incompatibilities
-        # re: https://github.com/sqlalchemy-redshift/sqlalchemy-redshift/issues/264#issuecomment-2181124071
-        if self.dwh.is_redshift() and hasattr(engine.dialect, "_set_backslash_escapes"):
-            engine.dialect._set_backslash_escapes = lambda _: None
+    def supports_sa_autoload(self):
+        return self.dwh.supports_sa_autoload()
 
 
 # TODO: use a Field(discriminator="type") when we support more than just "remote" databases.
@@ -624,9 +570,9 @@ class Datasource(ConfigBaseModel):
 
 
 class XnginSettings(ConfigBaseModel):
-    trusted_ips: Annotated[list[str], Field(default_factory=list, deprecated=True)]
-    db_connect_timeout_secs: Annotated[int, Field(deprecated=True)] = 3
     datasources: list[Datasource]
+    trusted_ips: Annotated[list[str], Field(default_factory=list, deprecated=True)] = []
+    db_connect_timeout_secs: Annotated[int, Field(deprecated=True)] = 3
 
     def get_datasource(self, datasource_id):
         """Finds the datasource for a specific ID if it exists, or returns None."""
@@ -640,21 +586,6 @@ class SettingsForTesting(XnginSettings):
     pass
 
 
-class CannotFindTableError(Exception):
-    """Raised when we cannot find a table in the database."""
-
-    def __init__(self, table_name, existing_tables):
-        self.table_name = table_name
-        self.alternatives = existing_tables
-        if existing_tables:
-            self.message = f"The table '{table_name}' does not exist. Known tables: {', '.join(sorted(existing_tables))}"
-        else:
-            self.message = f"The table '{table_name}' does not exist; the database does not contain any tables."
-
-    def __str__(self):
-        return self.message
-
-
 class CannotFindParticipantsError(Exception):
     """Raised when we cannot find a participant in the configuration."""
 
@@ -662,95 +593,9 @@ class CannotFindParticipantsError(Exception):
         self.participant_type = participant_type
         self.message = (
             f"The participant type '{participant_type}' does not exist."
-            "(Possible typo in request, or server settings for your dwh may be"
+            "(Possible typo in request, or server settings for your dwh may be "
             "misconfigured.)"
         )
 
     def __str__(self):
         return self.message
-
-
-def infer_table_from_cursor(
-    engine: sqlalchemy.engine.Engine, table_name: str
-) -> sqlalchemy.Table:
-    """Creates a SQLAlchemy Table instance from cursor description metadata."""
-
-    columns = []
-    metadata = sqlalchemy.MetaData()
-    try:
-        with engine.begin() as connection:
-            safe_table = sqlalchemy.quoted_name(table_name, quote=True)
-            # Create a select statement - this is safe from SQL injection
-            query = sqlalchemy.select(text("*")).select_from(text(safe_table)).limit(0)
-            result = connection.execute(query)
-            description = result.cursor.description
-            # print("CURSOR DESC: ", result.cursor.description)
-            for col in description:
-                # Unpack cursor.description tuple
-                (
-                    name,
-                    type_code,
-                    _,  # display_size,
-                    internal_size,
-                    precision,
-                    scale,
-                    null_ok,
-                ) = col
-
-                # Map Redshift type codes to SQLAlchemy types. Not comprehensive.
-                # https://docs.sqlalchemy.org/en/20/core/types.html
-                # Comment shows both pg_type.typename / information_schema.data_type
-                sa_type: type[sqlalchemy.TypeEngine] | sqlalchemy.TypeEngine
-                match type_code:
-                    case 16:  # BOOL / boolean
-                        sa_type = sqlalchemy.Boolean
-                    case 20:  # INT8 / bigint
-                        sa_type = sqlalchemy.BigInteger
-                    case 23:  # INT4 / integer
-                        sa_type = sqlalchemy.Integer
-                    case 701:  # FLOAT8 / double precision
-                        sa_type = sqlalchemy.Double
-                    case 1043:  # VARCHAR / character varying
-                        sa_type = sqlalchemy.String(internal_size)
-                    case 1082:  # DATE / date
-                        sa_type = sqlalchemy.Date
-                    case 1114:  # TIMESTAMP / timestamp without time zone
-                        sa_type = sqlalchemy.DateTime
-                    case 1700:  # NUMERIC / numeric
-                        sa_type = sqlalchemy.Numeric(precision, scale)
-                    case _:  # type_code == 25
-                        # Default to Text for unknown types
-                        sa_type = sqlalchemy.Text
-
-                columns.append(
-                    sqlalchemy.Column(
-                        name, sa_type, nullable=null_ok if null_ok is not None else True
-                    )
-                )
-            return sqlalchemy.Table(table_name, metadata, *columns, quote=False)
-    except NoSuchTableError as nste:
-        metadata.reflect(engine)
-        existing_tables = metadata.tables.keys()
-        raise CannotFindTableError(table_name, existing_tables) from nste
-
-
-def infer_table(engine: sqlalchemy.engine.Engine, table_name: str, use_reflection=True):
-    """Constructs a Table via reflection.
-
-    Raises CannotFindTheTableException containing helpful error message if the table doesn't exist.
-    """
-    metadata = sqlalchemy.MetaData()
-    try:
-        if use_reflection:
-            return sqlalchemy.Table(
-                table_name, metadata, autoload_with=engine, quote=False
-            )
-        # This method of introspection should only be used if the db dialect doesn't support Sqlalchemy2 reflection.
-        return infer_table_from_cursor(engine, table_name)
-    except sqlalchemy.exc.ProgrammingError:
-        logger.exception("Failed to create a Table! use_reflection: {}", use_reflection)
-        raise
-    except NoSuchTableError as nste:
-        metadata.reflect(engine)
-        existing_tables = metadata.tables.keys()
-        raise CannotFindTableError(table_name, existing_tables) from nste

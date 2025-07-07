@@ -1,13 +1,11 @@
 """Implements a basic Admin API."""
 
-import secrets  # noqa: I001
+import asyncio
+import secrets
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime, timedelta
 from typing import Annotated, Any
 
-import google.api_core.exceptions
-import sqlalchemy
-import sqlalchemy.orm
 from fastapi import (
     APIRouter,
     Body,
@@ -22,20 +20,20 @@ from fastapi import (
 from fastapi.responses import StreamingResponse
 from loguru import logger
 from pydantic import BaseModel
-from sqlalchemy import delete, select, text
-from sqlalchemy.exc import OperationalError
+from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import QueryableAttribute, selectinload
+from sqlalchemy.sql.functions import count
 
-from xngin.apiserver import constants, flags, settings
+from xngin.apiserver import constants, flags
 from xngin.apiserver.apikeys import hash_key_or_raise, make_key
 from xngin.apiserver.dependencies import xngin_db_session
 from xngin.apiserver.dns.safe_resolve import DnsLookupError, safe_resolve
-from xngin.apiserver.dwh.queries import get_participant_metrics, query_for_participants
+from xngin.apiserver.dwh.dwh_session import DwhDatabaseDoesNotExistError, DwhSession
 from xngin.apiserver.dwh.inspections import (
     create_inspect_table_response_from_table,
-    generate_field_descriptors,
 )
+from xngin.apiserver.dwh.queries import get_participant_metrics, get_stats_on_filters
 from xngin.apiserver.exceptions_common import LateValidationError
 from xngin.apiserver.models import tables
 from xngin.apiserver.models.storage_format_converters import ExperimentStorageConverter
@@ -73,6 +71,7 @@ from xngin.apiserver.routers.admin.admin_api_types import (
     UserSummary,
     WebhookSummary,
 )
+from xngin.apiserver.routers.auth.auth_api_types import CallerIdentity
 from xngin.apiserver.routers.auth.auth_dependencies import require_oidc_token
 from xngin.apiserver.routers.auth.principal import Principal
 from xngin.apiserver.routers.common_api_types import (
@@ -92,15 +91,14 @@ from xngin.apiserver.routers.common_api_types import (
 )
 from xngin.apiserver.routers.experiments import experiments_common
 from xngin.apiserver.routers.stateless.stateless_api import (
-    create_col_to_filter_meta_mapper,
     power_check_impl,
     validate_schema_metrics_or_raise,
 )
 from xngin.apiserver.settings import (
+    Dsn,
     ParticipantsConfig,
     ParticipantsDef,
     RemoteDatabaseConfig,
-    infer_table,
 )
 from xngin.apiserver.testing.testing_dwh import create_user_and_first_datasource
 from xngin.stats.analysis import analyze_experiment as analyze_experiment_impl
@@ -186,7 +184,11 @@ async def user_from_token(
     if user:
         return user
 
-    if token_info.is_privileged():
+    # There are two cases when we create a user on an authenticated request:
+    # 1. Airplane mode: We are in airplane mode and the request is coming from the UI in airplane mode.
+    # 2. First use of installation by a developer: There are no users in the database, and this is the first request.
+    user_count = await session.scalar(select(count(tables.User.id)))
+    if user_count == 0 or (flags.AIRPLANE_MODE and token_info.iss == "airplane"):
         new_user = create_user_and_first_datasource(
             session,
             email=token_info.email,
@@ -228,7 +230,7 @@ async def get_datasource_or_raise(
     /,
     *,
     preload: list[QueryableAttribute] | None = None,
-):
+) -> tables.Datasource:
     """Reads the requested datasource from the database.
 
     Raises 404 if disallowed or not found.
@@ -285,10 +287,23 @@ async def get_experiment_via_ds_or_raise(
 
 @router.get("/caller-identity")
 async def caller_identity(
+    session: Annotated[AsyncSession, Depends(xngin_db_session)],
     token_info: Annotated[Principal, Depends(require_oidc_token)],
-) -> Principal:
+) -> CallerIdentity:
     """Returns basic metadata about the authenticated caller of this method."""
-    return token_info
+    user = (
+        await session.scalars(
+            select(tables.User).filter(tables.User.email == token_info.email)
+        )
+    ).first()
+
+    return CallerIdentity(
+        email=token_info.email,
+        iss=token_info.iss,
+        sub=token_info.sub,
+        hd=token_info.hd,
+        is_privileged=user.is_privileged if user else False,
+    )
 
 
 @router.get("/organizations")
@@ -324,7 +339,7 @@ async def create_organizations(
 ) -> CreateOrganizationResponse:
     """Creates a new organization.
 
-    Only users with an @agency.fund email address can create organizations.
+    Only privileged users can create organizations.
     """
     if not user.is_privileged:
         raise HTTPException(
@@ -356,13 +371,21 @@ async def add_webhook_to_organization(
 
     # Create and save the webhook
     webhook = tables.Webhook(
-        type=body.type, url=body.url, auth_token=auth_token, organization_id=org.id
+        type=body.type,
+        name=body.name,
+        url=body.url,
+        auth_token=auth_token,
+        organization_id=org.id,
     )
     session.add(webhook)
     await session.commit()
 
     return AddWebhookToOrganizationResponse(
-        id=webhook.id, type=webhook.type, url=webhook.url, auth_token=auth_token
+        id=webhook.id,
+        type=webhook.type,
+        name=webhook.name,
+        url=webhook.url,
+        auth_token=auth_token,
     )
 
 
@@ -377,7 +400,11 @@ async def list_organization_webhooks(
     org = await get_organization_or_raise(session, user, organization_id)
 
     # Query for webhooks
-    stmt = select(tables.Webhook).where(tables.Webhook.organization_id == org.id)
+    stmt = (
+        select(tables.Webhook)
+        .where(tables.Webhook.organization_id == org.id)
+        .order_by(tables.Webhook.name, tables.Webhook.id)
+    )
     webhooks = await session.scalars(stmt)
 
     # Convert webhooks to WebhookSummary objects
@@ -391,6 +418,7 @@ def convert_webhooks_to_webhooksummaries(webhooks):
         WebhookSummary(
             id=webhook.id,
             type=webhook.type,
+            name=webhook.name,
             url=webhook.url,
             auth_token=webhook.auth_token,
         )
@@ -409,7 +437,7 @@ async def update_organization_webhook(
     user: Annotated[tables.User, Depends(user_from_token)],
     body: Annotated[UpdateOrganizationWebhookRequest, Body(...)],
 ):
-    """Updates a webhook's URL in an organization."""
+    """Updates a webhook's name and URL in an organization."""
     # Verify user has access to the organization
     org = await get_organization_or_raise(session, user, organization_id)
 
@@ -428,7 +456,7 @@ async def update_organization_webhook(
             status_code=status.HTTP_404_NOT_FOUND, detail="Webhook not found"
         )
 
-    # Update the webhook URL
+    webhook.name = body.name
     webhook.url = body.url
     await session.commit()
     return GENERIC_SUCCESS
@@ -744,7 +772,8 @@ async def create_datasource(
         )
     if body.dwh.driver in {"postgresql+psycopg", "postgresql+psycopg2"}:
         try:
-            safe_resolve(body.dwh.host)
+            if isinstance(body.dwh, Dsn):
+                safe_resolve(body.dwh.host)
         except DnsLookupError as err:
             raise HTTPException(
                 status_code=400,
@@ -825,35 +854,13 @@ async def inspect_datasource(
     try:
         try:
             config = ds.get_config()
-
-            # Hack for redshift's lack of reflection support.
-            if config.dwh.is_redshift():
-                query = text(
-                    "SELECT table_name FROM information_schema.tables "
-                    "WHERE table_schema IN (:search_path) ORDER BY table_name"
-                )
-                with config.dbsession() as dwh_session:
-                    result = dwh_session.execute(
-                        query, {"search_path": config.dwh.search_path or "public"}
-                    )
-                    tablenames = result.scalars().all()
-            else:
-                inspected = sqlalchemy.inspect(config.dbengine())
-                tablenames = list(
-                    sorted(inspected.get_table_names() + inspected.get_view_names())
-                )
+            async with DwhSession(config.dwh) as dwh:
+                tablenames = await dwh.list_tables()
 
             ds.set_table_list(tablenames)
             await session.commit()
             return InspectDatasourceResponse(tables=tablenames)
-        except OperationalError as exc:
-            if is_postgres_database_not_found_error(exc):
-                raise HTTPException(
-                    status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)
-                ) from exc
-            raise
-        except google.api_core.exceptions.NotFound as exc:
-            # Google returns a 404 when authentication succeeds but when the specified datasource does not exist.
+        except DwhDatabaseDoesNotExistError as exc:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)
             ) from exc
@@ -861,15 +868,6 @@ async def inspect_datasource(
         ds.clear_table_list()
         await session.commit()
         raise
-
-
-def is_postgres_database_not_found_error(exc):
-    return (
-        exc.args
-        and isinstance(exc.args[0], str)
-        and "FATAL:  database" in exc.args[0]
-        and "does not exist" in exc.args[0]
-    )
 
 
 async def invalidate_inspect_table_cache(session, datasource_id):
@@ -907,11 +905,9 @@ async def inspect_table_in_datasource(
     await invalidate_inspect_table_cache(session, datasource_id)
     await session.commit()
 
-    engine = config.dbengine()
-    # CannotFindTableError will be handled by exceptionhandlers.py.
-    table = settings.infer_table(
-        engine, table_name, use_reflection=config.supports_reflection()
-    )
+    async with DwhSession(config.dwh) as dwh:
+        # CannotFindTableError will be handled by exceptionhandlers.py.
+        table = await dwh.inspect_table(table_name)
     response = create_inspect_table_response_from_table(table)
 
     session.add(
@@ -1028,60 +1024,57 @@ async def inspect_participant_types(
     )
     await session.commit()
 
-    def inspect_participant_types_impl() -> InspectParticipantTypesResponse:
-        with dsconfig.dbsession() as dwh_session:
-            sa_table = infer_table(
-                dwh_session.get_bind(),
-                pconfig.table_name,
-                dsconfig.supports_reflection(),
-            )
-            db_schema = generate_field_descriptors(
-                sa_table, pconfig.get_unique_id_field()
-            )
-            mapper = create_col_to_filter_meta_mapper(db_schema, sa_table, dwh_session)
+    filter_fields = {c.field_name: c for c in pconfig.fields if c.is_filter}
+    strata_fields = {c.field_name: c for c in pconfig.fields if c.is_strata}
+    metric_cols = {c.field_name: c for c in pconfig.fields if c.is_metric}
 
-        filter_fields = {c.field_name: c for c in pconfig.fields if c.is_filter}
-        strata_fields = {c.field_name: c for c in pconfig.fields if c.is_strata}
-        metric_cols = {c.field_name: c for c in pconfig.fields if c.is_metric}
+    async def inspect_participant_types_impl() -> InspectParticipantTypesResponse:
+        async with DwhSession(dsconfig.dwh) as dwh:
+            result = await dwh.inspect_table_with_descriptors(
+                pconfig.table_name, pconfig.get_unique_id_field()
+            )
+            filter_data = await asyncio.to_thread(
+                get_stats_on_filters,
+                dwh.session,
+                result.sa_table,
+                result.db_schema,
+                filter_fields,
+            )
 
         return InspectParticipantTypesResponse(
             metrics=sorted(
                 [
                     GetMetricsResponseElement(
-                        data_type=db_schema.get(col_name).data_type,
+                        data_type=result.db_schema.get(col_name).data_type,  # type: ignore[union-attr]
                         field_name=col_name,
                         description=col_descriptor.description,
                     )
                     for col_name, col_descriptor in metric_cols.items()
-                    if db_schema.get(col_name)
+                    if result.db_schema.get(col_name)
                 ],
                 key=lambda item: item.field_name,
             ),
             strata=sorted(
                 [
                     GetStrataResponseElement(
-                        data_type=db_schema.get(field_name).data_type,
+                        data_type=result.db_schema.get(field_name).data_type,  # type: ignore[union-attr]
                         field_name=field_name,
                         description=field_descriptor.description,
                         # For strata columns, we will echo back any extra annotations
                         extra=field_descriptor.extra,
                     )
                     for field_name, field_descriptor in strata_fields.items()
-                    if db_schema.get(field_name)
+                    if result.db_schema.get(field_name)
                 ],
                 key=lambda item: item.field_name,
             ),
             filters=sorted(
-                [
-                    mapper(field_name, field_descriptor)
-                    for field_name, field_descriptor in filter_fields.items()
-                    if db_schema.get(field_name)
-                ],
+                filter_data,
                 key=lambda item: item.field_name,
             ),
         )
 
-    response = inspect_participant_types_impl()
+    response = await inspect_participant_types_impl()
 
     session.add(
         tables.ParticipantTypesInspected(
@@ -1266,21 +1259,19 @@ async def create_experiment(
 
     # Get participants and their schema info from the client dwh
     participants = None
-    with ds_config.dbsession() as dwh_session:
-        sa_table = infer_table(
-            dwh_session.get_bind(),
-            participants_cfg.table_name,
-            ds_config.supports_reflection(),
-        )
+    async with DwhSession(ds_config.dwh) as dwh:
         if chosen_n is not None:
-            participants = query_for_participants(
-                dwh_session, sa_table, body.design_spec.filters, chosen_n
+            result = await dwh.get_participants(
+                participants_cfg.table_name, body.design_spec.filters, chosen_n
             )
+            sa_table, participants = result.sa_table, result.participants
         elif body.design_spec.experiment_type == "preassigned":
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Preassigned experiments must have a chosen_n.",
             )
+        else:
+            sa_table = await dwh.inspect_table(participants_cfg.table_name)
 
     return await experiments_common.create_experiment_impl(
         request=body,
@@ -1291,6 +1282,7 @@ async def create_experiment(
         random_state=random_state,
         xngin_session=session,
         stratify_on_metrics=stratify_on_metrics,
+        webhook_ids=body.webhooks,
     )
 
 
@@ -1324,26 +1316,22 @@ async def analyze_experiment(
         )
     unique_id_field = participants_cfg.get_unique_id_field()
 
-    with dsconfig.dbsession() as dwh_session:
-        sa_table = infer_table(
-            dwh_session.get_bind(),
-            participants_cfg.table_name,
-            dsconfig.supports_reflection(),
-        )
+    design_spec = ExperimentStorageConverter(experiment).get_design_spec()
+    assignments = experiment.arm_assignments
+    participant_ids = [assignment.participant_id for assignment in assignments]
+    if len(participant_ids) == 0:
+        raise StatsAnalysisError("No participants found for experiment.")
 
-        design_spec = ExperimentStorageConverter(experiment).get_design_spec()
-        metrics = design_spec.metrics
-        assignments = experiment.arm_assignments
-        participant_ids = [assignment.participant_id for assignment in assignments]
-        if len(participant_ids) == 0:
-            raise StatsAnalysisError("No participants found for experiment.")
+    async with DwhSession(dsconfig.dwh) as dwh:
+        sa_table = await dwh.inspect_table(participants_cfg.table_name)
 
         # Mark the start of the analysis as when we begin pulling outcomes.
         created_at = datetime.now(UTC)
-        participant_outcomes = get_participant_metrics(
-            dwh_session,
+        participant_outcomes = await asyncio.to_thread(
+            get_participant_metrics,
+            dwh.session,
             sa_table,
-            metrics,
+            design_spec.metrics,
             unique_id_field,
             participant_ids,
         )
@@ -1453,12 +1441,15 @@ async def get_experiment(
 ) -> ExperimentConfig:
     """Returns the experiment with the specified ID."""
     ds = await get_datasource_or_raise(session, user, datasource_id)
-    experiment = await get_experiment_via_ds_or_raise(session, ds, experiment_id)
+    experiment = await get_experiment_via_ds_or_raise(
+        session, ds, experiment_id, preload=[tables.Experiment.webhooks]
+    )
     converter = ExperimentStorageConverter(experiment)
     assign_summary = await experiments_common.get_assign_summary(
         session, experiment.id, converter.get_balance_check()
     )
-    return converter.get_experiment_config(assign_summary)
+    webhook_ids = [webhook.id for webhook in experiment.webhooks]
+    return converter.get_experiment_config(assign_summary, webhook_ids)
 
 
 @router.get("/datasources/{datasource_id}/experiments/{experiment_id}/assignments")
@@ -1573,5 +1564,5 @@ async def power_check(
     ds = await get_datasource_or_raise(session, user, datasource_id)
     dsconfig = ds.get_config()
     participants_cfg = dsconfig.find_participants(body.design_spec.participant_type)
-    validate_schema_metrics_or_raise(body.design_spec, participants_cfg)
-    return power_check_impl(body, dsconfig, participants_cfg)
+    validate_schema_metrics_or_raise(body.design_spec, participants_cfg)  # type: ignore[arg-type]
+    return await power_check_impl(body, dsconfig, participants_cfg)

@@ -8,11 +8,9 @@ from pathlib import Path
 
 import pytest
 from loguru import logger
-from sqlalchemy import delete
 
 from xngin.apiserver import conftest, constants, flags
 from xngin.apiserver.gsheet_cache import GSheetCache
-from xngin.apiserver.models import tables
 from xngin.apiserver.routers.stateless.stateless_api import (
     CommonQueryParams,
     get_participants_config_and_schema,
@@ -46,20 +44,6 @@ def trunc(s, n=4096):
 def fixture_update_api_tests_flag(pytestconfig):
     """Returns true iff the UPDATE_API_TESTS environment variable resembles a truthy value."""
     return flags.UPDATE_API_TESTS
-
-
-@pytest.fixture(autouse=True)
-async def fixture_teardown(xngin_session):
-    try:
-        # setup here
-        yield
-    finally:
-        # teardown here
-        # Rollback any pending transactions that may have been hanging due to an exception.
-        await xngin_session.rollback()
-        # Ensure we're not using stale cache settings (possible if not using an ephemeral app db).
-        await xngin_session.execute(delete(tables.CacheTable))
-        await xngin_session.commit()
 
 
 async def test_datasource_dependency_falls_back_to_xngin_db(
@@ -108,9 +92,15 @@ API_TESTS_X_DATASOURCE = zip(
 )
 
 
+@pytest.mark.xurl
 @pytest.mark.parametrize("script,datasource_id", API_TESTS_X_DATASOURCE)
 def test_api(
-    script, datasource_id, update_api_tests_flag, use_deterministic_random, client_v1
+    script,
+    datasource_id,
+    update_api_tests_flag,
+    use_deterministic_random,
+    client_v1,
+    xngin_session,
 ):
     """Runs all the API_TESTS test scripts using the datasource specified in param or file if None.
 

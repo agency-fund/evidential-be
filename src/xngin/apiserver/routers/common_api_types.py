@@ -16,6 +16,7 @@ from pydantic import (
     field_validator,
     model_validator,
 )
+from sqlalchemy.dialects.postgresql.json import JSON, JSONB
 
 from xngin.apiserver.common_field_types import FieldName
 from xngin.apiserver.exceptions_common import LateValidationError
@@ -29,20 +30,14 @@ from xngin.apiserver.limits import (
 )
 from xngin.apiserver.models.enums import ExperimentState, StopAssignmentReason
 
+type StrictInt = Annotated[int | None, Field(strict=True)]
+type StrictFloat = Annotated[float | None, Field(strict=True, allow_inf_nan=False)]
 type FilterValueTypes = (
-    Sequence[Annotated[int, Field(strict=True)] | None]
-    | Sequence[Annotated[float, Field(strict=True, allow_inf_nan=False)] | None]
+    Sequence[StrictInt]
+    | Sequence[StrictFloat]
     | Sequence[str | None]
     | Sequence[bool | None]
 )
-
-type DesignSpec = Annotated[
-    PreassignedExperimentSpec | OnlineExperimentSpec,
-    Field(
-        discriminator="experiment_type",
-        description="Concrete type of experiment to run.",
-    ),
-]
 
 
 class DataType(enum.StrEnum):
@@ -96,9 +91,9 @@ class DataType(enum.StrEnum):
             return DataType.TIMESTAMP_WITH_TIMEZONE
         if isinstance(value, sqlalchemy.sql.sqltypes.DateTime) and not value.timezone:
             return DataType.TIMESTAMP_WITHOUT_TIMEZONE
-        if isinstance(value, sqlalchemy.dialects.postgresql.json.JSONB):
+        if isinstance(value, JSONB):
             return DataType.JSONB
-        if isinstance(value, sqlalchemy.dialects.postgresql.json.JSON):
+        if isinstance(value, JSON):
             return DataType.JSON
         if value is int:
             return DataType.INTEGER
@@ -504,16 +499,6 @@ class GetMetricsResponseElement(ApiBaseModel):
     description: Annotated[str, Field(max_length=MAX_LENGTH_OF_DESCRIPTION_VALUE)]
 
 
-class PowerRequest(ApiBaseModel):
-    design_spec: DesignSpec
-
-
-class PowerResponse(ApiBaseModel):
-    analyses: Annotated[
-        list[MetricPowerAnalysis], Field(max_length=MAX_NUMBER_OF_FIELDS)
-    ]
-
-
 EXPERIMENT_IDS_SUFFIX = "experiment_ids"
 
 
@@ -779,6 +764,25 @@ class OnlineExperimentSpec(FrequentistExperimentSpec):
     ] = "online"
 
 
+type DesignSpec = Annotated[
+    PreassignedExperimentSpec | OnlineExperimentSpec,
+    Field(
+        discriminator="experiment_type",
+        description="Concrete type of experiment to run.",
+    ),
+]
+
+
+class PowerRequest(ApiBaseModel):
+    design_spec: DesignSpec
+
+
+class PowerResponse(ApiBaseModel):
+    analyses: Annotated[
+        list[MetricPowerAnalysis], Field(max_length=MAX_NUMBER_OF_FIELDS)
+    ]
+
+
 class Strata(ApiBaseModel):
     """Describes stratification for an experiment participant."""
 
@@ -869,6 +873,21 @@ class ExperimentsBaseModel(BaseModel):
 class CreateExperimentRequest(ExperimentsBaseModel):
     design_spec: DesignSpec
     power_analyses: PowerResponse | None = None
+    webhooks: Annotated[
+        list[str],
+        Field(
+            default=[],
+            description="List of webhook IDs to associate with this experiment. When the experiment is committed, these webhooks will be triggered with experiment details. Must contain unique values.",
+        ),
+    ]
+
+    @field_validator("webhooks")
+    @classmethod
+    def validate_unique_webhooks(cls, v: list[str]) -> list[str]:
+        """Ensure all webhook IDs are unique."""
+        if len(v) != len(set(v)):
+            raise ValueError("Webhook IDs must be unique")
+        return v
 
 
 class AssignSummary(ExperimentsBaseModel):
@@ -915,6 +934,13 @@ class ExperimentConfig(ExperimentsBaseModel):
     design_spec: DesignSpec
     power_analyses: PowerResponse | None
     assign_summary: AssignSummary
+    webhooks: Annotated[
+        list[str],
+        Field(
+            default=[],
+            description="List of webhook IDs associated with this experiment. These webhooks are triggered when the experiment is committed.",
+        ),
+    ]
 
 
 class GetExperimentResponse(ExperimentConfig):
