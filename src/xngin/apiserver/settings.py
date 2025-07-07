@@ -389,7 +389,7 @@ class BqDsn(ConfigBaseModel, BaseDsn, EncryptedDsn):
             )
         return self
 
-    def to_sqlalchemy_url(self, datasource_id: str = "") -> sqlalchemy.URL:
+    def to_sqlalchemy_url(self) -> sqlalchemy.URL:
         qopts = {}
         if self.credentials.type == "serviceaccountinfo":
             qopts["credentials_base64"] = self.credentials.content_base64

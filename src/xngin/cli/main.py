@@ -795,7 +795,12 @@ def create_tink_key(
 
 @app.command()
 def encrypt(
-    aad: Annotated[str, typer.Option()] = "cli",
+    aad: Annotated[
+        str,
+        typer.Option(
+            help="Bind the ciphertext to this additionally authenticated data (AAD)."
+        ),
+    ] = "cli",
 ):
     """Encrypts a string using the same encryption configuration that the API server does."""
     secretservice.setup()
@@ -804,7 +809,11 @@ def encrypt(
 
 
 @app.command()
-def decrypt(aad: Annotated[str, typer.Option()] = "cli"):
+def decrypt(
+    aad: Annotated[
+        str, typer.Option(help="The AAD specified when the ciphertext was encrypted.")
+    ] = "cli",
+):
     """Decrypts a string using the same encryption configuration that the API server does."""
     secretservice.setup()
     ciphertext = sys.stdin.read()
