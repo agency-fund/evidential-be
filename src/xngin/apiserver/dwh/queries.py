@@ -1,4 +1,5 @@
 import re
+from collections.abc import Sequence
 from datetime import datetime, timedelta
 
 import sqlalchemy
@@ -9,10 +10,12 @@ from sqlalchemy import (
     Float,
     Integer,
     Label,
+    Select,
     String,
     Table,
     and_,
     cast,
+    distinct,
     func,
     not_,
     or_,
@@ -20,13 +23,18 @@ from sqlalchemy import (
 )
 from sqlalchemy.orm import Session
 
+from xngin.apiserver.dwh.inspection_types import FieldDescriptor
 from xngin.apiserver.exceptions_common import LateValidationError
 from xngin.apiserver.routers.common_api_types import (
     EXPERIMENT_IDS_SUFFIX,
     DesignSpecMetric,
     DesignSpecMetricRequest,
     Filter,
+    FilterClass,
     FilterValueTypes,
+    GetFiltersResponseDiscrete,
+    GetFiltersResponseElement,
+    GetFiltersResponseNumericOrDate,
     MetricType,
     Relation,
 )
@@ -95,6 +103,76 @@ def get_stats_on_metrics(
         )
 
     return metrics_to_return
+
+
+def get_stats_on_filters(
+    session: Session,
+    sa_table: Table,
+    db_schema: dict[str, FieldDescriptor],
+    filter_schema: dict[str, FieldDescriptor],
+) -> list[GetFiltersResponseElement]:
+    """Runs SELECT queries for metrics (min, max, distinct, etc) on filter fields.
+
+    This async method runs the queries against the synchronous Session in a thread.
+
+    Args:
+        session: SQLAlchemy session for customer data warehouse
+        sa_table: SQLAlchemy Table object
+        db_schema: The latest table schema in the database described as FieldDescriptors
+        filter_schema: The latest filter schema in the participant type config described as FieldDescriptors
+
+    Returns:
+        A mapper function that takes (column_name, column_descriptor) and returns GetFiltersResponseElement
+    """
+
+    def query(col_name: str, ptype_fd: FieldDescriptor) -> GetFiltersResponseElement:
+        db_col = db_schema.get(col_name)
+        if not db_col:
+            raise ValueError(f"Column {col_name} not found in schema.")
+
+        filter_class = db_col.data_type.filter_class(col_name)
+
+        # Collect metadata on the values in the database.
+        sa_col = sa_table.columns[col_name]
+        match filter_class:
+            case FilterClass.DISCRETE:
+                stmt: Select = (
+                    sqlalchemy.select(distinct(sa_col))
+                    .where(sa_col.is_not(None))
+                    .limit(1000)
+                    .order_by(sa_col)
+                )
+                result_discrete = session.scalars(stmt)
+                distinct_values = [str(v) for v in result_discrete]
+                return GetFiltersResponseDiscrete(
+                    field_name=col_name,
+                    data_type=db_col.data_type,
+                    relations=filter_class.valid_relations(),
+                    description=ptype_fd.description,
+                    distinct_values=distinct_values,
+                )
+            case FilterClass.NUMERIC:
+                min_, max_ = session.execute(
+                    sqlalchemy.select(
+                        sqlalchemy.func.min(sa_col), sqlalchemy.func.max(sa_col)
+                    ).where(sa_col.is_not(None))
+                ).one()
+                return GetFiltersResponseNumericOrDate(
+                    field_name=col_name,
+                    data_type=db_col.data_type,
+                    relations=filter_class.valid_relations(),
+                    description=ptype_fd.description,
+                    min=min_,
+                    max=max_,
+                )
+            case _:
+                raise RuntimeError("unexpected filter class")
+
+    return [
+        query(col_name, ptype_fd)
+        for col_name, ptype_fd in filter_schema.items()
+        if db_schema.get(col_name)
+    ]
 
 
 def get_participant_metrics(
@@ -176,18 +254,6 @@ def get_participant_metrics(
     return participant_outcomes
 
 
-def query_for_participants(
-    session: Session,
-    sa_table: Table,
-    filters: list[Filter],
-    chosen_n: int,
-):
-    """Samples participants."""
-    filters = create_query_filters(sa_table, filters)
-    query = compose_query(sa_table, chosen_n, filters)
-    return session.execute(query).all()
-
-
 def create_one_filter(filter_: Filter, sa_table: sqlalchemy.Table):
     """Converts a Filter into a SQLAlchemy filter."""
     if isinstance(sa_table.columns[filter_.field_name].type, DateTime):
@@ -238,7 +304,7 @@ def make_csv_regex(values):
 
 
 def general_excludes_filter(
-    col: sqlalchemy.Column, value: list[FilterValueTypes]
+    col: sqlalchemy.Column, value: FilterValueTypes | Sequence[datetime | None]
 ) -> ColumnElement[bool]:
     if None in value:
         non_null_list = [v for v in value if v is not None]
@@ -258,18 +324,22 @@ def general_excludes_filter(
 def create_datetime_filter(col: sqlalchemy.Column, filter_: Filter) -> ColumnOperators:
     """Converts a single Filter for a DateTime-typed column into a sqlalchemy filter."""
 
-    def str_to_datetime(s: int | float | str | None) -> datetime | None:
+    def str_to_datetime(s: int | float | str | datetime | None) -> datetime | None:
         """Convert an ISO8601 string to a timezone-unaware datetime.
 
         LateValidationError is raised if the ISO8601 string specifies a non-UTC timezone.
 
         For maximum compatibility between backends, any microseconds value, if specified, is truncated to zero.
+
+        If `s` is already a datetime, it is returned as-is, but with microseconds set to zero.
         """
         if s is None:
             return None
+        if isinstance(s, datetime):
+            return s.replace(microsecond=0)
         if not isinstance(s, str):
             raise LateValidationError(
-                "{col.name}: datetime-type filter values must be strings containing an ISO8601 formatted date."
+                f"{col.name}: datetime-type filter values must be strings containing an ISO8601 formatted date."
             )
         try:
             parsed = datetime.fromisoformat(s).replace(microsecond=0)
@@ -284,6 +354,11 @@ def create_datetime_filter(col: sqlalchemy.Column, filter_: Filter) -> ColumnOpe
             return parsed.replace(tzinfo=None)
         raise LateValidationError(
             f"{col.name}: datetime-type filter values must be in UTC, or not be tagged with an explicit timezone: {s}"
+        )
+
+    if not isinstance(col.type, DateTime):
+        raise LateValidationError(
+            f"Column {col.name} is not a DateTime type, cannot apply datetime filter."
         )
 
     parsed_values = list(map(str_to_datetime, filter_.value))

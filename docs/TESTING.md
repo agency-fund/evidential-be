@@ -35,7 +35,7 @@ typical table configuration for the participant type data above.
 
 [Various tests](../.github/workflows/test.yaml) are also run as part of our GitHub action test workflow.
 
-[conftest.py](../src/xngin/apiserver/conftest.py) defines fixtures used by many of the tests .
+[conftest.py](../src/xngin/apiserver/conftest.py) defines fixtures used by many of the tests.
 
 ## Google Integration Tests<a name="google-integration-tests"></a>
 
@@ -43,7 +43,7 @@ Some of our pytests have a test marked as 'integration'. These are only usually 
 by setting `GOOGLE_APPLICATION_CREDENTIALS` and running:
 
 ```shell
-pytest -m integration
+uv run pytest -m integration
 ```
 
 ## BigQuery Integration Tests<a name="bigquery-integration-tests"></a>
@@ -98,15 +98,6 @@ uv run xngin-cli create-testing-dwh \
    --password=$PASSWORD \
    --table-name=test_participant_type \
    --schema-name=alt
-```
-
-Now you can edit your `XNGIN_SETTINGS` json to add a ClientConfig that points to your local pg and
-new table.
-
-One way to manually query pg is using the `psql` terminal included with Postgres, e.g.:
-
-```shell
-psql -h localhost -p 5432 -d xngin -U xnginwebserver -c "select count(*) from alt.test_participant_type"
 ```
 
 ### How can I run the unittests against an arbitrary data warehouse?<a name="how-can-i-run-the-unittests-that-use-my-pgbq-instance-as-the-test-dwh"></a>

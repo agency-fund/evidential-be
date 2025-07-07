@@ -20,13 +20,21 @@ env:
   PYTHONUNBUFFERED: "1"
 
 jobs:
-  ruff:
+  linting:
     runs-on: ubuntu-22.04
     timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v4
-      - uses: astral-sh/setup-uv@v4
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup UV
+        uses: astral-sh/setup-uv@v4
         with:
-          version: "0.7.13"
+          version: "0.7.18"
           enable-cache: true
-      - run: uv run ruff check --output-format=github .
+
+      - name: Run ruff
+        run: uv run ruff check --output-format=github .
+
+      - name: Run mypy
+        run: uv run mypy src

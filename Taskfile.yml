@@ -39,15 +39,6 @@ env:
   #GOOGLE_OIDC_CLIENT_ID: "314428509782-j8fgiq5dvoic01432s2bcu3isinc9kam.apps.googleusercontent.com"
   #GOOGLE_OIDC_REDIRECT_URI: "http://localhost:3000/"
 
-  # These are values used in the xngin.railway.settings.json and are present for when testing the Railway configs.
-  # (optional)
-  DWH_PGHOST: "127.0.0.1"
-  DWH_PGPASSWORD: "pgpass"
-  DWH_PGPORT: "5632"
-  DWH_PGUSER: "pguser"
-  CUSTOMER_API_TOKEN: ""
-  CUSTOMER_DWH_PASSWORD: ""
-
   # Configure SQLAlchemy to log the generated SQL statements used on customer DWH via its own logger.
   ECHO_SQL: "false"
 
@@ -69,10 +60,6 @@ env:
 
   # Publish the OpenAPI spec for the admin and OIDC APIs
   XNGIN_PUBLISH_ALL_DOCS: "true"
-
-  # Generally useful settings.
-  XNGIN_SETTINGS: "src/xngin/apiserver/testdata/xngin.testing.settings.json"
-  XNGIN_DEBUG: "true"
 
   # Data warehouse available for use by the local dev environment (see task bootstrap-dwh-database) and also referenced
   # by unit tests via xngin.testing.settings.json. It is bootstrapped with the testing datawarehouse when
@@ -162,12 +149,12 @@ tasks:
     cmds:
       - uv run fastapi dev src/xngin/apiserver/main.py
   start-airplane:
-    desc: "Like start, but runs the backend in airplane mode. All Admin API interactions will be authenticated as testing@agency.fund automatically."
+    desc: "Like start, but runs the backend in airplane mode. All Admin API interactions will be authenticated as testing@example.com automatically."
     interactive: true
     env:
       AIRPLANE_MODE: "true"
     cmds:
-      - task: start
+      - task start
   test:
     desc: "Runs unit tests"
     interactive: true
@@ -183,7 +170,7 @@ tasks:
     env:
       AIRPLANE_MODE: "true"
     cmds:
-      - task: test
+      - task test
   test-integration:
     desc: "Runs Google integration tests. Requires GOOGLE_APPLICATION_CREDENTIALS environment variable to be set."
     interactive: true
