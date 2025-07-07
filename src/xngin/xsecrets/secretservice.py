@@ -63,7 +63,7 @@ def _serialize(backend: str, ciphertext: bytes):
     return f"{SERIALIZED_ENCRYPTED_VALUE_PREFIX}{serialized}"
 
 
-def _deserialize(serialized: str) -> (str, bytes):
+def _deserialize(serialized: str) -> tuple[str, bytes]:
     """Deserializes a string encoded with _serialize into a provider name and ciphertext."""
     prefix = SERIALIZED_ENCRYPTED_VALUE_PREFIX
     if len(serialized) < len(prefix) or not serialized.startswith(prefix):
