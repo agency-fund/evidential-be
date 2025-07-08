@@ -172,5 +172,9 @@ exclude = [
 plugins = ['pydantic.mypy']
 
 [[tool.mypy.overrides]]
-module = ["deepdiff", "parsy", "statsmodels.*", "patsy.*", "sqlalchemy_bigquery.*", "pandas_gbq.*", "tink.*"]
+module = ["deepdiff", "parsy", "statsmodels.*", "patsy.*", "sqlalchemy_bigquery.*", "pandas_gbq.*"]
 ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = ["tink.*"]
+follow_untyped_imports = true

@@ -26,7 +26,7 @@ class LocalProvider(Provider):
         keyset_handle = tink.json_proto_keyset_format.parse(
             key, secret_key_access.TOKEN
         )
-        self.primitive = keyset_handle.primitive(aead.Aead)
+        self.primitive = keyset_handle.primitive(aead.Aead)  # type: ignore[type-abstract]
 
     def name(self) -> str:
         return NAME

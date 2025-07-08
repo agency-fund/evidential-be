@@ -57,7 +57,7 @@ def is_encrypted(value: str) -> bool:
     return value.startswith(SERIALIZED_ENCRYPTED_VALUE_PREFIX)
 
 
-def _serialize(backend: str, ciphertext: bytes):
+def _serialize(backend: str, ciphertext: bytes) -> str:
     """Serializes the encrypted secret as a string."""
     serialized = json.dumps(
         [
@@ -121,7 +121,8 @@ class SecretService:
             return ct
         kms, ciphertext = _deserialize(ct)
         provider = self.registry.get(kms)
-        return (provider.decrypt(ciphertext, aad.encode("utf-8"))).decode("utf-8")
+        decrypted: bytes = provider.decrypt(ciphertext, aad.encode("utf-8"))
+        return decrypted.decode("utf-8")
 
 
 def get_symmetric() -> SecretService:
