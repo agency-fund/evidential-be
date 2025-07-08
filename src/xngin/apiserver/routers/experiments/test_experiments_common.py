@@ -624,7 +624,7 @@ async def test_state_setting_experiment_impl(
 async def test_list_experiments_impl(
     xngin_session,
     testing_datasource,
-    testing_datasource_with_inline_schema,
+    testing_datasource_with_user,
 ):
     """Test that we only get experiments in a valid state for the specified datasource."""
     experiment1_data = make_insertable_experiment(
@@ -641,7 +641,7 @@ async def test_list_experiments_impl(
     )
     # One more experiment associated with a *different* datasource.
     experiment5_data = make_insertable_experiment(
-        testing_datasource_with_inline_schema.ds, ExperimentState.ASSIGNED
+        testing_datasource_with_user.ds, ExperimentState.ASSIGNED
     )
     # Set the created_at time to test ordering
     experiment1_data[0].created_at = datetime.now(UTC) - timedelta(days=1)

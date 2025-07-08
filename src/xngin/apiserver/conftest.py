@@ -371,17 +371,6 @@ async def fixture_testing_sheet_datasource_with_user(
     return metadata
 
 
-@pytest.fixture(name="testing_datasource_with_inline_schema", scope="function")
-async def fixture_testing_datasource_with_inline_schema(
-    xngin_session: AsyncSession,
-) -> DatasourceMetadata:
-    """Adds to db a new Org, Datasource with a participant type's schema inlined, and API key."""
-    return await _make_datasource_metadata(
-        xngin_session,
-        new_name="testing datasource pt inlined",
-    )
-
-
 @pytest.fixture(name="testing_datasource_with_user", scope="function")
 async def fixture_testing_datasource_with_user(
     xngin_session: AsyncSession,

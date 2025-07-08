@@ -135,7 +135,7 @@ def test_get_experiment_assignments_not_found(testing_datasource, client_v1):
 
 
 async def test_get_experiment_assignments_wrong_datasource(
-    xngin_session, testing_datasource, testing_datasource_with_inline_schema, client_v1
+    xngin_session, testing_datasource, testing_datasource_with_user, client_v1
 ):
     """Test getting assignments for an experiment from a different datasource."""
     # Create experiment in one datasource
@@ -146,7 +146,7 @@ async def test_get_experiment_assignments_wrong_datasource(
     # Try to get testing_datasource's experiment from another datasource's key.
     response = client_v1.get(
         f"/experiments/{experiment.id!s}/assignments",
-        headers={constants.HEADER_API_KEY: testing_datasource_with_inline_schema.key},
+        headers={constants.HEADER_API_KEY: testing_datasource_with_user.key},
     )
     assert response.status_code == 404, response.json()
     assert response.json()["detail"] == "Experiment not found or not authorized."

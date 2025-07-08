@@ -92,16 +92,14 @@ SAMPLE_GCLOUD_SERVICE_ACCOUNT_KEY = {
 
 
 @pytest.fixture(name="testing_datasource_with_user_added")
-def fixture_testing_datasource_with_user_added(
-    testing_datasource_with_inline_schema, ppost
-):
+def fixture_testing_datasource_with_user_added(testing_datasource, ppost):
     """Add the privileged user to the test ds's organization so we can access the ds."""
     response = ppost(
-        f"/v1/m/organizations/{testing_datasource_with_inline_schema.org.id}/members",
+        f"/v1/m/organizations/{testing_datasource.org.id}/members",
         json={"email": PRIVILEGED_EMAIL},
     )
     assert response.status_code == 204, response.content
-    return testing_datasource_with_inline_schema
+    return testing_datasource
 
 
 @pytest.fixture(name="testing_experiment")
