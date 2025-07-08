@@ -4,7 +4,7 @@ from xngin.apiserver.settings import ParticipantsDef
 
 TESTING_PARTICIPANT_DEF = ParticipantsDef(
     type="schema",
-    participant_type="users",
+    participant_type="test_participant_type",
     table_name="dwh",
     fields=[
         FieldDescriptor(

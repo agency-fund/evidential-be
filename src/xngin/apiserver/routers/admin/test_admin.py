@@ -72,7 +72,6 @@ from xngin.apiserver.settings import (
     Dsn,
     GcpServiceAccountInfo,
     ParticipantsDef,
-    SheetParticipantsRef,
 )
 from xngin.apiserver.testing.assertions import assert_dates_equal
 from xngin.cli.main import create_testing_dwh
@@ -103,20 +102,6 @@ def fixture_testing_datasource_with_user_added(
     )
     assert response.status_code == 204, response.content
     return testing_datasource_with_inline_schema
-
-
-@pytest.fixture(name="testing_sheet_datasource_with_user_added")
-def fixture_testing_sheet_datasource_with_user_added(testing_datasource, ppost):
-    """
-    Add the privileged user to the test ds's organization so we can access the ds.
-    This uses a sheet participant type; most tests should use testing_datasource_with_user_added.
-    """
-    response = ppost(
-        f"/v1/m/organizations/{testing_datasource.org.id}/members",
-        json={"email": PRIVILEGED_EMAIL},
-    )
-    assert response.status_code == 204, response.content
-    return testing_datasource
 
 
 @pytest.fixture(name="testing_experiment")
@@ -535,14 +520,15 @@ def test_participants_lifecycle(
     """Test getting, creating, listing, updating, and deleting a participant type."""
     ds_id = testing_datasource_with_user.ds.id
 
-    # Get participants (sheet version)
+    # Get participants
     response = pget(
         f"/v1/m/datasources/{ds_id}/participants/test_participant_type",
     )
     assert response.status_code == 200, response.content
-    parsed = SheetParticipantsRef.model_validate(response.json())
+    parsed = ParticipantsDef.model_validate(response.json())
+    assert parsed.type == "schema"
     assert parsed.participant_type == "test_participant_type"
-    assert parsed.sheet.worksheet == "Sheet1"
+    assert parsed.table_name == "dwh"
 
     # Create participant
     response = ppost(
@@ -846,15 +832,14 @@ async def test_lifecycle_with_db(testing_datasource, ppost, pget, pdelete):
 
 
 def test_create_experiment_with_assignment_validation_errors(
-    testing_datasource_with_user_added, testing_sheet_datasource_with_user_added, ppost
+    testing_datasource_with_user_added, testing_sheet_datasource_with_user, ppost
 ):
     """Test LateValidationError cases in create_experiment_with_assignment."""
-    testing_datasource = testing_datasource_with_user_added
-
     # Create a basic experiment request
     # Test 1: IDs present in design spec trigger LateValidationError
     base_request = make_create_preassigned_experiment_request(with_ids=True)
     base_request.design_spec.experiment_id = "123e4567-e89b-12d3-a456-426614174000"
+    testing_datasource = testing_datasource_with_user_added
     response = ppost(
         f"/v1/m/datasources/{testing_datasource.ds.id}/experiments",
         params={"chosen_n": 100},
@@ -864,10 +849,10 @@ def test_create_experiment_with_assignment_validation_errors(
     assert "UUIDs must not be set" in response.json()["message"]
 
     # Test 2: Invalid participants config (sheet instead of schema)
-    # This datasource is loaded with a "remote" config from xngin.testing.settings.json, but
-    # the associated participants config is of type "sheet".
+    # This datasource is a "remote" config, but the participants is of type "sheet".
+    testing_datasource = testing_sheet_datasource_with_user
     response = ppost(
-        f"/v1/m/datasources/{testing_sheet_datasource_with_user_added.ds.id}/experiments",
+        f"/v1/m/datasources/{testing_datasource.ds.id}/experiments",
         params={"chosen_n": 100},
         content=make_create_preassigned_experiment_request().model_dump_json(),
     )
