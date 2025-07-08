@@ -14,8 +14,8 @@ from pydantic import TypeAdapter
 import xngin.apiserver.routers.common_api_types as capi
 from xngin.apiserver.models import tables
 from xngin.apiserver.models.enums import (
+    AssignmentType,
     ExperimentState,
-    ExperimentType,
     StopAssignmentReason,
 )
 from xngin.apiserver.models.storage_types import (
@@ -223,7 +223,7 @@ class ExperimentStorageConverter:
         cls,
         datasource_id: str,
         organization_id: str,
-        experiment_type: ExperimentType,
+        experiment_type: AssignmentType,
         design_spec: sapi.DesignSpec,
         state: ExperimentState = ExperimentState.ASSIGNED,
         stopped_assignments_at: datetime | None = None,

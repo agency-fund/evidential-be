@@ -25,9 +25,9 @@ from xngin.apiserver.limits import (
     MAX_NUMBER_OF_FILTERS,
 )
 from xngin.apiserver.models.enums import (
+    AssignmentType,
     DataType,
     ExperimentState,
-    ExperimentType,
     MetricPowerAnalysisMessageType,
     MetricType,
     Relation,
@@ -534,7 +534,7 @@ class BaseDesignSpec(ApiBaseModel):
     @classmethod
     def validate_experiment_type(cls, v):
         """Validate that the experiment type is one of the supported ExperimentTypes."""
-        if v not in get_args(ExperimentType):
+        if v not in get_args(AssignmentType):
             raise ValueError(f"Invalid experiment type: {v}")
         return v
 
