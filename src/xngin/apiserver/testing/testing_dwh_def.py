@@ -1,5 +1,5 @@
 from xngin.apiserver.dwh.inspection_types import FieldDescriptor
-from xngin.apiserver.routers.common_api_types import DataType
+from xngin.apiserver.models.enums import DataType
 from xngin.apiserver.settings import ParticipantsDef
 
 TESTING_PARTICIPANT_DEF = ParticipantsDef(

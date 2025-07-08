@@ -1,7 +1,8 @@
 import pytest
 from pydantic import ValidationError
 
-from xngin.apiserver.routers.common_api_types import Filter, Relation
+from xngin.apiserver.models.enums import Relation
+from xngin.apiserver.routers.common_api_types import Filter
 
 VALID_COLUMN_NAMES = [
     "column_name",

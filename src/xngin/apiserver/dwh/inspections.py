@@ -3,11 +3,11 @@
 import sqlalchemy
 
 from xngin.apiserver.dwh.inspection_types import FieldDescriptor, ParticipantsSchema
+from xngin.apiserver.models.enums import DataType
 from xngin.apiserver.routers.admin.admin_api_types import (
     FieldMetadata,
     InspectDatasourceTableResponse,
 )
-from xngin.apiserver.routers.common_api_types import DataType
 
 
 def create_schema_from_table(table: sqlalchemy.Table, unique_id_col: str | None = None):

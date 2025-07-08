@@ -8,7 +8,7 @@ from xngin.apiserver.dwh.inspections import (
     create_schema_from_table,
     generate_field_descriptors,
 )
-from xngin.apiserver.routers.common_api_types import DataType
+from xngin.apiserver.models.enums import DataType
 
 
 def test_create_schema_from_table_success():
