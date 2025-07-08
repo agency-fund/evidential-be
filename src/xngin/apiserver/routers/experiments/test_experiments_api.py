@@ -3,7 +3,7 @@ from datetime import UTC, datetime, timedelta
 from deepdiff import DeepDiff
 from sqlalchemy import select
 
-from xngin.apiserver import conftest, constants
+from xngin.apiserver import constants
 from xngin.apiserver.models import tables
 from xngin.apiserver.models.enums import ExperimentState, StopAssignmentReason
 from xngin.apiserver.models.storage_format_converters import ExperimentStorageConverter
@@ -34,21 +34,17 @@ def test_create_experiment_impl_invalid_design_spec(client_v1):
 
 
 async def test_create_experiment_with_assignment_sl(
-    xngin_session, use_deterministic_random, client_v1
+    testing_datasource, use_deterministic_random, client_v1
 ):
     """Test creating an experiment and saving assignments to the database."""
-    # First create a datasource to maintain proper referential integrity, but with a local config so we know we can read our dwh data.
-    ds_metadata = await conftest.make_datasource_metadata(
-        xngin_session, datasource_id="testing"
-    )
     request = make_create_preassigned_experiment_request()
 
     response = client_v1.post(
         "/experiments/with-assignment",
         params={"chosen_n": 100},
         headers={
-            constants.HEADER_CONFIG_ID: ds_metadata.ds.id,
-            constants.HEADER_API_KEY: ds_metadata.key,
+            constants.HEADER_CONFIG_ID: testing_datasource.ds.id,
+            constants.HEADER_API_KEY: testing_datasource.key,
         },
         content=request.model_dump_json(),
     )
@@ -59,7 +55,7 @@ async def test_create_experiment_with_assignment_sl(
     assert experiment_config.design_spec.experiment_id is not None
     assert experiment_config.design_spec.arms[0].arm_id is not None
     assert experiment_config.design_spec.arms[1].arm_id is not None
-    assert experiment_config.datasource_id == ds_metadata.ds.id
+    assert experiment_config.datasource_id == testing_datasource.ds.id
     assert experiment_config.state == ExperimentState.ASSIGNED
 
 
@@ -139,20 +135,18 @@ def test_get_experiment_assignments_not_found(testing_datasource, client_v1):
 
 
 async def test_get_experiment_assignments_wrong_datasource(
-    xngin_session, testing_datasource, client_v1
+    xngin_session, testing_datasource, testing_datasource_with_inline_schema, client_v1
 ):
     """Test getting assignments for an experiment from a different datasource."""
     # Create experiment in one datasource
     experiment = await insert_experiment_and_arms(
         xngin_session, testing_datasource.ds, state=ExperimentState.COMMITTED
     )
-    # Make a *different* datasource and API key to query with
-    metadata = await conftest.make_datasource_metadata(xngin_session, name="wrong ds")
 
     # Try to get testing_datasource's experiment from another datasource's key.
     response = client_v1.get(
         f"/experiments/{experiment.id!s}/assignments",
-        headers={constants.HEADER_API_KEY: metadata.key},
+        headers={constants.HEADER_API_KEY: testing_datasource_with_inline_schema.key},
     )
     assert response.status_code == 404, response.json()
     assert response.json()["detail"] == "Experiment not found or not authorized."

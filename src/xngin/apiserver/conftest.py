@@ -320,16 +320,36 @@ class DatasourceMetadata:
 
 @pytest.fixture(name="testing_datasource", scope="function")
 async def fixture_testing_datasource(xngin_session: AsyncSession) -> DatasourceMetadata:
-    """Generates a new Organization, Datasource, and API key for a test."""
-    return await make_datasource_metadata(xngin_session)
+    """Adds to db a new Organization, Datasource, and API key."""
+    return await _make_datasource_metadata(
+        xngin_session,
+        copy_settings_datasource_id="testing",
+        new_name="testing datasource",
+    )
+
+
+@pytest.fixture(name="testing_datasource_with_inline_schema", scope="function")
+async def fixture_testing_datasource_with_inline_schema(
+    xngin_session: AsyncSession,
+) -> DatasourceMetadata:
+    """Adds to db a new Org, Datasource with a participant type's schema inlined, and API key."""
+    return await _make_datasource_metadata(
+        xngin_session,
+        copy_settings_datasource_id="testing-inline-schema",
+        new_name="testing datasource pt inlined",
+    )
 
 
 @pytest.fixture(name="testing_datasource_with_user", scope="function")
-async def fixture_testing_datasource_with_user(xngin_session) -> DatasourceMetadata:
-    """
-    Generates a new Organization, Datasource, and API key. Adds the PRIVILEGED_EMAIL user to the org.
-    """
-    metadata = await make_datasource_metadata(xngin_session)
+async def fixture_testing_datasource_with_user(
+    xngin_session: AsyncSession,
+) -> DatasourceMetadata:
+    """Adds to db a new Org w/ PRIVILEGED_EMAIL user, Datasource, and API key."""
+    metadata = await _make_datasource_metadata(
+        xngin_session,
+        copy_settings_datasource_id="testing",
+        new_name="testing datasource with user",
+    )
     user = (
         await xngin_session.execute(
             select(tables.User)
@@ -342,46 +362,48 @@ async def fixture_testing_datasource_with_user(xngin_session) -> DatasourceMetad
     return metadata
 
 
-# TODO: The arguments on this method aren't used consistently; replace this with a fixture.
-async def make_datasource_metadata(
+async def _make_datasource_metadata(
     xngin_session: AsyncSession,
     *,
-    datasource_id: str | None = None,
-    name="test ds",
-    datasource_id_for_config="testing",
+    copy_settings_datasource_id: str,
+    new_name: str,
+    new_datasource_id: str | None = None,
     participants_def_list: list[ParticipantsDef] | None = None,
 ) -> DatasourceMetadata:
     """Generates a new Organization, Datasource, and API key in the database for testing.
 
     Args:
     db_session - the database session to use for adding our objects to the database.
-    datasource_id - the unique ID of the datasource. If not provided, it will be randomly generated.
-    name - the friendly name of the datasource.
-    datasource_id_for_config - the unique ID of the datasource **from our test settings json**
-        to use for the DatasourceConfig.
-    participants_def_list - set to override the top-level datasource_id_for_config's `participants`
-        list of participant types, to allow for testing with simulated inline schemas.
+    copy_settings_datasource_id - unique ID of the datasource **from our test settings json** to use
+        as the template DatasourceConfig for the new datasource.
+    new_name - the friendly name of the datasource.
+    new_datasource_id - unique ID of the datasource. If not provided, it will be randomly generated.
+    participants_def_list - override the top-level copy_settings_datasource_id's `participants` list
+        of participant types with this to allow testing of simulated inline schemas.
     """
     run_id = secrets.token_hex(8)
-    datasource_id = datasource_id or "ds" + run_id
-
-    # We derive a new test datasource from the standard static "testing" datasource by
-    # randomizing its unique ID and marking it as requiring an API key.
-    test_ds = get_settings_datasource(datasource_id_for_config).config
-    if participants_def_list:
-        test_ds.participants = participants_def_list
 
     org = tables.Organization(id="org" + run_id, name="test organization")
-    datasource = tables.Datasource(id=datasource_id, name=name)
+
+    # Now make a new test datasource attached to the org from an existing *static* test datasource
+    # by randomizing its unique ID.
+    new_datasource_id = new_datasource_id or "ds" + run_id
+    datasource = tables.Datasource(id=new_datasource_id, name=new_name)
+    test_ds = get_settings_datasource(copy_settings_datasource_id).config
+    # optionally override the ParticipantsConfig list
+    if participants_def_list:
+        test_ds.participants = participants_def_list
     datasource.set_config(test_ds)
     datasource.organization = org
 
+    # Make this ds also accessible via an API key.
     key_id, key = make_key()
     kt = tables.ApiKey(id=key_id, key=hash_key_or_raise(key))
     kt.datasource = datasource
 
     xngin_session.add_all([org, datasource, kt])
     await xngin_session.commit()
+
     return DatasourceMetadata(
         ds=datasource,
         dsn=datasource.get_config().to_sqlalchemy_url().render_as_string(False),

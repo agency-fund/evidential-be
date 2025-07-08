@@ -8,7 +8,7 @@ from pydantic import SecretStr
 from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from xngin.apiserver import conftest, flags
+from xngin.apiserver import flags
 from xngin.apiserver.conftest import delete_seeded_users
 from xngin.apiserver.dns import safe_resolve
 from xngin.apiserver.dwh.dwh_session import DwhSession
@@ -90,21 +90,6 @@ SAMPLE_GCLOUD_SERVICE_ACCOUNT_KEY = {
     "type": "service_account",
     "universe_domain": "googleapis.com",
 }
-
-
-@pytest.fixture(name="testing_datasource_with_inline_schema")
-async def fixture_testing_datasource_with_inline_schema(xngin_session: AsyncSession):
-    """Create a fake remote datasource using an inline schema for the participants config."""
-    # First create a datasource to maintain proper referential integrity, but with a local config
-    # so we know we can read our dwh data. Also populate with an inline schema to test admin.
-    ds_with_inlined_shema = conftest.get_settings_datasource(
-        "testing-inline-schema"
-    ).config
-    return await conftest.make_datasource_metadata(
-        xngin_session,
-        datasource_id_for_config="testing",
-        participants_def_list=[ds_with_inlined_shema.participants[0]],
-    )
 
 
 @pytest.fixture(name="testing_datasource_with_user_added")
