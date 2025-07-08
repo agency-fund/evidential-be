@@ -348,7 +348,7 @@ async def make_datasource_metadata(
     *,
     datasource_id: str | None = None,
     name="test ds",
-    datasource_id_for_config="testing-remote",
+    datasource_id_for_config="testing",
     participants_def_list: list[ParticipantsDef] | None = None,
 ) -> DatasourceMetadata:
     """Generates a new Organization, Datasource, and API key in the database for testing.
@@ -365,7 +365,7 @@ async def make_datasource_metadata(
     run_id = secrets.token_hex(8)
     datasource_id = datasource_id or "ds" + run_id
 
-    # We derive a new test datasource from the standard static "testing-remote" datasource by
+    # We derive a new test datasource from the standard static "testing" datasource by
     # randomizing its unique ID and marking it as requiring an API key.
     test_ds = get_settings_datasource(datasource_id_for_config).config
     if participants_def_list:
