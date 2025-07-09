@@ -69,11 +69,12 @@ jobs:
           openssl sha256 ~/.config/gspread/service_account.json
         env:
           GCLOUD_SERVICE_ACCOUNT_CREDENTIALS: ${{ secrets.GOOGLE_APPLICATION_CREDENTIALS_CONTENT }}
-          GSHEET_TEST_URL: ${{ secrets.GSHEET_TEST_URL }}
       - run: task test
         env:
           DATABASE_URL: "postgresql+psycopg://postgres:postgres@localhost:5499/test_xngin?sslmode=disable"
       - name: integration tests
+        env:
+          GSHEET_TEST_URL: ${{ secrets.GSHEET_TEST_URL }}
         run: |
           export GOOGLE_APPLICATION_CREDENTIALS=$HOME/.config/gspread/service_account.json
           task test-integration
