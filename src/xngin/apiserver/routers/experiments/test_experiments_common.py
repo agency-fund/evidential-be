@@ -63,6 +63,7 @@ def make_createexperimentrequest_json(
             "experiment_name": "test",
             "description": "test",
             "assignment_type": assignment_type,
+            "experiment_type": "freq_ab",
             # Attach UTC tz, but use dates_equal() to compare to respect db storage support
             "start_date": "2024-01-01T00:00:00+00:00",
             # default our experiment to end in the future

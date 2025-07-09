@@ -17,13 +17,13 @@ from xngin.apiserver.models.enums import (
     ExperimentState,
     StopAssignmentReason,
 )
-from xngin.apiserver.routers.common_enums import AssignmentType
 from xngin.apiserver.models.storage_types import (
     DesignSpecFields,
     StorageFilter,
     StorageMetric,
     StorageStratum,
 )
+from xngin.apiserver.routers.common_enums import AssignmentType
 from xngin.apiserver.routers.stateless import stateless_api_types as sapi
 
 
@@ -132,6 +132,7 @@ class ExperimentStorageConverter:
             "participant_type": self.experiment.participant_type,
             "experiment_id": self.experiment.id,
             "assignment_type": self.experiment.assignment_type,
+            "experiment_type": "freq_ab",
             "experiment_name": self.experiment.name,
             "description": self.experiment.description,
             "start_date": self.experiment.start_date,

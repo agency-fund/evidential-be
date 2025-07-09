@@ -37,7 +37,6 @@ from xngin.apiserver.routers.common_enums import (
     ArmPriors,
     AssignmentType,
     ContextType,
-    ContextLinkFunctions,
     ExperimentsType,
     MetricPowerAnalysisMessageType,
     MetricType,
@@ -1028,11 +1027,18 @@ def experiment_request_discriminator(value: dict[str, Any]) -> str:
     """Discriminator function for CreateExperimentRequest."""
 
     if isinstance(value, dict):
-        experiment_type = value.get("design_spec", {}).get("experiment_type")
+        try:
+            experiment_type = value["design_spec"].experiment_type
+        except AttributeError:
+            experiment_type = value.get("experiment_type")
 
     if experiment_type == ExperimentsType.FREQ_AB:
         return "frequentist"
-    return "bandit"
+    if experiment_type in ExperimentsType:
+        return "bandit"
+    raise ValueError(
+        f"Unknown experiment type: {experiment_type}. Expected one of {ExperimentsType}."
+    )
 
 
 class CreateExperimentRequest(RootModel):

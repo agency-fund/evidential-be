@@ -9,6 +9,7 @@ from fastapi import (
     APIRouter,
     Depends,
     FastAPI,
+    HTTPException,
     Query,
     status,
 )
