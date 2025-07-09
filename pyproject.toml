@@ -3,8 +3,7 @@ name = "xngin"
 version = "0.0.1"
 dependencies = [
     "atlas-provider-sqlalchemy>=0.2.4,<3",
-    "boto3>=1.35",
-    "cachetools>=5.5.2",
+    "boto3>=1.35,<1.36",
     "deepdiff>=8.5,<9",
     "dnspython>=2.7.0",
     "email-validator>=2.2.0",
@@ -28,7 +27,6 @@ dependencies = [
     "statsmodels>=0.14.1,<0.20",
     "stochatreat>=0.0.20,<0.1.0",
     "tenacity>=9.1.2,<9.2.0",
-    "tink[gcpkms,awskms]>=1.12.0",
     "typer>=0.15.4,<0.16.0",
     "uvicorn[standard]>=0.32.0",
     "zstandard>=0.23.0,<0.24",
@@ -148,7 +146,6 @@ dev-dependencies = [
     "pynvim>=0.4.0,<0.5.0",
     "types-python-jose>=3.5.0.20250531",
     "boto3-stubs>=1.39.1",
-    "types-cachetools>=6.0.0.20250525",
 ]
 environments = [
     "sys_platform == 'darwin'",
@@ -174,7 +171,3 @@ plugins = ['pydantic.mypy']
 [[tool.mypy.overrides]]
 module = ["deepdiff", "parsy", "statsmodels.*", "patsy.*", "sqlalchemy_bigquery.*", "pandas_gbq.*"]
 ignore_missing_imports = true
-
-[[tool.mypy.overrides]]
-module = ["tink.*"]
-follow_untyped_imports = true

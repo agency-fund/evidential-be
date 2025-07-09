@@ -21,7 +21,6 @@ from xngin.apiserver.routers.experiments import experiments_api
 from xngin.apiserver.routers.proxy_mgmt import proxy_mgmt_api
 from xngin.apiserver.routers.stateless import stateless_api
 from xngin.apiserver.settings import get_settings_for_server
-from xngin.xsecrets import secretservice
 
 if sentry_dsn := os.environ.get("SENTRY_DSN"):
     import sentry_sdk
@@ -71,7 +70,6 @@ app = FastAPI(lifespan=lifespan)
 exceptionhandlers.setup(app)
 middleware.setup(app)
 customlogging.setup()
-secretservice.setup()
 
 app.include_router(experiments_api.router, tags=["Experiment Integration"])
 
