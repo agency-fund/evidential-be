@@ -54,7 +54,7 @@ async def test_datasource_dependency_falls_back_to_xngin_db(
     participants_cfg_sheet, schema_sheet = await get_participants_config_and_schema(
         commons=CommonQueryParams("test_participant_type"),
         datasource_config=conftest.get_settings_for_test()
-        .get_datasource("testing-remote")
+        .get_datasource("testing")
         .config,
         gsheets=local_cache,
     )
