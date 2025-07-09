@@ -8,7 +8,7 @@ from xngin.apiserver.settings import (
 
 def test_get_settings_for_test():
     settings = conftest.get_settings_for_test()
-    assert settings.get_datasource("customer-test").config.dwh.user == "user"
+    assert settings.get_datasource("test-webhook-config").config.dwh.user == "user"
 
 
 def test_root_get_api(client):

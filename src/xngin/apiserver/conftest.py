@@ -22,7 +22,7 @@ from sqlalchemy.orm import selectinload
 from sqlalchemy_bigquery import dialect as bigquery_dialect
 from starlette.testclient import TestClient
 
-from xngin.apiserver import constants, database
+from xngin.apiserver import constants, database, flags
 from xngin.apiserver.apikeys import hash_key_or_raise, make_key
 from xngin.apiserver.dependencies import (
     random_seed_dependency,
@@ -38,8 +38,17 @@ from xngin.apiserver.routers.auth.auth_dependencies import (
     UNPRIVILEGED_EMAIL,
     UNPRIVILEGED_TOKEN_FOR_TESTING,
 )
-from xngin.apiserver.settings import ParticipantsDef, SettingsForTesting, XnginSettings
+from xngin.apiserver.settings import (
+    Dsn,
+    ParticipantsConfig,
+    RemoteDatabaseConfig,
+    SettingsForTesting,
+    SheetParticipantsRef,
+    SheetRef,
+    XnginSettings,
+)
 from xngin.apiserver.testing.pg_helpers import create_database_if_not_exists_pg
+from xngin.apiserver.testing.testing_dwh_def import TESTING_PARTICIPANT_DEF
 from xngin.db_extensions import custom_functions
 
 # SQLAlchemy's logger will append this to the name of its loggers used for the application database; e.g.
@@ -320,16 +329,36 @@ class DatasourceMetadata:
 
 @pytest.fixture(name="testing_datasource", scope="function")
 async def fixture_testing_datasource(xngin_session: AsyncSession) -> DatasourceMetadata:
-    """Generates a new Organization, Datasource, and API key for a test."""
-    return await make_datasource_metadata(xngin_session)
+    """Adds to db a new Organization, Datasource, and API key."""
+    return await _make_datasource_metadata(
+        xngin_session,
+        new_name="testing datasource",
+    )
 
 
-@pytest.fixture(name="testing_datasource_with_user", scope="function")
-async def fixture_testing_datasource_with_user(xngin_session) -> DatasourceMetadata:
+@pytest.fixture(name="testing_sheet_datasource_with_user", scope="function")
+async def fixture_testing_sheet_datasource_with_user(
+    xngin_session: AsyncSession,
+) -> DatasourceMetadata:
+    """Adds to db a new Org, Datasource with a sheet participant type, and API key.
+
+    This fixture is DEPRECATED.
     """
-    Generates a new Organization, Datasource, and API key. Adds the PRIVILEGED_EMAIL user to the org.
-    """
-    metadata = await make_datasource_metadata(xngin_session)
+    metadata = await _make_datasource_metadata(
+        xngin_session,
+        new_name="testing datasource pt sheet",
+        participants_def_list=[
+            SheetParticipantsRef(
+                type="sheet",
+                participant_type="test_participant_type",
+                table_name="dwh",
+                sheet=SheetRef(
+                    url="https://docs.google.com/spreadsheets/example",
+                    worksheet="Sheet1",
+                ),
+            )
+        ],
+    )
     user = (
         await xngin_session.execute(
             select(tables.User)
@@ -342,46 +371,66 @@ async def fixture_testing_datasource_with_user(xngin_session) -> DatasourceMetad
     return metadata
 
 
-# TODO: The arguments on this method aren't used consistently; replace this with a fixture.
-async def make_datasource_metadata(
+@pytest.fixture(name="testing_datasource_with_user", scope="function")
+async def fixture_testing_datasource_with_user(
+    xngin_session: AsyncSession,
+) -> DatasourceMetadata:
+    """Adds to db a new Org w/ PRIVILEGED_EMAIL user, Datasource, and API key."""
+    metadata = await _make_datasource_metadata(
+        xngin_session,
+        new_name="testing datasource with user",
+    )
+    user = (
+        await xngin_session.execute(
+            select(tables.User)
+            .options(selectinload(tables.User.organizations))
+            .where(tables.User.email == PRIVILEGED_EMAIL)
+        )
+    ).scalar_one()
+    user.organizations.append(metadata.org)
+    await xngin_session.commit()
+    return metadata
+
+
+async def _make_datasource_metadata(
     xngin_session: AsyncSession,
     *,
-    datasource_id: str | None = None,
-    name="test ds",
-    datasource_id_for_config="testing-remote",
-    participants_def_list: list[ParticipantsDef] | None = None,
+    new_name: str,
+    new_datasource_id: str | None = None,
+    participants_def_list: list[ParticipantsConfig] | None = None,
 ) -> DatasourceMetadata:
     """Generates a new Organization, Datasource, and API key in the database for testing.
 
     Args:
     db_session - the database session to use for adding our objects to the database.
-    datasource_id - the unique ID of the datasource. If not provided, it will be randomly generated.
-    name - the friendly name of the datasource.
-    datasource_id_for_config - the unique ID of the datasource **from our test settings json**
-        to use for the DatasourceConfig.
-    participants_def_list - set to override the top-level datasource_id_for_config's `participants`
-        list of participant types, to allow for testing with simulated inline schemas.
+    new_name - the friendly name of the datasource.
+    new_datasource_id - unique ID of the datasource. If not provided, it will be randomly generated.
+    participants_def_list - Allows overriding the new ds's `participants` list of participant types.
     """
     run_id = secrets.token_hex(8)
-    datasource_id = datasource_id or "ds" + run_id
-
-    # We derive a new test datasource from the standard static "testing-remote" datasource by
-    # randomizing its unique ID and marking it as requiring an API key.
-    test_ds = get_settings_datasource(datasource_id_for_config).config
-    if participants_def_list:
-        test_ds.participants = participants_def_list
 
     org = tables.Organization(id="org" + run_id, name="test organization")
-    datasource = tables.Datasource(id=datasource_id, name=name)
-    datasource.set_config(test_ds)
-    datasource.organization = org
 
+    # Now make a new test datasource attached to the org. Use a random ID if none is specified.
+    new_datasource_id = new_datasource_id or "ds" + run_id
+    datasource = tables.Datasource(id=new_datasource_id, name=new_name)
+    datasource.organization = org
+    # Initialize our ds config to point to our testing dwh.
+    test_dwh_dsn = Dsn.from_url(flags.XNGIN_DEVDWH_DSN)
+    # If no override is provided, use the default testing participant type.
+    pt_list = participants_def_list or [TESTING_PARTICIPANT_DEF]
+    datasource.set_config(
+        RemoteDatabaseConfig(type="remote", participants=pt_list, dwh=test_dwh_dsn)
+    )
+
+    # Make this ds also accessible via an API key.
     key_id, key = make_key()
     kt = tables.ApiKey(id=key_id, key=hash_key_or_raise(key))
     kt.datasource = datasource
 
     xngin_session.add_all([org, datasource, kt])
     await xngin_session.commit()
+
     return DatasourceMetadata(
         ds=datasource,
         dsn=datasource.get_config().to_sqlalchemy_url().render_as_string(False),

@@ -53,6 +53,8 @@ jobs:
     runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@v4
+        with:
+          lfs: true
       - uses: astral-sh/setup-uv@v4
         with:
           version: "0.7.18"
@@ -92,6 +94,8 @@ jobs:
           - 5499:5432
     steps:
       - uses: actions/checkout@v4
+        with:
+          lfs: true
       - uses: astral-sh/setup-uv@v4
         with:
           version: "0.7.18"
@@ -173,6 +177,8 @@ jobs:
           - 5499:5432
     steps:
       - uses: actions/checkout@v4
+        with:
+          lfs: true
       - uses: astral-sh/setup-uv@v4
         with:
           version: "0.7.18"
@@ -232,6 +238,8 @@ jobs:
           - 5499:5432
     steps:
       - uses: actions/checkout@v4
+        with:
+          lfs: true
       - uses: astral-sh/setup-uv@v4
         with:
           version: "0.7.18"

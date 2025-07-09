@@ -8,7 +8,7 @@ from pydantic import SecretStr
 from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from xngin.apiserver import conftest, flags
+from xngin.apiserver import flags
 from xngin.apiserver.conftest import delete_seeded_users
 from xngin.apiserver.dns import safe_resolve
 from xngin.apiserver.dwh.dwh_session import DwhSession
@@ -72,7 +72,6 @@ from xngin.apiserver.settings import (
     Dsn,
     GcpServiceAccountInfo,
     ParticipantsDef,
-    SheetParticipantsRef,
 )
 from xngin.apiserver.testing.assertions import assert_dates_equal
 from xngin.cli.main import create_testing_dwh
@@ -92,54 +91,12 @@ SAMPLE_GCLOUD_SERVICE_ACCOUNT_KEY = {
 }
 
 
-@pytest.fixture(name="testing_datasource_with_inline_schema")
-async def fixture_testing_datasource_with_inline_schema(xngin_session: AsyncSession):
-    """Create a fake remote datasource using an inline schema for the participants config."""
-    # First create a datasource to maintain proper referential integrity, but with a local config
-    # so we know we can read our dwh data. Also populate with an inline schema to test admin.
-    ds_with_inlined_shema = conftest.get_settings_datasource(
-        "testing-inline-schema"
-    ).config
-    return await conftest.make_datasource_metadata(
-        xngin_session,
-        datasource_id_for_config="testing",
-        participants_def_list=[ds_with_inlined_shema.participants[0]],
-    )
-
-
-@pytest.fixture(name="testing_datasource_with_user_added")
-def fixture_testing_datasource_with_user_added(
-    testing_datasource_with_inline_schema, ppost
-):
-    """Add the privileged user to the test ds's organization so we can access the ds."""
-    response = ppost(
-        f"/v1/m/organizations/{testing_datasource_with_inline_schema.org.id}/members",
-        json={"email": PRIVILEGED_EMAIL},
-    )
-    assert response.status_code == 204, response.content
-    return testing_datasource_with_inline_schema
-
-
-@pytest.fixture(name="testing_sheet_datasource_with_user_added")
-def fixture_testing_sheet_datasource_with_user_added(testing_datasource, ppost):
-    """
-    Add the privileged user to the test ds's organization so we can access the ds.
-    This uses a sheet participant type; most tests should use testing_datasource_with_user_added.
-    """
-    response = ppost(
-        f"/v1/m/organizations/{testing_datasource.org.id}/members",
-        json={"email": PRIVILEGED_EMAIL},
-    )
-    assert response.status_code == 204, response.content
-    return testing_datasource
-
-
 @pytest.fixture(name="testing_experiment")
 async def fixture_testing_experiment(
-    xngin_session: AsyncSession, testing_datasource_with_user_added
+    xngin_session: AsyncSession, testing_datasource_with_user
 ):
     """Create an experiment on a test inline schema datasource with proper user permissions."""
-    datasource = testing_datasource_with_user_added.ds
+    datasource = testing_datasource_with_user.ds
     experiment = await insert_experiment_and_arms(
         xngin_session, datasource, "preassigned"
     )
@@ -550,14 +507,15 @@ def test_participants_lifecycle(
     """Test getting, creating, listing, updating, and deleting a participant type."""
     ds_id = testing_datasource_with_user.ds.id
 
-    # Get participants (sheet version)
+    # Get participants
     response = pget(
         f"/v1/m/datasources/{ds_id}/participants/test_participant_type",
     )
     assert response.status_code == 200, response.content
-    parsed = SheetParticipantsRef.model_validate(response.json())
+    parsed = ParticipantsDef.model_validate(response.json())
+    assert parsed.type == "schema"
     assert parsed.participant_type == "test_participant_type"
-    assert parsed.sheet.worksheet == "Sheet1"
+    assert parsed.table_name == "dwh"
 
     # Create participant
     response = ppost(
@@ -861,15 +819,14 @@ async def test_lifecycle_with_db(testing_datasource, ppost, pget, pdelete):
 
 
 def test_create_experiment_with_assignment_validation_errors(
-    testing_datasource_with_user_added, testing_sheet_datasource_with_user_added, ppost
+    testing_datasource_with_user, testing_sheet_datasource_with_user, ppost
 ):
     """Test LateValidationError cases in create_experiment_with_assignment."""
-    testing_datasource = testing_datasource_with_user_added
-
     # Create a basic experiment request
     # Test 1: IDs present in design spec trigger LateValidationError
     base_request = make_create_preassigned_experiment_request(with_ids=True)
     base_request.design_spec.experiment_id = "123e4567-e89b-12d3-a456-426614174000"
+    testing_datasource = testing_datasource_with_user
     response = ppost(
         f"/v1/m/datasources/{testing_datasource.ds.id}/experiments",
         params={"chosen_n": 100},
@@ -879,10 +836,10 @@ def test_create_experiment_with_assignment_validation_errors(
     assert "UUIDs must not be set" in response.json()["message"]
 
     # Test 2: Invalid participants config (sheet instead of schema)
-    # This datasource is loaded with a "remote" config from xngin.testing.settings.json, but
-    # the associated participants config is of type "sheet".
+    # This datasource is a "remote" config, but the participants is of type "sheet".
+    testing_datasource = testing_sheet_datasource_with_user
     response = ppost(
-        f"/v1/m/datasources/{testing_sheet_datasource_with_user_added.ds.id}/experiments",
+        f"/v1/m/datasources/{testing_datasource.ds.id}/experiments",
         params={"chosen_n": 100},
         content=make_create_preassigned_experiment_request().model_dump_json(),
     )
@@ -892,11 +849,11 @@ def test_create_experiment_with_assignment_validation_errors(
 
 async def test_create_preassigned_experiment_using_inline_schema_ds(
     xngin_session: AsyncSession,
-    testing_datasource_with_user_added,
+    testing_datasource_with_user,
     use_deterministic_random,
     ppost,
 ):
-    datasource_id = testing_datasource_with_user_added.ds.id
+    datasource_id = testing_datasource_with_user.ds.id
     request_obj = make_create_preassigned_experiment_request()
 
     response = ppost(
@@ -979,9 +936,9 @@ async def test_create_preassigned_experiment_using_inline_schema_ds(
 
 
 def test_create_online_experiment_using_inline_schema_ds(
-    testing_datasource_with_user_added, use_deterministic_random, ppost
+    testing_datasource_with_user, use_deterministic_random, ppost
 ):
-    datasource_id = testing_datasource_with_user_added.ds.id
+    datasource_id = testing_datasource_with_user.ds.id
     request_obj = make_create_online_experiment_request()
 
     response = ppost(
@@ -1049,10 +1006,10 @@ def test_get_experiment_assignment_for_preassigned_participant(
 
 
 async def test_get_experiment_assignment_for_online_participant(
-    xngin_session: AsyncSession, testing_datasource_with_user_added, pget
+    xngin_session: AsyncSession, testing_datasource_with_user, pget
 ):
     test_experiment = await insert_experiment_and_arms(
-        xngin_session, testing_datasource_with_user_added.ds, "online"
+        xngin_session, testing_datasource_with_user.ds, "online"
     )
     datasource_id = test_experiment.datasource_id
     experiment_id = test_experiment.id
@@ -1106,11 +1063,11 @@ async def test_get_experiment_assignment_for_online_participant(
 
 
 async def test_get_experiment_assignment_for_online_participant_past_end_date(
-    xngin_session: AsyncSession, testing_datasource_with_user_added, pget
+    xngin_session: AsyncSession, testing_datasource_with_user, pget
 ):
     new_exp = await insert_experiment_and_arms(
         xngin_session,
-        testing_datasource_with_user_added.ds,
+        testing_datasource_with_user.ds,
         "online",
         end_date=datetime.now(UTC) - timedelta(days=1),
     )
@@ -1165,10 +1122,10 @@ def test_experiments_analyze(testing_experiment, pget):
 
 
 async def test_experiments_analyze_for_experiment_with_no_participants(
-    xngin_session: AsyncSession, testing_datasource_with_user_added, pget
+    xngin_session: AsyncSession, testing_datasource_with_user, pget
 ):
     test_experiment = await insert_experiment_and_arms(
-        xngin_session, testing_datasource_with_user_added.ds, "online"
+        xngin_session, testing_datasource_with_user.ds, "online"
     )
     datasource_id = test_experiment.datasource_id
     experiment_id = test_experiment.id
@@ -1195,7 +1152,7 @@ async def test_experiments_analyze_for_experiment_with_no_participants(
 )
 async def test_admin_experiment_state_setting(
     xngin_session: AsyncSession,
-    testing_datasource_with_user_added,
+    testing_datasource_with_user,
     endpoint,
     initial_state,
     expected_status,
@@ -1203,7 +1160,7 @@ async def test_admin_experiment_state_setting(
     ppost,
 ):
     # Initialize our state with an existing experiment who's state we want to modify.
-    datasource = testing_datasource_with_user_added.ds
+    datasource = testing_datasource_with_user.ds
     experiment, _ = make_insertable_experiment(datasource, initial_state)
     xngin_session.add(experiment)
     await xngin_session.commit()
@@ -1228,8 +1185,8 @@ async def test_admin_experiment_state_setting(
         assert response.json()["detail"] == expected_detail
 
 
-async def test_manage_apikeys(testing_datasource_with_user_added, ppost, pget, pdelete):
-    ds = testing_datasource_with_user_added.ds
+async def test_manage_apikeys(testing_datasource_with_user, ppost, pget, pdelete):
+    ds = testing_datasource_with_user.ds
 
     response = pget(f"/v1/m/datasources/{ds.id}/apikeys")
     assert response.status_code == 200
@@ -1257,11 +1214,11 @@ async def test_manage_apikeys(testing_datasource_with_user_added, ppost, pget, p
 
 
 async def test_experiment_webhook_integration(
-    testing_datasource_with_user_added, ppost, pget
+    testing_datasource_with_user, ppost, pget
 ):
     """Test creating an experiment with webhook associations and verifying webhook IDs in response."""
-    org_id = testing_datasource_with_user_added.org.id
-    datasource_id = testing_datasource_with_user_added.ds.id
+    org_id = testing_datasource_with_user.org.id
+    datasource_id = testing_datasource_with_user.ds.id
 
     # Create two webhooks in the organization
     webhook1_response = ppost(

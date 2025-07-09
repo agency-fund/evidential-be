@@ -55,7 +55,7 @@ sequenceDiagram
    along with a `Task` to issue a notification to the webhook registered in (2). Users can also see
    the `experiment.created` events in their Organization's settings page > Recent Events. For more
    implementation details, see the [task queues
-   docs](https://github.com/agency-fund/xngin/blob/main/docs/TASK-QUEUES.md).
+   docs](https://github.com/agency-fund/evidential-be/blob/main/docs/TASK-QUEUES.md).
 
 1. (Optional) For Preassigned experiments the user may immediately export a CSV version of the
    participant assignments and any strata for manual uploading to other systems or further

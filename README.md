@@ -1,6 +1,6 @@
-[![lint](https://github.com/agency-fund/xngin/actions/workflows/lint.yaml/badge.svg?branch=main)](https://github.com/agency-fund/xngin/actions/workflows/lint.yaml)
-[![precommit](https://github.com/agency-fund/xngin/actions/workflows/precommit.yaml/badge.svg?branch=main)](https://github.com/agency-fund/xngin/actions/workflows/precommit.yaml)
-[![test](https://github.com/agency-fund/xngin/actions/workflows/test.yaml/badge.svg?branch=main)](https://github.com/agency-fund/xngin/actions/workflows/test.yaml)
+[![lint](https://github.com/agency-fund/evidential-be/actions/workflows/lint.yaml/badge.svg?branch=main)](https://github.com/agency-fund/evidential-be/actions/workflows/lint.yaml)
+[![precommit](https://github.com/agency-fund/evidential-be/actions/workflows/precommit.yaml/badge.svg?branch=main)](https://github.com/agency-fund/evidential-be/actions/workflows/precommit.yaml)
+[![test](https://github.com/agency-fund/evidential-be/actions/workflows/test.yaml/badge.svg?branch=main)](https://github.com/agency-fund/evidential-be/actions/workflows/test.yaml)
 
 # Evidential<a name="evidential"></a>
 
