@@ -394,7 +394,9 @@ async def list_experiments_impl(
         balance_check = converter.get_balance_check()
         assign_summary = await get_assign_summary(xngin_session, e.id, balance_check)
         webhook_ids = [webhook.id for webhook in e.webhooks]
-        items.append(converter.get_experiment_config(assign_summary, webhook_ids))
+        items.append(
+            converter.get_experiment_config(assign_summary, webhook_ids).config
+        )
     return ListExperimentsResponse(items=items)
 
 

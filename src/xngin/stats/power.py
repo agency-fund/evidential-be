@@ -2,11 +2,14 @@
 import numpy as np
 import statsmodels.stats.api as sms
 
-from xngin.apiserver.routers.common_enums import MetricPowerAnalysisMessageType, MetricType
 from xngin.apiserver.routers.common_api_types import (
     DesignSpecMetric,
     MetricPowerAnalysis,
     MetricPowerAnalysisMessage,
+)
+from xngin.apiserver.routers.common_enums import (
+    MetricPowerAnalysisMessageType,
+    MetricType,
 )
 from xngin.stats.stats_errors import StatsPowerError
 

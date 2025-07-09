@@ -1030,7 +1030,9 @@ def experiment_request_discriminator(value: dict[str, Any]) -> str:
         try:
             experiment_type = value["design_spec"].experiment_type
         except AttributeError:
-            experiment_type = value.get("experiment_type")
+            experiment_type = value["design_spec"].get("experiment_type")
+    elif isinstance(value, ExperimentConfigBase):
+        experiment_type = value.design_spec.experiment_type
 
     if experiment_type == ExperimentsType.FREQ_AB:
         return "frequentist"

@@ -655,11 +655,11 @@ async def test_list_experiments_impl(
         experiment4_data,
         experiment5_data,
     ]
+
     xngin_session.add_all([data[0] for data in experiment_data])
     await xngin_session.commit()
 
     experiments = await list_experiments_impl(xngin_session, testing_datasource.ds.id)
-
     # experiment5 excluded due to datasource mismatch
     assert len(experiments.items) == 3
 
@@ -670,7 +670,6 @@ async def test_list_experiments_impl(
     assert actual1_config.state == ExperimentState.ASSIGNED
     diff = DeepDiff(actual1_config.design_spec, experiment1_data[1])
     assert not diff, f"Objects differ:\n{diff.pretty()}"
-    print(experiment1_data[1])
     assert actual2_config.state == ExperimentState.COMMITTED
     diff = DeepDiff(actual2_config.design_spec, experiment2_data[1])
     assert not diff, f"Objects differ:\n{diff.pretty()}"
