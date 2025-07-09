@@ -32,7 +32,7 @@ from xngin.apiserver.dwh.queries import (
     make_csv_regex,
 )
 from xngin.apiserver.exceptions_common import LateValidationError
-from xngin.apiserver.models.enums import MetricType
+from xngin.apiserver.routers.common_enums import MetricType
 from xngin.apiserver.routers.common_api_types import (
     DesignSpecMetric,
     DesignSpecMetricRequest,

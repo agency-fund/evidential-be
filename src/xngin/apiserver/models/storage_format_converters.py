@@ -14,10 +14,10 @@ from pydantic import TypeAdapter
 import xngin.apiserver.routers.common_api_types as capi
 from xngin.apiserver.models import tables
 from xngin.apiserver.models.enums import (
-    AssignmentType,
     ExperimentState,
     StopAssignmentReason,
 )
+from xngin.apiserver.routers.common_enums import AssignmentType
 from xngin.apiserver.models.storage_types import (
     DesignSpecFields,
     StorageFilter,

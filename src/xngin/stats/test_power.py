@@ -1,6 +1,6 @@
 import pytest
 
-from xngin.apiserver.models.enums import (
+from xngin.apiserver.routers.common_enums import (
     MetricPowerAnalysisMessageType,
     MetricType,
 )

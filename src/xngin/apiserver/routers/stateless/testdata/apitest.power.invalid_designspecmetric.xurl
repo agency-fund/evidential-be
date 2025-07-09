@@ -4,7 +4,8 @@ Datasource-ID: testing
 {
  "design_spec": {
     "experiment_id": "0897bbd7-dacd-41b4-b164-7a1950fa61f2",
-    "experiment_type": "preassigned",
+    "assignment_type": "preassigned",
+    "experiment_type": "freq_ab",
     "experiment_name": "Sample experiment name.",
     "description": "Sample experiment description.",
     "arms": [
