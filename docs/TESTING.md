@@ -64,7 +64,7 @@ pushed to GitHub.
 Method 2: Trigger via GitHub UI
 
 1. Push the branch to GitHub (i.e. draft PR)
-1. Click https://github.com/agency-fund/xngin/actions/workflows/test.yaml
+1. Click https://github.com/agency-fund/evidential-be/actions/workflows/test.yaml
 1. Click "new workflow"
 1. Select the PR's branch name
 1. Tick the "bq integration" box.

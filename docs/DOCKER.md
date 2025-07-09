@@ -25,7 +25,7 @@ optional).
 Docker Images are created automatically by CI whenever a commit is merged into the main branch. These are intended to
 be used by customers for deployments and to validate that dependencies install correctly.
 
-## How do I run the Docker images [built by the CI](https://github.com/agency-fund/xngin/pkgs/container/xngin)?<a name="how-do-i-run-the-docker-images-built-by-the-ci"></a>
+## How do I run the Docker images [built by the CI](https://github.com/agency-fund/evidential-be/pkgs/container/xngin)?<a name="how-do-i-run-the-docker-images-built-by-the-ci"></a>
 
 ```shell
 # Authenticate your local Docker to the ghcr using a GitHub Personal Access Token (classic) that has at least the
