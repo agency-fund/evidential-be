@@ -163,7 +163,7 @@ cython_debug/
 *.iml
 
 # local secrets
-/secrets
+secrets
 
 # local cache
 xngin.db

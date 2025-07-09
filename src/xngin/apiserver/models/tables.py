@@ -15,7 +15,7 @@ from xngin.apiserver.routers.admin.admin_api_types import (
     InspectDatasourceTableResponse,
     InspectParticipantTypesResponse,
 )
-from xngin.apiserver.settings import DatasourceConfig, EncryptedDsn
+from xngin.apiserver.settings import DatasourceConfig
 from xngin.events import EventDataTypes
 
 # JSONBetter is JSON for most databases but JSONB for Postgres.
@@ -31,14 +31,8 @@ def unique_id_factory(prefix: str):
     return generate
 
 
-arm_id_factory = unique_id_factory("arm")
-datasource_id_factory = unique_id_factory("ds")
-event_id_factory = unique_id_factory("evt")
 experiment_id_factory = unique_id_factory("exp")
-organization_id_factory = unique_id_factory("o")
-task_id_factory = unique_id_factory("task")
-user_id_factory = unique_id_factory("u")
-webhook_id_factory = unique_id_factory("wh")
+arm_id_factory = unique_id_factory("arm")
 
 
 class Base(AsyncAttrs, DeclarativeBase):
@@ -84,7 +78,7 @@ class Organization(Base):
     __tablename__ = "organizations"
 
     id: Mapped[str] = mapped_column(
-        String, primary_key=True, default=organization_id_factory
+        String, primary_key=True, default=unique_id_factory("o")
     )
     name: Mapped[str] = mapped_column(String(255))
 
@@ -114,7 +108,7 @@ class Webhook(Base):
 
     __tablename__ = "webhooks"
 
-    id: Mapped[str] = mapped_column(primary_key=True, default=webhook_id_factory)
+    id: Mapped[str] = mapped_column(primary_key=True, default=unique_id_factory("wh"))
     # User-friendly name for the webhook
     name: Mapped[str] = mapped_column(server_default="")
     # The type of webhook; e.g. experiment.created. These are user-visible arbitrary strings.
@@ -141,7 +135,7 @@ class Event(Base):
 
     __tablename__ = "events"
 
-    id: Mapped[str] = mapped_column(primary_key=True, default=event_id_factory)
+    id: Mapped[str] = mapped_column(primary_key=True, default=unique_id_factory("evt"))
     created_at: Mapped[datetime] = mapped_column(
         server_default=sqlalchemy.sql.func.now()
     )
@@ -176,7 +170,7 @@ class Task(Base):
 
     __tablename__ = "tasks"
 
-    id: Mapped[str] = mapped_column(primary_key=True, default=task_id_factory)
+    id: Mapped[str] = mapped_column(primary_key=True, default=unique_id_factory("task"))
     created_at: Mapped[datetime] = mapped_column(
         server_default=sqlalchemy.sql.func.now()
     )
@@ -207,7 +201,9 @@ class User(Base):
 
     __tablename__ = "users"
 
-    id: Mapped[str] = mapped_column(String, primary_key=True, default=user_id_factory)
+    id: Mapped[str] = mapped_column(
+        String, primary_key=True, default=unique_id_factory("u")
+    )
     email: Mapped[str] = mapped_column(String(255), unique=True)
     # TODO: properly handle federated auth
     iss: Mapped[str | None] = mapped_column(String(255), default=None)
@@ -255,16 +251,12 @@ class ExperimentWebhook(Base):
 
 
 class Datasource(Base):
-    """Stores a DatasourceConfig and maps it to an Organization.
-
-    When creating a Datasource entity, take care to manually set the id column value before calling .set_config(). This
-    is important because we need the primary key before we encrypt the datasource config.
-    """
+    """Stores a DatasourceConfig and maps it to an Organization."""
 
     __tablename__ = "datasources"
 
     id: Mapped[str] = mapped_column(
-        String, primary_key=True, default=datasource_id_factory
+        String, primary_key=True, default=unique_id_factory("ds")
     )
     name: Mapped[str] = mapped_column(String(255))
     organization_id: Mapped[str] = mapped_column(
@@ -288,25 +280,21 @@ class Datasource(Base):
 
     def get_config(self) -> DatasourceConfig:
         """Deserializes the config field into a DatasourceConfig."""
-        config: DatasourceConfig = TypeAdapter(DatasourceConfig).validate_python(
-            self.config
-        )
-        if isinstance(config.dwh, EncryptedDsn):
-            config = config.model_copy(update={"dwh": config.dwh.decrypt(self.id)})
-        return config
+        return TypeAdapter(DatasourceConfig).validate_python(self.config)
 
-    def set_config(self, config: DatasourceConfig) -> Self:
+    def set_config(self, value: DatasourceConfig) -> Self:
         """Sets the config field to the serialized DatasourceConfig.
 
         Raises ValidationError if the config is invalid.
         """
-        if isinstance(config.dwh, EncryptedDsn):
-            config = config.model_copy(update={"dwh": config.dwh.encrypt(self.id)})
+        # Dump the model to JSON because this is how we can serialize the SecretStr values.
+        as_json = value.model_dump_json()
 
-        # Round-trip the new model through validation so that we can validate it before committing it to the database.
+        # Validate that we are persisting a valid DatasourceConfig because Pydantic only validates on model creation.
         # This will raise if there is an error.
-        TypeAdapter(DatasourceConfig).validate_python(config.model_dump())
-        self.config = config.model_dump()
+        TypeAdapter(DatasourceConfig).validate_json(as_json)
+
+        self.config = json.loads(as_json)
         return self
 
     def set_table_list(self, tables: list[str] | None) -> Self:
