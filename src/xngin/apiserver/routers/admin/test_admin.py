@@ -778,6 +778,7 @@ async def test_lifecycle_with_db(testing_datasource, ppost, pget, pdelete):
     response = pget(
         f"/v1/m/datasources/{testing_datasource.ds.id}/experiments/{parsed_experiment_id}"
     )
+
     assert response.status_code == 200, response.content
     experiment_config = CreateExperimentResponse.model_validate(response.json()).config
     assert experiment_config.design_spec.experiment_id == parsed_experiment_id
