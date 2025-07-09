@@ -22,7 +22,7 @@ Follow the steps below to get a local development environment running.
 
 1. Install Docker.
 
-1. Install dependencies (Atlas, uv, Python dependencies) by running:
+1. Install dependencies (Atlas, uv, git-lfs, Python dependencies) by running:
 
    ```shell
    task install-dependencies
