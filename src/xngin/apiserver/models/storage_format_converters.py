@@ -131,7 +131,7 @@ class ExperimentStorageConverter:
         return TypeAdapter(sapi.DesignSpec).validate_python({
             "participant_type": self.experiment.participant_type,
             "experiment_id": self.experiment.id,
-            "experiment_type": self.experiment.experiment_type,
+            "assignment_type": self.experiment.assignment_type,
             "experiment_name": self.experiment.name,
             "description": self.experiment.description,
             "start_date": self.experiment.start_date,
@@ -184,21 +184,23 @@ class ExperimentStorageConverter:
 
     def get_experiment_config(
         self, assign_summary: capi.AssignSummary, webhook_ids: list[str] | None = None
-    ) -> capi.ExperimentConfig:
+    ) -> capi.GetExperimentResponse:
         """Construct an ExperimentConfig from the internal Experiment and an AssignSummary.
 
         Expects assign_summary since that typically requires a db lookup."""
-        return capi.ExperimentConfig(
-            datasource_id=self.experiment.datasource_id,
-            state=ExperimentState(self.experiment.state),
-            stopped_assignments_at=self.experiment.stopped_assignments_at,
-            stopped_assignments_reason=StopAssignmentReason.from_str(
-                self.experiment.stopped_assignments_reason
-            ),
-            design_spec=self.get_design_spec(),
-            power_analyses=self.get_power_response(),
-            assign_summary=assign_summary,
-            webhooks=webhook_ids or [],
+        return capi.GetExperimentResponse(
+            config=dict(
+                datasource_id=self.experiment.datasource_id,
+                state=ExperimentState(self.experiment.state),
+                stopped_assignments_at=self.experiment.stopped_assignments_at,
+                stopped_assignments_reason=StopAssignmentReason.from_str(
+                    self.experiment.stopped_assignments_reason
+                ),
+                design_spec=self.get_design_spec(),
+                power_analyses=self.get_power_response(),
+                assign_summary=assign_summary,
+                webhooks=webhook_ids or [],
+            )
         )
 
     def get_experiment_response(
@@ -223,7 +225,7 @@ class ExperimentStorageConverter:
         cls,
         datasource_id: str,
         organization_id: str,
-        experiment_type: AssignmentType,
+        assignment_type: AssignmentType,
         design_spec: sapi.DesignSpec,
         state: ExperimentState = ExperimentState.ASSIGNED,
         stopped_assignments_at: datetime | None = None,
@@ -241,7 +243,7 @@ class ExperimentStorageConverter:
         experiment = tables.Experiment(
             id=design_spec.experiment_id,
             datasource_id=datasource_id,
-            experiment_type=experiment_type,
+            assignment_type=assignment_type,
             participant_type=design_spec.participant_type,
             name=design_spec.experiment_name,
             description=design_spec.description,

@@ -76,11 +76,13 @@ from xngin.apiserver.routers.auth.auth_dependencies import require_oidc_token
 from xngin.apiserver.routers.auth.principal import Principal
 from xngin.apiserver.routers.common_api_types import (
     ArmAnalysis,
+    BanditExperimentSpec,
     CreateExperimentRequest,
+    CreateExperimentRequestBandit,
     CreateExperimentResponse,
     ExperimentAnalysis,
-    ExperimentConfig,
     GetExperimentAssignmentsResponse,
+    GetExperimentResponse,
     GetMetricsResponseElement,
     GetParticipantAssignmentResponse,
     GetStrataResponseElement,
@@ -1247,11 +1249,21 @@ async def create_experiment(
         ),
     ] = None,
 ) -> CreateExperimentResponse:
+    body_config = body.root
+    if isinstance(body_config, CreateExperimentRequestBandit) or isinstance(
+        body_config.design_spec, BanditExperimentSpec
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Bandit experiments are not supported in this endpoint.",
+        )
     datasource = await get_datasource_or_raise(session, user, datasource_id)
-    if body.design_spec.ids_are_present():
+    if body_config.design_spec.ids_are_present():
         raise LateValidationError("Invalid DesignSpec: UUIDs must not be set.")
     ds_config = datasource.get_config()
-    participants_cfg = ds_config.find_participants(body.design_spec.participant_type)
+    participants_cfg = ds_config.find_participants(
+        body_config.design_spec.participant_type
+    )
     if not isinstance(participants_cfg, ParticipantsDef):
         raise LateValidationError(
             "Invalid ParticipantsConfig: Participants must be of type schema."
@@ -1262,10 +1274,10 @@ async def create_experiment(
     async with DwhSession(ds_config.dwh) as dwh:
         if chosen_n is not None:
             result = await dwh.get_participants(
-                participants_cfg.table_name, body.design_spec.filters, chosen_n
+                participants_cfg.table_name, body_config.design_spec.filters, chosen_n
             )
             sa_table, participants = result.sa_table, result.participants
-        elif body.design_spec.experiment_type == "preassigned":
+        elif body_config.design_spec.assignment_type == "preassigned":
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Preassigned experiments must have a chosen_n.",
@@ -1282,7 +1294,7 @@ async def create_experiment(
         random_state=random_state,
         xngin_session=session,
         stratify_on_metrics=stratify_on_metrics,
-        webhook_ids=body.webhooks,
+        webhook_ids=body_config.webhooks,
     )
 
 
@@ -1438,7 +1450,7 @@ async def get_experiment(
     experiment_id: str,
     session: Annotated[AsyncSession, Depends(xngin_db_session)],
     user: Annotated[tables.User, Depends(user_from_token)],
-) -> ExperimentConfig:
+) -> GetExperimentResponse:
     """Returns the experiment with the specified ID."""
     ds = await get_datasource_or_raise(session, user, datasource_id)
     experiment = await get_experiment_via_ds_or_raise(

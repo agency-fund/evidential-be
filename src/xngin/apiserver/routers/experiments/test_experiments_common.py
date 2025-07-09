@@ -18,9 +18,9 @@ from xngin.apiserver.models import tables
 from xngin.apiserver.models.enums import ExperimentState, StopAssignmentReason
 from xngin.apiserver.models.storage_format_converters import ExperimentStorageConverter
 from xngin.apiserver.routers.common_api_types import (
+    AssignmentType,
     CreateExperimentRequest,
     DesignSpecMetric,
-    ExperimentType,
     MetricPowerAnalysis,
     MetricType,
     PowerResponse,
@@ -46,7 +46,7 @@ from xngin.apiserver.testing.assertions import assert_dates_equal
 
 def make_createexperimentrequest_json(
     participant_type: str = "test_participant_type",
-    experiment_type: str = "preassigned",
+    assignment_type: str = "preassigned",
     with_ids: bool = False,
 ):
     """Make a basic CreateExperimentRequest JSON object.
@@ -63,7 +63,7 @@ def make_createexperimentrequest_json(
             "participant_type": participant_type,
             "experiment_name": "test",
             "description": "test",
-            "experiment_type": experiment_type,
+            "assignment_type": assignment_type,
             # Attach UTC tz, but use dates_equal() to compare to respect db storage support
             "start_date": "2024-01-01T00:00:00+00:00",
             # default our experiment to end in the future
@@ -99,7 +99,7 @@ def make_create_preassigned_experiment_request(
     with_ids: bool = False,
 ) -> CreateExperimentRequest:
     request = make_createexperimentrequest_json(
-        with_ids=with_ids, experiment_type="preassigned"
+        with_ids=with_ids, assignment_type="preassigned"
     )
     return TypeAdapter(CreateExperimentRequest).validate_python(request)
 
@@ -108,7 +108,7 @@ def make_create_online_experiment_request(
     with_ids: bool = False,
 ) -> CreateExperimentRequest:
     request = make_createexperimentrequest_json(
-        with_ids=with_ids, experiment_type="online"
+        with_ids=with_ids, assignment_type="online"
     )
     return TypeAdapter(CreateExperimentRequest).validate_python(request)
 
@@ -116,7 +116,7 @@ def make_create_online_experiment_request(
 def make_insertable_experiment(
     datasource: tables.Datasource,
     state: ExperimentState = ExperimentState.COMMITTED,
-    experiment_type: ExperimentType = "preassigned",
+    assignment_type: AssignmentType = "preassigned",
     with_ids: bool = True,
 ) -> tuple[tables.Experiment, DesignSpec]:
     """Make a minimal experiment with arms ready for insertion into the database for tests.
@@ -124,20 +124,20 @@ def make_insertable_experiment(
     This does not add any power analyses or balance checks.
     """
     request = make_createexperimentrequest_json(
-        experiment_type=experiment_type, with_ids=with_ids
+        assignment_type=assignment_type, with_ids=with_ids
     )
     design_spec: DesignSpec = TypeAdapter(DesignSpec).validate_python(
         request["design_spec"]
     )
     stopped_assignments_at: datetime | None = None
     stopped_assignments_reason: StopAssignmentReason | None = None
-    if experiment_type == "preassigned":
+    if assignment_type == "preassigned":
         stopped_assignments_at = datetime.now(UTC)
         stopped_assignments_reason = StopAssignmentReason.PREASSIGNED
     experiment_converter = ExperimentStorageConverter.init_from_components(
         datasource_id=datasource.id,
         organization_id=datasource.organization_id,
-        experiment_type=experiment_type,
+        assignment_type=assignment_type,
         design_spec=design_spec,
         state=state,
         stopped_assignments_at=stopped_assignments_at,
@@ -150,7 +150,7 @@ def make_insertable_experiment(
 async def insert_experiment_and_arms(
     xngin_session: AsyncSession,
     datasource: tables.Datasource,
-    experiment_type: ExperimentType = "preassigned",
+    assignment_type: AssignmentType = "preassigned",
     state=ExperimentState.COMMITTED,
     end_date: datetime | None = None,
 ):
@@ -159,7 +159,7 @@ async def insert_experiment_and_arms(
     Returns the new ORM experiment object.
     """
     experiment, _ = make_insertable_experiment(
-        datasource=datasource, state=state, experiment_type=experiment_type
+        datasource=datasource, state=state, assignment_type=assignment_type
     )
     # Override the end date if provided.
     if end_date is not None:
@@ -268,7 +268,7 @@ async def test_create_experiment_impl_for_preassigned(
     experiment = await xngin_session.get(
         tables.Experiment, response.design_spec.experiment_id
     )
-    assert experiment.experiment_type == "preassigned"
+    assert experiment.assignment_type == "preassigned"
     assert experiment.participant_type == request.design_spec.participant_type
     assert experiment.name == request.design_spec.experiment_name
     assert experiment.description == request.design_spec.description
@@ -339,7 +339,7 @@ async def test_create_experiment_impl_for_online(
     # Create online experiment request, modifying the experiment type from the fixture
     request = make_create_preassigned_experiment_request()
     # Convert the experiment type to online
-    request.design_spec.experiment_type = "online"
+    request.design_spec.assignment_type = "online"
 
     response = await create_experiment_impl(
         request=request.model_copy(deep=True),
@@ -379,7 +379,7 @@ async def test_create_experiment_impl_for_online(
     experiment = await xngin_session.get(
         tables.Experiment, response.design_spec.experiment_id
     )
-    assert experiment.experiment_type == "online"
+    assert experiment.assignment_type == "online"
     assert experiment.participant_type == request.design_spec.participant_type
     assert experiment.name == request.design_spec.experiment_name
     assert experiment.description == request.design_spec.description
@@ -826,7 +826,7 @@ async def test_create_assignment_for_participant_errors(
     # Test assignment while in an experiment state not valid for assignments.
     # Preassigned will short circuit before the invalid state check so will NOT raise.
     experiment, _ = make_insertable_experiment(
-        testing_datasource.ds, ExperimentState.ASSIGNED, experiment_type="preassigned"
+        testing_datasource.ds, ExperimentState.ASSIGNED, assignment_type="preassigned"
     )
     experiment.arms = []
     response = await create_assignment_for_participant(
@@ -836,7 +836,7 @@ async def test_create_assignment_for_participant_errors(
 
     # But an online experiment in this invalid state will raise.
     experiment, _ = make_insertable_experiment(
-        testing_datasource.ds, ExperimentState.ASSIGNED, experiment_type="online"
+        testing_datasource.ds, ExperimentState.ASSIGNED, assignment_type="online"
     )
     with pytest.raises(
         ExperimentsAssignmentError, match="Invalid experiment state: assigned"
@@ -845,7 +845,7 @@ async def test_create_assignment_for_participant_errors(
 
     # Test that an online experiment with no arms will raise.
     experiment, _ = make_insertable_experiment(
-        testing_datasource.ds, ExperimentState.COMMITTED, experiment_type="online"
+        testing_datasource.ds, ExperimentState.COMMITTED, assignment_type="online"
     )
     experiment.arms = []
     with pytest.raises(ExperimentsAssignmentError, match="Experiment has no arms"):
@@ -863,7 +863,7 @@ async def test_create_assignment_for_participant(xngin_session, testing_datasour
     assert expect_none is None
 
     online_experiment = await insert_experiment_and_arms(
-        xngin_session, testing_datasource.ds, experiment_type="online"
+        xngin_session, testing_datasource.ds, assignment_type="online"
     )
     # Assert that we do create new assignments for online experiments
     assignment = await create_assignment_for_participant(
@@ -885,19 +885,19 @@ async def test_create_assignment_for_participant(xngin_session, testing_datasour
 
 
 @pytest.mark.parametrize(
-    "experiment_type,stopped_reason",
+    "assignment_type,stopped_reason",
     [
         ("preassigned", StopAssignmentReason.PREASSIGNED),
         ("online", StopAssignmentReason.END_DATE),
     ],
 )
 async def test_create_assignment_for_participant_stopped_reason(
-    xngin_session, testing_datasource, experiment_type, stopped_reason
+    xngin_session, testing_datasource, assignment_type, stopped_reason
 ):
     experiment = await insert_experiment_and_arms(
         xngin_session,
         testing_datasource.ds,
-        experiment_type=experiment_type,
+        assignment_type=assignment_type,
         end_date=datetime.now(UTC) - timedelta(days=1),
     )
 

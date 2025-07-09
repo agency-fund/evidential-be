@@ -413,8 +413,8 @@ class Experiment(Base):
     datasource_id: Mapped[str] = mapped_column(
         String(255), ForeignKey("datasources.id", ondelete="CASCADE")
     )
-    experiment_type: Mapped[str] = mapped_column(
-        comment="Should be one of the ExperimentType literals."
+    assignment_type: Mapped[str] = mapped_column(
+        comment="Should be one of the AssignmentType literals."
     )
     participant_type: Mapped[str] = mapped_column(String(255))
     name: Mapped[str] = mapped_column(String(255))

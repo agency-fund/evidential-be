@@ -12,8 +12,8 @@ from stochatreat import stochatreat
 
 from xngin.apiserver.routers.common_api_types import (
     Arm,
-    Assignment,
     BalanceCheck,
+    FrequentistAssignment,
     Strata,
 )
 from xngin.apiserver.routers.stateless.stateless_api_types import (
@@ -244,7 +244,7 @@ def _make_assign_response(
                 )
 
         arm_sizes_by_treatment_id[treatment_assignment] += 1
-        participant = Assignment(
+        participant = FrequentistAssignment(
             participant_id=str(row_dict[id_col]),
             arm_id=arms[treatment_assignment].arm_id,
             arm_name=arms[treatment_assignment].arm_name,

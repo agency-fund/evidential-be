@@ -946,7 +946,7 @@ async def test_create_preassigned_experiment_using_inline_schema_ds(
     ).one()
     assert experiment.state == ExperimentState.ASSIGNED
     assert experiment.datasource_id == datasource_id
-    assert experiment.experiment_type == "preassigned"
+    assert experiment.assignment_type == "preassigned"
     assert experiment.participant_type == "test_participant_type"
     assert experiment.name == request_obj.design_spec.experiment_name
     assert experiment.description == request_obj.design_spec.description
