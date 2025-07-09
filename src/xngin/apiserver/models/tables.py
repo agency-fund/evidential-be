@@ -1,11 +1,12 @@
 import json
 import secrets
+import uuid
 from datetime import UTC, datetime
 from typing import ClassVar, Self
 
 import sqlalchemy
 from pydantic import TypeAdapter
-from sqlalchemy import ForeignKey, Index, String
+from sqlalchemy import ARRAY, Boolean, Float, ForeignKey, Index, Integer, String
 from sqlalchemy.dialects import postgresql
 from sqlalchemy.ext.asyncio import AsyncAttrs
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
@@ -413,10 +414,14 @@ class Experiment(Base):
     datasource_id: Mapped[str] = mapped_column(
         String(255), ForeignKey("datasources.id", ondelete="CASCADE")
     )
-    experiment_type: Mapped[str] = mapped_column(
-        comment="Should be one of the ExperimentType literals."
+    # -- Experiment metadata --
+    assignment_type: Mapped[str] = mapped_column(
+        comment="Should be one of the AssignmentType literals."
     )
-    participant_type: Mapped[str] = mapped_column(String(255))
+    experiment_type: Mapped[str] = mapped_column(
+        comment="Should be one of the ExperimentType enums."
+    )
+    participant_type: Mapped[str | None] = mapped_column(String(255), nullable=True)
     name: Mapped[str] = mapped_column(String(255))
     # Describe your experiment and hypothesis here.
     description: Mapped[str] = mapped_column(String(2000))
@@ -431,28 +436,37 @@ class Experiment(Base):
     stopped_assignments_at: Mapped[datetime | None] = mapped_column()
     # The reason assignments were stopped. See xngin.apiserver.models.enums.StopAssignmentReason.
     stopped_assignments_reason: Mapped[str | None] = mapped_column()
-
-    # JSON serialized form of an experiment's specified dwh fields used for strata/metrics/filters.
-    design_spec_fields: Mapped[dict] = mapped_column(type_=JSONBetter)
-    # JSON serialized form of a PowerResponse. Not required since some experiments may not have data to run power analyses.
-    power_analyses: Mapped[dict | None] = mapped_column(type_=JSONBetter)
-    # JSON serialized form of a BalanceCheck. May be null if the experiment type doesn't support
-    # balance checks.
-    balance_check: Mapped[dict | None] = mapped_column(type_=JSONBetter)
-
     created_at: Mapped[datetime] = mapped_column(
         server_default=sqlalchemy.sql.func.now()
     )
     updated_at: Mapped[datetime] = mapped_column(
         server_default=sqlalchemy.sql.func.now(), onupdate=sqlalchemy.sql.func.now()
     )
+    n_trials: Mapped[int] = mapped_column(Integer, default=0, onupdate="n_trials + 1")
+
+    # -- Experiment config --
+    # Bandit config params
+    prior_type: Mapped[str | None] = mapped_column(String(length=50), nullable=True)
+    reward_type: Mapped[str | None] = mapped_column(String(length=50), nullable=True)
+
+    # Frequentist config params
+    # JSON serialized form of an experiment's specified dwh fields used for strata/metrics/filters.
+    design_spec_fields: Mapped[dict | None] = mapped_column(
+        type_=JSONBetter, nullable=True
+    )
+    # JSON serialized form of a PowerResponse. Not required since some experiments may not have data to run power analyses.
+    power_analyses: Mapped[dict | None] = mapped_column(type_=JSONBetter, nullable=True)
+    # JSON serialized form of a BalanceCheck. May be null if the experiment type doesn't support
+    # balance checks.
+    balance_check: Mapped[dict | None] = mapped_column(type_=JSONBetter, nullable=True)
 
     # Frequentist experiment types i.e. online and preassigned
     power: Mapped[float | None] = mapped_column()
     alpha: Mapped[float | None] = mapped_column()
     fstat_thresh: Mapped[float | None] = mapped_column()
 
-    arm_assignments: Mapped[list["ArmAssignment"]] = relationship(
+    # -- Relationships --
+    arm_assignments: Mapped[list["ArmAssignment"] | None] = relationship(
         back_populates="experiment", cascade="all, delete-orphan", lazy="raise"
     )
     arms: Mapped[list["Arm"]] = relationship(
@@ -462,12 +476,35 @@ class Experiment(Base):
     webhooks: Mapped[list["Webhook"]] = relationship(
         secondary="experiment_webhooks", back_populates="experiments"
     )
+    draws: Mapped[list["Draw"] | None] = relationship(
+        "Draw",
+        back_populates="experiment",
+        cascade="all, delete-orphan",
+    )
+    contexts: Mapped[list["Context"] | None] = relationship(
+        "Context",
+        back_populates="experiment",
+        cascade="all, delete-orphan",
+        lazy="joined",
+        primaryjoin="and_(Experiment.id==Context.id,"
+        + "Experiment.experiment_type=='cmab')",
+    )
 
     def get_arm_ids(self) -> list[str]:
         return [arm.id for arm in self.arms]
 
     def get_arm_names(self) -> list[str]:
         return [arm.name for arm in self.arms]
+
+    @property
+    def has_contexts(self) -> bool:
+        """Check if this experiment type supports contexts."""
+        return self.experiment_type == "cmab"
+
+    @property
+    def context_list(self) -> list["Context"] | list:
+        """Get contexts, returning empty list if not applicable."""
+        return self.contexts if self.has_contexts and self.contexts is not None else []
 
 
 class Arm(Base):
@@ -480,7 +517,7 @@ class Arm(Base):
     # __table_args__ = (
     #     sqlalchemy.UniqueConstraint("name", "organization_id", name="uix_arm_name_org"),
     # )
-
+    # -- Arm metadata --
     id: Mapped[str] = mapped_column(String(36), primary_key=True)
     name: Mapped[str] = mapped_column(String(255))
     description: Mapped[str] = mapped_column(String(2000))
@@ -497,8 +534,85 @@ class Arm(Base):
         server_default=sqlalchemy.sql.func.now(), onupdate=sqlalchemy.sql.func.now()
     )
 
+    # -- Arm config --
+    # Prior variables
+    mu_init: Mapped[float | None] = mapped_column(Float, nullable=True)
+    sigma_init: Mapped[float | None] = mapped_column(Float, nullable=True)
+    mu: Mapped[list[float] | None] = mapped_column(ARRAY(Float), nullable=True)
+    covariance: Mapped[list[list[float]] | None] = mapped_column(
+        ARRAY(Float), nullable=True
+    )
+    is_baseline: Mapped[bool] = mapped_column(Boolean, nullable=True, default=True)
+
+    alpha_init: Mapped[float | None] = mapped_column(Float, nullable=True)
+    beta_init: Mapped[float | None] = mapped_column(Float, nullable=True)
+    alpha: Mapped[float | None] = mapped_column(Float, nullable=True)
+    beta: Mapped[float | None] = mapped_column(Float, nullable=True)
+
+    # -- Relationships --
     organization: Mapped["Organization"] = relationship(back_populates="arms")
     experiment: Mapped["Experiment"] = relationship(back_populates="arms")
     arm_assignments: Mapped[list["ArmAssignment"]] = relationship(
         back_populates="arm", cascade="all, delete-orphan"
+    )
+    draws: Mapped[list["Draw"]] = relationship(
+        "Draw",
+        back_populates="arm",
+        cascade="all, delete-orphan",
+    )
+
+
+class Draw(Base):
+    """
+    Base model for draws.
+    """
+
+    __tablename__ = "draws"
+
+    # IDs
+    id: Mapped[str] = mapped_column(
+        String, primary_key=True, default=lambda x: str(uuid.uuid4())
+    )
+
+    # Logging
+    draw_datetime_utc: Mapped[datetime] = mapped_column(
+        server_default=sqlalchemy.sql.func.now()
+    )
+    observed_datetime_utc: Mapped[datetime] = mapped_column(
+        server_default=sqlalchemy.sql.func.now(), nullable=True
+    )
+    observation_type: Mapped[str] = mapped_column(String, nullable=True)
+
+    # Observation data
+    arm_id: Mapped[str] = mapped_column(
+        String, ForeignKey("arms.id", ondelete="CASCADE"), index=True
+    )
+    outcome: Mapped[float] = mapped_column(Float, nullable=True)
+    context_val: Mapped[list[float] | None] = mapped_column(ARRAY(Float), nullable=True)
+
+    # Relationships
+    arm: Mapped[Arm] = relationship("Arm", back_populates="draws", lazy="joined")
+    experiment: Mapped[Experiment] = relationship(
+        "Experiment", back_populates="draws", lazy="joined"
+    )
+
+
+class Context(Base):
+    """
+    ORM for managing context for an experiment
+    """
+
+    __tablename__ = "context"
+
+    # Context metadata
+    id: Mapped[str] = mapped_column(
+        String, primary_key=True, default=lambda x: str(uuid.uuid4())
+    )
+    name: Mapped[str] = mapped_column(String(length=255), nullable=False)
+    description: Mapped[str] = mapped_column(String(length=2000), nullable=True)
+    value_type: Mapped[str] = mapped_column(String, nullable=False)
+
+    # Relationships
+    experiment: Mapped[Experiment] = relationship(
+        "Experiment", back_populates="contexts"
     )
