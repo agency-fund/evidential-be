@@ -157,6 +157,12 @@ tasks:
       - task start
   test:
     desc: "Runs unit tests"
+    summary: |
+      Runs all the unit tests. Pass additional arguments to pytest after a --. Example:
+
+      task test -- src/xngin/apiserver/routers/admin/test_admin.py # run a single test file
+      task test -- -k tests_matching_some_string_expression -rA    # run subset of tests, show all output in summary
+      task test -- -m integration                                  # run tests annotated with @pytest.mark.integration
     interactive: true
     env:
       DATABASE_URL: "{{.DATABASE_URL_FOR_TEST}}"
