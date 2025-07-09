@@ -218,8 +218,9 @@ async def test_create_experiment_impl_for_preassigned(
     """Test implementation of creating a preassigned experiment."""
     participants = make_sample_data(n=100)
     request = make_create_preassigned_experiment_request()
+    request_config = request.root
     # Add a partial mock PowerResponse just to verify storage
-    request.power_analyses = PowerResponse(
+    request_config.power_analyses = PowerResponse(
         analyses=[
             MetricPowerAnalysis(
                 metric_spec=DesignSpecMetric(
@@ -243,48 +244,57 @@ async def test_create_experiment_impl_for_preassigned(
         stratify_on_metrics=True,
         webhook_ids=[],
     )
+    response_config = response.config
 
     # Verify response
-    assert response.datasource_id == testing_datasource.ds.id
-    assert response.state == ExperimentState.ASSIGNED
+    assert response_config.datasource_id == testing_datasource.ds.id
+    assert response_config.state == ExperimentState.ASSIGNED
     # Verify design_spec
-    assert response.design_spec.experiment_id is not None
-    assert response.design_spec.arms[0].arm_id is not None
-    assert response.design_spec.arms[1].arm_id is not None
-    assert response.design_spec.experiment_name == request.design_spec.experiment_name
-    assert response.design_spec.description == request.design_spec.description
-    assert response.design_spec.start_date == request.design_spec.start_date
-    assert response.design_spec.end_date == request.design_spec.end_date
+    assert response_config.design_spec.experiment_id is not None
+    assert response_config.design_spec.arms[0].arm_id is not None
+    assert response_config.design_spec.arms[1].arm_id is not None
+    assert (
+        response_config.design_spec.experiment_name
+        == request_config.design_spec.experiment_name
+    )
+    assert (
+        response_config.design_spec.description
+        == request_config.design_spec.description
+    )
+    assert (
+        response_config.design_spec.start_date == request_config.design_spec.start_date
+    )
+    assert response_config.design_spec.end_date == request_config.design_spec.end_date
     # although we stratify on target metrics as well in this test, note that the
     # original strata are not augmented with the metric names.
-    assert response.design_spec.strata == [Stratum(field_name="gender")]
-    assert response.power_analyses == request.power_analyses
+    assert response_config.design_spec.strata == [Stratum(field_name="gender")]
+    assert response_config.power_analyses == request_config.power_analyses
     # Verify assign_summary
-    assert response.assign_summary.sample_size == len(participants)
-    assert response.assign_summary.balance_check is not None
-    assert response.assign_summary.balance_check.balance_ok is True
+    assert response_config.assign_summary.sample_size == len(participants)
+    assert response_config.assign_summary.balance_check is not None
+    assert response_config.assign_summary.balance_check.balance_ok is True
 
     # Verify database state using the ids in the returned DesignSpec.
     experiment = await xngin_session.get(
-        tables.Experiment, response.design_spec.experiment_id
+        tables.Experiment, response_config.design_spec.experiment_id
     )
     assert experiment.assignment_type == "preassigned"
-    assert experiment.participant_type == request.design_spec.participant_type
-    assert experiment.name == request.design_spec.experiment_name
-    assert experiment.description == request.design_spec.description
+    assert experiment.participant_type == request_config.design_spec.participant_type
+    assert experiment.name == request_config.design_spec.experiment_name
+    assert experiment.description == request_config.design_spec.description
     assert experiment.state == ExperimentState.ASSIGNED
     assert experiment.datasource_id == testing_datasource.ds.id
     # This comparison is dependent on whether the db can store tz or not (sqlite does not).
-    assert_dates_equal(experiment.start_date, request.design_spec.start_date)
-    assert_dates_equal(experiment.end_date, request.design_spec.end_date)
+    assert_dates_equal(experiment.start_date, request_config.design_spec.start_date)
+    assert_dates_equal(experiment.end_date, request_config.design_spec.end_date)
     # Verify stats parameters were stored correctly
-    assert experiment.power == request.design_spec.power
-    assert experiment.alpha == request.design_spec.alpha
-    assert experiment.fstat_thresh == request.design_spec.fstat_thresh
+    assert experiment.power == request_config.design_spec.power
+    assert experiment.alpha == request_config.design_spec.alpha
+    assert experiment.fstat_thresh == request_config.design_spec.fstat_thresh
     # Verify design_spec was stored correctly
     converter = ExperimentStorageConverter(experiment)
-    assert converter.get_design_spec() == response.design_spec
-    assert converter.get_power_response() == response.power_analyses
+    assert converter.get_design_spec() == response_config.design_spec
+    assert converter.get_power_response() == response_config.power_analyses
     # Verify assignments were created
     assignments = (
         await xngin_session.scalars(
@@ -308,7 +318,7 @@ async def test_create_experiment_impl_for_preassigned(
     assert len(arms) == 2
     arm_ids = {arm.id for arm in arms}
     expected_arm_ids = {
-        response_arm.arm_id for response_arm in response.design_spec.arms
+        response_arm.arm_id for response_arm in response_config.design_spec.arms
     }
     assert arm_ids == expected_arm_ids
 
@@ -316,7 +326,9 @@ async def test_create_experiment_impl_for_preassigned(
     sample_assignment = assignments[0]
     assert sample_assignment.participant_type == "test_participant_type"
     assert sample_assignment.experiment_id == experiment.id
-    assert sample_assignment.arm_id in (arm.arm_id for arm in response.design_spec.arms)
+    assert sample_assignment.arm_id in (
+        arm.arm_id for arm in response_config.design_spec.arms
+    )
     # Verify strata information
     assert (
         len(sample_assignment.strata) == 2
@@ -325,8 +337,8 @@ async def test_create_experiment_impl_for_preassigned(
     assert sample_assignment.strata[1]["field_name"] == "is_onboarded"
 
     # Check for approximate balance in arm assignments
-    arm1_id = response.design_spec.arms[0].arm_id
-    arm2_id = response.design_spec.arms[1].arm_id
+    arm1_id = response_config.design_spec.arms[0].arm_id
+    arm2_id = response_config.design_spec.arms[1].arm_id
     num_control = sum(1 for a in assignments if a.arm_id == arm1_id)
     num_treat = sum(1 for a in assignments if a.arm_id == arm2_id)
     assert abs(num_control - num_treat) <= 1
@@ -338,8 +350,9 @@ async def test_create_experiment_impl_for_online(
     """Test implementation of creating an online experiment."""
     # Create online experiment request, modifying the experiment type from the fixture
     request = make_create_preassigned_experiment_request()
+    request_config = request.root
     # Convert the experiment type to online
-    request.design_spec.assignment_type = "online"
+    request_config.design_spec.assignment_type = "online"
 
     response = await create_experiment_impl(
         request=request.model_copy(deep=True),
@@ -352,49 +365,60 @@ async def test_create_experiment_impl_for_online(
         stratify_on_metrics=True,
         webhook_ids=[],
     )
+    response_config = response.config
 
     # Verify response
-    assert response.datasource_id == testing_datasource.ds.id
-    assert response.state == ExperimentState.ASSIGNED
+    assert response_config.datasource_id == testing_datasource.ds.id
+    assert response_config.state == ExperimentState.ASSIGNED
 
     # Verify design_spec
-    assert response.design_spec.experiment_id is not None
-    assert response.design_spec.arms[0].arm_id is not None
-    assert response.design_spec.arms[1].arm_id is not None
-    assert response.design_spec.experiment_name == request.design_spec.experiment_name
-    assert response.design_spec.description == request.design_spec.description
-    assert response.design_spec.start_date == request.design_spec.start_date
-    assert response.design_spec.end_date == request.design_spec.end_date
-    assert response.design_spec.strata == [Stratum(field_name="gender")]
+    assert response_config.design_spec.experiment_id is not None
+    assert response_config.design_spec.arms[0].arm_id is not None
+    assert response_config.design_spec.arms[1].arm_id is not None
+    assert (
+        response_config.design_spec.experiment_name
+        == request_config.design_spec.experiment_name
+    )
+    assert (
+        response_config.design_spec.description
+        == request_config.design_spec.description
+    )
+    assert (
+        response_config.design_spec.start_date == request_config.design_spec.start_date
+    )
+    assert response_config.design_spec.end_date == request_config.design_spec.end_date
+    assert response_config.design_spec.strata == [Stratum(field_name="gender")]
     # Online experiments don't have power analyses by default
-    assert response.power_analyses is None
+    assert response_config.power_analyses is None
 
     # Verify assign_summary for online experiment
-    assert response.assign_summary.sample_size == 0
-    assert response.assign_summary.balance_check is None
-    assert response.assign_summary.arm_sizes is not None
-    assert all(arm_size.size == 0 for arm_size in response.assign_summary.arm_sizes)
+    assert response_config.assign_summary.sample_size == 0
+    assert response_config.assign_summary.balance_check is None
+    assert response_config.assign_summary.arm_sizes is not None
+    assert all(
+        arm_size.size == 0 for arm_size in response_config.assign_summary.arm_sizes
+    )
 
     # Verify database state
     experiment = await xngin_session.get(
-        tables.Experiment, response.design_spec.experiment_id
+        tables.Experiment, response_config.design_spec.experiment_id
     )
     assert experiment.assignment_type == "online"
-    assert experiment.participant_type == request.design_spec.participant_type
-    assert experiment.name == request.design_spec.experiment_name
-    assert experiment.description == request.design_spec.description
+    assert experiment.participant_type == request_config.design_spec.participant_type
+    assert experiment.name == request_config.design_spec.experiment_name
+    assert experiment.description == request_config.design_spec.description
     # Online experiments still go through a review step before being committed
     assert experiment.state == ExperimentState.ASSIGNED
     assert experiment.datasource_id == testing_datasource.ds.id
-    assert_dates_equal(experiment.start_date, request.design_spec.start_date)
-    assert_dates_equal(experiment.end_date, request.design_spec.end_date)
+    assert_dates_equal(experiment.start_date, request_config.design_spec.start_date)
+    assert_dates_equal(experiment.end_date, request_config.design_spec.end_date)
     # Verify stats parameters were stored correctly
-    assert experiment.power == request.design_spec.power
-    assert experiment.alpha == request.design_spec.alpha
-    assert experiment.fstat_thresh == request.design_spec.fstat_thresh
+    assert experiment.power == request_config.design_spec.power
+    assert experiment.alpha == request_config.design_spec.alpha
+    assert experiment.fstat_thresh == request_config.design_spec.fstat_thresh
     # Verify design_spec was stored correctly
     converter = ExperimentStorageConverter(experiment)
-    assert converter.get_design_spec() == response.design_spec
+    assert converter.get_design_spec() == response_config.design_spec
     # Verify no power_analyses for online experiments
     assert experiment.power_analyses is None
 
@@ -406,7 +430,7 @@ async def test_create_experiment_impl_for_online(
     ).all()
     assert len(arms) == 2
     arm_ids = {arm.id for arm in arms}
-    expected_arm_ids = {arm.arm_id for arm in response.design_spec.arms}
+    expected_arm_ids = {arm.arm_id for arm in response_config.design_spec.arms}
     assert arm_ids == expected_arm_ids
 
     # Verify that no assignments were created for online experiment
@@ -429,8 +453,9 @@ async def test_create_experiment_impl_overwrites_uuids(
     """
     participants = make_sample_data(n=100)
     request = make_create_preassigned_experiment_request(with_ids=True)
-    original_experiment_id = request.design_spec.experiment_id
-    original_arm_ids = [arm.arm_id for arm in request.design_spec.arms]
+    request_config = request.root
+    original_experiment_id = request_config.design_spec.experiment_id
+    original_arm_ids = [arm.arm_id for arm in request_config.design_spec.arms]
 
     response = await create_experiment_impl(
         request=request,
@@ -443,17 +468,18 @@ async def test_create_experiment_impl_overwrites_uuids(
         stratify_on_metrics=True,
         webhook_ids=[],
     )
+    response_config = response.config
 
     # Verify that new UUIDs were generated
-    assert response.design_spec.experiment_id != original_experiment_id
-    new_arm_ids = [arm.arm_id for arm in response.design_spec.arms]
+    assert response_config.design_spec.experiment_id != original_experiment_id
+    new_arm_ids = [arm.arm_id for arm in response_config.design_spec.arms]
     assert set(new_arm_ids) != set(original_arm_ids)
 
     # Verify database state
     experiment = (
         await xngin_session.scalars(
             select(tables.Experiment).where(
-                tables.Experiment.id == response.design_spec.experiment_id
+                tables.Experiment.id == response_config.design_spec.experiment_id
             )
         )
     ).one()
@@ -490,21 +516,22 @@ async def test_create_experiment_impl_no_metric_stratification(
         stratify_on_metrics=False,
         webhook_ids=[],
     )
+    response_config = response.config
 
     # Verify basic response
-    assert response.datasource_id == testing_datasource.ds.id
-    assert response.state == ExperimentState.ASSIGNED
-    assert response.design_spec.experiment_id is not None
-    assert response.design_spec.arms[0].arm_id is not None
+    assert response_config.datasource_id == testing_datasource.ds.id
+    assert response_config.state == ExperimentState.ASSIGNED
+    assert response_config.design_spec.experiment_id is not None
+    assert response_config.design_spec.arms[0].arm_id is not None
     # Same as in the stratify_on_metrics=True test.
     # Only the output assignments will also store a snapshot of the metric values as strata.
-    assert response.design_spec.strata == [Stratum(field_name="gender")]
+    assert response_config.design_spec.strata == [Stratum(field_name="gender")]
 
     # Verify database state
     experiment = (
         await xngin_session.scalars(
             select(tables.Experiment).where(
-                tables.Experiment.id == response.design_spec.experiment_id
+                tables.Experiment.id == response_config.design_spec.experiment_id
             )
         )
     ).one()
@@ -524,8 +551,8 @@ async def test_create_experiment_impl_no_metric_stratification(
     assert not any(s["field_name"] == "is_onboarded" for s in sample_assignment.strata)
 
     # Check for approximate balance in arm assignments
-    arm1_id = response.design_spec.arms[0].arm_id
-    arm2_id = response.design_spec.arms[1].arm_id
+    arm1_id = response_config.design_spec.arms[0].arm_id
+    arm2_id = response_config.design_spec.arms[1].arm_id
     num_control = sum(1 for a in assignments if a.arm_id == arm1_id)
     num_treat = sum(1 for a in assignments if a.arm_id == arm2_id)
     assert abs(num_control - num_treat) <= 1
