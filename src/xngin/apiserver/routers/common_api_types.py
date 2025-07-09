@@ -1025,7 +1025,6 @@ class CreateExperimentRequestFrequentist(ExperimentsBaseModel):
 
 def experiment_request_discriminator(value: dict[str, Any]) -> str:
     """Discriminator function for CreateExperimentRequest."""
-
     if isinstance(value, dict):
         try:
             experiment_type = value["design_spec"].experiment_type
@@ -1033,6 +1032,8 @@ def experiment_request_discriminator(value: dict[str, Any]) -> str:
             experiment_type = value["design_spec"].get("experiment_type")
     elif isinstance(value, ExperimentConfigBase):
         experiment_type = value.design_spec.experiment_type
+    elif isinstance(value, ExperimentsBaseModel):
+        experiment_type = value.config.design_spec.experiment_type
 
     if experiment_type == ExperimentsType.FREQ_AB:
         return "frequentist"

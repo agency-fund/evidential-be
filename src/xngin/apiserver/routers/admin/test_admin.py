@@ -54,12 +54,12 @@ from xngin.apiserver.routers.common_api_types import (
     DataType,
     DesignSpecMetricRequest,
     ExperimentAnalysis,
-    ExperimentConfig,
     GetExperimentAssignmentsResponse,
     GetParticipantAssignmentResponse,
     ListExperimentsResponse,
     PreassignedExperimentSpec,
 )
+from xngin.apiserver.routers.common_enums import ExperimentsType
 from xngin.apiserver.routers.experiments.test_experiments_common import (
     insert_experiment_and_arms,
     make_create_online_experiment_request,
@@ -763,7 +763,7 @@ async def test_lifecycle_with_db(testing_datasource, ppost, pget, pdelete):
         json=make_createexperimentrequest_json(participant_type),
     )
     assert response.status_code == 200, response.content
-    created_experiment = CreateExperimentResponse.model_validate(response.json())
+    created_experiment = CreateExperimentResponse.model_validate(response.json()).config
     parsed_experiment_id = created_experiment.design_spec.experiment_id
     assert parsed_experiment_id is not None
     assert created_experiment.stopped_assignments_at is not None
@@ -779,7 +779,7 @@ async def test_lifecycle_with_db(testing_datasource, ppost, pget, pdelete):
         f"/v1/m/datasources/{testing_datasource.ds.id}/experiments/{parsed_experiment_id}"
     )
     assert response.status_code == 200, response.content
-    experiment_config = ExperimentConfig.model_validate(response.json())
+    experiment_config = CreateExperimentResponse.model_validate(response.json()).config
     assert experiment_config.design_spec.experiment_id == parsed_experiment_id
 
     # List org experiments.
@@ -825,7 +825,7 @@ def test_create_experiment_with_assignment_validation_errors(
     # Create a basic experiment request
     # Test 1: IDs present in design spec trigger LateValidationError
     base_request = make_create_preassigned_experiment_request(with_ids=True)
-    base_request.design_spec.experiment_id = "123e4567-e89b-12d3-a456-426614174000"
+    base_request.root.design_spec.experiment_id = "123e4567-e89b-12d3-a456-426614174000"
     testing_datasource = testing_datasource_with_user
     response = ppost(
         f"/v1/m/datasources/{testing_datasource.ds.id}/experiments",
@@ -854,7 +854,7 @@ async def test_create_preassigned_experiment_using_inline_schema_ds(
     ppost,
 ):
     datasource_id = testing_datasource_with_user.ds.id
-    request_obj = make_create_preassigned_experiment_request()
+    request_obj = make_create_preassigned_experiment_request().root
 
     response = ppost(
         f"/v1/m/datasources/{datasource_id}/experiments",
@@ -862,7 +862,7 @@ async def test_create_preassigned_experiment_using_inline_schema_ds(
         content=request_obj.model_dump_json(),
     )
     assert response.status_code == 200, response.content
-    created_experiment = CreateExperimentResponse.model_validate(response.json())
+    created_experiment = CreateExperimentResponse.model_validate(response.json()).config
     parsed_experiment_id = created_experiment.design_spec.experiment_id
     assert parsed_experiment_id is not None
     parsed_arm_ids = {arm.arm_id for arm in created_experiment.design_spec.arms}
@@ -939,7 +939,7 @@ def test_create_online_experiment_using_inline_schema_ds(
     testing_datasource_with_user, use_deterministic_random, ppost
 ):
     datasource_id = testing_datasource_with_user.ds.id
-    request_obj = make_create_online_experiment_request()
+    request_obj = make_create_online_experiment_request().root
 
     response = ppost(
         f"/v1/m/datasources/{datasource_id}/experiments",
@@ -947,7 +947,7 @@ def test_create_online_experiment_using_inline_schema_ds(
         content=request_obj.model_dump_json(),
     )
     assert response.status_code == 200, response.content
-    created_experiment = CreateExperimentResponse.model_validate(response.json())
+    created_experiment = CreateExperimentResponse.model_validate(response.json()).config
     parsed_experiment_id = created_experiment.design_spec.experiment_id
     assert parsed_experiment_id is not None
     parsed_arm_ids = {arm.arm_id for arm in created_experiment.design_spec.arms}
@@ -1247,6 +1247,8 @@ async def test_experiment_webhook_integration(
     experiment_request = CreateExperimentRequest(
         design_spec=PreassignedExperimentSpec(
             participant_type="test_participant_type",
+            assignment_type="preassigned",
+            experiment_type=ExperimentsType.FREQ_AB,
             experiment_name="Test Experiment with Webhook",
             description="Testing webhook integration",
             start_date=datetime(2024, 1, 1, tzinfo=UTC),
@@ -1270,12 +1272,12 @@ async def test_experiment_webhook_integration(
 
     # Verify the create response includes the webhook
     created_experiment = create_response.json()
-    assert "webhooks" in created_experiment
-    assert len(created_experiment["webhooks"]) == 1
-    assert created_experiment["webhooks"][0] == webhook1_id
+    assert "webhooks" in created_experiment["config"]
+    assert len(created_experiment["config"]["webhooks"]) == 1
+    assert created_experiment["config"]["webhooks"][0] == webhook1_id
 
     # Get the experiment ID for further testing
-    experiment_id = created_experiment["design_spec"]["experiment_id"]
+    experiment_id = created_experiment["config"]["design_spec"]["experiment_id"]
 
     # Get the experiment and verify webhook is included
     get_response = pget(
@@ -1284,16 +1286,18 @@ async def test_experiment_webhook_integration(
     assert get_response.status_code == 200, get_response.content
 
     retrieved_experiment = get_response.json()
-    assert "webhooks" in retrieved_experiment
-    assert len(retrieved_experiment["webhooks"]) == 1
-    assert retrieved_experiment["webhooks"][0] == webhook1_id
+    assert "webhooks" in retrieved_experiment["config"]
+    assert len(retrieved_experiment["config"]["webhooks"]) == 1
+    assert retrieved_experiment["config"]["webhooks"][0] == webhook1_id
 
     # Verify the second webhook is not included
-    assert webhook2_id not in retrieved_experiment["webhooks"]
+    assert webhook2_id not in retrieved_experiment["config"]["webhooks"]
 
     # Test creating an experiment with no webhooks using proper Pydantic models
     experiment_request_no_webhooks = CreateExperimentRequest(
         design_spec=PreassignedExperimentSpec(
+            assignment_type="preassigned",
+            experiment_type=ExperimentsType.FREQ_AB,
             participant_type="test_participant_type",
             experiment_name="Test Experiment without Webhooks",
             description="Testing no webhook integration",
@@ -1320,5 +1324,5 @@ async def test_experiment_webhook_integration(
 
     # Verify no webhooks are associated
     created_experiment_no_webhooks = create_response_no_webhooks.json()
-    assert "webhooks" in created_experiment_no_webhooks
-    assert len(created_experiment_no_webhooks["webhooks"]) == 0
+    assert "webhooks" in created_experiment_no_webhooks["config"]
+    assert len(created_experiment_no_webhooks["config"]["webhooks"]) == 0

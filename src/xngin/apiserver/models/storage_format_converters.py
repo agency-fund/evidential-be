@@ -132,7 +132,9 @@ class ExperimentStorageConverter:
             "participant_type": self.experiment.participant_type,
             "experiment_id": self.experiment.id,
             "assignment_type": self.experiment.assignment_type,
-            "experiment_type": "freq_ab",
+            "experiment_type": "freq_ab"
+            if not hasattr(self.experiment, "experiment_type")
+            else self.experiment.experiment_type,
             "experiment_name": self.experiment.name,
             "description": self.experiment.description,
             "start_date": self.experiment.start_date,
