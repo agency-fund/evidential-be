@@ -73,6 +73,8 @@ jobs:
         env:
           DATABASE_URL: "postgresql+psycopg://postgres:postgres@localhost:5499/test_xngin?sslmode=disable"
       - name: integration tests
+        env:
+          GSHEET_TEST_URL: ${{ secrets.GSHEET_TEST_URL }}
         run: |
           export GOOGLE_APPLICATION_CREDENTIALS=$HOME/.config/gspread/service_account.json
           task test-integration

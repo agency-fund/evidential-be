@@ -84,7 +84,7 @@ def build_docker_command(daemon: bool, tmpfs: bool, port: int, name: str) -> lis
         cmd.extend(["--tmpfs", "/var/lib/postgresql/data:rw,noexec,nosuid,size=4G"])
 
     # Add postgres image and version
-    cmd.append("postgres:16")
+    cmd.append("postgres:17")
 
     # Add all PostgreSQL configuration parameters
     for key, value in PG_CONFIG.items():
