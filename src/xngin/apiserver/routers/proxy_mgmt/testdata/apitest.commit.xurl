@@ -1,5 +1,5 @@
 POST http://localhost:8000/v1/commit?user_id=commituser
-Datasource-ID: customer-test
+Datasource-ID: test-webhook-config
 ```json
 {
   "design_spec": {
