@@ -108,7 +108,7 @@ SAMPLE_TINK_KEY = base64.standard_b64encode(
 def fixture_local_secretservice():
     registry = Registry()
     local_provider.initialize(registry, static_key=SAMPLE_TINK_KEY)
-    return SecretService(registry.get("local"), registry)
+    return SecretService(registry, "local")
 
 
 @pytest.mark.parametrize(

@@ -16,7 +16,7 @@ from xngin.xsecrets.constants import (
     SERIALIZED_ENCRYPTED_VALUE_PREFIX,
 )
 from xngin.xsecrets.exceptions import InvalidSecretStoreConfigurationError
-from xngin.xsecrets.provider import Provider, Registry
+from xngin.xsecrets.provider import Registry
 
 _SERVICE: Optional["SecretService"] = None
 
@@ -49,7 +49,7 @@ def setup():
     logger.info(
         f"Secrets: Using '{backend_spec}' for encryption (available: {', '.join(registered)})"
     )
-    _SERVICE = SecretService(registry.get(backend_spec), registry)
+    _SERVICE = SecretService(registry, backend_spec)
 
 
 def is_encrypted(value: str) -> bool:
@@ -92,12 +92,12 @@ def _deserialize(serialized: str) -> tuple[str, bytes]:
 
 
 class SecretService:
-    """Implements a secret storage mechanism for string values."""
+    """Implements methods for handling encryption and decryption using providers from a Registry."""
 
-    def __init__(self, encryption_provider: Provider, registry: Registry):
-        """Configures SecretService for cryptographic operations."""
-        self.provider = encryption_provider
+    def __init__(self, registry: Registry, encryption_provider: str):
+        """Create a SecretService using the specified registry and encryption provider."""
         self.registry = registry
+        self.encryption_provider = self.registry.get(encryption_provider)
 
     def encrypt(self, pt: str, aad: str) -> str:
         """Encrypts a value with the default encryption provider.
@@ -107,8 +107,10 @@ class SecretService:
         if is_encrypted(pt):
             raise ValueError("The value being encrypted is already encrypted.")
         return _serialize(
-            backend=self.provider.name(),
-            ciphertext=self.provider.encrypt(pt.encode("utf-8"), aad.encode("utf-8")),
+            backend=self.encryption_provider.name(),
+            ciphertext=self.encryption_provider.encrypt(
+                pt.encode("utf-8"), aad.encode("utf-8")
+            ),
         )
 
     def decrypt(self, ct: str, aad: str) -> str:
