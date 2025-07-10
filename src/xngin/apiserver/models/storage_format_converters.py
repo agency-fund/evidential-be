@@ -131,7 +131,6 @@ class ExperimentStorageConverter:
         return TypeAdapter(sapi.DesignSpec).validate_python({
             "participant_type": self.experiment.participant_type,
             "experiment_id": self.experiment.id,
-            "assignment_type": self.experiment.assignment_type,
             "experiment_type": "freq_ab"
             if not hasattr(self.experiment, "experiment_type")
             else self.experiment.experiment_type,

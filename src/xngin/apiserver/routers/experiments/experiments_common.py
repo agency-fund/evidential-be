@@ -543,12 +543,12 @@ async def create_assignment_for_participant(
     if len(experiment.arms) == 0:
         raise ExperimentsAssignmentError("Experiment has no arms")
 
-    assignment_type = experiment.assignment_type
-    if assignment_type == "preassigned":
+    experiment_type = experiment.experiment_type
+    if experiment_type == "preassigned":
         # Preassigned experiments are not allowed to have new assignmentsadded.
         return None
-    if assignment_type != "online":
-        raise ExperimentsAssignmentError(f"Invalid assignment type: {assignment_type}")
+    if experiment_type != "online":
+        raise ExperimentsAssignmentError(f"Invalid experiment type: {experiment_type}")
 
     # Don't allow new assignments for experiments that have ended.
     if experiment.end_date < datetime.now(UTC):
