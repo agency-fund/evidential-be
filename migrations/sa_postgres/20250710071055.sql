@@ -1,9 +1,7 @@
 -- Modify "experiments" table
-ALTER TABLE "public"."experiments" ALTER COLUMN "design_spec_fields" DROP NOT NULL, ADD COLUMN "assignment_type" character varying NOT NULL, ADD COLUMN "n_trials" integer NOT NULL, ADD COLUMN "prior_type" character varying(50) NULL, ADD COLUMN "reward_type" character varying(50) NULL;
+ALTER TABLE "public"."experiments" ALTER COLUMN "design_spec_fields" DROP NOT NULL, ADD COLUMN "n_trials" integer NOT NULL, ADD COLUMN "prior_type" character varying NULL, ADD COLUMN "reward_type" character varying NULL;
 -- Set comment to column: "experiment_type" on table: "experiments"
-COMMENT ON COLUMN "public"."experiments"."experiment_type" IS 'Should be one of the ExperimentType enums.';
--- Set comment to column: "assignment_type" on table: "experiments"
-COMMENT ON COLUMN "public"."experiments"."assignment_type" IS 'Should be one of the AssignmentType literals.';
+COMMENT ON COLUMN "public"."experiments"."experiment_type" IS NULL;
 -- Create "context" table
 CREATE TABLE "public"."context" (
   "id" character varying NOT NULL,
