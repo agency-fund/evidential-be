@@ -1,3 +1,4 @@
+import os
 from pathlib import Path
 
 import pytest
@@ -11,7 +12,10 @@ from xngin.sheets.gsheets import google_app_credentials_file, read_sheet_df
 def test_read_sheet():
     assert Path(google_app_credentials_file()).exists()
     # The testing service account has been granted read access to this spreadsheet.
-    test_sheet_url = "https://docs.google.com/spreadsheets/d/redacted/edit?usp=sharing"
+    test_sheet_url = os.environ.get(
+        "GSHEET_TEST_URL",
+        "https://docs.google.com/spreadsheets/d/redacted/edit?usp=sharing",
+    )
 
     sheet = read_sheet_df(test_sheet_url, "Sheet1")
     assert sheet["col1"][0] == "r1c1"

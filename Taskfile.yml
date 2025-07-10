@@ -88,6 +88,11 @@ tasks:
     status:
       - which uv
     cmd: curl -LsSf https://astral.sh/uv/install.sh | sh
+  check-git-lfs:
+    status:
+      - which git-lfs
+    cmds:
+      - echo -e "⚠️ This machine does not have a git-lfs binary available. \nPlease install from https://git-lfs.com/ \nthen run 'git lfs install' and 'git lfs pull' from this repo."
   check-pg-config:
     platforms:
       - linux
@@ -107,6 +112,7 @@ tasks:
     cmds:
       - task: install-atlas
       - task: install-uv
+      - task: check-git-lfs
       - task: check-pg-config
       - cmd: |
           atlas version
