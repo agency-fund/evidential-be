@@ -170,6 +170,7 @@ async def create_preassigned_experiment_impl(
         datasource_id=datasource_id,
         organization_id=organization_id,
         experiment_type="preassigned",
+        assignment_type="PLACEHOLDER",  # TODO: needs to be set properly
         design_spec=design_spec,
         state=ExperimentState.ASSIGNED,
         stopped_assignments_at=datetime.now(UTC),
@@ -220,6 +221,7 @@ async def create_online_experiment_impl(
         datasource_id=datasource_id,
         organization_id=organization_id,
         experiment_type="online",
+        assignment_type="PLACEHOLDER",  # TODO: needs to be set properly
         design_spec=design_spec,
     )
     experiment = experiment_converter.get_experiment()

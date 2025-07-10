@@ -442,7 +442,7 @@ class Experiment(Base):
     updated_at: Mapped[datetime] = mapped_column(
         server_default=sqlalchemy.sql.func.now(), onupdate=sqlalchemy.sql.func.now()
     )
-    n_trials: Mapped[int] = mapped_column(Integer, default=0, onupdate="n_trials + 1")
+    n_trials: Mapped[int] = mapped_column(Integer, default=0)
 
     # -- Experiment config --
     # Bandit config params
@@ -495,7 +495,7 @@ class Experiment(Base):
         "Context",
         back_populates="experiment",
         cascade="all, delete-orphan",
-        primaryjoin="and_(Experiment.id==Context.id,"
+        primaryjoin="and_(Experiment.id==Context.experiment_id,"
         + "Experiment.experiment_type=='cmab')",
     )
 
@@ -531,7 +531,7 @@ class Arm(Base):
     name: Mapped[str] = mapped_column(String(255))
     description: Mapped[str] = mapped_column(String(2000))
     experiment_id: Mapped[str] = mapped_column(
-        String(36), ForeignKey("experiments.id", ondelete="CASCADE"), index=True
+        ForeignKey("experiments.id", ondelete="CASCADE")
     )
     organization_id: Mapped[str] = mapped_column(
         ForeignKey("organizations.id", ondelete="CASCADE")
@@ -596,9 +596,10 @@ class Draw(Base):
     observation_type: Mapped[str] = mapped_column(String, nullable=True, default=None)
 
     # Observation data
-    arm_id: Mapped[str] = mapped_column(
-        String, ForeignKey("arms.id", ondelete="CASCADE"), index=True
+    experiment_id: Mapped[str] = mapped_column(
+        ForeignKey("experiments.id", ondelete="CASCADE")
     )
+    arm_id: Mapped[str] = mapped_column(ForeignKey("arms.id", ondelete="CASCADE"))
     outcome: Mapped[float] = mapped_column(Float, nullable=True, default=None)
     context_val: Mapped[list[float]] = mapped_column(ARRAY(Float), default=[])
 
@@ -619,6 +620,9 @@ class Context(Base):
     # Context metadata
     id: Mapped[str] = mapped_column(
         String, primary_key=True, default=lambda x: str(uuid.uuid4())
+    )
+    experiment_id: Mapped[str] = mapped_column(
+        ForeignKey("experiments.id", ondelete="CASCADE")
     )
     name: Mapped[str] = mapped_column(String(length=255), nullable=False)
     description: Mapped[str] = mapped_column(String(length=2000), nullable=True)
