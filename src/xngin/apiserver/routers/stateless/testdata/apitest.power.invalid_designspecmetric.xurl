@@ -59,7 +59,7 @@ HTTP 422
       "loc": [
         "body",
         "design_spec",
-        "preassigned",
+        "freq_preassigned",
         "metrics",
         0
       ],
@@ -76,7 +76,7 @@ HTTP 422
       "loc": [
         "body",
         "design_spec",
-        "preassigned",
+        "freq_preassigned",
         "metrics",
         1
       ],
@@ -86,3 +86,15 @@ HTTP 422
   ]
 }
 ```
+[test_api]
+{
+  "deepdiff_kwargs": {
+    "exclude_regex_paths": [
+      "\\['created_at'\\]",
+      "root\\['assignments'\\]\\[\\d+\\]\\['draw_id'\\]",
+      "root\\['assignments'\\]\\[\\d+\\]\\['observed_at'\\]",
+      "root\\['assignments'\\]\\[\\d+\\]\\['outcome'\\]",
+      "root\\['assignments'\\]\\[\\d+\\]\\['context_values'\\]"
+      ]
+  }
+}

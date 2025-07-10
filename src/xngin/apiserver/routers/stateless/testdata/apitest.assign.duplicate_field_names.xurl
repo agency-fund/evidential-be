@@ -858,6 +858,12 @@ HTTP 200
 [test_api]
 {
   "deepdiff_kwargs": {
-    "exclude_regex_paths": "\\['created_at'\\]"
+    "exclude_regex_paths": [
+      "\\['created_at'\\]",
+      "root\\['assignments'\\]\\[\\d+\\]\\['draw_id'\\]",
+      "root\\['assignments'\\]\\[\\d+\\]\\['observed_at'\\]",
+      "root\\['assignments'\\]\\[\\d+\\]\\['outcome'\\]",
+      "root\\['assignments'\\]\\[\\d+\\]\\['context_values'\\]"
+      ]
   }
 }
