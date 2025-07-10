@@ -1,6 +1,5 @@
 import json
 import secrets
-import uuid
 from datetime import UTC, datetime
 from typing import ClassVar, Self
 
@@ -441,28 +440,24 @@ class Experiment(Base):
 
     # -- Experiment config --
     # Bandit config params
-    prior_type: Mapped[str | None] = mapped_column(nullable=True, default=None)
-    reward_type: Mapped[str | None] = mapped_column(nullable=True, default=None)
+    prior_type: Mapped[str | None] = mapped_column(default=None)
+    reward_type: Mapped[str | None] = mapped_column(default=None)
 
     # Frequentist config params
     # JSON serialized form of an experiment's specified dwh fields used for strata/metrics/filters.
     design_spec_fields: Mapped[dict | None] = mapped_column(
-        type_=JSONBetter, nullable=True, default=None
+        type_=JSONBetter, default=None
     )
     # JSON serialized form of a PowerResponse. Not required since some experiments may not have data to run power analyses.
-    power_analyses: Mapped[dict | None] = mapped_column(
-        type_=JSONBetter, nullable=True, default=None
-    )
+    power_analyses: Mapped[dict | None] = mapped_column(type_=JSONBetter, default=None)
     # JSON serialized form of a BalanceCheck. May be null if the experiment type doesn't support
     # balance checks.
-    balance_check: Mapped[dict | None] = mapped_column(
-        type_=JSONBetter, nullable=True, default=None
-    )
+    balance_check: Mapped[dict | None] = mapped_column(type_=JSONBetter, default=None)
 
     # Frequentist experiment types i.e. online and preassigned
-    power: Mapped[float | None] = mapped_column(nullable=True, default=None)
-    alpha: Mapped[float | None] = mapped_column(nullable=True, default=None)
-    fstat_thresh: Mapped[float | None] = mapped_column(nullable=True, default=None)
+    power: Mapped[float | None] = mapped_column(default=None)
+    alpha: Mapped[float | None] = mapped_column(default=None)
+    fstat_thresh: Mapped[float | None] = mapped_column(default=None)
 
     # -- Relationships --
     arm_assignments: Mapped[list["ArmAssignment"]] = relationship(
@@ -534,20 +529,18 @@ class Arm(Base):
 
     # -- Arm config --
     # Prior variables
-    mu_init: Mapped[float | None] = mapped_column(nullable=True, default=None)
-    sigma_init: Mapped[float | None] = mapped_column(nullable=True, default=None)
-    mu: Mapped[list[float] | None] = mapped_column(
-        ARRAY(Float), nullable=True, default=None
-    )
+    mu_init: Mapped[float | None] = mapped_column(default=None)
+    sigma_init: Mapped[float | None] = mapped_column(default=None)
+    mu: Mapped[list[float] | None] = mapped_column(ARRAY(Float), default=None)
     covariance: Mapped[list[list[float]] | None] = mapped_column(
-        ARRAY(Float), nullable=True, default=None
+        ARRAY(Float), default=None
     )
     is_baseline: Mapped[bool] = mapped_column(default=True)
 
-    alpha_init: Mapped[float | None] = mapped_column(nullable=True, default=None)
-    beta_init: Mapped[float | None] = mapped_column(nullable=True, default=None)
-    alpha: Mapped[float | None] = mapped_column(nullable=True, default=None)
-    beta: Mapped[float | None] = mapped_column(nullable=True, default=None)
+    alpha_init: Mapped[float | None] = mapped_column(default=None)
+    beta_init: Mapped[float | None] = mapped_column(default=None)
+    alpha: Mapped[float | None] = mapped_column(default=None)
+    beta: Mapped[float | None] = mapped_column(default=None)
 
     # -- Relationships --
     organization: Mapped["Organization"] = relationship(back_populates="arms")
@@ -579,18 +572,18 @@ class Draw(Base):
     draw_datetime_utc: Mapped[datetime] = mapped_column(
         server_default=sqlalchemy.sql.func.now()
     )
-    observed_datetime_utc: Mapped[datetime] = mapped_column(
-        server_default=sqlalchemy.sql.func.now(), nullable=True, default=None
+    observed_datetime_utc: Mapped[datetime | None] = mapped_column(
+        server_default=sqlalchemy.sql.func.now(), default=None
     )
-    observation_type: Mapped[str] = mapped_column(nullable=True, default=None)
+    observation_type: Mapped[str | None] = mapped_column(default=None)
 
     # Observation data
     experiment_id: Mapped[str] = mapped_column(
         ForeignKey("experiments.id", ondelete="CASCADE")
     )
     arm_id: Mapped[str] = mapped_column(ForeignKey("arms.id", ondelete="CASCADE"))
-    outcome: Mapped[float] = mapped_column(nullable=True, default=None)
-    context_val: Mapped[list[float]] = mapped_column(ARRAY(Float), default=[])
+    outcome: Mapped[float | None] = mapped_column(default=None)
+    context_val: Mapped[list[float] | None] = mapped_column(ARRAY(Float), default=None)
 
     # Relationships
     arm: Mapped[Arm] = relationship("Arm", back_populates="draws", lazy="joined")
@@ -607,15 +600,13 @@ class Context(Base):
     __tablename__ = "context"
 
     # Context metadata
-    id: Mapped[str] = mapped_column(
-        String, primary_key=True, default=lambda x: str(uuid.uuid4())
-    )
+    id: Mapped[str] = mapped_column(String, primary_key=True)
     experiment_id: Mapped[str] = mapped_column(
         ForeignKey("experiments.id", ondelete="CASCADE")
     )
-    name: Mapped[str] = mapped_column(String(255), nullable=False)
-    description: Mapped[str] = mapped_column(String(2000), nullable=True)
-    value_type: Mapped[str] = mapped_column(nullable=False)
+    name: Mapped[str] = mapped_column(String(255))
+    description: Mapped[str] = mapped_column(String(2000))
+    value_type: Mapped[str] = mapped_column()
 
     # Relationships
     experiment: Mapped[Experiment] = relationship(
