@@ -3,7 +3,7 @@
 import sqlalchemy
 
 from xngin.apiserver.dwh.inspection_types import FieldDescriptor, ParticipantsSchema
-from xngin.apiserver.models.enums import DataType
+from xngin.apiserver.models.enums import DwhDataType
 from xngin.apiserver.routers.admin.admin_api_types import (
     FieldMetadata,
     InspectDatasourceTableResponse,
@@ -27,7 +27,7 @@ def create_schema_from_table(table: sqlalchemy.Table, unique_id_col: str | None 
         collected.append(
             FieldDescriptor(
                 field_name=column.name,
-                data_type=DataType.match(type_hint),
+                data_type=DwhDataType.match(type_hint),
                 description="",  # Note: we ignore column.comment
                 is_unique_id=column.name == unique_id_col,
                 is_strata=False,
@@ -40,7 +40,7 @@ def create_schema_from_table(table: sqlalchemy.Table, unique_id_col: str | None 
         collected,
         key=lambda r: (
             not r.is_unique_id,
-            r.data_type != DataType.CHARACTER_VARYING,
+            r.data_type != DwhDataType.CHARACTER_VARYING,
             r.field_name,
         ),
     )
@@ -68,7 +68,7 @@ def create_inspect_table_response_from_table(
     collected = []
     for column in table.columns.values():
         type_hint = column.type
-        data_type = DataType.match(type_hint)
+        data_type = DwhDataType.match(type_hint)
         if data_type.is_supported():
             collected.append(
                 FieldMetadata(

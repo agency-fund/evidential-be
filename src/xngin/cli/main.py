@@ -37,7 +37,7 @@ from xngin.apiserver.dwh.dwh_session import CannotFindTableError, DwhSession
 from xngin.apiserver.dwh.inspection_types import FieldDescriptor, ParticipantsSchema
 from xngin.apiserver.dwh.inspections import create_schema_from_table
 from xngin.apiserver.models import tables
-from xngin.apiserver.models.enums import DataType
+from xngin.apiserver.models.enums import DwhDataType
 from xngin.apiserver.settings import (
     Datasource,
     Dsn,
@@ -477,7 +477,7 @@ def bootstrap_spreadsheet(
             if v:
                 return "true"
             return ""
-        if isinstance(v, DataType):
+        if isinstance(v, DwhDataType):
             return str(v)
         return v
 

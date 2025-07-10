@@ -11,7 +11,6 @@ from typing import Self
 
 from pydantic import TypeAdapter
 
-import xngin.apiserver.routers.common_api_types as capi
 from xngin.apiserver.models import tables
 from xngin.apiserver.models.enums import (
     ExperimentState,
@@ -23,6 +22,7 @@ from xngin.apiserver.models.storage_types import (
     StorageMetric,
     StorageStratum,
 )
+from xngin.apiserver.routers import common_api_types as capi
 from xngin.apiserver.routers.common_enums import ExperimentsType
 from xngin.apiserver.routers.stateless import stateless_api_types as sapi
 
@@ -87,6 +87,16 @@ class ExperimentStorageConverter:
 
     def set_design_spec_fields(self, design_spec: sapi.DesignSpec) -> Self:
         """Saves the components of a DesignSpec to the experiment."""
+        # TODO: Update to handle bandit design spec types
+        if not isinstance(
+            design_spec,
+            (
+                capi.PreassignedFrequentistExperimentSpec,
+                capi.OnlineFrequentistExperimentSpec,
+            ),
+        ):
+            raise TypeError("Invalid design spec type.")
+
         storage_strata = None
         if design_spec.strata:
             storage_strata = [
@@ -189,18 +199,16 @@ class ExperimentStorageConverter:
 
         Expects assign_summary since that typically requires a db lookup."""
         return capi.GetExperimentResponse(
-            config=dict(
-                datasource_id=self.experiment.datasource_id,
-                state=ExperimentState(self.experiment.state),
-                stopped_assignments_at=self.experiment.stopped_assignments_at,
-                stopped_assignments_reason=StopAssignmentReason.from_str(
-                    self.experiment.stopped_assignments_reason
-                ),
-                design_spec=self.get_design_spec(),
-                power_analyses=self.get_power_response(),
-                assign_summary=assign_summary,
-                webhooks=webhook_ids or [],
-            )
+            datasource_id=self.experiment.datasource_id,
+            state=ExperimentState(self.experiment.state),
+            stopped_assignments_at=self.experiment.stopped_assignments_at,
+            stopped_assignments_reason=StopAssignmentReason.from_str(
+                self.experiment.stopped_assignments_reason
+            ),
+            design_spec=self.get_design_spec(),
+            power_analyses=self.get_power_response(),
+            assign_summary=assign_summary,
+            webhooks=webhook_ids or [],
         )
 
     def get_experiment_response(
@@ -238,6 +246,14 @@ class ExperimentStorageConverter:
         Raises:
             ValueError: If the experiment_id is not set in the design_spec.
         """
+        if not isinstance(
+            design_spec,
+            (
+                capi.PreassignedFrequentistExperimentSpec,
+                capi.OnlineFrequentistExperimentSpec,
+            ),
+        ):
+            raise TypeError("Invalid design spec type.")
         if design_spec.experiment_id is None:
             raise ValueError("experiment_id is required in the design_spec")
         experiment = tables.Experiment(

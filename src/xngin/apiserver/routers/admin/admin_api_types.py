@@ -16,7 +16,7 @@ from xngin.apiserver.limits import (
 )
 from xngin.apiserver.routers.common_api_types import (
     ApiBaseModel,
-    DataType,
+    DwhDataType,
     GetFiltersResponseElement,
     GetMetricsResponseElement,
     GetStrataResponseElement,
@@ -229,7 +229,7 @@ class FieldMetadata(ApiBaseModel):
     """Concise summary of fields in the table."""
 
     field_name: FieldName
-    data_type: DataType
+    data_type: DwhDataType
     description: Annotated[str, Field(max_length=MAX_LENGTH_OF_DESCRIPTION_VALUE)]
 
 

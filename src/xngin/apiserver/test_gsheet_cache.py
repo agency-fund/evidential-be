@@ -10,7 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from xngin.apiserver.dwh.inspection_types import FieldDescriptor, ParticipantsSchema
 from xngin.apiserver.gsheet_cache import GSheetCache
 from xngin.apiserver.models import tables
-from xngin.apiserver.models.enums import DataType
+from xngin.apiserver.models.enums import DwhDataType
 from xngin.apiserver.settings import SheetRef
 
 
@@ -31,7 +31,7 @@ def mock_sheet_config():
         fields=[
             FieldDescriptor(
                 field_name="c",
-                data_type=DataType.BOOLEAN,
+                data_type=DwhDataType.BOOLEAN,
                 description="d",
                 is_unique_id=True,
                 is_strata=False,

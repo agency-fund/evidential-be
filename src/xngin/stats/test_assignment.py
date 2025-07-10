@@ -11,7 +11,7 @@ from numpy.random import MT19937, RandomState
 from sqlalchemy import DECIMAL, Boolean, Column, Float, Integer, MetaData, String, Table
 
 from xngin.apiserver.models import tables
-from xngin.apiserver.routers.common_api_types import Arm, FrequentistAssignment, Strata
+from xngin.apiserver.routers.common_api_types import Arm, Assignment, Strata
 from xngin.stats.assignment import assign_treatment, simple_random_assignment
 
 
@@ -167,8 +167,7 @@ def test_assign_treatment_multiple_arms(sample_table, sample_rows):
     assert isinstance(result.assignments, list)
     # Check that the list contains ExperimentParticipant objects
     assert all(
-        isinstance(participant, FrequentistAssignment)
-        for participant in result.assignments
+        isinstance(participant, Assignment) for participant in result.assignments
     )
     # Check that the treatment assignments are valid (not None or NaN)
     assert all(participant.arm_name is not None for participant in result.assignments)

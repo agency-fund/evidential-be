@@ -13,9 +13,9 @@ from xngin.apiserver.limits import (
 )
 from xngin.apiserver.routers.common_api_types import (
     ApiBaseModel,
+    Assignment,
     BalanceCheck,
     DesignSpec,
-    FrequentistAssignment,
     GetFiltersResponseElement,
     GetMetricsResponseElement,
     GetStrataResponseElement,
@@ -85,7 +85,7 @@ class AssignResponse(ApiBaseModel):
     ]
     # TODO(qixotic): Consider lifting up Assignment.arm_id & arm_name to the AssignResponse level
     # and organize assignments into lists by arm. Be less bulky and arm sizes come naturally.
-    assignments: Annotated[list[FrequentistAssignment], Field()]
+    assignments: Annotated[list[Assignment], Field()]
 
 
 class AnalysisRequest(ApiBaseModel):

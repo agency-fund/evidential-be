@@ -2,16 +2,13 @@ import datetime
 import math
 import uuid
 from collections.abc import Sequence
-from typing import Annotated, Any, Literal, Self
+from typing import Annotated, Literal, Self
 
 import sqlalchemy.sql
 from pydantic import (
     BaseModel,
     ConfigDict,
-    Discriminator,
     Field,
-    RootModel,
-    Tag,
     field_serializer,
     field_validator,
     model_validator,
@@ -24,22 +21,23 @@ from xngin.apiserver.limits import (
     MAX_LENGTH_OF_NAME_VALUE,
     MAX_LENGTH_OF_PARTICIPANT_ID_VALUE,
     MAX_NUMBER_OF_ARMS,
+    MAX_NUMBER_OF_CONTEXTS,
     MAX_NUMBER_OF_FIELDS,
     MAX_NUMBER_OF_FILTERS,
 )
 from xngin.apiserver.models.enums import (
-    DataType,
+    DwhDataType,
     ExperimentState,
     Relation,
     StopAssignmentReason,
 )
 from xngin.apiserver.routers.common_enums import (
-    ArmPriors,
     ContextType,
     ExperimentsType,
+    LikelihoodTypes,
     MetricPowerAnalysisMessageType,
     MetricType,
-    OutcomeLikelihood,
+    PriorTypes,
 )
 
 type StrictInt = Annotated[int | None, Field(strict=True)]
@@ -470,7 +468,7 @@ class MetricPowerAnalysis(ApiBaseModel):
 class GetStrataResponseElement(ApiBaseModel):
     """Describes a stratification variable."""
 
-    data_type: DataType
+    data_type: DwhDataType
     field_name: FieldName
     description: Annotated[str, Field(max_length=MAX_LENGTH_OF_DESCRIPTION_VALUE)]
     # Extra fields will be stored here in case a user configured their worksheet with extra metadata for their own
@@ -484,7 +482,7 @@ class GetMetricsResponseElement(ApiBaseModel):
     """Describes a metric."""
 
     field_name: FieldName
-    data_type: DataType
+    data_type: DwhDataType
     description: Annotated[str, Field(max_length=MAX_LENGTH_OF_DESCRIPTION_VALUE)]
 
 
@@ -630,9 +628,13 @@ class Stratum(ApiBaseModel):
     field_name: FieldName
 
 
+# -- Experiment Design Specification --
+
+
 class BaseDesignSpec(ApiBaseModel):
     """Experiment design metadata and target metrics common to all experiment types."""
 
+    # --- Experiment metadata ---
     participant_type: Annotated[str, Field(max_length=MAX_LENGTH_OF_NAME_VALUE)]
 
     experiment_id: Annotated[
@@ -641,11 +643,11 @@ class BaseDesignSpec(ApiBaseModel):
             description="ID of the experiment. If creating a new experiment (POST /datasources/{datasource_id}/experiments), this is generated for you and made available in the response; you should NOT set this. Only generate ids of your own if using the stateless Experiment Design API as you will do your own persistence."
         ),
     ] = None
+
     experiment_type: Annotated[
         ExperimentsType,
         Field(
             description="This type determines how we do assignment and analyses.",
-            default=ExperimentsType.FREQ_ONLINE,
         ),
     ]
 
@@ -654,15 +656,11 @@ class BaseDesignSpec(ApiBaseModel):
     start_date: datetime.datetime
     end_date: datetime.datetime
 
-    @field_serializer("start_date", "end_date", when_used="json")
-    def serialize_dt(self, dt: datetime.datetime, _info):
-        """Convert dates to iso strings in model_dump_json()/model_dump(mode='json')"""
-        return dt.isoformat()
 
+class BaseFrequentistDesignSpec(BaseDesignSpec):
+    """Experiment design parameters for frequentist experiments."""
 
-class FrequentistExperimentSpecBase(BaseDesignSpec):
-    """Base class for Frequentist experiment design parameters."""
-
+    # Frequentist config params
     # arms (at least two)
     arms: Annotated[list[Arm], Field(..., min_length=2, max_length=MAX_NUMBER_OF_ARMS)]
 
@@ -691,16 +689,6 @@ class FrequentistExperimentSpecBase(BaseDesignSpec):
             max_length=MAX_NUMBER_OF_FILTERS,
         ),
     ]
-
-    def ids_are_present(self) -> bool:
-        """True if any IDs are present."""
-        return self.experiment_id is not None or any(
-            arm.arm_id is not None for arm in self.arms
-        )
-
-
-class FrequentistExperimentSpec(FrequentistExperimentSpecBase):
-    """Experiment design parameters for power calculations and analysis."""
 
     # stat parameters
     power: Annotated[
@@ -731,8 +719,19 @@ class FrequentistExperimentSpec(FrequentistExperimentSpecBase):
         ),
     ]
 
+    def ids_are_present(self) -> bool:
+        """True if any IDs are present."""
+        return self.experiment_id is not None or any(
+            arm.arm_id is not None for arm in self.arms
+        )
 
-class BanditExperimentSpec(BaseDesignSpec):
+    @field_serializer("start_date", "end_date", when_used="json")
+    def serialize_dt(self, dt: datetime.datetime, _info):
+        """Convert dates to iso strings in model_dump_json()/model_dump(mode='json')"""
+        return dt.isoformat()
+
+
+class BaseBanditExperimentSpec(BaseDesignSpec):
     """Experiment design parameters for bandit experiments."""
 
     # arms (at least two)
@@ -750,17 +749,17 @@ class BanditExperimentSpec(BaseDesignSpec):
 
     # Experiment config
     prior_type: Annotated[
-        ArmPriors,
+        PriorTypes,
         Field(
             description="The type of prior distribution for the arms.",
-            default=ArmPriors.BETA,
+            default=PriorTypes.BETA,
         ),
     ]
     reward_type: Annotated[
-        OutcomeLikelihood,
+        LikelihoodTypes,
         Field(
             description="The type of reward we observe from the experiment.",
-            default=OutcomeLikelihood.BERNOULLI,
+            default=LikelihoodTypes.BERNOULLI,
         ),
     ]
 
@@ -773,8 +772,8 @@ class BanditExperimentSpec(BaseDesignSpec):
         arms = self.arms
 
         prior_params = {
-            ArmPriors.BETA: ("alpha_init", "beta_init"),
-            ArmPriors.NORMAL: ("mu_init", "sigma_init"),
+            PriorTypes.BETA: ("alpha_init", "beta_init"),
+            PriorTypes.NORMAL: ("mu_init", "sigma_init"),
         }
 
         for arm in arms:
@@ -808,8 +807,8 @@ class BanditExperimentSpec(BaseDesignSpec):
         """
         Validate that the prior and reward type combination is allowed.
         """
-        if self.prior_type == ArmPriors.BETA:
-            if not self.reward_type == OutcomeLikelihood.BERNOULLI:
+        if self.prior_type == PriorTypes.BETA:
+            if not self.reward_type == LikelihoodTypes.BERNOULLI:
                 raise ValueError(
                     "Beta prior can only be used with binary-valued rewards."
                 )
@@ -834,7 +833,7 @@ class BanditExperimentSpec(BaseDesignSpec):
         return self
 
 
-class PreassignedExperimentSpec(FrequentistExperimentSpec):
+class PreassignedFrequentistExperimentSpec(BaseFrequentistDesignSpec):
     """Use this type to randomly select and assign from existing participants at design time with frequentist A/B experiments."""
 
     experiment_type: Literal[ExperimentsType.FREQ_PREASSIGNED] = (
@@ -842,7 +841,7 @@ class PreassignedExperimentSpec(FrequentistExperimentSpec):
     )
 
 
-class OnlineFrequentistExperimentSpec(FrequentistExperimentSpec):
+class OnlineFrequentistExperimentSpec(BaseFrequentistDesignSpec):
     """Use this type to randomly assign participants into arms during live experiment execution with frequentist A/B experiments.
 
     For example, you may wish to experiment on new users. Assignments are issued via API request.
@@ -851,8 +850,41 @@ class OnlineFrequentistExperimentSpec(FrequentistExperimentSpec):
     experiment_type: Literal[ExperimentsType.FREQ_ONLINE] = ExperimentsType.FREQ_ONLINE
 
 
+class MABExperimentSpec(BaseBanditExperimentSpec):
+    """Use this type to randomly assign participants into arms during live experiment execution with MAB experiments.
+
+    For example, you may wish to experiment on new users. Assignments are issued via API request.
+    """
+
+    experiment_type: Literal[ExperimentsType.MAB_ONLINE] = ExperimentsType.MAB_ONLINE
+
+
+class CMABExperimentSpec(BaseBanditExperimentSpec):
+    """Use this type to randomly assign participants into arms during live experiment execution with contextual MAB experiments.
+
+    For example, you may wish to experiment on new users. Assignments are issued via API request.
+    """
+
+    experiment_type: Literal[ExperimentsType.CMAB_ONLINE] = ExperimentsType.CMAB_ONLINE
+
+
+class BayesABExperimentSpec(BaseBanditExperimentSpec):
+    """Use this type to randomly assign participants into arms during live experiment execution with Bayesian A/B experiments.
+
+    For example, you may wish to experiment on new users. Assignments are issued via API request.
+    """
+
+    experiment_type: Literal[ExperimentsType.BAYESAB_ONLINE] = (
+        ExperimentsType.BAYESAB_ONLINE
+    )
+
+
 type DesignSpec = Annotated[
-    PreassignedExperimentSpec | OnlineFrequentistExperimentSpec,
+    PreassignedFrequentistExperimentSpec
+    | OnlineFrequentistExperimentSpec
+    | MABExperimentSpec
+    | CMABExperimentSpec
+    | BayesABExperimentSpec,
     Field(
         discriminator="experiment_type",
         description="The type of assignment and experiment design.",
@@ -880,16 +912,18 @@ class Strata(ApiBaseModel):
     strata_value: str | None = None
 
 
-class AssignmentBase(ApiBaseModel):
+class Assignment(ApiBaseModel):
     """Base class for treatment assignment in experiments."""
 
     # this references the field marked is_unique_id == TRUE in the configuration spreadsheet
-    participant_id: Annotated[str, Field(max_length=MAX_LENGTH_OF_PARTICIPANT_ID_VALUE)]
     arm_id: Annotated[
         str,
         Field(
             description="ID of the arm this participant was assigned to. Same as Arm.arm_id."
         ),
+    ]
+    participant_id: Annotated[
+        str, Field(max_length=MAX_LENGTH_OF_PARTICIPANT_ID_VALUE, default=None)
     ]
     arm_name: Annotated[
         str,
@@ -903,10 +937,7 @@ class AssignmentBase(ApiBaseModel):
         Field(description="The date and time the assignment was created."),
     ] = None
 
-
-class FrequentistAssignment(AssignmentBase):
-    """Describes treatment assignment for an experiment participant."""
-
+    # -- Frequentist-specific fields --
     strata: Annotated[
         list[Strata] | None,
         Field(
@@ -915,17 +946,14 @@ class FrequentistAssignment(AssignmentBase):
         ),
     ] = None
 
-
-class BanditAssignment(AssignmentBase):
-    """Describes treatment assignment for a bandit experiment participant."""
-
+    # -- Bandit-specific fields --
     draw_id: Annotated[
         str | None,
         Field(
             description="Unique identifier for the draw.",
             examples=["draw_123", None],
         ),
-    ]
+    ] = None
 
     observed_at: Annotated[
         datetime.datetime | None,
@@ -933,15 +961,17 @@ class BanditAssignment(AssignmentBase):
     ] = None
 
     outcome: Annotated[
-        float, Field(description="The observed outcome for this assignment.")
-    ]
+        float | None, Field(description="The observed outcome for this assignment.")
+    ] = None
+
     context_values: Annotated[
-        list[ContextInput] | None,
+        list[ContextInput],
         Field(
             description="List of context values for this assignment. If no contexts are used, this will be None.",
-            max_length=MAX_NUMBER_OF_FIELDS,
+            max_length=MAX_NUMBER_OF_CONTEXTS,
+            default=[],
         ),
-    ] = None
+    ] = []
 
 
 class BalanceCheck(ApiBaseModel):
@@ -986,16 +1016,9 @@ class ArmSize(ApiBaseModel):
     size: int = 0
 
 
-class ExperimentsBaseModel(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-
-class CreateExperimentRequestBandit(ExperimentsBaseModel):
-    design_spec: BanditExperimentSpec
-
-
-class CreateExperimentRequestFrequentist(ExperimentsBaseModel):
+class CreateExperimentRequest(ApiBaseModel):
     design_spec: DesignSpec
+    power_analyses: PowerResponse | None = None
     webhooks: Annotated[
         list[str],
         Field(
@@ -1012,42 +1035,8 @@ class CreateExperimentRequestFrequentist(ExperimentsBaseModel):
             raise ValueError("Webhook IDs must be unique")
         return v
 
-    power_analyses: PowerResponse | None = None
 
-
-def experiment_request_discriminator(value: dict[str, Any]) -> str:
-    """Discriminator function for CreateExperimentRequest."""
-    if isinstance(value, dict):
-        try:
-            experiment_type = value["design_spec"].experiment_type
-        except AttributeError:
-            experiment_type = value["design_spec"].get("experiment_type")
-    elif isinstance(value, ExperimentConfigBase):
-        experiment_type = value.design_spec.experiment_type
-    elif isinstance(value, ExperimentsBaseModel):
-        experiment_type = value.config.design_spec.experiment_type
-
-    if "freq" in experiment_type.value:
-        return "frequentist"
-    if experiment_type in ExperimentsType:
-        return "bandit"
-    raise ValueError(
-        f"Unknown experiment type: {experiment_type}. Expected one of {ExperimentsType}."
-    )
-
-
-class CreateExperimentRequest(RootModel):
-    root: Annotated[
-        Annotated[CreateExperimentRequestFrequentist, Tag("frequentist")]
-        | Annotated[CreateExperimentRequestBandit, Tag("bandit")],
-        Field(
-            discriminator=Discriminator(experiment_request_discriminator),
-            description="Concrete type of experiment to create, determined by the experiment_type in the design_spec.",
-        ),
-    ]
-
-
-class AssignSummary(ExperimentsBaseModel):
+class AssignSummary(ApiBaseModel):
     """Key pieces of an AssignResponse without the assignments."""
 
     balance_check: Annotated[
@@ -1069,7 +1058,7 @@ class AssignSummary(ExperimentsBaseModel):
     ] = None
 
 
-class ExperimentConfigBase(ExperimentsBaseModel):
+class ExperimentConfig(ApiBaseModel):
     """Representation of our stored Experiment information."""
 
     datasource_id: str
@@ -1088,14 +1077,9 @@ class ExperimentConfigBase(ExperimentsBaseModel):
             description="The reason assignments were stopped. Null if assignments are still allowed to be made."
         ),
     ]
-
-
-class ExperimentConfigFrequentist(ExperimentConfigBase):
-    """Experiment configuration for Frequentist experiments."""
-
     design_spec: DesignSpec
     power_analyses: PowerResponse | None
-    assign_summary: AssignSummary
+    assign_summary: AssignSummary | None
     webhooks: Annotated[
         list[str],
         Field(
@@ -1105,50 +1089,30 @@ class ExperimentConfigFrequentist(ExperimentConfigBase):
     ]
 
 
-class ExperimentConfigBandit(ExperimentConfigBase):
-    """Experiment configuration for Bandit experiments."""
-
-    design_spec: BanditExperimentSpec
-
-
-ExperimentConfig = Annotated[
-    Annotated[ExperimentConfigFrequentist, Tag("frequentist")]
-    | Annotated[ExperimentConfigBandit, Tag("bandit")],
-    Field(
-        discriminator=Discriminator(experiment_request_discriminator),
-        description="Concrete type of experiment configuration, determined by the experiment_type in the design_spec.",
-    ),
-]
-
-
-class GetExperimentResponse(ExperimentsBaseModel):
+class GetExperimentResponse(ExperimentConfig):
     """An experiment configuration capturing all info at design time when assignment was made."""
 
-    config: Annotated[ExperimentConfig, Field(description="Experiment configuration.")]
 
-
-class ListExperimentsResponse(ExperimentsBaseModel):
+class ListExperimentsResponse(ApiBaseModel):
     items: list[ExperimentConfig]
 
 
-class GetParticipantAssignmentResponse(ExperimentsBaseModel):
+class GetParticipantAssignmentResponse(ApiBaseModel):
     """Describes assignment for a single <experiment, participant> pair."""
 
     experiment_id: str
     participant_id: str
     assignment: Annotated[
-        FrequentistAssignment | None,
+        Assignment | None,
         Field(description="Null if no assignment. assignment.strata are not included."),
     ]
 
 
-class CreateExperimentResponse(ExperimentsBaseModel):
+class CreateExperimentResponse(ExperimentConfig):
     """Same as the request but with ids filled for the experiment and arms, and summary info on the assignment."""
 
-    config: ExperimentConfig
 
-
-class GetExperimentAssignmentsResponse(ExperimentsBaseModel):
+class GetExperimentAssignmentsResponse(ApiBaseModel):
     """Describes assignments for all participants and balance test results if available."""
 
     balance_check: Annotated[
@@ -1160,12 +1124,12 @@ class GetExperimentAssignmentsResponse(ExperimentsBaseModel):
 
     experiment_id: str
     sample_size: int
-    assignments: list[FrequentistAssignment]
+    assignments: list[Assignment]
 
 
 class GetFiltersResponseBase(ApiBaseModel):
     field_name: Annotated[FieldName, Field(..., description="Name of the field.")]
-    data_type: DataType
+    data_type: DwhDataType
     relations: Annotated[
         list[Relation], Field(..., min_length=1, max_length=MAX_NUMBER_OF_FILTERS)
     ]

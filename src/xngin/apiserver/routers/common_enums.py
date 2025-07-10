@@ -45,7 +45,7 @@ class ExperimentsType(enum.StrEnum):
     FREQ_PREASSIGNED = "freq_preassigned"
 
 
-class ArmPriors(enum.StrEnum):
+class PriorTypes(enum.StrEnum):
     """
     Enum for the prior distribution of the arm.
     """
@@ -57,13 +57,13 @@ class ArmPriors(enum.StrEnum):
         """
         Return the log pdf of the input param.
         """
-        if self == ArmPriors.BETA:
+        if self == PriorTypes.BETA:
             alpha = kwargs.get("alpha", np.ones_like(theta))
             beta = kwargs.get("beta", np.ones_like(theta))
             pdf = (alpha - 1) * np.log(theta) + (beta - 1) * np.log(1 - theta)
             return np.array(pdf)
 
-        if self == ArmPriors.NORMAL:
+        if self == PriorTypes.NORMAL:
             mu = kwargs.get("mu", np.zeros_like(theta))
             covariance = kwargs.get("covariance", np.diag(np.ones_like(theta)))
             inv_cov = np.linalg.inv(covariance)
@@ -73,7 +73,7 @@ class ArmPriors(enum.StrEnum):
         raise ValueError(f"Unsupported prior type: {self}.")
 
 
-class OutcomeLikelihood(enum.StrEnum):
+class LikelihoodTypes(enum.StrEnum):
     """
     Enum for the likelihood distribution of the reward.
     """
@@ -90,10 +90,10 @@ class OutcomeLikelihood(enum.StrEnum):
         reward : The reward.
         probs : The probability of the reward.
         """
-        if self == OutcomeLikelihood.NORMAL:
+        if self == LikelihoodTypes.NORMAL:
             llhood = -0.5 * np.sum((reward - probs) ** 2)
             return np.array(llhood)
-        if self == OutcomeLikelihood.BERNOULLI:
+        if self == LikelihoodTypes.BERNOULLI:
             llhood = np.sum(reward * np.log(probs) + (1 - reward) * np.log(1 - probs))
             return np.array(llhood)
         raise ValueError(f"Unsupported likelihood type: {self}.")

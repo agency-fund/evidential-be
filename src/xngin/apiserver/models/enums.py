@@ -42,7 +42,7 @@ class StopAssignmentReason(enum.StrEnum):
     TARGET_N = "target_n"  # target total number of participants across all arms reached
 
 
-class DataType(enum.StrEnum):
+class DwhDataType(enum.StrEnum):
     """Defines the supported data types for fields in the data source."""
 
     BOOLEAN = "boolean"
@@ -67,61 +67,65 @@ class DataType(enum.StrEnum):
 
         Value may be a Python type or a SQLAlchemy type.
         """
-        if value in DataType:
-            return DataType[value]
+        if value in DwhDataType:
+            return DwhDataType[value]
         if value is str:
-            return DataType.CHARACTER_VARYING
+            return DwhDataType.CHARACTER_VARYING
         if isinstance(value, sqlalchemy.sql.sqltypes.UUID):
-            return DataType.UUID
+            return DwhDataType.UUID
         if isinstance(value, sqlalchemy.sql.sqltypes.String):
-            return DataType.CHARACTER_VARYING
+            return DwhDataType.CHARACTER_VARYING
         if isinstance(value, sqlalchemy.sql.sqltypes.Boolean):
-            return DataType.BOOLEAN
+            return DwhDataType.BOOLEAN
         if isinstance(value, sqlalchemy.sql.sqltypes.BigInteger):
-            return DataType.BIGINT
+            return DwhDataType.BIGINT
         if isinstance(value, sqlalchemy.sql.sqltypes.Integer):
-            return DataType.INTEGER
+            return DwhDataType.INTEGER
         if isinstance(value, sqlalchemy.sql.sqltypes.Double):
-            return DataType.DOUBLE_PRECISION
+            return DwhDataType.DOUBLE_PRECISION
         if isinstance(value, sqlalchemy.sql.sqltypes.Float):
-            return DataType.DOUBLE_PRECISION
+            return DwhDataType.DOUBLE_PRECISION
         if isinstance(value, sqlalchemy.sql.sqltypes.Numeric):
-            return DataType.NUMERIC
+            return DwhDataType.NUMERIC
         if isinstance(value, sqlalchemy.sql.sqltypes.Date):
-            return DataType.DATE
+            return DwhDataType.DATE
         if isinstance(value, sqlalchemy.sql.sqltypes.DateTime) and value.timezone:
-            return DataType.TIMESTAMP_WITH_TIMEZONE
+            return DwhDataType.TIMESTAMP_WITH_TIMEZONE
         if isinstance(value, sqlalchemy.sql.sqltypes.DateTime) and not value.timezone:
-            return DataType.TIMESTAMP_WITHOUT_TIMEZONE
+            return DwhDataType.TIMESTAMP_WITHOUT_TIMEZONE
         if isinstance(value, JSONB):
-            return DataType.JSONB
+            return DwhDataType.JSONB
         if isinstance(value, JSON):
-            return DataType.JSON
+            return DwhDataType.JSON
         if value is int:
-            return DataType.INTEGER
+            return DwhDataType.INTEGER
         if value is float:
-            return DataType.DOUBLE_PRECISION
+            return DwhDataType.DOUBLE_PRECISION
         logger.warning("Unmatched type: {}", type(value))
-        return DataType.UNKNOWN
+        return DwhDataType.UNKNOWN
 
     @classmethod
-    def supported_participant_id_types(cls) -> list["DataType"]:
+    def supported_participant_id_types(cls) -> list["DwhDataType"]:
         """Returns the list of data types that are supported as participant IDs."""
         return [
-            DataType.INTEGER,
-            DataType.BIGINT,
-            DataType.UUID,
-            DataType.CHARACTER_VARYING,
+            DwhDataType.INTEGER,
+            DwhDataType.BIGINT,
+            DwhDataType.UUID,
+            DwhDataType.CHARACTER_VARYING,
         ]
 
     @classmethod
     def is_supported_type(cls, data_type: Self):
         """Returns True if the type is supported as a strata, filter, and/or metric."""
-        return data_type not in {DataType.JSONB, DataType.JSON, DataType.UNKNOWN}
+        return data_type not in {
+            DwhDataType.JSONB,
+            DwhDataType.JSON,
+            DwhDataType.UNKNOWN,
+        }
 
     def is_supported(self):
         """Returns True if the type is supported as a strata, filter, and/or metric."""
-        return DataType.is_supported_type(self)
+        return DwhDataType.is_supported_type(self)
 
     def filter_class(self, field_name):
         """Classifies a DataType into a filter class."""
@@ -129,16 +133,16 @@ class DataType(enum.StrEnum):
             # TODO: is this customer specific?
             case _ if field_name.lower().endswith("_id"):
                 return FilterClass.DISCRETE
-            case DataType.BOOLEAN | DataType.CHARACTER_VARYING | DataType.UUID:
+            case DwhDataType.BOOLEAN | DwhDataType.CHARACTER_VARYING | DwhDataType.UUID:
                 return FilterClass.DISCRETE
             case (
-                DataType.DATE
-                | DataType.TIMESTAMP_WITHOUT_TIMEZONE
-                | DataType.TIMESTAMP_WITH_TIMEZONE
-                | DataType.INTEGER
-                | DataType.DOUBLE_PRECISION
-                | DataType.NUMERIC
-                | DataType.BIGINT
+                DwhDataType.DATE
+                | DwhDataType.TIMESTAMP_WITHOUT_TIMEZONE
+                | DwhDataType.TIMESTAMP_WITH_TIMEZONE
+                | DwhDataType.INTEGER
+                | DwhDataType.DOUBLE_PRECISION
+                | DwhDataType.NUMERIC
+                | DwhDataType.BIGINT
             ):
                 return FilterClass.NUMERIC
             case _:

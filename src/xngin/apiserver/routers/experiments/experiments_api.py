@@ -30,14 +30,14 @@ from xngin.apiserver.gsheet_cache import GSheetCache
 from xngin.apiserver.models import tables
 from xngin.apiserver.models.storage_format_converters import ExperimentStorageConverter
 from xngin.apiserver.routers.common_api_types import (
-    BanditExperimentSpec,
     CreateExperimentRequest,
-    CreateExperimentRequestBandit,
     CreateExperimentResponse,
     GetExperimentAssignmentsResponse,
     GetExperimentResponse,
     GetParticipantAssignmentResponse,
     ListExperimentsResponse,
+    OnlineFrequentistExperimentSpec,
+    PreassignedFrequentistExperimentSpec,
 )
 from xngin.apiserver.routers.experiments.dependencies import experiment_dependency
 from xngin.apiserver.routers.experiments.experiments_common import (
@@ -94,20 +94,19 @@ async def create_experiment_with_assignment_sl(
     refresh: Annotated[bool, Query(description="Refresh the cache.")] = False,
 ) -> CreateExperimentResponse:
     """Creates an experiment and saves its assignments to the database."""
-    body_config = body.root
-    if isinstance(body_config, CreateExperimentRequestBandit) or isinstance(
-        body_config.design_spec, BanditExperimentSpec
+    if not isinstance(
+        body, (PreassignedFrequentistExperimentSpec, OnlineFrequentistExperimentSpec)
     ):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Bandit experiments are not supported in this API.",
+            detail=f"{body.__class__.__name__} experiments are not supported for assignments.",
         )
-    if body_config.design_spec.ids_are_present():
+    if body.design_spec.ids_are_present():
         raise LateValidationError("Invalid DesignSpec: UUIDs must not be set.")
 
     ds_config = datasource.config
     commons = CommonQueryParams(
-        participant_type=body_config.design_spec.participant_type, refresh=refresh
+        participant_type=body.design_spec.participant_type, refresh=refresh
     )
     participants_cfg, schema = await get_participants_config_and_schema(
         commons, ds_config, gsheets
@@ -116,7 +115,7 @@ async def create_experiment_with_assignment_sl(
     # Get participants and their schema info from the client dwh
     async with DwhSession(ds_config.dwh) as dwh:
         result = await dwh.get_participants(
-            participants_cfg.table_name, body_config.design_spec.filters, chosen_n
+            participants_cfg.table_name, body.design_spec.filters, chosen_n
         )
 
     # Persist the experiment and assignments in the xngin database

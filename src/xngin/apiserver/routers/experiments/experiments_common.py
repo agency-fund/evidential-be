@@ -24,15 +24,15 @@ from xngin.apiserver.models.storage_format_converters import ExperimentStorageCo
 from xngin.apiserver.routers.common_api_types import (
     Arm,
     ArmSize,
+    Assignment,
     AssignSummary,
     BalanceCheck,
-    BanditExperimentSpec,
     CreateExperimentRequest,
-    CreateExperimentRequestBandit,
     CreateExperimentResponse,
-    FrequentistAssignment,
     GetExperimentAssignmentsResponse,
     ListExperimentsResponse,
+    OnlineFrequentistExperimentSpec,
+    PreassignedFrequentistExperimentSpec,
     Strata,
 )
 from xngin.apiserver.routers.common_enums import ExperimentsType
@@ -96,12 +96,11 @@ async def create_experiment_impl(
             )
 
     # First generate ids for the experiment and arms, which do_assignment needs.
-    request_config = request.root
-    request_config.design_spec.experiment_id = tables.experiment_id_factory()
-    for arm in request_config.design_spec.arms:
+    request.design_spec.experiment_id = tables.experiment_id_factory()
+    for arm in request.design_spec.arms:
         arm.arm_id = tables.arm_id_factory()
 
-    if request_config.design_spec.experiment_type == "freq_preassigned":
+    if request.design_spec.experiment_type == ExperimentsType.FREQ_PREASSIGNED:
         if dwh_participants is None:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
@@ -119,7 +118,7 @@ async def create_experiment_impl(
             stratify_on_metrics=stratify_on_metrics,
             validated_webhooks=validated_webhooks,
         )
-    if request_config.design_spec.experiment_type == "freq_online":
+    if request.design_spec.experiment_type == ExperimentsType.FREQ_ONLINE:
         return await create_online_experiment_impl(
             request=request,
             datasource_id=datasource_id,
@@ -130,7 +129,7 @@ async def create_experiment_impl(
 
     raise HTTPException(
         status_code=status.HTTP_400_BAD_REQUEST,
-        detail=f"Invalid experiment type: {request_config.design_spec.experiment_type}",
+        detail=f"Invalid experiment type: {request.design_spec.experiment_type}",
     )
 
 
@@ -146,12 +145,9 @@ async def create_preassigned_experiment_impl(
     stratify_on_metrics: bool,
     validated_webhooks: list[tables.Webhook],
 ) -> CreateExperimentResponse:
-    request_config = request.root
-    design_spec = request_config.design_spec
+    design_spec = request.design_spec
 
-    if isinstance(request_config, CreateExperimentRequestBandit) or isinstance(
-        design_spec, BanditExperimentSpec
-    ):
+    if not isinstance(design_spec, PreassignedFrequentistExperimentSpec):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Bandit experiments are not supported for preassigned assignments",
@@ -182,13 +178,13 @@ async def create_preassigned_experiment_impl(
     experiment_converter = ExperimentStorageConverter.init_from_components(
         datasource_id=datasource_id,
         organization_id=organization_id,
-        experiment_type=ExperimentsType.FREQ_PREASSIGNED,
+        experiment_type=design_spec.experiment_type,
         design_spec=design_spec,
         state=ExperimentState.ASSIGNED,
         stopped_assignments_at=datetime.now(UTC),
         stopped_assignments_reason=StopAssignmentReason.PREASSIGNED,
         balance_check=assignment_response.balance_check,
-        power_analyses=request_config.power_analyses,
+        power_analyses=request.power_analyses,
     )
     experiment = experiment_converter.get_experiment()
     # Associate webhooks with the experiment
@@ -229,12 +225,10 @@ async def create_online_experiment_impl(
     validated_webhooks: list[tables.Webhook],
 ) -> CreateExperimentResponse:
     """Create an online experiment and persist it to the database."""
-    request_config = request.root
-    design_spec = request_config.design_spec
+    design_spec = request.design_spec
 
-    if isinstance(request_config, CreateExperimentRequestBandit) or isinstance(
-        design_spec, BanditExperimentSpec
-    ):
+    # TODO: update to support bandit experiments
+    if not isinstance(request, OnlineFrequentistExperimentSpec):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Bandit experiments are not supported for online assignments",
@@ -365,9 +359,7 @@ async def list_organization_experiments_impl(
         balance_check = converter.get_balance_check()
         assign_summary = await get_assign_summary(xngin_session, e.id, balance_check)
         webhook_ids = [webhook.id for webhook in e.webhooks]
-        items.append(
-            converter.get_experiment_config(assign_summary, webhook_ids).config
-        )
+        items.append(converter.get_experiment_config(assign_summary, webhook_ids))
     return ListExperimentsResponse(items=items)
 
 
@@ -397,9 +389,7 @@ async def list_experiments_impl(
         balance_check = converter.get_balance_check()
         assign_summary = await get_assign_summary(xngin_session, e.id, balance_check)
         webhook_ids = [webhook.id for webhook in e.webhooks]
-        items.append(
-            converter.get_experiment_config(assign_summary, webhook_ids).config
-        )
+        items.append(converter.get_experiment_config(assign_summary, webhook_ids))
     return ListExperimentsResponse(items=items)
 
 
@@ -410,7 +400,7 @@ def get_experiment_assignments_impl(
     arm_id_to_name = {arm.id: arm.name for arm in experiment.arms}
     # Convert ArmAssignment models to Assignment API types
     assignments = [
-        FrequentistAssignment(
+        Assignment(
             participant_id=arm_assignment.participant_id,
             arm_id=arm_assignment.arm_id,
             arm_name=arm_id_to_name[arm_assignment.arm_id],
@@ -486,7 +476,7 @@ async def get_experiment_assignments_as_csv_impl(
 
 async def get_existing_assignment_for_participant(
     xngin_session: AsyncSession, experiment_id: str, participant_id: str
-) -> FrequentistAssignment | None:
+) -> Assignment | None:
     """Internal helper to look up an existing assignment for a participant.  Excludes strata.
 
     Returns: None if no assignment exists.
@@ -512,7 +502,7 @@ async def get_existing_assignment_for_participant(
     existing_assignment = res.one_or_none()
     # If the participant already has an assignment for this experiment, return it.
     if existing_assignment:
-        return FrequentistAssignment(
+        return Assignment(
             participant_id=existing_assignment.participant_id,
             arm_id=existing_assignment.arm_id,
             arm_name=existing_assignment.arm_name,
@@ -527,7 +517,7 @@ async def create_assignment_for_participant(
     experiment: tables.Experiment,
     participant_id: str,
     random_state: int | None,
-) -> FrequentistAssignment | None:
+) -> Assignment | None:
     """Helper to persist a new assignment for a participant. Returned value excludes strata.
 
     Has side effect of updating the experiment's stopped_at and stopped_reason if we discover we should stop assigning.
@@ -598,7 +588,7 @@ async def create_assignment_for_participant(
             f"Failed to assign participant '{participant_id}' to arm '{chosen_arm_id}': {e}"
         ) from e
 
-    return FrequentistAssignment(
+    return Assignment(
         participant_id=participant_id,
         arm_id=chosen_arm_id,
         arm_name=chosen_arm.name,

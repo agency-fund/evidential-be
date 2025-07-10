@@ -76,9 +76,7 @@ from xngin.apiserver.routers.auth.auth_dependencies import require_oidc_token
 from xngin.apiserver.routers.auth.principal import Principal
 from xngin.apiserver.routers.common_api_types import (
     ArmAnalysis,
-    BanditExperimentSpec,
     CreateExperimentRequest,
-    CreateExperimentRequestBandit,
     CreateExperimentResponse,
     ExperimentAnalysis,
     GetExperimentAssignmentsResponse,
@@ -88,8 +86,10 @@ from xngin.apiserver.routers.common_api_types import (
     GetStrataResponseElement,
     ListExperimentsResponse,
     MetricAnalysis,
+    OnlineFrequentistExperimentSpec,
     PowerRequest,
     PowerResponse,
+    PreassignedFrequentistExperimentSpec,
 )
 from xngin.apiserver.routers.experiments import experiments_common
 from xngin.apiserver.routers.stateless.stateless_api import (
@@ -1249,21 +1249,20 @@ async def create_experiment(
         ),
     ] = None,
 ) -> CreateExperimentResponse:
-    body_config = body.root
-    if isinstance(body_config, CreateExperimentRequestBandit) or isinstance(
-        body_config.design_spec, BanditExperimentSpec
+    # TODO: Remove the bandit check once bandit experiments are supported.
+    if not isinstance(
+        body.design_spec,
+        (PreassignedFrequentistExperimentSpec, OnlineFrequentistExperimentSpec),
     ):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Bandit experiments are not supported in this endpoint.",
         )
     datasource = await get_datasource_or_raise(session, user, datasource_id)
-    if body_config.design_spec.ids_are_present():
+    if body.design_spec.ids_are_present():
         raise LateValidationError("Invalid DesignSpec: UUIDs must not be set.")
     ds_config = datasource.get_config()
-    participants_cfg = ds_config.find_participants(
-        body_config.design_spec.participant_type
-    )
+    participants_cfg = ds_config.find_participants(body.design_spec.participant_type)
     if not isinstance(participants_cfg, ParticipantsDef):
         raise LateValidationError(
             "Invalid ParticipantsConfig: Participants must be of type schema."
@@ -1274,10 +1273,10 @@ async def create_experiment(
     async with DwhSession(ds_config.dwh) as dwh:
         if chosen_n is not None:
             result = await dwh.get_participants(
-                participants_cfg.table_name, body_config.design_spec.filters, chosen_n
+                participants_cfg.table_name, body.design_spec.filters, chosen_n
             )
             sa_table, participants = result.sa_table, result.participants
-        elif body_config.design_spec.experiment_type == "freq_preassigned":
+        elif body.design_spec.experiment_type == "freq_preassigned":
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Preassigned experiments must have a chosen_n.",
@@ -1294,7 +1293,7 @@ async def create_experiment(
         random_state=random_state,
         xngin_session=session,
         stratify_on_metrics=stratify_on_metrics,
-        webhook_ids=body_config.webhooks,
+        webhook_ids=body.webhooks,
     )
 
 
@@ -1329,6 +1328,16 @@ async def analyze_experiment(
     unique_id_field = participants_cfg.get_unique_id_field()
 
     design_spec = ExperimentStorageConverter(experiment).get_design_spec()
+    # TODO: Remove the bandit check once bandit experiments are supported.
+    if not isinstance(
+        design_spec,
+        (PreassignedFrequentistExperimentSpec, OnlineFrequentistExperimentSpec),
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Bandit experiments are not supported.",
+        )
+
     assignments = experiment.arm_assignments
     participant_ids = [assignment.participant_id for assignment in assignments]
     if len(participant_ids) == 0:

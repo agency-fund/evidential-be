@@ -51,13 +51,13 @@ from xngin.apiserver.routers.common_api_types import (
     Arm,
     CreateExperimentRequest,
     CreateExperimentResponse,
-    DataType,
     DesignSpecMetricRequest,
+    DwhDataType,
     ExperimentAnalysis,
     GetExperimentAssignmentsResponse,
     GetParticipantAssignmentResponse,
     ListExperimentsResponse,
-    PreassignedExperimentSpec,
+    PreassignedFrequentistExperimentSpec,
 )
 from xngin.apiserver.routers.experiments.test_experiments_common import (
     insert_experiment_and_arms,
@@ -174,7 +174,7 @@ async def test_initial_user_setup_matches_testing_dwh(xngin_session):
     assert col_names == field_names
     for field in pt_def.fields:
         col = sa_table.columns[field.field_name]
-        assert DataType.match(col.type) == field.data_type
+        assert DwhDataType.match(col.type) == field.data_type
 
 
 @pytest.mark.skipif(
@@ -526,7 +526,7 @@ def test_participants_lifecycle(
                 fields=[
                     FieldDescriptor(
                         field_name="newf",
-                        data_type=DataType.INTEGER,
+                        data_type=DwhDataType.INTEGER,
                         description="test",
                         is_unique_id=True,
                         is_strata=False,
@@ -605,7 +605,7 @@ def test_create_participants_type_invalid(testing_datasource, ppost):
                 fields=[
                     FieldDescriptor(
                         field_name="newf",
-                        data_type=DataType.INTEGER,
+                        data_type=DwhDataType.INTEGER,
                         description="test",
                         is_unique_id=False,
                         is_strata=False,
@@ -649,71 +649,79 @@ async def test_lifecycle_with_db(testing_datasource, ppost, pget, pdelete):
         detected_unique_id_fields=["id", "uuid_filter"],
         fields=[
             FieldMetadata(
-                field_name="baseline_income", data_type=DataType.NUMERIC, description=""
+                field_name="baseline_income",
+                data_type=DwhDataType.NUMERIC,
+                description="",
             ),
             FieldMetadata(
-                field_name="current_income", data_type=DataType.NUMERIC, description=""
+                field_name="current_income",
+                data_type=DwhDataType.NUMERIC,
+                description="",
             ),
             FieldMetadata(
                 field_name="ethnicity",
-                data_type=DataType.CHARACTER_VARYING,
+                data_type=DwhDataType.CHARACTER_VARYING,
                 description="",
             ),
             FieldMetadata(
                 field_name="first_name",
-                data_type=DataType.CHARACTER_VARYING,
+                data_type=DwhDataType.CHARACTER_VARYING,
                 description="",
             ),
             FieldMetadata(
                 field_name="gender",
-                data_type=DataType.CHARACTER_VARYING,
+                data_type=DwhDataType.CHARACTER_VARYING,
                 description="",
             ),
-            FieldMetadata(field_name="id", data_type=DataType.BIGINT, description=""),
             FieldMetadata(
-                field_name="income", data_type=DataType.NUMERIC, description=""
+                field_name="id", data_type=DwhDataType.BIGINT, description=""
             ),
             FieldMetadata(
-                field_name="is_engaged", data_type=DataType.BOOLEAN, description=""
+                field_name="income", data_type=DwhDataType.NUMERIC, description=""
             ),
             FieldMetadata(
-                field_name="is_onboarded", data_type=DataType.BOOLEAN, description=""
+                field_name="is_engaged", data_type=DwhDataType.BOOLEAN, description=""
             ),
             FieldMetadata(
-                field_name="is_recruited", data_type=DataType.BOOLEAN, description=""
+                field_name="is_onboarded", data_type=DwhDataType.BOOLEAN, description=""
             ),
             FieldMetadata(
-                field_name="is_registered", data_type=DataType.BOOLEAN, description=""
+                field_name="is_recruited", data_type=DwhDataType.BOOLEAN, description=""
             ),
             FieldMetadata(
-                field_name="is_retained", data_type=DataType.BOOLEAN, description=""
+                field_name="is_registered",
+                data_type=DwhDataType.BOOLEAN,
+                description="",
+            ),
+            FieldMetadata(
+                field_name="is_retained", data_type=DwhDataType.BOOLEAN, description=""
             ),
             FieldMetadata(
                 field_name="last_name",
-                data_type=DataType.CHARACTER_VARYING,
+                data_type=DwhDataType.CHARACTER_VARYING,
                 description="",
             ),
             FieldMetadata(
-                field_name="potential_0", data_type=DataType.NUMERIC, description=""
+                field_name="potential_0", data_type=DwhDataType.NUMERIC, description=""
             ),
             FieldMetadata(
-                field_name="potential_1", data_type=DataType.BIGINT, description=""
+                field_name="potential_1", data_type=DwhDataType.BIGINT, description=""
             ),
             FieldMetadata(
-                field_name="sample_date", data_type=DataType.DATE, description=""
+                field_name="sample_date", data_type=DwhDataType.DATE, description=""
             ),
             FieldMetadata(
                 field_name="sample_timestamp",
-                data_type=DataType.TIMESTAMP_WITHOUT_TIMEZONE,
+                data_type=DwhDataType.TIMESTAMP_WITHOUT_TIMEZONE,
                 description="",
             ),
             FieldMetadata(
                 field_name="timestamp_with_tz",
-                data_type=DataType.TIMESTAMP_WITH_TIMEZONE,
+                data_type=DwhDataType.TIMESTAMP_WITH_TIMEZONE,
                 description="",
             ),
             FieldMetadata(
-                field_name="uuid_filter", data_type=DataType.UUID, description=""
+                field_name="uuid_filter", data_type=DwhDataType.UUID, description=""
             ),
         ],
     )
@@ -729,7 +737,7 @@ async def test_lifecycle_with_db(testing_datasource, ppost, pget, pdelete):
                 fields=[
                     FieldDescriptor(
                         field_name="id",
-                        data_type=DataType.INTEGER,
+                        data_type=DwhDataType.INTEGER,
                         description="test",
                         is_unique_id=True,
                         is_strata=False,
@@ -738,7 +746,7 @@ async def test_lifecycle_with_db(testing_datasource, ppost, pget, pdelete):
                     ),
                     FieldDescriptor(
                         field_name="current_income",
-                        data_type=DataType.NUMERIC,
+                        data_type=DwhDataType.NUMERIC,
                         description="test",
                         is_unique_id=False,
                         is_strata=False,
@@ -1245,7 +1253,7 @@ async def test_experiment_webhook_integration(
 
     # Create an experiment with only the first webhook using proper Pydantic models
     experiment_request = CreateExperimentRequest(
-        design_spec=PreassignedExperimentSpec(
+        design_spec=PreassignedFrequentistExperimentSpec(
             participant_type="test_participant_type",
             experiment_type="freq_preassigned",
             experiment_name="Test Experiment with Webhook",
@@ -1294,7 +1302,7 @@ async def test_experiment_webhook_integration(
 
     # Test creating an experiment with no webhooks using proper Pydantic models
     experiment_request_no_webhooks = CreateExperimentRequest(
-        design_spec=PreassignedExperimentSpec(
+        design_spec=PreassignedFrequentistExperimentSpec(
             experiment_type="freq_preassigned",
             participant_type="test_participant_type",
             experiment_name="Test Experiment without Webhooks",

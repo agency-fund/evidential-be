@@ -11,7 +11,7 @@ from xngin.apiserver.routers.common_api_types import (
     CreateExperimentResponse,
     GetParticipantAssignmentResponse,
     ListExperimentsResponse,
-    PreassignedExperimentSpec,
+    PreassignedFrequentistExperimentSpec,
 )
 from xngin.apiserver.routers.experiments.test_experiments_common import (
     insert_experiment_and_arms,
@@ -119,7 +119,7 @@ async def test_get_experiment(xngin_session, testing_datasource, client_v1):
     experiment_json = response.json()
     assert experiment_json["config"]["datasource_id"] == new_experiment.datasource_id
     assert experiment_json["config"]["state"] == new_experiment.state
-    actual = PreassignedExperimentSpec.model_validate(
+    actual = PreassignedFrequentistExperimentSpec.model_validate(
         experiment_json["config"]["design_spec"]
     )
     expected = ExperimentStorageConverter(new_experiment).get_design_spec()
