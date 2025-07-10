@@ -833,7 +833,7 @@ def test_create_experiment_with_assignment_validation_errors(
     # Create a basic experiment request
     # Test 1: IDs present in design spec trigger LateValidationError
     base_request = make_create_preassigned_experiment_request(with_ids=True)
-    base_request.root.design_spec.experiment_id = "123e4567-e89b-12d3-a456-426614174000"
+    base_request.design_spec.experiment_id = "123e4567-e89b-12d3-a456-426614174000"
     testing_datasource = testing_datasource_with_user
     response = ppost(
         f"/v1/m/datasources/{testing_datasource.ds.id}/experiments",
@@ -862,7 +862,7 @@ async def test_create_preassigned_experiment_using_inline_schema_ds(
     ppost,
 ):
     datasource_id = testing_datasource_with_user.ds.id
-    request_obj = make_create_preassigned_experiment_request().root
+    request_obj = make_create_preassigned_experiment_request()
 
     response = ppost(
         f"/v1/m/datasources/{datasource_id}/experiments",
@@ -947,7 +947,7 @@ def test_create_online_experiment_using_inline_schema_ds(
     testing_datasource_with_user, use_deterministic_random, ppost
 ):
     datasource_id = testing_datasource_with_user.ds.id
-    request_obj = make_create_online_experiment_request().root
+    request_obj = make_create_online_experiment_request()
 
     response = ppost(
         f"/v1/m/datasources/{datasource_id}/experiments",

@@ -217,9 +217,8 @@ async def test_create_experiment_impl_for_preassigned(
     """Test implementation of creating a preassigned experiment."""
     participants = make_sample_data(n=100)
     request = make_create_preassigned_experiment_request()
-    request_config = request.root
     # Add a partial mock PowerResponse just to verify storage
-    request_config.power_analyses = PowerResponse(
+    request.power_analyses = PowerResponse(
         analyses=[
             MetricPowerAnalysis(
                 metric_spec=DesignSpecMetric(
@@ -254,20 +253,15 @@ async def test_create_experiment_impl_for_preassigned(
     assert response_config.design_spec.arms[1].arm_id is not None
     assert (
         response_config.design_spec.experiment_name
-        == request_config.design_spec.experiment_name
+        == request.design_spec.experiment_name
     )
-    assert (
-        response_config.design_spec.description
-        == request_config.design_spec.description
-    )
-    assert (
-        response_config.design_spec.start_date == request_config.design_spec.start_date
-    )
-    assert response_config.design_spec.end_date == request_config.design_spec.end_date
+    assert response_config.design_spec.description == request.design_spec.description
+    assert response_config.design_spec.start_date == request.design_spec.start_date
+    assert response_config.design_spec.end_date == request.design_spec.end_date
     # although we stratify on target metrics as well in this test, note that the
     # original strata are not augmented with the metric names.
     assert response_config.design_spec.strata == [Stratum(field_name="gender")]
-    assert response_config.power_analyses == request_config.power_analyses
+    assert response_config.power_analyses == request.power_analyses
     # Verify assign_summary
     assert response_config.assign_summary.sample_size == len(participants)
     assert response_config.assign_summary.balance_check is not None
@@ -278,18 +272,18 @@ async def test_create_experiment_impl_for_preassigned(
         tables.Experiment, response_config.design_spec.experiment_id
     )
     assert experiment.experiment_type == "freq_preassigned"
-    assert experiment.participant_type == request_config.design_spec.participant_type
-    assert experiment.name == request_config.design_spec.experiment_name
-    assert experiment.description == request_config.design_spec.description
+    assert experiment.participant_type == request.design_spec.participant_type
+    assert experiment.name == request.design_spec.experiment_name
+    assert experiment.description == request.design_spec.description
     assert experiment.state == ExperimentState.ASSIGNED
     assert experiment.datasource_id == testing_datasource.ds.id
     # This comparison is dependent on whether the db can store tz or not (sqlite does not).
-    assert_dates_equal(experiment.start_date, request_config.design_spec.start_date)
-    assert_dates_equal(experiment.end_date, request_config.design_spec.end_date)
+    assert_dates_equal(experiment.start_date, request.design_spec.start_date)
+    assert_dates_equal(experiment.end_date, request.design_spec.end_date)
     # Verify stats parameters were stored correctly
-    assert experiment.power == request_config.design_spec.power
-    assert experiment.alpha == request_config.design_spec.alpha
-    assert experiment.fstat_thresh == request_config.design_spec.fstat_thresh
+    assert experiment.power == request.design_spec.power
+    assert experiment.alpha == request.design_spec.alpha
+    assert experiment.fstat_thresh == request.design_spec.fstat_thresh
     # Verify design_spec was stored correctly
     converter = ExperimentStorageConverter(experiment)
     assert converter.get_design_spec() == response_config.design_spec
@@ -349,9 +343,8 @@ async def test_create_experiment_impl_for_online(
     """Test implementation of creating an online experiment."""
     # Create online experiment request, modifying the experiment type from the fixture
     request = make_create_preassigned_experiment_request()
-    request_config = request.root
     # Convert the experiment type to online
-    request_config.design_spec.experiment_type = "freq_online"
+    request.design_spec.experiment_type = "freq_online"
 
     response = await create_experiment_impl(
         request=request.model_copy(deep=True),
@@ -376,16 +369,11 @@ async def test_create_experiment_impl_for_online(
     assert response_config.design_spec.arms[1].arm_id is not None
     assert (
         response_config.design_spec.experiment_name
-        == request_config.design_spec.experiment_name
+        == request.design_spec.experiment_name
     )
-    assert (
-        response_config.design_spec.description
-        == request_config.design_spec.description
-    )
-    assert (
-        response_config.design_spec.start_date == request_config.design_spec.start_date
-    )
-    assert response_config.design_spec.end_date == request_config.design_spec.end_date
+    assert response_config.design_spec.description == request.design_spec.description
+    assert response_config.design_spec.start_date == request.design_spec.start_date
+    assert response_config.design_spec.end_date == request.design_spec.end_date
     assert response_config.design_spec.strata == [Stratum(field_name="gender")]
     # Online experiments don't have power analyses by default
     assert response_config.power_analyses is None
@@ -403,18 +391,18 @@ async def test_create_experiment_impl_for_online(
         tables.Experiment, response_config.design_spec.experiment_id
     )
     assert experiment.experiment_type == "freq_online"
-    assert experiment.participant_type == request_config.design_spec.participant_type
-    assert experiment.name == request_config.design_spec.experiment_name
-    assert experiment.description == request_config.design_spec.description
+    assert experiment.participant_type == request.design_spec.participant_type
+    assert experiment.name == request.design_spec.experiment_name
+    assert experiment.description == request.design_spec.description
     # Online experiments still go through a review step before being committed
     assert experiment.state == ExperimentState.ASSIGNED
     assert experiment.datasource_id == testing_datasource.ds.id
-    assert_dates_equal(experiment.start_date, request_config.design_spec.start_date)
-    assert_dates_equal(experiment.end_date, request_config.design_spec.end_date)
+    assert_dates_equal(experiment.start_date, request.design_spec.start_date)
+    assert_dates_equal(experiment.end_date, request.design_spec.end_date)
     # Verify stats parameters were stored correctly
-    assert experiment.power == request_config.design_spec.power
-    assert experiment.alpha == request_config.design_spec.alpha
-    assert experiment.fstat_thresh == request_config.design_spec.fstat_thresh
+    assert experiment.power == request.design_spec.power
+    assert experiment.alpha == request.design_spec.alpha
+    assert experiment.fstat_thresh == request.design_spec.fstat_thresh
     # Verify design_spec was stored correctly
     converter = ExperimentStorageConverter(experiment)
     assert converter.get_design_spec() == response_config.design_spec
@@ -452,9 +440,8 @@ async def test_create_experiment_impl_overwrites_uuids(
     """
     participants = make_sample_data(n=100)
     request = make_create_preassigned_experiment_request(with_ids=True)
-    request_config = request.root
-    original_experiment_id = request_config.design_spec.experiment_id
-    original_arm_ids = [arm.arm_id for arm in request_config.design_spec.arms]
+    original_experiment_id = request.design_spec.experiment_id
+    original_arm_ids = [arm.arm_id for arm in request.design_spec.arms]
 
     response = await create_experiment_impl(
         request=request,
