@@ -903,7 +903,7 @@ async def test_create_preassigned_experiment_using_inline_schema_ds(
     ).one()
     assert experiment.state == ExperimentState.ASSIGNED
     assert experiment.datasource_id == datasource_id
-    assert experiment.experiment_type == "preassigned"
+    assert experiment.experiment_type == "freq_preassigned"
     assert experiment.participant_type == "test_participant_type"
     assert experiment.name == request_obj.design_spec.experiment_name
     assert experiment.description == request_obj.design_spec.description
@@ -1247,7 +1247,7 @@ async def test_experiment_webhook_integration(
     experiment_request = CreateExperimentRequest(
         design_spec=PreassignedExperimentSpec(
             participant_type="test_participant_type",
-            experiment_type="preassigned",
+            experiment_type="freq_preassigned",
             experiment_name="Test Experiment with Webhook",
             description="Testing webhook integration",
             start_date=datetime(2024, 1, 1, tzinfo=UTC),
@@ -1295,7 +1295,7 @@ async def test_experiment_webhook_integration(
     # Test creating an experiment with no webhooks using proper Pydantic models
     experiment_request_no_webhooks = CreateExperimentRequest(
         design_spec=PreassignedExperimentSpec(
-            experiment_type="preassigned",
+            experiment_type="freq_preassigned",
             participant_type="test_participant_type",
             experiment_name="Test Experiment without Webhooks",
             description="Testing no webhook integration",

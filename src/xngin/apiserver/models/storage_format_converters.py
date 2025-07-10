@@ -23,7 +23,7 @@ from xngin.apiserver.models.storage_types import (
     StorageMetric,
     StorageStratum,
 )
-from xngin.apiserver.routers.common_enums import AssignmentType
+from xngin.apiserver.routers.common_enums import ExperimentsType
 from xngin.apiserver.routers.stateless import stateless_api_types as sapi
 
 
@@ -225,7 +225,7 @@ class ExperimentStorageConverter:
         cls,
         datasource_id: str,
         organization_id: str,
-        experiment_type: AssignmentType,
+        experiment_type: ExperimentsType,
         design_spec: sapi.DesignSpec,
         state: ExperimentState = ExperimentState.ASSIGNED,
         stopped_assignments_at: datetime | None = None,

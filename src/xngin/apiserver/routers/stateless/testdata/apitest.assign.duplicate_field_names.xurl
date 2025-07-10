@@ -4,7 +4,7 @@ Datasource-ID: testing-inline-schema
 {
  "design_spec": {
     "experiment_id": "0897bbd7-dacd-41b4-b164-7a1950fa61f2",
-    "experiment_type": "preassigned",
+    "experiment_type": "freq_preassigned",
     "experiment_name": "Sample experiment name.",
     "description": "Test a duplicate column name shared in strata and metrics",
     "arms": [

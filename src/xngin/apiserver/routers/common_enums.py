@@ -1,6 +1,6 @@
 import decimal
 import enum
-from typing import Any, Literal
+from typing import Any
 
 import numpy as np
 
@@ -33,18 +33,16 @@ class MetricPowerAnalysisMessageType(enum.StrEnum):
     ZERO_STDDEV = "zero variation"
 
 
-AssignmentType = Literal["online", "preassigned"]
-
-
 class ExperimentsType(enum.StrEnum):
     """
     Enum for the experiment types.
     """
 
-    MAB = "mab"
-    CMAB = "cmab"
-    BAYESAB = "bayes_ab"
-    FREQ_AB = "freq_ab"
+    MAB_ONLINE = "mab_online"
+    CMAB_ONLINE = "cmab_online"
+    BAYESAB_ONLINE = "bayes_ab_online"
+    FREQ_ONLINE = "freq_online"
+    FREQ_PREASSIGNED = "freq_preassigned"
 
 
 class ArmPriors(enum.StrEnum):

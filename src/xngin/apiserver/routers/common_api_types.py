@@ -35,7 +35,6 @@ from xngin.apiserver.models.enums import (
 )
 from xngin.apiserver.routers.common_enums import (
     ArmPriors,
-    AssignmentType,
     ContextType,
     ExperimentsType,
     MetricPowerAnalysisMessageType,
@@ -642,18 +641,11 @@ class BaseDesignSpec(ApiBaseModel):
             description="ID of the experiment. If creating a new experiment (POST /datasources/{datasource_id}/experiments), this is generated for you and made available in the response; you should NOT set this. Only generate ids of your own if using the stateless Experiment Design API as you will do your own persistence."
         ),
     ] = None
-    assignment_type: Annotated[
-        AssignmentType,
-        Field(
-            description="This type determines how we do assignment and analyses.",
-            default="online",
-        ),
-    ]
     experiment_type: Annotated[
         ExperimentsType,
         Field(
-            description="The type of experiment, e.g. A/B, CMAB, etc. This is used to determine how the experiment is analyzed and what metrics are available.",
-            default=ExperimentsType.MAB,
+            description="This type determines how we do assignment and analyses.",
+            default=ExperimentsType.FREQ_ONLINE,
         ),
     ]
 
@@ -804,7 +796,7 @@ class BanditExperimentSpec(BaseDesignSpec):
         Validate that the treatment arm information is set correctly.
         """
         arms = self.arms
-        if self.experiment_type == ExperimentsType.BAYESAB:
+        if self.experiment_type == ExperimentsType.BAYESAB_ONLINE:
             if not any(arm.is_baseline for arm in arms):
                 raise ValueError("At least one arm must be a baseline/control arm.")
             if all(arm.is_baseline for arm in arms):
@@ -821,7 +813,7 @@ class BanditExperimentSpec(BaseDesignSpec):
                 raise ValueError(
                     "Beta prior can only be used with binary-valued rewards."
                 )
-            if self.experiment_type != ExperimentsType.MAB:
+            if self.experiment_type != ExperimentsType.MAB_ONLINE:
                 raise ValueError(
                     f"Experiments of type {self.experiment_type} can only use Gaussian priors."
                 )
@@ -833,9 +825,9 @@ class BanditExperimentSpec(BaseDesignSpec):
         """
         Validate that the contexts inputs are valid.
         """
-        if self.experiment_type == ExperimentsType.CMAB and not self.contexts:
+        if self.experiment_type == ExperimentsType.CMAB_ONLINE and not self.contexts:
             raise ValueError("Contextual MAB experiments require at least one context.")
-        if self.experiment_type != ExperimentsType.CMAB and self.contexts:
+        if self.experiment_type != ExperimentsType.CMAB_ONLINE and self.contexts:
             raise ValueError(
                 "Contexts are only applicable for contextual MAB experiments."
             )
@@ -845,8 +837,9 @@ class BanditExperimentSpec(BaseDesignSpec):
 class PreassignedExperimentSpec(FrequentistExperimentSpec):
     """Use this type to randomly select and assign from existing participants at design time with frequentist A/B experiments."""
 
-    assignment_type: Literal["preassigned"] = "preassigned"
-    experiment_type: Literal[ExperimentsType.FREQ_AB] = ExperimentsType.FREQ_AB
+    experiment_type: Literal[ExperimentsType.FREQ_PREASSIGNED] = (
+        ExperimentsType.FREQ_PREASSIGNED
+    )
 
 
 class OnlineFrequentistExperimentSpec(FrequentistExperimentSpec):
@@ -855,14 +848,13 @@ class OnlineFrequentistExperimentSpec(FrequentistExperimentSpec):
     For example, you may wish to experiment on new users. Assignments are issued via API request.
     """
 
-    assignment_type: Literal["online"] = "online"
-    experiment_type: Literal[ExperimentsType.FREQ_AB] = ExperimentsType.FREQ_AB
+    experiment_type: Literal[ExperimentsType.FREQ_ONLINE] = ExperimentsType.FREQ_ONLINE
 
 
 type DesignSpec = Annotated[
     PreassignedExperimentSpec | OnlineFrequentistExperimentSpec,
     Field(
-        discriminator="assignment_type",
+        discriminator="experiment_type",
         description="The type of assignment and experiment design.",
     ),
 ]
@@ -1035,7 +1027,7 @@ def experiment_request_discriminator(value: dict[str, Any]) -> str:
     elif isinstance(value, ExperimentsBaseModel):
         experiment_type = value.config.design_spec.experiment_type
 
-    if experiment_type == ExperimentsType.FREQ_AB:
+    if "freq" in experiment_type.value:
         return "frequentist"
     if experiment_type in ExperimentsType:
         return "bandit"
