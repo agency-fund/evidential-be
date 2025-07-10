@@ -100,7 +100,7 @@ async def create_experiment_impl(
     for arm in request_config.design_spec.arms:
         arm.arm_id = tables.arm_id_factory()
 
-    if request_config.design_spec.assignment_type == "preassigned":
+    if request_config.design_spec.experiment_type == "preassigned":
         if dwh_participants is None:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
@@ -118,7 +118,7 @@ async def create_experiment_impl(
             stratify_on_metrics=stratify_on_metrics,
             validated_webhooks=validated_webhooks,
         )
-    if request_config.design_spec.assignment_type == "online":
+    if request_config.design_spec.experiment_type == "online":
         return await create_online_experiment_impl(
             request=request,
             datasource_id=datasource_id,
@@ -129,7 +129,7 @@ async def create_experiment_impl(
 
     raise HTTPException(
         status_code=status.HTTP_400_BAD_REQUEST,
-        detail=f"Invalid assignment type: {request_config.design_spec.assignment_type}",
+        detail=f"Invalid experiment type: {request_config.design_spec.experiment_type}",
     )
 
 
@@ -181,7 +181,7 @@ async def create_preassigned_experiment_impl(
     experiment_converter = ExperimentStorageConverter.init_from_components(
         datasource_id=datasource_id,
         organization_id=organization_id,
-        assignment_type="preassigned",
+        experiment_type="preassigned",
         design_spec=design_spec,
         state=ExperimentState.ASSIGNED,
         stopped_assignments_at=datetime.now(UTC),
@@ -242,7 +242,7 @@ async def create_online_experiment_impl(
     experiment_converter = ExperimentStorageConverter.init_from_components(
         datasource_id=datasource_id,
         organization_id=organization_id,
-        assignment_type="online",
+        experiment_type="online",
         design_spec=design_spec,
     )
     experiment = experiment_converter.get_experiment()

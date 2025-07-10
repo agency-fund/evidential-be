@@ -131,9 +131,7 @@ class ExperimentStorageConverter:
         return TypeAdapter(sapi.DesignSpec).validate_python({
             "participant_type": self.experiment.participant_type,
             "experiment_id": self.experiment.id,
-            "experiment_type": "freq_ab"
-            if not hasattr(self.experiment, "experiment_type")
-            else self.experiment.experiment_type,
+            "experiment_type": self.experiment,
             "experiment_name": self.experiment.name,
             "description": self.experiment.description,
             "start_date": self.experiment.start_date,
@@ -227,7 +225,7 @@ class ExperimentStorageConverter:
         cls,
         datasource_id: str,
         organization_id: str,
-        assignment_type: AssignmentType,
+        experiment_type: AssignmentType,
         design_spec: sapi.DesignSpec,
         state: ExperimentState = ExperimentState.ASSIGNED,
         stopped_assignments_at: datetime | None = None,
@@ -245,7 +243,7 @@ class ExperimentStorageConverter:
         experiment = tables.Experiment(
             id=design_spec.experiment_id,
             datasource_id=datasource_id,
-            assignment_type=assignment_type,
+            experiment_type=experiment_type,
             participant_type=design_spec.participant_type,
             name=design_spec.experiment_name,
             description=design_spec.description,

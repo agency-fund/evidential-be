@@ -1277,7 +1277,7 @@ async def create_experiment(
                 participants_cfg.table_name, body_config.design_spec.filters, chosen_n
             )
             sa_table, participants = result.sa_table, result.participants
-        elif body_config.design_spec.assignment_type == "preassigned":
+        elif body_config.design_spec.experiment_type == "preassigned":
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Preassigned experiments must have a chosen_n.",

@@ -59,7 +59,6 @@ from xngin.apiserver.routers.common_api_types import (
     ListExperimentsResponse,
     PreassignedExperimentSpec,
 )
-from xngin.apiserver.routers.common_enums import ExperimentsType
 from xngin.apiserver.routers.experiments.test_experiments_common import (
     insert_experiment_and_arms,
     make_create_online_experiment_request,
@@ -904,7 +903,7 @@ async def test_create_preassigned_experiment_using_inline_schema_ds(
     ).one()
     assert experiment.state == ExperimentState.ASSIGNED
     assert experiment.datasource_id == datasource_id
-    assert experiment.assignment_type == "preassigned"
+    assert experiment.experiment_type == "preassigned"
     assert experiment.participant_type == "test_participant_type"
     assert experiment.name == request_obj.design_spec.experiment_name
     assert experiment.description == request_obj.design_spec.description
@@ -1248,8 +1247,7 @@ async def test_experiment_webhook_integration(
     experiment_request = CreateExperimentRequest(
         design_spec=PreassignedExperimentSpec(
             participant_type="test_participant_type",
-            assignment_type="preassigned",
-            experiment_type=ExperimentsType.FREQ_AB,
+            experiment_type="preassigned",
             experiment_name="Test Experiment with Webhook",
             description="Testing webhook integration",
             start_date=datetime(2024, 1, 1, tzinfo=UTC),
@@ -1297,8 +1295,7 @@ async def test_experiment_webhook_integration(
     # Test creating an experiment with no webhooks using proper Pydantic models
     experiment_request_no_webhooks = CreateExperimentRequest(
         design_spec=PreassignedExperimentSpec(
-            assignment_type="preassigned",
-            experiment_type=ExperimentsType.FREQ_AB,
+            experiment_type="preassigned",
             participant_type="test_participant_type",
             experiment_name="Test Experiment without Webhooks",
             description="Testing no webhook integration",

@@ -4,8 +4,7 @@ Datasource-ID: testing
 {
  "design_spec": {
     "experiment_id": "0897bbd7-dacd-41b4-b164-7a1950fa61f2",
-    "assignment_type": "preassigned",
-    "experiment_type": "freq_ab",
+    "experiment_type": "preassigned",
     "experiment_name": "Sample experiment name.",
     "description": "Same as apitest.power.xurl but with a uuid filter cutting available units approximately in half.",
     "arms": [
