@@ -51,14 +51,13 @@ from xngin.apiserver.routers.common_api_types import (
     Arm,
     CreateExperimentRequest,
     CreateExperimentResponse,
-    DataType,
     DesignSpecMetricRequest,
+    DwhDataType,
     ExperimentAnalysis,
-    ExperimentConfig,
     GetExperimentAssignmentsResponse,
     GetParticipantAssignmentResponse,
     ListExperimentsResponse,
-    PreassignedExperimentSpec,
+    PreassignedFrequentistExperimentSpec,
 )
 from xngin.apiserver.routers.experiments.test_experiments_common import (
     insert_experiment_and_arms,
@@ -98,7 +97,7 @@ async def fixture_testing_experiment(
     """Create an experiment on a test inline schema datasource with proper user permissions."""
     datasource = testing_datasource_with_user.ds
     experiment = await insert_experiment_and_arms(
-        xngin_session, datasource, "preassigned"
+        xngin_session, datasource, "freq_preassigned"
     )
     # Add fake assignments for each arm for real participant ids in our test data.
     arm_ids = [arm.id for arm in experiment.arms]
@@ -175,7 +174,7 @@ async def test_initial_user_setup_matches_testing_dwh(xngin_session):
     assert col_names == field_names
     for field in pt_def.fields:
         col = sa_table.columns[field.field_name]
-        assert DataType.match(col.type) == field.data_type
+        assert DwhDataType.match(col.type) == field.data_type
 
 
 @pytest.mark.skipif(
@@ -527,7 +526,7 @@ def test_participants_lifecycle(
                 fields=[
                     FieldDescriptor(
                         field_name="newf",
-                        data_type=DataType.INTEGER,
+                        data_type=DwhDataType.INTEGER,
                         description="test",
                         is_unique_id=True,
                         is_strata=False,
@@ -606,7 +605,7 @@ def test_create_participants_type_invalid(testing_datasource, ppost):
                 fields=[
                     FieldDescriptor(
                         field_name="newf",
-                        data_type=DataType.INTEGER,
+                        data_type=DwhDataType.INTEGER,
                         description="test",
                         is_unique_id=False,
                         is_strata=False,
@@ -650,71 +649,79 @@ async def test_lifecycle_with_db(testing_datasource, ppost, pget, pdelete):
         detected_unique_id_fields=["id", "uuid_filter"],
         fields=[
             FieldMetadata(
-                field_name="baseline_income", data_type=DataType.NUMERIC, description=""
+                field_name="baseline_income",
+                data_type=DwhDataType.NUMERIC,
+                description="",
             ),
             FieldMetadata(
-                field_name="current_income", data_type=DataType.NUMERIC, description=""
+                field_name="current_income",
+                data_type=DwhDataType.NUMERIC,
+                description="",
             ),
             FieldMetadata(
                 field_name="ethnicity",
-                data_type=DataType.CHARACTER_VARYING,
+                data_type=DwhDataType.CHARACTER_VARYING,
                 description="",
             ),
             FieldMetadata(
                 field_name="first_name",
-                data_type=DataType.CHARACTER_VARYING,
+                data_type=DwhDataType.CHARACTER_VARYING,
                 description="",
             ),
             FieldMetadata(
                 field_name="gender",
-                data_type=DataType.CHARACTER_VARYING,
+                data_type=DwhDataType.CHARACTER_VARYING,
                 description="",
             ),
-            FieldMetadata(field_name="id", data_type=DataType.BIGINT, description=""),
             FieldMetadata(
-                field_name="income", data_type=DataType.NUMERIC, description=""
+                field_name="id", data_type=DwhDataType.BIGINT, description=""
             ),
             FieldMetadata(
-                field_name="is_engaged", data_type=DataType.BOOLEAN, description=""
+                field_name="income", data_type=DwhDataType.NUMERIC, description=""
             ),
             FieldMetadata(
-                field_name="is_onboarded", data_type=DataType.BOOLEAN, description=""
+                field_name="is_engaged", data_type=DwhDataType.BOOLEAN, description=""
             ),
             FieldMetadata(
-                field_name="is_recruited", data_type=DataType.BOOLEAN, description=""
+                field_name="is_onboarded", data_type=DwhDataType.BOOLEAN, description=""
             ),
             FieldMetadata(
-                field_name="is_registered", data_type=DataType.BOOLEAN, description=""
+                field_name="is_recruited", data_type=DwhDataType.BOOLEAN, description=""
             ),
             FieldMetadata(
-                field_name="is_retained", data_type=DataType.BOOLEAN, description=""
+                field_name="is_registered",
+                data_type=DwhDataType.BOOLEAN,
+                description="",
+            ),
+            FieldMetadata(
+                field_name="is_retained", data_type=DwhDataType.BOOLEAN, description=""
             ),
             FieldMetadata(
                 field_name="last_name",
-                data_type=DataType.CHARACTER_VARYING,
+                data_type=DwhDataType.CHARACTER_VARYING,
                 description="",
             ),
             FieldMetadata(
-                field_name="potential_0", data_type=DataType.NUMERIC, description=""
+                field_name="potential_0", data_type=DwhDataType.NUMERIC, description=""
             ),
             FieldMetadata(
-                field_name="potential_1", data_type=DataType.BIGINT, description=""
+                field_name="potential_1", data_type=DwhDataType.BIGINT, description=""
             ),
             FieldMetadata(
-                field_name="sample_date", data_type=DataType.DATE, description=""
+                field_name="sample_date", data_type=DwhDataType.DATE, description=""
             ),
             FieldMetadata(
                 field_name="sample_timestamp",
-                data_type=DataType.TIMESTAMP_WITHOUT_TIMEZONE,
+                data_type=DwhDataType.TIMESTAMP_WITHOUT_TIMEZONE,
                 description="",
             ),
             FieldMetadata(
                 field_name="timestamp_with_tz",
-                data_type=DataType.TIMESTAMP_WITH_TIMEZONE,
+                data_type=DwhDataType.TIMESTAMP_WITH_TIMEZONE,
                 description="",
             ),
             FieldMetadata(
-                field_name="uuid_filter", data_type=DataType.UUID, description=""
+                field_name="uuid_filter", data_type=DwhDataType.UUID, description=""
             ),
         ],
     )
@@ -730,7 +737,7 @@ async def test_lifecycle_with_db(testing_datasource, ppost, pget, pdelete):
                 fields=[
                     FieldDescriptor(
                         field_name="id",
-                        data_type=DataType.INTEGER,
+                        data_type=DwhDataType.INTEGER,
                         description="test",
                         is_unique_id=True,
                         is_strata=False,
@@ -739,7 +746,7 @@ async def test_lifecycle_with_db(testing_datasource, ppost, pget, pdelete):
                     ),
                     FieldDescriptor(
                         field_name="current_income",
-                        data_type=DataType.NUMERIC,
+                        data_type=DwhDataType.NUMERIC,
                         description="test",
                         is_unique_id=False,
                         is_strata=False,
@@ -778,8 +785,9 @@ async def test_lifecycle_with_db(testing_datasource, ppost, pget, pdelete):
     response = pget(
         f"/v1/m/datasources/{testing_datasource.ds.id}/experiments/{parsed_experiment_id}"
     )
+
     assert response.status_code == 200, response.content
-    experiment_config = ExperimentConfig.model_validate(response.json())
+    experiment_config = CreateExperimentResponse.model_validate(response.json())
     assert experiment_config.design_spec.experiment_id == parsed_experiment_id
 
     # List org experiments.
@@ -903,7 +911,7 @@ async def test_create_preassigned_experiment_using_inline_schema_ds(
     ).one()
     assert experiment.state == ExperimentState.ASSIGNED
     assert experiment.datasource_id == datasource_id
-    assert experiment.experiment_type == "preassigned"
+    assert experiment.experiment_type == "freq_preassigned"
     assert experiment.participant_type == "test_participant_type"
     assert experiment.name == request_obj.design_spec.experiment_name
     assert experiment.description == request_obj.design_spec.description
@@ -1009,7 +1017,7 @@ async def test_get_experiment_assignment_for_online_participant(
     xngin_session: AsyncSession, testing_datasource_with_user, pget
 ):
     test_experiment = await insert_experiment_and_arms(
-        xngin_session, testing_datasource_with_user.ds, "online"
+        xngin_session, testing_datasource_with_user.ds, "freq_online"
     )
     datasource_id = test_experiment.datasource_id
     experiment_id = test_experiment.id
@@ -1068,7 +1076,7 @@ async def test_get_experiment_assignment_for_online_participant_past_end_date(
     new_exp = await insert_experiment_and_arms(
         xngin_session,
         testing_datasource_with_user.ds,
-        "online",
+        "freq_online",
         end_date=datetime.now(UTC) - timedelta(days=1),
     )
     datasource_id = new_exp.datasource_id
@@ -1125,7 +1133,7 @@ async def test_experiments_analyze_for_experiment_with_no_participants(
     xngin_session: AsyncSession, testing_datasource_with_user, pget
 ):
     test_experiment = await insert_experiment_and_arms(
-        xngin_session, testing_datasource_with_user.ds, "online"
+        xngin_session, testing_datasource_with_user.ds, "freq_online"
     )
     datasource_id = test_experiment.datasource_id
     experiment_id = test_experiment.id
@@ -1245,8 +1253,9 @@ async def test_experiment_webhook_integration(
 
     # Create an experiment with only the first webhook using proper Pydantic models
     experiment_request = CreateExperimentRequest(
-        design_spec=PreassignedExperimentSpec(
+        design_spec=PreassignedFrequentistExperimentSpec(
             participant_type="test_participant_type",
+            experiment_type="freq_preassigned",
             experiment_name="Test Experiment with Webhook",
             description="Testing webhook integration",
             start_date=datetime(2024, 1, 1, tzinfo=UTC),
@@ -1293,7 +1302,8 @@ async def test_experiment_webhook_integration(
 
     # Test creating an experiment with no webhooks using proper Pydantic models
     experiment_request_no_webhooks = CreateExperimentRequest(
-        design_spec=PreassignedExperimentSpec(
+        design_spec=PreassignedFrequentistExperimentSpec(
+            experiment_type="freq_preassigned",
             participant_type="test_participant_type",
             experiment_name="Test Experiment without Webhooks",
             description="Testing no webhook integration",

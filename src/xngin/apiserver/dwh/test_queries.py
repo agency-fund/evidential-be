@@ -36,9 +36,9 @@ from xngin.apiserver.routers.common_api_types import (
     DesignSpecMetric,
     DesignSpecMetricRequest,
     Filter,
-    MetricType,
     Relation,
 )
+from xngin.apiserver.routers.common_enums import MetricType
 from xngin.apiserver.routers.stateless.stateless_api_types import (
     MetricValue,
     ParticipantOutcome,

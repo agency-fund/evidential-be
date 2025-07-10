@@ -27,12 +27,14 @@ from xngin.apiserver.routers.common_api_types import (
     Assignment,
     AssignSummary,
     BalanceCheck,
+    BaseFrequentistDesignSpec,
     CreateExperimentRequest,
     CreateExperimentResponse,
     GetExperimentAssignmentsResponse,
     ListExperimentsResponse,
     Strata,
 )
+from xngin.apiserver.routers.common_enums import ExperimentsType
 from xngin.apiserver.webhooks.webhook_types import ExperimentCreatedWebhookBody
 from xngin.events.experiment_created import ExperimentCreatedEvent
 from xngin.stats.assignment import RowProtocol, assign_treatment
@@ -97,7 +99,7 @@ async def create_experiment_impl(
     for arm in request.design_spec.arms:
         arm.arm_id = tables.arm_id_factory()
 
-    if request.design_spec.experiment_type == "preassigned":
+    if request.design_spec.experiment_type == ExperimentsType.FREQ_PREASSIGNED:
         if dwh_participants is None:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
@@ -115,7 +117,7 @@ async def create_experiment_impl(
             stratify_on_metrics=stratify_on_metrics,
             validated_webhooks=validated_webhooks,
         )
-    if request.design_spec.experiment_type == "online":
+    if request.design_spec.experiment_type == ExperimentsType.FREQ_ONLINE:
         return await create_online_experiment_impl(
             request=request,
             datasource_id=datasource_id,
@@ -143,6 +145,15 @@ async def create_preassigned_experiment_impl(
     validated_webhooks: list[tables.Webhook],
 ) -> CreateExperimentResponse:
     design_spec = request.design_spec
+
+    if not isinstance(
+        design_spec,
+        BaseFrequentistDesignSpec,
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Bandit experiments are not supported for preassigned assignments",
+        )
     metric_names = [m.field_name for m in design_spec.metrics]
     strata_names = [s.field_name for s in design_spec.strata]
     stratum_cols = strata_names + metric_names if stratify_on_metrics else strata_names
@@ -169,7 +180,7 @@ async def create_preassigned_experiment_impl(
     experiment_converter = ExperimentStorageConverter.init_from_components(
         datasource_id=datasource_id,
         organization_id=organization_id,
-        experiment_type="preassigned",
+        experiment_type=design_spec.experiment_type,
         design_spec=design_spec,
         state=ExperimentState.ASSIGNED,
         stopped_assignments_at=datetime.now(UTC),
@@ -215,11 +226,20 @@ async def create_online_experiment_impl(
     xngin_session: AsyncSession,
     validated_webhooks: list[tables.Webhook],
 ) -> CreateExperimentResponse:
+    """Create an online experiment and persist it to the database."""
     design_spec = request.design_spec
+
+    # TODO: update to support bandit experiments
+    if not isinstance(design_spec, BaseFrequentistDesignSpec):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Bandit experiments are not supported for online assignments",
+        )
+
     experiment_converter = ExperimentStorageConverter.init_from_components(
         datasource_id=datasource_id,
         organization_id=organization_id,
-        experiment_type="online",
+        experiment_type=ExperimentsType.FREQ_ONLINE,
         design_spec=design_spec,
     )
     experiment = experiment_converter.get_experiment()
@@ -517,10 +537,10 @@ async def create_assignment_for_participant(
         raise ExperimentsAssignmentError("Experiment has no arms")
 
     experiment_type = experiment.experiment_type
-    if experiment_type == "preassigned":
+    if experiment_type == "freq_preassigned":
         # Preassigned experiments are not allowed to have new assignmentsadded.
         return None
-    if experiment_type != "online":
+    if experiment_type != "freq_online":
         raise ExperimentsAssignmentError(f"Invalid experiment type: {experiment_type}")
 
     # Don't allow new assignments for experiments that have ended.

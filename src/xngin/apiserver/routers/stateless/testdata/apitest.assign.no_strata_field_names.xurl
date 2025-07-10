@@ -4,7 +4,7 @@ Datasource-ID: testing-inline-schema
 {
  "design_spec": {
     "experiment_id": "0897bbd7-dacd-41b4-b164-7a1950fa61f2",
-    "experiment_type": "preassigned",
+    "experiment_type": "freq_preassigned",
     "experiment_name": "Sample experiment with no strata.",
     "description": "Although there are no strata, we still implicilty use any metrics as additional strata in the old /assign endpoint.",
     "arms": [
@@ -534,6 +534,12 @@ HTTP 200
 [test_api]
 {
   "deepdiff_kwargs": {
-    "exclude_regex_paths": "\\['created_at'\\]"
+    "exclude_regex_paths": [
+      "\\['created_at'\\]",
+      "root\\['assignments'\\]\\[\\d+\\]\\['draw_id'\\]",
+      "root\\['assignments'\\]\\[\\d+\\]\\['observed_at'\\]",
+      "root\\['assignments'\\]\\[\\d+\\]\\['outcome'\\]",
+      "root\\['assignments'\\]\\[\\d+\\]\\['context_values'\\]"
+      ]
   }
 }
