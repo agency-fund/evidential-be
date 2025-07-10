@@ -74,4 +74,4 @@ Follow the steps below to get a local development environment running.
 
 ## Documentation<a name="documentation"></a>
 
-See [docs/](docs/) for more documentation.
+See [https://docs.evidential.dev/](https://docs.evidential.dev/) for more documentation.
