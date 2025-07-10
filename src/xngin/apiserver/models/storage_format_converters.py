@@ -141,7 +141,7 @@ class ExperimentStorageConverter:
         return TypeAdapter(sapi.DesignSpec).validate_python({
             "participant_type": self.experiment.participant_type,
             "experiment_id": self.experiment.id,
-            "experiment_type": self.experiment,
+            "experiment_type": self.experiment.experiment_type,
             "experiment_name": self.experiment.name,
             "description": self.experiment.description,
             "start_date": self.experiment.start_date,

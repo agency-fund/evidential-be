@@ -1133,7 +1133,7 @@ async def test_experiments_analyze_for_experiment_with_no_participants(
     xngin_session: AsyncSession, testing_datasource_with_user, pget
 ):
     test_experiment = await insert_experiment_and_arms(
-        xngin_session, testing_datasource_with_user.ds, "online"
+        xngin_session, testing_datasource_with_user.ds, "freq_online"
     )
     datasource_id = test_experiment.datasource_id
     experiment_id = test_experiment.id
@@ -1279,12 +1279,12 @@ async def test_experiment_webhook_integration(
 
     # Verify the create response includes the webhook
     created_experiment = create_response.json()
-    assert "webhooks" in created_experiment["config"]
-    assert len(created_experiment["config"]["webhooks"]) == 1
-    assert created_experiment["config"]["webhooks"][0] == webhook1_id
+    assert "webhooks" in created_experiment
+    assert len(created_experiment["webhooks"]) == 1
+    assert created_experiment["webhooks"][0] == webhook1_id
 
     # Get the experiment ID for further testing
-    experiment_id = created_experiment["config"]["design_spec"]["experiment_id"]
+    experiment_id = created_experiment["design_spec"]["experiment_id"]
 
     # Get the experiment and verify webhook is included
     get_response = pget(
@@ -1293,12 +1293,12 @@ async def test_experiment_webhook_integration(
     assert get_response.status_code == 200, get_response.content
 
     retrieved_experiment = get_response.json()
-    assert "webhooks" in retrieved_experiment["config"]
-    assert len(retrieved_experiment["config"]["webhooks"]) == 1
-    assert retrieved_experiment["config"]["webhooks"][0] == webhook1_id
+    assert "webhooks" in retrieved_experiment
+    assert len(retrieved_experiment["webhooks"]) == 1
+    assert retrieved_experiment["webhooks"][0] == webhook1_id
 
     # Verify the second webhook is not included
-    assert webhook2_id not in retrieved_experiment["config"]["webhooks"]
+    assert webhook2_id not in retrieved_experiment["webhooks"]
 
     # Test creating an experiment with no webhooks using proper Pydantic models
     experiment_request_no_webhooks = CreateExperimentRequest(
@@ -1330,5 +1330,5 @@ async def test_experiment_webhook_integration(
 
     # Verify no webhooks are associated
     created_experiment_no_webhooks = create_response_no_webhooks.json()
-    assert "webhooks" in created_experiment_no_webhooks["config"]
-    assert len(created_experiment_no_webhooks["config"]["webhooks"]) == 0
+    assert "webhooks" in created_experiment_no_webhooks
+    assert len(created_experiment_no_webhooks["webhooks"]) == 0

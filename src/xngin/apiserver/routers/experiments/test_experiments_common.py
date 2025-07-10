@@ -242,34 +242,29 @@ async def test_create_experiment_impl_for_preassigned(
         stratify_on_metrics=True,
         webhook_ids=[],
     )
-    response_config = response.config
-
     # Verify response
-    assert response_config.datasource_id == testing_datasource.ds.id
-    assert response_config.state == ExperimentState.ASSIGNED
+    assert response.datasource_id == testing_datasource.ds.id
+    assert response.state == ExperimentState.ASSIGNED
     # Verify design_spec
-    assert response_config.design_spec.experiment_id is not None
-    assert response_config.design_spec.arms[0].arm_id is not None
-    assert response_config.design_spec.arms[1].arm_id is not None
-    assert (
-        response_config.design_spec.experiment_name
-        == request.design_spec.experiment_name
-    )
-    assert response_config.design_spec.description == request.design_spec.description
-    assert response_config.design_spec.start_date == request.design_spec.start_date
-    assert response_config.design_spec.end_date == request.design_spec.end_date
+    assert response.design_spec.experiment_id is not None
+    assert response.design_spec.arms[0].arm_id is not None
+    assert response.design_spec.arms[1].arm_id is not None
+    assert response.design_spec.experiment_name == request.design_spec.experiment_name
+    assert response.design_spec.description == request.design_spec.description
+    assert response.design_spec.start_date == request.design_spec.start_date
+    assert response.design_spec.end_date == request.design_spec.end_date
     # although we stratify on target metrics as well in this test, note that the
     # original strata are not augmented with the metric names.
-    assert response_config.design_spec.strata == [Stratum(field_name="gender")]
-    assert response_config.power_analyses == request.power_analyses
+    assert response.design_spec.strata == [Stratum(field_name="gender")]
+    assert response.power_analyses == request.power_analyses
     # Verify assign_summary
-    assert response_config.assign_summary.sample_size == len(participants)
-    assert response_config.assign_summary.balance_check is not None
-    assert response_config.assign_summary.balance_check.balance_ok is True
+    assert response.assign_summary.sample_size == len(participants)
+    assert response.assign_summary.balance_check is not None
+    assert response.assign_summary.balance_check.balance_ok is True
 
     # Verify database state using the ids in the returned DesignSpec.
     experiment = await xngin_session.get(
-        tables.Experiment, response_config.design_spec.experiment_id
+        tables.Experiment, response.design_spec.experiment_id
     )
     assert experiment.experiment_type == "freq_preassigned"
     assert experiment.participant_type == request.design_spec.participant_type
@@ -286,8 +281,8 @@ async def test_create_experiment_impl_for_preassigned(
     assert experiment.fstat_thresh == request.design_spec.fstat_thresh
     # Verify design_spec was stored correctly
     converter = ExperimentStorageConverter(experiment)
-    assert converter.get_design_spec() == response_config.design_spec
-    assert converter.get_power_response() == response_config.power_analyses
+    assert converter.get_design_spec() == response.design_spec
+    assert converter.get_power_response() == response.power_analyses
     # Verify assignments were created
     assignments = (
         await xngin_session.scalars(
@@ -311,7 +306,7 @@ async def test_create_experiment_impl_for_preassigned(
     assert len(arms) == 2
     arm_ids = {arm.id for arm in arms}
     expected_arm_ids = {
-        response_arm.arm_id for response_arm in response_config.design_spec.arms
+        response_arm.arm_id for response_arm in response.design_spec.arms
     }
     assert arm_ids == expected_arm_ids
 
@@ -319,9 +314,7 @@ async def test_create_experiment_impl_for_preassigned(
     sample_assignment = assignments[0]
     assert sample_assignment.participant_type == "test_participant_type"
     assert sample_assignment.experiment_id == experiment.id
-    assert sample_assignment.arm_id in (
-        arm.arm_id for arm in response_config.design_spec.arms
-    )
+    assert sample_assignment.arm_id in (arm.arm_id for arm in response.design_spec.arms)
     # Verify strata information
     assert (
         len(sample_assignment.strata) == 2
@@ -330,8 +323,8 @@ async def test_create_experiment_impl_for_preassigned(
     assert sample_assignment.strata[1]["field_name"] == "is_onboarded"
 
     # Check for approximate balance in arm assignments
-    arm1_id = response_config.design_spec.arms[0].arm_id
-    arm2_id = response_config.design_spec.arms[1].arm_id
+    arm1_id = response.design_spec.arms[0].arm_id
+    arm2_id = response.design_spec.arms[1].arm_id
     num_control = sum(1 for a in assignments if a.arm_id == arm1_id)
     num_treat = sum(1 for a in assignments if a.arm_id == arm2_id)
     assert abs(num_control - num_treat) <= 1
@@ -454,18 +447,17 @@ async def test_create_experiment_impl_overwrites_uuids(
         stratify_on_metrics=True,
         webhook_ids=[],
     )
-    response_config = response.config
 
     # Verify that new UUIDs were generated
-    assert response_config.design_spec.experiment_id != original_experiment_id
-    new_arm_ids = [arm.arm_id for arm in response_config.design_spec.arms]
+    assert response.design_spec.experiment_id != original_experiment_id
+    new_arm_ids = [arm.arm_id for arm in response.design_spec.arms]
     assert set(new_arm_ids) != set(original_arm_ids)
 
     # Verify database state
     experiment = (
         await xngin_session.scalars(
             select(tables.Experiment).where(
-                tables.Experiment.id == response_config.design_spec.experiment_id
+                tables.Experiment.id == response.design_spec.experiment_id
             )
         )
     ).one()
@@ -502,22 +494,21 @@ async def test_create_experiment_impl_no_metric_stratification(
         stratify_on_metrics=False,
         webhook_ids=[],
     )
-    response_config = response.config
 
     # Verify basic response
-    assert response_config.datasource_id == testing_datasource.ds.id
-    assert response_config.state == ExperimentState.ASSIGNED
-    assert response_config.design_spec.experiment_id is not None
-    assert response_config.design_spec.arms[0].arm_id is not None
+    assert response.datasource_id == testing_datasource.ds.id
+    assert response.state == ExperimentState.ASSIGNED
+    assert response.design_spec.experiment_id is not None
+    assert response.design_spec.arms[0].arm_id is not None
     # Same as in the stratify_on_metrics=True test.
     # Only the output assignments will also store a snapshot of the metric values as strata.
-    assert response_config.design_spec.strata == [Stratum(field_name="gender")]
+    assert response.design_spec.strata == [Stratum(field_name="gender")]
 
     # Verify database state
     experiment = (
         await xngin_session.scalars(
             select(tables.Experiment).where(
-                tables.Experiment.id == response_config.design_spec.experiment_id
+                tables.Experiment.id == response.design_spec.experiment_id
             )
         )
     ).one()
@@ -537,8 +528,8 @@ async def test_create_experiment_impl_no_metric_stratification(
     assert not any(s["field_name"] == "is_onboarded" for s in sample_assignment.strata)
 
     # Check for approximate balance in arm assignments
-    arm1_id = response_config.design_spec.arms[0].arm_id
-    arm2_id = response_config.design_spec.arms[1].arm_id
+    arm1_id = response.design_spec.arms[0].arm_id
+    arm2_id = response.design_spec.arms[1].arm_id
     num_control = sum(1 for a in assignments if a.arm_id == arm1_id)
     num_treat = sum(1 for a in assignments if a.arm_id == arm2_id)
     assert abs(num_control - num_treat) <= 1

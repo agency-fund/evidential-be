@@ -52,7 +52,6 @@ async def test_create_experiment_with_assignment_sl(
     # Verify basic response
     assert response.status_code == 200, request
     experiment_config = CreateExperimentResponse.model_validate(response.json())
-    experiment_config = experiment_config.config
     assert experiment_config.design_spec.experiment_id is not None
     assert experiment_config.design_spec.arms[0].arm_id is not None
     assert experiment_config.design_spec.arms[1].arm_id is not None
@@ -117,10 +116,10 @@ async def test_get_experiment(xngin_session, testing_datasource, client_v1):
     assert response.status_code == 200, response.content
 
     experiment_json = response.json()
-    assert experiment_json["config"]["datasource_id"] == new_experiment.datasource_id
-    assert experiment_json["config"]["state"] == new_experiment.state
+    assert experiment_json["datasource_id"] == new_experiment.datasource_id
+    assert experiment_json["state"] == new_experiment.state
     actual = PreassignedFrequentistExperimentSpec.model_validate(
-        experiment_json["config"]["design_spec"]
+        experiment_json["design_spec"]
     )
     expected = ExperimentStorageConverter(new_experiment).get_design_spec()
     diff = DeepDiff(actual, expected)
