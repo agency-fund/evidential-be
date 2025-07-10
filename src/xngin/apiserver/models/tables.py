@@ -6,7 +6,7 @@ from typing import ClassVar, Self
 
 import sqlalchemy
 from pydantic import TypeAdapter
-from sqlalchemy import ARRAY, Boolean, Float, ForeignKey, Index, Integer, String
+from sqlalchemy import ARRAY, Float, ForeignKey, Index, String
 from sqlalchemy.dialects import postgresql
 from sqlalchemy.ext.asyncio import AsyncAttrs
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
@@ -415,12 +415,7 @@ class Experiment(Base):
         String(255), ForeignKey("datasources.id", ondelete="CASCADE")
     )
     # -- Experiment metadata --
-    assignment_type: Mapped[str] = mapped_column(
-        comment="Should be one of the AssignmentType literals."
-    )
-    experiment_type: Mapped[str] = mapped_column(
-        comment="Should be one of the ExperimentType enums."
-    )
+    experiment_type: Mapped[str] = mapped_column()
     participant_type: Mapped[str] = mapped_column(String(255))
     name: Mapped[str] = mapped_column(String(255))
     # Describe your experiment and hypothesis here.
@@ -442,16 +437,12 @@ class Experiment(Base):
     updated_at: Mapped[datetime] = mapped_column(
         server_default=sqlalchemy.sql.func.now(), onupdate=sqlalchemy.sql.func.now()
     )
-    n_trials: Mapped[int] = mapped_column(Integer, default=0)
+    n_trials: Mapped[int] = mapped_column(default=0)
 
     # -- Experiment config --
     # Bandit config params
-    prior_type: Mapped[str | None] = mapped_column(
-        String(length=50), nullable=True, default=None
-    )
-    reward_type: Mapped[str | None] = mapped_column(
-        String(length=50), nullable=True, default=None
-    )
+    prior_type: Mapped[str | None] = mapped_column(nullable=True, default=None)
+    reward_type: Mapped[str | None] = mapped_column(nullable=True, default=None)
 
     # Frequentist config params
     # JSON serialized form of an experiment's specified dwh fields used for strata/metrics/filters.
@@ -469,11 +460,9 @@ class Experiment(Base):
     )
 
     # Frequentist experiment types i.e. online and preassigned
-    power: Mapped[float | None] = mapped_column(Float, nullable=True, default=None)
-    alpha: Mapped[float | None] = mapped_column(Float, nullable=True, default=None)
-    fstat_thresh: Mapped[float | None] = mapped_column(
-        Float, nullable=True, default=None
-    )
+    power: Mapped[float | None] = mapped_column(nullable=True, default=None)
+    alpha: Mapped[float | None] = mapped_column(nullable=True, default=None)
+    fstat_thresh: Mapped[float | None] = mapped_column(nullable=True, default=None)
 
     # -- Relationships --
     arm_assignments: Mapped[list["ArmAssignment"]] = relationship(
@@ -545,20 +534,20 @@ class Arm(Base):
 
     # -- Arm config --
     # Prior variables
-    mu_init: Mapped[float | None] = mapped_column(Float, nullable=True, default=None)
-    sigma_init: Mapped[float | None] = mapped_column(Float, nullable=True, default=None)
+    mu_init: Mapped[float | None] = mapped_column(nullable=True, default=None)
+    sigma_init: Mapped[float | None] = mapped_column(nullable=True, default=None)
     mu: Mapped[list[float] | None] = mapped_column(
         ARRAY(Float), nullable=True, default=None
     )
     covariance: Mapped[list[list[float]] | None] = mapped_column(
         ARRAY(Float), nullable=True, default=None
     )
-    is_baseline: Mapped[bool] = mapped_column(Boolean, default=True)
+    is_baseline: Mapped[bool] = mapped_column(default=True)
 
-    alpha_init: Mapped[float | None] = mapped_column(Float, nullable=True, default=None)
-    beta_init: Mapped[float | None] = mapped_column(Float, nullable=True, default=None)
-    alpha: Mapped[float | None] = mapped_column(Float, nullable=True, default=None)
-    beta: Mapped[float | None] = mapped_column(Float, nullable=True, default=None)
+    alpha_init: Mapped[float | None] = mapped_column(nullable=True, default=None)
+    beta_init: Mapped[float | None] = mapped_column(nullable=True, default=None)
+    alpha: Mapped[float | None] = mapped_column(nullable=True, default=None)
+    beta: Mapped[float | None] = mapped_column(nullable=True, default=None)
 
     # -- Relationships --
     organization: Mapped["Organization"] = relationship(back_populates="arms")
@@ -593,14 +582,14 @@ class Draw(Base):
     observed_datetime_utc: Mapped[datetime] = mapped_column(
         server_default=sqlalchemy.sql.func.now(), nullable=True, default=None
     )
-    observation_type: Mapped[str] = mapped_column(String, nullable=True, default=None)
+    observation_type: Mapped[str] = mapped_column(nullable=True, default=None)
 
     # Observation data
     experiment_id: Mapped[str] = mapped_column(
         ForeignKey("experiments.id", ondelete="CASCADE")
     )
     arm_id: Mapped[str] = mapped_column(ForeignKey("arms.id", ondelete="CASCADE"))
-    outcome: Mapped[float] = mapped_column(Float, nullable=True, default=None)
+    outcome: Mapped[float] = mapped_column(nullable=True, default=None)
     context_val: Mapped[list[float]] = mapped_column(ARRAY(Float), default=[])
 
     # Relationships
@@ -624,9 +613,9 @@ class Context(Base):
     experiment_id: Mapped[str] = mapped_column(
         ForeignKey("experiments.id", ondelete="CASCADE")
     )
-    name: Mapped[str] = mapped_column(String(length=255), nullable=False)
-    description: Mapped[str] = mapped_column(String(length=2000), nullable=True)
-    value_type: Mapped[str] = mapped_column(String, nullable=False)
+    name: Mapped[str] = mapped_column(String(255), nullable=False)
+    description: Mapped[str] = mapped_column(String(2000), nullable=True)
+    value_type: Mapped[str] = mapped_column(nullable=False)
 
     # Relationships
     experiment: Mapped[Experiment] = relationship(

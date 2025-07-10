@@ -137,7 +137,6 @@ def make_insertable_experiment(
         datasource_id=datasource.id,
         organization_id=datasource.organization_id,
         experiment_type=experiment_type,
-        assignment_type="PLACEHOLDER",  # TODO: needs to be set properly
         design_spec=design_spec,
         state=state,
         stopped_assignments_at=stopped_assignments_at,

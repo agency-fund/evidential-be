@@ -220,7 +220,6 @@ class ExperimentStorageConverter:
         datasource_id: str,
         organization_id: str,
         experiment_type: capi.ExperimentType,
-        assignment_type: str,  # TODO: Needs to be set properly
         design_spec: sapi.DesignSpec,
         state: ExperimentState = ExperimentState.ASSIGNED,
         stopped_assignments_at: datetime | None = None,
@@ -239,7 +238,6 @@ class ExperimentStorageConverter:
             id=design_spec.experiment_id,
             datasource_id=datasource_id,
             experiment_type=experiment_type,
-            assignment_type=assignment_type,
             participant_type=design_spec.participant_type,
             name=design_spec.experiment_name,
             description=design_spec.description,
