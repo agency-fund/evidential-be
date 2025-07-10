@@ -923,7 +923,12 @@ class Assignment(ApiBaseModel):
         ),
     ]
     participant_id: Annotated[
-        str, Field(max_length=MAX_LENGTH_OF_PARTICIPANT_ID_VALUE, default=None)
+        str,
+        Field(
+            description="Unique identifier for the participant. This is the primary key for the participant in the data warehouse.",
+            max_length=MAX_LENGTH_OF_PARTICIPANT_ID_VALUE,
+            default=None,
+        ),
     ]
     arm_name: Annotated[
         str,
