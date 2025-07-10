@@ -776,17 +776,21 @@ class BaseBanditExperimentSpec(BaseDesignSpec):
             PriorTypes.NORMAL: ("mu_init", "sigma_init"),
         }
 
+        if prior_type not in prior_params:
+            raise ValueError(
+                f"Unsupported prior type: {prior_type}. Supported types are: {', '.join(prior_params.keys())}."
+            )
+
         for arm in arms:
             arm_dict = arm.model_dump()
-            if prior_type in prior_params:
-                missing_params = []
-                for param in prior_params[prior_type]:
-                    if param not in arm_dict or arm_dict[param] is None:
-                        missing_params.append(param)
+            missing_params = []
+            for param in prior_params[prior_type]:
+                if param not in arm_dict or arm_dict[param] is None:
+                    missing_params.append(param)
 
-                if missing_params:
-                    val = prior_type.value
-                    raise ValueError(f"{val} prior needs {','.join(missing_params)}.")
+            if missing_params:
+                val = prior_type.value
+                raise ValueError(f"{val} prior needs {','.join(missing_params)}.")
         return self
 
     @model_validator(mode="after")
