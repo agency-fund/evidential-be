@@ -97,7 +97,7 @@ async def fixture_testing_experiment(
     """Create an experiment on a test inline schema datasource with proper user permissions."""
     datasource = testing_datasource_with_user.ds
     experiment = await insert_experiment_and_arms(
-        xngin_session, datasource, "preassigned"
+        xngin_session, datasource, "freq_preassigned"
     )
     # Add fake assignments for each arm for real participant ids in our test data.
     arm_ids = [arm.id for arm in experiment.arms]
@@ -1017,7 +1017,7 @@ async def test_get_experiment_assignment_for_online_participant(
     xngin_session: AsyncSession, testing_datasource_with_user, pget
 ):
     test_experiment = await insert_experiment_and_arms(
-        xngin_session, testing_datasource_with_user.ds, "online"
+        xngin_session, testing_datasource_with_user.ds, "freq_online"
     )
     datasource_id = test_experiment.datasource_id
     experiment_id = test_experiment.id
@@ -1076,7 +1076,7 @@ async def test_get_experiment_assignment_for_online_participant_past_end_date(
     new_exp = await insert_experiment_and_arms(
         xngin_session,
         testing_datasource_with_user.ds,
-        "online",
+        "freq_online",
         end_date=datetime.now(UTC) - timedelta(days=1),
     )
     datasource_id = new_exp.datasource_id

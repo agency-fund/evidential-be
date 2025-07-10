@@ -350,38 +350,31 @@ async def test_create_experiment_impl_for_online(
         stratify_on_metrics=True,
         webhook_ids=[],
     )
-    response_config = response.config
-
     # Verify response
-    assert response_config.datasource_id == testing_datasource.ds.id
-    assert response_config.state == ExperimentState.ASSIGNED
+    assert response.datasource_id == testing_datasource.ds.id
+    assert response.state == ExperimentState.ASSIGNED
 
     # Verify design_spec
-    assert response_config.design_spec.experiment_id is not None
-    assert response_config.design_spec.arms[0].arm_id is not None
-    assert response_config.design_spec.arms[1].arm_id is not None
-    assert (
-        response_config.design_spec.experiment_name
-        == request.design_spec.experiment_name
-    )
-    assert response_config.design_spec.description == request.design_spec.description
-    assert response_config.design_spec.start_date == request.design_spec.start_date
-    assert response_config.design_spec.end_date == request.design_spec.end_date
-    assert response_config.design_spec.strata == [Stratum(field_name="gender")]
+    assert response.design_spec.experiment_id is not None
+    assert response.design_spec.arms[0].arm_id is not None
+    assert response.design_spec.arms[1].arm_id is not None
+    assert response.design_spec.experiment_name == request.design_spec.experiment_name
+    assert response.design_spec.description == request.design_spec.description
+    assert response.design_spec.start_date == request.design_spec.start_date
+    assert response.design_spec.end_date == request.design_spec.end_date
+    assert response.design_spec.strata == [Stratum(field_name="gender")]
     # Online experiments don't have power analyses by default
-    assert response_config.power_analyses is None
+    assert response.power_analyses is None
 
     # Verify assign_summary for online experiment
-    assert response_config.assign_summary.sample_size == 0
-    assert response_config.assign_summary.balance_check is None
-    assert response_config.assign_summary.arm_sizes is not None
-    assert all(
-        arm_size.size == 0 for arm_size in response_config.assign_summary.arm_sizes
-    )
+    assert response.assign_summary.sample_size == 0
+    assert response.assign_summary.balance_check is None
+    assert response.assign_summary.arm_sizes is not None
+    assert all(arm_size.size == 0 for arm_size in response.assign_summary.arm_sizes)
 
     # Verify database state
     experiment = await xngin_session.get(
-        tables.Experiment, response_config.design_spec.experiment_id
+        tables.Experiment, response.design_spec.experiment_id
     )
     assert experiment.experiment_type == "freq_online"
     assert experiment.participant_type == request.design_spec.participant_type
@@ -398,7 +391,7 @@ async def test_create_experiment_impl_for_online(
     assert experiment.fstat_thresh == request.design_spec.fstat_thresh
     # Verify design_spec was stored correctly
     converter = ExperimentStorageConverter(experiment)
-    assert converter.get_design_spec() == response_config.design_spec
+    assert converter.get_design_spec() == response.design_spec
     # Verify no power_analyses for online experiments
     assert experiment.power_analyses is None
 
@@ -410,7 +403,7 @@ async def test_create_experiment_impl_for_online(
     ).all()
     assert len(arms) == 2
     arm_ids = {arm.id for arm in arms}
-    expected_arm_ids = {arm.arm_id for arm in response_config.design_spec.arms}
+    expected_arm_ids = {arm.arm_id for arm in response.design_spec.arms}
     assert arm_ids == expected_arm_ids
 
     # Verify that no assignments were created for online experiment

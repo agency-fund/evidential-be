@@ -95,7 +95,8 @@ async def create_experiment_with_assignment_sl(
 ) -> CreateExperimentResponse:
     """Creates an experiment and saves its assignments to the database."""
     if not isinstance(
-        body, (PreassignedFrequentistExperimentSpec, OnlineFrequentistExperimentSpec)
+        body.design_spec,
+        (PreassignedFrequentistExperimentSpec, OnlineFrequentistExperimentSpec),
     ):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
