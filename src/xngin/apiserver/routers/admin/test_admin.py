@@ -770,7 +770,7 @@ async def test_lifecycle_with_db(testing_datasource, ppost, pget, pdelete):
         json=make_createexperimentrequest_json(participant_type),
     )
     assert response.status_code == 200, response.content
-    created_experiment = CreateExperimentResponse.model_validate(response.json()).config
+    created_experiment = CreateExperimentResponse.model_validate(response.json())
     parsed_experiment_id = created_experiment.design_spec.experiment_id
     assert parsed_experiment_id is not None
     assert created_experiment.stopped_assignments_at is not None
@@ -787,7 +787,7 @@ async def test_lifecycle_with_db(testing_datasource, ppost, pget, pdelete):
     )
 
     assert response.status_code == 200, response.content
-    experiment_config = CreateExperimentResponse.model_validate(response.json()).config
+    experiment_config = CreateExperimentResponse.model_validate(response.json())
     assert experiment_config.design_spec.experiment_id == parsed_experiment_id
 
     # List org experiments.
@@ -870,7 +870,7 @@ async def test_create_preassigned_experiment_using_inline_schema_ds(
         content=request_obj.model_dump_json(),
     )
     assert response.status_code == 200, response.content
-    created_experiment = CreateExperimentResponse.model_validate(response.json()).config
+    created_experiment = CreateExperimentResponse.model_validate(response.json())
     parsed_experiment_id = created_experiment.design_spec.experiment_id
     assert parsed_experiment_id is not None
     parsed_arm_ids = {arm.arm_id for arm in created_experiment.design_spec.arms}
@@ -955,7 +955,7 @@ def test_create_online_experiment_using_inline_schema_ds(
         content=request_obj.model_dump_json(),
     )
     assert response.status_code == 200, response.content
-    created_experiment = CreateExperimentResponse.model_validate(response.json()).config
+    created_experiment = CreateExperimentResponse.model_validate(response.json())
     parsed_experiment_id = created_experiment.design_spec.experiment_id
     assert parsed_experiment_id is not None
     parsed_arm_ids = {arm.arm_id for arm in created_experiment.design_spec.arms}
