@@ -30,14 +30,13 @@ from xngin.apiserver.gsheet_cache import GSheetCache
 from xngin.apiserver.models import tables
 from xngin.apiserver.models.storage_format_converters import ExperimentStorageConverter
 from xngin.apiserver.routers.common_api_types import (
+    BaseFrequentistDesignSpec,
     CreateExperimentRequest,
     CreateExperimentResponse,
     GetExperimentAssignmentsResponse,
     GetExperimentResponse,
     GetParticipantAssignmentResponse,
     ListExperimentsResponse,
-    OnlineFrequentistExperimentSpec,
-    PreassignedFrequentistExperimentSpec,
 )
 from xngin.apiserver.routers.experiments.dependencies import experiment_dependency
 from xngin.apiserver.routers.experiments.experiments_common import (
@@ -96,7 +95,7 @@ async def create_experiment_with_assignment_sl(
     """Creates an experiment and saves its assignments to the database."""
     if not isinstance(
         body.design_spec,
-        (PreassignedFrequentistExperimentSpec, OnlineFrequentistExperimentSpec),
+        BaseFrequentistDesignSpec,
     ):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,

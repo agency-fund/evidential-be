@@ -21,13 +21,12 @@ from xngin.apiserver.dwh.queries import get_stats_on_filters, get_stats_on_metri
 from xngin.apiserver.exceptions_common import LateValidationError
 from xngin.apiserver.gsheet_cache import GSheetCache
 from xngin.apiserver.routers.common_api_types import (
+    BaseFrequentistDesignSpec,
     DesignSpec,
     GetMetricsResponseElement,
     GetStrataResponseElement,
-    OnlineFrequentistExperimentSpec,
     PowerRequest,
     PowerResponse,
-    PreassignedFrequentistExperimentSpec,
 )
 from xngin.apiserver.routers.stateless.stateless_api_types import (
     AssignRequest,
@@ -209,11 +208,10 @@ def validate_schema_metrics_or_raise(
 ):
     if not isinstance(
         design_spec,
-        (PreassignedFrequentistExperimentSpec, OnlineFrequentistExperimentSpec),
+        BaseFrequentistDesignSpec,
     ):
         raise TypeError(
-            f"Invalid DesignSpec type. Expected "
-            f"{PreassignedFrequentistExperimentSpec, OnlineFrequentistExperimentSpec}."
+            f"Invalid DesignSpec type. Expected {BaseFrequentistDesignSpec}."
         )
     metric_fields = {m.field_name for m in schema.fields if m.is_metric}
     metrics_requested = {m.field_name for m in design_spec.metrics}
@@ -251,11 +249,10 @@ async def power_check_impl(
     """Implementation of the power check logic."""
     if not isinstance(
         body.design_spec,
-        (PreassignedFrequentistExperimentSpec, OnlineFrequentistExperimentSpec),
+        BaseFrequentistDesignSpec,
     ):
         raise TypeError(
-            f"Invalid DesignSpec type. Expected "
-            f"{PreassignedFrequentistExperimentSpec, OnlineFrequentistExperimentSpec}."
+            f"Invalid DesignSpec type. Expected {BaseFrequentistDesignSpec}."
         )
 
     async with DwhSession(config.dwh) as dwh:
@@ -312,11 +309,10 @@ async def assign_treatment(
 ) -> AssignResponse:
     if not isinstance(
         body.design_spec,
-        (PreassignedFrequentistExperimentSpec, OnlineFrequentistExperimentSpec),
+        BaseFrequentistDesignSpec,
     ):
         raise TypeError(
-            f"Invalid DesignSpec type. Expected "
-            f"{PreassignedFrequentistExperimentSpec, OnlineFrequentistExperimentSpec}."
+            f"Invalid DesignSpec type. Expected {BaseFrequentistDesignSpec}."
         )
     commons = CommonQueryParams(
         participant_type=body.design_spec.participant_type, refresh=refresh

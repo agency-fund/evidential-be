@@ -76,6 +76,7 @@ from xngin.apiserver.routers.auth.auth_dependencies import require_oidc_token
 from xngin.apiserver.routers.auth.principal import Principal
 from xngin.apiserver.routers.common_api_types import (
     ArmAnalysis,
+    BaseFrequentistDesignSpec,
     CreateExperimentRequest,
     CreateExperimentResponse,
     ExperimentAnalysis,
@@ -86,10 +87,8 @@ from xngin.apiserver.routers.common_api_types import (
     GetStrataResponseElement,
     ListExperimentsResponse,
     MetricAnalysis,
-    OnlineFrequentistExperimentSpec,
     PowerRequest,
     PowerResponse,
-    PreassignedFrequentistExperimentSpec,
 )
 from xngin.apiserver.routers.experiments import experiments_common
 from xngin.apiserver.routers.stateless.stateless_api import (
@@ -1252,7 +1251,7 @@ async def create_experiment(
     # TODO: Remove the bandit check once bandit experiments are supported.
     if not isinstance(
         body.design_spec,
-        (PreassignedFrequentistExperimentSpec, OnlineFrequentistExperimentSpec),
+        BaseFrequentistDesignSpec,
     ):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -1329,10 +1328,7 @@ async def analyze_experiment(
 
     design_spec = ExperimentStorageConverter(experiment).get_design_spec()
     # TODO: Remove the bandit check once bandit experiments are supported.
-    if not isinstance(
-        design_spec,
-        (PreassignedFrequentistExperimentSpec, OnlineFrequentistExperimentSpec),
-    ):
+    if not isinstance(design_spec, BaseFrequentistDesignSpec):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Bandit experiments are not supported.",

@@ -27,12 +27,11 @@ from xngin.apiserver.routers.common_api_types import (
     Assignment,
     AssignSummary,
     BalanceCheck,
+    BaseFrequentistDesignSpec,
     CreateExperimentRequest,
     CreateExperimentResponse,
     GetExperimentAssignmentsResponse,
     ListExperimentsResponse,
-    OnlineFrequentistExperimentSpec,
-    PreassignedFrequentistExperimentSpec,
     Strata,
 )
 from xngin.apiserver.routers.common_enums import ExperimentsType
@@ -149,7 +148,7 @@ async def create_preassigned_experiment_impl(
 
     if not isinstance(
         design_spec,
-        (PreassignedFrequentistExperimentSpec, OnlineFrequentistExperimentSpec),
+        BaseFrequentistDesignSpec,
     ):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -231,10 +230,7 @@ async def create_online_experiment_impl(
     design_spec = request.design_spec
 
     # TODO: update to support bandit experiments
-    if not isinstance(
-        design_spec,
-        (OnlineFrequentistExperimentSpec, PreassignedFrequentistExperimentSpec),
-    ):
+    if not isinstance(design_spec, BaseFrequentistDesignSpec):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Bandit experiments are not supported for online assignments",

@@ -88,13 +88,7 @@ class ExperimentStorageConverter:
     def set_design_spec_fields(self, design_spec: sapi.DesignSpec) -> Self:
         """Saves the components of a DesignSpec to the experiment."""
         # TODO: Update to handle bandit design spec types
-        if not isinstance(
-            design_spec,
-            (
-                capi.PreassignedFrequentistExperimentSpec,
-                capi.OnlineFrequentistExperimentSpec,
-            ),
-        ):
+        if not isinstance(design_spec, capi.BaseFrequentistDesignSpec):
             raise TypeError("Invalid design spec type.")
 
         storage_strata = None
@@ -246,13 +240,7 @@ class ExperimentStorageConverter:
         Raises:
             ValueError: If the experiment_id is not set in the design_spec.
         """
-        if not isinstance(
-            design_spec,
-            (
-                capi.PreassignedFrequentistExperimentSpec,
-                capi.OnlineFrequentistExperimentSpec,
-            ),
-        ):
+        if not isinstance(design_spec, capi.BaseFrequentistDesignSpec):
             raise TypeError("Invalid design spec type.")
         if design_spec.experiment_id is None:
             raise ValueError("experiment_id is required in the design_spec")
