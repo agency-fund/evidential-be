@@ -28,6 +28,7 @@ from xngin.apiserver.routers.common_api_types import (
     AssignSummary,
     BalanceCheck,
     BaseFrequentistDesignSpec,
+    BaseBanditExperimentSpec,
     CreateExperimentRequest,
     CreateExperimentResponse,
     GetExperimentAssignmentsResponse,
@@ -118,7 +119,16 @@ async def create_experiment_impl(
             validated_webhooks=validated_webhooks,
         )
     if request.design_spec.experiment_type == ExperimentsType.FREQ_ONLINE:
-        return await create_online_experiment_impl(
+        return await create_online_frequentist_experiment_impl(
+            request=request,
+            datasource_id=datasource_id,
+            organization_id=organization_id,
+            xngin_session=xngin_session,
+            validated_webhooks=validated_webhooks,
+        )
+    
+    if request.design_spec.experiment_type == ExperimentsType.MAB_ONLINE:
+        return await create_online_bandit_experiment_impl(
             request=request,
             datasource_id=datasource_id,
             organization_id=organization_id,
@@ -219,7 +229,7 @@ async def create_preassigned_experiment_impl(
     )
 
 
-async def create_online_experiment_impl(
+async def create_online_frequentist_experiment_impl(
     request: CreateExperimentRequest,
     datasource_id: str,
     organization_id: str,
@@ -233,7 +243,7 @@ async def create_online_experiment_impl(
     if not isinstance(design_spec, BaseFrequentistDesignSpec):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Bandit experiments are not supported for online assignments",
+            detail="Expected a frequentist experiment design spec",
         )
 
     experiment_converter = ExperimentStorageConverter.init_from_components(
@@ -255,6 +265,44 @@ async def create_online_experiment_impl(
         sample_size=0,
         arm_sizes=[ArmSize(arm=arm.model_copy(), size=0) for arm in design_spec.arms],
     )
+    webhook_ids = [webhook.id for webhook in validated_webhooks]
+    return experiment_converter.get_create_experiment_response(
+        empty_assign_summary, webhook_ids
+    )
+
+
+async def create_online_bandit_experiment_impl(
+    request: CreateExperimentRequest,
+    datasource_id: str,
+    organization_id: str,
+    xngin_session: AsyncSession,
+    validated_webhooks: list[tables.Webhook],
+) -> CreateExperimentResponse:
+    """Create an online experiment and persist it to the database."""
+    design_spec = request.design_spec
+
+    # TODO: update to support bandit experiments
+    if not isinstance(design_spec, BaseBanditExperimentSpec):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Expected a bandit experiment design spec",
+        )
+
+    experiment_converter = ExperimentStorageConverter.init_from_components(
+        datasource_id=datasource_id,
+        organization_id=organization_id,
+        experiment_type=ExperimentsType.MAB_ONLINE, #TODO: update to support other bandits
+        design_spec=design_spec,
+    )
+    experiment = experiment_converter.get_experiment()
+    # Associate webhooks with the experiment
+    for webhook in validated_webhooks:
+        experiment.webhooks.append(webhook)
+    xngin_session.add(experiment)
+
+    await xngin_session.commit()
+    # Online experiments start with no assignments.
+    empty_assign_summary = None
     webhook_ids = [webhook.id for webhook in validated_webhooks]
     return experiment_converter.get_create_experiment_response(
         empty_assign_summary, webhook_ids

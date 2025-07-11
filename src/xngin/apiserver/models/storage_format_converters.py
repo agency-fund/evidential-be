@@ -23,6 +23,7 @@ from xngin.apiserver.models.storage_types import (
     StorageStratum,
 )
 from xngin.apiserver.routers import common_api_types as capi
+from xngin.apiserver.routers.common_enums import (PriorTypes, LikelihoodTypes)
 from xngin.apiserver.routers.common_enums import ExperimentsType
 from xngin.apiserver.routers.stateless import stateless_api_types as sapi
 
@@ -89,7 +90,7 @@ class ExperimentStorageConverter:
         """Saves the components of a DesignSpec to the experiment."""
         # TODO: Update to handle bandit design spec types
         if not isinstance(design_spec, capi.BaseFrequentistDesignSpec):
-            raise TypeError("Invalid design spec type.")
+            return None
 
         storage_strata = None
         if design_spec.strata:
@@ -145,6 +146,14 @@ class ExperimentStorageConverter:
                     "arm_id": arm.id,
                     "arm_name": arm.name,
                     "arm_description": arm.description,
+                    "mu_init": arm.mu_init,
+                    "sigma_init": arm.sigma_init,
+                    "mu": arm.mu,
+                    "covariance": arm.covariance,
+                    "alpha_init": arm.alpha_init,
+                    "beta_init": arm.beta_init,
+                    "alpha": arm.alpha,
+                    "beta": arm.beta,
                 }
                 for arm in self.experiment.arms
             ],
@@ -154,6 +163,8 @@ class ExperimentStorageConverter:
             "power": self.experiment.power,
             "alpha": self.experiment.alpha,
             "fstat_thresh": self.experiment.fstat_thresh,
+            "prior_type": PriorTypes(self.experiment.prior_type),
+            "reward_type": LikelihoodTypes(self.experiment.reward_type)
         })
 
     def set_balance_check(self, value: capi.BalanceCheck | None) -> Self:
@@ -256,9 +267,13 @@ class ExperimentStorageConverter:
             end_date=design_spec.end_date,
             stopped_assignments_at=stopped_assignments_at,
             stopped_assignments_reason=stopped_assignments_reason,
+            # Frequentist experiment parameters
             power=design_spec.power,
             alpha=design_spec.alpha,
             fstat_thresh=design_spec.fstat_thresh,
+            # Bandit experiment parameters
+            prior_type=design_spec.prior_type.value,
+            reward_type=design_spec.reward_type.value,
         )
         experiment.arms = [
             tables.Arm(
@@ -267,6 +282,14 @@ class ExperimentStorageConverter:
                 description=arm.arm_description,
                 experiment_id=experiment.id,
                 organization_id=organization_id,
+                mu_init=arm.mu_init,
+                sigma_init=arm.sigma_init,
+                mu=arm.mu,
+                covariance=arm.covariance,
+                alpha_init=arm.alpha_init,
+                beta_init=arm.beta_init,
+                alpha=arm.alpha,
+                beta=arm.beta,
             )
             for arm in design_spec.arms
         ]
