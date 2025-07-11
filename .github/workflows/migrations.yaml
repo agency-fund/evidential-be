@@ -20,7 +20,7 @@ env:
   PYTHONUNBUFFERED: "1"
 
 jobs:
-  ruff:
+  check-migrations:
     runs-on: ubuntu-22.04
     timeout-minutes: 15
     steps:
