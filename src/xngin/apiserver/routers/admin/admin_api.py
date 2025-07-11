@@ -77,6 +77,7 @@ from xngin.apiserver.routers.auth.principal import Principal
 from xngin.apiserver.routers.common_api_types import (
     ArmAnalysis,
     BaseFrequentistDesignSpec,
+    BaseBanditExperimentSpec,
     CreateExperimentRequest,
     CreateExperimentResponse,
     ExperimentAnalysis,
@@ -104,6 +105,8 @@ from xngin.apiserver.settings import (
 from xngin.apiserver.testing.testing_dwh import create_user_and_first_datasource
 from xngin.stats.analysis import analyze_experiment as analyze_experiment_impl
 from xngin.stats.stats_errors import StatsAnalysisError
+from xngin.apiserver.routers.experiments.utils import create_dummy_datasource
+
 
 GENERIC_SUCCESS = Response(status_code=status.HTTP_204_NO_CONTENT)
 RESPONSE_CACHE_MAX_AGE_SECONDS = timedelta(minutes=15).seconds
@@ -1229,7 +1232,7 @@ async def delete_api_key(
 
 @router.post("/datasources/{datasource_id}/experiments")
 async def create_experiment(
-    datasource_id: str,
+    datasource_id: str | None,
     session: Annotated[AsyncSession, Depends(xngin_db_session)],
     user: Annotated[tables.User, Depends(user_from_token)],
     body: CreateExperimentRequest,
@@ -1248,45 +1251,60 @@ async def create_experiment(
         ),
     ] = None,
 ) -> CreateExperimentResponse:
-    # TODO: Remove the bandit check once bandit experiments are supported.
-    if not isinstance(
+    
+    participants_unique_id_field = None
+    sa_table = None
+    participants = None
+
+    if body.design_spec.ids_are_present():
+        raise LateValidationError("Invalid DesignSpec: UUIDs must not be set.")
+
+    if isinstance(
         body.design_spec,
         BaseFrequentistDesignSpec,
     ):
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Bandit experiments are not supported in this endpoint.",
-        )
-    datasource = await get_datasource_or_raise(session, user, datasource_id)
-    if body.design_spec.ids_are_present():
-        raise LateValidationError("Invalid DesignSpec: UUIDs must not be set.")
-    ds_config = datasource.get_config()
-    participants_cfg = ds_config.find_participants(body.design_spec.participant_type)
-    if not isinstance(participants_cfg, ParticipantsDef):
-        raise LateValidationError(
-            "Invalid ParticipantsConfig: Participants must be of type schema."
-        )
-
-    # Get participants and their schema info from the client dwh
-    participants = None
-    async with DwhSession(ds_config.dwh) as dwh:
-        if chosen_n is not None:
-            result = await dwh.get_participants(
-                participants_cfg.table_name, body.design_spec.filters, chosen_n
-            )
-            sa_table, participants = result.sa_table, result.participants
-        elif body.design_spec.experiment_type == "freq_preassigned":
+        if not datasource_id:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Preassigned experiments must have a chosen_n.",
+                detail="datasource_id must be provided for frequentist experiments.",
             )
-        else:
-            sa_table = await dwh.inspect_table(participants_cfg.table_name)
+        
+        datasource = await get_datasource_or_raise(session, user, datasource_id)
+        
+        ds_config = datasource.get_config()
+        participants_cfg = ds_config.find_participants(body.design_spec.participant_type)
+        participants_unique_id_field = participants_cfg.get_unique_id_field()
+        if not isinstance(participants_cfg, ParticipantsDef):
+            raise LateValidationError(
+                "Invalid ParticipantsConfig: Participants must be of type schema."
+            )
+        
+        # Get participants and their schema info from the client dwh
+        async with DwhSession(ds_config.dwh) as dwh:
+            if chosen_n is not None:
+                result = await dwh.get_participants(
+                    participants_cfg.table_name, body.design_spec.filters, chosen_n
+                )
+                sa_table, participants = result.sa_table, result.participants
+            elif body.design_spec.experiment_type == "freq_preassigned":
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Preassigned experiments must have a chosen_n.",
+                )
+            else:
+                sa_table = await dwh.inspect_table(participants_cfg.table_name)
+    
+    if isinstance(body.design_spec, BaseBanditExperimentSpec):
+        stratify_on_metrics = False
+        await user.awaitable_attrs.organizations
+        organization_id = user.organizations[0].id # TODO: Temp fix to get organization_id
+        if not datasource_id:
+            datasource = await create_dummy_datasource(session, organization_id)
 
     return await experiments_common.create_experiment_impl(
         request=body,
         datasource_id=datasource.id,
-        participant_unique_id_field=participants_cfg.get_unique_id_field(),
+        participant_unique_id_field=participants_unique_id_field,
         dwh_sa_table=sa_table,
         dwh_participants=participants,
         random_state=random_state,
