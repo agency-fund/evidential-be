@@ -254,70 +254,62 @@ class ArmBandit(Arm):
     alpha_init: Annotated[
         float | None,
         Field(
-            default=None,
             examples=[None, 1.0],
             description="Initial alpha parameter for Beta prior",
         ),
-    ]
+    ] = None
     beta_init: Annotated[
         float | None,
         Field(
-            default=None,
             examples=[None, 1.0],
             description="Initial beta parameter for Beta prior",
         ),
-    ]
+    ] = None
     mu_init: Annotated[
         float | None,
         Field(
-            default=None,
             examples=[None, 0.0],
             description="Initial mean parameter for Normal prior",
         ),
-    ]
+    ] = None
     sigma_init: Annotated[
         float | None,
         Field(
-            default=None,
             examples=[None, 1.0],
             description="Initial standard deviation parameter for Normal prior",
         ),
-    ]
+    ] = None
     n_outcomes: Annotated[
         int, Field(default=0, description="The number of outcomes for this arm.")
     ]
     alpha: Annotated[
         float | None,
         Field(
-            default=None,
             examples=[None, 1.0],
             description="Updated alpha parameter for Beta prior",
         ),
-    ]
+    ] = None
     beta: Annotated[
         float | None,
         Field(
-            default=None,
             examples=[None, 1.0],
             description="Updated beta parameter for Beta prior",
         ),
-    ]
+    ] = None
     mu: Annotated[
         list[float] | None,
         Field(
-            default=None,
             examples=[None, [0.0]],
             description="Updated mean vector for Normal prior",
         ),
-    ]
+    ] = None
     covariance: Annotated[
         list[list[float]] | None,
         Field(
-            default=None,
             examples=[None, [[1.0]]],
             description="Updated covariance matrix for Normal prior",
         ),
-    ]
+    ] = None
     is_baseline: Annotated[
         bool | None,
         Field(
@@ -739,11 +731,10 @@ class BaseBanditExperimentSpec(BaseDesignSpec):
     contexts: Annotated[
         list[Context] | None,
         Field(
-            default=None,
             description="Optional list of contexts that can be used to condition the bandit assignment. Required for contextual bandit experiments.",
             max_length=MAX_NUMBER_OF_FIELDS,
         ),
-    ]
+    ] = None
 
     # Experiment config
     prior_type: Annotated[
@@ -929,7 +920,6 @@ class Assignment(ApiBaseModel):
         Field(
             description="Unique identifier for the participant. This is the primary key for the participant in the data warehouse.",
             max_length=MAX_LENGTH_OF_PARTICIPANT_ID_VALUE,
-            default=None,
         ),
     ]
     arm_name: Annotated[
