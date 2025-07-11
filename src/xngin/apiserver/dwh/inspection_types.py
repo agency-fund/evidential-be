@@ -3,7 +3,7 @@ from typing import Annotated
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
-from xngin.apiserver.models.enums import DwhDataType
+from xngin.apiserver.models.enums import DataType
 
 
 class SchemaBaseModel(BaseModel):
@@ -14,7 +14,7 @@ class FieldDescriptor(SchemaBaseModel):
     field_name: Annotated[
         str, Field(description="Name of the field in the data source")
     ]
-    data_type: Annotated[DwhDataType, Field(description="The data type of this field")]
+    data_type: Annotated[DataType, Field(description="The data type of this field")]
     description: Annotated[
         str, Field(description="Human-readable description of the field")
     ] = ""
@@ -43,8 +43,8 @@ class FieldDescriptor(SchemaBaseModel):
 
     @field_validator("data_type", mode="before")
     @classmethod
-    def to_data_type(cls, value) -> DwhDataType:
-        return DwhDataType(value.lower())
+    def to_data_type(cls, value) -> DataType:
+        return DataType(value.lower())
 
     @field_validator(
         "is_unique_id", "is_strata", "is_filter", "is_metric", mode="before"

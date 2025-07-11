@@ -51,8 +51,8 @@ from xngin.apiserver.routers.common_api_types import (
     Arm,
     CreateExperimentRequest,
     CreateExperimentResponse,
+    DataType,
     DesignSpecMetricRequest,
-    DwhDataType,
     ExperimentAnalysis,
     GetExperimentAssignmentsResponse,
     GetParticipantAssignmentResponse,
@@ -174,7 +174,7 @@ async def test_initial_user_setup_matches_testing_dwh(xngin_session):
     assert col_names == field_names
     for field in pt_def.fields:
         col = sa_table.columns[field.field_name]
-        assert DwhDataType.match(col.type) == field.data_type
+        assert DataType.match(col.type) == field.data_type
 
 
 @pytest.mark.skipif(
@@ -526,7 +526,7 @@ def test_participants_lifecycle(
                 fields=[
                     FieldDescriptor(
                         field_name="newf",
-                        data_type=DwhDataType.INTEGER,
+                        data_type=DataType.INTEGER,
                         description="test",
                         is_unique_id=True,
                         is_strata=False,
@@ -605,7 +605,7 @@ def test_create_participants_type_invalid(testing_datasource, ppost):
                 fields=[
                     FieldDescriptor(
                         field_name="newf",
-                        data_type=DwhDataType.INTEGER,
+                        data_type=DataType.INTEGER,
                         description="test",
                         is_unique_id=False,
                         is_strata=False,
@@ -650,78 +650,76 @@ async def test_lifecycle_with_db(testing_datasource, ppost, pget, pdelete):
         fields=[
             FieldMetadata(
                 field_name="baseline_income",
-                data_type=DwhDataType.NUMERIC,
+                data_type=DataType.NUMERIC,
                 description="",
             ),
             FieldMetadata(
                 field_name="current_income",
-                data_type=DwhDataType.NUMERIC,
+                data_type=DataType.NUMERIC,
                 description="",
             ),
             FieldMetadata(
                 field_name="ethnicity",
-                data_type=DwhDataType.CHARACTER_VARYING,
+                data_type=DataType.CHARACTER_VARYING,
                 description="",
             ),
             FieldMetadata(
                 field_name="first_name",
-                data_type=DwhDataType.CHARACTER_VARYING,
+                data_type=DataType.CHARACTER_VARYING,
                 description="",
             ),
             FieldMetadata(
                 field_name="gender",
-                data_type=DwhDataType.CHARACTER_VARYING,
+                data_type=DataType.CHARACTER_VARYING,
                 description="",
             ),
+            FieldMetadata(field_name="id", data_type=DataType.BIGINT, description=""),
             FieldMetadata(
-                field_name="id", data_type=DwhDataType.BIGINT, description=""
+                field_name="income", data_type=DataType.NUMERIC, description=""
             ),
             FieldMetadata(
-                field_name="income", data_type=DwhDataType.NUMERIC, description=""
+                field_name="is_engaged", data_type=DataType.BOOLEAN, description=""
             ),
             FieldMetadata(
-                field_name="is_engaged", data_type=DwhDataType.BOOLEAN, description=""
+                field_name="is_onboarded", data_type=DataType.BOOLEAN, description=""
             ),
             FieldMetadata(
-                field_name="is_onboarded", data_type=DwhDataType.BOOLEAN, description=""
-            ),
-            FieldMetadata(
-                field_name="is_recruited", data_type=DwhDataType.BOOLEAN, description=""
+                field_name="is_recruited", data_type=DataType.BOOLEAN, description=""
             ),
             FieldMetadata(
                 field_name="is_registered",
-                data_type=DwhDataType.BOOLEAN,
+                data_type=DataType.BOOLEAN,
                 description="",
             ),
             FieldMetadata(
-                field_name="is_retained", data_type=DwhDataType.BOOLEAN, description=""
+                field_name="is_retained", data_type=DataType.BOOLEAN, description=""
             ),
             FieldMetadata(
                 field_name="last_name",
-                data_type=DwhDataType.CHARACTER_VARYING,
+                data_type=DataType.CHARACTER_VARYING,
                 description="",
             ),
             FieldMetadata(
-                field_name="potential_0", data_type=DwhDataType.NUMERIC, description=""
+                field_name="potential_0", data_type=DataType.NUMERIC, description=""
             ),
             FieldMetadata(
-                field_name="potential_1", data_type=DwhDataType.BIGINT, description=""
+                field_name="potential_1", data_type=DataType.BIGINT, description=""
             ),
             FieldMetadata(
-                field_name="sample_date", data_type=DwhDataType.DATE, description=""
+                field_name="sample_date", data_type=DataType.DATE, description=""
             ),
             FieldMetadata(
                 field_name="sample_timestamp",
-                data_type=DwhDataType.TIMESTAMP_WITHOUT_TIMEZONE,
+                data_type=DataType.TIMESTAMP_WITHOUT_TIMEZONE,
                 description="",
             ),
             FieldMetadata(
                 field_name="timestamp_with_tz",
-                data_type=DwhDataType.TIMESTAMP_WITH_TIMEZONE,
+                data_type=DataType.TIMESTAMP_WITH_TIMEZONE,
                 description="",
             ),
             FieldMetadata(
-                field_name="uuid_filter", data_type=DwhDataType.UUID, description=""
+                field_name="uuid_filter", data_type=DataType.UUID, description=""
             ),
         ],
     )
@@ -737,7 +735,7 @@ async def test_lifecycle_with_db(testing_datasource, ppost, pget, pdelete):
                 fields=[
                     FieldDescriptor(
                         field_name="id",
-                        data_type=DwhDataType.INTEGER,
+                        data_type=DataType.INTEGER,
                         description="test",
                         is_unique_id=True,
                         is_strata=False,
@@ -746,7 +744,7 @@ async def test_lifecycle_with_db(testing_datasource, ppost, pget, pdelete):
                     ),
                     FieldDescriptor(
                         field_name="current_income",
-                        data_type=DwhDataType.NUMERIC,
+                        data_type=DataType.NUMERIC,
                         description="test",
                         is_unique_id=False,
                         is_strata=False,

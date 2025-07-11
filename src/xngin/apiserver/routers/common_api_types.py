@@ -26,7 +26,7 @@ from xngin.apiserver.limits import (
     MAX_NUMBER_OF_FILTERS,
 )
 from xngin.apiserver.models.enums import (
-    DwhDataType,
+    DataType,
     ExperimentState,
     Relation,
     StopAssignmentReason,
@@ -468,7 +468,7 @@ class MetricPowerAnalysis(ApiBaseModel):
 class GetStrataResponseElement(ApiBaseModel):
     """Describes a stratification variable."""
 
-    data_type: DwhDataType
+    data_type: DataType
     field_name: FieldName
     description: Annotated[str, Field(max_length=MAX_LENGTH_OF_DESCRIPTION_VALUE)]
     # Extra fields will be stored here in case a user configured their worksheet with extra metadata for their own
@@ -482,7 +482,7 @@ class GetMetricsResponseElement(ApiBaseModel):
     """Describes a metric."""
 
     field_name: FieldName
-    data_type: DwhDataType
+    data_type: DataType
     description: Annotated[str, Field(max_length=MAX_LENGTH_OF_DESCRIPTION_VALUE)]
 
 
@@ -1138,7 +1138,7 @@ class GetExperimentAssignmentsResponse(ApiBaseModel):
 
 class GetFiltersResponseBase(ApiBaseModel):
     field_name: Annotated[FieldName, Field(..., description="Name of the field.")]
-    data_type: DwhDataType
+    data_type: DataType
     relations: Annotated[
         list[Relation], Field(..., min_length=1, max_length=MAX_NUMBER_OF_FILTERS)
     ]

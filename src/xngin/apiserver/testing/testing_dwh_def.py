@@ -1,5 +1,5 @@
 from xngin.apiserver.dwh.inspection_types import FieldDescriptor
-from xngin.apiserver.models.enums import DwhDataType
+from xngin.apiserver.models.enums import DataType
 from xngin.apiserver.settings import ParticipantsDef
 
 TESTING_PARTICIPANT_DEF = ParticipantsDef(
@@ -9,100 +9,100 @@ TESTING_PARTICIPANT_DEF = ParticipantsDef(
     fields=[
         FieldDescriptor(
             field_name="id",
-            data_type=DwhDataType.BIGINT,
+            data_type=DataType.BIGINT,
             description="The ID of the user.",
             is_unique_id=True,
         ),
         FieldDescriptor(
             field_name="income",
-            data_type=DwhDataType.NUMERIC,
+            data_type=DataType.NUMERIC,
         ),
         FieldDescriptor(
             field_name="baseline_income",
-            data_type=DwhDataType.NUMERIC,
+            data_type=DataType.NUMERIC,
             is_filter=True,
             is_strata=True,
         ),
         FieldDescriptor(
             field_name="current_income",
-            data_type=DwhDataType.NUMERIC,
+            data_type=DataType.NUMERIC,
             is_filter=True,
             is_metric=True,
             is_strata=True,
         ),
         FieldDescriptor(
             field_name="ethnicity",
-            data_type=DwhDataType.CHARACTER_VARYING,
+            data_type=DataType.CHARACTER_VARYING,
         ),
         FieldDescriptor(
             field_name="first_name",
-            data_type=DwhDataType.CHARACTER_VARYING,
+            data_type=DataType.CHARACTER_VARYING,
         ),
         FieldDescriptor(
             field_name="last_name",
-            data_type=DwhDataType.CHARACTER_VARYING,
+            data_type=DataType.CHARACTER_VARYING,
         ),
         FieldDescriptor(
             field_name="gender",
-            data_type=DwhDataType.CHARACTER_VARYING,
+            data_type=DataType.CHARACTER_VARYING,
             is_filter=True,
             is_strata=True,
         ),
         FieldDescriptor(
             field_name="is_recruited",
-            data_type=DwhDataType.BOOLEAN,
+            data_type=DataType.BOOLEAN,
         ),
         FieldDescriptor(
             field_name="is_registered",
-            data_type=DwhDataType.BOOLEAN,
+            data_type=DataType.BOOLEAN,
         ),
         FieldDescriptor(
             field_name="is_onboarded",
-            data_type=DwhDataType.BOOLEAN,
+            data_type=DataType.BOOLEAN,
             is_filter=True,
             is_metric=True,
             is_strata=True,
         ),
         FieldDescriptor(
             field_name="is_engaged",
-            data_type=DwhDataType.BOOLEAN,
+            data_type=DataType.BOOLEAN,
             is_filter=True,
             is_metric=True,
             is_strata=True,
         ),
         FieldDescriptor(
             field_name="is_retained",
-            data_type=DwhDataType.BOOLEAN,
+            data_type=DataType.BOOLEAN,
         ),
         FieldDescriptor(
             field_name="potential_0",
-            data_type=DwhDataType.NUMERIC,
+            data_type=DataType.NUMERIC,
         ),
         FieldDescriptor(
             field_name="potential_1",
-            data_type=DwhDataType.BIGINT,
+            data_type=DataType.BIGINT,
             is_filter=True,
             is_metric=True,
             is_strata=True,
         ),
         FieldDescriptor(
             field_name="sample_date",
-            data_type=DwhDataType.DATE,
+            data_type=DataType.DATE,
             is_filter=True,
         ),
         FieldDescriptor(
             field_name="sample_timestamp",
-            data_type=DwhDataType.TIMESTAMP_WITHOUT_TIMEZONE,
+            data_type=DataType.TIMESTAMP_WITHOUT_TIMEZONE,
             is_filter=True,
         ),
         FieldDescriptor(
             field_name="timestamp_with_tz",
-            data_type=DwhDataType.TIMESTAMP_WITH_TIMEZONE,
+            data_type=DataType.TIMESTAMP_WITH_TIMEZONE,
             is_filter=True,
         ),
         FieldDescriptor(
             field_name="uuid_filter",
-            data_type=DwhDataType.UUID,
+            data_type=DataType.UUID,
             is_filter=True,
         ),
     ],

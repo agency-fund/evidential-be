@@ -8,7 +8,7 @@ from xngin.apiserver.dwh.inspections import (
     create_schema_from_table,
     generate_field_descriptors,
 )
-from xngin.apiserver.models.enums import DwhDataType
+from xngin.apiserver.models.enums import DataType
 
 
 def test_create_schema_from_table_success():
@@ -26,9 +26,9 @@ def test_create_schema_from_table_success():
     assert worksheet.get_unique_id_field() == "name"
     assert len(worksheet.fields) == 3
     expected_type = {
-        "id": DwhDataType.BIGINT,
-        "name": DwhDataType.CHARACTER_VARYING,
-        "primary_id": DwhDataType.INTEGER,
+        "id": DataType.BIGINT,
+        "name": DataType.CHARACTER_VARYING,
+        "primary_id": DataType.INTEGER,
     }
     for c in worksheet.fields:
         assert c.data_type == expected_type.get(c.field_name, "BAD_COLUMN"), (
@@ -77,7 +77,7 @@ async def test_generate_column_descriptors():
 
     # Check a few columns:
     assert db_schema["gender"].field_name == "gender"
-    assert db_schema["gender"].data_type == DwhDataType.CHARACTER_VARYING
+    assert db_schema["gender"].data_type == DataType.CHARACTER_VARYING
     assert db_schema["gender"].description == ""
     assert db_schema["gender"].is_unique_id is False
     assert db_schema["gender"].is_strata is False
@@ -85,12 +85,12 @@ async def test_generate_column_descriptors():
     assert db_schema["gender"].is_metric is False
     assert db_schema["gender"].extra is None  # only necessary info loaded
     assert db_schema["last_name"].field_name == "last_name"
-    assert db_schema["last_name"].data_type == DwhDataType.CHARACTER_VARYING
+    assert db_schema["last_name"].data_type == DataType.CHARACTER_VARYING
     # Next assertion ust because we labeled it that way in settings!
     assert db_schema["last_name"].is_unique_id
     assert db_schema["current_income"].field_name == "current_income"
-    assert db_schema["current_income"].data_type == DwhDataType.NUMERIC
+    assert db_schema["current_income"].data_type == DataType.NUMERIC
     assert db_schema["current_income"].is_unique_id is False
     assert db_schema["is_recruited"].field_name == "is_recruited"
-    assert db_schema["is_recruited"].data_type == DwhDataType.BOOLEAN
+    assert db_schema["is_recruited"].data_type == DataType.BOOLEAN
     assert db_schema["is_recruited"].is_unique_id is False

@@ -3,7 +3,7 @@ from pathlib import Path
 import pytest
 
 from xngin.apiserver.dwh.inspection_types import FieldDescriptor, ParticipantsSchema
-from xngin.apiserver.models.enums import DwhDataType
+from xngin.apiserver.models.enums import DataType
 from xngin.sheets.gsheets import google_app_credentials_file, read_sheet_df
 
 
@@ -28,7 +28,7 @@ def test_config_worksheet_get_unique_id_col():
         fields=[
             FieldDescriptor(
                 field_name="first_name",
-                data_type=DwhDataType.CHARACTER_VARYING,
+                data_type=DataType.CHARACTER_VARYING,
                 description="d",
                 is_unique_id=False,
                 is_strata=False,
@@ -38,7 +38,7 @@ def test_config_worksheet_get_unique_id_col():
             ),
             FieldDescriptor(
                 field_name="last_name",
-                data_type=DwhDataType.CHARACTER_VARYING,
+                data_type=DataType.CHARACTER_VARYING,
                 description="d",
                 is_unique_id=True,
                 is_strata=False,
