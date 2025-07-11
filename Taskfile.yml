@@ -264,7 +264,7 @@ tasks:
     desc: "Forcibly remove the local development databases."
     interactive: true
     cmds:
-      - psql "{{.XNGIN_LOCALPG_DSN}}" -c "DROP DATABASE dwh WITH (FORCE);" || /bin/true
-      - psql "{{.XNGIN_LOCALPG_DSN}}" -c "DROP DATABASE migration_lint WITH (FORCE);" || /bin/true
-      - psql "{{.XNGIN_LOCALPG_DSN}}" -c "DROP DATABASE test_xngin WITH (FORCE);" || /bin/true
-      - psql "{{.XNGIN_LOCALPG_DSN}}" -c "DROP DATABASE {{.XNGIN_DEVAPPDB_NAME}} WITH (FORCE);" || /bin/true
+      - psql "{{.XNGIN_LOCALPG_DSN}}" -c "DROP DATABASE dwh WITH (FORCE);" || true
+      - psql "{{.XNGIN_LOCALPG_DSN}}" -c "DROP DATABASE migration_lint WITH (FORCE);" || true
+      - psql "{{.XNGIN_LOCALPG_DSN}}" -c "DROP DATABASE test_xngin WITH (FORCE);" || true
+      - psql "{{.XNGIN_LOCALPG_DSN}}" -c "DROP DATABASE {{.XNGIN_DEVAPPDB_NAME}} WITH (FORCE);" || true
