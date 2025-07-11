@@ -12,10 +12,6 @@ from typing import Self
 from pydantic import TypeAdapter
 
 from xngin.apiserver.models import tables
-from xngin.apiserver.models.enums import (
-    ExperimentState,
-    StopAssignmentReason,
-)
 from xngin.apiserver.models.storage_types import (
     DesignSpecFields,
     StorageFilter,
@@ -23,7 +19,11 @@ from xngin.apiserver.models.storage_types import (
     StorageStratum,
 )
 from xngin.apiserver.routers import common_api_types as capi
-from xngin.apiserver.routers.common_enums import ExperimentsType
+from xngin.apiserver.routers.common_enums import (
+    ExperimentState,
+    ExperimentsType,
+    StopAssignmentReason,
+)
 from xngin.apiserver.routers.stateless import stateless_api_types as sapi
 
 

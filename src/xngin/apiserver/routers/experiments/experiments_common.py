@@ -19,7 +19,6 @@ from sqlalchemy.orm import selectinload
 
 from xngin.apiserver import constants, flags
 from xngin.apiserver.models import tables
-from xngin.apiserver.models.enums import ExperimentState, StopAssignmentReason
 from xngin.apiserver.models.storage_format_converters import ExperimentStorageConverter
 from xngin.apiserver.routers.common_api_types import (
     Arm,
@@ -34,7 +33,11 @@ from xngin.apiserver.routers.common_api_types import (
     ListExperimentsResponse,
     Strata,
 )
-from xngin.apiserver.routers.common_enums import ExperimentsType
+from xngin.apiserver.routers.common_enums import (
+    ExperimentState,
+    ExperimentsType,
+    StopAssignmentReason,
+)
 from xngin.apiserver.webhooks.webhook_types import ExperimentCreatedWebhookBody
 from xngin.events.experiment_created import ExperimentCreatedEvent
 from xngin.stats.assignment import RowProtocol, assign_treatment

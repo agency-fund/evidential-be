@@ -3,7 +3,7 @@ from typing import Annotated
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
-from xngin.apiserver.models.enums import DataType
+from xngin.apiserver.routers.common_enums import DataType
 
 
 class SchemaBaseModel(BaseModel):

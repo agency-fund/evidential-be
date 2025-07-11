@@ -420,7 +420,7 @@ class Experiment(Base):
     name: Mapped[str] = mapped_column(String(255))
     # Describe your experiment and hypothesis here.
     description: Mapped[str] = mapped_column(String(2000))
-    # The experiment state should be one of xngin.apiserver.models.enums.ExperimentState.
+    # The experiment state should be one of xngin.apiserver.routers.common_enums.ExperimentState.
     # We use a looser type to decouple the database from the API a little more.
     state: Mapped[str]
     # Target start date of the experiment. Denormalized from design_spec.
@@ -429,7 +429,7 @@ class Experiment(Base):
     end_date: Mapped[datetime] = mapped_column()
     # The timestamp when experiment assignment was stopped. New participants cannot be assigned.
     stopped_assignments_at: Mapped[datetime | None] = mapped_column()
-    # The reason assignments were stopped. See xngin.apiserver.models.enums.StopAssignmentReason.
+    # The reason assignments were stopped. See xngin.apiserver.routers.common_enums.StopAssignmentReason.
     stopped_assignments_reason: Mapped[str | None] = mapped_column()
 
     # JSON serialized form of an experiment's specified dwh fields used for strata/metrics/filters.

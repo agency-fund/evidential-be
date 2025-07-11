@@ -14,7 +14,6 @@ from xngin.apiserver.dns import safe_resolve
 from xngin.apiserver.dwh.dwh_session import DwhSession
 from xngin.apiserver.dwh.inspection_types import FieldDescriptor, ParticipantsSchema
 from xngin.apiserver.models import tables
-from xngin.apiserver.models.enums import ExperimentState, StopAssignmentReason
 from xngin.apiserver.routers.admin.admin_api import user_from_token
 from xngin.apiserver.routers.admin.admin_api_types import (
     AddWebhookToOrganizationRequest,
@@ -59,6 +58,7 @@ from xngin.apiserver.routers.common_api_types import (
     ListExperimentsResponse,
     PreassignedFrequentistExperimentSpec,
 )
+from xngin.apiserver.routers.common_enums import ExperimentState, StopAssignmentReason
 from xngin.apiserver.routers.experiments.test_experiments_common import (
     insert_experiment_and_arms,
     make_create_online_experiment_request,

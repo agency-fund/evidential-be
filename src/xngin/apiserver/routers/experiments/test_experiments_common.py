@@ -14,7 +14,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.schema import CreateTable
 
 from xngin.apiserver.models import tables
-from xngin.apiserver.models.enums import ExperimentState, StopAssignmentReason
 from xngin.apiserver.models.storage_format_converters import ExperimentStorageConverter
 from xngin.apiserver.routers.common_api_types import (
     CreateExperimentRequest,
@@ -25,6 +24,7 @@ from xngin.apiserver.routers.common_api_types import (
     PowerResponse,
     Stratum,
 )
+from xngin.apiserver.routers.common_enums import ExperimentState, StopAssignmentReason
 from xngin.apiserver.routers.experiments.experiments_common import (
     ExperimentsAssignmentError,
     abandon_experiment_impl,

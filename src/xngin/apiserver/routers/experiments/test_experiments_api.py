@@ -5,7 +5,6 @@ from sqlalchemy import select
 
 from xngin.apiserver import constants
 from xngin.apiserver.models import tables
-from xngin.apiserver.models.enums import ExperimentState, StopAssignmentReason
 from xngin.apiserver.models.storage_format_converters import ExperimentStorageConverter
 from xngin.apiserver.routers.common_api_types import (
     CreateExperimentResponse,
@@ -13,6 +12,7 @@ from xngin.apiserver.routers.common_api_types import (
     ListExperimentsResponse,
     PreassignedFrequentistExperimentSpec,
 )
+from xngin.apiserver.routers.common_enums import ExperimentState, StopAssignmentReason
 from xngin.apiserver.routers.experiments.test_experiments_common import (
     insert_experiment_and_arms,
     make_create_preassigned_experiment_request,

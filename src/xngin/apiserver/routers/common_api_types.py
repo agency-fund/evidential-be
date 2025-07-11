@@ -25,19 +25,17 @@ from xngin.apiserver.limits import (
     MAX_NUMBER_OF_FIELDS,
     MAX_NUMBER_OF_FILTERS,
 )
-from xngin.apiserver.models.enums import (
-    DataType,
-    ExperimentState,
-    Relation,
-    StopAssignmentReason,
-)
 from xngin.apiserver.routers.common_enums import (
     ContextType,
+    DataType,
+    ExperimentState,
     ExperimentsType,
     LikelihoodTypes,
     MetricPowerAnalysisMessageType,
     MetricType,
     PriorTypes,
+    Relation,
+    StopAssignmentReason,
 )
 
 type StrictInt = Annotated[int | None, Field(strict=True)]

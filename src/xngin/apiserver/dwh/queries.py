@@ -25,7 +25,6 @@ from sqlalchemy.orm import Session
 
 from xngin.apiserver.dwh.inspection_types import FieldDescriptor
 from xngin.apiserver.exceptions_common import LateValidationError
-from xngin.apiserver.models.enums import FilterClass
 from xngin.apiserver.routers.common_api_types import (
     EXPERIMENT_IDS_SUFFIX,
     DesignSpecMetric,
@@ -37,7 +36,7 @@ from xngin.apiserver.routers.common_api_types import (
     GetFiltersResponseNumericOrDate,
     Relation,
 )
-from xngin.apiserver.routers.common_enums import MetricType
+from xngin.apiserver.routers.common_enums import FilterClass, MetricType
 from xngin.apiserver.routers.stateless.stateless_api_types import (
     MetricValue,
     ParticipantOutcome,
