@@ -161,6 +161,13 @@ tasks:
       AIRPLANE_MODE: "true"
     cmds:
       - task start
+  start-stateless:
+    desc: "Like start, but without any local database."
+    interactive: true
+    env:
+      STATELESS: "true"
+    cmds:
+      - uv run fastapi dev src/xngin/apiserver/main.py
   test:
     desc: "Runs unit tests"
     interactive: true
