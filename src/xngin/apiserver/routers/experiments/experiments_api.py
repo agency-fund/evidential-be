@@ -9,6 +9,7 @@ from fastapi import (
     APIRouter,
     Depends,
     FastAPI,
+    HTTPException,
     Query,
     status,
 )
@@ -29,6 +30,7 @@ from xngin.apiserver.gsheet_cache import GSheetCache
 from xngin.apiserver.models import tables
 from xngin.apiserver.models.storage_format_converters import ExperimentStorageConverter
 from xngin.apiserver.routers.common_api_types import (
+    BaseFrequentistDesignSpec,
     CreateExperimentRequest,
     CreateExperimentResponse,
     GetExperimentAssignmentsResponse,
@@ -91,6 +93,14 @@ async def create_experiment_with_assignment_sl(
     refresh: Annotated[bool, Query(description="Refresh the cache.")] = False,
 ) -> CreateExperimentResponse:
     """Creates an experiment and saves its assignments to the database."""
+    if not isinstance(
+        body.design_spec,
+        BaseFrequentistDesignSpec,
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"{body.__class__.__name__} experiments are not supported for assignments.",
+        )
     if body.design_spec.ids_are_present():
         raise LateValidationError("Invalid DesignSpec: UUIDs must not be set.")
 

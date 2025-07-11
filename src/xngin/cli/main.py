@@ -37,7 +37,7 @@ from xngin.apiserver.dwh.dwh_session import CannotFindTableError, DwhSession
 from xngin.apiserver.dwh.inspection_types import FieldDescriptor, ParticipantsSchema
 from xngin.apiserver.dwh.inspections import create_schema_from_table
 from xngin.apiserver.models import tables
-from xngin.apiserver.routers.common_api_types import DataType
+from xngin.apiserver.routers.common_enums import DataType
 from xngin.apiserver.settings import (
     Datasource,
     Dsn,

@@ -19,6 +19,9 @@ MAX_LENGTH_OF_PARTICIPANT_ID_VALUE = 64
 # Maximum number of arms allowed in an experiment.
 MAX_NUMBER_OF_ARMS = 10
 
+# Maximum number of contexts allowed for bandits.
+MAX_NUMBER_OF_CONTEXTS = 10
+
 # Maximum number of fields that may appear in any single list. Some types contain more than one list of fields, so
 # there may be some multiple of this value in an object.
 MAX_NUMBER_OF_FIELDS = 150

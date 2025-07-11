@@ -5,14 +5,14 @@ from sqlalchemy import select
 
 from xngin.apiserver import constants
 from xngin.apiserver.models import tables
-from xngin.apiserver.models.enums import ExperimentState, StopAssignmentReason
 from xngin.apiserver.models.storage_format_converters import ExperimentStorageConverter
 from xngin.apiserver.routers.common_api_types import (
     CreateExperimentResponse,
     GetParticipantAssignmentResponse,
     ListExperimentsResponse,
-    PreassignedExperimentSpec,
+    PreassignedFrequentistExperimentSpec,
 )
+from xngin.apiserver.routers.common_enums import ExperimentState, StopAssignmentReason
 from xngin.apiserver.routers.experiments.test_experiments_common import (
     insert_experiment_and_arms,
     make_create_preassigned_experiment_request,
@@ -118,7 +118,9 @@ async def test_get_experiment(xngin_session, testing_datasource, client_v1):
     experiment_json = response.json()
     assert experiment_json["datasource_id"] == new_experiment.datasource_id
     assert experiment_json["state"] == new_experiment.state
-    actual = PreassignedExperimentSpec.model_validate(experiment_json["design_spec"])
+    actual = PreassignedFrequentistExperimentSpec.model_validate(
+        experiment_json["design_spec"]
+    )
     expected = ExperimentStorageConverter(new_experiment).get_design_spec()
     diff = DeepDiff(actual, expected)
     assert not diff, f"Objects differ:\n{diff.pretty()}"
@@ -197,7 +199,7 @@ async def test_get_assignment_for_participant_with_apikey_online(
     online_experiment = await insert_experiment_and_arms(
         xngin_session,
         testing_datasource.ds,
-        experiment_type="online",
+        experiment_type="freq_online",
     )
 
     response = client_v1.get(
@@ -245,7 +247,7 @@ async def test_get_assignment_for_participant_with_apikey_online_dont_create(
     online_experiment = await insert_experiment_and_arms(
         xngin_session,
         testing_datasource.ds,
-        experiment_type="online",
+        experiment_type="freq_online",
     )
 
     response = client_v1.get(
@@ -267,7 +269,7 @@ async def test_get_assignment_for_participant_with_apikey_online_past_end_date(
     online_experiment = await insert_experiment_and_arms(
         xngin_session,
         testing_datasource.ds,
-        experiment_type="online",
+        experiment_type="freq_online",
         end_date=datetime.now(UTC) - timedelta(days=1),
     )
 

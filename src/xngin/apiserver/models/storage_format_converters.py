@@ -11,14 +11,18 @@ from typing import Self
 
 from pydantic import TypeAdapter
 
-import xngin.apiserver.routers.common_api_types as capi
 from xngin.apiserver.models import tables
-from xngin.apiserver.models.enums import ExperimentState, StopAssignmentReason
 from xngin.apiserver.models.storage_types import (
     DesignSpecFields,
     StorageFilter,
     StorageMetric,
     StorageStratum,
+)
+from xngin.apiserver.routers import common_api_types as capi
+from xngin.apiserver.routers.common_enums import (
+    ExperimentState,
+    ExperimentsType,
+    StopAssignmentReason,
 )
 from xngin.apiserver.routers.stateless import stateless_api_types as sapi
 
@@ -83,6 +87,10 @@ class ExperimentStorageConverter:
 
     def set_design_spec_fields(self, design_spec: sapi.DesignSpec) -> Self:
         """Saves the components of a DesignSpec to the experiment."""
+        # TODO: Update to handle bandit design spec types
+        if not isinstance(design_spec, capi.BaseFrequentistDesignSpec):
+            raise TypeError("Invalid design spec type.")
+
         storage_strata = None
         if design_spec.strata:
             storage_strata = [
@@ -180,11 +188,11 @@ class ExperimentStorageConverter:
 
     def get_experiment_config(
         self, assign_summary: capi.AssignSummary, webhook_ids: list[str] | None = None
-    ) -> capi.ExperimentConfig:
+    ) -> capi.GetExperimentResponse:
         """Construct an ExperimentConfig from the internal Experiment and an AssignSummary.
 
         Expects assign_summary since that typically requires a db lookup."""
-        return capi.ExperimentConfig(
+        return capi.GetExperimentResponse(
             datasource_id=self.experiment.datasource_id,
             state=ExperimentState(self.experiment.state),
             stopped_assignments_at=self.experiment.stopped_assignments_at,
@@ -219,7 +227,7 @@ class ExperimentStorageConverter:
         cls,
         datasource_id: str,
         organization_id: str,
-        experiment_type: capi.ExperimentType,
+        experiment_type: ExperimentsType,
         design_spec: sapi.DesignSpec,
         state: ExperimentState = ExperimentState.ASSIGNED,
         stopped_assignments_at: datetime | None = None,
@@ -232,6 +240,8 @@ class ExperimentStorageConverter:
         Raises:
             ValueError: If the experiment_id is not set in the design_spec.
         """
+        if not isinstance(design_spec, capi.BaseFrequentistDesignSpec):
+            raise TypeError("Invalid design spec type.")
         if design_spec.experiment_id is None:
             raise ValueError("experiment_id is required in the design_spec")
         experiment = tables.Experiment(

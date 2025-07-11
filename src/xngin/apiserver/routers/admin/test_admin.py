@@ -14,7 +14,6 @@ from xngin.apiserver.dns import safe_resolve
 from xngin.apiserver.dwh.dwh_session import DwhSession
 from xngin.apiserver.dwh.inspection_types import FieldDescriptor, ParticipantsSchema
 from xngin.apiserver.models import tables
-from xngin.apiserver.models.enums import ExperimentState, StopAssignmentReason
 from xngin.apiserver.routers.admin.admin_api import user_from_token
 from xngin.apiserver.routers.admin.admin_api_types import (
     AddWebhookToOrganizationRequest,
@@ -54,12 +53,12 @@ from xngin.apiserver.routers.common_api_types import (
     DataType,
     DesignSpecMetricRequest,
     ExperimentAnalysis,
-    ExperimentConfig,
     GetExperimentAssignmentsResponse,
     GetParticipantAssignmentResponse,
     ListExperimentsResponse,
-    PreassignedExperimentSpec,
+    PreassignedFrequentistExperimentSpec,
 )
+from xngin.apiserver.routers.common_enums import ExperimentState, StopAssignmentReason
 from xngin.apiserver.routers.experiments.test_experiments_common import (
     insert_experiment_and_arms,
     make_create_online_experiment_request,
@@ -98,7 +97,7 @@ async def fixture_testing_experiment(
     """Create an experiment on a test inline schema datasource with proper user permissions."""
     datasource = testing_datasource_with_user.ds
     experiment = await insert_experiment_and_arms(
-        xngin_session, datasource, "preassigned"
+        xngin_session, datasource, "freq_preassigned"
     )
     # Add fake assignments for each arm for real participant ids in our test data.
     arm_ids = [arm.id for arm in experiment.arms]
@@ -650,10 +649,14 @@ async def test_lifecycle_with_db(testing_datasource, ppost, pget, pdelete):
         detected_unique_id_fields=["id", "uuid_filter"],
         fields=[
             FieldMetadata(
-                field_name="baseline_income", data_type=DataType.NUMERIC, description=""
+                field_name="baseline_income",
+                data_type=DataType.NUMERIC,
+                description="",
             ),
             FieldMetadata(
-                field_name="current_income", data_type=DataType.NUMERIC, description=""
+                field_name="current_income",
+                data_type=DataType.NUMERIC,
+                description="",
             ),
             FieldMetadata(
                 field_name="ethnicity",
@@ -684,7 +687,9 @@ async def test_lifecycle_with_db(testing_datasource, ppost, pget, pdelete):
                 field_name="is_recruited", data_type=DataType.BOOLEAN, description=""
             ),
             FieldMetadata(
-                field_name="is_registered", data_type=DataType.BOOLEAN, description=""
+                field_name="is_registered",
+                data_type=DataType.BOOLEAN,
+                description="",
             ),
             FieldMetadata(
                 field_name="is_retained", data_type=DataType.BOOLEAN, description=""
@@ -778,8 +783,9 @@ async def test_lifecycle_with_db(testing_datasource, ppost, pget, pdelete):
     response = pget(
         f"/v1/m/datasources/{testing_datasource.ds.id}/experiments/{parsed_experiment_id}"
     )
+
     assert response.status_code == 200, response.content
-    experiment_config = ExperimentConfig.model_validate(response.json())
+    experiment_config = CreateExperimentResponse.model_validate(response.json())
     assert experiment_config.design_spec.experiment_id == parsed_experiment_id
 
     # List org experiments.
@@ -903,7 +909,7 @@ async def test_create_preassigned_experiment_using_inline_schema_ds(
     ).one()
     assert experiment.state == ExperimentState.ASSIGNED
     assert experiment.datasource_id == datasource_id
-    assert experiment.experiment_type == "preassigned"
+    assert experiment.experiment_type == "freq_preassigned"
     assert experiment.participant_type == "test_participant_type"
     assert experiment.name == request_obj.design_spec.experiment_name
     assert experiment.description == request_obj.design_spec.description
@@ -1009,7 +1015,7 @@ async def test_get_experiment_assignment_for_online_participant(
     xngin_session: AsyncSession, testing_datasource_with_user, pget
 ):
     test_experiment = await insert_experiment_and_arms(
-        xngin_session, testing_datasource_with_user.ds, "online"
+        xngin_session, testing_datasource_with_user.ds, "freq_online"
     )
     datasource_id = test_experiment.datasource_id
     experiment_id = test_experiment.id
@@ -1068,7 +1074,7 @@ async def test_get_experiment_assignment_for_online_participant_past_end_date(
     new_exp = await insert_experiment_and_arms(
         xngin_session,
         testing_datasource_with_user.ds,
-        "online",
+        "freq_online",
         end_date=datetime.now(UTC) - timedelta(days=1),
     )
     datasource_id = new_exp.datasource_id
@@ -1125,7 +1131,7 @@ async def test_experiments_analyze_for_experiment_with_no_participants(
     xngin_session: AsyncSession, testing_datasource_with_user, pget
 ):
     test_experiment = await insert_experiment_and_arms(
-        xngin_session, testing_datasource_with_user.ds, "online"
+        xngin_session, testing_datasource_with_user.ds, "freq_online"
     )
     datasource_id = test_experiment.datasource_id
     experiment_id = test_experiment.id
@@ -1245,8 +1251,9 @@ async def test_experiment_webhook_integration(
 
     # Create an experiment with only the first webhook using proper Pydantic models
     experiment_request = CreateExperimentRequest(
-        design_spec=PreassignedExperimentSpec(
+        design_spec=PreassignedFrequentistExperimentSpec(
             participant_type="test_participant_type",
+            experiment_type="freq_preassigned",
             experiment_name="Test Experiment with Webhook",
             description="Testing webhook integration",
             start_date=datetime(2024, 1, 1, tzinfo=UTC),
@@ -1293,7 +1300,8 @@ async def test_experiment_webhook_integration(
 
     # Test creating an experiment with no webhooks using proper Pydantic models
     experiment_request_no_webhooks = CreateExperimentRequest(
-        design_spec=PreassignedExperimentSpec(
+        design_spec=PreassignedFrequentistExperimentSpec(
+            experiment_type="freq_preassigned",
             participant_type="test_participant_type",
             experiment_name="Test Experiment without Webhooks",
             description="Testing no webhook integration",

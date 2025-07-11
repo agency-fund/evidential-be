@@ -76,11 +76,12 @@ from xngin.apiserver.routers.auth.auth_dependencies import require_oidc_token
 from xngin.apiserver.routers.auth.principal import Principal
 from xngin.apiserver.routers.common_api_types import (
     ArmAnalysis,
+    BaseFrequentistDesignSpec,
     CreateExperimentRequest,
     CreateExperimentResponse,
     ExperimentAnalysis,
-    ExperimentConfig,
     GetExperimentAssignmentsResponse,
+    GetExperimentResponse,
     GetMetricsResponseElement,
     GetParticipantAssignmentResponse,
     GetStrataResponseElement,
@@ -1247,6 +1248,15 @@ async def create_experiment(
         ),
     ] = None,
 ) -> CreateExperimentResponse:
+    # TODO: Remove the bandit check once bandit experiments are supported.
+    if not isinstance(
+        body.design_spec,
+        BaseFrequentistDesignSpec,
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Bandit experiments are not supported in this endpoint.",
+        )
     datasource = await get_datasource_or_raise(session, user, datasource_id)
     if body.design_spec.ids_are_present():
         raise LateValidationError("Invalid DesignSpec: UUIDs must not be set.")
@@ -1265,7 +1275,7 @@ async def create_experiment(
                 participants_cfg.table_name, body.design_spec.filters, chosen_n
             )
             sa_table, participants = result.sa_table, result.participants
-        elif body.design_spec.experiment_type == "preassigned":
+        elif body.design_spec.experiment_type == "freq_preassigned":
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Preassigned experiments must have a chosen_n.",
@@ -1317,6 +1327,13 @@ async def analyze_experiment(
     unique_id_field = participants_cfg.get_unique_id_field()
 
     design_spec = ExperimentStorageConverter(experiment).get_design_spec()
+    # TODO: Remove the bandit check once bandit experiments are supported.
+    if not isinstance(design_spec, BaseFrequentistDesignSpec):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Bandit experiments are not supported.",
+        )
+
     assignments = experiment.arm_assignments
     participant_ids = [assignment.participant_id for assignment in assignments]
     if len(participant_ids) == 0:
@@ -1438,7 +1455,7 @@ async def get_experiment(
     experiment_id: str,
     session: Annotated[AsyncSession, Depends(xngin_db_session)],
     user: Annotated[tables.User, Depends(user_from_token)],
-) -> ExperimentConfig:
+) -> GetExperimentResponse:
     """Returns the experiment with the specified ID."""
     ds = await get_datasource_or_raise(session, user, datasource_id)
     experiment = await get_experiment_via_ds_or_raise(
