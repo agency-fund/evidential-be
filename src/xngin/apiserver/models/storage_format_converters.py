@@ -23,8 +23,11 @@ from xngin.apiserver.models.storage_types import (
     StorageStratum,
 )
 from xngin.apiserver.routers import common_api_types as capi
-from xngin.apiserver.routers.common_enums import (PriorTypes, LikelihoodTypes)
-from xngin.apiserver.routers.common_enums import ExperimentsType
+from xngin.apiserver.routers.common_enums import (
+    ExperimentsType,
+    LikelihoodTypes,
+    PriorTypes,
+)
 from xngin.apiserver.routers.stateless import stateless_api_types as sapi
 
 
@@ -164,7 +167,7 @@ class ExperimentStorageConverter:
             "alpha": self.experiment.alpha,
             "fstat_thresh": self.experiment.fstat_thresh,
             "prior_type": PriorTypes(self.experiment.prior_type),
-            "reward_type": LikelihoodTypes(self.experiment.reward_type)
+            "reward_type": LikelihoodTypes(self.experiment.reward_type),
         })
 
     def set_balance_check(self, value: capi.BalanceCheck | None) -> Self:

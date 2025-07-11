@@ -27,8 +27,8 @@ from xngin.apiserver.routers.common_api_types import (
     Assignment,
     AssignSummary,
     BalanceCheck,
-    BaseFrequentistDesignSpec,
     BaseBanditExperimentSpec,
+    BaseFrequentistDesignSpec,
     CreateExperimentRequest,
     CreateExperimentResponse,
     GetExperimentAssignmentsResponse,
@@ -126,7 +126,7 @@ async def create_experiment_impl(
             xngin_session=xngin_session,
             validated_webhooks=validated_webhooks,
         )
-    
+
     if request.design_spec.experiment_type == ExperimentsType.MAB_ONLINE:
         return await create_online_bandit_experiment_impl(
             request=request,
@@ -291,7 +291,7 @@ async def create_online_bandit_experiment_impl(
     experiment_converter = ExperimentStorageConverter.init_from_components(
         datasource_id=datasource_id,
         organization_id=organization_id,
-        experiment_type=ExperimentsType.MAB_ONLINE, #TODO: update to support other bandits
+        experiment_type=ExperimentsType.MAB_ONLINE,  # TODO: update to support other bandits
         design_spec=design_spec,
     )
     experiment = experiment_converter.get_experiment()
