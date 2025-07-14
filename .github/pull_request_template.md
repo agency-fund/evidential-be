@@ -1,15 +1,15 @@
 Reviewer:
 
----
+______________________________________________________________________
 
 ## Ticket
 
-Fixes: <issue number + link>
+Fixes: \<issue number + link>
 
 ## Related PRs
 
-Frontend: <PR number + link>
-Docs: <PR number + link>
+Frontend: \<PR number + link>
+Docs: \<PR number + link>
 
 ## Description
 
@@ -25,7 +25,7 @@ Docs: <PR number + link>
 
 ## Checklist
 
-Fill with `x` for completed. 
+Fill with `x` for completed.
 
 - [ ] My code follows the style guidelines of this project
 - [ ] I have reviewed my own code to ensure good quality
@@ -33,6 +33,7 @@ Fill with `x` for completed.
 - [ ] I have resolved merge conflicts
 
 (Delete any items below that are not relevant)
+
 - [ ] I have updated the automated tests
 - [ ] I have updated dependencies in pyproject.toml
 - [ ] I have updated the README file
