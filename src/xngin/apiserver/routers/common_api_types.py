@@ -653,14 +653,22 @@ class BaseDesignSpec(ApiBaseModel):
     start_date: datetime.datetime
     end_date: datetime.datetime
 
+    # arms (at least two)
+    arms: Annotated[
+        Sequence[Arm], Field(..., min_length=2, max_length=MAX_NUMBER_OF_ARMS)
+    ]
+
+    def ids_are_present(self) -> bool:
+        """True if any IDs are present."""
+        return self.experiment_id is not None or any(
+            arm.arm_id is not None for arm in self.arms
+        )
+
 
 class BaseFrequentistDesignSpec(BaseDesignSpec):
     """Experiment design parameters for frequentist experiments."""
 
     # Frequentist config params
-    # arms (at least two)
-    arms: Annotated[list[Arm], Field(..., min_length=2, max_length=MAX_NUMBER_OF_ARMS)]
-
     strata: Annotated[
         list[Stratum],
         Field(
@@ -716,12 +724,6 @@ class BaseFrequentistDesignSpec(BaseDesignSpec):
         ),
     ]
 
-    def ids_are_present(self) -> bool:
-        """True if any IDs are present."""
-        return self.experiment_id is not None or any(
-            arm.arm_id is not None for arm in self.arms
-        )
-
     @field_serializer("start_date", "end_date", when_used="json")
     def serialize_dt(self, dt: datetime.datetime, _info):
         """Convert dates to iso strings in model_dump_json()/model_dump(mode='json')"""
@@ -731,9 +733,9 @@ class BaseFrequentistDesignSpec(BaseDesignSpec):
 class BaseBanditExperimentSpec(BaseDesignSpec):
     """Experiment design parameters for bandit experiments."""
 
-    # arms (at least two)
+    # Type-narrowing to ArmBandit for type checking, to ensure bandit arms are the correct subtype.
     arms: Annotated[
-        list[ArmBandit], Field(..., min_length=2, max_length=MAX_NUMBER_OF_ARMS)
+        Sequence[ArmBandit], Field(..., min_length=2, max_length=MAX_NUMBER_OF_ARMS)
     ]
     contexts: Annotated[
         list[Context] | None,
@@ -758,12 +760,6 @@ class BaseBanditExperimentSpec(BaseDesignSpec):
             default=LikelihoodTypes.BERNOULLI,
         ),
     ]
-
-    def ids_are_present(self) -> bool:
-        """True if any IDs are present."""
-        return self.experiment_id is not None or any(
-            arm.arm_id is not None for arm in self.arms
-        )
 
     @model_validator(mode="after")
     def check_arm_missing_params(self) -> Self:
@@ -1024,6 +1020,7 @@ class CreateExperimentRequest(ApiBaseModel):
         return v
 
 
+# TODO: make this class work with the Bayesian experiment types and their Draw records.
 class AssignSummary(ApiBaseModel):
     """Key pieces of an AssignResponse without the assignments."""
 
