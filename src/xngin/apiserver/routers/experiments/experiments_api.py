@@ -24,11 +24,11 @@ from xngin.apiserver.dependencies import (
     random_seed_dependency,
     xngin_db_session,
 )
-from xngin.apiserver.dwh.dwh_session import DwhSession
 from xngin.apiserver.exceptions_common import LateValidationError
 from xngin.apiserver.gsheet_cache import GSheetCache
 from xngin.apiserver.models import tables
 from xngin.apiserver.models.storage_format_converters import ExperimentStorageConverter
+from xngin.apiserver.routers.admin.admin_api import validate_webhooks
 from xngin.apiserver.routers.common_api_types import (
     BaseFrequentistDesignSpec,
     CreateExperimentRequest,
@@ -43,16 +43,12 @@ from xngin.apiserver.routers.experiments.experiments_common import (
     abandon_experiment_impl,
     commit_experiment_impl,
     create_assignment_for_participant,
-    create_experiment_impl,
+    create_stateless_experiment_impl,
     get_assign_summary,
     get_existing_assignment_for_participant,
     get_experiment_assignments_as_csv_impl,
     get_experiment_assignments_impl,
     list_experiments_impl,
-)
-from xngin.apiserver.routers.stateless.stateless_api import (
-    CommonQueryParams,
-    get_participants_config_and_schema,
 )
 from xngin.apiserver.settings import (
     Datasource,
@@ -101,34 +97,39 @@ async def create_experiment_with_assignment_sl(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=f"{body.__class__.__name__} experiments are not supported for assignments.",
         )
+    db_datasource = await xngin_session.get(tables.Datasource, datasource.id)
+    if not db_datasource:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Datasource with id {datasource.id} not found.",
+        )
+
+    validated_webhooks = await validate_webhooks(
+        request_webhooks=body.webhooks,
+        organization_id=db_datasource.organization_id,
+        session=xngin_session,
+    )
+
     if body.design_spec.ids_are_present():
         raise LateValidationError("Invalid DesignSpec: UUIDs must not be set.")
 
-    ds_config = datasource.config
-    commons = CommonQueryParams(
-        participant_type=body.design_spec.participant_type, refresh=refresh
-    )
-    participants_cfg, schema = await get_participants_config_and_schema(
-        commons, ds_config, gsheets
-    )
-
-    # Get participants and their schema info from the client dwh
-    async with DwhSession(ds_config.dwh) as dwh:
-        result = await dwh.get_participants(
-            participants_cfg.table_name, body.design_spec.filters, chosen_n
-        )
+    # First generate ids for the experiment and arms, reqd for doing assignments.
+    body.design_spec.experiment_id = tables.experiment_id_factory()
+    for arm in body.design_spec.arms:
+        arm.arm_id = tables.arm_id_factory()
 
     # Persist the experiment and assignments in the xngin database
-    return await create_experiment_impl(
+    return await create_stateless_experiment_impl(
         request=body,
-        datasource_id=datasource.id,
-        participant_unique_id_field=schema.get_unique_id_field(),
-        dwh_sa_table=result.sa_table,
-        dwh_participants=result.participants,
-        random_state=random_state,
+        datasource=datasource,
+        gsheets=gsheets,
         xngin_session=xngin_session,
+        validated_webhooks=validated_webhooks,
+        organization_id=db_datasource.organization_id,
+        random_state=random_state,
+        chosen_n=chosen_n,
         stratify_on_metrics=True,
-        webhook_ids=[],
+        refresh=refresh,
     )
 
 

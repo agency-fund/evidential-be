@@ -30,7 +30,7 @@ from xngin.apiserver.routers.experiments.experiments_common import (
     abandon_experiment_impl,
     commit_experiment_impl,
     create_assignment_for_participant,
-    create_experiment_impl,
+    create_dwh_experiment_impl,
     experiment_assignments_to_csv_generator,
     get_assign_summary,
     get_existing_assignment_for_participant,
@@ -229,18 +229,16 @@ async def test_create_experiment_impl_for_preassigned(
     )
 
     # Test!
-    response = await create_experiment_impl(
+    response = await create_dwh_experiment_impl(
         request=request.model_copy(
             deep=True
         ),  # we'll use the original request for assertions
         datasource_id=testing_datasource.ds.id,
-        participant_unique_id_field="participant_id",
-        dwh_sa_table=sample_table,
-        dwh_participants=participants,
-        random_state=42,
         xngin_session=xngin_session,
+        chosen_n=len(participants),
         stratify_on_metrics=True,
-        webhook_ids=[],
+        random_state=42,
+        validated_webhooks=[],
     )
     # Verify response
     assert response.datasource_id == testing_datasource.ds.id
@@ -339,16 +337,14 @@ async def test_create_experiment_impl_for_online(
     # Convert the experiment type to online
     request.design_spec.experiment_type = "freq_online"
 
-    response = await create_experiment_impl(
+    response = await create_dwh_experiment_impl(
         request=request.model_copy(deep=True),
         datasource_id=testing_datasource.ds.id,
-        participant_unique_id_field="participant_id",
-        dwh_sa_table=sample_table,
-        dwh_participants=[],  # No pre-assigned participants in online experiments
         random_state=42,
+        chosen_n=None,
         xngin_session=xngin_session,
         stratify_on_metrics=True,
-        webhook_ids=[],
+        validated_webhooks=[],
     )
     # Verify response
     assert response.datasource_id == testing_datasource.ds.id
@@ -429,16 +425,14 @@ async def test_create_experiment_impl_overwrites_uuids(
     original_experiment_id = request.design_spec.experiment_id
     original_arm_ids = [arm.arm_id for arm in request.design_spec.arms]
 
-    response = await create_experiment_impl(
+    response = await create_dwh_experiment_impl(
         request=request,
         datasource_id=testing_datasource.ds.id,
-        participant_unique_id_field="participant_id",
-        dwh_sa_table=sample_table,
-        dwh_participants=participants,
         random_state=42,
         xngin_session=xngin_session,
+        chosen_n=len(participants),
         stratify_on_metrics=True,
-        webhook_ids=[],
+        validated_webhooks=[],
     )
 
     # Verify that new UUIDs were generated
@@ -476,16 +470,14 @@ async def test_create_experiment_impl_no_metric_stratification(
     request = make_create_preassigned_experiment_request()
 
     # Test with stratify_on_metrics=False
-    response = await create_experiment_impl(
+    response = await create_dwh_experiment_impl(
         request=request.model_copy(deep=True),
         datasource_id=testing_datasource.ds.id,
-        participant_unique_id_field="participant_id",
-        dwh_sa_table=sample_table,
-        dwh_participants=participants,
         random_state=42,
         xngin_session=xngin_session,
+        chosen_n=len(participants),
         stratify_on_metrics=False,
-        webhook_ids=[],
+        validated_webhooks=[],
     )
 
     # Verify basic response
