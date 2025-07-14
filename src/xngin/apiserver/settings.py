@@ -437,6 +437,18 @@ class Dsn(ConfigBaseModel, BaseDsn):
         return self
 
 
+class NoDwh(ConfigBaseModel):
+    """NoDwh is used to indicate that no data warehouse is configured."""
+
+    driver: Literal["none"] = "none"
+
+    def to_sqlalchemy_url(self):
+        raise NotImplementedError("NoDwh does not support to_sqlalchemy_url()")
+
+    def supports_sa_autoload(self):
+        return False
+
+
 class DbapiArg(ConfigBaseModel):
     """Describes a DBAPI connect() argument.
 
@@ -446,7 +458,7 @@ class DbapiArg(ConfigBaseModel):
     value: str
 
 
-type Dwh = Annotated[Dsn | BqDsn, Field(discriminator="driver")]
+type Dwh = Annotated[Dsn | BqDsn | NoDwh, Field(discriminator="driver")]
 
 
 class RemoteDatabaseConfig(ParticipantsMixin, ConfigBaseModel):

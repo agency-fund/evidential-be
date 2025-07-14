@@ -63,8 +63,8 @@ def random_choice[T](choices: Sequence[T], seed: int | None = None) -> T:
 async def create_experiment_impl(
     request: CreateExperimentRequest,
     datasource_id: str,
-    participant_unique_id_field: str,
-    dwh_sa_table: Table,
+    participant_unique_id_field: str | None,
+    dwh_sa_table: Table | None,
     dwh_participants: Sequence[RowProtocol] | None,
     random_state: int | None,
     xngin_session: AsyncSession,
@@ -103,7 +103,11 @@ async def create_experiment_impl(
         arm.arm_id = tables.arm_id_factory()
 
     if request.design_spec.experiment_type == ExperimentsType.FREQ_PREASSIGNED:
-        if dwh_participants is None:
+        if (
+            (dwh_participants is None)
+            or (participant_unique_id_field is None)
+            or (dwh_sa_table is None)
+        ):
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Preassigned experiments must have participants data",
@@ -121,13 +125,15 @@ async def create_experiment_impl(
             validated_webhooks=validated_webhooks,
         )
     if request.design_spec.experiment_type == ExperimentsType.FREQ_ONLINE:
-        return await create_online_experiment_impl(
+        return await create_freq_online_experiment_impl(
             request=request,
             datasource_id=datasource_id,
             organization_id=organization_id,
             xngin_session=xngin_session,
             validated_webhooks=validated_webhooks,
         )
+
+    # if request.design_spec.experiment_type == ExperimentsType.MAB_ONLINE:
 
     raise HTTPException(
         status_code=status.HTTP_400_BAD_REQUEST,
@@ -222,7 +228,7 @@ async def create_preassigned_experiment_impl(
     )
 
 
-async def create_online_experiment_impl(
+async def create_freq_online_experiment_impl(
     request: CreateExperimentRequest,
     datasource_id: str,
     organization_id: str,
@@ -243,6 +249,41 @@ async def create_online_experiment_impl(
         datasource_id=datasource_id,
         organization_id=organization_id,
         experiment_type=ExperimentsType.FREQ_ONLINE,
+        design_spec=design_spec,
+    )
+    experiment = experiment_converter.get_experiment()
+    # Associate webhooks with the experiment
+    for webhook in validated_webhooks:
+        experiment.webhooks.append(webhook)
+    xngin_session.add(experiment)
+
+    await xngin_session.commit()
+    # Online experiments start with no assignments.
+    empty_assign_summary = AssignSummary(
+        balance_check=None,
+        sample_size=0,
+        arm_sizes=[ArmSize(arm=arm.model_copy(), size=0) for arm in design_spec.arms],
+    )
+    webhook_ids = [webhook.id for webhook in validated_webhooks]
+    return experiment_converter.get_create_experiment_response(
+        empty_assign_summary, webhook_ids
+    )
+
+
+async def create_bandit_online_experiment_impl(
+    request: CreateExperimentRequest,
+    datasource_id: str,
+    organization_id: str,
+    xngin_session: AsyncSession,
+    validated_webhooks: list[tables.Webhook],
+) -> CreateExperimentResponse:
+    """Create an online experiment and persist it to the database."""
+    design_spec = request.design_spec
+
+    experiment_converter = ExperimentStorageConverter.init_from_components(
+        datasource_id=datasource_id,
+        organization_id=organization_id,
+        experiment_type=ExperimentsType.MAB_ONLINE,
         design_spec=design_spec,
     )
     experiment = experiment_converter.get_experiment()

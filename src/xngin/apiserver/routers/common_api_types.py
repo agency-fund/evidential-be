@@ -752,6 +752,12 @@ class BaseBanditExperimentSpec(BaseDesignSpec):
         ),
     ]
 
+    def ids_are_present(self) -> bool:
+        """True if any IDs are present."""
+        return self.experiment_id is not None or any(
+            arm.arm_id is not None for arm in self.arms
+        )
+
     @model_validator(mode="after")
     def check_arm_missing_params(self) -> Self:
         """
