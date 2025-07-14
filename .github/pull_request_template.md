@@ -6,6 +6,11 @@ Reviewer:
 
 Fixes: <issue number + link>
 
+## Related PRs
+
+Frontend: <PR number + link>
+Docs: <PR number + link>
+
 ## Description
 
 ### Goal
