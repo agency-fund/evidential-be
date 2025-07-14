@@ -1279,14 +1279,6 @@ async def create_experiment(
             detail=f"Datasource {datasource_id} not found in database",
         )
 
-    # Generate IDs
-    if body.design_spec.ids_are_present():
-        raise LateValidationError("Invalid DesignSpec: UUIDs must not be set.")
-    # First generate ids for the experiment and arms, reqd for doing assignments.
-    body.design_spec.experiment_id = tables.experiment_id_factory()
-    for arm in body.design_spec.arms:
-        arm.arm_id = tables.arm_id_factory()
-
     # Validate webhook IDs exist and belong to organization
     organization_id = datasource.organization_id
     validated_webhooks = await validate_webhooks(

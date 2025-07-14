@@ -87,6 +87,11 @@ async def create_dwh_experiment_impl(
             detail="Bandit experiments are not supported for DWH assignments",
         )
 
+    # Generate ids for the experiment and arms, required for doing assignments.
+    request.design_spec.experiment_id = tables.experiment_id_factory()
+    for arm in request.design_spec.arms:
+        arm.arm_id = tables.arm_id_factory()
+
     # Extract info from database
     db_datasource = await xngin_session.get(tables.Datasource, datasource_id)
     if db_datasource is None:
@@ -175,6 +180,10 @@ async def create_stateless_experiment_impl(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=f"{request.design_spec.experiment_type} experiments are not supported for assignments.",
         )
+
+    request.design_spec.experiment_id = tables.experiment_id_factory()
+    for arm in request.design_spec.arms:
+        arm.arm_id = tables.arm_id_factory()
 
     ds_config = datasource.config
     commons = CommonQueryParams(
