@@ -206,8 +206,8 @@ class User(Base):
     )
     email: Mapped[str] = mapped_column(String(255), unique=True)
     # TODO: properly handle federated auth
-    iss: Mapped[str | None] = mapped_column(String(255), default=None)
-    sub: Mapped[str | None] = mapped_column(String(255), default=None)
+    iss: Mapped[str | None] = mapped_column(String(255))
+    sub: Mapped[str | None] = mapped_column(String(255))
 
     # True when this user is considered to be privileged.
     is_privileged: Mapped[bool] = mapped_column(server_default=sqlalchemy.sql.false())
@@ -440,24 +440,22 @@ class Experiment(Base):
 
     # -- Experiment config --
     # Bandit config params
-    prior_type: Mapped[str | None] = mapped_column(default=None)
-    reward_type: Mapped[str | None] = mapped_column(default=None)
+    prior_type: Mapped[str | None] = mapped_column()
+    reward_type: Mapped[str | None] = mapped_column()
 
     # Frequentist config params
     # JSON serialized form of an experiment's specified dwh fields used for strata/metrics/filters.
-    design_spec_fields: Mapped[dict | None] = mapped_column(
-        type_=JSONBetter, default=None
-    )
+    design_spec_fields: Mapped[dict | None] = mapped_column(type_=JSONBetter)
     # JSON serialized form of a PowerResponse. Not required since some experiments may not have data to run power analyses.
-    power_analyses: Mapped[dict | None] = mapped_column(type_=JSONBetter, default=None)
+    power_analyses: Mapped[dict | None] = mapped_column(type_=JSONBetter)
     # JSON serialized form of a BalanceCheck. May be null if the experiment type doesn't support
     # balance checks.
-    balance_check: Mapped[dict | None] = mapped_column(type_=JSONBetter, default=None)
+    balance_check: Mapped[dict | None] = mapped_column(type_=JSONBetter)
 
     # Frequentist experiment types i.e. online and preassigned
-    power: Mapped[float | None] = mapped_column(default=None)
-    alpha: Mapped[float | None] = mapped_column(default=None)
-    fstat_thresh: Mapped[float | None] = mapped_column(default=None)
+    power: Mapped[float | None] = mapped_column()
+    alpha: Mapped[float | None] = mapped_column()
+    fstat_thresh: Mapped[float | None] = mapped_column()
 
     # -- Relationships --
     arm_assignments: Mapped[list["ArmAssignment"]] = relationship(
@@ -529,18 +527,16 @@ class Arm(Base):
 
     # -- Arm config --
     # Prior variables
-    mu_init: Mapped[float | None] = mapped_column(default=None)
-    sigma_init: Mapped[float | None] = mapped_column(default=None)
-    mu: Mapped[list[float] | None] = mapped_column(ARRAY(Float), default=None)
-    covariance: Mapped[list[list[float]] | None] = mapped_column(
-        ARRAY(Float), default=None
-    )
+    mu_init: Mapped[float | None] = mapped_column()
+    sigma_init: Mapped[float | None] = mapped_column()
+    mu: Mapped[list[float] | None] = mapped_column(ARRAY(Float))
+    covariance: Mapped[list[list[float]] | None] = mapped_column(ARRAY(Float))
     is_baseline: Mapped[bool] = mapped_column(default=True)
 
-    alpha_init: Mapped[float | None] = mapped_column(default=None)
-    beta_init: Mapped[float | None] = mapped_column(default=None)
-    alpha: Mapped[float | None] = mapped_column(default=None)
-    beta: Mapped[float | None] = mapped_column(default=None)
+    alpha_init: Mapped[float | None] = mapped_column()
+    beta_init: Mapped[float | None] = mapped_column()
+    alpha: Mapped[float | None] = mapped_column()
+    beta: Mapped[float | None] = mapped_column()
 
     # -- Relationships --
     organization: Mapped["Organization"] = relationship(back_populates="arms")
@@ -573,17 +569,17 @@ class Draw(Base):
         server_default=sqlalchemy.sql.func.now()
     )
     observed_datetime_utc: Mapped[datetime | None] = mapped_column(
-        server_default=sqlalchemy.sql.func.now(), default=None
+        server_default=sqlalchemy.sql.func.now(),
     )
-    observation_type: Mapped[str | None] = mapped_column(default=None)
+    observation_type: Mapped[str | None] = mapped_column()
 
     # Observation data
     experiment_id: Mapped[str] = mapped_column(
         ForeignKey("experiments.id", ondelete="CASCADE")
     )
     arm_id: Mapped[str] = mapped_column(ForeignKey("arms.id", ondelete="CASCADE"))
-    outcome: Mapped[float | None] = mapped_column(default=None)
-    context_val: Mapped[list[float] | None] = mapped_column(ARRAY(Float), default=None)
+    outcome: Mapped[float | None] = mapped_column()
+    context_val: Mapped[list[float] | None] = mapped_column(ARRAY(Float))
 
     # Relationships
     arm: Mapped[Arm] = relationship("Arm", back_populates="draws", lazy="joined")
