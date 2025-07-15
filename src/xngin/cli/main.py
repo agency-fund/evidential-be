@@ -1,7 +1,6 @@
 """Command line tool for various xngin-related operations."""
 
 import asyncio
-import base64
 import csv
 import json
 import logging
@@ -19,8 +18,6 @@ import pandas_gbq
 import psycopg
 import psycopg2
 import sqlalchemy
-import tink
-import tink.aead
 import typer
 import zstandard
 from email_validator import EmailNotValidError, validate_email
@@ -36,7 +33,6 @@ from sqlalchemy import create_engine, make_url
 from sqlalchemy.exc import IntegrityError, OperationalError
 from sqlalchemy.orm import Session
 from sqlalchemy.sql.compiler import IdentifierPreparer
-from tink import secret_key_access
 
 from xngin.apiserver.dwh.dwh_session import CannotFindTableError, DwhSession
 from xngin.apiserver.dwh.inspection_types import FieldDescriptor, ParticipantsSchema
@@ -56,6 +52,7 @@ from xngin.sheets.config_sheet import (
 )
 from xngin.sheets.gsheets import GSheetsPermissionError
 from xngin.xsecrets import secretservice
+from xngin.xsecrets.local_provider import LocalProviderKeyset
 
 SA_LOGGER_NAME_FOR_CLI = "cli_dwh"
 
@@ -763,7 +760,7 @@ class OutputFormat(StrEnum):
 
 
 @app.command()
-def create_tink_key(
+def create_nacl_keyset(
     output: Annotated[
         OutputFormat,
         typer.Option(
@@ -771,26 +768,16 @@ def create_tink_key(
         ),
     ] = OutputFormat.base64,
 ):
-    """Generate an encryption key for the "local" secret storage backend.
+    """Generate an encryption keyset for the "local" secret storage backend.
 
-    The encoded encryption keyset (specifically, a Tink keyset with a single key) will be written to stdout. This value
-    is suitable for use as the XNGIN_SECRETS_TINK_KEYSET environment variable.
+    The encoded encryption key will be written to stdout. This value
+    is suitable for use as the XNGIN_SECRETS_NACL_KEYSET environment variable.
     """
-    tink.aead.register()
-    keyset_handle = tink.new_keyset_handle(tink.aead.aead_key_templates.AES128_GCM)
-    # Remove superfluous spaces by decoding and re-encoding.
-    keyset = json.dumps(
-        json.loads(
-            tink.json_proto_keyset_format.serialize(
-                keyset_handle, secret_key_access.TOKEN
-            )
-        ),
-        separators=(",", ":"),
-    )
+    keyset = LocalProviderKeyset.create()
     if output == "base64":
-        print(base64.standard_b64encode(keyset.encode("utf-8")).decode("utf-8"))
+        print(keyset.serialize_base64())
     else:
-        print(keyset)
+        print(keyset.serialize_json())
 
 
 @app.command()

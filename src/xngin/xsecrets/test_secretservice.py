@@ -1,11 +1,13 @@
-import base64
 import json
 
+import nacl.exceptions
+import nacl.secret
+import nacl.utils
 import pytest
-from tink import TinkError
 
 from xngin.xsecrets import local_provider
 from xngin.xsecrets.constants import SERIALIZED_ENCRYPTED_VALUE_PREFIX
+from xngin.xsecrets.local_provider import LocalProviderKeyset
 from xngin.xsecrets.provider import Registry
 from xngin.xsecrets.secretservice import (
     SecretService,
@@ -85,30 +87,33 @@ def test_deserialize_invalid_structure():
         _deserialize(invalid_serialized)
 
 
-SAMPLE_TINK_KEY = base64.standard_b64encode(
-    json.dumps({
-        "primaryKeyId": 791033902,
-        "key": [
-            {
-                "keyData": {
-                    "typeUrl": "type.googleapis.com/google.crypto.tink.AesGcmKey",
-                    "value": "GhBkcDg+TK2y1NiO/jPT6P96",
-                    "keyMaterialType": "SYMMETRIC",
-                },
-                "status": "ENABLED",
-                "keyId": 791033902,
-                "outputPrefixType": "TINK",
-            }
-        ],
-    }).encode("utf-8")
-).decode("utf-8")
-
-
 @pytest.fixture(name="local_secretservice")
 def fixture_local_secretservice():
     registry = Registry()
-    local_provider.initialize(registry, static_key=SAMPLE_TINK_KEY)
+    local_provider.initialize(registry, keyset=LocalProviderKeyset.create())
     return SecretService(registry, "local")
+
+
+def test_rotate_scenario():
+    first_registry = Registry()
+    first_keyset = LocalProviderKeyset.create()
+    assert len(first_keyset.keys) == 1
+    local_provider.initialize(first_registry, keyset=first_keyset)
+    first_service = SecretService(first_registry, "local")
+
+    encrypted = first_service.encrypt("pt", "aad")
+
+    second_registry = Registry()
+    second_keyset = first_keyset.with_new_key()
+    assert len(second_keyset.keys) == 2
+    local_provider.initialize(second_registry, keyset=second_keyset)
+    second_service = SecretService(second_registry, "local")
+
+    assert second_service.decrypt(encrypted, "aad") == "pt"
+    encrypted_with_new_key = second_service.encrypt("pt2", "aad")
+
+    with pytest.raises(nacl.exceptions.CryptoError):
+        first_service.decrypt(encrypted_with_new_key, "aad")
 
 
 @pytest.mark.parametrize(
@@ -167,7 +172,7 @@ def test_secretservice_decrypt_with_wrong_aad(
     encrypted = local_secretservice.encrypt(plaintext, correct_aad)
 
     # Attempting to decrypt with the wrong AAD should raise an exception
-    with pytest.raises(TinkError):
+    with pytest.raises(nacl.exceptions.CryptoError):
         local_secretservice.decrypt(encrypted, wrong_aad)
 
 
