@@ -11,8 +11,11 @@ from numpy.random import MT19937, RandomState
 from sqlalchemy import DECIMAL, Boolean, Column, Float, Integer, MetaData, String, Table
 
 from xngin.apiserver.models import tables
+from xngin.apiserver.routers.assignment_adapters import (
+    assign_treatment,
+    simple_random_assignment,
+)
 from xngin.apiserver.routers.common_api_types import Arm, Assignment, Strata
-from xngin.stats.assignment import assign_treatment, simple_random_assignment
 
 
 @dataclass
@@ -61,7 +64,7 @@ def make_sample_data_dict(n=1000):
         "gender": rs.choice(["M", "F"], n),
         "region": rs.choice(["North", "South", "East", "West"], n),
         "skewed": rs.permutation(
-            np.concatenate((np.repeat([1], n * 0.9), np.repeat([0], n * 0.1)))
+            np.concatenate((np.repeat([1], int(n * 0.9)), np.repeat([0], int(n * 0.1))))
         ),
     }
     data["income_dec"] = [Decimal(i).quantize(Decimal(1)) for i in data["income"]]
@@ -139,7 +142,8 @@ def test_assign_treatment(sample_table, sample_rows):
         "stratum_id",
     ]
     # There should only be 8 distinct stratum_ids (gender x region)
-    assert {int(s.strata[2].strata_value) for s in result.assignments} == set(range(8))
+    strata_ids = [s.strata[2].strata_value for s in result.assignments if s.strata is not None]
+    assert set(strata_ids) == {str(x) for x in range(8)}
     # Count occurrences of each unique strata tuple
     strata_counts: defaultdict[tuple, int] = defaultdict(int)
     for participant in result.assignments:
@@ -291,6 +295,7 @@ def test_assign_treatment_with_integers_as_floats_for_unique_id(
     # We should be able to handle Decimals (e.g. from psycopg2 with redshift numerics).
     sample_data["id"] = sample_data["id"].apply(Decimal)
     result = assign(sample_data)
+    assert result.balance_check is not None
     assert result.balance_check.f_statistic == pytest.approx(0.006156735)
     assert result.balance_check.p_value == pytest.approx(0.99992466)
     json = result.model_dump()
@@ -365,14 +370,14 @@ def test_with_nans_that_would_break_stochatreat_without_preprocessing(sample_tab
 def test_simple_random_assignment(sample_rows):
     n = len(sample_rows)
     assignments = simple_random_assignment(
-        sample_rows, make_arms(["A", "B"]), random_state=42
+        pd.DataFrame(sample_rows), make_arms(["A", "B"]), random_state=42
     )
     assert len(assignments) == n
     assert assignments.count(0) == n // 2
     assert assignments.count(1) == n // 2
 
     assignments = simple_random_assignment(
-        sample_rows, make_arms(["A", "B", "C"]), random_state=42
+        pd.DataFrame(sample_rows), make_arms(["A", "B", "C"]), random_state=42
     )
     assert len(assignments) == n
     assert assignments.count(0) in {n // 3, n // 3 + 1}

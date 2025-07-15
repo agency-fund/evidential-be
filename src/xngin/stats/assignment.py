@@ -1,23 +1,11 @@
-import decimal
-from collections import defaultdict
-from collections.abc import Sequence
-from datetime import UTC, datetime
-from typing import Any, Protocol
 
 import numpy as np
 import pandas as pd
-from pandas import DataFrame
-from sqlalchemy import Table
 from stochatreat import stochatreat
 
 from xngin.apiserver.routers.common_api_types import (
     Arm,
-    Assignment,
     BalanceCheck,
-    Strata,
-)
-from xngin.apiserver.routers.stateless.stateless_api_types import (
-    AssignResponse,
 )
 from xngin.stats.balance import (
     check_balance_of_preprocessed_df,
@@ -25,19 +13,11 @@ from xngin.stats.balance import (
     restore_original_numeric_columns,
 )
 
-
-class RowProtocol(Protocol):
-    """Minimal methods to approximate a sqlalchemy.engine.row.Row for testing."""
-
-    def _asdict(self) -> dict[str, Any]:
-        """https://docs.sqlalchemy.org/en/20/core/connections.html#sqlalchemy.engine.Row._asdict"""
-
-
 STOCHATREAT_STRATUM_ID_NAME = "stratum_id"
 STOCHATREAT_TREAT_NAME = "treat"
 
 
-def _assign_treatment(
+def assign_treatment_and_check_balance(
     df: pd.DataFrame,
     decimal_columns: list[str],
     stratum_cols: list[str],
@@ -65,7 +45,7 @@ def _assign_treatment(
     """
     if len(stratum_cols) == 0:
         # No stratification, so use simple random assignment
-        treatment_ids = _simple_random_assignment(df, arms, random_state)
+        treatment_ids = simple_random_assignment(df, arms, random_state)
         return treatment_ids, None, None, []
 
     # Create copy for analysis while attempting to convert any numeric "object" types that pandas
@@ -93,7 +73,7 @@ def _assign_treatment(
     if len(post_stratum_cols) == 0:
         # No stratification, so use simple random assignment while still outputting strata, even
         # though they're either all the same value or all unique values.
-        treatment_ids = _simple_random_assignment(df, arms, random_state)
+        treatment_ids = simple_random_assignment(df, arms, random_state)
         return treatment_ids, None, None, orig_stratum_cols
 
     # Do stratified random assignment
@@ -143,7 +123,7 @@ def _assign_treatment(
     return list(treatment_ids), list(stratum_ids), balance_check, orig_stratum_cols
 
 
-def _simple_random_assignment(
+def simple_random_assignment(
     df: pd.DataFrame,
     arms: list[Arm],
     random_state: int | None = None,
@@ -166,148 +146,3 @@ def _simple_random_assignment(
     treatment_mask = np.repeat(treatment_ids, np.ceil(len(df) / n_arms))
     rng.shuffle(treatment_mask)
     return [int(x) for x in treatment_mask[: len(df)]]
-
-
-def assign_treatment(
-    sa_table: Table,
-    data: Sequence[RowProtocol],
-    stratum_cols: list[str],
-    id_col: str,
-    arms: list[Arm],
-    experiment_id: str,
-    fstat_thresh: float = 0.5,
-    quantiles: int = 4,
-    stratum_id_name: str | None = None,
-    random_state: int | None = None,
-) -> AssignResponse:
-    """
-    Perform stratified random assignment and balance checking.
-
-    Args:
-        sa_table: sqlalchemy table representation used for type info
-        data: sqlalchemy result set of Rows representing units to be assigned
-        stratum_cols: List of column names to stratify on
-        id_col: Name of column containing unit identifiers
-        arms: Name & id of each treatment arm
-        experiment_id: Unique identifier for experiment
-        fstat_thresh: Threshold for F-statistic p-value
-        quantiles: number of buckets to use for stratification of numerics
-        stratum_id_name: If you want to output the strata group ids, provide a non-null name for
-                         the column to add to the assignment output as a Strata field.
-        random_state: Random seed for reproducibility
-
-    Returns:
-        AssignmentResult containing assignments and balance check results
-    """
-    # Convert SQLAlchemy data to DataFrame
-    df = DataFrame(data)
-
-    # Extract decimal column names from SQLAlchemy table
-    decimal_columns = [
-        c.name for c in sa_table.columns if c.type.python_type is decimal.Decimal
-    ]
-
-    # Call the core assignment function
-    treatment_ids, stratum_ids, balance_check, orig_stratum_cols = _assign_treatment(
-        df=df,
-        decimal_columns=decimal_columns,
-        stratum_cols=stratum_cols,
-        id_col=id_col,
-        arms=arms,
-        fstat_thresh=fstat_thresh,
-        quantiles=quantiles,
-        random_state=random_state,
-    )
-
-    return _make_assign_response(
-        data=data,
-        orig_stratum_cols=orig_stratum_cols,
-        id_col=id_col,
-        arms=arms,
-        experiment_id=experiment_id,
-        balance_check=balance_check,
-        treatment_ids=treatment_ids,
-        stratum_ids=stratum_ids,
-        stratum_id_name=stratum_id_name,
-    )
-
-
-def simple_random_assignment(
-    data: Sequence[RowProtocol],
-    arms: list[Arm],
-    random_state: int | None = None,
-) -> list[int]:
-    """
-    Perform simple random assignment of data into the given arms.
-
-    Args:
-        data: sqlalchemy result set of Rows representing units to be assigned
-        arms: Name & uuid of each treatment arm
-        random_state: Random seed for reproducibility
-
-    Returns:
-        List of treatment ids
-    """
-    df = DataFrame(data)
-    return _simple_random_assignment(df, arms, random_state)
-
-
-def _make_assign_response(
-    data: Sequence[RowProtocol],
-    orig_stratum_cols: list[str],
-    id_col: str,
-    arms: list[Arm],
-    experiment_id: str,
-    balance_check: BalanceCheck | None,
-    treatment_ids: list[int],
-    stratum_ids: list[int] | None,
-    stratum_id_name: str | None = None,
-) -> AssignResponse:
-    """Prepare assignments for return along with the original data as a list of ExperimentParticipant objects."""
-    participants_list = []
-    arm_sizes_by_treatment_id: dict[int, int] = defaultdict(int)
-
-    stratum_ids = [0] * len(treatment_ids) if stratum_ids is None else stratum_ids
-    for stratum_id, treatment_assignment, row in zip(
-        stratum_ids, treatment_ids, data, strict=False
-    ):
-        strata = None
-        row_dict = row._asdict()
-
-        if orig_stratum_cols:
-            # Output the participant's strata values as seen at this time of assignment.
-            strata = [
-                Strata(
-                    field_name=column,
-                    strata_value=str(
-                        row_dict[column] if pd.notna(row_dict[column]) else "NA"
-                    ),
-                )
-                for column in orig_stratum_cols
-            ]
-            if stratum_id_name is not None:
-                strata.append(
-                    Strata(field_name=stratum_id_name, strata_value=str(stratum_id))
-                )
-
-        arm_sizes_by_treatment_id[treatment_assignment] += 1
-        participant = Assignment(
-            participant_id=str(row_dict[id_col]),
-            arm_id=arms[treatment_assignment].arm_id,
-            arm_name=arms[treatment_assignment].arm_name,
-            created_at=datetime.now(UTC),
-            strata=strata,
-        )
-        participants_list.append(participant)
-
-    # Sort participants by ID for stable output
-    participants_list.sort(key=lambda p: p.participant_id)
-
-    # Return the ExperimentAssignment with the list of participants
-    return AssignResponse(
-        balance_check=balance_check,
-        experiment_id=experiment_id,
-        sample_size=len(treatment_ids),
-        unique_id_field=id_col,
-        assignments=participants_list,
-    )
