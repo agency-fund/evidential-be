@@ -13,9 +13,9 @@ from sqlalchemy import DECIMAL, Boolean, Column, Float, Integer, MetaData, Strin
 from xngin.apiserver.models import tables
 from xngin.apiserver.routers.assignment_adapters import (
     assign_treatment,
-    simple_random_assignment,
 )
 from xngin.apiserver.routers.common_api_types import Arm, Assignment, Strata
+from xngin.stats.assignment import simple_random_assignment
 
 
 @dataclass
@@ -370,14 +370,14 @@ def test_with_nans_that_would_break_stochatreat_without_preprocessing(sample_tab
 def test_simple_random_assignment(sample_rows):
     n = len(sample_rows)
     assignments = simple_random_assignment(
-        pd.DataFrame(sample_rows), make_arms(["A", "B"]), random_state=42
+        pd.DataFrame(sample_rows), n_arms=2, random_state=42
     )
     assert len(assignments) == n
     assert assignments.count(0) == n // 2
     assert assignments.count(1) == n // 2
 
     assignments = simple_random_assignment(
-        pd.DataFrame(sample_rows), make_arms(["A", "B", "C"]), random_state=42
+        pd.DataFrame(sample_rows), n_arms=3, random_state=42
     )
     assert len(assignments) == n
     assert assignments.count(0) in {n // 3, n // 3 + 1}

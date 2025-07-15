@@ -3,10 +3,7 @@ import numpy as np
 import pandas as pd
 from stochatreat import stochatreat
 
-from xngin.apiserver.routers.common_api_types import (
-    Arm,
-    BalanceCheck,
-)
+from xngin.apiserver.routers.common_api_types import BalanceCheck
 from xngin.stats.balance import (
     check_balance_of_preprocessed_df,
     preprocess_for_balance_and_stratification,
@@ -22,20 +19,20 @@ def assign_treatment_and_check_balance(
     decimal_columns: list[str],
     stratum_cols: list[str],
     id_col: str,
-    arms: list[Arm],
+    n_arms: int,
     fstat_thresh: float = 0.5,
     quantiles: int = 4,
     random_state: int | None = None,
 ) -> tuple[list[int], list[int] | None, BalanceCheck | None, list[str]]:
     """
     Core assignment logic that operates on a pandas DataFrame.
-    
+
     Args:
         df: pandas DataFrame containing the data
         decimal_columns: List of column names that contain Decimal types
         stratum_cols: List of column names to stratify on
         id_col: Name of column containing unit identifiers
-        arms: Name & id of each treatment arm
+        n_arms: Number of arms in your experiment
         fstat_thresh: Threshold for F-statistic p-value
         quantiles: number of buckets to use for stratification of numerics
         random_state: Random seed for reproducibility
@@ -45,7 +42,7 @@ def assign_treatment_and_check_balance(
     """
     if len(stratum_cols) == 0:
         # No stratification, so use simple random assignment
-        treatment_ids = simple_random_assignment(df, arms, random_state)
+        treatment_ids = simple_random_assignment(df, n_arms, random_state)
         return treatment_ids, None, None, []
 
     # Create copy for analysis while attempting to convert any numeric "object" types that pandas
@@ -73,11 +70,10 @@ def assign_treatment_and_check_balance(
     if len(post_stratum_cols) == 0:
         # No stratification, so use simple random assignment while still outputting strata, even
         # though they're either all the same value or all unique values.
-        treatment_ids = simple_random_assignment(df, arms, random_state)
+        treatment_ids = simple_random_assignment(df, n_arms, random_state)
         return treatment_ids, None, None, orig_stratum_cols
 
     # Do stratified random assignment
-    n_arms = len(arms)
     # TODO: when we support unequal arm assignments, be careful about ensuring the right treatment
     # assignment id is mapped to the right arm_name.
     treatment_status = stochatreat(
@@ -125,7 +121,7 @@ def assign_treatment_and_check_balance(
 
 def simple_random_assignment(
     df: pd.DataFrame,
-    arms: list[Arm],
+    n_arms: int,
     random_state: int | None = None,
 ) -> list[int]:
     """
@@ -133,14 +129,13 @@ def simple_random_assignment(
 
     Args:
         df: pandas DataFrame containing the data
-        arms: Name & uuid of each treatment arm
+        n_arms: Number of arms in your experiment
         random_state: Random seed for reproducibility
 
     Returns:
         List of treatment ids
     """
     rng = np.random.default_rng(random_state)
-    n_arms = len(arms)
     # Create an equal number of treatment ids for each arm and shuffle to ensure arms are as balanced as possible.
     treatment_ids = list(range(n_arms))
     treatment_mask = np.repeat(treatment_ids, np.ceil(len(df) / n_arms))

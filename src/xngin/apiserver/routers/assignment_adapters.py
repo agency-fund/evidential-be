@@ -74,7 +74,7 @@ def assign_treatment(
         decimal_columns=decimal_columns,
         stratum_cols=stratum_cols,
         id_col=id_col,
-        arms=arms,
+        n_arms=len(arms),
         fstat_thresh=fstat_thresh,
         quantiles=quantiles,
         random_state=random_state,
