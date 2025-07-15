@@ -16,5 +16,5 @@ ENV_XNGIN_SECRETS_GCP_KMS_KEY_URI = "XNGIN_SECRETS_GCP_KMS_KEY_URI"
 ENV_XNGIN_SECRETS_TINK_KEYSET = "XNGIN_SECRETS_TINK_KEYSET"
 
 # Serialized ciphertexts are prefixed with this value so that it is easily recognizable as
-# an encrypted value similar to the ${secret:ENV} syntax we use in the static JSON settings files.
-SERIALIZED_ENCRYPTED_VALUE_PREFIX = "$secret$:"
+# an encrypted value.
+SERIALIZED_ENCRYPTED_VALUE_PREFIX = "$encrypted$:"
