@@ -52,7 +52,7 @@ from xngin.sheets.config_sheet import (
 )
 from xngin.sheets.gsheets import GSheetsPermissionError
 from xngin.xsecrets import secretservice
-from xngin.xsecrets.local_provider import LocalProviderKeyset
+from xngin.xsecrets.nacl_provider import NaclProviderKeyset
 
 SA_LOGGER_NAME_FOR_CLI = "cli_dwh"
 
@@ -773,7 +773,7 @@ def create_nacl_keyset(
     The encoded encryption key will be written to stdout. This value
     is suitable for use as the XNGIN_SECRETS_NACL_KEYSET environment variable.
     """
-    keyset = LocalProviderKeyset.create()
+    keyset = NaclProviderKeyset.create()
     if output == "base64":
         print(keyset.serialize_base64())
     else:

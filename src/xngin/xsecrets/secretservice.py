@@ -8,7 +8,7 @@ from loguru import logger
 from xngin.xsecrets import (
     aws_provider,
     gcp_provider,
-    local_provider,
+    nacl_provider,
     noop_provider,
 )
 from xngin.xsecrets.constants import (
@@ -29,7 +29,7 @@ def setup():
 
     aws_provider.initialize(registry)
     gcp_provider.initialize(registry)
-    local_provider.initialize(registry)
+    nacl_provider.initialize(registry)
 
     registered = registry.get_providers()
 

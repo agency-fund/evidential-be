@@ -5,9 +5,9 @@ import nacl.secret
 import nacl.utils
 import pytest
 
-from xngin.xsecrets import local_provider
+from xngin.xsecrets import nacl_provider
 from xngin.xsecrets.constants import SERIALIZED_ENCRYPTED_VALUE_PREFIX
-from xngin.xsecrets.local_provider import LocalProviderKeyset
+from xngin.xsecrets.nacl_provider import NaclProviderKeyset
 from xngin.xsecrets.provider import Registry
 from xngin.xsecrets.secretservice import (
     SecretService,
@@ -87,27 +87,27 @@ def test_deserialize_invalid_structure():
         _deserialize(invalid_serialized)
 
 
-@pytest.fixture(name="local_secretservice")
-def fixture_local_secretservice():
+@pytest.fixture(name="nacl_secretservice")
+def fixture_nacl_secretservice():
     registry = Registry()
-    local_provider.initialize(registry, keyset=LocalProviderKeyset.create())
-    return SecretService(registry, "local")
+    nacl_provider.initialize(registry, keyset=NaclProviderKeyset.create())
+    return SecretService(registry, nacl_provider.NAME)
 
 
 def test_rotate_scenario():
     first_registry = Registry()
-    first_keyset = LocalProviderKeyset.create()
+    first_keyset = NaclProviderKeyset.create()
     assert len(first_keyset.keys) == 1
-    local_provider.initialize(first_registry, keyset=first_keyset)
-    first_service = SecretService(first_registry, "local")
+    nacl_provider.initialize(first_registry, keyset=first_keyset)
+    first_service = SecretService(first_registry, nacl_provider.NAME)
 
     encrypted = first_service.encrypt("pt", "aad")
 
     second_registry = Registry()
     second_keyset = first_keyset.with_new_key()
     assert len(second_keyset.keys) == 2
-    local_provider.initialize(second_registry, keyset=second_keyset)
-    second_service = SecretService(second_registry, "local")
+    nacl_provider.initialize(second_registry, keyset=second_keyset)
+    second_service = SecretService(second_registry, nacl_provider.NAME)
 
     assert second_service.decrypt(encrypted, "aad") == "pt"
     encrypted_with_new_key = second_service.encrypt("pt2", "aad")
@@ -126,16 +126,16 @@ def test_rotate_scenario():
         ("", ""),  # Test with both empty
     ],
 )
-def test_secretservice_encrypt_decrypt(local_secretservice, plaintext, aad):
+def test_secretservice_encrypt_decrypt(nacl_secretservice, plaintext, aad):
     """Test that SecretService can encrypt and decrypt values with various inputs."""
     # Encrypt the value
-    encrypted = local_secretservice.encrypt(plaintext, aad)
+    encrypted = nacl_secretservice.encrypt(plaintext, aad)
 
     # Verify it has the expected format
     assert encrypted.startswith(SERIALIZED_ENCRYPTED_VALUE_PREFIX)
 
     # Decrypt the value
-    decrypted = local_secretservice.decrypt(encrypted, aad)
+    decrypted = nacl_secretservice.decrypt(encrypted, aad)
 
     # Verify we got the original plaintext back
     assert decrypted == plaintext
@@ -149,10 +149,10 @@ def test_secretservice_encrypt_decrypt(local_secretservice, plaintext, aad):
         ("non-empty plaintext", ""),  # Test with empty AAD
     ],
 )
-def test_secretservice_decrypt_unencrypted_value(local_secretservice, plaintext, aad):
+def test_secretservice_decrypt_unencrypted_value(nacl_secretservice, plaintext, aad):
     """Test that SecretService.decrypt returns unencrypted values as-is."""
     # Since the value doesn't have the prefix, it should be returned as-is
-    result = local_secretservice.decrypt(plaintext, aad)
+    result = nacl_secretservice.decrypt(plaintext, aad)
 
     assert result == plaintext
 
@@ -166,30 +166,28 @@ def test_secretservice_decrypt_unencrypted_value(local_secretservice, plaintext,
     ],
 )
 def test_secretservice_decrypt_with_wrong_aad(
-    local_secretservice, plaintext, correct_aad, wrong_aad
+    nacl_secretservice, plaintext, correct_aad, wrong_aad
 ):
     """Test that decryption fails when using the wrong AAD."""
-    encrypted = local_secretservice.encrypt(plaintext, correct_aad)
+    encrypted = nacl_secretservice.encrypt(plaintext, correct_aad)
 
     # Attempting to decrypt with the wrong AAD should raise an exception
     with pytest.raises(nacl.exceptions.CryptoError):
-        local_secretservice.decrypt(encrypted, wrong_aad)
+        nacl_secretservice.decrypt(encrypted, wrong_aad)
 
 
-def test_secretservice_provider_selection(local_secretservice):
+def test_secretservice_provider_selection(nacl_secretservice):
     """Test that SecretService uses the correct provider based on the serialized data."""
-    # The fixture uses the LocalProvider
     plaintext = "Test provider selection"
     aad = "provider_test"
 
-    encrypted = local_secretservice.encrypt(plaintext, aad)
+    encrypted = nacl_secretservice.encrypt(plaintext, aad)
 
     # Verify the provider name in the serialized data
     _, serialized_json = encrypted.split(SERIALIZED_ENCRYPTED_VALUE_PREFIX, 1)
     data = json.loads(serialized_json)
 
-    # The provider name should be "local"
-    assert data[0][0] == "local"
+    assert data[0][0] == nacl_provider.NAME
 
     # Decryption should work
-    assert local_secretservice.decrypt(encrypted, aad) == plaintext
+    assert nacl_secretservice.decrypt(encrypted, aad) == plaintext

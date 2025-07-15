@@ -13,11 +13,11 @@ from pydantic import BaseModel
 from xngin.xsecrets import constants
 from xngin.xsecrets.provider import Provider, Registry
 
-NAME = "local"
+NAME = "nacl"
 
 
-class LocalProviderKeyset(BaseModel):
-    """LocalProviderKeyset describes the active pynacl encryption keys."""
+class NaclProviderKeyset(BaseModel):
+    """Describes the active nacl encryption keys."""
 
     # The encryption keys. The first element in the list is the default encryption key. Decrypt operations will be
     # tried against all the keys until one succeeds.
@@ -43,9 +43,9 @@ class LocalProviderKeyset(BaseModel):
         return base64.standard_b64encode(self.serialize_json().encode()).decode()
 
     @classmethod
-    def deserialize_base64(cls, base64_keyset: str) -> "LocalProviderKeyset":
+    def deserialize_base64(cls, base64_keyset: str) -> "NaclProviderKeyset":
         """Constructs a new keyset from the output of serialize_base64."""
-        return LocalProviderKeyset.model_validate_json(
+        return NaclProviderKeyset.model_validate_json(
             base64.standard_b64decode(base64_keyset)
         )
 
@@ -58,24 +58,24 @@ class LocalProviderKeyset(BaseModel):
     @classmethod
     def create(cls):
         """Creates a new instance of KeySet with a single key."""
-        return LocalProviderKeyset(keys=[cls._create_key()])
+        return NaclProviderKeyset(keys=[cls._create_key()])
 
 
-def initialize(registry: Registry, *, keyset: LocalProviderKeyset | None = None):
-    """Registers a LocalProvider with the registry if configuration information is available to do so."""
+def initialize(registry: Registry, *, keyset: NaclProviderKeyset | None = None):
+    """Registers a NaclProvider with the registry if configuration information is available to do so."""
     if keyset is None and (
         key := os.environ.get(constants.ENV_XNGIN_SECRETS_NACL_KEYSET)
     ):
-        keyset = LocalProviderKeyset.deserialize_base64(key)
+        keyset = NaclProviderKeyset.deserialize_base64(key)
     if keyset:
-        instance = LocalProvider(keyset)
+        instance = NaclProvider(keyset)
         registry.register(instance.name(), instance)
 
 
-class LocalProvider(Provider):
+class NaclProvider(Provider):
     """Provides pynacl's Aead."""
 
-    def __init__(self, keyset: LocalProviderKeyset):
+    def __init__(self, keyset: NaclProviderKeyset):
         self.boxes = [
             nacl.secret.Aead(base64.standard_b64decode(key)) for key in keyset.keys
         ]
