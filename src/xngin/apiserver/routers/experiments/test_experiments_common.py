@@ -31,6 +31,7 @@ from xngin.apiserver.routers.experiments.experiments_common import (
     commit_experiment_impl,
     create_assignment_for_participant,
     create_dwh_experiment_impl,
+    create_preassigned_experiment_impl,
     experiment_assignments_to_csv_generator,
     get_assign_summary,
     get_existing_assignment_for_participant,
@@ -216,7 +217,7 @@ async def test_create_experiment_impl_for_preassigned(
 ):
     """Test implementation of creating a preassigned experiment."""
     participants = make_sample_data(n=100)
-    request = make_create_preassigned_experiment_request()
+    request = make_create_preassigned_experiment_request(with_ids=True)
     # Add a partial mock PowerResponse just to verify storage
     request.power_analyses = PowerResponse(
         analyses=[
@@ -229,15 +230,18 @@ async def test_create_experiment_impl_for_preassigned(
     )
 
     # Test!
-    response = await create_dwh_experiment_impl(
+    response = await create_preassigned_experiment_impl(
         request=request.model_copy(
             deep=True
         ),  # we'll use the original request for assertions
         datasource_id=testing_datasource.ds.id,
-        xngin_session=xngin_session,
-        chosen_n=len(participants),
-        stratify_on_metrics=True,
+        organization_id=testing_datasource.ds.organization_id,
+        participant_unique_id_field="participant_id",
+        dwh_sa_table=sample_table,
+        dwh_participants=participants,
         random_state=42,
+        xngin_session=xngin_session,
+        stratify_on_metrics=True,
         validated_webhooks=[],
     )
     # Verify response
@@ -339,7 +343,7 @@ async def test_create_experiment_impl_for_online(
 
     response = await create_dwh_experiment_impl(
         request=request.model_copy(deep=True),
-        datasource_id=testing_datasource.ds.id,
+        datasource=testing_datasource.ds,
         random_state=42,
         chosen_n=None,
         xngin_session=xngin_session,
@@ -427,7 +431,7 @@ async def test_create_experiment_impl_overwrites_uuids(
 
     response = await create_dwh_experiment_impl(
         request=request,
-        datasource_id=testing_datasource.ds.id,
+        datasource=testing_datasource.ds,
         random_state=42,
         xngin_session=xngin_session,
         chosen_n=len(participants),
@@ -472,7 +476,7 @@ async def test_create_experiment_impl_no_metric_stratification(
     # Test with stratify_on_metrics=False
     response = await create_dwh_experiment_impl(
         request=request.model_copy(deep=True),
-        datasource_id=testing_datasource.ds.id,
+        datasource=testing_datasource.ds,
         random_state=42,
         xngin_session=xngin_session,
         chosen_n=len(participants),

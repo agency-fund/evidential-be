@@ -73,7 +73,7 @@ def random_choice[T](choices: Sequence[T], seed: int | None = None) -> T:
 
 async def create_dwh_experiment_impl(
     request: CreateExperimentRequest,
-    datasource_id: str,
+    datasource: tables.Datasource,
     xngin_session: AsyncSession,
     chosen_n: int | None,
     stratify_on_metrics: bool,
@@ -93,14 +93,14 @@ async def create_dwh_experiment_impl(
         arm.arm_id = tables.arm_id_factory()
 
     # Extract info from database
-    db_datasource = await xngin_session.get(tables.Datasource, datasource_id)
-    if db_datasource is None:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Datasource with id {datasource_id} not found.",
-        )
+    # db_datasource = await xngin_session.get(tables.Datasource, datasource_id)
+    # if db_datasource is None:
+    #     raise HTTPException(
+    #         status_code=status.HTTP_404_NOT_FOUND,
+    #         detail=f"Datasource with id {datasource_id} not found.",
+    #     )
 
-    ds_config = db_datasource.get_config()
+    ds_config = datasource.get_config()
 
     participants_cfg = ds_config.find_participants(request.design_spec.participant_type)
     if not isinstance(participants_cfg, ParticipantsDef):
@@ -116,6 +116,7 @@ async def create_dwh_experiment_impl(
                 participants_cfg.table_name, request.design_spec.filters, chosen_n
             )
             sa_table, participants = result.sa_table, result.participants
+
         elif request.design_spec.experiment_type == "freq_preassigned":
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
@@ -132,8 +133,8 @@ async def create_dwh_experiment_impl(
             )
         return await create_preassigned_experiment_impl(
             request=request,
-            datasource_id=datasource_id,
-            organization_id=db_datasource.organization_id,
+            datasource_id=datasource.id,
+            organization_id=datasource.organization_id,
             participant_unique_id_field=participants_unique_id_field,
             dwh_sa_table=sa_table,
             dwh_participants=participants,
@@ -146,8 +147,8 @@ async def create_dwh_experiment_impl(
     if request.design_spec.experiment_type == ExperimentsType.FREQ_ONLINE:
         return await create_freq_online_experiment_impl(
             request=request,
-            datasource_id=datasource_id,
-            organization_id=db_datasource.organization_id,
+            datasource_id=datasource.id,
+            organization_id=datasource.organization_id,
             xngin_session=xngin_session,
             validated_webhooks=validated_webhooks,
         )

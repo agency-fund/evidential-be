@@ -1279,6 +1279,9 @@ async def create_experiment(
             detail=f"Datasource {datasource_id} not found in database",
         )
 
+    if body.design_spec.ids_are_present():
+        raise LateValidationError("Invalid DesignSpec: UUIDs must not be set.")
+
     # Validate webhook IDs exist and belong to organization
     organization_id = datasource.organization_id
     validated_webhooks = await validate_webhooks(
@@ -1289,7 +1292,7 @@ async def create_experiment(
 
     return await experiments_common.create_dwh_experiment_impl(
         request=body,
-        datasource_id=datasource_id,
+        datasource=datasource,
         xngin_session=session,
         chosen_n=chosen_n,
         stratify_on_metrics=stratify_on_metrics,

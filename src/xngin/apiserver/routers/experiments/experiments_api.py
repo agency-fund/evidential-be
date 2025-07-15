@@ -95,8 +95,12 @@ async def create_experiment_with_assignment_sl(
     ):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"{body.__class__.__name__} experiments are not supported for assignments.",
+            detail=f"{body.design_spec.experiment_type} experiments are not supported for assignments.",
         )
+
+    if body.design_spec.ids_are_present():
+        raise LateValidationError("Invalid DesignSpec: UUIDs must not be set.")
+
     db_datasource = await xngin_session.get(tables.Datasource, datasource.id)
     if not db_datasource:
         raise HTTPException(
@@ -109,9 +113,6 @@ async def create_experiment_with_assignment_sl(
         organization_id=db_datasource.organization_id,
         session=xngin_session,
     )
-
-    if body.design_spec.ids_are_present():
-        raise LateValidationError("Invalid DesignSpec: UUIDs must not be set.")
 
     # Persist the experiment and assignments in the xngin database
     return await create_stateless_experiment_impl(
