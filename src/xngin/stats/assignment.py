@@ -3,8 +3,8 @@ import numpy as np
 import pandas as pd
 from stochatreat import stochatreat
 
-from xngin.apiserver.routers.common_api_types import BalanceCheck
 from xngin.stats.balance import (
+    BalanceResult,
     check_balance_of_preprocessed_df,
     preprocess_for_balance_and_stratification,
     restore_original_numeric_columns,
@@ -23,7 +23,7 @@ def assign_treatment_and_check_balance(
     fstat_thresh: float = 0.5,
     quantiles: int = 4,
     random_state: int | None = None,
-) -> tuple[list[int], list[int] | None, BalanceCheck | None, list[str]]:
+) -> tuple[list[int], list[int] | None, BalanceResult | None, list[str]]:
     """
     Core assignment logic that operates on a pandas DataFrame.
 
@@ -38,7 +38,7 @@ def assign_treatment_and_check_balance(
         random_state: Random seed for reproducibility
 
     Returns:
-        tuple of (treatment_ids, stratum_ids, balance_check, orig_stratum_cols)
+        tuple of (treatment_ids, stratum_ids, balance_result, orig_stratum_cols)
     """
     if len(stratum_cols) == 0:
         # No stratification, so use simple random assignment
@@ -108,15 +108,8 @@ def assign_treatment_and_check_balance(
         alpha=fstat_thresh,
     )
     del df_cleaned_for_balance_check
-    balance_check = BalanceCheck(
-        f_statistic=np.round(balance_result.f_statistic, 9),
-        numerator_df=round(balance_result.numerator_df),
-        denominator_df=round(balance_result.denominator_df),
-        p_value=np.round(balance_result.f_pvalue, 9),
-        balance_ok=bool(balance_result.f_pvalue > fstat_thresh),
-    )
 
-    return list(treatment_ids), list(stratum_ids), balance_check, orig_stratum_cols
+    return list(treatment_ids), list(stratum_ids), balance_result, orig_stratum_cols
 
 
 def simple_random_assignment(

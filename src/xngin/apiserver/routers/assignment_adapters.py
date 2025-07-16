@@ -5,6 +5,7 @@ from collections.abc import Sequence
 from datetime import UTC, datetime
 from typing import Any, Protocol
 
+import numpy as np
 import pandas as pd
 from pandas import DataFrame
 from sqlalchemy import Table
@@ -19,6 +20,7 @@ from xngin.apiserver.routers.stateless.stateless_api_types import (
     AssignResponse,
 )
 from xngin.stats.assignment import assign_treatment_and_check_balance
+from xngin.stats.balance import BalanceResult
 
 
 class RowProtocol(Protocol):
@@ -27,6 +29,22 @@ class RowProtocol(Protocol):
     def _asdict(self) -> dict[str, Any]:
         """https://docs.sqlalchemy.org/en/20/core/connections.html#sqlalchemy.engine.Row._asdict"""
         ...
+
+
+def _make_balance_check(
+    balance_result: BalanceResult | None, fstat_thresh: float
+) -> BalanceCheck | None:
+    """Convert stats lib's BalanceResult to our API's BalanceCheck."""
+    if balance_result is None:
+        return None
+
+    return BalanceCheck(
+        f_statistic=np.round(balance_result.f_statistic, 9),
+        numerator_df=round(balance_result.numerator_df),
+        denominator_df=round(balance_result.denominator_df),
+        p_value=np.round(balance_result.f_pvalue, 9),
+        balance_ok=bool(balance_result.f_pvalue > fstat_thresh),
+    )
 
 
 def assign_treatment(
@@ -69,7 +87,7 @@ def assign_treatment(
     ]
 
     # Call the core assignment function
-    treatment_ids, stratum_ids, balance_check, orig_stratum_cols = assign_treatment_and_check_balance(
+    treatment_ids, stratum_ids, balance_result, orig_stratum_cols = assign_treatment_and_check_balance(
         df=df,
         decimal_columns=decimal_columns,
         stratum_cols=stratum_cols,
@@ -86,7 +104,7 @@ def assign_treatment(
         id_col=id_col,
         arms=arms,
         experiment_id=experiment_id,
-        balance_check=balance_check,
+        balance_check=_make_balance_check(balance_result, fstat_thresh),
         treatment_ids=treatment_ids,
         stratum_ids=stratum_ids,
         stratum_id_name=stratum_id_name,
