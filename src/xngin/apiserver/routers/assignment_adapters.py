@@ -122,7 +122,7 @@ def _make_assign_response(
     stratum_ids: list[int] | None,
     stratum_id_name: str | None = None,
 ) -> AssignResponse:
-    """Prepare assignments for return along with the original data as a list of ExperimentParticipant objects."""
+    """Prepare assignments and metadata for return."""
     participants_list = []
     arm_sizes_by_treatment_id: dict[int, int] = defaultdict(int)
 

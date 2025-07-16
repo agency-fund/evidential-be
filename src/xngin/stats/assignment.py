@@ -14,6 +14,11 @@ STOCHATREAT_STRATUM_ID_NAME = "stratum_id"
 STOCHATREAT_TREAT_NAME = "treat"
 
 
+# TODO?
+# * fstat_thresh for what determines "balanced" is a user concern. Perhaps remove it from the
+# interface and into assignment_adapters.
+# * decimal_columns could be handled by the assignment_adapters, and just document that python
+# Decimals should be converted to float.
 def assign_treatment_and_check_balance(
     df: pd.DataFrame,
     decimal_columns: list[str],
@@ -39,6 +44,10 @@ def assign_treatment_and_check_balance(
 
     Returns:
         tuple of (treatment_ids, stratum_ids, balance_result, orig_stratum_cols)
+
+        stratum_ids - list of stratum ids, one for each row in the dataframe if you wish to do any
+            post-hoc analyses by stratum
+        orig_stratum_cols - deduplicated and sorted list of stratum_cols
     """
     if len(stratum_cols) == 0:
         # No stratification, so use simple random assignment
