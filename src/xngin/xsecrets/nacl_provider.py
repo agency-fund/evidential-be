@@ -1,4 +1,5 @@
 import base64
+import binascii
 import json
 import os
 from typing import Annotated
@@ -8,9 +9,10 @@ import nacl.exceptions
 import nacl.secret
 import nacl.utils
 from annotated_types import Len
-from pydantic import BaseModel
+from pydantic import BaseModel, ValidationError
 
 from xngin.xsecrets import constants
+from xngin.xsecrets.exceptions import InvalidSecretStoreConfigurationError
 from xngin.xsecrets.provider import Provider, Registry
 
 NAME = "nacl"
@@ -66,7 +68,12 @@ def initialize(registry: Registry, *, keyset: NaclProviderKeyset | None = None):
     if keyset is None and (
         key := os.environ.get(constants.ENV_XNGIN_SECRETS_NACL_KEYSET)
     ):
-        keyset = NaclProviderKeyset.deserialize_base64(key)
+        try:
+            keyset = NaclProviderKeyset.deserialize_base64(key)
+        except (binascii.Error, ValidationError) as err:
+            raise InvalidSecretStoreConfigurationError(
+                f"{constants.ENV_XNGIN_SECRETS_NACL_KEYSET} is not valid base64 encoded keyset"
+            ) from err
     if keyset:
         instance = NaclProvider(keyset)
         registry.register(instance.name(), instance)

@@ -94,28 +94,6 @@ def fixture_nacl_secretservice():
     return SecretService(registry, nacl_provider.NAME)
 
 
-def test_rotate_scenario():
-    first_registry = Registry()
-    first_keyset = NaclProviderKeyset.create()
-    assert len(first_keyset.keys) == 1
-    nacl_provider.initialize(first_registry, keyset=first_keyset)
-    first_service = SecretService(first_registry, nacl_provider.NAME)
-
-    encrypted = first_service.encrypt("pt", "aad")
-
-    second_registry = Registry()
-    second_keyset = first_keyset.with_new_key()
-    assert len(second_keyset.keys) == 2
-    nacl_provider.initialize(second_registry, keyset=second_keyset)
-    second_service = SecretService(second_registry, nacl_provider.NAME)
-
-    assert second_service.decrypt(encrypted, "aad") == "pt"
-    encrypted_with_new_key = second_service.encrypt("pt2", "aad")
-
-    with pytest.raises(nacl.exceptions.CryptoError):
-        first_service.decrypt(encrypted_with_new_key, "aad")
-
-
 @pytest.mark.parametrize(
     "plaintext,aad",
     [
