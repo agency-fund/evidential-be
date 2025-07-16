@@ -81,79 +81,75 @@ async def create_dwh_experiment_impl(
     validated_webhooks: list[tables.Webhook],
 ) -> CreateExperimentResponse:
     # Raise error for bandit experiments
-    if not isinstance(request.design_spec, BaseFrequentistDesignSpec):
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Bandit experiments are not supported for DWH assignments",
-        )
-
     # Generate ids for the experiment and arms, required for doing assignments.
     request.design_spec.experiment_id = tables.experiment_id_factory()
     for arm in request.design_spec.arms:
         arm.arm_id = tables.arm_id_factory()
 
-    # Extract info from database
-    # db_datasource = await xngin_session.get(tables.Datasource, datasource_id)
-    # if db_datasource is None:
-    #     raise HTTPException(
-    #         status_code=status.HTTP_404_NOT_FOUND,
-    #         detail=f"Datasource with id {datasource_id} not found.",
-    #     )
+    if isinstance(request.design_spec, BaseFrequentistDesignSpec):
+        ds_config = datasource.get_config()
 
-    ds_config = datasource.get_config()
-
-    participants_cfg = ds_config.find_participants(request.design_spec.participant_type)
-    if not isinstance(participants_cfg, ParticipantsDef):
-        raise LateValidationError(
-            "Invalid ParticipantsConfig: Participants must be of type schema."
+        participants_cfg = ds_config.find_participants(
+            request.design_spec.participant_type
         )
-
-    # Get participants and their schema info from the client dwh
-    participants_unique_id_field = participants_cfg.get_unique_id_field()
-    async with DwhSession(ds_config.dwh) as dwh:
-        if chosen_n is not None:
-            result = await dwh.get_participants(
-                participants_cfg.table_name, request.design_spec.filters, chosen_n
+        if not isinstance(participants_cfg, ParticipantsDef):
+            raise LateValidationError(
+                "Invalid ParticipantsConfig: Participants must be of type schema."
             )
-            sa_table, participants = result.sa_table, result.participants
 
-        elif request.design_spec.experiment_type == "freq_preassigned":
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Preassigned experiments must have a chosen_n.",
-            )
-        else:
-            sa_table = await dwh.inspect_table(participants_cfg.table_name)
+        # Get participants and their schema info from the client dwh
+        participants_unique_id_field = participants_cfg.get_unique_id_field()
+        async with DwhSession(ds_config.dwh) as dwh:
+            if chosen_n is not None:
+                result = await dwh.get_participants(
+                    participants_cfg.table_name, request.design_spec.filters, chosen_n
+                )
+                sa_table, participants = result.sa_table, result.participants
 
-    if request.design_spec.experiment_type == ExperimentsType.FREQ_PREASSIGNED:
-        if participants is None:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Preassigned experiments must have participants data",
+            elif request.design_spec.experiment_type == "freq_preassigned":
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Preassigned experiments must have a chosen_n.",
+                )
+            else:
+                sa_table = await dwh.inspect_table(participants_cfg.table_name)
+
+        if request.design_spec.experiment_type == ExperimentsType.FREQ_PREASSIGNED:
+            if participants is None:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Preassigned experiments must have participants data",
+                )
+            return await create_preassigned_experiment_impl(
+                request=request,
+                datasource_id=datasource.id,
+                organization_id=datasource.organization_id,
+                participant_unique_id_field=participants_unique_id_field,
+                dwh_sa_table=sa_table,
+                dwh_participants=participants,
+                random_state=random_state,
+                xngin_session=xngin_session,
+                stratify_on_metrics=stratify_on_metrics,
+                validated_webhooks=validated_webhooks,
             )
-        return await create_preassigned_experiment_impl(
+
+        if request.design_spec.experiment_type == ExperimentsType.FREQ_ONLINE:
+            return await create_freq_online_experiment_impl(
+                request=request,
+                datasource_id=datasource.id,
+                organization_id=datasource.organization_id,
+                xngin_session=xngin_session,
+                validated_webhooks=validated_webhooks,
+            )
+
+    if request.design_spec.experiment_type == ExperimentsType.MAB_ONLINE:
+        return await create_bandit_online_experiment_impl(
             request=request,
             datasource_id=datasource.id,
             organization_id=datasource.organization_id,
-            participant_unique_id_field=participants_unique_id_field,
-            dwh_sa_table=sa_table,
-            dwh_participants=participants,
-            random_state=random_state,
-            xngin_session=xngin_session,
-            stratify_on_metrics=stratify_on_metrics,
-            validated_webhooks=validated_webhooks,
-        )
-
-    if request.design_spec.experiment_type == ExperimentsType.FREQ_ONLINE:
-        return await create_freq_online_experiment_impl(
-            request=request,
-            datasource_id=datasource.id,
-            organization_id=datasource.organization_id,
             xngin_session=xngin_session,
             validated_webhooks=validated_webhooks,
         )
-
-    # if request.design_spec.experiment_type == ExperimentsType.MAB_ONLINE:
 
     raise HTTPException(
         status_code=status.HTTP_400_BAD_REQUEST,
@@ -380,22 +376,15 @@ async def create_bandit_online_experiment_impl(
         design_spec=design_spec,
     )
     experiment = experiment_converter.get_experiment()
+
     # Associate webhooks with the experiment
     for webhook in validated_webhooks:
         experiment.webhooks.append(webhook)
     xngin_session.add(experiment)
 
     await xngin_session.commit()
-    # Online experiments start with no assignments.
-    empty_assign_summary = AssignSummary(
-        balance_check=None,
-        sample_size=0,
-        arm_sizes=[ArmSize(arm=arm.model_copy(), size=0) for arm in design_spec.arms],
-    )
     webhook_ids = [webhook.id for webhook in validated_webhooks]
-    return experiment_converter.get_create_experiment_response(
-        empty_assign_summary, webhook_ids
-    )
+    return experiment_converter.get_create_experiment_response(None, webhook_ids)
 
 
 async def commit_experiment_impl(

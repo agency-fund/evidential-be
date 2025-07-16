@@ -333,15 +333,6 @@ class ArmBandit(Arm):
             raise ValueError("Sigma must be greater than 0.")
         return self
 
-    @field_serializer(
-        "alpha_init", "beta_init", "mu_init", "sigma_init", when_used="json"
-    )
-    def serialize_float(self, v: float, _info):
-        """Serialize floats to None when they are NaN, which becomes null in JSON."""
-        if math.isnan(v):
-            return None
-        return v
-
 
 class MetricAnalysis(ApiBaseModel):
     """Describes the change in a single metric for each arm of an experiment."""
