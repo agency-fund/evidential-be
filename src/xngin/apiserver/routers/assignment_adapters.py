@@ -1,4 +1,5 @@
 """Bridges our API types with assignment logic that operates on DataFrames."""
+
 import decimal
 from collections import defaultdict
 from collections.abc import Sequence

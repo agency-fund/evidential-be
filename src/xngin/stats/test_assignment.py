@@ -134,6 +134,43 @@ def test_assign_treatment_with_missing_values(sample_df):
     assert set(treatment_ids) == {0, 1}
 
 
+def test_assign_treatment_decimal_strata_columns_are_not_supported(sample_df):
+    """Test that unconverted Decimal strata columns raise an error."""
+    sample_df["decimal"] = sample_df["income"].apply(Decimal)
+    with pytest.raises(RecursionError):
+        assign_treatment_and_check_balance(df=sample_df, stratum_cols=["decimal"], id_col="id", n_arms=2)
+
+
+def test_assign_treatment_with_problematic_values():
+    """Test assignment with None/NaN that could break stochatreat due to grouping issues."""
+    # Entries with None such that the grouping into strata causes stochatreat to raise a
+    # ValueError as it internally uses df.groupby(..., dropna=True), causing the count of
+    # synthetic rows created to be off.
+    df = pd.DataFrame(make_sample_data_dict(20))
+    df.loc[0, "gender"] = None
+    with pytest.raises(ValueError):
+        stochatreat(data=df, idx_col="id", stratum_cols=["gender"], treats=2)
+    df.loc[0, "gender"] = np.nan
+    with pytest.raises(ValueError):
+        stochatreat(data=df, idx_col="id", stratum_cols=["gender"], treats=2)
+
+    treatment_ids, _, balance_result, _ = assign_treatment_and_check_balance(
+        df=df,
+        stratum_cols=["gender"],
+        id_col="id",
+        n_arms=2,
+    )
+    # But we still expect success since internally we'll preprocess the data to handle NaNs.
+    assert balance_result is not None
+    assert balance_result.f_statistic > 0
+    assert balance_result.f_pvalue > 0
+    assert len(treatment_ids) == len(df)
+    assert (
+        len(treatment_ids)
+        == balance_result.numerator_df + balance_result.denominator_df + 1
+    )
+
+
 def test_assign_treatment_with_no_stratification(sample_df):
     """Test assignment with no stratification columns."""
     treatment_ids, stratum_ids, balance_result, orig_stratum_cols = assign_treatment_and_check_balance(
@@ -174,43 +211,6 @@ def test_assign_treatment_with_no_valid_strata(sample_df):
     assert treatment_ids.count(0) == treatment_ids.count(1)
 
 
-def test_decimal_strata_columns_are_not_supported(sample_df):
-    """Test that unconverted Decimal strata columns raise an error."""
-    sample_df["decimal"] = sample_df["income"].apply(Decimal)
-    with pytest.raises(RecursionError):
-        assign_treatment_and_check_balance(df=sample_df, stratum_cols=["decimal"], id_col="id", n_arms=2)
-
-
-def test_assign_treatment_with_problematic_values():
-    """Test assignment with None/NaN that could break stochatreat due to grouping issues."""
-    # Entries with None such that the grouping into strata causes stochatreat to raise a
-    # ValueError as it internally uses df.groupby(..., dropna=True), causing the count of
-    # synthetic rows created to be off.
-    df = pd.DataFrame(make_sample_data_dict(20))
-    df.loc[0, "gender"] = None
-    with pytest.raises(ValueError):
-        stochatreat(data=df, idx_col="id", stratum_cols=["gender"], treats=2)
-    df.loc[0, "gender"] = np.nan
-    with pytest.raises(ValueError):
-        stochatreat(data=df, idx_col="id", stratum_cols=["gender"], treats=2)
-
-    treatment_ids, _, balance_result, _ = assign_treatment_and_check_balance(
-        df=df,
-        stratum_cols=["gender"],
-        id_col="id",
-        n_arms=2,
-    )
-    # But we still expect success since internally we'll preprocess the data to handle NaNs.
-    assert balance_result is not None
-    assert balance_result.f_statistic > 0
-    assert balance_result.f_pvalue > 0
-    assert len(treatment_ids) == len(df)
-    assert (
-        len(treatment_ids)
-        == balance_result.numerator_df + balance_result.denominator_df + 1
-    )
-
-
 def test_simple_random_assignment(sample_df):
     """Test simple random assignment function."""
     assignments = simple_random_assignment(sample_df, n_arms=2, random_state=42)
@@ -230,20 +230,16 @@ def test_simple_random_assignment_multiple_arms(sample_df):
     assert set(assignments) == {0, 1, 2}
 
 
-def test_simple_random_assignment_reproducibility(sample_df):
-    """Test that simple random assignment is reproducible."""
-    assignments1 = simple_random_assignment(sample_df, n_arms=2, random_state=42)
-    assignments2 = simple_random_assignment(sample_df, n_arms=2, random_state=42)
-    assert assignments1 == assignments2
-
-
-def test_simple_random_assignment_different_seeds(sample_df):
+def test_simple_random_assignment_with_different_seeds(sample_df):
     """Test that simple random assignment gives different results with different seeds."""
     assignments1 = simple_random_assignment(sample_df, n_arms=2, random_state=42)
-    assignments2 = simple_random_assignment(sample_df, n_arms=2, random_state=123)
+    # Test random_state reproducibility
+    assignments2 = simple_random_assignment(sample_df, n_arms=2, random_state=42)
+    assert assignments1 == assignments2
     # Should be different with different seeds
-    assert assignments1 != assignments2
+    assignments3 = simple_random_assignment(sample_df, n_arms=2, random_state=123)
+    assert assignments1 != assignments3
     # But should have same length and arm counts
-    assert len(assignments1) == len(assignments2)
-    assert assignments1.count(0) == assignments2.count(0)
-    assert assignments1.count(1) == assignments2.count(1)
+    assert len(assignments1) == len(assignments3)
+    assert assignments1.count(0) == assignments3.count(0)
+    assert assignments1.count(1) == assignments3.count(1)

@@ -122,7 +122,7 @@ def test_make_balance_check():
 
 
 def test_make_balance_check_with_different_thresholds():
-    """Test conversion when balance is not OK."""
+    """Test that balance_ok varies with the threshold."""
     balance_result = BalanceResult(
         f_statistic=2.5,
         f_pvalue=0.3,
@@ -143,6 +143,7 @@ def test_make_balance_check_with_different_thresholds():
     assert not _make_balance_check(balance_result, 1.0).balance_ok
     assert not _make_balance_check(balance_result, 0.3).balance_ok
     assert _make_balance_check(balance_result, 0.299).balance_ok
+    assert _make_balance_check(balance_result, 0).balance_ok
 
 
 def test_assign_adapter_creates_proper_assign_response(sample_table, sample_rows):
@@ -279,7 +280,7 @@ def test_assign_adapter_with_no_stratification(sample_table, sample_rows):
 
 
 def test_assign_adapter_with_no_valid_strata(sample_table, sample_rows):
-    """Test assignment when strata columns have no valid stratification values."""
+    """Test assignment when a strata column has only a single value."""
     result = assign_treatment(
         sa_table=sample_table,
         data=sample_rows,
