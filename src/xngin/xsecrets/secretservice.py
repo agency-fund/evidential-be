@@ -7,7 +7,7 @@ from loguru import logger
 
 from xngin.xsecrets import (
     aws_provider,
-    gcp_provider,
+    gcp_kms_provider,
     nacl_provider,
     noop_provider,
 )
@@ -28,7 +28,7 @@ def setup():
     registry = Registry()
 
     aws_provider.initialize(registry)
-    gcp_provider.initialize(registry)
+    gcp_kms_provider.initialize(registry)
     nacl_provider.initialize(registry)
 
     registered = registry.get_providers()
@@ -47,7 +47,7 @@ def setup():
         )
 
     logger.info(
-        f"Secrets: Using '{backend_spec}' for encryption (available: {', '.join(registered)})"
+        f"Secrets: Using '{backend_spec}' for encryption (available: {', '.join(registered) if registered else 'none'})"
     )
     _SERVICE = SecretService(registry, backend_spec)
 
