@@ -42,8 +42,6 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v6
-        with:
-          version: "0.7.18"
       - name: Install dependencies
         run: |
           uv sync --locked --compile-bytecode
@@ -55,8 +53,6 @@ jobs:
         with:
           lfs: true
       - uses: astral-sh/setup-uv@v6
-        with:
-          version: "0.7.18"
       - uses: arduino/setup-task@v2
         with:
           version: 3.x
@@ -97,8 +93,6 @@ jobs:
         with:
           lfs: true
       - uses: astral-sh/setup-uv@v6
-        with:
-          version: "0.7.18"
       - name: Install Task
         uses: arduino/setup-task@v2
         with:
@@ -179,8 +173,6 @@ jobs:
         with:
           lfs: true
       - uses: astral-sh/setup-uv@v6
-        with:
-          version: "0.7.18"
       - run: uv sync --locked
       - uses: google-github-actions/auth@v2
         with:
@@ -239,8 +231,6 @@ jobs:
         with:
           lfs: true
       - uses: astral-sh/setup-uv@v6
-        with:
-          version: "0.7.18"
       - run: uv sync --locked
       - name: write secrets
         env:

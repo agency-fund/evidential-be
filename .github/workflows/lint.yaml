@@ -30,8 +30,6 @@ jobs:
           lfs: true
 
       - uses: astral-sh/setup-uv@v6
-        with:
-          version: "0.7.18"
 
       - name: Run ruff
         run: uv run ruff check --output-format=github .
