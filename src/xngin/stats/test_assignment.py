@@ -26,7 +26,10 @@ def make_sample_data_dict(n=1000):
         "gender": rs.choice(["M", "F"], n),
         "region": rs.choice(["North", "South", "East", "West"], n),
         "skewed": rs.permutation(
-            np.concatenate((np.repeat([1], int(n * 0.9)), np.repeat([0], n - int(n * 0.9))))
+            np.concatenate((
+                np.repeat([1], int(n * 0.9)),
+                np.repeat([0], n - int(n * 0.9)),
+            ))
         ),
         "single_value": [1] * n,
     }
@@ -42,12 +45,14 @@ def fixture_sample_df():
 
 def test_assign_treatment_with_stratification(sample_df):
     """Test core assignment logic with stratification."""
-    treatment_ids, stratum_ids, balance_result, orig_stratum_cols = assign_treatment_and_check_balance(
-        df=sample_df,
-        stratum_cols=["region", "gender"],
-        id_col="id",
-        n_arms=2,
-        random_state=42,
+    treatment_ids, stratum_ids, balance_result, orig_stratum_cols = (
+        assign_treatment_and_check_balance(
+            df=sample_df,
+            stratum_cols=["region", "gender"],
+            id_col="id",
+            n_arms=2,
+            random_state=42,
+        )
     )
 
     # Check lengths and valid assignments
@@ -70,12 +75,14 @@ def test_assign_treatment_with_stratification(sample_df):
 
 def test_assign_treatment_multiple_arms(sample_df):
     """Test assignment with multiple arms."""
-    treatment_ids, stratum_ids, balance_result, orig_stratum_cols = assign_treatment_and_check_balance(
-        df=sample_df,
-        stratum_cols=["gender", "region"],
-        id_col="id",
-        n_arms=3,
-        random_state=42,
+    treatment_ids, stratum_ids, balance_result, orig_stratum_cols = (
+        assign_treatment_and_check_balance(
+            df=sample_df,
+            stratum_cols=["gender", "region"],
+            id_col="id",
+            n_arms=3,
+            random_state=42,
+        )
     )
 
     # Check that all three arms are represented
@@ -138,7 +145,9 @@ def test_assign_treatment_decimal_strata_columns_are_not_supported(sample_df):
     """Test that unconverted Decimal strata columns raise an error."""
     sample_df["decimal"] = sample_df["income"].apply(Decimal)
     with pytest.raises(RecursionError):
-        assign_treatment_and_check_balance(df=sample_df, stratum_cols=["decimal"], id_col="id", n_arms=2)
+        assign_treatment_and_check_balance(
+            df=sample_df, stratum_cols=["decimal"], id_col="id", n_arms=2
+        )
 
 
 def test_assign_treatment_with_problematic_values():
@@ -173,12 +182,14 @@ def test_assign_treatment_with_problematic_values():
 
 def test_assign_treatment_with_no_stratification(sample_df):
     """Test assignment with no stratification columns."""
-    treatment_ids, stratum_ids, balance_result, orig_stratum_cols = assign_treatment_and_check_balance(
-        df=sample_df,
-        stratum_cols=[],
-        id_col="id",
-        n_arms=2,
-        random_state=42,
+    treatment_ids, stratum_ids, balance_result, orig_stratum_cols = (
+        assign_treatment_and_check_balance(
+            df=sample_df,
+            stratum_cols=[],
+            id_col="id",
+            n_arms=2,
+            random_state=42,
+        )
     )
 
     # Should use simple random assignment
@@ -193,12 +204,14 @@ def test_assign_treatment_with_no_stratification(sample_df):
 
 def test_assign_treatment_with_no_valid_strata(sample_df):
     """Test assignment when strata columns have no valid stratification values."""
-    treatment_ids, stratum_ids, balance_result, orig_stratum_cols = assign_treatment_and_check_balance(
-        df=sample_df,
-        stratum_cols=["single_value"],
-        id_col="id",
-        n_arms=2,
-        random_state=42,
+    treatment_ids, stratum_ids, balance_result, orig_stratum_cols = (
+        assign_treatment_and_check_balance(
+            df=sample_df,
+            stratum_cols=["single_value"],
+            id_col="id",
+            n_arms=2,
+            random_state=42,
+        )
     )
 
     # Should fall back to simple random assignment

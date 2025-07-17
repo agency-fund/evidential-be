@@ -72,7 +72,10 @@ def make_sample_data_dict(n=1000):
         "gender": rs.choice(["M", "F"], n),
         "region": rs.choice(["North", "South", "East", "West"], n),
         "skewed": rs.permutation(
-            np.concatenate((np.repeat([1], int(n * 0.9)), np.repeat([0], n - int(n * 0.9))))
+            np.concatenate((
+                np.repeat([1], int(n * 0.9)),
+                np.repeat([0], n - int(n * 0.9)),
+            ))
         ),
         "single_value": [1] * n,
     }
@@ -168,8 +171,9 @@ def test_assign_adapter_creates_proper_assign_response(sample_table, sample_rows
     assert result.experiment_id == "b767716b-f388-4cd9-a18a-08c4916ce26f"
     assert result.sample_size == len(sample_rows)
     assert result.unique_id_field == "id"
-    assert isinstance(result.assignments, list)
-    assert len(set([x.participant_id for x in result.assignments])) == len(result.assignments)
+    assignments = result.assignments
+    assert isinstance(assignments, list)
+    assert len(set([x.participant_id for x in assignments])) == len(assignments)
 
 
 def test_assign_adapter_multiple_arms(sample_table, sample_rows):
@@ -186,12 +190,13 @@ def test_assign_adapter_multiple_arms(sample_table, sample_rows):
     )
 
     # Check that assignments is a list of Assignment objects
-    assert isinstance(result.assignments, list)
-    assert all(isinstance(participant, Assignment) for participant in result.assignments)
+    assignments = result.assignments
+    assert isinstance(assignments, list)
+    assert all(isinstance(participant, Assignment) for participant in assignments)
     # Check that the treatment assignments are valid (not None or NaN)
-    assert all(participant.arm_name is not None for participant in result.assignments)
+    assert all(participant.arm_name is not None for participant in assignments)
     # Check that the treatment assignments are valid
-    assert len(set(participant.arm_name for participant in result.assignments)) == 3
+    assert len(set(participant.arm_name for participant in assignments)) == 3
     assert result.sample_size == len(sample_rows)
     assert result.unique_id_field == "id"
 
@@ -199,7 +204,9 @@ def test_assign_adapter_multiple_arms(sample_table, sample_rows):
 MAX_SAFE_INTEGER = (1 << 53) - 1  # 9007199254740991
 
 
-def test_assign_adapter_with_large_integers_as_participant_ids(sample_table, sample_data):
+def test_assign_adapter_with_large_integers_as_participant_ids(
+    sample_table, sample_data
+):
     """Test assignment with large integer participant IDs (underlying type is Decimal)."""
 
     def assign(data):
@@ -238,7 +245,9 @@ def test_assign_adapter_with_large_integers_as_participant_ids(sample_table, sam
     assert json["assignments"][0]["participant_id"] == "-9007199254740993"
 
 
-def test_assign_adapter_renders_decimal_and_bool_strata_correctly(sample_table, sample_rows):
+def test_assign_adapter_renders_decimal_and_bool_strata_correctly(
+    sample_table, sample_rows
+):
     """Test that the adapter correctly renders decimal and bool strata as strings."""
     arms = make_arms(["control", "treatment"])
     result = assign_treatment(
@@ -250,6 +259,7 @@ def test_assign_adapter_renders_decimal_and_bool_strata_correctly(sample_table, 
         experiment_id="b767716b-f388-4cd9-a18a-08c4916ce26f",
         random_state=42,
     )
+
     for p in result.assignments:
         json = p.model_dump()
         # we rounded the Decimal to an int, so shouldn't see the decimal point
@@ -268,6 +278,7 @@ def test_assign_adapter_with_no_stratification(sample_table, sample_rows):
         experiment_id="b767716b-f388-4cd9-a18a-08c4916ce26f",
         random_state=None,  # counts in each arm should always be equal regardless.
     )
+
     assert result.balance_check is None
     arm_counts: defaultdict[str, int] = defaultdict(int)
     # There should be no strata in the output
@@ -291,12 +302,15 @@ def test_assign_adapter_with_no_valid_strata(sample_table, sample_rows):
         random_state=42,
         stratum_id_name="stratum_id",
     )
+
     assert result.balance_check is None
     # In this case, we still output the strata column, even though it's all the same value
     arm_counts: defaultdict[str, int] = defaultdict(int)
     for participant in result.assignments:
         arm_counts[participant.arm_name] += 1
-        assert participant.strata == [Strata(field_name="single_value", strata_value="1")]
+        assert participant.strata == [
+            Strata(field_name="single_value", strata_value="1")
+        ]
     # And since we used simple random assignment, the arm lengths should be equal
     assert arm_counts["control"] == arm_counts["treatment"]
     assert arm_counts["control"] == len(result.assignments) // 2

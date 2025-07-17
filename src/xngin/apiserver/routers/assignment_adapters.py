@@ -84,17 +84,21 @@ def assign_treatment(
 
     # Extract Decimal column names from SQLAlchemy table and convert to float.
     # (Decimals are possible if the Table was created with SA's autoload instead of cursor).
-    if decimals := [c.name for c in sa_table.columns if c.type.python_type is decimal.Decimal]:
+    if decimals := [
+        c.name for c in sa_table.columns if c.type.python_type is decimal.Decimal
+    ]:
         df[decimals] = df[decimals].astype(float)
 
     # Call the core assignment function
-    treatment_ids, stratum_ids, balance_result, orig_stratum_cols = assign_treatment_and_check_balance(
-        df=df,
-        stratum_cols=stratum_cols,
-        id_col=id_col,
-        n_arms=len(arms),
-        quantiles=quantiles,
-        random_state=random_state,
+    treatment_ids, stratum_ids, balance_result, orig_stratum_cols = (
+        assign_treatment_and_check_balance(
+            df=df,
+            stratum_cols=stratum_cols,
+            id_col=id_col,
+            n_arms=len(arms),
+            quantiles=quantiles,
+            random_state=random_state,
+        )
     )
 
     return _make_assign_response(
