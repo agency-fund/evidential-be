@@ -203,7 +203,6 @@ def test_assign_treatment_with_problematic_values():
     assert balance_result is not None
     assert balance_result.f_statistic > 0
     assert balance_result.f_pvalue > 0
-    assert balance_result.is_balanced
     assert len(treatment_ids) == len(df)
     assert (
         len(treatment_ids)

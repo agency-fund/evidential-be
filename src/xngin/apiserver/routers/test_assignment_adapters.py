@@ -108,7 +108,6 @@ def test_make_balance_check():
         f_statistic=1.234567890123456,
         f_pvalue=0.876543210987654,
         model_summary="test summary",
-        is_balanced=True,
         numerator_df=5.0,
         denominator_df=100.0,
     )
@@ -122,13 +121,12 @@ def test_make_balance_check():
     assert balance_check.denominator_df == 100
 
 
-def test_make_balance_check_not_balanced():
+def test_make_balance_check_with_different_thresholds():
     """Test conversion when balance is not OK."""
     balance_result = BalanceResult(
         f_statistic=2.5,
-        f_pvalue=0.3,  # Less than threshold
+        f_pvalue=0.3,
         model_summary="test summary",
-        is_balanced=False,
         numerator_df=3.0,
         denominator_df=50.0,
     )
@@ -140,6 +138,11 @@ def test_make_balance_check_not_balanced():
     assert balance_check.p_value == 0.3
     assert balance_check.numerator_df == 3
     assert balance_check.denominator_df == 50
+
+    # Try a few other different thresholds
+    assert not _make_balance_check(balance_result, 1.0).balance_ok
+    assert not _make_balance_check(balance_result, 0.3).balance_ok
+    assert _make_balance_check(balance_result, 0.299).balance_ok
 
 
 def test_assign_adapter_creates_proper_assign_response(sample_table, sample_rows):
@@ -196,7 +199,7 @@ MAX_SAFE_INTEGER = (1 << 53) - 1  # 9007199254740991
 
 
 def test_assign_adapter_with_large_integers_as_participant_ids(sample_table, sample_data):
-    """Test assignment with large integer participant IDs."""
+    """Test assignment with large integer participant IDs (underlying type is Decimal)."""
 
     def assign(data):
         rows = [Row(**row) for row in data.to_dict("records")]
@@ -228,7 +231,7 @@ def test_assign_adapter_with_large_integers_as_participant_ids(sample_table, sam
     assert '"participant_id":"9007199254740993"' in json_str
 
     # We should be able to support very big negatives as well
-    sample_data.loc[0, "id"] = -MAX_SAFE_INTEGER - 2
+    sample_data.loc[0, "id"] = Decimal(-MAX_SAFE_INTEGER - 2)
     result = assign(sample_data)
     json = result.model_dump()
     assert json["assignments"][0]["participant_id"] == "-9007199254740993"

@@ -15,8 +15,6 @@ STOCHATREAT_TREAT_NAME = "treat"
 
 
 # TODO?
-# * fstat_thresh for what determines "balanced" is a user concern. Perhaps remove it from the
-# interface and into assignment_adapters.
 # * decimal_columns could be handled by the assignment_adapters, and just document that python
 # Decimals should be converted to float.
 def assign_treatment_and_check_balance(
@@ -25,7 +23,6 @@ def assign_treatment_and_check_balance(
     stratum_cols: list[str],
     id_col: str,
     n_arms: int,
-    fstat_thresh: float = 0.5,
     quantiles: int = 4,
     random_state: int | None = None,
 ) -> tuple[list[int], list[int] | None, BalanceResult | None, list[str]]:
@@ -38,7 +35,6 @@ def assign_treatment_and_check_balance(
         stratum_cols: List of column names to stratify on
         id_col: Name of column containing unit identifiers
         n_arms: Number of arms in your experiment
-        fstat_thresh: Threshold for F-statistic p-value
         quantiles: number of buckets to use for stratification of numerics
         random_state: Random seed for reproducibility
 
@@ -114,7 +110,6 @@ def assign_treatment_and_check_balance(
         df_cleaned_for_balance_check[balance_check_cols],
         treatment_col=STOCHATREAT_TREAT_NAME,
         exclude_col_set=exclude_cols_set,
-        alpha=fstat_thresh,
     )
     del df_cleaned_for_balance_check
 

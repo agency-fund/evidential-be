@@ -14,7 +14,6 @@ class BalanceResult:
     f_statistic: float
     f_pvalue: float
     model_summary: str
-    is_balanced: bool
     numerator_df: float
     denominator_df: float
 
@@ -125,7 +124,6 @@ def check_balance_of_preprocessed_df(
     data: pd.DataFrame,
     treatment_col: str = "treat",
     exclude_col_set: set[str] | None = None,
-    alpha: float = 0.5,
 ) -> BalanceResult:
     """
     Perform a balance check on treatment assignment.  One should typically first use
@@ -137,8 +135,6 @@ def check_balance_of_preprocessed_df(
         treatment_col: Name of treatment assignment column
         exclude_col_set: Columns to exclude from balance check. Typically should come from
             preprocess_for_balance_and_stratification().
-        alpha: Significance level for balance test. If the test p-value is above this, we declare
-            the dataset as being sufficiently balanced.
 
     Returns:
         BalanceResult object containing test results
@@ -187,7 +183,6 @@ def check_balance_of_preprocessed_df(
     return BalanceResult(
         f_statistic=model.fvalue,
         f_pvalue=model.f_pvalue,
-        is_balanced=bool(model.f_pvalue > alpha),
         numerator_df=model.df_model,
         denominator_df=model.df_resid,
         model_summary=model.summary().as_text(),

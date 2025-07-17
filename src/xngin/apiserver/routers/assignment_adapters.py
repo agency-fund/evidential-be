@@ -93,7 +93,6 @@ def assign_treatment(
         stratum_cols=stratum_cols,
         id_col=id_col,
         n_arms=len(arms),
-        fstat_thresh=fstat_thresh,
         quantiles=quantiles,
         random_state=random_state,
     )
