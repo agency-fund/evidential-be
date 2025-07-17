@@ -14,12 +14,8 @@ STOCHATREAT_STRATUM_ID_NAME = "stratum_id"
 STOCHATREAT_TREAT_NAME = "treat"
 
 
-# TODO?
-# * decimal_columns could be handled by the assignment_adapters, and just document that python
-# Decimals should be converted to float.
 def assign_treatment_and_check_balance(
     df: pd.DataFrame,
-    decimal_columns: list[str],
     stratum_cols: list[str],
     id_col: str,
     n_arms: int,
@@ -29,9 +25,10 @@ def assign_treatment_and_check_balance(
     """
     Core assignment logic that operates on a pandas DataFrame.
 
+    Note: Python Decimal types must be converted to float before calling this function.
+
     Args:
-        df: pandas DataFrame containing the data
-        decimal_columns: List of column names that contain Decimal types
+        df: pandas DataFrame containing the data (Decimal types should be converted to float)
         stratum_cols: List of column names to stratify on
         id_col: Name of column containing unit identifiers
         n_arms: Number of arms in your experiment
@@ -51,12 +48,8 @@ def assign_treatment_and_check_balance(
         return treatment_ids, None, None, []
 
     # Create copy for analysis while attempting to convert any numeric "object" types that pandas
-    # didn't originally recognize when creating the dataframe. This does NOT handle Decimal types!
+    # didn't originally recognize when creating the dataframe.
     df = df.infer_objects()
-
-    # Now convert any Decimal types to float (possible if the Table was created with SA's autoload instead of cursor).
-    if decimal_columns:
-        df[decimal_columns] = df[decimal_columns].astype(float)
 
     # Dedupe the strata names and then sort them for a stable output ordering
     orig_stratum_cols = sorted(set(stratum_cols))

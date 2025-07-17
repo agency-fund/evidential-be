@@ -1,5 +1,7 @@
 """Tests for core assignment statistics functionality."""
 
+from decimal import Decimal
+
 import numpy as np
 import pandas as pd
 import pytest
@@ -42,7 +44,6 @@ def test_assign_treatment_with_stratification(sample_df):
     """Test core assignment logic with stratification."""
     treatment_ids, stratum_ids, balance_result, orig_stratum_cols = assign_treatment_and_check_balance(
         df=sample_df,
-        decimal_columns=[],
         stratum_cols=["region", "gender"],
         id_col="id",
         n_arms=2,
@@ -71,7 +72,6 @@ def test_assign_treatment_multiple_arms(sample_df):
     """Test assignment with multiple arms."""
     treatment_ids, stratum_ids, balance_result, orig_stratum_cols = assign_treatment_and_check_balance(
         df=sample_df,
-        decimal_columns=[],
         stratum_cols=["gender", "region"],
         id_col="id",
         n_arms=3,
@@ -91,7 +91,6 @@ def test_assign_treatment_reproducibility(sample_df):
     """Test that assignment is reproducible with same random state."""
     result1 = assign_treatment_and_check_balance(
         df=sample_df,
-        decimal_columns=[],
         stratum_cols=["gender", "region"],
         id_col="id",
         n_arms=2,
@@ -100,7 +99,6 @@ def test_assign_treatment_reproducibility(sample_df):
 
     result2 = assign_treatment_and_check_balance(
         df=sample_df,
-        decimal_columns=[],
         stratum_cols=["gender", "region"],
         id_col="id",
         n_arms=2,
@@ -123,7 +121,6 @@ def test_assign_treatment_with_missing_values(sample_df):
 
     treatment_ids, stratum_ids, balance_result, _ = assign_treatment_and_check_balance(
         df=sample_df,
-        decimal_columns=[],
         stratum_cols=["gender", "region"],
         id_col="id",
         n_arms=2,
@@ -141,7 +138,6 @@ def test_assign_treatment_with_no_stratification(sample_df):
     """Test assignment with no stratification columns."""
     treatment_ids, stratum_ids, balance_result, orig_stratum_cols = assign_treatment_and_check_balance(
         df=sample_df,
-        decimal_columns=[],
         stratum_cols=[],
         id_col="id",
         n_arms=2,
@@ -162,7 +158,6 @@ def test_assign_treatment_with_no_valid_strata(sample_df):
     """Test assignment when strata columns have no valid stratification values."""
     treatment_ids, stratum_ids, balance_result, orig_stratum_cols = assign_treatment_and_check_balance(
         df=sample_df,
-        decimal_columns=[],
         stratum_cols=["single_value"],
         id_col="id",
         n_arms=2,
@@ -177,6 +172,13 @@ def test_assign_treatment_with_no_valid_strata(sample_df):
     # Arm lengths should be equal
     assert set(treatment_ids) == {0, 1}
     assert treatment_ids.count(0) == treatment_ids.count(1)
+
+
+def test_decimal_strata_columns_are_not_supported(sample_df):
+    """Test that unconverted Decimal strata columns raise an error."""
+    sample_df["decimal"] = sample_df["income"].apply(Decimal)
+    with pytest.raises(RecursionError):
+        assign_treatment_and_check_balance(df=sample_df, stratum_cols=["decimal"], id_col="id", n_arms=2)
 
 
 def test_assign_treatment_with_problematic_values():
@@ -194,7 +196,6 @@ def test_assign_treatment_with_problematic_values():
 
     treatment_ids, _, balance_result, _ = assign_treatment_and_check_balance(
         df=df,
-        decimal_columns=[],
         stratum_cols=["gender"],
         id_col="id",
         n_arms=2,
