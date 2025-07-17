@@ -6,7 +6,6 @@ from typing import Optional
 from loguru import logger
 
 from xngin.xsecrets import (
-    aws_provider,
     gcp_kms_provider,
     nacl_provider,
     noop_provider,
@@ -27,7 +26,6 @@ def setup():
 
     registry = Registry()
 
-    aws_provider.initialize(registry)
     gcp_kms_provider.initialize(registry)
     nacl_provider.initialize(registry)
 

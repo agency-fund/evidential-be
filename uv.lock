@@ -11,15 +11,6 @@ supported-markers = [
 ]
 
 [[package]]
-name = "absl-py"
-version = "2.3.0"
-source = { registry = "https://pypi.org/simple" }
-sdist = { url = "https://files.pythonhosted.org/packages/03/15/18693af986560a5c3cc0b84a8046b536ffb2cdb536e03cce897f2759e284/absl_py-2.3.0.tar.gz", hash = "sha256:d96fda5c884f1b22178852f30ffa85766d50b99e00775ea626c23304f582fc4f", size = 116400, upload-time = "2025-05-27T09:15:50.143Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/87/04/9d75e1d3bb4ab8ec67ff10919476ccdee06c098bcfcf3a352da5f985171d/absl_py-2.3.0-py3-none-any.whl", hash = "sha256:9824a48b654a306168f63e0d97714665f8490b8d89ec7bf2efc24bf67cf579b3", size = 135657, upload-time = "2025-05-27T09:15:48.742Z" },
-]
-
-[[package]]
 name = "annotated-types"
 version = "0.7.0"
 source = { registry = "https://pypi.org/simple" }
@@ -51,14 +42,6 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/b4/7b/fc7d9e6871c134af0f52d1c652cae0daec69b2726602aafc86431fdafc0a/atlas_provider_sqlalchemy-0.2.4.tar.gz", hash = "sha256:a7de4d0f2ccacc26c52c3a698a53dec81d756b9c58ba7311b573686b520c4d91", size = 7816, upload-time = "2024-12-29T10:00:48.963Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/bf/ba/80baf2a3e05df484af69b730760f6aacf06bd47ddc705711e60fb8db11ef/atlas_provider_sqlalchemy-0.2.4-py3-none-any.whl", hash = "sha256:94d66a62645e6a1dc3b6020c7e0d4e150151dc30aacb49eb71c36d09a4afbc3b", size = 9214, upload-time = "2024-12-29T10:00:45.926Z" },
-]
-
-[[package]]
-name = "bazel-runfiles"
-version = "1.4.1"
-source = { registry = "https://pypi.org/simple" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/ac/16/7c6195961041e55cf2d8e8fcc4992c4bf6fdff83c506e61bfad8635c0a8d/bazel_runfiles-1.4.1-py3-none-any.whl", hash = "sha256:90e9561ad31708b1f7590af817cfc1251153e981ee103a6be8e632845d696f74", size = 7580, upload-time = "2025-05-08T19:53:07.827Z" },
 ]
 
 [[package]]
@@ -1460,28 +1443,6 @@ wheels = [
 ]
 
 [[package]]
-name = "tink"
-version = "1.12.0"
-source = { registry = "https://pypi.org/simple" }
-dependencies = [
-    { name = "absl-py", marker = "sys_platform == 'darwin' or sys_platform == 'linux'" },
-    { name = "bazel-runfiles", marker = "sys_platform == 'darwin' or sys_platform == 'linux'" },
-    { name = "protobuf", marker = "sys_platform == 'darwin' or sys_platform == 'linux'" },
-]
-sdist = { url = "https://files.pythonhosted.org/packages/1c/1a/eb380635996a2a7aa47fc2da274872a6a430c59befdd8d2a8773538646db/tink-1.12.0.tar.gz", hash = "sha256:03b590e562eb2f2367b14ad15d6096385937b0dd87fe694fb864482726b11dbe", size = 216982, upload-time = "2025-06-03T10:57:48.708Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/82/f5/6e20ade036eebbfe075a72184513c8303de176fe093cf232a0895e9f9e33/tink-1.12.0-cp312-cp312-macosx_11_0_universal2.whl", hash = "sha256:d5a49c0cc0d98e245a4593045b3806d9097edebc40b3be31976b2d5bfe3013ef", size = 6524097, upload-time = "2025-06-03T10:57:22.997Z" },
-    { url = "https://files.pythonhosted.org/packages/82/d4/a7995e7244f1c50ffb00f4b51256ed8b08886fe7356cbc5f1725a2f47b3e/tink-1.12.0-cp312-cp312-manylinux_2_17_aarch64.manylinux2014_aarch64.whl", hash = "sha256:731a932fd7b4da59206bf030ca5ba907b9a7cb4c2c43253932170a41b96afe04", size = 4004402, upload-time = "2025-06-03T10:57:25.355Z" },
-    { url = "https://files.pythonhosted.org/packages/f7/b5/c893d7be111e82f5f40b513b266c5bb24ec764fde8b0d475feaa2e2d3105/tink-1.12.0-cp312-cp312-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:6e44f3cc99e08b19c560739b8c8eece03ef085602554d95fa680fc2f7677d42e", size = 4075253, upload-time = "2025-06-03T10:57:27.501Z" },
-]
-
-[package.optional-dependencies]
-awskms = [
-    { name = "boto3", marker = "sys_platform == 'darwin' or sys_platform == 'linux'" },
-    { name = "proto-plus", marker = "sys_platform == 'darwin' or sys_platform == 'linux'" },
-]
-
-[[package]]
 name = "typer"
 version = "0.15.4"
 source = { registry = "https://pypi.org/simple" }
@@ -1724,7 +1685,6 @@ dependencies = [
     { name = "statsmodels", marker = "sys_platform == 'darwin' or sys_platform == 'linux'" },
     { name = "stochatreat", marker = "sys_platform == 'darwin' or sys_platform == 'linux'" },
     { name = "tenacity", marker = "sys_platform == 'darwin' or sys_platform == 'linux'" },
-    { name = "tink", extra = ["awskms"], marker = "sys_platform == 'darwin' or sys_platform == 'linux'" },
     { name = "typer", marker = "sys_platform == 'darwin' or sys_platform == 'linux'" },
     { name = "uvicorn", extra = ["standard"], marker = "sys_platform == 'darwin' or sys_platform == 'linux'" },
     { name = "zstandard", marker = "sys_platform == 'darwin' or sys_platform == 'linux'" },
@@ -1777,7 +1737,6 @@ requires-dist = [
     { name = "statsmodels", specifier = ">=0.14.1,<0.20" },
     { name = "stochatreat", specifier = ">=0.0.20,<0.1.0" },
     { name = "tenacity", specifier = ">=9.1.2,<9.2.0" },
-    { name = "tink", extras = ["awskms"], specifier = ">=1.12.0" },
     { name = "typer", specifier = ">=0.15.4,<0.16.0" },
     { name = "uvicorn", extras = ["standard"], specifier = ">=0.32.0" },
     { name = "zstandard", specifier = ">=0.23.0,<0.24" },
