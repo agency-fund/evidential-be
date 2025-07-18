@@ -15,7 +15,7 @@ CREATE TABLE "public"."context" (
 -- Drop index "ix_arms_experiment_id" from table: "arms"
 DROP INDEX "public"."ix_arms_experiment_id";
 -- Modify "arms" table
-ALTER TABLE "public"."arms" ADD COLUMN "mu_init" double precision NULL, ADD COLUMN "sigma_init" double precision NULL, ADD COLUMN "mu" double precision[] NULL, ADD COLUMN "covariance" double precision[] NULL, ADD COLUMN "is_baseline" boolean NOT NULL, ADD COLUMN "alpha_init" double precision NULL, ADD COLUMN "beta_init" double precision NULL, ADD COLUMN "alpha" double precision NULL, ADD COLUMN "beta" double precision NULL;
+ALTER TABLE "public"."arms" ADD COLUMN "mu_init" double precision NULL, ADD COLUMN "sigma_init" double precision NULL, ADD COLUMN "mu" double precision[] NULL, ADD COLUMN "covariance" double precision[] NULL, ADD COLUMN "alpha_init" double precision NULL, ADD COLUMN "beta_init" double precision NULL, ADD COLUMN "alpha" double precision NULL, ADD COLUMN "beta" double precision NULL;
 -- Create "draws" table
 CREATE TABLE "public"."draws" (
   "id" character varying NOT NULL,

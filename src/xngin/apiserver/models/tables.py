@@ -531,7 +531,6 @@ class Arm(Base):
     sigma_init: Mapped[float | None] = mapped_column()
     mu: Mapped[list[float] | None] = mapped_column(ARRAY(Float))
     covariance: Mapped[list[list[float]] | None] = mapped_column(ARRAY(Float))
-    is_baseline: Mapped[bool] = mapped_column(default=True)
 
     alpha_init: Mapped[float | None] = mapped_column()
     beta_init: Mapped[float | None] = mapped_column()
