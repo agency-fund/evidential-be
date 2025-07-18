@@ -21,9 +21,6 @@ class GSheetCache:
         fetcher: Callable[[], ParticipantsSchema],
         refresh=False,
     ):
-        if self.session is None:
-            return fetcher()
-
         cache_key = f"{key.url}!{key.worksheet}"
         entry = None
         if not refresh:

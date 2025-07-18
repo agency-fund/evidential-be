@@ -244,14 +244,6 @@ async def fixture_xngin_db_session():
     interact with the API server through API methods (without explicitly using the xngin_session fixture),
     autouse=True guarantees this cleanup runs for every test, preventing any shared state between test runs.
     """
-    if flags.STATELESS:
-        yield None
-        return
-
-    assert database.SQLALCHEMY_DATABASE_URL is not None
-    assert database.async_engine is not None
-    assert database.AsyncSessionLocal is not None
-
     create_database_if_not_exists_pg(database.SQLALCHEMY_DATABASE_URL)
     sessionmaker = database.AsyncSessionLocal
     async with database.async_engine.begin() as conn:

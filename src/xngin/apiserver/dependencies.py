@@ -37,12 +37,6 @@ def settings_dependency():
 
 async def xngin_db_session():
     """Returns a database connection to the xngin app database (not customer data warehouse)."""
-    if flags.STATELESS:
-        yield None
-        return
-
-    assert AsyncSessionLocal is not None
-
     async with AsyncSessionLocal() as session:
         yield session
 

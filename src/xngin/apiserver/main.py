@@ -71,6 +71,20 @@ exceptionhandlers.setup(app)
 middleware.setup(app)
 customlogging.setup()
 
+app.include_router(
+    stateless_api.router,
+    tags=["Stateless Experiment Design"],
+)
+
+app.include_router(
+    proxy_mgmt_api.router,
+    tags=["Stateless Experiment Design"],
+)
+
+app.include_router(
+    healthchecks_api.router, tags=["Health Checks"], include_in_schema=False
+)
+
 if not flags.STATELESS:
     app.include_router(experiments_api.router, tags=["Experiment Integration"])
 
@@ -87,20 +101,6 @@ if not flags.STATELESS:
     )
 
     auth_dependencies.setup(app)
-
-app.include_router(
-    healthchecks_api.router, tags=["Health Checks"], include_in_schema=False
-)
-
-app.include_router(
-    stateless_api.router,
-    tags=["Stateless Experiment Design"],
-)
-
-app.include_router(
-    proxy_mgmt_api.router,
-    tags=["Stateless Experiment Design"],
-)
 
 
 @dataclasses.dataclass
