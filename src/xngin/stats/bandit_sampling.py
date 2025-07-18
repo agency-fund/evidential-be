@@ -89,7 +89,7 @@ def choose_arm(
             alphas=alphas, betas=betas, random_state=random_state
         )
 
-    if experiment.prior_type == PriorTypes.NORMAL.value:
+    elif experiment.prior_type == PriorTypes.NORMAL.value:
         mus = [np.array(arm.mu) for arm in sorted_arms]
         covariances = [np.array(arm.covariance) for arm in sorted_arms]
 
