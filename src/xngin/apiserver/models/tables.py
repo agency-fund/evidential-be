@@ -575,6 +575,12 @@ class Draw(Base):
     arm_id: Mapped[str] = mapped_column(ForeignKey("arms.id", ondelete="CASCADE"))
     outcome: Mapped[float | None] = mapped_column()
     context_val: Mapped[list[float] | None] = mapped_column(ARRAY(Float))
+    current_mu: Mapped[list[float] | None] = mapped_column(ARRAY(Float))
+    current_covariance: Mapped[list[list[float]] | None] = mapped_column(
+        ARRAY(ARRAY(Float))
+    )
+    current_alpha: Mapped[float | None] = mapped_column()
+    current_beta: Mapped[float | None] = mapped_column()
 
     # Relationships
     arm: Mapped[Arm] = relationship("Arm", back_populates="draws", lazy="joined")

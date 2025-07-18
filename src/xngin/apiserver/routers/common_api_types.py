@@ -279,9 +279,6 @@ class ArmBandit(Arm):
             description="Initial standard deviation parameter for Normal prior",
         ),
     ] = None
-    n_outcomes: Annotated[
-        int, Field(default=0, description="The number of outcomes for this arm.")
-    ]
     alpha: Annotated[
         float | None,
         Field(

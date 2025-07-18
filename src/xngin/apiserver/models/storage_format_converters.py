@@ -281,6 +281,7 @@ class ExperimentStorageConverter:
         stopped_assignments_reason: StopAssignmentReason | str | None = None,
         balance_check: capi.BalanceCheck | None = None,
         power_analyses: capi.PowerResponse | None = None,
+        n_trials: int = 0,
     ) -> Self:
         """Init experiment with arms from components. Get the final object with get_experiment().
 
@@ -337,6 +338,7 @@ class ExperimentStorageConverter:
                 stopped_assignments_reason=stopped_assignments_reason,
                 reward_type=design_spec.reward_type.value,
                 prior_type=design_spec.prior_type.value,
+                n_trials=n_trials,
             )
             experiment.arms = [
                 tables.Arm(

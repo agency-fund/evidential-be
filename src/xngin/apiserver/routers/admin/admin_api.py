@@ -80,6 +80,7 @@ from xngin.apiserver.routers.auth.auth_dependencies import require_oidc_token
 from xngin.apiserver.routers.auth.principal import Principal
 from xngin.apiserver.routers.common_api_types import (
     ArmAnalysis,
+    ArmBandit,
     BanditExperimentAnalysis,
     BaseBanditExperimentSpec,
     BaseFrequentistDesignSpec,
@@ -1495,7 +1496,6 @@ async def get_experiment_assignments(
     session: Annotated[AsyncSession, Depends(xngin_db_session)],
     user: Annotated[tables.User, Depends(user_from_token)],
 ) -> GetExperimentAssignmentsResponse:
-    # TODO: update for bandits
     ds = await get_datasource_or_raise(session, user, datasource_id)
     experiment = await get_experiment_via_ds_or_raise(
         session,
@@ -1574,6 +1574,70 @@ async def get_experiment_assignment_for_participant(
         experiment_id=experiment_id,
         participant_id=participant_id,
         assignment=assignment,
+    )
+
+
+@router.post(
+    "/datasources/{datasource_id}/experiments/{experiment_id}/assignments/{participant_id}",
+    description="""Get the assignment for a specific participant, excluding strata if any.
+    For 'preassigned' experiments, the participant's Assignment is returned if it exists.
+    For 'online', returns the assignment if it exists, else generates an assignment.""",
+)
+async def update_experiment_arm_for_participant(
+    datasource_id: str,
+    experiment_id: str,
+    participant_id: str,
+    outcome: float,
+    session: Annotated[AsyncSession, Depends(xngin_db_session)],
+    user: Annotated[tables.User, Depends(user_from_token)],
+) -> ArmBandit:
+    """Get the assignment for a specific participant in an experiment."""
+    # Validate the datasource and experiment exist
+    ds = await get_datasource_or_raise(session, user, datasource_id)
+    experiment = await get_experiment_via_ds_or_raise(session, ds, experiment_id)
+
+    # Not supported for frequentist experiments
+    if "freq" in experiment.experiment_type:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Cannot update assignment for frequentist experiments.",
+        )
+
+    # Look up the participant's assignment if it exists
+    assignment = await experiments_common.get_existing_assignment_for_participant(
+        session, experiment.id, participant_id, experiment.experiment_type
+    )
+    if not assignment:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Participant {participant_id} does not have an assignment for which to record an outcome.",
+        )
+    if assignment.outcome is not None:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Participant {participant_id} already has an outcome recorded.",
+        )
+
+    # Update the arm with the outcome
+    updated_arm = await experiments_common.update_bandit_arms_with_outcomes(
+        xngin_session=session,
+        experiment=experiment,
+        participant_id=participant_id,
+        outcome=outcome,
+    )
+
+    return ArmBandit(
+        arm_id=updated_arm.id,
+        arm_name=updated_arm.name,
+        arm_description=updated_arm.description,
+        alpha_init=updated_arm.alpha_init,
+        beta_init=updated_arm.beta_init,
+        alpha=updated_arm.alpha,
+        beta=updated_arm.beta,
+        mu_init=updated_arm.mu_init,
+        sigma_init=updated_arm.sigma_init,
+        mu=updated_arm.mu,
+        covariance=updated_arm.covariance,
     )
 
 

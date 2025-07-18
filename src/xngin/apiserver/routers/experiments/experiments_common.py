@@ -39,6 +39,7 @@ from xngin.apiserver.routers.common_api_types import (
 from xngin.apiserver.routers.common_enums import (
     ExperimentState,
     ExperimentsType,
+    PriorTypes,
     StopAssignmentReason,
 )
 from xngin.apiserver.routers.stateless.stateless_api import (
@@ -52,7 +53,7 @@ from xngin.apiserver.settings import (
 from xngin.apiserver.webhooks.webhook_types import ExperimentCreatedWebhookBody
 from xngin.events.experiment_created import ExperimentCreatedEvent
 from xngin.stats.assignment import RowProtocol, assign_treatment
-from xngin.stats.bandit_sampling import choose_arm
+from xngin.stats.bandit_sampling import choose_arm, update_arm
 from xngin.tq.task_payload_types import WEBHOOK_OUTBOUND_TASK_TYPE, WebhookOutboundTask
 
 
@@ -150,6 +151,7 @@ async def create_dwh_experiment_impl(
             validated_webhooks=validated_webhooks,
             request=request,
             datasource_id=datasource.id,
+            chosen_n=chosen_n,
         )
 
     raise HTTPException(
@@ -366,6 +368,7 @@ async def create_bandit_online_experiment_impl(
     validated_webhooks: list[tables.Webhook],
     request: CreateExperimentRequest,
     datasource_id: str,
+    chosen_n: int | None = None,
 ) -> CreateExperimentResponse:
     """Create an online experiment and persist it to the database."""
     design_spec = request.design_spec
@@ -375,6 +378,7 @@ async def create_bandit_online_experiment_impl(
         organization_id=organization_id,
         experiment_type=ExperimentsType.MAB_ONLINE,
         design_spec=design_spec,
+        n_trials=chosen_n if chosen_n is not None else 0,
     )
     experiment = experiment_converter.get_experiment()
 
@@ -777,6 +781,65 @@ async def create_assignment_for_participant(
         created_at=created_at,
         strata=[],
     )
+
+
+async def update_bandit_arms_with_outcomes(
+    xngin_session: AsyncSession,
+    experiment: tables.Experiment,
+    participant_id: str,
+    outcome: float,
+) -> tables.Arm:
+    """Update the Draw table with the outcome for a bandit experiment."""
+    # TODO: Add support for CMAB or Bayes A/B experiments.
+    if experiment.experiment_type != ExperimentsType.MAB_ONLINE.value:
+        raise ExperimentsAssignmentError(
+            f"Invalid experiment type for bandit outcome update: {experiment.experiment_type}"
+        )
+
+    draw_record = await xngin_session.scalar(
+        select(tables.Draw).where(
+            tables.Draw.participant_id == participant_id,
+            tables.Draw.experiment_id == experiment.id,
+        )
+    )
+    if draw_record is None:
+        raise ExperimentsAssignmentError(
+            f"No draw record found for participant '{participant_id}' in experiment '{experiment.id}'"
+        )
+
+    draw_record.observed_at = datetime.now(UTC)
+    draw_record.outcome = outcome
+
+    arm_to_update = next(arm for arm in experiment.arms if arm.id == draw_record.arm_id)
+
+    previous_outcomes = [
+        draw.outcome
+        for draw in sorted(experiment.draws, key=lambda d: d.created_at)
+        if draw.arm_id == draw_record.arm_id and draw.outcome is not None
+    ][::-1]  # Reverse order to get the most recent outcomes first
+
+    outcomes = [outcome, *previous_outcomes]
+    updated_parameters = update_arm(
+        experiment=experiment,
+        arm_to_update=arm_to_update,
+        outcomes=outcomes,
+        context=None,
+    )
+
+    # Update the draw record and arm with the new parameters
+    if experiment.prior_type == PriorTypes.BETA.value:
+        draw_record.current_alpha, draw_record.current_beta = updated_parameters
+        arm_to_update.alpha, arm_to_update.beta = updated_parameters
+
+    elif experiment.prior_type == PriorTypes.NORMAL.value:
+        draw_record.current_mu, draw_record.current_covariance = updated_parameters
+        arm_to_update.mu, arm_to_update.covariance = updated_parameters
+
+    xngin_session.add(draw_record)
+    xngin_session.add(arm_to_update)
+    await xngin_session.commit()
+
+    return arm_to_update
 
 
 async def get_assign_summary(
