@@ -528,21 +528,44 @@ def get_experiment_assignments_impl(
     # Map arm IDs to names
     arm_id_to_name = {arm.id: arm.name for arm in experiment.arms}
     # Convert ArmAssignment models to Assignment API types
-    assignments = [
-        Assignment(
-            participant_id=arm_assignment.participant_id,
-            arm_id=arm_assignment.arm_id,
-            arm_name=arm_id_to_name[arm_assignment.arm_id],
-            created_at=arm_assignment.created_at,
-            strata=[Strata.model_validate(s) for s in arm_assignment.strata],
+    if "freq" in experiment.experiment_type:
+        assignments = [
+            Assignment(
+                participant_id=arm_assignment.participant_id,
+                arm_id=arm_assignment.arm_id,
+                arm_name=arm_id_to_name[arm_assignment.arm_id],
+                created_at=arm_assignment.created_at,
+                strata=[Strata.model_validate(s) for s in arm_assignment.strata],
+            )
+            for arm_assignment in experiment.arm_assignments
+        ]
+        return GetExperimentAssignmentsResponse(
+            balance_check=ExperimentStorageConverter(experiment).get_balance_check(),
+            experiment_id=experiment.id,
+            sample_size=len(assignments),
+            assignments=assignments,
         )
-        for arm_assignment in experiment.arm_assignments
-    ]
-    return GetExperimentAssignmentsResponse(
-        balance_check=ExperimentStorageConverter(experiment).get_balance_check(),
-        experiment_id=experiment.id,
-        sample_size=len(assignments),
-        assignments=assignments,
+    if experiment.experiment_type == ExperimentsType.MAB_ONLINE.value:
+        assignments = [
+            Assignment(
+                participant_id=draw.participant_id,
+                arm_id=draw.arm_id,
+                arm_name=arm_id_to_name[draw.arm_id],
+                created_at=draw.created_at,
+                observed_at=draw.observed_at,
+                outcome=draw.outcome,
+            )
+            for draw in experiment.draws
+        ]
+        return GetExperimentAssignmentsResponse(
+            balance_check=None,  # MAB experiments do not have balance checks
+            experiment_id=experiment.id,
+            sample_size=len(assignments),
+            assignments=assignments,
+        )
+    raise HTTPException(
+        status_code=status.HTTP_400_BAD_REQUEST,
+        detail=f"Invalid experiment type: {experiment.experiment_type}",
     )
 
 

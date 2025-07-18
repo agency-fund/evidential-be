@@ -1498,7 +1498,10 @@ async def get_experiment_assignments(
     # TODO: update for bandits
     ds = await get_datasource_or_raise(session, user, datasource_id)
     experiment = await get_experiment_via_ds_or_raise(
-        session, ds, experiment_id, preload=[tables.Experiment.arm_assignments]
+        session,
+        ds,
+        experiment_id,
+        preload=[tables.Experiment.arm_assignments, tables.Experiment.draws],
     )
     return experiments_common.get_experiment_assignments_impl(experiment)
 
@@ -1555,7 +1558,6 @@ async def get_experiment_assignment_for_participant(
 ) -> GetParticipantAssignmentResponse:
     """Get the assignment for a specific participant in an experiment."""
     # Validate the datasource and experiment exist
-    # TODO: update for bandits
     ds = await get_datasource_or_raise(session, user, datasource_id)
     experiment = await get_experiment_via_ds_or_raise(session, ds, experiment_id)
 
