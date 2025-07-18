@@ -1185,6 +1185,92 @@ async def test_admin_experiment_state_setting(
         assert response.json()["detail"] == expected_detail
 
 
+async def test_delete_apikey_not_authorized(pdelete):
+    """Checks for a 403 when deleting a resource that doesn't exist.
+
+    This is equivalent to testing that a user does not have access to a datasource.
+
+    Per AIP-135: If the user does not have permission to access the resource, regardless of whether or not it exists,
+    the service must error with PERMISSION_DENIED (HTTP 403). Permission must be checked prior to checking if the
+    resource exists.
+    """
+    response = pdelete("/v1/m/datasources/not-a-datasource/apikeys/irrelevant")
+    assert response.status_code == 403
+
+
+async def test_delete_apikey_authorized_and_nonexistent(
+    testing_datasource_with_user, pdelete
+):
+    response = pdelete(
+        f"/v1/m/datasources/{testing_datasource_with_user.ds.id}/apikeys/sample-key-id"
+    )
+    assert response.status_code == 404
+
+
+async def test_delete_apikey_authorized_and_nonexistent_allow_missing(
+    testing_datasource_with_user, pdelete
+):
+    response = pdelete(
+        f"/v1/m/datasources/{testing_datasource_with_user.ds.id}/apikeys/sample-key-id?allow_missing=true"
+    )
+    assert response.status_code == 204
+
+
+async def test_delete_apikey_authorized_and_exists(
+    testing_datasource_with_user, pget, pdelete
+):
+    response = pget(f"/v1/m/datasources/{testing_datasource_with_user.ds.id}/apikeys")
+    assert response.status_code == 200
+    list_api_keys_response = ListApiKeysResponse.model_validate(response.json())
+    assert len(list_api_keys_response.items) == 1
+    api_key_id = list_api_keys_response.items[0].id
+
+    response = pdelete(
+        f"/v1/m/datasources/{testing_datasource_with_user.ds.id}/apikeys/{api_key_id}"
+    )
+    assert response.status_code == 204
+
+
+async def test_delete_apikey_authorized_and_exists_allow_missing(
+    testing_datasource_with_user, pget, pdelete
+):
+    response = pget(f"/v1/m/datasources/{testing_datasource_with_user.ds.id}/apikeys")
+    assert response.status_code == 200
+    list_api_keys_response = ListApiKeysResponse.model_validate(response.json())
+    assert len(list_api_keys_response.items) == 1
+    api_key_id = list_api_keys_response.items[0].id
+
+    response = pdelete(
+        f"/v1/m/datasources/{testing_datasource_with_user.ds.id}/apikeys/{api_key_id}?allow_missing=true"
+    )
+    assert response.status_code == 204
+
+
+async def test_delete_apikey_authorized_and_exists_idempotency(
+    testing_datasource_with_user, pget, pdelete
+):
+    response = pget(f"/v1/m/datasources/{testing_datasource_with_user.ds.id}/apikeys")
+    assert response.status_code == 200
+    list_api_keys_response = ListApiKeysResponse.model_validate(response.json())
+    assert len(list_api_keys_response.items) == 1
+    api_key_id = list_api_keys_response.items[0].id
+
+    response = pdelete(
+        f"/v1/m/datasources/{testing_datasource_with_user.ds.id}/apikeys/{api_key_id}"
+    )
+    assert response.status_code == 204
+
+    response = pdelete(
+        f"/v1/m/datasources/{testing_datasource_with_user.ds.id}/apikeys/{api_key_id}"
+    )
+    assert response.status_code == 404
+
+    response = pdelete(
+        f"/v1/m/datasources/{testing_datasource_with_user.ds.id}/apikeys/{api_key_id}?allow_missing=True"
+    )
+    assert response.status_code == 204
+
+
 async def test_manage_apikeys(testing_datasource_with_user, ppost, pget, pdelete):
     ds = testing_datasource_with_user.ds
 
@@ -1192,25 +1278,29 @@ async def test_manage_apikeys(testing_datasource_with_user, ppost, pget, pdelete
     assert response.status_code == 200
     list_api_keys_response = ListApiKeysResponse.model_validate(response.json())
     assert len(list_api_keys_response.items) == 1
+    first_key_id = list_api_keys_response.items[0].id
 
     response = ppost(f"/v1/m/datasources/{ds.id}/apikeys/")
     assert response.status_code == 200
     create_api_key_response = CreateApiKeyResponse.model_validate(response.json())
     assert create_api_key_response.datasource_id == ds.id
-    created_api_key_id = create_api_key_response.id
+    created_key_id = create_api_key_response.id
 
     response = pget(f"/v1/m/datasources/{ds.id}/apikeys")
     assert response.status_code == 200
     list_api_keys_response = ListApiKeysResponse.model_validate(response.json())
     assert len(list_api_keys_response.items) == 2
 
-    response = pdelete(f"/v1/m/datasources/{ds.id}/apikeys/{created_api_key_id}")
+    response = pdelete(f"/v1/m/datasources/{ds.id}/apikeys/{created_key_id}")
     assert response.status_code == 204
 
     response = pget(f"/v1/m/datasources/{ds.id}/apikeys")
     assert response.status_code == 200
     list_api_keys_response = ListApiKeysResponse.model_validate(response.json())
     assert len(list_api_keys_response.items) == 1
+
+    response = pdelete(f"/v1/m/datasources/{ds.id}/apikeys/{first_key_id}")
+    assert response.status_code == 204
 
 
 async def test_experiment_webhook_integration(

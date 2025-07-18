@@ -6,6 +6,7 @@ from contextlib import asynccontextmanager
 from datetime import UTC, datetime, timedelta
 from typing import Annotated, Any
 
+import sqlalchemy
 from fastapi import (
     APIRouter,
     Body,
@@ -37,6 +38,7 @@ from xngin.apiserver.dwh.queries import get_participant_metrics, get_stats_on_fi
 from xngin.apiserver.exceptions_common import LateValidationError
 from xngin.apiserver.models import tables
 from xngin.apiserver.models.storage_format_converters import ExperimentStorageConverter
+from xngin.apiserver.routers.admin import authz
 from xngin.apiserver.routers.admin.admin_api_types import (
     AddMemberToOrganizationRequest,
     AddWebhookToOrganizationRequest,
@@ -1215,15 +1217,20 @@ async def delete_api_key(
     session: Annotated[AsyncSession, Depends(xngin_db_session)],
     user: Annotated[tables.User, Depends(user_from_token)],
     api_key_id: Annotated[str, Path(...)],
+    allow_missing: Annotated[bool, Query()] = False,
 ):
     """Deletes the specified API key."""
-    ds = await get_datasource_or_raise(
-        session, user, datasource_id, preload=[tables.Datasource.api_keys]
+    resource_query = (
+        select(tables.ApiKey)
+        .join(tables.Datasource)
+        .where(tables.Datasource.id == datasource_id, tables.ApiKey.id == api_key_id)
     )
-    ds.api_keys = [a for a in ds.api_keys if a.id != api_key_id]
-    session.add(ds)
-    await session.commit()
-    return GENERIC_SUCCESS
+    return await handle_delete(
+        session,
+        allow_missing,
+        authz.is_user_authorized_on_datasource(user, datasource_id),
+        resource_query,
+    )
 
 
 @router.post("/datasources/{datasource_id}/experiments")
@@ -1566,3 +1573,39 @@ async def power_check(
     participants_cfg = dsconfig.find_participants(body.design_spec.participant_type)
     validate_schema_metrics_or_raise(body.design_spec, participants_cfg)  # type: ignore[arg-type]
     return await power_check_impl(body, dsconfig, participants_cfg)
+
+
+async def handle_delete(
+    session: AsyncSession,
+    allow_missing: bool,
+    is_authorized: sqlalchemy.Select,
+    get_resource_or_none: sqlalchemy.Select,
+):
+    """Generic delete request handler.
+
+    If the user does not have permission to access the resource, regardless of whether or not it exists, a
+    403 will be raised.
+
+    If the user does have proper permission, but the requested resource does not exist, we return a 404
+    unless allow_missing is set to true.
+
+    :param session: SQLAlchemy session
+    :param allow_missing: When True, a 204 will be returned even if the item does not exist.
+    :param is_authorized: Query that returns one row if the user is authorized to perform the delete, or zero rows if they are not.
+    :param get_resource_or_none: Query that returns the SQLAlchemy ORM instance of the resource being deleted.
+    :return:
+    """
+    allowed = (await session.execute(is_authorized)).scalar_one_or_none() is not None
+    if not allowed:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="You are not authorized for this resource.",
+        )
+    resource = (await session.execute(get_resource_or_none)).scalar_one_or_none()
+    if resource is None:
+        if allow_missing:
+            return GENERIC_SUCCESS
+        raise HTTPException(404)
+    await session.delete(resource)
+    await session.commit()
+    return GENERIC_SUCCESS
