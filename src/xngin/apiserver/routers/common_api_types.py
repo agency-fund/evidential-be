@@ -310,12 +310,6 @@ class ArmBandit(Arm):
             description="Updated covariance matrix for Normal prior",
         ),
     ] = None
-    is_baseline: Annotated[
-        bool | None,
-        Field(
-            description="Whether this arm is the baseline/control arm for comparison."
-        ),
-    ]
 
     @model_validator(mode="after")
     def check_values(self) -> Self:
@@ -808,19 +802,6 @@ class BaseBanditExperimentSpec(BaseDesignSpec):
             if missing_params:
                 val = prior_type.value
                 raise ValueError(f"{val} prior needs {','.join(missing_params)}.")
-        return self
-
-    @model_validator(mode="after")
-    def check_treatment_info(self) -> Self:
-        """
-        Validate that the treatment arm information is set correctly.
-        """
-        arms = self.arms
-        if self.experiment_type == ExperimentsType.BAYESAB_ONLINE:
-            if not any(arm.is_baseline for arm in arms):
-                raise ValueError("At least one arm must be a baseline/control arm.")
-            if all(arm.is_baseline for arm in arms):
-                raise ValueError("At least one arm must be a treatment arm.")
         return self
 
     @model_validator(mode="after")

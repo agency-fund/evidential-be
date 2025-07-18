@@ -145,11 +145,11 @@ async def create_dwh_experiment_impl(
 
     if request.design_spec.experiment_type == ExperimentsType.MAB_ONLINE:
         return await create_bandit_online_experiment_impl(
+            xngin_session=xngin_session,
+            organization_id=datasource.organization_id,
+            validated_webhooks=validated_webhooks,
             request=request,
             datasource_id=datasource.id,
-            organization_id=datasource.organization_id,
-            xngin_session=xngin_session,
-            validated_webhooks=validated_webhooks,
         )
 
     raise HTTPException(
@@ -361,11 +361,11 @@ async def create_freq_online_experiment_impl(
 
 
 async def create_bandit_online_experiment_impl(
+    xngin_session: AsyncSession,
+    organization_id: str,
+    validated_webhooks: list[tables.Webhook],
     request: CreateExperimentRequest,
     datasource_id: str,
-    organization_id: str,
-    xngin_session: AsyncSession,
-    validated_webhooks: list[tables.Webhook],
 ) -> CreateExperimentResponse:
     """Create an online experiment and persist it to the database."""
     design_spec = request.design_spec

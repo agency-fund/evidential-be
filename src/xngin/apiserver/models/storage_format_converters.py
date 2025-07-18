@@ -185,7 +185,6 @@ class ExperimentStorageConverter:
                         "sigma_init": arm.sigma_init,
                         "alpha_init": arm.alpha_init,
                         "beta_init": arm.beta_init,
-                        "is_baseline": arm.is_baseline,
                         "mu": arm.mu,
                         "covariance": arm.covariance,
                         "alpha": arm.alpha,
