@@ -29,7 +29,11 @@ from xngin.apiserver import constants, flags
 from xngin.apiserver.apikeys import hash_key_or_raise, make_key
 from xngin.apiserver.dependencies import xngin_db_session
 from xngin.apiserver.dns.safe_resolve import DnsLookupError, safe_resolve
-from xngin.apiserver.dwh.dwh_session import DwhDatabaseDoesNotExistError, DwhSession
+from xngin.apiserver.dwh.dwh_session import (
+    DwhDatabaseDoesNotExistError,
+    DwhSession,
+    NoDwh,
+)
 from xngin.apiserver.dwh.inspections import (
     create_inspect_table_response_from_table,
 )
@@ -76,10 +80,12 @@ from xngin.apiserver.routers.auth.auth_dependencies import require_oidc_token
 from xngin.apiserver.routers.auth.principal import Principal
 from xngin.apiserver.routers.common_api_types import (
     ArmAnalysis,
+    BanditExperimentAnalysis,
+    BaseBanditExperimentSpec,
     BaseFrequentistDesignSpec,
     CreateExperimentRequest,
     CreateExperimentResponse,
-    ExperimentAnalysis,
+    FreqExperimentAnalysis,
     GetExperimentAssignmentsResponse,
     GetExperimentResponse,
     GetMetricsResponseElement,
@@ -1313,7 +1319,7 @@ async def analyze_experiment(
             description="UUID of the baseline arm. If None, the first design spec arm is used.",
         ),
     ] = None,
-) -> ExperimentAnalysis:
+) -> FreqExperimentAnalysis | BanditExperimentAnalysis:
     ds = await get_datasource_or_raise(xngin_session, user, datasource_id)
     dsconfig = ds.get_config()
 
@@ -1324,82 +1330,92 @@ async def analyze_experiment(
         preload=[tables.Experiment.arm_assignments],
     )
 
-    participants_cfg = dsconfig.find_participants(experiment.participant_type)
-    if not isinstance(participants_cfg, ParticipantsDef):
-        raise LateValidationError(
-            "Invalid ParticipantsConfig: Participants must be of type schema."
-        )
-    unique_id_field = participants_cfg.get_unique_id_field()
-
     design_spec = ExperimentStorageConverter(experiment).get_design_spec()
-    # TODO: Remove the bandit check once bandit experiments are supported.
-    if not isinstance(design_spec, BaseFrequentistDesignSpec):
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Bandit experiments are not supported.",
+    if isinstance(design_spec, BaseBanditExperimentSpec):
+        # TODO: implement bandit experiment analysis
+        # For now, we return a placeholder analysis with no data.
+        return BanditExperimentAnalysis(
+            experiment_id=experiment.id,
+            n_trials=experiment.n_trials,
+            n_outcomes=0,
+            posterior_means=[0],
+            posterior_stds=[0],
+            volumes=[0],
         )
 
-    assignments = experiment.arm_assignments
-    participant_ids = [assignment.participant_id for assignment in assignments]
-    if len(participant_ids) == 0:
-        raise StatsAnalysisError("No participants found for experiment.")
+    if isinstance(design_spec, BaseFrequentistDesignSpec):
+        participants_cfg = dsconfig.find_participants(experiment.participant_type)
+        if not isinstance(participants_cfg, ParticipantsDef):
+            raise LateValidationError(
+                "Invalid ParticipantsConfig: Participants must be of type schema."
+            )
+        unique_id_field = participants_cfg.get_unique_id_field()
 
-    async with DwhSession(dsconfig.dwh) as dwh:
-        sa_table = await dwh.inspect_table(participants_cfg.table_name)
+        assignments = experiment.arm_assignments
+        participant_ids = [assignment.participant_id for assignment in assignments]
+        if len(participant_ids) == 0:
+            raise StatsAnalysisError("No participants found for experiment.")
 
-        # Mark the start of the analysis as when we begin pulling outcomes.
-        created_at = datetime.now(UTC)
-        participant_outcomes = await asyncio.to_thread(
-            get_participant_metrics,
-            dwh.session,
-            sa_table,
-            design_spec.metrics,
-            unique_id_field,
-            participant_ids,
+        async with DwhSession(dsconfig.dwh) as dwh:
+            sa_table = await dwh.inspect_table(participants_cfg.table_name)
+
+            # Mark the start of the analysis as when we begin pulling outcomes.
+            created_at = datetime.now(UTC)
+            participant_outcomes = await asyncio.to_thread(
+                get_participant_metrics,
+                dwh.session,
+                sa_table,
+                design_spec.metrics,
+                unique_id_field,
+                participant_ids,
+            )
+
+        # We want to notify the user if there are participants assigned to the experiment that are not
+        # in the data warehouse. E.g. in an online experiment, perhaps a new user was assigned
+        # before their info was synced to the dwh.
+        num_participants = len(participant_ids)
+        num_missing_participants = num_participants - len(participant_outcomes)
+
+        # Always assume the first arm is the baseline; UI can override this.
+        baseline_arm_id = baseline_arm_id or design_spec.arms[0].arm_id
+        analyze_results = analyze_experiment_impl(
+            assignments, participant_outcomes, baseline_arm_id
         )
 
-    # We want to notify the user if there are participants assigned to the experiment that are not
-    # in the data warehouse. E.g. in an online experiment, perhaps a new user was assigned
-    # before their info was synced to the dwh.
-    num_participants = len(participant_ids)
-    num_missing_participants = num_participants - len(participant_outcomes)
-
-    # Always assume the first arm is the baseline; UI can override this.
-    baseline_arm_id = baseline_arm_id or design_spec.arms[0].arm_id
-    analyze_results = analyze_experiment_impl(
-        assignments, participant_outcomes, baseline_arm_id
-    )
-
-    metric_analyses = []
-    for metric in design_spec.metrics:
-        metric_name = metric.field_name
-        arm_analyses = []
-        for arm in experiment.arms:
-            arm_result = analyze_results[metric_name][arm.id]
-            arm_analyses.append(
-                ArmAnalysis(
-                    arm_id=arm.id,
-                    arm_name=arm.name,
-                    arm_description=arm.description,
-                    is_baseline=arm_result.is_baseline,
-                    estimate=arm_result.estimate,
-                    p_value=arm_result.p_value,
-                    t_stat=arm_result.t_stat,
-                    std_error=arm_result.std_error,
-                    num_missing_values=arm_result.num_missing_values,
+        metric_analyses = []
+        for metric in design_spec.metrics:
+            metric_name = metric.field_name
+            arm_analyses = []
+            for arm in experiment.arms:
+                arm_result = analyze_results[metric_name][arm.id]
+                arm_analyses.append(
+                    ArmAnalysis(
+                        arm_id=arm.id,
+                        arm_name=arm.name,
+                        arm_description=arm.description,
+                        is_baseline=arm_result.is_baseline,
+                        estimate=arm_result.estimate,
+                        p_value=arm_result.p_value,
+                        t_stat=arm_result.t_stat,
+                        std_error=arm_result.std_error,
+                        num_missing_values=arm_result.num_missing_values,
+                    )
+                )
+            metric_analyses.append(
+                MetricAnalysis(
+                    metric_name=metric_name, metric=metric, arm_analyses=arm_analyses
                 )
             )
-        metric_analyses.append(
-            MetricAnalysis(
-                metric_name=metric_name, metric=metric, arm_analyses=arm_analyses
-            )
+        return FreqExperimentAnalysis(
+            experiment_id=experiment.id,
+            metric_analyses=metric_analyses,
+            num_participants=num_participants,
+            num_missing_participants=num_missing_participants,
+            created_at=created_at,
         )
-    return ExperimentAnalysis(
-        experiment_id=experiment.id,
-        metric_analyses=metric_analyses,
-        num_participants=num_participants,
-        num_missing_participants=num_missing_participants,
-        created_at=created_at,
+    raise HTTPException(
+        status_code=status.HTTP_400_BAD_REQUEST,
+        detail="Experiment analysis failed due to invalid inputs.",
     )
 
 
@@ -1481,6 +1497,7 @@ async def get_experiment_assignments(
     session: Annotated[AsyncSession, Depends(xngin_db_session)],
     user: Annotated[tables.User, Depends(user_from_token)],
 ) -> GetExperimentAssignmentsResponse:
+    # TODO: update for bandits
     ds = await get_datasource_or_raise(session, user, datasource_id)
     experiment = await get_experiment_via_ds_or_raise(
         session, ds, experiment_id, preload=[tables.Experiment.arm_assignments]
@@ -1501,6 +1518,7 @@ async def get_experiment_assignments_as_csv(
     session: Annotated[AsyncSession, Depends(xngin_db_session)],
     user: Annotated[tables.User, Depends(user_from_token)],
 ) -> StreamingResponse:
+    # TODO: update for bandits
     ds = await get_datasource_or_raise(session, user, datasource_id)
     experiment = await get_experiment_via_ds_or_raise(
         session,
@@ -1539,6 +1557,7 @@ async def get_experiment_assignment_for_participant(
 ) -> GetParticipantAssignmentResponse:
     """Get the assignment for a specific participant in an experiment."""
     # Validate the datasource and experiment exist
+    # TODO: update for bandits
     ds = await get_datasource_or_raise(session, user, datasource_id)
     experiment = await get_experiment_via_ds_or_raise(session, ds, experiment_id)
 
@@ -1583,7 +1602,18 @@ async def power_check(
     user: Annotated[tables.User, Depends(user_from_token)],
     body: PowerRequest,
 ) -> PowerResponse:
+    """Performs a power check for the specified datasource."""
+    if isinstance(body.design_spec, BaseBanditExperimentSpec):
+        raise HTTPException(
+            status_code=400,
+            detail="Power checks are not supported for bandit experiments.",
+        )
     ds = await get_datasource_or_raise(session, user, datasource_id)
+    if isinstance(ds.config, NoDwh):
+        raise HTTPException(
+            status_code=400,
+            detail="Power checks are not supported for datasources without a data warehouse.",
+        )
     dsconfig = ds.get_config()
     participants_cfg = dsconfig.find_participants(body.design_spec.participant_type)
     validate_schema_metrics_or_raise(body.design_spec, participants_cfg)  # type: ignore[arg-type]

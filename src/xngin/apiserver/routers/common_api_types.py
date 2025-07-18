@@ -357,7 +357,38 @@ class MetricAnalysis(ApiBaseModel):
         return self
 
 
-class ExperimentAnalysis(ApiBaseModel):
+class BanditExperimentAnalysis(ApiBaseModel):
+    """Describes changes in arms for a bandit experiment"""
+
+    experiment_id: Annotated[
+        str,
+        Field(description="ID of the experiment."),
+    ]
+    n_trials: Annotated[
+        int,
+        Field(description="The number of trials conducted for this experiment."),
+    ]
+    n_outcomes: Annotated[
+        int,
+        Field(description="The number of outcomes observed for this experiment."),
+    ]
+    posterior_means: Annotated[
+        list[float],
+        Field(description="Posterior means for each arm in the experiment."),
+    ]
+    posterior_stds: Annotated[
+        list[float],
+        Field(
+            description="Posterior standard deviations for each arm in the experiment."
+        ),
+    ]
+    volumes: Annotated[
+        list[float],
+        Field(description="Volume of participants for each arm in the experiment."),
+    ]
+
+
+class FreqExperimentAnalysis(ApiBaseModel):
     """Describes the change if any in metrics targeted by an experiment."""
 
     experiment_id: Annotated[
