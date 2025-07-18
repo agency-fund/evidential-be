@@ -52,6 +52,7 @@ from xngin.apiserver.settings import (
 from xngin.apiserver.webhooks.webhook_types import ExperimentCreatedWebhookBody
 from xngin.events.experiment_created import ExperimentCreatedEvent
 from xngin.stats.assignment import RowProtocol, assign_treatment
+from xngin.stats.bandit_sampling import choose_arm
 from xngin.tq.task_payload_types import WEBHOOK_OUTBOUND_TASK_TYPE, WebhookOutboundTask
 
 
@@ -603,29 +604,36 @@ async def get_experiment_assignments_as_csv_impl(
 
 
 async def get_existing_assignment_for_participant(
-    xngin_session: AsyncSession, experiment_id: str, participant_id: str
+    xngin_session: AsyncSession,
+    experiment_id: str,
+    participant_id: str,
+    experiment_type: str,
 ) -> Assignment | None:
     """Internal helper to look up an existing assignment for a participant.  Excludes strata.
 
     Returns: None if no assignment exists.
     """
+    assignment_table = (
+        tables.ArmAssignment if "freq" in experiment_type else tables.Draw
+    )
     stmt = (
         select(
-            tables.ArmAssignment.participant_id,
+            assignment_table.participant_id,
             tables.Arm.id.label("arm_id"),
             tables.Arm.name.label("arm_name"),
-            tables.ArmAssignment.created_at,
+            assignment_table.created_at,
         )
         .join(
-            tables.ArmAssignment,
-            (tables.ArmAssignment.arm_id == tables.Arm.id)
-            & (tables.ArmAssignment.experiment_id == tables.Arm.experiment_id),
+            assignment_table,
+            (assignment_table.arm_id == tables.Arm.id)
+            & (assignment_table.experiment_id == tables.Arm.experiment_id),
         )
         .filter(
             tables.Arm.experiment_id == experiment_id,
-            tables.ArmAssignment.participant_id == participant_id,
+            assignment_table.participant_id == participant_id,
         )
     )
+
     res = await xngin_session.execute(stmt)
     existing_assignment = res.one_or_none()
     # If the participant already has an assignment for this experiment, return it.
@@ -635,7 +643,7 @@ async def get_existing_assignment_for_participant(
             arm_id=existing_assignment.arm_id,
             arm_name=existing_assignment.arm_name,
             created_at=existing_assignment.created_at,
-            strata=[],
+            strata=[],  # Strata are not included in this query
         )
     return None
 
@@ -663,11 +671,13 @@ async def create_assignment_for_participant(
         raise ExperimentsAssignmentError("Experiment has no arms")
 
     experiment_type = experiment.experiment_type
-    if experiment_type == "freq_preassigned":
-        # Preassigned experiments are not allowed to have new assignmentsadded.
+    if experiment_type == ExperimentsType.FREQ_PREASSIGNED:
+        # Preassigned experiments are not allowed to have new assignments added.
         return None
-    if experiment_type != "freq_online":
-        raise ExperimentsAssignmentError(f"Invalid experiment type: {experiment_type}")
+
+    # TODO: Add support for CMAB experiments.
+    if experiment_type == ExperimentsType.CMAB_ONLINE.value:
+        raise ValueError("CMAB experiments are not supported for assignments")
 
     # Don't allow new assignments for experiments that have ended.
     if experiment.end_date < datetime.now(UTC):
@@ -676,34 +686,55 @@ async def create_assignment_for_participant(
         await xngin_session.commit()
         return None
 
-    # For online experiments, create a new assignment with simple random assignment.
-    if random_state:
+    if not random_state:
+        random_state = 66  # Default seed for deterministic behavior in tests.
+    # For online frequentist or Bayesian A/B experiments, create a new assignment
+    # with simple random assignment.
+    if experiment_type in {
+        ExperimentsType.FREQ_ONLINE.value,
+        ExperimentsType.BAYESAB_ONLINE.value,
+    }:
         # Sort by arm name to ensure deterministic assignment with seed for tests.
         chosen_arm = random_choice(
             sorted(experiment.arms, key=lambda a: a.name),
             seed=random_state,
         )
-    else:
-        chosen_arm = random_choice(experiment.arms)
+    if experiment_type == ExperimentsType.MAB_ONLINE.value:
+        chosen_arm = choose_arm(experiment=experiment, random_state=random_state)
 
     chosen_arm_id = chosen_arm.id
 
     # Create and save the new assignment. We use the insert() API because it allows us to read
     # the database-generated created_at value without needing to refresh the object in the SQLAlchemy cache.
     try:
-        result = (
-            await xngin_session.execute(
-                insert(tables.ArmAssignment)
-                .values(
-                    experiment_id=experiment.id,
-                    participant_id=participant_id,
-                    participant_type=experiment.participant_type,
-                    arm_id=chosen_arm_id,
-                    strata=[],
+        if "freq" in experiment_type:
+            result = (
+                await xngin_session.execute(
+                    insert(tables.ArmAssignment)
+                    .values(
+                        experiment_id=experiment.id,
+                        participant_id=participant_id,
+                        participant_type=experiment.participant_type,
+                        arm_id=chosen_arm_id,
+                        strata=[],
+                    )
+                    .returning(tables.ArmAssignment.created_at)
                 )
-                .returning(tables.ArmAssignment.created_at)
-            )
-        ).fetchone()
+            ).fetchone()
+        else:
+            # Write bandit assignments to the Draw table.
+            result = (
+                await xngin_session.execute(
+                    insert(tables.Draw)
+                    .values(
+                        experiment_id=experiment.id,
+                        participant_id=participant_id,
+                        participant_type=experiment.participant_type,
+                        arm_id=chosen_arm_id,
+                    )
+                    .returning(tables.Draw.created_at)
+                )
+            ).fetchone()
         if result is None:
             raise ExperimentsAssignmentError(
                 f"Failed to create assignment for participant '{participant_id}'"

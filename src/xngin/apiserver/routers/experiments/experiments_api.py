@@ -226,7 +226,7 @@ async def get_assignment_for_participant_with_apikey(
     random_state: Annotated[int | None, Depends(random_seed_dependency)] = None,
 ) -> GetParticipantAssignmentResponse:
     assignment = await get_existing_assignment_for_participant(
-        xngin_session, experiment.id, participant_id
+        xngin_session, experiment.id, participant_id, experiment.experiment_type
     )
     if not assignment and create_if_none:
         assignment = await create_assignment_for_participant(

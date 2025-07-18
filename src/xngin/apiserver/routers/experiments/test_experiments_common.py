@@ -803,14 +803,17 @@ async def test_get_existing_assignment_for_participant(
     expected_assignment = experiment.arm_assignments[0]
 
     assignment = await get_existing_assignment_for_participant(
-        xngin_session, experiment.id, expected_assignment.participant_id
+        xngin_session,
+        experiment.id,
+        expected_assignment.participant_id,
+        experiment.experiment_type,
     )
     assert assignment is not None
     assert assignment.participant_id == expected_assignment.participant_id
     assert str(assignment.arm_id) == expected_assignment.arm_id
 
     assignment = await get_existing_assignment_for_participant(
-        xngin_session, experiment.id, "new_id"
+        xngin_session, experiment.id, "new_id", experiment.experiment_type
     )
     assert assignment is None
 

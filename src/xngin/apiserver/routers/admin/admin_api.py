@@ -1563,7 +1563,7 @@ async def get_experiment_assignment_for_participant(
 
     # Look up the participant's assignment if it exists
     assignment = await experiments_common.get_existing_assignment_for_participant(
-        session, experiment.id, participant_id
+        session, experiment.id, participant_id, experiment.experiment_type
     )
     if not assignment and create_if_none and experiment.stopped_assignments_at is None:
         assignment = await experiments_common.create_assignment_for_participant(

@@ -559,24 +559,20 @@ class Draw(Base):
     __tablename__ = "draws"
 
     # IDs
-    id: Mapped[str] = mapped_column(
-        String,
-        primary_key=True,
-    )
-
-    # Logging
-    draw_datetime_utc: Mapped[datetime] = mapped_column(
-        server_default=sqlalchemy.sql.func.now()
-    )
-    observed_datetime_utc: Mapped[datetime | None] = mapped_column(
-        server_default=sqlalchemy.sql.func.now(),
-    )
-    observation_type: Mapped[str | None] = mapped_column()
-
-    # Observation data
     experiment_id: Mapped[str] = mapped_column(
         ForeignKey("experiments.id", ondelete="CASCADE")
     )
+    participant_id: Mapped[str] = mapped_column(String(255), primary_key=True)
+
+    # Logging
+    created_at: Mapped[datetime] = mapped_column(
+        server_default=sqlalchemy.sql.func.now()
+    )
+    observed_at: Mapped[datetime | None] = mapped_column()
+    observation_type: Mapped[str | None] = mapped_column()
+
+    # Observation data
+    participant_type: Mapped[str] = mapped_column(String(255))
     arm_id: Mapped[str] = mapped_column(ForeignKey("arms.id", ondelete="CASCADE"))
     outcome: Mapped[float | None] = mapped_column()
     context_val: Mapped[list[float] | None] = mapped_column(ARRAY(Float))

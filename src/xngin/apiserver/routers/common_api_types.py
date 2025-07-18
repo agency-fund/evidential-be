@@ -972,14 +972,6 @@ class Assignment(ApiBaseModel):
     ] = None
 
     # -- Bandit-specific fields --
-    draw_id: Annotated[
-        str | None,
-        Field(
-            description="Unique identifier for the draw.",
-            examples=["draw_123", None],
-        ),
-    ] = None
-
     observed_at: Annotated[
         datetime.datetime | None,
         Field(description="The date and time the outcome was recorded."),
