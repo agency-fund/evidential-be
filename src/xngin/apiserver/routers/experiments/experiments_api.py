@@ -109,9 +109,9 @@ async def create_experiment_with_assignment_sl(
         )
 
     validated_webhooks = await validate_webhooks(
-        request_webhooks=body.webhooks,
-        organization_id=db_datasource.organization_id,
         session=xngin_session,
+        organization_id=db_datasource.organization_id,
+        request_webhooks=body.webhooks,
     )
 
     # Persist the experiment and assignments in the xngin database

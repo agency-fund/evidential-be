@@ -293,7 +293,7 @@ async def get_experiment_via_ds_or_raise(
 
 
 async def validate_webhooks(
-    request_webhooks: list[str], organization_id: str, session: AsyncSession
+    session: AsyncSession, organization_id: str, request_webhooks: list[str] | None
 ) -> list[tables.Webhook]:
     # Validate webhook IDs exist and belong to organization
     validated_webhooks = []
@@ -1291,9 +1291,7 @@ async def create_experiment(
     # Validate webhook IDs exist and belong to organization
     organization_id = datasource.organization_id
     validated_webhooks = await validate_webhooks(
-        request_webhooks=body.webhooks,
-        organization_id=organization_id,
-        session=session,
+        session=session, organization_id=organization_id, request_webhooks=body.webhooks
     )
 
     return await experiments_common.create_dwh_experiment_impl(
