@@ -524,8 +524,10 @@ async def create_assignment_for_participant(
         raise ExperimentsAssignmentError(f"Invalid experiment type: {experiment_type}")
 
     # Don't allow new assignments for experiments that have ended.
-    if experiment.end_date < datetime.now(UTC):
-        experiment.stopped_assignments_at = datetime.now(UTC)
+    # "now" tz support must match the app db, e.g. sqlite is tz naive.
+    now = datetime.now(UTC if experiment.end_date.tzinfo else None)
+    if experiment.end_date < now:
+        experiment.stopped_assignments_at = now
         experiment.stopped_assignments_reason = StopAssignmentReason.END_DATE
         await xngin_session.commit()
         return None

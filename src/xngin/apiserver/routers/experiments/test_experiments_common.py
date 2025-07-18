@@ -790,13 +790,15 @@ async def test_experiment_assignments_to_csv_generator(
     assert len(batches) == 1
     rows = batches[0].splitlines(keepends=True)
     assert rows[0] == "participant_id,arm_id,arm_name,created_at,gender,score\r\n"
+    # sqlite is tz naive and does not output a tz indicator
+    tz = "+00:00" if experiment.created_at.tzinfo else ""
     assert (
         rows[1]
-        == f"p1,{arm_name_to_id['control']},control,2025-01-01 00:00:00+00:00,F,1.1\r\n"
+        == f"p1,{arm_name_to_id['control']},control,2025-01-01 00:00:00{tz},F,1.1\r\n"
     )
     assert (
         rows[2]
-        == f'p2,{arm_name_to_id["treatment"]},treatment,2025-01-02 00:00:00+00:00,M,"esc,aped"\r\n'
+        == f'p2,{arm_name_to_id["treatment"]},treatment,2025-01-02 00:00:00{tz},M,"esc,aped"\r\n'
     )
 
 
