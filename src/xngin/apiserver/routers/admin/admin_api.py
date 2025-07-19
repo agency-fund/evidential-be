@@ -508,26 +508,16 @@ async def delete_webhook_from_organization(
     webhook_id: str,
     session: Annotated[AsyncSession, Depends(xngin_db_session)],
     user: Annotated[tables.User, Depends(user_from_token)],
+    allow_missing: Annotated[bool, Query()] = False,
 ):
     """Removes a Webhook from an organization."""
-    # Verify user has access to the organization
-    org = await get_organization_or_raise(session, user, organization_id)
-
-    # Find and delete the webhook
-    stmt = (
-        delete(tables.Webhook)
-        .where(tables.Webhook.id == webhook_id)
-        .where(tables.Webhook.organization_id == org.id)
+    resource_query = select(tables.Webhook).where(tables.Webhook.id == webhook_id)
+    return await handle_delete(
+        session,
+        allow_missing,
+        authz.is_user_authorized_on_organization(user, organization_id),
+        resource_query,
     )
-    result = await session.execute(stmt)
-
-    if result.rowcount == 0:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND, detail="Webhook not found"
-        )
-
-    await session.commit()
-    return GENERIC_SUCCESS
 
 
 @router.get("/organizations/{organization_id}/events")

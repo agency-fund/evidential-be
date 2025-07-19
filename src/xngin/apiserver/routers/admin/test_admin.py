@@ -494,6 +494,16 @@ async def test_webhook_lifecycle(pdelete, ppost, ppatch, pget):
     webhooks = ListWebhooksResponse.model_validate(response.json()).items
     assert len(webhooks) == 0
 
+    # Delete the webhook again (404)
+    response = pdelete(f"/v1/m/organizations/{org_id}/webhooks/{webhook_id}")
+    assert response.status_code == 404, response.content
+
+    # Delete the webhook again (204)
+    response = pdelete(
+        f"/v1/m/organizations/{org_id}/webhooks/{webhook_id}?allow_missing=True"
+    )
+    assert response.status_code == 204, response.content
+
     # Try to regenerate auth token for a non-existent webhook
     response = ppost(f"/v1/m/organizations/{org_id}/webhooks/{webhook_id}/authtoken")
     assert response.status_code == 404, response.content
