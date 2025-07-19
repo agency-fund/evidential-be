@@ -634,7 +634,7 @@ def test_create_participants_type_invalid(testing_datasource, ppost):
     )
 
 
-async def test_lifecycle_with_db(testing_datasource, ppost, pget, pdelete):
+async def test_lifecycle_with_db(testing_datasource, ppost, pget, pdelete, udelete):
     """Exercises the admin API methods that require an external database."""
     # Add the privileged user to the organization.
     response = ppost(
@@ -822,9 +822,27 @@ async def test_lifecycle_with_db(testing_datasource, ppost, pget, pdelete):
     assert {arm.arm_name for arm in assignments.assignments} == {"control", "treatment"}
     assert {arm.arm_id for arm in assignments.assignments} == parsed_arm_ids
 
+    # Unprivileged user attempts to delete the experiment
+    response = udelete(
+        f"/v1/m/datasources/{testing_datasource.ds.id}/experiments/{parsed_experiment_id}"
+    )
+    assert response.status_code == 403
+
     # Delete the experiment.
     response = pdelete(
         f"/v1/m/datasources/{testing_datasource.ds.id}/experiments/{parsed_experiment_id}"
+    )
+    assert response.status_code == 204, response.content
+
+    # Delete the experiment again.
+    response = pdelete(
+        f"/v1/m/datasources/{testing_datasource.ds.id}/experiments/{parsed_experiment_id}"
+    )
+    assert response.status_code == 404, response.content
+
+    # Delete the experiment again w/allow_missing.
+    response = pdelete(
+        f"/v1/m/datasources/{testing_datasource.ds.id}/experiments/{parsed_experiment_id}?allow_missing=true"
     )
     assert response.status_code == 204, response.content
 

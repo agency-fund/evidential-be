@@ -938,8 +938,7 @@ async def delete_datasource(
     The user must be a member of the organization that owns the datasource.
     """
     resource_query = select(tables.Datasource).where(
-        tables.Datasource.id == datasource_id,
-        tables.Datasource.organization_id == organization_id,
+        tables.Datasource.id == datasource_id
     )
     return await handle_delete(
         session,
@@ -1550,13 +1549,18 @@ async def delete_experiment(
     experiment_id: str,
     session: Annotated[AsyncSession, Depends(xngin_db_session)],
     user: Annotated[tables.User, Depends(user_from_token)],
+    allow_missing: Annotated[bool, Query()] = False,
 ):
     """Deletes the experiment with the specified ID."""
-    ds = await get_datasource_or_raise(session, user, datasource_id)
-    experiment = await get_experiment_via_ds_or_raise(session, ds, experiment_id)
-    await session.delete(experiment)
-    await session.commit()
-    return GENERIC_SUCCESS
+    resource_query = select(tables.Experiment).where(
+        tables.Experiment.id == experiment_id
+    )
+    return await handle_delete(
+        session,
+        allow_missing,
+        authz.is_user_authorized_on_datasource(user, datasource_id),
+        resource_query,
+    )
 
 
 @router.post("/datasources/{datasource_id}/power")
