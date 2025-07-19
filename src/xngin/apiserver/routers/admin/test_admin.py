@@ -382,10 +382,9 @@ def test_delete_datasource(testing_datasource_with_user, pget, udelete, pdelete)
     ds_id = testing_datasource_with_user.ds.id
     org_id = testing_datasource_with_user.org.id
 
-    # udelete() authenticates as a user that is not in the same organization as the datasource but the delete
-    # endpoint always sends a 204.
-    response = udelete(f"/v1/m/datasources/{ds_id}")
-    assert response.status_code == 204, response.content
+    # udelete() authenticates as a user that is not in the same organization as the datasource.
+    response = udelete(f"/v1/m/organizations/{org_id}/datasources/{ds_id}")
+    assert response.status_code == 403, response.content
 
     response = pget(f"/v1/m/organizations/{org_id}/datasources")
     assert response.status_code == 200, response.content
@@ -394,7 +393,7 @@ def test_delete_datasource(testing_datasource_with_user, pget, udelete, pdelete)
     )  # non-empty list
 
     # Delete the datasource as a privileged user.
-    response = pdelete(f"/v1/m/datasources/{ds_id}")
+    response = pdelete(f"/v1/m/organizations/{org_id}/datasources/{ds_id}")
     assert response.status_code == 204, response.content
 
     # Assure the datasource was deleted.
@@ -402,9 +401,21 @@ def test_delete_datasource(testing_datasource_with_user, pget, udelete, pdelete)
     assert response.status_code == 200, response.content
     assert ListDatasourcesResponse.model_validate(response.json()).items == []
 
-    # Delete the datasource a 2nd time returns same code.
-    response = pdelete(f"/v1/m/datasources/{ds_id}")
+    # Delete the datasource a 2nd time returns 404.
+    response = pdelete(f"/v1/organizations/{org_id}/m/datasources/{ds_id}")
+    assert response.status_code == 404, response.content
+
+    # Delete the datasource a 2nd time returns 204 when ?allow_missing is set.
+    response = pdelete(
+        f"/v1/m/organizations/{org_id}/datasources/{ds_id}?allow_missing=true"
+    )
     assert response.status_code == 204, response.content
+
+    response = pget(f"/v1/m/organizations/{org_id}/datasources")
+    assert response.status_code == 200, response.content
+    assert not ListDatasourcesResponse.model_validate(response.json()).items, (
+        response.content
+    )  # empty list
 
 
 async def test_webhook_lifecycle(pdelete, ppost, ppatch, pget):

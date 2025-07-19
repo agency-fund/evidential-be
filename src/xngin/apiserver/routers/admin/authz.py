@@ -16,3 +16,17 @@ def is_user_authorized_on_datasource(
             tables.Datasource.id == datasource_id,
         )
     )
+
+
+def is_user_authorized_on_organization(
+    user: tables.User, organization_id: str
+) -> sqlalchemy.Select:
+    """Create a query that checks if a user is authorized to manage an organization."""
+    return (
+        sqlalchemy.select(tables.Organization)
+        .join(tables.UserOrganization)
+        .where(
+            tables.UserOrganization.user_id == user.id,
+            tables.Organization.id == organization_id,
+        )
+    )

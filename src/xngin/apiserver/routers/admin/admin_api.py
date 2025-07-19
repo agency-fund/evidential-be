@@ -922,33 +922,31 @@ async def inspect_table_in_datasource(
     return response
 
 
-@router.delete("/datasources/{datasource_id}", status_code=status.HTTP_204_NO_CONTENT)
+@router.delete(
+    "/organizations/{organization_id}/datasources/{datasource_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+)
 async def delete_datasource(
     session: Annotated[AsyncSession, Depends(xngin_db_session)],
     user: Annotated[tables.User, Depends(user_from_token)],
+    organization_id: Annotated[str, Path(...)],
     datasource_id: Annotated[str, Path(...)],
+    allow_missing: Annotated[bool, Query()] = False,
 ):
     """Deletes a datasource.
 
     The user must be a member of the organization that owns the datasource.
     """
-    # Delete the datasource, but only if the user has access to it
-    stmt = (
-        delete(tables.Datasource)
-        .where(tables.Datasource.id == datasource_id)
-        .where(
-            tables.Datasource.id.in_(
-                select(tables.Datasource.id)
-                .join(tables.Organization)
-                .join(tables.Organization.users)
-                .where(tables.User.id == user.id)
-            )
-        )
+    resource_query = select(tables.Datasource).where(
+        tables.Datasource.id == datasource_id,
+        tables.Datasource.organization_id == organization_id,
     )
-    await session.execute(stmt)
-    await session.commit()
-
-    return GENERIC_SUCCESS
+    return await handle_delete(
+        session,
+        allow_missing,
+        authz.is_user_authorized_on_organization(user, organization_id),
+        resource_query,
+    )
 
 
 @router.get("/datasources/{datasource_id}/participants")
