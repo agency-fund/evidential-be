@@ -600,6 +600,16 @@ def test_participants_lifecycle(
     response = pdelete(f"/v1/m/datasources/{ds_id}/participants/renamedpt")
     assert response.status_code == 204, response.content
 
+    # Delete the renamed participant type again.
+    response = pdelete(f"/v1/m/datasources/{ds_id}/participants/renamedpt")
+    assert response.status_code == 404, response.content
+
+    # Delete the renamed participant type again w/allow_missing.
+    response = pdelete(
+        f"/v1/m/datasources/{ds_id}/participants/renamedpt?allow_missing=1"
+    )
+    assert response.status_code == 204, response.content
+
     # Get the named participant type after it has been deleted
     response = pget(f"/v1/m/datasources/{ds_id}/participants/renamedpt")
     assert response.status_code == 404, response.content
@@ -615,6 +625,12 @@ def test_participants_lifecycle(
         f"/v1/m/datasources/{ds_id}/participants/test_participant_type",
     )
     assert response.status_code == 404, response.content
+
+    # Delete a participant type in a non-existent datasource.
+    response = pdelete(
+        "/v1/m/datasources/ds-not-exist/participants/test_participant_type",
+    )
+    assert response.status_code == 403, response.content
 
 
 def test_create_participants_type_invalid(testing_datasource, ppost):

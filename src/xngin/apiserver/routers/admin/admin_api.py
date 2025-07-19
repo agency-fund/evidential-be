@@ -2,6 +2,7 @@
 
 import asyncio
 import secrets
+from collections.abc import Awaitable, Callable
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime, timedelta
 from typing import Annotated, Any
@@ -1140,14 +1141,35 @@ async def delete_participant(
     participant_id: str,
     session: Annotated[AsyncSession, Depends(xngin_db_session)],
     user: Annotated[tables.User, Depends(user_from_token)],
+    allow_missing: Annotated[bool, Query()] = False,
 ):
-    ds = await get_datasource_or_raise(session, user, datasource_id)
-    config = ds.get_config()
-    participant = config.find_participants(participant_id)
-    config.participants.remove(participant)
-    ds.set_config(config)
-    await session.commit()
-    return GENERIC_SUCCESS
+    async def get_participants_or_none(session: AsyncSession):
+        resource = (
+            await session.execute(
+                select(tables.Datasource).where(tables.Datasource.id == datasource_id)
+            )
+        ).scalar_one_or_none()
+        if resource is None:
+            return None
+        config = resource.get_config()
+        participant = config.find_participants_or_none(participant_id)
+        if participant is None:
+            return None
+        return resource
+
+    async def deleter(_session: AsyncSession, resource: Any):
+        config = resource.get_config()
+        participant = config.find_participants(participant_id)
+        config.participants.remove(participant)
+        resource.set_config(config)
+
+    return await handle_delete(
+        session,
+        allow_missing,
+        authz.is_user_authorized_on_datasource(user, datasource_id),
+        get_participants_or_none,
+        deleter,
+    )
 
 
 @router.get("/datasources/{datasource_id}/apikeys")
@@ -1571,7 +1593,8 @@ async def handle_delete(
     session: AsyncSession,
     allow_missing: bool,
     is_authorized: sqlalchemy.Select,
-    get_resource_or_none: sqlalchemy.Select,
+    get_resource_or_none: sqlalchemy.Select | Callable[[AsyncSession], Awaitable[Any]],
+    deleter: Callable[[AsyncSession, Any], Awaitable[None]] | None = None,
 ):
     """Generic delete request handler.
 
@@ -1585,6 +1608,8 @@ async def handle_delete(
     :param allow_missing: When True, a 204 will be returned even if the item does not exist.
     :param is_authorized: Query that returns one row if the user is authorized to perform the delete, or zero rows if they are not.
     :param get_resource_or_none: Query that returns the SQLAlchemy ORM instance of the resource being deleted.
+    :param deleter: If specified, will be invoked instead of a standard database session delete operation. The method
+        will be passed the return value of get_resource_or_none.
     :return:
     """
     allowed = (await session.execute(is_authorized)).scalar_one_or_none() is not None
@@ -1593,11 +1618,17 @@ async def handle_delete(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="You are not authorized for this resource.",
         )
-    resource = (await session.execute(get_resource_or_none)).scalar_one_or_none()
+    if isinstance(get_resource_or_none, sqlalchemy.Select):
+        resource = (await session.execute(get_resource_or_none)).scalar_one_or_none()
+    else:
+        resource = await get_resource_or_none(session)
     if resource is None:
         if allow_missing:
             return GENERIC_SUCCESS
         raise HTTPException(404)
-    await session.delete(resource)
+    if deleter:
+        await deleter(session, resource)
+    else:
+        await session.delete(resource)
     await session.commit()
     return GENERIC_SUCCESS
