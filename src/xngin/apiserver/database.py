@@ -1,6 +1,5 @@
 """Handles SQLAlchemy connections to the application database."""
 
-import asyncio
 from pathlib import Path
 
 from loguru import logger

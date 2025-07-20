@@ -8,7 +8,9 @@ def create_database_if_not_exists_pg(connect_url: sqlalchemy.URL | str):
     if isinstance(connect_url, str):
         connect_url = sqlalchemy.engine.url.make_url(connect_url)
     if connect_url.get_backend_name() != "postgresql":
-        print(f"⚠️  No database created: provided URL backend is '{connect_url.get_backend_name()}', not 'postgresql'.")
+        print(
+            f"⚠️  No database created: provided URL backend is '{connect_url.get_backend_name()}', not 'postgresql'."
+        )
         return
 
     tmpl_url = connect_url.set(database="postgres", drivername="postgres")
