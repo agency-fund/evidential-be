@@ -168,33 +168,33 @@ class ExperimentStorageConverter:
                 raise ValueError(
                     "MAB experiments must have prior_type and reward_type set."
                 )
-            return TypeAdapter(capi.MABExperimentSpec).validate_python({
-                "participant_type": self.experiment.participant_type,
-                "experiment_id": self.experiment.id,
-                "experiment_type": self.experiment.experiment_type,
-                "experiment_name": self.experiment.name,
-                "description": self.experiment.description,
-                "start_date": self.experiment.start_date,
-                "end_date": self.experiment.end_date,
-                "arms": [
-                    {
-                        "arm_id": arm.id,
-                        "arm_name": arm.name,
-                        "arm_description": arm.description,
-                        "mu_init": arm.mu_init,
-                        "sigma_init": arm.sigma_init,
-                        "alpha_init": arm.alpha_init,
-                        "beta_init": arm.beta_init,
-                        "mu": arm.mu,
-                        "covariance": arm.covariance,
-                        "alpha": arm.alpha,
-                        "beta": arm.beta,
-                    }
+            return capi.MABExperimentSpec(
+                participant_type=self.experiment.participant_type,
+                experiment_id=self.experiment.id,
+                experiment_type=self.experiment.experiment_type,
+                experiment_name=self.experiment.name,
+                description=self.experiment.description,
+                start_date=self.experiment.start_date,
+                end_date=self.experiment.end_date,
+                arms=[
+                    capi.ArmBandit(
+                        arm_id=arm.id,
+                        arm_name=arm.name,
+                        arm_description=arm.description,
+                        mu_init=arm.mu_init,
+                        sigma_init=arm.sigma_init,
+                        alpha_init=arm.alpha_init,
+                        beta_init=arm.beta_init,
+                        mu=arm.mu,
+                        covariance=arm.covariance,
+                        alpha=arm.alpha,
+                        beta=arm.beta,
+                    )
                     for arm in self.experiment.arms
                 ],
-                "prior_type": capi.PriorTypes(self.experiment.prior_type),
-                "reward_type": capi.LikelihoodTypes(self.experiment.reward_type),
-            })
+                prior_type=capi.PriorTypes(self.experiment.prior_type),
+                reward_type=capi.LikelihoodTypes(self.experiment.reward_type),
+            )
         raise ValueError(
             f"Unsupported experiment type: {self.experiment.experiment_type}"
         )
