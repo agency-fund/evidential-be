@@ -5,8 +5,9 @@ from typing import ClassVar, Self
 
 import sqlalchemy
 from pydantic import TypeAdapter
-from sqlalchemy import ARRAY, Float, ForeignKey, Index, String
+from sqlalchemy import Float, ForeignKey, Index, String
 from sqlalchemy.dialects import postgresql
+from sqlalchemy.dialects.postgresql import ARRAY
 from sqlalchemy.ext.asyncio import AsyncAttrs
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 from sqlalchemy.types import TypeEngine
