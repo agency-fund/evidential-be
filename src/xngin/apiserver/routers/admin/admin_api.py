@@ -294,7 +294,7 @@ async def get_experiment_via_ds_or_raise(
 
 
 async def validate_webhooks(
-    session: AsyncSession, organization_id: str, request_webhooks: list[str] | None
+    session: AsyncSession, organization_id: str, request_webhooks: list[str]
 ) -> list[tables.Webhook]:
     # Validate webhook IDs exist and belong to organization
     validated_webhooks = []
