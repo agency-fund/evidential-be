@@ -39,6 +39,7 @@ from xngin.apiserver.routers.common_api_types import (
 from xngin.apiserver.routers.common_enums import (
     ExperimentState,
     ExperimentsType,
+    LikelihoodTypes,
     PriorTypes,
     StopAssignmentReason,
 )
@@ -795,6 +796,13 @@ async def update_bandit_arms_with_outcomes(
         raise ExperimentsAssignmentError(
             f"Invalid experiment type for bandit outcome update: {experiment.experiment_type}"
         )
+    if experiment.reward_type == LikelihoodTypes.BERNOULLI.value and outcome not in {
+        0,
+        1,
+    }:
+        raise ValueError(
+            f"Invalid outcome for binary reward type: {outcome}. Must be 0 or 1."
+        )
 
     draw_record = await xngin_session.scalar(
         select(tables.Draw).where(
@@ -804,7 +812,11 @@ async def update_bandit_arms_with_outcomes(
     )
     if draw_record is None:
         raise ExperimentsAssignmentError(
-            f"No draw record found for participant '{participant_id}' in experiment '{experiment.id}'"
+            f"No draw record found for participant '{participant_id}' this experiment"
+        )
+    if draw_record.outcome is not None:
+        raise ExperimentsAssignmentError(
+            f"Participant '{participant_id}' already has an outcome recorded for experiment '{experiment.id}'"
         )
 
     draw_record.observed_at = datetime.now(UTC)

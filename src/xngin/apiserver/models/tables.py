@@ -560,7 +560,7 @@ class Draw(Base):
 
     # IDs
     experiment_id: Mapped[str] = mapped_column(
-        ForeignKey("experiments.id", ondelete="CASCADE")
+        ForeignKey("experiments.id", ondelete="CASCADE"), primary_key=True
     )
     participant_id: Mapped[str] = mapped_column(String(255), primary_key=True)
 

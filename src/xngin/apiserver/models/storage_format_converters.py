@@ -340,6 +340,7 @@ class ExperimentStorageConverter:
                 prior_type=design_spec.prior_type.value,
                 n_trials=n_trials,
             )
+            print([arm.mu_init for arm in design_spec.arms])
             experiment.arms = [
                 tables.Arm(
                     id=arm.arm_id,
@@ -349,8 +350,10 @@ class ExperimentStorageConverter:
                     organization_id=organization_id,
                     mu_init=arm.mu_init,
                     sigma_init=arm.sigma_init,
-                    mu=[arm.mu_init] if arm.mu_init else None,
-                    covariance=[[arm.sigma_init]] if arm.sigma_init else None,
+                    mu=[arm.mu_init] if arm.mu_init is not None else None,
+                    covariance=[[arm.sigma_init]]
+                    if arm.sigma_init is not None
+                    else None,
                     alpha_init=arm.alpha_init,
                     beta_init=arm.beta_init,
                     alpha=arm.alpha_init,

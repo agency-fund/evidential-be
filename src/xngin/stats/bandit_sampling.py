@@ -47,11 +47,13 @@ def _sample_normal(
     link_function: link function for the context
     random_state: seed for random number generator
     """
+    print(mus, covariances)
     rng = np.random.default_rng(random_state)
     samples = np.array([
         rng.multivariate_normal(mean=mu, cov=cov)
         for mu, cov in zip(mus, covariances, strict=False)
     ]).reshape(-1, len(context))
+
     probs = link_function(samples @ context)
     return int(probs.argmax())
 
@@ -219,7 +221,7 @@ def update_arm(
     experiment: tables.Experiment,
     arm_to_update: tables.Arm,
     outcomes: list[float],
-    context: list[float] | None = None,
+    context: list[list[float]] | None = None,
 ) -> tuple:
     """
     Update the arm parameters based on the experiment type and reward.
@@ -233,7 +235,7 @@ def update_arm(
     treatments: The treatments applied to the arm, for a Bayesian A/B test.
     """
     # TODO: Only supported for MAB experiments
-    if experiment.experiment_type == ExperimentsType.MAB_ONLINE.value:
+    if experiment.experiment_type != ExperimentsType.MAB_ONLINE.value:
         raise ValueError(f"Invalid experiment type: {experiment.experiment_type}.")
     if not experiment.prior_type or not experiment.reward_type:
         raise ValueError("Experiment must have prior and reward types defined.")
@@ -253,7 +255,7 @@ def update_arm(
             "Arm must have mu and covariance parameters."
         )
         if context is None:
-            context = [1.0] * len(arm_to_update.mu)  # Default context if not provided
+            context = [[1.0] * len(arm_to_update.mu)]  # Default context if not provided
         # Normal likelihood
         if experiment.reward_type == LikelihoodTypes.NORMAL.value:
             return _update_arm_normal(

@@ -1578,7 +1578,7 @@ async def get_experiment_assignment_for_participant(
 
 
 @router.post(
-    "/datasources/{datasource_id}/experiments/{experiment_id}/assignments/{participant_id}",
+    "/datasources/{datasource_id}/experiments/{experiment_id}/assignments/{participant_id}/{outcome}",
     description="""Get the assignment for a specific participant, excluding strata if any.
     For 'preassigned' experiments, the participant's Assignment is returned if it exists.
     For 'online', returns the assignment if it exists, else generates an assignment.""",
@@ -1594,7 +1594,9 @@ async def update_experiment_arm_for_participant(
     """Get the assignment for a specific participant in an experiment."""
     # Validate the datasource and experiment exist
     ds = await get_datasource_or_raise(session, user, datasource_id)
-    experiment = await get_experiment_via_ds_or_raise(session, ds, experiment_id)
+    experiment = await get_experiment_via_ds_or_raise(
+        session, ds, experiment_id, preload=[tables.Experiment.draws]
+    )
 
     # Not supported for frequentist experiments
     if "freq" in experiment.experiment_type:
@@ -1619,12 +1621,18 @@ async def update_experiment_arm_for_participant(
         )
 
     # Update the arm with the outcome
-    updated_arm = await experiments_common.update_bandit_arms_with_outcomes(
-        xngin_session=session,
-        experiment=experiment,
-        participant_id=participant_id,
-        outcome=outcome,
-    )
+    try:
+        updated_arm = await experiments_common.update_bandit_arms_with_outcomes(
+            xngin_session=session,
+            experiment=experiment,
+            participant_id=participant_id,
+            outcome=outcome,
+        )
+    except Exception as err:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Failed to update arm for participant {participant_id}: {err!s}",
+        ) from err
 
     return ArmBandit(
         arm_id=updated_arm.id,
