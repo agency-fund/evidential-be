@@ -20,16 +20,13 @@ env:
   PYTHONUNBUFFERED: "1"
 
 jobs:
-  ruff:
+  check-migrations:
     runs-on: ubuntu-22.04
     timeout-minutes: 15
     steps:
       - uses: ariga/setup-atlas@v0
       - uses: actions/checkout@v4
-      - uses: astral-sh/setup-uv@v4
-        with:
-          version: "0.7.18"
-          enable-cache: true
+      - uses: astral-sh/setup-uv@v6
       - name: validate sa_postgres
         run: uv run atlas migrate validate --env sa_postgres
       - name: lint sa_postgres

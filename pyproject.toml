@@ -49,10 +49,9 @@ log_cli = 0  # set to 1 for live logs
 log_cli_level = "warn"
 markers = [
     "integration: integration tests that rely on remote resources",
-    "nondeterministic: tests that are nondeterministic (but should be)",
     "xurl: tests that use xurl scripts and can be updated with UPDATE_API_TESTS"
 ]
-addopts = "-m 'not integration and not nondeterministic'"
+addopts = "-m 'not integration'"
 # filtewarnings can be used to silence warnings during tests.
 # format is: action:message:category:module
 filterwarnings = [
@@ -133,6 +132,7 @@ banned-from = ["xngin.apiserver.models.tables"]
 "xngin.apiserver.routers.stateless.stateless_api_types" = "sapi"
 
 [tool.uv]
+required-version = "==0.7.18"
 dev-dependencies = [
     "pre-commit>=4.0.1,<4.1.0",
     "pytest>=8.3.2,<9.0.0",

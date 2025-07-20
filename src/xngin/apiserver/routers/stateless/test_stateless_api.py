@@ -19,16 +19,7 @@ from xngin.apiserver.settings import ParticipantsDef
 from xngin.apiserver.testing.assertions import assert_same
 from xngin.apiserver.testing.xurl import Xurl
 
-
-def mark_nondeterministic_tests(c):
-    """Marks known nondeterministic tests with a mark that allows us to skip them except when requested."""
-    return c
-
-
-API_TESTS = [
-    mark_nondeterministic_tests(c)
-    for c in glob.glob(str(Path(__file__).parent / "testdata/*.xurl"))
-]
+API_TESTS = [c for c in glob.glob(str(Path(__file__).parent / "testdata/*.xurl"))]
 
 
 def trunc(s, n=4096):

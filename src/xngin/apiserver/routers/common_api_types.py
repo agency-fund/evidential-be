@@ -97,14 +97,8 @@ class DesignSpecMetric(DesignSpecMetricBase):
     ] = None
 
     @model_validator(mode="after")
-    def stddev_only_if_numeric(self):
-        """Enforce that metric_stddev is present for NUMERICs"""
-        if (
-            self.metric_type == MetricType.NUMERIC
-            and self.available_n
-            and self.metric_stddev is None
-        ):
-            raise ValueError("missing stddev")
+    def stddev_check(self):
+        """Enforce that metric_stddev is empty for non-NUMERICs. FE will handle numerics without stddev (due to all nulls)"""
         if (
             self.metric_type is not MetricType.NUMERIC
             and self.metric_stddev is not None
