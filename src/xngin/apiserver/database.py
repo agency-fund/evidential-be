@@ -1,12 +1,14 @@
 """Handles SQLAlchemy connections to the application database."""
 
+import asyncio
 from pathlib import Path
 
 from loguru import logger
 from sqlalchemy import event
-from sqlalchemy.ext.asyncio import AsyncEngine, async_sessionmaker, create_async_engine
+from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
 from xngin.apiserver import flags
+from xngin.apiserver.models import tables
 
 # SQLAlchemy's logger will append this to the name of its loggers used for the application database; e.g.
 # sqlalchemy.engine.Engine.xngin_app.
@@ -47,6 +49,17 @@ async_engine = create_async_engine(
 
 # We use expire_on_commit for reasons described in docs/SQLALCHEMY.md.
 AsyncSessionLocal = async_sessionmaker(bind=async_engine, expire_on_commit=False)
+
+
+async def maybe_init_models():
+    """Init db tables if the appdb is sqlite.
+
+    Otherwise, run `task bootstrap-app-database` to init the db before starting the server.
+    """
+    if async_engine.dialect.name == "sqlite":
+        logger.info("Initializing SQLite database tables...")
+        async with async_engine.begin() as conn:
+            await conn.run_sync(tables.Base.metadata.create_all)
 
 
 if flags.LOG_SQL_APP_DB:

@@ -5,7 +5,7 @@ from fastapi import Depends, Header
 from fastapi.security import APIKeyHeader
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from xngin.apiserver import constants, flags
+from xngin.apiserver import constants
 from xngin.apiserver.apikeys import require_valid_api_key
 from xngin.apiserver.database import AsyncSessionLocal
 from xngin.apiserver.gsheet_cache import GSheetCache

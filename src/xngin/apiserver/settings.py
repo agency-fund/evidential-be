@@ -55,6 +55,7 @@ def get_settings_for_server():
     """Constructs an XnginSettings for use by the API server."""
     settings_path = os.environ.get("XNGIN_SETTINGS")
     if settings_path is None:
+        logger.info("No XNGIN_SETTINGS environment variable set for static config.")
         return XnginSettings(datasources=[])
 
     if settings_path.startswith("https://"):
