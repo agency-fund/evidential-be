@@ -10,7 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm.session import Session
 
 from xngin.apiserver.models import tables
-from xngin.apiserver.settings import Dsn, RemoteDatabaseConfig
+from xngin.apiserver.settings import Dsn, NoDwh, RemoteDatabaseConfig
 from xngin.apiserver.testing.testing_dwh_def import TESTING_PARTICIPANT_DEF
 
 TESTING_DWH_RAW_DATA = Path(__file__).parent.parent / "testdata/testing_dwh.csv.zst"
@@ -38,6 +38,7 @@ def create_user_and_first_datasource(
     organization = tables.Organization(name="My Organization")
     session.add(organization)
     organization.users.append(user)
+    # create a datasource from input
     if dsn:
         config = RemoteDatabaseConfig(
             participants=[TESTING_PARTICIPANT_DEF], type="remote", dwh=Dsn.from_url(dsn)
@@ -46,4 +47,12 @@ def create_user_and_first_datasource(
             name="Local DWH", organization=organization
         ).set_config(config)
         session.add(datasource)
+
+    # add a NoDWH datasource by default
+    nodwh_config = RemoteDatabaseConfig(participants=[], type="remote", dwh=NoDwh())
+    nodwh_datasource = tables.Datasource(
+        name="Default Dummy DWH", organization=organization
+    ).set_config(nodwh_config)
+    session.add(nodwh_datasource)
+
     return user
