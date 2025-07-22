@@ -29,11 +29,7 @@ jobs:
         with:
           lfs: true
 
-      - name: Setup UV
-        uses: astral-sh/setup-uv@v4
-        with:
-          version: "0.7.18"
-          enable-cache: true
+      - uses: astral-sh/setup-uv@v6
 
       - name: Run ruff
         run: uv run ruff check --output-format=github .
