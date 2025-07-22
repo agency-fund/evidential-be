@@ -1,3 +1,5 @@
+from dataclasses import dataclass
+
 import numpy as np
 import pandas as pd
 from stochatreat import stochatreat
@@ -13,6 +15,16 @@ STOCHATREAT_STRATUM_ID_NAME = "stratum_id"
 STOCHATREAT_TREAT_NAME = "treat"
 
 
+@dataclass(slots=True, kw_only=True, frozen=True)
+class AssignmentResult:
+    """Result of treatment assignment and balance checking."""
+
+    treatment_ids: list[int]
+    stratum_ids: list[int] | None
+    balance_result: BalanceResult | None
+    orig_stratum_cols: list[str]
+
+
 def assign_treatment_and_check_balance(
     df: pd.DataFrame,
     stratum_cols: list[str],
@@ -20,7 +32,7 @@ def assign_treatment_and_check_balance(
     n_arms: int,
     quantiles: int = 4,
     random_state: int | None = None,
-) -> tuple[list[int], list[int] | None, BalanceResult | None, list[str]]:
+) -> AssignmentResult:
     """
     Perform stratified random assignment and do a balance check of the arm assignments.
 
@@ -35,7 +47,7 @@ def assign_treatment_and_check_balance(
         random_state: Random seed for reproducibility
 
     Returns:
-        tuple of (treatment_ids, stratum_ids, balance_result, orig_stratum_cols)
+        AssignmentResult containing:
             treatment_ids - list of arm assignments starting from 0, one per row in the dataframe
             stratum_ids - list of stratum ids starting from 0, one per row in the dataframe.
                 May be useful if you wish to do any post-hoc analyses by stratum.
@@ -46,7 +58,12 @@ def assign_treatment_and_check_balance(
     if len(stratum_cols) == 0:
         # No stratification, so use simple random assignment
         treatment_ids = simple_random_assignment(df, n_arms, random_state)
-        return treatment_ids, None, None, []
+        return AssignmentResult(
+            treatment_ids=treatment_ids,
+            stratum_ids=None,
+            balance_result=None,
+            orig_stratum_cols=[],
+        )
 
     # Dedupe the strata names and then sort them for a stable output ordering
     orig_stratum_cols = sorted(set(stratum_cols))
@@ -69,7 +86,12 @@ def assign_treatment_and_check_balance(
         # No stratification, so use simple random assignment while still outputting strata, even
         # though they're either all the same value or all unique values.
         treatment_ids = simple_random_assignment(df, n_arms, random_state)
-        return treatment_ids, None, None, orig_stratum_cols
+        return AssignmentResult(
+            treatment_ids=treatment_ids,
+            stratum_ids=None,
+            balance_result=None,
+            orig_stratum_cols=orig_stratum_cols,
+        )
 
     # Do stratified random assignment
     # TODO: when we support unequal arm assignments, be careful about ensuring the right treatment
@@ -106,7 +128,12 @@ def assign_treatment_and_check_balance(
     )
     del df_cleaned_for_balance_check
 
-    return list(treatment_ids), list(stratum_ids), balance_result, orig_stratum_cols
+    return AssignmentResult(
+        treatment_ids=list(treatment_ids),
+        stratum_ids=list(stratum_ids),
+        balance_result=balance_result,
+        orig_stratum_cols=orig_stratum_cols,
+    )
 
 
 def simple_random_assignment(

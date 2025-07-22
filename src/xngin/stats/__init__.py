@@ -1,4 +1,8 @@
-from .assignment import assign_treatment_and_check_balance, simple_random_assignment
+from .assignment import (
+    AssignmentResult,
+    assign_treatment_and_check_balance,
+    simple_random_assignment,
+)
 from .balance import (
     check_balance_of_preprocessed_df,
     preprocess_for_balance_and_stratification,
@@ -8,6 +12,7 @@ from .power import check_power
 from .stats_errors import StatsBalanceError, StatsError, StatsPowerError
 
 __all__ = [
+    "AssignmentResult",
     "StatsBalanceError",
     "StatsError",
     "StatsPowerError",

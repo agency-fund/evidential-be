@@ -90,26 +90,24 @@ def assign_treatment(
         df[decimals] = df[decimals].astype(float)
 
     # Call the core assignment function
-    treatment_ids, stratum_ids, balance_result, orig_stratum_cols = (
-        assign_treatment_and_check_balance(
-            df=df,
-            stratum_cols=stratum_cols,
-            id_col=id_col,
-            n_arms=len(arms),
-            quantiles=quantiles,
-            random_state=random_state,
-        )
+    result = assign_treatment_and_check_balance(
+        df=df,
+        stratum_cols=stratum_cols,
+        id_col=id_col,
+        n_arms=len(arms),
+        quantiles=quantiles,
+        random_state=random_state,
     )
 
     return _make_assign_response(
         data=data,
-        orig_stratum_cols=orig_stratum_cols,
+        orig_stratum_cols=result.orig_stratum_cols,
         id_col=id_col,
         arms=arms,
         experiment_id=experiment_id,
-        balance_check=_make_balance_check(balance_result, fstat_thresh),
-        treatment_ids=treatment_ids,
-        stratum_ids=stratum_ids,
+        balance_check=_make_balance_check(result.balance_result, fstat_thresh),
+        treatment_ids=result.treatment_ids,
+        stratum_ids=result.stratum_ids,
         stratum_id_name=stratum_id_name,
     )
 
