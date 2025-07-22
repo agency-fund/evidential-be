@@ -340,7 +340,6 @@ class ExperimentStorageConverter:
                 prior_type=design_spec.prior_type.value,
                 n_trials=n_trials,
             )
-            print([arm.mu_init for arm in design_spec.arms])
             experiment.arms = [
                 tables.Arm(
                     id=arm.arm_id,

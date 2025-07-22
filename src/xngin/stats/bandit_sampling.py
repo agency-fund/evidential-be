@@ -47,7 +47,6 @@ def _sample_normal(
     link_function: link function for the context
     random_state: seed for random number generator
     """
-    print(mus, covariances)
     rng = np.random.default_rng(random_state)
     samples = np.array([
         rng.multivariate_normal(mean=mu, cov=cov)
