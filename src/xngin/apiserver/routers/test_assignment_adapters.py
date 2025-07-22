@@ -26,8 +26,13 @@ from xngin.apiserver.routers.common_api_types import (
 from xngin.stats.balance import BalanceResult
 
 
+class RowProtocolMixin:
+    def _asdict(self) -> dict[str, Any]:
+        return dataclasses.asdict(self)
+
+
 @dataclass
-class Row:
+class Row(RowProtocolMixin):
     """Simulate the bits of a sqlalchemy Row that we need here."""
 
     id: int
@@ -39,9 +44,6 @@ class Row:
     income_dec: Decimal
     is_male: bool
     single_value: int
-
-    def _asdict(self) -> dict[str, Any]:
-        return dataclasses.asdict(self)
 
 
 @pytest.fixture

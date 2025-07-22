@@ -141,6 +141,40 @@ def test_assign_treatment_with_missing_values(sample_df):
     assert set(treatment_ids) == {0, 1}
 
 
+def test_assign_treatment_with_infer_objects():
+    """Test that we infer objects correctly, resulting in a proper number of strata."""
+    n = 300
+    df = (
+        pd.DataFrame()
+        .assign(
+            id=np.arange(n),
+            # nullable, non-unique numeric => 3 levels (NaN, 0, 1)
+            col1=[None, 1, 2] * (n // 3),
+            # nullable, unique numeric => 5 levels since default quantiles=4, but only 1 None to stratify on
+            col2=np.concatenate([[None], np.arange(n - 1)]),
+            # non-unique numeric => 2 levels
+            col3=[1.0, 2.0] * (n // 2),
+        )
+        .astype("O")
+    )  # turn all columns into objects to test inference
+    # Improper inference of objects would raise a SyntaxError in the regression of
+    # balance.py::check_balance_of_preprocessed_df due to creating dummies out of float64s.
+    treatment_ids, stratum_ids, balance_result, orig_stratum_cols = (
+        assign_treatment_and_check_balance(
+            df=df,
+            stratum_cols=["col1", "col2", "col3"],
+            id_col="id",
+            n_arms=2,
+        )
+    )
+
+    assert set(treatment_ids) == {0, 1}
+    # Improper inference of objects would result in a different number of strata.
+    assert set(stratum_ids) == set(range(25))  # = 2*4*3 + 1 for the None in col1
+    assert balance_result.f_pvalue > 0.9
+    assert orig_stratum_cols == ["col1", "col2", "col3"]
+
+
 def test_assign_treatment_decimal_strata_columns_are_not_supported(sample_df):
     """Test that unconverted Decimal strata columns raise an error."""
     sample_df["decimal"] = sample_df["income"].apply(Decimal)

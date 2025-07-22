@@ -48,14 +48,13 @@ def assign_treatment_and_check_balance(
         treatment_ids = simple_random_assignment(df, n_arms, random_state)
         return treatment_ids, None, None, []
 
-    # Create copy for analysis while attempting to convert any numeric "object" types that pandas
-    # didn't originally recognize when creating the dataframe.
-    df = df.infer_objects()
-
     # Dedupe the strata names and then sort them for a stable output ordering
     orig_stratum_cols = sorted(set(stratum_cols))
 
-    orig_data_to_stratify = df[[id_col, *orig_stratum_cols]]
+    # Create copy for analysis while attempting to convert any numeric "object" types that pandas
+    # didn't originally recognize when creating the dataframe. This might have arisen from nullable
+    # numeric columns in the underlying database being converted to object types.
+    orig_data_to_stratify = df[[id_col, *orig_stratum_cols]].infer_objects()
     df_cleaned, exclude_cols_set, numeric_notnull_set = (
         preprocess_for_balance_and_stratification(
             data=orig_data_to_stratify,
