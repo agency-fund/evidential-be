@@ -790,65 +790,93 @@ async def update_bandit_arms_with_outcomes(
     outcome: float,
 ) -> tables.Arm:
     """Update the Draw table with the outcome for a bandit experiment."""
+    # Not supported for frequentist experiments
+    if "freq" in experiment.experiment_type:
+        raise LateValidationError(
+            "Cannot update assignment for frequentist experiments.",
+        )
+
+    # Look up the participant's assignment if it exists
+    assignment = await get_existing_assignment_for_participant(
+        xngin_session, experiment.id, participant_id, experiment.experiment_type
+    )
+    if not assignment:
+        raise LateValidationError(
+            f"Participant {participant_id} does not have an assignment for which to record an outcome.",
+        )
+    if assignment.outcome is not None:
+        raise LateValidationError(
+            f"Participant {participant_id} already has an outcome recorded.",
+        )
+
     # TODO: Add support for CMAB or Bayes A/B experiments.
     if experiment.experiment_type != ExperimentsType.MAB_ONLINE.value:
-        raise ExperimentsAssignmentError(
+        raise LateValidationError(
             f"Invalid experiment type for bandit outcome update: {experiment.experiment_type}"
         )
     if experiment.reward_type == LikelihoodTypes.BERNOULLI.value and outcome not in {
         0,
         1,
     }:
-        raise ValueError(
+        raise LateValidationError(
             f"Invalid outcome for binary reward type: {outcome}. Must be 0 or 1."
         )
 
-    draw_record = await xngin_session.scalar(
-        select(tables.Draw).where(
-            tables.Draw.participant_id == participant_id,
-            tables.Draw.experiment_id == experiment.id,
+    try:
+        draw_record = await xngin_session.scalar(
+            select(tables.Draw).where(
+                tables.Draw.participant_id == participant_id,
+                tables.Draw.experiment_id == experiment.id,
+            )
         )
-    )
-    if draw_record is None:
+        if draw_record is None:
+            raise ExperimentsAssignmentError(
+                f"No draw record found for participant '{participant_id}' this experiment"
+            )
+        if draw_record.outcome is not None:
+            raise ExperimentsAssignmentError(
+                f"Participant '{participant_id}' already has an outcome recorded for experiment '{experiment.id}'"
+            )
+
+        draw_record.observed_at = datetime.now(UTC)
+        draw_record.outcome = outcome
+
+        arm_to_update = next(
+            arm for arm in experiment.arms if arm.id == draw_record.arm_id
+        )
+
+        previous_outcomes = [
+            draw.outcome
+            for draw in sorted(experiment.draws, key=lambda d: d.created_at)
+            if draw.arm_id == draw_record.arm_id and draw.outcome is not None
+        ][::-1]  # Reverse order to get the most recent outcomes first
+
+        outcomes = [outcome, *previous_outcomes]
+        updated_parameters = update_arm(
+            experiment=experiment,
+            arm_to_update=arm_to_update,
+            outcomes=outcomes,
+            context=None,
+        )
+
+        # Update the draw record and arm with the new parameters
+        if experiment.prior_type == PriorTypes.BETA.value:
+            draw_record.current_alpha, draw_record.current_beta = updated_parameters
+            arm_to_update.alpha, arm_to_update.beta = updated_parameters
+
+        elif experiment.prior_type == PriorTypes.NORMAL.value:
+            draw_record.current_mu, draw_record.current_covariance = updated_parameters
+            arm_to_update.mu, arm_to_update.covariance = updated_parameters
+
+        xngin_session.add(draw_record)
+        xngin_session.add(arm_to_update)
+        await xngin_session.commit()
+
+    except IntegrityError as e:
+        await xngin_session.rollback()
         raise ExperimentsAssignmentError(
-            f"No draw record found for participant '{participant_id}' this experiment"
-        )
-    if draw_record.outcome is not None:
-        raise ExperimentsAssignmentError(
-            f"Participant '{participant_id}' already has an outcome recorded for experiment '{experiment.id}'"
-        )
-
-    draw_record.observed_at = datetime.now(UTC)
-    draw_record.outcome = outcome
-
-    arm_to_update = next(arm for arm in experiment.arms if arm.id == draw_record.arm_id)
-
-    previous_outcomes = [
-        draw.outcome
-        for draw in sorted(experiment.draws, key=lambda d: d.created_at)
-        if draw.arm_id == draw_record.arm_id and draw.outcome is not None
-    ][::-1]  # Reverse order to get the most recent outcomes first
-
-    outcomes = [outcome, *previous_outcomes]
-    updated_parameters = update_arm(
-        experiment=experiment,
-        arm_to_update=arm_to_update,
-        outcomes=outcomes,
-        context=None,
-    )
-
-    # Update the draw record and arm with the new parameters
-    if experiment.prior_type == PriorTypes.BETA.value:
-        draw_record.current_alpha, draw_record.current_beta = updated_parameters
-        arm_to_update.alpha, arm_to_update.beta = updated_parameters
-
-    elif experiment.prior_type == PriorTypes.NORMAL.value:
-        draw_record.current_mu, draw_record.current_covariance = updated_parameters
-        arm_to_update.mu, arm_to_update.covariance = updated_parameters
-
-    xngin_session.add(draw_record)
-    xngin_session.add(arm_to_update)
-    await xngin_session.commit()
+            f"Failed to update assignment for participant '{participant_id}' with outcome {outcome}: {e}"
+        ) from e
 
     return arm_to_update
 

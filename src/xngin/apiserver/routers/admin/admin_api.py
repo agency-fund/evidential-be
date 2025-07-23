@@ -1596,41 +1596,13 @@ async def update_experiment_arm_for_participant(
         session, ds, experiment_id, preload=[tables.Experiment.draws]
     )
 
-    # Not supported for frequentist experiments
-    if "freq" in experiment.experiment_type:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Cannot update assignment for frequentist experiments.",
-        )
-
-    # Look up the participant's assignment if it exists
-    assignment = await experiments_common.get_existing_assignment_for_participant(
-        session, experiment.id, participant_id, experiment.experiment_type
-    )
-    if not assignment:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Participant {participant_id} does not have an assignment for which to record an outcome.",
-        )
-    if assignment.outcome is not None:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Participant {participant_id} already has an outcome recorded.",
-        )
-
     # Update the arm with the outcome
-    try:
-        updated_arm = await experiments_common.update_bandit_arms_with_outcomes(
-            xngin_session=session,
-            experiment=experiment,
-            participant_id=participant_id,
-            outcome=outcome,
-        )
-    except Exception as err:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Failed to update arm for participant {participant_id}: {err!s}",
-        ) from err
+    updated_arm = await experiments_common.update_bandit_arms_with_outcomes(
+        xngin_session=session,
+        experiment=experiment,
+        participant_id=participant_id,
+        outcome=outcome,
+    )
 
     return ArmBandit(
         arm_id=updated_arm.id,
