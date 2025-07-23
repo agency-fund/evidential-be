@@ -20,6 +20,9 @@ from xngin.apiserver.dwh.inspection_types import ParticipantsSchema
 from xngin.apiserver.dwh.queries import get_stats_on_filters, get_stats_on_metrics
 from xngin.apiserver.exceptions_common import LateValidationError
 from xngin.apiserver.gsheet_cache import GSheetCache
+from xngin.apiserver.routers.assignment_adapters import (
+    assign_treatment as assign_treatment_actual,
+)
 from xngin.apiserver.routers.common_api_types import (
     BaseFrequentistDesignSpec,
     DesignSpec,
@@ -41,7 +44,6 @@ from xngin.apiserver.settings import (
     ParticipantsMixin,
 )
 from xngin.sheets.config_sheet import fetch_and_parse_sheet
-from xngin.stats.assignment import assign_treatment as assign_treatment_actual
 from xngin.stats.power import check_power
 
 

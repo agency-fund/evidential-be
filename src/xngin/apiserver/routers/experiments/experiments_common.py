@@ -23,6 +23,7 @@ from xngin.apiserver.exceptions_common import LateValidationError
 from xngin.apiserver.gsheet_cache import GSheetCache
 from xngin.apiserver.models import tables
 from xngin.apiserver.models.storage_format_converters import ExperimentStorageConverter
+from xngin.apiserver.routers.assignment_adapters import RowProtocol, assign_treatment
 from xngin.apiserver.routers.common_api_types import (
     Arm,
     ArmSize,
@@ -55,6 +56,7 @@ from xngin.apiserver.webhooks.webhook_types import ExperimentCreatedWebhookBody
 from xngin.events.experiment_created import ExperimentCreatedEvent
 from xngin.stats.assignment import RowProtocol, assign_treatment
 from xngin.stats.bandit_sampling import choose_arm, update_arm
+
 from xngin.tq.task_payload_types import WEBHOOK_OUTBOUND_TASK_TYPE, WebhookOutboundTask
 
 
