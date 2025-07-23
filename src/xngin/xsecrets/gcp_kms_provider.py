@@ -38,12 +38,13 @@ def _unpack_envelope_ciphertext(ct: bytes) -> tuple[bytes, bytes]:
     # Extract encrypted DEK length
     encrypted_dek_length = struct.unpack("<I", ct[:4])[0]
 
-    if len(ct) < 4 + encrypted_dek_length:
+    encrypted_data_offset = 4 + encrypted_dek_length
+    if len(ct) < encrypted_data_offset:
         raise ValueError("Ciphertext format invalid")
 
     # Extract encrypted DEK and encrypted data
-    encrypted_dek = ct[4 : 4 + encrypted_dek_length]
-    encrypted_data = ct[4 + encrypted_dek_length :]
+    encrypted_dek = ct[4:encrypted_data_offset]
+    encrypted_data = ct[encrypted_data_offset:]
 
     return encrypted_dek, encrypted_data
 
