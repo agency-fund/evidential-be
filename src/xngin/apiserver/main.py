@@ -14,6 +14,7 @@ from xngin.apiserver import (
 from xngin.apiserver.openapi import custom_openapi
 from xngin.apiserver.routers.auth import auth_dependencies
 from xngin.apiserver.settings import get_settings_for_server
+from xngin.xsecrets import secretservice
 
 if sentry_dsn := os.environ.get("SENTRY_DSN"):
     import sentry_sdk
@@ -64,9 +65,8 @@ app = FastAPI(lifespan=lifespan)
 exceptionhandlers.setup(app)
 middleware.setup(app)
 customlogging.setup()
+secretservice.setup()
 routes.register(app)
-
-
 auth_dependencies.setup(app)
 
 app.openapi = custom_openapi(app)  # type: ignore[method-assign]

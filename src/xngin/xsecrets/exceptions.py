@@ -1,0 +1,2 @@
+class InvalidSecretStoreConfigurationError(Exception):
+    pass
