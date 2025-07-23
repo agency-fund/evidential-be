@@ -870,10 +870,9 @@ class CreateExperimentRequest(ExperimentsBaseModel):
     webhooks: Annotated[
         list[str],
         Field(
-            default=[],
             description="List of webhook IDs to associate with this experiment. When the experiment is committed, these webhooks will be triggered with experiment details. Must contain unique values.",
         ),
-    ]
+    ] = []
 
     @field_validator("webhooks")
     @classmethod
@@ -931,10 +930,9 @@ class ExperimentConfig(ExperimentsBaseModel):
     webhooks: Annotated[
         list[str],
         Field(
-            default=[],
             description="List of webhook IDs associated with this experiment. These webhooks are triggered when the experiment is committed.",
         ),
-    ]
+    ] = []
 
 
 class GetExperimentResponse(ExperimentConfig):
