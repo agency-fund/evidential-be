@@ -169,9 +169,7 @@ def test_encrypt_decrypt_roundtrip(gcp_kms_provider, plaintext, aad):
     """Test encrypt/decrypt roundtrip with various data sizes and AAD."""
     ciphertext = gcp_kms_provider.encrypt(plaintext, aad)
     assert len(ciphertext) > 4 + 32  # at least EDEK size plus key
-
-    if plaintext:
-        assert ciphertext != plaintext
+    assert ciphertext != plaintext
 
     decrypted = gcp_kms_provider.decrypt(ciphertext, aad)
     assert decrypted == plaintext
