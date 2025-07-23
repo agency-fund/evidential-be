@@ -768,10 +768,11 @@ def create_nacl_keyset(
         ),
     ] = OutputFormat.base64,
 ):
-    """Generate an encryption keyset for the "local" secret storage backend.
+    """Generate an encryption keyset for the "nacl" secret provider.
 
-    The encoded encryption key will be written to stdout. This value
-    is suitable for use as the XNGIN_SECRETS_NACL_KEYSET environment variable.
+    The encoded encryption key will be written to stdout.
+
+    When --output=base64 (default), the output can be used as the XNGIN_SECRETS_NACL_KEYSET environment variable.
     """
     keyset = NaclProviderKeyset.create()
     if output == "base64":
