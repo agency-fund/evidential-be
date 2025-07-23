@@ -109,19 +109,19 @@ async def create_dwh_experiment_impl(
                 )
                 sa_table, participants = result.sa_table, result.participants
 
-            elif request.design_spec.experiment_type == "freq_preassigned":
-                raise HTTPException(
-                    status_code=status.HTTP_400_BAD_REQUEST,
-                    detail="Preassigned experiments must have a chosen_n.",
+            elif (
+                request.design_spec.experiment_type == ExperimentsType.FREQ_PREASSIGNED
+            ):
+                raise LateValidationError(
+                    "Preassigned experiments must have a chosen_n."
                 )
             else:
                 sa_table = await dwh.inspect_table(participants_cfg.table_name)
 
         if request.design_spec.experiment_type == ExperimentsType.FREQ_PREASSIGNED:
             if participants is None:
-                raise HTTPException(
-                    status_code=status.HTTP_400_BAD_REQUEST,
-                    detail="Preassigned experiments must have participants data",
+                raise LateValidationError(
+                    "Preassigned experiments must have participants data"
                 )
             return await create_preassigned_experiment_impl(
                 request=request,
@@ -202,9 +202,8 @@ async def create_stateless_experiment_impl(
 
     if request.design_spec.experiment_type == ExperimentsType.FREQ_PREASSIGNED:
         if result.participants is None:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Preassigned experiments must have participants data",
+            raise LateValidationError(
+                "Preassigned experiments must have participants data",
             )
         return await create_preassigned_experiment_impl(
             request=request,

@@ -1579,9 +1579,7 @@ async def get_experiment_assignment_for_participant(
 
 @router.post(
     "/datasources/{datasource_id}/experiments/{experiment_id}/assignments/{participant_id}/{outcome}",
-    description="""Get the assignment for a specific participant, excluding strata if any.
-    For 'preassigned' experiments, the participant's Assignment is returned if it exists.
-    For 'online', returns the assignment if it exists, else generates an assignment.""",
+    description="""Update the MAB arm assignment for a specific participant.""",
 )
 async def update_experiment_arm_for_participant(
     datasource_id: str,
