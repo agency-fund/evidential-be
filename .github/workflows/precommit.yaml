@@ -26,10 +26,7 @@ jobs:
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
-      - uses: astral-sh/setup-uv@v4
-        with:
-          version: "0.7.18"
-          enable-cache: true
+      - uses: astral-sh/setup-uv@v6
       - run: echo PYTHON_DIR=$(uv python dir) | tee -a $GITHUB_ENV
       - name: Configure cache for pre-commit
         uses: actions/cache@v4

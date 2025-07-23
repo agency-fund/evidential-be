@@ -135,6 +135,7 @@ banned-from = ["xngin.apiserver.models.tables"]
 "xngin.apiserver.routers.stateless.stateless_api_types" = "sapi"
 
 [tool.uv]
+required-version = "==0.7.18"
 dev-dependencies = [
     "pre-commit>=4.0.1,<4.1.0",
     "pytest>=8.3.2,<9.0.0",

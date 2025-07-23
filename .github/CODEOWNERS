@@ -7,4 +7,6 @@
 # @global-owner1 and @global-owner2 will be requested for
 # review when someone opens a pull request.
 
-* @qixotic @dctaf @poornimaramesh @Jayprakash-SE @sidravi1 @roboton @EdmundKorley
+**/stats @poornimaramesh @roboton
+
+**/auth @dctaf

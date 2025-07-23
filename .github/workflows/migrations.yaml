@@ -26,11 +26,10 @@ jobs:
     steps:
       - uses: ariga/setup-atlas@v0
       - uses: actions/checkout@v4
-      - uses: astral-sh/setup-uv@v4
-        with:
-          version: "0.7.18"
-          enable-cache: true
-      - name: validate sa_postgres
+      - uses: astral-sh/setup-uv@v6
+      - name: ensure migrations are valid
         run: uv run atlas migrate validate --env sa_postgres
-      - name: lint sa_postgres
+      - name: lint migrations
         run: uv run atlas migrate lint --env sa_postgres --git-base HEAD
+      - name: ensure migrations have been created for the latest code changes
+        run: uv run atlas migrate diff --env sa_postgres
