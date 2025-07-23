@@ -32,7 +32,6 @@ def check_balance(
     data: pd.DataFrame,
     treatment_col: str = "treat",
     exclude_cols: list[str] | None = None,
-    alpha: float = 0.5,
     quantiles: int = 4,
     missing_string="__NULL__",
 ) -> BalanceResult:
@@ -48,7 +47,6 @@ def check_balance(
         data: DataFrame containing treatment assignments and covariates
         treatment_col: Name of treatment assignment column
         exclude_cols: List of columns to exclude from balance check
-        alpha: Significance level for balance test
         quantiles: Number of quantiles to bucket numeric columns with NAs
         missing_string: value used internally for replacing NAs in non-numeric columns
 
@@ -77,7 +75,6 @@ def check_balance(
         data=df_cleaned,
         treatment_col=treatment_col,
         exclude_col_set=exclude_cols_set,
-        alpha=alpha,
     )
 
 
@@ -86,7 +83,7 @@ def test_check_balance(sample_data):
 
     assert result.f_statistic is not None
     assert result.f_pvalue is not None
-    assert result.is_balanced
+    assert result.f_pvalue > 0.5
     assert result.model_summary is not None
 
 
@@ -98,7 +95,7 @@ def test_check_balance_with_missing_values(sample_data):
 
     assert result.f_statistic is not None
     assert result.f_pvalue is not None
-    assert result.is_balanced
+    assert result.f_pvalue > 0.5
 
 
 def test_check_balance_with_excluded_cols(sample_data):
@@ -106,7 +103,7 @@ def test_check_balance_with_excluded_cols(sample_data):
 
     assert result.f_statistic is not None
     assert result.f_pvalue is not None
-    assert isinstance(result.is_balanced, bool)
+    assert result.f_pvalue > 0.5
 
 
 def test_check_balance_invalid_treatment(sample_data):
@@ -124,7 +121,7 @@ def test_check_balance_with_single_value_columns(sample_data):
 
     assert result.f_statistic is not None
     assert result.f_pvalue is not None
-    assert result.is_balanced
+    assert result.f_pvalue > 0.5
     assert result.model_summary is not None
 
 
@@ -144,7 +141,7 @@ def test_check_balance_with_column_exclusion_from_dummy_var_generation():
 
     assert result.numerator_df == 1
     assert result.denominator_df == 18
-    assert result.is_balanced is True
+    assert result.f_pvalue > 0.5
     assert result.model_summary is not None
 
 
@@ -162,7 +159,7 @@ def test_check_balance_with_skewed_column_doesnt_raise_valueerror():
 
     assert result.f_statistic is not None
     assert result.f_pvalue is not None
-    assert result.is_balanced is False
+    assert result.f_pvalue <= 0.5
     assert result.model_summary is not None
 
 
@@ -184,7 +181,6 @@ def test_check_balance_with_mostly_nulls_categorical():
     assert pd.isna(result.f_pvalue) is False, result.model_summary
     assert pd.isna(result.f_statistic) is False, result.model_summary
     assert result.denominator_df > 0
-    assert isinstance(result.is_balanced, bool)
     assert result.model_summary is not None
 
 
