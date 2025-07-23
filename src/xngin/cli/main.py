@@ -580,9 +580,9 @@ def export_openapi_spec(output: Path = Path("openapi.json")):
     """Writes the OpenAPI spec to the file specified by --output."""
     app = FastAPI()
     routes.register(app)
-    with open(output, "w") as f:
+    with open(output, "w") as outf:
         json.dump(
-            xngin.apiserver.openapi.custom_openapi(app), f, sort_keys=True, indent=2
+            xngin.apiserver.openapi.custom_openapi(app), outf, sort_keys=True, indent=2
         )
 
 
