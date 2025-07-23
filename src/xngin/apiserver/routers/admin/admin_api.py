@@ -508,7 +508,10 @@ async def delete_webhook_from_organization(
     webhook_id: str,
     session: Annotated[AsyncSession, Depends(xngin_db_session)],
     user: Annotated[tables.User, Depends(user_from_token)],
-    allow_missing: Annotated[bool, Query()] = False,
+    allow_missing: Annotated[
+        bool,
+        Query(description="If true, return a 204 even if the resource does not exist."),
+    ] = False,
 ):
     """Removes a Webhook from an organization."""
     resource_query = select(tables.Webhook).where(tables.Webhook.id == webhook_id)
@@ -921,7 +924,10 @@ async def delete_datasource(
     user: Annotated[tables.User, Depends(user_from_token)],
     organization_id: Annotated[str, Path(...)],
     datasource_id: Annotated[str, Path(...)],
-    allow_missing: Annotated[bool, Query()] = False,
+    allow_missing: Annotated[
+        bool,
+        Query(description="If true, return a 204 even if the resource does not exist."),
+    ] = False,
 ):
     """Deletes a datasource.
 
@@ -1140,7 +1146,10 @@ async def delete_participant(
     participant_id: str,
     session: Annotated[AsyncSession, Depends(xngin_db_session)],
     user: Annotated[tables.User, Depends(user_from_token)],
-    allow_missing: Annotated[bool, Query()] = False,
+    allow_missing: Annotated[
+        bool,
+        Query(description="If true, return a 204 even if the resource does not exist."),
+    ] = False,
 ):
     async def get_participants_or_none(session_: AsyncSession):
         resource = (
@@ -1225,7 +1234,10 @@ async def delete_api_key(
     session: Annotated[AsyncSession, Depends(xngin_db_session)],
     user: Annotated[tables.User, Depends(user_from_token)],
     api_key_id: Annotated[str, Path(...)],
-    allow_missing: Annotated[bool, Query()] = False,
+    allow_missing: Annotated[
+        bool,
+        Query(description="If true, return a 204 even if the resource does not exist."),
+    ] = False,
 ):
     """Deletes the specified API key."""
     resource_query = (
@@ -1560,7 +1572,10 @@ async def delete_experiment(
     experiment_id: str,
     session: Annotated[AsyncSession, Depends(xngin_db_session)],
     user: Annotated[tables.User, Depends(user_from_token)],
-    allow_missing: Annotated[bool, Query()] = False,
+    allow_missing: Annotated[
+        bool,
+        Query(description="If true, return a 204 even if the resource does not exist."),
+    ] = False,
 ):
     """Deletes the experiment with the specified ID."""
     resource_query = select(tables.Experiment).where(
