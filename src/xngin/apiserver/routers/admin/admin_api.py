@@ -1142,9 +1142,9 @@ async def delete_participant(
     user: Annotated[tables.User, Depends(user_from_token)],
     allow_missing: Annotated[bool, Query()] = False,
 ):
-    async def get_participants_or_none(session: AsyncSession):
+    async def get_participants_or_none(session_: AsyncSession):
         resource = (
-            await session.execute(
+            await session_.execute(
                 select(tables.Datasource).where(tables.Datasource.id == datasource_id)
             )
         ).scalar_one_or_none()
