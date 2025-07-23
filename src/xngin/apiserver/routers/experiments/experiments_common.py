@@ -54,9 +54,7 @@ from xngin.apiserver.settings import (
 )
 from xngin.apiserver.webhooks.webhook_types import ExperimentCreatedWebhookBody
 from xngin.events.experiment_created import ExperimentCreatedEvent
-from xngin.stats.assignment import RowProtocol, assign_treatment
 from xngin.stats.bandit_sampling import choose_arm, update_arm
-
 from xngin.tq.task_payload_types import WEBHOOK_OUTBOUND_TASK_TYPE, WebhookOutboundTask
 
 
