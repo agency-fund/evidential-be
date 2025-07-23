@@ -80,7 +80,6 @@ from xngin.apiserver.routers.auth.auth_dependencies import require_oidc_token
 from xngin.apiserver.routers.auth.principal import Principal
 from xngin.apiserver.routers.common_api_types import (
     ArmAnalysis,
-    ArmBandit,
     BanditExperimentAnalysis,
     BaseBanditExperimentSpec,
     BaseFrequentistDesignSpec,
@@ -1574,48 +1573,6 @@ async def get_experiment_assignment_for_participant(
         experiment_id=experiment_id,
         participant_id=participant_id,
         assignment=assignment,
-    )
-
-
-@router.post(
-    "/datasources/{datasource_id}/experiments/{experiment_id}/assignments/{participant_id}/{outcome}",
-    description="""Update the MAB arm assignment for a specific participant.""",
-)
-async def update_experiment_arm_for_participant(
-    datasource_id: str,
-    experiment_id: str,
-    participant_id: str,
-    outcome: float,
-    session: Annotated[AsyncSession, Depends(xngin_db_session)],
-    user: Annotated[tables.User, Depends(user_from_token)],
-) -> ArmBandit:
-    """Get the assignment for a specific participant in an experiment."""
-    # Validate the datasource and experiment exist
-    ds = await get_datasource_or_raise(session, user, datasource_id)
-    experiment = await get_experiment_via_ds_or_raise(
-        session, ds, experiment_id, preload=[tables.Experiment.draws]
-    )
-
-    # Update the arm with the outcome
-    updated_arm = await experiments_common.update_bandit_arms_with_outcomes(
-        xngin_session=session,
-        experiment=experiment,
-        participant_id=participant_id,
-        outcome=outcome,
-    )
-
-    return ArmBandit(
-        arm_id=updated_arm.id,
-        arm_name=updated_arm.name,
-        arm_description=updated_arm.description,
-        alpha_init=updated_arm.alpha_init,
-        beta_init=updated_arm.beta_init,
-        alpha=updated_arm.alpha,
-        beta=updated_arm.beta,
-        mu_init=updated_arm.mu_init,
-        sigma_init=updated_arm.sigma_init,
-        mu=updated_arm.mu,
-        covariance=updated_arm.covariance,
     )
 
 

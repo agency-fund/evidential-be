@@ -845,6 +845,7 @@ async def update_bandit_arms_with_outcomes(
             arm for arm in experiment.arms if arm.id == draw_record.arm_id
         )
 
+        await experiment.awaitable_attrs.draws
         previous_outcomes = [
             draw.outcome
             for draw in sorted(experiment.draws, key=lambda d: d.created_at)
