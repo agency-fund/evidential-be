@@ -775,7 +775,7 @@ def create_nacl_keyset(
     When --output=base64 (default), the output can be used as the XNGIN_SECRETS_NACL_KEYSET environment variable.
     """
     keyset = NaclProviderKeyset.create()
-    if output == "base64":
+    if output == OutputFormat.base64:
         print(keyset.serialize_base64())
     else:
         print(keyset.serialize_json())
