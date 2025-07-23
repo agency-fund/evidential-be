@@ -1,0 +1,171 @@
+import json
+
+import nacl.exceptions
+import nacl.secret
+import nacl.utils
+import pytest
+
+from xngin.xsecrets import nacl_provider
+from xngin.xsecrets.constants import SERIALIZED_ENCRYPTED_VALUE_PREFIX
+from xngin.xsecrets.nacl_provider import NaclProviderKeyset
+from xngin.xsecrets.provider import Registry
+from xngin.xsecrets.secretservice import (
+    SecretService,
+    _deserialize,  # noqa: PLC2701
+    _serialize,  # noqa: PLC2701
+)
+
+
+@pytest.mark.parametrize(
+    "backend,ciphertext",
+    [
+        ("test_backend", b"encrypted_data"),
+        (
+            "gcp_kms",
+            b"\xe2\x82\xac\xf0\x9f\x98\x80\x00\xff\xfe\xfd\xfc\xfb\xfa",
+        ),  # non-ASCII bytes
+        ("aws_kms", b""),  # Empty ciphertext
+    ],
+)
+def test_serialize_deserialize_roundtrip(backend, ciphertext):
+    """Test serialization and deserialization of encrypted data with various inputs."""
+    # Test serialization
+    serialized = _serialize(backend, ciphertext)
+
+    # Check prefix
+    assert serialized.startswith(SERIALIZED_ENCRYPTED_VALUE_PREFIX)
+
+    # Test deserialization (roundtrip)
+    result_backend, result_ciphertext = _deserialize(serialized)
+
+    assert result_backend == backend
+    assert result_ciphertext == ciphertext
+
+
+def test_deserialize_invalid_prefix():
+    """Test deserialization with invalid prefix."""
+    with pytest.raises(ValueError, match="String must start with"):
+        _deserialize("invalid_prefix{}")
+    with pytest.raises(ValueError, match="String must start with"):
+        _deserialize("")
+
+
+def test_deserialize_invalid_json():
+    """Test deserialization with invalid JSON."""
+    invalid_serialized = f"{SERIALIZED_ENCRYPTED_VALUE_PREFIX}{{invalid json"
+
+    with pytest.raises(ValueError, match="does not match expected format"):
+        _deserialize(invalid_serialized)
+
+
+def test_deserialize_invalid_structure():
+    """Test deserialization with valid JSON but invalid structure."""
+    # Test with a string instead of a list
+    invalid_serialized = f"{SERIALIZED_ENCRYPTED_VALUE_PREFIX}" + json.dumps(
+        "not_a_list"
+    )
+    with pytest.raises(ValueError, match="does not match expected format"):
+        _deserialize(invalid_serialized)
+
+    # Test with a list that doesn't contain a nested list
+    invalid_serialized = f"{SERIALIZED_ENCRYPTED_VALUE_PREFIX}" + json.dumps([
+        "not_a_nested_list"
+    ])
+    with pytest.raises(ValueError, match="does not match expected format"):
+        _deserialize(invalid_serialized)
+
+    # Test with a nested list that's too short
+    invalid_serialized = f"{SERIALIZED_ENCRYPTED_VALUE_PREFIX}" + json.dumps([
+        ["backend"]
+    ])
+    with pytest.raises(ValueError, match="does not match expected format"):
+        _deserialize(invalid_serialized)
+
+    # Test with a nested list with numbers instead of strings
+    invalid_serialized = f"{SERIALIZED_ENCRYPTED_VALUE_PREFIX}" + json.dumps([[2, 3]])
+    with pytest.raises(ValueError, match="does not match expected format"):
+        _deserialize(invalid_serialized)
+
+
+@pytest.fixture(name="nacl_secretservice")
+def fixture_nacl_secretservice():
+    registry = Registry()
+    nacl_provider.initialize(registry, keyset=NaclProviderKeyset.create())
+    return SecretService(registry, nacl_provider.NAME)
+
+
+@pytest.mark.parametrize(
+    "plaintext,aad",
+    [
+        ("This is a secret value", "test_context"),
+        ("Unicode text with emojis 😀🔑🌍 and special chars €£¥", "unicode_test"),
+        ("", "empty_plaintext_test"),  # Test with empty plaintext
+        ("non-empty plaintext", ""),  # Test with empty AAD
+        ("", ""),  # Test with both empty
+    ],
+)
+def test_secretservice_encrypt_decrypt(nacl_secretservice, plaintext, aad):
+    """Test that SecretService can encrypt and decrypt values with various inputs."""
+    # Encrypt the value
+    encrypted = nacl_secretservice.encrypt(plaintext, aad)
+
+    # Verify it has the expected format
+    assert encrypted.startswith(SERIALIZED_ENCRYPTED_VALUE_PREFIX)
+
+    # Decrypt the value
+    decrypted = nacl_secretservice.decrypt(encrypted, aad)
+
+    # Verify we got the original plaintext back
+    assert decrypted == plaintext
+
+
+@pytest.mark.parametrize(
+    "plaintext,aad",
+    [
+        ("This is not an encrypted value", "any_context"),
+        ("", "empty_plaintext_test"),  # Test with empty plaintext
+        ("non-empty plaintext", ""),  # Test with empty AAD
+    ],
+)
+def test_secretservice_decrypt_unencrypted_value(nacl_secretservice, plaintext, aad):
+    """Test that SecretService.decrypt returns unencrypted values as-is."""
+    # Since the value doesn't have the prefix, it should be returned as-is
+    result = nacl_secretservice.decrypt(plaintext, aad)
+
+    assert result == plaintext
+
+
+@pytest.mark.parametrize(
+    "plaintext,correct_aad,wrong_aad",
+    [
+        ("Secret message", "correct_context", "wrong_context"),
+        ("", "correct_context", "wrong_context"),  # Empty plaintext
+        ("Secret message", "", "non-empty"),  # Empty correct AAD
+    ],
+)
+def test_secretservice_decrypt_with_wrong_aad(
+    nacl_secretservice, plaintext, correct_aad, wrong_aad
+):
+    """Test that decryption fails when using the wrong AAD."""
+    encrypted = nacl_secretservice.encrypt(plaintext, correct_aad)
+
+    # Attempting to decrypt with the wrong AAD should raise an exception
+    with pytest.raises(nacl.exceptions.CryptoError):
+        nacl_secretservice.decrypt(encrypted, wrong_aad)
+
+
+def test_secretservice_provider_selection(nacl_secretservice):
+    """Test that SecretService uses the correct provider based on the serialized data."""
+    plaintext = "Test provider selection"
+    aad = "provider_test"
+
+    encrypted = nacl_secretservice.encrypt(plaintext, aad)
+
+    # Verify the provider name in the serialized data
+    _, serialized_json = encrypted.split(SERIALIZED_ENCRYPTED_VALUE_PREFIX, 1)
+    data = json.loads(serialized_json)
+
+    assert data[0][0] == nacl_provider.NAME
+
+    # Decryption should work
+    assert nacl_secretservice.decrypt(encrypted, aad) == plaintext
