@@ -13,7 +13,7 @@
 .schemas
 .venv
 dist
-secrets/
+/secrets
 xngin.db
 tools
 test_*.py
