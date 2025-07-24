@@ -70,6 +70,16 @@ logging.basicConfig(
 secretservice.setup()
 
 
+class TextOrJson(StrEnum):
+    text = "text"
+    json = "json"
+
+
+class Base64OrJson(StrEnum):
+    base64 = "base64"
+    json = "json"
+
+
 def create_engine_and_database(url: sqlalchemy.URL):
     """Connects to a SQLAlchemy URL and creates the database if it doesn't exist.
 
@@ -672,10 +682,10 @@ def validate_arg_is_email(email: str):
 
 @app.command()
 def add_user(
-    dsn: Annotated[
+    database_url: Annotated[
         str,
         typer.Option(
-            help="The SQLAlchemy DSN of the database where the user should be added.",
+            help="The application database where the user should be added.",
             envvar="DATABASE_URL",
         ),
     ],
@@ -694,10 +704,13 @@ def add_user(
     dwh: Annotated[
         str | None,
         typer.Option(
-            help="The SQLAlchemy DSN of a DWH to be added to the user's organization.",
+            help="The SQLAlchemy URI of a DWH to be added to the user's organization.",
             envvar="XNGIN_DEVDWH_DSN",
         ),
     ] = None,
+    output: Annotated[
+        TextOrJson, typer.Option(help="Output format.")
+    ] = TextOrJson.text,
 ):
     """Adds a new user to the database.
 
@@ -706,8 +719,9 @@ def add_user(
 
     If email is not provided via the --email flag, the command will prompt for it interactively.
     """
-    console.print(f"DSN: [cyan]{dsn}[/cyan]")
-    console.print(f"DWH: [cyan]{dwh}[/cyan]")
+    if output == TextOrJson.text:
+        console.print(f"Using application database: [cyan]{database_url}[/cyan]")
+        console.print(f"Using data warehouse: [cyan]{dwh}[/cyan]")
 
     if email is None:
         while True:
@@ -724,36 +738,69 @@ def add_user(
             "Should this user have privileged access?", default=False
         )
 
-    console.print(f"Adding user with email: [cyan]{email}[/cyan]")
-    console.print(f"Privileged access: [cyan]{privileged}[/cyan]")
+    if output == TextOrJson.text:
+        console.print(f"Adding user with email: [cyan]{email}[/cyan]")
+        console.print(f"Privileged access: [cyan]{privileged}[/cyan]")
 
-    if not dwh:
-        console.print(
-            "\n[bold yellow]Warning: Not adding a datasource for a data warehouse "
-            "because the --dwh flag was not specified or environment variable "
-            "XNGIN_DEVDWH_DSN is unset.[/bold yellow]"
-        )
+        if not dwh:
+            console.print(
+                "\n[bold yellow]Warning: Not adding a datasource for a data warehouse "
+                "because the --dwh flag was not specified or environment variable "
+                "XNGIN_DEVDWH_DSN is unset.[/bold yellow]"
+            )
 
-    engine = create_engine(dsn)
+    engine = create_engine(database_url)
     with Session(engine) as session:
         try:
             user = testing_dwh.create_user_and_first_datasource(
                 session, email=email, dsn=dwh, privileged=privileged
             )
             session.commit()
-            console.print("\n[bold green]User added successfully:[/bold green]")
-            console.print(f"User ID: [cyan]{user.id}[/cyan]")
-            console.print(f"Email: [cyan]{user.email}[/cyan]")
-            console.print(f"Privileged: [cyan]{user.is_privileged}[/cyan]")
+            if output == TextOrJson.text:
+                console.print("\n[bold green]User added successfully:[/bold green]")
+                console.print(f"User ID: [cyan]{user.id}[/cyan]")
+                console.print(f"Email: [cyan]{user.email}[/cyan]")
+                console.print(f"Privileged: [cyan]{user.is_privileged}[/cyan]")
+            api_keys = {}
             for organization in user.organizations:
-                console.print(f"Organization ID: [cyan]{organization.id}[/cyan]")
+                if output == TextOrJson.text:
+                    console.print(f"Organization ID: [cyan]{organization.id}[/cyan]")
                 for datasource in organization.datasources:
                     label, key = apikeys.make_key()
                     key_hash = apikeys.hash_key_or_raise(key)
+                    api_keys[datasource.id] = key
                     datasource.api_keys.append(tables.ApiKey(id=label, key=key_hash))
-                    console.print(
-                        f"  Datasource ID: [cyan]{datasource.id}[/cyan] [blue](API Key: {key})[/blue]"
+                    if output == TextOrJson.text:
+                        console.print(
+                            f"  Datasource ID: [cyan]{datasource.id}[/cyan] [blue](API Key: {key})[/blue]"
+                        )
+
+            if output == TextOrJson.json:
+                console.print(
+                    json.dumps(
+                        {
+                            "database_url": database_url,
+                            "dwh_uri": dwh,
+                            "user": {
+                                "email": user.email,
+                                "id": user.id,
+                                "is_privileged": user.is_privileged,
+                            },
+                            "organizations": [
+                                {
+                                    "id": o.id,
+                                    "datasources": [
+                                        {"id": ds.id, "api_keys": [api_keys[ds.id]]}
+                                        for ds in o.datasources
+                                    ],
+                                }
+                                for o in user.organizations
+                            ],
+                        },
+                        sort_keys=True,
+                        indent=2,
                     )
+                )
         except IntegrityError as err:
             session.rollback()
             err_console.print(
@@ -762,19 +809,14 @@ def add_user(
             raise typer.Exit(1) from err
 
 
-class OutputFormat(StrEnum):
-    base64 = "base64"
-    json = "json"
-
-
 @app.command()
 def create_nacl_keyset(
     output: Annotated[
-        OutputFormat,
+        Base64OrJson,
         typer.Option(
             help="Output format. Use base64 when generating a key for use in an environment variable."
         ),
-    ] = OutputFormat.base64,
+    ] = Base64OrJson.base64,
 ):
     """Generate an encryption keyset for the "nacl" secret provider.
 
@@ -783,7 +825,7 @@ def create_nacl_keyset(
     When --output=base64 (default), the output can be used as the XNGIN_SECRETS_NACL_KEYSET environment variable.
     """
     keyset = NaclProviderKeyset.create()
-    if output == OutputFormat.base64:
+    if output == Base64OrJson.base64:
         print(keyset.serialize_base64())
     else:
         print(keyset.serialize_json())
