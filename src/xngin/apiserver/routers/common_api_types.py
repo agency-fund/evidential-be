@@ -1029,6 +1029,4 @@ class AssignResponse(ApiBaseModel):
             description="Name of the datasource field used as the unique identifier for the participant_id value stored in each Assignment, as configured in the datasource settings. Included for frontend convenience."
         ),
     ]
-    # TODO(qixotic): Consider lifting up Assignment.arm_id & arm_name to the AssignResponse level
-    # and organize assignments into lists by arm. Be less bulky and arm sizes come naturally.
     assignments: Annotated[list[Assignment], Field()]
