@@ -145,7 +145,7 @@ tasks:
     desc: "Starts apiserver locally with settings compatible with local dash dev server."
     interactive: true
     dotenv:
-      # Populate BQ_SERVICE_ACCOUNT (optional) and GOOGLE_OIDC_CLIENT_SECRET (optional).
+      # Populate GOOGLE_OIDC_CLIENT_SECRET (optional).
       - .env
     env:
       DATABASE_URL: "{{.XNGIN_DEVAPP_DSN}}"
