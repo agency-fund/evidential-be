@@ -21,6 +21,7 @@ import sqlalchemy
 import typer
 import zstandard
 from email_validator import EmailNotValidError, validate_email
+from fastapi import FastAPI
 from google.cloud import bigquery
 from google.cloud.exceptions import NotFound
 from gspread import GSpreadException
@@ -34,7 +35,9 @@ from sqlalchemy.exc import IntegrityError, OperationalError
 from sqlalchemy.orm import Session
 from sqlalchemy.sql.compiler import IdentifierPreparer
 
-from xngin.apiserver import apikeys
+import xngin.apiserver.openapi
+import xngin.apiserver.routes
+from xngin.apiserver import apikeys, routes
 from xngin.apiserver.dwh.dwh_session import CannotFindTableError, DwhSession
 from xngin.apiserver.dwh.inspection_types import FieldDescriptor, ParticipantsSchema
 from xngin.apiserver.dwh.inspections import create_schema_from_table
@@ -582,6 +585,17 @@ def export_json_schemas(output: Path = Path(".schemas")):
         with open(filename, "w") as outf:
             outf.write(json.dumps(model.model_json_schema(), indent=2, sort_keys=True))
             print(f"Wrote {filename}.")
+
+
+@app.command()
+def export_openapi_spec(output: Path = Path("openapi.json")):
+    """Writes the OpenAPI spec to the file specified by --output."""
+    app = FastAPI()
+    routes.register(app)
+    with open(output, "w") as outf:
+        json.dump(
+            xngin.apiserver.openapi.custom_openapi(app), outf, sort_keys=True, indent=2
+        )
 
 
 @app.command()
