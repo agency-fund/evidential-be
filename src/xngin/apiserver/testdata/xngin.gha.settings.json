@@ -6,13 +6,219 @@
         "type": "remote",
         "participants": [
           {
-            "type": "sheet",
+            "type": "schema",
             "participant_type": "dwh",
             "table_name": "dwh",
-            "sheet": {
-              "url": "file://src/xngin/apiserver/testdata/testing_sheet.csv",
-              "worksheet": "Sheet1"
-            }
+            "fields": [
+              {
+                "field_name": "gender",
+                "data_type": "character varying",
+                "description": "Gender",
+                "is_unique_id": false,
+                "is_strata": true,
+                "is_filter": true,
+                "is_metric": false,
+                "extra": {
+                  "column_group": "TODO",
+                  "Extra Ad-Hoc Field": "adhoc1"
+                }
+              },
+              {
+                "field_name": "ethnicity",
+                "data_type": "character varying",
+                "description": "The ethnicity",
+                "is_unique_id": false,
+                "is_strata": true,
+                "is_filter": true,
+                "is_metric": false,
+                "extra": {
+                  "column_group": "TODO",
+                  "Extra Ad-Hoc Field": "adhoc2"
+                }
+              },
+              {
+                "field_name": "first_name",
+                "data_type": "character varying",
+                "description": "The first name",
+                "is_unique_id": false,
+                "is_strata": false,
+                "is_filter": false,
+                "is_metric": false,
+                "extra": {
+                  "column_group": "",
+                  "Extra Ad-Hoc Field": "adhoc3"
+                }
+              },
+              {
+                "field_name": "last_name",
+                "data_type": "character varying",
+                "description": "The last name",
+                "is_unique_id": false,
+                "is_strata": false,
+                "is_filter": false,
+                "is_metric": false,
+                "extra": {
+                  "column_group": "TODO",
+                  "Extra Ad-Hoc Field": ""
+                }
+              },
+              {
+                "field_name": "id",
+                "data_type": "integer",
+                "description": "Unique identifier",
+                "is_unique_id": true,
+                "is_strata": false,
+                "is_filter": false,
+                "is_metric": false,
+                "extra": {
+                  "column_group": "",
+                  "Extra Ad-Hoc Field": ""
+                }
+              },
+              {
+                "field_name": "income",
+                "data_type": "double precision",
+                "description": "Income",
+                "is_unique_id": false,
+                "is_strata": false,
+                "is_filter": false,
+                "is_metric": true,
+                "extra": {
+                  "column_group": "",
+                  "Extra Ad-Hoc Field": ""
+                }
+              },
+              {
+                "field_name": "potential_0",
+                "data_type": "double precision",
+                "description": "Potential 0",
+                "is_unique_id": false,
+                "is_strata": false,
+                "is_filter": false,
+                "is_metric": false,
+                "extra": {
+                  "column_group": "",
+                  "Extra Ad-Hoc Field": ""
+                }
+              },
+              {
+                "field_name": "potential_1",
+                "data_type": "double precision",
+                "description": "Potential 1",
+                "is_unique_id": false,
+                "is_strata": false,
+                "is_filter": false,
+                "is_metric": false,
+                "extra": {
+                  "column_group": "",
+                  "Extra Ad-Hoc Field": ""
+                }
+              },
+              {
+                "field_name": "is_recruited",
+                "data_type": "boolean",
+                "description": "Recruited?",
+                "is_unique_id": false,
+                "is_strata": true,
+                "is_filter": true,
+                "is_metric": true,
+                "extra": {
+                  "column_group": "",
+                  "Extra Ad-Hoc Field": ""
+                }
+              },
+              {
+                "field_name": "is_registered",
+                "data_type": "boolean",
+                "description": "Registered?",
+                "is_unique_id": false,
+                "is_strata": true,
+                "is_filter": true,
+                "is_metric": true,
+                "extra": {
+                  "column_group": "",
+                  "Extra Ad-Hoc Field": ""
+                }
+              },
+              {
+                "field_name": "is_onboarded",
+                "data_type": "boolean",
+                "description": "Onboarded?",
+                "is_unique_id": false,
+                "is_strata": true,
+                "is_filter": true,
+                "is_metric": true,
+                "extra": {
+                  "column_group": "",
+                  "Extra Ad-Hoc Field": ""
+                }
+              },
+              {
+                "field_name": "is_engaged",
+                "data_type": "boolean",
+                "description": "Engaged?",
+                "is_unique_id": false,
+                "is_strata": true,
+                "is_filter": true,
+                "is_metric": true,
+                "extra": {
+                  "column_group": "",
+                  "Extra Ad-Hoc Field": ""
+                }
+              },
+              {
+                "field_name": "is_retained",
+                "data_type": "boolean",
+                "description": "Retained?",
+                "is_unique_id": false,
+                "is_strata": true,
+                "is_filter": true,
+                "is_metric": true,
+                "extra": {
+                  "column_group": "",
+                  "Extra Ad-Hoc Field": ""
+                }
+              },
+              {
+                "field_name": "baseline_income",
+                "data_type": "double precision",
+                "description": "Baseline Income",
+                "is_unique_id": false,
+                "is_strata": true,
+                "is_filter": true,
+                "is_metric": false,
+                "extra": {
+                  "column_group": "",
+                  "Extra Ad-Hoc Field": ""
+                }
+              },
+              {
+                "field_name": "current_income",
+                "data_type": "double precision",
+                "description": "Current Income",
+                "is_unique_id": false,
+                "is_strata": true,
+                "is_filter": true,
+                "is_metric": true,
+                "extra": {
+                  "column_group": "",
+                  "Extra Ad-Hoc Field": ""
+                }
+              },
+              {
+                "field_name": "uuid_filter",
+                "data_type": "uuid",
+                "description": "uuid used as filter",
+                "is_unique_id": false,
+                "is_strata": false,
+                "is_filter": true,
+                "is_metric": false,
+                "extra": {
+                  "column_group": "",
+                  "Extra Ad-Hoc Field": ""
+                }
+              }
+            ]
           }
         ],
         "dwh": {
@@ -32,13 +238,219 @@
         "type": "remote",
         "participants": [
           {
-            "type": "sheet",
+            "type": "schema",
             "participant_type": "alt",
             "table_name": "alt_table",
-            "sheet": {
-              "url": "file://src/xngin/apiserver/testdata/testing_sheet.csv",
-              "worksheet": "Sheet1"
-            }
+            "fields": [
+              {
+                "field_name": "gender",
+                "data_type": "character varying",
+                "description": "Gender",
+                "is_unique_id": false,
+                "is_strata": true,
+                "is_filter": true,
+                "is_metric": false,
+                "extra": {
+                  "column_group": "TODO",
+                  "Extra Ad-Hoc Field": "adhoc1"
+                }
+              },
+              {
+                "field_name": "ethnicity",
+                "data_type": "character varying",
+                "description": "The ethnicity",
+                "is_unique_id": false,
+                "is_strata": true,
+                "is_filter": true,
+                "is_metric": false,
+                "extra": {
+                  "column_group": "TODO",
+                  "Extra Ad-Hoc Field": "adhoc2"
+                }
+              },
+              {
+                "field_name": "first_name",
+                "data_type": "character varying",
+                "description": "The first name",
+                "is_unique_id": false,
+                "is_strata": false,
+                "is_filter": false,
+                "is_metric": false,
+                "extra": {
+                  "column_group": "",
+                  "Extra Ad-Hoc Field": "adhoc3"
+                }
+              },
+              {
+                "field_name": "last_name",
+                "data_type": "character varying",
+                "description": "The last name",
+                "is_unique_id": false,
+                "is_strata": false,
+                "is_filter": false,
+                "is_metric": false,
+                "extra": {
+                  "column_group": "TODO",
+                  "Extra Ad-Hoc Field": ""
+                }
+              },
+              {
+                "field_name": "id",
+                "data_type": "integer",
+                "description": "Unique identifier",
+                "is_unique_id": true,
+                "is_strata": false,
+                "is_filter": false,
+                "is_metric": false,
+                "extra": {
+                  "column_group": "",
+                  "Extra Ad-Hoc Field": ""
+                }
+              },
+              {
+                "field_name": "income",
+                "data_type": "double precision",
+                "description": "Income",
+                "is_unique_id": false,
+                "is_strata": false,
+                "is_filter": false,
+                "is_metric": true,
+                "extra": {
+                  "column_group": "",
+                  "Extra Ad-Hoc Field": ""
+                }
+              },
+              {
+                "field_name": "potential_0",
+                "data_type": "double precision",
+                "description": "Potential 0",
+                "is_unique_id": false,
+                "is_strata": false,
+                "is_filter": false,
+                "is_metric": false,
+                "extra": {
+                  "column_group": "",
+                  "Extra Ad-Hoc Field": ""
+                }
+              },
+              {
+                "field_name": "potential_1",
+                "data_type": "double precision",
+                "description": "Potential 1",
+                "is_unique_id": false,
+                "is_strata": false,
+                "is_filter": false,
+                "is_metric": false,
+                "extra": {
+                  "column_group": "",
+                  "Extra Ad-Hoc Field": ""
+                }
+              },
+              {
+                "field_name": "is_recruited",
+                "data_type": "boolean",
+                "description": "Recruited?",
+                "is_unique_id": false,
+                "is_strata": true,
+                "is_filter": true,
+                "is_metric": true,
+                "extra": {
+                  "column_group": "",
+                  "Extra Ad-Hoc Field": ""
+                }
+              },
+              {
+                "field_name": "is_registered",
+                "data_type": "boolean",
+                "description": "Registered?",
+                "is_unique_id": false,
+                "is_strata": true,
+                "is_filter": true,
+                "is_metric": true,
+                "extra": {
+                  "column_group": "",
+                  "Extra Ad-Hoc Field": ""
+                }
+              },
+              {
+                "field_name": "is_onboarded",
+                "data_type": "boolean",
+                "description": "Onboarded?",
+                "is_unique_id": false,
+                "is_strata": true,
+                "is_filter": true,
+                "is_metric": true,
+                "extra": {
+                  "column_group": "",
+                  "Extra Ad-Hoc Field": ""
+                }
+              },
+              {
+                "field_name": "is_engaged",
+                "data_type": "boolean",
+                "description": "Engaged?",
+                "is_unique_id": false,
+                "is_strata": true,
+                "is_filter": true,
+                "is_metric": true,
+                "extra": {
+                  "column_group": "",
+                  "Extra Ad-Hoc Field": ""
+                }
+              },
+              {
+                "field_name": "is_retained",
+                "data_type": "boolean",
+                "description": "Retained?",
+                "is_unique_id": false,
+                "is_strata": true,
+                "is_filter": true,
+                "is_metric": true,
+                "extra": {
+                  "column_group": "",
+                  "Extra Ad-Hoc Field": ""
+                }
+              },
+              {
+                "field_name": "baseline_income",
+                "data_type": "double precision",
+                "description": "Baseline Income",
+                "is_unique_id": false,
+                "is_strata": true,
+                "is_filter": true,
+                "is_metric": false,
+                "extra": {
+                  "column_group": "",
+                  "Extra Ad-Hoc Field": ""
+                }
+              },
+              {
+                "field_name": "current_income",
+                "data_type": "double precision",
+                "description": "Current Income",
+                "is_unique_id": false,
+                "is_strata": true,
+                "is_filter": true,
+                "is_metric": true,
+                "extra": {
+                  "column_group": "",
+                  "Extra Ad-Hoc Field": ""
+                }
+              },
+              {
+                "field_name": "uuid_filter",
+                "data_type": "uuid",
+                "description": "uuid used as filter",
+                "is_unique_id": false,
+                "is_strata": false,
+                "is_filter": true,
+                "is_metric": false,
+                "extra": {
+                  "column_group": "",
+                  "Extra Ad-Hoc Field": ""
+                }
+              }
+            ]
           }
         ],
         "dwh": {
@@ -59,13 +471,219 @@
         "type": "remote",
         "participants": [
           {
-            "type": "sheet",
+            "type": "schema",
             "participant_type": "warehouse",
             "table_name": "${env:XNGIN_CLI_TABLE_NAME}",
-            "sheet": {
-              "url": "file://src/xngin/apiserver/testdata/testing_sheet.csv",
-              "worksheet": "Sheet1"
-            }
+            "fields": [
+              {
+                "field_name": "gender",
+                "data_type": "character varying",
+                "description": "Gender",
+                "is_unique_id": false,
+                "is_strata": true,
+                "is_filter": true,
+                "is_metric": false,
+                "extra": {
+                  "column_group": "TODO",
+                  "Extra Ad-Hoc Field": "adhoc1"
+                }
+              },
+              {
+                "field_name": "ethnicity",
+                "data_type": "character varying",
+                "description": "The ethnicity",
+                "is_unique_id": false,
+                "is_strata": true,
+                "is_filter": true,
+                "is_metric": false,
+                "extra": {
+                  "column_group": "TODO",
+                  "Extra Ad-Hoc Field": "adhoc2"
+                }
+              },
+              {
+                "field_name": "first_name",
+                "data_type": "character varying",
+                "description": "The first name",
+                "is_unique_id": false,
+                "is_strata": false,
+                "is_filter": false,
+                "is_metric": false,
+                "extra": {
+                  "column_group": "",
+                  "Extra Ad-Hoc Field": "adhoc3"
+                }
+              },
+              {
+                "field_name": "last_name",
+                "data_type": "character varying",
+                "description": "The last name",
+                "is_unique_id": false,
+                "is_strata": false,
+                "is_filter": false,
+                "is_metric": false,
+                "extra": {
+                  "column_group": "TODO",
+                  "Extra Ad-Hoc Field": ""
+                }
+              },
+              {
+                "field_name": "id",
+                "data_type": "integer",
+                "description": "Unique identifier",
+                "is_unique_id": true,
+                "is_strata": false,
+                "is_filter": false,
+                "is_metric": false,
+                "extra": {
+                  "column_group": "",
+                  "Extra Ad-Hoc Field": ""
+                }
+              },
+              {
+                "field_name": "income",
+                "data_type": "double precision",
+                "description": "Income",
+                "is_unique_id": false,
+                "is_strata": false,
+                "is_filter": false,
+                "is_metric": true,
+                "extra": {
+                  "column_group": "",
+                  "Extra Ad-Hoc Field": ""
+                }
+              },
+              {
+                "field_name": "potential_0",
+                "data_type": "double precision",
+                "description": "Potential 0",
+                "is_unique_id": false,
+                "is_strata": false,
+                "is_filter": false,
+                "is_metric": false,
+                "extra": {
+                  "column_group": "",
+                  "Extra Ad-Hoc Field": ""
+                }
+              },
+              {
+                "field_name": "potential_1",
+                "data_type": "double precision",
+                "description": "Potential 1",
+                "is_unique_id": false,
+                "is_strata": false,
+                "is_filter": false,
+                "is_metric": false,
+                "extra": {
+                  "column_group": "",
+                  "Extra Ad-Hoc Field": ""
+                }
+              },
+              {
+                "field_name": "is_recruited",
+                "data_type": "boolean",
+                "description": "Recruited?",
+                "is_unique_id": false,
+                "is_strata": true,
+                "is_filter": true,
+                "is_metric": true,
+                "extra": {
+                  "column_group": "",
+                  "Extra Ad-Hoc Field": ""
+                }
+              },
+              {
+                "field_name": "is_registered",
+                "data_type": "boolean",
+                "description": "Registered?",
+                "is_unique_id": false,
+                "is_strata": true,
+                "is_filter": true,
+                "is_metric": true,
+                "extra": {
+                  "column_group": "",
+                  "Extra Ad-Hoc Field": ""
+                }
+              },
+              {
+                "field_name": "is_onboarded",
+                "data_type": "boolean",
+                "description": "Onboarded?",
+                "is_unique_id": false,
+                "is_strata": true,
+                "is_filter": true,
+                "is_metric": true,
+                "extra": {
+                  "column_group": "",
+                  "Extra Ad-Hoc Field": ""
+                }
+              },
+              {
+                "field_name": "is_engaged",
+                "data_type": "boolean",
+                "description": "Engaged?",
+                "is_unique_id": false,
+                "is_strata": true,
+                "is_filter": true,
+                "is_metric": true,
+                "extra": {
+                  "column_group": "",
+                  "Extra Ad-Hoc Field": ""
+                }
+              },
+              {
+                "field_name": "is_retained",
+                "data_type": "boolean",
+                "description": "Retained?",
+                "is_unique_id": false,
+                "is_strata": true,
+                "is_filter": true,
+                "is_metric": true,
+                "extra": {
+                  "column_group": "",
+                  "Extra Ad-Hoc Field": ""
+                }
+              },
+              {
+                "field_name": "baseline_income",
+                "data_type": "double precision",
+                "description": "Baseline Income",
+                "is_unique_id": false,
+                "is_strata": true,
+                "is_filter": true,
+                "is_metric": false,
+                "extra": {
+                  "column_group": "",
+                  "Extra Ad-Hoc Field": ""
+                }
+              },
+              {
+                "field_name": "current_income",
+                "data_type": "double precision",
+                "description": "Current Income",
+                "is_unique_id": false,
+                "is_strata": true,
+                "is_filter": true,
+                "is_metric": true,
+                "extra": {
+                  "column_group": "",
+                  "Extra Ad-Hoc Field": ""
+                }
+              },
+              {
+                "field_name": "uuid_filter",
+                "data_type": "uuid",
+                "description": "uuid used as filter",
+                "is_unique_id": false,
+                "is_strata": false,
+                "is_filter": true,
+                "is_metric": false,
+                "extra": {
+                  "column_group": "",
+                  "Extra Ad-Hoc Field": ""
+                }
+              }
+            ]
           }
         ],
         "dwh": {
