@@ -156,7 +156,7 @@ async def test_user_from_token_initial_setup(xngin_session: AsyncSession):
 async def test_initial_user_setup_matches_testing_dwh(xngin_session):
     await delete_seeded_users(xngin_session)
     first_user = await user_from_token(
-        xngin_session, Principal(email="firstuser@example.com", iss="", sub="", hd="")
+        xngin_session, Principal(email="initial@example.com", iss="", sub="", hd="")
     )
 
     await xngin_session.refresh(first_user, ["organizations"])
