@@ -23,6 +23,7 @@ from sqlalchemy.orm import DeclarativeBase, Session, mapped_column
 
 from xngin.apiserver import flags
 from xngin.apiserver.conftest import DbType, get_queries_test_uri
+from xngin.apiserver.dwh.analysis_types import MetricValue, ParticipantOutcome
 from xngin.apiserver.dwh.queries import (
     compose_query,
     create_datetime_filter,
@@ -38,10 +39,6 @@ from xngin.apiserver.routers.common_api_types import (
     Filter,
     MetricType,
     Relation,
-)
-from xngin.apiserver.routers.stateless.stateless_api_types import (
-    MetricValue,
-    ParticipantOutcome,
 )
 
 SA_LOGGER_NAME_FOR_DWH = "xngin_dwh"

@@ -817,35 +817,6 @@ async def test_lifecycle_with_db(testing_datasource, ppost, pget, pdelete):
     assert response.status_code == 204, response.content
 
 
-def test_create_experiment_with_assignment_validation_errors(
-    testing_datasource_with_user, testing_sheet_datasource_with_user, ppost
-):
-    """Test LateValidationError cases in create_experiment_with_assignment."""
-    # Create a basic experiment request
-    # Test 1: IDs present in design spec trigger LateValidationError
-    base_request = make_create_preassigned_experiment_request(with_ids=True)
-    base_request.design_spec.experiment_id = "123e4567-e89b-12d3-a456-426614174000"
-    testing_datasource = testing_datasource_with_user
-    response = ppost(
-        f"/v1/m/datasources/{testing_datasource.ds.id}/experiments",
-        params={"chosen_n": 100},
-        content=base_request.model_dump_json(),
-    )
-    assert response.status_code == 422, response.content
-    assert "UUIDs must not be set" in response.json()["message"]
-
-    # Test 2: Invalid participants config (sheet instead of schema)
-    # This datasource is a "remote" config, but the participants is of type "sheet".
-    testing_datasource = testing_sheet_datasource_with_user
-    response = ppost(
-        f"/v1/m/datasources/{testing_datasource.ds.id}/experiments",
-        params={"chosen_n": 100},
-        content=make_create_preassigned_experiment_request().model_dump_json(),
-    )
-    assert response.status_code == 422, response.content
-    assert "Participants must be of type schema" in response.json()["message"]
-
-
 async def test_create_preassigned_experiment_using_inline_schema_ds(
     xngin_session: AsyncSession,
     testing_datasource_with_user,

@@ -19,13 +19,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from xngin.apiserver import constants
 from xngin.apiserver.dependencies import (
     datasource_dependency,
-    gsheet_cache,
     random_seed_dependency,
     xngin_db_session,
 )
 from xngin.apiserver.dwh.dwh_session import DwhSession
 from xngin.apiserver.exceptions_common import LateValidationError
-from xngin.apiserver.gsheet_cache import GSheetCache
 from xngin.apiserver.models import tables
 from xngin.apiserver.models.storage_format_converters import ExperimentStorageConverter
 from xngin.apiserver.routers.common_api_types import (
@@ -48,10 +46,6 @@ from xngin.apiserver.routers.experiments.experiments_common import (
     get_experiment_assignments_impl,
     list_experiments_impl,
 )
-from xngin.apiserver.routers.stateless.stateless_api import (
-    CommonQueryParams,
-    get_participants_config_and_schema,
-)
 from xngin.apiserver.settings import (
     Datasource,
 )
@@ -69,6 +63,25 @@ router = APIRouter(
 )
 
 
+# ruff: noqa: B903
+class CommonQueryParams:
+    """Describes query parameters common to the /strata, /filters, and /metrics APIs."""
+
+    def __init__(
+        self,
+        participant_type: Annotated[
+            str,
+            Query(
+                description="Unit of analysis for experiment.",
+                examples=["test_participant_type"],
+            ),
+        ],
+        refresh: Annotated[bool, Query(description="Refresh the cache.")] = False,
+    ):
+        self.participant_type = participant_type
+        self.refresh = refresh
+
+
 #  TODO? Remove mutating endpoints (except assignment) from public-facing integration API
 @router.post(
     "/experiments/with-assignment",
@@ -84,35 +97,28 @@ async def create_experiment_with_assignment_sl(
     chosen_n: Annotated[
         int, Query(..., description="Number of participants to assign.")
     ],
-    gsheets: Annotated[GSheetCache, Depends(gsheet_cache)],
     datasource: Annotated[Datasource, Depends(datasource_dependency)],
     xngin_session: Annotated[AsyncSession, Depends(xngin_db_session)],
     random_state: Annotated[int | None, Depends(random_seed_dependency)],
-    refresh: Annotated[bool, Query(description="Refresh the cache.")] = False,
 ) -> CreateExperimentResponse:
     """Creates an experiment and saves its assignments to the database."""
     if body.design_spec.ids_are_present():
         raise LateValidationError("Invalid DesignSpec: UUIDs must not be set.")
 
     ds_config = datasource.config
-    commons = CommonQueryParams(
-        participant_type=body.design_spec.participant_type, refresh=refresh
-    )
-    participants_cfg, schema = await get_participants_config_and_schema(
-        commons, ds_config, gsheets
-    )
+    participants_schema = ds_config.find_participants(body.design_spec.participant_type)
 
     # Get participants and their schema info from the client dwh
     async with DwhSession(ds_config.dwh) as dwh:
         result = await dwh.get_participants(
-            participants_cfg.table_name, body.design_spec.filters, chosen_n
+            participants_schema.table_name, body.design_spec.filters, chosen_n
         )
 
     # Persist the experiment and assignments in the xngin database
     return await create_experiment_impl(
         request=body,
         datasource_id=datasource.id,
-        participant_unique_id_field=schema.get_unique_id_field(),
+        participant_unique_id_field=participants_schema.get_unique_id_field(),
         dwh_sa_table=result.sa_table,
         dwh_participants=result.participants,
         random_state=random_state,

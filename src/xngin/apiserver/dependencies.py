@@ -8,7 +8,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from xngin.apiserver import constants
 from xngin.apiserver.apikeys import require_valid_api_key
 from xngin.apiserver.database import AsyncSessionLocal
-from xngin.apiserver.gsheet_cache import GSheetCache
 from xngin.apiserver.models import tables
 from xngin.apiserver.settings import (
     Datasource,
@@ -89,10 +88,6 @@ def datasource_config_required(
     if ds is None:
         raise CannotFindDatasourceError("Invalid datasource.")
     return ds.config
-
-
-def gsheet_cache(xngin_session: Annotated[AsyncSession, Depends(xngin_db_session)]):
-    return GSheetCache(xngin_session)
 
 
 async def retrying_httpx_dependency():

@@ -20,7 +20,6 @@ from xngin.apiserver.models.storage_types import (
     StorageMetric,
     StorageStratum,
 )
-from xngin.apiserver.routers.stateless import stateless_api_types as sapi
 
 
 class ExperimentStorageConverter:
@@ -81,7 +80,7 @@ class ExperimentStorageConverter:
             for f in design_spec_fields.filters
         ]
 
-    def set_design_spec_fields(self, design_spec: sapi.DesignSpec) -> Self:
+    def set_design_spec_fields(self, design_spec: capi.DesignSpec) -> Self:
         """Saves the components of a DesignSpec to the experiment."""
         storage_strata = None
         if design_spec.strata:
@@ -121,10 +120,10 @@ class ExperimentStorageConverter:
     def get_design_spec_fields(self) -> DesignSpecFields:
         return DesignSpecFields.model_validate(self.experiment.design_spec_fields)
 
-    def get_design_spec(self) -> sapi.DesignSpec:
+    def get_design_spec(self) -> capi.DesignSpec:
         """Converts a DesignSpecFields to a DesignSpec object."""
         design_spec_fields = self.get_design_spec_fields()
-        return TypeAdapter(sapi.DesignSpec).validate_python({
+        return TypeAdapter(capi.DesignSpec).validate_python({
             "participant_type": self.experiment.participant_type,
             "experiment_id": self.experiment.id,
             "experiment_type": self.experiment.experiment_type,
@@ -220,7 +219,7 @@ class ExperimentStorageConverter:
         datasource_id: str,
         organization_id: str,
         experiment_type: capi.ExperimentType,
-        design_spec: sapi.DesignSpec,
+        design_spec: capi.DesignSpec,
         state: ExperimentState = ExperimentState.ASSIGNED,
         stopped_assignments_at: datetime | None = None,
         stopped_assignments_reason: StopAssignmentReason | str | None = None,

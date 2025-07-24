@@ -43,8 +43,6 @@ from xngin.apiserver.settings import (
     ParticipantsConfig,
     RemoteDatabaseConfig,
     SettingsForTesting,
-    SheetParticipantsRef,
-    SheetRef,
     XnginSettings,
 )
 from xngin.apiserver.testing.pg_helpers import create_database_if_not_exists_pg
@@ -334,41 +332,6 @@ async def fixture_testing_datasource(xngin_session: AsyncSession) -> DatasourceM
         xngin_session,
         new_name="testing datasource",
     )
-
-
-@pytest.fixture(name="testing_sheet_datasource_with_user", scope="function")
-async def fixture_testing_sheet_datasource_with_user(
-    xngin_session: AsyncSession,
-) -> DatasourceMetadata:
-    """Adds to db a new Org, Datasource with a sheet participant type, and API key.
-
-    This fixture is DEPRECATED.
-    """
-    metadata = await _make_datasource_metadata(
-        xngin_session,
-        new_name="testing datasource pt sheet",
-        participants_def_list=[
-            SheetParticipantsRef(
-                type="sheet",
-                participant_type="test_participant_type",
-                table_name="dwh",
-                sheet=SheetRef(
-                    url="https://docs.google.com/spreadsheets/example",
-                    worksheet="Sheet1",
-                ),
-            )
-        ],
-    )
-    user = (
-        await xngin_session.execute(
-            select(tables.User)
-            .options(selectinload(tables.User.organizations))
-            .where(tables.User.email == PRIVILEGED_EMAIL)
-        )
-    ).scalar_one()
-    user.organizations.append(metadata.org)
-    await xngin_session.commit()
-    return metadata
 
 
 @pytest.fixture(name="testing_datasource_with_user", scope="function")

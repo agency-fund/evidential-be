@@ -30,10 +30,15 @@ from xngin.apiserver.apikeys import hash_key_or_raise, make_key
 from xngin.apiserver.dependencies import xngin_db_session
 from xngin.apiserver.dns.safe_resolve import DnsLookupError, safe_resolve
 from xngin.apiserver.dwh.dwh_session import DwhDatabaseDoesNotExistError, DwhSession
+from xngin.apiserver.dwh.inspection_types import ParticipantsSchema
 from xngin.apiserver.dwh.inspections import (
     create_inspect_table_response_from_table,
 )
-from xngin.apiserver.dwh.queries import get_participant_metrics, get_stats_on_filters
+from xngin.apiserver.dwh.queries import (
+    get_participant_metrics,
+    get_stats_on_filters,
+    get_stats_on_metrics,
+)
 from xngin.apiserver.exceptions_common import LateValidationError
 from xngin.apiserver.models import tables
 from xngin.apiserver.models.storage_format_converters import ExperimentStorageConverter
@@ -78,6 +83,7 @@ from xngin.apiserver.routers.common_api_types import (
     ArmAnalysis,
     CreateExperimentRequest,
     CreateExperimentResponse,
+    DesignSpec,
     ExperimentAnalysis,
     ExperimentConfig,
     GetExperimentAssignmentsResponse,
@@ -90,17 +96,15 @@ from xngin.apiserver.routers.common_api_types import (
     PowerResponse,
 )
 from xngin.apiserver.routers.experiments import experiments_common
-from xngin.apiserver.routers.stateless.stateless_api import (
-    power_check_impl,
-    validate_schema_metrics_or_raise,
-)
 from xngin.apiserver.settings import (
+    DatasourceConfig,
     Dsn,
     ParticipantsConfig,
     ParticipantsDef,
     RemoteDatabaseConfig,
 )
 from xngin.apiserver.testing.testing_dwh import create_user_and_first_datasource
+from xngin.stats import check_power
 from xngin.stats.analysis import analyze_experiment as analyze_experiment_impl
 from xngin.stats.stats_errors import StatsAnalysisError
 
@@ -1564,5 +1568,41 @@ async def power_check(
     ds = await get_datasource_or_raise(session, user, datasource_id)
     dsconfig = ds.get_config()
     participants_cfg = dsconfig.find_participants(body.design_spec.participant_type)
-    validate_schema_metrics_or_raise(body.design_spec, participants_cfg)  # type: ignore[arg-type]
+    validate_schema_metrics_or_raise(body.design_spec, participants_cfg)
     return await power_check_impl(body, dsconfig, participants_cfg)
+
+
+def validate_schema_metrics_or_raise(
+    design_spec: DesignSpec, schema: ParticipantsSchema
+):
+    metric_fields = {m.field_name for m in schema.fields if m.is_metric}
+    metrics_requested = {m.field_name for m in design_spec.metrics}
+    invalid_metrics = metrics_requested - metric_fields
+    if len(invalid_metrics) > 0:
+        raise LateValidationError(
+            f"Invalid DesignSpec metrics (check your Datasource configuration): {invalid_metrics}"
+        )
+
+
+async def power_check_impl(
+    body: PowerRequest, config: DatasourceConfig, participants_cfg: ParticipantsConfig
+) -> PowerResponse:
+    async with DwhSession(config.dwh) as dwh:
+        sa_table = await dwh.inspect_table(participants_cfg.table_name)
+
+        metric_stats = await asyncio.to_thread(
+            get_stats_on_metrics,
+            dwh.session,
+            sa_table,
+            body.design_spec.metrics,
+            body.design_spec.filters,
+        )
+
+    return PowerResponse(
+        analyses=check_power(
+            metrics=metric_stats,
+            n_arms=len(body.design_spec.arms),
+            power=body.design_spec.power,
+            alpha=body.design_spec.alpha,
+        )
+    )

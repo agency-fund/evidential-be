@@ -132,7 +132,6 @@ banned-from = ["xngin.apiserver.models.tables"]
 # https://docs.astral.sh/ruff/settings/#lint_flake8-import-conventions_extend-aliases
 "xngin.apiserver.routers.admin.admin_api_types" = "aapi"
 "xngin.apiserver.routers.common_api_types" = "capi"
-"xngin.apiserver.routers.stateless.stateless_api_types" = "sapi"
 
 [tool.uv]
 required-version = "==0.7.18"

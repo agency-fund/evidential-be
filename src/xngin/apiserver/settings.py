@@ -113,12 +113,6 @@ class ConfigBaseModel(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
 
-class SheetRef(ConfigBaseModel):
-    url: str
-    # worksheet is the name of the worksheet. This is usually the name of the database warehouse table.
-    worksheet: str
-
-
 class BaseParticipantsRef(ConfigBaseModel):
     """Participants are a logical representation of a table in the data warehouse.
 
@@ -134,17 +128,6 @@ class BaseParticipantsRef(ConfigBaseModel):
     ]
 
 
-class SheetParticipantsRef(BaseParticipantsRef):
-    type: Annotated[
-        Literal["sheet"],
-        Field(
-            description="Indicates that the schema is determined by a remote Google Sheet."
-        ),
-    ]
-    table_name: str
-    sheet: SheetRef
-
-
 class ParticipantsDef(BaseParticipantsRef, ParticipantsSchema):
     type: Annotated[
         Literal["schema"],
@@ -154,9 +137,7 @@ class ParticipantsDef(BaseParticipantsRef, ParticipantsSchema):
     ]
 
 
-type ParticipantsConfig = Annotated[
-    SheetParticipantsRef | ParticipantsDef, Field(discriminator="type")
-]
+type ParticipantsConfig = Annotated[ParticipantsDef, Field(discriminator="type")]
 
 
 class ParticipantsMixin(ConfigBaseModel):

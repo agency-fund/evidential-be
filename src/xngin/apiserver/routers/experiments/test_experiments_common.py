@@ -18,6 +18,7 @@ from xngin.apiserver.models.enums import ExperimentState, StopAssignmentReason
 from xngin.apiserver.models.storage_format_converters import ExperimentStorageConverter
 from xngin.apiserver.routers.common_api_types import (
     CreateExperimentRequest,
+    DesignSpec,
     DesignSpecMetric,
     ExperimentType,
     MetricPowerAnalysis,
@@ -36,9 +37,6 @@ from xngin.apiserver.routers.experiments.experiments_common import (
     get_existing_assignment_for_participant,
     get_experiment_assignments_impl,
     list_experiments_impl,
-)
-from xngin.apiserver.routers.stateless.stateless_api_types import (
-    DesignSpec,
 )
 from xngin.apiserver.testing.assertions import assert_dates_equal
 

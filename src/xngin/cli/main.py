@@ -23,7 +23,6 @@ import zstandard
 from email_validator import EmailNotValidError, validate_email
 from google.cloud import bigquery
 from google.cloud.exceptions import NotFound
-from gspread import GSpreadException
 from gspread.worksheet import CellFormat
 from pandas import DataFrame
 from pydantic import ValidationError
@@ -42,15 +41,9 @@ from xngin.apiserver.routers.common_api_types import DataType
 from xngin.apiserver.settings import (
     Datasource,
     Dsn,
-    SheetRef,
     XnginSettings,
 )
 from xngin.apiserver.testing import testing_dwh
-from xngin.sheets.config_sheet import (
-    InvalidSheetError,
-    fetch_and_parse_sheet,
-)
-from xngin.sheets.gsheets import GSheetsPermissionError
 from xngin.xsecrets import secretservice
 from xngin.xsecrets.nacl_provider import NaclProviderKeyset
 
@@ -523,40 +516,6 @@ def bootstrap_spreadsheet(
             sheet.share(email, perm_type="user", role="writer")
             print(f"# Sheet shared with {email}")
     print(sheet.url)
-
-
-@app.command()
-def parse_config_spreadsheet(
-    url: Annotated[
-        str,
-        typer.Argument(
-            ..., help="URL to the Google Sheet, or file://-style path to a CSV."
-        ),
-    ],
-    worksheet: Annotated[
-        str,
-        typer.Argument(
-            ...,
-            help="The worksheet to parse. If parsing CSV, specify the name of the table the CSV was generated from.",
-        ),
-    ],
-):
-    """Parses a Google Spreadsheet and displays the parsed configuration on the console.
-
-    This is primarily useful for confirming that the spreadsheet passes validations.
-    """
-    try:
-        parsed = fetch_and_parse_sheet(SheetRef(url=url, worksheet=worksheet))
-        print(parsed.model_dump_json(indent=2))
-    except GSpreadException as gse:
-        err_console.print(gse)
-        raise typer.Exit(1) from gse
-    except GSheetsPermissionError as pe:
-        err_console.print("You do not have permission to open this spreadsheet.")
-        raise typer.Exit(1) from pe
-    except InvalidSheetError as ise:
-        err_console.print(f"Error(s):\n{ise}")
-        raise typer.Exit(1) from ise
 
 
 @app.command()
