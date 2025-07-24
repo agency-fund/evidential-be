@@ -883,6 +883,9 @@ async def inspect_datasource(
     """Verifies connectivity to a datasource and returns a list of readable tables."""
     ds = await get_datasource_or_raise(session, user, datasource_id)
 
+    if ds.get_config().dwh.driver == "none":
+        return InspectDatasourceResponse(tables=[])
+
     if not refresh and cache_is_fresh(ds.table_list_updated):
         return InspectDatasourceResponse(tables=ds.table_list)
     try:

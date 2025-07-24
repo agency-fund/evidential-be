@@ -202,7 +202,7 @@ def test_list_orgs_privileged(pget):
     assert ListOrganizationsResponse.model_validate(response.json()).items == []
 
 
-def test_create_organization(ppost, pget):
+def test_create_and_get_organization(ppost, pget):
     """Test basic organization creation."""
     # Create an organization
     org_name = "New Organization"
@@ -228,6 +228,11 @@ def test_create_organization(ppost, pget):
     assert "Default" in nodwh_summary.name
     assert nodwh_summary.organization_id == create_response.id
     assert nodwh_summary.organization_name == org_name
+
+    # Inspect the default NoDwh datasource; should have no tables.
+    response = pget(f"/v1/m/datasources/{nodwh_summary.id}/inspect")
+    assert response.status_code == 200, response.content
+    assert InspectDatasourceResponse.model_validate(response.json()).tables == []
 
 
 @pytest.mark.skipif(
