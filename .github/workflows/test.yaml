@@ -2,9 +2,9 @@ name: tests
 
 on:
   push:
-    branches: [main]
+    branches: [ main ]
   pull_request:
-    branches: [main]
+    branches: [ main ]
   workflow_dispatch:
     inputs:
       run-bq-integration:
@@ -67,8 +67,6 @@ jobs:
         env:
           DATABASE_URL: "postgresql+psycopg://postgres:postgres@localhost:5499/test_xngin?sslmode=disable"
       - name: integration tests
-        env:
-          GSHEET_TEST_URL: ${{ secrets.GSHEET_TEST_URL }}
         run: |
           export GOOGLE_APPLICATION_CREDENTIALS=$HOME/.config/gspread/service_account.json
           task test-integration
@@ -107,25 +105,8 @@ jobs:
           uv run xngin-cli validate-settings ./src/xngin/apiserver/testdata/xngin.gha.settings.json
       - name: xngin-cli smoke tests
         env:
-          DATABASE_URL: "postgresql+psycopg://postgres:postgres@localhost:5499/postgres?sslmode=disable"
-        run: |
-          set -x
-
-          # import/export lifecycle
-          uv run xngin-cli create-testing-dwh --dsn $DATABASE_URL --table-name=test_participant_type
-          # First bootstrap just tests --unique-id-col (although the column itself isn't unique)
-          uv run xngin-cli bootstrap-spreadsheet $DATABASE_URL test_participant_type --unique-id-col potential_1 | tee config-unique.csv
-          uv run xngin-cli parse-config-spreadsheet file://./config-unique.csv test_participant_type
-          # This next bootstrap is a more appropriate testing config
-          uv run xngin-cli bootstrap-spreadsheet $DATABASE_URL test_participant_type | tee config.csv
-          uv run xngin-cli parse-config-spreadsheet file://./config.csv test_participant_type
-      - name: Run xngin.gha.settings.json tests
-        env:
-          DATABASE_URL: "postgresql+psycopg://postgres:postgres@localhost:5499/postgres?sslmode=disable"
           PGPASSWORD: postgres
         run: |
-          set -x
-
           # These imports correspond to entries in xngin.gha.settings.json.
           uv run xngin-cli create-testing-dwh --dsn postgresql+psycopg://postgres@127.0.0.1:5499/postgres
           uv run xngin-cli create-testing-dwh --dsn postgresql+psycopg://postgres@127.0.0.1:5499/postgres \
@@ -138,16 +119,6 @@ jobs:
 
           # Create the application database.
           uv run xngin-cli create-apiserver-db
-
-          # Verify the sources in xngin.gha.settings.json are still readable (uses the psycopg imports).
-          XNGIN_SETTINGS=src/xngin/apiserver/testdata/xngin.gha.settings.json uv run fastapi run \
-            src/xngin/apiserver/main.py &
-          sleep 10
-          # Verify we can get data from a table in the default schema
-          curl -v --fail-with-body -H "Datasource-ID: gha-postgres" 'http://localhost:8000/v1/filters?participant_type=dwh'
-          # Now verify search_path can override defaults
-          curl -v --fail-with-body -H "Datasource-ID: gha-postgres-alt" 'http://localhost:8000/v1/filters?participant_type=alt'
-          kill %1
   bq-integration:
     timeout-minutes: 15
     runs-on: ubuntu-22.04
@@ -250,11 +221,6 @@ jobs:
           # Populate the test warehouse. This is read by the two CLI commands and the server we start below.
           uv run xngin-cli create-testing-dwh --dsn bigquery://xngin-development-dc/ds --nrows 1000
 
-          # The outputs of bootstrap-spreadsheet and parse-config-spreadsheet aren't actually used by the HTTP test
-          # below. We run them to ensure that the commands can interact with BigQuery without failing.
-          uv run xngin-cli bootstrap-spreadsheet bigquery://xngin-development-dc/ds | tee config.csv
-          uv run xngin-cli parse-config-spreadsheet file://./config.csv "$XNGIN_CLI_TABLE_NAME"
-
           # Unset the environment variable because we want to ensure the server is authenticating with the credentials
           # configured in the settings file and not relying on fallback behavior.
           unset GOOGLE_APPLICATION_CREDENTIALS
@@ -262,53 +228,8 @@ jobs:
           # Create the application database.
           uv run xngin-cli create-apiserver-db
 
-          # Start a server using the gha-bq profile.
-          XNGIN_SETTINGS=src/xngin/apiserver/testdata/xngin.gha.settings.json uv run fastapi run \
-            src/xngin/apiserver/main.py &
-          sleep 10
-          curl -v --fail-with-body -H "Datasource-ID: gha-bq" 'http://localhost:8000/v1/filters?participant_type=warehouse'
-          curl -v --fail-with-body \
-            -H "Datasource-ID: gha-bq" \
-            -H "Accept: application/json" \
-            -H "Content-Type: application/json" \
-            -X POST "http://localhost:8000/v1/assign?chosen_n=40&random_state=42" \
-            -d '{
-              "design_spec": {
-                "participant_type": "warehouse",
-                "experiment_id": "0897bbd7-dacd-41b4-b164-7a1950fa61f2",
-                "experiment_type": "preassigned",
-                "experiment_name": "Sample experiment name.",
-                "description": "Sample experiment description.",
-                "arms": [
-                  {
-                    "arm_name": "Control",
-                    "arm_id": "699a500b-41d6-4cba-b254-60b9493717cb"
-                  },
-                  {
-                    "arm_name": "Treatment",
-                    "arm_id": "5bc829fb-ffa6-456c-9e54-d26ba8d1031d"
-                  }
-                ],
-                "start_date": "2024-11-06",
-                "end_date": "2024-11-20",
-                "filters": [],
-                "strata": [
-                  {
-                    "field_name": "is_onboarded"
-                  }
-                ],
-                "power": 0.8,
-                "alpha": 0.05,
-                "fstat_thresh": 0.5,
-                "metrics": [
-                  {
-                    "field_name": "current_income",
-                    "metric_pct_change": 0.1
-                  }
-                ]
-              }
-            }'
-          kill %1
+          # TODO: Add xngin-cli command to convert xngin.gha.settings.json into database entries and generate API key
+          # suitable for use in integration tests.
       - name: bq cleanup
         if: success() || failure()
         run: |
