@@ -7,6 +7,7 @@ from typing import Annotated
 
 from fastapi import (
     APIRouter,
+    Body,
     Depends,
     FastAPI,
     HTTPException,
@@ -248,8 +249,8 @@ async def get_assignment_for_participant_with_apikey(
     description="""Update the MAB arm assignment for a specific participant.""",
 )
 async def update_experiment_arm_for_participant(
+    request: Annotated[GetBanditOutcome, Body()],
     experiment: Annotated[tables.Experiment, Depends(experiment_dependency)],
-    request: GetBanditOutcome,
     session: Annotated[AsyncSession, Depends(xngin_db_session)],
 ) -> ArmBandit:
     """Get the assignment for a specific participant in an experiment."""
