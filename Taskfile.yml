@@ -62,7 +62,7 @@ env:
   XNGIN_PUBLISH_ALL_DOCS: "true"
 
   # Data warehouse available for use by the local dev environment (see task bootstrap-dwh-database) and also referenced
-  # by unit tests via xngin.testing.settings.json. It is bootstrapped with the testing datawarehouse when
+  # by unit tests via xngin.testing.settings.json. The database is bootstrapped with testing_dwh.csv.zst when
   # `task start` is used.
   XNGIN_DEVDWH_DSN: "postgresql+psycopg://postgres:postgres@localhost:5499/dwh?sslmode=disable"
 
