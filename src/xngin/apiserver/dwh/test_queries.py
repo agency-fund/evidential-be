@@ -323,7 +323,7 @@ IS_NULLABLE_CASES = [
             Filter(
                 field_name="date_col",
                 relation=Relation.EXCLUDES,
-                value=[None, ROW_10.date_col.isoformat()],
+                value=[None, ROW_10.date_col and ROW_10.date_col.isoformat()],
             ),
         ],
         matches=[ROW_20],
@@ -401,7 +401,7 @@ IS_NULLABLE_CASES = [
             Filter(
                 field_name="date_col",
                 relation=Relation.INCLUDES,
-                value=[None, ROW_10.date_col.isoformat()],
+                value=[None, ROW_10.date_col and ROW_10.date_col.isoformat()],
             ),
         ],
         matches=[ROW_10, ROW_30],
