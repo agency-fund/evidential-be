@@ -34,6 +34,7 @@ from xngin.apiserver.routers.common_api_types import (
     BaseFrequentistDesignSpec,
     CreateExperimentRequest,
     CreateExperimentResponse,
+    GetBanditOutcome,
     GetExperimentAssignmentsResponse,
     GetExperimentResponse,
     GetParticipantAssignmentResponse,
@@ -248,8 +249,7 @@ async def get_assignment_for_participant_with_apikey(
 )
 async def update_experiment_arm_for_participant(
     experiment: Annotated[tables.Experiment, Depends(experiment_dependency)],
-    participant_id: str,
-    outcome: float,
+    request: GetBanditOutcome,
     session: Annotated[AsyncSession, Depends(xngin_db_session)],
 ) -> ArmBandit:
     """Get the assignment for a specific participant in an experiment."""
@@ -257,8 +257,8 @@ async def update_experiment_arm_for_participant(
     updated_arm = await update_bandit_arms_with_outcomes(
         xngin_session=session,
         experiment=experiment,
-        participant_id=participant_id,
-        outcome=outcome,
+        participant_id=request.participant_id,
+        outcome=request.outcome,
     )
 
     return ArmBandit(

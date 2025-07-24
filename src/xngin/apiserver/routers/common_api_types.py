@@ -1144,3 +1144,10 @@ class GetFiltersResponseDiscrete(GetFiltersResponseBase):
 type GetFiltersResponseElement = (
     GetFiltersResponseNumericOrDate | GetFiltersResponseDiscrete
 )
+
+
+class GetBanditOutcome(ApiBaseModel):
+    """Describes the outcome of a bandit experiment."""
+
+    participant_id: str
+    outcome: float
