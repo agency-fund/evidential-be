@@ -34,6 +34,7 @@ from sqlalchemy.exc import IntegrityError, OperationalError
 from sqlalchemy.orm import Session
 from sqlalchemy.sql.compiler import IdentifierPreparer
 
+from xngin.apiserver import apikeys
 from xngin.apiserver.dwh.dwh_session import CannotFindTableError, DwhSession
 from xngin.apiserver.dwh.inspection_types import FieldDescriptor, ParticipantsSchema
 from xngin.apiserver.dwh.inspections import create_schema_from_table
@@ -65,6 +66,8 @@ app = typer.Typer(help=__doc__)
 logging.basicConfig(
     level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s - %(message)s"
 )
+
+secretservice.setup()
 
 
 def create_engine_and_database(url: sqlalchemy.URL):
@@ -745,7 +748,12 @@ def add_user(
             for organization in user.organizations:
                 console.print(f"Organization ID: [cyan]{organization.id}[/cyan]")
                 for datasource in organization.datasources:
-                    console.print(f"  Datasource ID: [cyan]{datasource.id}[/cyan]")
+                    label, key = apikeys.make_key()
+                    key_hash = apikeys.hash_key_or_raise(key)
+                    datasource.api_keys.append(tables.ApiKey(id=label, key=key_hash))
+                    console.print(
+                        f"  Datasource ID: [cyan]{datasource.id}[/cyan] [blue](API Key: {key})[/blue]"
+                    )
         except IntegrityError as err:
             session.rollback()
             err_console.print(
@@ -791,7 +799,6 @@ def encrypt(
     ] = "cli",
 ):
     """Encrypts a string using the same encryption configuration that the API server does."""
-    secretservice.setup()
     plaintext = sys.stdin.read()
     print(secretservice.get_symmetric().encrypt(plaintext, aad))
 
