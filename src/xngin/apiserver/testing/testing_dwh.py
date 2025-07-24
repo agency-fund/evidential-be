@@ -26,6 +26,15 @@ def compact_hash(path: Path):
     return int.from_bytes(h.digest())
 
 
+def add_nodwh_datasource_to_org(session, organization):
+    """Adds a NoDWH datasource to the given organization."""
+    nodwh_config = RemoteDatabaseConfig(participants=[], type="remote", dwh=NoDwh())
+    nodwh_datasource = tables.Datasource(
+        name="Default no-DWH Source", organization=organization
+    ).set_config(nodwh_config)
+    session.add(nodwh_datasource)
+
+
 def create_user_and_first_datasource(
     session: Session | AsyncSession, *, email: str, dsn: str | None, privileged: bool
 ) -> tables.User:
@@ -50,11 +59,6 @@ def create_user_and_first_datasource(
         ).set_config(config)
         session.add(datasource)
 
-    # add a NoDWH datasource by default
-    nodwh_config = RemoteDatabaseConfig(participants=[], type="remote", dwh=NoDwh())
-    nodwh_datasource = tables.Datasource(
-        name="Default Dummy DWH", organization=organization
-    ).set_config(nodwh_config)
-    session.add(nodwh_datasource)
+    add_nodwh_datasource_to_org(session, organization)
 
     return user
