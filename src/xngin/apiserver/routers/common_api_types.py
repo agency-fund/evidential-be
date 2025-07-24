@@ -898,8 +898,7 @@ class AssignSummary(ExperimentsBaseModel):
     arm_sizes: Annotated[
         list[ArmSize] | None,
         Field(
-            description="For each arm, the number of participants assigned. "
-            "TODO: make required once development has stabilized. May be None if unknown due to persisting prior versions of an AssignSummary.",
+            description="For each arm, the number of participants assigned.",
             max_length=MAX_NUMBER_OF_ARMS,
         ),
     ] = None
