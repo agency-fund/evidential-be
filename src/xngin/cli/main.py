@@ -1,7 +1,5 @@
 """Command line tool for various xngin-related operations."""
 
-import asyncio
-import csv
 import json
 import logging
 import re
@@ -12,7 +10,6 @@ from pathlib import Path
 from typing import Annotated
 
 import boto3
-import gspread
 import pandas as pd
 import pandas_gbq
 import psycopg
@@ -23,7 +20,6 @@ import zstandard
 from email_validator import EmailNotValidError, validate_email
 from google.cloud import bigquery
 from google.cloud.exceptions import NotFound
-from gspread.worksheet import CellFormat
 from pandas import DataFrame
 from pydantic import ValidationError
 from pydantic_core import from_json
@@ -34,10 +30,9 @@ from sqlalchemy.orm import Session
 from sqlalchemy.sql.compiler import IdentifierPreparer
 
 from xngin.apiserver.dwh.dwh_session import CannotFindTableError, DwhSession
-from xngin.apiserver.dwh.inspection_types import FieldDescriptor, ParticipantsSchema
+from xngin.apiserver.dwh.inspection_types import ParticipantsSchema
 from xngin.apiserver.dwh.inspections import create_schema_from_table
 from xngin.apiserver.models import tables
-from xngin.apiserver.routers.common_api_types import DataType
 from xngin.apiserver.settings import (
     Datasource,
     Dsn,
@@ -403,119 +398,6 @@ def create_testing_dwh(
     else:
         err_console.print("Unrecognized database driver.")
         raise typer.Exit(2)
-
-
-@app.command()
-def bootstrap_spreadsheet(
-    dsn: Annotated[
-        str, typer.Argument(..., help="The SQLAlchemy DSN of a data warehouse.")
-    ],
-    table_name: Annotated[
-        str,
-        typer.Argument(
-            ...,
-            envvar="XNGIN_CLI_TABLE_NAME",
-            help="The name of the table to pull field metadata from. If creating a Google Sheet, this will also be "
-            "used as the worksheet name, unless overridden by --participant-type.",
-        ),
-    ],
-    unique_id_col: Annotated[
-        str | None,
-        typer.Option(
-            help="Specify the column name within table_name to use as the unique identifier for each participant. If "
-            "None, will attempt to infer a reasonable column from the schema or raise an error."
-        ),
-    ] = None,
-    create_gsheet: Annotated[
-        bool,
-        typer.Option(
-            ...,
-            help="Create a Google Sheet version of the configuration spreadsheet from `table_name`.",
-        ),
-    ] = False,
-    participant_type: Annotated[
-        str | None,
-        typer.Option(
-            ...,
-            help="When creating the Google Sheet, use the specified value rather than the table name "
-            "as the worksheet name. This corresponds to the participant_type field in the settings file.",
-        ),
-    ] = None,
-    share_email: Annotated[
-        tuple[str] | None,
-        typer.Option(
-            help="Share the newly created Google Sheet with one or more email addresses.",
-        ),
-    ] = None,
-    use_sa_autoload: Annotated[
-        bool,
-        typer.Option(
-            help="True to use SQLAlchemy's table reflection, else use a cursor to infer types",
-        ),
-    ] = True,
-):
-    """Generates a Google Spreadsheet from a SQLAlchemy DSN and a table name.
-
-    Use this to get a customer started on configuring an experiment.
-    """
-    config = asyncio.run(
-        create_participants_schema_from_table(
-            dsn, table_name, use_sa_autoload, unique_id_col
-        )
-    )
-
-    # Exclude the `extra` field.
-    field_names = [c for c in FieldDescriptor.model_fields if c != "extra"]
-    rows = [field_names]
-
-    def convert(v):
-        if isinstance(v, bool):
-            if v:
-                return "true"
-            return ""
-        if isinstance(v, DataType):
-            return str(v)
-        return v
-
-    for row in config.fields:
-        # Exclude the `extra` field.
-        rows.append([convert(v) for k, v in row.model_dump().items() if k != "extra"])
-
-    if not create_gsheet:
-        writer = csv.writer(sys.stdout)
-        writer.writerows(rows)
-        return
-
-    gc = gspread.service_account()
-    # TODO: if the sheet exists already, add a new worksheet instead of erroring.
-    if participant_type is None:
-        participant_type = table_name
-    sheet = gc.create(participant_type)
-    # The "Sheet1" worksheet is created automatically. We don't want to use that, so hold on to its ID for later
-    # so that we can delete it.
-    sheets_to_delete = [s.id for s in sheet.worksheets()]
-    worksheet = sheet.add_worksheet(table_name, rows=len(rows), cols=len(field_names))
-    worksheet.append_rows(rows)
-    # Bold the first row.
-    formats: list[CellFormat] = [
-        {
-            "range": "1:1",
-            "format": {
-                "textFormat": {
-                    "bold": True,
-                },
-            },
-        },
-    ]
-    worksheet.batch_format(formats)
-    for sheet_id in sheets_to_delete:
-        sheet.del_worksheet_by_id(sheet_id)
-    if share_email:
-        for email in share_email:
-            # TODO: if running as a service account, also transfer ownership to one fo the email addresses.
-            sheet.share(email, perm_type="user", role="writer")
-            print(f"# Sheet shared with {email}")
-    print(sheet.url)
 
 
 @app.command()
