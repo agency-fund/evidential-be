@@ -112,7 +112,7 @@ def get_queries_test_uri() -> TestUriInfo:
 def setup_debug_logging():
     print(
         "Running tests with "
-        f"\n\tDATABASE_URL: {database.SQLALCHEMY_DATABASE_URL} "
+        f"\n\tDATABASE_URL: {database.get_server_database_url()} "
         f"\n\tXNGIN_QUERIES_TEST_URI  : {get_queries_test_uri()}"
     )
 
@@ -242,19 +242,19 @@ async def fixture_xngin_db_session():
     interact with the API server through API methods (without explicitly using the xngin_session fixture),
     autouse=True guarantees this cleanup runs for every test, preventing any shared state between test runs.
     """
-    create_database_if_not_exists_pg(database.SQLALCHEMY_DATABASE_URL)
-    sessionmaker = database.AsyncSessionLocal
-    async with database.async_engine.begin() as conn:
-        await conn.run_sync(tables.Base.metadata.drop_all)
-        await conn.run_sync(tables.Base.metadata.create_all)
-    async with sessionmaker() as session:
-        session.add_all([
-            tables.User(email=PRIVILEGED_EMAIL, is_privileged=True),
-            tables.User(email=UNPRIVILEGED_EMAIL, is_privileged=False),
-        ])
-        await session.commit()
-    async with sessionmaker() as sess:
-        yield sess
+    async with database.setup():
+        create_database_if_not_exists_pg(database.get_sqlalchemy_database_url())
+        async with database.get_async_engine().begin() as conn:
+            await conn.run_sync(tables.Base.metadata.drop_all)
+            await conn.run_sync(tables.Base.metadata.create_all)
+        async with database.async_session() as session:
+            session.add_all([
+                tables.User(email=PRIVILEGED_EMAIL, is_privileged=True),
+                tables.User(email=UNPRIVILEGED_EMAIL, is_privileged=False),
+            ])
+            await session.commit()
+        async with database.async_session() as sess:
+            yield sess
 
 
 async def delete_seeded_users(xngin_session: AsyncSession):
