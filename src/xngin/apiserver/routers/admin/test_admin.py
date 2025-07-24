@@ -4,7 +4,6 @@ from datetime import UTC, datetime, timedelta
 
 import pytest
 from fastapi import HTTPException
-from pydantic import SecretStr
 from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -220,7 +219,7 @@ def test_create_datasource_invalid_dns(testing_datasource, ppost):
                 host=safe_resolve.UNSAFE_IP_FOR_TESTING,
                 user="postgres",
                 port=5499,
-                password=SecretStr("postgres"),
+                password="postgres",
                 dbname="postgres",
                 sslmode="disable",
             ),
@@ -309,7 +308,7 @@ def test_datasource_lifecycle(ppost, pget, ppatch):
                 host="127.0.0.1",
                 user="postgres",
                 port=5499,
-                password=SecretStr("postgres"),
+                password="postgres",
                 dbname="postgres",
                 sslmode="disable",
             ),

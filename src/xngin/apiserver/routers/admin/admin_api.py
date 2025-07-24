@@ -811,9 +811,9 @@ async def create_datasource(
 
     config = RemoteDatabaseConfig(participants=[], type="remote", dwh=body.dwh)
 
-    datasource = tables.Datasource(name=body.name, organization_id=org.id).set_config(
-        config
-    )
+    datasource = tables.Datasource(
+        id=tables.datasource_id_factory(), name=body.name, organization_id=org.id
+    ).set_config(config)
     session.add(datasource)
     await session.commit()
 

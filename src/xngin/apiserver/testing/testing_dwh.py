@@ -44,7 +44,9 @@ def create_user_and_first_datasource(
             participants=[TESTING_PARTICIPANT_DEF], type="remote", dwh=Dsn.from_url(dsn)
         )
         datasource = tables.Datasource(
-            name="Local DWH", organization=organization
+            id=tables.datasource_id_factory(),
+            name="Local DWH",
+            organization=organization,
         ).set_config(config)
         session.add(datasource)
 
