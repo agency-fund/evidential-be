@@ -105,6 +105,7 @@ jobs:
           uv run xngin-cli validate-settings ./src/xngin/apiserver/testdata/xngin.gha.settings.json
       - name: xngin-cli smoke tests
         env:
+          DATABASE_URL: "postgresql+psycopg://postgres:postgres@localhost:5499/postgres?sslmode=disable"
           PGPASSWORD: postgres
         run: |
           # These imports correspond to entries in xngin.gha.settings.json.
