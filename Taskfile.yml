@@ -176,6 +176,7 @@ tasks:
       - bootstrap-dwh-database
     cmds:
       - uv run coverage run -m pytest {{.CLI_ARGS}}
+      - uv run coverage report
   test-airplane:
     desc: "Run unit tests (in airplane mode)."
     interactive: true
