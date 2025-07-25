@@ -145,7 +145,10 @@ async def create_dwh_experiment_impl(
                 validated_webhooks=validated_webhooks,
             )
 
-    if request.design_spec.experiment_type == ExperimentsType.MAB_ONLINE:
+    if request.design_spec.experiment_type in {
+        ExperimentsType.MAB_ONLINE,
+        ExperimentsType.CMAB_ONLINE,
+    }:
         return await create_bandit_online_experiment_impl(
             xngin_session=xngin_session,
             organization_id=datasource.organization_id,
@@ -376,7 +379,7 @@ async def create_bandit_online_experiment_impl(
     experiment_converter = ExperimentStorageConverter.init_from_components(
         datasource_id=datasource_id,
         organization_id=organization_id,
-        experiment_type=ExperimentsType.MAB_ONLINE,
+        experiment_type=request.design_spec.experiment_type,
         design_spec=design_spec,
         n_trials=chosen_n if chosen_n is not None else 0,
     )

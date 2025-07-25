@@ -149,7 +149,7 @@ class Context(ApiBaseModel):
             description="Unique identifier for the context, you should NOT set this when creating a new context.",
             examples=[1],
         ),
-    ]
+    ] = None
     context_name: Annotated[str, Field(max_length=MAX_LENGTH_OF_NAME_VALUE)]
     context_description: Annotated[
         str | None, Field(max_length=MAX_LENGTH_OF_DESCRIPTION_VALUE)
@@ -742,6 +742,7 @@ class BaseBanditExperimentSpec(BaseDesignSpec):
         Field(
             description="Optional list of contexts that can be used to condition the bandit assignment. Required for contextual bandit experiments.",
             max_length=MAX_NUMBER_OF_FIELDS,
+            min_length=1,
         ),
     ] = None
 

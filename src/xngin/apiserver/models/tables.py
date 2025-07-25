@@ -40,6 +40,7 @@ organization_id_factory = unique_id_factory("o")
 task_id_factory = unique_id_factory("task")
 user_id_factory = unique_id_factory("u")
 webhook_id_factory = unique_id_factory("wh")
+context_id_factory = unique_id_factory("ctx")
 
 
 class Base(AsyncAttrs, DeclarativeBase):
@@ -608,7 +609,9 @@ class Context(Base):
     __tablename__ = "context"
 
     # Context metadata
-    id: Mapped[str] = mapped_column(String, primary_key=True)
+    id: Mapped[str] = mapped_column(
+        String, primary_key=True, default=context_id_factory
+    )
     experiment_id: Mapped[str] = mapped_column(
         ForeignKey("experiments.id", ondelete="CASCADE")
     )
