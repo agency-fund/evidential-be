@@ -51,7 +51,7 @@ from xngin.apiserver.routers.common_api_types import (
     CreateExperimentResponse,
     DataType,
     DesignSpecMetricRequest,
-    FreqExperimentAnalysisResponse,
+    FreqExperimentAnalysis,
     GetExperimentAssignmentsResponse,
     GetParticipantAssignmentResponse,
     ListExperimentsResponse,
@@ -800,7 +800,7 @@ async def test_lifecycle_with_db(testing_datasource, ppost, pget, pdelete):
         f"/v1/m/datasources/{testing_datasource.ds.id}/experiments/{parsed_experiment_id}/analyze"
     )
     assert response.status_code == 200, response.content
-    experiment_analysis = FreqExperimentAnalysisResponse.model_validate(response.json())
+    experiment_analysis = FreqExperimentAnalysis.model_validate(response.json())
     assert experiment_analysis.experiment_id == parsed_experiment_id
 
     # Get assignments for the experiment.
@@ -1105,7 +1105,7 @@ def test_experiments_analyze(testing_experiment, pget):
     )
 
     assert response.status_code == 200, response.content
-    experiment_analysis = FreqExperimentAnalysisResponse.model_validate(response.json())
+    experiment_analysis = FreqExperimentAnalysis.model_validate(response.json())
     assert experiment_analysis.experiment_id == experiment_id
     assert len(experiment_analysis.metric_analyses) == 1
     assert experiment_analysis.num_participants == 10

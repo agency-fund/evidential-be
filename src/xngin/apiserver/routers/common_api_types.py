@@ -342,7 +342,7 @@ class MetricAnalysis(ApiBaseModel):
         return self
 
 
-class BanditExperimentAnalysisResponse(ApiBaseModel):
+class BanditExperimentAnalysis(ApiBaseModel):
     """Describes changes in arms for a bandit experiment"""
 
     experiment_id: Annotated[
@@ -373,7 +373,7 @@ class BanditExperimentAnalysisResponse(ApiBaseModel):
     ]
 
 
-class FreqExperimentAnalysisResponse(ApiBaseModel):
+class FreqExperimentAnalysis(ApiBaseModel):
     """Describes the change if any in metrics targeted by an experiment."""
 
     experiment_id: Annotated[
