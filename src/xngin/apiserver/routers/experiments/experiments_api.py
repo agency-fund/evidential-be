@@ -35,11 +35,11 @@ from xngin.apiserver.routers.common_api_types import (
     BaseFrequentistDesignSpec,
     CreateExperimentRequest,
     CreateExperimentResponse,
-    GetBanditOutcome,
     GetExperimentAssignmentsResponse,
     GetExperimentResponse,
     GetParticipantAssignmentResponse,
     ListExperimentsResponse,
+    UpdateBanditArmOutcomeRequest,
 )
 from xngin.apiserver.routers.experiments.dependencies import experiment_dependency
 from xngin.apiserver.routers.experiments.experiments_common import (
@@ -52,7 +52,7 @@ from xngin.apiserver.routers.experiments.experiments_common import (
     get_experiment_assignments_as_csv_impl,
     get_experiment_assignments_impl,
     list_experiments_impl,
-    update_bandit_arms_with_outcomes,
+    update_bandit_arm_with_outcome_impl,
 )
 from xngin.apiserver.settings import (
     Datasource,
@@ -246,20 +246,19 @@ async def get_assignment_for_participant_with_apikey(
 
 @router.post(
     "/experiments/{experiment_id}/assignments/{participant_id}/outcome",
-    description="""Update the MAB arm assignment for a specific participant.""",
+    description="""Update the bandit arm with corresponding outcome for a specific participant.""",
 )
-async def update_experiment_arm_for_participant(
-    request: Annotated[GetBanditOutcome, Body()],
+async def update_bandit_arm_with_participant_outcome(
+    body: Annotated[UpdateBanditArmOutcomeRequest, Body()],
     experiment: Annotated[tables.Experiment, Depends(experiment_dependency)],
     session: Annotated[AsyncSession, Depends(xngin_db_session)],
 ) -> ArmBandit:
-    """Get the assignment for a specific participant in an experiment."""
     # Update the arm with the outcome
-    updated_arm = await update_bandit_arms_with_outcomes(
+    updated_arm = await update_bandit_arm_with_outcome_impl(
         xngin_session=session,
         experiment=experiment,
-        participant_id=request.participant_id,
-        outcome=request.outcome,
+        participant_id=body.participant_id,
+        outcome=body.outcome,
     )
 
     return ArmBandit(
