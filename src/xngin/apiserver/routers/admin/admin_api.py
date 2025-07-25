@@ -107,7 +107,7 @@ from xngin.apiserver.settings import (
     ParticipantsDef,
     RemoteDatabaseConfig,
 )
-from xngin.apiserver.testing.testing_dwh import (
+from xngin.apiserver.storage.bootstrap import (
     add_nodwh_datasource_to_org,
     create_user_and_first_datasource,
 )
