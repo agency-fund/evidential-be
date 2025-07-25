@@ -16,13 +16,14 @@ from sqlalchemy.schema import CreateTable
 from xngin.apiserver.models import tables
 from xngin.apiserver.models.storage_format_converters import ExperimentStorageConverter
 from xngin.apiserver.routers.common_api_types import (
-    BaseFrequentistDesignSpec,
     CreateExperimentRequest,
     DesignSpecMetric,
     ExperimentsType,
     MetricPowerAnalysis,
     MetricType,
+    OnlineFrequentistExperimentSpec,
     PowerResponse,
+    PreassignedFrequentistExperimentSpec,
     Stratum,
 )
 from xngin.apiserver.routers.common_enums import ExperimentState, StopAssignmentReason
@@ -100,7 +101,7 @@ def make_create_preassigned_experiment_request(
     with_ids: bool = False,
 ) -> CreateExperimentRequest:
     request = make_createexperimentrequest_json(
-        with_ids=with_ids, experiment_type="freq_preassigned"
+        with_ids=with_ids, experiment_type=ExperimentsType.FREQ_PREASSIGNED
     )
     return TypeAdapter(CreateExperimentRequest).validate_python(request)
 
@@ -109,7 +110,7 @@ def make_create_online_experiment_request(
     with_ids: bool = False,
 ) -> CreateExperimentRequest:
     request = make_createexperimentrequest_json(
-        with_ids=with_ids, experiment_type="freq_online"
+        with_ids=with_ids, experiment_type=ExperimentsType.FREQ_ONLINE
     )
     return TypeAdapter(CreateExperimentRequest).validate_python(request)
 
@@ -132,7 +133,7 @@ def make_insertable_experiment(
     )
     stopped_assignments_at: datetime | None = None
     stopped_assignments_reason: StopAssignmentReason | None = None
-    if experiment_type == "freq_preassigned":
+    if experiment_type == ExperimentsType.FREQ_PREASSIGNED:
         stopped_assignments_at = datetime.now(UTC)
         stopped_assignments_reason = StopAssignmentReason.PREASSIGNED
     experiment_converter = ExperimentStorageConverter.init_from_components(
@@ -258,13 +259,13 @@ async def test_create_experiment_impl_for_preassigned(
     assert response.design_spec.end_date == request.design_spec.end_date
     # although we stratify on target metrics as well in this test, note that the
     # original strata are not augmented with the metric names.
-
-    assert response.design_spec.experiment_type == "freq_preassigned"
-    assert isinstance(response.design_spec, BaseFrequentistDesignSpec)
-    assert response.power_analyses is not None and response.assign_summary is not None
+    assert response.design_spec.experiment_type == ExperimentsType.FREQ_PREASSIGNED
+    assert isinstance(response.design_spec, PreassignedFrequentistExperimentSpec)
     assert response.design_spec.strata == [Stratum(field_name="gender")]
+    assert response.power_analyses is not None
     assert response.power_analyses == request.power_analyses
     # Verify assign_summary
+    assert response.assign_summary is not None
     assert response.assign_summary.sample_size == len(participants)
     assert response.assign_summary.balance_check is not None
     assert response.assign_summary.balance_check.balance_ok is True
@@ -274,7 +275,7 @@ async def test_create_experiment_impl_for_preassigned(
         tables.Experiment, response.design_spec.experiment_id
     )
     assert experiment is not None
-    assert experiment.experiment_type == "freq_preassigned"
+    assert experiment.experiment_type == ExperimentsType.FREQ_PREASSIGNED
     assert experiment.participant_type == request.design_spec.participant_type
     assert experiment.name == request.design_spec.experiment_name
     assert experiment.description == request.design_spec.description
@@ -285,7 +286,7 @@ async def test_create_experiment_impl_for_preassigned(
     assert_dates_equal(experiment.end_date, request.design_spec.end_date)
 
     # Verify stats parameters were stored correctly
-    assert isinstance(request.design_spec, BaseFrequentistDesignSpec)
+    assert isinstance(request.design_spec, PreassignedFrequentistExperimentSpec)
     assert experiment.power == request.design_spec.power
     assert experiment.alpha == request.design_spec.alpha
     assert experiment.fstat_thresh == request.design_spec.fstat_thresh
@@ -345,10 +346,7 @@ async def test_create_experiment_impl_for_online(
     xngin_session, testing_datasource, sample_table, use_deterministic_random
 ):
     """Test implementation of creating an online experiment."""
-    # Create online experiment request, modifying the experiment type from the fixture
-    request = make_create_preassigned_experiment_request()
-    # Convert the experiment type to online
-    request.design_spec.experiment_type = ExperimentsType.FREQ_ONLINE
+    request = make_create_online_experiment_request()
 
     response = await create_dwh_experiment_impl(
         request=request.model_copy(deep=True),
@@ -371,13 +369,13 @@ async def test_create_experiment_impl_for_online(
     assert response.design_spec.description == request.design_spec.description
     assert response.design_spec.start_date == request.design_spec.start_date
     assert response.design_spec.end_date == request.design_spec.end_date
-    assert isinstance(response.design_spec, BaseFrequentistDesignSpec)
-    assert response.power_analyses is None and response.assign_summary is not None
+    assert isinstance(response.design_spec, OnlineFrequentistExperimentSpec)
     assert response.design_spec.strata == [Stratum(field_name="gender")]
     # Online experiments don't have power analyses by default
     assert response.power_analyses is None
 
     # Verify assign_summary for online experiment
+    assert response.assign_summary is not None
     assert response.assign_summary.sample_size == 0
     assert response.assign_summary.balance_check is None
     assert response.assign_summary.arm_sizes is not None
@@ -387,7 +385,7 @@ async def test_create_experiment_impl_for_online(
     experiment = await xngin_session.get(
         tables.Experiment, response.design_spec.experiment_id
     )
-    assert experiment.experiment_type == "freq_online"
+    assert experiment.experiment_type == ExperimentsType.FREQ_ONLINE
     assert experiment.participant_type == request.design_spec.participant_type
     assert experiment.name == request.design_spec.experiment_name
     assert experiment.description == request.design_spec.description
@@ -397,7 +395,7 @@ async def test_create_experiment_impl_for_online(
     assert_dates_equal(experiment.start_date, request.design_spec.start_date)
     assert_dates_equal(experiment.end_date, request.design_spec.end_date)
     # Verify stats parameters were stored correctly
-    assert isinstance(request.design_spec, BaseFrequentistDesignSpec)
+    assert isinstance(request.design_spec, OnlineFrequentistExperimentSpec)
     assert experiment.power == request.design_spec.power
     assert experiment.alpha == request.design_spec.alpha
     assert experiment.fstat_thresh == request.design_spec.fstat_thresh
@@ -503,7 +501,7 @@ async def test_create_experiment_impl_no_metric_stratification(
     assert response.design_spec.arms[0].arm_id is not None
     # Same as in the stratify_on_metrics=True test.
     # Only the output assignments will also store a snapshot of the metric values as strata.
-    assert isinstance(response.design_spec, BaseFrequentistDesignSpec)
+    assert isinstance(response.design_spec, PreassignedFrequentistExperimentSpec)
     assert response.design_spec.strata == [Stratum(field_name="gender")]
 
     # Verify database state
@@ -906,8 +904,8 @@ async def test_create_assignment_for_participant(xngin_session, testing_datasour
 @pytest.mark.parametrize(
     "experiment_type,stopped_reason",
     [
-        ("freq_preassigned", StopAssignmentReason.PREASSIGNED),
-        ("freq_online", StopAssignmentReason.END_DATE),
+        (ExperimentsType.FREQ_PREASSIGNED, StopAssignmentReason.PREASSIGNED),
+        (ExperimentsType.FREQ_ONLINE, StopAssignmentReason.END_DATE),
     ],
 )
 async def test_create_assignment_for_participant_stopped_reason(
