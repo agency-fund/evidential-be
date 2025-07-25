@@ -80,12 +80,12 @@ from xngin.apiserver.routers.auth.auth_dependencies import require_oidc_token
 from xngin.apiserver.routers.auth.principal import Principal
 from xngin.apiserver.routers.common_api_types import (
     ArmAnalysis,
-    BanditExperimentAnalysis,
+    BanditExperimentAnalysisResponse,
     BaseBanditExperimentSpec,
     BaseFrequentistDesignSpec,
     CreateExperimentRequest,
     CreateExperimentResponse,
-    FreqExperimentAnalysis,
+    FreqExperimentAnalysisResponse,
     GetExperimentAssignmentsResponse,
     GetExperimentResponse,
     GetMetricsResponseElement,
@@ -1317,7 +1317,7 @@ async def analyze_experiment(
             description="UUID of the baseline arm. If None, the first design spec arm is used.",
         ),
     ] = None,
-) -> FreqExperimentAnalysis | BanditExperimentAnalysis:
+) -> FreqExperimentAnalysisResponse | BanditExperimentAnalysisResponse:
     ds = await get_datasource_or_raise(xngin_session, user, datasource_id)
     dsconfig = ds.get_config()
 
@@ -1332,7 +1332,7 @@ async def analyze_experiment(
     if isinstance(design_spec, BaseBanditExperimentSpec):
         # TODO: implement bandit experiment analysis
         # For now, we return a placeholder analysis with no data.
-        return BanditExperimentAnalysis(
+        return BanditExperimentAnalysisResponse(
             experiment_id=experiment.id,
             n_trials=experiment.n_trials,
             n_outcomes=0,
@@ -1404,7 +1404,7 @@ async def analyze_experiment(
                     metric_name=metric_name, metric=metric, arm_analyses=arm_analyses
                 )
             )
-        return FreqExperimentAnalysis(
+        return FreqExperimentAnalysisResponse(
             experiment_id=experiment.id,
             metric_analyses=metric_analyses,
             num_participants=num_participants,
