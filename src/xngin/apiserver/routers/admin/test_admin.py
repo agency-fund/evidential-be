@@ -159,7 +159,7 @@ async def test_initial_user_setup_matches_testing_dwh(xngin_session):
     )
 
     await xngin_session.refresh(first_user, ["organizations"])
-    ds = first_user.organizations[0].datasources[0]
+    ds = (await first_user.organizations[0].awaitable_attrs.datasources)[0]
 
     ds_config = ds.get_config()
     pt_def = ds_config.participants[0]
