@@ -56,6 +56,7 @@ def test_assign_treatment_with_stratification(sample_df):
     # Check lengths and valid assignments
     assert len(result.treatment_ids) == len(sample_df)
     assert set(result.treatment_ids) == {0, 1}
+    assert result.stratum_ids
     assert len(result.stratum_ids) == len(sample_df)
     # 2 genders, 4 regions => 8 strata
     assert set(result.stratum_ids) == set(range(8))
@@ -84,6 +85,7 @@ def test_assign_treatment_multiple_arms(sample_df):
     # Check that all three arms are represented
     assert set(result.treatment_ids) == {0, 1, 2}
     assert len(result.treatment_ids) == len(sample_df)
+    assert result.stratum_ids
     assert len(result.stratum_ids) == len(sample_df)
     assert set(result.orig_stratum_cols) == {"gender", "region"}
     assert result.balance_result is not None
@@ -113,6 +115,8 @@ def test_assign_treatment_reproducibility(sample_df):
     assert result1.stratum_ids == result2.stratum_ids
     assert result1.orig_stratum_cols == result2.orig_stratum_cols
     # Balance results should have same values
+    assert result1.balance_result
+    assert result2.balance_result
     assert result1.balance_result.f_statistic == result2.balance_result.f_statistic
     assert result1.balance_result.f_pvalue == result2.balance_result.f_pvalue
 
@@ -131,6 +135,7 @@ def test_assign_treatment_with_missing_values(sample_df):
     )
 
     assert len(result.treatment_ids) == len(sample_df)
+    assert result.stratum_ids
     assert len(result.stratum_ids) == len(sample_df)
     assert result.balance_result is not None
     # Check that treatment assignments are not None or NaN
@@ -164,7 +169,9 @@ def test_assign_treatment_with_infer_objects():
 
     assert set(result.treatment_ids) == {0, 1}
     # Improper inference of objects would result in a different number of strata.
+    assert result.stratum_ids
     assert set(result.stratum_ids) == set(range(25))  # = 2*4*3 + 1 for the None in col1
+    assert result.balance_result
     assert result.balance_result.f_pvalue > 0.9
     assert result.orig_stratum_cols == ["col1", "col2", "col3"]
 

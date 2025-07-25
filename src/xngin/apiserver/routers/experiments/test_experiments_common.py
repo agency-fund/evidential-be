@@ -267,6 +267,7 @@ async def test_create_experiment_impl_for_preassigned(
     experiment = await xngin_session.get(
         tables.Experiment, response.design_spec.experiment_id
     )
+    assert experiment
     assert experiment.experiment_type == "preassigned"
     assert experiment.participant_type == request.design_spec.participant_type
     assert experiment.name == request.design_spec.experiment_name
