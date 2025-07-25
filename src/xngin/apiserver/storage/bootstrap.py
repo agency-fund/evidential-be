@@ -5,7 +5,7 @@ from sqlalchemy.orm.session import Session
 
 from xngin.apiserver.models import tables
 from xngin.apiserver.settings import Dsn, NoDwh, RemoteDatabaseConfig
-from xngin.apiserver.testing.testing_dwh_def import TESTING_PARTICIPANT_DEF
+from xngin.apiserver.testing.testing_dwh_def import TESTING_DWH_PARTICIPANT_DEF
 
 
 def add_nodwh_datasource_to_org(session, organization):
@@ -32,7 +32,9 @@ def create_user_and_first_datasource(
     # create a datasource from input
     if dsn:
         config = RemoteDatabaseConfig(
-            participants=[TESTING_PARTICIPANT_DEF], type="remote", dwh=Dsn.from_url(dsn)
+            participants=[TESTING_DWH_PARTICIPANT_DEF],
+            type="remote",
+            dwh=Dsn.from_url(dsn),
         )
         datasource = tables.Datasource(
             id=tables.datasource_id_factory(),

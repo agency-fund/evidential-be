@@ -45,7 +45,8 @@ from xngin.apiserver.settings import (
     SheetRef,
     XnginSettings,
 )
-from xngin.apiserver.testing import testing_dwh
+from xngin.apiserver.storage.bootstrap import create_user_and_first_datasource
+from xngin.apiserver.testing.testing_dwh_def import TESTING_DWH_RAW_DATA
 from xngin.sheets.config_sheet import (
     InvalidSheetError,
     fetch_and_parse_sheet,
@@ -196,7 +197,7 @@ def create_testing_dwh(
             "must end in .csv or .csv.zst.",
             callback=validate_create_testing_dwh_src,
         ),
-    ] = testing_dwh.TESTING_DWH_RAW_DATA,
+    ] = TESTING_DWH_RAW_DATA,
     nrows: Annotated[
         int | None,
         typer.Option(
@@ -734,7 +735,7 @@ def add_user(
     engine = create_engine(dsn)
     with Session(engine) as session:
         try:
-            user = testing_dwh.create_user_and_first_datasource(
+            user = create_user_and_first_datasource(
                 session, email=email, dsn=dwh, privileged=privileged
             )
             session.commit()

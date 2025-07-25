@@ -1,8 +1,19 @@
+"""Definitions for the testing data warehouse that we bootstrap new Evidential instances with."""
+
+from pathlib import Path
+
 from xngin.apiserver.dwh.inspection_types import FieldDescriptor
 from xngin.apiserver.routers.common_enums import DataType
 from xngin.apiserver.settings import ParticipantsDef
 
-TESTING_PARTICIPANT_DEF = ParticipantsDef(
+TESTING_DWH_RAW_DATA = Path(__file__).parent.parent / "testdata/testing_dwh.csv.zst"
+"""
+Path to the compressed raw test dwh data.
+
+TESTING_DWH_PARTICIPANT_DEF is defined with respect to these contents.
+"""
+
+TESTING_DWH_PARTICIPANT_DEF = ParticipantsDef(
     type="schema",
     participant_type="test_participant_type",
     table_name="dwh",
