@@ -28,8 +28,6 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
-        with:
-          lfs: true
       - uses: astral-sh/setup-uv@v6
       - name: Run ruff
         run: uv run ruff check --output-format=github .
