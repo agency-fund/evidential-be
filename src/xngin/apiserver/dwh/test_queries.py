@@ -228,7 +228,10 @@ def fixture_queries_session():
             session.commit()
 
         with Session(engine) as session:
-            yield session
+            try:
+                yield session
+            finally:
+                session.close()
     finally:
         engine.dispose()
 

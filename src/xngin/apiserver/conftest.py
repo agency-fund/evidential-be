@@ -256,7 +256,10 @@ async def fixture_xngin_db_session():
             ])
             await session.commit()
         async with database.async_session() as sess:
-            yield sess
+            try:
+                yield sess
+            finally:
+                sess.close()
 
 
 async def delete_seeded_users(xngin_session: AsyncSession):
