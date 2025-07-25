@@ -1,7 +1,3 @@
-Reviewer:
-
-______________________________________________________________________
-
 ## Ticket
 
 \<issue number + link>
@@ -13,11 +9,7 @@ Docs: \<PR number + link>
 
 ## Description
 
-### Goal
-
-### Changes
-
-### Future Tasks (optional)
+## Future Tasks (optional)
 
 ## How has this been tested?
 
