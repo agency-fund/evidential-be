@@ -17,22 +17,31 @@ concurrency:
 env:
   DEBIAN_FRONTEND: noninteractive
   FORCE_COLOR: "1"
+  PIP_DISABLE_PIP_VERSION_CHECK: "1"
+  PIP_PROGRESS_BAR: "off"
   PYTHONUNBUFFERED: "1"
 
 jobs:
-  linting:
+  ruff-annotations:
     runs-on: ubuntu-22.04
     timeout-minutes: 15
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
-        with:
-          lfs: true
-
       - uses: astral-sh/setup-uv@v6
-
       - name: Run ruff
         run: uv run ruff check --output-format=github .
 
-      - name: Run mypy
-        run: uv run mypy src
+  pre-commit:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+      - run: echo PYTHON_DIR=$(uv python dir) | tee -a $GITHUB_ENV
+      - name: Configure cache for pre-commit
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pre-commit
+          key: pre-commit-4|${{ env.PYTHON_DIR }}|${{ hashFiles('.pre-commit-config.yaml') }}|${{ hashFiles('pyproject.toml') }}
+      - run: uv run pre-commit run --show-diff-on-failure --color=always --all-files
