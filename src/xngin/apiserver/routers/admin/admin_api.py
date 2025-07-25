@@ -1,4 +1,7 @@
-"""Implements a basic Admin API."""
+"""
+This module defines the internal Evidential UI-facing Admin API endpoints.
+(See experiments_api.py for integrator-facing endpoints.)
+"""
 
 import asyncio
 import secrets
@@ -107,7 +110,10 @@ from xngin.apiserver.settings import (
     ParticipantsDef,
     RemoteDatabaseConfig,
 )
-from xngin.apiserver.testing.testing_dwh import create_user_and_first_datasource
+from xngin.apiserver.storage.bootstrap import (
+    add_nodwh_datasource_to_org,
+    create_user_and_first_datasource,
+)
 from xngin.stats.analysis import analyze_experiment as analyze_experiment_impl
 from xngin.stats.stats_errors import StatsAnalysisError
 
@@ -379,6 +385,7 @@ async def create_organizations(
     organization = tables.Organization(name=body.name)
     session.add(organization)
     organization.users.append(user)  # Add the creating user to the organization
+    add_nodwh_datasource_to_org(session, organization)
     await session.commit()
 
     return CreateOrganizationResponse(id=organization.id)
@@ -878,6 +885,10 @@ async def inspect_datasource(
 ) -> InspectDatasourceResponse:
     """Verifies connectivity to a datasource and returns a list of readable tables."""
     ds = await get_datasource_or_raise(session, user, datasource_id)
+
+    if ds.get_config().dwh.driver == "none":
+        return InspectDatasourceResponse(tables=[])
+
     if not refresh and cache_is_fresh(ds.table_list_updated):
         return InspectDatasourceResponse(tables=ds.table_list)
     try:
