@@ -22,7 +22,7 @@ env:
   PYTHONUNBUFFERED: "1"
 
 jobs:
-  linting:
+  ruff-annotations:
     runs-on: ubuntu-22.04
     timeout-minutes: 15
     steps:
