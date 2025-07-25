@@ -1146,7 +1146,7 @@ type GetFiltersResponseElement = (
 )
 
 
-class GetBanditOutcome(ApiBaseModel):
+class UpdateBanditArmOutcomeRequest(ApiBaseModel):
     """Describes the outcome of a bandit experiment."""
 
     participant_id: str

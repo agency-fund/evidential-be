@@ -783,7 +783,7 @@ async def create_assignment_for_participant(
     )
 
 
-async def update_bandit_arms_with_outcomes(
+async def update_bandit_arm_with_outcome_impl(
     xngin_session: AsyncSession,
     experiment: tables.Experiment,
     participant_id: str,
