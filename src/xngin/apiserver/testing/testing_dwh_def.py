@@ -6,13 +6,11 @@ from xngin.apiserver.dwh.inspection_types import FieldDescriptor
 from xngin.apiserver.routers.common_enums import DataType
 from xngin.apiserver.settings import ParticipantsDef
 
+#: Path to the compressed raw test dwh data.
+#: TESTING_DWH_PARTICIPANT_DEF is defined with respect to these contents.
 TESTING_DWH_RAW_DATA = Path(__file__).parent.parent / "testdata/testing_dwh.csv.zst"
-"""
-Path to the compressed raw test dwh data.
 
-TESTING_DWH_PARTICIPANT_DEF is defined with respect to these contents.
-"""
-
+#: Has fields that map to our test dwh, covering data types usable by strata/filters/metrics.
 TESTING_DWH_PARTICIPANT_DEF = ParticipantsDef(
     type="schema",
     participant_type="test_participant_type",
@@ -118,4 +116,3 @@ TESTING_DWH_PARTICIPANT_DEF = ParticipantsDef(
         ),
     ],
 )
-"""Has fields that map to our test dwh, covering data types usable by strata/filters/metrics."""

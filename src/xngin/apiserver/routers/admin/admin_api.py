@@ -1,4 +1,7 @@
-"""Implements a basic Admin API."""
+"""
+This module defines the internal Evidential UI-facing Admin API endpoints.
+(See experiments_api.py for integrator-facing endpoints.)
+"""
 
 import asyncio
 import secrets

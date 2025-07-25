@@ -1,5 +1,6 @@
 """
 This module defines the public API for clients to integrate with experiments.
+(See admin_api.py for Evidential UI-facing endpoints.)
 """
 
 from contextlib import asynccontextmanager

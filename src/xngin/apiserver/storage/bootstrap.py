@@ -9,7 +9,7 @@ from xngin.apiserver.testing.testing_dwh_def import TESTING_DWH_PARTICIPANT_DEF
 
 DEFAULT_ORGANIZATION_NAME = "My Organization"
 DEFAULT_DWH_SOURCE_NAME = "Local DWH"
-DEFAULT_NO_DWH_SOURCE_NAME = "Default no-DWH Source"
+DEFAULT_NO_DWH_SOURCE_NAME = "API Only"
 
 
 def add_nodwh_datasource_to_org(session, organization):
