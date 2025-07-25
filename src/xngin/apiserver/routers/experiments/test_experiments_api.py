@@ -8,6 +8,7 @@ from xngin.apiserver.models import tables
 from xngin.apiserver.models.storage_format_converters import ExperimentStorageConverter
 from xngin.apiserver.routers.common_api_types import (
     CreateExperimentResponse,
+    ExperimentsType,
     GetParticipantAssignmentResponse,
     ListExperimentsResponse,
     PreassignedFrequentistExperimentSpec,
@@ -199,7 +200,7 @@ async def test_get_assignment_for_participant_with_apikey_online(
     online_experiment = await insert_experiment_and_arms(
         xngin_session,
         testing_datasource.ds,
-        experiment_type="freq_online",
+        experiment_type=ExperimentsType.FREQ_ONLINE,
     )
 
     response = client_v1.get(
@@ -247,7 +248,7 @@ async def test_get_assignment_for_participant_with_apikey_online_dont_create(
     online_experiment = await insert_experiment_and_arms(
         xngin_session,
         testing_datasource.ds,
-        experiment_type="freq_online",
+        experiment_type=ExperimentsType.FREQ_ONLINE,
     )
 
     response = client_v1.get(
@@ -269,7 +270,7 @@ async def test_get_assignment_for_participant_with_apikey_online_past_end_date(
     online_experiment = await insert_experiment_and_arms(
         xngin_session,
         testing_datasource.ds,
-        experiment_type="freq_online",
+        experiment_type=ExperimentsType.FREQ_ONLINE,
         end_date=datetime.now(UTC) - timedelta(days=1),
     )
 

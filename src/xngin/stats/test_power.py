@@ -168,6 +168,7 @@ def test_analyze_metric_with_no_available_nonnull_n_returns_ok():
 
     result = analyze_metric_power(metric, n_arms=2)
 
+    assert result.msg
     assert result.msg.type == MetricPowerAnalysisMessageType.SUFFICIENT
     assert "There are enough units available." in result.msg.msg
     assert result.msg.values == {

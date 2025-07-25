@@ -699,30 +699,27 @@ class BaseFrequentistDesignSpec(BaseDesignSpec):
     power: Annotated[
         float,
         Field(
-            0.8,
             ge=0,
             le=1,
             description="The chance of detecting a real non-null effect, i.e. 1 - false negative rate.",
         ),
-    ]
+    ] = 0.8
     alpha: Annotated[
         float,
         Field(
-            0.05,
             ge=0,
             le=1,
             description="The chance of a false positive, i.e. there is no real non-null effect, but we mistakenly think there is one.",
         ),
-    ]
+    ] = 0.05
     fstat_thresh: Annotated[
         float,
         Field(
-            0.6,
             ge=0,
             le=1,
             description='Threshold on the p-value of joint significance in doing the omnibus balance check, above which we declare the data to be "balanced".',
         ),
-    ]
+    ] = 0.6
 
     @field_serializer("start_date", "end_date", when_used="json")
     def serialize_dt(self, dt: datetime.datetime, _info):
