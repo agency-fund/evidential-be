@@ -410,7 +410,9 @@ def test_datasource_lifecycle(ppost, pget, ppatch):
     assert response.status_code == 200, response.content
     list_ds_response = ListDatasourcesResponse.model_validate(response.json())
     test_dwh = find_ds_with_name(list_ds_response.items, updated_ds_name)
+    # Ensure driver didn't change, just name
     assert test_dwh.id == datasource_id
+    assert test_dwh.driver == "postgresql+psycopg"
 
     # Update DWH on the datasource
     response = ppatch(
@@ -436,10 +438,11 @@ def test_datasource_lifecycle(ppost, pget, ppatch):
         f"/v1/m/organizations/{org_id}/datasources",
     )
     assert response.status_code == 200, response.content
-    assert (
-        ListDatasourcesResponse.model_validate(response.json()).items[1].driver
-        == "bigquery"
-    )
+    list_ds_response = ListDatasourcesResponse.model_validate(response.json())
+    test_dwh = find_ds_with_name(list_ds_response.items, updated_ds_name)
+    # Ensure driver changed, name didn't
+    assert test_dwh.id == datasource_id
+    assert test_dwh.driver == "bigquery"
 
 
 def test_delete_datasource(testing_datasource_with_user, pget, udelete, pdelete):
