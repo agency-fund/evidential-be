@@ -22,7 +22,8 @@ from sqlalchemy.sql.ddl import CreateTable
 
 from xngin.apiserver.conftest import DbType
 from xngin.apiserver.dwh.queries import compose_query, create_query_filters
-from xngin.apiserver.routers.common_api_types import Filter, Relation
+from xngin.apiserver.routers.common_api_types import Filter
+from xngin.apiserver.routers.common_enums import Relation
 
 
 class HelpfulBase(DeclarativeBase):

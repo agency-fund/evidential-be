@@ -24,6 +24,7 @@ from xngin.apiserver.routers.assignment_adapters import (
     assign_treatment as assign_treatment_actual,
 )
 from xngin.apiserver.routers.common_api_types import (
+    BaseFrequentistDesignSpec,
     DesignSpec,
     GetMetricsResponseElement,
     GetStrataResponseElement,
@@ -207,6 +208,13 @@ async def get_metrics(
 def validate_schema_metrics_or_raise(
     design_spec: DesignSpec, schema: ParticipantsSchema
 ):
+    if not isinstance(
+        design_spec,
+        BaseFrequentistDesignSpec,
+    ):
+        raise TypeError(
+            f"Invalid DesignSpec type. Expected {BaseFrequentistDesignSpec}."
+        )
     metric_fields = {m.field_name for m in schema.fields if m.is_metric}
     metrics_requested = {m.field_name for m in design_spec.metrics}
     invalid_metrics = metrics_requested - metric_fields
@@ -240,6 +248,15 @@ async def powercheck(
 async def power_check_impl(
     body: PowerRequest, config: DatasourceConfig, participants_cfg: ParticipantsConfig
 ) -> PowerResponse:
+    """Implementation of the power check logic."""
+    if not isinstance(
+        body.design_spec,
+        BaseFrequentistDesignSpec,
+    ):
+        raise TypeError(
+            f"Invalid DesignSpec type. Expected {BaseFrequentistDesignSpec}."
+        )
+
     async with DwhSession(config.dwh) as dwh:
         sa_table = await dwh.inspect_table(participants_cfg.table_name)
 
@@ -292,6 +309,13 @@ async def assign_treatment(
         ),
     ] = None,
 ) -> AssignResponse:
+    if not isinstance(
+        body.design_spec,
+        BaseFrequentistDesignSpec,
+    ):
+        raise TypeError(
+            f"Invalid DesignSpec type. Expected {BaseFrequentistDesignSpec}."
+        )
     commons = CommonQueryParams(
         participant_type=body.design_spec.participant_type, refresh=refresh
     )

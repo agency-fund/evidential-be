@@ -1,7 +1,7 @@
 import pytest
 
-from xngin.apiserver.routers.common_api_types import (
-    DesignSpecMetric,
+from xngin.apiserver.routers.common_api_types import DesignSpecMetric
+from xngin.apiserver.routers.common_enums import (
     MetricPowerAnalysisMessageType,
     MetricType,
 )

@@ -4,7 +4,7 @@ from pathlib import Path
 import pytest
 
 from xngin.apiserver.dwh.inspection_types import FieldDescriptor, ParticipantsSchema
-from xngin.apiserver.routers.common_api_types import DataType
+from xngin.apiserver.routers.common_enums import DataType
 from xngin.sheets.gsheets import google_app_credentials_file, read_sheet_df
 
 
