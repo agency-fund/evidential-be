@@ -69,4 +69,4 @@ secretservice.setup()
 routes.register(app)
 auth_dependencies.setup(app)
 
-app.openapi = custom_openapi(app)  # type: ignore[method-assign]
+app.openapi = lambda: custom_openapi(app)  # type: ignore[method-assign]
