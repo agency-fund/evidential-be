@@ -150,6 +150,7 @@ dev-dependencies = [
     "types-python-jose>=3.5.0.20250531",
     "boto3-stubs>=1.39.1",
     "types-cachetools>=6.0.0.20250525",
+    "coverage>=7.10.0",
 ]
 environments = [
     "sys_platform == 'darwin'",
