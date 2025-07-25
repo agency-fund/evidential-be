@@ -48,7 +48,7 @@ from xngin.apiserver.settings import (
     XnginSettings,
 )
 from xngin.apiserver.testing.pg_helpers import create_database_if_not_exists_pg
-from xngin.apiserver.testing.testing_dwh_def import TESTING_PARTICIPANT_DEF
+from xngin.apiserver.testing.testing_dwh_def import TESTING_DWH_PARTICIPANT_DEF
 from xngin.db_extensions import custom_functions
 
 # SQLAlchemy's logger will append this to the name of its loggers used for the application database; e.g.
@@ -421,7 +421,7 @@ async def _make_datasource_metadata(
     # Initialize our ds config to point to our testing dwh.
     test_dwh_dsn = Dsn.from_url(flags.XNGIN_DEVDWH_DSN)
     # If no override is provided, use the default testing participant type.
-    pt_list = participants_def_list or [TESTING_PARTICIPANT_DEF]
+    pt_list = participants_def_list or [TESTING_DWH_PARTICIPANT_DEF]
     datasource.set_config(
         RemoteDatabaseConfig(type="remote", participants=pt_list, dwh=test_dwh_dsn)
     )

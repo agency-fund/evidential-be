@@ -14,23 +14,26 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.schema import CreateTable
 
 from xngin.apiserver.models import tables
-from xngin.apiserver.models.enums import ExperimentState, StopAssignmentReason
 from xngin.apiserver.models.storage_format_converters import ExperimentStorageConverter
 from xngin.apiserver.routers.common_api_types import (
     CreateExperimentRequest,
     DesignSpecMetric,
-    ExperimentType,
+    ExperimentsType,
     MetricPowerAnalysis,
     MetricType,
+    OnlineFrequentistExperimentSpec,
     PowerResponse,
+    PreassignedFrequentistExperimentSpec,
     Stratum,
 )
+from xngin.apiserver.routers.common_enums import ExperimentState, StopAssignmentReason
 from xngin.apiserver.routers.experiments.experiments_common import (
     ExperimentsAssignmentError,
     abandon_experiment_impl,
     commit_experiment_impl,
     create_assignment_for_participant,
-    create_experiment_impl,
+    create_dwh_experiment_impl,
+    create_preassigned_experiment_impl,
     experiment_assignments_to_csv_generator,
     get_assign_summary,
     get_existing_assignment_for_participant,
@@ -45,7 +48,7 @@ from xngin.apiserver.testing.assertions import assert_dates_equal
 
 def make_createexperimentrequest_json(
     participant_type: str = "test_participant_type",
-    experiment_type: str = "preassigned",
+    experiment_type: str = "freq_preassigned",
     with_ids: bool = False,
 ):
     """Make a basic CreateExperimentRequest JSON object.
@@ -98,7 +101,7 @@ def make_create_preassigned_experiment_request(
     with_ids: bool = False,
 ) -> CreateExperimentRequest:
     request = make_createexperimentrequest_json(
-        with_ids=with_ids, experiment_type="preassigned"
+        with_ids=with_ids, experiment_type=ExperimentsType.FREQ_PREASSIGNED
     )
     return TypeAdapter(CreateExperimentRequest).validate_python(request)
 
@@ -107,7 +110,7 @@ def make_create_online_experiment_request(
     with_ids: bool = False,
 ) -> CreateExperimentRequest:
     request = make_createexperimentrequest_json(
-        with_ids=with_ids, experiment_type="online"
+        with_ids=with_ids, experiment_type=ExperimentsType.FREQ_ONLINE
     )
     return TypeAdapter(CreateExperimentRequest).validate_python(request)
 
@@ -115,7 +118,7 @@ def make_create_online_experiment_request(
 def make_insertable_experiment(
     datasource: tables.Datasource,
     state: ExperimentState = ExperimentState.COMMITTED,
-    experiment_type: ExperimentType = "preassigned",
+    experiment_type: ExperimentsType = ExperimentsType.FREQ_PREASSIGNED,
     with_ids: bool = True,
 ) -> tuple[tables.Experiment, DesignSpec]:
     """Make a minimal experiment with arms ready for insertion into the database for tests.
@@ -130,7 +133,7 @@ def make_insertable_experiment(
     )
     stopped_assignments_at: datetime | None = None
     stopped_assignments_reason: StopAssignmentReason | None = None
-    if experiment_type == "preassigned":
+    if experiment_type == ExperimentsType.FREQ_PREASSIGNED:
         stopped_assignments_at = datetime.now(UTC)
         stopped_assignments_reason = StopAssignmentReason.PREASSIGNED
     experiment_converter = ExperimentStorageConverter.init_from_components(
@@ -149,7 +152,7 @@ def make_insertable_experiment(
 async def insert_experiment_and_arms(
     xngin_session: AsyncSession,
     datasource: tables.Datasource,
-    experiment_type: ExperimentType = "preassigned",
+    experiment_type: ExperimentsType = ExperimentsType.FREQ_PREASSIGNED,
     state=ExperimentState.COMMITTED,
     end_date: datetime | None = None,
 ):
@@ -216,7 +219,7 @@ async def test_create_experiment_impl_for_preassigned(
 ):
     """Test implementation of creating a preassigned experiment."""
     participants = make_sample_data(n=100)
-    request = make_create_preassigned_experiment_request()
+    request = make_create_preassigned_experiment_request(with_ids=True)
     # Add a partial mock PowerResponse just to verify storage
     request.power_analyses = PowerResponse(
         analyses=[
@@ -229,20 +232,20 @@ async def test_create_experiment_impl_for_preassigned(
     )
 
     # Test!
-    response = await create_experiment_impl(
+    response = await create_preassigned_experiment_impl(
         request=request.model_copy(
             deep=True
         ),  # we'll use the original request for assertions
         datasource_id=testing_datasource.ds.id,
+        organization_id=testing_datasource.ds.organization_id,
         participant_unique_id_field="participant_id",
         dwh_sa_table=sample_table,
         dwh_participants=participants,
         random_state=42,
         xngin_session=xngin_session,
         stratify_on_metrics=True,
-        webhook_ids=[],
+        validated_webhooks=[],
     )
-
     # Verify response
     assert response.datasource_id == testing_datasource.ds.id
     assert response.state == ExperimentState.ASSIGNED
@@ -256,9 +259,13 @@ async def test_create_experiment_impl_for_preassigned(
     assert response.design_spec.end_date == request.design_spec.end_date
     # although we stratify on target metrics as well in this test, note that the
     # original strata are not augmented with the metric names.
+    assert response.design_spec.experiment_type == ExperimentsType.FREQ_PREASSIGNED
+    assert isinstance(response.design_spec, PreassignedFrequentistExperimentSpec)
     assert response.design_spec.strata == [Stratum(field_name="gender")]
+    assert response.power_analyses is not None
     assert response.power_analyses == request.power_analyses
     # Verify assign_summary
+    assert response.assign_summary is not None
     assert response.assign_summary.sample_size == len(participants)
     assert response.assign_summary.balance_check is not None
     assert response.assign_summary.balance_check.balance_ok is True
@@ -267,8 +274,8 @@ async def test_create_experiment_impl_for_preassigned(
     experiment = await xngin_session.get(
         tables.Experiment, response.design_spec.experiment_id
     )
-    assert experiment
-    assert experiment.experiment_type == "preassigned"
+    assert experiment is not None
+    assert experiment.experiment_type == ExperimentsType.FREQ_PREASSIGNED
     assert experiment.participant_type == request.design_spec.participant_type
     assert experiment.name == request.design_spec.experiment_name
     assert experiment.description == request.design_spec.description
@@ -277,7 +284,9 @@ async def test_create_experiment_impl_for_preassigned(
     # This comparison is dependent on whether the db can store tz or not (sqlite does not).
     assert_dates_equal(experiment.start_date, request.design_spec.start_date)
     assert_dates_equal(experiment.end_date, request.design_spec.end_date)
+
     # Verify stats parameters were stored correctly
+    assert isinstance(request.design_spec, PreassignedFrequentistExperimentSpec)
     assert experiment.power == request.design_spec.power
     assert experiment.alpha == request.design_spec.alpha
     assert experiment.fstat_thresh == request.design_spec.fstat_thresh
@@ -285,6 +294,7 @@ async def test_create_experiment_impl_for_preassigned(
     converter = ExperimentStorageConverter(experiment)
     assert converter.get_design_spec() == response.design_spec
     assert converter.get_power_response() == response.power_analyses
+
     # Verify assignments were created
     assignments = (
         await xngin_session.scalars(
@@ -336,23 +346,17 @@ async def test_create_experiment_impl_for_online(
     xngin_session, testing_datasource, sample_table, use_deterministic_random
 ):
     """Test implementation of creating an online experiment."""
-    # Create online experiment request, modifying the experiment type from the fixture
-    request = make_create_preassigned_experiment_request()
-    # Convert the experiment type to online
-    request.design_spec.experiment_type = "online"
+    request = make_create_online_experiment_request()
 
-    response = await create_experiment_impl(
+    response = await create_dwh_experiment_impl(
         request=request.model_copy(deep=True),
-        datasource_id=testing_datasource.ds.id,
-        participant_unique_id_field="participant_id",
-        dwh_sa_table=sample_table,
-        dwh_participants=[],  # No pre-assigned participants in online experiments
+        datasource=testing_datasource.ds,
         random_state=42,
+        chosen_n=None,
         xngin_session=xngin_session,
         stratify_on_metrics=True,
-        webhook_ids=[],
+        validated_webhooks=[],
     )
-
     # Verify response
     assert response.datasource_id == testing_datasource.ds.id
     assert response.state == ExperimentState.ASSIGNED
@@ -365,11 +369,13 @@ async def test_create_experiment_impl_for_online(
     assert response.design_spec.description == request.design_spec.description
     assert response.design_spec.start_date == request.design_spec.start_date
     assert response.design_spec.end_date == request.design_spec.end_date
+    assert isinstance(response.design_spec, OnlineFrequentistExperimentSpec)
     assert response.design_spec.strata == [Stratum(field_name="gender")]
     # Online experiments don't have power analyses by default
     assert response.power_analyses is None
 
     # Verify assign_summary for online experiment
+    assert response.assign_summary is not None
     assert response.assign_summary.sample_size == 0
     assert response.assign_summary.balance_check is None
     assert response.assign_summary.arm_sizes is not None
@@ -379,7 +385,7 @@ async def test_create_experiment_impl_for_online(
     experiment = await xngin_session.get(
         tables.Experiment, response.design_spec.experiment_id
     )
-    assert experiment.experiment_type == "online"
+    assert experiment.experiment_type == ExperimentsType.FREQ_ONLINE
     assert experiment.participant_type == request.design_spec.participant_type
     assert experiment.name == request.design_spec.experiment_name
     assert experiment.description == request.design_spec.description
@@ -389,6 +395,7 @@ async def test_create_experiment_impl_for_online(
     assert_dates_equal(experiment.start_date, request.design_spec.start_date)
     assert_dates_equal(experiment.end_date, request.design_spec.end_date)
     # Verify stats parameters were stored correctly
+    assert isinstance(request.design_spec, OnlineFrequentistExperimentSpec)
     assert experiment.power == request.design_spec.power
     assert experiment.alpha == request.design_spec.alpha
     assert experiment.fstat_thresh == request.design_spec.fstat_thresh
@@ -432,16 +439,14 @@ async def test_create_experiment_impl_overwrites_uuids(
     original_experiment_id = request.design_spec.experiment_id
     original_arm_ids = [arm.arm_id for arm in request.design_spec.arms]
 
-    response = await create_experiment_impl(
+    response = await create_dwh_experiment_impl(
         request=request,
-        datasource_id=testing_datasource.ds.id,
-        participant_unique_id_field="participant_id",
-        dwh_sa_table=sample_table,
-        dwh_participants=participants,
+        datasource=testing_datasource.ds,
         random_state=42,
         xngin_session=xngin_session,
+        chosen_n=len(participants),
         stratify_on_metrics=True,
-        webhook_ids=[],
+        validated_webhooks=[],
     )
 
     # Verify that new UUIDs were generated
@@ -479,16 +484,14 @@ async def test_create_experiment_impl_no_metric_stratification(
     request = make_create_preassigned_experiment_request()
 
     # Test with stratify_on_metrics=False
-    response = await create_experiment_impl(
+    response = await create_dwh_experiment_impl(
         request=request.model_copy(deep=True),
-        datasource_id=testing_datasource.ds.id,
-        participant_unique_id_field="participant_id",
-        dwh_sa_table=sample_table,
-        dwh_participants=participants,
+        datasource=testing_datasource.ds,
         random_state=42,
         xngin_session=xngin_session,
+        chosen_n=len(participants),
         stratify_on_metrics=False,
-        webhook_ids=[],
+        validated_webhooks=[],
     )
 
     # Verify basic response
@@ -498,6 +501,7 @@ async def test_create_experiment_impl_no_metric_stratification(
     assert response.design_spec.arms[0].arm_id is not None
     # Same as in the stratify_on_metrics=True test.
     # Only the output assignments will also store a snapshot of the metric values as strata.
+    assert isinstance(response.design_spec, PreassignedFrequentistExperimentSpec)
     assert response.design_spec.strata == [Stratum(field_name="gender")]
 
     # Verify database state
@@ -655,11 +659,11 @@ async def test_list_experiments_impl(
         experiment4_data,
         experiment5_data,
     ]
+
     xngin_session.add_all([data[0] for data in experiment_data])
     await xngin_session.commit()
 
     experiments = await list_experiments_impl(xngin_session, testing_datasource.ds.id)
-
     # experiment5 excluded due to datasource mismatch
     assert len(experiments.items) == 3
 
@@ -670,7 +674,6 @@ async def test_list_experiments_impl(
     assert actual1_config.state == ExperimentState.ASSIGNED
     diff = DeepDiff(actual1_config.design_spec, experiment1_data[1])
     assert not diff, f"Objects differ:\n{diff.pretty()}"
-    print(experiment1_data[1])
     assert actual2_config.state == ExperimentState.COMMITTED
     diff = DeepDiff(actual2_config.design_spec, experiment2_data[1])
     assert not diff, f"Objects differ:\n{diff.pretty()}"
@@ -811,14 +814,17 @@ async def test_get_existing_assignment_for_participant(
     expected_assignment = experiment.arm_assignments[0]
 
     assignment = await get_existing_assignment_for_participant(
-        xngin_session, experiment.id, expected_assignment.participant_id
+        xngin_session,
+        experiment.id,
+        expected_assignment.participant_id,
+        experiment.experiment_type,
     )
     assert assignment is not None
     assert assignment.participant_id == expected_assignment.participant_id
     assert str(assignment.arm_id) == expected_assignment.arm_id
 
     assignment = await get_existing_assignment_for_participant(
-        xngin_session, experiment.id, "new_id"
+        xngin_session, experiment.id, "new_id", experiment.experiment_type
     )
     assert assignment is None
 
@@ -829,7 +835,9 @@ async def test_create_assignment_for_participant_errors(
     # Test assignment while in an experiment state not valid for assignments.
     # Preassigned will short circuit before the invalid state check so will NOT raise.
     experiment, _ = make_insertable_experiment(
-        testing_datasource.ds, ExperimentState.ASSIGNED, experiment_type="preassigned"
+        testing_datasource.ds,
+        ExperimentState.ASSIGNED,
+        experiment_type=ExperimentsType.FREQ_PREASSIGNED,
     )
     experiment.arms = []
     response = await create_assignment_for_participant(
@@ -839,7 +847,9 @@ async def test_create_assignment_for_participant_errors(
 
     # But an online experiment in this invalid state will raise.
     experiment, _ = make_insertable_experiment(
-        testing_datasource.ds, ExperimentState.ASSIGNED, experiment_type="online"
+        testing_datasource.ds,
+        ExperimentState.ASSIGNED,
+        experiment_type=ExperimentsType.FREQ_ONLINE,
     )
     with pytest.raises(
         ExperimentsAssignmentError, match="Invalid experiment state: assigned"
@@ -848,7 +858,9 @@ async def test_create_assignment_for_participant_errors(
 
     # Test that an online experiment with no arms will raise.
     experiment, _ = make_insertable_experiment(
-        testing_datasource.ds, ExperimentState.COMMITTED, experiment_type="online"
+        testing_datasource.ds,
+        ExperimentState.COMMITTED,
+        experiment_type=ExperimentsType.FREQ_ONLINE,
     )
     experiment.arms = []
     with pytest.raises(ExperimentsAssignmentError, match="Experiment has no arms"):
@@ -866,7 +878,9 @@ async def test_create_assignment_for_participant(xngin_session, testing_datasour
     assert expect_none is None
 
     online_experiment = await insert_experiment_and_arms(
-        xngin_session, testing_datasource.ds, experiment_type="online"
+        xngin_session,
+        testing_datasource.ds,
+        experiment_type=ExperimentsType.FREQ_ONLINE,
     )
     # Assert that we do create new assignments for online experiments
     assignment = await create_assignment_for_participant(
@@ -890,8 +904,8 @@ async def test_create_assignment_for_participant(xngin_session, testing_datasour
 @pytest.mark.parametrize(
     "experiment_type,stopped_reason",
     [
-        ("preassigned", StopAssignmentReason.PREASSIGNED),
-        ("online", StopAssignmentReason.END_DATE),
+        (ExperimentsType.FREQ_PREASSIGNED, StopAssignmentReason.PREASSIGNED),
+        (ExperimentsType.FREQ_ONLINE, StopAssignmentReason.END_DATE),
     ],
 )
 async def test_create_assignment_for_participant_stopped_reason(
