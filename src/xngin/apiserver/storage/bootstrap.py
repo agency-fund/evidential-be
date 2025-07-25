@@ -7,12 +7,16 @@ from xngin.apiserver.models import tables
 from xngin.apiserver.settings import Dsn, NoDwh, RemoteDatabaseConfig
 from xngin.apiserver.testing.testing_dwh_def import TESTING_DWH_PARTICIPANT_DEF
 
+DEFAULT_ORGANIZATION_NAME = "My Organization"
+DEFAULT_DWH_SOURCE_NAME = "Local DWH"
+DEFAULT_NO_DWH_SOURCE_NAME = "Default no-DWH Source"
+
 
 def add_nodwh_datasource_to_org(session, organization):
     """Adds a NoDWH datasource to the given organization."""
     nodwh_config = RemoteDatabaseConfig(participants=[], type="remote", dwh=NoDwh())
     nodwh_datasource = tables.Datasource(
-        name="Default no-DWH Source", organization=organization
+        name=DEFAULT_NO_DWH_SOURCE_NAME, organization=organization
     ).set_config(nodwh_config)
     session.add(nodwh_datasource)
 
@@ -26,9 +30,10 @@ def create_user_and_first_datasource(
     """
     user = tables.User(email=email, is_privileged=privileged)
     session.add(user)
-    organization = tables.Organization(name="My Organization")
+    organization = tables.Organization(name=DEFAULT_ORGANIZATION_NAME)
     session.add(organization)
     organization.users.append(user)
+
     # create a datasource from input
     if dsn:
         config = RemoteDatabaseConfig(
@@ -38,7 +43,7 @@ def create_user_and_first_datasource(
         )
         datasource = tables.Datasource(
             id=tables.datasource_id_factory(),
-            name="Local DWH",
+            name=DEFAULT_DWH_SOURCE_NAME,
             organization=organization,
         ).set_config(config)
         session.add(datasource)
