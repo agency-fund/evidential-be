@@ -51,7 +51,6 @@ repos:
     hooks:
       - id: mypy
         entry: uv run mypy
-        exclude: '(^|/)(test_.*\.py)$'
         pass_filenames: false
         args:
           - src
