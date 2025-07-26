@@ -10,7 +10,6 @@ from xngin.apiserver.apikeys import require_valid_api_key
 from xngin.apiserver.models import tables
 from xngin.apiserver.settings import (
     Datasource,
-    DatasourceConfig,
     XnginSettings,
     get_settings_for_server,
 )
@@ -78,15 +77,6 @@ async def datasource_dependency(
         raise CannotFindDatasourceError("Invalid datasource.")
 
     return from_json
-
-
-def datasource_config_required(
-    ds: Annotated[Datasource | None, Depends(datasource_dependency)],
-) -> DatasourceConfig:
-    """Returns the connection-specific implementation for this datasource."""
-    if ds is None:
-        raise CannotFindDatasourceError("Invalid datasource.")
-    return ds.config
 
 
 async def retrying_httpx_dependency():
