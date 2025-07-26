@@ -7,7 +7,7 @@ on:
       - completed
 
 jobs:
-  test:
+  post-coverage-comment:
     name: Run tests & display coverage
     runs-on: ubuntu-22.04
     timeout-minutes: 10
