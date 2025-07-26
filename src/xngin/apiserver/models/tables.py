@@ -500,11 +500,6 @@ class Experiment(Base):
     def get_arm_names(self) -> list[str]:
         return [arm.name for arm in self.arms]
 
-    @property
-    def context_list(self) -> list["Context"]:
-        """Get contexts, returning empty list if not applicable."""
-        return self.contexts
-
 
 class Arm(Base):
     """Representation of arms of an experiment."""
