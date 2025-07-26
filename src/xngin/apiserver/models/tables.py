@@ -501,11 +501,6 @@ class Experiment(Base):
         return [arm.name for arm in self.arms]
 
     @property
-    def has_contexts(self) -> bool:
-        """Check if this experiment type supports contexts."""
-        return self.experiment_type == "cmab"
-
-    @property
     def context_list(self) -> list["Context"]:
         """Get contexts, returning empty list if not applicable."""
         return self.contexts
