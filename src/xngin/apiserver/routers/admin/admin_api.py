@@ -1,4 +1,7 @@
-"""Implements a basic Admin API."""
+"""
+This module defines the internal Evidential UI-facing Admin API endpoints.
+(See experiments_api.py for integrator-facing endpoints.)
+"""
 
 import asyncio
 import secrets
@@ -29,7 +32,11 @@ from xngin.apiserver import constants, flags
 from xngin.apiserver.apikeys import hash_key_or_raise, make_key
 from xngin.apiserver.dependencies import xngin_db_session
 from xngin.apiserver.dns.safe_resolve import DnsLookupError, safe_resolve
-from xngin.apiserver.dwh.dwh_session import DwhDatabaseDoesNotExistError, DwhSession
+from xngin.apiserver.dwh.dwh_session import (
+    DwhDatabaseDoesNotExistError,
+    DwhSession,
+    NoDwh,
+)
 from xngin.apiserver.dwh.inspections import (
     create_inspect_table_response_from_table,
 )
@@ -78,11 +85,14 @@ from xngin.apiserver.routers.auth.auth_dependencies import require_oidc_token
 from xngin.apiserver.routers.auth.principal import Principal
 from xngin.apiserver.routers.common_api_types import (
     ArmAnalysis,
+    BanditExperimentAnalysis,
+    BaseBanditExperimentSpec,
+    BaseFrequentistDesignSpec,
     CreateExperimentRequest,
     CreateExperimentResponse,
-    ExperimentAnalysis,
-    ExperimentConfig,
+    FreqExperimentAnalysis,
     GetExperimentAssignmentsResponse,
+    GetExperimentResponse,
     GetMetricsResponseElement,
     GetParticipantAssignmentResponse,
     GetStrataResponseElement,
@@ -102,7 +112,10 @@ from xngin.apiserver.settings import (
     ParticipantsDef,
     RemoteDatabaseConfig,
 )
-from xngin.apiserver.testing.testing_dwh import create_user_and_first_datasource
+from xngin.apiserver.storage.bootstrap import (
+    add_nodwh_datasource_to_org,
+    create_user_and_first_datasource,
+)
 from xngin.stats.analysis import analyze_experiment as analyze_experiment_impl
 from xngin.stats.stats_errors import StatsAnalysisError
 
@@ -287,6 +300,28 @@ async def get_experiment_via_ds_or_raise(
     return exp
 
 
+async def validate_webhooks(
+    session: AsyncSession, organization_id: str, request_webhooks: list[str]
+) -> list[tables.Webhook]:
+    # Validate webhook IDs exist and belong to organization
+    validated_webhooks = []
+    if request_webhooks:
+        webhooks = await session.scalars(
+            select(tables.Webhook)
+            .where(tables.Webhook.id.in_(request_webhooks))
+            .where(tables.Webhook.organization_id == organization_id)
+        )
+        validated_webhooks = list(webhooks)
+        found_webhook_ids = {w.id for w in validated_webhooks}
+        missing_webhook_ids = set(request_webhooks) - found_webhook_ids
+        if missing_webhook_ids:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Invalid webhook IDs: {sorted(missing_webhook_ids)}",
+            )
+    return validated_webhooks
+
+
 @router.get("/caller-identity")
 async def caller_identity(
     session: Annotated[AsyncSession, Depends(xngin_db_session)],
@@ -352,6 +387,7 @@ async def create_organizations(
     organization = tables.Organization(name=body.name)
     session.add(organization)
     organization.users.append(user)  # Add the creating user to the organization
+    add_nodwh_datasource_to_org(session, organization)
     await session.commit()
 
     return CreateOrganizationResponse(id=organization.id)
@@ -844,6 +880,10 @@ async def inspect_datasource(
 ) -> InspectDatasourceResponse:
     """Verifies connectivity to a datasource and returns a list of readable tables."""
     ds = await get_datasource_or_raise(session, user, datasource_id)
+
+    if ds.get_config().dwh.driver == "none":
+        return InspectDatasourceResponse(tables=[])
+
     if not refresh and cache_is_fresh(ds.table_list_updated):
         return InspectDatasourceResponse(tables=ds.table_list)
     try:
@@ -1274,42 +1314,32 @@ async def create_experiment(
         ),
     ] = None,
 ) -> CreateExperimentResponse:
+    """Creates a new experiment in the specified datasource."""
+    # Datasource checks
     datasource = await get_datasource_or_raise(session, user, datasource_id)
-    if body.design_spec.ids_are_present():
-        raise LateValidationError("Invalid DesignSpec: UUIDs must not be set.")
-    ds_config = datasource.get_config()
-    participants_cfg = ds_config.find_participants(body.design_spec.participant_type)
-    if not isinstance(participants_cfg, ParticipantsDef):
-        raise LateValidationError(
-            "Invalid ParticipantsConfig: Participants must be of type schema."
+    if not datasource:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Datasource {datasource_id} not found in database",
         )
 
-    # Get participants and their schema info from the client dwh
-    participants = None
-    async with DwhSession(ds_config.dwh) as dwh:
-        if chosen_n is not None:
-            result = await dwh.get_participants(
-                participants_cfg.table_name, body.design_spec.filters, chosen_n
-            )
-            sa_table, participants = result.sa_table, result.participants
-        elif body.design_spec.experiment_type == "preassigned":
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Preassigned experiments must have a chosen_n.",
-            )
-        else:
-            sa_table = await dwh.inspect_table(participants_cfg.table_name)
+    if body.design_spec.ids_are_present():
+        raise LateValidationError("Invalid DesignSpec: UUIDs must not be set.")
 
-    return await experiments_common.create_experiment_impl(
+    # Validate webhook IDs exist and belong to organization
+    organization_id = datasource.organization_id
+    validated_webhooks = await validate_webhooks(
+        session=session, organization_id=organization_id, request_webhooks=body.webhooks
+    )
+
+    return await experiments_common.create_dwh_experiment_impl(
         request=body,
-        datasource_id=datasource.id,
-        participant_unique_id_field=participants_cfg.get_unique_id_field(),
-        dwh_sa_table=sa_table,
-        dwh_participants=participants,
-        random_state=random_state,
+        datasource=datasource,
         xngin_session=session,
+        chosen_n=chosen_n,
         stratify_on_metrics=stratify_on_metrics,
-        webhook_ids=body.webhooks,
+        random_state=random_state,
+        validated_webhooks=validated_webhooks,
     )
 
 
@@ -1325,7 +1355,7 @@ async def analyze_experiment(
             description="UUID of the baseline arm. If None, the first design spec arm is used.",
         ),
     ] = None,
-) -> ExperimentAnalysis:
+) -> FreqExperimentAnalysis | BanditExperimentAnalysis:
     ds = await get_datasource_or_raise(xngin_session, user, datasource_id)
     dsconfig = ds.get_config()
 
@@ -1336,75 +1366,92 @@ async def analyze_experiment(
         preload=[tables.Experiment.arm_assignments],
     )
 
-    participants_cfg = dsconfig.find_participants(experiment.participant_type)
-    if not isinstance(participants_cfg, ParticipantsDef):
-        raise LateValidationError(
-            "Invalid ParticipantsConfig: Participants must be of type schema."
-        )
-    unique_id_field = participants_cfg.get_unique_id_field()
-
     design_spec = ExperimentStorageConverter(experiment).get_design_spec()
-    assignments = experiment.arm_assignments
-    participant_ids = [assignment.participant_id for assignment in assignments]
-    if len(participant_ids) == 0:
-        raise StatsAnalysisError("No participants found for experiment.")
-
-    async with DwhSession(dsconfig.dwh) as dwh:
-        sa_table = await dwh.inspect_table(participants_cfg.table_name)
-
-        # Mark the start of the analysis as when we begin pulling outcomes.
-        created_at = datetime.now(UTC)
-        participant_outcomes = await asyncio.to_thread(
-            get_participant_metrics,
-            dwh.session,
-            sa_table,
-            design_spec.metrics,
-            unique_id_field,
-            participant_ids,
+    if isinstance(design_spec, BaseBanditExperimentSpec):
+        # TODO: implement bandit experiment analysis
+        # For now, we return a placeholder analysis with no data.
+        return BanditExperimentAnalysis(
+            experiment_id=experiment.id,
+            n_trials=experiment.n_trials,
+            n_outcomes=0,
+            posterior_means=[0],
+            posterior_stds=[0],
+            volumes=[0],
         )
 
-    # We want to notify the user if there are participants assigned to the experiment that are not
-    # in the data warehouse. E.g. in an online experiment, perhaps a new user was assigned
-    # before their info was synced to the dwh.
-    num_participants = len(participant_ids)
-    num_missing_participants = num_participants - len(participant_outcomes)
+    if isinstance(design_spec, BaseFrequentistDesignSpec):
+        participants_cfg = dsconfig.find_participants(experiment.participant_type)
+        if not isinstance(participants_cfg, ParticipantsDef):
+            raise LateValidationError(
+                "Invalid ParticipantsConfig: Participants must be of type schema."
+            )
+        unique_id_field = participants_cfg.get_unique_id_field()
 
-    # Always assume the first arm is the baseline; UI can override this.
-    baseline_arm_id = baseline_arm_id or design_spec.arms[0].arm_id
-    analyze_results = analyze_experiment_impl(
-        assignments, participant_outcomes, baseline_arm_id
-    )
+        assignments = experiment.arm_assignments
+        participant_ids = [assignment.participant_id for assignment in assignments]
+        if len(participant_ids) == 0:
+            raise StatsAnalysisError("No participants found for experiment.")
 
-    metric_analyses = []
-    for metric in design_spec.metrics:
-        metric_name = metric.field_name
-        arm_analyses = []
-        for arm in experiment.arms:
-            arm_result = analyze_results[metric_name][arm.id]
-            arm_analyses.append(
-                ArmAnalysis(
-                    arm_id=arm.id,
-                    arm_name=arm.name,
-                    arm_description=arm.description,
-                    is_baseline=arm_result.is_baseline,
-                    estimate=arm_result.estimate,
-                    p_value=arm_result.p_value,
-                    t_stat=arm_result.t_stat,
-                    std_error=arm_result.std_error,
-                    num_missing_values=arm_result.num_missing_values,
+        async with DwhSession(dsconfig.dwh) as dwh:
+            sa_table = await dwh.inspect_table(participants_cfg.table_name)
+
+            # Mark the start of the analysis as when we begin pulling outcomes.
+            created_at = datetime.now(UTC)
+            participant_outcomes = await asyncio.to_thread(
+                get_participant_metrics,
+                dwh.session,
+                sa_table,
+                design_spec.metrics,
+                unique_id_field,
+                participant_ids,
+            )
+
+        # We want to notify the user if there are participants assigned to the experiment that are not
+        # in the data warehouse. E.g. in an online experiment, perhaps a new user was assigned
+        # before their info was synced to the dwh.
+        num_participants = len(participant_ids)
+        num_missing_participants = num_participants - len(participant_outcomes)
+
+        # Always assume the first arm is the baseline; UI can override this.
+        baseline_arm_id = baseline_arm_id or design_spec.arms[0].arm_id
+        analyze_results = analyze_experiment_impl(
+            assignments, participant_outcomes, baseline_arm_id
+        )
+
+        metric_analyses = []
+        for metric in design_spec.metrics:
+            metric_name = metric.field_name
+            arm_analyses = []
+            for arm in experiment.arms:
+                arm_result = analyze_results[metric_name][arm.id]
+                arm_analyses.append(
+                    ArmAnalysis(
+                        arm_id=arm.id,
+                        arm_name=arm.name,
+                        arm_description=arm.description,
+                        is_baseline=arm_result.is_baseline,
+                        estimate=arm_result.estimate,
+                        p_value=arm_result.p_value,
+                        t_stat=arm_result.t_stat,
+                        std_error=arm_result.std_error,
+                        num_missing_values=arm_result.num_missing_values,
+                    )
+                )
+            metric_analyses.append(
+                MetricAnalysis(
+                    metric_name=metric_name, metric=metric, arm_analyses=arm_analyses
                 )
             )
-        metric_analyses.append(
-            MetricAnalysis(
-                metric_name=metric_name, metric=metric, arm_analyses=arm_analyses
-            )
+        return FreqExperimentAnalysis(
+            experiment_id=experiment.id,
+            metric_analyses=metric_analyses,
+            num_participants=num_participants,
+            num_missing_participants=num_missing_participants,
+            created_at=created_at,
         )
-    return ExperimentAnalysis(
-        experiment_id=experiment.id,
-        metric_analyses=metric_analyses,
-        num_participants=num_participants,
-        num_missing_participants=num_missing_participants,
-        created_at=created_at,
+    raise HTTPException(
+        status_code=status.HTTP_400_BAD_REQUEST,
+        detail="Experiment analysis failed due to invalid inputs.",
     )
 
 
@@ -1465,7 +1512,7 @@ async def get_experiment(
     experiment_id: str,
     session: Annotated[AsyncSession, Depends(xngin_db_session)],
     user: Annotated[tables.User, Depends(user_from_token)],
-) -> ExperimentConfig:
+) -> GetExperimentResponse:
     """Returns the experiment with the specified ID."""
     ds = await get_datasource_or_raise(session, user, datasource_id)
     experiment = await get_experiment_via_ds_or_raise(
@@ -1488,7 +1535,10 @@ async def get_experiment_assignments(
 ) -> GetExperimentAssignmentsResponse:
     ds = await get_datasource_or_raise(session, user, datasource_id)
     experiment = await get_experiment_via_ds_or_raise(
-        session, ds, experiment_id, preload=[tables.Experiment.arm_assignments]
+        session,
+        ds,
+        experiment_id,
+        preload=[tables.Experiment.arm_assignments, tables.Experiment.draws],
     )
     return experiments_common.get_experiment_assignments_impl(experiment)
 
@@ -1506,6 +1556,7 @@ async def get_experiment_assignments_as_csv(
     session: Annotated[AsyncSession, Depends(xngin_db_session)],
     user: Annotated[tables.User, Depends(user_from_token)],
 ) -> StreamingResponse:
+    # TODO: update for bandits
     ds = await get_datasource_or_raise(session, user, datasource_id)
     experiment = await get_experiment_via_ds_or_raise(
         session,
@@ -1549,7 +1600,7 @@ async def get_experiment_assignment_for_participant(
 
     # Look up the participant's assignment if it exists
     assignment = await experiments_common.get_existing_assignment_for_participant(
-        session, experiment.id, participant_id
+        session, experiment.id, participant_id, experiment.experiment_type
     )
     if not assignment and create_if_none and experiment.stopped_assignments_at is None:
         assignment = await experiments_common.create_assignment_for_participant(
@@ -1596,7 +1647,18 @@ async def power_check(
     user: Annotated[tables.User, Depends(user_from_token)],
     body: PowerRequest,
 ) -> PowerResponse:
+    """Performs a power check for the specified datasource."""
+    if isinstance(body.design_spec, BaseBanditExperimentSpec):
+        raise HTTPException(
+            status_code=400,
+            detail="Power checks are not supported for bandit experiments.",
+        )
     ds = await get_datasource_or_raise(session, user, datasource_id)
+    if isinstance(ds.config, NoDwh):
+        raise HTTPException(
+            status_code=400,
+            detail="Power checks are not supported for datasources without a data warehouse.",
+        )
     dsconfig = ds.get_config()
     participants_cfg = dsconfig.find_participants(body.design_spec.participant_type)
     validate_schema_metrics_or_raise(body.design_spec, participants_cfg)  # type: ignore[arg-type]

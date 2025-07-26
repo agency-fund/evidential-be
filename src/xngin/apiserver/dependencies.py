@@ -5,9 +5,8 @@ from fastapi import Depends, Header
 from fastapi.security import APIKeyHeader
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from xngin.apiserver import constants
+from xngin.apiserver import constants, database
 from xngin.apiserver.apikeys import require_valid_api_key
-from xngin.apiserver.database import AsyncSessionLocal
 from xngin.apiserver.gsheet_cache import GSheetCache
 from xngin.apiserver.models import tables
 from xngin.apiserver.settings import (
@@ -37,7 +36,7 @@ def settings_dependency():
 
 async def xngin_db_session():
     """Returns a database connection to the xngin app database (not customer data warehouse)."""
-    async with AsyncSessionLocal() as session:
+    async with database.async_session() as session:
         yield session
 
 

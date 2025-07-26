@@ -1,13 +1,10 @@
 import datetime
-import decimal
-import enum
 import math
 import uuid
 from collections.abc import Sequence
-from typing import Annotated, Literal, Self, get_args
+from typing import Annotated, Literal, Self
 
 import sqlalchemy.sql
-from loguru import logger
 from pydantic import (
     BaseModel,
     ConfigDict,
@@ -16,7 +13,6 @@ from pydantic import (
     field_validator,
     model_validator,
 )
-from sqlalchemy.dialects.postgresql.json import JSON, JSONB
 
 from xngin.apiserver.common_field_types import FieldName
 from xngin.apiserver.exceptions_common import LateValidationError
@@ -25,10 +21,22 @@ from xngin.apiserver.limits import (
     MAX_LENGTH_OF_NAME_VALUE,
     MAX_LENGTH_OF_PARTICIPANT_ID_VALUE,
     MAX_NUMBER_OF_ARMS,
+    MAX_NUMBER_OF_CONTEXTS,
     MAX_NUMBER_OF_FIELDS,
     MAX_NUMBER_OF_FILTERS,
 )
-from xngin.apiserver.models.enums import ExperimentState, StopAssignmentReason
+from xngin.apiserver.routers.common_enums import (
+    ContextType,
+    DataType,
+    ExperimentState,
+    ExperimentsType,
+    LikelihoodTypes,
+    MetricPowerAnalysisMessageType,
+    MetricType,
+    PriorTypes,
+    Relation,
+    StopAssignmentReason,
+)
 
 type StrictInt = Annotated[int | None, Field(strict=True)]
 type StrictFloat = Annotated[float | None, Field(strict=True, allow_inf_nan=False)]
@@ -38,167 +46,6 @@ type FilterValueTypes = (
     | Sequence[str | None]
     | Sequence[bool | None]
 )
-
-
-class DataType(enum.StrEnum):
-    """Defines the supported data types for fields in the data source."""
-
-    BOOLEAN = "boolean"
-    CHARACTER_VARYING = "character varying"
-    UUID = "uuid"
-    DATE = "date"
-    INTEGER = "integer"
-    DOUBLE_PRECISION = "double precision"
-    NUMERIC = "numeric"
-    TIMESTAMP_WITHOUT_TIMEZONE = "timestamp without time zone"
-    TIMESTAMP_WITH_TIMEZONE = "timestamp with time zone"
-    BIGINT = "bigint"
-    JSONB = "jsonb (unsupported)"
-    JSON = "json (unsupported)"
-    UNKNOWN = "unsupported"
-    # NOTE: If adding types, the frontend (e.g. data-type-badge.tsx when viewing participant type
-    # details) should also be updated to badge appropriately in the UI.
-
-    @classmethod
-    def match(cls, value):
-        """Maps a Python or SQLAlchemy type or value's type to the corresponding DataType.
-
-        Value may be a Python type or a SQLAlchemy type.
-        """
-        if value in DataType:
-            return DataType[value]
-        if value is str:
-            return DataType.CHARACTER_VARYING
-        if isinstance(value, sqlalchemy.sql.sqltypes.UUID):
-            return DataType.UUID
-        if isinstance(value, sqlalchemy.sql.sqltypes.String):
-            return DataType.CHARACTER_VARYING
-        if isinstance(value, sqlalchemy.sql.sqltypes.Boolean):
-            return DataType.BOOLEAN
-        if isinstance(value, sqlalchemy.sql.sqltypes.BigInteger):
-            return DataType.BIGINT
-        if isinstance(value, sqlalchemy.sql.sqltypes.Integer):
-            return DataType.INTEGER
-        if isinstance(value, sqlalchemy.sql.sqltypes.Double):
-            return DataType.DOUBLE_PRECISION
-        if isinstance(value, sqlalchemy.sql.sqltypes.Float):
-            return DataType.DOUBLE_PRECISION
-        if isinstance(value, sqlalchemy.sql.sqltypes.Numeric):
-            return DataType.NUMERIC
-        if isinstance(value, sqlalchemy.sql.sqltypes.Date):
-            return DataType.DATE
-        if isinstance(value, sqlalchemy.sql.sqltypes.DateTime) and value.timezone:
-            return DataType.TIMESTAMP_WITH_TIMEZONE
-        if isinstance(value, sqlalchemy.sql.sqltypes.DateTime) and not value.timezone:
-            return DataType.TIMESTAMP_WITHOUT_TIMEZONE
-        if isinstance(value, JSONB):
-            return DataType.JSONB
-        if isinstance(value, JSON):
-            return DataType.JSON
-        if value is int:
-            return DataType.INTEGER
-        if value is float:
-            return DataType.DOUBLE_PRECISION
-        logger.warning("Unmatched type: {}", type(value))
-        return DataType.UNKNOWN
-
-    @classmethod
-    def supported_participant_id_types(cls) -> list["DataType"]:
-        """Returns the list of data types that are supported as participant IDs."""
-        return [
-            DataType.INTEGER,
-            DataType.BIGINT,
-            DataType.UUID,
-            DataType.CHARACTER_VARYING,
-        ]
-
-    @classmethod
-    def is_supported_type(cls, data_type: Self):
-        """Returns True if the type is supported as a strata, filter, and/or metric."""
-        return data_type not in {DataType.JSONB, DataType.JSON, DataType.UNKNOWN}
-
-    def is_supported(self):
-        """Returns True if the type is supported as a strata, filter, and/or metric."""
-        return DataType.is_supported_type(self)
-
-    def filter_class(self, field_name):
-        """Classifies a DataType into a filter class."""
-        match self:
-            # TODO: is this customer specific?
-            case _ if field_name.lower().endswith("_id"):
-                return FilterClass.DISCRETE
-            case DataType.BOOLEAN | DataType.CHARACTER_VARYING | DataType.UUID:
-                return FilterClass.DISCRETE
-            case (
-                DataType.DATE
-                | DataType.TIMESTAMP_WITHOUT_TIMEZONE
-                | DataType.TIMESTAMP_WITH_TIMEZONE
-                | DataType.INTEGER
-                | DataType.DOUBLE_PRECISION
-                | DataType.NUMERIC
-                | DataType.BIGINT
-            ):
-                return FilterClass.NUMERIC
-            case _:
-                return FilterClass.UNKNOWN
-
-
-class FilterClass(enum.StrEnum):
-    """Internal helper for grouping our supported data types by what filter relations they can use."""
-
-    DISCRETE = "discrete"
-    NUMERIC = "numeric"
-    UNKNOWN = "unknown"
-
-    def valid_relations(self):
-        """Gets the valid relation operators for this data type class."""
-        match self:
-            case FilterClass.DISCRETE:
-                return [Relation.INCLUDES, Relation.EXCLUDES]
-            case FilterClass.NUMERIC:
-                return [
-                    Relation.BETWEEN,
-                    Relation.EXCLUDES,
-                    Relation.INCLUDES,
-                ]
-        raise ValueError(f"{self} has no valid defined relations.")
-
-
-class Relation(enum.StrEnum):
-    """Defines operators for filtering values.
-
-    INCLUDES matches when the value matches any of the provided values, including null if explicitly
-    specified. For CSV fields (i.e. experiment_ids), any value in the CSV that matches the provided
-    values will match, but nulls are unsupported. This is equivalent to NOT(EXCLUDES(values)).
-
-    EXCLUDES matches when the value does not match any of the provided values, including null if
-    explicitly specified. If null is not explicitly excluded, we include nulls in the result.  CSV
-    fields (i.e. experiment_ids), the match will fail if any of the provided values are present
-    in the value, but nulls are unsupported.
-
-    BETWEEN matches when the value is between the two provided values (inclusive). Not allowed for CSV fields.
-    """
-
-    INCLUDES = "includes"
-    EXCLUDES = "excludes"
-    BETWEEN = "between"
-
-
-class MetricType(enum.StrEnum):
-    """Classifies metrics by their value type."""
-
-    BINARY = "binary"
-    NUMERIC = "numeric"
-
-    @classmethod
-    def from_python_type(cls, python_type: type) -> "MetricType":
-        """Maps Python types to metric types."""
-
-        if python_type in {int, float, decimal.Decimal}:
-            return MetricType.NUMERIC
-        if python_type is bool:
-            return MetricType.BINARY
-        raise ValueError(f"Unsupported type: {python_type}")
 
 
 class ApiBaseModel(BaseModel):
@@ -291,6 +138,51 @@ class DesignSpecMetricRequest(DesignSpecMetricBase):
         return self
 
 
+class Context(ApiBaseModel):
+    """
+    Pydantic model for context of the experiment.
+    """
+
+    context_id: Annotated[
+        int | None,
+        Field(
+            description="Unique identifier for the context, you should NOT set this when creating a new context.",
+            examples=[1],
+        ),
+    ]
+    context_name: Annotated[str, Field(max_length=MAX_LENGTH_OF_NAME_VALUE)]
+    context_description: Annotated[
+        str | None, Field(max_length=MAX_LENGTH_OF_DESCRIPTION_VALUE)
+    ] = None
+    value_type: Annotated[
+        ContextType,
+        Field(
+            description="Type of value the context can take", default=ContextType.BINARY
+        ),
+    ]
+
+
+class ContextInput(ApiBaseModel):
+    """
+    Pydantic model for a context input
+    """
+
+    context_id: Annotated[
+        int,
+        Field(
+            description="Unique identifier for the context.",
+            examples=[1],
+        ),
+    ]
+    context_value: Annotated[
+        float,
+        Field(
+            description="Value of the context",
+            examples=[2.5],
+        ),
+    ]
+
+
 class Arm(ApiBaseModel):
     """Describes an experiment treatment arm."""
 
@@ -307,12 +199,6 @@ class Arm(ApiBaseModel):
 
 
 class ArmAnalysis(Arm):
-    is_baseline: Annotated[
-        bool,
-        Field(
-            description="Whether this arm is the baseline/control arm for comparison."
-        ),
-    ]
     estimate: Annotated[
         float,
         Field(
@@ -340,6 +226,12 @@ class ArmAnalysis(Arm):
             description="The number of participants assigned to this arm with missing values (NaNs) for this metric. These rows are excluded from the analysis."
         ),
     ]
+    is_baseline: Annotated[
+        bool,
+        Field(
+            description="Whether this arm is the baseline/control arm for comparison."
+        ),
+    ]
 
     @field_serializer("t_stat", "p_value", when_used="json")
     def serialize_float(self, v: float, _info):
@@ -347,6 +239,84 @@ class ArmAnalysis(Arm):
         if math.isnan(v):
             return None
         return v
+
+
+class ArmBandit(Arm):
+    """Describes an experiment arm for bandit experiments."""
+
+    # Prior variables
+    alpha_init: Annotated[
+        float | None,
+        Field(
+            examples=[None, 1.0],
+            description="Initial alpha parameter for Beta prior",
+        ),
+    ] = None
+    beta_init: Annotated[
+        float | None,
+        Field(
+            examples=[None, 1.0],
+            description="Initial beta parameter for Beta prior",
+        ),
+    ] = None
+    mu_init: Annotated[
+        float | None,
+        Field(
+            examples=[None, 0.0],
+            description="Initial mean parameter for Normal prior",
+        ),
+    ] = None
+    sigma_init: Annotated[
+        float | None,
+        Field(
+            examples=[None, 1.0],
+            description="Initial standard deviation parameter for Normal prior",
+        ),
+    ] = None
+    alpha: Annotated[
+        float | None,
+        Field(
+            examples=[None, 1.0],
+            description="Updated alpha parameter for Beta prior",
+        ),
+    ] = None
+    beta: Annotated[
+        float | None,
+        Field(
+            examples=[None, 1.0],
+            description="Updated beta parameter for Beta prior",
+        ),
+    ] = None
+    mu: Annotated[
+        list[float] | None,
+        Field(
+            examples=[None, [0.0]],
+            description="Updated mean vector for Normal prior",
+        ),
+    ] = None
+    covariance: Annotated[
+        list[list[float]] | None,
+        Field(
+            examples=[None, [[1.0]]],
+            description="Updated covariance matrix for Normal prior",
+        ),
+    ] = None
+
+    @model_validator(mode="after")
+    def check_values(self) -> Self:
+        """
+        Check if the values are unique.
+        """
+        alpha = self.alpha_init
+        beta = self.beta_init
+        sigma = self.sigma_init
+        if alpha is not None and alpha <= 0:
+            raise ValueError("Alpha must be greater than 0.")
+        if beta is not None and beta <= 0:
+            raise ValueError("Beta must be greater than 0.")
+        if sigma is not None and sigma <= 0:
+            raise ValueError("Sigma must be greater than 0.")
+        return self
 
 
 class MetricAnalysis(ApiBaseModel):
@@ -372,7 +342,38 @@ class MetricAnalysis(ApiBaseModel):
         return self
 
 
-class ExperimentAnalysis(ApiBaseModel):
+class BanditExperimentAnalysis(ApiBaseModel):
+    """Describes changes in arms for a bandit experiment"""
+
+    experiment_id: Annotated[
+        str,
+        Field(description="ID of the experiment."),
+    ]
+    n_trials: Annotated[
+        int,
+        Field(description="The number of trials conducted for this experiment."),
+    ]
+    n_outcomes: Annotated[
+        int,
+        Field(description="The number of outcomes observed for this experiment."),
+    ]
+    posterior_means: Annotated[
+        list[float],
+        Field(description="Posterior means for each arm in the experiment."),
+    ]
+    posterior_stds: Annotated[
+        list[float],
+        Field(
+            description="Posterior standard deviations for each arm in the experiment."
+        ),
+    ]
+    volumes: Annotated[
+        list[float],
+        Field(description="Volume of participants for each arm in the experiment."),
+    ]
+
+
+class FreqExperimentAnalysis(ApiBaseModel):
     """Describes the change if any in metrics targeted by an experiment."""
 
     experiment_id: Annotated[
@@ -401,17 +402,6 @@ class ExperimentAnalysis(ApiBaseModel):
         datetime.datetime,
         Field(description="The date and time the experiment analysis was created."),
     ]
-
-
-class MetricPowerAnalysisMessageType(enum.StrEnum):
-    """Classifies metric power analysis results."""
-
-    SUFFICIENT = "sufficient"
-    INSUFFICIENT = "insufficient"
-    NO_BASELINE = "no baseline"
-    NO_AVAILABLE_N = "no available n"
-    ZERO_EFFECT_SIZE = "zero effect size"
-    ZERO_STDDEV = "zero variation"
 
 
 class MetricPowerAnalysisMessage(ApiBaseModel):
@@ -629,18 +619,19 @@ class Filter(ApiBaseModel):
         return self
 
 
-ExperimentType = Literal["online", "preassigned"]
-
-
 class Stratum(ApiBaseModel):
     """Describes a variable used for stratification."""
 
     field_name: FieldName
 
 
+# -- Experiment Design Specification --
+
+
 class BaseDesignSpec(ApiBaseModel):
     """Experiment design metadata and target metrics common to all experiment types."""
 
+    # --- Experiment metadata ---
     participant_type: Annotated[str, Field(max_length=MAX_LENGTH_OF_NAME_VALUE)]
 
     experiment_id: Annotated[
@@ -649,18 +640,35 @@ class BaseDesignSpec(ApiBaseModel):
             description="ID of the experiment. If creating a new experiment (POST /datasources/{datasource_id}/experiments), this is generated for you and made available in the response; you should NOT set this. Only generate ids of your own if using the stateless Experiment Design API as you will do your own persistence."
         ),
     ] = None
+
     experiment_type: Annotated[
-        str,
-        Field(description="This type determines how we do assignment and analyses."),
+        ExperimentsType,
+        Field(
+            description="This type determines how we do assignment and analyses.",
+        ),
     ]
+
     experiment_name: Annotated[str, Field(max_length=MAX_LENGTH_OF_NAME_VALUE)]
     description: Annotated[str, Field(max_length=MAX_LENGTH_OF_DESCRIPTION_VALUE)]
     start_date: datetime.datetime
     end_date: datetime.datetime
 
     # arms (at least two)
-    arms: Annotated[list[Arm], Field(..., min_length=2, max_length=MAX_NUMBER_OF_ARMS)]
+    arms: Annotated[
+        Sequence[Arm], Field(..., min_length=2, max_length=MAX_NUMBER_OF_ARMS)
+    ]
 
+    def ids_are_present(self) -> bool:
+        """True if any IDs are present."""
+        return self.experiment_id is not None or any(
+            arm.arm_id is not None for arm in self.arms
+        )
+
+
+class BaseFrequentistDesignSpec(BaseDesignSpec):
+    """Experiment design parameters for frequentist experiments."""
+
+    # Frequentist config params
     strata: Annotated[
         list[Stratum],
         Field(
@@ -687,82 +695,185 @@ class BaseDesignSpec(ApiBaseModel):
         ),
     ]
 
+    # stat parameters
+    power: Annotated[
+        float,
+        Field(
+            ge=0,
+            le=1,
+            description="The chance of detecting a real non-null effect, i.e. 1 - false negative rate.",
+        ),
+    ] = 0.8
+    alpha: Annotated[
+        float,
+        Field(
+            ge=0,
+            le=1,
+            description="The chance of a false positive, i.e. there is no real non-null effect, but we mistakenly think there is one.",
+        ),
+    ] = 0.05
+    fstat_thresh: Annotated[
+        float,
+        Field(
+            ge=0,
+            le=1,
+            description='Threshold on the p-value of joint significance in doing the omnibus balance check, above which we declare the data to be "balanced".',
+        ),
+    ] = 0.6
+
     @field_serializer("start_date", "end_date", when_used="json")
     def serialize_dt(self, dt: datetime.datetime, _info):
         """Convert dates to iso strings in model_dump_json()/model_dump(mode='json')"""
         return dt.isoformat()
 
-    @field_validator("experiment_type")
-    @classmethod
-    def validate_experiment_type(cls, v):
-        """Validate that the experiment type is one of the supported ExperimentTypes."""
-        if v not in get_args(ExperimentType):
-            raise ValueError(f"Invalid experiment type: {v}")
-        return v
 
-    def ids_are_present(self) -> bool:
-        """True if any IDs are present."""
-        return self.experiment_id is not None or any(
-            arm.arm_id is not None for arm in self.arms
-        )
+class BaseBanditExperimentSpec(BaseDesignSpec):
+    """Experiment design parameters for bandit experiments."""
 
-
-class FrequentistExperimentSpec(BaseDesignSpec):
-    """Experiment design parameters for power calculations and analysis."""
-
-    # stat parameters
-    power: Annotated[
-        float,
+    # Type-narrowing to ArmBandit for type checking, to ensure bandit arms are the correct subtype.
+    arms: Annotated[
+        Sequence[ArmBandit], Field(..., min_length=2, max_length=MAX_NUMBER_OF_ARMS)
+    ]
+    contexts: Annotated[
+        list[Context] | None,
         Field(
-            0.8,
-            ge=0,
-            le=1,
-            description="The chance of detecting a real non-null effect, i.e. 1 - false negative rate.",
+            description="Optional list of contexts that can be used to condition the bandit assignment. Required for contextual bandit experiments.",
+            max_length=MAX_NUMBER_OF_FIELDS,
+        ),
+    ] = None
+
+    # Experiment config
+    prior_type: Annotated[
+        PriorTypes,
+        Field(
+            description="The type of prior distribution for the arms.",
+            default=PriorTypes.BETA,
         ),
     ]
-    alpha: Annotated[
-        float,
+    reward_type: Annotated[
+        LikelihoodTypes,
         Field(
-            0.05,
-            ge=0,
-            le=1,
-            description="The chance of a false positive, i.e. there is no real non-null effect, but we mistakenly think there is one.",
-        ),
-    ]
-    fstat_thresh: Annotated[
-        float,
-        Field(
-            0.6,
-            ge=0,
-            le=1,
-            description='Threshold on the p-value of joint significance in doing the omnibus balance check, above which we declare the data to be "balanced".',
+            description="The type of reward we observe from the experiment.",
+            default=LikelihoodTypes.BERNOULLI,
         ),
     ]
 
+    @model_validator(mode="after")
+    def check_arm_missing_params(self) -> Self:
+        """
+        Check if the arm reward type is same as the experiment reward type.
+        """
+        prior_type = self.prior_type
+        arms = self.arms
 
-class PreassignedExperimentSpec(FrequentistExperimentSpec):
-    """Use this type to randomly select and assign from existing participants at design time."""
+        prior_params = {
+            PriorTypes.BETA: ("alpha_init", "beta_init"),
+            PriorTypes.NORMAL: ("mu_init", "sigma_init"),
+        }
 
-    experiment_type: Literal["preassigned"] = "preassigned"
+        if prior_type not in prior_params:
+            raise ValueError(
+                f"Unsupported prior type: {prior_type}. Supported types are: {', '.join(prior_params.keys())}."
+            )
+
+        for arm in arms:
+            arm_dict = arm.model_dump()
+            missing_params = []
+            for param in prior_params[prior_type]:
+                if param not in arm_dict or arm_dict[param] is None:
+                    missing_params.append(param)
+
+            if missing_params:
+                val = prior_type.value
+                raise ValueError(f"{val} prior needs {','.join(missing_params)}.")
+        return self
+
+    @model_validator(mode="after")
+    def check_prior_reward_type_combo(self) -> Self:
+        """
+        Validate that the prior and reward type combination is allowed.
+        """
+        if self.prior_type == PriorTypes.BETA:
+            if not self.reward_type == LikelihoodTypes.BERNOULLI:
+                raise ValueError(
+                    "Beta prior can only be used with binary-valued rewards."
+                )
+            if self.experiment_type != ExperimentsType.MAB_ONLINE:
+                raise ValueError(
+                    f"Experiments of type {self.experiment_type} can only use Gaussian priors."
+                )
+
+        return self
+
+    @model_validator(mode="after")
+    def check_contexts(self) -> Self:
+        """
+        Validate that the contexts inputs are valid.
+        """
+        if self.experiment_type == ExperimentsType.CMAB_ONLINE and not self.contexts:
+            raise ValueError("Contextual MAB experiments require at least one context.")
+        if self.experiment_type != ExperimentsType.CMAB_ONLINE and self.contexts:
+            raise ValueError(
+                "Contexts are only applicable for contextual MAB experiments."
+            )
+        return self
 
 
-class OnlineExperimentSpec(FrequentistExperimentSpec):
-    """Use this type to randomly assign participants into arms during live experiment execution.
+class PreassignedFrequentistExperimentSpec(BaseFrequentistDesignSpec):
+    """Use this type to randomly select and assign from existing participants at design time with frequentist A/B experiments."""
+
+    experiment_type: Literal[ExperimentsType.FREQ_PREASSIGNED] = (
+        ExperimentsType.FREQ_PREASSIGNED
+    )
+
+
+class OnlineFrequentistExperimentSpec(BaseFrequentistDesignSpec):
+    """Use this type to randomly assign participants into arms during live experiment execution with frequentist A/B experiments.
 
     For example, you may wish to experiment on new users. Assignments are issued via API request.
     """
 
-    experiment_type: Annotated[
-        Literal["online"],
-        Field(description="Experiment type identifier for online experiments"),
-    ] = "online"
+    experiment_type: Literal[ExperimentsType.FREQ_ONLINE] = ExperimentsType.FREQ_ONLINE
+
+
+class MABExperimentSpec(BaseBanditExperimentSpec):
+    """Use this type to randomly assign participants into arms during live experiment execution with MAB experiments.
+
+    For example, you may wish to experiment on new users. Assignments are issued via API request.
+    """
+
+    experiment_type: Literal[ExperimentsType.MAB_ONLINE] = ExperimentsType.MAB_ONLINE
+
+
+class CMABExperimentSpec(BaseBanditExperimentSpec):
+    """Use this type to randomly assign participants into arms during live experiment execution with contextual MAB experiments.
+
+    For example, you may wish to experiment on new users. Assignments are issued via API request.
+    """
+
+    experiment_type: Literal[ExperimentsType.CMAB_ONLINE] = ExperimentsType.CMAB_ONLINE
+
+
+class BayesABExperimentSpec(BaseBanditExperimentSpec):
+    """Use this type to randomly assign participants into arms during live experiment execution with Bayesian A/B experiments.
+
+    For example, you may wish to experiment on new users. Assignments are issued via API request.
+    """
+
+    experiment_type: Literal[ExperimentsType.BAYESAB_ONLINE] = (
+        ExperimentsType.BAYESAB_ONLINE
+    )
 
 
 type DesignSpec = Annotated[
-    PreassignedExperimentSpec | OnlineExperimentSpec,
+    PreassignedFrequentistExperimentSpec
+    | OnlineFrequentistExperimentSpec
+    | MABExperimentSpec
+    | CMABExperimentSpec
+    | BayesABExperimentSpec,
     Field(
         discriminator="experiment_type",
-        description="Concrete type of experiment to run.",
+        description="The type of assignment and experiment design.",
     ),
 ]
 
@@ -788,14 +899,20 @@ class Strata(ApiBaseModel):
 
 
 class Assignment(ApiBaseModel):
-    """Describes treatment assignment for an experiment participant."""
+    """Base class for treatment assignment in experiments."""
 
     # this references the field marked is_unique_id == TRUE in the configuration spreadsheet
-    participant_id: Annotated[str, Field(max_length=MAX_LENGTH_OF_PARTICIPANT_ID_VALUE)]
     arm_id: Annotated[
         str,
         Field(
             description="ID of the arm this participant was assigned to. Same as Arm.arm_id."
+        ),
+    ]
+    participant_id: Annotated[
+        str,
+        Field(
+            description="Unique identifier for the participant. This is the primary key for the participant in the data warehouse.",
+            max_length=MAX_LENGTH_OF_PARTICIPANT_ID_VALUE,
         ),
     ]
     arm_name: Annotated[
@@ -809,6 +926,8 @@ class Assignment(ApiBaseModel):
         datetime.datetime | None,
         Field(description="The date and time the assignment was created."),
     ] = None
+
+    # -- Frequentist-specific fields --
     strata: Annotated[
         list[Strata] | None,
         Field(
@@ -816,6 +935,25 @@ class Assignment(ApiBaseModel):
             max_length=MAX_NUMBER_OF_FIELDS,
         ),
     ] = None
+
+    # -- Bandit-specific fields --
+    observed_at: Annotated[
+        datetime.datetime | None,
+        Field(description="The date and time the outcome was recorded."),
+    ] = None
+
+    outcome: Annotated[
+        float | None, Field(description="The observed outcome for this assignment.")
+    ] = None
+
+    context_values: Annotated[
+        list[ContextInput],
+        Field(
+            description="List of context values for this assignment. If no contexts are used, this will be None.",
+            max_length=MAX_NUMBER_OF_CONTEXTS,
+            default=[],
+        ),
+    ] = []
 
 
 class BalanceCheck(ApiBaseModel):
@@ -860,11 +998,7 @@ class ArmSize(ApiBaseModel):
     size: int = 0
 
 
-class ExperimentsBaseModel(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-
-class CreateExperimentRequest(ExperimentsBaseModel):
+class CreateExperimentRequest(ApiBaseModel):
     design_spec: DesignSpec
     power_analyses: PowerResponse | None = None
     webhooks: Annotated[
@@ -883,7 +1017,8 @@ class CreateExperimentRequest(ExperimentsBaseModel):
         return v
 
 
-class AssignSummary(ExperimentsBaseModel):
+# TODO: make this class work with the Bayesian experiment types and their Draw records.
+class AssignSummary(ApiBaseModel):
     """Key pieces of an AssignResponse without the assignments."""
 
     balance_check: Annotated[
@@ -905,7 +1040,7 @@ class AssignSummary(ExperimentsBaseModel):
     ] = None
 
 
-class ExperimentConfig(ExperimentsBaseModel):
+class ExperimentConfig(ApiBaseModel):
     """Representation of our stored Experiment information."""
 
     datasource_id: str
@@ -926,7 +1061,7 @@ class ExperimentConfig(ExperimentsBaseModel):
     ]
     design_spec: DesignSpec
     power_analyses: PowerResponse | None
-    assign_summary: AssignSummary
+    assign_summary: AssignSummary | None
     webhooks: Annotated[
         list[str],
         Field(
@@ -939,11 +1074,11 @@ class GetExperimentResponse(ExperimentConfig):
     """An experiment configuration capturing all info at design time when assignment was made."""
 
 
-class ListExperimentsResponse(ExperimentsBaseModel):
+class ListExperimentsResponse(ApiBaseModel):
     items: list[ExperimentConfig]
 
 
-class GetParticipantAssignmentResponse(ExperimentsBaseModel):
+class GetParticipantAssignmentResponse(ApiBaseModel):
     """Describes assignment for a single <experiment, participant> pair."""
 
     experiment_id: str
@@ -958,7 +1093,7 @@ class CreateExperimentResponse(ExperimentConfig):
     """Same as the request but with ids filled for the experiment and arms, and summary info on the assignment."""
 
 
-class GetExperimentAssignmentsResponse(ExperimentsBaseModel):
+class GetExperimentAssignmentsResponse(ApiBaseModel):
     """Describes assignments for all participants and balance test results if available."""
 
     balance_check: Annotated[
@@ -1006,3 +1141,10 @@ class GetFiltersResponseDiscrete(GetFiltersResponseBase):
 type GetFiltersResponseElement = (
     GetFiltersResponseNumericOrDate | GetFiltersResponseDiscrete
 )
+
+
+class UpdateBanditArmOutcomeRequest(ApiBaseModel):
+    """Describes the outcome of a bandit experiment."""
+
+    participant_id: str
+    outcome: float

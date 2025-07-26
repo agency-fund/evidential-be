@@ -11,12 +11,9 @@ import os
 from collections import Counter
 from functools import lru_cache
 from typing import Annotated, Literal, Protocol
-from urllib.parse import urlparse
 
-import httpx
 import sqlalchemy
 from cachetools.func import ttl_cache
-from httpx import codes
 from loguru import logger
 from pydantic import (
     BaseModel,
@@ -27,12 +24,6 @@ from pydantic import (
     model_validator,
 )
 from sqlalchemy import make_url
-from tenacity import (
-    retry,
-    retry_if_not_exception_type,
-    stop_after_delay,
-    wait_random,
-)
 
 from xngin.apiserver.certs import get_amazon_trust_ca_bundle_path
 from xngin.apiserver.dwh.inspection_types import ParticipantsSchema
@@ -67,46 +58,11 @@ def get_settings_for_server():
     if settings_path is None:
         return XnginSettings(datasources=[])
 
-    if settings_path.startswith("https://"):
-        settings_raw = get_remote_settings(settings_path)
-    else:
-        logger.info("Loading XNGIN_SETTINGS from disk: {}", settings_path)
-        with open(settings_path) as f:
-            settings_raw = json.load(f)
+    logger.info("Loading XNGIN_SETTINGS from disk: {}", settings_path)
+    with open(settings_path) as f:
+        settings_raw = json.load(f)
     settings_raw = replace_secrets(settings_raw)
     return XnginSettings.model_validate(settings_raw)
-
-
-@retry(
-    reraise=True,
-    retry=retry_if_not_exception_type(RemoteSettingsClientError),
-    stop=stop_after_delay(15),
-    wait=wait_random(1, 3),
-)
-def get_remote_settings(url):
-    """Fetches the settings from a remote URL.
-
-    Retries: Requests that take more than 5 seconds, or that respond with a server error, will be retried. We do not
-    retry errors that look like misconfigurations on our side (e.g. 404s).
-    """
-    parsed = urlparse(url)
-    headers: dict = {}
-    if auth := os.environ.get("XNGIN_SETTINGS_AUTHORIZATION"):
-        headers["Authorization"] = auth.strip()
-    if parsed.hostname == "api.github.com" and parsed.path.startswith("/repos"):
-        headers["Accept"] = "application/vnd.github.v3.raw"
-    logger.info("Loading XNGIN_SETTINGS from URL: {}", url)
-    retrying_transport = httpx.HTTPTransport(retries=2)
-    with httpx.Client(
-        transport=retrying_transport, headers=headers, timeout=5
-    ) as client:
-        response = client.get(url)
-        status = response.status_code
-        if status == codes.OK:
-            return response.json()
-        if codes.is_client_error(status):
-            raise RemoteSettingsClientError(f"{status}: {url}")
-        raise UnclassifiedRemoteSettingsError(f"{status} {response.text}")
 
 
 class ConfigBaseModel(BaseModel):
@@ -520,6 +476,18 @@ class Dsn(ConfigBaseModel, BaseDsn, EncryptedDsn):
         return self
 
 
+class NoDwh(ConfigBaseModel):
+    """NoDwh is used to indicate that no data warehouse is configured."""
+
+    driver: Literal["none"] = "none"
+
+    def to_sqlalchemy_url(self):
+        raise NotImplementedError("NoDwh does not support to_sqlalchemy_url()")
+
+    def supports_sa_autoload(self):
+        return False
+
+
 class DbapiArg(ConfigBaseModel):
     """Describes a DBAPI connect() argument.
 
@@ -529,7 +497,7 @@ class DbapiArg(ConfigBaseModel):
     value: str
 
 
-type Dwh = Annotated[Dsn | BqDsn, Field(discriminator="driver")]
+type Dwh = Annotated[Dsn | BqDsn | NoDwh, Field(discriminator="driver")]
 
 
 class RemoteDatabaseConfig(ParticipantsMixin, ConfigBaseModel):

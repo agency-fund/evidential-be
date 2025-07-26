@@ -127,7 +127,7 @@ ignore = [
 [tool.ruff.lint.flake8-import-conventions]
 # https://docs.astral.sh/ruff/settings/#lintflake8-import-conventions
 banned-from = [
-    "xngin.apiserver.authz",
+    "xngin.apiserver.models.tables",
     "xngin.apiserver.routers.admin.authz"
 ]
 
@@ -170,9 +170,6 @@ warn_unused_ignores = true
 warn_return_any = true
 strict_optional = true
 disallow_untyped_defs = false
-exclude = [
-    '^(.*/)?test_.*\.py$',
-]
 plugins = ['pydantic.mypy']
 
 [[tool.mypy.overrides]]
