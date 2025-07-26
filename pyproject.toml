@@ -153,6 +153,7 @@ dev-dependencies = [
     "types-python-jose>=3.5.0.20250531",
     "boto3-stubs>=1.39.1",
     "types-cachetools>=6.0.0.20250525",
+    "coverage>=7.10.0",
 ]
 environments = [
     "sys_platform == 'darwin'",
@@ -175,3 +176,11 @@ plugins = ['pydantic.mypy']
 [[tool.mypy.overrides]]
 module = ["deepdiff", "parsy", "statsmodels.*", "patsy.*", "sqlalchemy_bigquery.*", "pandas_gbq.*"]
 ignore_missing_imports = true
+
+[tool.coverage.run]
+relative_files = true
+
+[tool.coverage.report]
+format = "markdown"
+skip_covered = true
+skip_empty = true
