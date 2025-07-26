@@ -46,12 +46,15 @@ repos:
   #       exclude: '^(.*/)?test_.*\.py$'
   #       entry: interrogate
   #       args: [-v, --fail-under=95, --ignore-module]
-  - repo: https://github.com/pre-commit/mirrors-mypy
-    rev: v1.16.1
+  - repo: local
     hooks:
-      - id: mypy
-        entry: uv run mypy
-        pass_filenames: false
+      - id: uv-run-mypy
+        'types_or': [ python, pyi ]
         args:
-          - src
           - --config-file=pyproject.toml
+          - src
+        entry: uv run mypy
+        language: system
+        name: mypy
+        pass_filenames: false
+        require_serial: true
