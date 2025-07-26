@@ -257,7 +257,7 @@ async def fixture_xngin_db_session():
             try:
                 yield sess
             finally:
-                sess.close()
+                await sess.close()
 
 
 async def delete_seeded_users(xngin_session: AsyncSession):
