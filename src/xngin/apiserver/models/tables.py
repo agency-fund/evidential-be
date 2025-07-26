@@ -494,12 +494,6 @@ class Experiment(Base):
         + "Experiment.experiment_type=='cmab')",
     )
 
-    def get_arm_ids(self) -> list[str]:
-        return [arm.id for arm in self.arms]
-
-    def get_arm_names(self) -> list[str]:
-        return [arm.name for arm in self.arms]
-
 
 class Arm(Base):
     """Representation of arms of an experiment."""
