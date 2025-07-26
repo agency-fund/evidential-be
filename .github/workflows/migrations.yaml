@@ -9,12 +9,14 @@ on:
 
 permissions:
   contents: read
+  pull-requests: write
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
 env:
+  ATLAS_NO_ANON_TELEMETRY: "true"
   DEBIAN_FRONTEND: noninteractive
   FORCE_COLOR: "1"
   PYTHONUNBUFFERED: "1"
@@ -26,10 +28,71 @@ jobs:
     steps:
       - uses: ariga/setup-atlas@v0
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
       - uses: astral-sh/setup-uv@v6
-      - name: ensure migrations are valid
+      - name: check that migrations are valid
         run: uv run atlas migrate validate --env sa_postgres
       - name: lint migrations
-        run: uv run atlas migrate lint --env sa_postgres --git-base HEAD
+        if: github.event_name == 'pull_request'
+        run: |
+          uv run atlas migrate lint --env sa_postgres --git-base origin/main | tee -a lint-output
+
+          {
+            echo '# Atlas Lint'
+            echo
+            if [[ -s lint-output ]]; then
+              echo '```'
+              cat lint-output
+              echo '```'
+            else
+              echo Lint output was empty.
+            fi
+            echo
+          } | tee -a "${GITHUB_STEP_SUMMARY}"
       - name: ensure migrations have been created for the latest code changes
-        run: uv run atlas migrate diff --env sa_postgres
+        run: |
+          before=$(sha256sum migrations/sa_postgres/atlas.sum)
+          uv run atlas migrate diff --env sa_postgres
+          after=$(sha256sum migrations/sa_postgres/atlas.sum)
+
+          if [[ "${before}" == "${after}" ]]; then
+            exit 0
+          fi
+
+          {
+            echo '# Missing Migration Files'
+            echo
+            echo "The committed migration files do not match the table definitions."
+            echo
+
+            echo '## git status'
+            echo
+            echo '```'
+            git status migrations
+            echo '```'
+            echo
+
+            untracked=$(git ls-files --other --directory --exclude-standard migrations)
+            for migf in ${untracked}; do
+              echo
+              echo '##' "${migf}"
+              echo
+              echo '```sql'
+              cat "${migf}"
+              echo '```'
+              echo
+            done
+          } | tee -a comment.md "${GITHUB_STEP_SUMMARY}"
+          exit 1
+      - name: post comment
+        if: always() && github.event_name == 'pull_request'
+        env:
+          PR_NUMBER: ${{ github.event.number }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if [[ -s comment.md ]]; then
+            gh pr comment "${PR_NUMBER}" \
+              --repo "${GITHUB_REPOSITORY}" \
+              --body-file comment.md
+          fi
