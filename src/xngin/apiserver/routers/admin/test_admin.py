@@ -1363,14 +1363,8 @@ async def test_delete_apikey_authorized_and_nonexistent_allow_missing(
 async def test_delete_apikey_authorized_and_exists(
     testing_datasource_with_user, pget, pdelete
 ):
-    response = pget(f"/v1/m/datasources/{testing_datasource_with_user.ds.id}/apikeys")
-    assert response.status_code == 200
-    list_api_keys_response = ListApiKeysResponse.model_validate(response.json())
-    assert len(list_api_keys_response.items) == 1
-    api_key_id = list_api_keys_response.items[0].id
-
     response = pdelete(
-        f"/v1/m/datasources/{testing_datasource_with_user.ds.id}/apikeys/{api_key_id}"
+        f"/v1/m/datasources/{testing_datasource_with_user.ds.id}/apikeys/{testing_datasource_with_user.key_id}"
     )
     assert response.status_code == 204
 
@@ -1378,14 +1372,8 @@ async def test_delete_apikey_authorized_and_exists(
 async def test_delete_apikey_authorized_and_exists_allow_missing(
     testing_datasource_with_user, pget, pdelete
 ):
-    response = pget(f"/v1/m/datasources/{testing_datasource_with_user.ds.id}/apikeys")
-    assert response.status_code == 200
-    list_api_keys_response = ListApiKeysResponse.model_validate(response.json())
-    assert len(list_api_keys_response.items) == 1
-    api_key_id = list_api_keys_response.items[0].id
-
     response = pdelete(
-        f"/v1/m/datasources/{testing_datasource_with_user.ds.id}/apikeys/{api_key_id}?allow_missing=true"
+        f"/v1/m/datasources/{testing_datasource_with_user.ds.id}/apikeys/{testing_datasource_with_user.key_id}?allow_missing=true"
     )
     assert response.status_code == 204
 
@@ -1393,36 +1381,25 @@ async def test_delete_apikey_authorized_and_exists_allow_missing(
 async def test_delete_apikey_authorized_and_exists_idempotency(
     testing_datasource_with_user, pget, pdelete
 ):
-    response = pget(f"/v1/m/datasources/{testing_datasource_with_user.ds.id}/apikeys")
-    assert response.status_code == 200
-    list_api_keys_response = ListApiKeysResponse.model_validate(response.json())
-    assert len(list_api_keys_response.items) == 1
-    api_key_id = list_api_keys_response.items[0].id
-
     response = pdelete(
-        f"/v1/m/datasources/{testing_datasource_with_user.ds.id}/apikeys/{api_key_id}"
+        f"/v1/m/datasources/{testing_datasource_with_user.ds.id}/apikeys/{testing_datasource_with_user.key_id}"
     )
     assert response.status_code == 204
 
     response = pdelete(
-        f"/v1/m/datasources/{testing_datasource_with_user.ds.id}/apikeys/{api_key_id}"
+        f"/v1/m/datasources/{testing_datasource_with_user.ds.id}/apikeys/{testing_datasource_with_user.key_id}"
     )
     assert response.status_code == 404
 
     response = pdelete(
-        f"/v1/m/datasources/{testing_datasource_with_user.ds.id}/apikeys/{api_key_id}?allow_missing=True"
+        f"/v1/m/datasources/{testing_datasource_with_user.ds.id}/apikeys/{testing_datasource_with_user.key_id}?allow_missing=True"
     )
     assert response.status_code == 204
 
 
 async def test_manage_apikeys(testing_datasource_with_user, ppost, pget, pdelete):
     ds = testing_datasource_with_user.ds
-
-    response = pget(f"/v1/m/datasources/{ds.id}/apikeys")
-    assert response.status_code == 200
-    list_api_keys_response = ListApiKeysResponse.model_validate(response.json())
-    assert len(list_api_keys_response.items) == 1
-    first_key_id = list_api_keys_response.items[0].id
+    first_key_id = testing_datasource_with_user.key_id
 
     response = ppost(f"/v1/m/datasources/{ds.id}/apikeys/")
     assert response.status_code == 200
