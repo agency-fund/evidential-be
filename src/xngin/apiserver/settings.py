@@ -125,7 +125,13 @@ class ParticipantsMixin(ConfigBaseModel):
 
     def find_participants(self, participant_type: str) -> ParticipantsConfig:
         """Returns the ParticipantsConfig matching participant_type or raises CannotFindParticipantsException."""
-        found = next(
+        found = self.find_participants_or_none(participant_type)
+        if found is None:
+            raise CannotFindParticipantsError(participant_type)
+        return found
+
+    def find_participants_or_none(self, participant_type) -> ParticipantsConfig | None:
+        return next(
             (
                 u
                 for u in self.participants
@@ -133,9 +139,6 @@ class ParticipantsMixin(ConfigBaseModel):
             ),
             None,
         )
-        if found is None:
-            raise CannotFindParticipantsError(participant_type)
-        return found
 
     @model_validator(mode="after")
     def check_unique_participant_types(self):

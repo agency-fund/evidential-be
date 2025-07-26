@@ -328,6 +328,7 @@ class DatasourceMetadata:
 
     # An API key suitable for use in the Authorization: header.
     key: str
+    key_id: str
 
 
 @pytest.fixture(name="testing_datasource", scope="function")
@@ -438,5 +439,6 @@ async def _make_datasource_metadata(
         ds=datasource,
         dsn=datasource.get_config().to_sqlalchemy_url().render_as_string(False),
         key=key,
+        key_id=key_id,
         org=org,
     )
