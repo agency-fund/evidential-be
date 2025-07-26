@@ -70,25 +70,6 @@ router = APIRouter(
 )
 
 
-# ruff: noqa: B903
-class CommonQueryParams:
-    """Describes query parameters common to the /strata, /filters, and /metrics APIs."""
-
-    def __init__(
-        self,
-        participant_type: Annotated[
-            str,
-            Query(
-                description="Unit of analysis for experiment.",
-                examples=["test_participant_type"],
-            ),
-        ],
-        refresh: Annotated[bool, Query(description="Refresh the cache.")] = False,
-    ):
-        self.participant_type = participant_type
-        self.refresh = refresh
-
-
 #  TODO? Remove mutating endpoints (except assignment) from public-facing integration API
 @router.post(
     "/experiments/with-assignment",
