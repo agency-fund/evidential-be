@@ -26,7 +26,6 @@ from xngin.apiserver import constants, database, flags
 from xngin.apiserver.apikeys import hash_key_or_raise, make_key
 from xngin.apiserver.dependencies import (
     random_seed_dependency,
-    settings_dependency,
 )
 from xngin.apiserver.dns import safe_resolve
 from xngin.apiserver.main import app
@@ -43,7 +42,6 @@ from xngin.apiserver.settings import (
     ParticipantsConfig,
     RemoteDatabaseConfig,
     SettingsForTesting,
-    XnginSettings,
 )
 from xngin.apiserver.testing.pg_helpers import create_database_if_not_exists_pg
 from xngin.apiserver.testing.testing_dwh_def import TESTING_DWH_PARTICIPANT_DEF
@@ -86,7 +84,9 @@ class TestUriInfo:
     db_type: DbType
 
 
-def get_settings_for_test() -> XnginSettings:
+@pytest.fixture(name="static_settings")
+def fixture_static_settings() -> SettingsForTesting:
+    """Reads the xngin.testing.settings.json file."""
     filename = Path(__file__).parent / "testdata/xngin.testing.settings.json"
     with open(filename) as f:
         try:
@@ -148,10 +148,6 @@ def fixture_override_app_dependencies():
 
     This uses FastAPI's dependency override mechanism: https://fastapi.tiangolo.com/advanced/testing-dependencies/#use-the-appdependency_overrides-attribute
     """
-
-    # Deprecated: we no longer need to support the static JSON settings files. Future tests should be implemented using
-    # the API methods to create configurations.
-    app.dependency_overrides[settings_dependency] = get_settings_for_test
 
     app.dependency_overrides[random_seed_dependency] = get_random_seed_for_test
 
@@ -307,11 +303,6 @@ def fixture_use_deterministic_random():
         yield
     finally:
         custom_functions.USE_DETERMINISTIC_RANDOM = original
-
-
-def get_settings_datasource(datasource_id: str):
-    """Pull a datasource from the xngin.testing.settings.json file."""
-    return get_settings_for_test().get_datasource(datasource_id)
 
 
 @dataclass

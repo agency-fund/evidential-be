@@ -40,7 +40,7 @@ from xngin.apiserver.models import tables
 from xngin.apiserver.settings import (
     Datasource,
     Dsn,
-    XnginSettings,
+    SettingsForTesting,
 )
 from xngin.apiserver.storage.bootstrap import create_user_and_first_datasource
 from xngin.apiserver.testing.testing_dwh_def import TESTING_DWH_RAW_DATA
@@ -422,7 +422,7 @@ def export_json_schemas(output: Path = Path(".schemas")):
     """Generates JSON schemas for Xngin settings files."""
     if not output.exists():
         output.mkdir()
-    for model in (XnginSettings, ParticipantsSchema, Datasource):
+    for model in (SettingsForTesting, ParticipantsSchema, Datasource):
         filename = output / (model.__name__ + ".schema.json")
         with open(filename, "w") as outf:
             outf.write(json.dumps(model.model_json_schema(), indent=2, sort_keys=True))
@@ -441,13 +441,13 @@ def export_openapi_spec(output: Path = Path("openapi.json")):
 
 
 @app.command()
-def validate_settings(file: Path):
-    """Validates a settings .json file against the Pydantic models."""
+def validate_testing_settings(file: Path):
+    """Validates a settings .json file against the SettingsForTesting model."""
 
     with open(file) as f:
         config = f.read()
     try:
-        XnginSettings.model_validate(from_json(config))
+        SettingsForTesting.model_validate(from_json(config))
     except ValidationError as verr:
         print(f"{file} failed validation:", file=sys.stderr)
         for details in verr.errors():

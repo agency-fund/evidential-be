@@ -10,8 +10,6 @@ from xngin.apiserver.apikeys import require_valid_api_key
 from xngin.apiserver.models import tables
 from xngin.apiserver.settings import (
     Datasource,
-    XnginSettings,
-    get_settings_for_server,
 )
 
 
@@ -24,14 +22,6 @@ def random_seed_dependency():
     return
 
 
-def settings_dependency():
-    """Provides the settings for the server.
-
-    This may be overridden by tests using the FastAPI dependency override features.
-    """
-    return get_settings_for_server()
-
-
 async def xngin_db_session():
     """Returns a database connection to the xngin app database (not customer data warehouse)."""
     async with database.async_session() as session:
@@ -39,7 +29,6 @@ async def xngin_db_session():
 
 
 async def datasource_dependency(
-    settings: Annotated[XnginSettings, Depends(settings_dependency)],
     datasource_id: Annotated[
         str,
         Header(
@@ -56,27 +45,15 @@ async def datasource_dependency(
 ):
     """Returns the configuration for the current request, as determined by the Datasource-ID HTTP request header."""
     if not datasource_id:
-        return None
+        # TODO: 400, replace header parameters with header model for cleaner validation
+        raise CannotFindDatasourceError(f"{constants.HEADER_CONFIG_ID} is required.")
 
-    # Datasource configs can be in the static JSON settings or in the database.
-    from_json = settings.get_datasource(datasource_id)
-
-    # Datasources from the database always require an API key.
-    if from_json is None and (
-        from_db := await xngin_session.get(tables.Datasource, datasource_id)
-    ):
+    if from_db := await xngin_session.get(tables.Datasource, datasource_id):
         await require_valid_api_key(xngin_session, api_key, datasource_id)
         dsconfig = from_db.get_config()
         return Datasource(id=datasource_id, config=dsconfig)
 
-    # Datasources from the static JSON settings optionally require an API key.
-    if from_json and from_json.require_api_key:
-        await require_valid_api_key(xngin_session, api_key, datasource_id)
-
-    if from_json is None:
-        raise CannotFindDatasourceError("Invalid datasource.")
-
-    return from_json
+    raise CannotFindDatasourceError("Datasource not found.")
 
 
 async def retrying_httpx_dependency():

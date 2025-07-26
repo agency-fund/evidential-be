@@ -2,7 +2,6 @@ import pytest
 from pydantic import ValidationError
 from sqlalchemy import BigInteger, Column, Integer, MetaData, String, Table
 
-from xngin.apiserver import conftest
 from xngin.apiserver.dwh.dwh_session import DwhSession
 from xngin.apiserver.dwh.inspections import (
     create_schema_from_table,
@@ -67,9 +66,8 @@ def test_create_schema_from_table_fails_if_no_unique_id():
         create_schema_from_table(my_table, None)
 
 
-async def test_generate_column_descriptors():
-    settings = conftest.get_settings_for_test()
-    config = settings.get_datasource("testing").config
+async def test_generate_column_descriptors(static_settings):
+    config = static_settings.get_datasource("testing").config
     async with DwhSession(config.dwh) as dwh:
         sa_table = await dwh.inspect_table("dwh")
 
