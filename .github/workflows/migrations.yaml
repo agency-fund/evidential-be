@@ -9,12 +9,14 @@ on:
 
 permissions:
   contents: read
+  pull-requests: write
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
 env:
+  ATLAS_NO_ANON_TELEMETRY: "true"
   DEBIAN_FRONTEND: noninteractive
   FORCE_COLOR: "1"
   PYTHONUNBUFFERED: "1"
@@ -81,5 +83,16 @@ jobs:
               echo '```'
               echo
             done
-          } | tee -a ${GITHUB_STEP_SUMMARY}
+          } | tee -a comment.md "${GITHUB_STEP_SUMMARY}"
           exit 1
+      - name: post comment
+        if: always() && github.event_name == 'pull_request'
+        env:
+          PR_NUMBER: ${{ github.event.number }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if [[ -s comment.md ]]; then
+            gh pr comment "${PR_NUMBER}" \
+              --repo "${GITHUB_REPOSITORY}" \
+              --body-file comment.md
+          fi
