@@ -1,5 +1,5 @@
 -- Modify "experiments" table
-ALTER TABLE "public"."experiments" ALTER COLUMN "design_spec_fields" DROP NOT NULL, ADD COLUMN "n_trials" integer NOT NULL, ADD COLUMN "prior_type" character varying NULL, ADD COLUMN "reward_type" character varying NULL;
+ALTER TABLE "public"."experiments" ALTER COLUMN "design_spec_fields" DROP NOT NULL, ADD COLUMN "n_trials" integer NOT NULL DEFAULT 0, ADD COLUMN "prior_type" character varying NULL, ADD COLUMN "reward_type" character varying NULL;
 -- Set comment to column: "experiment_type" on table: "experiments"
 COMMENT ON COLUMN "public"."experiments"."experiment_type" IS NULL;
 -- Create "context" table
