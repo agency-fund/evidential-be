@@ -54,7 +54,7 @@ from xngin.apiserver.routers.common_api_types import (
     DataType,
     DesignSpecMetricRequest,
     ExperimentsType,
-    FreqExperimentAnalysis,
+    FreqExperimentAnalysisResponse,
     GetExperimentAssignmentsResponse,
     GetParticipantAssignmentResponse,
     ListExperimentsResponse,
@@ -460,10 +460,9 @@ def test_delete_datasource(testing_datasource_with_user, pget, udelete, pdelete)
     ds_id = testing_datasource_with_user.ds.id
     org_id = testing_datasource_with_user.org.id
 
-    # udelete() authenticates as a user that is not in the same organization as the datasource but the delete
-    # endpoint always sends a 204.
-    response = udelete(f"/v1/m/datasources/{ds_id}")
-    assert response.status_code == 204, response.content
+    # udelete() authenticates as a user that is not in the same organization as the datasource.
+    response = udelete(f"/v1/m/organizations/{org_id}/datasources/{ds_id}")
+    assert response.status_code == 403, response.content
 
     response = pget(f"/v1/m/organizations/{org_id}/datasources")
     assert response.status_code == 200, response.content
@@ -472,7 +471,7 @@ def test_delete_datasource(testing_datasource_with_user, pget, udelete, pdelete)
     )  # non-empty list
 
     # Delete the datasource as a privileged user.
-    response = pdelete(f"/v1/m/datasources/{ds_id}")
+    response = pdelete(f"/v1/m/organizations/{org_id}/datasources/{ds_id}")
     assert response.status_code == 204, response.content
 
     # Assure the datasource was deleted.
@@ -480,9 +479,21 @@ def test_delete_datasource(testing_datasource_with_user, pget, udelete, pdelete)
     assert response.status_code == 200, response.content
     assert ListDatasourcesResponse.model_validate(response.json()).items == []
 
-    # Delete the datasource a 2nd time returns same code.
-    response = pdelete(f"/v1/m/datasources/{ds_id}")
+    # Delete the datasource a 2nd time returns 404.
+    response = pdelete(f"/v1/organizations/{org_id}/m/datasources/{ds_id}")
+    assert response.status_code == 404, response.content
+
+    # Delete the datasource a 2nd time returns 204 when ?allow_missing is set.
+    response = pdelete(
+        f"/v1/m/organizations/{org_id}/datasources/{ds_id}?allow_missing=true"
+    )
     assert response.status_code == 204, response.content
+
+    response = pget(f"/v1/m/organizations/{org_id}/datasources")
+    assert response.status_code == 200, response.content
+    assert not ListDatasourcesResponse.model_validate(response.json()).items, (
+        response.content
+    )  # empty list
 
 
 async def test_webhook_lifecycle(pdelete, ppost, ppatch, pget):
@@ -560,6 +571,16 @@ async def test_webhook_lifecycle(pdelete, ppost, ppatch, pget):
     assert response.status_code == 200, response.content
     webhooks = ListWebhooksResponse.model_validate(response.json()).items
     assert len(webhooks) == 0
+
+    # Delete the webhook again (404)
+    response = pdelete(f"/v1/m/organizations/{org_id}/webhooks/{webhook_id}")
+    assert response.status_code == 404, response.content
+
+    # Delete the webhook again (204)
+    response = pdelete(
+        f"/v1/m/organizations/{org_id}/webhooks/{webhook_id}?allow_missing=True"
+    )
+    assert response.status_code == 204, response.content
 
     # Try to regenerate auth token for a non-existent webhook
     response = ppost(f"/v1/m/organizations/{org_id}/webhooks/{webhook_id}/authtoken")
@@ -657,6 +678,16 @@ def test_participants_lifecycle(
     response = pdelete(f"/v1/m/datasources/{ds_id}/participants/renamedpt")
     assert response.status_code == 204, response.content
 
+    # Delete the renamed participant type again.
+    response = pdelete(f"/v1/m/datasources/{ds_id}/participants/renamedpt")
+    assert response.status_code == 404, response.content
+
+    # Delete the renamed participant type again w/allow_missing.
+    response = pdelete(
+        f"/v1/m/datasources/{ds_id}/participants/renamedpt?allow_missing=1"
+    )
+    assert response.status_code == 204, response.content
+
     # Get the named participant type after it has been deleted
     response = pget(f"/v1/m/datasources/{ds_id}/participants/renamedpt")
     assert response.status_code == 404, response.content
@@ -672,6 +703,12 @@ def test_participants_lifecycle(
         f"/v1/m/datasources/{ds_id}/participants/test_participant_type",
     )
     assert response.status_code == 404, response.content
+
+    # Delete a participant type in a non-existent datasource.
+    response = pdelete(
+        "/v1/m/datasources/ds-not-exist/participants/test_participant_type",
+    )
+    assert response.status_code == 403, response.content
 
 
 def test_create_participants_type_invalid(testing_datasource, ppost):
@@ -701,7 +738,7 @@ def test_create_participants_type_invalid(testing_datasource, ppost):
     )
 
 
-async def test_lifecycle_with_db(testing_datasource, ppost, pget, pdelete):
+async def test_lifecycle_with_db(testing_datasource, ppost, pget, pdelete, udelete):
     """Exercises the admin API methods that require an external database."""
     # Add the privileged user to the organization.
     response = ppost(
@@ -882,7 +919,7 @@ async def test_lifecycle_with_db(testing_datasource, ppost, pget, pdelete):
         f"/v1/m/datasources/{testing_datasource.ds.id}/experiments/{parsed_experiment_id}/analyze"
     )
     assert response.status_code == 200, response.content
-    experiment_analysis = FreqExperimentAnalysis.model_validate(response.json())
+    experiment_analysis = FreqExperimentAnalysisResponse.model_validate(response.json())
     assert experiment_analysis.experiment_id == parsed_experiment_id
 
     # Get assignments for the experiment.
@@ -898,9 +935,27 @@ async def test_lifecycle_with_db(testing_datasource, ppost, pget, pdelete):
     assert {arm.arm_name for arm in assignments.assignments} == {"control", "treatment"}
     assert {arm.arm_id for arm in assignments.assignments} == parsed_arm_ids
 
+    # Unprivileged user attempts to delete the experiment
+    response = udelete(
+        f"/v1/m/datasources/{testing_datasource.ds.id}/experiments/{parsed_experiment_id}"
+    )
+    assert response.status_code == 403
+
     # Delete the experiment.
     response = pdelete(
         f"/v1/m/datasources/{testing_datasource.ds.id}/experiments/{parsed_experiment_id}"
+    )
+    assert response.status_code == 204, response.content
+
+    # Delete the experiment again.
+    response = pdelete(
+        f"/v1/m/datasources/{testing_datasource.ds.id}/experiments/{parsed_experiment_id}"
+    )
+    assert response.status_code == 404, response.content
+
+    # Delete the experiment again w/allow_missing.
+    response = pdelete(
+        f"/v1/m/datasources/{testing_datasource.ds.id}/experiments/{parsed_experiment_id}?allow_missing=true"
     )
     assert response.status_code == 204, response.content
 
@@ -1160,7 +1215,7 @@ def test_experiments_analyze(testing_experiment, pget):
     )
 
     assert response.status_code == 200, response.content
-    experiment_analysis = FreqExperimentAnalysis.model_validate(response.json())
+    experiment_analysis = FreqExperimentAnalysisResponse.model_validate(response.json())
     assert experiment_analysis.experiment_id == experiment_id
     assert len(experiment_analysis.metric_analyses) == 1
     assert experiment_analysis.num_participants == 10
@@ -1245,32 +1300,99 @@ async def test_admin_experiment_state_setting(
         assert response.json()["detail"] == expected_detail
 
 
+async def test_delete_apikey_not_authorized(pdelete):
+    """Checks for a 403 when deleting a resource that doesn't exist.
+
+    This is equivalent to testing that a user does not have access to a datasource.
+
+    Per AIP-135: If the user does not have permission to access the resource, regardless of whether or not it exists,
+    the service must error with PERMISSION_DENIED (HTTP 403). Permission must be checked prior to checking if the
+    resource exists.
+    """
+    response = pdelete("/v1/m/datasources/not-a-datasource/apikeys/irrelevant")
+    assert response.status_code == 403
+
+
+async def test_delete_apikey_authorized_and_nonexistent(
+    testing_datasource_with_user, pdelete
+):
+    response = pdelete(
+        f"/v1/m/datasources/{testing_datasource_with_user.ds.id}/apikeys/sample-key-id"
+    )
+    assert response.status_code == 404
+
+
+async def test_delete_apikey_authorized_and_nonexistent_allow_missing(
+    testing_datasource_with_user, pdelete
+):
+    response = pdelete(
+        f"/v1/m/datasources/{testing_datasource_with_user.ds.id}/apikeys/sample-key-id?allow_missing=true"
+    )
+    assert response.status_code == 204
+
+
+async def test_delete_apikey_authorized_and_exists(
+    testing_datasource_with_user, pget, pdelete
+):
+    response = pdelete(
+        f"/v1/m/datasources/{testing_datasource_with_user.ds.id}/apikeys/{testing_datasource_with_user.key_id}"
+    )
+    assert response.status_code == 204
+
+
+async def test_delete_apikey_authorized_and_exists_allow_missing(
+    testing_datasource_with_user, pget, pdelete
+):
+    response = pdelete(
+        f"/v1/m/datasources/{testing_datasource_with_user.ds.id}/apikeys/{testing_datasource_with_user.key_id}?allow_missing=true"
+    )
+    assert response.status_code == 204
+
+
+async def test_delete_apikey_authorized_and_exists_idempotency(
+    testing_datasource_with_user, pget, pdelete
+):
+    response = pdelete(
+        f"/v1/m/datasources/{testing_datasource_with_user.ds.id}/apikeys/{testing_datasource_with_user.key_id}"
+    )
+    assert response.status_code == 204
+
+    response = pdelete(
+        f"/v1/m/datasources/{testing_datasource_with_user.ds.id}/apikeys/{testing_datasource_with_user.key_id}"
+    )
+    assert response.status_code == 404
+
+    response = pdelete(
+        f"/v1/m/datasources/{testing_datasource_with_user.ds.id}/apikeys/{testing_datasource_with_user.key_id}?allow_missing=True"
+    )
+    assert response.status_code == 204
+
+
 async def test_manage_apikeys(testing_datasource_with_user, ppost, pget, pdelete):
     ds = testing_datasource_with_user.ds
-
-    response = pget(f"/v1/m/datasources/{ds.id}/apikeys")
-    assert response.status_code == 200
-    list_api_keys_response = ListApiKeysResponse.model_validate(response.json())
-    assert len(list_api_keys_response.items) == 1
+    first_key_id = testing_datasource_with_user.key_id
 
     response = ppost(f"/v1/m/datasources/{ds.id}/apikeys/")
     assert response.status_code == 200
     create_api_key_response = CreateApiKeyResponse.model_validate(response.json())
     assert create_api_key_response.datasource_id == ds.id
-    created_api_key_id = create_api_key_response.id
+    created_key_id = create_api_key_response.id
 
     response = pget(f"/v1/m/datasources/{ds.id}/apikeys")
     assert response.status_code == 200
     list_api_keys_response = ListApiKeysResponse.model_validate(response.json())
     assert len(list_api_keys_response.items) == 2
 
-    response = pdelete(f"/v1/m/datasources/{ds.id}/apikeys/{created_api_key_id}")
+    response = pdelete(f"/v1/m/datasources/{ds.id}/apikeys/{created_key_id}")
     assert response.status_code == 204
 
     response = pget(f"/v1/m/datasources/{ds.id}/apikeys")
     assert response.status_code == 200
     list_api_keys_response = ListApiKeysResponse.model_validate(response.json())
     assert len(list_api_keys_response.items) == 1
+
+    response = pdelete(f"/v1/m/datasources/{ds.id}/apikeys/{first_key_id}")
+    assert response.status_code == 204
 
 
 async def test_experiment_webhook_integration(
