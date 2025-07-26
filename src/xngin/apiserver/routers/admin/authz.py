@@ -8,7 +8,7 @@ def is_user_authorized_on_datasource(
 ) -> sqlalchemy.Select:
     """Create a query that checks if a user is authorized to manage a datasource."""
     return (
-        sqlalchemy.select(tables.Datasource)
+        sqlalchemy.select(tables.Datasource.id)
         .join(tables.Organization)
         .join(tables.UserOrganization)
         .where(
@@ -23,7 +23,7 @@ def is_user_authorized_on_organization(
 ) -> sqlalchemy.Select:
     """Create a query that checks if a user is authorized to manage an organization."""
     return (
-        sqlalchemy.select(tables.Organization)
+        sqlalchemy.select(tables.Organization.id)
         .join(tables.UserOrganization)
         .where(
             tables.UserOrganization.user_id == user.id,
