@@ -28,7 +28,7 @@ from xngin.stats.balance import BalanceResult
 
 class RowProtocolMixin:
     def _asdict(self) -> dict[str, Any]:
-        return dataclasses.asdict(self)
+        return dataclasses.asdict(self)  # type: ignore[no-any-return, call-overload]
 
 
 @dataclass
@@ -137,6 +137,7 @@ def test_make_balance_check_with_different_thresholds():
     )
 
     balance_check = _make_balance_check(balance_result, 0.5)
+    assert balance_check is not None
 
     assert balance_check.balance_ok is False
     assert balance_check.f_statistic == 2.5
@@ -145,10 +146,14 @@ def test_make_balance_check_with_different_thresholds():
     assert balance_check.denominator_df == 50
 
     # Try a few other different thresholds
-    assert not _make_balance_check(balance_result, 1.0).balance_ok
-    assert not _make_balance_check(balance_result, 0.3).balance_ok
-    assert _make_balance_check(balance_result, 0.299).balance_ok
-    assert _make_balance_check(balance_result, 0).balance_ok
+    thresh1 = _make_balance_check(balance_result, 1.0)
+    assert thresh1 and thresh1.balance_ok is False
+    thresh2 = _make_balance_check(balance_result, 0.3)
+    assert thresh2 and thresh2.balance_ok is False
+    thresh3 = _make_balance_check(balance_result, 0.299)
+    assert thresh3 and thresh3.balance_ok
+    thresh4 = _make_balance_check(balance_result, 0)
+    assert thresh4 and thresh4.balance_ok
 
 
 def test_assign_adapter_creates_proper_assign_response(sample_table, sample_rows):

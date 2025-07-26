@@ -21,6 +21,7 @@ from xngin.apiserver.settings import (
     TIMEOUT_SECS_FOR_CUSTOMER_POSTGRES,
     Dsn,
     Dwh,
+    NoDwh,
 )
 
 
@@ -420,7 +421,9 @@ class DwhSession:
                 dbapi_connection.autocommit = existing_autocommit
 
         # Handle Redshift incompatibilities
-        if self.dwh_config.is_redshift() and hasattr(
-            engine.dialect, "_set_backslash_escapes"
+        if (
+            not isinstance(self.dwh_config, NoDwh)
+            and self.dwh_config.is_redshift()
+            and hasattr(engine.dialect, "_set_backslash_escapes")
         ):
             engine.dialect._set_backslash_escapes = lambda _: None

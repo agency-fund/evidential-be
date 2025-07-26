@@ -31,14 +31,13 @@ from xngin.apiserver.routers.common_api_types import (
     DesignSpecMetric,
     DesignSpecMetricRequest,
     Filter,
-    FilterClass,
     FilterValueTypes,
     GetFiltersResponseDiscrete,
     GetFiltersResponseElement,
     GetFiltersResponseNumericOrDate,
-    MetricType,
     Relation,
 )
+from xngin.apiserver.routers.common_enums import FilterClass, MetricType
 from xngin.db_extensions import custom_functions
 
 

@@ -1,5 +1,6 @@
 """
 This module defines the public API for clients to integrate with experiments.
+(See admin_api.py for Evidential UI-facing endpoints.)
 """
 
 from contextlib import asynccontextmanager
@@ -7,8 +8,10 @@ from typing import Annotated
 
 from fastapi import (
     APIRouter,
+    Body,
     Depends,
     FastAPI,
+    HTTPException,
     Query,
     status,
 )
@@ -22,29 +25,33 @@ from xngin.apiserver.dependencies import (
     random_seed_dependency,
     xngin_db_session,
 )
-from xngin.apiserver.dwh.dwh_session import DwhSession
 from xngin.apiserver.exceptions_common import LateValidationError
 from xngin.apiserver.models import tables
 from xngin.apiserver.models.storage_format_converters import ExperimentStorageConverter
+from xngin.apiserver.routers.admin.admin_api import validate_webhooks
 from xngin.apiserver.routers.common_api_types import (
+    ArmBandit,
+    BaseFrequentistDesignSpec,
     CreateExperimentRequest,
     CreateExperimentResponse,
     GetExperimentAssignmentsResponse,
     GetExperimentResponse,
     GetParticipantAssignmentResponse,
     ListExperimentsResponse,
+    UpdateBanditArmOutcomeRequest,
 )
 from xngin.apiserver.routers.experiments.dependencies import experiment_dependency
 from xngin.apiserver.routers.experiments.experiments_common import (
     abandon_experiment_impl,
     commit_experiment_impl,
     create_assignment_for_participant,
-    create_experiment_impl,
+    create_stateless_experiment_impl,
     get_assign_summary,
     get_existing_assignment_for_participant,
     get_experiment_assignments_as_csv_impl,
     get_experiment_assignments_impl,
     list_experiments_impl,
+    update_bandit_arm_with_outcome_impl,
 )
 from xngin.apiserver.settings import (
     Datasource,
@@ -102,29 +109,41 @@ async def create_experiment_with_assignment_sl(
     random_state: Annotated[int | None, Depends(random_seed_dependency)],
 ) -> CreateExperimentResponse:
     """Creates an experiment and saves its assignments to the database."""
+    if not isinstance(
+        body.design_spec,
+        BaseFrequentistDesignSpec,
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"{body.design_spec.experiment_type} experiments are not supported for assignments.",
+        )
+
     if body.design_spec.ids_are_present():
         raise LateValidationError("Invalid DesignSpec: UUIDs must not be set.")
 
-    ds_config = datasource.config
-    participants_schema = ds_config.find_participants(body.design_spec.participant_type)
-
-    # Get participants and their schema info from the client dwh
-    async with DwhSession(ds_config.dwh) as dwh:
-        result = await dwh.get_participants(
-            participants_schema.table_name, body.design_spec.filters, chosen_n
+    db_datasource = await xngin_session.get(tables.Datasource, datasource.id)
+    if not db_datasource:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Datasource with id {datasource.id} not found.",
         )
 
+    validated_webhooks = await validate_webhooks(
+        session=xngin_session,
+        organization_id=db_datasource.organization_id,
+        request_webhooks=body.webhooks,
+    )
+
     # Persist the experiment and assignments in the xngin database
-    return await create_experiment_impl(
+    return await create_stateless_experiment_impl(
         request=body,
-        datasource_id=datasource.id,
-        participant_unique_id_field=participants_schema.get_unique_id_field(),
-        dwh_sa_table=result.sa_table,
-        dwh_participants=result.participants,
-        random_state=random_state,
+        datasource=datasource,
         xngin_session=xngin_session,
+        validated_webhooks=validated_webhooks,
+        organization_id=db_datasource.organization_id,
+        random_state=random_state,
+        chosen_n=chosen_n,
         stratify_on_metrics=True,
-        webhook_ids=[],
     )
 
 
@@ -225,7 +244,7 @@ async def get_assignment_for_participant_with_apikey(
     random_state: Annotated[int | None, Depends(random_seed_dependency)] = None,
 ) -> GetParticipantAssignmentResponse:
     assignment = await get_existing_assignment_for_participant(
-        xngin_session, experiment.id, participant_id
+        xngin_session, experiment.id, participant_id, experiment.experiment_type
     )
     if not assignment and create_if_none:
         assignment = await create_assignment_for_participant(
@@ -236,4 +255,36 @@ async def get_assignment_for_participant_with_apikey(
         experiment_id=experiment.id,
         participant_id=participant_id,
         assignment=assignment,
+    )
+
+
+@router.post(
+    "/experiments/{experiment_id}/assignments/{participant_id}/outcome",
+    description="""Update the bandit arm with corresponding outcome for a specific participant.""",
+)
+async def update_bandit_arm_with_participant_outcome(
+    body: Annotated[UpdateBanditArmOutcomeRequest, Body()],
+    experiment: Annotated[tables.Experiment, Depends(experiment_dependency)],
+    session: Annotated[AsyncSession, Depends(xngin_db_session)],
+) -> ArmBandit:
+    # Update the arm with the outcome
+    updated_arm = await update_bandit_arm_with_outcome_impl(
+        xngin_session=session,
+        experiment=experiment,
+        participant_id=body.participant_id,
+        outcome=body.outcome,
+    )
+
+    return ArmBandit(
+        arm_id=updated_arm.id,
+        arm_name=updated_arm.name,
+        arm_description=updated_arm.description,
+        alpha_init=updated_arm.alpha_init,
+        beta_init=updated_arm.beta_init,
+        alpha=updated_arm.alpha,
+        beta=updated_arm.beta,
+        mu_init=updated_arm.mu_init,
+        sigma_init=updated_arm.sigma_init,
+        mu=updated_arm.mu,
+        covariance=updated_arm.covariance,
     )

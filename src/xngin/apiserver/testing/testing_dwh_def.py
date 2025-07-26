@@ -1,8 +1,17 @@
+"""Definitions for the testing data warehouse that we bootstrap new Evidential instances with."""
+
+from pathlib import Path
+
 from xngin.apiserver.dwh.inspection_types import FieldDescriptor
-from xngin.apiserver.routers.common_api_types import DataType
+from xngin.apiserver.routers.common_enums import DataType
 from xngin.apiserver.settings import ParticipantsDef
 
-TESTING_PARTICIPANT_DEF = ParticipantsDef(
+#: Path to the compressed raw test dwh data.
+#: TESTING_DWH_PARTICIPANT_DEF is defined with respect to these contents.
+TESTING_DWH_RAW_DATA = Path(__file__).parent.parent / "testdata/testing_dwh.csv.zst"
+
+#: Has fields that map to our test dwh, covering data types usable by strata/filters/metrics.
+TESTING_DWH_PARTICIPANT_DEF = ParticipantsDef(
     type="schema",
     participant_type="test_participant_type",
     table_name="dwh",
@@ -107,4 +116,3 @@ TESTING_PARTICIPANT_DEF = ParticipantsDef(
         ),
     ],
 )
-"""Has fields that map to our test dwh, covering data types usable by strata/filters/metrics."""

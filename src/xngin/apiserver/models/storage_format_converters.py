@@ -11,14 +11,18 @@ from typing import Self
 
 from pydantic import TypeAdapter
 
-import xngin.apiserver.routers.common_api_types as capi
 from xngin.apiserver.models import tables
-from xngin.apiserver.models.enums import ExperimentState, StopAssignmentReason
 from xngin.apiserver.models.storage_types import (
     DesignSpecFields,
     StorageFilter,
     StorageMetric,
     StorageStratum,
+)
+from xngin.apiserver.routers import common_api_types as capi
+from xngin.apiserver.routers.common_enums import (
+    ExperimentState,
+    ExperimentsType,
+    StopAssignmentReason,
 )
 
 
@@ -82,6 +86,10 @@ class ExperimentStorageConverter:
 
     def set_design_spec_fields(self, design_spec: capi.DesignSpec) -> Self:
         """Saves the components of a DesignSpec to the experiment."""
+        if not isinstance(design_spec, capi.BaseFrequentistDesignSpec):
+            self.experiment.design_spec_fields = None
+            return self
+
         storage_strata = None
         if design_spec.strata:
             storage_strata = [
@@ -122,30 +130,73 @@ class ExperimentStorageConverter:
 
     def get_design_spec(self) -> capi.DesignSpec:
         """Converts a DesignSpecFields to a DesignSpec object."""
-        design_spec_fields = self.get_design_spec_fields()
-        return TypeAdapter(capi.DesignSpec).validate_python({
-            "participant_type": self.experiment.participant_type,
-            "experiment_id": self.experiment.id,
-            "experiment_type": self.experiment.experiment_type,
-            "experiment_name": self.experiment.name,
-            "description": self.experiment.description,
-            "start_date": self.experiment.start_date,
-            "end_date": self.experiment.end_date,
-            "arms": [
-                {
-                    "arm_id": arm.id,
-                    "arm_name": arm.name,
-                    "arm_description": arm.description,
-                }
-                for arm in self.experiment.arms
-            ],
-            "strata": ExperimentStorageConverter.get_api_strata(design_spec_fields),
-            "metrics": ExperimentStorageConverter.get_api_metrics(design_spec_fields),
-            "filters": ExperimentStorageConverter.get_api_filters(design_spec_fields),
-            "power": self.experiment.power,
-            "alpha": self.experiment.alpha,
-            "fstat_thresh": self.experiment.fstat_thresh,
-        })
+        if self.experiment.experiment_type in {
+            ExperimentsType.FREQ_ONLINE.value,
+            ExperimentsType.FREQ_PREASSIGNED.value,
+        }:
+            design_spec_fields = self.get_design_spec_fields()
+            return TypeAdapter(capi.DesignSpec).validate_python({
+                "participant_type": self.experiment.participant_type,
+                "experiment_id": self.experiment.id,
+                "experiment_type": self.experiment.experiment_type,
+                "experiment_name": self.experiment.name,
+                "description": self.experiment.description,
+                "start_date": self.experiment.start_date,
+                "end_date": self.experiment.end_date,
+                "arms": [
+                    {
+                        "arm_id": arm.id,
+                        "arm_name": arm.name,
+                        "arm_description": arm.description,
+                    }
+                    for arm in self.experiment.arms
+                ],
+                "strata": ExperimentStorageConverter.get_api_strata(design_spec_fields),
+                "metrics": ExperimentStorageConverter.get_api_metrics(
+                    design_spec_fields
+                ),
+                "filters": ExperimentStorageConverter.get_api_filters(
+                    design_spec_fields
+                ),
+                "power": self.experiment.power,
+                "alpha": self.experiment.alpha,
+                "fstat_thresh": self.experiment.fstat_thresh,
+            })
+        if self.experiment.experiment_type == ExperimentsType.MAB_ONLINE.value:
+            if not self.experiment.prior_type or not self.experiment.reward_type:
+                raise ValueError(
+                    "MAB experiments must have prior_type and reward_type set."
+                )
+            return capi.MABExperimentSpec(
+                participant_type=self.experiment.participant_type,
+                experiment_id=self.experiment.id,
+                experiment_type=self.experiment.experiment_type,
+                experiment_name=self.experiment.name,
+                description=self.experiment.description,
+                start_date=self.experiment.start_date,
+                end_date=self.experiment.end_date,
+                arms=[
+                    capi.ArmBandit(
+                        arm_id=arm.id,
+                        arm_name=arm.name,
+                        arm_description=arm.description,
+                        mu_init=arm.mu_init,
+                        sigma_init=arm.sigma_init,
+                        alpha_init=arm.alpha_init,
+                        beta_init=arm.beta_init,
+                        mu=arm.mu,
+                        covariance=arm.covariance,
+                        alpha=arm.alpha,
+                        beta=arm.beta,
+                    )
+                    for arm in self.experiment.arms
+                ],
+                prior_type=capi.PriorTypes(self.experiment.prior_type),
+                reward_type=capi.LikelihoodTypes(self.experiment.reward_type),
+            )
+        raise ValueError(
+            f"Unsupported experiment type: {self.experiment.experiment_type}"
+        )
 
     def set_balance_check(self, value: capi.BalanceCheck | None) -> Self:
         if value is None:
@@ -178,12 +229,14 @@ class ExperimentStorageConverter:
         return capi.PowerResponse.model_validate(self.experiment.power_analyses)
 
     def get_experiment_config(
-        self, assign_summary: capi.AssignSummary, webhook_ids: list[str] | None = None
-    ) -> capi.ExperimentConfig:
+        self,
+        assign_summary: capi.AssignSummary | None,
+        webhook_ids: list[str] | None = None,
+    ) -> capi.GetExperimentResponse:
         """Construct an ExperimentConfig from the internal Experiment and an AssignSummary.
 
         Expects assign_summary since that typically requires a db lookup."""
-        return capi.ExperimentConfig(
+        return capi.GetExperimentResponse(
             datasource_id=self.experiment.datasource_id,
             state=ExperimentState(self.experiment.state),
             stopped_assignments_at=self.experiment.stopped_assignments_at,
@@ -206,7 +259,9 @@ class ExperimentStorageConverter:
         )
 
     def get_create_experiment_response(
-        self, assign_summary: capi.AssignSummary, webhook_ids: list[str] | None = None
+        self,
+        assign_summary: capi.AssignSummary | None,
+        webhook_ids: list[str] | None = None,
     ) -> capi.CreateExperimentResponse:
         # Revalidate the response in case we ever change the API.
         return capi.CreateExperimentResponse.model_validate(
@@ -218,13 +273,14 @@ class ExperimentStorageConverter:
         cls,
         datasource_id: str,
         organization_id: str,
-        experiment_type: capi.ExperimentType,
+        experiment_type: capi.ExperimentsType,
         design_spec: capi.DesignSpec,
         state: ExperimentState = ExperimentState.ASSIGNED,
         stopped_assignments_at: datetime | None = None,
         stopped_assignments_reason: StopAssignmentReason | str | None = None,
         balance_check: capi.BalanceCheck | None = None,
         power_analyses: capi.PowerResponse | None = None,
+        n_trials: int = 0,
     ) -> Self:
         """Init experiment with arms from components. Get the final object with get_experiment().
 
@@ -233,35 +289,76 @@ class ExperimentStorageConverter:
         """
         if design_spec.experiment_id is None:
             raise ValueError("experiment_id is required in the design_spec")
-        experiment = tables.Experiment(
-            id=design_spec.experiment_id,
-            datasource_id=datasource_id,
-            experiment_type=experiment_type,
-            participant_type=design_spec.participant_type,
-            name=design_spec.experiment_name,
-            description=design_spec.description,
-            state=state.value,
-            start_date=design_spec.start_date,
-            end_date=design_spec.end_date,
-            stopped_assignments_at=stopped_assignments_at,
-            stopped_assignments_reason=stopped_assignments_reason,
-            power=design_spec.power,
-            alpha=design_spec.alpha,
-            fstat_thresh=design_spec.fstat_thresh,
-        )
-        experiment.arms = [
-            tables.Arm(
-                id=arm.arm_id,
-                name=arm.arm_name,
-                description=arm.arm_description,
-                experiment_id=experiment.id,
-                organization_id=organization_id,
+        if isinstance(design_spec, capi.BaseFrequentistDesignSpec):
+            experiment = tables.Experiment(
+                id=design_spec.experiment_id,
+                datasource_id=datasource_id,
+                experiment_type=experiment_type,
+                participant_type=design_spec.participant_type,
+                name=design_spec.experiment_name,
+                description=design_spec.description,
+                state=state.value,
+                start_date=design_spec.start_date,
+                end_date=design_spec.end_date,
+                stopped_assignments_at=stopped_assignments_at,
+                stopped_assignments_reason=stopped_assignments_reason,
+                power=design_spec.power,
+                alpha=design_spec.alpha,
+                fstat_thresh=design_spec.fstat_thresh,
             )
-            for arm in design_spec.arms
-        ]
-        return (
-            cls(experiment)
-            .set_design_spec_fields(design_spec)
-            .set_balance_check(balance_check)
-            .set_power_response(power_analyses)
-        )
+            experiment.arms = [
+                tables.Arm(
+                    id=arm.arm_id,
+                    name=arm.arm_name,
+                    description=arm.arm_description,
+                    experiment_id=experiment.id,
+                    organization_id=organization_id,
+                )
+                for arm in design_spec.arms
+            ]
+            return (
+                cls(experiment)
+                .set_design_spec_fields(design_spec)
+                .set_balance_check(balance_check)
+                .set_power_response(power_analyses)
+            )
+        if isinstance(design_spec, capi.MABExperimentSpec):
+            experiment = tables.Experiment(
+                id=design_spec.experiment_id,
+                datasource_id=datasource_id,
+                experiment_type=experiment_type,
+                participant_type=design_spec.participant_type,
+                name=design_spec.experiment_name,
+                description=design_spec.description,
+                state=state.value,
+                start_date=design_spec.start_date,
+                end_date=design_spec.end_date,
+                stopped_assignments_at=stopped_assignments_at,
+                stopped_assignments_reason=stopped_assignments_reason,
+                reward_type=design_spec.reward_type.value,
+                prior_type=design_spec.prior_type.value,
+                n_trials=n_trials,
+            )
+            experiment.arms = [
+                tables.Arm(
+                    id=arm.arm_id,
+                    name=arm.arm_name,
+                    description=arm.arm_description,
+                    experiment_id=experiment.id,
+                    organization_id=organization_id,
+                    mu_init=arm.mu_init,
+                    sigma_init=arm.sigma_init,
+                    mu=[arm.mu_init] if arm.mu_init is not None else None,
+                    covariance=[[arm.sigma_init]]
+                    if arm.sigma_init is not None
+                    else None,
+                    alpha_init=arm.alpha_init,
+                    beta_init=arm.beta_init,
+                    alpha=arm.alpha_init,
+                    beta=arm.beta_init,
+                )
+                for arm in design_spec.arms
+            ]
+            return cls(experiment)
+
+        raise ValueError(f"Unsupported design_spec type: {type(design_spec)}.")

@@ -201,6 +201,7 @@ tasks:
     cmd: uv run pytest -m xurl
   make-migrations:
     desc: "Build Postgres migrations"
+    interactive: true
     cmd: |
       uv run atlas migrate diff --env sa_postgres && git add migrations
       echo 💡 If you modify the migration file afterwards, you should re-hash it: task hash-migrations
