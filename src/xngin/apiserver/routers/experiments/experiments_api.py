@@ -45,7 +45,7 @@ from xngin.apiserver.routers.experiments.experiments_common import (
     abandon_experiment_impl,
     commit_experiment_impl,
     create_assignment_for_participant,
-    create_stateless_experiment_impl,
+    create_experiment_with_assignments_impl,
     get_assign_summary,
     get_existing_assignment_for_participant,
     get_experiment_assignments_as_csv_impl,
@@ -116,7 +116,7 @@ async def create_experiment_with_assignment_sl(
     )
 
     # Persist the experiment and assignments in the xngin database
-    return await create_stateless_experiment_impl(
+    return await create_experiment_with_assignments_impl(
         request=body,
         datasource=datasource,
         xngin_session=xngin_session,

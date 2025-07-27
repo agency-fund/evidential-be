@@ -156,7 +156,7 @@ async def create_dwh_experiment_impl(
     )
 
 
-async def create_stateless_experiment_impl(
+async def create_experiment_with_assignments_impl(
     request: CreateExperimentRequest,
     datasource: Datasource,
     xngin_session: AsyncSession,
