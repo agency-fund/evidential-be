@@ -13,7 +13,6 @@ from xngin.apiserver.routers.experiments.experiments_common import (
     ExperimentsAssignmentError,
 )
 from xngin.apiserver.settings import CannotFindParticipantsError
-from xngin.sheets.gsheets import GSheetsPermissionError
 from xngin.stats.stats_errors import StatsError
 
 
@@ -67,14 +66,6 @@ def setup(app):
     async def exception_handler_apikeys(_request: Request, _exc: ApiKeyError):
         return JSONResponse(
             status_code=403, content={"message": "API key missing or invalid."}
-        )
-
-    @app.exception_handler(GSheetsPermissionError)
-    async def exception_handler_gsheets(
-        _request: Request, _exc: GSheetsPermissionError
-    ):
-        return JSONResponse(
-            status_code=500, content={"message": "Possible server misconfiguration."}
         )
 
     @app.exception_handler(LateValidationError)

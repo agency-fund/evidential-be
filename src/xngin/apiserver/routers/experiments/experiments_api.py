@@ -22,12 +22,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from xngin.apiserver import constants
 from xngin.apiserver.dependencies import (
     datasource_dependency,
-    gsheet_cache,
     random_seed_dependency,
     xngin_db_session,
 )
 from xngin.apiserver.exceptions_common import LateValidationError
-from xngin.apiserver.gsheet_cache import GSheetCache
 from xngin.apiserver.models import tables
 from xngin.apiserver.models.storage_format_converters import ExperimentStorageConverter
 from xngin.apiserver.routers.admin.admin_api import validate_webhooks
@@ -47,7 +45,7 @@ from xngin.apiserver.routers.experiments.experiments_common import (
     abandon_experiment_impl,
     commit_experiment_impl,
     create_assignment_for_participant,
-    create_stateless_experiment_impl,
+    create_experiment_with_assignments_impl,
     get_assign_summary,
     get_existing_assignment_for_participant,
     get_experiment_assignments_as_csv_impl,
@@ -87,11 +85,9 @@ async def create_experiment_with_assignment_sl(
     chosen_n: Annotated[
         int, Query(..., description="Number of participants to assign.")
     ],
-    gsheets: Annotated[GSheetCache, Depends(gsheet_cache)],
     datasource: Annotated[Datasource, Depends(datasource_dependency)],
     xngin_session: Annotated[AsyncSession, Depends(xngin_db_session)],
     random_state: Annotated[int | None, Depends(random_seed_dependency)],
-    refresh: Annotated[bool, Query(description="Refresh the cache.")] = False,
 ) -> CreateExperimentResponse:
     """Creates an experiment and saves its assignments to the database."""
     if not isinstance(
@@ -120,17 +116,15 @@ async def create_experiment_with_assignment_sl(
     )
 
     # Persist the experiment and assignments in the xngin database
-    return await create_stateless_experiment_impl(
+    return await create_experiment_with_assignments_impl(
         request=body,
         datasource=datasource,
-        gsheets=gsheets,
         xngin_session=xngin_session,
         validated_webhooks=validated_webhooks,
         organization_id=db_datasource.organization_id,
         random_state=random_state,
         chosen_n=chosen_n,
         stratify_on_metrics=True,
-        refresh=refresh,
     )
 
 

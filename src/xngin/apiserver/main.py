@@ -13,7 +13,6 @@ from xngin.apiserver import (
 )
 from xngin.apiserver.openapi import custom_openapi
 from xngin.apiserver.routers.auth import auth_dependencies
-from xngin.apiserver.settings import get_settings_for_server
 from xngin.xsecrets import secretservice
 
 if sentry_dsn := os.environ.get("SENTRY_DSN"):
@@ -37,9 +36,6 @@ class MisconfiguredError(Exception):
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
     logger.info(f"Starting server: {__name__}")
-
-    # verify that the soon-to-be-obsoleted JSON file settings can be loaded
-    _ = get_settings_for_server()
 
     # Security: Disable the Google Cloud SDK's use of GCE metadata service by pointing it at localhost. This service
     # operates on behalf of customers who provide their own credentials. By setting these variables (and aborting if

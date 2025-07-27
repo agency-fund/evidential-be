@@ -20,7 +20,6 @@ from sqlalchemy.orm import selectinload
 from xngin.apiserver import constants, flags
 from xngin.apiserver.dwh.dwh_session import DwhSession
 from xngin.apiserver.exceptions_common import LateValidationError
-from xngin.apiserver.gsheet_cache import GSheetCache
 from xngin.apiserver.models import tables
 from xngin.apiserver.models.storage_format_converters import ExperimentStorageConverter
 from xngin.apiserver.routers.assignment_adapters import RowProtocol, assign_treatment
@@ -43,10 +42,6 @@ from xngin.apiserver.routers.common_enums import (
     LikelihoodTypes,
     PriorTypes,
     StopAssignmentReason,
-)
-from xngin.apiserver.routers.stateless.stateless_api import (
-    CommonQueryParams,
-    get_participants_config_and_schema,
 )
 from xngin.apiserver.settings import (
     Datasource,
@@ -161,17 +156,15 @@ async def create_dwh_experiment_impl(
     )
 
 
-async def create_stateless_experiment_impl(
+async def create_experiment_with_assignments_impl(
     request: CreateExperimentRequest,
     datasource: Datasource,
-    gsheets: GSheetCache,
     xngin_session: AsyncSession,
     validated_webhooks: list[tables.Webhook],
     organization_id: str,
     random_state: int | None,
     chosen_n: int,
     stratify_on_metrics: bool,
-    refresh: bool,
 ) -> CreateExperimentResponse:
     if not isinstance(
         request.design_spec,
@@ -187,17 +180,14 @@ async def create_stateless_experiment_impl(
         arm.arm_id = tables.arm_id_factory()
 
     ds_config = datasource.config
-    commons = CommonQueryParams(
-        participant_type=request.design_spec.participant_type, refresh=refresh
-    )
-    participants_cfg, schema = await get_participants_config_and_schema(
-        commons, ds_config, gsheets
+    participants_schema = ds_config.find_participants(
+        request.design_spec.participant_type
     )
 
     # Get participants and their schema info from the client dwh
     async with DwhSession(ds_config.dwh) as dwh:
         result = await dwh.get_participants(
-            participants_cfg.table_name, request.design_spec.filters, chosen_n
+            participants_schema.table_name, request.design_spec.filters, chosen_n
         )
 
     if request.design_spec.experiment_type == ExperimentsType.FREQ_PREASSIGNED:
@@ -209,7 +199,7 @@ async def create_stateless_experiment_impl(
             request=request,
             datasource_id=datasource.id,
             organization_id=organization_id,
-            participant_unique_id_field=schema.get_unique_id_field(),
+            participant_unique_id_field=participants_schema.get_unique_id_field(),
             dwh_sa_table=result.sa_table,
             dwh_participants=result.participants,
             random_state=random_state,

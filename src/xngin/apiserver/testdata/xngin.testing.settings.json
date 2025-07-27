@@ -1,140 +1,9 @@
 {
   "datasources": [
     {
-      "id": "test-webhook-config",
-      "config": {
-        "type": "remote",
-        "participants": [
-          {
-            "type": "sheet",
-            "participant_type": "transforms",
-            "sheet": {
-              "url": "https://docs.google.com/spreadsheets/d/redacted/edit",
-              "worksheet": "Sheet1"
-            },
-            "table_name": "transforms"
-          }
-        ],
-        "webhook_config": {
-          "actions": {
-            "commit": {
-              "method": "POST",
-              "url": "http://localhost:4001/dev/api/v1/experiment-commit/save-experiment-commit"
-            }
-          },
-          "common_headers": {
-            "authorization": "abc"
-          }
-        },
-        "dwh": {
-          "driver": "postgresql+psycopg2",
-          "user": "user",
-          "port": 5439,
-          "host": "__example__.redshift.amazonaws.com",
-          "password": "password",
-          "dbname": "dwh",
-          "sslmode": "verify-full"
-        }
-      }
-    },
-    {
-      "id": "test-bad-webhook-config",
-      "config": {
-        "type": "remote",
-        "participants": [
-          {
-            "type": "sheet",
-            "participant_type": "transforms",
-            "sheet": {
-              "url": "https://docs.google.com/spreadsheets/d/redacted/edit",
-              "worksheet": "Sheet1"
-            },
-            "table_name": "transforms"
-          }
-        ],
-        "webhook_config": {
-          "actions": {},
-          "common_headers": {
-            "authorization": "abc"
-          }
-        },
-        "dwh": {
-          "driver": "postgresql+psycopg2",
-          "user": "user",
-          "port": 5439,
-          "host": "__example__.redshift.amazonaws.com",
-          "password": "password",
-          "dbname": "dwh",
-          "sslmode": "verify-full"
-        }
-      }
-    },
-    {
       "id": "testing",
       "config": {
         "type": "remote",
-        "participants": [
-          {
-            "type": "sheet",
-            "participant_type": "test_participant_type",
-            "table_name": "dwh",
-            "sheet": {
-              "url": "file://src/xngin/apiserver/testdata/testing_sheet.csv",
-              "worksheet": "Sheet1"
-            }
-          }
-        ],
-        "dwh": {
-          "driver": "postgresql+psycopg2",
-          "user": "postgres",
-          "port": 5499,
-          "host": "127.0.0.1",
-          "password": "postgres",
-          "dbname": "dwh",
-          "sslmode": "disable"
-        }
-      }
-    },
-    {
-      "id": "testing-secured",
-      "require_api_key": true,
-      "config": {
-        "type": "remote",
-        "participants": [
-          {
-            "type": "sheet",
-            "participant_type": "test_participant_type",
-            "table_name": "dwh",
-            "sheet": {
-              "url": "file://src/xngin/apiserver/testdata/testing_sheet.csv",
-              "worksheet": "Sheet1"
-            }
-          }
-        ],
-        "dwh": {
-          "driver": "postgresql+psycopg2",
-          "user": "postgres",
-          "port": 5499,
-          "host": "127.0.0.1",
-          "password": "postgres",
-          "dbname": "testing_dwh",
-          "sslmode": "disable"
-        }
-      }
-    },
-    {
-      "id": "testing-inline-schema",
-      "config": {
-        "type": "remote",
-        "dwh": {
-          "driver": "postgresql+psycopg2",
-          "user": "postgres",
-          "port": 5499,
-          "host": "127.0.0.1",
-          "password": "postgres",
-          "dbname": "dwh",
-          "sslmode": "disable"
-        },
         "participants": [
           {
             "type": "schema",
@@ -351,7 +220,16 @@
               }
             ]
           }
-        ]
+        ],
+        "dwh": {
+          "driver": "postgresql+psycopg2",
+          "user": "postgres",
+          "port": 5499,
+          "host": "127.0.0.1",
+          "password": "postgres",
+          "dbname": "dwh",
+          "sslmode": "disable"
+        }
       }
     }
   ]

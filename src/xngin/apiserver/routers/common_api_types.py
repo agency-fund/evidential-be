@@ -1033,8 +1033,7 @@ class AssignSummary(ApiBaseModel):
     arm_sizes: Annotated[
         list[ArmSize] | None,
         Field(
-            description="For each arm, the number of participants assigned. "
-            "TODO: make required once development has stabilized. May be None if unknown due to persisting prior versions of an AssignSummary.",
+            description="For each arm, the number of participants assigned.",
             max_length=MAX_NUMBER_OF_ARMS,
         ),
     ] = None
@@ -1148,3 +1147,27 @@ class UpdateBanditArmOutcomeRequest(ApiBaseModel):
 
     participant_id: str
     outcome: float
+
+
+class AssignResponse(ApiBaseModel):
+    """Describes assignments for all participants and balance test results."""
+
+    balance_check: Annotated[
+        BalanceCheck | None,
+        Field(
+            description="Result of checking that the arms are balanced. May not be present if we are not able to stratify on any design metrics or other fields specified for stratification. (Fields used must be supported data types whose values are NOT all unique or all the same)."
+        ),
+    ] = None
+
+    experiment_id: str
+    sample_size: Annotated[
+        int,
+        Field(description="The number of participants across all arms in total."),
+    ]
+    unique_id_field: Annotated[
+        str,
+        Field(
+            description="Name of the datasource field used as the unique identifier for the participant_id value stored in each Assignment, as configured in the datasource settings. Included for frontend convenience."
+        ),
+    ]
+    assignments: Annotated[list[Assignment], Field()]

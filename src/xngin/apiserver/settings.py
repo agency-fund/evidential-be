@@ -9,12 +9,10 @@ import binascii
 import json
 import os
 from collections import Counter
-from functools import lru_cache
 from typing import Annotated, Literal, Protocol
 
 import sqlalchemy
 from cachetools.func import ttl_cache
-from loguru import logger
 from pydantic import (
     BaseModel,
     ConfigDict,
@@ -27,7 +25,6 @@ from sqlalchemy import make_url
 
 from xngin.apiserver.certs import get_amazon_trust_ca_bundle_path
 from xngin.apiserver.dwh.inspection_types import ParticipantsSchema
-from xngin.apiserver.settings_secrets import replace_secrets
 from xngin.xsecrets import secretservice
 
 SA_LOGGER_NAME_FOR_DWH = "xngin_dwh"
@@ -51,28 +48,8 @@ class RemoteSettingsClientError(Exception):
     """Raised when we fail to fetch remote settings due to our misconfiguration."""
 
 
-@lru_cache
-def get_settings_for_server():
-    """Constructs an XnginSettings for use by the API server."""
-    settings_path = os.environ.get("XNGIN_SETTINGS")
-    if settings_path is None:
-        return XnginSettings(datasources=[])
-
-    logger.info("Loading XNGIN_SETTINGS from disk: {}", settings_path)
-    with open(settings_path) as f:
-        settings_raw = json.load(f)
-    settings_raw = replace_secrets(settings_raw)
-    return XnginSettings.model_validate(settings_raw)
-
-
 class ConfigBaseModel(BaseModel):
     model_config = ConfigDict(extra="forbid")
-
-
-class SheetRef(ConfigBaseModel):
-    url: str
-    # worksheet is the name of the worksheet. This is usually the name of the database warehouse table.
-    worksheet: str
 
 
 class BaseParticipantsRef(ConfigBaseModel):
@@ -90,17 +67,6 @@ class BaseParticipantsRef(ConfigBaseModel):
     ]
 
 
-class SheetParticipantsRef(BaseParticipantsRef):
-    type: Annotated[
-        Literal["sheet"],
-        Field(
-            description="Indicates that the schema is determined by a remote Google Sheet."
-        ),
-    ]
-    table_name: str
-    sheet: SheetRef
-
-
 class ParticipantsDef(BaseParticipantsRef, ParticipantsSchema):
     type: Annotated[
         Literal["schema"],
@@ -110,9 +76,7 @@ class ParticipantsDef(BaseParticipantsRef, ParticipantsSchema):
     ]
 
 
-type ParticipantsConfig = Annotated[
-    SheetParticipantsRef | ParticipantsDef, Field(discriminator="type")
-]
+type ParticipantsConfig = Annotated[ParticipantsDef, Field(discriminator="type")]
 
 
 class ParticipantsMixin(ConfigBaseModel):
@@ -525,13 +489,10 @@ class Datasource(ConfigBaseModel):
 
     id: str
     config: DatasourceConfig
-    require_api_key: Annotated[bool | None, Field(...)] = None
 
 
-class XnginSettings(ConfigBaseModel):
+class SettingsForTesting(ConfigBaseModel):
     datasources: list[Datasource]
-    trusted_ips: Annotated[list[str], Field(default_factory=list, deprecated=True)] = []
-    db_connect_timeout_secs: Annotated[int, Field(deprecated=True)] = 3
 
     def get_datasource(self, datasource_id):
         """Finds the datasource for a specific ID if it exists, or returns None."""
@@ -539,10 +500,6 @@ class XnginSettings(ConfigBaseModel):
             if datasource.id == datasource_id:
                 return datasource
         return None
-
-
-class SettingsForTesting(XnginSettings):
-    pass
 
 
 class CannotFindParticipantsError(Exception):

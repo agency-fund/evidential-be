@@ -24,7 +24,6 @@ from xngin.apiserver.routers.common_enums import (
     ExperimentsType,
     StopAssignmentReason,
 )
-from xngin.apiserver.routers.stateless import stateless_api_types as sapi
 
 
 class ExperimentStorageConverter:
@@ -85,7 +84,7 @@ class ExperimentStorageConverter:
             for f in design_spec_fields.filters
         ]
 
-    def set_design_spec_fields(self, design_spec: sapi.DesignSpec) -> Self:
+    def set_design_spec_fields(self, design_spec: capi.DesignSpec) -> Self:
         """Saves the components of a DesignSpec to the experiment."""
         if not isinstance(design_spec, capi.BaseFrequentistDesignSpec):
             self.experiment.design_spec_fields = None
@@ -129,7 +128,7 @@ class ExperimentStorageConverter:
     def get_design_spec_fields(self) -> DesignSpecFields:
         return DesignSpecFields.model_validate(self.experiment.design_spec_fields)
 
-    def get_design_spec(self) -> sapi.DesignSpec:
+    def get_design_spec(self) -> capi.DesignSpec:
         """Converts a DesignSpecFields to a DesignSpec object."""
         if self.experiment.experiment_type in {
             ExperimentsType.FREQ_ONLINE.value,
@@ -274,8 +273,8 @@ class ExperimentStorageConverter:
         cls,
         datasource_id: str,
         organization_id: str,
-        experiment_type: ExperimentsType,
-        design_spec: sapi.DesignSpec,
+        experiment_type: capi.ExperimentsType,
+        design_spec: capi.DesignSpec,
         state: ExperimentState = ExperimentState.ASSIGNED,
         stopped_assignments_at: datetime | None = None,
         stopped_assignments_reason: StopAssignmentReason | str | None = None,

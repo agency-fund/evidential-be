@@ -37,10 +37,15 @@ from xngin.apiserver.dwh.dwh_session import (
     DwhSession,
     NoDwh,
 )
+from xngin.apiserver.dwh.inspection_types import ParticipantsSchema
 from xngin.apiserver.dwh.inspections import (
     create_inspect_table_response_from_table,
 )
-from xngin.apiserver.dwh.queries import get_participant_metrics, get_stats_on_filters
+from xngin.apiserver.dwh.queries import (
+    get_participant_metrics,
+    get_stats_on_filters,
+    get_stats_on_metrics,
+)
 from xngin.apiserver.exceptions_common import LateValidationError
 from xngin.apiserver.models import tables
 from xngin.apiserver.models.storage_format_converters import ExperimentStorageConverter
@@ -102,10 +107,6 @@ from xngin.apiserver.routers.common_api_types import (
     PowerResponse,
 )
 from xngin.apiserver.routers.experiments import experiments_common
-from xngin.apiserver.routers.stateless.stateless_api import (
-    power_check_impl,
-    validate_schema_metrics_or_raise,
-)
 from xngin.apiserver.settings import (
     Dsn,
     ParticipantsConfig,
@@ -116,6 +117,7 @@ from xngin.apiserver.storage.bootstrap import (
     add_nodwh_datasource_to_org,
     create_user_and_first_datasource,
 )
+from xngin.stats import check_power
 from xngin.stats.analysis import analyze_experiment as analyze_experiment_impl
 from xngin.stats.stats_errors import StatsAnalysisError
 
@@ -1648,10 +1650,11 @@ async def power_check(
     body: PowerRequest,
 ) -> PowerResponse:
     """Performs a power check for the specified datasource."""
-    if isinstance(body.design_spec, BaseBanditExperimentSpec):
+    design_spec = body.design_spec
+    if not isinstance(design_spec, BaseFrequentistDesignSpec):
         raise HTTPException(
             status_code=400,
-            detail="Power checks are not supported for bandit experiments.",
+            detail="Power checks are only supported for frequentist experiments",
         )
     ds = await get_datasource_or_raise(session, user, datasource_id)
     if isinstance(ds.config, NoDwh):
@@ -1660,6 +1663,36 @@ async def power_check(
             detail="Power checks are not supported for datasources without a data warehouse.",
         )
     dsconfig = ds.get_config()
-    participants_cfg = dsconfig.find_participants(body.design_spec.participant_type)
-    validate_schema_metrics_or_raise(body.design_spec, participants_cfg)  # type: ignore[arg-type]
-    return await power_check_impl(body, dsconfig, participants_cfg)
+    participants_cfg = dsconfig.find_participants(design_spec.participant_type)
+
+    validate_schema_metrics_or_raise(design_spec, participants_cfg)
+    async with DwhSession(dsconfig.dwh) as dwh:
+        sa_table = await dwh.inspect_table(participants_cfg.table_name)
+
+        metric_stats = await asyncio.to_thread(
+            get_stats_on_metrics,
+            dwh.session,
+            sa_table,
+            design_spec.metrics,
+            design_spec.filters,
+        )
+    return PowerResponse(
+        analyses=check_power(
+            metrics=metric_stats,
+            n_arms=len(design_spec.arms),
+            power=design_spec.power,
+            alpha=design_spec.alpha,
+        )
+    )
+
+
+def validate_schema_metrics_or_raise(
+    design_spec: BaseFrequentistDesignSpec, schema: ParticipantsSchema
+):
+    metric_fields = {m.field_name for m in schema.fields if m.is_metric}
+    metrics_requested = {m.field_name for m in design_spec.metrics}
+    invalid_metrics = metrics_requested - metric_fields
+    if len(invalid_metrics) > 0:
+        raise LateValidationError(
+            f"Invalid DesignSpec metrics (check your Datasource configuration): {invalid_metrics}"
+        )
