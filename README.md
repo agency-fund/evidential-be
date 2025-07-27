@@ -21,7 +21,7 @@
 | src/xngin/apiserver/exceptionhandlers.py                             |       49 |       10 |     80% |31, 37, 47, 57-62, 76, 92 |
 | src/xngin/apiserver/main.py                                          |       32 |        3 |     91% | 20-22, 51 |
 | src/xngin/apiserver/models/storage\_format\_converters.py            |       91 |       16 |     82% |60, 77, 91-92, 113, 166-198, 292, 326-365 |
-| src/xngin/apiserver/models/tables.py                                 |      272 |       16 |     94% |55, 168-170, 323, 345, 369, 374-376, 379-380, 498, 501, 506, 511 |
+| src/xngin/apiserver/models/tables.py                                 |      262 |       12 |     95% |55, 168-170, 323, 345, 369, 374-376, 379-380 |
 | src/xngin/apiserver/openapi.py                                       |       20 |        9 |     55% |     19-75 |
 | src/xngin/apiserver/routers/admin/admin\_api.py                      |      492 |      247 |     50% |160, 233-238, 265-270, 295-300, 314-318, 331-337, 360, 382, 393, 408-421, 441-451, 483-500, 518-535, 570-582, 586-599, 621-641, 658-677, 692-698, 715-725, 757-768, 796-822, 833-851, 861-865, 884-891, 897-905, 927-941, 955, 1009-1019, 1034-1121, 1133, 1148-1173, 1200-1206, 1260-1265, 1320-1335, 1360-1393, 1452, 1479-1480, 1494-1495, 1506, 1518-1526, 1537-1543, 1560-1567, 1599-1610, 1651-1665 |
 | src/xngin/apiserver/routers/admin/admin\_api\_types.py               |      144 |        2 |     99% |    31, 33 |
@@ -62,7 +62,7 @@
 | src/xngin/xsecrets/secretservice.py                                  |       61 |        4 |     93% |42-43, 106, 130 |
 | src/xngin/xsecrets/test\_gcp\_kms\_provider.py                       |      103 |       26 |     75% |40-42, 170-175, 182-189, 195-203, 210, 217-228 |
 | src/xngin/xsecrets/test\_nacl\_provider.py                           |       67 |        1 |     99% |        24 |
-|                                                            **TOTAL** | **7464** | **1282** | **83%** |           |
+|                                                            **TOTAL** | **7454** | **1278** | **83%** |           |
 
 62 files skipped due to complete coverage.
 
