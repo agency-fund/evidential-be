@@ -126,7 +126,7 @@ ignore = [
 [tool.ruff.lint.flake8-import-conventions]
 # https://docs.astral.sh/ruff/settings/#lintflake8-import-conventions
 banned-from = [
-    "xngin.apiserver.models.tables",
+    "xngin.apiserver.sqla.tables",
     "xngin.apiserver.routers.admin.authz"
 ]
 
