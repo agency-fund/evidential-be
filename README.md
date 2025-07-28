@@ -20,8 +20,6 @@
 | src/xngin/apiserver/dwh/test\_queries.py                             |      224 |        1 |     99% |       216 |
 | src/xngin/apiserver/exceptionhandlers.py                             |       45 |        9 |     80% |30, 36, 46, 56-61, 83 |
 | src/xngin/apiserver/main.py                                          |       30 |        3 |     90% | 19-21, 47 |
-| src/xngin/apiserver/models/storage\_format\_converters.py            |       90 |       16 |     82% |59, 76, 90-91, 112, 165-197, 291, 325-364 |
-| src/xngin/apiserver/models/tables.py                                 |      262 |       12 |     95% |55, 168-170, 323, 345, 369, 374-376, 379-380 |
 | src/xngin/apiserver/openapi.py                                       |       20 |        9 |     55% |     19-75 |
 | src/xngin/apiserver/routers/admin/admin\_api.py                      |      503 |      256 |     49% |162, 235-240, 267-272, 297-302, 316-320, 333-339, 362, 384, 395, 410-423, 443-453, 485-502, 520-537, 572-584, 588-601, 623-643, 660-679, 694-700, 717-727, 759-770, 798-824, 835-853, 863-867, 886-893, 899-907, 929-943, 957, 1011-1021, 1036-1123, 1135, 1150-1175, 1202-1208, 1262-1267, 1322-1337, 1362-1395, 1454, 1481-1482, 1496-1497, 1508, 1520-1528, 1539-1545, 1562-1569, 1601-1612, 1653-1679, 1692-1696 |
 | src/xngin/apiserver/routers/admin/admin\_api\_types.py               |      144 |        2 |     99% |    31, 33 |
@@ -38,6 +36,8 @@
 | src/xngin/apiserver/routers/healthchecks\_api.py                     |       16 |        2 |     88% |     26-29 |
 | src/xngin/apiserver/routers/test\_common\_api\_types.py              |       41 |        1 |     98% |        76 |
 | src/xngin/apiserver/settings.py                                      |      195 |       34 |     83% |114, 163, 170, 176, 236, 238-244, 306, 313, 316-321, 375-381, 402, 424, 434-439, 449, 452, 480, 502, 517 |
+| src/xngin/apiserver/sqla/tables.py                                   |      262 |       12 |     95% |57, 170-172, 325, 347, 371, 376-378, 381-382 |
+| src/xngin/apiserver/storage/storage\_format\_converters.py           |       90 |       16 |     82% |59, 76, 90-91, 112, 165-197, 291, 325-364 |
 | src/xngin/apiserver/testing/assertions.py                            |       14 |        5 |     64% | 16-19, 27 |
 | src/xngin/apiserver/testing/xurl.py                                  |       29 |        1 |     97% |        37 |
 | src/xngin/cli/main.py                                                |      336 |      197 |     41% |85-101, 117-149, 153-157, 169-171, 266, 269, 274, 286-287, 296, 304-322, 325-361, 363-366, 386-391, 396-397, 428-433, 446-454, 460-466, 472-475, 484-492, 517-522, 537-545, 558-566, 570-573, 615-702, 720-724, 737-738, 748-750, 754 |
