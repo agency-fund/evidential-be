@@ -20,7 +20,7 @@
 | src/xngin/apiserver/dwh/test\_queries.py                             |      224 |        1 |     99% |       216 |
 | src/xngin/apiserver/exceptionhandlers.py                             |       45 |        9 |     80% |30, 36, 46, 56-61, 83 |
 | src/xngin/apiserver/main.py                                          |       30 |        3 |     90% | 19-21, 47 |
-| src/xngin/apiserver/openapi.py                                       |       20 |        9 |     55% |     19-75 |
+| src/xngin/apiserver/openapi.py                                       |       20 |        9 |     55% |     19-68 |
 | src/xngin/apiserver/routers/admin/admin\_api.py                      |      503 |      256 |     49% |162, 235-240, 267-272, 297-302, 316-320, 333-339, 362, 384, 395, 410-423, 443-453, 485-502, 520-537, 572-584, 588-601, 623-643, 660-679, 694-700, 717-727, 759-770, 798-824, 835-853, 863-867, 886-893, 899-907, 929-943, 957, 1011-1021, 1036-1123, 1135, 1150-1175, 1202-1208, 1262-1267, 1322-1337, 1362-1395, 1454, 1481-1482, 1496-1497, 1508, 1520-1528, 1539-1545, 1562-1569, 1601-1612, 1653-1679, 1692-1696 |
 | src/xngin/apiserver/routers/admin/admin\_api\_types.py               |      144 |        2 |     99% |    31, 33 |
 | src/xngin/apiserver/routers/admin/generic\_handlers.py               |       24 |       14 |     42% |     41-59 |
