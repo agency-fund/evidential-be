@@ -1,6 +1,6 @@
 import sqlalchemy
 
-from xngin.apiserver.models import tables
+from xngin.apiserver.sqla import tables
 
 
 def is_user_authorized_on_datasource(

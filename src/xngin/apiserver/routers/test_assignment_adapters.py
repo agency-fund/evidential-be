@@ -12,7 +12,6 @@ import pytest
 from numpy.random import MT19937, RandomState
 from sqlalchemy import DECIMAL, Boolean, Column, Float, Integer, MetaData, String, Table
 
-from xngin.apiserver.models import tables
 from xngin.apiserver.routers.assignment_adapters import (
     _make_balance_check,  # noqa: PLC2701
     assign_treatment,
@@ -23,6 +22,7 @@ from xngin.apiserver.routers.common_api_types import (
     BalanceCheck,
     Strata,
 )
+from xngin.apiserver.sqla import tables
 from xngin.stats.balance import BalanceResult
 
 

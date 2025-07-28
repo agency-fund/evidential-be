@@ -11,13 +11,13 @@ from typing import Self
 
 from pydantic import TypeAdapter
 
-from xngin.apiserver.models import tables
 from xngin.apiserver.routers import common_api_types as capi
 from xngin.apiserver.routers.common_enums import (
     ExperimentState,
     ExperimentsType,
     StopAssignmentReason,
 )
+from xngin.apiserver.sqla import tables
 from xngin.apiserver.storage.storage_types import (
     DesignSpecFields,
     StorageFilter,

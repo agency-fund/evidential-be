@@ -13,7 +13,6 @@ from sqlalchemy.dialects import postgresql
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.schema import CreateTable
 
-from xngin.apiserver.models import tables
 from xngin.apiserver.routers.common_api_types import (
     CreateExperimentRequest,
     DesignSpec,
@@ -40,6 +39,7 @@ from xngin.apiserver.routers.experiments.experiments_common import (
     get_experiment_assignments_impl,
     list_experiments_impl,
 )
+from xngin.apiserver.sqla import tables
 from xngin.apiserver.storage.storage_format_converters import ExperimentStorageConverter
 from xngin.apiserver.testing.assertions import assert_dates_equal
 

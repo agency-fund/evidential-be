@@ -20,7 +20,6 @@ from sqlalchemy.orm import selectinload
 from xngin.apiserver import constants, flags
 from xngin.apiserver.dwh.dwh_session import DwhSession
 from xngin.apiserver.exceptions_common import LateValidationError
-from xngin.apiserver.models import tables
 from xngin.apiserver.routers.assignment_adapters import RowProtocol, assign_treatment
 from xngin.apiserver.routers.common_api_types import (
     Arm,
@@ -46,6 +45,7 @@ from xngin.apiserver.settings import (
     Datasource,
     ParticipantsDef,
 )
+from xngin.apiserver.sqla import tables
 from xngin.apiserver.storage.storage_format_converters import ExperimentStorageConverter
 from xngin.apiserver.webhooks.webhook_types import ExperimentCreatedWebhookBody
 from xngin.events.experiment_created import ExperimentCreatedEvent

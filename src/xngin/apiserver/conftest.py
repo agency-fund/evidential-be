@@ -29,7 +29,6 @@ from xngin.apiserver.dependencies import (
 )
 from xngin.apiserver.dns import safe_resolve
 from xngin.apiserver.main import app
-from xngin.apiserver.models import tables
 from xngin.apiserver.routers.auth import auth_dependencies
 from xngin.apiserver.routers.auth.auth_dependencies import (
     PRIVILEGED_EMAIL,
@@ -43,6 +42,7 @@ from xngin.apiserver.settings import (
     RemoteDatabaseConfig,
     SettingsForTesting,
 )
+from xngin.apiserver.sqla import tables
 from xngin.apiserver.testing.pg_helpers import create_database_if_not_exists_pg
 from xngin.apiserver.testing.testing_dwh_def import TESTING_DWH_PARTICIPANT_DEF
 from xngin.db_extensions import custom_functions

@@ -4,7 +4,6 @@ from deepdiff import DeepDiff
 from sqlalchemy import select
 
 from xngin.apiserver import constants
-from xngin.apiserver.models import tables
 from xngin.apiserver.routers.common_api_types import (
     CreateExperimentResponse,
     ExperimentsType,
@@ -17,6 +16,7 @@ from xngin.apiserver.routers.experiments.test_experiments_common import (
     insert_experiment_and_arms,
     make_create_preassigned_experiment_request,
 )
+from xngin.apiserver.sqla import tables
 from xngin.apiserver.storage.storage_format_converters import ExperimentStorageConverter
 
 
