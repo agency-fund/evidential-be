@@ -31,13 +31,6 @@ def custom_openapi(app: FastAPI):
         TagDocumentation(
             visible=True,
             definition={
-                "name": "Stateless Experiment Design",
-                "description": " (⚠️ New clients: use Experiment Integration APIs.) Methods for designing and saving experiments in which a client manages all state persistence.",
-            },
-        ),
-        TagDocumentation(
-            visible=True,
-            definition={
                 "name": "Experiment Integration",
                 "description": "Methods for a client to use when integrating Evidential experiments and assignments with their own serving infrastructure.",
             },
