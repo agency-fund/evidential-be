@@ -48,7 +48,7 @@ def custom_openapi(app: FastAPI):
         ),
     ]
     openapi_schema = get_openapi(
-        title="xngin: Experiments API",
+        title="Evidential Experiments API",
         version="0.9.0",
         contact={
             "name": "Evidential Developers",
