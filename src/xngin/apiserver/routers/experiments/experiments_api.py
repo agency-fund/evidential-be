@@ -27,7 +27,6 @@ from xngin.apiserver.dependencies import (
 )
 from xngin.apiserver.exceptions_common import LateValidationError
 from xngin.apiserver.models import tables
-from xngin.apiserver.models.storage_format_converters import ExperimentStorageConverter
 from xngin.apiserver.routers.admin.admin_api import validate_webhooks
 from xngin.apiserver.routers.common_api_types import (
     ArmBandit,
@@ -56,6 +55,7 @@ from xngin.apiserver.routers.experiments.experiments_common import (
 from xngin.apiserver.settings import (
     Datasource,
 )
+from xngin.apiserver.storage.storage_format_converters import ExperimentStorageConverter
 
 
 @asynccontextmanager

@@ -48,7 +48,6 @@ from xngin.apiserver.dwh.queries import (
 )
 from xngin.apiserver.exceptions_common import LateValidationError
 from xngin.apiserver.models import tables
-from xngin.apiserver.models.storage_format_converters import ExperimentStorageConverter
 from xngin.apiserver.routers.admin import authz
 from xngin.apiserver.routers.admin.admin_api_types import (
     AddMemberToOrganizationRequest,
@@ -117,6 +116,7 @@ from xngin.apiserver.storage.bootstrap import (
     add_nodwh_datasource_to_org,
     create_user_and_first_datasource,
 )
+from xngin.apiserver.storage.storage_format_converters import ExperimentStorageConverter
 from xngin.stats import check_power
 from xngin.stats.analysis import analyze_experiment as analyze_experiment_impl
 from xngin.stats.stats_errors import StatsAnalysisError
