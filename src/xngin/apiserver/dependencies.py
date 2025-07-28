@@ -7,10 +7,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from xngin.apiserver import constants, database
 from xngin.apiserver.apikeys import require_valid_api_key
-from xngin.apiserver.models import tables
 from xngin.apiserver.settings import (
     Datasource,
 )
+from xngin.apiserver.sqla import tables
 
 
 class CannotFindDatasourceError(Exception):

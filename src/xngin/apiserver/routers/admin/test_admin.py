@@ -12,7 +12,6 @@ from xngin.apiserver.conftest import delete_seeded_users
 from xngin.apiserver.dns import safe_resolve
 from xngin.apiserver.dwh.dwh_session import DwhSession
 from xngin.apiserver.dwh.inspection_types import FieldDescriptor, ParticipantsSchema
-from xngin.apiserver.models import tables
 from xngin.apiserver.routers.admin.admin_api import user_from_token
 from xngin.apiserver.routers.admin.admin_api_types import (
     AddWebhookToOrganizationRequest,
@@ -75,6 +74,7 @@ from xngin.apiserver.settings import (
     NoDwh,
     ParticipantsDef,
 )
+from xngin.apiserver.sqla import tables
 from xngin.apiserver.storage.bootstrap import (
     DEFAULT_DWH_SOURCE_NAME,
     DEFAULT_NO_DWH_SOURCE_NAME,

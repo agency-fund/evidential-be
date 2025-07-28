@@ -1,7 +1,7 @@
 data "external_schema" "sqlalchemy_pg" {
   program = [
     "atlas-provider-sqlalchemy",
-    "--path", "./src/xngin/apiserver/models",
+    "--path", "./src/xngin/apiserver/sqla",
     "--dialect", "postgresql"
   ]
 }

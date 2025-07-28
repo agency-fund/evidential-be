@@ -5,7 +5,7 @@ from typing import Any
 import pytest
 
 from xngin.apiserver.dwh.analysis_types import MetricValue, ParticipantOutcome
-from xngin.apiserver.models import tables
+from xngin.apiserver.sqla import tables
 from xngin.stats.analysis import analyze_experiment
 
 

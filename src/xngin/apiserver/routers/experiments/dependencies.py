@@ -10,7 +10,7 @@ from starlette import status
 from xngin.apiserver import constants
 from xngin.apiserver.apikeys import hash_key_or_raise
 from xngin.apiserver.dependencies import xngin_db_session
-from xngin.apiserver.models import tables
+from xngin.apiserver.sqla import tables
 
 
 async def experiment_dependency(

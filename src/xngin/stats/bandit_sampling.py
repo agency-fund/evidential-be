@@ -1,13 +1,13 @@
 import numpy as np
 from scipy.optimize import minimize  # type: ignore
 
-from xngin.apiserver.models import tables
 from xngin.apiserver.routers.common_enums import (
     ContextLinkFunctions,
     ExperimentsType,
     LikelihoodTypes,
     PriorTypes,
 )
+from xngin.apiserver.sqla import tables
 
 
 # ------------- Utilities for sampling and updating arms ----------------

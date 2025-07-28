@@ -1,3 +1,5 @@
+"""Defines our app db tables and models using the SQLAlchemy ORM."""
+
 import json
 import secrets
 from datetime import UTC, datetime

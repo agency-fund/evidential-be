@@ -37,12 +37,12 @@ from xngin.apiserver import apikeys, routes
 from xngin.apiserver.dwh.dwh_session import CannotFindTableError, DwhSession
 from xngin.apiserver.dwh.inspection_types import ParticipantsSchema
 from xngin.apiserver.dwh.inspections import create_schema_from_table
-from xngin.apiserver.models import tables
 from xngin.apiserver.settings import (
     Datasource,
     Dsn,
     SettingsForTesting,
 )
+from xngin.apiserver.sqla import tables
 from xngin.apiserver.storage.bootstrap import create_user_and_first_datasource
 from xngin.apiserver.testing.testing_dwh_def import TESTING_DWH_RAW_DATA
 from xngin.xsecrets import secretservice

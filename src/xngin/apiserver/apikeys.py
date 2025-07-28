@@ -5,7 +5,7 @@ import string
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from xngin.apiserver.models import tables
+from xngin.apiserver.sqla import tables
 
 API_KEY_PREFIX = "xat"
 HASH_PURPOSE = b"xnginapikey1"

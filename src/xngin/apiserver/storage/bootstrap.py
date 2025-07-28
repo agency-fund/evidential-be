@@ -3,8 +3,8 @@
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm.session import Session
 
-from xngin.apiserver.models import tables
 from xngin.apiserver.settings import Dsn, NoDwh, RemoteDatabaseConfig
+from xngin.apiserver.sqla import tables
 from xngin.apiserver.testing.testing_dwh_def import TESTING_DWH_PARTICIPANT_DEF
 
 DEFAULT_ORGANIZATION_NAME = "My Organization"
