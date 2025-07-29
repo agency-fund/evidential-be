@@ -455,31 +455,60 @@ async def abandon_experiment_impl(
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
-async def list_organization_experiments_impl(
-    xngin_session: AsyncSession, organization_id: str
+async def list_organization_or_datasource_experiments_impl(
+    xngin_session: AsyncSession,
+    organization_id: str | None = None,
+    datasource_id: str | None = None,
 ) -> ListExperimentsResponse:
-    stmt = (
-        select(tables.Experiment)
-        .options(
-            selectinload(tables.Experiment.arms),
-            selectinload(tables.Experiment.contexts),
-            selectinload(tables.Experiment.webhooks),
-        )  # async: ExperimentStorageConverter requires .arms
-        .join(
-            tables.Datasource,
-            (tables.Experiment.datasource_id == tables.Datasource.id)
-            & (tables.Datasource.organization_id == organization_id),
+    if not datasource_id and not organization_id:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Must provide either organization_id or datasource_id",
         )
-        .where(
-            tables.Experiment.state.in_([
-                ExperimentState.DESIGNING,
-                ExperimentState.COMMITTED,
-                ExperimentState.ASSIGNED,
-            ])
+
+    if datasource_id:
+        stmt = (
+            select(tables.Experiment)
+            .options(
+                selectinload(tables.Experiment.arms),
+                selectinload(tables.Experiment.contexts),
+                selectinload(tables.Experiment.webhooks),
+            )
+            .where(tables.Experiment.datasource_id == datasource_id)
+            .where(
+                tables.Experiment.state.in_([
+                    ExperimentState.DESIGNING,
+                    ExperimentState.COMMITTED,
+                    ExperimentState.ASSIGNED,
+                ])
+            )
+            .order_by(tables.Experiment.created_at.desc())
         )
-        .order_by(tables.Experiment.start_date.desc())
-    )
+    if organization_id:
+        stmt = (
+            select(tables.Experiment)
+            .options(
+                selectinload(tables.Experiment.arms),
+                selectinload(tables.Experiment.contexts),
+                selectinload(tables.Experiment.webhooks),
+            )  # async: ExperimentStorageConverter requires .arms
+            .join(
+                tables.Datasource,
+                (tables.Experiment.datasource_id == tables.Datasource.id)
+                & (tables.Datasource.organization_id == organization_id),
+            )
+            .where(
+                tables.Experiment.state.in_([
+                    ExperimentState.DESIGNING,
+                    ExperimentState.COMMITTED,
+                    ExperimentState.ASSIGNED,
+                ])
+            )
+            .order_by(tables.Experiment.start_date.desc())
+        )
+
     experiments = await xngin_session.scalars(stmt)
+    print(experiments)
     items = []
     for e in experiments:
         converter = ExperimentStorageConverter(e)
