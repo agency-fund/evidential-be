@@ -4,10 +4,9 @@ from deepdiff import DeepDiff
 from sqlalchemy import select
 
 from xngin.apiserver import constants
-from xngin.apiserver.models import tables
-from xngin.apiserver.models.storage_format_converters import ExperimentStorageConverter
 from xngin.apiserver.routers.common_api_types import (
     CreateExperimentResponse,
+    ExperimentsType,
     GetParticipantAssignmentResponse,
     ListExperimentsResponse,
     PreassignedFrequentistExperimentSpec,
@@ -17,19 +16,24 @@ from xngin.apiserver.routers.experiments.test_experiments_common import (
     insert_experiment_and_arms,
     make_create_preassigned_experiment_request,
 )
+from xngin.apiserver.sqla import tables
+from xngin.apiserver.storage.storage_format_converters import ExperimentStorageConverter
 
 
-def test_create_experiment_impl_invalid_design_spec(client_v1):
+def test_create_experiment_impl_invalid_design_spec(client_v1, testing_datasource):
     """Test creating an experiment and saving assignments to the database."""
     request = make_create_preassigned_experiment_request(with_ids=True)
 
     response = client_v1.post(
         "/experiments/with-assignment",
         params={"chosen_n": 100},
-        headers={constants.HEADER_CONFIG_ID: "testing"},
+        headers={
+            constants.HEADER_CONFIG_ID: testing_datasource.ds.id,
+            constants.HEADER_API_KEY: testing_datasource.key,
+        },
         content=request.model_dump_json(),
     )
-    assert response.status_code == 422, request
+    assert response.status_code == 422, response.content
     assert "UUIDs must not be set" in response.json()["message"]
 
 
@@ -199,7 +203,7 @@ async def test_get_assignment_for_participant_with_apikey_online(
     online_experiment = await insert_experiment_and_arms(
         xngin_session,
         testing_datasource.ds,
-        experiment_type="freq_online",
+        experiment_type=ExperimentsType.FREQ_ONLINE,
     )
 
     response = client_v1.get(
@@ -247,7 +251,7 @@ async def test_get_assignment_for_participant_with_apikey_online_dont_create(
     online_experiment = await insert_experiment_and_arms(
         xngin_session,
         testing_datasource.ds,
-        experiment_type="freq_online",
+        experiment_type=ExperimentsType.FREQ_ONLINE,
     )
 
     response = client_v1.get(
@@ -269,7 +273,7 @@ async def test_get_assignment_for_participant_with_apikey_online_past_end_date(
     online_experiment = await insert_experiment_and_arms(
         xngin_session,
         testing_datasource.ds,
-        experiment_type="freq_online",
+        experiment_type=ExperimentsType.FREQ_ONLINE,
         end_date=datetime.now(UTC) - timedelta(days=1),
     )
 

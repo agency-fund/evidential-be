@@ -20,9 +20,6 @@ from sqlalchemy.orm import selectinload
 from xngin.apiserver import constants, flags
 from xngin.apiserver.dwh.dwh_session import DwhSession
 from xngin.apiserver.exceptions_common import LateValidationError
-from xngin.apiserver.gsheet_cache import GSheetCache
-from xngin.apiserver.models import tables
-from xngin.apiserver.models.storage_format_converters import ExperimentStorageConverter
 from xngin.apiserver.routers.assignment_adapters import RowProtocol, assign_treatment
 from xngin.apiserver.routers.common_api_types import (
     Arm,
@@ -44,14 +41,12 @@ from xngin.apiserver.routers.common_enums import (
     PriorTypes,
     StopAssignmentReason,
 )
-from xngin.apiserver.routers.stateless.stateless_api import (
-    CommonQueryParams,
-    get_participants_config_and_schema,
-)
 from xngin.apiserver.settings import (
     Datasource,
     ParticipantsDef,
 )
+from xngin.apiserver.sqla import tables
+from xngin.apiserver.storage.storage_format_converters import ExperimentStorageConverter
 from xngin.apiserver.webhooks.webhook_types import ExperimentCreatedWebhookBody
 from xngin.events.experiment_created import ExperimentCreatedEvent
 from xngin.stats.bandit_sampling import choose_arm, update_arm
@@ -145,10 +140,7 @@ async def create_dwh_experiment_impl(
                 validated_webhooks=validated_webhooks,
             )
 
-    if request.design_spec.experiment_type in {
-        ExperimentsType.MAB_ONLINE,
-        ExperimentsType.CMAB_ONLINE,
-    }:
+    if request.design_spec.experiment_type == ExperimentsType.MAB_ONLINE:
         return await create_bandit_online_experiment_impl(
             xngin_session=xngin_session,
             organization_id=datasource.organization_id,
@@ -164,17 +156,15 @@ async def create_dwh_experiment_impl(
     )
 
 
-async def create_stateless_experiment_impl(
+async def create_experiment_with_assignments_impl(
     request: CreateExperimentRequest,
     datasource: Datasource,
-    gsheets: GSheetCache,
     xngin_session: AsyncSession,
     validated_webhooks: list[tables.Webhook],
     organization_id: str,
     random_state: int | None,
     chosen_n: int,
     stratify_on_metrics: bool,
-    refresh: bool,
 ) -> CreateExperimentResponse:
     if not isinstance(
         request.design_spec,
@@ -190,17 +180,14 @@ async def create_stateless_experiment_impl(
         arm.arm_id = tables.arm_id_factory()
 
     ds_config = datasource.config
-    commons = CommonQueryParams(
-        participant_type=request.design_spec.participant_type, refresh=refresh
-    )
-    participants_cfg, schema = await get_participants_config_and_schema(
-        commons, ds_config, gsheets
+    participants_schema = ds_config.find_participants(
+        request.design_spec.participant_type
     )
 
     # Get participants and their schema info from the client dwh
     async with DwhSession(ds_config.dwh) as dwh:
         result = await dwh.get_participants(
-            participants_cfg.table_name, request.design_spec.filters, chosen_n
+            participants_schema.table_name, request.design_spec.filters, chosen_n
         )
 
     if request.design_spec.experiment_type == ExperimentsType.FREQ_PREASSIGNED:
@@ -212,7 +199,7 @@ async def create_stateless_experiment_impl(
             request=request,
             datasource_id=datasource.id,
             organization_id=organization_id,
-            participant_unique_id_field=schema.get_unique_id_field(),
+            participant_unique_id_field=participants_schema.get_unique_id_field(),
             dwh_sa_table=result.sa_table,
             dwh_participants=result.participants,
             random_state=random_state,
@@ -379,7 +366,7 @@ async def create_bandit_online_experiment_impl(
     experiment_converter = ExperimentStorageConverter.init_from_components(
         datasource_id=datasource_id,
         organization_id=organization_id,
-        experiment_type=request.design_spec.experiment_type,
+        experiment_type=ExperimentsType.MAB_ONLINE,
         design_spec=design_spec,
         n_trials=chosen_n if chosen_n is not None else 0,
     )

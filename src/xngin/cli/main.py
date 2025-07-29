@@ -1,7 +1,6 @@
 """Command line tool for various xngin-related operations."""
 
 import asyncio
-import csv
 import json
 import logging
 import re
@@ -12,7 +11,6 @@ from pathlib import Path
 from typing import Annotated
 
 import boto3
-import gspread
 import pandas as pd
 import pandas_gbq
 import psycopg
@@ -24,8 +22,6 @@ from email_validator import EmailNotValidError, validate_email
 from fastapi import FastAPI
 from google.cloud import bigquery
 from google.cloud.exceptions import NotFound
-from gspread import GSpreadException
-from gspread.worksheet import CellFormat
 from pandas import DataFrame
 from pydantic import ValidationError
 from pydantic_core import from_json
@@ -37,24 +33,18 @@ from sqlalchemy.sql.compiler import IdentifierPreparer
 
 import xngin.apiserver.openapi
 import xngin.apiserver.routes
-from xngin.apiserver import routes
+from xngin.apiserver import apikeys, routes
 from xngin.apiserver.dwh.dwh_session import CannotFindTableError, DwhSession
-from xngin.apiserver.dwh.inspection_types import FieldDescriptor, ParticipantsSchema
+from xngin.apiserver.dwh.inspection_types import ParticipantsSchema
 from xngin.apiserver.dwh.inspections import create_schema_from_table
-from xngin.apiserver.models import tables
-from xngin.apiserver.routers.common_enums import DataType
 from xngin.apiserver.settings import (
     Datasource,
     Dsn,
-    SheetRef,
-    XnginSettings,
+    SettingsForTesting,
 )
-from xngin.apiserver.testing import testing_dwh
-from xngin.sheets.config_sheet import (
-    InvalidSheetError,
-    fetch_and_parse_sheet,
-)
-from xngin.sheets.gsheets import GSheetsPermissionError
+from xngin.apiserver.sqla import tables
+from xngin.apiserver.storage.bootstrap import create_user_and_first_datasource
+from xngin.apiserver.testing.testing_dwh_def import TESTING_DWH_RAW_DATA
 from xngin.xsecrets import secretservice
 from xngin.xsecrets.nacl_provider import NaclProviderKeyset
 
@@ -69,6 +59,18 @@ app = typer.Typer(help=__doc__)
 logging.basicConfig(
     level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s - %(message)s"
 )
+
+secretservice.setup()
+
+
+class TextOrJson(StrEnum):
+    text = "text"
+    json = "json"
+
+
+class Base64OrJson(StrEnum):
+    base64 = "base64"
+    json = "json"
 
 
 def create_engine_and_database(url: sqlalchemy.URL):
@@ -102,27 +104,6 @@ def create_engine_and_database(url: sqlalchemy.URL):
         )
     else:
         return engine
-
-
-async def create_participants_schema_from_table(
-    dsn: str, table: str, use_sa_autoload: bool, unique_id_col: str | None = None
-):
-    """Creates a ParticipantsSchema from a SQLAlchemy table.
-
-    :param dsn The SQLAlchemy-compatible DSN.
-    :param table The name of the table to inspect.
-    :param use_sa_autoload True if you want to use SQLAlchemy's reflection, else infer from a SQL SELECT cursor.
-    :param unique_id_col The column name in the table to use as a participant's unique identifier.
-    """
-    try:
-        dwh_config = Dsn.from_url(dsn)
-
-        async with DwhSession(dwh_config) as dwh:
-            dwh_table = await dwh.inspect_table(table, use_sa_autoload=use_sa_autoload)
-    except CannotFindTableError as cfte:
-        err_console.print(cfte.message)
-        raise typer.Exit(1) from cfte
-    return create_schema_from_table(dwh_table, unique_id_col=unique_id_col)
 
 
 def df_to_ddl(
@@ -200,7 +181,7 @@ def create_testing_dwh(
             "must end in .csv or .csv.zst.",
             callback=validate_create_testing_dwh_src,
         ),
-    ] = testing_dwh.TESTING_DWH_RAW_DATA,
+    ] = TESTING_DWH_RAW_DATA,
     nrows: Annotated[
         int | None,
         typer.Option(
@@ -417,7 +398,7 @@ def create_testing_dwh(
 
 
 @app.command()
-def bootstrap_spreadsheet(
+def create_participants_schema(
     dsn: Annotated[
         str, typer.Argument(..., help="The SQLAlchemy DSN of a data warehouse.")
     ],
@@ -426,36 +407,14 @@ def bootstrap_spreadsheet(
         typer.Argument(
             ...,
             envvar="XNGIN_CLI_TABLE_NAME",
-            help="The name of the table to pull field metadata from. If creating a Google Sheet, this will also be "
-            "used as the worksheet name, unless overridden by --participant-type.",
+            help="The name of the table to pull field metadata from.",
         ),
-    ],
+    ] = "dwh",
     unique_id_col: Annotated[
         str | None,
         typer.Option(
             help="Specify the column name within table_name to use as the unique identifier for each participant. If "
             "None, will attempt to infer a reasonable column from the schema or raise an error."
-        ),
-    ] = None,
-    create_gsheet: Annotated[
-        bool,
-        typer.Option(
-            ...,
-            help="Create a Google Sheet version of the configuration spreadsheet from `table_name`.",
-        ),
-    ] = False,
-    participant_type: Annotated[
-        str | None,
-        typer.Option(
-            ...,
-            help="When creating the Google Sheet, use the specified value rather than the table name "
-            "as the worksheet name. This corresponds to the participant_type field in the settings file.",
-        ),
-    ] = None,
-    share_email: Annotated[
-        tuple[str] | None,
-        typer.Option(
-            help="Share the newly created Google Sheet with one or more email addresses.",
         ),
     ] = None,
     use_sa_autoload: Annotated[
@@ -465,102 +424,34 @@ def bootstrap_spreadsheet(
         ),
     ] = True,
 ):
-    """Generates a Google Spreadsheet from a SQLAlchemy DSN and a table name.
-
-    Use this to get a customer started on configuring an experiment.
-    """
+    """Generates a ParticipantsSchema from a datasource."""
     config = asyncio.run(
         create_participants_schema_from_table(
             dsn, table_name, use_sa_autoload, unique_id_col
         )
     )
-
-    # Exclude the `extra` field.
-    field_names = [c for c in FieldDescriptor.model_fields if c != "extra"]
-    rows = [field_names]
-
-    def convert(v):
-        if isinstance(v, bool):
-            if v:
-                return "true"
-            return ""
-        if isinstance(v, DataType):
-            return str(v)
-        return v
-
-    for row in config.fields:
-        # Exclude the `extra` field.
-        rows.append([convert(v) for k, v in row.model_dump().items() if k != "extra"])
-
-    if not create_gsheet:
-        writer = csv.writer(sys.stdout)
-        writer.writerows(rows)
-        return
-
-    gc = gspread.service_account()
-    # TODO: if the sheet exists already, add a new worksheet instead of erroring.
-    if participant_type is None:
-        participant_type = table_name
-    sheet = gc.create(participant_type)
-    # The "Sheet1" worksheet is created automatically. We don't want to use that, so hold on to its ID for later
-    # so that we can delete it.
-    sheets_to_delete = [s.id for s in sheet.worksheets()]
-    worksheet = sheet.add_worksheet(table_name, rows=len(rows), cols=len(field_names))
-    worksheet.append_rows(rows)
-    # Bold the first row.
-    formats: list[CellFormat] = [
-        {
-            "range": "1:1",
-            "format": {
-                "textFormat": {
-                    "bold": True,
-                },
-            },
-        },
-    ]
-    worksheet.batch_format(formats)
-    for sheet_id in sheets_to_delete:
-        sheet.del_worksheet_by_id(sheet_id)
-    if share_email:
-        for email in share_email:
-            # TODO: if running as a service account, also transfer ownership to one fo the email addresses.
-            sheet.share(email, perm_type="user", role="writer")
-            print(f"# Sheet shared with {email}")
-    print(sheet.url)
+    print(json.dumps(config.model_dump(), sort_keys=True, indent=2))
 
 
-@app.command()
-def parse_config_spreadsheet(
-    url: Annotated[
-        str,
-        typer.Argument(
-            ..., help="URL to the Google Sheet, or file://-style path to a CSV."
-        ),
-    ],
-    worksheet: Annotated[
-        str,
-        typer.Argument(
-            ...,
-            help="The worksheet to parse. If parsing CSV, specify the name of the table the CSV was generated from.",
-        ),
-    ],
+async def create_participants_schema_from_table(
+    dsn: str, table: str, use_sa_autoload: bool, unique_id_col: str | None = None
 ):
-    """Parses a Google Spreadsheet and displays the parsed configuration on the console.
+    """Creates a ParticipantsSchema from a SQLAlchemy table.
 
-    This is primarily useful for confirming that the spreadsheet passes validations.
+    :param dsn The SQLAlchemy-compatible DSN.
+    :param table The name of the table to inspect.
+    :param use_sa_autoload True if you want to use SQLAlchemy's reflection, else infer from a SQL SELECT cursor.
+    :param unique_id_col The column name in the table to use as a participant's unique identifier.
     """
     try:
-        parsed = fetch_and_parse_sheet(SheetRef(url=url, worksheet=worksheet))
-        print(parsed.model_dump_json(indent=2))
-    except GSpreadException as gse:
-        err_console.print(gse)
-        raise typer.Exit(1) from gse
-    except GSheetsPermissionError as pe:
-        err_console.print("You do not have permission to open this spreadsheet.")
-        raise typer.Exit(1) from pe
-    except InvalidSheetError as ise:
-        err_console.print(f"Error(s):\n{ise}")
-        raise typer.Exit(1) from ise
+        dwh_config = Dsn.from_url(dsn)
+
+        async with DwhSession(dwh_config) as dwh:
+            dwh_table = await dwh.inspect_table(table, use_sa_autoload=use_sa_autoload)
+    except CannotFindTableError as cfte:
+        err_console.print(cfte.message)
+        raise typer.Exit(1) from cfte
+    return create_schema_from_table(dwh_table, unique_id_col=unique_id_col)
 
 
 @app.command()
@@ -568,7 +459,7 @@ def export_json_schemas(output: Path = Path(".schemas")):
     """Generates JSON schemas for Xngin settings files."""
     if not output.exists():
         output.mkdir()
-    for model in (XnginSettings, ParticipantsSchema, Datasource):
+    for model in (SettingsForTesting, ParticipantsSchema, Datasource):
         filename = output / (model.__name__ + ".schema.json")
         with open(filename, "w") as outf:
             outf.write(json.dumps(model.model_json_schema(), indent=2, sort_keys=True))
@@ -587,13 +478,13 @@ def export_openapi_spec(output: Path = Path("openapi.json")):
 
 
 @app.command()
-def validate_settings(file: Path):
-    """Validates a settings .json file against the Pydantic models."""
+def validate_testing_settings(file: Path):
+    """Validates a settings .json file against the SettingsForTesting model."""
 
     with open(file) as f:
         config = f.read()
     try:
-        XnginSettings.model_validate(from_json(config))
+        SettingsForTesting.model_validate(from_json(config))
     except ValidationError as verr:
         print(f"{file} failed validation:", file=sys.stderr)
         for details in verr.errors():
@@ -684,10 +575,10 @@ def validate_arg_is_email(email: str):
 
 @app.command()
 def add_user(
-    dsn: Annotated[
+    database_url: Annotated[
         str,
         typer.Option(
-            help="The SQLAlchemy DSN of the database where the user should be added.",
+            help="The application database where the user should be added.",
             envvar="DATABASE_URL",
         ),
     ],
@@ -706,10 +597,13 @@ def add_user(
     dwh: Annotated[
         str | None,
         typer.Option(
-            help="The SQLAlchemy DSN of a DWH to be added to the user's organization.",
+            help="The SQLAlchemy URI of a DWH to be added to the user's organization.",
             envvar="XNGIN_DEVDWH_DSN",
         ),
     ] = None,
+    output: Annotated[
+        TextOrJson, typer.Option(help="Output format.")
+    ] = TextOrJson.text,
 ):
     """Adds a new user to the database.
 
@@ -718,8 +612,9 @@ def add_user(
 
     If email is not provided via the --email flag, the command will prompt for it interactively.
     """
-    console.print(f"DSN: [cyan]{dsn}[/cyan]")
-    console.print(f"DWH: [cyan]{dwh}[/cyan]")
+    if output == TextOrJson.text:
+        console.print(f"Using application database: [cyan]{database_url}[/cyan]")
+        console.print(f"Using data warehouse: [cyan]{dwh}[/cyan]")
 
     if email is None:
         while True:
@@ -736,31 +631,69 @@ def add_user(
             "Should this user have privileged access?", default=False
         )
 
-    console.print(f"Adding user with email: [cyan]{email}[/cyan]")
-    console.print(f"Privileged access: [cyan]{privileged}[/cyan]")
+    if output == TextOrJson.text:
+        console.print(f"Adding user with email: [cyan]{email}[/cyan]")
+        console.print(f"Privileged access: [cyan]{privileged}[/cyan]")
 
-    if not dwh:
-        console.print(
-            "\n[bold yellow]Warning: Not adding a datasource for a data warehouse "
-            "because the --dwh flag was not specified or environment variable "
-            "XNGIN_DEVDWH_DSN is unset.[/bold yellow]"
-        )
+        if not dwh:
+            console.print(
+                "\n[bold yellow]Warning: Not adding a datasource for a data warehouse "
+                "because the --dwh flag was not specified or environment variable "
+                "XNGIN_DEVDWH_DSN is unset.[/bold yellow]"
+            )
 
-    engine = create_engine(dsn)
+    engine = create_engine(database_url)
     with Session(engine) as session:
         try:
-            user = testing_dwh.create_user_and_first_datasource(
+            user = create_user_and_first_datasource(
                 session, email=email, dsn=dwh, privileged=privileged
             )
             session.commit()
-            console.print("\n[bold green]User added successfully:[/bold green]")
-            console.print(f"User ID: [cyan]{user.id}[/cyan]")
-            console.print(f"Email: [cyan]{user.email}[/cyan]")
-            console.print(f"Privileged: [cyan]{user.is_privileged}[/cyan]")
+            if output == TextOrJson.text:
+                console.print("\n[bold green]User added successfully:[/bold green]")
+                console.print(f"User ID: [cyan]{user.id}[/cyan]")
+                console.print(f"Email: [cyan]{user.email}[/cyan]")
+                console.print(f"Privileged: [cyan]{user.is_privileged}[/cyan]")
+            api_keys = {}
             for organization in user.organizations:
-                console.print(f"Organization ID: [cyan]{organization.id}[/cyan]")
+                if output == TextOrJson.text:
+                    console.print(f"Organization ID: [cyan]{organization.id}[/cyan]")
                 for datasource in organization.datasources:
-                    console.print(f"  Datasource ID: [cyan]{datasource.id}[/cyan]")
+                    label, key = apikeys.make_key()
+                    key_hash = apikeys.hash_key_or_raise(key)
+                    api_keys[datasource.id] = key
+                    datasource.api_keys.append(tables.ApiKey(id=label, key=key_hash))
+                    if output == TextOrJson.text:
+                        console.print(
+                            f"  Datasource ID: [cyan]{datasource.id}[/cyan] [blue](API Key: {key})[/blue]"
+                        )
+
+            if output == TextOrJson.json:
+                console.print(
+                    json.dumps(
+                        {
+                            "database_url": database_url,
+                            "dwh_uri": dwh,
+                            "user": {
+                                "email": user.email,
+                                "id": user.id,
+                                "is_privileged": user.is_privileged,
+                            },
+                            "organizations": [
+                                {
+                                    "id": o.id,
+                                    "datasources": [
+                                        {"id": ds.id, "api_keys": [api_keys[ds.id]]}
+                                        for ds in o.datasources
+                                    ],
+                                }
+                                for o in user.organizations
+                            ],
+                        },
+                        sort_keys=True,
+                        indent=2,
+                    )
+                )
         except IntegrityError as err:
             session.rollback()
             err_console.print(
@@ -769,19 +702,14 @@ def add_user(
             raise typer.Exit(1) from err
 
 
-class OutputFormat(StrEnum):
-    base64 = "base64"
-    json = "json"
-
-
 @app.command()
 def create_nacl_keyset(
     output: Annotated[
-        OutputFormat,
+        Base64OrJson,
         typer.Option(
             help="Output format. Use base64 when generating a key for use in an environment variable."
         ),
-    ] = OutputFormat.base64,
+    ] = Base64OrJson.base64,
 ):
     """Generate an encryption keyset for the "nacl" secret provider.
 
@@ -790,7 +718,7 @@ def create_nacl_keyset(
     When --output=base64 (default), the output can be used as the XNGIN_SECRETS_NACL_KEYSET environment variable.
     """
     keyset = NaclProviderKeyset.create()
-    if output == OutputFormat.base64:
+    if output == Base64OrJson.base64:
         print(keyset.serialize_base64())
     else:
         print(keyset.serialize_json())
@@ -806,7 +734,6 @@ def encrypt(
     ] = "cli",
 ):
     """Encrypts a string using the same encryption configuration that the API server does."""
-    secretservice.setup()
     plaintext = sys.stdin.read()
     print(secretservice.get_symmetric().encrypt(plaintext, aad))
 

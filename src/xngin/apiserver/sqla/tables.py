@@ -1,3 +1,5 @@
+"""Defines our app db tables and models using the SQLAlchemy ORM."""
+
 import json
 import secrets
 from datetime import UTC, datetime
@@ -450,7 +452,7 @@ class Experiment(Base):
     updated_at: Mapped[datetime] = mapped_column(
         server_default=sqlalchemy.sql.func.now(), onupdate=sqlalchemy.sql.func.now()
     )
-    n_trials: Mapped[int] = mapped_column(default=0)
+    n_trials: Mapped[int] = mapped_column(server_default="0")
 
     # -- Experiment config --
     # Bandit config params

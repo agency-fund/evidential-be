@@ -1,4 +1,7 @@
-"""Implements a basic Admin API."""
+"""
+This module defines the internal Evidential UI-facing Admin API endpoints.
+(See experiments_api.py for integrator-facing endpoints.)
+"""
 
 import asyncio
 import secrets
@@ -34,13 +37,17 @@ from xngin.apiserver.dwh.dwh_session import (
     DwhSession,
     NoDwh,
 )
+from xngin.apiserver.dwh.inspection_types import ParticipantsSchema
 from xngin.apiserver.dwh.inspections import (
     create_inspect_table_response_from_table,
 )
-from xngin.apiserver.dwh.queries import get_participant_metrics, get_stats_on_filters
+from xngin.apiserver.dwh.queries import (
+    get_participant_metrics,
+    get_stats_on_filters,
+    get_stats_on_metrics,
+)
 from xngin.apiserver.exceptions_common import LateValidationError
-from xngin.apiserver.models import tables
-from xngin.apiserver.models.storage_format_converters import ExperimentStorageConverter
+from xngin.apiserver.routers.admin import authz
 from xngin.apiserver.routers.admin.admin_api_types import (
     AddMemberToOrganizationRequest,
     AddWebhookToOrganizationRequest,
@@ -75,17 +82,18 @@ from xngin.apiserver.routers.admin.admin_api_types import (
     UserSummary,
     WebhookSummary,
 )
+from xngin.apiserver.routers.admin.generic_handlers import handle_delete
 from xngin.apiserver.routers.auth.auth_api_types import CallerIdentity
 from xngin.apiserver.routers.auth.auth_dependencies import require_oidc_token
 from xngin.apiserver.routers.auth.principal import Principal
 from xngin.apiserver.routers.common_api_types import (
     ArmAnalysis,
-    BanditExperimentAnalysis,
+    BanditExperimentAnalysisResponse,
     BaseBanditExperimentSpec,
     BaseFrequentistDesignSpec,
     CreateExperimentRequest,
     CreateExperimentResponse,
-    FreqExperimentAnalysis,
+    FreqExperimentAnalysisResponse,
     GetExperimentAssignmentsResponse,
     GetExperimentResponse,
     GetMetricsResponseElement,
@@ -97,17 +105,19 @@ from xngin.apiserver.routers.common_api_types import (
     PowerResponse,
 )
 from xngin.apiserver.routers.experiments import experiments_common
-from xngin.apiserver.routers.stateless.stateless_api import (
-    power_check_impl,
-    validate_schema_metrics_or_raise,
-)
 from xngin.apiserver.settings import (
     Dsn,
     ParticipantsConfig,
     ParticipantsDef,
     RemoteDatabaseConfig,
 )
-from xngin.apiserver.testing.testing_dwh import create_user_and_first_datasource
+from xngin.apiserver.sqla import tables
+from xngin.apiserver.storage.bootstrap import (
+    add_nodwh_datasource_to_org,
+    create_user_and_first_datasource,
+)
+from xngin.apiserver.storage.storage_format_converters import ExperimentStorageConverter
+from xngin.stats import check_power
 from xngin.stats.analysis import analyze_experiment as analyze_experiment_impl
 from xngin.stats.stats_errors import StatsAnalysisError
 
@@ -379,6 +389,7 @@ async def create_organizations(
     organization = tables.Organization(name=body.name)
     session.add(organization)
     organization.users.append(user)  # Add the creating user to the organization
+    add_nodwh_datasource_to_org(session, organization)
     await session.commit()
 
     return CreateOrganizationResponse(id=organization.id)
@@ -535,26 +546,19 @@ async def delete_webhook_from_organization(
     webhook_id: str,
     session: Annotated[AsyncSession, Depends(xngin_db_session)],
     user: Annotated[tables.User, Depends(user_from_token)],
+    allow_missing: Annotated[
+        bool,
+        Query(description="If true, return a 204 even if the resource does not exist."),
+    ] = False,
 ):
     """Removes a Webhook from an organization."""
-    # Verify user has access to the organization
-    org = await get_organization_or_raise(session, user, organization_id)
-
-    # Find and delete the webhook
-    stmt = (
-        delete(tables.Webhook)
-        .where(tables.Webhook.id == webhook_id)
-        .where(tables.Webhook.organization_id == org.id)
+    resource_query = select(tables.Webhook).where(tables.Webhook.id == webhook_id)
+    return await handle_delete(
+        session,
+        allow_missing,
+        authz.is_user_authorized_on_organization(user, organization_id),
+        resource_query,
     )
-    result = await session.execute(stmt)
-
-    if result.rowcount == 0:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND, detail="Webhook not found"
-        )
-
-    await session.commit()
-    return GENERIC_SUCCESS
 
 
 @router.get("/organizations/{organization_id}/events")
@@ -878,6 +882,10 @@ async def inspect_datasource(
 ) -> InspectDatasourceResponse:
     """Verifies connectivity to a datasource and returns a list of readable tables."""
     ds = await get_datasource_or_raise(session, user, datasource_id)
+
+    if ds.get_config().dwh.driver == "none":
+        return InspectDatasourceResponse(tables=[])
+
     if not refresh and cache_is_fresh(ds.table_list_updated):
         return InspectDatasourceResponse(tables=ds.table_list)
     try:
@@ -949,33 +957,33 @@ async def inspect_table_in_datasource(
     return response
 
 
-@router.delete("/datasources/{datasource_id}", status_code=status.HTTP_204_NO_CONTENT)
+@router.delete(
+    "/organizations/{organization_id}/datasources/{datasource_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+)
 async def delete_datasource(
     session: Annotated[AsyncSession, Depends(xngin_db_session)],
     user: Annotated[tables.User, Depends(user_from_token)],
+    organization_id: Annotated[str, Path(...)],
     datasource_id: Annotated[str, Path(...)],
+    allow_missing: Annotated[
+        bool,
+        Query(description="If true, return a 204 even if the resource does not exist."),
+    ] = False,
 ):
     """Deletes a datasource.
 
     The user must be a member of the organization that owns the datasource.
     """
-    # Delete the datasource, but only if the user has access to it
-    stmt = (
-        delete(tables.Datasource)
-        .where(tables.Datasource.id == datasource_id)
-        .where(
-            tables.Datasource.id.in_(
-                select(tables.Datasource.id)
-                .join(tables.Organization)
-                .join(tables.Organization.users)
-                .where(tables.User.id == user.id)
-            )
-        )
+    resource_query = select(tables.Datasource).where(
+        tables.Datasource.id == datasource_id
     )
-    await session.execute(stmt)
-    await session.commit()
-
-    return GENERIC_SUCCESS
+    return await handle_delete(
+        session,
+        allow_missing,
+        authz.is_user_authorized_on_organization(user, organization_id),
+        resource_query,
+    )
 
 
 @router.get("/datasources/{datasource_id}/participants")
@@ -1180,14 +1188,38 @@ async def delete_participant(
     participant_id: str,
     session: Annotated[AsyncSession, Depends(xngin_db_session)],
     user: Annotated[tables.User, Depends(user_from_token)],
+    allow_missing: Annotated[
+        bool,
+        Query(description="If true, return a 204 even if the resource does not exist."),
+    ] = False,
 ):
-    ds = await get_datasource_or_raise(session, user, datasource_id)
-    config = ds.get_config()
-    participant = config.find_participants(participant_id)
-    config.participants.remove(participant)
-    ds.set_config(config)
-    await session.commit()
-    return GENERIC_SUCCESS
+    async def get_participants_or_none(session_: AsyncSession):
+        resource = (
+            await session_.execute(
+                select(tables.Datasource).where(tables.Datasource.id == datasource_id)
+            )
+        ).scalar_one_or_none()
+        if resource is None:
+            return None
+        config = resource.get_config()
+        participant = config.find_participants_or_none(participant_id)
+        if participant is None:
+            return None
+        return resource
+
+    async def deleter(_session: AsyncSession, resource: tables.Datasource):
+        config = resource.get_config()
+        participant = config.find_participants(participant_id)
+        config.participants.remove(participant)
+        resource.set_config(config)
+
+    return await handle_delete(
+        session,
+        allow_missing,
+        authz.is_user_authorized_on_datasource(user, datasource_id),
+        get_participants_or_none,
+        deleter,
+    )
 
 
 @router.get("/datasources/{datasource_id}/apikeys")
@@ -1244,15 +1276,23 @@ async def delete_api_key(
     session: Annotated[AsyncSession, Depends(xngin_db_session)],
     user: Annotated[tables.User, Depends(user_from_token)],
     api_key_id: Annotated[str, Path(...)],
+    allow_missing: Annotated[
+        bool,
+        Query(description="If true, return a 204 even if the resource does not exist."),
+    ] = False,
 ):
     """Deletes the specified API key."""
-    ds = await get_datasource_or_raise(
-        session, user, datasource_id, preload=[tables.Datasource.api_keys]
+    resource_query = (
+        select(tables.ApiKey)
+        .join(tables.Datasource)
+        .where(tables.Datasource.id == datasource_id, tables.ApiKey.id == api_key_id)
     )
-    ds.api_keys = [a for a in ds.api_keys if a.id != api_key_id]
-    session.add(ds)
-    await session.commit()
-    return GENERIC_SUCCESS
+    return await handle_delete(
+        session,
+        allow_missing,
+        authz.is_user_authorized_on_datasource(user, datasource_id),
+        resource_query,
+    )
 
 
 @router.post("/datasources/{datasource_id}/experiments")
@@ -1284,6 +1324,7 @@ async def create_experiment(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"Datasource {datasource_id} not found in database",
         )
+
     if body.design_spec.ids_are_present():
         raise LateValidationError("Invalid DesignSpec: UUIDs must not be set.")
 
@@ -1316,7 +1357,7 @@ async def analyze_experiment(
             description="UUID of the baseline arm. If None, the first design spec arm is used.",
         ),
     ] = None,
-) -> FreqExperimentAnalysis | BanditExperimentAnalysis:
+) -> FreqExperimentAnalysisResponse | BanditExperimentAnalysisResponse:
     ds = await get_datasource_or_raise(xngin_session, user, datasource_id)
     dsconfig = ds.get_config()
 
@@ -1331,7 +1372,7 @@ async def analyze_experiment(
     if isinstance(design_spec, BaseBanditExperimentSpec):
         # TODO: implement bandit experiment analysis
         # For now, we return a placeholder analysis with no data.
-        return BanditExperimentAnalysis(
+        return BanditExperimentAnalysisResponse(
             experiment_id=experiment.id,
             n_trials=experiment.n_trials,
             n_outcomes=0,
@@ -1403,7 +1444,7 @@ async def analyze_experiment(
                     metric_name=metric_name, metric=metric, arm_analyses=arm_analyses
                 )
             )
-        return FreqExperimentAnalysis(
+        return FreqExperimentAnalysisResponse(
             experiment_id=experiment.id,
             metric_analyses=metric_analyses,
             num_participants=num_participants,
@@ -1584,13 +1625,21 @@ async def delete_experiment(
     experiment_id: str,
     session: Annotated[AsyncSession, Depends(xngin_db_session)],
     user: Annotated[tables.User, Depends(user_from_token)],
+    allow_missing: Annotated[
+        bool,
+        Query(description="If true, return a 204 even if the resource does not exist."),
+    ] = False,
 ):
     """Deletes the experiment with the specified ID."""
-    ds = await get_datasource_or_raise(session, user, datasource_id)
-    experiment = await get_experiment_via_ds_or_raise(session, ds, experiment_id)
-    await session.delete(experiment)
-    await session.commit()
-    return GENERIC_SUCCESS
+    resource_query = select(tables.Experiment).where(
+        tables.Experiment.id == experiment_id
+    )
+    return await handle_delete(
+        session,
+        allow_missing,
+        authz.is_user_authorized_on_datasource(user, datasource_id),
+        resource_query,
+    )
 
 
 @router.post("/datasources/{datasource_id}/power")
@@ -1601,10 +1650,11 @@ async def power_check(
     body: PowerRequest,
 ) -> PowerResponse:
     """Performs a power check for the specified datasource."""
-    if isinstance(body.design_spec, BaseBanditExperimentSpec):
+    design_spec = body.design_spec
+    if not isinstance(design_spec, BaseFrequentistDesignSpec):
         raise HTTPException(
             status_code=400,
-            detail="Power checks are not supported for bandit experiments.",
+            detail="Power checks are only supported for frequentist experiments",
         )
     ds = await get_datasource_or_raise(session, user, datasource_id)
     if isinstance(ds.config, NoDwh):
@@ -1613,6 +1663,36 @@ async def power_check(
             detail="Power checks are not supported for datasources without a data warehouse.",
         )
     dsconfig = ds.get_config()
-    participants_cfg = dsconfig.find_participants(body.design_spec.participant_type)
-    validate_schema_metrics_or_raise(body.design_spec, participants_cfg)  # type: ignore[arg-type]
-    return await power_check_impl(body, dsconfig, participants_cfg)
+    participants_cfg = dsconfig.find_participants(design_spec.participant_type)
+
+    validate_schema_metrics_or_raise(design_spec, participants_cfg)
+    async with DwhSession(dsconfig.dwh) as dwh:
+        sa_table = await dwh.inspect_table(participants_cfg.table_name)
+
+        metric_stats = await asyncio.to_thread(
+            get_stats_on_metrics,
+            dwh.session,
+            sa_table,
+            design_spec.metrics,
+            design_spec.filters,
+        )
+    return PowerResponse(
+        analyses=check_power(
+            metrics=metric_stats,
+            n_arms=len(design_spec.arms),
+            power=design_spec.power,
+            alpha=design_spec.alpha,
+        )
+    )
+
+
+def validate_schema_metrics_or_raise(
+    design_spec: BaseFrequentistDesignSpec, schema: ParticipantsSchema
+):
+    metric_fields = {m.field_name for m in schema.fields if m.is_metric}
+    metrics_requested = {m.field_name for m in design_spec.metrics}
+    invalid_metrics = metrics_requested - metric_fields
+    if len(invalid_metrics) > 0:
+        raise LateValidationError(
+            f"Invalid DesignSpec metrics (check your Datasource configuration): {invalid_metrics}"
+        )

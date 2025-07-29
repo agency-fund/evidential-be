@@ -26,11 +26,9 @@ from xngin.apiserver import constants, database, flags
 from xngin.apiserver.apikeys import hash_key_or_raise, make_key
 from xngin.apiserver.dependencies import (
     random_seed_dependency,
-    settings_dependency,
 )
 from xngin.apiserver.dns import safe_resolve
 from xngin.apiserver.main import app
-from xngin.apiserver.models import tables
 from xngin.apiserver.routers.auth import auth_dependencies
 from xngin.apiserver.routers.auth.auth_dependencies import (
     PRIVILEGED_EMAIL,
@@ -43,12 +41,10 @@ from xngin.apiserver.settings import (
     ParticipantsConfig,
     RemoteDatabaseConfig,
     SettingsForTesting,
-    SheetParticipantsRef,
-    SheetRef,
-    XnginSettings,
 )
+from xngin.apiserver.sqla import tables
 from xngin.apiserver.testing.pg_helpers import create_database_if_not_exists_pg
-from xngin.apiserver.testing.testing_dwh_def import TESTING_PARTICIPANT_DEF
+from xngin.apiserver.testing.testing_dwh_def import TESTING_DWH_PARTICIPANT_DEF
 from xngin.db_extensions import custom_functions
 
 # SQLAlchemy's logger will append this to the name of its loggers used for the application database; e.g.
@@ -88,7 +84,9 @@ class TestUriInfo:
     db_type: DbType
 
 
-def get_settings_for_test() -> XnginSettings:
+@pytest.fixture(name="static_settings")
+def fixture_static_settings() -> SettingsForTesting:
+    """Reads the xngin.testing.settings.json file."""
     filename = Path(__file__).parent / "testdata/xngin.testing.settings.json"
     with open(filename) as f:
         try:
@@ -150,10 +148,6 @@ def fixture_override_app_dependencies():
 
     This uses FastAPI's dependency override mechanism: https://fastapi.tiangolo.com/advanced/testing-dependencies/#use-the-appdependency_overrides-attribute
     """
-
-    # Deprecated: we no longer need to support the static JSON settings files. Future tests should be implemented using
-    # the API methods to create configurations.
-    app.dependency_overrides[settings_dependency] = get_settings_for_test
 
     app.dependency_overrides[random_seed_dependency] = get_random_seed_for_test
 
@@ -256,7 +250,10 @@ async def fixture_xngin_db_session():
             ])
             await session.commit()
         async with database.async_session() as sess:
-            yield sess
+            try:
+                yield sess
+            finally:
+                await sess.close()
 
 
 async def delete_seeded_users(xngin_session: AsyncSession):
@@ -308,11 +305,6 @@ def fixture_use_deterministic_random():
         custom_functions.USE_DETERMINISTIC_RANDOM = original
 
 
-def get_settings_datasource(datasource_id: str):
-    """Pull a datasource from the xngin.testing.settings.json file."""
-    return get_settings_for_test().get_datasource(datasource_id)
-
-
 @dataclass
 class DatasourceMetadata:
     """Describes an ephemeral datasource, organization, and API key."""
@@ -325,6 +317,7 @@ class DatasourceMetadata:
 
     # An API key suitable for use in the Authorization: header.
     key: str
+    key_id: str
 
 
 @pytest.fixture(name="testing_datasource", scope="function")
@@ -334,41 +327,6 @@ async def fixture_testing_datasource(xngin_session: AsyncSession) -> DatasourceM
         xngin_session,
         new_name="testing datasource",
     )
-
-
-@pytest.fixture(name="testing_sheet_datasource_with_user", scope="function")
-async def fixture_testing_sheet_datasource_with_user(
-    xngin_session: AsyncSession,
-) -> DatasourceMetadata:
-    """Adds to db a new Org, Datasource with a sheet participant type, and API key.
-
-    This fixture is DEPRECATED.
-    """
-    metadata = await _make_datasource_metadata(
-        xngin_session,
-        new_name="testing datasource pt sheet",
-        participants_def_list=[
-            SheetParticipantsRef(
-                type="sheet",
-                participant_type="test_participant_type",
-                table_name="dwh",
-                sheet=SheetRef(
-                    url="https://docs.google.com/spreadsheets/example",
-                    worksheet="Sheet1",
-                ),
-            )
-        ],
-    )
-    user = (
-        await xngin_session.execute(
-            select(tables.User)
-            .options(selectinload(tables.User.organizations))
-            .where(tables.User.email == PRIVILEGED_EMAIL)
-        )
-    ).scalar_one()
-    user.organizations.append(metadata.org)
-    await xngin_session.commit()
-    return metadata
 
 
 @pytest.fixture(name="testing_datasource_with_user", scope="function")
@@ -418,7 +376,7 @@ async def _make_datasource_metadata(
     # Initialize our ds config to point to our testing dwh.
     test_dwh_dsn = Dsn.from_url(flags.XNGIN_DEVDWH_DSN)
     # If no override is provided, use the default testing participant type.
-    pt_list = participants_def_list or [TESTING_PARTICIPANT_DEF]
+    pt_list = participants_def_list or [TESTING_DWH_PARTICIPANT_DEF]
     datasource.set_config(
         RemoteDatabaseConfig(type="remote", participants=pt_list, dwh=test_dwh_dsn)
     )
@@ -435,5 +393,6 @@ async def _make_datasource_metadata(
         ds=datasource,
         dsn=datasource.get_config().to_sqlalchemy_url().render_as_string(False),
         key=key,
+        key_id=key_id,
         org=org,
     )

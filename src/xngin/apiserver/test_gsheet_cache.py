@@ -6,9 +6,9 @@ import pytest
 from sqlalchemy import Update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
+from xngin.apiserver.gsheet_cache import GSheetCache
 
 from xngin.apiserver.dwh.inspection_types import FieldDescriptor, ParticipantsSchema
-from xngin.apiserver.gsheet_cache import GSheetCache
 from xngin.apiserver.models import tables
 from xngin.apiserver.routers.common_enums import DataType
 from xngin.apiserver.settings import SheetRef

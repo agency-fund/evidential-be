@@ -62,7 +62,7 @@ env:
   XNGIN_PUBLISH_ALL_DOCS: "true"
 
   # Data warehouse available for use by the local dev environment (see task bootstrap-dwh-database) and also referenced
-  # by unit tests via xngin.testing.settings.json. It is bootstrapped with the testing datawarehouse when
+  # by unit tests via xngin.testing.settings.json. The database is bootstrapped with testing_dwh.csv.zst when
   # `task start` is used.
   XNGIN_DEVDWH_DSN: "postgresql+psycopg://postgres:postgres@localhost:5499/dwh?sslmode=disable"
 
@@ -145,7 +145,7 @@ tasks:
     desc: "Starts apiserver locally with settings compatible with local dash dev server."
     interactive: true
     dotenv:
-      # Populate BQ_SERVICE_ACCOUNT (optional) and GOOGLE_OIDC_CLIENT_SECRET (optional).
+      # Populate GOOGLE_OIDC_CLIENT_SECRET (optional).
       - .env
     env:
       DATABASE_URL: "{{.XNGIN_DEVAPP_DSN}}"
@@ -161,6 +161,31 @@ tasks:
       AIRPLANE_MODE: "true"
     cmds:
       - task start
+  test-coverage:
+    desc: "Runs unit tests and generates a coverage report."
+    summary: |
+      Runs all the unit tests and generates a coverage report. Pass additional arguments to pytest after a --. Example:
+
+      task test-coverage -- src/xngin/apiserver/routers/admin/test_admin.py # run a single test file
+      task test-coverage -- -k tests_matching_some_string_expression -rA    # run subset of tests, show all output in summary
+      task test-coverage -- -m integration                                  # run tests annotated with @pytest.mark.integration
+    interactive: true
+    env:
+      DATABASE_URL: "{{.DATABASE_URL_FOR_TEST}}"
+    deps:
+      - bootstrap-dwh-database
+    cmds:
+      - uv run coverage run -m pytest {{.CLI_ARGS}}
+      - uv run coverage html
+      - uv run coverage report
+      - echo "Open the HTML report at file://{{.USER_WORKING_DIR}}/htmlcov/index.html"
+  test-coverage-airplane:
+    desc: "Run unit tests and generate a coverage report (in airplane mode)."
+    interactive: true
+    env:
+      AIRPLANE_MODE: "true"
+    cmds:
+      - task test-coverage
   test:
     desc: "Runs unit tests"
     summary: |

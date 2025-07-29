@@ -23,6 +23,7 @@ from sqlalchemy import (
 )
 from sqlalchemy.orm import Session
 
+from xngin.apiserver.dwh.analysis_types import MetricValue, ParticipantOutcome
 from xngin.apiserver.dwh.inspection_types import FieldDescriptor
 from xngin.apiserver.exceptions_common import LateValidationError
 from xngin.apiserver.routers.common_api_types import (
@@ -37,10 +38,6 @@ from xngin.apiserver.routers.common_api_types import (
     Relation,
 )
 from xngin.apiserver.routers.common_enums import FilterClass, MetricType
-from xngin.apiserver.routers.stateless.stateless_api_types import (
-    MetricValue,
-    ParticipantOutcome,
-)
 from xngin.db_extensions import custom_functions
 
 

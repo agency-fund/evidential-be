@@ -14,11 +14,9 @@ from sqlalchemy import Table
 from xngin.apiserver.routers.common_api_types import (
     Arm,
     Assignment,
+    AssignResponse,
     BalanceCheck,
     Strata,
-)
-from xngin.apiserver.routers.stateless.stateless_api_types import (
-    AssignResponse,
 )
 from xngin.stats.assignment import assign_treatment_and_check_balance
 from xngin.stats.balance import BalanceResult
