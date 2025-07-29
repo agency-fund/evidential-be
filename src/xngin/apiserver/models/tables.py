@@ -492,7 +492,7 @@ class Experiment(Base):
         back_populates="experiment",
         cascade="all, delete-orphan",
         primaryjoin="and_(Experiment.id==Context.experiment_id,"
-        + "Experiment.experiment_type=='cmab')",
+        + "Experiment.experiment_type=='cmab_online')",
     )
 
     def get_arm_ids(self) -> list[str]:

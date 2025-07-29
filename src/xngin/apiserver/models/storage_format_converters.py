@@ -132,19 +132,23 @@ class ExperimentStorageConverter:
 
     def get_design_spec(self) -> sapi.DesignSpec:
         """Converts a DesignSpecFields to a DesignSpec object."""
+        base_experiment_dict = {
+            "participant_type": self.experiment.participant_type,
+            "experiment_id": self.experiment.id,
+            "experiment_type": self.experiment.experiment_type,
+            "experiment_name": self.experiment.name,
+            "description": self.experiment.description,
+            "start_date": self.experiment.start_date,
+            "end_date": self.experiment.end_date,
+        }
+
         if self.experiment.experiment_type in {
             ExperimentsType.FREQ_ONLINE.value,
             ExperimentsType.FREQ_PREASSIGNED.value,
         }:
             design_spec_fields = self.get_design_spec_fields()
             return TypeAdapter(capi.DesignSpec).validate_python({
-                "participant_type": self.experiment.participant_type,
-                "experiment_id": self.experiment.id,
-                "experiment_type": self.experiment.experiment_type,
-                "experiment_name": self.experiment.name,
-                "description": self.experiment.description,
-                "start_date": self.experiment.start_date,
-                "end_date": self.experiment.end_date,
+                **base_experiment_dict,
                 "arms": [
                     {
                         "arm_id": arm.id,
@@ -170,16 +174,22 @@ class ExperimentStorageConverter:
         }:
             if not self.experiment.prior_type or not self.experiment.reward_type:
                 raise ValueError(
-                    "MAB experiments must have prior_type and reward_type set."
+                    "Bandit experiments must have prior_type and reward_type set."
                 )
+            contexts = None
+            if self.experiment.contexts:
+                contexts = [
+                    capi.Context(
+                        context_id=context.id,
+                        context_name=context.name,
+                        context_description=context.description,
+                        value_type=capi.ContextType(context.value_type),
+                    )
+                    for context in self.experiment.contexts
+                ]
+
             return TypeAdapter(capi.DesignSpec).validate_python({
-                "participant_type": self.experiment.participant_type,
-                "experiment_id": self.experiment.id,
-                "experiment_type": self.experiment.experiment_type,
-                "experiment_name": self.experiment.name,
-                "description": self.experiment.description,
-                "start_date": self.experiment.start_date,
-                "end_date": self.experiment.end_date,
+                **base_experiment_dict,
                 "arms": [
                     {
                         "arm_id": arm.id,
@@ -198,16 +208,7 @@ class ExperimentStorageConverter:
                 ],
                 "prior_type": capi.PriorTypes(self.experiment.prior_type),
                 "reward_type": capi.LikelihoodTypes(self.experiment.reward_type),
-                "contexts": None
-                if self.experiment.contexts is None
-                else [
-                    {
-                        "context_name": context.name,
-                        "context_description": context.description,
-                        "value_type": capi.ContextType(context.value_type),
-                    }
-                    for context in self.experiment.contexts
-                ],
+                "contexts": contexts,
             })
         raise ValueError(
             f"Unsupported experiment type: {self.experiment.experiment_type}"
@@ -378,6 +379,9 @@ class ExperimentStorageConverter:
                 for arm in design_spec.arms
             ]
             if isinstance(design_spec, capi.CMABExperimentSpec):
+                if not design_spec.contexts:
+                    raise ValueError("Contexts are required for CMAB experiments.")
+                # Set contexts for CMAB experiments
                 experiment.contexts = [
                     tables.Context(
                         name=context.context_name,
@@ -385,7 +389,7 @@ class ExperimentStorageConverter:
                         value_type=context.value_type.value,
                         experiment_id=experiment.id,
                     )
-                    for context in design_spec.contexts or []
+                    for context in design_spec.contexts
                 ]
             return cls(experiment)
 

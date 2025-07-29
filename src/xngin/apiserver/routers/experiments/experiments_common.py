@@ -472,6 +472,7 @@ async def list_organization_experiments_impl(
         select(tables.Experiment)
         .options(
             selectinload(tables.Experiment.arms),
+            selectinload(tables.Experiment.contexts),
             selectinload(tables.Experiment.webhooks),
         )  # async: ExperimentStorageConverter requires .arms
         .join(
