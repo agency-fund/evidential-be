@@ -48,7 +48,7 @@ from xngin.apiserver.routers.experiments.experiments_common import (
     get_existing_assignment_for_participant,
     get_experiment_assignments_as_csv_impl,
     get_experiment_assignments_impl,
-    list_experiments_impl,
+    list_organization_experiments_impl,
     update_bandit_arm_with_outcome_impl,
 )
 from xngin.apiserver.settings import (
@@ -162,7 +162,7 @@ async def list_experiments_sl(
     datasource: Annotated[Datasource, Depends(datasource_dependency)],
     xngin_session: Annotated[AsyncSession, Depends(xngin_db_session)],
 ) -> ListExperimentsResponse:
-    return await list_experiments_impl(xngin_session, datasource.id)
+    return await list_organization_experiments_impl(xngin_session, datasource.id)
 
 
 @router.get(

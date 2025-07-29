@@ -37,7 +37,7 @@ from xngin.apiserver.routers.experiments.experiments_common import (
     get_assign_summary,
     get_existing_assignment_for_participant,
     get_experiment_assignments_impl,
-    list_experiments_impl,
+    list_organization_experiments_impl,
 )
 from xngin.apiserver.sqla import tables
 from xngin.apiserver.storage.storage_format_converters import ExperimentStorageConverter
@@ -661,7 +661,9 @@ async def test_list_experiments_impl(
     xngin_session.add_all([data[0] for data in experiment_data])
     await xngin_session.commit()
 
-    experiments = await list_experiments_impl(xngin_session, testing_datasource.ds.id)
+    experiments = await list_organization_experiments_impl(
+        xngin_session, testing_datasource.ds.id
+    )
     # experiment5 excluded due to datasource mismatch
     assert len(experiments.items) == 3
 

@@ -140,7 +140,10 @@ async def create_dwh_experiment_impl(
                 validated_webhooks=validated_webhooks,
             )
 
-    if request.design_spec.experiment_type == ExperimentsType.MAB_ONLINE:
+    if request.design_spec.experiment_type in {
+        ExperimentsType.MAB_ONLINE,
+        ExperimentsType.CMAB_ONLINE,
+    }:
         return await create_bandit_online_experiment_impl(
             xngin_session=xngin_session,
             organization_id=datasource.organization_id,
@@ -366,7 +369,7 @@ async def create_bandit_online_experiment_impl(
     experiment_converter = ExperimentStorageConverter.init_from_components(
         datasource_id=datasource_id,
         organization_id=organization_id,
-        experiment_type=ExperimentsType.MAB_ONLINE,
+        experiment_type=design_spec.experiment_type,
         design_spec=design_spec,
         n_trials=chosen_n if chosen_n is not None else 0,
     )
@@ -475,36 +478,6 @@ async def list_organization_experiments_impl(
             ])
         )
         .order_by(tables.Experiment.start_date.desc())
-    )
-    experiments = await xngin_session.scalars(stmt)
-    items = []
-    for e in experiments:
-        converter = ExperimentStorageConverter(e)
-        balance_check = converter.get_balance_check()
-        assign_summary = await get_assign_summary(xngin_session, e.id, balance_check)
-        webhook_ids = [webhook.id for webhook in e.webhooks]
-        items.append(converter.get_experiment_config(assign_summary, webhook_ids))
-    return ListExperimentsResponse(items=items)
-
-
-async def list_experiments_impl(
-    xngin_session: AsyncSession, datasource_id: str
-) -> ListExperimentsResponse:
-    stmt = (
-        select(tables.Experiment)
-        .options(
-            selectinload(tables.Experiment.arms),
-            selectinload(tables.Experiment.webhooks),
-        )
-        .where(tables.Experiment.datasource_id == datasource_id)
-        .where(
-            tables.Experiment.state.in_([
-                ExperimentState.DESIGNING,
-                ExperimentState.COMMITTED,
-                ExperimentState.ASSIGNED,
-            ])
-        )
-        .order_by(tables.Experiment.created_at.desc())
     )
     experiments = await xngin_session.scalars(stmt)
     items = []

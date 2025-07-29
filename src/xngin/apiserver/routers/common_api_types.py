@@ -144,12 +144,12 @@ class Context(ApiBaseModel):
     """
 
     context_id: Annotated[
-        int | None,
+        str | None,
         Field(
             description="Unique identifier for the context, you should NOT set this when creating a new context.",
-            examples=[1],
+            examples=["1"],
         ),
-    ]
+    ] = None
     context_name: Annotated[str, Field(max_length=MAX_LENGTH_OF_NAME_VALUE)]
     context_description: Annotated[
         str | None, Field(max_length=MAX_LENGTH_OF_DESCRIPTION_VALUE)
