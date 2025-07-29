@@ -20,23 +20,6 @@ from xngin.apiserver.sqla import tables
 from xngin.apiserver.storage.storage_format_converters import ExperimentStorageConverter
 
 
-def test_create_experiment_impl_invalid_design_spec(client_v1, testing_datasource):
-    """Test creating an experiment and saving assignments to the database."""
-    request = make_create_preassigned_experiment_request(with_ids=True)
-
-    response = client_v1.post(
-        "/experiments/with-assignment",
-        params={"chosen_n": 100},
-        headers={
-            constants.HEADER_CONFIG_ID: testing_datasource.ds.id,
-            constants.HEADER_API_KEY: testing_datasource.key,
-        },
-        content=request.model_dump_json(),
-    )
-    assert response.status_code == 422, response.content
-    assert "UUIDs must not be set" in response.json()["message"]
-
-
 async def test_create_experiment_with_assignment_sl(
     testing_datasource, use_deterministic_random, client_v1
 ):

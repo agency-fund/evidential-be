@@ -13,8 +13,8 @@ from numpy.random import MT19937, RandomState
 from sqlalchemy import DECIMAL, Boolean, Column, Float, Integer, MetaData, String, Table
 
 from xngin.apiserver.routers.assignment_adapters import (
-    _make_balance_check,  # noqa: PLC2701
     assign_treatment,
+    make_balance_check,
 )
 from xngin.apiserver.routers.common_api_types import (
     Arm,
@@ -106,7 +106,7 @@ def make_arms(names: list[str]):
 def test_make_balance_check():
     """Test conversion from BalanceResult to BalanceCheck."""
     # Test with None input
-    assert _make_balance_check(None, 0.5) is None
+    assert make_balance_check(None, 0.5) is None
 
     # Test with actual BalanceResult
     balance_result = BalanceResult(
@@ -116,7 +116,7 @@ def test_make_balance_check():
         numerator_df=5.0,
         denominator_df=100.0,
     )
-    balance_check = _make_balance_check(balance_result, 0.5)
+    balance_check = make_balance_check(balance_result, 0.5)
 
     assert isinstance(balance_check, BalanceCheck)
     assert balance_check.f_statistic == pytest.approx(1.234567890, abs=1e-9)
@@ -136,7 +136,7 @@ def test_make_balance_check_with_different_thresholds():
         denominator_df=50.0,
     )
 
-    balance_check = _make_balance_check(balance_result, 0.5)
+    balance_check = make_balance_check(balance_result, 0.5)
     assert balance_check is not None
 
     assert balance_check.balance_ok is False
@@ -146,13 +146,13 @@ def test_make_balance_check_with_different_thresholds():
     assert balance_check.denominator_df == 50
 
     # Try a few other different thresholds
-    thresh1 = _make_balance_check(balance_result, 1.0)
+    thresh1 = make_balance_check(balance_result, 1.0)
     assert thresh1 and thresh1.balance_ok is False
-    thresh2 = _make_balance_check(balance_result, 0.3)
+    thresh2 = make_balance_check(balance_result, 0.3)
     assert thresh2 and thresh2.balance_ok is False
-    thresh3 = _make_balance_check(balance_result, 0.299)
+    thresh3 = make_balance_check(balance_result, 0.299)
     assert thresh3 and thresh3.balance_ok
-    thresh4 = _make_balance_check(balance_result, 0)
+    thresh4 = make_balance_check(balance_result, 0)
     assert thresh4 and thresh4.balance_ok
 
 

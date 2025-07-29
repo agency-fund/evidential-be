@@ -424,7 +424,9 @@ class Experiment(Base):
 
     __tablename__ = "experiments"
 
-    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    id: Mapped[str] = mapped_column(
+        String(36), primary_key=True, default=experiment_id_factory
+    )
     datasource_id: Mapped[str] = mapped_column(
         String(255), ForeignKey("datasources.id", ondelete="CASCADE")
     )

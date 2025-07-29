@@ -20,7 +20,12 @@ from sqlalchemy.orm import selectinload
 from xngin.apiserver import constants, flags
 from xngin.apiserver.dwh.dwh_session import DwhSession
 from xngin.apiserver.exceptions_common import LateValidationError
-from xngin.apiserver.routers.assignment_adapters import RowProtocol, assign_treatment
+from xngin.apiserver.routers.assignment_adapters import (
+    RowProtocol,
+    assign_treatments_with_balance,
+    bulk_insert_arm_assignments,
+    make_balance_check,
+)
 from xngin.apiserver.routers.common_api_types import (
     Arm,
     ArmSize,
@@ -78,9 +83,7 @@ async def create_dwh_experiment_impl(
     random_state: int | None,
     validated_webhooks: list[tables.Webhook],
 ) -> CreateExperimentResponse:
-    # Raise error for bandit experiments
-    # Generate ids for the experiment and arms, required for doing assignments.
-    request.design_spec.experiment_id = tables.experiment_id_factory()
+    # Generate ids for arms, required for doing assignments.
     for arm in request.design_spec.arms:
         arm.arm_id = tables.arm_id_factory()
 
@@ -175,7 +178,6 @@ async def create_experiment_with_assignments_impl(
             detail=f"{request.design_spec.experiment_type} experiments are not supported for assignments.",
         )
 
-    request.design_spec.experiment_id = tables.experiment_id_factory()
     for arm in request.design_spec.arms:
         arm.arm_id = tables.arm_id_factory()
 
@@ -249,23 +251,18 @@ async def create_preassigned_experiment_impl(
     strata_names = [s.field_name for s in design_spec.strata]
     stratum_cols = strata_names + metric_names if stratify_on_metrics else strata_names
 
-    experiment_id = design_spec.experiment_id
-    if experiment_id is None:
-        # Should not actually happen, but just in case and for the type checker:
-        raise ValueError("Must have an experiment_id before assigning treatments")
-
-    # TODO: directly create ArmAssignments from the pd dataframe instead
-    assignment_response = assign_treatment(
+    # Do the raw assignment first so we can store the balance check with the experiment.
+    assignment_result = assign_treatments_with_balance(
         sa_table=dwh_sa_table,
         data=dwh_participants,
         stratum_cols=stratum_cols,
         id_col=participant_unique_id_field,
-        arms=design_spec.arms,
-        experiment_id=experiment_id,
-        fstat_thresh=design_spec.fstat_thresh,
-        quantiles=4,  # TODO(qixotic): make this configurable
-        stratum_id_name=None,
+        n_arms=len(design_spec.arms),
+        quantiles=4,
         random_state=random_state,
+    )
+    balance_check = make_balance_check(
+        assignment_result.balance_result, design_spec.fstat_thresh
     )
 
     experiment_converter = ExperimentStorageConverter.init_from_components(
@@ -276,7 +273,7 @@ async def create_preassigned_experiment_impl(
         state=ExperimentState.ASSIGNED,
         stopped_assignments_at=datetime.now(UTC),
         stopped_assignments_reason=StopAssignmentReason.PREASSIGNED,
-        balance_check=assignment_response.balance_check,
+        balance_check=balance_check,
         power_analyses=request.power_analyses,
     )
     experiment = experiment_converter.get_experiment()
@@ -284,25 +281,23 @@ async def create_preassigned_experiment_impl(
     for webhook in validated_webhooks:
         experiment.webhooks.append(webhook)
     xngin_session.add(experiment)
+    # Flush to get ids
+    await xngin_session.flush()
 
-    # Create assignment records
-    for assignment in assignment_response.assignments:
-        # TODO: bulk insert https://docs.sqlalchemy.org/en/20/orm/queryguide/dml.html#orm-queryguide-bulk-insert {"dml_strategy": "raw"}
-        db_assignment = tables.ArmAssignment(
-            experiment_id=experiment.id,
-            participant_type=design_spec.participant_type,
-            participant_id=assignment.participant_id,
-            arm_id=str(assignment.arm_id),
-            strata=[s.model_dump(mode="json") for s in assignment.strata]
-            if assignment.strata
-            else None,
-        )
-        xngin_session.add(db_assignment)
+    await bulk_insert_arm_assignments(
+        xngin_session=xngin_session,
+        experiment_id=experiment.id,
+        arms=design_spec.arms,
+        participant_type=experiment.participant_type,
+        participant_id_col=participant_unique_id_field,
+        data=dwh_participants,
+        assignment_result=assignment_result,
+    )
 
     await xngin_session.commit()
 
     assign_summary = await get_assign_summary(
-        xngin_session, experiment.id, assignment_response.balance_check
+        xngin_session, experiment.id, balance_check
     )
     webhook_ids = [webhook.id for webhook in validated_webhooks]
     return experiment_converter.get_create_experiment_response(

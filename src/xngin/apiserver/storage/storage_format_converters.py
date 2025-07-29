@@ -237,6 +237,7 @@ class ExperimentStorageConverter:
 
         Expects assign_summary since that typically requires a db lookup."""
         return capi.GetExperimentResponse(
+            experiment_id=self.experiment.id,
             datasource_id=self.experiment.datasource_id,
             state=ExperimentState(self.experiment.state),
             stopped_assignments_at=self.experiment.stopped_assignments_at,
@@ -287,11 +288,8 @@ class ExperimentStorageConverter:
         Raises:
             ValueError: If the experiment_id is not set in the design_spec.
         """
-        if design_spec.experiment_id is None:
-            raise ValueError("experiment_id is required in the design_spec")
         if isinstance(design_spec, capi.BaseFrequentistDesignSpec):
             experiment = tables.Experiment(
-                id=design_spec.experiment_id,
                 datasource_id=datasource_id,
                 experiment_type=experiment_type,
                 participant_type=design_spec.participant_type,

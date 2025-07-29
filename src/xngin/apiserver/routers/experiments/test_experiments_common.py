@@ -53,13 +53,11 @@ def make_createexperimentrequest_json(
 
     This does not add any power analyses or balance checks, nor do any validation.
     """
-    experiment_id = tables.experiment_id_factory() if with_ids else None
     arm1_id = tables.arm_id_factory() if with_ids else None
     arm2_id = tables.arm_id_factory() if with_ids else None
 
     return {
         "design_spec": {
-            **({"experiment_id": experiment_id} if experiment_id is not None else {}),
             "participant_type": participant_type,
             "experiment_name": "test",
             "description": "test",
@@ -245,10 +243,10 @@ async def test_create_experiment_impl_for_preassigned(
         validated_webhooks=[],
     )
     # Verify response
+    experiment_id = response.experiment_id
     assert response.datasource_id == testing_datasource.ds.id
     assert response.state == ExperimentState.ASSIGNED
     # Verify design_spec
-    assert response.design_spec.experiment_id is not None
     assert response.design_spec.arms[0].arm_id is not None
     assert response.design_spec.arms[1].arm_id is not None
     assert response.design_spec.experiment_name == request.design_spec.experiment_name
@@ -268,10 +266,8 @@ async def test_create_experiment_impl_for_preassigned(
     assert response.assign_summary.balance_check is not None
     assert response.assign_summary.balance_check.balance_ok is True
 
-    # Verify database state using the ids in the returned DesignSpec.
-    experiment = await xngin_session.get(
-        tables.Experiment, response.design_spec.experiment_id
-    )
+    # Verify database state uses app-generated ids
+    experiment = await xngin_session.get(tables.Experiment, experiment_id)
     assert experiment is not None
     assert experiment.experiment_type == ExperimentsType.FREQ_PREASSIGNED
     assert experiment.participant_type == request.design_spec.participant_type
@@ -425,16 +421,15 @@ async def test_create_experiment_impl_for_online(
     assert len(assignments) == 0
 
 
-async def test_create_experiment_impl_overwrites_uuids(
+async def test_create_experiment_impl_overwrites_arm_uuids(
     xngin_session, testing_datasource, sample_table, use_deterministic_random
 ):
     """
-    Test that the function overwrites requests with preset UUIDs
+    Test that the function overwrites requests with preset arm UUIDs
     (which would otherwise be caught in the route handler).
     """
     participants = make_sample_data(n=100)
     request = make_create_preassigned_experiment_request(with_ids=True)
-    original_experiment_id = request.design_spec.experiment_id
     original_arm_ids = [arm.arm_id for arm in request.design_spec.arms]
 
     response = await create_dwh_experiment_impl(
@@ -448,7 +443,7 @@ async def test_create_experiment_impl_overwrites_uuids(
     )
 
     # Verify that new UUIDs were generated
-    assert response.design_spec.experiment_id != original_experiment_id
+    assert response.experiment_id.startswith("exp_")
     new_arm_ids = [arm.arm_id for arm in response.design_spec.arms]
     assert set(new_arm_ids) != set(original_arm_ids)
 
@@ -456,7 +451,7 @@ async def test_create_experiment_impl_overwrites_uuids(
     experiment = (
         await xngin_session.scalars(
             select(tables.Experiment).where(
-                tables.Experiment.id == response.design_spec.experiment_id
+                tables.Experiment.id == response.experiment_id
             )
         )
     ).one()
@@ -495,7 +490,7 @@ async def test_create_experiment_impl_no_metric_stratification(
     # Verify basic response
     assert response.datasource_id == testing_datasource.ds.id
     assert response.state == ExperimentState.ASSIGNED
-    assert response.design_spec.experiment_id is not None
+    assert response.experiment_id.startswith("exp_")
     assert response.design_spec.arms[0].arm_id is not None
     # Same as in the stratify_on_metrics=True test.
     # Only the output assignments will also store a snapshot of the metric values as strata.
@@ -506,7 +501,7 @@ async def test_create_experiment_impl_no_metric_stratification(
     experiment = (
         await xngin_session.scalars(
             select(tables.Experiment).where(
-                tables.Experiment.id == response.design_spec.experiment_id
+                tables.Experiment.id == response.experiment_id
             )
         )
     ).one()
@@ -670,13 +665,19 @@ async def test_list_experiments_impl(
     actual2_config = experiments.items[1]
     actual3_config = experiments.items[0]
     assert actual1_config.state == ExperimentState.ASSIGNED
-    diff = DeepDiff(actual1_config.design_spec, experiment1_data[1])
+    diff = DeepDiff(
+        actual1_config.design_spec, experiment1_data[1], exclude_paths=["experiment_id"]
+    )
     assert not diff, f"Objects differ:\n{diff.pretty()}"
     assert actual2_config.state == ExperimentState.COMMITTED
-    diff = DeepDiff(actual2_config.design_spec, experiment2_data[1])
+    diff = DeepDiff(
+        actual2_config.design_spec, experiment2_data[1], exclude_paths=["experiment_id"]
+    )
     assert not diff, f"Objects differ:\n{diff.pretty()}"
     assert actual3_config.state == ExperimentState.DESIGNING
-    diff = DeepDiff(actual3_config.design_spec, experiment3_data[1])
+    diff = DeepDiff(
+        actual3_config.design_spec, experiment3_data[1], exclude_paths=["experiment_id"]
+    )
     assert not diff, f"Objects differ:\n{diff.pretty()}"
 
 
