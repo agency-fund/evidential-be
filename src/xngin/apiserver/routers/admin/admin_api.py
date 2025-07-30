@@ -91,8 +91,8 @@ from xngin.apiserver.routers.common_api_types import (
     BanditExperimentAnalysisResponse,
     BaseBanditExperimentSpec,
     BaseFrequentistDesignSpec,
+    ContextInputRequest,
     ContextType,
-    CreateCMABAssignmentRequest,
     CreateExperimentRequest,
     CreateExperimentResponse,
     ExperimentsType,
@@ -1636,7 +1636,10 @@ async def get_experiment_assignment_for_participant(
     description="""Create a CMAB arm assignment for a specific participant. This endpoint is used for creating CMAB experiment assignments only.""",
 )
 async def get_cmab_experiment_assignment_for_participant(
-    body: CreateCMABAssignmentRequest,
+    datasource_id: str,
+    experiment_id: str,
+    participant_id: str,
+    context_values: list[ContextInputRequest],
     session: Annotated[AsyncSession, Depends(xngin_db_session)],
     user: Annotated[tables.User, Depends(user_from_token)],
     random_state: Annotated[
@@ -1649,14 +1652,14 @@ async def get_cmab_experiment_assignment_for_participant(
 ) -> GetParticipantAssignmentResponse:
     """Get the assignment for a specific participant in an experiment."""
     # Validate the datasource and experiment exist
-    ds = await get_datasource_or_raise(session, user, body.datasource_id)
+    ds = await get_datasource_or_raise(session, user, datasource_id)
     experiment = await get_experiment_via_ds_or_raise(
-        session, ds, body.experiment_id, preload=[tables.Experiment.contexts]
+        session, ds, experiment_id, preload=[tables.Experiment.contexts]
     )
 
     # Check context values
     for context_body, context_def in zip(
-        sorted(body.context_values, key=lambda x: x.context_id),
+        sorted(context_values, key=lambda x: x.context_id),
         sorted(experiment.contexts, key=lambda x: x.id),
         strict=False,
     ):
@@ -1676,31 +1679,31 @@ async def get_cmab_experiment_assignment_for_participant(
     assignment = await experiments_common.get_existing_assignment_for_participant(
         xngin_session=session,
         experiment_id=experiment.id,
-        participant_id=body.participant_id,
+        participant_id=participant_id,
         experiment_type=experiment.experiment_type,
     )
     if assignment:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Assignment for participant {body.participant_id} already exists.",
+            detail=f"Assignment for participant {participant_id} already exists.",
         )
 
     if not assignment and experiment.stopped_assignments_at is None:
         context_vals = [
             ctx.context_value
-            for ctx in sorted(body.context_values, key=lambda x: x.context_id)
+            for ctx in sorted(context_values, key=lambda x: x.context_id)
         ]
         assignment = await experiments_common.create_assignment_for_participant(
             xngin_session=session,
             experiment=experiment,
-            participant_id=body.participant_id,
+            participant_id=participant_id,
             context_vals=context_vals,
             random_state=random_state,
         )
 
     return GetParticipantAssignmentResponse(
         experiment_id=experiment.id,
-        participant_id=body.participant_id,
+        participant_id=participant_id,
         assignment=assignment,
     )
 

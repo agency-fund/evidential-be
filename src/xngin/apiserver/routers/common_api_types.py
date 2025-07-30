@@ -162,7 +162,7 @@ class Context(ApiBaseModel):
     ]
 
 
-class ContextInput(ApiBaseModel):
+class ContextInputRequest(ApiBaseModel):
     """
     Pydantic model for a context input
     """
@@ -1170,18 +1170,3 @@ class AssignResponse(ApiBaseModel):
         ),
     ]
     assignments: Annotated[list[Assignment], Field()]
-
-
-class CreateCMABAssignmentRequest(ApiBaseModel):
-    """Describes a request to assign a participant to an arm in a contextual MAB experiment."""
-
-    datasource_id: str
-    experiment_id: str
-    participant_id: str
-    context_values: Annotated[
-        list[ContextInput],
-        Field(
-            description="List of context values for this assignment. Must match the contexts defined in the experiment design.",
-            max_length=MAX_NUMBER_OF_CONTEXTS,
-        ),
-    ]
