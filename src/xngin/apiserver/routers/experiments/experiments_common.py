@@ -264,7 +264,7 @@ async def create_preassigned_experiment_impl(
                 "Experiment cannot be created with non-unique participant IDs as this would bias results."
             )
         seen_participant_ids.add(participant_id)
-        
+
     # TODO: directly create ArmAssignments from the pd dataframe instead
     assignment_response = assign_treatment(
         sa_table=dwh_sa_table,
@@ -278,7 +278,6 @@ async def create_preassigned_experiment_impl(
         stratum_id_name=None,
         random_state=random_state,
     )
-
 
     experiment_converter = ExperimentStorageConverter.init_from_components(
         datasource_id=datasource_id,

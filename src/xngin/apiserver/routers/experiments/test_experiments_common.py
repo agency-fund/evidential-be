@@ -350,7 +350,7 @@ async def test_create_preassigned_experiment_impl_raises_on_duplicate_ids(
 ):
     """Test that create_preassigned_experiment_impl raises LateValidationError for duplicate participant IDs."""
     request = make_create_preassigned_experiment_request(with_ids=True)
-    
+
     # Create mock participants with a duplicate ID
     participants_with_duplicate = [
         MockRow(participant_id="id_1", gender="M", is_onboarded=True),
@@ -373,7 +373,8 @@ async def test_create_preassigned_experiment_impl_raises_on_duplicate_ids(
             stratify_on_metrics=False,
             validated_webhooks=[],
         )
-        
+
+
 async def test_create_experiment_impl_for_online(
     xngin_session, testing_datasource, sample_table, use_deterministic_random
 ):
