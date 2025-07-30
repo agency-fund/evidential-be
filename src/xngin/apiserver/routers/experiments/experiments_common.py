@@ -541,7 +541,7 @@ def get_experiment_assignments_impl(
             sample_size=len(assignments),
             assignments=assignments,
         )
-    if experiment.experiment_type == ExperimentsType.MAB_ONLINE.value:
+    if experiment.experiment_type != ExperimentsType.BAYESAB_ONLINE.value:
         assignments = [
             Assignment(
                 participant_id=draw.participant_id,
@@ -845,7 +845,7 @@ async def update_bandit_arm_with_outcome_impl(
         )
 
     # TODO: Add support for CMAB or Bayes A/B experiments.
-    if experiment.experiment_type != ExperimentsType.MAB_ONLINE.value:
+    if experiment.experiment_type == ExperimentsType.BAYESAB_ONLINE.value:
         raise LateValidationError(
             f"Invalid experiment type for bandit outcome update: {experiment.experiment_type}"
         )
@@ -886,13 +886,22 @@ async def update_bandit_arm_with_outcome_impl(
             for draw in sorted(experiment.draws, key=lambda d: d.created_at)
             if draw.arm_id == draw_record.arm_id and draw.outcome is not None
         ][::-1]  # Reverse order to get the most recent outcomes first
-
         outcomes = [outcome, *previous_outcomes]
+
+        context_vals = None
+        if draw_record.context_vals:
+            previous_contexts = [
+                draw.context_vals
+                for draw in sorted(experiment.draws, key=lambda d: d.created_at)
+                if draw.arm_id == draw_record.arm_id and draw.context_vals is not None
+            ][::-1]
+            context_vals = [draw_record.context_vals, *previous_contexts]
+
         updated_parameters = update_arm(
             experiment=experiment,
             arm_to_update=arm_to_update,
             outcomes=outcomes,
-            context=None,
+            context=context_vals,
         )
 
         # Update the draw record and arm with the new parameters

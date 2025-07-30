@@ -234,7 +234,7 @@ def update_arm(
     treatments: The treatments applied to the arm, for a Bayesian A/B test.
     """
     # TODO: Only supported for MAB experiments
-    if experiment.experiment_type != ExperimentsType.MAB_ONLINE.value:
+    if experiment.experiment_type == ExperimentsType.BAYESAB_ONLINE.value:
         raise ValueError(f"Invalid experiment type: {experiment.experiment_type}.")
     if not experiment.prior_type or not experiment.reward_type:
         raise ValueError("Experiment must have prior and reward types defined.")
