@@ -211,8 +211,8 @@ async def get_experiment_assignments_as_csv_sl(
 @router.get(
     "/experiments/{experiment_id}/assignments/{participant_id}",
     summary="Get the assignment for a specific participant, excluding strata if any.",
-    description="""For 'preassigned' experiments, the participant's Assignment is returned if it
-    exists.  For 'online', returns the assignment if it exists, else generates an assignment""",
+    description="""For preassigned experiments, the participant's Assignment is returned if it
+    exists.  For online experiments, returns the assignment if it exists, else generates an assignment""",
 )
 async def get_assignment_for_participant_with_apikey(
     experiment: Annotated[tables.Experiment, Depends(experiment_dependency)],
@@ -227,11 +227,17 @@ async def get_assignment_for_participant_with_apikey(
     random_state: Annotated[int | None, Depends(random_seed_dependency)] = None,
 ) -> GetParticipantAssignmentResponse:
     assignment = await get_existing_assignment_for_participant(
-        xngin_session, experiment.id, participant_id, experiment.experiment_type
+        xngin_session=xngin_session,
+        experiment_id=experiment.id,
+        participant_id=participant_id,
+        experiment_type=experiment.experiment_type,
     )
     if not assignment and create_if_none:
         assignment = await create_assignment_for_participant(
-            xngin_session, experiment, participant_id, random_state
+            xngin_session=xngin_session,
+            experiment=experiment,
+            participant_id=participant_id,
+            random_state=random_state,
         )
 
     return GetParticipantAssignmentResponse(

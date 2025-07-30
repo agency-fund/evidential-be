@@ -574,7 +574,7 @@ class Draw(Base):
     participant_type: Mapped[str] = mapped_column(String(255))
     arm_id: Mapped[str] = mapped_column(ForeignKey("arms.id", ondelete="CASCADE"))
     outcome: Mapped[float | None] = mapped_column()
-    context_val: Mapped[list[float] | None] = mapped_column(ARRAY(Float))
+    context_vals: Mapped[list[float] | None] = mapped_column(ARRAY(Float))
     current_mu: Mapped[list[float] | None] = mapped_column(ARRAY(Float))
     current_covariance: Mapped[list[list[float]] | None] = mapped_column(ARRAY(Float))
     current_alpha: Mapped[float | None] = mapped_column()

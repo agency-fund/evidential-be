@@ -179,8 +179,8 @@ def choose_arm(
     experiment: The experiment data containing priors and rewards for each arm.
     context: Optional context vector for the experiment.
     """
-    # TODO: Only supported for MAB experiments
-    if experiment.experiment_type != ExperimentsType.MAB_ONLINE.value:
+    # TODO: Only supported for MAB and CMAB experiments
+    if experiment.experiment_type == ExperimentsType.BAYESAB_ONLINE.value:
         raise ValueError(f"Invalid experiment type: {experiment.experiment_type}.")
 
     sorted_arms = sorted(experiment.arms, key=lambda a: a.name)

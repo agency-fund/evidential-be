@@ -91,8 +91,11 @@ from xngin.apiserver.routers.common_api_types import (
     BanditExperimentAnalysisResponse,
     BaseBanditExperimentSpec,
     BaseFrequentistDesignSpec,
+    ContextType,
+    CreateCMABAssignmentRequest,
     CreateExperimentRequest,
     CreateExperimentResponse,
+    ExperimentsType,
     FreqExperimentAnalysisResponse,
     GetExperimentAssignmentsResponse,
     GetExperimentResponse,
@@ -1606,14 +1609,98 @@ async def get_experiment_assignment_for_participant(
     assignment = await experiments_common.get_existing_assignment_for_participant(
         session, experiment.id, participant_id, experiment.experiment_type
     )
+
     if not assignment and create_if_none and experiment.stopped_assignments_at is None:
+        if experiment.experiment_type == ExperimentsType.CMAB_ONLINE.value:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="New arm assignments for CMAB experiments are not at this endpoint, please use the corresponding POST endpoint instead.",
+            )
+
         assignment = await experiments_common.create_assignment_for_participant(
-            session, experiment, participant_id, random_state
+            xngin_session=session,
+            experiment=experiment,
+            participant_id=participant_id,
+            random_state=random_state,
         )
 
     return GetParticipantAssignmentResponse(
         experiment_id=experiment_id,
         participant_id=participant_id,
+        assignment=assignment,
+    )
+
+
+@router.post(
+    "/datasources/{datasource_id}/experiments/{experiment_id}/assignments/{participant_id}",
+    description="""Create a CMAB arm assignment for a specific participant. This endpoint is used for creating CMAB experiment assignments only.""",
+)
+async def get_cmab_experiment_assignment_for_participant(
+    body: CreateCMABAssignmentRequest,
+    session: Annotated[AsyncSession, Depends(xngin_db_session)],
+    user: Annotated[tables.User, Depends(user_from_token)],
+    random_state: Annotated[
+        int | None,
+        Query(
+            description="Specify a random seed for reproducibility.",
+            include_in_schema=False,
+        ),
+    ] = None,
+) -> GetParticipantAssignmentResponse:
+    """Get the assignment for a specific participant in an experiment."""
+    # Validate the datasource and experiment exist
+    ds = await get_datasource_or_raise(session, user, body.datasource_id)
+    experiment = await get_experiment_via_ds_or_raise(
+        session, ds, body.experiment_id, preload=[tables.Experiment.contexts]
+    )
+
+    # Check context values
+    for context_body, context_def in zip(
+        sorted(body.context_values, key=lambda x: x.context_id),
+        sorted(experiment.contexts, key=lambda x: x.id),
+        strict=False,
+    ):
+        if context_body.context_id != context_def.id:
+            raise LateValidationError(
+                f"Context value {context_body.context_id} does not match expected context {context_def.id}",
+            )
+        if (
+            context_def.value_type == ContextType.BINARY.value
+            and context_body.context_value not in set([0.0, 1.0])
+        ):
+            raise LateValidationError(
+                f"Context value {context_body.context_id} must be binary (0 or 1).",
+            )
+
+    # Look up the participant's assignment if it exists
+    assignment = await experiments_common.get_existing_assignment_for_participant(
+        xngin_session=session,
+        experiment_id=experiment.id,
+        participant_id=body.participant_id,
+        experiment_type=experiment.experiment_type,
+    )
+    if assignment:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Assignment for participant {body.participant_id} already exists.",
+        )
+
+    if not assignment and experiment.stopped_assignments_at is None:
+        context_vals = [
+            ctx.context_value
+            for ctx in sorted(body.context_values, key=lambda x: x.context_id)
+        ]
+        assignment = await experiments_common.create_assignment_for_participant(
+            xngin_session=session,
+            experiment=experiment,
+            participant_id=body.participant_id,
+            context_vals=context_vals,
+            random_state=random_state,
+        )
+
+    return GetParticipantAssignmentResponse(
+        experiment_id=experiment.id,
+        participant_id=body.participant_id,
         assignment=assignment,
     )
 
@@ -1655,13 +1742,13 @@ async def power_check(
     design_spec = body.design_spec
     if not isinstance(design_spec, BaseFrequentistDesignSpec):
         raise HTTPException(
-            status_code=400,
+            status_code=status.HTTP_400_BAD_REQUEST,
             detail="Power checks are only supported for frequentist experiments",
         )
     ds = await get_datasource_or_raise(session, user, datasource_id)
     if isinstance(ds.config, NoDwh):
         raise HTTPException(
-            status_code=400,
+            status_code=status.HTTP_400_BAD_REQUEST,
             detail="Power checks are not supported for datasources without a data warehouse.",
         )
     dsconfig = ds.get_config()

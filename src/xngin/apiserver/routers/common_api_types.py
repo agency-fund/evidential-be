@@ -168,10 +168,10 @@ class ContextInput(ApiBaseModel):
     """
 
     context_id: Annotated[
-        int,
+        str,
         Field(
             description="Unique identifier for the context.",
-            examples=[1],
+            examples=["1"],
         ),
     ]
     context_value: Annotated[
@@ -947,13 +947,12 @@ class Assignment(ApiBaseModel):
     ] = None
 
     context_values: Annotated[
-        list[ContextInput],
+        list[float] | None,
         Field(
             description="List of context values for this assignment. If no contexts are used, this will be None.",
             max_length=MAX_NUMBER_OF_CONTEXTS,
-            default=[],
         ),
-    ] = []
+    ] = None
 
 
 class BalanceCheck(ApiBaseModel):
@@ -1171,3 +1170,18 @@ class AssignResponse(ApiBaseModel):
         ),
     ]
     assignments: Annotated[list[Assignment], Field()]
+
+
+class CreateCMABAssignmentRequest(ApiBaseModel):
+    """Describes a request to assign a participant to an arm in a contextual MAB experiment."""
+
+    datasource_id: str
+    experiment_id: str
+    participant_id: str
+    context_values: Annotated[
+        list[ContextInput],
+        Field(
+            description="List of context values for this assignment. Must match the contexts defined in the experiment design.",
+            max_length=MAX_NUMBER_OF_CONTEXTS,
+        ),
+    ]
