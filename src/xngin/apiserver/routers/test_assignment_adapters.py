@@ -10,19 +10,39 @@ import numpy as np
 import pandas as pd
 import pytest
 from numpy.random import MT19937, RandomState
-from sqlalchemy import DECIMAL, Boolean, Column, Float, Integer, MetaData, String, Table
+from pydantic import TypeAdapter
+from sqlalchemy import (
+    DECIMAL,
+    Boolean,
+    Column,
+    Float,
+    Integer,
+    MetaData,
+    String,
+    Table,
+    delete,
+    select,
+)
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from xngin.apiserver.routers.assignment_adapters import (
-    assign_treatment,
+    assign_treatments_with_balance,
+    bulk_insert_arm_assignments,
     make_balance_check,
 )
 from xngin.apiserver.routers.common_api_types import (
     Arm,
-    Assignment,
     BalanceCheck,
     Strata,
 )
+from xngin.apiserver.routers.experiments.test_experiments_common import (
+    insert_experiment_and_arms,
+)
+from xngin.apiserver.settings import (
+    RemoteDatabaseConfig,
+)
 from xngin.apiserver.sqla import tables
+from xngin.stats.assignment import AssignmentResult
 from xngin.stats.balance import BalanceResult
 
 
@@ -52,7 +72,7 @@ def sample_table():
     return Table(
         "table_name",
         metadata_obj,
-        Column("id", String, primary_key=True, autoincrement=False),
+        Column("id", Integer, primary_key=True, autoincrement=False),
         Column("age", Integer),
         Column("income", Float),
         Column("gender", String),
@@ -156,168 +176,279 @@ def test_make_balance_check_with_different_thresholds():
     assert thresh4 and thresh4.balance_ok
 
 
-def test_assign_adapter_creates_proper_assign_response(sample_table, sample_rows):
-    """Test that assign_treatment creates a proper AssignResponse with all required fields."""
-    arms = make_arms(["control", "treatment"])
-    result = assign_treatment(
+def test_assign_treatments_with_balance_basic(sample_table, sample_rows):
+    """Test that assign_treatments_with_balance returns proper AssignmentResult."""
+    result = assign_treatments_with_balance(
         sa_table=sample_table,
         data=sample_rows,
         stratum_cols=["region", "gender"],
         id_col="id",
-        arms=arms,
-        experiment_id="b767716b-f388-4cd9-a18a-08c4916ce26f",
+        n_arms=2,
         random_state=42,
-        stratum_id_name="stratum_id",
     )
 
-    # Test AssignResponse structure
-    assert result.balance_check is not None
-    assert result.balance_check.f_statistic == pytest.approx(0.006156735)
-    assert result.balance_check.p_value == pytest.approx(0.99992466)
-    assert result.balance_check.balance_ok
-    assert result.experiment_id == "b767716b-f388-4cd9-a18a-08c4916ce26f"
-    assert result.sample_size == len(sample_rows)
-    assert result.unique_id_field == "id"
-    assignments = result.assignments
-    assert isinstance(assignments, list)
-    assert len(set([x.participant_id for x in assignments])) == len(assignments)
+    # Check AssignmentResult structure
+    assert isinstance(result, AssignmentResult)
+    assert result.stratum_ids is not None
+    assert len(result.stratum_ids) == len(sample_rows)
+    assert len(result.treatment_ids) == len(sample_rows)
+    assert result.orig_stratum_cols == ["gender", "region"]
+    assert result.balance_result is not None
+    assert result.balance_result.f_statistic == pytest.approx(0.006156735)
+    assert result.balance_result.f_pvalue == pytest.approx(0.99992466)
 
 
-def test_assign_adapter_multiple_arms(sample_table, sample_rows):
-    """Test assignment with multiple arms."""
-    arms = make_arms(["control", "treatment_a", "treatment_b"])
-    result = assign_treatment(
-        sa_table=sample_table,
+@pytest.mark.parametrize("stratum_id_name", [None, "stratum_id"])
+async def test_bulk_insert_arm_assignments_basic(
+    xngin_session: AsyncSession,
+    testing_datasource,
+    sample_rows,
+    stratum_id_name: str | None,
+):
+    """Test bulk inserts of arm assignments, with and without strata group ids."""
+    # First create an experiment and arms in db
+    ds: tables.Datasource = testing_datasource.ds
+    pt = testing_datasource.pt
+    experiment = await insert_experiment_and_arms(xngin_session, ds)
+    arms = [Arm(arm_id=arm.id, arm_name=arm.name) for arm in experiment.arms]
+
+    # Simulate 2 arms with stratification
+    fake_assignment_results = AssignmentResult(
+        treatment_ids=[0, 1] * (len(sample_rows) // 2),
+        stratum_ids=[int(s.is_male) for s in sample_rows],
+        balance_result=None,
+        orig_stratum_cols=["gender"],
+    )
+
+    await bulk_insert_arm_assignments(
+        xngin_session=xngin_session,
+        experiment_id=experiment.id,
+        arms=arms,
+        participant_type=pt.participant_type,
+        participant_id_col=pt.get_unique_id_field(),
         data=sample_rows,
-        stratum_cols=["gender", "region"],
-        id_col="id",
-        arms=arms,
-        experiment_id="b767716b-f388-4cd9-a18a-08c4916ce26f",
-        random_state=42,
+        assignment_result=fake_assignment_results,
+        stratum_id_name=stratum_id_name,
     )
 
-    # Check that assignments is a list of Assignment objects
-    assignments = result.assignments
-    assert isinstance(assignments, list)
-    assert all(isinstance(participant, Assignment) for participant in assignments)
-    # Check that the treatment assignments are valid (not None or NaN)
-    assert all(participant.arm_name is not None for participant in assignments)
-    # Check that the treatment assignments are valid
-    assert len(set(participant.arm_name for participant in assignments)) == 3
-    assert result.sample_size == len(sample_rows)
-    assert result.unique_id_field == "id"
+    # Get assignments for verification
+    result = await xngin_session.scalars(select(tables.ArmAssignment))
+    assignments = result.all()
+
+    # Verify all participants are assigned
+    participant_ids = {a.participant_id for a in assignments}
+    expected_ids = {str(row.id) for row in sample_rows}
+    assert participant_ids == expected_ids
+
+    # Verify arm assignments
+    arm_ids = {arm.arm_id for arm in arms}
+    for assignment in assignments:
+        assert assignment.experiment_id == experiment.id
+        assert assignment.participant_type == pt.participant_type
+        assert assignment.arm_id in arm_ids
+
+        # Verify strata are properly stored
+        assert assignment.strata[0]["field_name"] == "gender"
+        assert assignment.strata[0]["strata_value"] in {"M", "F"}
+        assert len(assignment.strata) == 1 if stratum_id_name is None else 2
+        if stratum_id_name is not None:
+            assert assignment.strata[1]["field_name"] == stratum_id_name
+            # Note that all strata values are rendered as strings
+            assert assignment.strata[1]["strata_value"] in {"0", "1"}
 
 
 MAX_SAFE_INTEGER = (1 << 53) - 1  # 9007199254740991
 
 
-def test_assign_adapter_with_large_integers_as_participant_ids(
-    sample_table, sample_data
+async def test_assign_and_bulk_insert_with_large_integers_as_participant_ids(
+    xngin_session: AsyncSession, testing_datasource, sample_table, sample_data
 ):
     """Test assignment with large integer participant IDs (underlying type is Decimal)."""
+    # First create an experiment and arms in db
+    ds: tables.Datasource = testing_datasource.ds
+    ds_config = TypeAdapter(RemoteDatabaseConfig).validate_python(ds.config)
+    pt = ds_config.participants[0]
+    experiment = await insert_experiment_and_arms(xngin_session, ds)
+    arms = [Arm(arm_id=arm.id, arm_name=arm.name) for arm in experiment.arms]
 
-    def assign(data):
+    async def _assign_test(data):
         rows = [Row(**row) for row in data.to_dict("records")]
-        return assign_treatment(
+        assignment_result = assign_treatments_with_balance(
             sa_table=sample_table,
             data=rows,
             stratum_cols=["gender", "region"],
             id_col="id",
-            arms=make_arms(["control", "treatment"]),
-            experiment_id="b767716b-f388-4cd9-a18a-08c4916ce26f",
+            n_arms=2,
             random_state=42,
         )
 
-    # We should be able to handle Decimals (e.g. from psycopg2 with redshift numerics).
-    sample_data["id"] = sample_data["id"].apply(Decimal)
-    result = assign(sample_data)
+        # Bulk insert assignments
+        await bulk_insert_arm_assignments(
+            xngin_session=xngin_session,
+            experiment_id=experiment.id,
+            arms=arms,
+            participant_type=pt.participant_type,
+            participant_id_col="id",
+            data=rows,
+            assignment_result=assignment_result,
+        )
 
-    assert result.balance_check.f_statistic == pytest.approx(0.006156735)
-    assert result.balance_check.p_value == pytest.approx(0.99992466)
-    json = result.model_dump()
-    assert json["assignments"][0]["participant_id"] == "0"
-    assert json["assignments"][1]["participant_id"] == "1"
+        # Get assignments for verification
+        result = await xngin_session.scalars(
+            select(tables.ArmAssignment)
+            .where(tables.ArmAssignment.experiment_id == experiment.id)
+            .order_by(tables.ArmAssignment.participant_id)
+        )
+        return result.all()
 
-    # We should be able to support bigger than signed int64s
-    sample_data.loc[0, "id"] = Decimal(MAX_SAFE_INTEGER + 2)
-    result = assign(sample_data)
-    # Ensure the id string is rendered properly. (index=891 since participant ids are ordered lexicogrpahically)
-    json_str = result.model_dump_json()
-    assert '"participant_id":"9007199254740993"' in json_str
+    orig_ids = sample_data["id"].copy()
+
+    # We should be able to handle Decimals including those bigger than signed int64s
+    # (e.g. from psycopg2 with redshift numerics).
+    sample_data["id"] = orig_ids.apply(lambda x: Decimal(MAX_SAFE_INTEGER + x))
+    assignments = await _assign_test(sample_data)
+    # Verify large integer IDs were properly stored as strings
+    assert len(assignments) == len(sample_data)
+    for assignment in assignments:
+        participant_id_int = int(assignment.participant_id)
+        assert participant_id_int >= MAX_SAFE_INTEGER
+        orig_id = participant_id_int - MAX_SAFE_INTEGER
+        # Assert that the inserted id was derived from the original id
+        assert orig_id in orig_ids, f"id {orig_id} not found"
+
+    # Reset the assignments
+    await xngin_session.execute(delete(tables.ArmAssignment))
 
     # We should be able to support very big negatives as well
-    sample_data.loc[0, "id"] = Decimal(-MAX_SAFE_INTEGER - 2)
-    result = assign(sample_data)
-    json = result.model_dump()
-    assert json["assignments"][0]["participant_id"] == "-9007199254740993"
+    sample_data["id"] = orig_ids.apply(lambda x: Decimal(-MAX_SAFE_INTEGER - x))
+    assignments = await _assign_test(sample_data)
+    # Verify large integer IDs were properly stored as strings
+    assert len(assignments) == len(sample_data)
+    for assignment in assignments:
+        participant_id_int = int(assignment.participant_id)
+        assert participant_id_int <= -MAX_SAFE_INTEGER
+        orig_id = -participant_id_int - MAX_SAFE_INTEGER
+        # Assert that the inserted id was derived from the original id
+        assert orig_id in orig_ids, f"id {orig_id} not found"
 
 
-def test_assign_adapter_renders_decimal_and_bool_strata_correctly(
-    sample_table, sample_rows
+async def test_bulk_insert_renders_decimal_and_bool_strata_correctly(
+    xngin_session: AsyncSession, testing_datasource, sample_rows
 ):
     """Test that the adapter correctly renders decimal and bool strata as strings."""
-    arms = make_arms(["control", "treatment"])
-    result = assign_treatment(
-        sa_table=sample_table,
-        data=sample_rows,
-        stratum_cols=["income_dec", "is_male"],
-        id_col="id",
+    # First create an experiment and arms in db
+    ds: tables.Datasource = testing_datasource.ds
+    pt = testing_datasource.pt
+    experiment = await insert_experiment_and_arms(xngin_session, ds)
+    arms = [Arm(arm_id=arm.id, arm_name=arm.name) for arm in experiment.arms]
+
+    fake_assignment_results = AssignmentResult(
+        treatment_ids=[0, 1] * (len(sample_rows) // 2),
+        stratum_ids=[0, 1] * (len(sample_rows) // 2),
+        balance_result=None,
+        orig_stratum_cols=["income_dec", "is_male"],
+    )
+
+    await bulk_insert_arm_assignments(
+        xngin_session=xngin_session,
+        experiment_id=experiment.id,
         arms=arms,
-        experiment_id="b767716b-f388-4cd9-a18a-08c4916ce26f",
-        random_state=42,
-    )
-
-    for p in result.assignments:
-        json = p.model_dump()
-        # we rounded the Decimal to an int, so shouldn't see the decimal point
-        assert "." not in json["strata"][0]["strata_value"], json
-        assert json["strata"][1]["strata_value"] in {"True", "False"}, json
-
-
-def test_assign_adapter_with_no_stratification(sample_table, sample_rows):
-    """Test assignment with no stratification columns."""
-    result = assign_treatment(
-        sa_table=sample_table,
+        participant_type=pt.participant_type,
+        participant_id_col=pt.get_unique_id_field(),
         data=sample_rows,
-        stratum_cols=[],
-        id_col="id",
-        arms=make_arms(["control", "treatment"]),
-        experiment_id="b767716b-f388-4cd9-a18a-08c4916ce26f",
-        random_state=None,  # counts in each arm should always be equal regardless.
+        assignment_result=fake_assignment_results,
     )
 
-    assert result.balance_check is None
+    # Get assignments for verification
+    result = await xngin_session.scalars(select(tables.ArmAssignment))
+    assignments = result.all()
+
+    assert len(assignments) == len(sample_rows)
+    for p in assignments:
+        # we rounded the Decimal to an int, so shouldn't see the decimal point
+        assert len(p.strata) == 2, p.strata
+        assert p.strata[0]["field_name"] == "income_dec", p.strata
+        assert "." not in p.strata[0]["strata_value"], p.strata
+        assert p.strata[1]["field_name"] == "is_male", p.strata
+        assert p.strata[1]["strata_value"] in {"True", "False"}, p.strata
+
+
+async def test_bulk_insert_with_no_stratification(
+    xngin_session: AsyncSession, testing_datasource, sample_rows
+):
+    """Test assignment with no stratification columns."""
+    # First create an experiment and arms in db
+    ds: tables.Datasource = testing_datasource.ds
+    pt = testing_datasource.pt
+    experiment = await insert_experiment_and_arms(xngin_session, ds)
+    arms = [Arm(arm_id=arm.id, arm_name=arm.name) for arm in experiment.arms]
+
+    fake_assignment_results = AssignmentResult(
+        treatment_ids=[0, 1] * (len(sample_rows) // 2),
+        stratum_ids=None,
+        balance_result=None,
+        orig_stratum_cols=[],
+    )
+
+    await bulk_insert_arm_assignments(
+        xngin_session=xngin_session,
+        experiment_id=experiment.id,
+        arms=arms,
+        participant_type=pt.participant_type,
+        participant_id_col=pt.get_unique_id_field(),
+        data=sample_rows,
+        assignment_result=fake_assignment_results,
+    )
+
+    # Get assignments for verification
+    result = await xngin_session.scalars(select(tables.ArmAssignment))
+    assignments = result.all()
+
     arm_counts: defaultdict[str, int] = defaultdict(int)
     # There should be no strata in the output
-    for participant in result.assignments:
-        arm_counts[participant.arm_name] += 1
-        assert participant.strata is None
+    for p in assignments:
+        arm_counts[p.arm_id] += 1
+        assert p.strata == []
     # The number of assignments per arm should be equal
-    assert arm_counts["control"] == arm_counts["treatment"]
-    assert arm_counts["control"] == len(result.assignments) // 2
+    arm0 = arms[0].arm_id
+    arm1 = arms[1].arm_id
+    assert arm0 is not None and arm1 is not None
+    assert arm_counts[arm0] == arm_counts[arm1]
+    assert arm_counts[arm0] == len(assignments) // 2
 
 
-def test_assign_adapter_with_no_valid_strata(sample_table, sample_rows):
+async def test_bulk_insert_with_no_valid_strata(
+    xngin_session: AsyncSession, testing_datasource, sample_rows
+):
     """Test assignment when a strata column has only a single value."""
-    result = assign_treatment(
-        sa_table=sample_table,
-        data=sample_rows,
-        stratum_cols=["single_value"],
-        id_col="id",
-        arms=make_arms(["control", "treatment"]),
-        experiment_id="b767716b-f388-4cd9-a18a-08c4916ce26f",
-        random_state=42,
-        stratum_id_name="stratum_id",
+    # First create an experiment and arms in db
+    ds: tables.Datasource = testing_datasource.ds
+    pt = testing_datasource.pt
+    experiment = await insert_experiment_and_arms(xngin_session, ds)
+    arms = [Arm(arm_id=arm.id, arm_name=arm.name) for arm in experiment.arms]
+
+    # Simulate no stratification case: the strata column only has a single value.
+    fake_assignment_results = AssignmentResult(
+        treatment_ids=[0, 1] * (len(sample_rows) // 2),
+        stratum_ids=None,
+        balance_result=None,
+        orig_stratum_cols=["single_value"],
     )
 
-    assert result.balance_check is None
-    # In this case, we still output the strata column, even though it's all the same value
-    arm_counts: defaultdict[str, int] = defaultdict(int)
-    for participant in result.assignments:
-        arm_counts[participant.arm_name] += 1
-        assert participant.strata == [
-            Strata(field_name="single_value", strata_value="1")
-        ]
-    # And since we used simple random assignment, the arm lengths should be equal
-    assert arm_counts["control"] == arm_counts["treatment"]
-    assert arm_counts["control"] == len(result.assignments) // 2
+    await bulk_insert_arm_assignments(
+        xngin_session=xngin_session,
+        experiment_id=experiment.id,
+        arms=arms,
+        participant_type=pt.participant_type,
+        participant_id_col=pt.get_unique_id_field(),
+        data=sample_rows,
+        assignment_result=fake_assignment_results,
+    )
+
+    # Get assignments for verification
+    result = await xngin_session.scalars(select(tables.ArmAssignment))
+    assignments = result.all()
+
+    # Here we still output the requested strata column, even though it's all the same value
+    expected_strata = [Strata(field_name="single_value", strata_value="1").model_dump()]
+    assert all(p.strata == expected_strata for p in assignments)
