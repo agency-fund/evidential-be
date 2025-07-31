@@ -277,11 +277,17 @@ def ensure_correct_working_directory():
     is the root of the repository. This is to avoid problems on CI or other automated runs that where it might not be
     safe to traverse parents.
     """
+    ensure_correct_working_directory_impl()
+
+
+def ensure_correct_working_directory_impl():
+    """Internal implementation of ensure_correct_working_directory fixture."""
     current_dir = Path.cwd()
     operating_outside_homedir = Path.home() not in current_dir.parents
+    # Possible we may be outside of the home dir e.g. in a docker container.
     if operating_outside_homedir:
-        if not Path.exists(current_dir / "pyproject.toml"):
-            raise DeveloperErrorRunFromRootOfRepositoryPleaseError()
+        if Path.exists(current_dir / "pyproject.toml"):
+            return
     else:
         while current_dir != Path.home():
             if (current_dir / "pyproject.toml").exists():
