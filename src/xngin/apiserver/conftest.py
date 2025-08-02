@@ -86,7 +86,7 @@ class TestUriInfo:
 @pytest.fixture(name="static_settings")
 def fixture_static_settings() -> SettingsForTesting:
     """Reads the xngin.testing.settings.json file."""
-    filename = Path(__file__).parent / "testdata/xngin.testing.settings.json"
+    filename = Path(__file__).resolve().parent / "testdata/xngin.testing.settings.json"
     with open(filename) as f:
         try:
             contents = f.read()
