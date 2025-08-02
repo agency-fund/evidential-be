@@ -1,5 +1,6 @@
 """conftest configures FastAPI dependency injection for testing and also does some setup before tests in this module are run."""
 
+import contextlib
 import enum
 import os
 import secrets
@@ -78,6 +79,9 @@ class TestUriInfo:
     connect_url: URL
     db_type: DbType
 
+    def __str__(self):
+        return f"{self.connect_url} (detected type: {self.db_type})"
+
 
 @pytest.fixture(name="static_settings")
 def fixture_static_settings() -> SettingsForTesting:
@@ -104,11 +108,24 @@ def get_queries_test_uri() -> TestUriInfo:
 
 
 @pytest.fixture(scope="session", autouse=True)
-def setup_debug_logging():
+def print_database_env_vars():
+    """Prints debugging information sometimes useful for working with tests to stdout."""
+
+    database_url = "(unset)"
+    with contextlib.suppress(ValueError):
+        database_url = database.get_server_database_url()
+
+    queries_url = "(unset)"
+    with contextlib.suppress(ValueError):
+        queries_url = str(get_queries_test_uri())
+
+    dwh_url = flags.XNGIN_DEVDWH_DSN or "(unset)"
+
     print(
         "Running tests with "
-        f"\n\tDATABASE_URL: {database.get_server_database_url()} "
-        f"\n\tXNGIN_QUERIES_TEST_URI  : {get_queries_test_uri()}"
+        f"\n\tDATABASE_URL: {database_url} "
+        f"\n\tXNGIN_DEVDWH_DSN: {dwh_url}"
+        f"\n\tXNGIN_QUERIES_TEST_URI: {queries_url}"
     )
 
 
