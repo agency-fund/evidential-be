@@ -341,7 +341,6 @@ async def test_create_experiment_impl_for_preassigned(
     assert abs(num_control - num_treat) <= 1
 
 
-@pytest.mark.asyncio
 async def test_create_preassigned_experiment_impl_raises_on_duplicate_ids(
     xngin_session: AsyncSession,
     testing_datasource,
