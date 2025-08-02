@@ -52,11 +52,6 @@ from xngin.db_extensions import custom_functions
 SA_LOGGER_NAME_FOR_APP = "xngin_app"
 
 
-class DeveloperErrorRunFromRootOfRepositoryPleaseError(Exception):
-    def __init__(self):
-        super().__init__("Tests must be run from the root of the repository.")
-
-
 class DbType(enum.StrEnum):
     RS = "redshift"
     PG = "postgres"
@@ -261,35 +256,6 @@ async def delete_seeded_users(xngin_session: AsyncSession):
     await xngin_session.execute(delete(tables.User))
     await xngin_session.commit()
     await xngin_session.reset()
-
-
-@pytest.fixture(scope="session", autouse=True)
-def ensure_correct_working_directory():
-    """Ensures the tests are being run from the root of the repo.
-
-    This is important because the tests generate and consume some temporary data on disk using relative paths.
-
-    When the code is located under the home directory, this will automatically change the working directory to the root
-    of the repository. This is helpful for developers because they can now run the tests from any directory without
-    worrying about their working directory.
-
-    When the code is not under the home directory, this will raise an exception unless the current working directory
-    is the root of the repository. This is to avoid problems on CI or other automated runs that where it might not be
-    safe to traverse parents.
-    """
-    current_dir = Path.cwd()
-    operating_outside_homedir = Path.home() not in current_dir.parents
-    if operating_outside_homedir:
-        if not Path.exists(current_dir / "pyproject.toml"):
-            raise DeveloperErrorRunFromRootOfRepositoryPleaseError()
-    else:
-        while current_dir != Path.home():
-            if (current_dir / "pyproject.toml").exists():
-                os.chdir(current_dir)
-                return
-            current_dir = current_dir.parent
-
-    raise DeveloperErrorRunFromRootOfRepositoryPleaseError()
 
 
 @pytest.fixture(name="use_deterministic_random")
