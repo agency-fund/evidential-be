@@ -33,6 +33,8 @@ def test_find_participants_raises_specific_exception_for_undefined_participants(
 def test_ensure_correct_working_directory_impl_outside_home_dir():
     with tempfile.TemporaryDirectory() as tmpdir:
         os.chdir(tmpdir)
+        # Make sure we really are testing the desired scenario.
+        assert Path.home() not in Path.cwd().parents
 
         # Raises since current dir is not repo root
         with pytest.raises(DeveloperErrorRunFromRootOfRepositoryPleaseError):
