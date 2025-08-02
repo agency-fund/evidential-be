@@ -399,7 +399,9 @@ class Dsn(ConfigBaseModel, BaseDsn, EncryptedDsn):
                 sslmode=parsed_url.query.get("sslmode", "verify-ca"),
                 search_path=parsed_url.query.get("search_path", None),
             )
-        raise NotImplementedError("Dsn.from_url() only supports postgres databases.")
+        raise NotImplementedError(
+            f"Dsn.from_url() only supports postgres databases: {url}"
+        )
 
     def is_redshift(self):
         return self.host.endswith("redshift.amazonaws.com")
