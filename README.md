@@ -25,7 +25,7 @@
 | src/xngin/apiserver/routers/admin/admin\_api\_types.py               |      144 |        2 |     99% |    31, 33 |
 | src/xngin/apiserver/routers/admin/generic\_handlers.py               |       24 |       14 |     42% |     41-59 |
 | src/xngin/apiserver/routers/assignment\_adapters.py                  |       44 |        1 |     98% |       159 |
-| src/xngin/apiserver/routers/auth/auth\_api.py                        |       32 |       10 |     69% |26, 30, 61-84 |
+| src/xngin/apiserver/routers/auth/auth\_api.py                        |       35 |       12 |     66% |29-34, 65-88 |
 | src/xngin/apiserver/routers/auth/auth\_dependencies.py               |       96 |       47 |     51% |56, 71-79, 86-117, 137, 144-187, 218-220 |
 | src/xngin/apiserver/routers/common\_api\_types.py                    |      335 |       46 |     86% |106, 135, 137, 240, 310-319, 339, 550-554, 595, 766-789, 796-806, 813-819, 1016 |
 | src/xngin/apiserver/routers/common\_enums.py                         |      169 |       56 |     67% |73, 75, 87, 89, 98-107, 112, 134-151, 163-172, 209, 247-260, 280-286, 314-318 |
@@ -54,7 +54,7 @@
 | src/xngin/xsecrets/secretservice.py                                  |       61 |        4 |     93% |42-43, 106, 130 |
 | src/xngin/xsecrets/test\_gcp\_kms\_provider.py                       |      103 |       26 |     75% |40-42, 170-175, 182-189, 195-203, 210, 217-228 |
 | src/xngin/xsecrets/test\_nacl\_provider.py                           |       67 |        1 |     99% |        24 |
-|                                                            **TOTAL** | **6674** | **1161** | **83%** |           |
+|                                                            **TOTAL** | **6677** | **1163** | **83%** |           |
 
 54 files skipped due to complete coverage.
 
