@@ -9,6 +9,7 @@ from loguru import logger
 
 from xngin.apiserver import constants, flags
 from xngin.apiserver.dependencies import retrying_httpx_dependency
+from xngin.apiserver.routers.auth import auth_dependencies
 from xngin.apiserver.routers.auth.auth_api_types import CallbackResponse
 from xngin.apiserver.routers.auth.auth_dependencies import (
     GoogleOidcConfig,
@@ -22,6 +23,9 @@ class OidcMisconfiguredError(Exception):
 
 def validate_environment_variables():
     """Raises informative exceptions if environment variables critical for OIDC functioning are not set."""
+    if flags.AIRPLANE_MODE or auth_dependencies.TESTING_TOKENS_ENABLED:
+        return
+
     if not flags.CLIENT_ID:
         raise OidcMisconfiguredError(
             f"{flags.ENV_GOOGLE_OIDC_CLIENT_ID} environment variable is not set."
