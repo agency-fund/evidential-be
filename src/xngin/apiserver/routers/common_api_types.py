@@ -162,7 +162,7 @@ class Context(ApiBaseModel):
     ]
 
 
-class ContextInputRequest(ApiBaseModel):
+class ContextInput(ApiBaseModel):
     """
     Pydantic model for a context input
     """
@@ -180,6 +180,15 @@ class ContextInputRequest(ApiBaseModel):
             description="Value of the context",
             examples=[2.5],
         ),
+    ]
+
+
+class CreateCMABAssignmentRequest(ApiBaseModel):
+    """Request model for creating a new CMAB assignment."""
+
+    context_inputs: Annotated[
+        list[ContextInput],
+        Field(description="List of context values for the assignment"),
     ]
 
 

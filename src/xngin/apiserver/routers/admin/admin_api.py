@@ -91,8 +91,8 @@ from xngin.apiserver.routers.common_api_types import (
     BanditExperimentAnalysisResponse,
     BaseBanditExperimentSpec,
     BaseFrequentistDesignSpec,
-    ContextInputRequest,
     ContextType,
+    CreateCMABAssignmentRequest,
     CreateExperimentRequest,
     CreateExperimentResponse,
     ExperimentsType,
@@ -1612,9 +1612,8 @@ async def get_experiment_assignment_for_participant(
 
     if not assignment and create_if_none and experiment.stopped_assignments_at is None:
         if experiment.experiment_type == ExperimentsType.CMAB_ONLINE.value:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="New arm assignments for CMAB experiments are not at this endpoint, please use the corresponding POST endpoint instead.",
+            raise LateValidationError(
+                f"New arm assignments for {ExperimentsType.CMAB_ONLINE.value} experiments are not at this endpoint, please use the corresponding POST endpoint instead."
             )
 
         assignment = await experiments_common.create_assignment_for_participant(
@@ -1639,7 +1638,7 @@ async def get_cmab_experiment_assignment_for_participant(
     datasource_id: str,
     experiment_id: str,
     participant_id: str,
-    context_values: list[ContextInputRequest],
+    body: CreateCMABAssignmentRequest,
     session: Annotated[AsyncSession, Depends(xngin_db_session)],
     user: Annotated[tables.User, Depends(user_from_token)],
     random_state: Annotated[
@@ -1657,22 +1656,27 @@ async def get_cmab_experiment_assignment_for_participant(
         session, ds, experiment_id, preload=[tables.Experiment.contexts]
     )
 
+    if experiment.experiment_type != ExperimentsType.CMAB_ONLINE.value:
+        raise LateValidationError(
+            f"Experiment {experiment_id} is a {experiment.experiment_type} experiment, and not a {ExperimentsType.CMAB_ONLINE.value} experiment. Please use the corresponding GET endpoint to create assignments."
+        )
+
     # Check context values
-    for context_body, context_def in zip(
-        sorted(context_values, key=lambda x: x.context_id),
+    for context_input, context_def in zip(
+        sorted(body.context_inputs, key=lambda x: x.context_id),
         sorted(experiment.contexts, key=lambda x: x.id),
         strict=False,
     ):
-        if context_body.context_id != context_def.id:
+        if context_input.context_id != context_def.id:
             raise LateValidationError(
-                f"Context value {context_body.context_id} does not match expected context {context_def.id}",
+                f"Context input for id {context_input.context_id} does not match expected context id {context_def.id}",
             )
         if (
             context_def.value_type == ContextType.BINARY.value
-            and context_body.context_value not in set([0.0, 1.0])
+            and context_input.context_value not in {0.0, 1.0}
         ):
             raise LateValidationError(
-                f"Context value {context_body.context_id} must be binary (0 or 1).",
+                f"Context value for id {context_input.context_id} must be binary (0 or 1).",
             )
 
     # Look up the participant's assignment if it exists
@@ -1683,15 +1687,14 @@ async def get_cmab_experiment_assignment_for_participant(
         experiment_type=experiment.experiment_type,
     )
     if assignment:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Assignment for participant {participant_id} already exists.",
+        raise LateValidationError(
+            f"Assignment for participant {participant_id} already exists."
         )
 
     if not assignment and experiment.stopped_assignments_at is None:
         context_vals = [
             ctx.context_value
-            for ctx in sorted(context_values, key=lambda x: x.context_id)
+            for ctx in sorted(body.context_inputs, key=lambda x: x.context_id)
         ]
         assignment = await experiments_common.create_assignment_for_participant(
             xngin_session=session,
