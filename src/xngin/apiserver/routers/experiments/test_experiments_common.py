@@ -358,7 +358,7 @@ async def test_create_preassigned_experiment_impl_raises_on_duplicate_ids(
     ]
 
     with pytest.raises(
-        LateValidationError, match="Duplicate participant ID found after filtering"
+        LateValidationError, match="Duplicate participant ID found after filtering:"
     ):
         await create_preassigned_experiment_impl(
             request=request,

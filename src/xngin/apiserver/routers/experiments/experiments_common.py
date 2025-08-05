@@ -260,8 +260,7 @@ async def create_preassigned_experiment_impl(
         participant_id = getattr(participant, participant_unique_id_field)
         if participant_id in seen_participant_ids:
             raise LateValidationError(
-                f"Duplicate participant ID found after filtering: '{participant_id}'. "
-                "Experiment cannot be created with non-unique participant IDs as this would bias results."
+                f"Duplicate participant ID found after filtering: '{participant_id}'."
             )
         seen_participant_ids.add(participant_id)
 
