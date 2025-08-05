@@ -1,8 +1,6 @@
 import pytest
 
-from xngin.apiserver.settings import (
-    CannotFindParticipantsError,
-)
+from xngin.apiserver.settings import CannotFindParticipantsError
 
 
 def test_root_get_api(client):

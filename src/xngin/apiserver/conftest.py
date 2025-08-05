@@ -1,5 +1,6 @@
 """conftest configures FastAPI dependency injection for testing and also does some setup before tests in this module are run."""
 
+import contextlib
 import enum
 import os
 import secrets
@@ -52,11 +53,6 @@ from xngin.db_extensions import custom_functions
 SA_LOGGER_NAME_FOR_APP = "xngin_app"
 
 
-class DeveloperErrorRunFromRootOfRepositoryPleaseError(Exception):
-    def __init__(self):
-        super().__init__("Tests must be run from the root of the repository.")
-
-
 class DbType(enum.StrEnum):
     RS = "redshift"
     PG = "postgres"
@@ -83,11 +79,14 @@ class TestUriInfo:
     connect_url: URL
     db_type: DbType
 
+    def __str__(self):
+        return f"{self.connect_url} (detected type: {self.db_type})"
+
 
 @pytest.fixture(name="static_settings")
 def fixture_static_settings() -> SettingsForTesting:
     """Reads the xngin.testing.settings.json file."""
-    filename = Path(__file__).parent / "testdata/xngin.testing.settings.json"
+    filename = Path(__file__).resolve().parent / "testdata/xngin.testing.settings.json"
     with open(filename) as f:
         try:
             contents = f.read()
@@ -109,11 +108,24 @@ def get_queries_test_uri() -> TestUriInfo:
 
 
 @pytest.fixture(scope="session", autouse=True)
-def setup_debug_logging():
+def print_database_env_vars():
+    """Prints debugging information sometimes useful for working with tests to stdout."""
+
+    database_url = "(unset)"
+    with contextlib.suppress(ValueError):
+        database_url = database.get_server_database_url()
+
+    queries_url = "(unset)"
+    with contextlib.suppress(ValueError):
+        queries_url = str(get_queries_test_uri())
+
+    dwh_url = flags.XNGIN_DEVDWH_DSN or "(unset)"
+
     print(
         "Running tests with "
-        f"\n\tDATABASE_URL: {database.get_server_database_url()} "
-        f"\n\tXNGIN_QUERIES_TEST_URI  : {get_queries_test_uri()}"
+        f"\n\tDATABASE_URL: {database_url} "
+        f"\n\tXNGIN_DEVDWH_DSN: {dwh_url}"
+        f"\n\tXNGIN_QUERIES_TEST_URI: {queries_url}"
     )
 
 
@@ -261,35 +273,6 @@ async def delete_seeded_users(xngin_session: AsyncSession):
     await xngin_session.execute(delete(tables.User))
     await xngin_session.commit()
     await xngin_session.reset()
-
-
-@pytest.fixture(scope="session", autouse=True)
-def ensure_correct_working_directory():
-    """Ensures the tests are being run from the root of the repo.
-
-    This is important because the tests generate and consume some temporary data on disk using relative paths.
-
-    When the code is located under the home directory, this will automatically change the working directory to the root
-    of the repository. This is helpful for developers because they can now run the tests from any directory without
-    worrying about their working directory.
-
-    When the code is not under the home directory, this will raise an exception unless the current working directory
-    is the root of the repository. This is to avoid problems on CI or other automated runs that where it might not be
-    safe to traverse parents.
-    """
-    current_dir = Path.cwd()
-    operating_outside_homedir = Path.home() not in current_dir.parents
-    if operating_outside_homedir:
-        if not Path.exists(current_dir / "pyproject.toml"):
-            raise DeveloperErrorRunFromRootOfRepositoryPleaseError()
-    else:
-        while current_dir != Path.home():
-            if (current_dir / "pyproject.toml").exists():
-                os.chdir(current_dir)
-                return
-            current_dir = current_dir.parent
-
-    raise DeveloperErrorRunFromRootOfRepositoryPleaseError()
 
 
 @pytest.fixture(name="use_deterministic_random")
