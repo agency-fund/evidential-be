@@ -162,7 +162,15 @@ environments = [
 python_version = 3.12
 mypy_path = "src"
 namespace_packages = true
-enable_error_code = ["exhaustive-match"]
+enable_error_code = [
+    "exhaustive-match",
+    "override",
+    "redundant-cast",
+    "redundant-expr",
+    "truthy-bool",
+    "truthy-iterable",
+    "unused-awaitable",
+]
 explicit_package_bases = true
 check_untyped_defs = true
 warn_redundant_casts = true
