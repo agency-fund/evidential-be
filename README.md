@@ -1,6 +1,6 @@
 # Repository Coverage
 
-
+[Full report](https://htmlpreview.github.io/?https://github.com/agency-fund/evidential-be/blob/python-coverage-comment-action-data/htmlcov/index.html)
 
 | Name                                                                 |    Stmts |     Miss |   Cover |   Missing |
 |--------------------------------------------------------------------- | -------: | -------: | ------: | --------: |
@@ -31,8 +31,8 @@
 | src/xngin/apiserver/routers/common\_enums.py                         |      169 |       56 |     67% |73, 75, 87, 89, 98-107, 112, 134-151, 163-172, 209, 247-260, 280-286, 314-318 |
 | src/xngin/apiserver/routers/experiments/dependencies.py              |       18 |        3 |     83% |     51-57 |
 | src/xngin/apiserver/routers/experiments/experiments\_api.py          |       63 |       15 |     76% |97, 106-119, 141, 154, 181, 192, 206, 230-235, 252-259 |
-| src/xngin/apiserver/routers/experiments/experiments\_common.py       |      290 |       87 |     70% |64, 69, 94, 110, 118, 143-153, 173, 195, 211-220, 244, 255, 325, 339, 364-382, 414-432, 479-486, 542-560, 614-616, 693, 697, 720, 743, 756, 784-872 |
-| src/xngin/apiserver/routers/experiments/test\_experiments\_common.py |      337 |        1 |     99% |       931 |
+| src/xngin/apiserver/routers/experiments/experiments\_common.py       |      296 |       87 |     71% |64, 69, 94, 110, 118, 143-153, 173, 195, 211-220, 244, 255, 335, 349, 374-392, 424-442, 489-496, 552-570, 624-626, 703, 707, 730, 753, 766, 794-882 |
+| src/xngin/apiserver/routers/experiments/test\_experiments\_common.py |      343 |        1 |     99% |       965 |
 | src/xngin/apiserver/routers/healthchecks\_api.py                     |       16 |        2 |     88% |     26-29 |
 | src/xngin/apiserver/routers/test\_common\_api\_types.py              |       41 |        1 |     98% |        76 |
 | src/xngin/apiserver/settings.py                                      |      195 |       34 |     83% |114, 163, 170, 176, 236, 238-244, 306, 313, 316-321, 375-381, 402, 426, 436-441, 451, 454, 482, 504, 519 |
@@ -54,7 +54,7 @@
 | src/xngin/xsecrets/secretservice.py                                  |       61 |        4 |     93% |42-43, 106, 130 |
 | src/xngin/xsecrets/test\_gcp\_kms\_provider.py                       |      103 |       26 |     75% |40-42, 170-175, 182-189, 195-203, 210, 217-228 |
 | src/xngin/xsecrets/test\_nacl\_provider.py                           |       67 |        1 |     99% |        24 |
-|                                                            **TOTAL** | **6677** | **1163** | **83%** |           |
+|                                                            **TOTAL** | **6689** | **1163** | **83%** |           |
 
 54 files skipped due to complete coverage.
 
@@ -65,11 +65,22 @@ Below are examples of the badges you can use in your main branch `README` file.
 
 ### Direct image
 
-[![Coverage badge](https://github.com/agency-fund/evidential-be/raw/python-coverage-comment-action-data/badge.svg)](https://github.com/agency-fund/evidential-be/tree/python-coverage-comment-action-data)
+[![Coverage badge](https://raw.githubusercontent.com/agency-fund/evidential-be/python-coverage-comment-action-data/badge.svg)](https://htmlpreview.github.io/?https://github.com/agency-fund/evidential-be/blob/python-coverage-comment-action-data/htmlcov/index.html)
 
 This is the one to use if your repository is private or if you don't want to customize anything.
 
+### [Shields.io](https://shields.io) Json Endpoint
 
+[![Coverage badge](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/agency-fund/evidential-be/python-coverage-comment-action-data/endpoint.json)](https://htmlpreview.github.io/?https://github.com/agency-fund/evidential-be/blob/python-coverage-comment-action-data/htmlcov/index.html)
+
+Using this one will allow you to [customize](https://shields.io/endpoint) the look of your badge.
+It won't work with private repositories. It won't be refreshed more than once per five minutes.
+
+### [Shields.io](https://shields.io) Dynamic Badge
+
+[![Coverage badge](https://img.shields.io/badge/dynamic/json?color=brightgreen&label=coverage&query=%24.message&url=https%3A%2F%2Fraw.githubusercontent.com%2Fagency-fund%2Fevidential-be%2Fpython-coverage-comment-action-data%2Fendpoint.json)](https://htmlpreview.github.io/?https://github.com/agency-fund/evidential-be/blob/python-coverage-comment-action-data/htmlcov/index.html)
+
+This one will always be the same color. It won't work for private repos. I'm not even sure why we included it.
 
 ## What is that?
 
