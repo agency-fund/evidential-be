@@ -67,6 +67,7 @@ env = [
 ]
 
 [tool.ruff]
+line-length = 120
 preview = true
 exclude = ["*.ipynb", "tmp/**"]
 
@@ -99,7 +100,6 @@ select = [
 ]
 ignore = [
     "E266", # Too many leading `#` before block comment
-    "E501", # redundant line length warnings
     "FURB101", # `open` and `read` should be replaced by `Path(file).read_text()`
     "FURB103", # `open` and `write` should be replaced by `Path(filename)....`
     "FURB140", # Use `itertools.starmap` instead of the generator
