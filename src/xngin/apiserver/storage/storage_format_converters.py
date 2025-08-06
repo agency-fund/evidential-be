@@ -176,7 +176,7 @@ class ExperimentStorageConverter:
                     "Bandit experiments must have prior_type and reward_type set."
                 )
             contexts = None
-            if self.experiment.contexts:
+            if self.experiment.experiment_type == ExperimentsType.CMAB_ONLINE.value:
                 contexts = [
                     capi.Context(
                         context_id=context.id,

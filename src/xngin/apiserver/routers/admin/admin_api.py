@@ -1509,7 +1509,7 @@ async def list_organization_experiments(
     """Returns a list of experiments in the organization."""
     org = await get_organization_or_raise(session, user, organization_id)
     return await experiments_common.list_organization_or_datasource_experiments_impl(
-        session, organization_id=org.id
+        xngin_session=session, organization_id=org.id
     )
 
 

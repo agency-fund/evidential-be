@@ -662,7 +662,7 @@ async def test_list_experiments_impl(
     await xngin_session.commit()
 
     experiments = await list_organization_or_datasource_experiments_impl(
-        xngin_session, datasource_id=testing_datasource.ds.id
+        xngin_session=xngin_session, datasource_id=testing_datasource.ds.id
     )
     # experiment5 excluded due to datasource mismatch
     assert len(experiments.items) == 3

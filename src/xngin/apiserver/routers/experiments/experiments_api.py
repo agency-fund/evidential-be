@@ -163,7 +163,7 @@ async def list_experiments_sl(
     xngin_session: Annotated[AsyncSession, Depends(xngin_db_session)],
 ) -> ListExperimentsResponse:
     return await list_organization_or_datasource_experiments_impl(
-        xngin_session, datasource_id=datasource.id
+        xngin_session=xngin_session, datasource_id=datasource.id
     )
 
 

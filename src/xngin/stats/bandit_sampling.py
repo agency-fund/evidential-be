@@ -233,7 +233,7 @@ def update_arm(
     context: The context vector for the arm.
     treatments: The treatments applied to the arm, for a Bayesian A/B test.
     """
-    # TODO: Only supported for MAB experiments
+    # TODO: Does not support Bayes A/B experiments
     if experiment.experiment_type == ExperimentsType.BAYESAB_ONLINE.value:
         raise ValueError(f"Invalid experiment type: {experiment.experiment_type}.")
     if not experiment.prior_type or not experiment.reward_type:
@@ -253,6 +253,7 @@ def update_arm(
         assert arm_to_update.mu and arm_to_update.covariance, (
             "Arm must have mu and covariance parameters."
         )
+
         if context is None:
             context = [[1.0] * len(arm_to_update.mu)]  # Default context if not provided
         # Normal likelihood

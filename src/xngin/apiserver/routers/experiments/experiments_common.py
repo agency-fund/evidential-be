@@ -456,56 +456,37 @@ async def abandon_experiment_impl(
 
 
 async def list_organization_or_datasource_experiments_impl(
+    *,
     xngin_session: AsyncSession,
     organization_id: str | None = None,
     datasource_id: str | None = None,
 ) -> ListExperimentsResponse:
-    if not datasource_id and not organization_id:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Must provide either organization_id or datasource_id",
-        )
+    stmt = select(tables.Experiment).options(
+        selectinload(tables.Experiment.arms),
+        selectinload(tables.Experiment.contexts),
+        selectinload(tables.Experiment.webhooks),
+    )
 
     if datasource_id:
-        stmt = (
-            select(tables.Experiment)
-            .options(
-                selectinload(tables.Experiment.arms),
-                selectinload(tables.Experiment.contexts),
-                selectinload(tables.Experiment.webhooks),
-            )
-            .where(tables.Experiment.datasource_id == datasource_id)
-            .where(
-                tables.Experiment.state.in_([
-                    ExperimentState.DESIGNING,
-                    ExperimentState.COMMITTED,
-                    ExperimentState.ASSIGNED,
-                ])
-            )
-            .order_by(tables.Experiment.created_at.desc())
+        stmt = stmt.where(tables.Experiment.datasource_id == datasource_id)
+    elif organization_id:
+        stmt = stmt.join(
+            tables.Datasource,
+            (tables.Experiment.datasource_id == tables.Datasource.id)
+            & (tables.Datasource.organization_id == organization_id),
         )
-    if organization_id:
-        stmt = (
-            select(tables.Experiment)
-            .options(
-                selectinload(tables.Experiment.arms),
-                selectinload(tables.Experiment.contexts),
-                selectinload(tables.Experiment.webhooks),
-            )
-            .join(
-                tables.Datasource,
-                (tables.Experiment.datasource_id == tables.Datasource.id)
-                & (tables.Datasource.organization_id == organization_id),
-            )
-            .where(
-                tables.Experiment.state.in_([
-                    ExperimentState.DESIGNING,
-                    ExperimentState.COMMITTED,
-                    ExperimentState.ASSIGNED,
-                ])
-            )
-            .order_by(tables.Experiment.start_date.desc())
+    else:
+        raise ValueError(
+            "Either datasource_id or organization_id must be provided",
         )
+
+    stmt = stmt.where(
+        tables.Experiment.state.in_([
+            ExperimentState.DESIGNING,
+            ExperimentState.COMMITTED,
+            ExperimentState.ASSIGNED,
+        ])
+    ).order_by(tables.Experiment.created_at.desc())
 
     experiments = await xngin_session.scalars(stmt)
     items = []
@@ -524,7 +505,10 @@ def get_experiment_assignments_impl(
     # Map arm IDs to names
     arm_id_to_name = {arm.id: arm.name for arm in experiment.arms}
     # Convert ArmAssignment models to Assignment API types
-    if "freq" in experiment.experiment_type:
+    if experiment.experiment_type in {
+        ExperimentsType.FREQ_ONLINE,
+        ExperimentsType.FREQ_PREASSIGNED,
+    }:
         assignments = [
             Assignment(
                 participant_id=arm_assignment.participant_id,
@@ -637,7 +621,10 @@ async def get_existing_assignment_for_participant(
         | Select[tuple[str, str, str, datetime, list[float] | None]]
     )
 
-    if "freq" in experiment_type:
+    if experiment_type in {
+        ExperimentsType.FREQ_ONLINE,
+        ExperimentsType.FREQ_PREASSIGNED,
+    }:
         stmt = (
             select(
                 tables.ArmAssignment.participant_id,
@@ -685,9 +672,7 @@ async def get_existing_assignment_for_participant(
             arm_name=existing_assignment.arm_name,
             created_at=existing_assignment.created_at,
             strata=[],  # Strata are not included in this query
-            context_values=existing_assignment.context_vals
-            if "freq" not in experiment_type
-            else None,
+            context_values=existing_assignment.context_vals,
         )
     return None
 
@@ -715,16 +700,16 @@ async def create_assignment_for_participant(
     if len(experiment.arms) == 0:
         raise ExperimentsAssignmentError("Experiment has no arms")
 
-    experiment_type = experiment.experiment_type
+    experiment_type = ExperimentsType(experiment.experiment_type)
     if experiment_type == ExperimentsType.FREQ_PREASSIGNED:
         # Preassigned experiments are not allowed to have new assignments added.
         return None
 
     # TODO: Add support for Bayesian A/B experiments.
-    if experiment_type == ExperimentsType.BAYESAB_ONLINE.value:
+    if experiment_type == ExperimentsType.BAYESAB_ONLINE:
         raise ValueError("Bayesian A/B experiments are not supported for assignments")
 
-    if experiment_type == ExperimentsType.CMAB_ONLINE.value:
+    if experiment_type == ExperimentsType.CMAB_ONLINE:
         if not context_vals:
             raise ExperimentsAssignmentError(
                 "Context values are required for contextual multi-armed bandit experiments"
@@ -746,8 +731,8 @@ async def create_assignment_for_participant(
     # For online frequentist or Bayesian A/B experiments, create a new assignment
     # with simple random assignment.
     if experiment_type in {
-        ExperimentsType.FREQ_ONLINE.value,
-        ExperimentsType.BAYESAB_ONLINE.value,
+        ExperimentsType.FREQ_ONLINE,
+        ExperimentsType.BAYESAB_ONLINE,
     }:
         # Sort by arm name to ensure deterministic assignment with seed for tests.
         chosen_arm = random_choice(
@@ -755,8 +740,8 @@ async def create_assignment_for_participant(
             seed=random_state,
         )
     if experiment_type in {
-        ExperimentsType.MAB_ONLINE.value,
-        ExperimentsType.CMAB_ONLINE.value,
+        ExperimentsType.MAB_ONLINE,
+        ExperimentsType.CMAB_ONLINE,
     }:
         chosen_arm = choose_arm(
             experiment=experiment, context=context_vals, random_state=random_state
@@ -767,7 +752,10 @@ async def create_assignment_for_participant(
     # Create and save the new assignment. We use the insert() API because it allows us to read
     # the database-generated created_at value without needing to refresh the object in the SQLAlchemy cache.
     try:
-        if "freq" in experiment_type:
+        if experiment_type in {
+            ExperimentsType.FREQ_ONLINE,
+            ExperimentsType.FREQ_PREASSIGNED,
+        }:
             result = (
                 await xngin_session.execute(
                     insert(tables.ArmAssignment)
@@ -826,11 +814,12 @@ async def update_bandit_arm_with_outcome_impl(
 ) -> tables.Arm:
     """Update the Draw table with the outcome for a bandit experiment."""
     # Not supported for frequentist experiments
-    if "freq" in experiment.experiment_type:
-        raise LateValidationError(
-            "Cannot update assignment for frequentist experiments.",
-        )
+    design_spec = ExperimentStorageConverter(experiment).get_design_spec()
 
+    if isinstance(design_spec, BaseFrequentistDesignSpec):
+        raise LateValidationError(
+            "Cannot dynamically update arms for frequentist experiments.",
+        )
     # Look up the participant's assignment if it exists
     assignment = await get_existing_assignment_for_participant(
         xngin_session, experiment.id, participant_id, experiment.experiment_type
@@ -844,12 +833,13 @@ async def update_bandit_arm_with_outcome_impl(
             f"Participant {participant_id} already has an outcome recorded.",
         )
 
-    # TODO: Add support for CMAB or Bayes A/B experiments.
-    if experiment.experiment_type == ExperimentsType.BAYESAB_ONLINE.value:
+    # TODO: Add support for Bayesian A/B experiments.
+    if design_spec.experiment_type == ExperimentsType.BAYESAB_ONLINE:
         raise LateValidationError(
-            f"Invalid experiment type for bandit outcome update: {experiment.experiment_type}"
+            f"Invalid experiment type for bandit outcome update: {design_spec.experiment_type.value}"
         )
-    if experiment.reward_type == LikelihoodTypes.BERNOULLI.value and outcome not in {
+
+    if design_spec.reward_type == LikelihoodTypes.BERNOULLI and outcome not in {
         0,
         1,
     }:
@@ -880,22 +870,19 @@ async def update_bandit_arm_with_outcome_impl(
             arm for arm in experiment.arms if arm.id == draw_record.arm_id
         )
 
-        await experiment.awaitable_attrs.draws
-        previous_outcomes = [
-            draw.outcome
-            for draw in sorted(experiment.draws, key=lambda d: d.created_at)
-            if draw.arm_id == draw_record.arm_id and draw.outcome is not None
-        ][::-1]  # Reverse order to get the most recent outcomes first
-        outcomes = [outcome, *previous_outcomes]
-
-        context_vals = None
-        if draw_record.context_vals:
-            previous_contexts = [
-                draw.context_vals
-                for draw in sorted(experiment.draws, key=lambda d: d.created_at)
-                if draw.arm_id == draw_record.arm_id and draw.context_vals is not None
-            ][::-1]
-            context_vals = [draw_record.context_vals, *previous_contexts]
+        # Get all prior draws for this arm, sorted by creation date
+        draws = await experiment.awaitable_attrs.draws
+        relevant_draws = sorted(
+            (d for d in draws if d.arm_id == draw_record.arm_id),
+            key=lambda d: d.created_at,
+            reverse=True,
+        )
+        outcomes = [outcome] + [d.outcome for d in relevant_draws]
+        context_vals = (
+            [draw_record.context_vals] + [d.context_vals for d in relevant_draws]
+            if draw_record.context_vals
+            else None
+        )
 
         updated_parameters = update_arm(
             experiment=experiment,
