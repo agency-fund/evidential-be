@@ -490,11 +490,7 @@ class Experiment(Base):
         cascade="all, delete-orphan",
     )
     contexts: Mapped[list["Context"]] = relationship(
-        "Context",
-        back_populates="experiment",
-        cascade="all, delete-orphan",
-        primaryjoin="and_(Experiment.id==Context.experiment_id,"
-        + "Experiment.experiment_type=='cmab_online')",
+        "Context", back_populates="experiment", cascade="all, delete-orphan"
     )
 
 
