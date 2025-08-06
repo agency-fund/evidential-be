@@ -682,6 +682,47 @@ async def test_list_experiments_impl(
     assert not diff, f"Objects differ:\n{diff.pretty()}"
 
 
+async def test_list_experiments_impl_alt_scenarios(
+    xngin_session,
+    testing_datasource,
+):
+    with pytest.raises(
+        ValueError, match="Either datasource_id or organization_id must be provided"
+    ):
+        await list_organization_or_datasource_experiments_impl(
+            xngin_session=xngin_session
+        )
+
+    experiment1_data = make_insertable_experiment(
+        testing_datasource.ds, ExperimentState.ASSIGNED
+    )
+    xngin_session.add(experiment1_data[0])
+    org_list = await list_organization_or_datasource_experiments_impl(
+        xngin_session=xngin_session, organization_id=testing_datasource.org.id
+    )
+    ds_list = await list_organization_or_datasource_experiments_impl(
+        xngin_session=xngin_session,
+        datasource_id=testing_datasource.ds.id,
+    )
+    both_list = await list_organization_or_datasource_experiments_impl(
+        xngin_session=xngin_session,
+        datasource_id=testing_datasource.ds.id,
+        organization_id=testing_datasource.org.id,
+    )
+    assert len(org_list.items) == 1
+    assert len(ds_list.items) == 1
+    assert len(both_list.items) == 1
+    assert org_list == ds_list
+    assert ds_list == both_list
+
+    bad_list = await list_organization_or_datasource_experiments_impl(
+        xngin_session=xngin_session,
+        datasource_id="bad_id",
+        organization_id=testing_datasource.org.id,
+    )
+    assert bad_list.items == []
+
+
 async def test_get_experiment_assignments_impl(xngin_session, testing_datasource):
     # First insert an experiment with assignments
     experiment = await insert_experiment_and_arms(xngin_session, testing_datasource.ds)

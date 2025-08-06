@@ -672,7 +672,9 @@ async def get_existing_assignment_for_participant(
             arm_name=existing_assignment.arm_name,
             created_at=existing_assignment.created_at,
             strata=[],  # Strata are not included in this query
-            context_values=existing_assignment.context_vals,
+            context_values=existing_assignment.context_vals
+            if hasattr(existing_assignment, "context_vals")
+            else None,
         )
     return None
 
