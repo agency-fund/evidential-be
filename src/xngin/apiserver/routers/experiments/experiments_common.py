@@ -257,6 +257,16 @@ async def create_preassigned_experiment_impl(
         # Should not actually happen, but just in case and for the type checker:
         raise ValueError("Must have an experiment_id before assigning treatments")
 
+    # Check for unique participant IDs after filtering
+    seen_participant_ids = set()
+    for participant in dwh_participants:
+        participant_id = getattr(participant, participant_unique_id_field)
+        if participant_id in seen_participant_ids:
+            raise LateValidationError(
+                f"Duplicate participant ID found after filtering: '{participant_id}'."
+            )
+        seen_participant_ids.add(participant_id)
+
     # TODO: directly create ArmAssignments from the pd dataframe instead
     assignment_response = assign_treatment(
         sa_table=dwh_sa_table,

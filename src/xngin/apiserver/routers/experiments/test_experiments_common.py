@@ -13,6 +13,7 @@ from sqlalchemy.dialects import postgresql
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.schema import CreateTable
 
+from xngin.apiserver.exceptions_common import LateValidationError
 from xngin.apiserver.routers.common_api_types import (
     CreateExperimentRequest,
     DesignSpec,
@@ -338,6 +339,39 @@ async def test_create_experiment_impl_for_preassigned(
     num_control = sum(1 for a in assignments if a.arm_id == arm1_id)
     num_treat = sum(1 for a in assignments if a.arm_id == arm2_id)
     assert abs(num_control - num_treat) <= 1
+
+
+async def test_create_preassigned_experiment_impl_raises_on_duplicate_ids(
+    xngin_session: AsyncSession,
+    testing_datasource,
+    sample_table,
+    use_deterministic_random,
+):
+    """Test that create_preassigned_experiment_impl raises LateValidationError for duplicate participant IDs."""
+    request = make_create_preassigned_experiment_request(with_ids=True)
+
+    # Create mock participants with a duplicate ID
+    participants_with_duplicate = [
+        MockRow(participant_id="id_1", gender="M", is_onboarded=True),
+        MockRow(participant_id="id_2", gender="F", is_onboarded=False),
+        MockRow(participant_id="id_1", gender="F", is_onboarded=True),  # Duplicate ID
+    ]
+
+    with pytest.raises(
+        LateValidationError, match="Duplicate participant ID found after filtering:"
+    ):
+        await create_preassigned_experiment_impl(
+            request=request,
+            datasource_id=testing_datasource.ds.id,
+            organization_id=testing_datasource.ds.organization_id,
+            participant_unique_id_field="participant_id",
+            dwh_sa_table=sample_table,
+            dwh_participants=participants_with_duplicate,
+            random_state=42,
+            xngin_session=xngin_session,
+            stratify_on_metrics=False,
+            validated_webhooks=[],
+        )
 
 
 async def test_create_experiment_impl_for_online(
