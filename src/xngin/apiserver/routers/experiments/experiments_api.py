@@ -32,6 +32,7 @@ from xngin.apiserver.routers.common_api_types import (
     BaseFrequentistDesignSpec,
     CreateExperimentRequest,
     CreateExperimentResponse,
+    ExperimentsType,
     GetExperimentAssignmentsResponse,
     GetExperimentResponse,
     GetParticipantAssignmentResponse,
@@ -257,6 +258,9 @@ async def update_bandit_arm_with_participant_outcome(
     session: Annotated[AsyncSession, Depends(xngin_db_session)],
 ) -> ArmBandit:
     # Update the arm with the outcome
+    if experiment.experiment_type == ExperimentsType.CMAB_ONLINE.value:
+        await experiment.awaitable_attrs.contexts
+
     updated_arm = await update_bandit_arm_with_outcome_impl(
         xngin_session=session,
         experiment=experiment,

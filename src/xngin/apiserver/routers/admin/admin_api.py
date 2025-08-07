@@ -1613,9 +1613,8 @@ async def get_experiment_assignment_for_participant(
     if not assignment and create_if_none and experiment.stopped_assignments_at is None:
         if experiment.experiment_type == ExperimentsType.CMAB_ONLINE.value:
             raise LateValidationError(
-                f"New arm assignments for {ExperimentsType.CMAB_ONLINE.value} experiments are not at this endpoint, please use the corresponding POST endpoint instead."
+                f"New arm assignments for {ExperimentsType.CMAB_ONLINE.value} cannot be created at this endpoint, please use the corresponding POST endpoint instead."
             )
-
         assignment = await experiments_common.create_assignment_for_participant(
             xngin_session=session,
             experiment=experiment,
@@ -1631,8 +1630,8 @@ async def get_experiment_assignment_for_participant(
 
 
 @router.post(
-    "/datasources/{datasource_id}/experiments/{experiment_id}/assignments/{participant_id}",
-    description="""Create a CMAB arm assignment for a specific participant. This endpoint is used for creating CMAB experiment assignments only.""",
+    "/datasources/{datasource_id}/experiments/cmab/{experiment_id}/assignments/{participant_id}",
+    description="""Get or create a CMAB arm assignment for a specific participant. This endpoint is used only for CMAB assignments.""",
 )
 async def get_cmab_experiment_assignment_for_participant(
     datasource_id: str,
@@ -1665,7 +1664,7 @@ async def get_cmab_experiment_assignment_for_participant(
     for context_input, context_def in zip(
         sorted(body.context_inputs, key=lambda x: x.context_id),
         sorted(experiment.contexts, key=lambda x: x.id),
-        strict=False,
+        strict=True,
     ):
         if context_input.context_id != context_def.id:
             raise LateValidationError(
@@ -1679,6 +1678,10 @@ async def get_cmab_experiment_assignment_for_participant(
                 f"Context value for id {context_input.context_id} must be binary (0 or 1).",
             )
 
+    context_vals = [
+        ctx.context_value
+        for ctx in sorted(body.context_inputs, key=lambda x: x.context_id)
+    ]
     # Look up the participant's assignment if it exists
     assignment = await experiments_common.get_existing_assignment_for_participant(
         xngin_session=session,
@@ -1686,16 +1689,12 @@ async def get_cmab_experiment_assignment_for_participant(
         participant_id=participant_id,
         experiment_type=experiment.experiment_type,
     )
-    if assignment:
+    if assignment and assignment.context_values != context_vals:
         raise LateValidationError(
-            f"Assignment for participant {participant_id} already exists."
+            f"Existing assignment found for participant {participant_id} with different context values {assignment.context_values}."
         )
 
     if not assignment and experiment.stopped_assignments_at is None:
-        context_vals = [
-            ctx.context_value
-            for ctx in sorted(body.context_inputs, key=lambda x: x.context_id)
-        ]
         assignment = await experiments_common.create_assignment_for_participant(
             xngin_session=session,
             experiment=experiment,
