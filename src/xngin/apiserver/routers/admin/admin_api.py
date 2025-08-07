@@ -1648,7 +1648,7 @@ async def get_cmab_experiment_assignment_for_participant(
         ),
     ] = None,
 ) -> GetParticipantAssignmentResponse:
-    """Get the assignment for a specific participant in an experiment."""
+    """Get or create the CMAB arm assignment for a specific participant in an experiment."""
     # Validate the datasource and experiment exist
     ds = await get_datasource_or_raise(session, user, datasource_id)
     experiment = await get_experiment_via_ds_or_raise(
