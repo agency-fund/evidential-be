@@ -42,6 +42,7 @@ organization_id_factory = unique_id_factory("o")
 task_id_factory = unique_id_factory("task")
 user_id_factory = unique_id_factory("u")
 webhook_id_factory = unique_id_factory("wh")
+context_id_factory = unique_id_factory("ctx")
 
 
 class Base(AsyncAttrs, DeclarativeBase):
@@ -489,11 +490,7 @@ class Experiment(Base):
         cascade="all, delete-orphan",
     )
     contexts: Mapped[list["Context"]] = relationship(
-        "Context",
-        back_populates="experiment",
-        cascade="all, delete-orphan",
-        primaryjoin="and_(Experiment.id==Context.experiment_id,"
-        + "Experiment.experiment_type=='cmab')",
+        "Context", back_populates="experiment", cascade="all, delete-orphan"
     )
 
 
@@ -573,7 +570,7 @@ class Draw(Base):
     participant_type: Mapped[str] = mapped_column(String(255))
     arm_id: Mapped[str] = mapped_column(ForeignKey("arms.id", ondelete="CASCADE"))
     outcome: Mapped[float | None] = mapped_column()
-    context_val: Mapped[list[float] | None] = mapped_column(ARRAY(Float))
+    context_vals: Mapped[list[float] | None] = mapped_column(ARRAY(Float))
     current_mu: Mapped[list[float] | None] = mapped_column(ARRAY(Float))
     current_covariance: Mapped[list[list[float]] | None] = mapped_column(ARRAY(Float))
     current_alpha: Mapped[float | None] = mapped_column()
@@ -594,7 +591,9 @@ class Context(Base):
     __tablename__ = "context"
 
     # Context metadata
-    id: Mapped[str] = mapped_column(String, primary_key=True)
+    id: Mapped[str] = mapped_column(
+        String, primary_key=True, default=context_id_factory
+    )
     experiment_id: Mapped[str] = mapped_column(
         ForeignKey("experiments.id", ondelete="CASCADE")
     )

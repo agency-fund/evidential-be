@@ -32,6 +32,7 @@ from xngin.apiserver.routers.common_api_types import (
     BaseFrequentistDesignSpec,
     CreateExperimentRequest,
     CreateExperimentResponse,
+    ExperimentsType,
     GetExperimentAssignmentsResponse,
     GetExperimentResponse,
     GetParticipantAssignmentResponse,
@@ -48,7 +49,7 @@ from xngin.apiserver.routers.experiments.experiments_common import (
     get_existing_assignment_for_participant,
     get_experiment_assignments_as_csv_impl,
     get_experiment_assignments_impl,
-    list_experiments_impl,
+    list_organization_or_datasource_experiments_impl,
     update_bandit_arm_with_outcome_impl,
 )
 from xngin.apiserver.settings import (
@@ -162,7 +163,9 @@ async def list_experiments_sl(
     datasource: Annotated[Datasource, Depends(datasource_dependency)],
     xngin_session: Annotated[AsyncSession, Depends(xngin_db_session)],
 ) -> ListExperimentsResponse:
-    return await list_experiments_impl(xngin_session, datasource.id)
+    return await list_organization_or_datasource_experiments_impl(
+        xngin_session=xngin_session, datasource_id=datasource.id
+    )
 
 
 @router.get(
@@ -209,8 +212,8 @@ async def get_experiment_assignments_as_csv_sl(
 @router.get(
     "/experiments/{experiment_id}/assignments/{participant_id}",
     summary="Get the assignment for a specific participant, excluding strata if any.",
-    description="""For 'preassigned' experiments, the participant's Assignment is returned if it
-    exists.  For 'online', returns the assignment if it exists, else generates an assignment""",
+    description="""For preassigned experiments, the participant's Assignment is returned if it
+    exists.  For online experiments, returns the assignment if it exists, else generates an assignment""",
 )
 async def get_assignment_for_participant_with_apikey(
     experiment: Annotated[tables.Experiment, Depends(experiment_dependency)],
@@ -225,11 +228,17 @@ async def get_assignment_for_participant_with_apikey(
     random_state: Annotated[int | None, Depends(random_seed_dependency)] = None,
 ) -> GetParticipantAssignmentResponse:
     assignment = await get_existing_assignment_for_participant(
-        xngin_session, experiment.id, participant_id, experiment.experiment_type
+        xngin_session=xngin_session,
+        experiment_id=experiment.id,
+        participant_id=participant_id,
+        experiment_type=experiment.experiment_type,
     )
     if not assignment and create_if_none:
         assignment = await create_assignment_for_participant(
-            xngin_session, experiment, participant_id, random_state
+            xngin_session=xngin_session,
+            experiment=experiment,
+            participant_id=participant_id,
+            random_state=random_state,
         )
 
     return GetParticipantAssignmentResponse(
@@ -249,6 +258,9 @@ async def update_bandit_arm_with_participant_outcome(
     session: Annotated[AsyncSession, Depends(xngin_db_session)],
 ) -> ArmBandit:
     # Update the arm with the outcome
+    if experiment.experiment_type == ExperimentsType.CMAB_ONLINE.value:
+        await experiment.awaitable_attrs.contexts
+
     updated_arm = await update_bandit_arm_with_outcome_impl(
         xngin_session=session,
         experiment=experiment,

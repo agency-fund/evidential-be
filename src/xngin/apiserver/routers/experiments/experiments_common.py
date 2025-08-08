@@ -12,7 +12,7 @@ from fastapi import (
     status,
 )
 from fastapi.responses import StreamingResponse
-from sqlalchemy import Table, func, insert, select
+from sqlalchemy import Select, Table, func, insert, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
@@ -140,7 +140,10 @@ async def create_dwh_experiment_impl(
                 validated_webhooks=validated_webhooks,
             )
 
-    if request.design_spec.experiment_type == ExperimentsType.MAB_ONLINE:
+    if request.design_spec.experiment_type in {
+        ExperimentsType.MAB_ONLINE,
+        ExperimentsType.CMAB_ONLINE,
+    }:
         return await create_bandit_online_experiment_impl(
             xngin_session=xngin_session,
             organization_id=datasource.organization_id,
@@ -376,7 +379,7 @@ async def create_bandit_online_experiment_impl(
     experiment_converter = ExperimentStorageConverter.init_from_components(
         datasource_id=datasource_id,
         organization_id=organization_id,
-        experiment_type=ExperimentsType.MAB_ONLINE,
+        experiment_type=design_spec.experiment_type,
         design_spec=design_spec,
         n_trials=chosen_n if chosen_n is not None else 0,
     )
@@ -462,59 +465,39 @@ async def abandon_experiment_impl(
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
-async def list_organization_experiments_impl(
-    xngin_session: AsyncSession, organization_id: str
+async def list_organization_or_datasource_experiments_impl(
+    *,
+    xngin_session: AsyncSession,
+    organization_id: str | None = None,
+    datasource_id: str | None = None,
 ) -> ListExperimentsResponse:
-    stmt = (
-        select(tables.Experiment)
-        .options(
-            selectinload(tables.Experiment.arms),
-            selectinload(tables.Experiment.webhooks),
-        )  # async: ExperimentStorageConverter requires .arms
-        .join(
+    stmt = select(tables.Experiment).options(
+        selectinload(tables.Experiment.arms),
+        selectinload(tables.Experiment.contexts),
+        selectinload(tables.Experiment.webhooks),
+    )
+
+    if datasource_id:
+        stmt = stmt.where(tables.Experiment.datasource_id == datasource_id)
+    elif organization_id:
+        stmt = stmt.join(
             tables.Datasource,
             (tables.Experiment.datasource_id == tables.Datasource.id)
             & (tables.Datasource.organization_id == organization_id),
         )
-        .where(
-            tables.Experiment.state.in_([
-                ExperimentState.DESIGNING,
-                ExperimentState.COMMITTED,
-                ExperimentState.ASSIGNED,
-            ])
+    else:
+        raise ValueError(
+            "Either datasource_id or organization_id must be provided",
         )
-        .order_by(tables.Experiment.start_date.desc())
-    )
-    experiments = await xngin_session.scalars(stmt)
-    items = []
-    for e in experiments:
-        converter = ExperimentStorageConverter(e)
-        balance_check = converter.get_balance_check()
-        assign_summary = await get_assign_summary(xngin_session, e.id, balance_check)
-        webhook_ids = [webhook.id for webhook in e.webhooks]
-        items.append(converter.get_experiment_config(assign_summary, webhook_ids))
-    return ListExperimentsResponse(items=items)
 
+    stmt = stmt.where(
+        tables.Experiment.state.in_([
+            ExperimentState.DESIGNING,
+            ExperimentState.COMMITTED,
+            ExperimentState.ASSIGNED,
+        ])
+    ).order_by(tables.Experiment.created_at.desc())
 
-async def list_experiments_impl(
-    xngin_session: AsyncSession, datasource_id: str
-) -> ListExperimentsResponse:
-    stmt = (
-        select(tables.Experiment)
-        .options(
-            selectinload(tables.Experiment.arms),
-            selectinload(tables.Experiment.webhooks),
-        )
-        .where(tables.Experiment.datasource_id == datasource_id)
-        .where(
-            tables.Experiment.state.in_([
-                ExperimentState.DESIGNING,
-                ExperimentState.COMMITTED,
-                ExperimentState.ASSIGNED,
-            ])
-        )
-        .order_by(tables.Experiment.created_at.desc())
-    )
     experiments = await xngin_session.scalars(stmt)
     items = []
     for e in experiments:
@@ -532,7 +515,10 @@ def get_experiment_assignments_impl(
     # Map arm IDs to names
     arm_id_to_name = {arm.id: arm.name for arm in experiment.arms}
     # Convert ArmAssignment models to Assignment API types
-    if "freq" in experiment.experiment_type:
+    if experiment.experiment_type in {
+        ExperimentsType.FREQ_ONLINE,
+        ExperimentsType.FREQ_PREASSIGNED,
+    }:
         assignments = [
             Assignment(
                 participant_id=arm_assignment.participant_id,
@@ -549,7 +535,7 @@ def get_experiment_assignments_impl(
             sample_size=len(assignments),
             assignments=assignments,
         )
-    if experiment.experiment_type == ExperimentsType.MAB_ONLINE.value:
+    if experiment.experiment_type != ExperimentsType.BAYESAB_ONLINE.value:
         assignments = [
             Assignment(
                 participant_id=draw.participant_id,
@@ -640,26 +626,51 @@ async def get_existing_assignment_for_participant(
 
     Returns: None if no assignment exists.
     """
-    assignment_table = (
-        tables.ArmAssignment if "freq" in experiment_type else tables.Draw
+    stmt: (
+        Select[tuple[str, str, str, datetime]]
+        | Select[tuple[str, str, str, datetime, list[float] | None]]
     )
-    stmt = (
-        select(
-            assignment_table.participant_id,
-            tables.Arm.id.label("arm_id"),
-            tables.Arm.name.label("arm_name"),
-            assignment_table.created_at,
+
+    if experiment_type in {
+        ExperimentsType.FREQ_ONLINE,
+        ExperimentsType.FREQ_PREASSIGNED,
+    }:
+        stmt = (
+            select(
+                tables.ArmAssignment.participant_id,
+                tables.Arm.id.label("arm_id"),
+                tables.Arm.name.label("arm_name"),
+                tables.ArmAssignment.created_at,
+            )
+            .join(
+                tables.ArmAssignment,
+                (tables.ArmAssignment.arm_id == tables.Arm.id)
+                & (tables.ArmAssignment.experiment_id == tables.Arm.experiment_id),
+            )
+            .filter(
+                tables.Arm.experiment_id == experiment_id,
+                tables.ArmAssignment.participant_id == participant_id,
+            )
         )
-        .join(
-            assignment_table,
-            (assignment_table.arm_id == tables.Arm.id)
-            & (assignment_table.experiment_id == tables.Arm.experiment_id),
+    else:
+        stmt = (
+            select(
+                tables.Draw.participant_id,
+                tables.Draw.arm_id,
+                tables.Arm.name.label("arm_name"),
+                tables.Draw.created_at,
+                tables.Draw.context_vals.label("context_vals"),
+            )
+            .join(
+                tables.Arm,
+                (tables.Draw.arm_id == tables.Arm.id)
+                & (tables.Draw.experiment_id == tables.Arm.experiment_id),
+            )
+            .filter(
+                tables.Arm.experiment_id == experiment_id,
+                tables.Draw.participant_id == participant_id,
+            )
         )
-        .filter(
-            tables.Arm.experiment_id == experiment_id,
-            assignment_table.participant_id == participant_id,
-        )
-    )
 
     res = await xngin_session.execute(stmt)
     existing_assignment = res.one_or_none()
@@ -671,6 +682,9 @@ async def get_existing_assignment_for_participant(
             arm_name=existing_assignment.arm_name,
             created_at=existing_assignment.created_at,
             strata=[],  # Strata are not included in this query
+            context_values=existing_assignment.context_vals
+            if hasattr(existing_assignment, "context_vals")
+            else None,
         )
     return None
 
@@ -679,7 +693,8 @@ async def create_assignment_for_participant(
     xngin_session: AsyncSession,
     experiment: tables.Experiment,
     participant_id: str,
-    random_state: int | None,
+    context_vals: list[float] | None = None,
+    random_state: int | None = None,
 ) -> Assignment | None:
     """Helper to persist a new assignment for a participant. Returned value excludes strata.
 
@@ -697,14 +712,24 @@ async def create_assignment_for_participant(
     if len(experiment.arms) == 0:
         raise ExperimentsAssignmentError("Experiment has no arms")
 
-    experiment_type = experiment.experiment_type
+    experiment_type = ExperimentsType(experiment.experiment_type)
     if experiment_type == ExperimentsType.FREQ_PREASSIGNED:
         # Preassigned experiments are not allowed to have new assignments added.
         return None
 
-    # TODO: Add support for CMAB experiments.
-    if experiment_type == ExperimentsType.CMAB_ONLINE.value:
-        raise ValueError("CMAB experiments are not supported for assignments")
+    # TODO: Add support for Bayesian A/B experiments.
+    if experiment_type == ExperimentsType.BAYESAB_ONLINE:
+        raise ValueError("Bayesian A/B experiments are not supported for assignments")
+
+    if experiment_type == ExperimentsType.CMAB_ONLINE:
+        if not context_vals:
+            raise ExperimentsAssignmentError(
+                "Context values are required for contextual multi-armed bandit experiments"
+            )
+        if len(context_vals) != len(experiment.contexts):
+            raise ExperimentsAssignmentError(
+                f"Expected {len(experiment.contexts)} context values, got {len(context_vals)}"
+            )
 
     # Don't allow new assignments for experiments that have ended.
     if experiment.end_date < datetime.now(UTC):
@@ -718,23 +743,31 @@ async def create_assignment_for_participant(
     # For online frequentist or Bayesian A/B experiments, create a new assignment
     # with simple random assignment.
     if experiment_type in {
-        ExperimentsType.FREQ_ONLINE.value,
-        ExperimentsType.BAYESAB_ONLINE.value,
+        ExperimentsType.FREQ_ONLINE,
+        ExperimentsType.BAYESAB_ONLINE,
     }:
         # Sort by arm name to ensure deterministic assignment with seed for tests.
         chosen_arm = random_choice(
             sorted(experiment.arms, key=lambda a: a.name),
             seed=random_state,
         )
-    if experiment_type == ExperimentsType.MAB_ONLINE.value:
-        chosen_arm = choose_arm(experiment=experiment, random_state=random_state)
+    if experiment_type in {
+        ExperimentsType.MAB_ONLINE,
+        ExperimentsType.CMAB_ONLINE,
+    }:
+        chosen_arm = choose_arm(
+            experiment=experiment, context=context_vals, random_state=random_state
+        )
 
     chosen_arm_id = chosen_arm.id
 
     # Create and save the new assignment. We use the insert() API because it allows us to read
     # the database-generated created_at value without needing to refresh the object in the SQLAlchemy cache.
     try:
-        if "freq" in experiment_type:
+        if experiment_type in {
+            ExperimentsType.FREQ_ONLINE,
+            ExperimentsType.FREQ_PREASSIGNED,
+        }:
             result = (
                 await xngin_session.execute(
                     insert(tables.ArmAssignment)
@@ -758,6 +791,7 @@ async def create_assignment_for_participant(
                         participant_id=participant_id,
                         participant_type=experiment.participant_type,
                         arm_id=chosen_arm_id,
+                        context_vals=context_vals,
                     )
                     .returning(tables.Draw.created_at)
                 )
@@ -780,6 +814,7 @@ async def create_assignment_for_participant(
         arm_name=chosen_arm.name,
         created_at=created_at,
         strata=[],
+        context_values=context_vals,
     )
 
 
@@ -791,11 +826,12 @@ async def update_bandit_arm_with_outcome_impl(
 ) -> tables.Arm:
     """Update the Draw table with the outcome for a bandit experiment."""
     # Not supported for frequentist experiments
-    if "freq" in experiment.experiment_type:
-        raise LateValidationError(
-            "Cannot update assignment for frequentist experiments.",
-        )
+    design_spec = ExperimentStorageConverter(experiment).get_design_spec()
 
+    if isinstance(design_spec, BaseFrequentistDesignSpec):
+        raise LateValidationError(
+            "Cannot dynamically update arms for frequentist experiments.",
+        )
     # Look up the participant's assignment if it exists
     assignment = await get_existing_assignment_for_participant(
         xngin_session, experiment.id, participant_id, experiment.experiment_type
@@ -809,12 +845,13 @@ async def update_bandit_arm_with_outcome_impl(
             f"Participant {participant_id} already has an outcome recorded.",
         )
 
-    # TODO: Add support for CMAB or Bayes A/B experiments.
-    if experiment.experiment_type != ExperimentsType.MAB_ONLINE.value:
+    # TODO: Add support for Bayesian A/B experiments.
+    if design_spec.experiment_type == ExperimentsType.BAYESAB_ONLINE:
         raise LateValidationError(
-            f"Invalid experiment type for bandit outcome update: {experiment.experiment_type}"
+            f"Invalid experiment type for bandit outcome update: {design_spec.experiment_type.value}"
         )
-    if experiment.reward_type == LikelihoodTypes.BERNOULLI.value and outcome not in {
+
+    if design_spec.reward_type == LikelihoodTypes.BERNOULLI and outcome not in {
         0,
         1,
     }:
@@ -845,19 +882,25 @@ async def update_bandit_arm_with_outcome_impl(
             arm for arm in experiment.arms if arm.id == draw_record.arm_id
         )
 
-        await experiment.awaitable_attrs.draws
-        previous_outcomes = [
-            draw.outcome
-            for draw in sorted(experiment.draws, key=lambda d: d.created_at)
-            if draw.arm_id == draw_record.arm_id and draw.outcome is not None
-        ][::-1]  # Reverse order to get the most recent outcomes first
+        # Get all prior draws for this arm, sorted by creation date
+        draws = await experiment.awaitable_attrs.draws
+        relevant_draws = sorted(
+            (d for d in draws if d.arm_id == draw_record.arm_id),
+            key=lambda d: d.created_at,
+            reverse=True,
+        )
+        outcomes = [outcome] + [d.outcome for d in relevant_draws]
+        context_vals = (
+            [draw_record.context_vals] + [d.context_vals for d in relevant_draws]
+            if draw_record.context_vals
+            else None
+        )
 
-        outcomes = [outcome, *previous_outcomes]
         updated_parameters = update_arm(
             experiment=experiment,
             arm_to_update=arm_to_update,
             outcomes=outcomes,
-            context=None,
+            context=context_vals,
         )
 
         # Update the draw record and arm with the new parameters
