@@ -4,8 +4,10 @@ This module defines the public API for clients to integrate with experiments.
 """
 
 from contextlib import asynccontextmanager
+from datetime import timedelta
 from typing import Annotated
 
+from annotated_types import Ge, Le
 from fastapi import (
     APIRouter,
     Body,
@@ -13,6 +15,7 @@ from fastapi import (
     FastAPI,
     HTTPException,
     Query,
+    Response,
     status,
 )
 from fastapi.responses import StreamingResponse
@@ -38,6 +41,7 @@ from xngin.apiserver.routers.common_api_types import (
     ListExperimentsResponse,
     UpdateBanditArmOutcomeRequest,
 )
+from xngin.apiserver.routers.common_enums import ExperimentsType
 from xngin.apiserver.routers.experiments.dependencies import experiment_dependency
 from xngin.apiserver.routers.experiments.experiments_common import (
     abandon_experiment_impl,
@@ -213,24 +217,47 @@ async def get_experiment_assignments_as_csv_sl(
     exists.  For 'online', returns the assignment if it exists, else generates an assignment""",
 )
 async def get_assignment_for_participant_with_apikey(
+    response: Response,
     experiment: Annotated[tables.Experiment, Depends(experiment_dependency)],
     participant_id: str,
     xngin_session: Annotated[AsyncSession, Depends(xngin_db_session)],
     create_if_none: Annotated[
         bool,
         Query(
-            description="Create an assignment if none exists. Does nothing for preassigned experiments. Override if you just want to check if an assignment exists."
+            description="Create an assignment if none exists. Ignored for preassigned experiments. Set to false if "
+            "you just want to check if an assignment exists."
         ),
     ] = True,
     random_state: Annotated[int | None, Depends(random_seed_dependency)] = None,
+    max_age: Annotated[
+        int,
+        Ge(0),
+        Le(86400),
+        Query(
+            description="If a positive integer, and the assignment is stable, the HTTP "
+            "Cache-Control response header will be set with a max-age equal to the specified value. Ignored for "
+            "experiment types that do not have stable assignments."
+        ),
+    ] = timedelta(hours=6).seconds,
 ) -> GetParticipantAssignmentResponse:
     assignment = await get_existing_assignment_for_participant(
         xngin_session, experiment.id, participant_id, experiment.experiment_type
     )
-    if not assignment and create_if_none:
+    if assignment is None and create_if_none:
         assignment = await create_assignment_for_participant(
             xngin_session, experiment, participant_id, random_state
         )
+
+    # Only instruct clients to cache responses we know are immutable after creation.
+    if assignment and (
+        ExperimentsType(experiment.experiment_type)
+        in {
+            ExperimentsType.FREQ_PREASSIGNED,
+            ExperimentsType.FREQ_ONLINE,
+        }
+        and max_age > 0
+    ):
+        response.headers["Cache-Control"] = f"private, max-age={max_age}"
 
     return GetParticipantAssignmentResponse(
         experiment_id=experiment.id,

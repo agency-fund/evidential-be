@@ -196,6 +196,82 @@ async def test_get_assignment_for_participant_with_apikey_preassigned(
     assert parsed.assignment.arm_name == "control"
 
 
+async def test_get_experiment_assignment_for_preassigned_cache_headers(
+    xngin_session, testing_datasource, client_v1
+):
+    """Experiment is created with assignments stopped so we do not expect a cacheable response."""
+    new_exp = await insert_experiment_and_arms(
+        xngin_session, testing_datasource.ds, ExperimentsType.FREQ_PREASSIGNED
+    )
+    response = client_v1.get(
+        f"/experiments/{new_exp.id}/assignments/new_id",
+        headers={constants.HEADER_API_KEY: testing_datasource.key},
+    )
+    assert response.status_code == 200, response.content
+    assert "Cache-Control" not in response.headers
+    assert (
+        GetParticipantAssignmentResponse.model_validate(response.json()).assignment
+        is None
+    )
+
+
+async def test_get_experiment_assignment_for_online_cache_headers(
+    xngin_session, testing_datasource, client_v1
+):
+    new_exp = await insert_experiment_and_arms(
+        xngin_session, testing_datasource.ds, ExperimentsType.FREQ_ONLINE
+    )
+    experiment_id = new_exp.id
+
+    empty_response = client_v1.get(
+        f"/experiments/{experiment_id}/assignments/new_id?create_if_none=false",
+        headers={constants.HEADER_API_KEY: testing_datasource.key},
+    )
+    assert empty_response.status_code == 200, empty_response.content
+    assert "Cache-Control" not in empty_response.headers
+    assert (
+        GetParticipantAssignmentResponse.model_validate(
+            empty_response.json()
+        ).assignment
+        is None
+    )
+
+    # Expect cache control header by default
+    cached_response = client_v1.get(
+        f"/experiments/{experiment_id}/assignments/new_id",
+        headers={constants.HEADER_API_KEY: testing_datasource.key},
+    )
+    assert cached_response.status_code == 200, cached_response.content
+    assert cached_response.headers.pop("Cache-Control") == "private, max-age=21600"
+
+    # Allow clients to disable caching
+    uncached_response = client_v1.get(
+        f"/experiments/{experiment_id}/assignments/new_id?max_age=0",
+        headers={constants.HEADER_API_KEY: testing_datasource.key},
+    )
+    assert uncached_response.status_code == 200, uncached_response.content
+    assert "Cache-Control" not in uncached_response.headers
+
+    # Allow clients to set custom max-age
+    custom_maxage_response = client_v1.get(
+        f"/experiments/{experiment_id}/assignments/new_id?max_age=100",
+        headers={constants.HEADER_API_KEY: testing_datasource.key},
+    )
+    assert custom_maxage_response.status_code == 200, custom_maxage_response.content
+    assert custom_maxage_response.headers.pop("Cache-Control") == "private, max-age=100"
+
+    # Validate that the response bodies are identical
+    assert cached_response.content == uncached_response.content
+    assert cached_response.content == custom_maxage_response.content
+
+    # Reject invalid max-age
+    invalid_maxage_response = client_v1.get(
+        f"/experiments/{experiment_id}/assignments/new_id?max_age=-100",
+        headers={constants.HEADER_API_KEY: testing_datasource.key},
+    )
+    assert invalid_maxage_response.status_code == 422, invalid_maxage_response.content
+
+
 async def test_get_assignment_for_participant_with_apikey_online(
     xngin_session, testing_datasource, client_v1
 ):
