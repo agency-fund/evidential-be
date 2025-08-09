@@ -17,7 +17,6 @@ from pydantic import (
     BaseModel,
     ConfigDict,
     Field,
-    SecretStr,
     field_validator,
     model_validator,
 )
@@ -38,14 +37,6 @@ def _decrypt_string(ciphertext: str, aad: str) -> str:
     This method is cached because it can avoid a remote API call to the key management service.
     """
     return secretservice.get_symmetric().decrypt(ciphertext, aad)
-
-
-class UnclassifiedRemoteSettingsError(Exception):
-    """Raised when we fail to fetch remote settings for an unclassified reason."""
-
-
-class RemoteSettingsClientError(Exception):
-    """Raised when we fail to fetch remote settings due to our misconfiguration."""
 
 
 class ConfigBaseModel(BaseModel):
@@ -118,33 +109,6 @@ class ParticipantsMixin(ConfigBaseModel):
 
 
 type HttpMethodTypes = Literal["GET", "POST", "PUT", "PATCH", "DELETE"]
-
-
-class WebhookUrl(ConfigBaseModel):
-    """Represents a url and HTTP method to use with it."""
-
-    method: HttpMethodTypes
-    url: str
-
-
-class WebhookActions(ConfigBaseModel):
-    """The set of supported actions that trigger a user callback."""
-
-    # No action is required, so a user can leave it out completely.
-    commit: WebhookUrl | None = None
-
-
-class WebhookCommonHeaders(ConfigBaseModel):
-    """Enumerates supported headers to attach to all webhook requests."""
-
-    authorization: SecretStr | None
-
-
-class WebhookConfig(ConfigBaseModel):
-    """Top-level configuration object for user-defined webhooks."""
-
-    actions: WebhookActions
-    common_headers: WebhookCommonHeaders
 
 
 class ToSqlalchemyUrl(Protocol):
@@ -454,22 +418,11 @@ class NoDwh(ConfigBaseModel):
         return False
 
 
-class DbapiArg(ConfigBaseModel):
-    """Describes a DBAPI connect() argument.
-
-    These can be arbitrary kv pairs and are database-driver specific."""
-
-    arg: str
-    value: str
-
-
 type Dwh = Annotated[Dsn | BqDsn | NoDwh, Field(discriminator="driver")]
 
 
 class RemoteDatabaseConfig(ParticipantsMixin, ConfigBaseModel):
     """RemoteDatabaseConfig defines a configuration for a remote data warehouse."""
-
-    webhook_config: WebhookConfig | None = None
 
     type: Literal["remote"]
 
