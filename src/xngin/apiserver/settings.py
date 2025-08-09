@@ -43,10 +43,6 @@ class UnclassifiedRemoteSettingsError(Exception):
     """Raised when we fail to fetch remote settings for an unclassified reason."""
 
 
-class RemoteSettingsClientError(Exception):
-    """Raised when we fail to fetch remote settings due to our misconfiguration."""
-
-
 class ConfigBaseModel(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
