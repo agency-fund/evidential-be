@@ -17,7 +17,6 @@ from pydantic import (
     BaseModel,
     ConfigDict,
     Field,
-    SecretStr,
     field_validator,
     model_validator,
 )
@@ -118,33 +117,6 @@ class ParticipantsMixin(ConfigBaseModel):
 
 
 type HttpMethodTypes = Literal["GET", "POST", "PUT", "PATCH", "DELETE"]
-
-
-class WebhookUrl(ConfigBaseModel):
-    """Represents a url and HTTP method to use with it."""
-
-    method: HttpMethodTypes
-    url: str
-
-
-class WebhookActions(ConfigBaseModel):
-    """The set of supported actions that trigger a user callback."""
-
-    # No action is required, so a user can leave it out completely.
-    commit: WebhookUrl | None = None
-
-
-class WebhookCommonHeaders(ConfigBaseModel):
-    """Enumerates supported headers to attach to all webhook requests."""
-
-    authorization: SecretStr | None
-
-
-class WebhookConfig(ConfigBaseModel):
-    """Top-level configuration object for user-defined webhooks."""
-
-    actions: WebhookActions
-    common_headers: WebhookCommonHeaders
 
 
 class ToSqlalchemyUrl(Protocol):
@@ -468,8 +440,6 @@ type Dwh = Annotated[Dsn | BqDsn | NoDwh, Field(discriminator="driver")]
 
 class RemoteDatabaseConfig(ParticipantsMixin, ConfigBaseModel):
     """RemoteDatabaseConfig defines a configuration for a remote data warehouse."""
-
-    webhook_config: WebhookConfig | None = None
 
     type: Literal["remote"]
 
