@@ -39,10 +39,6 @@ def _decrypt_string(ciphertext: str, aad: str) -> str:
     return secretservice.get_symmetric().decrypt(ciphertext, aad)
 
 
-class UnclassifiedRemoteSettingsError(Exception):
-    """Raised when we fail to fetch remote settings for an unclassified reason."""
-
-
 class ConfigBaseModel(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
