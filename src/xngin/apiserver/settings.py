@@ -6,7 +6,6 @@ The Pydantic classes herein also provide some methods for connecting to the cust
 
 import base64
 import binascii
-import json
 import os
 from collections import Counter
 from typing import Annotated, Literal, Protocol
@@ -25,6 +24,9 @@ from sqlalchemy import make_url
 
 from xngin.apiserver.certs import get_amazon_trust_ca_bundle_path
 from xngin.apiserver.dwh.inspection_types import ParticipantsSchema
+from xngin.apiserver.routers.common_api_types import (
+    validate_gcp_service_account_info_json,
+)
 from xngin.xsecrets import secretservice
 
 SA_LOGGER_NAME_FOR_DWH = "xngin_dwh"
@@ -182,7 +184,7 @@ class BaseDsn:
 class GcpServiceAccountInfo(ConfigBaseModel):
     """Describes a Google Cloud Service Account credential."""
 
-    type: Literal["serviceaccountinfo"]
+    type: Literal["serviceaccountinfo"] = "serviceaccountinfo"
     # Note: this field may be stored in an encrypted form.
     content_base64: Annotated[
         str,
@@ -223,23 +225,7 @@ class GcpServiceAccountInfo(ConfigBaseModel):
         try:
             # Decode and validate the JSON structure matches Google Cloud Service Account format.
             decoded = base64.b64decode(value, validate=True)
-            try:
-                creds = json.loads(decoded)
-                required_fields = {
-                    "type",
-                    "project_id",
-                    "private_key_id",
-                    "private_key",
-                    "client_email",
-                }
-                if not all(field in creds for field in required_fields):
-                    raise ValueError("Missing required fields in service account JSON")
-                if creds["type"] != "service_account":
-                    raise ValueError(
-                        'Service account JSON must have type="service_account"'
-                    )
-            except json.JSONDecodeError as e:
-                raise ValueError("Invalid JSON in service account credentials") from e
+            validate_gcp_service_account_info_json(decoded)
         except binascii.Error as e:
             raise ValueError("Invalid base64 content") from e
         return value

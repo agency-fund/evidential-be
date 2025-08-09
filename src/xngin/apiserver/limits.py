@@ -28,3 +28,6 @@ MAX_NUMBER_OF_FIELDS = 150
 
 # Maximum number of filters we allow to define an audience.
 MAX_NUMBER_OF_FILTERS = 20
+
+# Maximum length of GCP service account info JSON.
+MAX_GCP_SERVICE_ACCOUNT_LEN = 8000

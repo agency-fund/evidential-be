@@ -47,7 +47,8 @@ from xngin.apiserver.dwh.queries import (
     get_stats_on_metrics,
 )
 from xngin.apiserver.exceptions_common import LateValidationError
-from xngin.apiserver.routers.admin import authz
+from xngin.apiserver.routers.admin import admin_api_converters, authz
+from xngin.apiserver.routers.admin.admin_api_converters import api_dsn_to_settings_dwh
 from xngin.apiserver.routers.admin.admin_api_types import (
     AddMemberToOrganizationRequest,
     AddWebhookToOrganizationRequest,
@@ -74,6 +75,8 @@ from xngin.apiserver.routers.admin.admin_api_types import (
     ListParticipantsTypeResponse,
     ListWebhooksResponse,
     OrganizationSummary,
+    PostgresDsn,
+    RedshiftDsn,
     UpdateDatasourceRequest,
     UpdateOrganizationRequest,
     UpdateOrganizationWebhookRequest,
@@ -106,7 +109,6 @@ from xngin.apiserver.routers.common_api_types import (
 )
 from xngin.apiserver.routers.experiments import experiments_common
 from xngin.apiserver.settings import (
-    Dsn,
     ParticipantsConfig,
     ParticipantsDef,
     RemoteDatabaseConfig,
@@ -795,25 +797,11 @@ async def create_datasource(
     """Creates a new datasource for the specified organization."""
     org = await get_organization_or_raise(session, user, body.organization_id)
 
-    if (
-        body.dwh.driver == "bigquery"
-        and body.dwh.credentials.type != "serviceaccountinfo"
-    ):
-        raise HTTPException(
-            status_code=400,
-            detail="BigQuery credentials must be specified using type=serviceaccountinfo",
-        )
-    if body.dwh.driver in {"postgresql+psycopg", "postgresql+psycopg2"}:
-        try:
-            if isinstance(body.dwh, Dsn):
-                safe_resolve(body.dwh.host)
-        except DnsLookupError as err:
-            raise HTTPException(
-                status_code=400,
-                detail="DNS resolution failed. Check datasource hostname and try again.",
-            ) from err
+    raise_unless_safe_hostname(body.dsn)
 
-    config = RemoteDatabaseConfig(participants=[], type="remote", dwh=body.dwh)
+    config = RemoteDatabaseConfig(
+        participants=[], type="remote", dwh=api_dsn_to_settings_dwh(body.dsn)
+    )
 
     datasource = tables.Datasource(
         id=tables.datasource_id_factory(), name=body.name, organization_id=org.id
@@ -834,9 +822,10 @@ async def update_datasource(
     ds = await get_datasource_or_raise(session, user, datasource_id)
     if body.name is not None:
         ds.name = body.name
-    if body.dwh is not None:
+    if body.dsn is not None:
+        raise_unless_safe_hostname(body.dsn)
         cfg = ds.get_config()
-        cfg.dwh = body.dwh
+        cfg.dwh = api_dsn_to_settings_dwh(body.dsn, cfg.dwh)
 
         # Invalidate cached inspections.
         ds.set_config(cfg)
@@ -867,7 +856,7 @@ async def get_datasource(
     return GetDatasourceResponse(
         id=ds.id,
         name=ds.name,
-        config=config,
+        dsn=admin_api_converters.settings_dwh_to_api_dsn(config.dwh),
         organization_id=ds.organization_id,
         organization_name=ds.organization.name,
     )
@@ -1690,3 +1679,17 @@ def validate_schema_metrics_or_raise(
         raise LateValidationError(
             f"Invalid DesignSpec metrics (check your Datasource configuration): {invalid_metrics}"
         )
+
+
+def raise_unless_safe_hostname(dsn):
+    """Raises a 400 if the DNS name in dsn is possibly attempting to connect to resources on local network."""
+    if flags.DISABLE_SAFEDNS_CHECK:
+        return
+    if isinstance(dsn, PostgresDsn | RedshiftDsn):
+        try:
+            safe_resolve(dsn.host)
+        except DnsLookupError as err:
+            raise HTTPException(
+                status_code=400,
+                detail="DNS resolution failed. Check datasource hostname and try again.",
+            ) from err
