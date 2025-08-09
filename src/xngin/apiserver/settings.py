@@ -426,15 +426,6 @@ class NoDwh(ConfigBaseModel):
         return False
 
 
-class DbapiArg(ConfigBaseModel):
-    """Describes a DBAPI connect() argument.
-
-    These can be arbitrary kv pairs and are database-driver specific."""
-
-    arg: str
-    value: str
-
-
 type Dwh = Annotated[Dsn | BqDsn | NoDwh, Field(discriminator="driver")]
 
 
