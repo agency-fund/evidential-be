@@ -7,6 +7,10 @@ Evidential is an experiments management platform built on FastAPI, Postgres, and
 
 This repository contains the backend API server.
 
+## Getting Started
+
+See https://docs.evidential.dev/development/getting-started-dev/ for how to get started building and contributing.
+
 ## Documentation<a name="documentation"></a>
 
 See [https://docs.evidential.dev/](https://docs.evidential.dev/) for more documentation.
