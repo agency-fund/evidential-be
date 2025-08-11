@@ -14,6 +14,9 @@ from xngin.apiserver.dns import safe_resolve
 from xngin.apiserver.dwh.dwh_session import DwhSession
 from xngin.apiserver.dwh.inspection_types import FieldDescriptor, ParticipantsSchema
 from xngin.apiserver.routers.admin.admin_api import user_from_token
+from xngin.apiserver.routers.admin.admin_api_converters import (
+    CREDENTIALS_UNAVAILABLE_MESSAGE,
+)
 from xngin.apiserver.routers.admin.admin_api_types import (
     AddWebhookToOrganizationRequest,
     AddWebhookToOrganizationResponse,
@@ -310,7 +313,9 @@ async def test_datasources_hide_credentials(
 ):
     response = ppost(
         "/v1/m/organizations",
-        json=CreateOrganizationRequest(name="test_create_datasource").model_dump(),
+        json=CreateOrganizationRequest(
+            name="test_datasources_hide_credentials"
+        ).model_dump(),
     )
     assert response.status_code == 200, response.content
     org_id = CreateOrganizationResponse.model_validate(response.json()).id
@@ -415,6 +420,58 @@ async def test_datasources_hide_credentials(
                     after_second_revision.dwh.credentials.content_base64
                 ).decode()
             )
+
+
+@pytest.mark.parametrize(
+    "dsn",
+    [
+        PostgresDsn(
+            host="127.0.0.1",
+            user="postgres",
+            port=5499,
+            password=Hidden(),
+            dbname="postgres",
+            sslmode="disable",
+            search_path=None,
+        ),
+        RedshiftDsn(
+            host="foo.redshift.amazonaws.com",
+            user="postgres",
+            port=5499,
+            password=Hidden(),
+            dbname="postgres",
+            search_path=None,
+        ),
+        BqDsn(
+            project_id="projectid",
+            dataset_id="dataset_id",
+            credentials=Hidden(),
+        ),
+    ],
+    ids=lambda d: type(d),
+)
+def test_create_datasource_without_credentials(
+    disable_safe_resolve_check, dsn: BqDsn | RedshiftDsn | PostgresDsn, ppost
+):
+    response = ppost(
+        "/v1/m/organizations",
+        json=CreateOrganizationRequest(
+            name="test_create_datasource_without_credentials"
+        ).model_dump(),
+    )
+    assert response.status_code == 200, response.content
+    org_id = CreateOrganizationResponse.model_validate(response.json()).id
+
+    response = ppost(
+        "/v1/m/datasources",
+        content=CreateDatasourceRequest(
+            name="test_create_datasource",
+            organization_id=org_id,
+            dsn=dsn,
+        ).model_dump_json(),
+    )
+    assert response.status_code == 422, response.content
+    assert response.json() == {"message": CREDENTIALS_UNAVAILABLE_MESSAGE}
 
 
 def test_create_datasource_invalid_dns(testing_datasource, ppost):

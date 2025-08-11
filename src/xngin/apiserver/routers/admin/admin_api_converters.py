@@ -3,9 +3,17 @@ import base64
 from xngin.apiserver import settings
 from xngin.apiserver.routers.admin import admin_api_types as aapi
 
+CREDENTIALS_UNAVAILABLE_MESSAGE = (
+    "Credentials may only be omitted from datasource updates when the existing configuration uses the same "
+    "type of credentials."
+)
+
 
 class CredentialsUnavailableError(Exception):
-    """Indicates that mutation to a datasource was requested but the datasource's credentials are unavailable."""
+    """Raised when a mutation to a datasource was requested but the datasource's previous credentials are not usable."""
+
+    def __init__(self, *args):
+        super().__init__(CREDENTIALS_UNAVAILABLE_MESSAGE)
 
 
 def api_dsn_to_settings_dwh(
