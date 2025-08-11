@@ -30,6 +30,8 @@ from xngin.apiserver.routers.admin.admin_api import validate_webhooks
 from xngin.apiserver.routers.common_api_types import (
     ArmBandit,
     BaseFrequentistDesignSpec,
+    ContextType,
+    CreateCMABAssignmentRequest,
     CreateExperimentRequest,
     CreateExperimentResponse,
     ExperimentsType,
@@ -238,6 +240,89 @@ async def get_assignment_for_participant_with_apikey(
             xngin_session=xngin_session,
             experiment=experiment,
             participant_id=participant_id,
+            random_state=random_state,
+        )
+
+    return GetParticipantAssignmentResponse(
+        experiment_id=experiment.id,
+        participant_id=participant_id,
+        assignment=assignment,
+    )
+
+
+@router.post(
+    "experiments/{experiment_id}/assignments/{participant_id}/assign_cmab",
+    description="""Get or create a CMAB arm assignment for a specific participant. This endpoint is used only for CMAB assignments.""",
+)
+async def get_cmab_experiment_assignment_for_participant(
+    experiment: Annotated[tables.Experiment, Depends(experiment_dependency)],
+    participant_id: str,
+    body: CreateCMABAssignmentRequest,
+    session: Annotated[AsyncSession, Depends(xngin_db_session)],
+    create_if_none: Annotated[
+        bool,
+        Query(
+            description="Create an assignment if none exists. Does nothing for preassigned experiments. Override if you just want to check if an assignment exists."
+        ),
+    ] = True,
+    random_state: Annotated[
+        int | None,
+        Query(
+            description="Specify a random seed for reproducibility.",
+            include_in_schema=False,
+        ),
+    ] = None,
+) -> GetParticipantAssignmentResponse:
+    """Get or create the CMAB arm assignment for a specific participant in an experiment."""
+    # Validate the datasource and experiment exist
+
+    if experiment.experiment_type != ExperimentsType.CMAB_ONLINE.value:
+        raise LateValidationError(
+            f"Experiment {experiment.id} is a {experiment.experiment_type} experiment, and not a {ExperimentsType.CMAB_ONLINE.value} experiment. Please use the corresponding GET endpoint to create assignments."
+        )
+
+    # Check context values
+    context_inputs = body.context_inputs
+    context_defns = experiment.contexts
+    if len(context_inputs) != len(context_defns):
+        raise LateValidationError(
+            f"Expected {len(context_defns)} context inputs, but got {len(context_inputs)} in CreateCMABAssignmentRequest."
+        )
+
+    for context_input, context_def in zip(
+        sorted(context_inputs, key=lambda x: x.context_id),
+        sorted(context_defns, key=lambda x: x.id),
+        strict=True,
+    ):
+        if context_input.context_id != context_def.id:
+            raise LateValidationError(
+                f"Context input for id {context_input.context_id} does not match expected context id {context_def.id}",
+            )
+        if (
+            context_def.value_type == ContextType.BINARY.value
+            and context_input.context_value not in {0.0, 1.0}
+        ):
+            raise LateValidationError(
+                f"Context value for id {context_input.context_id} must be binary (0 or 1).",
+            )
+
+    context_vals = [
+        ctx.context_value for ctx in sorted(context_inputs, key=lambda x: x.context_id)
+    ]
+    # Look up the participant's assignment if it exists
+    assignment = await get_existing_assignment_for_participant(
+        xngin_session=session,
+        experiment_id=experiment.id,
+        participant_id=participant_id,
+        experiment_type=experiment.experiment_type,
+    )
+
+    if not assignment and create_if_none and experiment.stopped_assignments_at is None:
+        assignment = await create_assignment_for_participant(
+            xngin_session=session,
+            experiment=experiment,
+            participant_id=participant_id,
+            context_vals=context_vals,
             random_state=random_state,
         )
 

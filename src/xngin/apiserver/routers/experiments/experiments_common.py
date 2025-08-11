@@ -466,11 +466,16 @@ async def abandon_experiment_impl(
 
 
 async def list_organization_or_datasource_experiments_impl(
-    *,
     xngin_session: AsyncSession,
+    *,
     organization_id: str | None = None,
     datasource_id: str | None = None,
 ) -> ListExperimentsResponse:
+    """
+    List experiments for a given organization or datasource.
+    If both are provided, datasource_id takes precedence.
+    Raises ValueError if neither is provided.
+    """
     stmt = select(tables.Experiment).options(
         selectinload(tables.Experiment.arms),
         selectinload(tables.Experiment.contexts),

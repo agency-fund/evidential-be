@@ -91,8 +91,6 @@ from xngin.apiserver.routers.common_api_types import (
     BanditExperimentAnalysisResponse,
     BaseBanditExperimentSpec,
     BaseFrequentistDesignSpec,
-    ContextType,
-    CreateCMABAssignmentRequest,
     CreateExperimentRequest,
     CreateExperimentResponse,
     ExperimentsType,
@@ -1624,87 +1622,6 @@ async def get_experiment_assignment_for_participant(
 
     return GetParticipantAssignmentResponse(
         experiment_id=experiment_id,
-        participant_id=participant_id,
-        assignment=assignment,
-    )
-
-
-@router.post(
-    "/datasources/{datasource_id}/experiments/cmab/{experiment_id}/assignments/{participant_id}",
-    description="""Get or create a CMAB arm assignment for a specific participant. This endpoint is used only for CMAB assignments.""",
-)
-async def get_cmab_experiment_assignment_for_participant(
-    datasource_id: str,
-    experiment_id: str,
-    participant_id: str,
-    body: CreateCMABAssignmentRequest,
-    session: Annotated[AsyncSession, Depends(xngin_db_session)],
-    user: Annotated[tables.User, Depends(user_from_token)],
-    random_state: Annotated[
-        int | None,
-        Query(
-            description="Specify a random seed for reproducibility.",
-            include_in_schema=False,
-        ),
-    ] = None,
-) -> GetParticipantAssignmentResponse:
-    """Get or create the CMAB arm assignment for a specific participant in an experiment."""
-    # Validate the datasource and experiment exist
-    ds = await get_datasource_or_raise(session, user, datasource_id)
-    experiment = await get_experiment_via_ds_or_raise(
-        session, ds, experiment_id, preload=[tables.Experiment.contexts]
-    )
-
-    if experiment.experiment_type != ExperimentsType.CMAB_ONLINE.value:
-        raise LateValidationError(
-            f"Experiment {experiment_id} is a {experiment.experiment_type} experiment, and not a {ExperimentsType.CMAB_ONLINE.value} experiment. Please use the corresponding GET endpoint to create assignments."
-        )
-
-    # Check context values
-    for context_input, context_def in zip(
-        sorted(body.context_inputs, key=lambda x: x.context_id),
-        sorted(experiment.contexts, key=lambda x: x.id),
-        strict=True,
-    ):
-        if context_input.context_id != context_def.id:
-            raise LateValidationError(
-                f"Context input for id {context_input.context_id} does not match expected context id {context_def.id}",
-            )
-        if (
-            context_def.value_type == ContextType.BINARY.value
-            and context_input.context_value not in {0.0, 1.0}
-        ):
-            raise LateValidationError(
-                f"Context value for id {context_input.context_id} must be binary (0 or 1).",
-            )
-
-    context_vals = [
-        ctx.context_value
-        for ctx in sorted(body.context_inputs, key=lambda x: x.context_id)
-    ]
-    # Look up the participant's assignment if it exists
-    assignment = await experiments_common.get_existing_assignment_for_participant(
-        xngin_session=session,
-        experiment_id=experiment.id,
-        participant_id=participant_id,
-        experiment_type=experiment.experiment_type,
-    )
-    if assignment and assignment.context_values != context_vals:
-        raise LateValidationError(
-            f"Existing assignment found for participant {participant_id} with different context values {assignment.context_values}."
-        )
-
-    if not assignment and experiment.stopped_assignments_at is None:
-        assignment = await experiments_common.create_assignment_for_participant(
-            xngin_session=session,
-            experiment=experiment,
-            participant_id=participant_id,
-            context_vals=context_vals,
-            random_state=random_state,
-        )
-
-    return GetParticipantAssignmentResponse(
-        experiment_id=experiment.id,
         participant_id=participant_id,
         assignment=assignment,
     )
