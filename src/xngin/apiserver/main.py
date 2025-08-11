@@ -5,6 +5,7 @@ from fastapi import FastAPI
 from loguru import logger
 
 from xngin.apiserver import (
+    constants,
     customlogging,
     database,
     exceptionhandlers,
@@ -17,6 +18,27 @@ from xngin.xsecrets import secretservice
 
 if sentry_dsn := os.environ.get("SENTRY_DSN"):
     import sentry_sdk
+    from sentry_sdk import scrubber
+
+    denylist = [
+        *scrubber.DEFAULT_DENYLIST,
+        *[
+            "code",  # OIDC
+            "code_verifier",  # OIDC
+            "credentials_base64",  # sqlalchemy-bigquery
+            "credentials_info",  # sqlalchemy-bigquery
+            "database_url",  # common name of variable containing application database credentials
+        ],
+    ]
+    pii_denylist = [
+        *scrubber.DEFAULT_PII_DENYLIST,
+        *[
+            # Header names are exposed to Sentry in a normalized form.
+            constants.HEADER_API_KEY.lower().replace("-", "_"),
+            constants.HEADER_WEBHOOK_TOKEN.lower().replace("-", "_"),
+            "email",
+        ],
+    ]
 
     sentry_sdk.init(
         db_query_source_threshold_ms=10,  # Capture origin of queries that exceed this time (default 100).
@@ -26,6 +48,10 @@ if sentry_dsn := os.environ.get("SENTRY_DSN"):
         _experiments={
             "continuous_profiling_auto_start": True,
         },
+        send_default_pii=False,
+        event_scrubber=sentry_sdk.scrubber.EventScrubber(
+            denylist=denylist, pii_denylist=pii_denylist
+        ),
     )
 
 
