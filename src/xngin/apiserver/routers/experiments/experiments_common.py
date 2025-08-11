@@ -747,22 +747,17 @@ async def create_assignment_for_participant(
         random_state = 66  # Default seed for deterministic behavior in tests.
     # For online frequentist or Bayesian A/B experiments, create a new assignment
     # with simple random assignment.
-    if experiment_type in {
-        ExperimentsType.FREQ_ONLINE,
-        ExperimentsType.BAYESAB_ONLINE,
-    }:
-        # Sort by arm name to ensure deterministic assignment with seed for tests.
-        chosen_arm = random_choice(
-            sorted(experiment.arms, key=lambda a: a.name),
-            seed=random_state,
-        )
-    if experiment_type in {
-        ExperimentsType.MAB_ONLINE,
-        ExperimentsType.CMAB_ONLINE,
-    }:
-        chosen_arm = choose_arm(
-            experiment=experiment, context=context_vals, random_state=random_state
-        )
+    match experiment_type:
+        case ExperimentsType.FREQ_ONLINE | ExperimentsType.BAYESAB_ONLINE:
+            # Sort by arm name to ensure deterministic assignment with seed for tests.
+            chosen_arm = random_choice(
+                sorted(experiment.arms, key=lambda a: a.name),
+                seed=random_state,
+            )
+        case ExperimentsType.MAB_ONLINE | ExperimentsType.CMAB_ONLINE:
+            chosen_arm = choose_arm(
+                experiment=experiment, context=context_vals, random_state=random_state
+            )
 
     chosen_arm_id = chosen_arm.id
 
@@ -900,6 +895,11 @@ async def update_bandit_arm_with_outcome_impl(
             if draw_record.context_vals
             else None
         )
+
+        # Limit to most recent 100 draws
+        # TODO: Make draw limiting configurable
+        outcomes = outcomes[:100]
+        context_vals = context_vals[:100] if context_vals else None
 
         updated_parameters = update_arm(
             experiment=experiment,
