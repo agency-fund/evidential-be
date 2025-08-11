@@ -251,7 +251,7 @@ async def get_assignment_for_participant_with_apikey(
 
 
 @router.post(
-    "experiments/{experiment_id}/assignments/{participant_id}/assign_cmab",
+    "/experiments/{experiment_id}/assignments/{participant_id}/assign_cmab",
     description="""Get or create a CMAB arm assignment for a specific participant. This endpoint is used only for CMAB assignments.""",
 )
 async def get_cmab_experiment_assignment_for_participant(
@@ -283,7 +283,7 @@ async def get_cmab_experiment_assignment_for_participant(
 
     # Check context values
     context_inputs = body.context_inputs
-    context_defns = experiment.contexts
+    context_defns = await experiment.awaitable_attrs.contexts
     if len(context_inputs) != len(context_defns):
         raise LateValidationError(
             f"Expected {len(context_defns)} context inputs, but got {len(context_inputs)} in CreateCMABAssignmentRequest."
