@@ -262,7 +262,7 @@ async def get_cmab_experiment_assignment_for_participant(
     create_if_none: Annotated[
         bool,
         Query(
-            description="Create an assignment if none exists. Does nothing for preassigned experiments. Override if you just want to check if an assignment exists."
+            description="Create an assignment if none exists. Override if you just want to check if an assignment exists."
         ),
     ] = True,
     random_state: Annotated[
@@ -274,7 +274,6 @@ async def get_cmab_experiment_assignment_for_participant(
     ] = None,
 ) -> GetParticipantAssignmentResponse:
     """Get or create the CMAB arm assignment for a specific participant in an experiment."""
-    # Validate the datasource and experiment exist
 
     if experiment.experiment_type != ExperimentsType.CMAB_ONLINE.value:
         raise LateValidationError(
@@ -284,14 +283,16 @@ async def get_cmab_experiment_assignment_for_participant(
     # Check context values
     context_inputs = body.context_inputs
     context_defns = await experiment.awaitable_attrs.contexts
+    context_inputs = sorted(context_inputs, key=lambda x: x.context_id)
+    context_defns = sorted(context_defns, key=lambda x: x.id)
     if len(context_inputs) != len(context_defns):
         raise LateValidationError(
             f"Expected {len(context_defns)} context inputs, but got {len(context_inputs)} in CreateCMABAssignmentRequest."
         )
 
     for context_input, context_def in zip(
-        sorted(context_inputs, key=lambda x: x.context_id),
-        sorted(context_defns, key=lambda x: x.id),
+        context_inputs,
+        context_defns,
         strict=True,
     ):
         if context_input.context_id != context_def.id:
@@ -306,9 +307,7 @@ async def get_cmab_experiment_assignment_for_participant(
                 f"Context value for id {context_input.context_id} must be binary (0 or 1).",
             )
 
-    context_vals = [
-        ctx.context_value for ctx in sorted(context_inputs, key=lambda x: x.context_id)
-    ]
+    context_vals = [ctx.context_value for ctx in context_inputs]
     # Look up the participant's assignment if it exists
     assignment = await get_existing_assignment_for_participant(
         xngin_session=session,
