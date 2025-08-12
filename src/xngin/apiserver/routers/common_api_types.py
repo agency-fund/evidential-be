@@ -201,7 +201,7 @@ class CreateCMABAssignmentRequest(ApiBaseModel):
         "cmab_assignment"  # Adding type field to allow for type-discriminated unions in future
     )
     context_inputs: Annotated[
-        list[ContextInput],
+        list[ContextInput] | None,
         Field(
             description="""
             List of context values for the assignment.

@@ -280,34 +280,6 @@ async def get_cmab_experiment_assignment_for_participant(
             f"Experiment {experiment.id} is a {experiment.experiment_type} experiment, and not a {ExperimentsType.CMAB_ONLINE.value} experiment. Please use the corresponding GET endpoint to create assignments."
         )
 
-    # Check context values
-    context_inputs = body.context_inputs
-    context_defns = await experiment.awaitable_attrs.contexts
-    context_inputs = sorted(context_inputs, key=lambda x: x.context_id)
-    context_defns = sorted(context_defns, key=lambda x: x.id)
-    if len(context_inputs) != len(context_defns):
-        raise LateValidationError(
-            f"Expected {len(context_defns)} context inputs, but got {len(context_inputs)} in CreateCMABAssignmentRequest."
-        )
-
-    for context_input, context_def in zip(
-        context_inputs,
-        context_defns,
-        strict=True,
-    ):
-        if context_input.context_id != context_def.id:
-            raise LateValidationError(
-                f"Context input for id {context_input.context_id} does not match expected context id {context_def.id}",
-            )
-        if (
-            context_def.value_type == ContextType.BINARY.value
-            and context_input.context_value not in {0.0, 1.0}
-        ):
-            raise LateValidationError(
-                f"Context value for id {context_input.context_id} must be binary (0 or 1).",
-            )
-
-    context_vals = [ctx.context_value for ctx in context_inputs]
     # Look up the participant's assignment if it exists
     assignment = await get_existing_assignment_for_participant(
         xngin_session=session,
@@ -317,6 +289,42 @@ async def get_cmab_experiment_assignment_for_participant(
     )
 
     if not assignment and create_if_none and experiment.stopped_assignments_at is None:
+        # --- Check context values ---
+        context_inputs = body.context_inputs
+
+        if not context_inputs:
+            raise LateValidationError(
+                "Context inputs are required for creating CMAB assignments."
+            )
+
+        context_defns = await experiment.awaitable_attrs.contexts
+        context_inputs = sorted(context_inputs, key=lambda x: x.context_id)
+        context_defns = sorted(context_defns, key=lambda x: x.id)
+
+        if len(context_inputs) != len(context_defns):
+            raise LateValidationError(
+                f"Expected {len(context_defns)} context inputs, but got {len(context_inputs)} in CreateCMABAssignmentRequest."
+            )
+
+        for context_input, context_def in zip(
+            context_inputs,
+            context_defns,
+            strict=True,
+        ):
+            if context_input.context_id != context_def.id:
+                raise LateValidationError(
+                    f"Context input for id {context_input.context_id} does not match expected context id {context_def.id}",
+                )
+            if (
+                context_def.value_type == ContextType.BINARY.value
+                and context_input.context_value not in {0.0, 1.0}
+            ):
+                raise LateValidationError(
+                    f"Context value for id {context_input.context_id} must be binary (0 or 1).",
+                )
+
+        context_vals = [ctx.context_value for ctx in context_inputs]
+
         assignment = await create_assignment_for_participant(
             xngin_session=session,
             experiment=experiment,
