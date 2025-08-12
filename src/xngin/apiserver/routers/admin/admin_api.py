@@ -1318,13 +1318,7 @@ async def create_experiment(
     ] = None,
 ) -> CreateExperimentResponse:
     """Creates a new experiment in the specified datasource."""
-    # Datasource checks
     datasource = await get_datasource_or_raise(session, user, datasource_id)
-    if not datasource:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Datasource {datasource_id} not found in database",
-        )
 
     if body.design_spec.ids_are_present():
         raise LateValidationError("Invalid DesignSpec: UUIDs must not be set.")

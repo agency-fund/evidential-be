@@ -143,7 +143,7 @@ dev-dependencies = [
     "ruff>=0.11.11,<0.12.0",
     "pytest-mock>=3.14.0,<4",
     "types-psycopg2>=2.9.10,<3",
-    "mypy>=1.16.0",
+    "mypy>=1.17.1",
     "pandas-stubs>=2.2.3.241126",
     "pytest-asyncio>=1.0.0",
     "pytest-env>=1.1.5,<1.2",
@@ -162,6 +162,15 @@ environments = [
 python_version = 3.12
 mypy_path = "src"
 namespace_packages = true
+enable_error_code = [
+    "exhaustive-match",
+    "override",
+    "redundant-cast",
+    "redundant-expr",
+    "truthy-bool",
+    "truthy-iterable",
+    "unused-awaitable",
+]
 explicit_package_bases = true
 check_untyped_defs = true
 warn_redundant_casts = true

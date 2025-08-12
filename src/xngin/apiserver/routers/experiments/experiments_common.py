@@ -594,7 +594,7 @@ def experiment_assignments_to_csv_generator(experiment: tables.Experiment):
                         participant.arm_id,
                         arm_id_to_name[participant.arm_id],
                         participant.created_at,
-                        *["" if v is None else v for v in participant.strata_values()],
+                        *participant.strata_values(),
                     ]
                     writer.writerow(row)
 

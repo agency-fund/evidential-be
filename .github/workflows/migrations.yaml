@@ -39,7 +39,7 @@ jobs:
           uv run atlas migrate lint --env sa_postgres --git-base origin/main | tee -a lint-output
 
           {
-            echo '# Atlas Lint'
+            echo '## Migration Lint'
             echo
             if [[ -s lint-output ]]; then
               echo '```'
@@ -49,7 +49,11 @@ jobs:
               echo Lint output was empty.
             fi
             echo
-          } | tee -a "${GITHUB_STEP_SUMMARY}"
+          } | tee -a migration-lint.md
+
+          if [[ -s lint-output ]]; then
+            cat migration-lint.md >> comment.md
+          fi
       - name: ensure migrations have been created for the latest code changes
         run: |
           before=$(sha256sum migrations/sa_postgres/atlas.sum)
@@ -61,12 +65,12 @@ jobs:
           fi
 
           {
-            echo '# Missing Migration Files'
+            echo '## Missing Migration Files'
             echo
             echo "The committed migration files do not match the table definitions."
             echo
 
-            echo '## git status'
+            echo '### git status'
             echo
             echo '```'
             git status migrations
@@ -76,7 +80,7 @@ jobs:
             untracked=$(git ls-files --other --directory --exclude-standard migrations)
             for migf in ${untracked}; do
               echo
-              echo '##' "${migf}"
+              echo '###' "${migf}"
               echo
               echo '```sql'
               cat "${migf}"

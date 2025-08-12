@@ -279,10 +279,11 @@ def create_special_experiment_id_filter(
                 func.char_length(col) == 0,
                 not_(func.lower(col).regexp_match(matching_regex)),
             )
-    # This should be impossible as it's caught by the Filter validator:
-    raise ValueError(
-        f"Experiment id filter on {filter_.field_name} has invalid relation: {filter_.relation}"
-    )
+        case Relation.BETWEEN:
+            # This should be impossible as it's caught by the Filter validator:
+            raise ValueError(
+                f"Experiment id filter on {filter_.field_name} has invalid relation: {filter_.relation}"
+            )
 
 
 def make_csv_regex(values):
@@ -372,7 +373,8 @@ def create_datetime_filter(col: sqlalchemy.Column, filter_: Filter) -> ColumnOpe
             return col <= right
         case (left, right):
             return col.between(left, right)
-    raise RuntimeError("Bug: invalid Filter.")
+        case _:
+            raise RuntimeError("Bug: invalid filter.")
 
 
 def create_filter(col: sqlalchemy.Column, filter_: Filter) -> ColumnOperators:
@@ -386,6 +388,8 @@ def create_filter(col: sqlalchemy.Column, filter_: Filter) -> ColumnOperators:
                     return col <= right
                 case (left, right):
                     return col.between(left, right)
+                case _:
+                    raise RuntimeError("Bug: invalid filter.")
         case Relation.EXCLUDES if isinstance(col.type, sqlalchemy.Boolean):
             return and_(*[
                 col.is_not(value) if value is not None else col.is_not(None)
@@ -400,7 +404,8 @@ def create_filter(col: sqlalchemy.Column, filter_: Filter) -> ColumnOperators:
             ])
         case Relation.INCLUDES:
             return sqlalchemy.not_(general_excludes_filter(col, filter_.value))
-    raise RuntimeError("Bug: invalid Filter.")
+        case _:
+            raise RuntimeError("Bug: invalid Filter.")
 
 
 def compose_query(sa_table: Table, chosen_n: int, filters):

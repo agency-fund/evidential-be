@@ -148,7 +148,7 @@ class DataType(enum.StrEnum):
             ):
                 return FilterClass.NUMERIC
             case _:
-                return FilterClass.UNKNOWN
+                raise RuntimeError(f"Unsupported data type {self}")
 
 
 class FilterClass(enum.StrEnum):
@@ -156,7 +156,6 @@ class FilterClass(enum.StrEnum):
 
     DISCRETE = "discrete"
     NUMERIC = "numeric"
-    UNKNOWN = "unknown"
 
     def valid_relations(self):
         """Gets the valid relation operators for this data type class."""
@@ -169,7 +168,6 @@ class FilterClass(enum.StrEnum):
                     Relation.EXCLUDES,
                     Relation.INCLUDES,
                 ]
-        raise ValueError(f"{self} has no valid defined relations.")
 
 
 class Relation(enum.StrEnum):
