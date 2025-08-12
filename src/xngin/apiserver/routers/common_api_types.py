@@ -191,6 +191,7 @@ class CreateCMABAssignmentRequest(ApiBaseModel):
     2. The order of context_inputs does not need to match the order of contexts in the experiment
     3. You must provide values for all contexts defined in the experiment
     4. Number of input context values must match the number of contexts defined in the experiment
+    5. The context value input can be None, but only in the case of retrieving a pre-existing assignment.
 
     Example:
         If an experiment defines contexts with IDs ["ctx_1", "ctx_2"], your request must include
@@ -208,6 +209,7 @@ class CreateCMABAssignmentRequest(ApiBaseModel):
             Must include exactly the same number contexts defined in the experiment.
             The values are matched to the experiment's contexts by context_id, not by position in the list.
             Each context_id must correspond to one of the IDs of the contexts defined in the experiment.
+            Can be None, when simply retrieving pre-existing assignments; must have valid inputs otherwise.
             """
         ),
     ]

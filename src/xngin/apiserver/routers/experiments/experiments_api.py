@@ -252,7 +252,11 @@ async def get_assignment_for_participant_with_apikey(
 
 @router.post(
     "/experiments/{experiment_id}/assignments/{participant_id}/assign_cmab",
-    description="""Get or create a CMAB arm assignment for a specific participant. This endpoint is used only for CMAB assignments.""",
+    description="""
+    Get or create a CMAB arm assignment for a specific participant. This endpoint is used only for CMAB assignments.
+    If there is a pre-existing assignment for a given participant ID, the context inputs in the
+    CreateCMABAssignmentRequest can be None, and will be disregarded if they are not None.
+    """,
 )
 async def get_cmab_experiment_assignment_for_participant(
     experiment: Annotated[tables.Experiment, Depends(experiment_dependency)],
