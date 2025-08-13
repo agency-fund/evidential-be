@@ -652,31 +652,26 @@ async def remove_member_from_organization(
     user_id: str,
     session: Annotated[AsyncSession, Depends(xngin_db_session)],
     user: Annotated[tables.User, Depends(user_from_token)],
+    allow_missing: Annotated[
+        bool,
+        Query(description="If true, return a 204 even if the resource does not exist."),
+    ] = False,
 ):
     """Removes a member from an organization.
 
     The authenticated user must be part of the organization to remove members.
     """
-    _authz_check = await get_organization_or_raise(session, user, organization_id)
-    # Prevent users from removing themselves from an organization
-    if user_id == user.id:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="You cannot remove yourself from an organization",
-        )
-    stmt = delete(tables.UserOrganization).where(
+    resource_query = select(tables.UserOrganization).where(
         tables.UserOrganization.organization_id == organization_id,
         tables.UserOrganization.user_id == user_id,
+        tables.UserOrganization.user_id != user.id,  # not current authenticated user
     )
-    result = await session.execute(stmt)
-    if result.rowcount == 0:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="User is not a member of this organization",
-        )
-
-    await session.commit()
-    return GENERIC_SUCCESS
+    return await handle_delete(
+        session,
+        allow_missing,
+        authz.is_user_authorized_on_organization(user, organization_id),
+        resource_query,
+    )
 
 
 @router.patch("/organizations/{organization_id}")
