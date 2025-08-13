@@ -313,6 +313,68 @@ def test_add_member_to_org(testing_datasource, ppost):
     assert response.status_code == 204, response.content
 
 
+def test_remove_member_from_org(xngin_session, pget, ppost, pdelete):
+    def create_organization():
+        creation_response = ppost(
+            "/v1/m/organizations",
+            json=CreateOrganizationRequest(
+                name="test_remove_member_from_org"
+            ).model_dump(),
+        )
+        assert creation_response.status_code == 200, creation_response.content
+        parsed = CreateOrganizationResponse.model_validate(creation_response.json())
+        return parsed.id
+
+    org_id = create_organization()
+
+    def list_members():
+        org_response = pget(f"/v1/m/organizations/{org_id}")
+        assert org_response.status_code == 200, org_response.content
+        return {
+            u.email: u.id
+            for u in GetOrganizationResponse.model_validate(org_response.json()).users
+        }
+
+    def add_member(email: str):
+        add_response = ppost(
+            f"/v1/m/organizations/{org_id}/members",
+            json={"email": email},
+        )
+        assert add_response.status_code == 204, add_response.content
+        return add_response
+
+    def remove_member(user_id: str, extra: str | None = None):
+        return pdelete(
+            f"/v1/m/organizations/{org_id}/members/{user_id}"
+            + (f"?{extra}" if extra else "")
+        )
+
+    assert list_members().keys() == {PRIVILEGED_EMAIL}
+    add_member(UNPRIVILEGED_EMAIL)
+    member_list = list_members()
+    assert member_list.keys() == {PRIVILEGED_EMAIL, UNPRIVILEGED_EMAIL}
+
+    # 404 when trying to remove self from organization
+    response = remove_member(member_list.get(PRIVILEGED_EMAIL))
+    assert response.status_code == 404, response.content
+    assert list_members().keys() == {PRIVILEGED_EMAIL, UNPRIVILEGED_EMAIL}
+
+    # 204 when remove existing member
+    response = remove_member(member_list.get(UNPRIVILEGED_EMAIL))
+    assert response.status_code == 204, response.content
+    assert list_members().keys() == {PRIVILEGED_EMAIL}
+
+    # 404 when removing non-existent member
+    response = remove_member(member_list.get(UNPRIVILEGED_EMAIL))
+    assert response.status_code == 404, response.content
+    assert list_members().keys() == {PRIVILEGED_EMAIL}
+
+    # 204 when removing non-existent member w/allow-missing
+    response = remove_member(member_list.get(UNPRIVILEGED_EMAIL), "allow_missing=true")
+    assert response.status_code == 204, response.content
+    assert list_members().keys() == {PRIVILEGED_EMAIL}
+
+
 def test_list_orgs(testing_datasource_with_user, pget):
     """Test listing the orgs the user is a member of."""
     response = pget("/v1/m/organizations")
