@@ -22,21 +22,17 @@ if sentry_dsn := os.environ.get("SENTRY_DSN"):
 
     denylist = [
         *scrubber.DEFAULT_DENYLIST,
-        *[
-            "code",  # OIDC
-            "code_verifier",  # OIDC
-            "credentials_base64",  # sqlalchemy-bigquery
-            "credentials_info",  # sqlalchemy-bigquery
-            "database_url",  # common name of variable containing application database credentials
-        ],
+        "code",  # OIDC
+        "code_verifier",  # OIDC
+        "credentials_base64",  # sqlalchemy-bigquery
+        "credentials_info",  # sqlalchemy-bigquery
+        "database_url",  # common name of variable containing application database credentials
     ]
     pii_denylist = [
         *scrubber.DEFAULT_PII_DENYLIST,
-        *[
-            # Header names are exposed to Sentry in a normalized form.
-            constants.HEADER_WEBHOOK_TOKEN.lower().replace("-", "_"),
-            "email",
-        ],
+        # Header names are exposed to Sentry in a normalized form.
+        constants.HEADER_WEBHOOK_TOKEN.lower().replace("-", "_"),
+        "email",
     ]
 
     sentry_sdk.init(
