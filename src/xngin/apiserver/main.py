@@ -34,7 +34,6 @@ if sentry_dsn := os.environ.get("SENTRY_DSN"):
         *scrubber.DEFAULT_PII_DENYLIST,
         *[
             # Header names are exposed to Sentry in a normalized form.
-            constants.HEADER_API_KEY.lower().replace("-", "_"),
             constants.HEADER_WEBHOOK_TOKEN.lower().replace("-", "_"),
             "email",
         ],
