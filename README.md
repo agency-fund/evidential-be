@@ -19,7 +19,7 @@
 | src/xngin/apiserver/dwh/test\_dialect\_sql.py                        |       77 |        6 |     92% |535, 549, 552-557 |
 | src/xngin/apiserver/dwh/test\_queries.py                             |      224 |        1 |     99% |       216 |
 | src/xngin/apiserver/exceptionhandlers.py                             |       45 |        9 |     80% |30, 36, 46, 56-61, 83 |
-| src/xngin/apiserver/main.py                                          |       30 |        3 |     90% | 19-21, 47 |
+| src/xngin/apiserver/main.py                                          |       33 |        6 |     82% | 20-38, 68 |
 | src/xngin/apiserver/openapi.py                                       |       20 |        9 |     55% |     19-68 |
 | src/xngin/apiserver/routers/admin/admin\_api.py                      |      494 |      245 |     50% |162, 235-240, 267-272, 297-302, 316-320, 333-339, 362, 384, 395, 410-423, 443-453, 485-502, 520-537, 572-584, 588-601, 623-643, 689-695, 712-722, 754-765, 793-819, 830-848, 858-862, 881-888, 894-902, 924-938, 952, 1006-1016, 1031-1118, 1130, 1145-1170, 1197-1203, 1257-1262, 1317-1326, 1351-1384, 1443, 1470-1471, 1485-1486, 1497, 1509-1517, 1528-1534, 1551-1558, 1590-1601, 1642-1668, 1681-1685 |
 | src/xngin/apiserver/routers/admin/admin\_api\_types.py               |      144 |        2 |     99% |    31, 33 |
@@ -54,7 +54,7 @@
 | src/xngin/xsecrets/secretservice.py                                  |       61 |        4 |     93% |42-43, 106, 130 |
 | src/xngin/xsecrets/test\_gcp\_kms\_provider.py                       |      103 |       26 |     75% |40-42, 170-175, 182-189, 195-203, 210, 217-228 |
 | src/xngin/xsecrets/test\_nacl\_provider.py                           |       67 |        1 |     99% |        24 |
-|                                                            **TOTAL** | **6700** | **1156** | **83%** |           |
+|                                                            **TOTAL** | **6703** | **1159** | **83%** |           |
 
 54 files skipped due to complete coverage.
 
