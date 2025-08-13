@@ -19,6 +19,17 @@ DEFAULT_POLLING_INTERVAL = 60
 
 if sentry_dsn := os.environ.get("SENTRY_DSN"):
     import sentry_sdk
+    from sentry_sdk import scrubber
+
+    denylist = [
+        *scrubber.DEFAULT_DENYLIST,
+        "dsn",
+    ]
+    pii_denylist = [
+        *scrubber.DEFAULT_PII_DENYLIST,
+        "webhook_token",
+        "email",
+    ]
 
     sentry_sdk.init(
         dsn=sentry_dsn,
@@ -27,6 +38,10 @@ if sentry_dsn := os.environ.get("SENTRY_DSN"):
         _experiments={
             "continuous_profiling_auto_start": True,
         },
+        send_default_pii=False,
+        event_scrubber=sentry_sdk.scrubber.EventScrubber(
+            denylist=denylist, pii_denylist=pii_denylist
+        ),
     )
 
 app = typer.Typer(help="Task queue processor for xngin")
