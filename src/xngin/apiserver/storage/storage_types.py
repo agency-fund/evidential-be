@@ -39,9 +39,7 @@ class StorageMetric(StorageBaseModel):
     ] = None
     metric_target: Annotated[
         float | None,
-        Field(
-            description="Absolute target value = metric_baseline*(1 + metric_pct_change)"
-        ),
+        Field(description="Absolute target value = metric_baseline*(1 + metric_pct_change)"),
     ] = None
 
 

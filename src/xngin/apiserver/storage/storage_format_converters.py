@@ -46,9 +46,7 @@ class ExperimentStorageConverter:
         """Converts stored strata to API Stratum objects."""
         if design_spec_fields.strata is None:
             return []
-        return [
-            capi.Stratum(field_name=s.field_name) for s in design_spec_fields.strata
-        ]
+        return [capi.Stratum(field_name=s.field_name) for s in design_spec_fields.strata]
 
     @staticmethod
     def get_api_metrics(
@@ -92,9 +90,7 @@ class ExperimentStorageConverter:
 
         storage_strata = None
         if design_spec.strata:
-            storage_strata = [
-                StorageStratum(field_name=s.field_name) for s in design_spec.strata
-            ]
+            storage_strata = [StorageStratum(field_name=s.field_name) for s in design_spec.strata]
 
         storage_metrics = None
         if design_spec.metrics:
@@ -152,21 +148,15 @@ class ExperimentStorageConverter:
                     for arm in self.experiment.arms
                 ],
                 "strata": ExperimentStorageConverter.get_api_strata(design_spec_fields),
-                "metrics": ExperimentStorageConverter.get_api_metrics(
-                    design_spec_fields
-                ),
-                "filters": ExperimentStorageConverter.get_api_filters(
-                    design_spec_fields
-                ),
+                "metrics": ExperimentStorageConverter.get_api_metrics(design_spec_fields),
+                "filters": ExperimentStorageConverter.get_api_filters(design_spec_fields),
                 "power": self.experiment.power,
                 "alpha": self.experiment.alpha,
                 "fstat_thresh": self.experiment.fstat_thresh,
             })
         if self.experiment.experiment_type == ExperimentsType.MAB_ONLINE.value:
             if not self.experiment.prior_type or not self.experiment.reward_type:
-                raise ValueError(
-                    "MAB experiments must have prior_type and reward_type set."
-                )
+                raise ValueError("MAB experiments must have prior_type and reward_type set.")
             return capi.MABExperimentSpec(
                 participant_type=self.experiment.participant_type,
                 experiment_id=self.experiment.id,
@@ -194,17 +184,13 @@ class ExperimentStorageConverter:
                 prior_type=capi.PriorTypes(self.experiment.prior_type),
                 reward_type=capi.LikelihoodTypes(self.experiment.reward_type),
             )
-        raise ValueError(
-            f"Unsupported experiment type: {self.experiment.experiment_type}"
-        )
+        raise ValueError(f"Unsupported experiment type: {self.experiment.experiment_type}")
 
     def set_balance_check(self, value: capi.BalanceCheck | None) -> Self:
         if value is None:
             self.experiment.balance_check = None
         else:
-            self.experiment.balance_check = capi.BalanceCheck.model_validate(
-                value
-            ).model_dump()
+            self.experiment.balance_check = capi.BalanceCheck.model_validate(value).model_dump()
         return self
 
     def get_balance_check(self) -> capi.BalanceCheck | None:
@@ -216,9 +202,7 @@ class ExperimentStorageConverter:
         if value is None:
             self.experiment.power_analyses = None
         else:
-            self.experiment.power_analyses = capi.PowerResponse.model_validate(
-                value
-            ).model_dump()
+            self.experiment.power_analyses = capi.PowerResponse.model_validate(value).model_dump()
         return self
 
     def get_power_response(
@@ -240,23 +224,17 @@ class ExperimentStorageConverter:
             datasource_id=self.experiment.datasource_id,
             state=ExperimentState(self.experiment.state),
             stopped_assignments_at=self.experiment.stopped_assignments_at,
-            stopped_assignments_reason=StopAssignmentReason.from_str(
-                self.experiment.stopped_assignments_reason
-            ),
+            stopped_assignments_reason=StopAssignmentReason.from_str(self.experiment.stopped_assignments_reason),
             design_spec=self.get_design_spec(),
             power_analyses=self.get_power_response(),
             assign_summary=assign_summary,
             webhooks=webhook_ids or [],
         )
 
-    def get_experiment_response(
-        self, assign_summary: capi.AssignSummary
-    ) -> capi.GetExperimentResponse:
+    def get_experiment_response(self, assign_summary: capi.AssignSummary) -> capi.GetExperimentResponse:
         # Although GetExperimentResponse is a subclass of ExperimentConfig, we revalidate the
         # response in case we ever change the API.
-        return capi.GetExperimentResponse.model_validate(
-            self.get_experiment_config(assign_summary).model_dump()
-        )
+        return capi.GetExperimentResponse.model_validate(self.get_experiment_config(assign_summary).model_dump())
 
     def get_create_experiment_response(
         self,
@@ -349,9 +327,7 @@ class ExperimentStorageConverter:
                     mu_init=arm.mu_init,
                     sigma_init=arm.sigma_init,
                     mu=[arm.mu_init] if arm.mu_init is not None else None,
-                    covariance=[[arm.sigma_init]]
-                    if arm.sigma_init is not None
-                    else None,
+                    covariance=[[arm.sigma_init]] if arm.sigma_init is not None else None,
                     alpha_init=arm.alpha_init,
                     beta_init=arm.beta_init,
                     alpha=arm.alpha_init,

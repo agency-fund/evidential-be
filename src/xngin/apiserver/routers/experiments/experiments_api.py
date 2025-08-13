@@ -82,9 +82,7 @@ router = APIRouter(
 )
 async def create_experiment_with_assignment_sl(
     body: CreateExperimentRequest,
-    chosen_n: Annotated[
-        int, Query(..., description="Number of participants to assign.")
-    ],
+    chosen_n: Annotated[int, Query(..., description="Number of participants to assign.")],
     datasource: Annotated[Datasource, Depends(datasource_dependency)],
     xngin_session: Annotated[AsyncSession, Depends(xngin_db_session)],
     random_state: Annotated[int | None, Depends(random_seed_dependency)],
@@ -175,9 +173,7 @@ async def get_experiment_sl(
 ) -> GetExperimentResponse:
     converter = ExperimentStorageConverter(experiment)
     balance_check = converter.get_balance_check()
-    assign_summary = await get_assign_summary(
-        xngin_session, experiment.id, balance_check
-    )
+    assign_summary = await get_assign_summary(xngin_session, experiment.id, balance_check)
     return converter.get_experiment_response(assign_summary)
 
 
@@ -228,9 +224,7 @@ async def get_assignment_for_participant_with_apikey(
         xngin_session, experiment.id, participant_id, experiment.experiment_type
     )
     if not assignment and create_if_none:
-        assignment = await create_assignment_for_participant(
-            xngin_session, experiment, participant_id, random_state
-        )
+        assignment = await create_assignment_for_participant(xngin_session, experiment, participant_id, random_state)
 
     return GetParticipantAssignmentResponse(
         experiment_id=experiment.id,

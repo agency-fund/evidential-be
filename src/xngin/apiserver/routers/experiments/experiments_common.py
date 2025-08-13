@@ -87,37 +87,25 @@ async def create_dwh_experiment_impl(
     if isinstance(request.design_spec, BaseFrequentistDesignSpec):
         ds_config = datasource.get_config()
 
-        participants_cfg = ds_config.find_participants(
-            request.design_spec.participant_type
-        )
+        participants_cfg = ds_config.find_participants(request.design_spec.participant_type)
         if not isinstance(participants_cfg, ParticipantsDef):
-            raise LateValidationError(
-                "Invalid ParticipantsConfig: Participants must be of type schema."
-            )
+            raise LateValidationError("Invalid ParticipantsConfig: Participants must be of type schema.")
 
         # Get participants and their schema info from the client dwh
         participants_unique_id_field = participants_cfg.get_unique_id_field()
         async with DwhSession(ds_config.dwh) as dwh:
             if chosen_n is not None:
-                result = await dwh.get_participants(
-                    participants_cfg.table_name, request.design_spec.filters, chosen_n
-                )
+                result = await dwh.get_participants(participants_cfg.table_name, request.design_spec.filters, chosen_n)
                 sa_table, participants = result.sa_table, result.participants
 
-            elif (
-                request.design_spec.experiment_type == ExperimentsType.FREQ_PREASSIGNED
-            ):
-                raise LateValidationError(
-                    "Preassigned experiments must have a chosen_n."
-                )
+            elif request.design_spec.experiment_type == ExperimentsType.FREQ_PREASSIGNED:
+                raise LateValidationError("Preassigned experiments must have a chosen_n.")
             else:
                 sa_table = await dwh.inspect_table(participants_cfg.table_name)
 
         if request.design_spec.experiment_type == ExperimentsType.FREQ_PREASSIGNED:
             if participants is None:
-                raise LateValidationError(
-                    "Preassigned experiments must have participants data"
-                )
+                raise LateValidationError("Preassigned experiments must have participants data")
             return await create_preassigned_experiment_impl(
                 request=request,
                 datasource_id=datasource.id,
@@ -180,15 +168,11 @@ async def create_experiment_with_assignments_impl(
         arm.arm_id = tables.arm_id_factory()
 
     ds_config = datasource.config
-    participants_schema = ds_config.find_participants(
-        request.design_spec.participant_type
-    )
+    participants_schema = ds_config.find_participants(request.design_spec.participant_type)
 
     # Get participants and their schema info from the client dwh
     async with DwhSession(ds_config.dwh) as dwh:
-        result = await dwh.get_participants(
-            participants_schema.table_name, request.design_spec.filters, chosen_n
-        )
+        result = await dwh.get_participants(participants_schema.table_name, request.design_spec.filters, chosen_n)
 
     if request.design_spec.experiment_type == ExperimentsType.FREQ_PREASSIGNED:
         if result.participants is None:
@@ -259,9 +243,7 @@ async def create_preassigned_experiment_impl(
     for participant in dwh_participants:
         participant_id = getattr(participant, participant_unique_id_field)
         if participant_id in seen_participant_ids:
-            raise LateValidationError(
-                f"Duplicate participant ID found after filtering: '{participant_id}'."
-            )
+            raise LateValidationError(f"Duplicate participant ID found after filtering: '{participant_id}'.")
         seen_participant_ids.add(participant_id)
 
     # TODO: directly create ArmAssignments from the pd dataframe instead
@@ -303,21 +285,15 @@ async def create_preassigned_experiment_impl(
             participant_type=design_spec.participant_type,
             participant_id=assignment.participant_id,
             arm_id=str(assignment.arm_id),
-            strata=[s.model_dump(mode="json") for s in assignment.strata]
-            if assignment.strata
-            else None,
+            strata=[s.model_dump(mode="json") for s in assignment.strata] if assignment.strata else None,
         )
         xngin_session.add(db_assignment)
 
     await xngin_session.commit()
 
-    assign_summary = await get_assign_summary(
-        xngin_session, experiment.id, assignment_response.balance_check
-    )
+    assign_summary = await get_assign_summary(xngin_session, experiment.id, assignment_response.balance_check)
     webhook_ids = [webhook.id for webhook in validated_webhooks]
-    return experiment_converter.get_create_experiment_response(
-        assign_summary, webhook_ids
-    )
+    return experiment_converter.get_create_experiment_response(assign_summary, webhook_ids)
 
 
 async def create_freq_online_experiment_impl(
@@ -357,9 +333,7 @@ async def create_freq_online_experiment_impl(
         arm_sizes=[ArmSize(arm=arm.model_copy(), size=0) for arm in design_spec.arms],
     )
     webhook_ids = [webhook.id for webhook in validated_webhooks]
-    return experiment_converter.get_create_experiment_response(
-        empty_assign_summary, webhook_ids
-    )
+    return experiment_converter.get_create_experiment_response(empty_assign_summary, webhook_ids)
 
 
 async def create_bandit_online_experiment_impl(
@@ -392,9 +366,7 @@ async def create_bandit_online_experiment_impl(
     return experiment_converter.get_create_experiment_response(None, webhook_ids)
 
 
-async def commit_experiment_impl(
-    xngin_session: AsyncSession, experiment: tables.Experiment
-):
+async def commit_experiment_impl(xngin_session: AsyncSession, experiment: tables.Experiment):
     if experiment.state == ExperimentState.COMMITTED:
         return Response(status_code=status.HTTP_304_NOT_MODIFIED)
     if experiment.state != ExperimentState.ASSIGNED:
@@ -412,11 +384,7 @@ async def commit_experiment_impl(
     event = tables.Event(
         organization_id=datasource.organization_id,
         type=ExperimentCreatedEvent.TYPE,
-    ).set_data(
-        ExperimentCreatedEvent(
-            datasource_id=experiment.datasource_id, experiment_id=experiment_id
-        )
-    )
+    ).set_data(ExperimentCreatedEvent(datasource_id=experiment.datasource_id, experiment_id=experiment_id))
     xngin_session.add(event)
     for webhook in webhooks:
         # If the organization has a webhook for experiment.created, enqueue a task for it.
@@ -431,9 +399,7 @@ async def commit_experiment_impl(
                     experiment_id=experiment_id,
                     experiment_url=f"{flags.XNGIN_PUBLIC_PROTOCOL}://{flags.XNGIN_PUBLIC_HOSTNAME}/v1/experiments/{experiment_id}",
                 ).model_dump(),
-                headers={constants.HEADER_WEBHOOK_TOKEN: webhook.auth_token}
-                if webhook.auth_token
-                else {},
+                headers={constants.HEADER_WEBHOOK_TOKEN: webhook.auth_token} if webhook.auth_token else {},
             )
             task = tables.Task(
                 task_type=WEBHOOK_OUTBOUND_TASK_TYPE,
@@ -445,9 +411,7 @@ async def commit_experiment_impl(
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
-async def abandon_experiment_impl(
-    xngin_session: AsyncSession, experiment: tables.Experiment
-):
+async def abandon_experiment_impl(xngin_session: AsyncSession, experiment: tables.Experiment):
     if experiment.state == ExperimentState.ABANDONED:
         return Response(status_code=status.HTTP_304_NOT_MODIFIED)
     if experiment.state not in {ExperimentState.DESIGNING, ExperimentState.ASSIGNED}:
@@ -496,9 +460,7 @@ async def list_organization_experiments_impl(
     return ListExperimentsResponse(items=items)
 
 
-async def list_experiments_impl(
-    xngin_session: AsyncSession, datasource_id: str
-) -> ListExperimentsResponse:
+async def list_experiments_impl(xngin_session: AsyncSession, datasource_id: str) -> ListExperimentsResponse:
     stmt = (
         select(tables.Experiment)
         .options(
@@ -640,9 +602,7 @@ async def get_existing_assignment_for_participant(
 
     Returns: None if no assignment exists.
     """
-    assignment_table = (
-        tables.ArmAssignment if "freq" in experiment_type else tables.Draw
-    )
+    assignment_table = tables.ArmAssignment if "freq" in experiment_type else tables.Draw
     stmt = (
         select(
             assignment_table.participant_id,
@@ -652,8 +612,7 @@ async def get_existing_assignment_for_participant(
         )
         .join(
             assignment_table,
-            (assignment_table.arm_id == tables.Arm.id)
-            & (assignment_table.experiment_id == tables.Arm.experiment_id),
+            (assignment_table.arm_id == tables.Arm.id) & (assignment_table.experiment_id == tables.Arm.experiment_id),
         )
         .filter(
             tables.Arm.experiment_id == experiment_id,
@@ -690,9 +649,7 @@ async def create_assignment_for_participant(
         return None
 
     if experiment.state != ExperimentState.COMMITTED:
-        raise ExperimentsAssignmentError(
-            f"Invalid experiment state: {experiment.state}"
-        )
+        raise ExperimentsAssignmentError(f"Invalid experiment state: {experiment.state}")
 
     if len(experiment.arms) == 0:
         raise ExperimentsAssignmentError("Experiment has no arms")
@@ -763,9 +720,7 @@ async def create_assignment_for_participant(
                 )
             ).fetchone()
         if result is None:
-            raise ExperimentsAssignmentError(
-                f"Failed to create assignment for participant '{participant_id}'"
-            )
+            raise ExperimentsAssignmentError(f"Failed to create assignment for participant '{participant_id}'")
         created_at = result[0]
         await xngin_session.commit()
     except IntegrityError as e:
@@ -811,16 +766,12 @@ async def update_bandit_arm_with_outcome_impl(
 
     # TODO: Add support for CMAB or Bayes A/B experiments.
     if experiment.experiment_type != ExperimentsType.MAB_ONLINE.value:
-        raise LateValidationError(
-            f"Invalid experiment type for bandit outcome update: {experiment.experiment_type}"
-        )
+        raise LateValidationError(f"Invalid experiment type for bandit outcome update: {experiment.experiment_type}")
     if experiment.reward_type == LikelihoodTypes.BERNOULLI.value and outcome not in {
         0,
         1,
     }:
-        raise LateValidationError(
-            f"Invalid outcome for binary reward type: {outcome}. Must be 0 or 1."
-        )
+        raise LateValidationError(f"Invalid outcome for binary reward type: {outcome}. Must be 0 or 1.")
 
     try:
         draw_record = await xngin_session.scalar(
@@ -830,9 +781,7 @@ async def update_bandit_arm_with_outcome_impl(
             )
         )
         if draw_record is None:
-            raise ExperimentsAssignmentError(
-                f"No draw record found for participant '{participant_id}' this experiment"
-            )
+            raise ExperimentsAssignmentError(f"No draw record found for participant '{participant_id}' this experiment")
         if draw_record.outcome is not None:
             raise ExperimentsAssignmentError(
                 f"Participant '{participant_id}' already has an outcome recorded for experiment '{experiment.id}'"
@@ -841,9 +790,7 @@ async def update_bandit_arm_with_outcome_impl(
         draw_record.observed_at = datetime.now(UTC)
         draw_record.outcome = outcome
 
-        arm_to_update = next(
-            arm for arm in experiment.arms if arm.id == draw_record.arm_id
-        )
+        arm_to_update = next(arm for arm in experiment.arms if arm.id == draw_record.arm_id)
 
         await experiment.awaitable_attrs.draws
         previous_outcomes = [

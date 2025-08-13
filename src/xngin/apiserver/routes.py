@@ -10,9 +10,7 @@ from xngin.apiserver.routers.experiments import experiments_api
 def register(app: FastAPI):
     app.include_router(experiments_api.router, tags=["Experiment Integration"])
 
-    app.include_router(
-        healthchecks_api.router, tags=["Health Checks"], include_in_schema=False
-    )
+    app.include_router(healthchecks_api.router, tags=["Health Checks"], include_in_schema=False)
 
     app.include_router(
         auth_api.router,

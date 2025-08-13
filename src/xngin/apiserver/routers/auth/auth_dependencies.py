@@ -23,12 +23,8 @@ TESTING_TOKENS_ENABLED = False
 UNPRIVILEGED_EMAIL = "testing-unprivileged@example.com"
 UNPRIVILEGED_TOKEN_FOR_TESTING = secrets.token_urlsafe(32)
 TESTING_TOKENS = {
-    AIRPLANE_TOKEN: Principal(
-        email="testing@example.com", iss="airplane", sub="airplane", hd="example.com"
-    ),
-    UNPRIVILEGED_TOKEN_FOR_TESTING: Principal(
-        email=UNPRIVILEGED_EMAIL, iss="testing", sub="testing", hd="example.com"
-    ),
+    AIRPLANE_TOKEN: Principal(email="testing@example.com", iss="airplane", sub="airplane", hd="example.com"),
+    UNPRIVILEGED_TOKEN_FOR_TESTING: Principal(email=UNPRIVILEGED_EMAIL, iss="testing", sub="testing", hd="example.com"),
     PRIVILEGED_TOKEN_FOR_TESTING: Principal(
         email=PRIVILEGED_EMAIL,
         iss="testing",
@@ -53,9 +49,7 @@ class GoogleOidcConfig:
     jwks: dict
 
     def should_refresh(self):
-        return self.last_refreshed < datetime.datetime.now() - datetime.timedelta(
-            hours=1
-        )
+        return self.last_refreshed < datetime.datetime.now() - datetime.timedelta(hours=1)
 
 
 # _google_config and _google_config_stampede_lock are managed by get_google_configuration().
@@ -70,9 +64,7 @@ async def _fetch_object_200(client: httpx.AsyncClient, url: str):
     """
     response = await client.get(url)
     if response.status_code != 200:
-        raise GoogleOidcError(
-            f"Fetching {url} failed with an unexpected status code: {response.status_code}"
-        )
+        raise GoogleOidcError(f"Fetching {url} failed with an unexpected status code: {response.status_code}")
     parsed = response.json()
     if not isinstance(parsed, dict):
         raise GoogleOidcError(f"{url} returned a non-dictionary response")
@@ -98,14 +90,10 @@ async def get_google_configuration() -> GoogleOidcConfig:
                 config = await _fetch_object_200(client, GOOGLE_DISCOVERY_URL)
                 jwks_url = config.get("jwks_uri")
                 if not jwks_url:
-                    raise GoogleOidcError(
-                        "config object does not have a jwks_uri field"
-                    )
+                    raise GoogleOidcError("config object does not have a jwks_uri field")
                 jwks_response = await _fetch_object_200(client, jwks_url)
                 if not jwks_response.get("keys"):
-                    raise GoogleOidcError(
-                        "JWKS response does not contain keys in expected format"
-                    )
+                    raise GoogleOidcError("JWKS response does not contain keys in expected format")
                 _google_config = GoogleOidcConfig(
                     last_refreshed=datetime.datetime.now(),
                     config=config,
@@ -118,9 +106,7 @@ async def get_google_configuration() -> GoogleOidcConfig:
 
 
 async def require_oidc_token(
-    token: Annotated[
-        str, Security(OpenIdConnect(openIdConnectUrl=GOOGLE_DISCOVERY_URL))
-    ],
+    token: Annotated[str, Security(OpenIdConnect(openIdConnectUrl=GOOGLE_DISCOVERY_URL))],
     oidc_config: Annotated[GoogleOidcConfig, Depends(get_google_configuration)],
 ) -> Principal:
     """Dependency for validating that the Authorization: header is a valid Google JWT.
@@ -150,9 +136,7 @@ async def require_oidc_token(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail=f"Invalid authentication credentials: {e}",
         ) from e
-    key = next(
-        (jwk for jwk in oidc_config.jwks["keys"] if jwk["kid"] == header["kid"]), None
-    )
+    key = next((jwk for jwk in oidc_config.jwks["keys"] if jwk["kid"] == header["kid"]), None)
     if not key:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
@@ -176,9 +160,7 @@ async def require_oidc_token(
         # Confirming that authorized party (azp) and audience (aud) match is not strictly necessary but if Google ever
         # issues a token where azp an aud don't match then we would like to know about it.
         if decoded["azp"] != decoded["aud"]:
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid azp/aud"
-            )
+            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid azp/aud")
     except JWTError as e:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,

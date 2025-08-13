@@ -39,9 +39,7 @@ if sentry_dsn := os.environ.get("SENTRY_DSN"):
             "continuous_profiling_auto_start": True,
         },
         send_default_pii=False,
-        event_scrubber=sentry_sdk.scrubber.EventScrubber(
-            denylist=denylist, pii_denylist=pii_denylist
-        ),
+        event_scrubber=sentry_sdk.scrubber.EventScrubber(denylist=denylist, pii_denylist=pii_denylist),
     )
 
 app = typer.Typer(help="Task queue processor for xngin")
@@ -87,10 +85,6 @@ def run(
     logger.add(sys.stderr, level=log_level)
     logger.info(f"Starting task queue with DSN: {dsn}")
 
-    queue = TaskQueue(
-        dsn=dsn, max_retries=max_retries, poll_interval_secs=poll_interval
-    )
-    queue.register_handler(
-        WEBHOOK_OUTBOUND_TASK_TYPE, make_webhook_outbound_handler(dsn)
-    )
+    queue = TaskQueue(dsn=dsn, max_retries=max_retries, poll_interval_secs=poll_interval)
+    queue.register_handler(WEBHOOK_OUTBOUND_TASK_TYPE, make_webhook_outbound_handler(dsn))
     queue.run()

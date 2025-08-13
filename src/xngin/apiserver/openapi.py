@@ -57,11 +57,7 @@ def custom_openapi(app: FastAPI):
         },
         summary="",
         description="",
-        tags=[
-            tag.definition
-            for tag in sorted(visible_tags, key=lambda t: t.definition["name"])
-            if tag.visible
-        ],
+        tags=[tag.definition for tag in sorted(visible_tags, key=lambda t: t.definition["name"]) if tag.visible],
         routes=app.routes,
     )
     app.openapi_schema = openapi_schema

@@ -19,9 +19,7 @@ def _power_analysis_error(
 ) -> MetricPowerAnalysis:
     return MetricPowerAnalysis(
         metric_spec=metric,
-        msg=MetricPowerAnalysisMessage(
-            type=msg_type, msg=msg_body, source_msg=msg_body, values=None
-        ),
+        msg=MetricPowerAnalysisMessage(type=msg_type, msg=msg_body, source_msg=msg_body, values=None),
     )
 
 
@@ -43,11 +41,7 @@ def analyze_metric_power(
     if metric.metric_type is None:
         raise ValueError("Unknown metric_type.")
 
-    if (
-        metric.metric_target is None
-        and metric.metric_baseline is not None
-        and metric.metric_pct_change is not None
-    ):
+    if metric.metric_target is None and metric.metric_baseline is not None and metric.metric_pct_change is not None:
         metric.metric_target = metric.metric_baseline * (1 + metric.metric_pct_change)
 
     # Validate we have usable input to do the analysis.
@@ -58,10 +52,7 @@ def analyze_metric_power(
         return _power_analysis_error(
             metric,
             MetricPowerAnalysisMessageType.NO_AVAILABLE_N,
-            (
-                "You have no available units to run your experiment. "
-                "Adjust your filters to target more units."
-            ),
+            ("You have no available units to run your experiment. Adjust your filters to target more units."),
         )
 
     if metric.metric_target is None or metric.metric_baseline is None:
@@ -83,13 +74,9 @@ def analyze_metric_power(
                 "There is no variation in the metric with the given filters. Standard deviation must be positive to do a sample size calculation.",
             )
 
-        effect_size = (
-            metric.metric_target - metric.metric_baseline
-        ) / metric.metric_stddev
+        effect_size = (metric.metric_target - metric.metric_baseline) / metric.metric_stddev
     elif metric.metric_type == MetricType.BINARY:
-        effect_size = sms.proportion_effectsize(
-            metric.metric_baseline, metric.metric_target
-        )
+        effect_size = sms.proportion_effectsize(metric.metric_baseline, metric.metric_target)
     else:
         raise ValueError("metric_type must be NUMERIC or BINARY.")
 

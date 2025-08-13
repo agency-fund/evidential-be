@@ -72,12 +72,10 @@ def assign_treatment_and_check_balance(
     # didn't originally recognize when creating the dataframe. This might have arisen from nullable
     # numeric columns in the underlying database being converted to object types.
     orig_data_to_stratify = df[[id_col, *orig_stratum_cols]].infer_objects()
-    df_cleaned, exclude_cols_set, numeric_notnull_set = (
-        preprocess_for_balance_and_stratification(
-            data=orig_data_to_stratify,
-            exclude_cols=[id_col],
-            quantiles=quantiles,
-        )
+    df_cleaned, exclude_cols_set, numeric_notnull_set = preprocess_for_balance_and_stratification(
+        data=orig_data_to_stratify,
+        exclude_cols=[id_col],
+        quantiles=quantiles,
     )
     # Our original target of columns to stratify on may have gotten smaller:
     post_stratum_cols = sorted(set(orig_stratum_cols) - exclude_cols_set)

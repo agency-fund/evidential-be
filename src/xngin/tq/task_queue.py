@@ -27,9 +27,7 @@ class Task:
 
     def __repr__(self) -> str:
         """Return a string representation of the task."""
-        return (
-            f"Task(id={self.id}, type={self.task_type}, retry_count={self.retry_count})"
-        )
+        return f"Task(id={self.id}, type={self.task_type}, retry_count={self.retry_count})"
 
 
 class TaskHandler(Protocol):
@@ -134,9 +132,7 @@ class TaskQueue:
 
         if task.task_type not in self.handlers:
             logger.error(f"No handler registered for task type: {task.task_type}")
-            self._mark_task_failed(
-                conn, task, f"No handler for task type: {task.task_type}"
-            )
+            self._mark_task_failed(conn, task, f"No handler for task type: {task.task_type}")
             return
 
         handler = self.handlers[task.task_type]
@@ -181,9 +177,7 @@ class TaskQueue:
                         task.id,
                     ),
                 )
-                logger.warning(
-                    f"Task {task.id} failed and reached max retries, marked as dead"
-                )
+                logger.warning(f"Task {task.id} failed and reached max retries, marked as dead")
             else:
                 # Calculate backoff time for next retry
                 backoff_minutes = min(2**task.retry_count, 15)
@@ -234,9 +228,7 @@ class TaskQueue:
                         continue
                     except StopIteration:
                         # StopIteration is raised when poll_interval expires
-                        logger.debug(
-                            f"Waited {self.poll_interval} for notification. Polling again."
-                        )
+                        logger.debug(f"Waited {self.poll_interval} for notification. Polling again.")
                         continue
                     finally:
                         gen.close()

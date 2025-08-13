@@ -183,24 +183,18 @@ def fixture_client_v1():
 
     TestClient manages the lifecycle of the app and will invoke the FastAPI app and router @lifespan methods.
     """
-    with TestClient(
-        app, base_url=f"http://testserver{constants.API_PREFIX_V1}"
-    ) as client:
+    with TestClient(app, base_url=f"http://testserver{constants.API_PREFIX_V1}") as client:
         yield client
 
 
 @pytest.fixture(scope="session", name="pget")
 def fixture_pget(client):
-    return partial(
-        client.get, headers={"Authorization": f"Bearer {PRIVILEGED_TOKEN_FOR_TESTING}"}
-    )
+    return partial(client.get, headers={"Authorization": f"Bearer {PRIVILEGED_TOKEN_FOR_TESTING}"})
 
 
 @pytest.fixture(scope="session", name="ppost")
 def fixture_ppost(client):
-    return partial(
-        client.post, headers={"Authorization": f"Bearer {PRIVILEGED_TOKEN_FOR_TESTING}"}
-    )
+    return partial(client.post, headers={"Authorization": f"Bearer {PRIVILEGED_TOKEN_FOR_TESTING}"})
 
 
 @pytest.fixture(scope="session", name="ppatch")
@@ -360,9 +354,7 @@ async def _make_datasource_metadata(
     test_dwh_dsn = Dsn.from_url(flags.XNGIN_DEVDWH_DSN)
     # If no override is provided, use the default testing participant type.
     pt_list = participants_def_list or [TESTING_DWH_PARTICIPANT_DEF]
-    datasource.set_config(
-        RemoteDatabaseConfig(type="remote", participants=pt_list, dwh=test_dwh_dsn)
-    )
+    datasource.set_config(RemoteDatabaseConfig(type="remote", participants=pt_list, dwh=test_dwh_dsn))
 
     # Make this ds also accessible via an API key.
     key_id, key = make_key()

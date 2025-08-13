@@ -19,9 +19,7 @@ def create_schema_from_table(table: sqlalchemy.Table, unique_id_col: str | None 
 
     collected = []
     if unique_id_col is None:
-        unique_id_col = next(
-            (c.name for c in table.columns.values() if c.primary_key), "id"
-        )
+        unique_id_col = next((c.name for c in table.columns.values() if c.primary_key), "id")
     for column in table.columns.values():
         type_hint = column.type
         collected.append(
@@ -89,6 +87,4 @@ def generate_field_descriptors(table: sqlalchemy.Table, unique_id_col: str):
 
     Uniqueness of the values in the column unique_id_col is assumed, not verified!
     """
-    return {
-        c.field_name: c for c in create_schema_from_table(table, unique_id_col).fields
-    }
+    return {c.field_name: c for c in create_schema_from_table(table, unique_id_col).fields}
