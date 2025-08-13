@@ -119,6 +119,7 @@ ignore = [
     "PLR1702", # too many nested blocks
     "PLR2004", # magic value,
     "PLR6301", # method could be a function, class method, or static method
+    "SIM108", # Use ternary operator instead of `if`-`else`-block
     "RUF029",
     "TRY003",
 ]
