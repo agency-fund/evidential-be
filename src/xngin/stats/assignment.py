@@ -114,9 +114,10 @@ def assign_treatment_and_check_balance(
     stratum_ids = df_cleaned[STOCHATREAT_STRATUM_ID_NAME]
     treatment_ids = df_cleaned[STOCHATREAT_TREAT_NAME]
 
-    if len(df) != len(treatment_ids):
+    if len(df) != len(df_cleaned):
         raise StatsError(
-            f"Expected {len(df)} assignments but only have {len(df_cleaned)}"
+            f"Expected {len(df)} assignments but only have {len(df_cleaned)}. "
+            f"Check if your {id_col} values could be causing problems."
         )
 
     # Put back non-null numeric columns for a more robust balance check.
