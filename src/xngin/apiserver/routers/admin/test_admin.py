@@ -2,6 +2,7 @@ import base64
 import copy
 import json
 from datetime import UTC, datetime, timedelta
+from urllib.parse import urlparse
 
 import pytest
 from fastapi import HTTPException
@@ -29,6 +30,7 @@ from xngin.apiserver.routers.admin.admin_api_types import (
     CreateOrganizationResponse,
     CreateParticipantsTypeRequest,
     CreateParticipantsTypeResponse,
+    CreateSnapshotResponse,
     DatasourceSummary,
     FieldMetadata,
     GcpServiceAccount,
@@ -41,6 +43,7 @@ from xngin.apiserver.routers.admin.admin_api_types import (
     ListDatasourcesResponse,
     ListOrganizationsResponse,
     ListParticipantsTypeResponse,
+    ListSnapshotsResponse,
     ListWebhooksResponse,
     PostgresDsn,
     RedshiftDsn,
@@ -1595,3 +1598,107 @@ async def test_experiment_webhook_integration(testing_datasource_with_user, ppos
     created_experiment_no_webhooks = create_response_no_webhooks.json()
     assert "webhooks" in created_experiment_no_webhooks
     assert len(created_experiment_no_webhooks["webhooks"]) == 0
+
+
+def test_snapshots(pget, ppost):
+    creation_response = ppost(
+        "/v1/m/organizations",
+        json=CreateOrganizationRequest(name="test_snapshots").model_dump(),
+    )
+    assert creation_response.status_code == 200, creation_response.content
+    create_organization_response = CreateOrganizationResponse.model_validate(creation_response.json())
+
+    parsed = urlparse(flags.XNGIN_DEVDWH_DSN)
+    response = ppost(
+        "/v1/m/datasources",
+        content=CreateDatasourceRequest(
+            name="test_create_datasource",
+            organization_id=create_organization_response.id,
+            dsn=PostgresDsn(
+                type="postgres",
+                host=parsed.hostname,
+                port=parsed.port,
+                user=parsed.username,
+                password=RevealedStr(value=parsed.password),
+                dbname=parsed.path[1:],
+                sslmode="disable",
+                search_path=None,
+            ),
+        ).model_dump_json(),
+    )
+    assert response.status_code == 200, response.content
+    create_datasource_response = CreateDatasourceResponse.model_validate(response.json())
+
+    create_participant_type_response = ppost(
+        f"/v1/m/datasources/{create_datasource_response.id}/participants",
+        content=CreateParticipantsTypeRequest(
+            participant_type="test_participant_type",
+            schema_def=ParticipantsSchema(
+                table_name="dwh",
+                fields=[
+                    FieldDescriptor(
+                        field_name="id",
+                        data_type=DataType.INTEGER,
+                        description="test",
+                        is_unique_id=True,
+                        is_strata=False,
+                        is_filter=False,
+                        is_metric=False,
+                    ),
+                    FieldDescriptor(
+                        field_name="current_income",
+                        data_type=DataType.NUMERIC,
+                        description="test",
+                        is_unique_id=False,
+                        is_strata=False,
+                        is_filter=False,
+                        is_metric=True,
+                    ),
+                ],
+            ),
+        ).model_dump_json(),
+    )
+    assert create_participant_type_response.status_code == 200, create_participant_type_response.content
+
+    repsonse = ppost(
+        f"/v1/m/datasources/{create_datasource_response.id}/experiments?chosen_n=100",
+        json=CreateExperimentRequest(
+            design_spec=PreassignedFrequentistExperimentSpec(
+                experiment_type=ExperimentsType.FREQ_PREASSIGNED,
+                participant_type="test_participant_type",
+                experiment_name="test experiment",
+                description="test experiment",
+                start_date=datetime(2024, 1, 1, tzinfo=UTC),
+                end_date=datetime(2024, 1, 31, 23, 59, 59, tzinfo=UTC),
+                arms=[
+                    Arm(arm_name="control", arm_description="Control group"),
+                    Arm(arm_name="treatment", arm_description="Treatment group"),
+                ],
+                metrics=[DesignSpecMetricRequest(field_name="income", metric_pct_change=5)],
+                strata=[],
+                filters=[],
+            )
+        ).model_dump(mode="json"),
+    )
+    assert repsonse.status_code == 200, repsonse.content
+    experiment_id = CreateExperimentResponse.model_validate_json(repsonse.content).design_spec.experiment_id
+
+    response = ppost(
+        f"/v1/m/organizations/{create_organization_response.id}/datasources/{create_datasource_response.id}"
+        f"/experiments/{experiment_id}/snapshots"
+    )
+    assert response.status_code == 200, response.content
+    create_snapshot_response = CreateSnapshotResponse.model_validate(response.json())
+
+    list_snapshot_response = pget(
+        f"/v1/m/organizations/{create_organization_response.id}/datasources/{create_datasource_response.id}"
+        f"/experiments/{experiment_id}/snapshots"
+    )
+    assert list_snapshot_response.status_code == 200, list_snapshot_response.content
+    list_snapshot = ListSnapshotsResponse.model_validate(list_snapshot_response.json())
+    assert len(list_snapshot.items) == 1, list_snapshot
+    rendered_snapshot = list_snapshot.items[0]
+    assert rendered_snapshot.id == create_snapshot_response.id
+    assert rendered_snapshot.experiment_id == experiment_id
+    assert rendered_snapshot.status == "success"
+    assert rendered_snapshot.data is not None  # TODO(qixotic)

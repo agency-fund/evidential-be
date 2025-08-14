@@ -32,6 +32,7 @@ datasource_id_factory = unique_id_factory("ds")
 event_id_factory = unique_id_factory("evt")
 experiment_id_factory = unique_id_factory("exp")
 organization_id_factory = unique_id_factory("o")
+snapshot_id_factory = unique_id_factory("sn")
 task_id_factory = unique_id_factory("task")
 user_id_factory = unique_id_factory("u")
 webhook_id_factory = unique_id_factory("wh")
@@ -386,6 +387,7 @@ class Experiment(Base):
     contexts: Mapped[list["Context"]] = relationship(
         "Context", back_populates="experiment", cascade="all, delete-orphan"
     )
+    snapshots: Mapped["Snapshot"] = relationship(viewonly=True)
 
 
 class Arm(Base):
@@ -466,3 +468,25 @@ class Context(Base):
     value_type: Mapped[str] = mapped_column()
 
     experiment: Mapped[Experiment] = relationship("Experiment", back_populates="contexts")
+
+
+class Snapshot(Base):
+    """Snapshots of experiment data."""
+
+    __tablename__ = "snapshots"
+
+    experiment_id: Mapped[str] = mapped_column(ForeignKey("experiments.id", ondelete="CASCADE"), primary_key=True)
+    id: Mapped[str] = mapped_column(primary_key=True, default=snapshot_id_factory, unique=True)
+    created_at: Mapped[datetime] = mapped_column(server_default=sqlalchemy.sql.func.now())
+    updated_at: Mapped[datetime] = mapped_column(
+        server_default=sqlalchemy.sql.func.now(), onupdate=sqlalchemy.sql.func.now()
+    )
+    # Status of the task: 'pending', 'running', 'success', or 'dead'.
+    status: Mapped[str] = mapped_column(server_default="pending")
+    # An optional informative message about the state of this task.
+    message: Mapped[str | None] = mapped_column()
+
+    # TODO(qixotic): structure data
+    data: Mapped[dict | None] = mapped_column(postgresql.JSONB)
+
+    experiment: Mapped[Experiment] = relationship(back_populates="snapshots", viewonly=True)

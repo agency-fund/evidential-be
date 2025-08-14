@@ -40,6 +40,39 @@ class AdminApiBaseModel(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
 
+type SnapshotStatus = Literal["success", "running", "failed"]
+
+
+class Snapshot(AdminApiBaseModel):
+    experiment_id: Annotated[str, Field(description="The experiment that this snapshot was captured for.")]
+    id: Annotated[str, Field(description="The unique ID of the experiment.")]
+
+    status: Annotated[
+        SnapshotStatus,
+        Field(description="The status of the snapshot. When not `success`, data will be null."),
+    ]
+    details: Annotated[dict | None, Field(description="Additional data about this snapshot.")]
+
+    created_at: Annotated[datetime, Field(description="The time the snapshot was requested.")]
+    updated_at: Annotated[datetime, Field(description="The time the snapshot was acquired.")]
+
+    data: dict | None  # TODO(qixotic)
+
+
+class GetSnapshotResponse(AdminApiBaseModel):
+    """Describes the status and content of a snapshot."""
+
+    snapshot: Annotated[Snapshot | None, Field(description="The completed snapshot.")]
+
+
+class ListSnapshotsResponse(AdminApiBaseModel):
+    items: list[Snapshot]
+
+
+class CreateSnapshotResponse(AdminApiBaseModel):
+    id: str
+
+
 class CreateOrganizationRequest(AdminApiBaseModel):
     name: Annotated[str, Field(max_length=MAX_LENGTH_OF_NAME_VALUE)]
 

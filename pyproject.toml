@@ -42,6 +42,7 @@ build-backend = "uv_build"
 [project.scripts]
 xngin-apiserver = "xngin.apiserver.main:main"
 xngin-cli = "xngin.cli.main:app"
+xngin-snapshotter = "xngin.apiserver.snapshots.cli:app"
 xngin-tq = "xngin.tq.cli:app"
 
 [tool.pytest.ini_options]
