@@ -289,8 +289,12 @@ def test_simple_random_assignment_with_different_seeds(sample_df):
     assert assignments1.count(1) == assignments3.count(1)
 
 
-def test_assign_treatment_with_large_integers_as_participant_ids(sample_df):
-    """Test assignment with large integer participant IDs (underlying type is int64)."""
+def test_assign_treatment_with_bigints_as_participant_ids(sample_df):
+    """Test assignment with large integer participant IDs (int64) are handled correctly.
+
+    stochatreat's logic may silently upcast certain dtypes to float64s, which can cause precision
+    loss, resulting in incorrect/duplicate ids getting treatment assignments.
+    """
     sample_df["id"] = sample_df["id"].astype("int64")
     max_safe_int = (1 << 53) - 1
     # This value is 9007199254740993 but if cast to float64 would round to 9007199254740992
@@ -305,4 +309,6 @@ def test_assign_treatment_with_large_integers_as_participant_ids(sample_df):
         random_state=42,
     )
 
+    # If stochatreat silently upcasted int64 to float64, we'd lose assignments for both the bigints
+    # above, as they would not join back with any of the original ids in the df.
     assert len(result.treatment_ids) == len(sample_df)
