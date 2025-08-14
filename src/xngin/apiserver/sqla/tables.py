@@ -146,9 +146,7 @@ class Event(Base):
     # The type of event. E.g. `experiment.created`
     type: Mapped[str] = mapped_column()
     # The event payload. This will always be a JSON object with a `type` field.
-    data: Mapped[dict] = mapped_column(
-        type_=postgresql.JSONB,
-    )
+    data: Mapped[dict] = mapped_column(postgresql.JSONB)
 
     organization_id: Mapped[str] = mapped_column(
         ForeignKey("organizations.id", ondelete="CASCADE")
@@ -193,7 +191,7 @@ class Task(Base):
     # Number of times this task has been retried.
     retry_count: Mapped[int] = mapped_column(server_default="0")
     # The task payload. This will be a JSON object with task-specific data.
-    payload: Mapped[dict | None] = mapped_column(type_=postgresql.JSONB)
+    payload: Mapped[dict | None] = mapped_column(postgresql.JSONB)
     # An optional informative message about the state of this task.
     message: Mapped[str | None] = mapped_column()
 
@@ -269,10 +267,10 @@ class Datasource(Base):
         ForeignKey("organizations.id", ondelete="CASCADE")
     )
     # JSON serialized form of DatasourceConfig
-    config: Mapped[dict] = mapped_column(type_=postgresql.JSONB)
+    config: Mapped[dict] = mapped_column(postgresql.JSONB)
 
     # List of table names available in this datasource
-    table_list: Mapped[list[str] | None] = mapped_column(type_=postgresql.JSONB)
+    table_list: Mapped[list[str] | None] = mapped_column(postgresql.JSONB)
     # Timestamp of the last update to `inspected_tables`
     table_list_updated: Mapped[datetime | None] = mapped_column()
 
@@ -334,7 +332,7 @@ class DatasourceTablesInspected(Base):
     table_name: Mapped[str] = mapped_column(primary_key=True)
 
     # Serialized InspectDatasourceTablesResponse.
-    response: Mapped[dict | None] = mapped_column(type_=postgresql.JSONB)
+    response: Mapped[dict | None] = mapped_column(postgresql.JSONB)
     # Timestamp of the last update to `response`
     response_last_updated: Mapped[datetime | None] = mapped_column()
 
@@ -358,7 +356,7 @@ class ParticipantTypesInspected(Base):
     participant_type: Mapped[str] = mapped_column(primary_key=True)
 
     # Serialized InspectParticipantTypesResponse.
-    response: Mapped[dict | None] = mapped_column(type_=postgresql.JSONB)
+    response: Mapped[dict | None] = mapped_column(postgresql.JSONB)
     # Timestamp of the last update to `response`
     response_last_updated: Mapped[datetime | None] = mapped_column()
 
@@ -393,7 +391,7 @@ class ArmAssignment(Base):
         String(36), ForeignKey("arms.id", ondelete="CASCADE")
     )
     # JSON serialized form of a list of Strata objects (from Assignment.strata).
-    strata: Mapped[list[dict[str, str]]] = mapped_column(type_=postgresql.JSONB)
+    strata: Mapped[list[dict[str, str]]] = mapped_column(postgresql.JSONB)
     created_at: Mapped[datetime] = mapped_column(
         server_default=sqlalchemy.sql.func.now()
     )
@@ -455,12 +453,12 @@ class Experiment(Base):
 
     # Frequentist config params
     # JSON serialized form of an experiment's specified dwh fields used for strata/metrics/filters.
-    design_spec_fields: Mapped[dict | None] = mapped_column(type_=postgresql.JSONB)
+    design_spec_fields: Mapped[dict | None] = mapped_column(postgresql.JSONB)
     # JSON serialized form of a PowerResponse. Not required since some experiments may not have data to run power analyses.
-    power_analyses: Mapped[dict | None] = mapped_column(type_=postgresql.JSONB)
+    power_analyses: Mapped[dict | None] = mapped_column(postgresql.JSONB)
     # JSON serialized form of a BalanceCheck. May be null if the experiment type doesn't support
     # balance checks.
-    balance_check: Mapped[dict | None] = mapped_column(type_=postgresql.JSONB)
+    balance_check: Mapped[dict | None] = mapped_column(postgresql.JSONB)
 
     # Frequentist experiment types i.e. online and preassigned
     power: Mapped[float | None] = mapped_column()
