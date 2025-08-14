@@ -32,7 +32,10 @@ def custom_openapi(app: FastAPI):
             visible=True,
             definition={
                 "name": "Experiment Integration",
-                "description": "Methods for a client to use when integrating Evidential experiments and assignments with their own serving infrastructure.",
+                "description": (
+                    "Methods for a client to use when integrating Evidential experiments and assignments "
+                    "with their own serving infrastructure."
+                ),
             },
         ),
         TagDocumentation(

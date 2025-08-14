@@ -1,4 +1,5 @@
-"""conftest configures FastAPI dependency injection for testing and also does some setup before tests in this module are run."""
+"""conftest configures FastAPI dependency injection for testing and also does some setup before tests in
+this module are run."""
 
 import contextlib
 import enum

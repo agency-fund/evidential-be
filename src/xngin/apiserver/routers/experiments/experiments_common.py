@@ -279,7 +279,8 @@ async def create_preassigned_experiment_impl(
 
     # Create assignment records
     for assignment in assignment_response.assignments:
-        # TODO: bulk insert https://docs.sqlalchemy.org/en/20/orm/queryguide/dml.html#orm-queryguide-bulk-insert {"dml_strategy": "raw"}
+        # TODO: bulk insert https://docs.sqlalchemy.org/en/20/orm/queryguide/dml.html#orm-queryguide-bulk-insert
+        # {"dml_strategy": "raw"}
         db_assignment = tables.ArmAssignment(
             experiment_id=experiment.id,
             participant_type=design_spec.participant_type,

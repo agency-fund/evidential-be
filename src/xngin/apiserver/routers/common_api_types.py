@@ -69,25 +69,36 @@ class DesignSpecMetric(DesignSpecMetricBase):
     metric_stddev: Annotated[
         float | None,
         Field(
-            description="Standard deviation is set only for metric_type.NUMERIC metrics. Must be set for numeric metrics when available_n > 0."
+            description=(
+                "Standard deviation is set only for metric_type.NUMERIC metrics. Must be set for "
+                "numeric metrics when available_n > 0."
+            )
         ),
     ] = None
     available_nonnull_n: Annotated[
         int | None,
         Field(
-            description="The number of participants meeting the filtering criteria with a *non-null* value for this metric."
+            description=(
+                "The number of participants meeting the filtering criteria with a *non-null* value for this metric."
+            )
         ),
     ] = None
     available_n: Annotated[
         int | None,
         Field(
-            description="The number of participants meeting the filtering criteria regardless of whether or not this metric's value is NULL. NOTE: Assignments are made from the targeted aviailable_n population, so be sure you are ok with participants potentially having this value missing during assignment if available_n != available_nonnull_n."
+            description=(
+                "The number of participants meeting the filtering criteria regardless of whether or "
+                "not this metric's value is NULL. NOTE: Assignments are made from the targeted "
+                "aviailable_n population, so be sure you are ok with participants potentially having "
+                "this value missing during assignment if available_n != available_nonnull_n."
+            )
         ),
     ] = None
 
     @model_validator(mode="after")
     def stddev_check(self):
-        """Enforce that metric_stddev is empty for non-NUMERICs. FE will handle numerics without stddev (due to all nulls)"""
+        """Enforce that metric_stddev is empty for non-NUMERICs. FE will handle numerics without stddev
+        (due to all nulls)"""
         if self.metric_type is not MetricType.NUMERIC and self.metric_stddev is not None:
             raise ValueError("should not have stddev")
         return self
@@ -168,7 +179,12 @@ class Arm(ApiBaseModel):
     arm_id: Annotated[
         str | None,
         Field(
-            description="ID of the arm. If creating a new experiment (POST /datasources/{datasource_id}/experiments), this is generated for you and made available in the response; you should NOT set this. Only generate ids of your own if using the stateless Experiment Design API as you will do your own persistence."
+            description=(
+                "ID of the arm. If creating a new experiment (POST /datasources/{datasource_id}/experiments), "
+                "this is generated for you and made available in the response; you should NOT set this. "
+                "Only generate ids of your own if using the stateless Experiment Design API as you will "
+                "do your own persistence."
+            )
         ),
     ] = None
     arm_name: Annotated[str, Field(max_length=MAX_LENGTH_OF_NAME_VALUE)]
@@ -183,20 +199,29 @@ class ArmAnalysis(Arm):
     p_value: Annotated[
         float | None,
         Field(
-            description="The p-value indicating statistical significance of the treatment effect. Value may be None if the t-stat is not available, e.g. due to inability to calculate the standard error."
+            description=(
+                "The p-value indicating statistical significance of the treatment effect. Value may be "
+                "None if the t-stat is not available, e.g. due to inability to calculate the standard error."
+            )
         ),
     ]
     t_stat: Annotated[
         float | None,
         Field(
-            description="The t-statistic from the statistical test. If the value is actually NaN, e.g. due to inability to calculate the standard error, we return None."
+            description=(
+                "The t-statistic from the statistical test. If the value is actually NaN, e.g. due to "
+                "inability to calculate the standard error, we return None."
+            )
         ),
     ]
     std_error: Annotated[float, Field(description="The standard error of the treatment effect estimate.")]
     num_missing_values: Annotated[
         int,
         Field(
-            description="The number of participants assigned to this arm with missing values (NaNs) for this metric. These rows are excluded from the analysis."
+            description=(
+                "The number of participants assigned to this arm with missing values (NaNs) for this "
+                "metric. These rows are excluded from the analysis."
+            )
         ),
     ]
     is_baseline: Annotated[
@@ -354,13 +379,19 @@ class FreqExperimentAnalysisResponse(ApiBaseModel):
     num_participants: Annotated[
         int,
         Field(
-            description="The number of participants assigned to the experiment pulled from the dwh across all arms. Metric outcomes are not guaranteed to be present for all participants."
+            description=(
+                "The number of participants assigned to the experiment pulled from the dwh across all arms. "
+                "Metric outcomes are not guaranteed to be present for all participants."
+            )
         ),
     ]
     num_missing_participants: Annotated[
         int | None,
         Field(
-            description="The number of participants assigned to the experiment across all arms that are not found in the data warehouse when pulling metrics."
+            description=(
+                "The number of participants assigned to the experiment across all arms that are not found "
+                "in the data warehouse when pulling metrics."
+            )
         ),
     ] = None
     created_at: Annotated[
@@ -380,7 +411,10 @@ class MetricPowerAnalysisMessage(ApiBaseModel):
     source_msg: Annotated[
         str,
         Field(
-            description="Power analysis result formatted as a template string with curly-braced {} named placeholders. Use with the dictionary of values to support localization of messages."
+            description=(
+                "Power analysis result formatted as a template string with curly-braced {} named placeholders. "
+                "Use with the dictionary of values to support localization of messages."
+            )
         ),
     ]
     values: dict[str, float | int] | None = None
@@ -406,14 +440,22 @@ class MetricPowerAnalysis(ApiBaseModel):
     target_possible: Annotated[
         float | None,
         Field(
-            description="If there is an insufficient sample size to meet the desired metric_target, we report what is possible given the available_n. This value is equivalent to the relative pct_change_possible. This is None when there is a sufficient sample size to detect the desired change."
+            description=(
+                "If there is an insufficient sample size to meet the desired metric_target, we report what is possible "
+                "given the available_n. This value is equivalent to the relative pct_change_possible. "
+                "This is None when there is a sufficient sample size to detect the desired change."
+            )
         ),
     ] = None
 
     pct_change_possible: Annotated[
         float | None,
         Field(
-            description="If there is an insufficient sample size to meet the desired metric_pct_change, we report what is possible given the available_n. This value is equivalent to the absolute target_possible. This is None when there is a sufficient sample size to detect the desired change."
+            description=(
+                "If there is an insufficient sample size to meet the desired metric_pct_change, we report what is "
+                "possible given the available_n. This value is equivalent to the absolute target_possible. "
+                "This is None when there is a sufficient sample size to detect the desired change."
+            )
         ),
     ] = None
 
@@ -586,7 +628,12 @@ class BaseDesignSpec(ApiBaseModel):
     experiment_id: Annotated[
         str | None,
         Field(
-            description="ID of the experiment. If creating a new experiment (POST /datasources/{datasource_id}/experiments), this is generated for you and made available in the response; you should NOT set this. Only generate ids of your own if using the stateless Experiment Design API as you will do your own persistence."
+            description=(
+                "ID of the experiment. If creating a new experiment (POST /datasources/{datasource_id}/experiments), "
+                "this is generated for you and made available in the response; you should NOT set this. "
+                "Only generate ids of your own if using the stateless Experiment Design API as you will "
+                "do your own persistence."
+            )
         ),
     ] = None
 
@@ -635,7 +682,10 @@ class BaseFrequentistDesignSpec(BaseDesignSpec):
     filters: Annotated[
         list[Filter],
         Field(
-            description="Optional filters that constrain a general participant_type to a specific subset who can participate in an experiment.",
+            description=(
+                "Optional filters that constrain a general participant_type to a specific subset "
+                "who can participate in an experiment."
+            ),
             max_length=MAX_NUMBER_OF_FILTERS,
         ),
     ]
@@ -654,7 +704,10 @@ class BaseFrequentistDesignSpec(BaseDesignSpec):
         Field(
             ge=0,
             le=1,
-            description="The chance of a false positive, i.e. there is no real non-null effect, but we mistakenly think there is one.",
+            description=(
+                "The chance of a false positive, i.e. there is no real non-null effect, but we "
+                "mistakenly think there is one."
+            ),
         ),
     ] = 0.05
     fstat_thresh: Annotated[
@@ -662,7 +715,10 @@ class BaseFrequentistDesignSpec(BaseDesignSpec):
         Field(
             ge=0,
             le=1,
-            description='Threshold on the p-value of joint significance in doing the omnibus balance check, above which we declare the data to be "balanced".',
+            description=(
+                "Threshold on the p-value of joint significance in doing the omnibus balance check, "
+                'above which we declare the data to be "balanced".'
+            ),
         ),
     ] = 0.6
 
@@ -680,7 +736,10 @@ class BaseBanditExperimentSpec(BaseDesignSpec):
     contexts: Annotated[
         list[Context] | None,
         Field(
-            description="Optional list of contexts that can be used to condition the bandit assignment. Required for contextual bandit experiments.",
+            description=(
+                "Optional list of contexts that can be used to condition the bandit assignment. "
+                "Required for contextual bandit experiments."
+            ),
             max_length=MAX_NUMBER_OF_FIELDS,
         ),
     ] = None
@@ -757,13 +816,15 @@ class BaseBanditExperimentSpec(BaseDesignSpec):
 
 
 class PreassignedFrequentistExperimentSpec(BaseFrequentistDesignSpec):
-    """Use this type to randomly select and assign from existing participants at design time with frequentist A/B experiments."""
+    """Use this type to randomly select and assign from existing participants at design time with
+    frequentist A/B experiments."""
 
     experiment_type: Literal[ExperimentsType.FREQ_PREASSIGNED] = ExperimentsType.FREQ_PREASSIGNED
 
 
 class OnlineFrequentistExperimentSpec(BaseFrequentistDesignSpec):
-    """Use this type to randomly assign participants into arms during live experiment execution with frequentist A/B experiments.
+    """Use this type to randomly assign participants into arms during live experiment execution with
+    frequentist A/B experiments.
 
     For example, you may wish to experiment on new users. Assignments are issued via API request.
     """
@@ -781,7 +842,8 @@ class MABExperimentSpec(BaseBanditExperimentSpec):
 
 
 class CMABExperimentSpec(BaseBanditExperimentSpec):
-    """Use this type to randomly assign participants into arms during live experiment execution with contextual MAB experiments.
+    """Use this type to randomly assign participants into arms during live experiment execution with
+    contextual MAB experiments.
 
     For example, you may wish to experiment on new users. Assignments are issued via API request.
     """
@@ -790,7 +852,8 @@ class CMABExperimentSpec(BaseBanditExperimentSpec):
 
 
 class BayesABExperimentSpec(BaseBanditExperimentSpec):
-    """Use this type to randomly assign participants into arms during live experiment execution with Bayesian A/B experiments.
+    """Use this type to randomly assign participants into arms during live experiment execution with
+    Bayesian A/B experiments.
 
     For example, you may wish to experiment on new users. Assignments are issued via API request.
     """
@@ -840,7 +903,10 @@ class Assignment(ApiBaseModel):
     participant_id: Annotated[
         str,
         Field(
-            description="Unique identifier for the participant. This is the primary key for the participant in the data warehouse.",
+            description=(
+                "Unique identifier for the participant. This is the primary key for the participant "
+                "in the data warehouse."
+            ),
             max_length=MAX_LENGTH_OF_PARTICIPANT_ID_VALUE,
         ),
     ]
@@ -860,7 +926,10 @@ class Assignment(ApiBaseModel):
     strata: Annotated[
         list[Strata] | None,
         Field(
-            description="List of properties and their values for this participant used for stratification or tracking metrics. If stratification is not used, this will be None.",
+            description=(
+                "List of properties and their values for this participant used for stratification or "
+                "tracking metrics. If stratification is not used, this will be None."
+            ),
             max_length=MAX_NUMBER_OF_FIELDS,
         ),
     ] = None
@@ -903,13 +972,19 @@ class BalanceCheck(ApiBaseModel):
     p_value: Annotated[
         float,
         Field(
-            description="Probability of observing these data if strata do not predict treatment assignment, i.e. our randomization is balanced."
+            description=(
+                "Probability of observing these data if strata do not predict treatment assignment, "
+                "i.e. our randomization is balanced."
+            )
         ),
     ]
     balance_ok: Annotated[
         bool,
         Field(
-            description="Whether the p-value for our observed f_statistic is greater than the f-stat threshold specified in our design specification. (See DesignSpec.fstat_thresh)"
+            description=(
+                "Whether the p-value for our observed f_statistic is greater than the f-stat threshold "
+                "specified in our design specification. (See DesignSpec.fstat_thresh)"
+            )
         ),
     ]
 
@@ -927,7 +1002,10 @@ class CreateExperimentRequest(ApiBaseModel):
     webhooks: Annotated[
         list[str],
         Field(
-            description="List of webhook IDs to associate with this experiment. When the experiment is committed, these webhooks will be triggered with experiment details. Must contain unique values.",
+            description=(
+                "List of webhook IDs to associate with this experiment. When the experiment is committed, "
+                "these webhooks will be triggered with experiment details. Must contain unique values."
+            ),
         ),
     ] = []
 
@@ -979,7 +1057,10 @@ class ExperimentConfig(ApiBaseModel):
     webhooks: Annotated[
         list[str],
         Field(
-            description="List of webhook IDs associated with this experiment. These webhooks are triggered when the experiment is committed.",
+            description=(
+                "List of webhook IDs associated with this experiment. "
+                "These webhooks are triggered when the experiment is committed."
+            ),
         ),
     ] = []
 
@@ -1062,7 +1143,11 @@ class AssignResponse(ApiBaseModel):
     balance_check: Annotated[
         BalanceCheck | None,
         Field(
-            description="Result of checking that the arms are balanced. May not be present if we are not able to stratify on any design metrics or other fields specified for stratification. (Fields used must be supported data types whose values are NOT all unique or all the same)."
+            description=(
+                "Result of checking that the arms are balanced. May not be present if we are not able "
+                "to stratify on any design metrics or other fields specified for stratification. "
+                "(Fields used must be supported data types whose values are NOT all unique or all the same)."
+            )
         ),
     ] = None
 
@@ -1074,7 +1159,11 @@ class AssignResponse(ApiBaseModel):
     unique_id_field: Annotated[
         str,
         Field(
-            description="Name of the datasource field used as the unique identifier for the participant_id value stored in each Assignment, as configured in the datasource settings. Included for frontend convenience."
+            description=(
+                "Name of the datasource field used as the unique identifier for the participant_id "
+                "value stored in each Assignment, as configured in the datasource settings. "
+                "Included for frontend convenience."
+            )
         ),
     ]
     assignments: Annotated[list[Assignment], Field()]

@@ -147,7 +147,9 @@ STANDARD_ADMIN_RESPONSES: dict[str | int, dict[str, Any]] = {
     # action.
     "403": {
         "model": HTTPExceptionError,
-        "description": "Requester does not have sufficient privileges to perform this operation or is not authenticated.",
+        "description": (
+            "Requester does not have sufficient privileges to perform this operation or is not authenticated."
+        ),
     },
     # We return a 404 when a requested resource is not found. Authenticated users that do not have permission to know
     # whether a requested resource exists or not may also see a 404.
@@ -970,7 +972,8 @@ async def inspect_participant_types(
     user: Annotated[tables.User, Depends(user_from_token)],
     refresh: Annotated[bool, Query(description="Refresh the cache.")] = False,
 ) -> InspectParticipantTypesResponse:
-    """Returns filter, strata, and metric field metadata for a participant type, including exemplars for filter fields."""
+    """Returns filter, strata, and metric field metadata for a participant type, including exemplars for
+    filter fields."""
     ds = await get_datasource_or_raise(session, user, datasource_id)
     dsconfig = ds.get_config()
     # CannotFindParticipantsError will be handled by exceptionhandlers.
@@ -1490,7 +1493,10 @@ async def get_experiment_assignment_for_participant(
     create_if_none: Annotated[
         bool,
         Query(
-            description="Create an assignment if none exists. Does nothing for preassigned experiments. Override if you just want to check if an assignment exists."
+            description=(
+                "Create an assignment if none exists. Does nothing for preassigned experiments. "
+                "Override if you just want to check if an assignment exists."
+            )
         ),
     ] = True,
     random_state: Annotated[

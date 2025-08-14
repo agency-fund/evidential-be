@@ -215,7 +215,10 @@ async def get_assignment_for_participant_with_apikey(
     create_if_none: Annotated[
         bool,
         Query(
-            description="Create an assignment if none exists. Does nothing for preassigned experiments. Override if you just want to check if an assignment exists."
+            description=(
+                "Create an assignment if none exists. Does nothing for preassigned experiments. "
+                "Override if you just want to check if an assignment exists."
+            )
         ),
     ] = True,
     random_state: Annotated[int | None, Depends(random_seed_dependency)] = None,

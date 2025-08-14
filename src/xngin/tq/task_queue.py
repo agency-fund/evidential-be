@@ -196,7 +196,8 @@ class TaskQueue:
                     (backoff_minutes, err, task.id),
                 )
                 logger.info(
-                    f"Task {task.id} failed, retry count now {task.retry_count + 1}, next attempt after {backoff_minutes} minutes"
+                    f"Task {task.id} failed, retry count now {task.retry_count + 1}, next attempt after "
+                    f"{backoff_minutes} minutes"
                 )
             conn.commit()
 

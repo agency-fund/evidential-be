@@ -401,7 +401,8 @@ class Experiment(Base):
     # Frequentist config params
     # JSON serialized form of an experiment's specified dwh fields used for strata/metrics/filters.
     design_spec_fields: Mapped[dict | None] = mapped_column(type_=JSONBetter)
-    # JSON serialized form of a PowerResponse. Not required since some experiments may not have data to run power analyses.
+    # JSON serialized form of a PowerResponse. Not required since some experiments may not have data to run
+    # power analyses.
     power_analyses: Mapped[dict | None] = mapped_column(type_=JSONBetter)
     # JSON serialized form of a BalanceCheck. May be null if the experiment type doesn't support
     # balance checks.

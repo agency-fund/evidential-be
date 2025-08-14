@@ -71,7 +71,10 @@ def analyze_metric_power(
             return _power_analysis_error(
                 metric,
                 MetricPowerAnalysisMessageType.ZERO_STDDEV,
-                "There is no variation in the metric with the given filters. Standard deviation must be positive to do a sample size calculation.",
+                (
+                    "There is no variation in the metric with the given filters. Standard deviation must be "
+                    "positive to do a sample size calculation."
+                ),
             )
 
         effect_size = (metric.metric_target - metric.metric_baseline) / metric.metric_stddev

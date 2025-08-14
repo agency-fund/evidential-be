@@ -692,7 +692,8 @@ def test_make_csv_regex(csv, values, expected):
     matches = re.search(r, csv)
     actual = matches is not None
     assert actual == expected, (
-        f'Expression {r} is expected to {"match" if expected else "not match"} in "{csv}". Values = {values}. Matches = {matches}.'
+        f'Expression {r} is expected to {"match" if expected else "not match"} in "{csv}". '
+        f"Values = {values}. Matches = {matches}."
     )
 
 

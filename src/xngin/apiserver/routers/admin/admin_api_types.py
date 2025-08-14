@@ -109,7 +109,10 @@ class AddWebhookToOrganizationRequest(AdminApiBaseModel):
         str,
         Field(
             max_length=MAX_LENGTH_OF_NAME_VALUE,
-            description="User-friendly name for the webhook. This name is displayed in the UI and helps identify the webhook's purpose.",
+            description=(
+                "User-friendly name for the webhook. This name is displayed in the UI and helps "
+                "identify the webhook's purpose."
+            ),
         ),
     ]
     url: Annotated[
@@ -139,7 +142,9 @@ class AddWebhookToOrganizationResponse(AdminApiBaseModel):
     auth_token: Annotated[
         str | None,
         Field(
-            description="The value of the Webhook-Token: header that will be sent with the request to the configured URL."
+            description=(
+                "The value of the Webhook-Token: header that will be sent with the request to the configured URL."
+            )
         ),
     ]
 
@@ -157,7 +162,9 @@ class WebhookSummary(AdminApiBaseModel):
     auth_token: Annotated[
         str | None,
         Field(
-            description="The value of the Webhook-Token: header that will be sent with the request to the configured URL."
+            description=(
+                "The value of the Webhook-Token: header that will be sent with the request to the configured URL."
+            )
         ),
     ]
 
@@ -169,7 +176,10 @@ class UpdateOrganizationWebhookRequest(AdminApiBaseModel):
         str,
         Field(
             max_length=MAX_LENGTH_OF_NAME_VALUE,
-            description="User-friendly name for the webhook. This name is displayed in the UI and helps identify the webhook's purpose.",
+            description=(
+                "User-friendly name for the webhook. This name is displayed in the UI and helps "
+                "identify the webhook's purpose."
+            ),
         ),
     ]
     url: Annotated[

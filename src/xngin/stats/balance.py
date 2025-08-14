@@ -151,7 +151,8 @@ def check_balance_of_preprocessed_df(
     covariates = [col for col in df_analysis.columns if col != treatment_col and col not in exclude_col_set]
     if len(covariates) == 0:
         raise StatsBalanceError(
-            "No usable fields for performing a balance check found. Please check your metrics and fields used for stratification."
+            "No usable fields for performing a balance check found. Please check your metrics "
+            "and fields used for stratification."
         )
 
     # TODO(roboton): Run multi-class regression via MVLogit
