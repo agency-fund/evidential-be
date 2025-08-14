@@ -84,7 +84,6 @@ class Organization(Base):
     id: Mapped[str] = mapped_column(primary_key=True, default=organization_id_factory)
     name: Mapped[str] = mapped_column(String(255))
 
-    # Relationships
     arms: Mapped[list["Arm"]] = relationship(
         back_populates="organization", cascade="all, delete-orphan"
     )
@@ -210,7 +209,6 @@ class User(Base):
     # True when this user is considered to be privileged.
     is_privileged: Mapped[bool] = mapped_column(server_default=sqlalchemy.sql.false())
 
-    # Relationships
     organizations: Mapped[list["Organization"]] = relationship(
         secondary="user_organizations", back_populates="users"
     )
@@ -417,14 +415,13 @@ class Experiment(Base):
     datasource_id: Mapped[str] = mapped_column(
         String(255), ForeignKey("datasources.id", ondelete="CASCADE")
     )
-    # -- Experiment metadata --
+
     experiment_type: Mapped[str] = mapped_column()
     participant_type: Mapped[str] = mapped_column(String(255))
     name: Mapped[str] = mapped_column(String(255))
     # Describe your experiment and hypothesis here.
     description: Mapped[str] = mapped_column(String(2000))
     # The experiment state should be one of xngin.apiserver.routers.common_enums.ExperimentState.
-    # We use a looser type to decouple the database from the API a little more.
     state: Mapped[str]
     # Target start date of the experiment. Denormalized from design_spec.
     start_date: Mapped[datetime] = mapped_column()
@@ -442,7 +439,6 @@ class Experiment(Base):
     )
     n_trials: Mapped[int] = mapped_column(server_default="0")
 
-    # -- Experiment config --
     # Bandit config params
     prior_type: Mapped[str | None] = mapped_column()
     reward_type: Mapped[str | None] = mapped_column()
@@ -461,7 +457,6 @@ class Experiment(Base):
     alpha: Mapped[float | None] = mapped_column()
     fstat_thresh: Mapped[float | None] = mapped_column()
 
-    # -- Relationships --
     arm_assignments: Mapped[list["ArmAssignment"]] = relationship(
         back_populates="experiment", cascade="all, delete-orphan", lazy="raise"
     )
@@ -490,13 +485,7 @@ class Arm(Base):
     """Representation of arms of an experiment."""
 
     __tablename__ = "arms"
-    # TODO: Ensure arm names are unique within an organization
-    #       Do this as part of Issue #278; will need to backfill in such a way that old arms are
-    #       made unique e.g. suffixing with a part of the experiment id.
-    # __table_args__ = (
-    #     sqlalchemy.UniqueConstraint("name", "organization_id", name="uix_arm_name_org"),
-    # )
-    # -- Arm metadata --
+
     id: Mapped[str] = mapped_column(String(36), primary_key=True)
     name: Mapped[str] = mapped_column(String(255))
     description: Mapped[str] = mapped_column(String(2000))
@@ -513,7 +502,6 @@ class Arm(Base):
         server_default=sqlalchemy.sql.func.now(), onupdate=sqlalchemy.sql.func.now()
     )
 
-    # -- Arm config --
     # Prior variables
     mu_init: Mapped[float | None] = mapped_column()
     sigma_init: Mapped[float | None] = mapped_column()
@@ -525,7 +513,6 @@ class Arm(Base):
     alpha: Mapped[float | None] = mapped_column()
     beta: Mapped[float | None] = mapped_column()
 
-    # -- Relationships --
     organization: Mapped["Organization"] = relationship(back_populates="arms")
     experiment: Mapped["Experiment"] = relationship(back_populates="arms")
     arm_assignments: Mapped[list["ArmAssignment"]] = relationship(
@@ -545,13 +532,11 @@ class Draw(Base):
 
     __tablename__ = "draws"
 
-    # IDs
     experiment_id: Mapped[str] = mapped_column(
         ForeignKey("experiments.id", ondelete="CASCADE"), primary_key=True
     )
     participant_id: Mapped[str] = mapped_column(String(255), primary_key=True)
 
-    # Logging
     created_at: Mapped[datetime] = mapped_column(
         server_default=sqlalchemy.sql.func.now()
     )
@@ -568,7 +553,6 @@ class Draw(Base):
     current_alpha: Mapped[float | None] = mapped_column()
     current_beta: Mapped[float | None] = mapped_column()
 
-    # Relationships
     arm: Mapped[Arm] = relationship("Arm", back_populates="draws", lazy="joined")
     experiment: Mapped[Experiment] = relationship(
         "Experiment", back_populates="draws", lazy="joined"
@@ -582,7 +566,6 @@ class Context(Base):
 
     __tablename__ = "context"
 
-    # Context metadata
     id: Mapped[str] = mapped_column(primary_key=True)
     experiment_id: Mapped[str] = mapped_column(
         ForeignKey("experiments.id", ondelete="CASCADE")
@@ -591,7 +574,6 @@ class Context(Base):
     description: Mapped[str] = mapped_column(String(2000))
     value_type: Mapped[str] = mapped_column()
 
-    # Relationships
     experiment: Mapped[Experiment] = relationship(
         "Experiment", back_populates="contexts"
     )
