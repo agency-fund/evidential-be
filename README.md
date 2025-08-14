@@ -46,6 +46,7 @@
 | src/xngin/events/common.py                                           |        7 |        2 |     71% |    14, 21 |
 | src/xngin/events/experiment\_created.py                              |       14 |        4 |     71% | 18, 21-25 |
 | src/xngin/events/webhook\_sent.py                                    |       15 |        5 |     67% |     18-23 |
+| src/xngin/stats/assignment.py                                        |       46 |        1 |     98% |       118 |
 | src/xngin/stats/balance.py                                           |       62 |        3 |     95% |113, 143, 146 |
 | src/xngin/stats/bandit\_sampling.py                                  |       70 |       59 |     16% |27-29, 50-57, 76-78, 100-115, 141-164, 183-215, 237-277 |
 | src/xngin/stats/power.py                                             |       65 |        5 |     92% |51, 94, 151-161 |
@@ -54,9 +55,9 @@
 | src/xngin/xsecrets/secretservice.py                                  |       61 |        4 |     93% |42-43, 106, 130 |
 | src/xngin/xsecrets/test\_gcp\_kms\_provider.py                       |      103 |       26 |     75% |40-42, 170-175, 182-189, 195-203, 210, 217-228 |
 | src/xngin/xsecrets/test\_nacl\_provider.py                           |       67 |        1 |     99% |        24 |
-|                                                            **TOTAL** | **6703** | **1159** | **83%** |           |
+|                                                            **TOTAL** | **6728** | **1160** | **83%** |           |
 
-54 files skipped due to complete coverage.
+53 files skipped due to complete coverage.
 
 
 ## Setup coverage badge
