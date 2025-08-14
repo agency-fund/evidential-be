@@ -61,23 +61,17 @@ def test_deserialize_invalid_json():
 def test_deserialize_invalid_structure():
     """Test deserialization with valid JSON but invalid structure."""
     # Test with a string instead of a list
-    invalid_serialized = f"{SERIALIZED_ENCRYPTED_VALUE_PREFIX}" + json.dumps(
-        "not_a_list"
-    )
+    invalid_serialized = f"{SERIALIZED_ENCRYPTED_VALUE_PREFIX}" + json.dumps("not_a_list")
     with pytest.raises(ValueError, match="does not match expected format"):
         _deserialize(invalid_serialized)
 
     # Test with a list that doesn't contain a nested list
-    invalid_serialized = f"{SERIALIZED_ENCRYPTED_VALUE_PREFIX}" + json.dumps([
-        "not_a_nested_list"
-    ])
+    invalid_serialized = f"{SERIALIZED_ENCRYPTED_VALUE_PREFIX}" + json.dumps(["not_a_nested_list"])
     with pytest.raises(ValueError, match="does not match expected format"):
         _deserialize(invalid_serialized)
 
     # Test with a nested list that's too short
-    invalid_serialized = f"{SERIALIZED_ENCRYPTED_VALUE_PREFIX}" + json.dumps([
-        ["backend"]
-    ])
+    invalid_serialized = f"{SERIALIZED_ENCRYPTED_VALUE_PREFIX}" + json.dumps([["backend"]])
     with pytest.raises(ValueError, match="does not match expected format"):
         _deserialize(invalid_serialized)
 
@@ -143,9 +137,7 @@ def test_secretservice_decrypt_unencrypted_value(nacl_secretservice, plaintext, 
         ("Secret message", "", "non-empty"),  # Empty correct AAD
     ],
 )
-def test_secretservice_decrypt_with_wrong_aad(
-    nacl_secretservice, plaintext, correct_aad, wrong_aad
-):
+def test_secretservice_decrypt_with_wrong_aad(nacl_secretservice, plaintext, correct_aad, wrong_aad):
     """Test that decryption fails when using the wrong AAD."""
     encrypted = nacl_secretservice.encrypt(plaintext, correct_aad)
 

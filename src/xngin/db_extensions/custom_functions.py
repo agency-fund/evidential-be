@@ -44,14 +44,9 @@ class Random(FunctionElement):
 def deterministic_random(element):
     """Helper to implement a deterministic random."""
     if element.sa_table is None:
-        raise ValueError(
-            "our_random requires sa_table= to be an inspectable table-like entity."
-        )
+        raise ValueError("our_random requires sa_table= to be an inspectable table-like entity.")
     meta = inspect(element.sa_table)
-    if meta.primary_key.columns:
-        columns = (c for c in meta.primary_key.columns)
-    else:
-        columns = (c for c in meta.columns)
+    columns = (c for c in meta.primary_key.columns) if meta.primary_key.columns else (c for c in meta.columns)
     return ", ".join(str(c) for c in sorted(columns, key=lambda c: c.name))
 
 

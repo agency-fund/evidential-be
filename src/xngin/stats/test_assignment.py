@@ -66,10 +66,7 @@ def test_assign_treatment_with_stratification(sample_df):
     assert isinstance(result.balance_result, BalanceResult)
     assert result.balance_result.f_statistic > 0
     assert result.balance_result.f_pvalue > 0
-    assert (
-        len(result.treatment_ids)
-        == result.balance_result.numerator_df + result.balance_result.denominator_df + 1
-    )
+    assert len(result.treatment_ids) == result.balance_result.numerator_df + result.balance_result.denominator_df + 1
 
 
 def test_assign_treatment_multiple_arms(sample_df):
@@ -180,9 +177,7 @@ def test_assign_treatment_decimal_strata_columns_are_not_supported(sample_df):
     """Test that unconverted Decimal strata columns raise an error."""
     sample_df["decimal"] = sample_df["income"].apply(Decimal)
     with pytest.raises(RecursionError):
-        assign_treatment_and_check_balance(
-            df=sample_df, stratum_cols=["decimal"], id_col="id", n_arms=2
-        )
+        assign_treatment_and_check_balance(df=sample_df, stratum_cols=["decimal"], id_col="id", n_arms=2)
 
 
 def test_assign_treatment_with_problematic_values():
@@ -209,10 +204,7 @@ def test_assign_treatment_with_problematic_values():
     assert result.balance_result.f_statistic > 0
     assert result.balance_result.f_pvalue > 0
     assert len(result.treatment_ids) == len(df)
-    assert (
-        len(result.treatment_ids)
-        == result.balance_result.numerator_df + result.balance_result.denominator_df + 1
-    )
+    assert len(result.treatment_ids) == result.balance_result.numerator_df + result.balance_result.denominator_df + 1
 
 
 def test_assign_treatment_with_no_stratification(sample_df):

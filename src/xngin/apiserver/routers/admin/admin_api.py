@@ -147,7 +147,9 @@ STANDARD_ADMIN_RESPONSES: dict[str | int, dict[str, Any]] = {
     # action.
     "403": {
         "model": HTTPExceptionError,
-        "description": "Requester does not have sufficient privileges to perform this operation or is not authenticated.",
+        "description": (
+            "Requester does not have sufficient privileges to perform this operation or is not authenticated."
+        ),
     },
     # We return a 404 when a requested resource is not found. Authenticated users that do not have permission to know
     # whether a requested resource exists or not may also see a 404.
@@ -159,11 +161,7 @@ STANDARD_ADMIN_RESPONSES: dict[str | int, dict[str, Any]] = {
 
 
 def responses_factory(*codes):
-    return {
-        code: config
-        for code, config in STANDARD_ADMIN_RESPONSES.items()
-        if code in {str(c) for c in codes}
-    }
+    return {code: config for code, config in STANDARD_ADMIN_RESPONSES.items() if code in {str(c) for c in codes}}
 
 
 def cache_is_fresh(updated: datetime | None):
@@ -180,9 +178,7 @@ router = APIRouter(
     lifespan=lifespan,
     prefix=constants.API_PREFIX_V1 + "/m",
     responses=STANDARD_ADMIN_RESPONSES,
-    dependencies=[
-        Depends(require_oidc_token)
-    ],  # All routes in this router require authentication.
+    dependencies=[Depends(require_oidc_token)],  # All routes in this router require authentication.
 )
 
 
@@ -194,9 +190,7 @@ async def user_from_token(
 
     This may raise a 400, 401, or 403.
     """
-    result = await session.scalars(
-        select(tables.User).filter(tables.User.email == token_info.email)
-    )
+    result = await session.scalars(select(tables.User).filter(tables.User.email == token_info.email))
     user = result.first()
     if user:
         return user
@@ -221,9 +215,7 @@ async def user_from_token(
     )
 
 
-async def get_organization_or_raise(
-    session: AsyncSession, user: tables.User, organization_id: str
-):
+async def get_organization_or_raise(session: AsyncSession, user: tables.User, organization_id: str):
     """Reads the requested organization from the database. Raises 404 if disallowed or not found."""
     stmt = (
         select(tables.Organization)
@@ -234,9 +226,7 @@ async def get_organization_or_raise(
     result = await session.execute(stmt)
     org = result.scalar_one_or_none()
     if org is None:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND, detail="Organization not found."
-        )
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Organization not found.")
     return org
 
 
@@ -266,9 +256,7 @@ async def get_datasource_or_raise(
     result = await session.execute(stmt)
     ds = result.scalar_one_or_none()
     if ds is None:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND, detail="Datasource not found."
-        )
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Datasource not found.")
     return ds
 
 
@@ -296,9 +284,7 @@ async def get_experiment_via_ds_or_raise(
     result = await session.execute(stmt)
     exp = result.scalar_one_or_none()
     if exp is None:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND, detail="Experiment not found."
-        )
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Experiment not found.")
     return exp
 
 
@@ -330,11 +316,7 @@ async def caller_identity(
     token_info: Annotated[Principal, Depends(require_oidc_token)],
 ) -> CallerIdentity:
     """Returns basic metadata about the authenticated caller of this method."""
-    user = (
-        await session.scalars(
-            select(tables.User).filter(tables.User.email == token_info.email)
-        )
-    ).first()
+    user = (await session.scalars(select(tables.User).filter(tables.User.email == token_info.email))).first()
 
     return CallerIdentity(
         email=token_info.email,
@@ -492,9 +474,7 @@ async def update_organization_webhook(
     ).scalar_one_or_none()
 
     if webhook is None:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND, detail="Webhook not found"
-        )
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Webhook not found")
 
     webhook.name = body.name
     webhook.url = body.url
@@ -527,9 +507,7 @@ async def regenerate_webhook_auth_token(
     ).scalar_one_or_none()
 
     if webhook is None:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND, detail="Webhook not found"
-        )
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Webhook not found")
 
     # Generate a new secure auth token
     webhook.auth_token = secrets.token_hex(16)
@@ -601,9 +579,7 @@ def convert_events_to_eventsummaries(events):
     return event_summaries
 
 
-@router.post(
-    "/organizations/{organization_id}/members", status_code=status.HTTP_204_NO_CONTENT
-)
+@router.post("/organizations/{organization_id}/members", status_code=status.HTTP_204_NO_CONTENT)
 async def add_member_to_organization(
     organization_id: str,
     session: Annotated[AsyncSession, Depends(xngin_db_session)],
@@ -621,18 +597,14 @@ async def add_member_to_organization(
         options=[selectinload(tables.Organization.users)],
     )
     if not org:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND, detail="Organization not found"
-        )
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Organization not found")
 
     if not user.is_privileged:
         # Verify user is a member of the organization
         _authz_check = await get_organization_or_raise(session, user, organization_id)
 
     # Add the new member
-    result = await session.scalars(
-        select(tables.User).filter(tables.User.email == body.email)
-    )
+    result = await session.scalars(select(tables.User).filter(tables.User.email == body.email))
     new_user = result.first()
     if not new_user:
         new_user = tables.User(email=body.email)
@@ -716,18 +688,13 @@ async def get_organization(
     )
     users = await session.scalars(users_stmt)
 
-    datasources_stmt = select(tables.Datasource).filter(
-        tables.Datasource.organization_id == organization_id
-    )
+    datasources_stmt = select(tables.Datasource).filter(tables.Datasource.organization_id == organization_id)
     datasources = await session.scalars(datasources_stmt)
 
     return GetOrganizationResponse(
         id=org.id,
         name=org.name,
-        users=[
-            UserSummary(id=u.id, email=u.email)
-            for u in sorted(users, key=lambda x: x.email)
-        ],
+        users=[UserSummary(id=u.id, email=u.email) for u in sorted(users, key=lambda x: x.email)],
         datasources=[
             DatasourceSummary(
                 id=ds.id,
@@ -774,10 +741,7 @@ async def list_organization_datasources(
         )
 
     return ListDatasourcesResponse(
-        items=[
-            convert_ds_to_summary(ds)
-            for ds in sorted(datasources, key=lambda d: d.name)
-        ]
+        items=[convert_ds_to_summary(ds) for ds in sorted(datasources, key=lambda d: d.name)]
     )
 
 
@@ -790,10 +754,7 @@ async def create_datasource(
     """Creates a new datasource for the specified organization."""
     org = await get_organization_or_raise(session, user, body.organization_id)
 
-    if (
-        body.dwh.driver == "bigquery"
-        and body.dwh.credentials.type != "serviceaccountinfo"
-    ):
+    if body.dwh.driver == "bigquery" and body.dwh.credentials.type != "serviceaccountinfo":
         raise HTTPException(
             status_code=400,
             detail="BigQuery credentials must be specified using type=serviceaccountinfo",
@@ -855,9 +816,7 @@ async def get_datasource(
     session: Annotated[AsyncSession, Depends(xngin_db_session)],
 ) -> GetDatasourceResponse:
     """Returns detailed information about a specific datasource."""
-    ds = await get_datasource_or_raise(
-        session, user, datasource_id, preload=[tables.Datasource.organization]
-    )
+    ds = await get_datasource_or_raise(session, user, datasource_id, preload=[tables.Datasource.organization])
     config = ds.get_config()
     return GetDatasourceResponse(
         id=ds.id,
@@ -893,9 +852,7 @@ async def inspect_datasource(
             await session.commit()
             return InspectDatasourceResponse(tables=tablenames)
         except DwhDatabaseDoesNotExistError as exc:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)
-            ) from exc
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
     except:
         ds.clear_table_list()
         await session.commit()
@@ -905,9 +862,7 @@ async def inspect_datasource(
 async def invalidate_inspect_table_cache(session, datasource_id):
     """Invalidates all table inspection cache entries for a datasource."""
     await session.execute(
-        delete(tables.DatasourceTablesInspected).where(
-            tables.DatasourceTablesInspected.datasource_id == datasource_id
-        )
+        delete(tables.DatasourceTablesInspected).where(tables.DatasourceTablesInspected.datasource_id == datasource_id)
     )
 
 
@@ -923,11 +878,7 @@ async def inspect_table_in_datasource(
     ds = await get_datasource_or_raise(session, user, datasource_id)
     if (
         not refresh
-        and (
-            cached := await session.get(
-                tables.DatasourceTablesInspected, (datasource_id, table_name)
-            )
-        )
+        and (cached := await session.get(tables.DatasourceTablesInspected, (datasource_id, table_name)))
         and cache_is_fresh(cached.response_last_updated)
     ):
         return cached.get_response()
@@ -943,9 +894,7 @@ async def inspect_table_in_datasource(
     response = create_inspect_table_response_from_table(table)
 
     session.add(
-        tables.DatasourceTablesInspected(
-            datasource_id=datasource_id, table_name=table_name
-        ).set_response(response)
+        tables.DatasourceTablesInspected(datasource_id=datasource_id, table_name=table_name).set_response(response)
     )
     await session.commit()
 
@@ -970,9 +919,7 @@ async def delete_datasource(
 
     The user must be a member of the organization that owns the datasource.
     """
-    resource_query = select(tables.Datasource).where(
-        tables.Datasource.id == datasource_id
-    )
+    resource_query = select(tables.Datasource).where(tables.Datasource.id == datasource_id)
     return await handle_delete(
         session,
         allow_missing,
@@ -989,9 +936,7 @@ async def list_participant_types(
 ) -> ListParticipantsTypeResponse:
     ds = await get_datasource_or_raise(session, user, datasource_id)
     return ListParticipantsTypeResponse(
-        items=list(
-            sorted(ds.get_config().participants, key=lambda p: p.participant_type)
-        )
+        items=list(sorted(ds.get_config().participants, key=lambda p: p.participant_type))
     )
 
 
@@ -1027,23 +972,18 @@ async def inspect_participant_types(
     user: Annotated[tables.User, Depends(user_from_token)],
     refresh: Annotated[bool, Query(description="Refresh the cache.")] = False,
 ) -> InspectParticipantTypesResponse:
-    """Returns filter, strata, and metric field metadata for a participant type, including exemplars for filter fields."""
+    """Returns filter, strata, and metric field metadata for a participant type, including exemplars for
+    filter fields."""
     ds = await get_datasource_or_raise(session, user, datasource_id)
     dsconfig = ds.get_config()
     # CannotFindParticipantsError will be handled by exceptionhandlers.
     pconfig = dsconfig.find_participants(participant_id)
     if pconfig.type == "sheet":
-        raise HTTPException(
-            status_code=405, detail="Sheet schemas cannot be inspected."
-        )
+        raise HTTPException(status_code=405, detail="Sheet schemas cannot be inspected.")
 
     if (
         not refresh
-        and (
-            cached := await session.get(
-                tables.ParticipantTypesInspected, (datasource_id, participant_id)
-            )
-        )
+        and (cached := await session.get(tables.ParticipantTypesInspected, (datasource_id, participant_id)))
         and cache_is_fresh(cached.response_last_updated)
     ):
         return cached.get_response()
@@ -1062,9 +1002,7 @@ async def inspect_participant_types(
 
     async def inspect_participant_types_impl() -> InspectParticipantTypesResponse:
         async with DwhSession(dsconfig.dwh) as dwh:
-            result = await dwh.inspect_table_with_descriptors(
-                pconfig.table_name, pconfig.get_unique_id_field()
-            )
+            result = await dwh.inspect_table_with_descriptors(pconfig.table_name, pconfig.get_unique_id_field())
             filter_data = await asyncio.to_thread(
                 get_stats_on_filters,
                 dwh.session,
@@ -1109,9 +1047,9 @@ async def inspect_participant_types(
     response = await inspect_participant_types_impl()
 
     session.add(
-        tables.ParticipantTypesInspected(
-            datasource_id=datasource_id, participant_type=participant_id
-        ).set_response(response)
+        tables.ParticipantTypesInspected(datasource_id=datasource_id, participant_type=participant_id).set_response(
+            response
+        )
     )
     await session.commit()
 
@@ -1146,9 +1084,7 @@ async def update_participant_type(
     participant = config.find_participants(participant_id)
     config.participants.remove(participant)
     if not isinstance(participant, ParticipantsDef):
-        return Response(
-            status_code=405, content="Only schema participants can be updated"
-        )
+        return Response(status_code=405, content="Only schema participants can be updated")
     if body.participant_type is not None:
         participant.participant_type = body.participant_type
     if body.table_name is not None:
@@ -1190,9 +1126,7 @@ async def delete_participant(
 ):
     async def get_participants_or_none(session_: AsyncSession):
         resource = (
-            await session_.execute(
-                select(tables.Datasource).where(tables.Datasource.id == datasource_id)
-            )
+            await session_.execute(select(tables.Datasource).where(tables.Datasource.id == datasource_id))
         ).scalar_one_or_none()
         if resource is None:
             return None
@@ -1296,9 +1230,7 @@ async def create_experiment(
     session: Annotated[AsyncSession, Depends(xngin_db_session)],
     user: Annotated[tables.User, Depends(user_from_token)],
     body: CreateExperimentRequest,
-    chosen_n: Annotated[
-        int | None, Query(..., description="Number of participants to assign.")
-    ] = None,
+    chosen_n: Annotated[int | None, Query(..., description="Number of participants to assign.")] = None,
     stratify_on_metrics: Annotated[
         bool,
         Query(description="Whether to also stratify on metrics during assignment."),
@@ -1373,9 +1305,7 @@ async def analyze_experiment(
     if isinstance(design_spec, BaseFrequentistDesignSpec):
         participants_cfg = dsconfig.find_participants(experiment.participant_type)
         if not isinstance(participants_cfg, ParticipantsDef):
-            raise LateValidationError(
-                "Invalid ParticipantsConfig: Participants must be of type schema."
-            )
+            raise LateValidationError("Invalid ParticipantsConfig: Participants must be of type schema.")
         unique_id_field = participants_cfg.get_unique_id_field()
 
         assignments = experiment.arm_assignments
@@ -1405,9 +1335,7 @@ async def analyze_experiment(
 
         # Always assume the first arm is the baseline; UI can override this.
         baseline_arm_id = baseline_arm_id or design_spec.arms[0].arm_id
-        analyze_results = analyze_experiment_impl(
-            assignments, participant_outcomes, baseline_arm_id
-        )
+        analyze_results = analyze_experiment_impl(assignments, participant_outcomes, baseline_arm_id)
 
         metric_analyses = []
         for metric in design_spec.metrics:
@@ -1428,11 +1356,7 @@ async def analyze_experiment(
                         num_missing_values=arm_result.num_missing_values,
                     )
                 )
-            metric_analyses.append(
-                MetricAnalysis(
-                    metric_name=metric_name, metric=metric, arm_analyses=arm_analyses
-                )
-            )
+            metric_analyses.append(MetricAnalysis(metric_name=metric_name, metric=metric, arm_analyses=arm_analyses))
         return FreqExperimentAnalysisResponse(
             experiment_id=experiment.id,
             metric_analyses=metric_analyses,
@@ -1506,13 +1430,9 @@ async def get_experiment(
 ) -> GetExperimentResponse:
     """Returns the experiment with the specified ID."""
     ds = await get_datasource_or_raise(session, user, datasource_id)
-    experiment = await get_experiment_via_ds_or_raise(
-        session, ds, experiment_id, preload=[tables.Experiment.webhooks]
-    )
+    experiment = await get_experiment_via_ds_or_raise(session, ds, experiment_id, preload=[tables.Experiment.webhooks])
     converter = ExperimentStorageConverter(experiment)
-    assign_summary = await experiments_common.get_assign_summary(
-        session, experiment.id, converter.get_balance_check()
-    )
+    assign_summary = await experiments_common.get_assign_summary(session, experiment.id, converter.get_balance_check())
     webhook_ids = [webhook.id for webhook in experiment.webhooks]
     return converter.get_experiment_config(assign_summary, webhook_ids)
 
@@ -1573,7 +1493,10 @@ async def get_experiment_assignment_for_participant(
     create_if_none: Annotated[
         bool,
         Query(
-            description="Create an assignment if none exists. Does nothing for preassigned experiments. Override if you just want to check if an assignment exists."
+            description=(
+                "Create an assignment if none exists. Does nothing for preassigned experiments. "
+                "Override if you just want to check if an assignment exists."
+            )
         ),
     ] = True,
     random_state: Annotated[
@@ -1620,9 +1543,7 @@ async def delete_experiment(
     ] = False,
 ):
     """Deletes the experiment with the specified ID."""
-    resource_query = select(tables.Experiment).where(
-        tables.Experiment.id == experiment_id
-    )
+    resource_query = select(tables.Experiment).where(tables.Experiment.id == experiment_id)
     return await handle_delete(
         session,
         allow_missing,
@@ -1675,9 +1596,7 @@ async def power_check(
     )
 
 
-def validate_schema_metrics_or_raise(
-    design_spec: BaseFrequentistDesignSpec, schema: ParticipantsSchema
-):
+def validate_schema_metrics_or_raise(design_spec: BaseFrequentistDesignSpec, schema: ParticipantsSchema):
     metric_fields = {m.field_name for m in schema.fields if m.is_metric}
     metrics_requested = {m.field_name for m in design_spec.metrics}
     invalid_metrics = metrics_requested - metric_fields

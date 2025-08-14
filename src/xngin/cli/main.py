@@ -56,9 +56,7 @@ err_console = Console(stderr=True)
 console = Console(stderr=False)
 app = typer.Typer(help=__doc__)
 
-logging.basicConfig(
-    level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s - %(message)s"
-)
+logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s - %(message)s")
 
 secretservice.setup()
 
@@ -143,8 +141,7 @@ def df_to_ddl(
                 pass  # Not a UUID
     # Now generate the DDL.
     columns = [
-        f"{quoter.quote(str(col))} {type_map.get(str(dtype), default_sql_type)}"
-        for col, dtype in df_dtypes.items()
+        f"{quoter.quote(str(col))} {type_map.get(str(dtype), default_sql_type)}" for col, dtype in df_dtypes.items()
     ]
     return f"""CREATE TABLE {table_name} ({",\n    ".join(columns)});"""
 
@@ -161,9 +158,7 @@ def validate_create_testing_dwh_src(v: Path):
 def create_apiserver_db(
     dsn: Annotated[
         str,
-        typer.Option(
-            help="The SQLAlchemy URL for the database.", envvar="DATABASE_URL"
-        ),
+        typer.Option(help="The SQLAlchemy URL for the database.", envvar="DATABASE_URL"),
     ],
 ):
     console.print(f"DSN: [cyan]{dsn}[/cyan]")
@@ -217,20 +212,14 @@ def create_testing_dwh(
             "Required when connecting to Redshift."
         ),
     ] = None,
-    password: Annotated[
-        str | None, typer.Option(envvar="PGPASSWORD", help="The database password.")
-    ] = None,
+    password: Annotated[str | None, typer.Option(envvar="PGPASSWORD", help="The database password.")] = None,
     create_db: Annotated[
         bool,
-        typer.Option(
-            help="Create the database if it does not yet exist (Postgres only)."
-        ),
+        typer.Option(help="Create the database if it does not yet exist (Postgres only)."),
     ] = False,
     allow_existing: Annotated[
         bool,
-        typer.Option(
-            help="True if you only want to create the table if it does not exist."
-        ),
+        typer.Option(help="True if you only want to create the table if it does not exist."),
     ] = False,
 ):
     """Loads the testing data warehouse CSV into a database.
@@ -250,9 +239,7 @@ def create_testing_dwh(
     Due to variations in all of the above, the loaded data may vary in small ways when loaded with different data
     stores. E.g. floats may not roundtrip.
     """
-    create_schema_ddl = (
-        f"CREATE SCHEMA IF NOT EXISTS {schema_name}" if schema_name else ""
-    )
+    create_schema_ddl = f"CREATE SCHEMA IF NOT EXISTS {schema_name}" if schema_name else ""
     full_table_name = f"{schema_name}.{table_name}" if schema_name else table_name
     drop_table_ddl = f"DROP TABLE IF EXISTS {full_table_name}"
     is_compressed = src.suffix == ".zst"
@@ -363,9 +350,7 @@ def create_testing_dwh(
         df = read_csv()
         destination_table = f"{url.database}.{table_name}"
         print("Loading using an inferred schema (warning: may lose fidelity!)...")
-        pandas_gbq.to_gbq(
-            df, destination_table, project_id=url.host, if_exists="replace"
-        )
+        pandas_gbq.to_gbq(df, destination_table, project_id=url.host, if_exists="replace")
     elif url.get_driver_name() in {"psycopg", "psycopg2"}:
         engine = create_engine_and_database(url)
         ddl = get_ddl_magic(engine.dialect.identifier_preparer, "postgres")
@@ -399,9 +384,7 @@ def create_testing_dwh(
 
 @app.command()
 def create_participants_schema(
-    dsn: Annotated[
-        str, typer.Argument(..., help="The SQLAlchemy DSN of a data warehouse.")
-    ],
+    dsn: Annotated[str, typer.Argument(..., help="The SQLAlchemy DSN of a data warehouse.")],
     table_name: Annotated[
         str,
         typer.Argument(
@@ -425,11 +408,7 @@ def create_participants_schema(
     ] = True,
 ):
     """Generates a ParticipantsSchema from a datasource."""
-    config = asyncio.run(
-        create_participants_schema_from_table(
-            dsn, table_name, use_sa_autoload, unique_id_col
-        )
-    )
+    config = asyncio.run(create_participants_schema_from_table(dsn, table_name, use_sa_autoload, unique_id_col))
     print(json.dumps(config.model_dump(), sort_keys=True, indent=2))
 
 
@@ -472,9 +451,7 @@ def export_openapi_spec(output: Path = Path("openapi.json")):
     app = FastAPI()
     routes.register(app)
     with open(output, "w") as outf:
-        json.dump(
-            xngin.apiserver.openapi.custom_openapi(app), outf, sort_keys=True, indent=2
-        )
+        json.dump(xngin.apiserver.openapi.custom_openapi(app), outf, sort_keys=True, indent=2)
 
 
 @app.command()
@@ -601,9 +578,7 @@ def add_user(
             envvar="XNGIN_DEVDWH_DSN",
         ),
     ] = None,
-    output: Annotated[
-        TextOrJson, typer.Option(help="Output format.")
-    ] = TextOrJson.text,
+    output: Annotated[TextOrJson, typer.Option(help="Output format.")] = TextOrJson.text,
 ):
     """Adds a new user to the database.
 
@@ -620,16 +595,12 @@ def add_user(
         while True:
             email_input = typer.prompt("Enter email address")
             try:
-                email = validate_email(
-                    email_input, check_deliverability=False
-                ).normalized
+                email = validate_email(email_input, check_deliverability=False).normalized
                 break
             except EmailNotValidError as err:
                 err_console.print(f"[bold red]Invalid email:[/bold red] {err!s}")
 
-        privileged = typer.confirm(
-            "Should this user have privileged access?", default=False
-        )
+        privileged = typer.confirm("Should this user have privileged access?", default=False)
 
     if output == TextOrJson.text:
         console.print(f"Adding user with email: [cyan]{email}[/cyan]")
@@ -645,9 +616,7 @@ def add_user(
     engine = create_engine(database_url)
     with Session(engine) as session:
         try:
-            user = create_user_and_first_datasource(
-                session, email=email, dsn=dwh, privileged=privileged
-            )
+            user = create_user_and_first_datasource(session, email=email, dsn=dwh, privileged=privileged)
             session.commit()
             if output == TextOrJson.text:
                 console.print("\n[bold green]User added successfully:[/bold green]")
@@ -664,9 +633,7 @@ def add_user(
                     api_keys[datasource.id] = key
                     datasource.api_keys.append(tables.ApiKey(id=label, key=key_hash))
                     if output == TextOrJson.text:
-                        console.print(
-                            f"  Datasource ID: [cyan]{datasource.id}[/cyan] [blue](API Key: {key})[/blue]"
-                        )
+                        console.print(f"  Datasource ID: [cyan]{datasource.id}[/cyan] [blue](API Key: {key})[/blue]")
 
             if output == TextOrJson.json:
                 console.print(
@@ -683,8 +650,7 @@ def add_user(
                                 {
                                     "id": o.id,
                                     "datasources": [
-                                        {"id": ds.id, "api_keys": [api_keys[ds.id]]}
-                                        for ds in o.datasources
+                                        {"id": ds.id, "api_keys": [api_keys[ds.id]]} for ds in o.datasources
                                     ],
                                 }
                                 for o in user.organizations
@@ -696,9 +662,7 @@ def add_user(
                 )
         except IntegrityError as err:
             session.rollback()
-            err_console.print(
-                f"[bold red]Error:[/bold red] User with email '{email}' already exists."
-            )
+            err_console.print(f"[bold red]Error:[/bold red] User with email '{email}' already exists.")
             raise typer.Exit(1) from err
 
 
@@ -706,9 +670,7 @@ def add_user(
 def create_nacl_keyset(
     output: Annotated[
         Base64OrJson,
-        typer.Option(
-            help="Output format. Use base64 when generating a key for use in an environment variable."
-        ),
+        typer.Option(help="Output format. Use base64 when generating a key for use in an environment variable."),
     ] = Base64OrJson.base64,
 ):
     """Generate an encryption keyset for the "nacl" secret provider.
@@ -728,9 +690,7 @@ def create_nacl_keyset(
 def encrypt(
     aad: Annotated[
         str,
-        typer.Option(
-            help="Bind the ciphertext to this additionally authenticated data (AAD)."
-        ),
+        typer.Option(help="Bind the ciphertext to this additionally authenticated data (AAD)."),
     ] = "cli",
 ):
     """Encrypts a string using the same encryption configuration that the API server does."""
@@ -740,9 +700,7 @@ def encrypt(
 
 @app.command()
 def decrypt(
-    aad: Annotated[
-        str, typer.Option(help="The AAD specified when the ciphertext was encrypted.")
-    ] = "cli",
+    aad: Annotated[str, typer.Option(help="The AAD specified when the ciphertext was encrypted.")] = "cli",
 ):
     """Decrypts a string using the same encryption configuration that the API server does."""
     secretservice.setup()

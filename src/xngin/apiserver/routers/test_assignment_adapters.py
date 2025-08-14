@@ -211,9 +211,7 @@ def test_assign_adapter_multiple_arms(sample_table, sample_rows):
 MAX_SAFE_INTEGER = (1 << 53) - 1  # 9007199254740991
 
 
-def test_assign_adapter_with_large_integers_as_participant_ids(
-    sample_table, sample_data
-):
+def test_assign_adapter_with_large_integers_as_participant_ids(sample_table, sample_data):
     """Test assignment with large integer participant IDs (underlying type is Decimal)."""
 
     def assign(data):
@@ -252,9 +250,7 @@ def test_assign_adapter_with_large_integers_as_participant_ids(
     assert json["assignments"][0]["participant_id"] == "-9007199254740993"
 
 
-def test_assign_adapter_renders_decimal_and_bool_strata_correctly(
-    sample_table, sample_rows
-):
+def test_assign_adapter_renders_decimal_and_bool_strata_correctly(sample_table, sample_rows):
     """Test that the adapter correctly renders decimal and bool strata as strings."""
     arms = make_arms(["control", "treatment"])
     result = assign_treatment(
@@ -315,9 +311,7 @@ def test_assign_adapter_with_no_valid_strata(sample_table, sample_rows):
     arm_counts: defaultdict[str, int] = defaultdict(int)
     for participant in result.assignments:
         arm_counts[participant.arm_name] += 1
-        assert participant.strata == [
-            Strata(field_name="single_value", strata_value="1")
-        ]
+        assert participant.strata == [Strata(field_name="single_value", strata_value="1")]
     # And since we used simple random assignment, the arm lengths should be equal
     assert arm_counts["control"] == arm_counts["treatment"]
     assert arm_counts["control"] == len(result.assignments) // 2

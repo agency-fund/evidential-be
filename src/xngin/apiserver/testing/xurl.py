@@ -55,12 +55,7 @@ class Xurl(BaseModel):
             method = yield string("GET") | string("POST")
             yield string(" ")
             path = yield regex(r"[^\n]+") << string("\n")
-            headers = (
-                yield regex(r"([^:\n]+): ([^:\n]*)\n", group=(1, 2))
-                .many()
-                .map(dict)
-                .optional()
-            )
+            headers = yield regex(r"([^:\n]+): ([^:\n]*)\n", group=(1, 2)).many().map(dict).optional()
             json_block = regex(r"```json\n(.+?)\n```\n+", flags=re.DOTALL, group=1)
             status_code_p = regex(r"HTTP (\d+)\n+", group=1)
             json_block_eof = regex(r"```json\n(.+)\n```", flags=re.DOTALL, group=1)

@@ -75,14 +75,9 @@ def _deserialize(serialized: str) -> tuple[str, bytes]:
     try:
         arr = json.loads(serialized[start_pos:])
     except json.decoder.JSONDecodeError as exc:
-        raise ValueError(
-            "Serialized encrypted data does not match expected format."
-        ) from exc
+        raise ValueError("Serialized encrypted data does not match expected format.") from exc
     if not isinstance(arr, list) or not (
-        len(arr) > 0
-        and isinstance(arr[0], list)
-        and len(arr[0]) == 2
-        and all(isinstance(v, str) for v in arr[0])
+        len(arr) > 0 and isinstance(arr[0], list) and len(arr[0]) == 2 and all(isinstance(v, str) for v in arr[0])
     ):
         raise ValueError("Serialized encrypted data does not match expected format.")
     kms, ciphertext = arr[0][0], arr[0][1]
@@ -106,9 +101,7 @@ class SecretService:
             raise ValueError("The value being encrypted is already encrypted.")
         return _serialize(
             backend=self.encryption_provider.name(),
-            ciphertext=self.encryption_provider.encrypt(
-                pt.encode("utf-8"), aad.encode("utf-8")
-            ),
+            ciphertext=self.encryption_provider.encrypt(pt.encode("utf-8"), aad.encode("utf-8")),
         )
 
     def decrypt(self, ct: str, aad: str) -> str:
@@ -127,7 +120,5 @@ class SecretService:
 
 def get_symmetric() -> SecretService:
     if not _SERVICE:
-        raise InvalidSecretStoreConfigurationError(
-            "setup() must be called before encryption operations"
-        )
+        raise InvalidSecretStoreConfigurationError("setup() must be called before encryption operations")
     return _SERVICE

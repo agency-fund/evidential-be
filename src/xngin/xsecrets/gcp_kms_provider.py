@@ -70,9 +70,7 @@ def _read_gcp_env() -> GcpKmsConfiguration | None:
 
         key_name = key_uri[len("gcp-kms://") :]
 
-        logger.info(
-            f"Secrets: GCP credentials and key URI configured from environment: {key_uri}"
-        )
+        logger.info(f"Secrets: GCP credentials and key URI configured from environment: {key_uri}")
         credentials = service_account.Credentials.from_service_account_info(
             json.loads(base64.standard_b64decode(credentials))
         )
@@ -83,9 +81,7 @@ def _read_gcp_env() -> GcpKmsConfiguration | None:
 def initialize(registry: Registry):
     params = _read_gcp_env()
     if params:
-        instance = GcpKmsProvider(
-            key_name=params.key_name, credentials=params.credentials
-        )
+        instance = GcpKmsProvider(key_name=params.key_name, credentials=params.credentials)
         registry.register(instance.name(), instance)
 
 

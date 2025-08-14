@@ -44,9 +44,7 @@ if sentry_dsn := os.environ.get("SENTRY_DSN"):
             "continuous_profiling_auto_start": True,
         },
         send_default_pii=False,
-        event_scrubber=sentry_sdk.scrubber.EventScrubber(
-            denylist=denylist, pii_denylist=pii_denylist
-        ),
+        event_scrubber=sentry_sdk.scrubber.EventScrubber(denylist=denylist, pii_denylist=pii_denylist),
     )
 
 

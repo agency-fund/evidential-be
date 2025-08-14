@@ -43,9 +43,7 @@ def make_webhook_outbound_handler(dsn: str):
                 )
 
                 if 200 <= response.status_code < 300:
-                    logger.info(
-                        f"Successfully sent event data to {request.url}: {response.status_code}"
-                    )
+                    logger.info(f"Successfully sent event data to {request.url}: {response.status_code}")
                     if response.content:
                         logger.debug(f"Response has content: {response.text}")
                     session.add(
@@ -61,16 +59,11 @@ def make_webhook_outbound_handler(dsn: str):
                         )
                     )
                 else:
-                    logger.info(
-                        f"Outbound webhook failed with status {response.status_code}"
-                    )
+                    logger.info(f"Outbound webhook failed with status {response.status_code}")
                     response.raise_for_status()
             except httpx.HTTPError as err:
                 logger.exception("Outbound webhook failed")
-                if "response" in locals():
-                    message = f"status={response.status_code} message={err!s}"
-                else:
-                    message = str(err)
+                message = f"status={response.status_code} message={err!s}" if "response" in locals() else str(err)
                 session.add(
                     tables.Event(
                         organization_id=request.organization_id,

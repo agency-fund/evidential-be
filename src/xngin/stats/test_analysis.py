@@ -36,9 +36,7 @@ def test_outcomes(n=1000, seed=43):
     return [
         ParticipantOutcome(
             participant_id=str(i),
-            metric_values=[
-                MetricValue(metric_name="bool_field", metric_value=rand.choice([0, 1]))
-            ],
+            metric_values=[MetricValue(metric_name="bool_field", metric_value=rand.choice([0, 1]))],
         )
         for i in range(n)
     ]
@@ -51,15 +49,9 @@ def test_analysis(test_assignments, test_outcomes):
 
     bool_field_results = result["bool_field"]
     # Test using the fixed UUIDs
-    assert (
-        bool_field_results["0ffe0995-6404-4622-934a-0d5cccfe3a59"].is_baseline is True
-    )
-    assert (
-        bool_field_results["b1d90769-6e6e-4973-a7eb-d9da1c6ddcd5"].is_baseline is False
-    )
-    assert (
-        bool_field_results["df84e3ae-f5df-4dc8-9ba6-fa0743e1c895"].is_baseline is False
-    )
+    assert bool_field_results["0ffe0995-6404-4622-934a-0d5cccfe3a59"].is_baseline is True
+    assert bool_field_results["b1d90769-6e6e-4973-a7eb-d9da1c6ddcd5"].is_baseline is False
+    assert bool_field_results["df84e3ae-f5df-4dc8-9ba6-fa0743e1c895"].is_baseline is False
 
     # Test approximate values since floating point math may have small variations
     assert (
@@ -96,15 +88,9 @@ def test_analysis_with_custom_baseline(test_assignments, test_outcomes):
 
     bool_field_results = result["bool_field"]
     # Test using the fixed UUIDs
-    assert (
-        bool_field_results["0ffe0995-6404-4622-934a-0d5cccfe3a59"].is_baseline is False
-    )
-    assert (
-        bool_field_results["b1d90769-6e6e-4973-a7eb-d9da1c6ddcd5"].is_baseline is True
-    )
-    assert (
-        bool_field_results["df84e3ae-f5df-4dc8-9ba6-fa0743e1c895"].is_baseline is False
-    )
+    assert bool_field_results["0ffe0995-6404-4622-934a-0d5cccfe3a59"].is_baseline is False
+    assert bool_field_results["b1d90769-6e6e-4973-a7eb-d9da1c6ddcd5"].is_baseline is True
+    assert bool_field_results["df84e3ae-f5df-4dc8-9ba6-fa0743e1c895"].is_baseline is False
 
     # Test approximate values since floating point math may have small variations
     assert (
@@ -144,15 +130,9 @@ def test_analysis_with_missing_outcomes(test_assignments, test_outcomes):
 
     bool_field_results = result["bool_field"]
     # Test using the fixed UUIDs
-    assert (
-        bool_field_results["0ffe0995-6404-4622-934a-0d5cccfe3a59"].is_baseline is True
-    )
-    assert (
-        bool_field_results["b1d90769-6e6e-4973-a7eb-d9da1c6ddcd5"].is_baseline is False
-    )
-    assert (
-        bool_field_results["df84e3ae-f5df-4dc8-9ba6-fa0743e1c895"].is_baseline is False
-    )
+    assert bool_field_results["0ffe0995-6404-4622-934a-0d5cccfe3a59"].is_baseline is True
+    assert bool_field_results["b1d90769-6e6e-4973-a7eb-d9da1c6ddcd5"].is_baseline is False
+    assert bool_field_results["df84e3ae-f5df-4dc8-9ba6-fa0743e1c895"].is_baseline is False
 
     # Test approximate values since floating point math may have small variations
     assert (
@@ -186,10 +166,4 @@ def test_analysis_with_missing_outcomes(test_assignments, test_outcomes):
             == 200 // 3
         )
 
-    assert (
-        sum(
-            arm_results.num_missing_values
-            for arm_results in bool_field_results.values()
-        )
-        == 200
-    )
+    assert sum(arm_results.num_missing_values for arm_results in bool_field_results.values()) == 200

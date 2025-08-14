@@ -44,9 +44,7 @@ def analyze_experiment(
 
     rows = []
     for outcome in participant_outcomes:
-        data_row: dict[str, float | str | None] = {
-            "participant_id": outcome.participant_id
-        }
+        data_row: dict[str, float | str | None] = {"participant_id": outcome.participant_id}
         for metric_value in outcome.metric_values:
             data_row[metric_value.metric_name] = metric_value.metric_value
         rows.append(data_row)
@@ -63,29 +61,21 @@ def analyze_experiment(
         merged_df["arm_id"] = merged_df["arm_id"].cat.reorder_categories(arm_ids)
 
     metric_analyses: dict[str, dict[str, ArmAnalysisResult]] = {}
-    metric_columns = [
-        col for col in merged_df.columns if col not in {"arm_id", "participant_id"}
-    ]
+    metric_columns = [col for col in merged_df.columns if col not in {"arm_id", "participant_id"}]
 
     # Calculate NaN counts for all metrics. Since assignments_df may have participants that are not
     # yet in the dwh (e.g. in an online experiment) we're also counting missing participants as having NaN as well.
-    nan_counts_df = merged_df.groupby("arm_id", observed=False)[metric_columns].agg(
-        lambda s: s.isna().sum()
-    )
+    nan_counts_df = merged_df.groupby("arm_id", observed=False)[metric_columns].agg(lambda s: s.isna().sum())
 
     for metric_name in metric_columns:
         # smf.ols internally actually drops missing values by default (see Model.from_formula),
         # but make it explicit here for developer clarity.
         model = smf.ols(f"{metric_name} ~ arm_id", data=merged_df, missing="drop").fit()
-        arm_ids = model.model.data.design_info.factor_infos[
-            EvalFactor("arm_id")
-        ].categories
+        arm_ids = model.model.data.design_info.factor_infos[EvalFactor("arm_id")].categories
         arm_analyses: dict[str, ArmAnalysisResult] = {}
         for i, arm_id in enumerate(arm_ids):
             arm_analyses[arm_id] = ArmAnalysisResult(
-                is_baseline=i == 0
-                if baseline_arm_id is None
-                else arm_id == baseline_arm_id,
+                is_baseline=i == 0 if baseline_arm_id is None else arm_id == baseline_arm_id,
                 estimate=float(model.params.iloc[i]),
                 p_value=float(model.pvalues.iloc[i]),
                 t_stat=float(model.tvalues.iloc[i]),

@@ -71,7 +71,9 @@ class CannotFindTableError(Exception):
         self.table_name = table_name
         self.alternatives = existing_tables
         if existing_tables:
-            self.message = f"The table '{table_name}' does not exist. Known tables: {', '.join(sorted(existing_tables))}"
+            self.message = (
+                f"The table '{table_name}' does not exist. Known tables: {', '.join(sorted(existing_tables))}"
+            )
         else:
             self.message = f"The table '{table_name}' does not exist; the database does not contain any tables."
 
@@ -139,38 +141,26 @@ class DwhSession:
         in a thread so that it doesn't block FastAPI's request thread.
         """
         if self._session is None:
-            raise RuntimeError(
-                "DwhSession not entered - use 'async with DwhSession(...) as dwh:'"
-            )
+            raise RuntimeError("DwhSession not entered - use 'async with DwhSession(...) as dwh:'")
         return self._session
 
     def _safe_engine(self) -> Engine:
         """Get the type-checked synchronous SQLAlchemy engine."""
         if self._engine is None:
-            raise RuntimeError(
-                "DwhSession not entered - use 'async with DwhSession(...) as dwh:'"
-            )
+            raise RuntimeError("DwhSession not entered - use 'async with DwhSession(...) as dwh:'")
         return self._engine
 
-    def _inspect_table_blocking(
-        self, table_name: str, use_sa_autoload: bool | None = None
-    ) -> sqlalchemy.Table:
+    def _inspect_table_blocking(self, table_name: str, use_sa_autoload: bool | None = None) -> sqlalchemy.Table:
         if use_sa_autoload is None:
             use_sa_autoload = self.dwh_config.supports_sa_autoload()
         metadata = sqlalchemy.MetaData()
         try:
             if use_sa_autoload:
-                return sqlalchemy.Table(
-                    table_name, metadata, autoload_with=self._safe_engine(), quote=False
-                )
+                return sqlalchemy.Table(table_name, metadata, autoload_with=self._safe_engine(), quote=False)
             # This method of introspection should only be used if the db dialect doesn't support Sqlalchemy2 reflection.
-            return self._inspect_table_from_cursor_blocking(
-                self._safe_engine(), table_name
-            )
+            return self._inspect_table_from_cursor_blocking(self._safe_engine(), table_name)
         except sqlalchemy.exc.ProgrammingError:
-            logger.exception(
-                "Failed to create a Table! use_sa_autoload: {}", use_sa_autoload
-            )
+            logger.exception("Failed to create a Table! use_sa_autoload: {}", use_sa_autoload)
             raise
         except NoSuchTableError as nste:
             metadata.reflect(self._safe_engine())
@@ -188,9 +178,7 @@ class DwhSession:
             with engine.begin() as connection:
                 safe_table = sqlalchemy.quoted_name(table_name, quote=True)
                 # Create a select statement - this is safe from SQL injection
-                query = (
-                    sqlalchemy.select(text("*")).select_from(text(safe_table)).limit(0)
-                )
+                query = sqlalchemy.select(text("*")).select_from(text(safe_table)).limit(0)
                 result = connection.execute(query)
                 description = result.cursor.description
                 for col in description:
@@ -208,9 +196,7 @@ class DwhSession:
                     # Map Redshift type codes to SQLAlchemy types. Not comprehensive.
                     # https://docs.sqlalchemy.org/en/20/core/types.html
                     # Comment shows both pg_type.typename / information_schema.data_type
-                    sa_type: (
-                        type[sqlalchemy.types.TypeEngine] | sqlalchemy.types.TypeEngine
-                    )
+                    sa_type: type[sqlalchemy.types.TypeEngine] | sqlalchemy.types.TypeEngine
                     match type_code:
                         case 16:  # BOOL / boolean
                             sa_type = sqlalchemy.Boolean
@@ -245,9 +231,7 @@ class DwhSession:
             existing_tables = metadata.tables.keys()
             raise CannotFindTableError(table_name, existing_tables) from nste
 
-    async def inspect_table(
-        self, table_name: str, use_sa_autoload: bool | None = None
-    ) -> sqlalchemy.Table:
+    async def inspect_table(self, table_name: str, use_sa_autoload: bool | None = None) -> sqlalchemy.Table:
         """Inspect table structure using a variety of backend-specific workarounds.
 
         The only fields guaranteed to be set on the the returned Table.columns field are
@@ -262,9 +246,7 @@ class DwhSession:
         Returns:
             SQLAlchemy Table object
         """
-        return await asyncio.to_thread(
-            self._inspect_table_blocking, table_name, use_sa_autoload
-        )
+        return await asyncio.to_thread(self._inspect_table_blocking, table_name, use_sa_autoload)
 
     def _inspect_table_with_descriptors_blocking(
         self, table_name: str, unique_id_field: str, use_sa_autoload: bool | None = None
@@ -343,16 +325,12 @@ class DwhSession:
                     "SELECT table_name FROM information_schema.tables "
                     "WHERE table_schema IN (:search_path) ORDER BY table_name"
                 )
-                result = self.session.execute(
-                    query, {"search_path": self.dwh_config.search_path or "public"}
-                )
+                result = self.session.execute(query, {"search_path": self.dwh_config.search_path or "public"})
                 return list(result.scalars().all())
             inspected = sqlalchemy.inspect(self._safe_engine())
             if not isinstance(inspected, Inspector):
                 raise TypeError(f"Unexpected type of inspector: {type(inspected)}")
-            return list(
-                sorted(inspected.get_table_names() + inspected.get_view_names())
-            )
+            return list(sorted(inspected.get_table_names() + inspected.get_view_names()))
         except OperationalError as exc:
             if _is_postgres_database_not_found_error(exc):
                 raise DwhDatabaseDoesNotExistError(str(exc)) from exc

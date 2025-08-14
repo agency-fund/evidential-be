@@ -4,9 +4,7 @@ from typing import Any
 from deepdiff import DeepDiff
 
 
-def assert_same(
-    actual: Any, expected: Any, deepdiff_kwargs=None, extra: str | None = None
-):
+def assert_same(actual: Any, expected: Any, deepdiff_kwargs=None, extra: str | None = None):
     """Compare two values in a float-tolerant way using DeepDiff.
 
     If extra= is set, it will be displayed when the assertions fail.
@@ -16,9 +14,7 @@ def assert_same(
     if deepdiff_kwargs is None:
         deepdiff_kwargs = dict()
     diff = DeepDiff(expected, actual, math_epsilon=0, **deepdiff_kwargs)
-    assert not diff, (
-        f"Objects differ:\n{diff.pretty()}" + f"\n{extra}\n" if extra else ""
-    )
+    assert not diff, f"Objects differ:\n{diff.pretty()}" + f"\n{extra}\n" if extra else ""
 
 
 def _dates_equal(db_date: datetime, other_date: datetime):
@@ -30,6 +26,4 @@ def _dates_equal(db_date: datetime, other_date: datetime):
 
 def assert_dates_equal(db_date: datetime, other_date: datetime):
     """Asserts that the db_date is equal to other_date, honoring the db_date's timezone."""
-    assert _dates_equal(db_date, other_date), (
-        f"Date {db_date} is not equal to {other_date}"
-    )
+    assert _dates_equal(db_date, other_date), f"Date {db_date} is not equal to {other_date}"

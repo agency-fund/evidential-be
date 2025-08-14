@@ -23,7 +23,5 @@ async def healthcheck_db(
     session: Annotated[AsyncSession, Depends(xngin_db_session)],
 ):
     """Endpoint to confirm that we can make a connection to the database and issue a query."""
-    now = (
-        await session.execute(sqlalchemy.select(sqlalchemy.sql.func.now()))
-    ).scalar_one_or_none()
+    now = (await session.execute(sqlalchemy.select(sqlalchemy.sql.func.now()))).scalar_one_or_none()
     return {"status": "ok", "db_time": now}

@@ -3,9 +3,7 @@ from xngin.apiserver.testing.xurl import Xurl
 
 
 def test_hurl():
-    assert Xurl.from_script(
-        """GET /foo/bar\nH1: v1\nHTTP 200\n```json\ncontents\n```"""
-    ) == Xurl(
+    assert Xurl.from_script("""GET /foo/bar\nH1: v1\nHTTP 200\n```json\ncontents\n```""") == Xurl(
         method="GET",
         url="/foo/bar",
         headers={"H1": "v1"},
@@ -13,9 +11,7 @@ def test_hurl():
         expected_status=200,
         trailer=None,
     )
-    assert Xurl.from_script(
-        """GET /foo/bar\nHTTP 200\n```json\ncontents\n```"""
-    ) == Xurl(
+    assert Xurl.from_script("""GET /foo/bar\nHTTP 200\n```json\ncontents\n```""") == Xurl(
         method="GET",
         url="/foo/bar",
         headers={},
@@ -23,9 +19,7 @@ def test_hurl():
         expected_status=200,
         trailer=None,
     )
-    assert Xurl.from_script(
-        """GET /foo/bar\n```json\npayload\n```\nHTTP 200\n```json\ncontents\n```"""
-    ) == Xurl(
+    assert Xurl.from_script("""GET /foo/bar\n```json\npayload\n```\nHTTP 200\n```json\ncontents\n```""") == Xurl(
         method="GET",
         url="/foo/bar",
         headers={},
@@ -100,9 +94,7 @@ HTTP 200
 
 
 def test_hurl_trailer():
-    assert Xurl.from_script(
-        """GET /foo/bar\nH1: v1\nHTTP 200\n```json\ncontents\n```trailer"""
-    ) == Xurl(
+    assert Xurl.from_script("""GET /foo/bar\nH1: v1\nHTTP 200\n```json\ncontents\n```trailer""") == Xurl(
         method="GET",
         url="/foo/bar",
         headers={"H1": "v1"},
@@ -111,9 +103,7 @@ def test_hurl_trailer():
         trailer="trailer",
     )
 
-    assert Xurl.from_script(
-        """GET /foo/bar\nH1: v1\nHTTP 200\n```json\ncontents\n```trailer1\ntrailer2\n"""
-    ) == Xurl(
+    assert Xurl.from_script("""GET /foo/bar\nH1: v1\nHTTP 200\n```json\ncontents\n```trailer1\ntrailer2\n""") == Xurl(
         method="GET",
         url="/foo/bar",
         headers={"H1": "v1"},

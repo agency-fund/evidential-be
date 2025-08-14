@@ -77,14 +77,10 @@ class EventSummary(AdminApiBaseModel):
     """Describes an event."""
 
     id: Annotated[str, Field(description="The ID of the event.")]
-    created_at: Annotated[
-        datetime, Field(description="The time the event was created.")
-    ]
+    created_at: Annotated[datetime, Field(description="The time the event was created.")]
     type: Annotated[str, Field(description="The type of event.")]
     summary: Annotated[str, Field(description="Human-readable summary of the event.")]
-    link: Annotated[
-        str | None, Field(description="A navigable link to related information.")
-    ] = None
+    link: Annotated[str | None, Field(description="A navigable link to related information.")] = None
     details: Annotated[dict | None, Field(description="Details")]
 
 
@@ -113,7 +109,10 @@ class AddWebhookToOrganizationRequest(AdminApiBaseModel):
         str,
         Field(
             max_length=MAX_LENGTH_OF_NAME_VALUE,
-            description="User-friendly name for the webhook. This name is displayed in the UI and helps identify the webhook's purpose.",
+            description=(
+                "User-friendly name for the webhook. This name is displayed in the UI and helps "
+                "identify the webhook's purpose."
+            ),
         ),
     ]
     url: Annotated[
@@ -134,9 +133,7 @@ class AddWebhookToOrganizationResponse(AdminApiBaseModel):
     """Information on the successfully created webhook."""
 
     id: Annotated[str, Field(description="The ID of the newly created webhook.")]
-    type: Annotated[
-        str, Field(description="The type of webhook; e.g. experiment.created")
-    ]
+    type: Annotated[str, Field(description="The type of webhook; e.g. experiment.created")]
     name: Annotated[
         str,
         Field(description="User-friendly name for the webhook."),
@@ -145,7 +142,9 @@ class AddWebhookToOrganizationResponse(AdminApiBaseModel):
     auth_token: Annotated[
         str | None,
         Field(
-            description="The value of the Webhook-Token: header that will be sent with the request to the configured URL."
+            description=(
+                "The value of the Webhook-Token: header that will be sent with the request to the configured URL."
+            )
         ),
     ]
 
@@ -154,9 +153,7 @@ class WebhookSummary(AdminApiBaseModel):
     """Summarizes a Webhook configuration for an organization."""
 
     id: Annotated[str, Field(description="The ID of the webhook.")]
-    type: Annotated[
-        str, Field(description="The type of webhook; e.g. experiment.created")
-    ]
+    type: Annotated[str, Field(description="The type of webhook; e.g. experiment.created")]
     name: Annotated[
         str,
         Field(description="User-friendly name for the webhook."),
@@ -165,7 +162,9 @@ class WebhookSummary(AdminApiBaseModel):
     auth_token: Annotated[
         str | None,
         Field(
-            description="The value of the Webhook-Token: header that will be sent with the request to the configured URL."
+            description=(
+                "The value of the Webhook-Token: header that will be sent with the request to the configured URL."
+            )
         ),
     ]
 
@@ -177,7 +176,10 @@ class UpdateOrganizationWebhookRequest(AdminApiBaseModel):
         str,
         Field(
             max_length=MAX_LENGTH_OF_NAME_VALUE,
-            description="User-friendly name for the webhook. This name is displayed in the UI and helps identify the webhook's purpose.",
+            description=(
+                "User-friendly name for the webhook. This name is displayed in the UI and helps "
+                "identify the webhook's purpose."
+            ),
         ),
     ]
     url: Annotated[
@@ -266,21 +268,15 @@ class CreateParticipantsTypeResponse(ApiBaseModel):
 
 
 class UpdateParticipantsTypeRequest(ApiBaseModel):
-    participant_type: Annotated[
-        str | None, Field(max_length=MAX_LENGTH_OF_NAME_VALUE)
-    ] = None
+    participant_type: Annotated[str | None, Field(max_length=MAX_LENGTH_OF_NAME_VALUE)] = None
     table_name: Annotated[FieldName | None, Field()] = None
-    fields: Annotated[
-        list[FieldDescriptor] | None, Field(max_length=MAX_NUMBER_OF_FIELDS)
-    ] = None
+    fields: Annotated[list[FieldDescriptor] | None, Field(max_length=MAX_NUMBER_OF_FIELDS)] = None
 
 
 class UpdateParticipantsTypeResponse(ApiBaseModel):
     participant_type: Annotated[str, Field(max_length=MAX_LENGTH_OF_NAME_VALUE)]
     table_name: Annotated[FieldName | None, Field()] = None
-    fields: Annotated[
-        list[FieldDescriptor] | None, Field(max_length=MAX_NUMBER_OF_FIELDS)
-    ] = None
+    fields: Annotated[list[FieldDescriptor] | None, Field(max_length=MAX_NUMBER_OF_FIELDS)] = None
 
 
 class ApiKeySummary(AdminApiBaseModel):

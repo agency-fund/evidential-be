@@ -16,9 +16,7 @@ class MetricValue(BaseModel):
             description="The field_name from the datasource which this analysis models as the dependent variable (y)."
         ),
     ]
-    metric_value: Annotated[
-        float | None, Field(description="The queried value for this field_name.")
-    ]
+    metric_value: Annotated[float | None, Field(description="The queried value for this field_name.")]
 
 
 class ParticipantOutcome(BaseModel):

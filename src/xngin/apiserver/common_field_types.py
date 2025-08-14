@@ -21,7 +21,5 @@ def validate_can_be_used_as_column_name(value: str, info: ValidationInfo) -> str
 FieldName = Annotated[
     str,
     BeforeValidator(validate_can_be_used_as_column_name),
-    Field(
-        json_schema_extra={"pattern": VALID_SQL_COLUMN_REGEX}, examples=["field_name"]
-    ),
+    Field(json_schema_extra={"pattern": VALID_SQL_COLUMN_REGEX}, examples=["field_name"]),
 ]

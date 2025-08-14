@@ -30,9 +30,7 @@ def test_create_schema_from_table_success():
         "primary_id": DataType.INTEGER,
     }
     for c in worksheet.fields:
-        assert c.data_type == expected_type.get(c.field_name, "BAD_COLUMN"), (
-            c.field_name
-        )
+        assert c.data_type == expected_type.get(c.field_name, "BAD_COLUMN"), c.field_name
 
     # PK found
     worksheet = create_schema_from_table(my_table, None)

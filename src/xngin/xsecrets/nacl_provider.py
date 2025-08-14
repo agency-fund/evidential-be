@@ -47,9 +47,7 @@ class NaclProviderKeyset(BaseModel):
     @classmethod
     def deserialize_base64(cls, base64_keyset: str) -> "NaclProviderKeyset":
         """Constructs a new keyset from the output of serialize_base64."""
-        return NaclProviderKeyset.model_validate_json(
-            base64.standard_b64decode(base64_keyset)
-        )
+        return NaclProviderKeyset.model_validate_json(base64.standard_b64decode(base64_keyset))
 
     @classmethod
     def _create_key(cls):
@@ -65,9 +63,7 @@ class NaclProviderKeyset(BaseModel):
 
 def initialize(registry: Registry, *, keyset: NaclProviderKeyset | None = None):
     """Registers a NaclProvider with the registry if configuration information is available to do so."""
-    if keyset is None and (
-        key := os.environ.get(constants.ENV_XNGIN_SECRETS_NACL_KEYSET)
-    ):
+    if keyset is None and (key := os.environ.get(constants.ENV_XNGIN_SECRETS_NACL_KEYSET)):
         try:
             keyset = NaclProviderKeyset.deserialize_base64(key)
         except (binascii.Error, ValidationError) as err:
@@ -83,9 +79,7 @@ class NaclProvider(Provider):
     """Provides pynacl's Aead."""
 
     def __init__(self, keyset: NaclProviderKeyset):
-        self.boxes = [
-            nacl.secret.Aead(base64.standard_b64decode(key)) for key in keyset.keys
-        ]
+        self.boxes = [nacl.secret.Aead(base64.standard_b64decode(key)) for key in keyset.keys]
 
     def name(self) -> str:
         return NAME

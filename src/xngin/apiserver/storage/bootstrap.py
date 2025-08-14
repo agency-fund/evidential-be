@@ -15,9 +15,9 @@ DEFAULT_NO_DWH_SOURCE_NAME = "API Only"
 def add_nodwh_datasource_to_org(session, organization):
     """Adds a NoDWH datasource to the given organization."""
     nodwh_config = RemoteDatabaseConfig(participants=[], type="remote", dwh=NoDwh())
-    nodwh_datasource = tables.Datasource(
-        name=DEFAULT_NO_DWH_SOURCE_NAME, organization=organization
-    ).set_config(nodwh_config)
+    nodwh_datasource = tables.Datasource(name=DEFAULT_NO_DWH_SOURCE_NAME, organization=organization).set_config(
+        nodwh_config
+    )
     session.add(nodwh_datasource)
 
 
