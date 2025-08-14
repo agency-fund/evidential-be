@@ -81,9 +81,7 @@ class Organization(Base):
 
     __tablename__ = "organizations"
 
-    id: Mapped[str] = mapped_column(
-        String, primary_key=True, default=organization_id_factory
-    )
+    id: Mapped[str] = mapped_column(primary_key=True, default=organization_id_factory)
     name: Mapped[str] = mapped_column(String(255))
 
     # Relationships
@@ -203,7 +201,7 @@ class User(Base):
 
     __tablename__ = "users"
 
-    id: Mapped[str] = mapped_column(String, primary_key=True, default=user_id_factory)
+    id: Mapped[str] = mapped_column(primary_key=True, default=user_id_factory)
     email: Mapped[str] = mapped_column(String(255), unique=True)
     # TODO: properly handle federated auth
     iss: Mapped[str | None] = mapped_column(String(255))
@@ -259,9 +257,7 @@ class Datasource(Base):
 
     __tablename__ = "datasources"
 
-    id: Mapped[str] = mapped_column(
-        String, primary_key=True, default=datasource_id_factory
-    )
+    id: Mapped[str] = mapped_column(primary_key=True, default=datasource_id_factory)
     name: Mapped[str] = mapped_column(String(255))
     organization_id: Mapped[str] = mapped_column(
         ForeignKey("organizations.id", ondelete="CASCADE")
@@ -587,7 +583,7 @@ class Context(Base):
     __tablename__ = "context"
 
     # Context metadata
-    id: Mapped[str] = mapped_column(String, primary_key=True)
+    id: Mapped[str] = mapped_column(primary_key=True)
     experiment_id: Mapped[str] = mapped_column(
         ForeignKey("experiments.id", ondelete="CASCADE")
     )
