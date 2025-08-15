@@ -9,6 +9,9 @@ from xngin.apiserver.apikeys import ApiKeyError
 from xngin.apiserver.dependencies import CannotFindDatasourceError
 from xngin.apiserver.dwh.dwh_session import CannotFindTableError
 from xngin.apiserver.exceptions_common import LateValidationError
+from xngin.apiserver.routers.admin.admin_api_converters import (
+    CredentialsUnavailableError,
+)
 from xngin.apiserver.routers.experiments.experiments_common import (
     ExperimentsAssignmentError,
 )
@@ -84,3 +87,9 @@ def setup(app):
             status_code=422,
             content={"detail": jsonable_encoder(exc.errors())},
         )
+
+    @app.exception_handler(CredentialsUnavailableError)
+    async def exception_handler_credentialsunavailable(
+        _request: Request, exc: ValidationError
+    ):
+        return JSONResponse(status_code=422, content={"message": str(exc)})

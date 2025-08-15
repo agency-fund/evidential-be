@@ -2,6 +2,7 @@ from datetime import datetime
 from typing import Annotated, Literal
 from urllib.parse import urlparse
 
+from annotated_types import Ge, Le
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from xngin.apiserver.common_field_types import FieldName
@@ -17,11 +18,12 @@ from xngin.apiserver.limits import (
 from xngin.apiserver.routers.common_api_types import (
     ApiBaseModel,
     DataType,
+    GcpServiceAccountBlob,
     GetFiltersResponseElement,
     GetMetricsResponseElement,
     GetStrataResponseElement,
 )
-from xngin.apiserver.settings import DatasourceConfig, Dwh, ParticipantsConfig
+from xngin.apiserver.settings import ParticipantsConfig
 
 
 def validate_webhook_url(url: str) -> str:
@@ -198,15 +200,86 @@ class ListWebhooksResponse(AdminApiBaseModel):
     items: list[WebhookSummary]
 
 
+class Hidden(AdminApiBaseModel):
+    type: Literal["hidden"] = "hidden"
+
+
+class RevealedStr(AdminApiBaseModel):
+    type: Literal["revealed"] = "revealed"
+    value: str
+
+
+class GcpServiceAccount(AdminApiBaseModel):
+    type: Literal["serviceaccountinfo"] = "serviceaccountinfo"
+    content: GcpServiceAccountBlob
+
+
+class PostgresDsn(AdminApiBaseModel):
+    type: Literal["postgres"] = "postgres"
+
+    host: str
+    port: Annotated[int, Ge(1024), Le(65535)]
+    user: str
+    password: Annotated[RevealedStr | Hidden, Field(discriminator="type")]
+    dbname: str
+    sslmode: Literal["disable", "require", "verify-ca", "verify-full"]
+    search_path: str | None
+
+
+class RedshiftDsn(AdminApiBaseModel):
+    type: Literal["redshift"] = "redshift"
+
+    host: str
+    port: Annotated[int, Ge(1024), Le(65535)]
+    user: str
+    password: Annotated[RevealedStr | Hidden, Field(discriminator="type")]
+    dbname: str
+    search_path: str | None
+
+
+class BqDsn(AdminApiBaseModel):
+    type: Literal["bigquery"] = "bigquery"
+
+    project_id: Annotated[
+        str,
+        Field(
+            description="The Google Cloud Project ID containing the dataset.",
+            min_length=6,
+            max_length=30,
+            pattern=r"^[a-z0-9-]+$",
+        ),
+    ]
+    dataset_id: Annotated[
+        str,
+        Field(
+            description="The dataset name.",
+            min_length=1,
+            max_length=1024,
+            pattern=r"^[a-zA-Z0-9_]+$",
+        ),
+    ]
+
+    credentials: Annotated[GcpServiceAccount | Hidden, Field(discriminator="type")]
+
+
+class ApiOnlyDsn(AdminApiBaseModel):
+    type: Literal["api_only"] = "api_only"
+
+
+type Dsn = Annotated[
+    ApiOnlyDsn | PostgresDsn | BqDsn | RedshiftDsn, Field(discriminator="type")
+]
+
+
 class CreateDatasourceRequest(AdminApiBaseModel):
     organization_id: Annotated[str, Field(max_length=MAX_LENGTH_OF_ID_VALUE)]
     name: Annotated[str, Field(...)]
-    dwh: Dwh
+    dsn: Dsn
 
 
 class UpdateDatasourceRequest(AdminApiBaseModel):
     name: Annotated[str | None, Field(max_length=MAX_LENGTH_OF_NAME_VALUE)] = None
-    dwh: Annotated[Dwh | None, Field()] = None
+    dsn: Dsn | None = None
 
 
 class CreateDatasourceResponse(AdminApiBaseModel):
@@ -216,7 +289,7 @@ class CreateDatasourceResponse(AdminApiBaseModel):
 class GetDatasourceResponse(AdminApiBaseModel):
     id: Annotated[str, Field(max_length=MAX_LENGTH_OF_ID_VALUE)]
     name: Annotated[str, Field(max_length=MAX_LENGTH_OF_NAME_VALUE)]
-    config: DatasourceConfig  # TODO: map this to a public type
+    dsn: Dsn
     organization_id: Annotated[str, Field(max_length=MAX_LENGTH_OF_ID_VALUE)]
     organization_name: Annotated[str, Field(max_length=MAX_LENGTH_OF_NAME_VALUE)]
 
