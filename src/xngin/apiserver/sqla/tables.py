@@ -14,10 +14,6 @@ from sqlalchemy.ext.asyncio import AsyncAttrs
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 from sqlalchemy.types import TypeEngine
 
-from xngin.apiserver.routers.admin.admin_api_types import (
-    InspectDatasourceTableResponse,
-    InspectParticipantTypesResponse,
-)
 from xngin.apiserver.settings import DatasourceConfig, EncryptedDsn
 from xngin.events import EventDataTypes
 
@@ -330,14 +326,6 @@ class DatasourceTablesInspected(Base):
     # Timestamp of the last update to `response`
     response_last_updated: Mapped[datetime | None] = mapped_column()
 
-    def get_response(self) -> InspectDatasourceTableResponse:
-        return InspectDatasourceTableResponse.model_validate(self.response)
-
-    def set_response(self, value: InspectDatasourceTableResponse) -> Self:
-        self.response = value.model_dump()
-        self.response_last_updated = datetime.now(UTC)
-        return self
-
 
 class ParticipantTypesInspected(Base):
     """Stores details of the most recent participant type inspection (including exemplar values)."""
@@ -353,16 +341,6 @@ class ParticipantTypesInspected(Base):
     response: Mapped[dict | None] = mapped_column(postgresql.JSONB)
     # Timestamp of the last update to `response`
     response_last_updated: Mapped[datetime | None] = mapped_column()
-
-    def get_response(self) -> InspectParticipantTypesResponse:
-        return InspectParticipantTypesResponse.model_validate(self.response)
-
-    def set_response(self, value: InspectParticipantTypesResponse) -> Self:
-        # This value may contain Python datetime objects. The default JSON serializer doesn't serialize them
-        # but the Pydantic serializer turns them into ISO8601 strings. This could be better.
-        self.response = json.loads(value.model_dump_json())
-        self.response_last_updated = datetime.now(UTC)
-        return self
 
     def clear_response(self):
         self.response = None
