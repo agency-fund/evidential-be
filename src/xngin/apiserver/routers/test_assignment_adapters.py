@@ -211,7 +211,7 @@ def test_assign_adapter_multiple_arms(sample_table, sample_rows):
 MAX_SAFE_INTEGER = (1 << 53) - 1  # 9007199254740991
 
 
-def test_assign_adapter_with_large_integers_as_participant_ids(sample_table, sample_data):
+def test_assign_adapter_with_large_decimals_as_participant_ids(sample_table, sample_data):
     """Test assignment with large integer participant IDs (underlying type is Decimal)."""
 
     def assign(data):
@@ -242,12 +242,41 @@ def test_assign_adapter_with_large_integers_as_participant_ids(sample_table, sam
     # Ensure the id string is rendered properly. (index=891 since participant ids are ordered lexicogrpahically)
     json_str = result.model_dump_json()
     assert '"participant_id":"9007199254740993"' in json_str
+    ids = {a.participant_id for a in result.assignments}
+    assert ids == set(sample_data["id"].astype(str))
 
     # We should be able to support very big negatives as well
     sample_data.loc[0, "id"] = Decimal(-MAX_SAFE_INTEGER - 2)
     result = assign(sample_data)
     json = result.model_dump()
     assert json["assignments"][0]["participant_id"] == "-9007199254740993"
+    ids = {a.participant_id for a in result.assignments}
+    assert ids == set(sample_data["id"].astype(str))
+
+
+def test_assign_adapter_with_bigints_as_participant_ids(sample_table, sample_data):
+    """Test assignment with large integer participant IDs (underlying type is BigInt)."""
+    sample_data["id"] = sample_data["id"].astype("int64")
+    # if cast to float64 would round to 9007199254740992
+    sample_data.loc[1, "id"] = MAX_SAFE_INTEGER + 2
+    # If we didn't catch stochatreat's upcast of int64 to float64, this next value would be rounded
+    # to nonexistent 103241243500726320 and raise a ValueError in our response construction.
+    sample_data.loc[2, "id"] = 103241243500726324
+    rows = [Row(**row) for row in sample_data.to_dict("records")]
+    result = assign_treatment(
+        sa_table=sample_table,
+        data=rows,
+        stratum_cols=["gender", "region"],
+        id_col="id",
+        arms=make_arms(["control", "treatment"]),
+        experiment_id="b767716b-f388-4cd9-a18a-08c4916ce26f",
+        random_state=42,
+    )
+    # These raise StopIteration if they don't exist
+    next(a for a in result.assignments if a.participant_id == "9007199254740993")
+    next(a for a in result.assignments if a.participant_id == "103241243500726324")
+    ids = {a.participant_id for a in result.assignments}
+    assert ids == set(sample_data["id"].astype(str))
 
 
 def test_assign_adapter_renders_decimal_and_bool_strata_correctly(sample_table, sample_rows):

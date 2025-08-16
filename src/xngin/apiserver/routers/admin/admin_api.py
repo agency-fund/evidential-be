@@ -4,6 +4,7 @@ This module defines the internal Evidential UI-facing Admin API endpoints.
 """
 
 import asyncio
+import json
 import secrets
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime, timedelta
@@ -165,7 +166,7 @@ def responses_factory(*codes):
 
 
 def cache_is_fresh(updated: datetime | None):
-    return updated and datetime.now(UTC) - updated < timedelta(minutes=5)
+    return updated is not None and datetime.now(UTC) - updated < timedelta(minutes=5)
 
 
 @asynccontextmanager
@@ -840,7 +841,7 @@ async def inspect_datasource(
     if ds.get_config().dwh.driver == "none":
         return InspectDatasourceResponse(tables=[])
 
-    if not refresh and cache_is_fresh(ds.table_list_updated):
+    if not refresh and cache_is_fresh(ds.table_list_updated) and ds.table_list is not None:
         return InspectDatasourceResponse(tables=ds.table_list)
     try:
         try:
@@ -880,8 +881,9 @@ async def inspect_table_in_datasource(
         not refresh
         and (cached := await session.get(tables.DatasourceTablesInspected, (datasource_id, table_name)))
         and cache_is_fresh(cached.response_last_updated)
+        and cached.response is not None
     ):
-        return cached.get_response()
+        return InspectDatasourceTableResponse.model_validate(cached.response)
 
     config = ds.get_config()
 
@@ -894,7 +896,12 @@ async def inspect_table_in_datasource(
     response = create_inspect_table_response_from_table(table)
 
     session.add(
-        tables.DatasourceTablesInspected(datasource_id=datasource_id, table_name=table_name).set_response(response)
+        tables.DatasourceTablesInspected(
+            datasource_id=datasource_id,
+            table_name=table_name,
+            response=response.model_dump(),
+            response_last_updated=datetime.now(UTC),
+        )
     )
     await session.commit()
 
@@ -985,8 +992,9 @@ async def inspect_participant_types(
         not refresh
         and (cached := await session.get(tables.ParticipantTypesInspected, (datasource_id, participant_id)))
         and cache_is_fresh(cached.response_last_updated)
+        and cached.response is not None
     ):
-        return cached.get_response()
+        return InspectParticipantTypesResponse.model_validate(cached.response)
 
     await session.execute(
         delete(tables.ParticipantTypesInspected).where(
@@ -1047,10 +1055,16 @@ async def inspect_participant_types(
     response = await inspect_participant_types_impl()
 
     session.add(
-        tables.ParticipantTypesInspected(datasource_id=datasource_id, participant_type=participant_id).set_response(
-            response
+        tables.ParticipantTypesInspected(
+            datasource_id=datasource_id,
+            participant_type=participant_id,
+            # This value may contain Python datetime objects. The default JSON serializer doesn't serialize them
+            # but the Pydantic serializer turns them into ISO8601 strings. This could be better.
+            response=json.loads(response.model_dump_json()),
+            response_last_updated=datetime.now(UTC),
         )
     )
+
     await session.commit()
 
     return response
