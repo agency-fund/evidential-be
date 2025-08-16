@@ -4,6 +4,7 @@ This module defines the internal Evidential UI-facing Admin API endpoints.
 """
 
 import asyncio
+import json
 import secrets
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime, timedelta
@@ -169,7 +170,7 @@ def responses_factory(*codes):
 
 
 def cache_is_fresh(updated: datetime | None):
-    return updated and datetime.now(UTC) - updated < timedelta(minutes=5)
+    return updated is not None and datetime.now(UTC) - updated < timedelta(minutes=5)
 
 
 @asynccontextmanager
@@ -654,31 +655,26 @@ async def remove_member_from_organization(
     user_id: str,
     session: Annotated[AsyncSession, Depends(xngin_db_session)],
     user: Annotated[tables.User, Depends(user_from_token)],
+    allow_missing: Annotated[
+        bool,
+        Query(description="If true, return a 204 even if the resource does not exist."),
+    ] = False,
 ):
     """Removes a member from an organization.
 
     The authenticated user must be part of the organization to remove members.
     """
-    _authz_check = await get_organization_or_raise(session, user, organization_id)
-    # Prevent users from removing themselves from an organization
-    if user_id == user.id:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="You cannot remove yourself from an organization",
-        )
-    stmt = delete(tables.UserOrganization).where(
+    resource_query = select(tables.UserOrganization).where(
         tables.UserOrganization.organization_id == organization_id,
         tables.UserOrganization.user_id == user_id,
+        tables.UserOrganization.user_id != user.id,  # not current authenticated user
     )
-    result = await session.execute(stmt)
-    if result.rowcount == 0:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="User is not a member of this organization",
-        )
-
-    await session.commit()
-    return GENERIC_SUCCESS
+    return await handle_delete(
+        session,
+        allow_missing,
+        authz.is_user_authorized_on_organization(user, organization_id),
+        resource_query,
+    )
 
 
 @router.patch("/organizations/{organization_id}")
@@ -875,7 +871,11 @@ async def inspect_datasource(
     if ds.get_config().dwh.driver == "none":
         return InspectDatasourceResponse(tables=[])
 
-    if not refresh and cache_is_fresh(ds.table_list_updated):
+    if (
+        not refresh
+        and cache_is_fresh(ds.table_list_updated)
+        and ds.table_list is not None
+    ):
         return InspectDatasourceResponse(tables=ds.table_list)
     try:
         try:
@@ -923,8 +923,9 @@ async def inspect_table_in_datasource(
             )
         )
         and cache_is_fresh(cached.response_last_updated)
+        and cached.response is not None
     ):
-        return cached.get_response()
+        return InspectDatasourceTableResponse.model_validate(cached.response)
 
     config = ds.get_config()
 
@@ -938,8 +939,11 @@ async def inspect_table_in_datasource(
 
     session.add(
         tables.DatasourceTablesInspected(
-            datasource_id=datasource_id, table_name=table_name
-        ).set_response(response)
+            datasource_id=datasource_id,
+            table_name=table_name,
+            response=response.model_dump(),
+            response_last_updated=datetime.now(UTC),
+        )
     )
     await session.commit()
 
@@ -1039,8 +1043,9 @@ async def inspect_participant_types(
             )
         )
         and cache_is_fresh(cached.response_last_updated)
+        and cached.response is not None
     ):
-        return cached.get_response()
+        return InspectParticipantTypesResponse.model_validate(cached.response)
 
     await session.execute(
         delete(tables.ParticipantTypesInspected).where(
@@ -1104,9 +1109,15 @@ async def inspect_participant_types(
 
     session.add(
         tables.ParticipantTypesInspected(
-            datasource_id=datasource_id, participant_type=participant_id
-        ).set_response(response)
+            datasource_id=datasource_id,
+            participant_type=participant_id,
+            # This value may contain Python datetime objects. The default JSON serializer doesn't serialize them
+            # but the Pydantic serializer turns them into ISO8601 strings. This could be better.
+            response=json.loads(response.model_dump_json()),
+            response_last_updated=datetime.now(UTC),
+        )
     )
+
     await session.commit()
 
     return response

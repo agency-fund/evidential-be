@@ -10,6 +10,7 @@ from xngin.stats.balance import (
     preprocess_for_balance_and_stratification,
     restore_original_numeric_columns,
 )
+from xngin.stats.stats_errors import StatsError
 
 STOCHATREAT_STRATUM_ID_NAME = "stratum_id"
 STOCHATREAT_TREAT_NAME = "treat"
@@ -72,6 +73,9 @@ def assign_treatment_and_check_balance(
     # didn't originally recognize when creating the dataframe. This might have arisen from nullable
     # numeric columns in the underlying database being converted to object types.
     orig_data_to_stratify = df[[id_col, *orig_stratum_cols]].infer_objects()
+    # Protect against inadvertent precision loss from stochatreat silently upcasting your index.
+    orig_data_to_stratify[id_col] = orig_data_to_stratify[id_col].astype("object")
+
     df_cleaned, exclude_cols_set, numeric_notnull_set = (
         preprocess_for_balance_and_stratification(
             data=orig_data_to_stratify,
@@ -105,9 +109,16 @@ def assign_treatment_and_check_balance(
         # internally uses legacy np.random.RandomState which can take None
         random_state=random_state,  # type: ignore[arg-type]
     )
+
     df_cleaned = df_cleaned.merge(treatment_status, on=id_col)
     stratum_ids = df_cleaned[STOCHATREAT_STRATUM_ID_NAME]
     treatment_ids = df_cleaned[STOCHATREAT_TREAT_NAME]
+
+    if len(df) != len(df_cleaned):
+        raise StatsError(
+            f"Expected {len(df)} assignments but only have {len(df_cleaned)}. "
+            f"Check if your {id_col} values could be causing problems."
+        )
 
     # Put back non-null numeric columns for a more robust balance check.
     df_cleaned.drop(columns=[STOCHATREAT_STRATUM_ID_NAME], inplace=True)
