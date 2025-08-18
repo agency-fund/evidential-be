@@ -1198,7 +1198,7 @@ def validate_gcp_service_account_info_json(serviceaccount_json):
         return serviceaccount_json
 
 
-GcpServiceAccountBlob = Annotated[
+type GcpServiceAccountBlob = Annotated[
     str,
     MinLen(4),
     MaxLen(MAX_GCP_SERVICE_ACCOUNT_LEN),
