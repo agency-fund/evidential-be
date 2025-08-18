@@ -26,7 +26,7 @@ CREATE TABLE "public"."draws" (
   "participant_type" character varying(255) NOT NULL,
   "arm_id" character varying(36) NOT NULL,
   "outcome" double precision NULL,
-  "context_val" double precision[] NULL,
+  "context_vals" double precision[] NULL,
   "current_mu" double precision[] NULL,
   "current_covariance" double precision[] NULL,
   "current_alpha" double precision NULL,

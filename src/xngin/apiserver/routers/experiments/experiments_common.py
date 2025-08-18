@@ -637,7 +637,17 @@ async def get_existing_assignment_for_participant(
     """
     stmt: (
         Select[tuple[str, str, str, datetime]]
-        | Select[tuple[str, str, str, datetime, list[float] | None]]
+        | Select[
+            tuple[
+                str,
+                str,
+                str,
+                datetime,
+                list[float] | None,
+                datetime | None,
+                float | None | None,
+            ]
+        ]
     )
 
     match experiment_type:
@@ -666,7 +676,9 @@ async def get_existing_assignment_for_participant(
                     tables.Draw.arm_id,
                     tables.Arm.name.label("arm_name"),
                     tables.Draw.created_at,
-                    tables.Draw.context_vals.label("context_vals"),
+                    tables.Draw.context_vals,
+                    tables.Draw.observed_at,
+                    tables.Draw.outcome,
                 )
                 .join(
                     tables.Arm,
