@@ -139,6 +139,16 @@ def allow_connecting_to_private_ips():
     safe_resolve.ALLOW_CONNECTING_TO_PRIVATE_IPS = True
 
 
+@pytest.fixture(scope="function")
+def disable_safe_resolve_check():
+    prev = flags.DISABLE_SAFEDNS_CHECK
+    flags.DISABLE_SAFEDNS_CHECK = True
+    try:
+        yield
+    finally:
+        flags.DISABLE_SAFEDNS_CHECK = prev
+
+
 def get_test_uri_info(connection_uri: str) -> TestUriInfo:
     """Returns a TestUriInfo dataclass about a test database given its connection_uri."""
     if connection_uri.startswith("bigquery"):
