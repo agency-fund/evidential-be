@@ -242,7 +242,6 @@ async def get_assignment_for_participant_with_apikey(
             participant_id=participant_id,
             random_state=random_state,
         )
-
     return GetParticipantAssignmentResponse(
         experiment_id=experiment.id,
         participant_id=participant_id,
@@ -293,7 +292,6 @@ async def get_cmab_experiment_assignment_for_participant(
     )
 
     if not assignment and create_if_none and experiment.stopped_assignments_at is None:
-        # --- Check context values ---
         context_inputs = body.context_inputs
 
         if not context_inputs:

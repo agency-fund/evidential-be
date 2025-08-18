@@ -84,79 +84,82 @@ async def create_dwh_experiment_impl(
     for arm in request.design_spec.arms:
         arm.arm_id = tables.arm_id_factory()
 
-    if isinstance(request.design_spec, BaseFrequentistDesignSpec):
-        ds_config = datasource.get_config()
+    match request.design_spec.experiment_type:
+        case ExperimentsType.FREQ_ONLINE | ExperimentsType.FREQ_PREASSIGNED:
+            ds_config = datasource.get_config()
 
-        participants_cfg = ds_config.find_participants(
-            request.design_spec.participant_type
-        )
-        if not isinstance(participants_cfg, ParticipantsDef):
-            raise LateValidationError(
-                "Invalid ParticipantsConfig: Participants must be of type schema."
+            participants_cfg = ds_config.find_participants(
+                request.design_spec.participant_type
             )
-
-        # Get participants and their schema info from the client dwh
-        participants_unique_id_field = participants_cfg.get_unique_id_field()
-        async with DwhSession(ds_config.dwh) as dwh:
-            if chosen_n is not None:
-                result = await dwh.get_participants(
-                    participants_cfg.table_name, request.design_spec.filters, chosen_n
-                )
-                sa_table, participants = result.sa_table, result.participants
-
-            elif (
-                request.design_spec.experiment_type == ExperimentsType.FREQ_PREASSIGNED
-            ):
+            if not isinstance(participants_cfg, ParticipantsDef):
                 raise LateValidationError(
-                    "Preassigned experiments must have a chosen_n."
+                    "Invalid ParticipantsConfig: Participants must be of type schema."
                 )
-            else:
-                sa_table = await dwh.inspect_table(participants_cfg.table_name)
 
-        if request.design_spec.experiment_type == ExperimentsType.FREQ_PREASSIGNED:
-            if participants is None:
-                raise LateValidationError(
-                    "Preassigned experiments must have participants data"
-                )
-            return await create_preassigned_experiment_impl(
+            # Get participants and their schema info from the client dwh
+            participants_unique_id_field = participants_cfg.get_unique_id_field()
+            async with DwhSession(ds_config.dwh) as dwh:
+                if chosen_n is not None:
+                    result = await dwh.get_participants(
+                        participants_cfg.table_name,
+                        request.design_spec.filters,
+                        chosen_n,
+                    )
+                    sa_table, participants = result.sa_table, result.participants
+
+                elif (
+                    request.design_spec.experiment_type
+                    == ExperimentsType.FREQ_PREASSIGNED
+                ):
+                    raise LateValidationError(
+                        "Preassigned experiments must have a chosen_n."
+                    )
+                else:
+                    sa_table = await dwh.inspect_table(participants_cfg.table_name)
+
+            match request.design_spec.experiment_type:
+                case ExperimentsType.FREQ_PREASSIGNED:
+                    if participants is None:
+                        raise LateValidationError(
+                            "Preassigned experiments must have participants data"
+                        )
+                    return await create_preassigned_experiment_impl(
+                        request=request,
+                        datasource_id=datasource.id,
+                        organization_id=datasource.organization_id,
+                        participant_unique_id_field=participants_unique_id_field,
+                        dwh_sa_table=sa_table,
+                        dwh_participants=participants,
+                        random_state=random_state,
+                        xngin_session=xngin_session,
+                        stratify_on_metrics=stratify_on_metrics,
+                        validated_webhooks=validated_webhooks,
+                    )
+
+                case ExperimentsType.FREQ_ONLINE:
+                    return await create_freq_online_experiment_impl(
+                        request=request,
+                        datasource_id=datasource.id,
+                        organization_id=datasource.organization_id,
+                        xngin_session=xngin_session,
+                        validated_webhooks=validated_webhooks,
+                    )
+
+        case ExperimentsType.MAB_ONLINE | ExperimentsType.CMAB_ONLINE:
+            return await create_bandit_online_experiment_impl(
+                xngin_session=xngin_session,
+                organization_id=datasource.organization_id,
+                validated_webhooks=validated_webhooks,
                 request=request,
                 datasource_id=datasource.id,
-                organization_id=datasource.organization_id,
-                participant_unique_id_field=participants_unique_id_field,
-                dwh_sa_table=sa_table,
-                dwh_participants=participants,
-                random_state=random_state,
-                xngin_session=xngin_session,
-                stratify_on_metrics=stratify_on_metrics,
-                validated_webhooks=validated_webhooks,
+                chosen_n=chosen_n,
             )
 
-        if request.design_spec.experiment_type == ExperimentsType.FREQ_ONLINE:
-            return await create_freq_online_experiment_impl(
-                request=request,
-                datasource_id=datasource.id,
-                organization_id=datasource.organization_id,
-                xngin_session=xngin_session,
-                validated_webhooks=validated_webhooks,
+        case _:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Invalid experiment type: {request.design_spec.experiment_type}",
             )
-
-    if request.design_spec.experiment_type in {
-        ExperimentsType.MAB_ONLINE,
-        ExperimentsType.CMAB_ONLINE,
-    }:
-        return await create_bandit_online_experiment_impl(
-            xngin_session=xngin_session,
-            organization_id=datasource.organization_id,
-            validated_webhooks=validated_webhooks,
-            request=request,
-            datasource_id=datasource.id,
-            chosen_n=chosen_n,
-        )
-
-    raise HTTPException(
-        status_code=status.HTTP_400_BAD_REQUEST,
-        detail=f"Invalid experiment type: {request.design_spec.experiment_type}",
-    )
 
 
 async def create_experiment_with_assignments_impl(
@@ -636,46 +639,48 @@ async def get_existing_assignment_for_participant(
         | Select[tuple[str, str, str, datetime, list[float] | None]]
     )
 
-    if experiment_type in {
-        ExperimentsType.FREQ_ONLINE,
-        ExperimentsType.FREQ_PREASSIGNED,
-    }:
-        stmt = (
-            select(
-                tables.ArmAssignment.participant_id,
-                tables.Arm.id.label("arm_id"),
-                tables.Arm.name.label("arm_name"),
-                tables.ArmAssignment.created_at,
+    match experiment_type:
+        case ExperimentsType.FREQ_ONLINE | ExperimentsType.FREQ_PREASSIGNED:
+            stmt = (
+                select(
+                    tables.ArmAssignment.participant_id,
+                    tables.Arm.id.label("arm_id"),
+                    tables.Arm.name.label("arm_name"),
+                    tables.ArmAssignment.created_at,
+                )
+                .join(
+                    tables.ArmAssignment,
+                    (tables.ArmAssignment.arm_id == tables.Arm.id)
+                    & (tables.ArmAssignment.experiment_id == tables.Arm.experiment_id),
+                )
+                .filter(
+                    tables.Arm.experiment_id == experiment_id,
+                    tables.ArmAssignment.participant_id == participant_id,
+                )
             )
-            .join(
-                tables.ArmAssignment,
-                (tables.ArmAssignment.arm_id == tables.Arm.id)
-                & (tables.ArmAssignment.experiment_id == tables.Arm.experiment_id),
+        case ExperimentsType.MAB_ONLINE | ExperimentsType.CMAB_ONLINE:
+            stmt = (
+                select(
+                    tables.Draw.participant_id,
+                    tables.Draw.arm_id,
+                    tables.Arm.name.label("arm_name"),
+                    tables.Draw.created_at,
+                    tables.Draw.context_vals.label("context_vals"),
+                )
+                .join(
+                    tables.Arm,
+                    (tables.Draw.arm_id == tables.Arm.id)
+                    & (tables.Draw.experiment_id == tables.Arm.experiment_id),
+                )
+                .filter(
+                    tables.Arm.experiment_id == experiment_id,
+                    tables.Draw.participant_id == participant_id,
+                )
             )
-            .filter(
-                tables.Arm.experiment_id == experiment_id,
-                tables.ArmAssignment.participant_id == participant_id,
+        case _:
+            raise ExperimentsAssignmentError(
+                f"Invalid experiment type {experiment_type}"
             )
-        )
-    else:
-        stmt = (
-            select(
-                tables.Draw.participant_id,
-                tables.Draw.arm_id,
-                tables.Arm.name.label("arm_name"),
-                tables.Draw.created_at,
-                tables.Draw.context_vals.label("context_vals"),
-            )
-            .join(
-                tables.Arm,
-                (tables.Draw.arm_id == tables.Arm.id)
-                & (tables.Draw.experiment_id == tables.Arm.experiment_id),
-            )
-            .filter(
-                tables.Arm.experiment_id == experiment_id,
-                tables.Draw.participant_id == participant_id,
-            )
-        )
 
     res = await xngin_session.execute(stmt)
     existing_assignment = res.one_or_none()
@@ -687,6 +692,12 @@ async def get_existing_assignment_for_participant(
             arm_name=existing_assignment.arm_name,
             created_at=existing_assignment.created_at,
             strata=[],  # Strata are not included in this query
+            observed_at=existing_assignment.observed_at
+            if hasattr(existing_assignment, "observed_at")
+            else None,
+            outcome=existing_assignment.outcome
+            if hasattr(existing_assignment, "outcome")
+            else None,
             context_values=existing_assignment.context_vals
             if hasattr(existing_assignment, "context_vals")
             else None,
@@ -764,38 +775,40 @@ async def create_assignment_for_participant(
     # Create and save the new assignment. We use the insert() API because it allows us to read
     # the database-generated created_at value without needing to refresh the object in the SQLAlchemy cache.
     try:
-        if experiment_type in {
-            ExperimentsType.FREQ_ONLINE,
-            ExperimentsType.FREQ_PREASSIGNED,
-        }:
-            result = (
-                await xngin_session.execute(
-                    insert(tables.ArmAssignment)
-                    .values(
-                        experiment_id=experiment.id,
-                        participant_id=participant_id,
-                        participant_type=experiment.participant_type,
-                        arm_id=chosen_arm_id,
-                        strata=[],
+        match experiment_type:
+            case ExperimentsType.FREQ_ONLINE | ExperimentsType.FREQ_PREASSIGNED:
+                result = (
+                    await xngin_session.execute(
+                        insert(tables.ArmAssignment)
+                        .values(
+                            experiment_id=experiment.id,
+                            participant_id=participant_id,
+                            participant_type=experiment.participant_type,
+                            arm_id=chosen_arm_id,
+                            strata=[],
+                        )
+                        .returning(tables.ArmAssignment.created_at)
                     )
-                    .returning(tables.ArmAssignment.created_at)
-                )
-            ).fetchone()
-        else:
-            # Write bandit assignments to the Draw table.
-            result = (
-                await xngin_session.execute(
-                    insert(tables.Draw)
-                    .values(
-                        experiment_id=experiment.id,
-                        participant_id=participant_id,
-                        participant_type=experiment.participant_type,
-                        arm_id=chosen_arm_id,
-                        context_vals=context_vals,
+                ).fetchone()
+            case ExperimentsType.MAB_ONLINE | ExperimentsType.CMAB_ONLINE:
+                result = (
+                    await xngin_session.execute(
+                        insert(tables.Draw)
+                        .values(
+                            experiment_id=experiment.id,
+                            participant_id=participant_id,
+                            participant_type=experiment.participant_type,
+                            arm_id=chosen_arm_id,
+                            context_vals=context_vals,
+                        )
+                        .returning(tables.Draw.created_at)
                     )
-                    .returning(tables.Draw.created_at)
+                ).fetchone()
+            case _:
+                raise ExperimentsAssignmentError(
+                    f"Invalid experiment type: {experiment_type}"
                 )
-            ).fetchone()
+
         if result is None:
             raise ExperimentsAssignmentError(
                 f"Failed to create assignment for participant '{participant_id}'"
@@ -909,13 +922,20 @@ async def update_bandit_arm_with_outcome_impl(
         )
 
         # Update the draw record and arm with the new parameters
-        if experiment.prior_type == PriorTypes.BETA.value:
-            draw_record.current_alpha, draw_record.current_beta = updated_parameters
-            arm_to_update.alpha, arm_to_update.beta = updated_parameters
+        match experiment.prior_type:
+            case PriorTypes.BETA.value:
+                draw_record.current_alpha, draw_record.current_beta = updated_parameters
+                arm_to_update.alpha, arm_to_update.beta = updated_parameters
 
-        elif experiment.prior_type == PriorTypes.NORMAL.value:
-            draw_record.current_mu, draw_record.current_covariance = updated_parameters
-            arm_to_update.mu, arm_to_update.covariance = updated_parameters
+            case PriorTypes.NORMAL.value:
+                draw_record.current_mu, draw_record.current_covariance = (
+                    updated_parameters
+                )
+                arm_to_update.mu, arm_to_update.covariance = updated_parameters
+            case _:
+                raise ExperimentsAssignmentError(
+                    f"Unsupported prior type: {experiment.prior_type}"
+                )
 
         xngin_session.add(draw_record)
         xngin_session.add(arm_to_update)
