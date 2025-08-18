@@ -1,11 +1,14 @@
 import datetime
+import json
 import math
 import uuid
 from collections.abc import Sequence
 from typing import Annotated, Literal, Self
 
 import sqlalchemy.sql
+from annotated_types import MaxLen, MinLen
 from pydantic import (
+    AfterValidator,
     BaseModel,
     ConfigDict,
     Field,
@@ -17,6 +20,7 @@ from pydantic import (
 from xngin.apiserver.common_field_types import FieldName
 from xngin.apiserver.exceptions_common import LateValidationError
 from xngin.apiserver.limits import (
+    MAX_GCP_SERVICE_ACCOUNT_LEN,
     MAX_LENGTH_OF_DESCRIPTION_VALUE,
     MAX_LENGTH_OF_NAME_VALUE,
     MAX_LENGTH_OF_PARTICIPANT_ID_VALUE,
@@ -1202,3 +1206,36 @@ class AssignResponse(ApiBaseModel):
         ),
     ]
     assignments: Annotated[list[Assignment], Field()]
+
+
+def validate_gcp_service_account_info_json(serviceaccount_json):
+    """Raises a ValueError if decoded does not resemble a JSON string containing GCP Service Account info."""
+    try:
+        creds = json.loads(serviceaccount_json)
+        required_fields = {
+            "type",
+            "project_id",
+            "private_key_id",
+            "private_key",
+            "client_email",
+        }
+        if not all(field in creds for field in required_fields):
+            raise ValueError("Missing required fields in service account JSON")
+        if creds["type"] != "service_account":
+            raise ValueError('Service account JSON must have type="service_account"')
+    except json.JSONDecodeError as e:
+        raise ValueError("Invalid JSON in service account credentials") from e
+    else:
+        return serviceaccount_json
+
+
+type GcpServiceAccountBlob = Annotated[
+    str,
+    MinLen(4),
+    MaxLen(MAX_GCP_SERVICE_ACCOUNT_LEN),
+    AfterValidator(validate_gcp_service_account_info_json),
+    Field(
+        description="The service account info in the canonical JSON form. Required fields: type, project_id, "
+        "private_key_id, private_key, client_email."
+    ),
+]
