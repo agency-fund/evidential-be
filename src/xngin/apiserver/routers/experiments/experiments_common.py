@@ -552,6 +552,7 @@ def get_experiment_assignments_impl(
                 created_at=draw.created_at,
                 observed_at=draw.observed_at,
                 outcome=draw.outcome,
+                context_values=draw.context_vals,
             )
             for draw in experiment.draws
         ]
