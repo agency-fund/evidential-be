@@ -97,6 +97,7 @@ from xngin.apiserver.routers.common_api_types import (
     BaseFrequentistDesignSpec,
     CreateExperimentRequest,
     CreateExperimentResponse,
+    ExperimentsType,
     FreqExperimentAnalysisResponse,
     GetExperimentAssignmentsResponse,
     GetExperimentResponse,
@@ -1499,7 +1500,9 @@ async def list_organization_experiments(
 ) -> ListExperimentsResponse:
     """Returns a list of experiments in the organization."""
     org = await get_organization_or_raise(session, user, organization_id)
-    return await experiments_common.list_organization_experiments_impl(session, org.id)
+    return await experiments_common.list_organization_or_datasource_experiments_impl(
+        xngin_session=session, organization_id=org.id
+    )
 
 
 @router.get("/datasources/{datasource_id}/experiments/{experiment_id}")
@@ -1512,7 +1515,10 @@ async def get_experiment(
     """Returns the experiment with the specified ID."""
     ds = await get_datasource_or_raise(session, user, datasource_id)
     experiment = await get_experiment_via_ds_or_raise(
-        session, ds, experiment_id, preload=[tables.Experiment.webhooks]
+        session,
+        ds,
+        experiment_id,
+        preload=[tables.Experiment.webhooks, tables.Experiment.contexts],
     )
     converter = ExperimentStorageConverter(experiment)
     assign_summary = await experiments_common.get_assign_summary(
@@ -1598,9 +1604,17 @@ async def get_experiment_assignment_for_participant(
     assignment = await experiments_common.get_existing_assignment_for_participant(
         session, experiment.id, participant_id, experiment.experiment_type
     )
+
     if not assignment and create_if_none and experiment.stopped_assignments_at is None:
+        if experiment.experiment_type == ExperimentsType.CMAB_ONLINE.value:
+            raise LateValidationError(
+                f"New arm assignments for {ExperimentsType.CMAB_ONLINE.value} cannot be created at this endpoint, please use the corresponding POST endpoint instead."
+            )
         assignment = await experiments_common.create_assignment_for_participant(
-            session, experiment, participant_id, random_state
+            xngin_session=session,
+            experiment=experiment,
+            participant_id=participant_id,
+            random_state=random_state,
         )
 
     return GetParticipantAssignmentResponse(
@@ -1647,13 +1661,13 @@ async def power_check(
     design_spec = body.design_spec
     if not isinstance(design_spec, BaseFrequentistDesignSpec):
         raise HTTPException(
-            status_code=400,
+            status_code=status.HTTP_400_BAD_REQUEST,
             detail="Power checks are only supported for frequentist experiments",
         )
     ds = await get_datasource_or_raise(session, user, datasource_id)
     if isinstance(ds.config, NoDwh):
         raise HTTPException(
-            status_code=400,
+            status_code=status.HTTP_400_BAD_REQUEST,
             detail="Power checks are not supported for datasources without a data warehouse.",
         )
     dsconfig = ds.get_config()

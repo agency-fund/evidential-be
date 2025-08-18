@@ -148,12 +148,12 @@ class Context(ApiBaseModel):
     """
 
     context_id: Annotated[
-        int | None,
+        str | None,
         Field(
             description="Unique identifier for the context, you should NOT set this when creating a new context.",
-            examples=[1],
+            examples=["1"],
         ),
-    ]
+    ] = None
     context_name: Annotated[str, Field(max_length=MAX_LENGTH_OF_NAME_VALUE)]
     context_description: Annotated[
         str | None, Field(max_length=MAX_LENGTH_OF_DESCRIPTION_VALUE)
@@ -172,10 +172,10 @@ class ContextInput(ApiBaseModel):
     """
 
     context_id: Annotated[
-        int,
+        str,
         Field(
             description="Unique identifier for the context.",
-            examples=[1],
+            examples=["1"],
         ),
     ]
     context_value: Annotated[
@@ -183,6 +183,38 @@ class ContextInput(ApiBaseModel):
         Field(
             description="Value of the context",
             examples=[2.5],
+        ),
+    ]
+
+
+class CreateCMABAssignmentRequest(ApiBaseModel):
+    """Request model for creating a new CMAB assignment.
+
+    When submitting context values for a CMAB experiment, the following rules apply:
+    1. Each context_input must reference a valid context_id from the experiment's defined contexts
+    2. The order of context_inputs does not need to match the order of contexts in the experiment
+    3. You must provide values for all contexts defined in the experiment
+    4. Number of input context values must match the number of contexts defined in the experiment
+    5. The context value input can be None, but only in the case of retrieving a pre-existing assignment.
+
+    Example:
+        If an experiment defines contexts with IDs ["ctx_1", "ctx_2"], your request must include
+        both of these context_ids in the context_inputs list, but they can be in any order.
+    """
+
+    type: Literal["cmab_assignment"] = (
+        "cmab_assignment"  # Adding type field to allow for type-discriminated unions in future
+    )
+    context_inputs: Annotated[
+        list[ContextInput] | None,
+        Field(
+            description="""
+            List of context values for the assignment.
+            Must include exactly the same number contexts defined in the experiment.
+            The values are matched to the experiment's contexts by context_id, not by position in the list.
+            Each context_id must correspond to one of the IDs of the contexts defined in the experiment.
+            Can be None, when simply retrieving pre-existing assignments; must have valid inputs otherwise.
+            """
         ),
     ]
 
@@ -951,13 +983,12 @@ class Assignment(ApiBaseModel):
     ] = None
 
     context_values: Annotated[
-        list[ContextInput],
+        list[float] | None,
         Field(
             description="List of context values for this assignment. If no contexts are used, this will be None.",
             max_length=MAX_NUMBER_OF_CONTEXTS,
-            default=[],
         ),
-    ] = []
+    ] = None
 
 
 class BalanceCheck(ApiBaseModel):
