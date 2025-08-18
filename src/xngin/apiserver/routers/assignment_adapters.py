@@ -130,7 +130,7 @@ def _make_assign_response(
     stratum_ids = [0] * len(treatment_ids) if stratum_ids is None else stratum_ids
 
     for stratum_id, treatment_assignment, row in zip(
-        stratum_ids, treatment_ids, data, strict=False
+        stratum_ids, treatment_ids, data, strict=True
     ):
         strata = None
         row_dict = row._asdict()
