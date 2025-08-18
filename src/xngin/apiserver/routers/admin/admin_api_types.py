@@ -201,43 +201,75 @@ class ListWebhooksResponse(AdminApiBaseModel):
 
 
 class Hidden(AdminApiBaseModel):
+    """Hidden represents a credential that is intentionally omitted."""
+
     type: Literal["hidden"] = "hidden"
 
 
 class RevealedStr(AdminApiBaseModel):
+    """RevealedStr contains a credential."""
+
     type: Literal["revealed"] = "revealed"
     value: str
 
 
 class GcpServiceAccount(AdminApiBaseModel):
+    """Describes a Google Cloud Platform service account."""
+
     type: Literal["serviceaccountinfo"] = "serviceaccountinfo"
     content: GcpServiceAccountBlob
 
 
 class PostgresDsn(AdminApiBaseModel):
+    """PostgresDsn describes a connection to a Postgres-compatible database."""
+
     type: Literal["postgres"] = "postgres"
 
     host: str
     port: Annotated[int, Ge(1024), Le(65535)]
     user: str
-    password: Annotated[RevealedStr | Hidden, Field(discriminator="type")]
+    password: Annotated[
+        RevealedStr | Hidden,
+        Field(
+            discriminator="type",
+            description=(
+                "This value must be a RevealedStr when creating the datasource or when updating a "
+                "datasource's credentials. It may be a Hidden when updating a datasource. When hidden, "
+                "the existing credentials are retained."
+            ),
+        ),
+    ]
     dbname: str
     sslmode: Literal["disable", "require", "verify-ca", "verify-full"]
     search_path: str | None
 
 
 class RedshiftDsn(AdminApiBaseModel):
+    """RedshiftDsn describes a connection to a Redshift database."""
+
     type: Literal["redshift"] = "redshift"
 
     host: str
     port: Annotated[int, Ge(1024), Le(65535)]
     user: str
-    password: Annotated[RevealedStr | Hidden, Field(discriminator="type")]
+    password: Annotated[
+        RevealedStr | Hidden,
+        Field(
+            discriminator="type",
+            description=(
+                "This value must be a RevealedStr when creating the datasource or when updating a "
+                "datasource's credentials. It may be a Hidden when updating a datasource. When hidden, "
+                "the existing credentials are retained."
+            ),
+        ),
+    ]
     dbname: str
     search_path: str | None
 
 
 class BqDsn(AdminApiBaseModel):
+    """BqDsn describes a connection to a BigQuery database."""
+
     type: Literal["bigquery"] = "bigquery"
 
     project_id: Annotated[
@@ -259,10 +291,22 @@ class BqDsn(AdminApiBaseModel):
         ),
     ]
 
-    credentials: Annotated[GcpServiceAccount | Hidden, Field(discriminator="type")]
+    credentials: Annotated[
+        GcpServiceAccount | Hidden,
+        Field(
+            discriminator="type",
+            description=(
+                "This value must be a GcpServiceAccount when creating the datasource or when updating a "
+                "datasource's credentials. It may be a Hidden when updating a datasource. When hidden, "
+                "the existing credentials are retained."
+            ),
+        ),
+    ]
 
 
 class ApiOnlyDsn(AdminApiBaseModel):
+    """ApiOnlyDsn describes a datasource where data is included in Evidential API requests."""
+
     type: Literal["api_only"] = "api_only"
 
 
