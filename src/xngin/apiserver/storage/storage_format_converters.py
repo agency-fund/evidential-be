@@ -9,6 +9,7 @@ JSONB type columns for multi-value/complex types, use the converters to get/set 
 from datetime import datetime
 from typing import Self
 
+import numpy as np
 from pydantic import TypeAdapter
 
 from xngin.apiserver.routers import common_api_types as capi
@@ -126,19 +127,23 @@ class ExperimentStorageConverter:
 
     def get_design_spec(self) -> capi.DesignSpec:
         """Converts a DesignSpecFields to a DesignSpec object."""
+        base_experiment_dict = {
+            "participant_type": self.experiment.participant_type,
+            "experiment_id": self.experiment.id,
+            "experiment_type": self.experiment.experiment_type,
+            "experiment_name": self.experiment.name,
+            "description": self.experiment.description,
+            "start_date": self.experiment.start_date,
+            "end_date": self.experiment.end_date,
+        }
+
         if self.experiment.experiment_type in {
             ExperimentsType.FREQ_ONLINE.value,
             ExperimentsType.FREQ_PREASSIGNED.value,
         }:
             design_spec_fields = self.get_design_spec_fields()
             return TypeAdapter(capi.DesignSpec).validate_python({
-                "participant_type": self.experiment.participant_type,
-                "experiment_id": self.experiment.id,
-                "experiment_type": self.experiment.experiment_type,
-                "experiment_name": self.experiment.name,
-                "description": self.experiment.description,
-                "start_date": self.experiment.start_date,
-                "end_date": self.experiment.end_date,
+                **base_experiment_dict,
                 "arms": [
                     {
                         "arm_id": arm.id,
@@ -154,36 +159,46 @@ class ExperimentStorageConverter:
                 "alpha": self.experiment.alpha,
                 "fstat_thresh": self.experiment.fstat_thresh,
             })
-        if self.experiment.experiment_type == ExperimentsType.MAB_ONLINE.value:
+        if self.experiment.experiment_type in {
+            ExperimentsType.MAB_ONLINE.value,
+            ExperimentsType.CMAB_ONLINE.value,
+        }:
             if not self.experiment.prior_type or not self.experiment.reward_type:
-                raise ValueError("MAB experiments must have prior_type and reward_type set.")
-            return capi.MABExperimentSpec(
-                participant_type=self.experiment.participant_type,
-                experiment_id=self.experiment.id,
-                experiment_type=self.experiment.experiment_type,
-                experiment_name=self.experiment.name,
-                description=self.experiment.description,
-                start_date=self.experiment.start_date,
-                end_date=self.experiment.end_date,
-                arms=[
-                    capi.ArmBandit(
-                        arm_id=arm.id,
-                        arm_name=arm.name,
-                        arm_description=arm.description,
-                        mu_init=arm.mu_init,
-                        sigma_init=arm.sigma_init,
-                        alpha_init=arm.alpha_init,
-                        beta_init=arm.beta_init,
-                        mu=arm.mu,
-                        covariance=arm.covariance,
-                        alpha=arm.alpha,
-                        beta=arm.beta,
+                raise ValueError("Bandit experiments must have prior_type and reward_type set.")
+            contexts = None
+            if self.experiment.experiment_type == ExperimentsType.CMAB_ONLINE.value:
+                contexts = [
+                    capi.Context(
+                        context_id=context.id,
+                        context_name=context.name,
+                        context_description=context.description,
+                        value_type=capi.ContextType(context.value_type),
                     )
+                    for context in self.experiment.contexts
+                ]
+
+            return TypeAdapter(capi.DesignSpec).validate_python({
+                **base_experiment_dict,
+                "arms": [
+                    {
+                        "arm_id": arm.id,
+                        "arm_name": arm.name,
+                        "arm_description": arm.description,
+                        "mu_init": arm.mu_init,
+                        "sigma_init": arm.sigma_init,
+                        "alpha_init": arm.alpha_init,
+                        "beta_init": arm.beta_init,
+                        "mu": arm.mu,
+                        "covariance": arm.covariance,
+                        "alpha": arm.alpha,
+                        "beta": arm.beta,
+                    }
                     for arm in self.experiment.arms
                 ],
-                prior_type=capi.PriorTypes(self.experiment.prior_type),
-                reward_type=capi.LikelihoodTypes(self.experiment.reward_type),
-            )
+                "prior_type": capi.PriorTypes(self.experiment.prior_type),
+                "reward_type": capi.LikelihoodTypes(self.experiment.reward_type),
+                "contexts": contexts,
+            })
         raise ValueError(f"Unsupported experiment type: {self.experiment.experiment_type}")
 
     def set_balance_check(self, value: capi.BalanceCheck | None) -> Self:
@@ -300,7 +315,7 @@ class ExperimentStorageConverter:
                 .set_balance_check(balance_check)
                 .set_power_response(power_analyses)
             )
-        if isinstance(design_spec, capi.MABExperimentSpec):
+        if isinstance(design_spec, capi.BaseBanditExperimentSpec):
             experiment = tables.Experiment(
                 id=design_spec.experiment_id,
                 datasource_id=datasource_id,
@@ -317,6 +332,7 @@ class ExperimentStorageConverter:
                 prior_type=design_spec.prior_type.value,
                 n_trials=n_trials,
             )
+            context_length = len(design_spec.contexts) if design_spec.contexts else 1
             experiment.arms = [
                 tables.Arm(
                     id=arm.arm_id,
@@ -326,8 +342,10 @@ class ExperimentStorageConverter:
                     organization_id=organization_id,
                     mu_init=arm.mu_init,
                     sigma_init=arm.sigma_init,
-                    mu=[arm.mu_init] if arm.mu_init is not None else None,
-                    covariance=[[arm.sigma_init]] if arm.sigma_init is not None else None,
+                    mu=[arm.mu_init] * context_length if arm.mu_init is not None else None,
+                    covariance=np.diag([arm.sigma_init] * context_length).tolist()
+                    if arm.sigma_init is not None
+                    else None,
                     alpha_init=arm.alpha_init,
                     beta_init=arm.beta_init,
                     alpha=arm.alpha_init,
@@ -335,6 +353,19 @@ class ExperimentStorageConverter:
                 )
                 for arm in design_spec.arms
             ]
+            if isinstance(design_spec, capi.CMABExperimentSpec):
+                if not design_spec.contexts:
+                    raise ValueError("Contexts are required for CMAB experiments.")
+                # Set contexts for CMAB experiments
+                experiment.contexts = [
+                    tables.Context(
+                        name=context.context_name,
+                        description=context.context_description,
+                        value_type=context.value_type.value,
+                        experiment_id=experiment.id,
+                    )
+                    for context in design_spec.contexts
+                ]
             return cls(experiment)
 
         raise ValueError(f"Unsupported design_spec type: {type(design_spec)}.")

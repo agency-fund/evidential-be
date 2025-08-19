@@ -1,4 +1,5 @@
 import base64
+import copy
 import json
 from datetime import UTC, datetime, timedelta
 
@@ -13,9 +14,14 @@ from xngin.apiserver.dns import safe_resolve
 from xngin.apiserver.dwh.dwh_session import DwhSession
 from xngin.apiserver.dwh.inspection_types import FieldDescriptor, ParticipantsSchema
 from xngin.apiserver.routers.admin.admin_api import user_from_token
+from xngin.apiserver.routers.admin.admin_api_converters import (
+    CREDENTIALS_UNAVAILABLE_MESSAGE,
+)
 from xngin.apiserver.routers.admin.admin_api_types import (
     AddWebhookToOrganizationRequest,
     AddWebhookToOrganizationResponse,
+    ApiOnlyDsn,
+    BqDsn,
     CreateApiKeyResponse,
     CreateDatasourceRequest,
     CreateDatasourceResponse,
@@ -25,7 +31,10 @@ from xngin.apiserver.routers.admin.admin_api_types import (
     CreateParticipantsTypeResponse,
     DatasourceSummary,
     FieldMetadata,
+    GcpServiceAccount,
+    GetDatasourceResponse,
     GetOrganizationResponse,
+    Hidden,
     InspectDatasourceResponse,
     InspectDatasourceTableResponse,
     ListApiKeysResponse,
@@ -33,6 +42,9 @@ from xngin.apiserver.routers.admin.admin_api_types import (
     ListOrganizationsResponse,
     ListParticipantsTypeResponse,
     ListWebhooksResponse,
+    PostgresDsn,
+    RedshiftDsn,
+    RevealedStr,
     UpdateDatasourceRequest,
     UpdateOrganizationWebhookRequest,
     UpdateParticipantsTypeRequest,
@@ -67,13 +79,7 @@ from xngin.apiserver.routers.experiments.test_experiments_common import (
     make_createexperimentrequest_json,
     make_insertable_experiment,
 )
-from xngin.apiserver.settings import (
-    BqDsn,
-    Dsn,
-    GcpServiceAccountInfo,
-    NoDwh,
-    ParticipantsDef,
-)
+from xngin.apiserver.settings import NoDwh, ParticipantsDef
 from xngin.apiserver.sqla import tables
 from xngin.apiserver.storage.bootstrap import (
     DEFAULT_DWH_SOURCE_NAME,
@@ -83,7 +89,7 @@ from xngin.apiserver.storage.bootstrap import (
 from xngin.apiserver.testing.assertions import assert_dates_equal
 from xngin.cli.main import create_testing_dwh
 
-SAMPLE_GCLOUD_SERVICE_ACCOUNT_KEY = {
+SAMPLE_GCLOUD_SERVICE_ACCOUNT = {
     "auth_provider_x509_cert_url": "",
     "auth_uri": "",
     "client_email": "",
@@ -96,6 +102,7 @@ SAMPLE_GCLOUD_SERVICE_ACCOUNT_KEY = {
     "type": "service_account",
     "universe_domain": "googleapis.com",
 }
+SAMPLE_GCLOUD_SERVICE_ACCOUNT_JSON = json.dumps(SAMPLE_GCLOUD_SERVICE_ACCOUNT)
 
 
 def find_ds_with_name[DSType: tables.Datasource | DatasourceSummary](datasources: list[DSType], name: str) -> DSType:
@@ -252,6 +259,180 @@ def test_list_orgs_unprivileged(uget):
     assert ListOrganizationsResponse.model_validate(response.json()).items == []
 
 
+@pytest.mark.parametrize(
+    "dsn",
+    [
+        PostgresDsn(
+            host="127.0.0.1",
+            user="postgres",
+            port=5499,
+            password=RevealedStr(value="postgres"),
+            dbname="postgres",
+            sslmode="disable",
+            search_path=None,
+        ),
+        RedshiftDsn(
+            host="foo.redshift.amazonaws.com",
+            user="postgres",
+            port=5499,
+            password=RevealedStr(value="postgres"),
+            dbname="postgres",
+            search_path=None,
+        ),
+        BqDsn(
+            project_id="projectid",
+            dataset_id="dataset_id",
+            credentials=GcpServiceAccount(content=SAMPLE_GCLOUD_SERVICE_ACCOUNT_JSON),
+        ),
+    ],
+    ids=lambda d: type(d),
+)
+async def test_datasources_hide_credentials(
+    disable_safe_resolve_check,
+    dsn: PostgresDsn | RedshiftDsn | BqDsn,
+    xngin_session,
+    ppost,
+    pget,
+    ppatch,
+):
+    response = ppost(
+        "/v1/m/organizations",
+        json=CreateOrganizationRequest(name="test_datasources_hide_credentials").model_dump(),
+    )
+    assert response.status_code == 200, response.content
+    org_id = CreateOrganizationResponse.model_validate(response.json()).id
+
+    response = ppost(
+        "/v1/m/datasources",
+        content=CreateDatasourceRequest(
+            name="test_create_datasource",
+            organization_id=org_id,
+            dsn=dsn,
+        ).model_dump_json(),
+    )
+    assert response.status_code == 200, response.content
+    datasource_id = CreateDatasourceResponse.model_validate(response.json()).id
+
+    response = pget(f"/v1/m/datasources/{datasource_id}")
+    assert response.status_code == 200, response.content
+    datasource_response = GetDatasourceResponse.model_validate(response.json())
+    match datasource_response.dsn:
+        case ApiOnlyDsn():
+            raise TypeError("unexpected dsn type")
+        case PostgresDsn() | RedshiftDsn():
+            assert isinstance(datasource_response.dsn.password, Hidden)
+        case BqDsn():
+            assert isinstance(datasource_response.dsn.credentials, Hidden)
+
+    # Send an update that changes credentials.
+    before_revision = (await xngin_session.get(tables.Datasource, datasource_id)).get_config()
+    match dsn:
+        case PostgresDsn() | RedshiftDsn():
+            revised_pg: PostgresDsn | RedshiftDsn = dsn.model_copy(deep=True)
+            revised_pg.password = RevealedStr(value="updated")
+            update_request = UpdateDatasourceRequest(dsn=revised_pg)
+        case BqDsn():
+            revised_service_account = copy.deepcopy(SAMPLE_GCLOUD_SERVICE_ACCOUNT)
+            revised_service_account["private_key"] = "newprivatekey"
+            revised_bq = dsn.model_copy(deep=True)
+            revised_bq.credentials = GcpServiceAccount(content=json.dumps(revised_service_account))
+            update_request = UpdateDatasourceRequest(dsn=revised_bq)
+    response = ppatch(f"/v1/m/datasources/{datasource_id}", content=update_request.model_dump_json())
+    assert response.status_code == 204, response.content
+
+    after_revision = (await xngin_session.get(tables.Datasource, datasource_id)).get_config()
+    match dsn:
+        case PostgresDsn() | RedshiftDsn():
+            assert after_revision.dwh.host == before_revision.dwh.host
+            assert after_revision.dwh.password != before_revision.dwh.password
+            assert after_revision.dwh.password == "updated"
+        case BqDsn():
+            assert after_revision.dwh.project_id == before_revision.dwh.project_id
+            assert after_revision.dwh.credentials != before_revision.dwh.credentials
+            assert "newprivatekey" in base64.standard_b64decode(after_revision.dwh.credentials.content_base64).decode()
+
+    # Send an update with hidden credentials and confirm that non-credential data remains the same.
+    match dsn:
+        case PostgresDsn() | RedshiftDsn():
+            revised_pg = dsn.model_copy(deep=True)
+            revised_pg.dbname = "newdatabase"
+            revised_pg.password = Hidden()
+            update_request = UpdateDatasourceRequest(dsn=revised_pg)
+        case BqDsn():
+            revised_bq = dsn.model_copy(deep=True)
+            revised_bq.project_id = "newprojectid"
+            revised_bq.credentials = Hidden()
+            update_request = UpdateDatasourceRequest(dsn=revised_bq)
+    response = ppatch(f"/v1/m/datasources/{datasource_id}", content=update_request.model_dump_json())
+    assert response.status_code == 204, response.content
+
+    after_second_revision = (await xngin_session.get(tables.Datasource, datasource_id)).get_config()
+    match dsn:
+        case PostgresDsn() | RedshiftDsn():
+            assert after_second_revision.dwh.dbname == "newdatabase"
+            assert after_second_revision.dwh.host == after_revision.dwh.host
+            assert after_second_revision.dwh.password == after_revision.dwh.password
+            assert after_second_revision.dwh.password == "updated"
+        case BqDsn():
+            assert after_second_revision.dwh.project_id == "newprojectid"
+            assert after_second_revision.dwh.dataset_id == after_revision.dwh.dataset_id
+            assert after_second_revision.dwh.credentials == after_revision.dwh.credentials
+            assert (
+                "newprivatekey"
+                in base64.standard_b64decode(after_second_revision.dwh.credentials.content_base64).decode()
+            )
+
+
+@pytest.mark.parametrize(
+    "dsn",
+    [
+        PostgresDsn(
+            host="127.0.0.1",
+            user="postgres",
+            port=5499,
+            password=Hidden(),
+            dbname="postgres",
+            sslmode="disable",
+            search_path=None,
+        ),
+        RedshiftDsn(
+            host="foo.redshift.amazonaws.com",
+            user="postgres",
+            port=5499,
+            password=Hidden(),
+            dbname="postgres",
+            search_path=None,
+        ),
+        BqDsn(
+            project_id="projectid",
+            dataset_id="dataset_id",
+            credentials=Hidden(),
+        ),
+    ],
+    ids=lambda d: type(d),
+)
+def test_create_datasource_without_credentials(
+    disable_safe_resolve_check, dsn: BqDsn | RedshiftDsn | PostgresDsn, ppost
+):
+    response = ppost(
+        "/v1/m/organizations",
+        json=CreateOrganizationRequest(name="test_create_datasource_without_credentials").model_dump(),
+    )
+    assert response.status_code == 200, response.content
+    org_id = CreateOrganizationResponse.model_validate(response.json()).id
+
+    response = ppost(
+        "/v1/m/datasources",
+        content=CreateDatasourceRequest(
+            name="test_create_datasource",
+            organization_id=org_id,
+            dsn=dsn,
+        ).model_dump_json(),
+    )
+    assert response.status_code == 422, response.content
+    assert response.json() == {"message": CREDENTIALS_UNAVAILABLE_MESSAGE}
+
+
 def test_create_datasource_invalid_dns(testing_datasource, ppost):
     """Tests that we reject insecure hostnames with a 400."""
     response = ppost(
@@ -265,14 +446,14 @@ def test_create_datasource_invalid_dns(testing_datasource, ppost):
         content=CreateDatasourceRequest(
             organization_id=testing_datasource.org.id,
             name="test remote ds",
-            dwh=Dsn(
-                driver="postgresql+psycopg",
+            dsn=PostgresDsn(
                 host=safe_resolve.UNSAFE_IP_FOR_TESTING,
                 user="postgres",
                 port=5499,
-                password="postgres",
+                password=RevealedStr(value="postgres"),
                 dbname="postgres",
                 sslmode="disable",
+                search_path=None,
             ),
         ).model_dump_json(),
     )
@@ -405,14 +586,14 @@ def test_datasource_lifecycle(ppost, pget, ppatch):
             organization_id=org_id,
             name=new_ds_name,
             # These settings correspond to the Postgres spun up in GHA or via localpg.py.
-            dwh=Dsn(
-                driver="postgresql+psycopg",
+            dsn=PostgresDsn(
                 host="127.0.0.1",
                 user="postgres",
                 port=5499,
-                password="postgres",
+                password=RevealedStr(value="postgres"),
                 dbname="postgres",
                 sslmode="disable",
+                search_path=None,
             ),
         ).model_dump_json(),
     )
@@ -464,16 +645,10 @@ def test_datasource_lifecycle(ppost, pget, ppatch):
     response = ppatch(
         f"/v1/m/datasources/{datasource_id}",
         content=UpdateDatasourceRequest(
-            dwh=BqDsn(
-                driver="bigquery",
+            dsn=BqDsn(
                 project_id="123456",
                 dataset_id="ds",
-                credentials=GcpServiceAccountInfo(
-                    type="serviceaccountinfo",
-                    content_base64=base64.b64encode(
-                        json.dumps(SAMPLE_GCLOUD_SERVICE_ACCOUNT_KEY).encode("utf-8")
-                    ).decode(),
-                ),
+                credentials=GcpServiceAccount(content=SAMPLE_GCLOUD_SERVICE_ACCOUNT_JSON),
             )
         ).model_dump_json(),
     )

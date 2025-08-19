@@ -48,7 +48,8 @@ from xngin.apiserver.dwh.queries import (
     get_stats_on_metrics,
 )
 from xngin.apiserver.exceptions_common import LateValidationError
-from xngin.apiserver.routers.admin import authz
+from xngin.apiserver.routers.admin import admin_api_converters, authz
+from xngin.apiserver.routers.admin.admin_api_converters import api_dsn_to_settings_dwh
 from xngin.apiserver.routers.admin.admin_api_types import (
     AddMemberToOrganizationRequest,
     AddWebhookToOrganizationRequest,
@@ -75,6 +76,8 @@ from xngin.apiserver.routers.admin.admin_api_types import (
     ListParticipantsTypeResponse,
     ListWebhooksResponse,
     OrganizationSummary,
+    PostgresDsn,
+    RedshiftDsn,
     UpdateDatasourceRequest,
     UpdateOrganizationRequest,
     UpdateOrganizationWebhookRequest,
@@ -94,6 +97,7 @@ from xngin.apiserver.routers.common_api_types import (
     BaseFrequentistDesignSpec,
     CreateExperimentRequest,
     CreateExperimentResponse,
+    ExperimentsType,
     FreqExperimentAnalysisResponse,
     GetExperimentAssignmentsResponse,
     GetExperimentResponse,
@@ -107,7 +111,6 @@ from xngin.apiserver.routers.common_api_types import (
 )
 from xngin.apiserver.routers.experiments import experiments_common
 from xngin.apiserver.settings import (
-    Dsn,
     ParticipantsConfig,
     ParticipantsDef,
     RemoteDatabaseConfig,
@@ -755,22 +758,9 @@ async def create_datasource(
     """Creates a new datasource for the specified organization."""
     org = await get_organization_or_raise(session, user, body.organization_id)
 
-    if body.dwh.driver == "bigquery" and body.dwh.credentials.type != "serviceaccountinfo":
-        raise HTTPException(
-            status_code=400,
-            detail="BigQuery credentials must be specified using type=serviceaccountinfo",
-        )
-    if body.dwh.driver in {"postgresql+psycopg", "postgresql+psycopg2"}:
-        try:
-            if isinstance(body.dwh, Dsn):
-                safe_resolve(body.dwh.host)
-        except DnsLookupError as err:
-            raise HTTPException(
-                status_code=400,
-                detail="DNS resolution failed. Check datasource hostname and try again.",
-            ) from err
+    raise_unless_safe_hostname(body.dsn)
 
-    config = RemoteDatabaseConfig(participants=[], type="remote", dwh=body.dwh)
+    config = RemoteDatabaseConfig(participants=[], type="remote", dwh=api_dsn_to_settings_dwh(body.dsn))
 
     datasource = tables.Datasource(
         id=tables.datasource_id_factory(), name=body.name, organization_id=org.id
@@ -791,9 +781,10 @@ async def update_datasource(
     ds = await get_datasource_or_raise(session, user, datasource_id)
     if body.name is not None:
         ds.name = body.name
-    if body.dwh is not None:
+    if body.dsn is not None:
+        raise_unless_safe_hostname(body.dsn)
         cfg = ds.get_config()
-        cfg.dwh = body.dwh
+        cfg.dwh = api_dsn_to_settings_dwh(body.dsn, cfg.dwh)
 
         # Invalidate cached inspections.
         ds.set_config(cfg)
@@ -822,7 +813,7 @@ async def get_datasource(
     return GetDatasourceResponse(
         id=ds.id,
         name=ds.name,
-        config=config,
+        dsn=admin_api_converters.settings_dwh_to_api_dsn(config.dwh),
         organization_id=ds.organization_id,
         organization_name=ds.organization.name,
     )
@@ -1432,7 +1423,9 @@ async def list_organization_experiments(
 ) -> ListExperimentsResponse:
     """Returns a list of experiments in the organization."""
     org = await get_organization_or_raise(session, user, organization_id)
-    return await experiments_common.list_organization_experiments_impl(session, org.id)
+    return await experiments_common.list_organization_or_datasource_experiments_impl(
+        xngin_session=session, organization_id=org.id
+    )
 
 
 @router.get("/datasources/{datasource_id}/experiments/{experiment_id}")
@@ -1444,7 +1437,12 @@ async def get_experiment(
 ) -> GetExperimentResponse:
     """Returns the experiment with the specified ID."""
     ds = await get_datasource_or_raise(session, user, datasource_id)
-    experiment = await get_experiment_via_ds_or_raise(session, ds, experiment_id, preload=[tables.Experiment.webhooks])
+    experiment = await get_experiment_via_ds_or_raise(
+        session,
+        ds,
+        experiment_id,
+        preload=[tables.Experiment.webhooks, tables.Experiment.contexts],
+    )
     converter = ExperimentStorageConverter(experiment)
     assign_summary = await experiments_common.get_assign_summary(session, experiment.id, converter.get_balance_check())
     webhook_ids = [webhook.id for webhook in experiment.webhooks]
@@ -1530,9 +1528,18 @@ async def get_experiment_assignment_for_participant(
     assignment = await experiments_common.get_existing_assignment_for_participant(
         session, experiment.id, participant_id, experiment.experiment_type
     )
+
     if not assignment and create_if_none and experiment.stopped_assignments_at is None:
+        if experiment.experiment_type == ExperimentsType.CMAB_ONLINE.value:
+            raise LateValidationError(
+                f"New arm assignments for {ExperimentsType.CMAB_ONLINE.value} cannot be created at this endpoint, "
+                f"please use the corresponding POST endpoint instead."
+            )
         assignment = await experiments_common.create_assignment_for_participant(
-            session, experiment, participant_id, random_state
+            xngin_session=session,
+            experiment=experiment,
+            participant_id=participant_id,
+            random_state=random_state,
         )
 
     return GetParticipantAssignmentResponse(
@@ -1577,13 +1584,13 @@ async def power_check(
     design_spec = body.design_spec
     if not isinstance(design_spec, BaseFrequentistDesignSpec):
         raise HTTPException(
-            status_code=400,
+            status_code=status.HTTP_400_BAD_REQUEST,
             detail="Power checks are only supported for frequentist experiments",
         )
     ds = await get_datasource_or_raise(session, user, datasource_id)
     if isinstance(ds.config, NoDwh):
         raise HTTPException(
-            status_code=400,
+            status_code=status.HTTP_400_BAD_REQUEST,
             detail="Power checks are not supported for datasources without a data warehouse.",
         )
     dsconfig = ds.get_config()
@@ -1618,3 +1625,17 @@ def validate_schema_metrics_or_raise(design_spec: BaseFrequentistDesignSpec, sch
         raise LateValidationError(
             f"Invalid DesignSpec metrics (check your Datasource configuration): {invalid_metrics}"
         )
+
+
+def raise_unless_safe_hostname(dsn):
+    """Raises a 400 if the DNS name in dsn is possibly attempting to connect to resources on local network."""
+    if flags.DISABLE_SAFEDNS_CHECK:
+        return
+    if isinstance(dsn, PostgresDsn | RedshiftDsn):
+        try:
+            safe_resolve(dsn.host)
+        except DnsLookupError as err:
+            raise HTTPException(
+                status_code=400,
+                detail="DNS resolution failed. Check datasource hostname and try again.",
+            ) from err
