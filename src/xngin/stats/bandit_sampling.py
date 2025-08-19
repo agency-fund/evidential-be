@@ -1,5 +1,5 @@
 import numpy as np
-from scipy.optimize import minimize  # type: ignore
+from scipy.optimize import minimize
 
 from xngin.apiserver.routers.common_enums import (
     ContextLinkFunctions,
@@ -151,7 +151,10 @@ def _update_arm_laplace(
 
     result = minimize(objective, x0=np.zeros_like(current_mu), method="L-BFGS-B", hess="2-point")
     new_mu = result.x
-    covariance = result.hess_inv.todense()
+    hess_inv = result.hess_inv
+    if not hasattr(hess_inv, "todense"):
+        raise TypeError(f"unexpected type: {type(result.hess_inv)}")
+    covariance = hess_inv.todense()
 
     new_covariance = 0.5 * (covariance + covariance.T)
     return new_mu.tolist(), new_covariance.tolist()
