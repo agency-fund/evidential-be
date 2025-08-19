@@ -39,9 +39,7 @@ class StorageMetric(StorageBaseModel):
     ] = None
     metric_target: Annotated[
         float | None,
-        Field(
-            description="Absolute target value = metric_baseline*(1 + metric_pct_change)"
-        ),
+        Field(description="Absolute target value = metric_baseline*(1 + metric_pct_change)"),
     ] = None
 
 
@@ -69,7 +67,10 @@ class DesignSpecFields(StorageBaseModel):
     filters: Annotated[
         list[StorageFilter] | None,
         Field(
-            description="Optional filters that constrain a general participant_type to a specific subset who can participate in an experiment.",
+            description=(
+                "Optional filters that constrain a general participant_type to a specific subset "
+                "who can participate in an experiment."
+            ),
             max_length=MAX_NUMBER_OF_FILTERS,
         ),
     ] = None

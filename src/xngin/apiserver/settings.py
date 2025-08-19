@@ -63,9 +63,7 @@ class BaseParticipantsRef(ConfigBaseModel):
 class ParticipantsDef(BaseParticipantsRef, ParticipantsSchema):
     type: Annotated[
         Literal["schema"],
-        Field(
-            description="Indicates that the schema is determined by an inline schema."
-        ),
+        Field(description="Indicates that the schema is determined by an inline schema."),
     ]
 
 
@@ -89,24 +87,16 @@ class ParticipantsMixin(ConfigBaseModel):
 
     def find_participants_or_none(self, participant_type) -> ParticipantsConfig | None:
         return next(
-            (
-                u
-                for u in self.participants
-                if u.participant_type.lower() == participant_type.lower()
-            ),
+            (u for u in self.participants if u.participant_type.lower() == participant_type.lower()),
             None,
         )
 
     @model_validator(mode="after")
     def check_unique_participant_types(self):
-        counted = Counter([
-            participant.participant_type for participant in self.participants
-        ])
+        counted = Counter([participant.participant_type for participant in self.participants])
         duplicates = [item for item, count in counted.items() if count > 1]
         if duplicates:
-            raise ValueError(
-                f"Participant types with conflicting names found: {', '.join(duplicates)}."
-            )
+            raise ValueError(f"Participant types with conflicting names found: {', '.join(duplicates)}.")
         return self
 
 
@@ -163,19 +153,13 @@ class GcpServiceAccountInfo(ConfigBaseModel):
     def encrypt(self, datasource_id):
         return self.model_copy(
             update={
-                "content_base64": secretservice.get_symmetric().encrypt(
-                    self.content_base64, f"dsn.{datasource_id}"
-                )
+                "content_base64": secretservice.get_symmetric().encrypt(self.content_base64, f"dsn.{datasource_id}")
             }
         )
 
     def decrypt(self, datasource_id):
         return self.model_copy(
-            update={
-                "content_base64": _decrypt_string(
-                    self.content_base64, aad=f"dsn.{datasource_id}"
-                )
-            }
+            update={"content_base64": _decrypt_string(self.content_base64, aad=f"dsn.{datasource_id}")}
         )
 
     @field_validator("content_base64")
@@ -250,16 +234,12 @@ class BqDsn(ConfigBaseModel, BaseDsn, EncryptedDsn):
 
     def encrypt(self, datasource_id):
         if self.credentials.type == "serviceaccountinfo":
-            return self.model_copy(
-                update={"credentials": self.credentials.encrypt(datasource_id)}
-            )
+            return self.model_copy(update={"credentials": self.credentials.encrypt(datasource_id)})
         return self
 
     def decrypt(self, datasource_id):
         if self.credentials.type == "serviceaccountinfo":
-            return self.model_copy(
-                update={"credentials": self.credentials.decrypt(datasource_id)}
-            )
+            return self.model_copy(update={"credentials": self.credentials.decrypt(datasource_id)})
         return self
 
     def to_sqlalchemy_url(self) -> sqlalchemy.URL:
@@ -295,11 +275,7 @@ class Dsn(ConfigBaseModel, BaseDsn, EncryptedDsn):
 
     def encrypt(self, datasource_id):
         return self.model_copy(
-            update={
-                "password": secretservice.get_symmetric().encrypt(
-                    self.password, f"dsn.{datasource_id}"
-                )
-            }
+            update={"password": secretservice.get_symmetric().encrypt(self.password, f"dsn.{datasource_id}")}
         )
 
     def decrypt(self, datasource_id):
@@ -325,16 +301,12 @@ class Dsn(ConfigBaseModel, BaseDsn, EncryptedDsn):
             parsed_url = make_url(url)
             credentials = os.environ.get("GOOGLE_APPLICATION_CREDENTIALS", None)
             if credentials is None:
-                raise ValueError(
-                    "GOOGLE_APPLICATION_CREDENTIALS must be set when using Dsn.from_url."
-                )
+                raise ValueError("GOOGLE_APPLICATION_CREDENTIALS must be set when using Dsn.from_url.")
             return BqDsn(
                 driver="bigquery",
                 project_id=parsed_url.host,
                 dataset_id=parsed_url.database,
-                credentials=GcpServiceAccountFile(
-                    type="serviceaccountfile", path=credentials
-                ),
+                credentials=GcpServiceAccountFile(type="serviceaccountfile", path=credentials),
             )
 
         if url.startswith("postgres"):
@@ -349,9 +321,7 @@ class Dsn(ConfigBaseModel, BaseDsn, EncryptedDsn):
                 sslmode=parsed_url.query.get("sslmode", "verify-ca"),
                 search_path=parsed_url.query.get("search_path", None),
             )
-        raise NotImplementedError(
-            f"Dsn.from_url() only supports postgres databases: {url}"
-        )
+        raise NotImplementedError(f"Dsn.from_url() only supports postgres databases: {url}")
 
     def is_redshift(self):
         return self.host.endswith("redshift.amazonaws.com")
@@ -384,9 +354,7 @@ class Dsn(ConfigBaseModel, BaseDsn, EncryptedDsn):
     def check_redshift_safe(self):
         if self.is_redshift():
             if self.driver != "postgresql+psycopg2":
-                raise ValueError(
-                    "Redshift connections must use postgresql+psycopg2 driver"
-                )
+                raise ValueError("Redshift connections must use postgresql+psycopg2 driver")
             if self.sslmode != "verify-full":
                 raise ValueError("Redshift connections must use sslmode=verify-full")
         return self

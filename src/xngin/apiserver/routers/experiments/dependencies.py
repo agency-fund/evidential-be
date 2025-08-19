@@ -14,9 +14,7 @@ from xngin.apiserver.sqla import tables
 
 
 async def experiment_dependency(
-    experiment_id: Annotated[
-        str, Path(..., description="The ID of the experiment to fetch.")
-    ],
+    experiment_id: Annotated[str, Path(..., description="The ID of the experiment to fetch.")],
     xngin_session: Annotated[AsyncSession, Depends(xngin_db_session)],
     api_key: Annotated[
         str | None,

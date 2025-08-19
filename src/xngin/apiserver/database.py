@@ -25,11 +25,7 @@ class DatabaseSetupRequiredError(Exception):
 def generic_url_to_sa_url(database_url):
     """Converts postgres:// to a SQLAlchemy-compatible value that includes a dialect."""
     if database_url.startswith(("postgres://", "postgresql://")):
-        database_url = (
-            DEFAULT_POSTGRES_DIALECT
-            + "://"
-            + database_url[database_url.find("://") + 3 :]
-        )
+        database_url = DEFAULT_POSTGRES_DIALECT + "://" + database_url[database_url.find("://") + 3 :]
     return database_url
 
 
@@ -92,12 +88,8 @@ async def setup():
     if flags.LOG_SQL_APP_DB:
         import inspect  # noqa: PLC0415
 
-        @event.listens_for(
-            async_engine.sync_engine, "before_cursor_execute", retval=True
-        )
-        def _apply_comment(
-            _connection, _cursor, statement, parameters, _context, _executemany
-        ):
+        @event.listens_for(async_engine.sync_engine, "before_cursor_execute", retval=True)
+        def _apply_comment(_connection, _cursor, statement, parameters, _context, _executemany):
             annotation = "unknown"
             frame = inspect.stack()
             # Find the first frame that is likely to be in our project, but skip the current frame.

@@ -57,9 +57,7 @@ def make_key() -> tuple[str, str]:
     return id_, key
 
 
-async def require_valid_api_key(
-    session: AsyncSession, api_key: str | None, datasource_id: str
-):
+async def require_valid_api_key(session: AsyncSession, api_key: str | None, datasource_id: str):
     """Queries the database for a matching API key with privileges on the config referenced by config_id."""
     key_hash = hash_key_or_raise(api_key)
     stmt = (

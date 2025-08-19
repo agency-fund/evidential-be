@@ -49,15 +49,10 @@ def get_stats_on_metrics(
 ) -> list[DesignSpecMetric]:
     missing_metrics = {m.field_name for m in metrics if m.field_name not in sa_table.c}
     if len(missing_metrics) > 0:
-        raise LateValidationError(
-            f"Missing metrics (check your Datasource configuration): {missing_metrics}"
-        )
+        raise LateValidationError(f"Missing metrics (check your Datasource configuration): {missing_metrics}")
 
     # build our query
-    metric_types = [
-        MetricType.from_python_type(sa_table.c[m.field_name].type.python_type)
-        for m in metrics
-    ]
+    metric_types = [MetricType.from_python_type(sa_table.c[m.field_name].type.python_type) for m in metrics]
     # Include in our list of stats a total count of rows targeted by the audience filters,
     # whereas the individual aggregate functions per metric ignore NULLs by default.
     select_columns: list[Label] = [func.count().label("rows__count")]
@@ -89,9 +84,7 @@ def get_stats_on_metrics(
                 metric_target=metric.metric_target,
                 metric_type=metric_type,
                 metric_baseline=stats[f"{field_name}__mean"],
-                metric_stddev=stats[f"{field_name}__stddev"]
-                if metric_type is MetricType.NUMERIC
-                else None,
+                metric_stddev=stats[f"{field_name}__stddev"] if metric_type is MetricType.NUMERIC else None,
                 available_nonnull_n=stats[f"{field_name}__count"],
                 # This value is the same across all metrics, but we replicate for convenience:
                 available_n=stats["rows__count"],
@@ -133,10 +126,7 @@ def get_stats_on_filters(
         match filter_class:
             case FilterClass.DISCRETE:
                 stmt: Select = (
-                    sqlalchemy.select(distinct(sa_col))
-                    .where(sa_col.is_not(None))
-                    .limit(1000)
-                    .order_by(sa_col)
+                    sqlalchemy.select(distinct(sa_col)).where(sa_col.is_not(None)).limit(1000).order_by(sa_col)
                 )
                 result_discrete = session.scalars(stmt)
                 distinct_values = [str(v) for v in result_discrete]
@@ -149,9 +139,9 @@ def get_stats_on_filters(
                 )
             case FilterClass.NUMERIC:
                 min_, max_ = session.execute(
-                    sqlalchemy.select(
-                        sqlalchemy.func.min(sa_col), sqlalchemy.func.max(sa_col)
-                    ).where(sa_col.is_not(None))
+                    sqlalchemy.select(sqlalchemy.func.min(sa_col), sqlalchemy.func.max(sa_col)).where(
+                        sa_col.is_not(None)
+                    )
                 ).one()
                 return GetFiltersResponseNumericOrDate(
                     field_name=col_name,
@@ -164,11 +154,7 @@ def get_stats_on_filters(
             case _:
                 raise RuntimeError("unexpected filter class")
 
-    return [
-        query(col_name, ptype_fd)
-        for col_name, ptype_fd in filter_schema.items()
-        if db_schema.get(col_name)
-    ]
+    return [query(col_name, ptype_fd) for col_name, ptype_fd in filter_schema.items() if db_schema.get(col_name)]
 
 
 def get_participant_metrics(
@@ -180,26 +166,17 @@ def get_participant_metrics(
 ) -> list[ParticipantOutcome]:
     missing_metrics = {m.field_name for m in metrics if m.field_name not in sa_table.c}
     if len(missing_metrics) > 0:
-        raise LateValidationError(
-            f"Missing metrics (check your Datasource configuration): {missing_metrics}"
-        )
+        raise LateValidationError(f"Missing metrics (check your Datasource configuration): {missing_metrics}")
 
     # build our query
-    metric_types = [
-        MetricType.from_python_type(sa_table.c[m.field_name].type.python_type)
-        for m in metrics
-    ]
+    metric_types = [MetricType.from_python_type(sa_table.c[m.field_name].type.python_type) for m in metrics]
 
     # select participant_id field
     if unique_id_field not in sa_table.columns:
-        raise LateValidationError(
-            f"Unique ID field {unique_id_field} not found in table."
-        )
+        raise LateValidationError(f"Unique ID field {unique_id_field} not found in table.")
     participant_id_column = sa_table.c[unique_id_field]
     # We always store participant_id as a string, so select it back as such.
-    select_columns: list[Label] = [
-        cast(participant_id_column, String).label("participant_id")
-    ]
+    select_columns: list[Label] = [cast(participant_id_column, String).label("participant_id")]
 
     field_names = ["participant_id"]
     # add metrics from the experiment design
@@ -219,10 +196,7 @@ def get_participant_metrics(
     participant_id_filter = Filter(
         field_name=unique_id_field,
         relation=Relation.INCLUDES,
-        value=[
-            Filter.cast_participant_id(pid, participant_id_column.type)
-            for pid in participant_ids
-        ],
+        value=[Filter.cast_participant_id(pid, participant_id_column.type) for pid in participant_ids],
     )
     participant_filter = create_one_filter(participant_id_filter, sa_table)
     query = select(*select_columns).filter(participant_filter)
@@ -236,17 +210,11 @@ def get_participant_metrics(
             if field_name == "participant_id":
                 participant_id = result[i]
             else:
-                metric_values.append(
-                    MetricValue(metric_name=field_name, metric_value=result[i])
-                )
+                metric_values.append(MetricValue(metric_name=field_name, metric_value=result[i]))
         if participant_id is None:
             # Should never happen as we filter on the participant_id field.
             raise LateValidationError("Participant ID is required.")
-        participant_outcomes.append(
-            ParticipantOutcome(
-                participant_id=str(participant_id), metric_values=metric_values
-            )
-        )
+        participant_outcomes.append(ParticipantOutcome(participant_id=str(participant_id), metric_values=metric_values))
     return participant_outcomes
 
 
@@ -255,9 +223,7 @@ def create_one_filter(filter_: Filter, sa_table: sqlalchemy.Table):
     if isinstance(sa_table.columns[filter_.field_name].type, DateTime):
         return create_datetime_filter(sa_table.columns[filter_.field_name], filter_)
     if filter_.field_name.endswith(EXPERIMENT_IDS_SUFFIX):
-        return create_special_experiment_id_filter(
-            sa_table.columns[filter_.field_name], filter_
-        )
+        return create_special_experiment_id_filter(sa_table.columns[filter_.field_name], filter_)
     return create_filter(sa_table.columns[filter_.field_name], filter_)
 
 
@@ -266,9 +232,7 @@ def create_query_filters(sa_table: sqlalchemy.Table, filters: list[Filter]):
     return [create_one_filter(filter_, sa_table) for filter_ in filters]
 
 
-def create_special_experiment_id_filter(
-    col: sqlalchemy.Column, filter_: Filter
-) -> ColumnOperators:
+def create_special_experiment_id_filter(col: sqlalchemy.Column, filter_: Filter) -> ColumnOperators:
     matching_regex = make_csv_regex(filter_.value)
     match filter_.relation:
         case Relation.INCLUDES:
@@ -281,9 +245,7 @@ def create_special_experiment_id_filter(
             )
         case Relation.BETWEEN:
             # This should be impossible as it's caught by the Filter validator:
-            raise ValueError(
-                f"Experiment id filter on {filter_.field_name} has invalid relation: {filter_.relation}"
-            )
+            raise ValueError(f"Experiment id filter on {filter_.field_name} has invalid relation: {filter_.relation}")
 
 
 def make_csv_regex(values):
@@ -292,11 +254,7 @@ def make_csv_regex(values):
     The generated regexp is to be used by re.search() or equivalent. We assume that most database engines
     will support identical syntax.
     """
-    value_regexp = (
-        r"("
-        + r"|".join(re.escape(str(v).lower()) for v in values if v is not None)
-        + r")"
-    )
+    value_regexp = r"(" + r"|".join(re.escape(str(v).lower()) for v in values if v is not None) + r")"
     return r"(^x$)|(^x,)|(,x$)|(,x,)".replace("x", value_regexp)
 
 
@@ -354,9 +312,7 @@ def create_datetime_filter(col: sqlalchemy.Column, filter_: Filter) -> ColumnOpe
         )
 
     if not isinstance(col.type, DateTime):
-        raise LateValidationError(
-            f"Column {col.name} is not a DateTime type, cannot apply datetime filter."
-        )
+        raise LateValidationError(f"Column {col.name} is not a DateTime type, cannot apply datetime filter.")
 
     parsed_values = list(map(str_to_datetime, filter_.value))
     if filter_.relation == Relation.EXCLUDES:
@@ -391,17 +347,11 @@ def create_filter(col: sqlalchemy.Column, filter_: Filter) -> ColumnOperators:
                 case _:
                     raise RuntimeError("Bug: invalid filter.")
         case Relation.EXCLUDES if isinstance(col.type, sqlalchemy.Boolean):
-            return and_(*[
-                col.is_not(value) if value is not None else col.is_not(None)
-                for value in filter_.value
-            ])
+            return and_(*[col.is_not(value) if value is not None else col.is_not(None) for value in filter_.value])
         case Relation.EXCLUDES:
             return general_excludes_filter(col, filter_.value)
         case Relation.INCLUDES if isinstance(col.type, sqlalchemy.Boolean):
-            return or_(*[
-                col.is_(value) if value is not None else col.is_(None)
-                for value in filter_.value
-            ])
+            return or_(*[col.is_(value) if value is not None else col.is_(None) for value in filter_.value])
         case Relation.INCLUDES:
             return sqlalchemy.not_(general_excludes_filter(col, filter_.value))
         case _:
@@ -409,9 +359,4 @@ def create_filter(col: sqlalchemy.Column, filter_: Filter) -> ColumnOperators:
 
 
 def compose_query(sa_table: Table, chosen_n: int, filters):
-    return (
-        select(sa_table)
-        .filter(*filters)
-        .order_by(custom_functions.Random(sa_table=sa_table))
-        .limit(chosen_n)
-    )
+    return select(sa_table).filter(*filters).order_by(custom_functions.Random(sa_table=sa_table)).limit(chosen_n)

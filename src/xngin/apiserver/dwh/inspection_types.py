@@ -11,28 +11,14 @@ class SchemaBaseModel(BaseModel):
 
 
 class FieldDescriptor(SchemaBaseModel):
-    field_name: Annotated[
-        str, Field(description="Name of the field in the data source")
-    ]
+    field_name: Annotated[str, Field(description="Name of the field in the data source")]
     data_type: Annotated[DataType, Field(description="The data type of this field")]
-    description: Annotated[
-        str, Field(description="Human-readable description of the field")
-    ] = ""
-    is_unique_id: Annotated[
-        bool, Field(description="Whether this field uniquely identifies records")
-    ] = False
-    is_strata: Annotated[
-        bool, Field(description="Whether this field should be used for stratification")
-    ] = False
-    is_filter: Annotated[
-        bool, Field(description="Whether this field can be used as a filter")
-    ] = False
-    is_metric: Annotated[
-        bool, Field(description="Whether this field can be used as a metric")
-    ] = False
-    extra: Annotated[
-        dict[str, str] | None, Field(description="Additional field metadata")
-    ] = None
+    description: Annotated[str, Field(description="Human-readable description of the field")] = ""
+    is_unique_id: Annotated[bool, Field(description="Whether this field uniquely identifies records")] = False
+    is_strata: Annotated[bool, Field(description="Whether this field should be used for stratification")] = False
+    is_filter: Annotated[bool, Field(description="Whether this field can be used as a filter")] = False
+    is_metric: Annotated[bool, Field(description="Whether this field can be used as a metric")] = False
+    extra: Annotated[dict[str, str] | None, Field(description="Additional field metadata")] = None
 
     @field_validator("description", mode="before")
     @classmethod
@@ -46,9 +32,7 @@ class FieldDescriptor(SchemaBaseModel):
     def to_data_type(cls, value) -> DataType:
         return DataType(value.lower())
 
-    @field_validator(
-        "is_unique_id", "is_strata", "is_filter", "is_metric", mode="before"
-    )
+    @field_validator("is_unique_id", "is_strata", "is_filter", "is_metric", mode="before")
     @classmethod
     def to_boolean(cls, value):
         truthy = {"true", "t", "yes", "y", "1"}
@@ -64,9 +48,7 @@ class FieldDescriptor(SchemaBaseModel):
 class ParticipantsSchema(SchemaBaseModel):
     """Represents a single worksheet describing metadata about a type of Participant."""
 
-    table_name: Annotated[
-        str, Field(description="Name of the table in the data warehouse")
-    ]
+    table_name: Annotated[str, Field(description="Name of the table in the data warehouse")]
     fields: Annotated[
         list[FieldDescriptor],
         Field(description="List of fields available in this table"),
@@ -93,15 +75,11 @@ class ParticipantsSchema(SchemaBaseModel):
         counted = Counter([".".join(row.field_name) for row in self.fields])
         duplicates = [item for item, count in counted.items() if count > 1]
         if duplicates:
-            raise ValueError(
-                f"Duplicate 'field_name' values found: {', '.join(duplicates)}."
-            )
+            raise ValueError(f"Duplicate 'field_name' values found: {', '.join(duplicates)}.")
         return self
 
     @model_validator(mode="after")
     def check_non_empty_rows(self) -> "ParticipantsSchema":
         if len(self.fields) == 0:
-            raise ValueError(
-                f"{self.__class__} must contain at least one FieldDescriptor."
-            )
+            raise ValueError(f"{self.__class__} must contain at least one FieldDescriptor.")
         return self

@@ -36,9 +36,7 @@ class StopAssignmentReason(enum.StrEnum):
         """Create StopAssignmentReason from string. Returns None if value is None."""
         return None if value is None else cls(value)
 
-    PREASSIGNED = (
-        "preassigned"  # preassigned experiments do not allow additional assignments
-    )
+    PREASSIGNED = "preassigned"  # preassigned experiments do not allow additional assignments
     END_DATE = "end_date"  # end date reached
     MANUAL = "manual"  # manually stopped by user
     TARGET_N = "target_n"  # target total number of participants across all arms reached

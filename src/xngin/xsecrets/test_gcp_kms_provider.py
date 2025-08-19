@@ -193,13 +193,9 @@ def test_mismatched_aad_raises_nacl_error(gcp_kms_provider):
 @skip_unless_gcp_available
 def test_dek_decrypt_failure(gcp_kms_provider):
     ciphertext = gcp_kms_provider.encrypt(b"message", b"aad")
-    ciphertext = (
-        ciphertext[:4] + ciphertext[5:9:-1] + ciphertext[9:]
-    )  # swap a few bytes of encrypted DEK
+    ciphertext = ciphertext[:4] + ciphertext[5:9:-1] + ciphertext[9:]  # swap a few bytes of encrypted DEK
 
-    with pytest.raises(
-        google.api_core.exceptions.InvalidArgument, match="400 Decryption failed"
-    ):
+    with pytest.raises(google.api_core.exceptions.InvalidArgument, match="400 Decryption failed"):
         gcp_kms_provider.decrypt(ciphertext, b"aad")
 
 

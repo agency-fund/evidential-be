@@ -85,9 +85,7 @@ router = APIRouter(
 )
 async def create_experiment_with_assignment_sl(
     body: CreateExperimentRequest,
-    chosen_n: Annotated[
-        int, Query(..., description="Number of participants to assign.")
-    ],
+    chosen_n: Annotated[int, Query(..., description="Number of participants to assign.")],
     datasource: Annotated[Datasource, Depends(datasource_dependency)],
     xngin_session: Annotated[AsyncSession, Depends(xngin_db_session)],
     random_state: Annotated[int | None, Depends(random_seed_dependency)],
@@ -180,9 +178,7 @@ async def get_experiment_sl(
 ) -> GetExperimentResponse:
     converter = ExperimentStorageConverter(experiment)
     balance_check = converter.get_balance_check()
-    assign_summary = await get_assign_summary(
-        xngin_session, experiment.id, balance_check
-    )
+    assign_summary = await get_assign_summary(xngin_session, experiment.id, balance_check)
     return converter.get_experiment_response(assign_summary)
 
 
@@ -224,7 +220,10 @@ async def get_assignment_for_participant_with_apikey(
     create_if_none: Annotated[
         bool,
         Query(
-            description="Create an assignment if none exists. Does nothing for preassigned experiments. Override if you just want to check if an assignment exists."
+            description=(
+                "Create an assignment if none exists. Does nothing for preassigned experiments. "
+                "Override if you just want to check if an assignment exists."
+            )
         ),
     ] = True,
     random_state: Annotated[int | None, Depends(random_seed_dependency)] = None,
@@ -265,7 +264,9 @@ async def get_cmab_experiment_assignment_for_participant(
     create_if_none: Annotated[
         bool,
         Query(
-            description="Create an assignment if none exists. Override if you just want to check if an assignment exists."
+            description=(
+                "Create an assignment if none exists. Override if you just want to check if an assignment exists."
+            )
         ),
     ] = True,
     random_state: Annotated[
@@ -280,7 +281,9 @@ async def get_cmab_experiment_assignment_for_participant(
 
     if experiment.experiment_type != ExperimentsType.CMAB_ONLINE.value:
         raise LateValidationError(
-            f"Experiment {experiment.id} is a {experiment.experiment_type} experiment, and not a {ExperimentsType.CMAB_ONLINE.value} experiment. Please use the corresponding GET endpoint to create assignments."
+            f"Experiment {experiment.id} is a {experiment.experiment_type} experiment, and not a "
+            f"{ExperimentsType.CMAB_ONLINE.value} experiment. Please use the corresponding GET endpoint to "
+            f"create assignments."
         )
 
     # Look up the participant's assignment if it exists
@@ -295,9 +298,7 @@ async def get_cmab_experiment_assignment_for_participant(
         context_inputs = body.context_inputs
 
         if not context_inputs:
-            raise LateValidationError(
-                "Context inputs are required for creating CMAB assignments."
-            )
+            raise LateValidationError("Context inputs are required for creating CMAB assignments.")
 
         context_defns = await experiment.awaitable_attrs.contexts
         context_inputs = sorted(context_inputs, key=lambda x: x.context_id)
@@ -305,7 +306,8 @@ async def get_cmab_experiment_assignment_for_participant(
 
         if len(context_inputs) != len(context_defns):
             raise LateValidationError(
-                f"Expected {len(context_defns)} context inputs, but got {len(context_inputs)} in CreateCMABAssignmentRequest."
+                f"Expected {len(context_defns)} context inputs, but got {len(context_inputs)} in "
+                f"CreateCMABAssignmentRequest."
             )
 
         for context_input, context_def in zip(
@@ -315,12 +317,10 @@ async def get_cmab_experiment_assignment_for_participant(
         ):
             if context_input.context_id != context_def.id:
                 raise LateValidationError(
-                    f"Context input for id {context_input.context_id} does not match expected context id {context_def.id}",
+                    f"Context input for id {context_input.context_id} does not match expected context id "
+                    f"{context_def.id}",
                 )
-            if (
-                context_def.value_type == ContextType.BINARY.value
-                and context_input.context_value not in {0.0, 1.0}
-            ):
+            if context_def.value_type == ContextType.BINARY.value and context_input.context_value not in {0.0, 1.0}:
                 raise LateValidationError(
                     f"Context value for id {context_input.context_id} must be binary (0 or 1).",
                 )

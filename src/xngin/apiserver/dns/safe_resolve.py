@@ -46,10 +46,7 @@ def is_safe_ip(ip):
             return True
         return parsed.is_global and (
             (parsed.version == 4 and parsed.packed[0] != 192)
-            or (
-                parsed.version == 6
-                and parsed.exploded.split(":")[0] not in {"2001", "2620", "64"}
-            )
+            or (parsed.version == 6 and parsed.exploded.split(":")[0] not in {"2001", "2620", "64"})
         )
     except ValueError:
         return False
@@ -61,9 +58,7 @@ def is_safe_ipset(ips: set[str]):
 
 def safe_resolve(host: str):
     if host == UNSAFE_IP_FOR_TESTING:
-        raise DnsLookupError(
-            "Detected sentinel value of invalid IP used for testing purposes."
-        )
+        raise DnsLookupError("Detected sentinel value of invalid IP used for testing purposes.")
 
     # If it is a safe IP address, return it immediately.
     if is_safe_ip(host):

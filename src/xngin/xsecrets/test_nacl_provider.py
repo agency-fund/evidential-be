@@ -34,9 +34,7 @@ def test_initialize_when_provider_is_not_configured():
 
 def test_initialize_valid_env_var():
     registry = Registry()
-    with temporary_env_var(
-        ENV_XNGIN_SECRETS_NACL_KEYSET, NaclProviderKeyset.create().serialize_base64()
-    ):
+    with temporary_env_var(ENV_XNGIN_SECRETS_NACL_KEYSET, NaclProviderKeyset.create().serialize_base64()):
         nacl_provider.initialize(registry)
     registry.get(nacl_provider.NAME)
     assert len(registry.get_providers()) == 1

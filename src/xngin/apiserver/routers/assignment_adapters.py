@@ -30,9 +30,7 @@ class RowProtocol(Protocol):
         ...
 
 
-def _make_balance_check(
-    balance_result: BalanceResult | None, fstat_thresh: float
-) -> BalanceCheck | None:
+def _make_balance_check(balance_result: BalanceResult | None, fstat_thresh: float) -> BalanceCheck | None:
     """Convert stats lib's BalanceResult to our API's BalanceCheck."""
     if balance_result is None:
         return None
@@ -82,9 +80,7 @@ def assign_treatment(
 
     # Extract Decimal column names from SQLAlchemy table and convert to float.
     # (Decimals are possible if the Table was created with SA's autoload instead of cursor).
-    if decimals := [
-        c.name for c in sa_table.columns if c.type.python_type is decimal.Decimal
-    ]:
+    if decimals := [c.name for c in sa_table.columns if c.type.python_type is decimal.Decimal]:
         df[decimals] = df[decimals].astype(float)
 
     # Call the core assignment function
@@ -129,9 +125,7 @@ def _make_assign_response(
     had_valid_strata = stratum_ids is not None
     stratum_ids = [0] * len(treatment_ids) if stratum_ids is None else stratum_ids
 
-    for stratum_id, treatment_assignment, row in zip(
-        stratum_ids, treatment_ids, data, strict=True
-    ):
+    for stratum_id, treatment_assignment, row in zip(stratum_ids, treatment_ids, data, strict=True):
         strata = None
         row_dict = row._asdict()
 
@@ -140,17 +134,13 @@ def _make_assign_response(
             strata = [
                 Strata(
                     field_name=column,
-                    strata_value=str(
-                        row_dict[column] if pd.notna(row_dict[column]) else "NA"
-                    ),
+                    strata_value=str(row_dict[column] if pd.notna(row_dict[column]) else "NA"),
                 )
                 for column in orig_stratum_cols
             ]
             # Only add stratum_id if we had valid strata and stratum_id_name is provided
             if stratum_id_name is not None and had_valid_strata:
-                strata.append(
-                    Strata(field_name=stratum_id_name, strata_value=str(stratum_id))
-                )
+                strata.append(Strata(field_name=stratum_id_name, strata_value=str(stratum_id)))
 
         arm_sizes_by_treatment_id[treatment_assignment] += 1
         # Fix linter error: ensure arm_id is not None

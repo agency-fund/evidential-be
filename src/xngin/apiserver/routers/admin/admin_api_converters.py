@@ -16,9 +16,7 @@ class CredentialsUnavailableError(Exception):
         super().__init__(CREDENTIALS_UNAVAILABLE_MESSAGE)
 
 
-def api_dsn_to_settings_dwh(
-    dsn: aapi.Dsn, current: settings.Dwh | None = None
-) -> settings.Dwh:
+def api_dsn_to_settings_dwh(dsn: aapi.Dsn, current: settings.Dwh | None = None) -> settings.Dwh:
     """Converts an Admin API DSN to a settings.Dwh.
 
     The credentials from current, if available, and of a compatible type to dsn, will be used if dsn's credentials
@@ -28,15 +26,11 @@ def api_dsn_to_settings_dwh(
         case aapi.ApiOnlyDsn():
             return settings.NoDwh()
         case aapi.BqDsn():
-            if isinstance(dsn.credentials, aapi.Hidden) and isinstance(
-                current, settings.BqDsn
-            ):
+            if isinstance(dsn.credentials, aapi.Hidden) and isinstance(current, settings.BqDsn):
                 credentials = current.credentials
             elif isinstance(dsn.credentials, aapi.GcpServiceAccount):
                 credentials = settings.GcpServiceAccountInfo(
-                    content_base64=base64.standard_b64encode(
-                        dsn.credentials.content.encode()
-                    ).decode()
+                    content_base64=base64.standard_b64encode(dsn.credentials.content.encode()).decode()
                 )
             else:
                 raise CredentialsUnavailableError()
@@ -47,9 +41,7 @@ def api_dsn_to_settings_dwh(
                 credentials=credentials,
             )
         case aapi.PostgresDsn() | aapi.RedshiftDsn():
-            if isinstance(dsn.password, aapi.Hidden) and isinstance(
-                current, settings.Dsn
-            ):
+            if isinstance(dsn.password, aapi.Hidden) and isinstance(current, settings.Dsn):
                 password = current.password
             elif isinstance(dsn.password, aapi.RevealedStr):
                 password = dsn.password.value

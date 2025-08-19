@@ -109,9 +109,7 @@ def run(
         help="Mount a tmpfs volume for data directory",
         envvar="LOCALPG_TMPFS",
     ),
-    port: int = typer.Option(
-        5499, "--port", "-p", help="Port to expose PostgreSQL on", envvar="LOCALPG_PORT"
-    ),
+    port: int = typer.Option(5499, "--port", "-p", help="Port to expose PostgreSQL on", envvar="LOCALPG_PORT"),
     name: str = typer.Option(
         "localpg",
         "--name",
@@ -172,9 +170,7 @@ def run(
             if allow_existing:
                 console.print("[info]Continuing due to --allow-existing flag[/]")
             else:
-                console.print(
-                    f"[command]Run 'docker kill {name}' to remove it first.[/]\n"
-                )
+                console.print(f"[command]Run 'docker kill {name}' to remove it first.[/]\n")
                 # ruff: noqa: TRY301
                 raise typer.Exit(3)
         else:
@@ -182,9 +178,7 @@ def run(
             console.print(f"\n🔄 [info]Running command: {' '.join(cmd)}[/]")
 
             if not daemon:
-                console.print(
-                    "\n💡 [info]Press Ctrl+C to stop the container when done[/]\n"
-                )
+                console.print("\n💡 [info]Press Ctrl+C to stop the container when done[/]\n")
 
             subprocess.run(cmd, check=True)
 
@@ -193,9 +187,7 @@ def run(
                     wait_for_postgres(port)
 
                 console.print("🚀 [info]Postgres started in daemon mode.[/]")
-                console.print(
-                    f"\n⚡ To stop the container, run:\n   [command]docker kill {name}[/]"
-                )
+                console.print(f"\n⚡ To stop the container, run:\n   [command]docker kill {name}[/]")
                 console.print(
                     f"\n🪓 To view the logs, run:\n   [command]docker logs --follow {name}[/]"
                     f"\n🔌 Default connection string:\n   [url]postgresql://postgres:postgres@localhost:{port}/postgres?sslmode=disable[/]"
@@ -255,9 +247,7 @@ def wait_for_postgres(port):
             except psycopg.OperationalError:
                 time.sleep(0.25)  # 250ms between retries
         else:
-            console.print(
-                "\n❌ [warning]Timed out waiting for PostgreSQL to start[/]\n"
-            )
+            console.print("\n❌ [warning]Timed out waiting for PostgreSQL to start[/]\n")
             raise typer.Exit(1)
 
 

@@ -105,9 +105,7 @@ SAMPLE_GCLOUD_SERVICE_ACCOUNT = {
 SAMPLE_GCLOUD_SERVICE_ACCOUNT_JSON = json.dumps(SAMPLE_GCLOUD_SERVICE_ACCOUNT)
 
 
-def find_ds_with_name[DSType: tables.Datasource | DatasourceSummary](
-    datasources: list[DSType], name: str
-) -> DSType:
+def find_ds_with_name[DSType: tables.Datasource | DatasourceSummary](datasources: list[DSType], name: str) -> DSType:
     """Helper function to find a datasource with a specific name from an iterable.
 
     Raises StopIteration if the datasource is not found.
@@ -116,14 +114,10 @@ def find_ds_with_name[DSType: tables.Datasource | DatasourceSummary](
 
 
 @pytest.fixture(name="testing_experiment")
-async def fixture_testing_experiment(
-    xngin_session: AsyncSession, testing_datasource_with_user
-):
+async def fixture_testing_experiment(xngin_session: AsyncSession, testing_datasource_with_user):
     """Create an experiment on a test inline schema datasource with proper user permissions."""
     datasource = testing_datasource_with_user.ds
-    experiment = await insert_experiment_and_arms(
-        xngin_session, datasource, ExperimentsType.FREQ_PREASSIGNED
-    )
+    experiment = await insert_experiment_and_arms(xngin_session, datasource, ExperimentsType.FREQ_PREASSIGNED)
     # Add fake assignments for each arm for real participant ids in our test data.
     arm_ids = [arm.id for arm in experiment.arms]
     # NOTE: id = 0 doesn't exist in the test data, so we'll have 1 missing participant.
@@ -142,13 +136,9 @@ async def fixture_testing_experiment(
 
 
 async def test_user_from_token_when_users_exist(xngin_session: AsyncSession):
-    unpriv = await user_from_token(
-        xngin_session, TESTING_TOKENS[UNPRIVILEGED_TOKEN_FOR_TESTING]
-    )
+    unpriv = await user_from_token(xngin_session, TESTING_TOKENS[UNPRIVILEGED_TOKEN_FOR_TESTING])
     assert not unpriv.is_privileged
-    priv = await user_from_token(
-        xngin_session, TESTING_TOKENS[PRIVILEGED_TOKEN_FOR_TESTING]
-    )
+    priv = await user_from_token(xngin_session, TESTING_TOKENS[PRIVILEGED_TOKEN_FOR_TESTING])
     assert priv.is_privileged
 
     with pytest.raises(HTTPException, match="No user found with email") as e:
@@ -163,9 +153,7 @@ async def test_user_from_token_initial_setup(xngin_session: AsyncSession):
     # emulate first time developer experience by deleting the seeded users
     await delete_seeded_users(xngin_session)
 
-    first_user = await user_from_token(
-        xngin_session, Principal(email="firstuser@example.com", iss="", sub="", hd="")
-    )
+    first_user = await user_from_token(xngin_session, Principal(email="firstuser@example.com", iss="", sub="", hd=""))
     assert first_user.is_privileged
     await xngin_session.refresh(first_user, ["organizations"])
     assert len(first_user.organizations) == 1
@@ -181,17 +169,13 @@ async def test_user_from_token_initial_setup(xngin_session: AsyncSession):
 async def test_initial_user_setup_matches_testing_dwh(xngin_session):
     await delete_seeded_users(xngin_session)
 
-    first_user = await user_from_token(
-        xngin_session, Principal(email="initial@example.com", iss="", sub="", hd="")
-    )
+    first_user = await user_from_token(xngin_session, Principal(email="initial@example.com", iss="", sub="", hd=""))
 
     # Validate directly from the db that our default org was created with datasources.
     await xngin_session.refresh(first_user, ["organizations"])
     organization = first_user.organizations[0]
     assert organization.name == DEFAULT_ORGANIZATION_NAME
-    datasources: list[
-        tables.Datasource
-    ] = await organization.awaitable_attrs.datasources
+    datasources: list[tables.Datasource] = await organization.awaitable_attrs.datasources
     assert len(datasources) == 2
 
     # Validate that we added the testing dwh datasource.
@@ -313,9 +297,7 @@ async def test_datasources_hide_credentials(
 ):
     response = ppost(
         "/v1/m/organizations",
-        json=CreateOrganizationRequest(
-            name="test_datasources_hide_credentials"
-        ).model_dump(),
+        json=CreateOrganizationRequest(name="test_datasources_hide_credentials").model_dump(),
     )
     assert response.status_code == 200, response.content
     org_id = CreateOrganizationResponse.model_validate(response.json()).id
@@ -343,9 +325,7 @@ async def test_datasources_hide_credentials(
             assert isinstance(datasource_response.dsn.credentials, Hidden)
 
     # Send an update that changes credentials.
-    before_revision = (
-        await xngin_session.get(tables.Datasource, datasource_id)
-    ).get_config()
+    before_revision = (await xngin_session.get(tables.Datasource, datasource_id)).get_config()
     match dsn:
         case PostgresDsn() | RedshiftDsn():
             revised_pg: PostgresDsn | RedshiftDsn = dsn.model_copy(deep=True)
@@ -355,18 +335,12 @@ async def test_datasources_hide_credentials(
             revised_service_account = copy.deepcopy(SAMPLE_GCLOUD_SERVICE_ACCOUNT)
             revised_service_account["private_key"] = "newprivatekey"
             revised_bq = dsn.model_copy(deep=True)
-            revised_bq.credentials = GcpServiceAccount(
-                content=json.dumps(revised_service_account)
-            )
+            revised_bq.credentials = GcpServiceAccount(content=json.dumps(revised_service_account))
             update_request = UpdateDatasourceRequest(dsn=revised_bq)
-    response = ppatch(
-        f"/v1/m/datasources/{datasource_id}", content=update_request.model_dump_json()
-    )
+    response = ppatch(f"/v1/m/datasources/{datasource_id}", content=update_request.model_dump_json())
     assert response.status_code == 204, response.content
 
-    after_revision = (
-        await xngin_session.get(tables.Datasource, datasource_id)
-    ).get_config()
+    after_revision = (await xngin_session.get(tables.Datasource, datasource_id)).get_config()
     match dsn:
         case PostgresDsn() | RedshiftDsn():
             assert after_revision.dwh.host == before_revision.dwh.host
@@ -375,12 +349,7 @@ async def test_datasources_hide_credentials(
         case BqDsn():
             assert after_revision.dwh.project_id == before_revision.dwh.project_id
             assert after_revision.dwh.credentials != before_revision.dwh.credentials
-            assert (
-                "newprivatekey"
-                in base64.standard_b64decode(
-                    after_revision.dwh.credentials.content_base64
-                ).decode()
-            )
+            assert "newprivatekey" in base64.standard_b64decode(after_revision.dwh.credentials.content_base64).decode()
 
     # Send an update with hidden credentials and confirm that non-credential data remains the same.
     match dsn:
@@ -394,14 +363,10 @@ async def test_datasources_hide_credentials(
             revised_bq.project_id = "newprojectid"
             revised_bq.credentials = Hidden()
             update_request = UpdateDatasourceRequest(dsn=revised_bq)
-    response = ppatch(
-        f"/v1/m/datasources/{datasource_id}", content=update_request.model_dump_json()
-    )
+    response = ppatch(f"/v1/m/datasources/{datasource_id}", content=update_request.model_dump_json())
     assert response.status_code == 204, response.content
 
-    after_second_revision = (
-        await xngin_session.get(tables.Datasource, datasource_id)
-    ).get_config()
+    after_second_revision = (await xngin_session.get(tables.Datasource, datasource_id)).get_config()
     match dsn:
         case PostgresDsn() | RedshiftDsn():
             assert after_second_revision.dwh.dbname == "newdatabase"
@@ -411,14 +376,10 @@ async def test_datasources_hide_credentials(
         case BqDsn():
             assert after_second_revision.dwh.project_id == "newprojectid"
             assert after_second_revision.dwh.dataset_id == after_revision.dwh.dataset_id
-            assert (
-                after_second_revision.dwh.credentials == after_revision.dwh.credentials
-            )
+            assert after_second_revision.dwh.credentials == after_revision.dwh.credentials
             assert (
                 "newprivatekey"
-                in base64.standard_b64decode(
-                    after_second_revision.dwh.credentials.content_base64
-                ).decode()
+                in base64.standard_b64decode(after_second_revision.dwh.credentials.content_base64).decode()
             )
 
 
@@ -455,9 +416,7 @@ def test_create_datasource_without_credentials(
 ):
     response = ppost(
         "/v1/m/organizations",
-        json=CreateOrganizationRequest(
-            name="test_create_datasource_without_credentials"
-        ).model_dump(),
+        json=CreateOrganizationRequest(name="test_create_datasource_without_credentials").model_dump(),
     )
     assert response.status_code == 200, response.content
     org_id = CreateOrganizationResponse.model_validate(response.json()).id
@@ -523,9 +482,7 @@ def test_remove_member_from_org(xngin_session, pget, ppost, pdelete):
     def create_organization():
         creation_response = ppost(
             "/v1/m/organizations",
-            json=CreateOrganizationRequest(
-                name="test_remove_member_from_org"
-            ).model_dump(),
+            json=CreateOrganizationRequest(name="test_remove_member_from_org").model_dump(),
         )
         assert creation_response.status_code == 200, creation_response.content
         parsed = CreateOrganizationResponse.model_validate(creation_response.json())
@@ -536,10 +493,7 @@ def test_remove_member_from_org(xngin_session, pget, ppost, pdelete):
     def list_members():
         org_response = pget(f"/v1/m/organizations/{org_id}")
         assert org_response.status_code == 200, org_response.content
-        return {
-            u.email: u.id
-            for u in GetOrganizationResponse.model_validate(org_response.json()).users
-        }
+        return {u.email: u.id for u in GetOrganizationResponse.model_validate(org_response.json()).users}
 
     def add_member(email: str):
         add_response = ppost(
@@ -550,10 +504,7 @@ def test_remove_member_from_org(xngin_session, pget, ppost, pdelete):
         return add_response
 
     def remove_member(user_id: str, extra: str | None = None):
-        return pdelete(
-            f"/v1/m/organizations/{org_id}/members/{user_id}"
-            + (f"?{extra}" if extra else "")
-        )
+        return pdelete(f"/v1/m/organizations/{org_id}/members/{user_id}" + (f"?{extra}" if extra else ""))
 
     assert list_members().keys() == {PRIVILEGED_EMAIL}
     add_member(UNPRIVILEGED_EMAIL)
@@ -602,9 +553,7 @@ async def test_first_user_has_an_organization_created_at_login(xngin_session, pg
     assert response.json()["items"][0]["name"] == "My Organization"
 
 
-async def test_first_user_has_an_organization_created_at_login_unprivileged(
-    xngin_session, uget
-):
+async def test_first_user_has_an_organization_created_at_login_unprivileged(xngin_session, uget):
     """Test listing the orgs by the first user of the system using uget."""
     await delete_seeded_users(xngin_session)
 
@@ -699,9 +648,7 @@ def test_datasource_lifecycle(ppost, pget, ppatch):
             dsn=BqDsn(
                 project_id="123456",
                 dataset_id="ds",
-                credentials=GcpServiceAccount(
-                    content=SAMPLE_GCLOUD_SERVICE_ACCOUNT_JSON
-                ),
+                credentials=GcpServiceAccount(content=SAMPLE_GCLOUD_SERVICE_ACCOUNT_JSON),
             )
         ).model_dump_json(),
     )
@@ -730,9 +677,7 @@ def test_delete_datasource(testing_datasource_with_user, pget, udelete, pdelete)
 
     response = pget(f"/v1/m/organizations/{org_id}/datasources")
     assert response.status_code == 200, response.content
-    assert ListDatasourcesResponse.model_validate(response.json()).items, (
-        response.content
-    )  # non-empty list
+    assert ListDatasourcesResponse.model_validate(response.json()).items, response.content  # non-empty list
 
     # Delete the datasource as a privileged user.
     response = pdelete(f"/v1/m/organizations/{org_id}/datasources/{ds_id}")
@@ -748,16 +693,12 @@ def test_delete_datasource(testing_datasource_with_user, pget, udelete, pdelete)
     assert response.status_code == 404, response.content
 
     # Delete the datasource a 2nd time returns 204 when ?allow_missing is set.
-    response = pdelete(
-        f"/v1/m/organizations/{org_id}/datasources/{ds_id}?allow_missing=true"
-    )
+    response = pdelete(f"/v1/m/organizations/{org_id}/datasources/{ds_id}?allow_missing=true")
     assert response.status_code == 204, response.content
 
     response = pget(f"/v1/m/organizations/{org_id}/datasources")
     assert response.status_code == 200, response.content
-    assert not ListDatasourcesResponse.model_validate(response.json()).items, (
-        response.content
-    )  # empty list
+    assert not ListDatasourcesResponse.model_validate(response.json()).items, response.content  # empty list
 
 
 async def test_webhook_lifecycle(pdelete, ppost, ppatch, pget):
@@ -841,9 +782,7 @@ async def test_webhook_lifecycle(pdelete, ppost, ppatch, pget):
     assert response.status_code == 404, response.content
 
     # Delete the webhook again (204)
-    response = pdelete(
-        f"/v1/m/organizations/{org_id}/webhooks/{webhook_id}?allow_missing=True"
-    )
+    response = pdelete(f"/v1/m/organizations/{org_id}/webhooks/{webhook_id}?allow_missing=True")
     assert response.status_code == 204, response.content
 
     # Try to regenerate auth token for a non-existent webhook
@@ -853,9 +792,7 @@ async def test_webhook_lifecycle(pdelete, ppost, ppatch, pget):
     # Try to update a non-existent webhook
     response = ppatch(
         f"/v1/m/organizations/{org_id}/webhooks/{webhook_id}",
-        json=UpdateOrganizationWebhookRequest(
-            url="https://should-fail.com/webhook", name="fail"
-        ).model_dump(),
+        json=UpdateOrganizationWebhookRequest(url="https://should-fail.com/webhook", name="fail").model_dump(),
     )
     assert response.status_code == 404, response.content
 
@@ -864,9 +801,7 @@ async def test_webhook_lifecycle(pdelete, ppost, ppatch, pget):
     assert response.status_code == 404, response.content
 
 
-def test_participants_lifecycle(
-    testing_datasource_with_user, pget, ppost, ppatch, pdelete
-):
+def test_participants_lifecycle(testing_datasource_with_user, pget, ppost, ppatch, pdelete):
     """Test getting, creating, listing, updating, and deleting a participant type."""
     ds_id = testing_datasource_with_user.ds.id
 
@@ -916,9 +851,7 @@ def test_participants_lifecycle(
     # Update participant
     response = ppatch(
         f"/v1/m/datasources/{ds_id}/participants/newpt",
-        content=UpdateParticipantsTypeRequest(
-            participant_type="renamedpt"
-        ).model_dump_json(),
+        content=UpdateParticipantsTypeRequest(participant_type="renamedpt").model_dump_json(),
     )
     assert response.status_code == 200, response.content
     update_pt_response = UpdateParticipantsTypeResponse.model_validate(response.json())
@@ -947,9 +880,7 @@ def test_participants_lifecycle(
     assert response.status_code == 404, response.content
 
     # Delete the renamed participant type again w/allow_missing.
-    response = pdelete(
-        f"/v1/m/datasources/{ds_id}/participants/renamedpt?allow_missing=1"
-    )
+    response = pdelete(f"/v1/m/datasources/{ds_id}/participants/renamedpt?allow_missing=1")
     assert response.status_code == 204, response.content
 
     # Get the named participant type after it has been deleted
@@ -997,9 +928,7 @@ def test_create_participants_type_invalid(testing_datasource, ppost):
         ).model_dump_json(),
     )
     assert response.status_code == 422, response.content
-    assert "no columns marked as unique ID." in response.json()["detail"][0]["msg"], (
-        response.content
-    )
+    assert "no columns marked as unique ID." in response.json()["detail"][0]["msg"], response.content
 
 
 async def test_lifecycle_with_db(testing_datasource, ppost, pget, pdelete, udelete):
@@ -1054,40 +983,24 @@ async def test_lifecycle_with_db(testing_datasource, ppost, pget, pdelete, udele
                 description="",
             ),
             FieldMetadata(field_name="id", data_type=DataType.BIGINT, description=""),
-            FieldMetadata(
-                field_name="income", data_type=DataType.NUMERIC, description=""
-            ),
-            FieldMetadata(
-                field_name="is_engaged", data_type=DataType.BOOLEAN, description=""
-            ),
-            FieldMetadata(
-                field_name="is_onboarded", data_type=DataType.BOOLEAN, description=""
-            ),
-            FieldMetadata(
-                field_name="is_recruited", data_type=DataType.BOOLEAN, description=""
-            ),
+            FieldMetadata(field_name="income", data_type=DataType.NUMERIC, description=""),
+            FieldMetadata(field_name="is_engaged", data_type=DataType.BOOLEAN, description=""),
+            FieldMetadata(field_name="is_onboarded", data_type=DataType.BOOLEAN, description=""),
+            FieldMetadata(field_name="is_recruited", data_type=DataType.BOOLEAN, description=""),
             FieldMetadata(
                 field_name="is_registered",
                 data_type=DataType.BOOLEAN,
                 description="",
             ),
-            FieldMetadata(
-                field_name="is_retained", data_type=DataType.BOOLEAN, description=""
-            ),
+            FieldMetadata(field_name="is_retained", data_type=DataType.BOOLEAN, description=""),
             FieldMetadata(
                 field_name="last_name",
                 data_type=DataType.CHARACTER_VARYING,
                 description="",
             ),
-            FieldMetadata(
-                field_name="potential_0", data_type=DataType.NUMERIC, description=""
-            ),
-            FieldMetadata(
-                field_name="potential_1", data_type=DataType.BIGINT, description=""
-            ),
-            FieldMetadata(
-                field_name="sample_date", data_type=DataType.DATE, description=""
-            ),
+            FieldMetadata(field_name="potential_0", data_type=DataType.NUMERIC, description=""),
+            FieldMetadata(field_name="potential_1", data_type=DataType.BIGINT, description=""),
+            FieldMetadata(field_name="sample_date", data_type=DataType.DATE, description=""),
             FieldMetadata(
                 field_name="sample_timestamp",
                 data_type=DataType.TIMESTAMP_WITHOUT_TIMEZONE,
@@ -1098,9 +1011,7 @@ async def test_lifecycle_with_db(testing_datasource, ppost, pget, pdelete, udele
                 data_type=DataType.TIMESTAMP_WITH_TIMEZONE,
                 description="",
             ),
-            FieldMetadata(
-                field_name="uuid_filter", data_type=DataType.UUID, description=""
-            ),
+            FieldMetadata(field_name="uuid_filter", data_type=DataType.UUID, description=""),
         ],
     )
 
@@ -1136,9 +1047,7 @@ async def test_lifecycle_with_db(testing_datasource, ppost, pget, pdelete, udele
         ).model_dump_json(),
     )
     assert response.status_code == 200, response.content
-    created_participant_type = CreateParticipantsTypeResponse.model_validate(
-        response.json()
-    )
+    created_participant_type = CreateParticipantsTypeResponse.model_validate(response.json())
     assert created_participant_type.participant_type == participant_type
 
     # Create experiment using that participant type.
@@ -1152,22 +1061,15 @@ async def test_lifecycle_with_db(testing_datasource, ppost, pget, pdelete, udele
     parsed_experiment_id = created_experiment.design_spec.experiment_id
     assert parsed_experiment_id is not None
     assert created_experiment.stopped_assignments_at is not None
-    assert (
-        created_experiment.stopped_assignments_reason
-        == StopAssignmentReason.PREASSIGNED
-    )
+    assert created_experiment.stopped_assignments_reason == StopAssignmentReason.PREASSIGNED
     parsed_arm_ids = {arm.arm_id for arm in created_experiment.design_spec.arms}
     assert len(parsed_arm_ids) == 2
 
     # Get that experiment.
-    response = pget(
-        f"/v1/m/datasources/{testing_datasource.ds.id}/experiments/{parsed_experiment_id}"
-    )
+    response = pget(f"/v1/m/datasources/{testing_datasource.ds.id}/experiments/{parsed_experiment_id}")
 
     assert response.status_code == 200, response.content
-    create_experiment_response = CreateExperimentResponse.model_validate(
-        response.json()
-    )
+    create_experiment_response = CreateExperimentResponse.model_validate(response.json())
     assert create_experiment_response.design_spec.experiment_id == parsed_experiment_id
 
     # List org experiments.
@@ -1179,17 +1081,13 @@ async def test_lifecycle_with_db(testing_datasource, ppost, pget, pdelete, udele
     assert experiment_config_0.design_spec.experiment_id == parsed_experiment_id
 
     # Analyze experiment
-    response = pget(
-        f"/v1/m/datasources/{testing_datasource.ds.id}/experiments/{parsed_experiment_id}/analyze"
-    )
+    response = pget(f"/v1/m/datasources/{testing_datasource.ds.id}/experiments/{parsed_experiment_id}/analyze")
     assert response.status_code == 200, response.content
     experiment_analysis = FreqExperimentAnalysisResponse.model_validate(response.json())
     assert experiment_analysis.experiment_id == parsed_experiment_id
 
     # Get assignments for the experiment.
-    response = pget(
-        f"/v1/m/datasources/{testing_datasource.ds.id}/experiments/{parsed_experiment_id}/assignments"
-    )
+    response = pget(f"/v1/m/datasources/{testing_datasource.ds.id}/experiments/{parsed_experiment_id}/assignments")
     assert response.status_code == 200, response.content
     assignments = GetExperimentAssignmentsResponse.model_validate(response.json())
     assert assignments.experiment_id == parsed_experiment_id
@@ -1200,21 +1098,15 @@ async def test_lifecycle_with_db(testing_datasource, ppost, pget, pdelete, udele
     assert {arm.arm_id for arm in assignments.assignments} == parsed_arm_ids
 
     # Unprivileged user attempts to delete the experiment
-    response = udelete(
-        f"/v1/m/datasources/{testing_datasource.ds.id}/experiments/{parsed_experiment_id}"
-    )
+    response = udelete(f"/v1/m/datasources/{testing_datasource.ds.id}/experiments/{parsed_experiment_id}")
     assert response.status_code == 403
 
     # Delete the experiment.
-    response = pdelete(
-        f"/v1/m/datasources/{testing_datasource.ds.id}/experiments/{parsed_experiment_id}"
-    )
+    response = pdelete(f"/v1/m/datasources/{testing_datasource.ds.id}/experiments/{parsed_experiment_id}")
     assert response.status_code == 204, response.content
 
     # Delete the experiment again.
-    response = pdelete(
-        f"/v1/m/datasources/{testing_datasource.ds.id}/experiments/{parsed_experiment_id}"
-    )
+    response = pdelete(f"/v1/m/datasources/{testing_datasource.ds.id}/experiments/{parsed_experiment_id}")
     assert response.status_code == 404, response.content
 
     # Delete the experiment again w/allow_missing.
@@ -1247,10 +1139,7 @@ async def test_create_preassigned_experiment_using_inline_schema_ds(
 
     # Verify basic response
     assert created_experiment.stopped_assignments_at is not None
-    assert (
-        created_experiment.stopped_assignments_reason
-        == StopAssignmentReason.PREASSIGNED
-    )
+    assert created_experiment.stopped_assignments_reason == StopAssignmentReason.PREASSIGNED
     assert created_experiment.design_spec.experiment_id is not None
     assert created_experiment.design_spec.arms[0].arm_id is not None
     assert created_experiment.design_spec.arms[1].arm_id is not None
@@ -1275,9 +1164,7 @@ async def test_create_preassigned_experiment_using_inline_schema_ds(
 
     # Verify database state using the ids in the returned DesignSpec.
     experiment = (
-        await xngin_session.scalars(
-            select(tables.Experiment).where(tables.Experiment.id == experiment_id)
-        )
+        await xngin_session.scalars(select(tables.Experiment).where(tables.Experiment.id == experiment_id))
     ).one()
     assert experiment.state == ExperimentState.ASSIGNED
     assert experiment.datasource_id == datasource_id
@@ -1290,14 +1177,10 @@ async def test_create_preassigned_experiment_using_inline_schema_ds(
     # Verify assignments were created
     assignments = (
         await xngin_session.scalars(
-            select(tables.ArmAssignment).where(
-                tables.ArmAssignment.experiment_id == experiment_id
-            )
+            select(tables.ArmAssignment).where(tables.ArmAssignment.experiment_id == experiment_id)
         )
     ).all()
-    assert len(assignments) == 100, {
-        e.name: getattr(experiment, e.name) for e in tables.Experiment.__table__.columns
-    }
+    assert len(assignments) == 100, {e.name: getattr(experiment, e.name) for e in tables.Experiment.__table__.columns}
 
     # Check one assignment to see if it looks roughly right
     sample_assignment: tables.ArmAssignment = assignments[0]
@@ -1313,9 +1196,7 @@ async def test_create_preassigned_experiment_using_inline_schema_ds(
     assert abs(num_control - num_treat) <= 5  # Allow some wiggle room
 
 
-def test_create_online_experiment_using_inline_schema_ds(
-    testing_datasource_with_user, use_deterministic_random, ppost
-):
+def test_create_online_experiment_using_inline_schema_ds(testing_datasource_with_user, use_deterministic_random, ppost):
     datasource_id = testing_datasource_with_user.ds.id
     request_obj = make_create_online_experiment_request()
 
@@ -1354,20 +1235,14 @@ def test_create_online_experiment_using_inline_schema_ds(
     assert actual_design_spec == request_obj.design_spec
 
 
-def test_get_experiment_assignment_for_preassigned_participant(
-    testing_experiment, pget
-):
+def test_get_experiment_assignment_for_preassigned_participant(testing_experiment, pget):
     datasource_id = testing_experiment.datasource_id
     experiment_id = testing_experiment.id
     assignments = testing_experiment.arm_assignments
 
-    response = pget(
-        f"/v1/m/datasources/{datasource_id}/experiments/{experiment_id}/assignments/unassigned_id"
-    )
+    response = pget(f"/v1/m/datasources/{datasource_id}/experiments/{experiment_id}/assignments/unassigned_id")
     assert response.status_code == 200, response.content
-    assignment_response = GetParticipantAssignmentResponse.model_validate(
-        response.json()
-    )
+    assignment_response = GetParticipantAssignmentResponse.model_validate(response.json())
     assert assignment_response.experiment_id == experiment_id
     assert assignment_response.participant_id == "unassigned_id"
     assert assignment_response.assignment is None
@@ -1376,9 +1251,7 @@ def test_get_experiment_assignment_for_preassigned_participant(
         f"/v1/m/datasources/{datasource_id}/experiments/{experiment_id}/assignments/{assignments[0].participant_id}"
     )
     assert response.status_code == 200, response.content
-    assignment_response = GetParticipantAssignmentResponse.model_validate(
-        response.json()
-    )
+    assignment_response = GetParticipantAssignmentResponse.model_validate(response.json())
     assert assignment_response.experiment_id == experiment_id
     assert assignment_response.participant_id == assignments[0].participant_id
     assert assignment_response.assignment is not None
@@ -1398,43 +1271,29 @@ async def test_get_experiment_assignment_for_online_participant(
         f"/v1/m/datasources/{datasource_id}/experiments/{experiment_id}/assignments/new_id?create_if_none=false"
     )
     assert response.status_code == 200, response.content
-    assignment_response = GetParticipantAssignmentResponse.model_validate(
-        response.json()
-    )
+    assignment_response = GetParticipantAssignmentResponse.model_validate(response.json())
     assert assignment_response.experiment_id == experiment_id
     assert assignment_response.participant_id == "new_id"
     assert assignment_response.assignment is None
 
     # Create a new participant assignment.
-    response = pget(
-        f"/v1/m/datasources/{datasource_id}/experiments/{experiment_id}/assignments/new_id"
-    )
+    response = pget(f"/v1/m/datasources/{datasource_id}/experiments/{experiment_id}/assignments/new_id")
     assert response.status_code == 200, response.content
-    assignment_response = GetParticipantAssignmentResponse.model_validate(
-        response.json()
-    )
+    assignment_response = GetParticipantAssignmentResponse.model_validate(response.json())
     assert assignment_response.experiment_id == experiment_id
     assert assignment_response.participant_id == "new_id"
     assert assignment_response.assignment is not None
-    assert str(assignment_response.assignment.arm_id) in {
-        arm.id for arm in test_experiment.arms
-    }
+    assert str(assignment_response.assignment.arm_id) in {arm.id for arm in test_experiment.arms}
 
     # Get back the same assignment.
-    response = pget(
-        f"/v1/m/datasources/{datasource_id}/experiments/{experiment_id}/assignments/new_id"
-    )
+    response = pget(f"/v1/m/datasources/{datasource_id}/experiments/{experiment_id}/assignments/new_id")
     assert response.status_code == 200, response.content
-    assignment_response2 = GetParticipantAssignmentResponse.model_validate(
-        response.json()
-    )
+    assignment_response2 = GetParticipantAssignmentResponse.model_validate(response.json())
     assert assignment_response2 == assignment_response
 
     # Make sure there's only one db entry.
     scalars = await xngin_session.scalars(
-        select(tables.ArmAssignment).where(
-            tables.ArmAssignment.experiment_id == experiment_id
-        )
+        select(tables.ArmAssignment).where(tables.ArmAssignment.experiment_id == experiment_id)
     )
     assignment = scalars.one()
     assert assignment.participant_id == "new_id"
@@ -1454,13 +1313,9 @@ async def test_get_experiment_assignment_for_online_participant_past_end_date(
     experiment_id = new_exp.id
 
     # Verify no new assignment is created for the ended experiment.
-    response = pget(
-        f"/v1/m/datasources/{datasource_id}/experiments/{experiment_id}/assignments/new_id"
-    )
+    response = pget(f"/v1/m/datasources/{datasource_id}/experiments/{experiment_id}/assignments/new_id")
     assert response.status_code == 200, response.content
-    assignment_response = GetParticipantAssignmentResponse.model_validate(
-        response.json()
-    )
+    assignment_response = GetParticipantAssignmentResponse.model_validate(response.json())
     assert assignment_response.experiment_id == experiment_id
     assert assignment_response.participant_id == "new_id"
     assert assignment_response.assignment is None, assignment_response.model_dump_json()
@@ -1474,9 +1329,7 @@ def test_experiments_analyze(testing_experiment, pget):
     datasource_id = testing_experiment.datasource_id
     experiment_id = testing_experiment.id
 
-    response = pget(
-        f"/v1/m/datasources/{datasource_id}/experiments/{experiment_id}/analyze"
-    )
+    response = pget(f"/v1/m/datasources/{datasource_id}/experiments/{experiment_id}/analyze")
 
     assert response.status_code == 200, response.content
     experiment_analysis = FreqExperimentAnalysisResponse.model_validate(response.json())
@@ -1493,9 +1346,7 @@ def test_experiments_analyze(testing_experiment, pget):
     assert baseline_arms[0].is_baseline
     for analysis in experiment_analysis.metric_analyses:
         # Verify arm_ids match the database model.
-        assert {arm.arm_id for arm in analysis.arm_analyses} == {
-            arm.id for arm in testing_experiment.arms
-        }
+        assert {arm.arm_id for arm in analysis.arm_analyses} == {arm.id for arm in testing_experiment.arms}
         # id=0 doesn't exist in our test data, so we'll have 1 missing value across all arms.
         assert sum([arm.num_missing_values for arm in analysis.arm_analyses]) == 1
 
@@ -1509,9 +1360,7 @@ async def test_experiments_analyze_for_experiment_with_no_participants(
     datasource_id = test_experiment.datasource_id
     experiment_id = test_experiment.id
 
-    response = pget(
-        f"/v1/m/datasources/{datasource_id}/experiments/{experiment_id}/analyze"
-    )
+    response = pget(f"/v1/m/datasources/{datasource_id}/experiments/{experiment_id}/analyze")
     assert response.status_code == 422, response.content
     assert response.json()["message"] == "No participants found for experiment."
 
@@ -1544,19 +1393,13 @@ async def test_admin_experiment_state_setting(
     xngin_session.add(experiment)
     await xngin_session.commit()
 
-    response = ppost(
-        f"/v1/m/datasources/{datasource.id}/experiments/{experiment.id!s}/{endpoint}"
-    )
+    response = ppost(f"/v1/m/datasources/{datasource.id}/experiments/{experiment.id!s}/{endpoint}")
 
     # Verify
     assert response.status_code == expected_status
     # If success case, verify state was updated
     if expected_status == 204:
-        expected_state = (
-            ExperimentState.ABANDONED
-            if endpoint == "abandon"
-            else ExperimentState.COMMITTED
-        )
+        expected_state = ExperimentState.ABANDONED if endpoint == "abandon" else ExperimentState.COMMITTED
         await xngin_session.refresh(experiment)
         assert experiment.state == expected_state
     # If failure case, verify the error message
@@ -1577,45 +1420,33 @@ async def test_delete_apikey_not_authorized(pdelete):
     assert response.status_code == 403
 
 
-async def test_delete_apikey_authorized_and_nonexistent(
-    testing_datasource_with_user, pdelete
-):
-    response = pdelete(
-        f"/v1/m/datasources/{testing_datasource_with_user.ds.id}/apikeys/sample-key-id"
-    )
+async def test_delete_apikey_authorized_and_nonexistent(testing_datasource_with_user, pdelete):
+    response = pdelete(f"/v1/m/datasources/{testing_datasource_with_user.ds.id}/apikeys/sample-key-id")
     assert response.status_code == 404
 
 
-async def test_delete_apikey_authorized_and_nonexistent_allow_missing(
-    testing_datasource_with_user, pdelete
-):
+async def test_delete_apikey_authorized_and_nonexistent_allow_missing(testing_datasource_with_user, pdelete):
     response = pdelete(
         f"/v1/m/datasources/{testing_datasource_with_user.ds.id}/apikeys/sample-key-id?allow_missing=true"
     )
     assert response.status_code == 204
 
 
-async def test_delete_apikey_authorized_and_exists(
-    testing_datasource_with_user, pget, pdelete
-):
+async def test_delete_apikey_authorized_and_exists(testing_datasource_with_user, pget, pdelete):
     response = pdelete(
         f"/v1/m/datasources/{testing_datasource_with_user.ds.id}/apikeys/{testing_datasource_with_user.key_id}"
     )
     assert response.status_code == 204
 
 
-async def test_delete_apikey_authorized_and_exists_allow_missing(
-    testing_datasource_with_user, pget, pdelete
-):
+async def test_delete_apikey_authorized_and_exists_allow_missing(testing_datasource_with_user, pget, pdelete):
     response = pdelete(
         f"/v1/m/datasources/{testing_datasource_with_user.ds.id}/apikeys/{testing_datasource_with_user.key_id}?allow_missing=true"
     )
     assert response.status_code == 204
 
 
-async def test_delete_apikey_authorized_and_exists_idempotency(
-    testing_datasource_with_user, pget, pdelete
-):
+async def test_delete_apikey_authorized_and_exists_idempotency(testing_datasource_with_user, pget, pdelete):
     response = pdelete(
         f"/v1/m/datasources/{testing_datasource_with_user.ds.id}/apikeys/{testing_datasource_with_user.key_id}"
     )
@@ -1659,9 +1490,7 @@ async def test_manage_apikeys(testing_datasource_with_user, ppost, pget, pdelete
     assert response.status_code == 204
 
 
-async def test_experiment_webhook_integration(
-    testing_datasource_with_user, ppost, pget
-):
+async def test_experiment_webhook_integration(testing_datasource_with_user, ppost, pget):
     """Test creating an experiment with webhook associations and verifying webhook IDs in response."""
     org_id = testing_datasource_with_user.org.id
     datasource_id = testing_datasource_with_user.ds.id
@@ -1725,9 +1554,7 @@ async def test_experiment_webhook_integration(
     experiment_id = created_experiment["design_spec"]["experiment_id"]
 
     # Get the experiment and verify webhook is included
-    get_response = pget(
-        f"/v1/m/datasources/{datasource_id}/experiments/{experiment_id}"
-    )
+    get_response = pget(f"/v1/m/datasources/{datasource_id}/experiments/{experiment_id}")
     assert get_response.status_code == 200, get_response.content
 
     retrieved_experiment = get_response.json()
@@ -1762,9 +1589,7 @@ async def test_experiment_webhook_integration(
         f"/v1/m/datasources/{datasource_id}/experiments?chosen_n=100",
         json=experiment_request_no_webhooks.model_dump(mode="json"),
     )
-    assert create_response_no_webhooks.status_code == 200, (
-        create_response_no_webhooks.content
-    )
+    assert create_response_no_webhooks.status_code == 200, create_response_no_webhooks.content
 
     # Verify no webhooks are associated
     created_experiment_no_webhooks = create_response_no_webhooks.json()

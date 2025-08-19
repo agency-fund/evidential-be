@@ -3,9 +3,7 @@ import sqlalchemy
 from xngin.apiserver.sqla import tables
 
 
-def is_user_authorized_on_datasource(
-    user: tables.User, datasource_id: str
-) -> sqlalchemy.Select:
+def is_user_authorized_on_datasource(user: tables.User, datasource_id: str) -> sqlalchemy.Select:
     """Create a query that checks if a user is authorized to manage a datasource."""
     return (
         sqlalchemy.select(tables.Datasource.id)
@@ -18,9 +16,7 @@ def is_user_authorized_on_datasource(
     )
 
 
-def is_user_authorized_on_organization(
-    user: tables.User, organization_id: str
-) -> sqlalchemy.Select:
+def is_user_authorized_on_organization(user: tables.User, organization_id: str) -> sqlalchemy.Select:
     """Create a query that checks if a user is authorized to manage an organization."""
     return (
         sqlalchemy.select(tables.Organization.id)
