@@ -152,6 +152,7 @@ dev-dependencies = [
     "boto3-stubs>=1.39.1",
     "types-cachetools>=6.0.0.20250525",
     "coverage>=7.10.0",
+    "scipy-stubs>=1.12.0,<2",
 ]
 environments = [
     "sys_platform == 'darwin'",
