@@ -65,7 +65,7 @@
             <a id="nextFileLink" class="nav" href="z_3103cf4b20fd3e3c_test_common_api_types_py.html">&#xbb; next</a>
             &nbsp; &nbsp; &nbsp;
             <a class="nav" href="https://coverage.readthedocs.io/en/7.10.3">coverage.py v7.10.3</a>,
-            created at 2025-08-18 18:05 +0000
+            created at 2025-08-19 21:45 +0000
         </p>
         <aside class="hidden">
             <button type="button" class="button_next_chunk" data-shortcut="j"></button>
@@ -105,10 +105,8 @@
     <p class="run run2"><span class="n"><a id="t23" href="#t23">23</a></span><span class="t">    <span class="nam">session</span><span class="op">:</span> <span class="nam">Annotated</span><span class="op">[</span><span class="nam">AsyncSession</span><span class="op">,</span> <span class="nam">Depends</span><span class="op">(</span><span class="nam">xngin_db_session</span><span class="op">)</span><span class="op">]</span><span class="op">,</span>&nbsp;</span><span class="r"></span></p>
     <p class="run run2"><span class="n"><a id="t24" href="#t24">24</a></span><span class="t"><span class="op">)</span><span class="op">:</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t25" href="#t25">25</a></span><span class="t">    <span class="str">"""Endpoint to confirm that we can make a connection to the database and issue a query."""</span>&nbsp;</span><span class="r"></span></p>
-    <p class="mis show_mis"><span class="n"><a id="t26" href="#t26">26</a></span><span class="t">    <span class="nam">now</span> <span class="op">=</span> <span class="op">(</span>&nbsp;</span><span class="r"></span></p>
-    <p class="mis mis2 show_mis"><span class="n"><a id="t27" href="#t27">27</a></span><span class="t">        <span class="key">await</span> <span class="nam">session</span><span class="op">.</span><span class="nam">execute</span><span class="op">(</span><span class="nam">sqlalchemy</span><span class="op">.</span><span class="nam">select</span><span class="op">(</span><span class="nam">sqlalchemy</span><span class="op">.</span><span class="nam">sql</span><span class="op">.</span><span class="nam">func</span><span class="op">.</span><span class="nam">now</span><span class="op">(</span><span class="op">)</span><span class="op">)</span><span class="op">)</span>&nbsp;</span><span class="r"></span></p>
-    <p class="mis mis2 show_mis"><span class="n"><a id="t28" href="#t28">28</a></span><span class="t">    <span class="op">)</span><span class="op">.</span><span class="nam">scalar_one_or_none</span><span class="op">(</span><span class="op">)</span>&nbsp;</span><span class="r"></span></p>
-    <p class="mis show_mis"><span class="n"><a id="t29" href="#t29">29</a></span><span class="t">    <span class="key">return</span> <span class="op">{</span><span class="str">"status"</span><span class="op">:</span> <span class="str">"ok"</span><span class="op">,</span> <span class="str">"db_time"</span><span class="op">:</span> <span class="nam">now</span><span class="op">}</span>&nbsp;</span><span class="r"></span></p>
+    <p class="mis show_mis"><span class="n"><a id="t26" href="#t26">26</a></span><span class="t">    <span class="nam">now</span> <span class="op">=</span> <span class="op">(</span><span class="key">await</span> <span class="nam">session</span><span class="op">.</span><span class="nam">execute</span><span class="op">(</span><span class="nam">sqlalchemy</span><span class="op">.</span><span class="nam">select</span><span class="op">(</span><span class="nam">sqlalchemy</span><span class="op">.</span><span class="nam">sql</span><span class="op">.</span><span class="nam">func</span><span class="op">.</span><span class="nam">now</span><span class="op">(</span><span class="op">)</span><span class="op">)</span><span class="op">)</span><span class="op">)</span><span class="op">.</span><span class="nam">scalar_one_or_none</span><span class="op">(</span><span class="op">)</span>&nbsp;</span><span class="r"></span></p>
+    <p class="mis show_mis"><span class="n"><a id="t27" href="#t27">27</a></span><span class="t">    <span class="key">return</span> <span class="op">{</span><span class="str">"status"</span><span class="op">:</span> <span class="str">"ok"</span><span class="op">,</span> <span class="str">"db_time"</span><span class="op">:</span> <span class="nam">now</span><span class="op">}</span>&nbsp;</span><span class="r"></span></p>
 </main>
 <footer>
     <div class="content">
@@ -118,7 +116,7 @@
             <a class="nav" href="z_3103cf4b20fd3e3c_test_common_api_types_py.html">&#xbb; next</a>
             &nbsp; &nbsp; &nbsp;
             <a class="nav" href="https://coverage.readthedocs.io/en/7.10.3">coverage.py v7.10.3</a>,
-            created at 2025-08-18 18:05 +0000
+            created at 2025-08-19 21:45 +0000
         </p>
     </div>
 </footer>
