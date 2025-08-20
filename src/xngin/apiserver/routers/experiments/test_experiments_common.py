@@ -24,6 +24,7 @@ from xngin.apiserver.routers.common_api_types import (
     OnlineFrequentistExperimentSpec,
     PowerResponse,
     PreassignedFrequentistExperimentSpec,
+    PriorTypes,
     Stratum,
 )
 from xngin.apiserver.routers.common_enums import ExperimentState, StopAssignmentReason
@@ -49,6 +50,8 @@ def make_createexperimentrequest_json(
     participant_type: str = "test_participant_type",
     experiment_type: str = "freq_preassigned",
     with_ids: bool = False,
+    prior_type: str = "normal",
+    reward_type: str = "real-valued",
 ):
     """Make a basic CreateExperimentRequest JSON object.
 
@@ -58,42 +61,83 @@ def make_createexperimentrequest_json(
     arm1_id = tables.arm_id_factory() if with_ids else None
     arm2_id = tables.arm_id_factory() if with_ids else None
 
-    return {
-        "design_spec": {
-            **({"experiment_id": experiment_id} if experiment_id is not None else {}),
-            "participant_type": participant_type,
-            "experiment_name": "test",
-            "description": "test",
-            "experiment_type": experiment_type,
-            # Attach UTC tz, but use dates_equal() to compare to respect db storage support
-            "start_date": "2024-01-01T00:00:00+00:00",
-            # default our experiment to end in the future
-            "end_date": (datetime.now(UTC) + timedelta(days=1)).isoformat(),
-            "arms": [
-                {
-                    **({"arm_id": arm1_id} if arm1_id is not None else {}),
-                    "arm_name": "control",
-                    "arm_description": "control",
-                },
-                {
-                    **({"arm_id": arm2_id} if arm2_id is not None else {}),
-                    "arm_name": "treatment",
-                    "arm_description": "treatment",
-                },
-            ],
-            "filters": [],
-            "strata": [{"field_name": "gender"}],
-            "metrics": [
-                {
-                    "field_name": "is_onboarded",
-                    "metric_pct_change": 0.1,
+    experiment_type = ExperimentsType(experiment_type)
+    match experiment_type:
+        case ExperimentsType.FREQ_PREASSIGNED | ExperimentsType.FREQ_ONLINE:
+            return {
+                "design_spec": {
+                    **({"experiment_id": experiment_id} if experiment_id is not None else {}),
+                    "participant_type": participant_type,
+                    "experiment_name": "test",
+                    "description": "test",
+                    "experiment_type": experiment_type,
+                    # Attach UTC tz, but use dates_equal() to compare to respect db storage support
+                    "start_date": "2024-01-01T00:00:00+00:00",
+                    # default our experiment to end in the future
+                    "end_date": (datetime.now(UTC) + timedelta(days=1)).isoformat(),
+                    "arms": [
+                        {
+                            **({"arm_id": arm1_id} if arm1_id is not None else {}),
+                            "arm_name": "control",
+                            "arm_description": "control",
+                        },
+                        {
+                            **({"arm_id": arm2_id} if arm2_id is not None else {}),
+                            "arm_name": "treatment",
+                            "arm_description": "treatment",
+                        },
+                    ],
+                    "filters": [],
+                    "strata": [{"field_name": "gender"}],
+                    "metrics": [
+                        {
+                            "field_name": "is_onboarded",
+                            "metric_pct_change": 0.1,
+                        }
+                    ],
+                    "power": 0.8,
+                    "alpha": 0.05,
+                    "fstat_thresh": 0.2,
                 }
-            ],
-            "power": 0.8,
-            "alpha": 0.05,
-            "fstat_thresh": 0.2,
-        }
-    }
+            }
+        case ExperimentsType.MAB_ONLINE:
+            return {
+                "design_spec": {
+                    **({"experiment_id": experiment_id} if experiment_id is not None else {}),
+                    "participant_type": "string",
+                    "experiment_name": "test",
+                    "description": "test",
+                    # Attach UTC tz, but use dates_equal() to compare to respect db storage support
+                    "start_date": "2024-01-01T00:00:00+00:00",
+                    # default our experiment to end in the future
+                    "end_date": (datetime.now(UTC) + timedelta(days=1)).isoformat(),
+                    "experiment_type": "mab_online",
+                    "prior_type": prior_type,
+                    "reward_type": reward_type,
+                    "arms": [
+                        {
+                            **({"arm_id": arm1_id} if arm1_id is not None else {}),
+                            "arm_name": "string",
+                            "arm_description": "string",
+                            "alpha_init": 1.0 if prior_type == PriorTypes.BETA else None,
+                            "beta_init": 1.0 if prior_type == PriorTypes.BETA else None,
+                            "mu_init": 0.0 if prior_type == PriorTypes.NORMAL else None,
+                            "sigma_init": 1.0 if prior_type == PriorTypes.NORMAL else None,
+                        },
+                        {
+                            **({"arm_id": arm2_id} if arm2_id is not None else {}),
+                            "arm_name": "string",
+                            "arm_description": "string",
+                            "alpha_init": 1.0 if prior_type == PriorTypes.BETA else None,
+                            "beta_init": 2.0 if prior_type == PriorTypes.BETA else None,
+                            "mu_init": 1.0 if prior_type == PriorTypes.NORMAL else None,
+                            "sigma_init": 2.0 if prior_type == PriorTypes.NORMAL else None,
+                        },
+                    ],
+                }
+            }
+        case _:
+            raise ValueError(f"Invalid experiment type: {experiment_type}")
 
 
 def make_create_preassigned_experiment_request(
@@ -107,6 +151,15 @@ def make_create_online_experiment_request(
     with_ids: bool = False,
 ) -> CreateExperimentRequest:
     request = make_createexperimentrequest_json(with_ids=with_ids, experiment_type=ExperimentsType.FREQ_ONLINE)
+    return TypeAdapter(CreateExperimentRequest).validate_python(request)
+
+
+def make_create_online_mab_experiment_request(
+    with_ids: bool = False, reward_type: str = "real-valued", prior_type: str = "normal"
+) -> CreateExperimentRequest:
+    request = make_createexperimentrequest_json(
+        with_ids=with_ids, experiment_type=ExperimentsType.MAB_ONLINE, prior_type=prior_type, reward_type=reward_type
+    )
     return TypeAdapter(CreateExperimentRequest).validate_python(request)
 
 
