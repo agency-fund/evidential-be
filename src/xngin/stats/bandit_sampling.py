@@ -1,5 +1,5 @@
 import numpy as np
-from scipy.optimize import minimize  # type: ignore
+from scipy.optimize import minimize
 
 from xngin.apiserver.routers.common_enums import (
     ContextLinkFunctions,
@@ -12,9 +12,7 @@ from xngin.apiserver.sqla import tables
 
 # ------------- Utilities for sampling and updating arms ----------------
 # --- Sampling functions for Thompson Sampling ---
-def _sample_beta_binomial(
-    alphas: np.ndarray, betas: np.ndarray, random_state: int = 66
-) -> int:
+def _sample_beta_binomial(alphas: np.ndarray, betas: np.ndarray, random_state: int = 66) -> int:
     """
     Thompson Sampling with Beta-Binomial distribution.
 
@@ -49,8 +47,7 @@ def _sample_normal(
     """
     rng = np.random.default_rng(random_state)
     samples = np.array([
-        rng.multivariate_normal(mean=mu, cov=cov)
-        for mu, cov in zip(mus, covariances, strict=False)
+        rng.multivariate_normal(mean=mu, cov=cov) for mu, cov in zip(mus, covariances, strict=False)
     ]).reshape(-1, len(context))
 
     probs = link_function(samples @ context)
@@ -58,9 +55,7 @@ def _sample_normal(
 
 
 # --- Arm update functions ---
-def _update_arm_beta_binomial(
-    alpha: float, beta: float, reward: bool
-) -> tuple[float, float]:
+def _update_arm_beta_binomial(alpha: float, beta: float, reward: bool) -> tuple[float, float]:
     """
     Update the alpha and beta parameters of the Beta distribution.
 
@@ -154,11 +149,12 @@ def _update_arm_laplace(
 
         return float(-log_prior - log_likelihood)
 
-    result = minimize(
-        objective, x0=np.zeros_like(current_mu), method="L-BFGS-B", hess="2-point"
-    )
+    result = minimize(objective, x0=np.zeros_like(current_mu), method="L-BFGS-B", hess="2-point")
     new_mu = result.x
-    covariance = result.hess_inv.todense()
+    hess_inv = result.hess_inv
+    if not hasattr(hess_inv, "todense"):
+        raise TypeError(f"unexpected type: {type(result.hess_inv)}")
+    covariance = hess_inv.todense()
 
     new_covariance = 0.5 * (covariance + covariance.T)
     return new_mu.tolist(), new_covariance.tolist()
@@ -179,8 +175,8 @@ def choose_arm(
     experiment: The experiment data containing priors and rewards for each arm.
     context: Optional context vector for the experiment.
     """
-    # TODO: Only supported for MAB experiments
-    if experiment.experiment_type != ExperimentsType.MAB_ONLINE.value:
+    # TODO: Only supported for MAB and CMAB experiments
+    if experiment.experiment_type == ExperimentsType.BAYESAB_ONLINE.value:
         raise ValueError(f"Invalid experiment type: {experiment.experiment_type}.")
 
     sorted_arms = sorted(experiment.arms, key=lambda a: a.name)
@@ -190,9 +186,7 @@ def choose_arm(
         alphas = np.array([arm.alpha for arm in sorted_arms])
         betas = np.array([arm.beta for arm in sorted_arms])
 
-        arm_index = _sample_beta_binomial(
-            alphas=alphas, betas=betas, random_state=random_state
-        )
+        arm_index = _sample_beta_binomial(alphas=alphas, betas=betas, random_state=random_state)
 
     elif experiment.prior_type == PriorTypes.NORMAL.value:
         mus = [np.array(arm.mu) for arm in sorted_arms]
@@ -233,26 +227,21 @@ def update_arm(
     context: The context vector for the arm.
     treatments: The treatments applied to the arm, for a Bayesian A/B test.
     """
-    # TODO: Only supported for MAB experiments
-    if experiment.experiment_type != ExperimentsType.MAB_ONLINE.value:
+    # TODO: Does not support Bayes A/B experiments
+    if experiment.experiment_type == ExperimentsType.BAYESAB_ONLINE.value:
         raise ValueError(f"Invalid experiment type: {experiment.experiment_type}.")
     if not experiment.prior_type or not experiment.reward_type:
         raise ValueError("Experiment must have prior and reward types defined.")
 
     # Beta-binomial priors
     if experiment.prior_type == PriorTypes.BETA.value:
-        assert arm_to_update.alpha and arm_to_update.beta, (
-            "Arm must have alpha and beta parameters."
-        )
-        return _update_arm_beta_binomial(
-            alpha=arm_to_update.alpha, beta=arm_to_update.beta, reward=bool(outcomes[0])
-        )
+        assert arm_to_update.alpha and arm_to_update.beta, "Arm must have alpha and beta parameters."
+        return _update_arm_beta_binomial(alpha=arm_to_update.alpha, beta=arm_to_update.beta, reward=bool(outcomes[0]))
 
     # Normal priors
     if experiment.prior_type == PriorTypes.NORMAL.value:
-        assert arm_to_update.mu and arm_to_update.covariance, (
-            "Arm must have mu and covariance parameters."
-        )
+        assert arm_to_update.mu and arm_to_update.covariance, "Arm must have mu and covariance parameters."
+
         if context is None:
             context = [[1.0] * len(arm_to_update.mu)]  # Default context if not provided
         # Normal likelihood

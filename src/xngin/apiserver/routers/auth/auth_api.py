@@ -9,6 +9,7 @@ from loguru import logger
 
 from xngin.apiserver import constants, flags
 from xngin.apiserver.dependencies import retrying_httpx_dependency
+from xngin.apiserver.routers.auth import auth_dependencies
 from xngin.apiserver.routers.auth.auth_api_types import CallbackResponse
 from xngin.apiserver.routers.auth.auth_dependencies import (
     GoogleOidcConfig,
@@ -22,14 +23,13 @@ class OidcMisconfiguredError(Exception):
 
 def validate_environment_variables():
     """Raises informative exceptions if environment variables critical for OIDC functioning are not set."""
+    if flags.AIRPLANE_MODE or auth_dependencies.TESTING_TOKENS_ENABLED:
+        return
+
     if not flags.CLIENT_ID:
-        raise OidcMisconfiguredError(
-            f"{flags.ENV_GOOGLE_OIDC_CLIENT_ID} environment variable is not set."
-        )
+        raise OidcMisconfiguredError(f"{flags.ENV_GOOGLE_OIDC_CLIENT_ID} environment variable is not set.")
     if not flags.CLIENT_SECRET:
-        logger.warning(
-            f"{flags.ENV_GOOGLE_OIDC_CLIENT_SECRET} environment variable is not set."
-        )
+        logger.warning(f"{flags.ENV_GOOGLE_OIDC_CLIENT_SECRET} environment variable is not set.")
 
 
 @asynccontextmanager
@@ -48,9 +48,7 @@ router = APIRouter(
 @router.get("/callback")
 async def auth_callback(
     code: Annotated[str, Query(...)],
-    code_verifier: Annotated[
-        str, Query(min_length=43, max_length=128, pattern=r"^[A-Za-z0-9._~-]+$")
-    ],
+    code_verifier: Annotated[str, Query(min_length=43, max_length=128, pattern=r"^[A-Za-z0-9._~-]+$")],
     oidc_config: Annotated[GoogleOidcConfig, Depends(get_google_configuration)],
     httpx_client: Annotated[httpx.AsyncClient, Depends(retrying_httpx_dependency)],
 ) -> CallbackResponse:
@@ -78,7 +76,5 @@ async def auth_callback(
         )
     response = token_response.json()
     if not isinstance(response, dict) or response.get("id_token") is None:
-        raise HTTPException(
-            status_code=500, detail=f"Unexpected response from {token_endpoint}"
-        )
+        raise HTTPException(status_code=500, detail=f"Unexpected response from {token_endpoint}")
     return CallbackResponse(id_token=response.get("id_token"))

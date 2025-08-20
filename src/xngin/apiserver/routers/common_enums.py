@@ -36,9 +36,7 @@ class StopAssignmentReason(enum.StrEnum):
         """Create StopAssignmentReason from string. Returns None if value is None."""
         return None if value is None else cls(value)
 
-    PREASSIGNED = (
-        "preassigned"  # preassigned experiments do not allow additional assignments
-    )
+    PREASSIGNED = "preassigned"  # preassigned experiments do not allow additional assignments
     END_DATE = "end_date"  # end date reached
     MANUAL = "manual"  # manually stopped by user
     TARGET_N = "target_n"  # target total number of participants across all arms reached
@@ -148,7 +146,7 @@ class DataType(enum.StrEnum):
             ):
                 return FilterClass.NUMERIC
             case _:
-                return FilterClass.UNKNOWN
+                raise RuntimeError(f"Unsupported data type {self}")
 
 
 class FilterClass(enum.StrEnum):
@@ -156,7 +154,6 @@ class FilterClass(enum.StrEnum):
 
     DISCRETE = "discrete"
     NUMERIC = "numeric"
-    UNKNOWN = "unknown"
 
     def valid_relations(self):
         """Gets the valid relation operators for this data type class."""
@@ -169,7 +166,6 @@ class FilterClass(enum.StrEnum):
                     Relation.EXCLUDES,
                     Relation.INCLUDES,
                 ]
-        raise ValueError(f"{self} has no valid defined relations.")
 
 
 class Relation(enum.StrEnum):

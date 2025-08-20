@@ -55,10 +55,7 @@ def preprocess_for_balance_and_stratification(
         unique_count = df_analysis[col].nunique(dropna=True)
         if unique_count <= 1:
             single_value_cols.append(col)
-        elif (
-            not is_any_real_numeric_dtype(df_analysis[col])
-            and df_analysis[col].dropna().is_unique
-        ):
+        elif not is_any_real_numeric_dtype(df_analysis[col]) and df_analysis[col].dropna().is_unique:
             unique_non_numeric_cols.append(col)
         else:
             working_list.append(col)
@@ -67,9 +64,7 @@ def preprocess_for_balance_and_stratification(
     exclude_set = exclude_set.union(single_value_cols, unique_non_numeric_cols)
 
     # Handle numeric columns (can include NaNs) by converting to quartiles. Excludes booleans.
-    numeric_columns = [
-        c for c in working_list if is_any_real_numeric_dtype(df_analysis[c])
-    ]
+    numeric_columns = [c for c in working_list if is_any_real_numeric_dtype(df_analysis[c])]
     for col in numeric_columns:
         labels = pd.qcut(
             df_analysis[col],
@@ -96,9 +91,7 @@ def preprocess_for_balance_and_stratification(
     return df_analysis, exclude_set, numeric_notnull_set
 
 
-def restore_original_numeric_columns(
-    df_orig: pd.DataFrame, df_cleaned: pd.DataFrame, numeric_notnull_set: set
-):
+def restore_original_numeric_columns(df_orig: pd.DataFrame, df_cleaned: pd.DataFrame, numeric_notnull_set: set):
     """
     Restore columns named in numeric_notnull_set from df_orig to df_cleaned for better balance test
     results.
@@ -110,9 +103,7 @@ def restore_original_numeric_columns(
         columns = sorted(numeric_notnull_set)
         for col in columns:
             if col not in df_orig.columns or col not in df_cleaned.columns:
-                raise ValueError(
-                    f"Column {col} is missing from either df_orig or df_cleaned."
-                )
+                raise ValueError(f"Column {col} is missing from either df_orig or df_cleaned.")
 
         df_cleaned = df_cleaned.copy()
         df_cleaned[columns] = df_orig[columns]
@@ -146,9 +137,7 @@ def check_balance_of_preprocessed_df(
         exclude_col_set = set()
 
     # Convert all non-numeric columns into dummy vars, including booleans
-    non_numeric_columns = {
-        c for c in data.columns if not is_any_real_numeric_dtype(data[c])
-    }
+    non_numeric_columns = {c for c in data.columns if not is_any_real_numeric_dtype(data[c])}
     cols_to_dummies = list(non_numeric_columns - exclude_col_set)
     df_analysis = pd.get_dummies(
         data,
@@ -159,14 +148,11 @@ def check_balance_of_preprocessed_df(
     )
 
     # Create formula excluding specified columns
-    covariates = [
-        col
-        for col in df_analysis.columns
-        if col != treatment_col and col not in exclude_col_set
-    ]
+    covariates = [col for col in df_analysis.columns if col != treatment_col and col not in exclude_col_set]
     if len(covariates) == 0:
         raise StatsBalanceError(
-            "No usable fields for performing a balance check found. Please check your metrics and fields used for stratification."
+            "No usable fields for performing a balance check found. Please check your metrics "
+            "and fields used for stratification."
         )
 
     # TODO(roboton): Run multi-class regression via MVLogit

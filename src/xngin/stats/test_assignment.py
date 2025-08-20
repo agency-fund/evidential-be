@@ -66,10 +66,7 @@ def test_assign_treatment_with_stratification(sample_df):
     assert isinstance(result.balance_result, BalanceResult)
     assert result.balance_result.f_statistic > 0
     assert result.balance_result.f_pvalue > 0
-    assert (
-        len(result.treatment_ids)
-        == result.balance_result.numerator_df + result.balance_result.denominator_df + 1
-    )
+    assert len(result.treatment_ids) == result.balance_result.numerator_df + result.balance_result.denominator_df + 1
 
 
 def test_assign_treatment_multiple_arms(sample_df):
@@ -180,9 +177,7 @@ def test_assign_treatment_decimal_strata_columns_are_not_supported(sample_df):
     """Test that unconverted Decimal strata columns raise an error."""
     sample_df["decimal"] = sample_df["income"].apply(Decimal)
     with pytest.raises(RecursionError):
-        assign_treatment_and_check_balance(
-            df=sample_df, stratum_cols=["decimal"], id_col="id", n_arms=2
-        )
+        assign_treatment_and_check_balance(df=sample_df, stratum_cols=["decimal"], id_col="id", n_arms=2)
 
 
 def test_assign_treatment_with_problematic_values():
@@ -209,10 +204,7 @@ def test_assign_treatment_with_problematic_values():
     assert result.balance_result.f_statistic > 0
     assert result.balance_result.f_pvalue > 0
     assert len(result.treatment_ids) == len(df)
-    assert (
-        len(result.treatment_ids)
-        == result.balance_result.numerator_df + result.balance_result.denominator_df + 1
-    )
+    assert len(result.treatment_ids) == result.balance_result.numerator_df + result.balance_result.denominator_df + 1
 
 
 def test_assign_treatment_with_no_stratification(sample_df):
@@ -287,3 +279,28 @@ def test_simple_random_assignment_with_different_seeds(sample_df):
     assert len(assignments1) == len(assignments3)
     assert assignments1.count(0) == assignments3.count(0)
     assert assignments1.count(1) == assignments3.count(1)
+
+
+def test_assign_treatment_with_bigints_as_participant_ids(sample_df):
+    """Test assignment with large integer participant IDs (int64) are handled correctly.
+
+    stochatreat's logic may silently upcast certain dtypes to float64s, which can cause precision
+    loss, resulting in incorrect/duplicate ids getting treatment assignments.
+    """
+    sample_df["id"] = sample_df["id"].astype("int64")
+    max_safe_int = (1 << 53) - 1
+    # This value is 9007199254740993 but if cast to float64 would round to 9007199254740992
+    sample_df.loc[1, "id"] = max_safe_int + 2
+    # Next value would get rounded to 103241243500726320 if a float64
+    sample_df.loc[2, "id"] = 103241243500726324
+    result = assign_treatment_and_check_balance(
+        df=sample_df,
+        stratum_cols=["gender", "region"],
+        id_col="id",
+        n_arms=2,
+        random_state=42,
+    )
+
+    # If stochatreat silently upcasted int64 to float64, we'd lose assignments for both the bigints
+    # above, as they would not join back with any of the original ids in the df.
+    assert len(result.treatment_ids) == len(sample_df)

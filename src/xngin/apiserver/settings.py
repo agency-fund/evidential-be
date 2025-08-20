@@ -6,7 +6,6 @@ The Pydantic classes herein also provide some methods for connecting to the cust
 
 import base64
 import binascii
-import json
 import os
 from collections import Counter
 from typing import Annotated, Literal, Protocol
@@ -17,7 +16,6 @@ from pydantic import (
     BaseModel,
     ConfigDict,
     Field,
-    SecretStr,
     field_validator,
     model_validator,
 )
@@ -25,6 +23,9 @@ from sqlalchemy import make_url
 
 from xngin.apiserver.certs import get_amazon_trust_ca_bundle_path
 from xngin.apiserver.dwh.inspection_types import ParticipantsSchema
+from xngin.apiserver.routers.common_api_types import (
+    validate_gcp_service_account_info_json,
+)
 from xngin.xsecrets import secretservice
 
 SA_LOGGER_NAME_FOR_DWH = "xngin_dwh"
@@ -38,14 +39,6 @@ def _decrypt_string(ciphertext: str, aad: str) -> str:
     This method is cached because it can avoid a remote API call to the key management service.
     """
     return secretservice.get_symmetric().decrypt(ciphertext, aad)
-
-
-class UnclassifiedRemoteSettingsError(Exception):
-    """Raised when we fail to fetch remote settings for an unclassified reason."""
-
-
-class RemoteSettingsClientError(Exception):
-    """Raised when we fail to fetch remote settings due to our misconfiguration."""
 
 
 class ConfigBaseModel(BaseModel):
@@ -70,9 +63,7 @@ class BaseParticipantsRef(ConfigBaseModel):
 class ParticipantsDef(BaseParticipantsRef, ParticipantsSchema):
     type: Annotated[
         Literal["schema"],
-        Field(
-            description="Indicates that the schema is determined by an inline schema."
-        ),
+        Field(description="Indicates that the schema is determined by an inline schema."),
     ]
 
 
@@ -96,55 +87,20 @@ class ParticipantsMixin(ConfigBaseModel):
 
     def find_participants_or_none(self, participant_type) -> ParticipantsConfig | None:
         return next(
-            (
-                u
-                for u in self.participants
-                if u.participant_type.lower() == participant_type.lower()
-            ),
+            (u for u in self.participants if u.participant_type.lower() == participant_type.lower()),
             None,
         )
 
     @model_validator(mode="after")
     def check_unique_participant_types(self):
-        counted = Counter([
-            participant.participant_type for participant in self.participants
-        ])
+        counted = Counter([participant.participant_type for participant in self.participants])
         duplicates = [item for item, count in counted.items() if count > 1]
         if duplicates:
-            raise ValueError(
-                f"Participant types with conflicting names found: {', '.join(duplicates)}."
-            )
+            raise ValueError(f"Participant types with conflicting names found: {', '.join(duplicates)}.")
         return self
 
 
 type HttpMethodTypes = Literal["GET", "POST", "PUT", "PATCH", "DELETE"]
-
-
-class WebhookUrl(ConfigBaseModel):
-    """Represents a url and HTTP method to use with it."""
-
-    method: HttpMethodTypes
-    url: str
-
-
-class WebhookActions(ConfigBaseModel):
-    """The set of supported actions that trigger a user callback."""
-
-    # No action is required, so a user can leave it out completely.
-    commit: WebhookUrl | None = None
-
-
-class WebhookCommonHeaders(ConfigBaseModel):
-    """Enumerates supported headers to attach to all webhook requests."""
-
-    authorization: SecretStr | None
-
-
-class WebhookConfig(ConfigBaseModel):
-    """Top-level configuration object for user-defined webhooks."""
-
-    actions: WebhookActions
-    common_headers: WebhookCommonHeaders
 
 
 class ToSqlalchemyUrl(Protocol):
@@ -182,7 +138,7 @@ class BaseDsn:
 class GcpServiceAccountInfo(ConfigBaseModel):
     """Describes a Google Cloud Service Account credential."""
 
-    type: Literal["serviceaccountinfo"]
+    type: Literal["serviceaccountinfo"] = "serviceaccountinfo"
     # Note: this field may be stored in an encrypted form.
     content_base64: Annotated[
         str,
@@ -197,19 +153,13 @@ class GcpServiceAccountInfo(ConfigBaseModel):
     def encrypt(self, datasource_id):
         return self.model_copy(
             update={
-                "content_base64": secretservice.get_symmetric().encrypt(
-                    self.content_base64, f"dsn.{datasource_id}"
-                )
+                "content_base64": secretservice.get_symmetric().encrypt(self.content_base64, f"dsn.{datasource_id}")
             }
         )
 
     def decrypt(self, datasource_id):
         return self.model_copy(
-            update={
-                "content_base64": _decrypt_string(
-                    self.content_base64, aad=f"dsn.{datasource_id}"
-                )
-            }
+            update={"content_base64": _decrypt_string(self.content_base64, aad=f"dsn.{datasource_id}")}
         )
 
     @field_validator("content_base64")
@@ -223,23 +173,7 @@ class GcpServiceAccountInfo(ConfigBaseModel):
         try:
             # Decode and validate the JSON structure matches Google Cloud Service Account format.
             decoded = base64.b64decode(value, validate=True)
-            try:
-                creds = json.loads(decoded)
-                required_fields = {
-                    "type",
-                    "project_id",
-                    "private_key_id",
-                    "private_key",
-                    "client_email",
-                }
-                if not all(field in creds for field in required_fields):
-                    raise ValueError("Missing required fields in service account JSON")
-                if creds["type"] != "service_account":
-                    raise ValueError(
-                        'Service account JSON must have type="service_account"'
-                    )
-            except json.JSONDecodeError as e:
-                raise ValueError("Invalid JSON in service account credentials") from e
+            validate_gcp_service_account_info_json(decoded)
         except binascii.Error as e:
             raise ValueError("Invalid base64 content") from e
         return value
@@ -300,16 +234,12 @@ class BqDsn(ConfigBaseModel, BaseDsn, EncryptedDsn):
 
     def encrypt(self, datasource_id):
         if self.credentials.type == "serviceaccountinfo":
-            return self.model_copy(
-                update={"credentials": self.credentials.encrypt(datasource_id)}
-            )
+            return self.model_copy(update={"credentials": self.credentials.encrypt(datasource_id)})
         return self
 
     def decrypt(self, datasource_id):
         if self.credentials.type == "serviceaccountinfo":
-            return self.model_copy(
-                update={"credentials": self.credentials.decrypt(datasource_id)}
-            )
+            return self.model_copy(update={"credentials": self.credentials.decrypt(datasource_id)})
         return self
 
     def to_sqlalchemy_url(self) -> sqlalchemy.URL:
@@ -345,11 +275,7 @@ class Dsn(ConfigBaseModel, BaseDsn, EncryptedDsn):
 
     def encrypt(self, datasource_id):
         return self.model_copy(
-            update={
-                "password": secretservice.get_symmetric().encrypt(
-                    self.password, f"dsn.{datasource_id}"
-                )
-            }
+            update={"password": secretservice.get_symmetric().encrypt(self.password, f"dsn.{datasource_id}")}
         )
 
     def decrypt(self, datasource_id):
@@ -375,16 +301,12 @@ class Dsn(ConfigBaseModel, BaseDsn, EncryptedDsn):
             parsed_url = make_url(url)
             credentials = os.environ.get("GOOGLE_APPLICATION_CREDENTIALS", None)
             if credentials is None:
-                raise ValueError(
-                    "GOOGLE_APPLICATION_CREDENTIALS must be set when using Dsn.from_url."
-                )
+                raise ValueError("GOOGLE_APPLICATION_CREDENTIALS must be set when using Dsn.from_url.")
             return BqDsn(
                 driver="bigquery",
                 project_id=parsed_url.host,
                 dataset_id=parsed_url.database,
-                credentials=GcpServiceAccountFile(
-                    type="serviceaccountfile", path=credentials
-                ),
+                credentials=GcpServiceAccountFile(type="serviceaccountfile", path=credentials),
             )
 
         if url.startswith("postgres"):
@@ -399,7 +321,7 @@ class Dsn(ConfigBaseModel, BaseDsn, EncryptedDsn):
                 sslmode=parsed_url.query.get("sslmode", "verify-ca"),
                 search_path=parsed_url.query.get("search_path", None),
             )
-        raise NotImplementedError("Dsn.from_url() only supports postgres databases.")
+        raise NotImplementedError(f"Dsn.from_url() only supports postgres databases: {url}")
 
     def is_redshift(self):
         return self.host.endswith("redshift.amazonaws.com")
@@ -432,9 +354,7 @@ class Dsn(ConfigBaseModel, BaseDsn, EncryptedDsn):
     def check_redshift_safe(self):
         if self.is_redshift():
             if self.driver != "postgresql+psycopg2":
-                raise ValueError(
-                    "Redshift connections must use postgresql+psycopg2 driver"
-                )
+                raise ValueError("Redshift connections must use postgresql+psycopg2 driver")
             if self.sslmode != "verify-full":
                 raise ValueError("Redshift connections must use sslmode=verify-full")
         return self
@@ -452,22 +372,11 @@ class NoDwh(ConfigBaseModel):
         return False
 
 
-class DbapiArg(ConfigBaseModel):
-    """Describes a DBAPI connect() argument.
-
-    These can be arbitrary kv pairs and are database-driver specific."""
-
-    arg: str
-    value: str
-
-
 type Dwh = Annotated[Dsn | BqDsn | NoDwh, Field(discriminator="driver")]
 
 
 class RemoteDatabaseConfig(ParticipantsMixin, ConfigBaseModel):
     """RemoteDatabaseConfig defines a configuration for a remote data warehouse."""
-
-    webhook_config: WebhookConfig | None = None
 
     type: Literal["remote"]
 

@@ -373,9 +373,7 @@ async def test_bulk_insert_renders_decimal_and_bool_strata_correctly(
         assert p.strata[1]["strata_value"] in {"True", "False"}, p.strata
 
 
-async def test_bulk_insert_with_no_stratification(
-    xngin_session: AsyncSession, testing_datasource, sample_rows
-):
+async def test_bulk_insert_with_no_stratification(xngin_session: AsyncSession, testing_datasource, sample_rows):
     """Test assignment with no stratification columns."""
     # First create an experiment and arms in db
     ds: tables.Datasource = testing_datasource.ds
@@ -417,9 +415,7 @@ async def test_bulk_insert_with_no_stratification(
     assert arm_counts[arm0] == len(assignments) // 2
 
 
-async def test_bulk_insert_with_no_valid_strata(
-    xngin_session: AsyncSession, testing_datasource, sample_rows
-):
+async def test_bulk_insert_with_no_valid_strata(xngin_session: AsyncSession, testing_datasource, sample_rows):
     """Test assignment when a strata column has only a single value."""
     # First create an experiment and arms in db
     ds: tables.Datasource = testing_datasource.ds

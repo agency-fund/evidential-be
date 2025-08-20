@@ -2,6 +2,7 @@ from datetime import datetime
 from typing import Annotated, Literal
 from urllib.parse import urlparse
 
+from annotated_types import Ge, Le
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from xngin.apiserver.common_field_types import FieldName
@@ -17,11 +18,12 @@ from xngin.apiserver.limits import (
 from xngin.apiserver.routers.common_api_types import (
     ApiBaseModel,
     DataType,
+    GcpServiceAccountBlob,
     GetFiltersResponseElement,
     GetMetricsResponseElement,
     GetStrataResponseElement,
 )
-from xngin.apiserver.settings import DatasourceConfig, Dwh, ParticipantsConfig
+from xngin.apiserver.settings import ParticipantsConfig
 
 
 def validate_webhook_url(url: str) -> str:
@@ -77,14 +79,10 @@ class EventSummary(AdminApiBaseModel):
     """Describes an event."""
 
     id: Annotated[str, Field(description="The ID of the event.")]
-    created_at: Annotated[
-        datetime, Field(description="The time the event was created.")
-    ]
+    created_at: Annotated[datetime, Field(description="The time the event was created.")]
     type: Annotated[str, Field(description="The type of event.")]
     summary: Annotated[str, Field(description="Human-readable summary of the event.")]
-    link: Annotated[
-        str | None, Field(description="A navigable link to related information.")
-    ] = None
+    link: Annotated[str | None, Field(description="A navigable link to related information.")] = None
     details: Annotated[dict | None, Field(description="Details")]
 
 
@@ -113,7 +111,10 @@ class AddWebhookToOrganizationRequest(AdminApiBaseModel):
         str,
         Field(
             max_length=MAX_LENGTH_OF_NAME_VALUE,
-            description="User-friendly name for the webhook. This name is displayed in the UI and helps identify the webhook's purpose.",
+            description=(
+                "User-friendly name for the webhook. This name is displayed in the UI and helps "
+                "identify the webhook's purpose."
+            ),
         ),
     ]
     url: Annotated[
@@ -134,9 +135,7 @@ class AddWebhookToOrganizationResponse(AdminApiBaseModel):
     """Information on the successfully created webhook."""
 
     id: Annotated[str, Field(description="The ID of the newly created webhook.")]
-    type: Annotated[
-        str, Field(description="The type of webhook; e.g. experiment.created")
-    ]
+    type: Annotated[str, Field(description="The type of webhook; e.g. experiment.created")]
     name: Annotated[
         str,
         Field(description="User-friendly name for the webhook."),
@@ -145,7 +144,9 @@ class AddWebhookToOrganizationResponse(AdminApiBaseModel):
     auth_token: Annotated[
         str | None,
         Field(
-            description="The value of the Webhook-Token: header that will be sent with the request to the configured URL."
+            description=(
+                "The value of the Webhook-Token: header that will be sent with the request to the configured URL."
+            )
         ),
     ]
 
@@ -154,9 +155,7 @@ class WebhookSummary(AdminApiBaseModel):
     """Summarizes a Webhook configuration for an organization."""
 
     id: Annotated[str, Field(description="The ID of the webhook.")]
-    type: Annotated[
-        str, Field(description="The type of webhook; e.g. experiment.created")
-    ]
+    type: Annotated[str, Field(description="The type of webhook; e.g. experiment.created")]
     name: Annotated[
         str,
         Field(description="User-friendly name for the webhook."),
@@ -165,7 +164,9 @@ class WebhookSummary(AdminApiBaseModel):
     auth_token: Annotated[
         str | None,
         Field(
-            description="The value of the Webhook-Token: header that will be sent with the request to the configured URL."
+            description=(
+                "The value of the Webhook-Token: header that will be sent with the request to the configured URL."
+            )
         ),
     ]
 
@@ -177,7 +178,10 @@ class UpdateOrganizationWebhookRequest(AdminApiBaseModel):
         str,
         Field(
             max_length=MAX_LENGTH_OF_NAME_VALUE,
-            description="User-friendly name for the webhook. This name is displayed in the UI and helps identify the webhook's purpose.",
+            description=(
+                "User-friendly name for the webhook. This name is displayed in the UI and helps "
+                "identify the webhook's purpose."
+            ),
         ),
     ]
     url: Annotated[
@@ -198,15 +202,128 @@ class ListWebhooksResponse(AdminApiBaseModel):
     items: list[WebhookSummary]
 
 
+class Hidden(AdminApiBaseModel):
+    """Hidden represents a credential that is intentionally omitted."""
+
+    type: Literal["hidden"] = "hidden"
+
+
+class RevealedStr(AdminApiBaseModel):
+    """RevealedStr contains a credential."""
+
+    type: Literal["revealed"] = "revealed"
+    value: str
+
+
+class GcpServiceAccount(AdminApiBaseModel):
+    """Describes a Google Cloud Platform service account."""
+
+    type: Literal["serviceaccountinfo"] = "serviceaccountinfo"
+    content: GcpServiceAccountBlob
+
+
+class PostgresDsn(AdminApiBaseModel):
+    """PostgresDsn describes a connection to a Postgres-compatible database."""
+
+    type: Literal["postgres"] = "postgres"
+
+    host: str
+    port: Annotated[int, Ge(1024), Le(65535)]
+    user: str
+    password: Annotated[
+        RevealedStr | Hidden,
+        Field(
+            discriminator="type",
+            description=(
+                "This value must be a RevealedStr when creating the datasource or when updating a "
+                "datasource's credentials. It may be a Hidden when updating a datasource. When hidden, "
+                "the existing credentials are retained."
+            ),
+        ),
+    ]
+    dbname: str
+    sslmode: Literal["disable", "require", "verify-ca", "verify-full"]
+    search_path: str | None
+
+
+class RedshiftDsn(AdminApiBaseModel):
+    """RedshiftDsn describes a connection to a Redshift database."""
+
+    type: Literal["redshift"] = "redshift"
+
+    host: str
+    port: Annotated[int, Ge(1024), Le(65535)]
+    user: str
+    password: Annotated[
+        RevealedStr | Hidden,
+        Field(
+            discriminator="type",
+            description=(
+                "This value must be a RevealedStr when creating the datasource or when updating a "
+                "datasource's credentials. It may be a Hidden when updating a datasource. When hidden, "
+                "the existing credentials are retained."
+            ),
+        ),
+    ]
+    dbname: str
+    search_path: str | None
+
+
+class BqDsn(AdminApiBaseModel):
+    """BqDsn describes a connection to a BigQuery database."""
+
+    type: Literal["bigquery"] = "bigquery"
+
+    project_id: Annotated[
+        str,
+        Field(
+            description="The Google Cloud Project ID containing the dataset.",
+            min_length=6,
+            max_length=30,
+            pattern=r"^[a-z0-9-]+$",
+        ),
+    ]
+    dataset_id: Annotated[
+        str,
+        Field(
+            description="The dataset name.",
+            min_length=1,
+            max_length=1024,
+            pattern=r"^[a-zA-Z0-9_]+$",
+        ),
+    ]
+
+    credentials: Annotated[
+        GcpServiceAccount | Hidden,
+        Field(
+            discriminator="type",
+            description=(
+                "This value must be a GcpServiceAccount when creating the datasource or when updating a "
+                "datasource's credentials. It may be a Hidden when updating a datasource. When hidden, "
+                "the existing credentials are retained."
+            ),
+        ),
+    ]
+
+
+class ApiOnlyDsn(AdminApiBaseModel):
+    """ApiOnlyDsn describes a datasource where data is included in Evidential API requests."""
+
+    type: Literal["api_only"] = "api_only"
+
+
+type Dsn = Annotated[ApiOnlyDsn | PostgresDsn | BqDsn | RedshiftDsn, Field(discriminator="type")]
+
+
 class CreateDatasourceRequest(AdminApiBaseModel):
     organization_id: Annotated[str, Field(max_length=MAX_LENGTH_OF_ID_VALUE)]
     name: Annotated[str, Field(...)]
-    dwh: Dwh
+    dsn: Dsn
 
 
 class UpdateDatasourceRequest(AdminApiBaseModel):
     name: Annotated[str | None, Field(max_length=MAX_LENGTH_OF_NAME_VALUE)] = None
-    dwh: Annotated[Dwh | None, Field()] = None
+    dsn: Dsn | None = None
 
 
 class CreateDatasourceResponse(AdminApiBaseModel):
@@ -216,7 +333,7 @@ class CreateDatasourceResponse(AdminApiBaseModel):
 class GetDatasourceResponse(AdminApiBaseModel):
     id: Annotated[str, Field(max_length=MAX_LENGTH_OF_ID_VALUE)]
     name: Annotated[str, Field(max_length=MAX_LENGTH_OF_NAME_VALUE)]
-    config: DatasourceConfig  # TODO: map this to a public type
+    dsn: Dsn
     organization_id: Annotated[str, Field(max_length=MAX_LENGTH_OF_ID_VALUE)]
     organization_name: Annotated[str, Field(max_length=MAX_LENGTH_OF_NAME_VALUE)]
 
@@ -266,21 +383,15 @@ class CreateParticipantsTypeResponse(ApiBaseModel):
 
 
 class UpdateParticipantsTypeRequest(ApiBaseModel):
-    participant_type: Annotated[
-        str | None, Field(max_length=MAX_LENGTH_OF_NAME_VALUE)
-    ] = None
+    participant_type: Annotated[str | None, Field(max_length=MAX_LENGTH_OF_NAME_VALUE)] = None
     table_name: Annotated[FieldName | None, Field()] = None
-    fields: Annotated[
-        list[FieldDescriptor] | None, Field(max_length=MAX_NUMBER_OF_FIELDS)
-    ] = None
+    fields: Annotated[list[FieldDescriptor] | None, Field(max_length=MAX_NUMBER_OF_FIELDS)] = None
 
 
 class UpdateParticipantsTypeResponse(ApiBaseModel):
     participant_type: Annotated[str, Field(max_length=MAX_LENGTH_OF_NAME_VALUE)]
     table_name: Annotated[FieldName | None, Field()] = None
-    fields: Annotated[
-        list[FieldDescriptor] | None, Field(max_length=MAX_NUMBER_OF_FIELDS)
-    ] = None
+    fields: Annotated[list[FieldDescriptor] | None, Field(max_length=MAX_NUMBER_OF_FIELDS)] = None
 
 
 class ApiKeySummary(AdminApiBaseModel):

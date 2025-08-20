@@ -89,24 +89,18 @@ def test_deterministic_random():
 
     # deterministic random enabled
     custom_functions.USE_DETERMINISTIC_RANDOM = True
-    query = select(SampleTable).order_by(
-        custom_functions.Random(sa_table=SampleTable.__table__)
-    )
+    query = select(SampleTable).order_by(custom_functions.Random(sa_table=SampleTable.__table__))
     sql_text = str(query.compile(engine))
     assert "ORDER BY test_table.id1, test_table.id2" in sql_text
 
     # deterministic random enabled and no primary key
     custom_functions.USE_DETERMINISTIC_RANDOM = True
-    query_nopk = select(SampleTableNoPK).order_by(
-        custom_functions.Random(sa_table=SampleTableNoPK.__table__)
-    )
+    query_nopk = select(SampleTableNoPK).order_by(custom_functions.Random(sa_table=SampleTableNoPK.__table__))
     sql_text = str(query_nopk.compile(engine))
     assert "ORDER BY nopk_table.int_col, nopk_table.string_col" in sql_text
 
     # normal case
     custom_functions.USE_DETERMINISTIC_RANDOM = False
-    query = select(SampleTable).order_by(
-        custom_functions.Random(sa_table=SampleTable.__table__)
-    )
+    query = select(SampleTable).order_by(custom_functions.Random(sa_table=SampleTable.__table__))
     sql_text = str(query.compile(engine))
     assert "ORDER BY random()" in sql_text

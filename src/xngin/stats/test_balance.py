@@ -58,13 +58,11 @@ def check_balance(
     else:
         exclude_cols.append(treatment_col)
 
-    df_cleaned, exclude_cols_set, numeric_notnull_set = (
-        preprocess_for_balance_and_stratification(
-            data=data,
-            exclude_cols=exclude_cols,
-            quantiles=quantiles,
-            missing_string=missing_string,
-        )
+    df_cleaned, exclude_cols_set, numeric_notnull_set = preprocess_for_balance_and_stratification(
+        data=data,
+        exclude_cols=exclude_cols,
+        quantiles=quantiles,
+        missing_string=missing_string,
     )
     df_cleaned = restore_original_numeric_columns(
         df_orig=data,
@@ -230,9 +228,7 @@ def test_preprocessing_booleans():
         # categorical.
         "bools_na": [True] * 8 + [False] * 1 + [None],
     }
-    df, exclude, numeric_notnull_set = preprocess_for_balance_and_stratification(
-        pd.DataFrame(data)
-    )
+    df, exclude, numeric_notnull_set = preprocess_for_balance_and_stratification(pd.DataFrame(data))
     assert exclude == set()
     assert numeric_notnull_set == set()
     assert df["bools"].nunique() == 2
@@ -260,9 +256,7 @@ def test_preprocessing_with_exclusions():
         # uniq_obj_na is excluded when nones are ignored
         "uniq_obj_na": ["a", "b", None, None],
     })
-    df, exclude, numeric_notnull_set = preprocess_for_balance_and_stratification(
-        data, exclude_cols=["skip"]
-    )
+    df, exclude, numeric_notnull_set = preprocess_for_balance_and_stratification(data, exclude_cols=["skip"])
 
     assert exclude == {
         "skip",
@@ -284,9 +278,7 @@ def test_preprocessing_with_exclusions():
         df["treat"] = [0, 1, 0, 1]  # assignments needed for balance check
         exclude_all = exclude | {"uniq_int"}
         check_balance_of_preprocessed_df(df, exclude_col_set=exclude_all)
-    assert "No usable fields for performing a balance check found." in str(
-        excinfo.value
-    )
+    assert "No usable fields for performing a balance check found." in str(excinfo.value)
 
 
 def test_preprocessing_numerics_as_categories():

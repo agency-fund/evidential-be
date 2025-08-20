@@ -14,15 +14,8 @@ from sqlalchemy.ext.asyncio import AsyncAttrs
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 from sqlalchemy.types import TypeEngine
 
-from xngin.apiserver.routers.admin.admin_api_types import (
-    InspectDatasourceTableResponse,
-    InspectParticipantTypesResponse,
-)
 from xngin.apiserver.settings import DatasourceConfig, EncryptedDsn
 from xngin.events import EventDataTypes
-
-# JSONBetter is JSON for most databases but JSONB for Postgres.
-JSONBetter = sqlalchemy.JSON().with_variant(postgresql.JSONB(), "postgresql")
 
 ALPHABET = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz"
 
@@ -42,21 +35,18 @@ organization_id_factory = unique_id_factory("o")
 task_id_factory = unique_id_factory("task")
 user_id_factory = unique_id_factory("u")
 webhook_id_factory = unique_id_factory("wh")
+context_id_factory = unique_id_factory("ctx")
 
 
 class Base(AsyncAttrs, DeclarativeBase):
     # See https://docs.sqlalchemy.org/en/20/orm/declarative_tables.html#customizing-the-type-map
     type_annotation_map: ClassVar[dict[type, TypeEngine]] = {
-        # For pg specifically, use the binary form
-        sqlalchemy.JSON: JSONBetter,
         datetime: sqlalchemy.TIMESTAMP(timezone=True),
     }
 
     def to_dict(self):
         """Quick and dirty dump to dict for debugging."""
-        return {
-            column.name: getattr(self, column.name) for column in self.__table__.columns
-        }
+        return {column.name: getattr(self, column.name) for column in self.__table__.columns}
 
 
 class CacheTable(Base):
@@ -75,9 +65,7 @@ class ApiKey(Base):
 
     id: Mapped[str] = mapped_column(primary_key=True)
     key: Mapped[str] = mapped_column(unique=True)
-    datasource_id: Mapped[str] = mapped_column(
-        ForeignKey("datasources.id", ondelete="CASCADE")
-    )
+    datasource_id: Mapped[str] = mapped_column(ForeignKey("datasources.id", ondelete="CASCADE"))
     datasource: Mapped["Datasource"] = relationship(back_populates="api_keys")
 
 
@@ -86,27 +74,14 @@ class Organization(Base):
 
     __tablename__ = "organizations"
 
-    id: Mapped[str] = mapped_column(
-        String, primary_key=True, default=organization_id_factory
-    )
+    id: Mapped[str] = mapped_column(primary_key=True, default=organization_id_factory)
     name: Mapped[str] = mapped_column(String(255))
 
-    # Relationships
-    arms: Mapped[list["Arm"]] = relationship(
-        back_populates="organization", cascade="all, delete-orphan"
-    )
-    users: Mapped[list["User"]] = relationship(
-        secondary="user_organizations", back_populates="organizations"
-    )
-    datasources: Mapped[list["Datasource"]] = relationship(
-        back_populates="organization", cascade="all, delete-orphan"
-    )
-    events: Mapped[list["Event"]] = relationship(
-        back_populates="organization", cascade="all, delete-orphan"
-    )
-    webhooks: Mapped[list["Webhook"]] = relationship(
-        back_populates="organization", cascade="all, delete-orphan"
-    )
+    arms: Mapped[list["Arm"]] = relationship(back_populates="organization", cascade="all, delete-orphan")
+    users: Mapped[list["User"]] = relationship(secondary="user_organizations", back_populates="organizations")
+    datasources: Mapped[list["Datasource"]] = relationship(back_populates="organization", cascade="all, delete-orphan")
+    events: Mapped[list["Event"]] = relationship(back_populates="organization", cascade="all, delete-orphan")
+    webhooks: Mapped[list["Webhook"]] = relationship(back_populates="organization", cascade="all, delete-orphan")
 
 
 class Webhook(Base):
@@ -127,13 +102,9 @@ class Webhook(Base):
     # The token that will be sent in the Webhook-Token header.
     auth_token: Mapped[str | None] = mapped_column()
 
-    organization_id: Mapped[str] = mapped_column(
-        ForeignKey("organizations.id", ondelete="CASCADE")
-    )
+    organization_id: Mapped[str] = mapped_column(ForeignKey("organizations.id", ondelete="CASCADE"))
     organization: Mapped["Organization"] = relationship(back_populates="webhooks")
-    experiments: Mapped[list["Experiment"]] = relationship(
-        secondary="experiment_webhooks", back_populates="webhooks"
-    )
+    experiments: Mapped[list["Experiment"]] = relationship(secondary="experiment_webhooks", back_populates="webhooks")
 
 
 class Event(Base):
@@ -145,19 +116,13 @@ class Event(Base):
     __tablename__ = "events"
 
     id: Mapped[str] = mapped_column(primary_key=True, default=event_id_factory)
-    created_at: Mapped[datetime] = mapped_column(
-        server_default=sqlalchemy.sql.func.now()
-    )
+    created_at: Mapped[datetime] = mapped_column(server_default=sqlalchemy.sql.func.now())
     # The type of event. E.g. `experiment.created`
     type: Mapped[str] = mapped_column()
     # The event payload. This will always be a JSON object with a `type` field.
-    data: Mapped[dict] = mapped_column(
-        type_=JSONBetter,
-    )
+    data: Mapped[dict] = mapped_column(postgresql.JSONB)
 
-    organization_id: Mapped[str] = mapped_column(
-        ForeignKey("organizations.id", ondelete="CASCADE")
-    )
+    organization_id: Mapped[str] = mapped_column(ForeignKey("organizations.id", ondelete="CASCADE"))
     organization: Mapped["Organization"] = relationship(back_populates="events")
 
     def set_data(self, data: EventDataTypes):
@@ -180,9 +145,7 @@ class Task(Base):
     __tablename__ = "tasks"
 
     id: Mapped[str] = mapped_column(primary_key=True, default=task_id_factory)
-    created_at: Mapped[datetime] = mapped_column(
-        server_default=sqlalchemy.sql.func.now()
-    )
+    created_at: Mapped[datetime] = mapped_column(server_default=sqlalchemy.sql.func.now())
     updated_at: Mapped[datetime] = mapped_column(
         server_default=sqlalchemy.sql.func.now(),
         onupdate=sqlalchemy.sql.func.now(),
@@ -192,13 +155,11 @@ class Task(Base):
     # Status of the task: 'pending', 'running', 'success', or 'dead'.
     status: Mapped[str] = mapped_column(server_default="pending")
     # Time until which the task should not be processed. Defaults to created_at.
-    embargo_until: Mapped[datetime] = mapped_column(
-        server_default=sqlalchemy.sql.func.now()
-    )
+    embargo_until: Mapped[datetime] = mapped_column(server_default=sqlalchemy.sql.func.now())
     # Number of times this task has been retried.
     retry_count: Mapped[int] = mapped_column(server_default="0")
     # The task payload. This will be a JSON object with task-specific data.
-    payload: Mapped[dict | None] = mapped_column(type_=JSONBetter)
+    payload: Mapped[dict | None] = mapped_column(postgresql.JSONB)
     # An optional informative message about the state of this task.
     message: Mapped[str | None] = mapped_column()
 
@@ -210,7 +171,7 @@ class User(Base):
 
     __tablename__ = "users"
 
-    id: Mapped[str] = mapped_column(String, primary_key=True, default=user_id_factory)
+    id: Mapped[str] = mapped_column(primary_key=True, default=user_id_factory)
     email: Mapped[str] = mapped_column(String(255), unique=True)
     # TODO: properly handle federated auth
     iss: Mapped[str | None] = mapped_column(String(255))
@@ -219,10 +180,7 @@ class User(Base):
     # True when this user is considered to be privileged.
     is_privileged: Mapped[bool] = mapped_column(server_default=sqlalchemy.sql.false())
 
-    # Relationships
-    organizations: Mapped[list["Organization"]] = relationship(
-        secondary="user_organizations", back_populates="users"
-    )
+    organizations: Mapped[list["Organization"]] = relationship(secondary="user_organizations", back_populates="users")
 
 
 class UserOrganization(Base):
@@ -230,12 +188,8 @@ class UserOrganization(Base):
 
     __tablename__ = "user_organizations"
 
-    user_id: Mapped[str] = mapped_column(
-        ForeignKey("users.id", ondelete="CASCADE"), primary_key=True
-    )
-    organization_id: Mapped[str] = mapped_column(
-        ForeignKey("organizations.id", ondelete="CASCADE"), primary_key=True
-    )
+    user_id: Mapped[str] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), primary_key=True)
+    organization_id: Mapped[str] = mapped_column(ForeignKey("organizations.id", ondelete="CASCADE"), primary_key=True)
 
     organization: Mapped["Organization"] = relationship(viewonly=True)
     user: Mapped["User"] = relationship(viewonly=True)
@@ -246,12 +200,8 @@ class ExperimentWebhook(Base):
 
     __tablename__ = "experiment_webhooks"
 
-    experiment_id: Mapped[str] = mapped_column(
-        ForeignKey("experiments.id", ondelete="CASCADE"), primary_key=True
-    )
-    webhook_id: Mapped[str] = mapped_column(
-        ForeignKey("webhooks.id", ondelete="CASCADE"), primary_key=True
-    )
+    experiment_id: Mapped[str] = mapped_column(ForeignKey("experiments.id", ondelete="CASCADE"), primary_key=True)
+    webhook_id: Mapped[str] = mapped_column(ForeignKey("webhooks.id", ondelete="CASCADE"), primary_key=True)
 
     experiment: Mapped["Experiment"] = relationship(viewonly=True)
     webhook: Mapped["Webhook"] = relationship(viewonly=True)
@@ -266,34 +216,24 @@ class Datasource(Base):
 
     __tablename__ = "datasources"
 
-    id: Mapped[str] = mapped_column(
-        String, primary_key=True, default=datasource_id_factory
-    )
+    id: Mapped[str] = mapped_column(primary_key=True, default=datasource_id_factory)
     name: Mapped[str] = mapped_column(String(255))
-    organization_id: Mapped[str] = mapped_column(
-        ForeignKey("organizations.id", ondelete="CASCADE")
-    )
+    organization_id: Mapped[str] = mapped_column(ForeignKey("organizations.id", ondelete="CASCADE"))
     # JSON serialized form of DatasourceConfig
-    config: Mapped[dict] = mapped_column(type_=JSONBetter)
+    config: Mapped[dict] = mapped_column(postgresql.JSONB)
 
     # List of table names available in this datasource
-    table_list: Mapped[list[str] | None] = mapped_column(type_=JSONBetter)
+    table_list: Mapped[list[str] | None] = mapped_column(postgresql.JSONB)
     # Timestamp of the last update to `inspected_tables`
     table_list_updated: Mapped[datetime | None] = mapped_column()
 
     organization: Mapped["Organization"] = relationship(back_populates="datasources")
-    api_keys: Mapped[list["ApiKey"]] = relationship(
-        back_populates="datasource", cascade="all, delete-orphan"
-    )
-    experiments: Mapped[list["Experiment"]] = relationship(
-        back_populates="datasource", cascade="all, delete-orphan"
-    )
+    api_keys: Mapped[list["ApiKey"]] = relationship(back_populates="datasource", cascade="all, delete-orphan")
+    experiments: Mapped[list["Experiment"]] = relationship(back_populates="datasource", cascade="all, delete-orphan")
 
     def get_config(self) -> DatasourceConfig:
         """Deserializes the config field into a DatasourceConfig."""
-        config: DatasourceConfig = TypeAdapter(DatasourceConfig).validate_python(
-            self.config
-        )
+        config: DatasourceConfig = TypeAdapter(DatasourceConfig).validate_python(self.config)
         if isinstance(config.dwh, EncryptedDsn):
             config = config.model_copy(update={"dwh": config.dwh.decrypt(self.id)})
         return config
@@ -333,23 +273,13 @@ class DatasourceTablesInspected(Base):
 
     __tablename__ = "datasource_tables_inspected"
 
-    datasource_id: Mapped[str] = mapped_column(
-        ForeignKey("datasources.id", ondelete="CASCADE"), primary_key=True
-    )
+    datasource_id: Mapped[str] = mapped_column(ForeignKey("datasources.id", ondelete="CASCADE"), primary_key=True)
     table_name: Mapped[str] = mapped_column(primary_key=True)
 
     # Serialized InspectDatasourceTablesResponse.
-    response: Mapped[dict | None] = mapped_column(type_=JSONBetter)
+    response: Mapped[dict | None] = mapped_column(postgresql.JSONB)
     # Timestamp of the last update to `response`
     response_last_updated: Mapped[datetime | None] = mapped_column()
-
-    def get_response(self) -> InspectDatasourceTableResponse:
-        return InspectDatasourceTableResponse.model_validate(self.response)
-
-    def set_response(self, value: InspectDatasourceTableResponse) -> Self:
-        self.response = value.model_dump()
-        self.response_last_updated = datetime.now(UTC)
-        return self
 
 
 class ParticipantTypesInspected(Base):
@@ -357,25 +287,13 @@ class ParticipantTypesInspected(Base):
 
     __tablename__ = "participant_types_inspected"
 
-    datasource_id: Mapped[str] = mapped_column(
-        ForeignKey("datasources.id", ondelete="CASCADE"), primary_key=True
-    )
+    datasource_id: Mapped[str] = mapped_column(ForeignKey("datasources.id", ondelete="CASCADE"), primary_key=True)
     participant_type: Mapped[str] = mapped_column(primary_key=True)
 
     # Serialized InspectParticipantTypesResponse.
-    response: Mapped[dict | None] = mapped_column(type_=JSONBetter)
+    response: Mapped[dict | None] = mapped_column(postgresql.JSONB)
     # Timestamp of the last update to `response`
     response_last_updated: Mapped[datetime | None] = mapped_column()
-
-    def get_response(self) -> InspectParticipantTypesResponse:
-        return InspectParticipantTypesResponse.model_validate(self.response)
-
-    def set_response(self, value: InspectParticipantTypesResponse) -> Self:
-        # This value may contain Python datetime objects. The default JSON serializer doesn't serialize them
-        # but the Pydantic serializer turns them into ISO8601 strings. This could be better.
-        self.response = json.loads(value.model_dump_json())
-        self.response_last_updated = datetime.now(UTC)
-        return self
 
     def clear_response(self):
         self.response = None
@@ -394,14 +312,10 @@ class ArmAssignment(Base):
     )
     participant_id: Mapped[str] = mapped_column(String(255), primary_key=True)
     participant_type: Mapped[str] = mapped_column(String(255))
-    arm_id: Mapped[str] = mapped_column(
-        String(36), ForeignKey("arms.id", ondelete="CASCADE")
-    )
+    arm_id: Mapped[str] = mapped_column(String(36), ForeignKey("arms.id", ondelete="CASCADE"))
     # JSON serialized form of a list of Strata objects (from Assignment.strata).
-    strata: Mapped[list[dict[str, str]]] = mapped_column(type_=JSONBetter)
-    created_at: Mapped[datetime] = mapped_column(
-        server_default=sqlalchemy.sql.func.now()
-    )
+    strata: Mapped[list[dict[str, str]]] = mapped_column(postgresql.JSONB)
+    created_at: Mapped[datetime] = mapped_column(server_default=sqlalchemy.sql.func.now())
 
     experiment: Mapped["Experiment"] = relationship(back_populates="arm_assignments")
     arm: Mapped["Arm"] = relationship(back_populates="arm_assignments")
@@ -424,20 +338,15 @@ class Experiment(Base):
 
     __tablename__ = "experiments"
 
-    id: Mapped[str] = mapped_column(
-        String(36), primary_key=True, default=experiment_id_factory
-    )
-    datasource_id: Mapped[str] = mapped_column(
-        String(255), ForeignKey("datasources.id", ondelete="CASCADE")
-    )
-    # -- Experiment metadata --
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=experiment_id_factory)
+    datasource_id: Mapped[str] = mapped_column(String(255), ForeignKey("datasources.id", ondelete="CASCADE"))
+
     experiment_type: Mapped[str] = mapped_column()
     participant_type: Mapped[str] = mapped_column(String(255))
     name: Mapped[str] = mapped_column(String(255))
     # Describe your experiment and hypothesis here.
     description: Mapped[str] = mapped_column(String(2000))
     # The experiment state should be one of xngin.apiserver.routers.common_enums.ExperimentState.
-    # We use a looser type to decouple the database from the API a little more.
     state: Mapped[str]
     # Target start date of the experiment. Denormalized from design_spec.
     start_date: Mapped[datetime] = mapped_column()
@@ -447,55 +356,44 @@ class Experiment(Base):
     stopped_assignments_at: Mapped[datetime | None] = mapped_column()
     # The reason assignments were stopped. See xngin.apiserver.routers.common_enums.StopAssignmentReason.
     stopped_assignments_reason: Mapped[str | None] = mapped_column()
-    created_at: Mapped[datetime] = mapped_column(
-        server_default=sqlalchemy.sql.func.now()
-    )
+    created_at: Mapped[datetime] = mapped_column(server_default=sqlalchemy.sql.func.now())
     updated_at: Mapped[datetime] = mapped_column(
         server_default=sqlalchemy.sql.func.now(), onupdate=sqlalchemy.sql.func.now()
     )
     n_trials: Mapped[int] = mapped_column(server_default="0")
 
-    # -- Experiment config --
     # Bandit config params
     prior_type: Mapped[str | None] = mapped_column()
     reward_type: Mapped[str | None] = mapped_column()
 
     # Frequentist config params
     # JSON serialized form of an experiment's specified dwh fields used for strata/metrics/filters.
-    design_spec_fields: Mapped[dict | None] = mapped_column(type_=JSONBetter)
-    # JSON serialized form of a PowerResponse. Not required since some experiments may not have data to run power analyses.
-    power_analyses: Mapped[dict | None] = mapped_column(type_=JSONBetter)
+    design_spec_fields: Mapped[dict | None] = mapped_column(postgresql.JSONB)
+    # JSON serialized form of a PowerResponse. Not required since some experiments may not have data to run
+    # power analyses.
+    power_analyses: Mapped[dict | None] = mapped_column(postgresql.JSONB)
     # JSON serialized form of a BalanceCheck. May be null if the experiment type doesn't support
     # balance checks.
-    balance_check: Mapped[dict | None] = mapped_column(type_=JSONBetter)
+    balance_check: Mapped[dict | None] = mapped_column(postgresql.JSONB)
 
     # Frequentist experiment types i.e. online and preassigned
     power: Mapped[float | None] = mapped_column()
     alpha: Mapped[float | None] = mapped_column()
     fstat_thresh: Mapped[float | None] = mapped_column()
 
-    # -- Relationships --
     arm_assignments: Mapped[list["ArmAssignment"]] = relationship(
         back_populates="experiment", cascade="all, delete-orphan", lazy="raise"
     )
-    arms: Mapped[list["Arm"]] = relationship(
-        back_populates="experiment", cascade="all, delete-orphan"
-    )
+    arms: Mapped[list["Arm"]] = relationship(back_populates="experiment", cascade="all, delete-orphan")
     datasource: Mapped["Datasource"] = relationship(back_populates="experiments")
-    webhooks: Mapped[list["Webhook"]] = relationship(
-        secondary="experiment_webhooks", back_populates="experiments"
-    )
+    webhooks: Mapped[list["Webhook"]] = relationship(secondary="experiment_webhooks", back_populates="experiments")
     draws: Mapped[list["Draw"]] = relationship(
         "Draw",
         back_populates="experiment",
         cascade="all, delete-orphan",
     )
     contexts: Mapped[list["Context"]] = relationship(
-        "Context",
-        back_populates="experiment",
-        cascade="all, delete-orphan",
-        primaryjoin="and_(Experiment.id==Context.experiment_id,"
-        + "Experiment.experiment_type=='cmab')",
+        "Context", back_populates="experiment", cascade="all, delete-orphan"
     )
 
 
@@ -503,30 +401,17 @@ class Arm(Base):
     """Representation of arms of an experiment."""
 
     __tablename__ = "arms"
-    # TODO: Ensure arm names are unique within an organization
-    #       Do this as part of Issue #278; will need to backfill in such a way that old arms are
-    #       made unique e.g. suffixing with a part of the experiment id.
-    # __table_args__ = (
-    #     sqlalchemy.UniqueConstraint("name", "organization_id", name="uix_arm_name_org"),
-    # )
-    # -- Arm metadata --
+
     id: Mapped[str] = mapped_column(String(36), primary_key=True)
     name: Mapped[str] = mapped_column(String(255))
     description: Mapped[str] = mapped_column(String(2000))
-    experiment_id: Mapped[str] = mapped_column(
-        ForeignKey("experiments.id", ondelete="CASCADE")
-    )
-    organization_id: Mapped[str] = mapped_column(
-        ForeignKey("organizations.id", ondelete="CASCADE")
-    )
-    created_at: Mapped[datetime] = mapped_column(
-        server_default=sqlalchemy.sql.func.now()
-    )
+    experiment_id: Mapped[str] = mapped_column(ForeignKey("experiments.id", ondelete="CASCADE"))
+    organization_id: Mapped[str] = mapped_column(ForeignKey("organizations.id", ondelete="CASCADE"))
+    created_at: Mapped[datetime] = mapped_column(server_default=sqlalchemy.sql.func.now())
     updated_at: Mapped[datetime] = mapped_column(
         server_default=sqlalchemy.sql.func.now(), onupdate=sqlalchemy.sql.func.now()
     )
 
-    # -- Arm config --
     # Prior variables
     mu_init: Mapped[float | None] = mapped_column()
     sigma_init: Mapped[float | None] = mapped_column()
@@ -538,12 +423,9 @@ class Arm(Base):
     alpha: Mapped[float | None] = mapped_column()
     beta: Mapped[float | None] = mapped_column()
 
-    # -- Relationships --
     organization: Mapped["Organization"] = relationship(back_populates="arms")
     experiment: Mapped["Experiment"] = relationship(back_populates="arms")
-    arm_assignments: Mapped[list["ArmAssignment"]] = relationship(
-        back_populates="arm", cascade="all, delete-orphan"
-    )
+    arm_assignments: Mapped[list["ArmAssignment"]] = relationship(back_populates="arm", cascade="all, delete-orphan")
     draws: Mapped[list["Draw"]] = relationship(
         "Draw",
         back_populates="arm",
@@ -558,16 +440,10 @@ class Draw(Base):
 
     __tablename__ = "draws"
 
-    # IDs
-    experiment_id: Mapped[str] = mapped_column(
-        ForeignKey("experiments.id", ondelete="CASCADE"), primary_key=True
-    )
+    experiment_id: Mapped[str] = mapped_column(ForeignKey("experiments.id", ondelete="CASCADE"), primary_key=True)
     participant_id: Mapped[str] = mapped_column(String(255), primary_key=True)
 
-    # Logging
-    created_at: Mapped[datetime] = mapped_column(
-        server_default=sqlalchemy.sql.func.now()
-    )
+    created_at: Mapped[datetime] = mapped_column(server_default=sqlalchemy.sql.func.now())
     observed_at: Mapped[datetime | None] = mapped_column()
     observation_type: Mapped[str | None] = mapped_column()
 
@@ -575,17 +451,14 @@ class Draw(Base):
     participant_type: Mapped[str] = mapped_column(String(255))
     arm_id: Mapped[str] = mapped_column(ForeignKey("arms.id", ondelete="CASCADE"))
     outcome: Mapped[float | None] = mapped_column()
-    context_val: Mapped[list[float] | None] = mapped_column(ARRAY(Float))
+    context_vals: Mapped[list[float] | None] = mapped_column(ARRAY(Float))
     current_mu: Mapped[list[float] | None] = mapped_column(ARRAY(Float))
     current_covariance: Mapped[list[list[float]] | None] = mapped_column(ARRAY(Float))
     current_alpha: Mapped[float | None] = mapped_column()
     current_beta: Mapped[float | None] = mapped_column()
 
-    # Relationships
     arm: Mapped[Arm] = relationship("Arm", back_populates="draws", lazy="joined")
-    experiment: Mapped[Experiment] = relationship(
-        "Experiment", back_populates="draws", lazy="joined"
-    )
+    experiment: Mapped[Experiment] = relationship("Experiment", back_populates="draws", lazy="joined")
 
 
 class Context(Base):
@@ -595,16 +468,10 @@ class Context(Base):
 
     __tablename__ = "context"
 
-    # Context metadata
-    id: Mapped[str] = mapped_column(String, primary_key=True)
-    experiment_id: Mapped[str] = mapped_column(
-        ForeignKey("experiments.id", ondelete="CASCADE")
-    )
+    id: Mapped[str] = mapped_column(primary_key=True, default=context_id_factory)
+    experiment_id: Mapped[str] = mapped_column(ForeignKey("experiments.id", ondelete="CASCADE"))
     name: Mapped[str] = mapped_column(String(255))
     description: Mapped[str] = mapped_column(String(2000))
     value_type: Mapped[str] = mapped_column()
 
-    # Relationships
-    experiment: Mapped[Experiment] = relationship(
-        "Experiment", back_populates="contexts"
-    )
+    experiment: Mapped[Experiment] = relationship("Experiment", back_populates="contexts")

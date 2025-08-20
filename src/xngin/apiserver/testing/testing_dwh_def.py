@@ -8,7 +8,7 @@ from xngin.apiserver.settings import ParticipantsDef
 
 #: Path to the compressed raw test dwh data.
 #: TESTING_DWH_PARTICIPANT_DEF is defined with respect to these contents.
-TESTING_DWH_RAW_DATA = Path(__file__).parent.parent / "testdata/testing_dwh.csv.zst"
+TESTING_DWH_RAW_DATA = Path(__file__).resolve().parent.parent / "testdata/testing_dwh.csv.zst"
 
 #: Has fields that map to our test dwh, covering data types usable by strata/filters/metrics.
 TESTING_DWH_PARTICIPANT_DEF = ParticipantsDef(

@@ -167,9 +167,7 @@ class Case:
     chosen_n: int = 3
 
     def __str__(self):
-        return " and ".join([
-            f"{f.field_name} {f.relation.name} {f.value}" for f in self.filters
-        ])
+        return " and ".join([f"{f.field_name} {f.relation.name} {f.value}" for f in self.filters])
 
 
 @pytest.fixture(name="queries_session")
@@ -192,9 +190,7 @@ def fixture_queries_session():
             execution_options={"logging_token": SA_LOGGING_PREFIX_FOR_DWH},
         )
         # re: DROP and CREATE DATABASE cannot be executed inside a transaction block
-        with default_engine.connect().execution_options(
-            isolation_level="AUTOCOMMIT"
-        ) as conn:
+        with default_engine.connect().execution_options(isolation_level="AUTOCOMMIT") as conn:
             for stmt in (
                 f"DROP DATABASE IF EXISTS {test_db.connect_url.database}",
                 f"CREATE DATABASE {test_db.connect_url.database}",
@@ -210,9 +206,7 @@ def fixture_queries_session():
     )
     try:
         # TODO: consider trying to consolidate dwh-conditional config with that in settings.py
-        if test_db.db_type is DbType.RS and hasattr(
-            engine.dialect, "_set_backslash_escapes"
-        ):
+        if test_db.db_type is DbType.RS and hasattr(engine.dialect, "_set_backslash_escapes"):
             engine.dialect._set_backslash_escapes = lambda _: None
 
         Base.metadata.drop_all(engine)
@@ -241,9 +235,7 @@ def test_compile_query_without_filters_pg():
     )
     for dialect in dialects:
         query = compose_query(SampleTable.get_table(), 2, [])
-        actual = str(
-            query.compile(dialect=dialect, compile_kwargs={"literal_binds": True})
-        ).replace("\n", "")
+        actual = str(query.compile(dialect=dialect, compile_kwargs={"literal_binds": True})).replace("\n", "")
         expectation = (
             "SELECT test_table.id, test_table.int_col, test_table.float_col,"
             " test_table.bool_col, test_table.string_col, test_table.experiment_ids "
@@ -255,9 +247,7 @@ def test_compile_query_without_filters_pg():
 def test_compile_query_without_filters_bq():
     query = compose_query(SampleTable.get_table(), 2, [])
     dialect = sqlalchemy_bigquery.dialect()
-    actual = str(
-        query.compile(dialect=dialect, compile_kwargs={"literal_binds": True})
-    ).replace("\n", "")
+    actual = str(query.compile(dialect=dialect, compile_kwargs={"literal_binds": True})).replace("\n", "")
     expectation = (
         "SELECT `test_table`.`id`, `test_table`.`int_col`, `test_table`.`float_col`, "
         "`test_table`.`bool_col`, `test_table`.`string_col`, `test_table`.`experiment_ids` "
@@ -351,9 +341,7 @@ IS_NULLABLE_CASES = [
     ),
     # verify INCLUDES
     Case(
-        filters=[
-            Filter(field_name="bool_col", relation=Relation.INCLUDES, value=[False])
-        ],
+        filters=[Filter(field_name="bool_col", relation=Relation.INCLUDES, value=[False])],
         matches=[ROW_30],
     ),
     Case(
@@ -411,16 +399,12 @@ IS_NULLABLE_CASES = [
 
 @pytest.mark.parametrize("testcase", IS_NULLABLE_CASES, ids=lambda d: str(d))
 def test_is_nullable(testcase, queries_session, use_deterministic_random):
-    testcase.filters = [
-        Filter.model_validate(filt.model_dump()) for filt in testcase.filters
-    ]
+    testcase.filters = [Filter.model_validate(filt.model_dump()) for filt in testcase.filters]
     table = SampleNullableTable.get_table()
     filters = create_query_filters(table, testcase.filters)
     q = compose_query(table, testcase.chosen_n, filters)
     query_results = queries_session.execute(q)
-    assert list(sorted([r.id for r in query_results])) == list(
-        sorted(r.id for r in testcase.matches)
-    ), testcase
+    assert list(sorted([r.id for r in query_results])) == list(sorted(r.id for r in testcase.matches)), testcase
 
 
 RELATION_CASES = [
@@ -467,9 +451,7 @@ RELATION_CASES = [
         matches=[ROW_100],
     ),
     Case(
-        filters=[
-            Filter(field_name="int_col", relation=Relation.BETWEEN, value=[-17, 42])
-        ],
+        filters=[Filter(field_name="int_col", relation=Relation.BETWEEN, value=[-17, 42])],
         matches=[ROW_100, ROW_200],
     ),
     Case(
@@ -484,9 +466,7 @@ RELATION_CASES = [
     ),
     # float_col
     Case(
-        filters=[
-            Filter(field_name="float_col", relation=Relation.BETWEEN, value=[2, 3])
-        ],
+        filters=[Filter(field_name="float_col", relation=Relation.BETWEEN, value=[2, 3])],
         matches=[ROW_200],
     ),
     # bool_col
@@ -502,33 +482,23 @@ RELATION_CASES = [
     ),
     # regexp hacks
     Case(
-        filters=[
-            Filter(field_name="experiment_ids", relation=Relation.INCLUDES, value=["a"])
-        ],
+        filters=[Filter(field_name="experiment_ids", relation=Relation.INCLUDES, value=["a"])],
         matches=[ROW_100, ROW_200, ROW_300],
     ),
     Case(
-        filters=[
-            Filter(field_name="experiment_ids", relation=Relation.INCLUDES, value=["B"])
-        ],
+        filters=[Filter(field_name="experiment_ids", relation=Relation.INCLUDES, value=["B"])],
         matches=[ROW_200, ROW_300],
     ),
     Case(
-        filters=[
-            Filter(field_name="experiment_ids", relation=Relation.INCLUDES, value=["c"])
-        ],
+        filters=[Filter(field_name="experiment_ids", relation=Relation.INCLUDES, value=["c"])],
         matches=[ROW_300],
     ),
     Case(
-        filters=[
-            Filter(field_name="experiment_ids", relation=Relation.EXCLUDES, value=["a"])
-        ],
+        filters=[Filter(field_name="experiment_ids", relation=Relation.EXCLUDES, value=["a"])],
         matches=[],
     ),
     Case(
-        filters=[
-            Filter(field_name="experiment_ids", relation=Relation.EXCLUDES, value=["D"])
-        ],
+        filters=[Filter(field_name="experiment_ids", relation=Relation.EXCLUDES, value=["D"])],
         matches=[ROW_100, ROW_200, ROW_300],
     ),
     Case(
@@ -552,15 +522,11 @@ RELATION_CASES = [
         matches=[],
     ),
     Case(
-        filters=[
-            Filter(field_name="experiment_ids", relation=Relation.INCLUDES, value=["d"])
-        ],
+        filters=[Filter(field_name="experiment_ids", relation=Relation.INCLUDES, value=["d"])],
         matches=[],
     ),
     Case(
-        filters=[
-            Filter(field_name="experiment_ids", relation=Relation.EXCLUDES, value=["d"])
-        ],
+        filters=[Filter(field_name="experiment_ids", relation=Relation.EXCLUDES, value=["d"])],
         matches=[ROW_100, ROW_200, ROW_300],
     ),
 ]
@@ -568,15 +534,11 @@ RELATION_CASES = [
 
 @pytest.mark.parametrize("testcase", RELATION_CASES)
 def test_relations(testcase, queries_session, use_deterministic_random):
-    testcase.filters = [
-        Filter.model_validate(filt.model_dump()) for filt in testcase.filters
-    ]
+    testcase.filters = [Filter.model_validate(filt.model_dump()) for filt in testcase.filters]
     filters = create_query_filters(SampleTable.get_table(), testcase.filters)
     q = compose_query(SampleTable.get_table(), testcase.chosen_n, filters)
     query_results = queries_session.execute(q)
-    assert list(sorted([r.id for r in query_results])) == list(
-        sorted(r.id for r in testcase.matches)
-    ), testcase
+    assert list(sorted([r.id for r in query_results])) == list(sorted(r.id for r in testcase.matches)), testcase
 
 
 def test_datetime_filter_validation():
@@ -677,9 +639,7 @@ def test_allowed_datetime_filter_validation():
     midnight_with_delim = "2024-01-01T00:00:00"
     create_datetime_filter(
         col,
-        Filter(
-            field_name="x", relation=Relation.BETWEEN, value=[None, midnight_with_delim]
-        ),
+        Filter(field_name="x", relation=Relation.BETWEEN, value=[None, midnight_with_delim]),
     )
 
     # bare dates are allowed
@@ -732,7 +692,8 @@ def test_make_csv_regex(csv, values, expected):
     matches = re.search(r, csv)
     actual = matches is not None
     assert actual == expected, (
-        f'Expression {r} is expected to {"match" if expected else "not match"} in "{csv}". Values = {values}. Matches = {matches}.'
+        f'Expression {r} is expected to {"match" if expected else "not match"} in "{csv}". '
+        f"Values = {values}. Matches = {matches}."
     )
 
 
@@ -744,10 +705,7 @@ def test_get_stats_on_missing_metric_raises_error(queries_session):
             [DesignSpecMetricRequest(field_name="missing_col", metric_pct_change=0.1)],
             filters=[],
         )
-    assert (
-        "Missing metrics (check your Datasource configuration): {'missing_col'}"
-        in str(exc)
-    )
+    assert "Missing metrics (check your Datasource configuration): {'missing_col'}" in str(exc)
 
 
 def test_get_stats_on_integer_metric(queries_session):
@@ -779,9 +737,7 @@ def test_get_stats_on_integer_metric(queries_session):
     assert actual.metric_type == expected.metric_type
     # PG: assertion would fail due to a float vs decimal.Decimal comparison.
     # RS: assertion would fail due to avg() on int types keeps them as integers.
-    assert actual.model_dump(include=numeric_fields) == pytest.approx(
-        expected.model_dump(include=numeric_fields)
-    )
+    assert actual.model_dump(include=numeric_fields) == pytest.approx(expected.model_dump(include=numeric_fields))
 
 
 def test_get_stats_on_nullable_integer_metric(queries_session):
@@ -810,9 +766,7 @@ def test_get_stats_on_nullable_integer_metric(queries_session):
     }
     assert actual.field_name == expected.field_name
     assert actual.metric_type == expected.metric_type
-    assert actual.model_dump(include=numeric_fields) == pytest.approx(
-        expected.model_dump(include=numeric_fields)
-    )
+    assert actual.model_dump(include=numeric_fields) == pytest.approx(expected.model_dump(include=numeric_fields))
 
 
 def test_get_stats_on_boolean_metric(queries_session):
@@ -842,9 +796,7 @@ def test_get_stats_on_boolean_metric(queries_session):
     }
     assert actual.field_name == expected.field_name
     assert actual.metric_type == expected.metric_type
-    assert actual.model_dump(include=numeric_fields) == pytest.approx(
-        expected.model_dump(include=numeric_fields)
-    )
+    assert actual.model_dump(include=numeric_fields) == pytest.approx(expected.model_dump(include=numeric_fields))
 
 
 def test_get_stats_on_numeric_metric(queries_session):
@@ -874,9 +826,7 @@ def test_get_stats_on_numeric_metric(queries_session):
     assert actual.field_name == expected.field_name
     assert actual.metric_type == expected.metric_type
     # pytest.approx does a reasonable fuzzy comparison of floats for non-nested dictionaries.
-    assert actual.model_dump(include=numeric_fields) == pytest.approx(
-        expected.model_dump(include=numeric_fields)
-    )
+    assert actual.model_dump(include=numeric_fields) == pytest.approx(expected.model_dump(include=numeric_fields))
 
 
 def test_get_participant_metrics(queries_session):

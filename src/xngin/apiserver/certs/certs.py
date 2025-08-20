@@ -2,9 +2,7 @@ import hashlib
 from pathlib import Path
 
 PATH_TO_AMAZON_TRUST_CA_BUNDLE = (
-    (Path(__file__).parent / "amazon-trust-ca-bundle.crt")
-    .resolve(strict=True)
-    .as_posix()
+    (Path(__file__).resolve().parent / "amazon-trust-ca-bundle.crt").resolve(strict=True).as_posix()
 )
 
 CERT_FILES_HASHES = {
@@ -43,8 +41,4 @@ def assert_file_hash(file_path, expected_hash):
         raise CertsError(f"{file_path} not found") from err
 
     if actual_hash != expected_hash:
-        raise CertsError(
-            f"File has incorrect SHA256 hash.\n"
-            f"Expected: {expected_hash}\n"
-            f"Actual: {actual_hash}"
-        )
+        raise CertsError(f"File has incorrect SHA256 hash.\nExpected: {expected_hash}\nActual: {actual_hash}")

@@ -30,8 +30,11 @@ from xngin.apiserver.routers.admin.admin_api import validate_webhooks
 from xngin.apiserver.routers.common_api_types import (
     ArmBandit,
     BaseFrequentistDesignSpec,
+    ContextType,
+    CreateCMABAssignmentRequest,
     CreateExperimentRequest,
     CreateExperimentResponse,
+    ExperimentsType,
     GetExperimentAssignmentsResponse,
     GetExperimentResponse,
     GetParticipantAssignmentResponse,
@@ -48,7 +51,7 @@ from xngin.apiserver.routers.experiments.experiments_common import (
     get_existing_assignment_for_participant,
     get_experiment_assignments_as_csv_impl,
     get_experiment_assignments_impl,
-    list_experiments_impl,
+    list_organization_or_datasource_experiments_impl,
     update_bandit_arm_with_outcome_impl,
 )
 from xngin.apiserver.settings import (
@@ -82,9 +85,7 @@ router = APIRouter(
 )
 async def create_experiment_with_assignment_sl(
     body: CreateExperimentRequest,
-    chosen_n: Annotated[
-        int, Query(..., description="Number of participants to assign.")
-    ],
+    chosen_n: Annotated[int, Query(..., description="Number of participants to assign.")],
     datasource: Annotated[Datasource, Depends(datasource_dependency)],
     xngin_session: Annotated[AsyncSession, Depends(xngin_db_session)],
     random_state: Annotated[int | None, Depends(random_seed_dependency)],
@@ -162,7 +163,9 @@ async def list_experiments_sl(
     datasource: Annotated[Datasource, Depends(datasource_dependency)],
     xngin_session: Annotated[AsyncSession, Depends(xngin_db_session)],
 ) -> ListExperimentsResponse:
-    return await list_experiments_impl(xngin_session, datasource.id)
+    return await list_organization_or_datasource_experiments_impl(
+        xngin_session=xngin_session, datasource_id=datasource.id
+    )
 
 
 @router.get(
@@ -175,9 +178,7 @@ async def get_experiment_sl(
 ) -> GetExperimentResponse:
     converter = ExperimentStorageConverter(experiment)
     balance_check = converter.get_balance_check()
-    assign_summary = await get_assign_summary(
-        xngin_session, experiment.id, balance_check
-    )
+    assign_summary = await get_assign_summary(xngin_session, experiment.id, balance_check)
     return converter.get_experiment_response(assign_summary)
 
 
@@ -209,8 +210,8 @@ async def get_experiment_assignments_as_csv_sl(
 @router.get(
     "/experiments/{experiment_id}/assignments/{participant_id}",
     summary="Get the assignment for a specific participant, excluding strata if any.",
-    description="""For 'preassigned' experiments, the participant's Assignment is returned if it
-    exists.  For 'online', returns the assignment if it exists, else generates an assignment""",
+    description="""For preassigned experiments, the participant's Assignment is returned if it
+    exists.  For online experiments, returns the assignment if it exists, else generates an assignment""",
 )
 async def get_assignment_for_participant_with_apikey(
     experiment: Annotated[tables.Experiment, Depends(experiment_dependency)],
@@ -219,17 +220,119 @@ async def get_assignment_for_participant_with_apikey(
     create_if_none: Annotated[
         bool,
         Query(
-            description="Create an assignment if none exists. Does nothing for preassigned experiments. Override if you just want to check if an assignment exists."
+            description=(
+                "Create an assignment if none exists. Does nothing for preassigned experiments. "
+                "Override if you just want to check if an assignment exists."
+            )
         ),
     ] = True,
     random_state: Annotated[int | None, Depends(random_seed_dependency)] = None,
 ) -> GetParticipantAssignmentResponse:
     assignment = await get_existing_assignment_for_participant(
-        xngin_session, experiment.id, participant_id, experiment.experiment_type
+        xngin_session=xngin_session,
+        experiment_id=experiment.id,
+        participant_id=participant_id,
+        experiment_type=experiment.experiment_type,
     )
     if not assignment and create_if_none:
         assignment = await create_assignment_for_participant(
-            xngin_session, experiment, participant_id, random_state
+            xngin_session=xngin_session,
+            experiment=experiment,
+            participant_id=participant_id,
+            random_state=random_state,
+        )
+    return GetParticipantAssignmentResponse(
+        experiment_id=experiment.id,
+        participant_id=participant_id,
+        assignment=assignment,
+    )
+
+
+@router.post(
+    "/experiments/{experiment_id}/assignments/{participant_id}/assign_cmab",
+    description="""
+    Get or create a CMAB arm assignment for a specific participant. This endpoint is used only for CMAB assignments.
+    If there is a pre-existing assignment for a given participant ID, the context inputs in the
+    CreateCMABAssignmentRequest can be None, and will be disregarded if they are not None.
+    """,
+)
+async def get_cmab_experiment_assignment_for_participant(
+    experiment: Annotated[tables.Experiment, Depends(experiment_dependency)],
+    participant_id: str,
+    body: CreateCMABAssignmentRequest,
+    session: Annotated[AsyncSession, Depends(xngin_db_session)],
+    create_if_none: Annotated[
+        bool,
+        Query(
+            description=(
+                "Create an assignment if none exists. Override if you just want to check if an assignment exists."
+            )
+        ),
+    ] = True,
+    random_state: Annotated[
+        int | None,
+        Query(
+            description="Specify a random seed for reproducibility.",
+            include_in_schema=False,
+        ),
+    ] = None,
+) -> GetParticipantAssignmentResponse:
+    """Get or create the CMAB arm assignment for a specific participant in an experiment."""
+
+    if experiment.experiment_type != ExperimentsType.CMAB_ONLINE.value:
+        raise LateValidationError(
+            f"Experiment {experiment.id} is a {experiment.experiment_type} experiment, and not a "
+            f"{ExperimentsType.CMAB_ONLINE.value} experiment. Please use the corresponding GET endpoint to "
+            f"create assignments."
+        )
+
+    # Look up the participant's assignment if it exists
+    assignment = await get_existing_assignment_for_participant(
+        xngin_session=session,
+        experiment_id=experiment.id,
+        participant_id=participant_id,
+        experiment_type=experiment.experiment_type,
+    )
+
+    if not assignment and create_if_none and experiment.stopped_assignments_at is None:
+        context_inputs = body.context_inputs
+
+        if not context_inputs:
+            raise LateValidationError("Context inputs are required for creating CMAB assignments.")
+
+        context_defns = await experiment.awaitable_attrs.contexts
+        context_inputs = sorted(context_inputs, key=lambda x: x.context_id)
+        context_defns = sorted(context_defns, key=lambda x: x.id)
+
+        if len(context_inputs) != len(context_defns):
+            raise LateValidationError(
+                f"Expected {len(context_defns)} context inputs, but got {len(context_inputs)} in "
+                f"CreateCMABAssignmentRequest."
+            )
+
+        for context_input, context_def in zip(
+            context_inputs,
+            context_defns,
+            strict=True,
+        ):
+            if context_input.context_id != context_def.id:
+                raise LateValidationError(
+                    f"Context input for id {context_input.context_id} does not match expected context id "
+                    f"{context_def.id}",
+                )
+            if context_def.value_type == ContextType.BINARY.value and context_input.context_value not in {0.0, 1.0}:
+                raise LateValidationError(
+                    f"Context value for id {context_input.context_id} must be binary (0 or 1).",
+                )
+
+        context_vals = [ctx.context_value for ctx in context_inputs]
+
+        assignment = await create_assignment_for_participant(
+            xngin_session=session,
+            experiment=experiment,
+            participant_id=participant_id,
+            context_vals=context_vals,
+            random_state=random_state,
         )
 
     return GetParticipantAssignmentResponse(
@@ -249,6 +352,9 @@ async def update_bandit_arm_with_participant_outcome(
     session: Annotated[AsyncSession, Depends(xngin_db_session)],
 ) -> ArmBandit:
     # Update the arm with the outcome
+    if experiment.experiment_type == ExperimentsType.CMAB_ONLINE.value:
+        await experiment.awaitable_attrs.contexts
+
     updated_arm = await update_bandit_arm_with_outcome_impl(
         xngin_session=session,
         experiment=experiment,
