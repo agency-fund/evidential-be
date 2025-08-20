@@ -19,6 +19,7 @@ from xngin.apiserver.routers.common_api_types import (
     DesignSpec,
     DesignSpecMetric,
     ExperimentsType,
+    MABExperimentSpec,
     MetricPowerAnalysis,
     MetricType,
     OnlineFrequentistExperimentSpec,
@@ -33,6 +34,7 @@ from xngin.apiserver.routers.experiments.experiments_common import (
     abandon_experiment_impl,
     commit_experiment_impl,
     create_assignment_for_participant,
+    create_bandit_online_experiment_impl,
     create_dwh_experiment_impl,
     create_preassigned_experiment_impl,
     experiment_assignments_to_csv_generator,
@@ -474,6 +476,74 @@ async def test_create_experiment_impl_for_online(
     assert len(assignments) == 0
 
 
+async def test_create_experiment_impl_for_mab_online(
+    xngin_session, testing_datasource, sample_table, use_deterministic_random
+):
+    """Test implementation of creating an online experiment."""
+    request = make_create_online_mab_experiment_request(with_ids=True)
+
+    response = await create_bandit_online_experiment_impl(
+        request=request.model_copy(deep=True),
+        chosen_n=None,
+        xngin_session=xngin_session,
+        organization_id=testing_datasource.org.id,
+        datasource_id=testing_datasource.ds.id,
+        validated_webhooks=[],
+    )
+    # Verify response
+    assert response.datasource_id == testing_datasource.ds.id
+    assert response.state == ExperimentState.ASSIGNED
+
+    # Verify design_spec
+    assert response.design_spec.experiment_id is not None
+    assert response.design_spec.arms[0].arm_id is not None
+    assert response.design_spec.arms[1].arm_id is not None
+    assert response.design_spec.experiment_name == request.design_spec.experiment_name
+    assert response.design_spec.description == request.design_spec.description
+    assert response.design_spec.start_date == request.design_spec.start_date
+    assert response.design_spec.end_date == request.design_spec.end_date
+    assert isinstance(response.design_spec, MABExperimentSpec)
+    assert response.assign_summary is None
+
+    # Verify database state
+    experiment = await xngin_session.get(tables.Experiment, response.design_spec.experiment_id)
+    assert experiment.experiment_type == ExperimentsType.MAB_ONLINE
+    assert experiment.participant_type == request.design_spec.participant_type
+    assert experiment.name == request.design_spec.experiment_name
+    assert experiment.description == request.design_spec.description
+    # Online experiments still go through a review step before being committed
+    assert experiment.state == ExperimentState.ASSIGNED
+    assert experiment.datasource_id == testing_datasource.ds.id
+    assert_dates_equal(experiment.start_date, request.design_spec.start_date)
+    assert_dates_equal(experiment.end_date, request.design_spec.end_date)
+
+    # Verify design_spec was stored correctly
+    converter = ExperimentStorageConverter(experiment)
+    converted_design_spec = converter.get_design_spec()
+    assert converted_design_spec == response.design_spec
+    assert isinstance(converted_design_spec, MABExperimentSpec)
+    for arms in converted_design_spec.arms:
+        if response.design_spec.prior_type == PriorTypes.NORMAL:
+            assert arms.mu is not None
+            assert arms.covariance is not None
+        elif response.design_spec.prior_type == PriorTypes.BETA:
+            assert arms.alpha is not None
+            assert arms.beta is not None
+
+    # Verify arms were created in database
+    arms = (await xngin_session.scalars(select(tables.Arm).where(tables.Arm.experiment_id == experiment.id))).all()
+    assert len(arms) == 2
+    arm_ids = {arm.id for arm in arms}
+    expected_arm_ids = {arm.arm_id for arm in response.design_spec.arms}
+    assert arm_ids == expected_arm_ids
+
+    # Verify that no assignments were created for online experiment
+    assignments = (
+        await xngin_session.scalars(select(tables.Draw).where(tables.Draw.experiment_id == experiment.id))
+    ).all()
+    assert len(assignments) == 0
+
+
 async def test_create_experiment_impl_overwrites_uuids(
     xngin_session, testing_datasource, sample_table, use_deterministic_random
 ):
@@ -802,6 +872,64 @@ async def test_get_experiment_assignments_impl(xngin_session, testing_datasource
     assert assignments[1].strata[0].field_name == "gender"
     assert assignments[1].strata[0].strata_value == "M"
     assert assignments[1].created_at is not None
+
+
+async def test_get_experiment_mab_assignments_impl(xngin_session, testing_datasource):
+    # First insert an experiment with assignments
+    experiment = await insert_experiment_and_arms(
+        xngin_session, testing_datasource.ds, experiment_type=ExperimentsType.MAB_ONLINE
+    )
+    await xngin_session.commit()
+
+    experiment_id = experiment.id
+    arm1_id = experiment.arms[0].id
+    arm2_id = experiment.arms[1].id
+    arm_assignments = [
+        tables.Draw(
+            experiment_id=experiment_id,
+            participant_type="test_participant_type",
+            participant_id="p1",
+            arm_id=arm1_id,
+            current_mu=experiment.arms[0].mu,
+            current_covariance=experiment.arms[0].covariance,
+        ),
+        tables.Draw(
+            experiment_id=experiment_id,
+            participant_type="test_participant_type",
+            participant_id="p2",
+            arm_id=arm2_id,
+            current_mu=experiment.arms[1].mu,
+            current_covariance=experiment.arms[1].covariance,
+        ),
+    ]
+    xngin_session.add_all(arm_assignments)
+    await xngin_session.commit()
+    await xngin_session.refresh(experiment, ["arms", "draws"])
+
+    data = get_experiment_assignments_impl(experiment)
+
+    # Check the response structure
+    assert data.experiment_id == experiment.id
+
+    # Check assignments
+    assignments = data.assignments
+    assert len(assignments) == 2
+
+    # Verify first assignment
+    assert assignments[0].participant_id == "p1"
+    assert str(assignments[0].arm_id) == arm1_id
+    assert assignments[0].arm_name == "string"
+
+    # Verify second assignment
+    assert assignments[1].participant_id == "p2"
+    assert str(assignments[1].arm_id) == arm2_id
+    assert assignments[1].arm_name == "string"
+
+    for assignment in assignments:
+        assert assignment.outcome is None
+        assert assignment.context_values is None
+        assert assignment.observed_at is None
+        assert assignment.created_at is not None
 
 
 async def make_experiment_with_assignments(xngin_session, datasource: tables.Datasource):
