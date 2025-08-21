@@ -41,6 +41,7 @@ from xngin.apiserver.routers.auth.auth_dependencies import (
 from xngin.apiserver.settings import (
     Dsn,
     ParticipantsConfig,
+    ParticipantsDef,
     RemoteDatabaseConfig,
     SettingsForTesting,
 )
@@ -299,6 +300,7 @@ class DatasourceMetadata:
 
     org: tables.Organization
     ds: tables.Datasource
+    pt: ParticipantsDef
 
     # The SQLAlchemy DSN
     dsn: str
@@ -377,6 +379,7 @@ async def _make_datasource_metadata(
 
     return DatasourceMetadata(
         ds=datasource,
+        pt=datasource.get_config().participants[0],
         dsn=datasource.get_config().to_sqlalchemy_url().render_as_string(False),
         key=key,
         key_id=key_id,

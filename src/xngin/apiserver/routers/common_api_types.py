@@ -664,12 +664,15 @@ class BaseDesignSpec(ApiBaseModel):
     experiment_id: Annotated[
         str | None,
         Field(
+            deprecated=True,
             description=(
                 "ID of the experiment. If creating a new experiment (POST /datasources/{datasource_id}/experiments), "
                 "this is generated for you and made available in the response; you should NOT set this. "
                 "Only generate ids of your own if using the stateless Experiment Design API as you will "
-                "do your own persistence."
-            )
+                "do your own persistence. \n"
+                "DEPRECATED: This field is no longer used and will be removed in a future release. "
+                "Use the Create/GetExperimentResponse field directly."
+            ),
         ),
     ] = None
 
@@ -1074,6 +1077,7 @@ class AssignSummary(ApiBaseModel):
 class ExperimentConfig(ApiBaseModel):
     """Representation of our stored Experiment information."""
 
+    experiment_id: Annotated[str, Field(description="Server-generated ID of the experiment.")]
     datasource_id: str
     state: Annotated[ExperimentState, Field(description="Current state of this experiment.")]
     stopped_assignments_at: Annotated[
