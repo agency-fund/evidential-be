@@ -1088,8 +1088,6 @@ async def update_participant_type(
     config = ds.get_config()
     participant = config.find_participants(participant_id)
     config.participants.remove(participant)
-    if not isinstance(participant, ParticipantsDef):
-        return Response(status_code=405, content="Only schema participants can be updated")
     if body.participant_type is not None:
         participant.participant_type = body.participant_type
     if body.table_name is not None:
@@ -1309,8 +1307,6 @@ async def analyze_experiment(
 
     if isinstance(design_spec, BaseFrequentistDesignSpec):
         participants_cfg = dsconfig.find_participants(experiment.participant_type)
-        if not isinstance(participants_cfg, ParticipantsDef):
-            raise LateValidationError("Invalid ParticipantsConfig: Participants must be of type schema.")
         unique_id_field = participants_cfg.get_unique_id_field()
 
         assignments = experiment.arm_assignments
