@@ -812,11 +812,11 @@ async def update_bandit_arm_with_outcome_impl(
         xngin_session, experiment.id, participant_id, experiment.experiment_type
     )
     if not assignment:
-        raise LateValidationError(
+        raise ExperimentsAssignmentError(
             f"Participant {participant_id} does not have an assignment for which to record an outcome.",
         )
     if assignment.outcome is not None:
-        raise LateValidationError(
+        raise ExperimentsAssignmentError(
             f"Participant {participant_id} already has an outcome recorded.",
         )
 
@@ -840,7 +840,9 @@ async def update_bandit_arm_with_outcome_impl(
             )
         )
         if draw_record is None:
-            raise ExperimentsAssignmentError(f"No draw record found for participant '{participant_id}' this experiment")
+            raise ExperimentsAssignmentError(
+                f"No draw record found for participant '{participant_id}' for this experiment"
+            )
         if draw_record.outcome is not None:
             raise ExperimentsAssignmentError(
                 f"Participant '{participant_id}' already has an outcome recorded for experiment '{experiment.id}'"
