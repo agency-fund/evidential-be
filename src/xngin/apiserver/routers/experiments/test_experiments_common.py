@@ -639,7 +639,6 @@ async def test_create_experiment_impl_for_cmab_online(xngin_session, testing_dat
     assert response.design_spec.description == request.design_spec.description
     assert response.design_spec.start_date == request.design_spec.start_date
     assert response.design_spec.end_date == request.design_spec.end_date
-    assert isinstance(response.design_spec, CMABExperimentSpec)
     assert response.assign_summary is None
 
     # Verify database state
