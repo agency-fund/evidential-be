@@ -20,7 +20,7 @@ def _sample_beta_binomial(alphas: np.ndarray, betas: np.ndarray, random_state: i
     ----------
     alphas: alpha parameter of Beta distribution for each arm
     betas: beta parameter of Beta distribution for each arm
-    random_state : seed for random number generator
+    random_state: random number generator
     """
     rng = np.random.default_rng(random_state)
     samples = rng.beta(alphas, betas)
@@ -35,17 +35,20 @@ def _sample_normal(
     random_state: int = 66,
 ) -> int:
     """
-    Thompson Sampling with normal prior.
+        Thompson Sampling with normal prior.
 
-    Parameters
-    ----------
-    mus: mean of Normal distribution for each arm
-    covariances: covariance matrix of Normal distribution for each arm
-    context: context vector
-    link_function: link function for the context
-    random_state: seed for random number generator
+        Parameters
+        ----------
+        mus: mean of Normal distribution for each arm
+        covariances: covariance matrix of Normal distribution for each arm
+        context: context vector
+        link_function: link function for the context
+        random_state: int = 66,
+    ) -> int:
     """
+
     rng = np.random.default_rng(random_state)
+
     samples = np.array([
         rng.multivariate_normal(mean=mu, cov=cov) for mu, cov in zip(mus, covariances, strict=False)
     ]).reshape(-1, len(context))

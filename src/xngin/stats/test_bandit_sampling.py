@@ -3,8 +3,33 @@ from xngin.apiserver.routers.common_enums import ExperimentState, ExperimentsTyp
 from xngin.apiserver.routers.experiments.test_experiments_common import make_insertable_experiment
 from xngin.stats.bandit_sampling import choose_arm, update_arm
 
+# TODO: hacky way to import fixtures; need to fix
 xngin_session = fixture_xngin_db_session
 testing_datasource = fixture_testing_datasource
+
+
+def test_check_arm_draw_is_reproducible(testing_datasource):
+    beta_binom_experiment, _ = make_insertable_experiment(
+        datasource=testing_datasource.ds,
+        state=ExperimentState.COMMITTED,
+        experiment_type=ExperimentsType.MAB_ONLINE,
+        prior_type=PriorTypes.BETA,
+        reward_type=LikelihoodTypes.BERNOULLI,
+    )
+    arm1 = choose_arm(experiment=beta_binom_experiment, random_state=0)
+    arm2 = choose_arm(experiment=beta_binom_experiment, random_state=0)
+    assert arm1.id == arm2.id
+
+    normal_experiment, _ = make_insertable_experiment(
+        datasource=testing_datasource.ds,
+        state=ExperimentState.COMMITTED,
+        experiment_type=ExperimentsType.MAB_ONLINE,
+        prior_type=PriorTypes.NORMAL,
+        reward_type=LikelihoodTypes.BERNOULLI,
+    )
+    arm1 = choose_arm(experiment=normal_experiment, random_state=66)
+    arm2 = choose_arm(experiment=normal_experiment, random_state=66)
+    assert arm1.id == arm2.id
 
 
 def test_check_arm_drawn_correctly(testing_datasource):
@@ -16,8 +41,10 @@ def test_check_arm_drawn_correctly(testing_datasource):
         prior_type=PriorTypes.BETA,
         reward_type=LikelihoodTypes.BERNOULLI,
     )
+    beta_binom_experiment.arms[0].id = "abcd"
+    beta_binom_experiment.arms[1].id = "bcde"
     sorted_beta_binom_arms = sorted(beta_binom_experiment.arms, key=lambda arm: arm.id)
-    arm = choose_arm(experiment=beta_binom_experiment, random_state=42)
+    arm = choose_arm(experiment=beta_binom_experiment, random_state=0)
     assert arm.id == sorted_beta_binom_arms[0].id
 
     # Test for Normal prior
@@ -28,8 +55,10 @@ def test_check_arm_drawn_correctly(testing_datasource):
         prior_type=PriorTypes.NORMAL,
         reward_type=LikelihoodTypes.BERNOULLI,
     )
+    normal_experiment.arms[0].id = "abcd"
+    normal_experiment.arms[1].id = "bcde"
     sorted_normal_arms = sorted(normal_experiment.arms, key=lambda arm: arm.id)
-    arm = choose_arm(experiment=normal_experiment, random_state=42)
+    arm = choose_arm(experiment=normal_experiment, random_state=66)
     assert arm.id == sorted_normal_arms[0].id
 
 
