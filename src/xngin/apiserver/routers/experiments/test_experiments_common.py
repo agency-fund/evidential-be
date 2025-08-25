@@ -108,7 +108,7 @@ def make_createexperimentrequest_json(
             return {
                 "design_spec": {
                     **({"experiment_id": experiment_id} if experiment_id is not None else {}),
-                    "participant_type": "string",
+                    "participant_type": participant_type,
                     "experiment_name": "test",
                     "description": "test",
                     # Attach UTC tz, but use dates_equal() to compare to respect db storage support
@@ -140,6 +140,54 @@ def make_createexperimentrequest_json(
                     ],
                 }
             }
+        case ExperimentsType.CMAB_ONLINE:
+            context1_id = tables.context_id_factory() if with_ids else None
+            context2_id = tables.context_id_factory() if with_ids else None
+            return {
+                "design_spec": {
+                    **({"experiment_id": experiment_id} if experiment_id is not None else {}),
+                    "participant_type": "string",
+                    "experiment_name": "test",
+                    "description": "test",
+                    # Attach UTC tz, but use dates_equal() to compare to respect db storage support
+                    "start_date": "2024-01-01T00:00:00+00:00",
+                    # default our experiment to end in the future
+                    "end_date": (datetime.now(UTC) + timedelta(days=1)).isoformat(),
+                    "experiment_type": "cmab_online",
+                    "prior_type": prior_type,
+                    "reward_type": reward_type,
+                    "arms": [
+                        {
+                            **({"arm_id": arm1_id} if arm1_id is not None else {}),
+                            "arm_name": "Arm 1",
+                            "arm_description": "Arm 1",
+                            "mu_init": 10.0,
+                            "sigma_init": 1.0,
+                        },
+                        {
+                            **({"arm_id": arm2_id} if arm2_id is not None else {}),
+                            "arm_name": "Arm 2",
+                            "arm_description": "Arm 2",
+                            "mu_init": -10.0,
+                            "sigma_init": 1.0,
+                        },
+                    ],
+                    "contexts": [
+                        {
+                            **({"context_id": context1_id} if context1_id is not None else {}),
+                            "context_name": "Context 1",
+                            "context_description": "Context 1",
+                            "value_type": "binary",
+                        },
+                        {
+                            **({"context_id": context2_id} if context2_id is not None else {}),
+                            "context_name": "Context 2",
+                            "context_description": "Context 2",
+                            "value_type": "real-valued",
+                        },
+                    ],
+                }
+            }
         case _:
             raise ValueError(f"Invalid experiment type: {experiment_type}")
 
@@ -158,13 +206,14 @@ def make_create_online_experiment_request(
     return TypeAdapter(CreateExperimentRequest).validate_python(request)
 
 
-def make_create_online_mab_experiment_request(
+def make_create_online_bandit_experiment_request(
+    experiment_type: ExperimentsType = ExperimentsType.MAB_ONLINE,
     with_ids: bool = False,
     reward_type: LikelihoodTypes = LikelihoodTypes.NORMAL,
     prior_type: PriorTypes = PriorTypes.NORMAL,
 ) -> CreateExperimentRequest:
     request = make_createexperimentrequest_json(
-        with_ids=with_ids, experiment_type=ExperimentsType.MAB_ONLINE, prior_type=prior_type, reward_type=reward_type
+        with_ids=with_ids, experiment_type=experiment_type, prior_type=prior_type, reward_type=reward_type
     )
     return TypeAdapter(CreateExperimentRequest).validate_python(request)
 
@@ -495,7 +544,7 @@ async def test_create_experiment_impl_for_online(
 
 async def test_create_experiment_impl_for_mab_online(xngin_session, testing_datasource):
     """Test implementation of creating an online experiment."""
-    request = make_create_online_mab_experiment_request(with_ids=True)
+    request = make_create_online_bandit_experiment_request(with_ids=True)
 
     response = await create_bandit_online_experiment_impl(
         request=request.model_copy(deep=True),

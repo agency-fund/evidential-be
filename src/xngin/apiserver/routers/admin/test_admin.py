@@ -3,6 +3,7 @@ import copy
 import json
 from datetime import UTC, datetime, timedelta
 
+import numpy as np
 import pytest
 from fastapi import HTTPException
 from sqlalchemy import select
@@ -61,6 +62,7 @@ from xngin.apiserver.routers.auth.principal import Principal
 from xngin.apiserver.routers.common_api_types import (
     Arm,
     ArmBandit,
+    CMABExperimentSpec,
     CreateExperimentRequest,
     CreateExperimentResponse,
     DataType,
@@ -78,8 +80,8 @@ from xngin.apiserver.routers.common_api_types import (
 from xngin.apiserver.routers.common_enums import ExperimentState, StopAssignmentReason
 from xngin.apiserver.routers.experiments.test_experiments_common import (
     insert_experiment_and_arms,
+    make_create_online_bandit_experiment_request,
     make_create_online_experiment_request,
-    make_create_online_mab_experiment_request,
     make_create_preassigned_experiment_request,
     make_createexperimentrequest_json,
     make_insertable_experiment,
@@ -1255,7 +1257,7 @@ def test_create_online_mab_experiment_using_inline_schema_ds(
     prior_type,
 ):
     datasource_id = testing_datasource_with_user.ds.id
-    request_obj = make_create_online_mab_experiment_request(reward_type=reward_type, prior_type=prior_type)
+    request_obj = make_create_online_bandit_experiment_request(reward_type=reward_type, prior_type=prior_type)
 
     response = ppost(
         f"/v1/m/datasources/{datasource_id}/experiments",
@@ -1298,6 +1300,69 @@ def test_create_online_mab_experiment_using_inline_schema_ds(
         arm.beta = None
         arm.mu = None
         arm.covariance = None
+    assert actual_design_spec == request_obj.design_spec
+
+
+@pytest.mark.parametrize(
+    "reward_type,prior_type",
+    [
+        (LikelihoodTypes.NORMAL, PriorTypes.NORMAL),
+        (LikelihoodTypes.BERNOULLI, PriorTypes.NORMAL),
+    ],
+)
+def test_create_online_cmab_experiment_using_inline_schema_ds(
+    testing_datasource_with_user,
+    ppost,
+    reward_type,
+    prior_type,
+):
+    datasource_id = testing_datasource_with_user.ds.id
+    request_obj = make_create_online_bandit_experiment_request(
+        experiment_type=ExperimentsType.CMAB_ONLINE, reward_type=reward_type, prior_type=prior_type
+    )
+
+    response = ppost(
+        f"/v1/m/datasources/{datasource_id}/experiments",
+        params={"random_state": 42},
+        content=request_obj.model_dump_json(),
+    )
+    assert response.status_code == 200, response.content
+    created_experiment = CreateExperimentResponse.model_validate(response.json())
+    parsed_experiment_id = created_experiment.design_spec.experiment_id
+    assert parsed_experiment_id is not None
+    parsed_arm_ids = {arm.arm_id for arm in created_experiment.design_spec.arms}
+    assert len(parsed_arm_ids) == 2
+
+    # Verify basic response
+    assert isinstance(created_experiment.design_spec, CMABExperimentSpec)
+    assert created_experiment.design_spec.contexts is not None and len(created_experiment.design_spec.contexts) == 2
+    assert created_experiment.stopped_assignments_at is None
+    assert created_experiment.stopped_assignments_reason is None
+    assert created_experiment.design_spec.experiment_id is not None
+    assert created_experiment.state == ExperimentState.ASSIGNED
+    assert created_experiment.assign_summary is None
+    assert created_experiment.power_analyses is None
+
+    for arm in created_experiment.design_spec.arms:
+        assert isinstance(arm, ArmBandit)
+        assert arm.arm_id is not None
+        assert arm.mu is not None and len(arm.mu) == 2
+        assert arm.covariance is not None and np.array(arm.covariance).size == 4
+
+    # Check if the representations are equivalent
+    # scrub the ids from the config for comparison
+    actual_design_spec = created_experiment.design_spec.model_copy(deep=True)
+    actual_design_spec.experiment_id = None
+    for arm in actual_design_spec.arms:
+        arm.arm_id = None
+        arm.alpha = None
+        arm.beta = None
+        arm.mu = None
+        arm.covariance = None
+
+    assert actual_design_spec.contexts is not None
+    for context in actual_design_spec.contexts:
+        context.context_id = None
     assert actual_design_spec == request_obj.design_spec
 
 
