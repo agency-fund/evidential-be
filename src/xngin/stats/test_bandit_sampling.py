@@ -47,7 +47,7 @@ def test_update_arm(testing_datasource):
 
     assert arm.alpha is not None and arm.beta is not None
     assert float(arm.alpha) == alpha
-    assert int(arm.beta + 1) == beta
+    assert float(arm.beta + 1) == beta
 
     # Test for Normal prior with binary outcomes
     normal_binary_experiment, _ = make_insertable_experiment(
