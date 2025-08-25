@@ -179,7 +179,7 @@ def choose_arm(
     if experiment.experiment_type == ExperimentsType.BAYESAB_ONLINE.value:
         raise ValueError(f"Invalid experiment type: {experiment.experiment_type}.")
 
-    sorted_arms = sorted(experiment.arms, key=lambda a: a.name)
+    sorted_arms = sorted(experiment.arms, key=lambda a: a.id)
     if experiment.prior_type == PriorTypes.BETA.value:
         if experiment.reward_type != LikelihoodTypes.BERNOULLI.value:
             raise ValueError("Beta prior is only supported for Bernoulli rewards.")
