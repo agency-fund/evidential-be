@@ -245,6 +245,10 @@ async def test_get_assignment_for_participant_with_apikey_mab_online(xngin_sessi
     assert parsed.assignment.observed_at is None
     assert parsed.assignment.outcome is None
     assert parsed.assignment.context_values is None
+    assert parsed.assignment.current_mu is None
+    assert parsed.assignment.current_covariance is None
+    assert parsed.assignment.current_alpha is None
+    assert parsed.assignment.current_beta is None
 
     # Test that we get the same assignment for the same participant.
     response2 = client_v1.get(
@@ -265,6 +269,10 @@ async def test_get_assignment_for_participant_with_apikey_mab_online(xngin_sessi
     assert assignment.observed_at is None
     assert assignment.outcome is None
     assert assignment.context_vals is None
+    assert assignment.current_mu is None
+    assert assignment.current_covariance is None
+    assert assignment.current_alpha is None
+    assert assignment.current_beta is None
     assert assignment.experiment.stopped_assignments_at is None
     assert assignment.experiment.stopped_assignments_reason is None
 
@@ -354,6 +362,8 @@ async def test_get_cmab_experiment_assignment_for_online_participant(xngin_sessi
     assert parsed.assignment.observed_at is None
     assert parsed.assignment.outcome is None
     assert parsed.assignment.context_values == [1.0, 1.0]
+    assert parsed.assignment.current_mu is None
+    assert parsed.assignment.current_covariance is None
 
     # Test that we get the same assignment for the same participant.
     response2 = client_v1.get(
@@ -370,6 +380,8 @@ async def test_get_cmab_experiment_assignment_for_online_participant(xngin_sessi
     assert assignment.participant_id == "1"
     assert assignment.arm_id == str(parsed.assignment.arm_id)
     assert assignment.context_vals == [1.0, 1.0]
+    assert assignment.current_mu is None
+    assert assignment.current_covariance is None
 
     # Verify no update to experiment lifecycle info.
     assert assignment.observed_at is None

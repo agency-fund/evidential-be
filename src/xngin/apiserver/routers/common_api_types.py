@@ -985,6 +985,10 @@ class Assignment(ApiBaseModel):
             max_length=MAX_NUMBER_OF_CONTEXTS,
         ),
     ] = None
+    current_mu: list[float] | None = None
+    current_covariance: list[list[float]] | None = None
+    current_alpha: float | None = None
+    current_beta: float | None = None
 
 
 class BalanceCheck(ApiBaseModel):
