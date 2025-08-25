@@ -211,7 +211,8 @@ async def get_experiment_assignments_as_csv_sl(
     "/experiments/{experiment_id}/assignments/{participant_id}",
     summary="Get the assignment for a specific participant, excluding strata if any.",
     description="""For preassigned experiments, the participant's Assignment is returned if it
-    exists.  For online experiments, returns the assignment if it exists, else generates an assignment""",
+    exists.  For all online experiments (except contextual bandits), returns the assignment if
+    it exists, else generates an assignment""",
 )
 async def get_assignment_for_participant_with_apikey(
     experiment: Annotated[tables.Experiment, Depends(experiment_dependency)],
@@ -344,7 +345,8 @@ async def get_cmab_experiment_assignment_for_participant(
 
 @router.post(
     "/experiments/{experiment_id}/assignments/{participant_id}/outcome",
-    description="""Update the bandit arm with corresponding outcome for a specific participant.""",
+    description="""Update the bandit arm with corresponding outcome for a specific participant.
+    Used only for bandit experiments.""",
 )
 async def update_bandit_arm_with_participant_outcome(
     body: Annotated[UpdateBanditArmOutcomeRequest, Body()],
