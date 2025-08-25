@@ -1247,7 +1247,9 @@ async def test_create_assignment_for_participant_stopped_reason(
 
     # Assert that we don't create assignments for experiments in the past,
     # but for preassigned experiments we don't set a stopped_reason.
-    assignment = await create_assignment_for_participant(xngin_session, experiment, "new_id", None)
+    assignment = await create_assignment_for_participant(
+        xngin_session, experiment, "new_id", [1.0, 1.0] if experiment_type == ExperimentsType.CMAB_ONLINE else None
+    )
     assert assignment is None
     assert experiment.stopped_assignments_reason == stopped_reason
     if stopped_reason is not None:
@@ -1257,29 +1259,38 @@ async def test_create_assignment_for_participant_stopped_reason(
 
 
 @pytest.mark.parametrize(
-    "prior_type,reward_type",
+    "experiment_type,prior_type,reward_type",
     [
-        (PriorTypes.NORMAL, LikelihoodTypes.NORMAL),
-        (PriorTypes.BETA, LikelihoodTypes.BERNOULLI),
-        (PriorTypes.NORMAL, LikelihoodTypes.BERNOULLI),
+        (ExperimentsType.MAB_ONLINE, PriorTypes.NORMAL, LikelihoodTypes.NORMAL),
+        (ExperimentsType.MAB_ONLINE, PriorTypes.BETA, LikelihoodTypes.BERNOULLI),
+        (ExperimentsType.MAB_ONLINE, PriorTypes.NORMAL, LikelihoodTypes.BERNOULLI),
+        (ExperimentsType.CMAB_ONLINE, PriorTypes.NORMAL, LikelihoodTypes.NORMAL),
+        (ExperimentsType.CMAB_ONLINE, PriorTypes.NORMAL, LikelihoodTypes.BERNOULLI),
     ],
 )
-async def test_update_bandit_arm_with_outcome(xngin_session, testing_datasource, prior_type, reward_type):
-    mab_experiment = await insert_experiment_and_arms(
+async def test_update_bandit_arm_with_outcome(
+    xngin_session, testing_datasource, experiment_type, prior_type, reward_type
+):
+    bandit_experiment = await insert_experiment_and_arms(
         xngin_session,
         testing_datasource.ds,
-        experiment_type=ExperimentsType.MAB_ONLINE,
+        experiment_type=experiment_type,
         prior_type=prior_type,
         reward_type=reward_type,
     )
-    await create_assignment_for_participant(xngin_session, mab_experiment, "test_id")
+    await create_assignment_for_participant(
+        xngin_session,
+        bandit_experiment,
+        "test_id",
+        [1.0, 1.0] if experiment_type == ExperimentsType.CMAB_ONLINE else None,
+    )
 
     updated_arm = await update_bandit_arm_with_outcome_impl(
-        xngin_session=xngin_session, experiment=mab_experiment, participant_id="test_id", outcome=1.0
+        xngin_session=xngin_session, experiment=bandit_experiment, participant_id="test_id", outcome=1.0
     )
 
     # Refresh experiment; retrieve draws
-    await xngin_session.refresh(mab_experiment)
+    await xngin_session.refresh(bandit_experiment)
     draws = await updated_arm.awaitable_attrs.draws
     draw = draws[0]
 
@@ -1287,12 +1298,16 @@ async def test_update_bandit_arm_with_outcome(xngin_session, testing_datasource,
     assert len(draws) == 1
     assert draw.outcome == 1.0
     assert draw.observed_at is not None
-    await mab_experiment.awaitable_attrs.arms
-    mab_arm_map = {arm.id: arm for arm in mab_experiment.arms}
-    assert draw.current_mu == mab_arm_map[updated_arm.id].mu
-    assert draw.current_covariance == mab_arm_map[updated_arm.id].covariance
-    assert draw.current_alpha == mab_arm_map[updated_arm.id].alpha
-    assert draw.current_beta == mab_arm_map[updated_arm.id].beta
+    await bandit_experiment.awaitable_attrs.arms
+    await bandit_experiment.awaitable_attrs.contexts
+    bandit_arm_map = {arm.id: arm for arm in bandit_experiment.arms}
+    assert draw.current_mu == bandit_arm_map[updated_arm.id].mu
+    assert draw.current_covariance == bandit_arm_map[updated_arm.id].covariance
+    assert draw.current_alpha == bandit_arm_map[updated_arm.id].alpha
+    assert draw.current_beta == bandit_arm_map[updated_arm.id].beta
+
+    if experiment_type == ExperimentsType.CMAB_ONLINE:
+        assert draw.context_vals == [1.0, 1.0]
 
     # Assert that we can't update the arm with an outcome for a participant that doesn't exist
     with pytest.raises(
@@ -1301,14 +1316,14 @@ async def test_update_bandit_arm_with_outcome(xngin_session, testing_datasource,
             participant_id="some_other_id"
         ),
     ):
-        await update_bandit_arm_with_outcome_impl(xngin_session, mab_experiment, "some_other_id", 1.0)
+        await update_bandit_arm_with_outcome_impl(xngin_session, bandit_experiment, "some_other_id", 1.0)
 
     # Assert that we can't update the arm with an outcome for a participant that already has an outcome
     with pytest.raises(
         ExperimentsAssignmentError,
         match="Participant {participant_id} already has an outcome recorded.".format(participant_id="test_id"),
     ):
-        await update_bandit_arm_with_outcome_impl(xngin_session, mab_experiment, "test_id", 1.0)
+        await update_bandit_arm_with_outcome_impl(xngin_session, bandit_experiment, "test_id", 1.0)
 
 
 def test_experiment_sql():
