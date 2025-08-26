@@ -32,7 +32,7 @@
 | src/xngin/apiserver/routers/common\_api\_types.py                    |      352 |       50 |     86% |107, 133, 135, 272, 342-351, 369, 585-587, 624, 804-827, 834-840, 847-851, 1052, 1219, 1221-1223 |
 | src/xngin/apiserver/routers/common\_enums.py                         |      167 |       55 |     67% |71, 73, 85, 87, 96-105, 110, 132-149, 160-164, 205, 243-256, 276-282, 310-314 |
 | src/xngin/apiserver/routers/experiments/dependencies.py              |       18 |        3 |     83% |     49-55 |
-| src/xngin/apiserver/routers/experiments/experiments\_api.py          |       87 |       37 |     57% |98, 107-120, 142, 155, 182, 193, 207, 237-244, 282-338, 355-365 |
+| src/xngin/apiserver/routers/experiments/experiments\_api.py          |       87 |       37 |     57% |98, 107-120, 142, 155, 182, 193, 207, 238-245, 283-339, 357-367 |
 | src/xngin/apiserver/routers/experiments/experiments\_common.py       |      316 |       99 |     69% |64, 69, 93, 107, 114, 137-148, 168, 186, 202-211, 235, 246, 319, 333, 356-374, 400-416, 512-531, 585-587, 638-659, 702, 706, 709-714, 736-737, 759-774, 777, 804-900 |
 | src/xngin/apiserver/routers/experiments/test\_experiments\_common.py |      358 |        1 |     99% |       903 |
 | src/xngin/apiserver/routers/healthchecks\_api.py                     |       16 |        2 |     88% |     26-27 |
