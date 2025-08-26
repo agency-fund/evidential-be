@@ -42,7 +42,6 @@ from xngin.apiserver.routers.common_enums import (
     StopAssignmentReason,
 )
 from xngin.apiserver.settings import (
-    Datasource,
     ParticipantsDef,
 )
 from xngin.apiserver.sqla import tables
@@ -149,69 +148,6 @@ async def create_dwh_experiment_impl(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail=f"Invalid experiment type: {request.design_spec.experiment_type}",
             )
-
-
-async def create_experiment_with_assignments_impl(
-    request: CreateExperimentRequest,
-    datasource: Datasource,
-    xngin_session: AsyncSession,
-    validated_webhooks: list[tables.Webhook],
-    organization_id: str,
-    random_state: int | None,
-    chosen_n: int,
-    stratify_on_metrics: bool,
-) -> CreateExperimentResponse:
-    if not isinstance(
-        request.design_spec,
-        BaseFrequentistDesignSpec,
-    ):
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"{request.design_spec.experiment_type} experiments are not supported for assignments.",
-        )
-
-    request.design_spec.experiment_id = tables.experiment_id_factory()
-    for arm in request.design_spec.arms:
-        arm.arm_id = tables.arm_id_factory()
-
-    ds_config = datasource.config
-    participants_schema = ds_config.find_participants(request.design_spec.participant_type)
-
-    # Get participants and their schema info from the client dwh
-    async with DwhSession(ds_config.dwh) as dwh:
-        result = await dwh.get_participants(participants_schema.table_name, request.design_spec.filters, chosen_n)
-
-    if request.design_spec.experiment_type == ExperimentsType.FREQ_PREASSIGNED:
-        if result.participants is None:
-            raise LateValidationError(
-                "Preassigned experiments must have participants data",
-            )
-        return await create_preassigned_experiment_impl(
-            request=request,
-            datasource_id=datasource.id,
-            organization_id=organization_id,
-            participant_unique_id_field=participants_schema.get_unique_id_field(),
-            dwh_sa_table=result.sa_table,
-            dwh_participants=result.participants,
-            random_state=random_state,
-            xngin_session=xngin_session,
-            stratify_on_metrics=stratify_on_metrics,
-            validated_webhooks=validated_webhooks,
-        )
-
-    if request.design_spec.experiment_type == ExperimentsType.FREQ_ONLINE:
-        return await create_freq_online_experiment_impl(
-            request=request,
-            datasource_id=datasource.id,
-            organization_id=organization_id,
-            xngin_session=xngin_session,
-            validated_webhooks=validated_webhooks,
-        )
-
-    raise HTTPException(
-        status_code=status.HTTP_400_BAD_REQUEST,
-        detail=f"Invalid experiment type: {request.design_spec.experiment_type}",
-    )
 
 
 async def create_preassigned_experiment_impl(
