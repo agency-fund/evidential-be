@@ -12,7 +12,6 @@ from fastapi import (
     Depends,
     FastAPI,
     Query,
-    status,
 )
 from fastapi.responses import StreamingResponse
 from loguru import logger
@@ -38,8 +37,6 @@ from xngin.apiserver.routers.common_api_types import (
 )
 from xngin.apiserver.routers.experiments.dependencies import experiment_dependency
 from xngin.apiserver.routers.experiments.experiments_common import (
-    abandon_experiment_impl,
-    commit_experiment_impl,
     create_assignment_for_participant,
     get_assign_summary,
     get_existing_assignment_for_participant,
@@ -65,32 +62,6 @@ router = APIRouter(
     lifespan=lifespan,
     prefix=constants.API_PREFIX_V1,
 )
-
-
-@router.post(
-    "/experiments/{experiment_id}/commit",
-    summary="Marks any ASSIGNED experiment as COMMITTED.",
-    status_code=status.HTTP_204_NO_CONTENT,
-    include_in_schema=False,
-)
-async def commit_experiment_sl(
-    experiment: Annotated[tables.Experiment, Depends(experiment_dependency)],
-    xngin_session: Annotated[AsyncSession, Depends(xngin_db_session)],
-):
-    return await commit_experiment_impl(xngin_session, experiment)
-
-
-@router.post(
-    "/experiments/{experiment_id}/abandon",
-    summary="Marks any DESIGNING or ASSIGNED experiment as ABANDONED.",
-    status_code=status.HTTP_204_NO_CONTENT,
-    include_in_schema=False,
-)
-async def abandon_experiment_sl(
-    experiment: Annotated[tables.Experiment, Depends(experiment_dependency)],
-    xngin_session: Annotated[AsyncSession, Depends(xngin_db_session)],
-):
-    return await abandon_experiment_impl(xngin_session, experiment)
 
 
 @router.get(
