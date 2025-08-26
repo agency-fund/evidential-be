@@ -1,3 +1,4 @@
+import enum
 from datetime import datetime
 from typing import Annotated, Literal
 from urllib.parse import urlparse
@@ -40,7 +41,12 @@ class AdminApiBaseModel(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
 
-type SnapshotStatus = Literal["success", "running", "failed"]
+class SnapshotStatus(enum.StrEnum):
+    """Describes the status of a snapshot."""
+
+    SUCCESS = "success"
+    RUNNING = "running"
+    FAILED = "failed"
 
 
 class Snapshot(AdminApiBaseModel):
@@ -52,10 +58,8 @@ class Snapshot(AdminApiBaseModel):
         Field(description="The status of the snapshot. When not `success`, data will be null."),
     ]
     details: Annotated[dict | None, Field(description="Additional data about this snapshot.")]
-
     created_at: Annotated[datetime, Field(description="The time the snapshot was requested.")]
     updated_at: Annotated[datetime, Field(description="The time the snapshot was acquired.")]
-
     data: dict | None  # TODO(qixotic)
 
 

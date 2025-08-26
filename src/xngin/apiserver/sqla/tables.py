@@ -3,7 +3,7 @@
 import json
 import secrets
 from datetime import UTC, datetime
-from typing import ClassVar, Self
+from typing import Any, ClassVar, Literal, Self
 
 import sqlalchemy
 from pydantic import TypeAdapter
@@ -38,11 +38,16 @@ user_id_factory = unique_id_factory("u")
 webhook_id_factory = unique_id_factory("wh")
 context_id_factory = unique_id_factory("ctx")
 
+# Describes the status of a snapshot. SQLAlchemy will represent this Literal type as a string type.
+type SnapshotStatus = Literal["pending", "success", "failed"]
+
 
 class Base(AsyncAttrs, DeclarativeBase):
     # See https://docs.sqlalchemy.org/en/20/orm/declarative_tables.html#customizing-the-type-map
-    type_annotation_map: ClassVar[dict[type, TypeEngine]] = {
+    # Type borrowed from sqlalchemy.orm.decl_api.
+    type_annotation_map: ClassVar[dict[Any, TypeEngine[Any]]] = {
         datetime: sqlalchemy.TIMESTAMP(timezone=True),
+        SnapshotStatus: sqlalchemy.String(16),
     }
 
     def to_dict(self):
@@ -481,12 +486,10 @@ class Snapshot(Base):
     updated_at: Mapped[datetime] = mapped_column(
         server_default=sqlalchemy.sql.func.now(), onupdate=sqlalchemy.sql.func.now()
     )
-    # Status of the task: 'pending', 'running', 'success', or 'dead'.
-    status: Mapped[str] = mapped_column(server_default="pending")
-    # An optional informative message about the state of this task.
+    status: Mapped[SnapshotStatus] = mapped_column(server_default="pending")
+    # An optional informative message about the state of this task (for example, if a snapshot fails, it might contain
+    # an informative error message).
     message: Mapped[str | None] = mapped_column()
-
-    # TODO(qixotic): structure data
-    data: Mapped[dict | None] = mapped_column(postgresql.JSONB)
+    data: Mapped[dict | None] = mapped_column(postgresql.JSONB)  # TODO(qixotic): structure data
 
     experiment: Mapped[Experiment] = relationship(back_populates="snapshots", viewonly=True)

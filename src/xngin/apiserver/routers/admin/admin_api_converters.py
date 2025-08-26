@@ -1,5 +1,5 @@
 import base64
-from typing import Literal
+from typing import assert_never
 
 from xngin.apiserver import settings
 from xngin.apiserver.routers.admin import admin_api_types as aapi
@@ -112,16 +112,16 @@ def settings_dwh_to_api_dsn(dwh: settings.Dwh) -> aapi.Dsn:
 
 
 def convert_snapshot_to_api_snapshot(snapshot: tables.Snapshot) -> aapi.Snapshot:
-    status: Literal["running", "success", "failed"]
+    status: aapi.SnapshotStatus
     match snapshot.status:
-        case "pending" | "running":
-            status = "running"
+        case "pending":
+            status = aapi.SnapshotStatus.RUNNING
         case "success":
-            status = "success"
-        case "dead":
-            status = "failed"
+            status = aapi.SnapshotStatus.SUCCESS
+        case "failed":
+            status = aapi.SnapshotStatus.FAILED
         case _:
-            raise RuntimeError(f"bug: invalid persisted status: {snapshot.status}")
+            assert_never(snapshot.status)
 
     return aapi.Snapshot(
         experiment_id=snapshot.experiment_id,
