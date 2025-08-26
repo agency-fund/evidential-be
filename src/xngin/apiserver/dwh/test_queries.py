@@ -227,32 +227,53 @@ def fixture_queries_session():
         engine.dispose()
 
 
-def test_compile_query_without_filters_pg():
+def test_compile_query_with_missing_select_column():
+    with pytest.raises(ValueError, match=r"Column missing_column not found in schema."):
+        compose_query(SampleTable.get_table(), {"missing_column"}, [], 2)
+
+
+SELECT_COLUMNS_CASES_PG = [
+    pytest.param(
+        set(),
+        "test_table.id, test_table.int_col, test_table.float_col, test_table.bool_col, test_table.string_col, "
+        "test_table.experiment_ids",
+        id="all",
+    ),
+    pytest.param({"id", "int_col"}, "test_table.id, test_table.int_col", id="id_and_int_col"),
+]
+
+
+@pytest.mark.parametrize("select_columns, expected_columns", SELECT_COLUMNS_CASES_PG)
+def test_compile_query_without_filters_pg(select_columns, expected_columns):
     # SQLAlchemy shares a base class for both psycopg2's and psycopg's dialect so they are very similar.
     dialects = (
         sqlalchemy.dialects.postgresql.psycopg2.dialect(),
         sqlalchemy.dialects.postgresql.psycopg.dialect(),
     )
     for dialect in dialects:
-        query = compose_query(SampleTable.get_table(), 2, [])
+        query = compose_query(SampleTable.get_table(), select_columns, [], 2)
         actual = str(query.compile(dialect=dialect, compile_kwargs={"literal_binds": True})).replace("\n", "")
-        expectation = (
-            "SELECT test_table.id, test_table.int_col, test_table.float_col,"
-            " test_table.bool_col, test_table.string_col, test_table.experiment_ids "
-            "FROM test_table ORDER BY random()  LIMIT 2"
-        )  # two spaces!
+        expectation = f"SELECT {expected_columns} FROM test_table ORDER BY random()  LIMIT 2"  # two spaces!
         assert actual == expectation
 
 
-def test_compile_query_without_filters_bq():
-    query = compose_query(SampleTable.get_table(), 2, [])
+SELECT_COLUMNS_CASES_BQ = [
+    pytest.param(
+        set(),
+        "`test_table`.`id`, `test_table`.`int_col`, `test_table`.`float_col`, `test_table`.`bool_col`, "
+        "`test_table`.`string_col`, `test_table`.`experiment_ids`",
+        id="all",
+    ),
+    pytest.param({"id", "int_col"}, "`test_table`.`id`, `test_table`.`int_col`", id="id_and_int_col"),
+]
+
+
+@pytest.mark.parametrize("select_columns, expected_columns", SELECT_COLUMNS_CASES_BQ)
+def test_compile_query_without_filters_bq(select_columns, expected_columns):
+    query = compose_query(SampleTable.get_table(), select_columns, [], 2)
     dialect = sqlalchemy_bigquery.dialect()
     actual = str(query.compile(dialect=dialect, compile_kwargs={"literal_binds": True})).replace("\n", "")
-    expectation = (
-        "SELECT `test_table`.`id`, `test_table`.`int_col`, `test_table`.`float_col`, "
-        "`test_table`.`bool_col`, `test_table`.`string_col`, `test_table`.`experiment_ids` "
-        "FROM `test_table` ORDER BY rand() LIMIT 2"
-    )
+    expectation = f"SELECT {expected_columns} FROM `test_table` ORDER BY rand() LIMIT 2"
     assert actual == expectation, actual
 
 
@@ -402,7 +423,7 @@ def test_is_nullable(testcase, queries_session, use_deterministic_random):
     testcase.filters = [Filter.model_validate(filt.model_dump()) for filt in testcase.filters]
     table = SampleNullableTable.get_table()
     filters = create_query_filters(table, testcase.filters)
-    q = compose_query(table, testcase.chosen_n, filters)
+    q = compose_query(table, set(), filters, testcase.chosen_n)
     query_results = queries_session.execute(q)
     assert list(sorted([r.id for r in query_results])) == list(sorted(r.id for r in testcase.matches)), testcase
 
@@ -536,7 +557,7 @@ RELATION_CASES = [
 def test_relations(testcase, queries_session, use_deterministic_random):
     testcase.filters = [Filter.model_validate(filt.model_dump()) for filt in testcase.filters]
     filters = create_query_filters(SampleTable.get_table(), testcase.filters)
-    q = compose_query(SampleTable.get_table(), testcase.chosen_n, filters)
+    q = compose_query(SampleTable.get_table(), set(), filters, testcase.chosen_n)
     query_results = queries_session.execute(q)
     assert list(sorted([r.id for r in query_results])) == list(sorted(r.id for r in testcase.matches)), testcase
 
