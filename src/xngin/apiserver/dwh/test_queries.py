@@ -227,6 +227,18 @@ def fixture_queries_session():
         engine.dispose()
 
 
+@pytest.mark.parametrize(
+    "select_columns, error_message",
+    [
+        (set(), "You must explicitly select at least one valid column."),
+        ({"missing_column"}, "Column missing_column not found in schema."),
+    ],
+)
+def test_compile_query_with_empty_select_column(select_columns, error_message):
+    with pytest.raises(ValueError, match=error_message):
+        compose_query(SampleTable.get_table(), select_columns, [], 2)
+
+
 def test_compile_query_with_missing_select_column():
     with pytest.raises(ValueError, match=r"Column missing_column not found in schema."):
         compose_query(SampleTable.get_table(), {"missing_column"}, [], 2)
@@ -234,9 +246,9 @@ def test_compile_query_with_missing_select_column():
 
 SELECT_COLUMNS_CASES_PG = [
     pytest.param(
-        set(),
-        "test_table.id, test_table.int_col, test_table.float_col, test_table.bool_col, test_table.string_col, "
-        "test_table.experiment_ids",
+        set({"id", "int_col", "float_col", "bool_col", "string_col", "experiment_ids"}),
+        "test_table.bool_col, test_table.experiment_ids, test_table.float_col, test_table.id, "
+        "test_table.int_col, test_table.string_col",
         id="all",
     ),
     pytest.param({"id", "int_col"}, "test_table.id, test_table.int_col", id="id_and_int_col"),
@@ -259,9 +271,9 @@ def test_compile_query_without_filters_pg(select_columns, expected_columns):
 
 SELECT_COLUMNS_CASES_BQ = [
     pytest.param(
-        set(),
-        "`test_table`.`id`, `test_table`.`int_col`, `test_table`.`float_col`, `test_table`.`bool_col`, "
-        "`test_table`.`string_col`, `test_table`.`experiment_ids`",
+        set({"id", "int_col", "float_col", "bool_col", "string_col", "experiment_ids"}),
+        "`test_table`.`bool_col`, `test_table`.`experiment_ids`, `test_table`.`float_col`, `test_table`.`id`, "
+        "`test_table`.`int_col`, `test_table`.`string_col`",
         id="all",
     ),
     pytest.param({"id", "int_col"}, "`test_table`.`id`, `test_table`.`int_col`", id="id_and_int_col"),
@@ -422,8 +434,9 @@ IS_NULLABLE_CASES = [
 def test_is_nullable(testcase, queries_session, use_deterministic_random):
     testcase.filters = [Filter.model_validate(filt.model_dump()) for filt in testcase.filters]
     table = SampleNullableTable.get_table()
+    select_columns = set(table.c.keys())
     filters = create_query_filters(table, testcase.filters)
-    q = compose_query(table, set(), filters, testcase.chosen_n)
+    q = compose_query(table, select_columns, filters, testcase.chosen_n)
     query_results = queries_session.execute(q)
     assert list(sorted([r.id for r in query_results])) == list(sorted(r.id for r in testcase.matches)), testcase
 
@@ -556,8 +569,10 @@ RELATION_CASES = [
 @pytest.mark.parametrize("testcase", RELATION_CASES)
 def test_relations(testcase, queries_session, use_deterministic_random):
     testcase.filters = [Filter.model_validate(filt.model_dump()) for filt in testcase.filters]
-    filters = create_query_filters(SampleTable.get_table(), testcase.filters)
-    q = compose_query(SampleTable.get_table(), set(), filters, testcase.chosen_n)
+    table = SampleTable.get_table()
+    select_columns = set(table.c.keys())
+    filters = create_query_filters(table, testcase.filters)
+    q = compose_query(table, select_columns, filters, testcase.chosen_n)
     query_results = queries_session.execute(q)
     assert list(sorted([r.id for r in query_results])) == list(sorted(r.id for r in testcase.matches)), testcase
 

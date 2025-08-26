@@ -358,10 +358,14 @@ def create_filter(col: sqlalchemy.Column, filter_: Filter) -> ColumnElement:
 
 
 def compose_query(sa_table: Table, select_columns: set[str], filters: list[ColumnElement], chosen_n: int):
+    """Builds a query to fetch rows from a list of filters and a set of column names to select."""
     columns = []
     for col in sorted(select_columns):  # sort for stable generated sql
         if col not in sa_table.c:
             raise ValueError(f"Column {col} not found in schema.")
         columns.append(sa_table.c[col])
-    columns = columns or sa_table.c.values()
+
+    if not columns:
+        raise ValueError("You must explicitly select at least one valid column.")
+
     return select(*columns).filter(*filters).order_by(custom_functions.Random(sa_table=sa_table)).limit(chosen_n)
