@@ -90,6 +90,7 @@ from xngin.apiserver.storage.bootstrap import (
     DEFAULT_ORGANIZATION_NAME,
 )
 from xngin.apiserver.testing.assertions import assert_dates_equal
+from xngin.apiserver.testing.testing_dwh_def import TESTING_DWH_PARTICIPANT_DEF
 from xngin.cli.main import create_testing_dwh
 
 SAMPLE_GCLOUD_SERVICE_ACCOUNT = {
@@ -1600,7 +1601,7 @@ async def test_experiment_webhook_integration(testing_datasource_with_user, ppos
     assert len(created_experiment_no_webhooks["webhooks"]) == 0
 
 
-def test_snapshots(pget, ppost):
+def test_snapshots(pget, ppost, pdelete):
     creation_response = ppost(
         "/v1/m/organizations",
         json=CreateOrganizationRequest(name="test_snapshots").model_dump(),
@@ -1633,29 +1634,7 @@ def test_snapshots(pget, ppost):
         f"/v1/m/datasources/{create_datasource_response.id}/participants",
         content=CreateParticipantsTypeRequest(
             participant_type="test_participant_type",
-            schema_def=ParticipantsSchema(
-                table_name="dwh",
-                fields=[
-                    FieldDescriptor(
-                        field_name="id",
-                        data_type=DataType.INTEGER,
-                        description="test",
-                        is_unique_id=True,
-                        is_strata=False,
-                        is_filter=False,
-                        is_metric=False,
-                    ),
-                    FieldDescriptor(
-                        field_name="current_income",
-                        data_type=DataType.NUMERIC,
-                        description="test",
-                        is_unique_id=False,
-                        is_strata=False,
-                        is_filter=False,
-                        is_metric=True,
-                    ),
-                ],
-            ),
+            schema_def=TESTING_DWH_PARTICIPANT_DEF,
         ).model_dump_json(),
     )
     assert create_participant_type_response.status_code == 200, create_participant_type_response.content
@@ -1683,6 +1662,8 @@ def test_snapshots(pget, ppost):
     assert repsonse.status_code == 200, repsonse.content
     experiment_id = CreateExperimentResponse.model_validate_json(repsonse.content).design_spec.experiment_id
 
+    # When run via tests, the TestClient that ppost() is built upon will wait for the backend handler to finish
+    # all of its background tasks. Therefore this test will not observe the experiment in a "pending" state.
     response = ppost(
         f"/v1/m/organizations/{create_organization_response.id}/datasources/{create_datasource_response.id}"
         f"/experiments/{experiment_id}/snapshots"
@@ -1701,4 +1682,10 @@ def test_snapshots(pget, ppost):
     assert rendered_snapshot.id == create_snapshot_response.id
     assert rendered_snapshot.experiment_id == experiment_id
     assert rendered_snapshot.status == "success"
-    assert rendered_snapshot.data is not None  # TODO(qixotic)
+    assert rendered_snapshot.data == {"todo": ["dwh"]}  # TODO(qixotic)
+
+    delete_snapshot_response = pdelete(
+        f"/v1/m/organizations/{create_organization_response.id}/datasources/{create_datasource_response.id}"
+        f"/experiments/{experiment_id}/snapshots/{rendered_snapshot.id}"
+    )
+    assert delete_snapshot_response.status_code == 204, delete_snapshot_response.content

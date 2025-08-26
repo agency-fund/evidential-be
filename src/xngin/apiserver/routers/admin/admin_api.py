@@ -398,6 +398,27 @@ async def list_snapshots(
     return ListSnapshotsResponse(items=[convert_snapshot_to_api_snapshot(snapshot) for snapshot in snapshots])
 
 
+@router.delete(
+    "/organizations/{organization_id}/datasources/{datasource_id}/experiments/{experiment_id}/snapshots/{snapshot_id}"
+)
+async def delete_snapshot(
+    session: Annotated[AsyncSession, Depends(xngin_db_session)],
+    user: Annotated[tables.User, Depends(user_from_token)],
+    params: Annotated[SnapshotPathParams, Path()],
+    allow_missing: Annotated[
+        bool,
+        Query(description="If true, return a 204 even if the resource does not exist."),
+    ] = False,
+):
+    """Deletes a snapshot."""
+    resource_query = select(tables.Snapshot).where(
+        tables.Snapshot.experiment_id == params.experiment_id, tables.Snapshot.id == params.snapshot_id
+    )
+    return await handle_delete(
+        session, allow_missing, authz.is_user_authorized_on_datasource(user, params.datasource_id), resource_query
+    )
+
+
 @router.post("/organizations/{organization_id}/datasources/{datasource_id}/experiments/{experiment_id}/snapshots")
 async def create_snapshot(
     session: Annotated[AsyncSession, Depends(xngin_db_session)],
