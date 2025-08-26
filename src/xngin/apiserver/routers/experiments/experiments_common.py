@@ -68,7 +68,7 @@ def random_choice[T](choices: Sequence[T], seed: int | None = None) -> T:
     return secrets.choice(choices)
 
 
-async def create_dwh_experiment_impl(
+async def create_experiment_impl(
     request: CreateExperimentRequest,
     datasource: tables.Datasource,
     xngin_session: AsyncSession,
