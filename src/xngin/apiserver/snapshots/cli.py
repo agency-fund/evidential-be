@@ -70,7 +70,7 @@ def collect(
             help="Maximum duration of a single snapshot (in seconds). "
             "Snapshots that take longer than this will be marked as failures.",
         ),
-    ] = 90,
+    ] = snapshotter.SNAPSHOT_TIMEOUT_SECS,
     snapshot_interval: Annotated[
         int, typer.Option("--interval", min=60, help="The target interval between snapshots (in seconds).")
     ] = timedelta(hours=6).seconds,
