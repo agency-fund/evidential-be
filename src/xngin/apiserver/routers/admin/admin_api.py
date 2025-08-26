@@ -433,7 +433,7 @@ async def create_snapshot(
     _ = await get_organization_or_raise(session, user, params.organization_id)
     datasource = await get_datasource_or_raise(session, user, params.datasource_id)
     experiment = await get_experiment_via_ds_or_raise(session, datasource, params.experiment_id)
-    snapshot = tables.Snapshot(experiment_id=experiment.id, status="pending")
+    snapshot = tables.Snapshot(experiment_id=experiment.id)
     session.add(snapshot)
     await session.commit()
     background_tasks.add_task(snapshotter.make_first_snapshot, snapshot.experiment_id, snapshot.id)
