@@ -20,7 +20,7 @@ def _sample_beta_binomial(alphas: np.ndarray, betas: np.ndarray, random_state: i
     ----------
     alphas: alpha parameter of Beta distribution for each arm
     betas: beta parameter of Beta distribution for each arm
-    random_state : seed for random number generator
+    random_state: random number generator
     """
     rng = np.random.default_rng(random_state)
     samples = rng.beta(alphas, betas)
@@ -43,9 +43,11 @@ def _sample_normal(
     covariances: covariance matrix of Normal distribution for each arm
     context: context vector
     link_function: link function for the context
-    random_state: seed for random number generator
+    random_state: int = 66,
     """
+
     rng = np.random.default_rng(random_state)
+
     samples = np.array([
         rng.multivariate_normal(mean=mu, cov=cov) for mu, cov in zip(mus, covariances, strict=False)
     ]).reshape(-1, len(context))
@@ -179,7 +181,7 @@ def choose_arm(
     if experiment.experiment_type == ExperimentsType.BAYESAB_ONLINE.value:
         raise ValueError(f"Invalid experiment type: {experiment.experiment_type}.")
 
-    sorted_arms = sorted(experiment.arms, key=lambda a: a.name)
+    sorted_arms = sorted(experiment.arms, key=lambda a: a.id)
     if experiment.prior_type == PriorTypes.BETA.value:
         if experiment.reward_type != LikelihoodTypes.BERNOULLI.value:
             raise ValueError("Beta prior is only supported for Bernoulli rewards.")
