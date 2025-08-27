@@ -547,7 +547,6 @@ async def test_create_experiment_impl_for_online(
 async def test_create_experiment_impl_for_mab_online(xngin_session, testing_datasource):
     """Test implementation of creating an online experiment."""
     request = make_create_online_bandit_experiment_request(with_ids=True)
-
     response = await create_bandit_online_experiment_impl(
         request=request.model_copy(deep=True),
         chosen_n=None,
