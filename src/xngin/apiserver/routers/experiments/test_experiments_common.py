@@ -36,7 +36,7 @@ from xngin.apiserver.routers.experiments.experiments_common import (
     commit_experiment_impl,
     create_assignment_for_participant,
     create_bandit_online_experiment_impl,
-    create_dwh_experiment_impl,
+    create_experiment_impl,
     create_preassigned_experiment_impl,
     experiment_assignments_to_csv_generator,
     get_assign_summary,
@@ -422,7 +422,7 @@ async def test_create_experiment_impl_for_online(
     """Test implementation of creating an online experiment."""
     request = make_create_online_experiment_request()
 
-    response = await create_dwh_experiment_impl(
+    response = await create_experiment_impl(
         request=request.model_copy(deep=True),
         datasource=testing_datasource.ds,
         random_state=42,
@@ -571,7 +571,7 @@ async def test_create_experiment_impl_overwrites_uuids(
     original_experiment_id = request.design_spec.experiment_id
     original_arm_ids = [arm.arm_id for arm in request.design_spec.arms]
 
-    response = await create_dwh_experiment_impl(
+    response = await create_experiment_impl(
         request=request,
         datasource=testing_datasource.ds,
         random_state=42,
@@ -612,7 +612,7 @@ async def test_create_experiment_impl_no_metric_stratification(
     request = make_create_preassigned_experiment_request()
 
     # Test with stratify_on_metrics=False
-    response = await create_dwh_experiment_impl(
+    response = await create_experiment_impl(
         request=request.model_copy(deep=True),
         datasource=testing_datasource.ds,
         random_state=42,

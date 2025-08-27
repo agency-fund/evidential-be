@@ -278,23 +278,35 @@ class DwhSession:
     def _query_for_participants_blocking(
         self,
         sa_table: sqlalchemy.Table,
+        select_columns: set[str],
         filters: list[Filter],
         chosen_n: int,
     ):
         """Samples participants."""
-        filters = queries.create_query_filters(sa_table, filters)
-        query = queries.compose_query(sa_table, chosen_n, filters)
+        sqla_filters = queries.create_query_filters(sa_table, filters)
+        query = queries.compose_query(sa_table, select_columns, sqla_filters, chosen_n)
         return self.session.execute(query).all()
 
     def _get_participants_blocking(
-        self, table_name: str, filters, n: int, use_sa_autoload: bool | None = None
+        self,
+        table_name: str,
+        select_columns: set[str],
+        filters: list[Filter],
+        n: int,
+        use_sa_autoload: bool | None = None,
     ) -> GetParticipantsResult:
         sa_table = self._inspect_table_blocking(table_name, use_sa_autoload)
-        participants = self._query_for_participants_blocking(sa_table, filters, n)
+        participants = self._query_for_participants_blocking(sa_table, select_columns, filters, n)
         return GetParticipantsResult(sa_table=sa_table, participants=participants)
 
     async def get_participants(
-        self, table_name: str, filters, n: int, use_sa_autoload: bool | None = None
+        self,
+        table_name: str,
+        *,
+        select_columns: set[str],
+        filters: list[Filter],
+        n: int,
+        use_sa_autoload: bool | None = None,
     ) -> GetParticipantsResult:
         """Get participants by combining table inspection and querying.
 
@@ -312,6 +324,7 @@ class DwhSession:
         return await asyncio.to_thread(
             self._get_participants_blocking,
             table_name,
+            select_columns,
             filters,
             n,
             use_sa_autoload,
