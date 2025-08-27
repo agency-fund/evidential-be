@@ -132,3 +132,13 @@ def convert_snapshot_to_api_snapshot(snapshot: tables.Snapshot) -> aapi.Snapshot
         data=snapshot.data,
         details={"message": snapshot.message} if snapshot.message else None,
     )
+
+
+def convert_api_snapshot_status_to_snapshot_status(status: aapi.SnapshotStatus) -> tables.SnapshotStatus:
+    match status:
+        case aapi.SnapshotStatus.SUCCESS:
+            return "success"
+        case aapi.SnapshotStatus.RUNNING:
+            return "pending"
+        case aapi.SnapshotStatus.FAILED:
+            return "failed"

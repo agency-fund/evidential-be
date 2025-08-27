@@ -50,7 +50,11 @@ from xngin.apiserver.dwh.queries import (
 )
 from xngin.apiserver.exceptions_common import LateValidationError
 from xngin.apiserver.routers.admin import admin_api_converters, authz
-from xngin.apiserver.routers.admin.admin_api_converters import api_dsn_to_settings_dwh, convert_snapshot_to_api_snapshot
+from xngin.apiserver.routers.admin.admin_api_converters import (
+    api_dsn_to_settings_dwh,
+    convert_api_snapshot_status_to_snapshot_status,
+    convert_snapshot_to_api_snapshot,
+)
 from xngin.apiserver.routers.admin.admin_api_types import (
     AddMemberToOrganizationRequest,
     AddWebhookToOrganizationRequest,
@@ -82,6 +86,7 @@ from xngin.apiserver.routers.admin.admin_api_types import (
     OrganizationSummary,
     PostgresDsn,
     RedshiftDsn,
+    SnapshotStatus,
     UpdateDatasourceRequest,
     UpdateOrganizationRequest,
     UpdateOrganizationWebhookRequest,
@@ -388,6 +393,13 @@ async def list_snapshots(
     session: Annotated[AsyncSession, Depends(xngin_db_session)],
     user: Annotated[tables.User, Depends(user_from_token)],
     params: Annotated[ExperimentPathParams, Path()],
+    status_: Annotated[
+        list[SnapshotStatus] | None,
+        Query(
+            alias="status",
+            description="Filter the returned snapshots to only those of this status. May be specified multiple times.",
+        ),
+    ] = None,
 ) -> ListSnapshotsResponse:
     """Lists all snapshots for an experiment, ordered by timestamp."""
     datasource = await get_datasource_or_raise(
@@ -395,13 +407,17 @@ async def list_snapshots(
     )
     experiment = await get_experiment_via_ds_or_raise(session, datasource, params.experiment_id)
 
-    snapshots = await session.scalars(
+    query = (
         select(tables.Snapshot)
-        .where(
-            tables.Snapshot.experiment_id == experiment.id,
-        )
+        .where(tables.Snapshot.experiment_id == experiment.id)
         .order_by(tables.Snapshot.updated_at)
     )
+    if status_:
+        query = query.where(
+            tables.Snapshot.status.in_([convert_api_snapshot_status_to_snapshot_status(s) for s in status_])
+        )
+    snapshots = await session.scalars(query)
+
     return ListSnapshotsResponse(items=[convert_snapshot_to_api_snapshot(snapshot) for snapshot in snapshots])
 
 
