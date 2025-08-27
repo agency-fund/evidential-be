@@ -1602,7 +1602,7 @@ async def test_experiment_webhook_integration(testing_datasource_with_user, ppos
     assert len(created_experiment_no_webhooks["webhooks"]) == 0
 
 
-def test_snapshots(pget, ppost, pdelete, uget):
+def test_snapshots(pget, ppost, pdelete, uget, ppatch):
     creation_response = ppost(
         "/v1/m/organizations",
         json=CreateOrganizationRequest(name="test_snapshots").model_dump(),
@@ -1611,21 +1611,22 @@ def test_snapshots(pget, ppost, pdelete, uget):
     create_organization_response = CreateOrganizationResponse.model_validate(creation_response.json())
 
     parsed = urlparse(flags.XNGIN_DEVDWH_DSN)
+    valid_dsn = PostgresDsn(
+        type="postgres",
+        host=parsed.hostname,
+        port=parsed.port,
+        user=parsed.username,
+        password=RevealedStr(value=parsed.password),
+        dbname=parsed.path[1:],
+        sslmode="disable",
+        search_path=None,
+    )
     response = ppost(
         "/v1/m/datasources",
         content=CreateDatasourceRequest(
             name="test_create_datasource",
             organization_id=create_organization_response.id,
-            dsn=PostgresDsn(
-                type="postgres",
-                host=parsed.hostname,
-                port=parsed.port,
-                user=parsed.username,
-                password=RevealedStr(value=parsed.password),
-                dbname=parsed.path[1:],
-                sslmode="disable",
-                search_path=None,
-            ),
+            dsn=valid_dsn,
         ).model_dump_json(),
     )
     assert response.status_code == 200, response.content
@@ -1640,7 +1641,7 @@ def test_snapshots(pget, ppost, pdelete, uget):
     )
     assert create_participant_type_response.status_code == 200, create_participant_type_response.content
 
-    repsonse = ppost(
+    response = ppost(
         f"/v1/m/datasources/{create_datasource_response.id}/experiments?chosen_n=100",
         json=CreateExperimentRequest(
             design_spec=PreassignedFrequentistExperimentSpec(
@@ -1660,8 +1661,8 @@ def test_snapshots(pget, ppost, pdelete, uget):
             )
         ).model_dump(mode="json"),
     )
-    assert repsonse.status_code == 200, repsonse.content
-    experiment_id = CreateExperimentResponse.model_validate_json(repsonse.content).design_spec.experiment_id
+    assert response.status_code == 200, response.content
+    experiment_id = CreateExperimentResponse.model_validate_json(response.content).design_spec.experiment_id
 
     # When run via tests, the TestClient that ppost() is built upon will wait for the backend handler to finish
     # all of its background tasks. Therefore this test will not observe the experiment in a "pending" state.
@@ -1672,51 +1673,76 @@ def test_snapshots(pget, ppost, pdelete, uget):
     assert response.status_code == 200, response.content
     create_snapshot_response = CreateSnapshotResponse.model_validate(response.json())
 
+    # Force the second snapshot to fail by misconfiguring the Postgres port.
+    response = ppatch(
+        f"/v1/m/datasources/{create_datasource_response.id}",
+        content=UpdateDatasourceRequest(
+            dsn=valid_dsn.model_copy(update={"port": valid_dsn.port + 1})
+        ).model_dump_json(),
+    )
+    assert response.status_code == 204, response.content
+
+    response = ppost(
+        f"/v1/m/organizations/{create_organization_response.id}/datasources/{create_datasource_response.id}"
+        f"/experiments/{experiment_id}/snapshots"
+    )
+    assert response.status_code == 200, response.content
+    create_bad_snapshot_response = CreateSnapshotResponse.model_validate(response.json())
+
     list_snapshot_response = pget(
         f"/v1/m/organizations/{create_organization_response.id}/datasources/{create_datasource_response.id}"
         f"/experiments/{experiment_id}/snapshots"
     )
     assert list_snapshot_response.status_code == 200, list_snapshot_response.content
     list_snapshot = ListSnapshotsResponse.model_validate(list_snapshot_response.json())
-    assert len(list_snapshot.items) == 1, list_snapshot
-    listed_snapshot = list_snapshot.items[0]
-    assert listed_snapshot.id == create_snapshot_response.id
-    assert listed_snapshot.experiment_id == experiment_id
-    assert listed_snapshot.status == "success"
-    assert listed_snapshot.data == {"todo": ["dwh"]}  # TODO(qixotic)
+    assert len(list_snapshot.items) == 2, list_snapshot
+    assert list_snapshot.items[0].updated_at < list_snapshot.items[1].updated_at, list_snapshot
+
+    success_snapshot, failed_snapshot = list_snapshot.items
+    assert success_snapshot.id == create_snapshot_response.id
+    assert success_snapshot.experiment_id == experiment_id
+    assert success_snapshot.status == "success"
+    assert success_snapshot.data == {"todo": ["dwh"]}  # TODO(qixotic)
+    assert success_snapshot.details is None
+    assert failed_snapshot.id == create_bad_snapshot_response.id
+    assert failed_snapshot.experiment_id == experiment_id
+    assert failed_snapshot.status == "failed"
+    assert failed_snapshot.data is None
+    assert failed_snapshot.details is not None and "OperationalError: " in failed_snapshot.details["message"]
 
     response = pget(
         f"/v1/m/organizations/{create_organization_response.id}/datasources/{create_datasource_response.id}"
-        f"/experiments/{experiment_id}/snapshots/{listed_snapshot.id}"
+        f"/experiments/{experiment_id}/snapshots/{success_snapshot.id}"
     )
     assert response.status_code == 200, response.content
     get_snapshot_response = GetSnapshotResponse.model_validate(response.json())
     assert get_snapshot_response.snapshot is not None
-    assert get_snapshot_response.snapshot.id == listed_snapshot.id
-    assert get_snapshot_response.snapshot.experiment_id == listed_snapshot.experiment_id
-    assert get_snapshot_response.snapshot.status == listed_snapshot.status
-    assert get_snapshot_response.snapshot.data == listed_snapshot.data
+    assert get_snapshot_response.snapshot.id == success_snapshot.id
+    assert get_snapshot_response.snapshot.experiment_id == success_snapshot.experiment_id
+    assert get_snapshot_response.snapshot.status == success_snapshot.status
+    assert get_snapshot_response.snapshot.data == success_snapshot.data
 
+    # Attempt to read a snapshot as a user that doesn't have access to the snapshot.
     response = uget(
         f"/v1/m/organizations/{create_organization_response.id}/datasources/{create_datasource_response.id}"
-        f"/experiments/{experiment_id}/snapshots/{listed_snapshot.id}"
+        f"/experiments/{experiment_id}/snapshots/{success_snapshot.id}"
     )
     assert response.status_code == 404, response.content
 
-    delete_snapshot_response = pdelete(
+    response = pdelete(
         f"/v1/m/organizations/{create_organization_response.id}/datasources/{create_datasource_response.id}"
-        f"/experiments/{experiment_id}/snapshots/{listed_snapshot.id}"
+        f"/experiments/{experiment_id}/snapshots/{success_snapshot.id}"
     )
-    assert delete_snapshot_response.status_code == 204, delete_snapshot_response.content
+    assert response.status_code == 204, response.content
 
-    delete_snapshot_response = pdelete(
+    response = pdelete(
         f"/v1/m/organizations/{create_organization_response.id}/datasources/{create_datasource_response.id}"
-        f"/experiments/{experiment_id}/snapshots/{listed_snapshot.id}"
+        f"/experiments/{experiment_id}/snapshots/{success_snapshot.id}"
     )
-    assert delete_snapshot_response.status_code == 404, delete_snapshot_response.content
+    assert response.status_code == 404, response.content
 
     response = pget(
         f"/v1/m/organizations/{create_organization_response.id}/datasources/{create_datasource_response.id}"
-        f"/experiments/{experiment_id}/snapshots/{listed_snapshot.id}"
+        f"/experiments/{experiment_id}/snapshots/{success_snapshot.id}"
     )
     assert response.status_code == 404, response.content
