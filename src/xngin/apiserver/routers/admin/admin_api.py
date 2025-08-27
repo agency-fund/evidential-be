@@ -383,7 +383,7 @@ async def get_snapshot(
         )
     )
     if snapshot is None:
-        raise HTTPException(status_code=404)
+        raise HTTPException(status_code=404, detail="Snapshot not found")
 
     return GetSnapshotResponse(snapshot=convert_snapshot_to_api_snapshot(snapshot))
 
@@ -401,7 +401,7 @@ async def list_snapshots(
         ),
     ] = None,
 ) -> ListSnapshotsResponse:
-    """Lists all snapshots for an experiment, ordered by timestamp."""
+    """Lists snapshots for an experiment, ordered by timestamp."""
     datasource = await get_datasource_or_raise(
         session, user, params.datasource_id, organization_id=params.organization_id
     )
@@ -457,6 +457,7 @@ async def create_snapshot(
         session, user, params.datasource_id, organization_id=params.organization_id
     )
     experiment = await get_experiment_via_ds_or_raise(session, datasource, params.experiment_id)
+    # TODO(qixotic): Apply experiment type and state validations.
     snapshot = tables.Snapshot(experiment_id=experiment.id)
     session.add(snapshot)
     await session.commit()
