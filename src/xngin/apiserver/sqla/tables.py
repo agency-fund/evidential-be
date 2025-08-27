@@ -49,15 +49,6 @@ class Base(AsyncAttrs, DeclarativeBase):
         return {column.name: getattr(self, column.name) for column in self.__table__.columns}
 
 
-class CacheTable(Base):
-    """Stores cached values."""
-
-    __tablename__ = "cache"
-
-    key: Mapped[str] = mapped_column(primary_key=True)
-    value: Mapped[str]
-
-
 class ApiKey(Base):
     """Stores API keys. Each API key grants access to a single datasource."""
 
