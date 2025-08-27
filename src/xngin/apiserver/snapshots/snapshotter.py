@@ -78,7 +78,7 @@ async def make_first_snapshot(experiment_id: str, snapshot_id: str):
             )
         ).scalar_one_or_none()
         if snapshot is None:
-            logger.info(f"{experiment_id}.{snapshot} is missing or is already being processed.")
+            logger.info(f"{experiment_id}.{snapshot_id} is missing or is already being processed.")
             return
         await _handle_one_snapshot_safely(session, snapshot, SNAPSHOT_TIMEOUT_SECS)
 
