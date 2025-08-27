@@ -60,6 +60,7 @@ from xngin.apiserver.routers.auth.auth_dependencies import (
 from xngin.apiserver.routers.auth.principal import Principal
 from xngin.apiserver.routers.common_api_types import (
     Arm,
+    ArmBandit,
     CreateExperimentRequest,
     CreateExperimentResponse,
     DataType,
@@ -68,13 +69,17 @@ from xngin.apiserver.routers.common_api_types import (
     FreqExperimentAnalysisResponse,
     GetExperimentAssignmentsResponse,
     GetParticipantAssignmentResponse,
+    LikelihoodTypes,
     ListExperimentsResponse,
+    MABExperimentSpec,
     PreassignedFrequentistExperimentSpec,
+    PriorTypes,
 )
 from xngin.apiserver.routers.common_enums import ExperimentState, StopAssignmentReason
 from xngin.apiserver.routers.experiments.test_experiments_common import (
     insert_experiment_and_arms,
     make_create_online_experiment_request,
+    make_create_online_mab_experiment_request,
     make_create_preassigned_experiment_request,
     make_createexperimentrequest_json,
     make_insertable_experiment,
@@ -1235,6 +1240,67 @@ def test_create_online_experiment_using_inline_schema_ds(testing_datasource_with
     assert actual_design_spec == request_obj.design_spec
 
 
+@pytest.mark.parametrize(
+    "reward_type,prior_type",
+    [
+        (LikelihoodTypes.BERNOULLI, PriorTypes.BETA),
+        (LikelihoodTypes.NORMAL, PriorTypes.NORMAL),
+        (LikelihoodTypes.BERNOULLI, PriorTypes.NORMAL),
+    ],
+)
+def test_create_online_mab_experiment_using_inline_schema_ds(
+    testing_datasource_with_user,
+    ppost,
+    reward_type,
+    prior_type,
+):
+    datasource_id = testing_datasource_with_user.ds.id
+    request_obj = make_create_online_mab_experiment_request(reward_type=reward_type, prior_type=prior_type)
+
+    response = ppost(
+        f"/v1/m/datasources/{datasource_id}/experiments",
+        params={"random_state": 42},
+        content=request_obj.model_dump_json(),
+    )
+    assert response.status_code == 200, response.content
+    created_experiment = CreateExperimentResponse.model_validate(response.json())
+    parsed_experiment_id = created_experiment.design_spec.experiment_id
+    assert parsed_experiment_id is not None
+    parsed_arm_ids = {arm.arm_id for arm in created_experiment.design_spec.arms}
+    assert len(parsed_arm_ids) == 2
+
+    # Verify basic response
+    assert isinstance(created_experiment.design_spec, MABExperimentSpec)
+    assert created_experiment.stopped_assignments_at is None
+    assert created_experiment.stopped_assignments_reason is None
+    assert created_experiment.design_spec.experiment_id is not None
+    assert created_experiment.state == ExperimentState.ASSIGNED
+    assert created_experiment.assign_summary is None
+    assert created_experiment.power_analyses is None
+
+    for arm in created_experiment.design_spec.arms:
+        assert isinstance(arm, ArmBandit)
+        assert arm.arm_id is not None
+        if prior_type == PriorTypes.BETA:
+            assert arm.alpha is not None
+            assert arm.beta is not None
+        elif prior_type == PriorTypes.NORMAL:
+            assert arm.mu is not None
+            assert arm.covariance is not None
+
+    # Check if the representations are equivalent
+    # scrub the ids from the config for comparison
+    actual_design_spec = created_experiment.design_spec.model_copy(deep=True)
+    actual_design_spec.experiment_id = None
+    for arm in actual_design_spec.arms:
+        arm.arm_id = None
+        arm.alpha = None
+        arm.beta = None
+        arm.mu = None
+        arm.covariance = None
+    assert actual_design_spec == request_obj.design_spec
+
+
 def test_get_experiment_assignment_for_preassigned_participant(testing_experiment, pget):
     datasource_id = testing_experiment.datasource_id
     experiment_id = testing_experiment.id
@@ -1295,6 +1361,49 @@ async def test_get_experiment_assignment_for_online_participant(
     scalars = await xngin_session.scalars(
         select(tables.ArmAssignment).where(tables.ArmAssignment.experiment_id == experiment_id)
     )
+    assignment = scalars.one()
+    assert assignment.participant_id == "new_id"
+    assert assignment.arm_id == str(assignment_response.assignment.arm_id)
+
+
+async def test_get_mab_experiment_assignment_for_online_participant(
+    xngin_session: AsyncSession, testing_datasource_with_user, pget
+):
+    test_experiment = await insert_experiment_and_arms(
+        xngin_session, testing_datasource_with_user.ds, ExperimentsType.MAB_ONLINE
+    )
+    datasource_id = test_experiment.datasource_id
+    experiment_id = test_experiment.id
+
+    # Check for an assignment that doesn't exist, but don't create it.
+    response = pget(
+        f"/v1/m/datasources/{datasource_id}/experiments/{experiment_id}/assignments/new_id?create_if_none=false"
+    )
+    assert response.status_code == 200, response.content
+    assignment_response = GetParticipantAssignmentResponse.model_validate(response.json())
+    assert assignment_response.experiment_id == experiment_id
+    assert assignment_response.participant_id == "new_id"
+    assert assignment_response.assignment is None
+
+    # Create a new participant assignment.
+    response = pget(f"/v1/m/datasources/{datasource_id}/experiments/{experiment_id}/assignments/new_id")
+    assert response.status_code == 200, response.content
+    assignment_response = GetParticipantAssignmentResponse.model_validate(response.json())
+    assert assignment_response.experiment_id == experiment_id
+    assert assignment_response.participant_id == "new_id"
+    assert assignment_response.assignment is not None
+    assert assignment_response.assignment.observed_at is None
+    assert assignment_response.assignment.outcome is None
+    assert str(assignment_response.assignment.arm_id) in {arm.id for arm in test_experiment.arms}
+
+    # Get back the same assignment.
+    response = pget(f"/v1/m/datasources/{datasource_id}/experiments/{experiment_id}/assignments/new_id")
+    assert response.status_code == 200, response.content
+    assignment_response2 = GetParticipantAssignmentResponse.model_validate(response.json())
+    assert assignment_response2 == assignment_response
+
+    # Make sure there's only one db entry.
+    scalars = await xngin_session.scalars(select(tables.Draw).where(tables.Draw.experiment_id == experiment_id))
     assignment = scalars.one()
     assert assignment.participant_id == "new_id"
     assert assignment.arm_id == str(assignment_response.assignment.arm_id)
