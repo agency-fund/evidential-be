@@ -25,21 +25,21 @@
 | src/xngin/apiserver/routers/admin/admin\_api\_converters.py          |       41 |        6 |     85% |27, 71-72, 82, 108-109 |
 | src/xngin/apiserver/routers/admin/admin\_api\_types.py               |      178 |        2 |     99% |    33, 35 |
 | src/xngin/apiserver/routers/admin/generic\_handlers.py               |       24 |       14 |     42% |     42-60 |
-| src/xngin/apiserver/routers/admin/test\_admin.py                     |      710 |        1 |     99% |       321 |
+| src/xngin/apiserver/routers/admin/test\_admin.py                     |      773 |        1 |     99% |       326 |
 | src/xngin/apiserver/routers/assignment\_adapters.py                  |       44 |        1 |     98% |       149 |
 | src/xngin/apiserver/routers/auth/auth\_api.py                        |       35 |       12 |     66% |29-32, 59-80 |
 | src/xngin/apiserver/routers/auth/auth\_dependencies.py               |       96 |       47 |     51% |52, 65-71, 78-105, 123, 130-169, 200-202 |
-| src/xngin/apiserver/routers/common\_api\_types.py                    |      352 |       50 |     86% |107, 133, 135, 272, 342-351, 369, 585-587, 624, 804-827, 834-840, 847-851, 1052, 1219, 1221-1223 |
-| src/xngin/apiserver/routers/common\_enums.py                         |      167 |       55 |     67% |71, 73, 85, 87, 96-105, 110, 132-149, 160-164, 205, 243-256, 276-282, 310-314 |
+| src/xngin/apiserver/routers/common\_api\_types.py                    |      352 |       25 |     93% |107, 133, 135, 272, 346, 348, 350, 369, 585-587, 624, 813, 822, 825-826, 836, 838, 848, 850, 1052, 1219, 1221-1223 |
+| src/xngin/apiserver/routers/common\_enums.py                         |      167 |       39 |     77% |71, 73, 85, 87, 96-105, 110, 132-149, 160-164, 205, 244-247, 256, 277-278, 282, 314 |
 | src/xngin/apiserver/routers/experiments/dependencies.py              |       18 |        3 |     83% |     49-55 |
 | src/xngin/apiserver/routers/experiments/experiments\_api.py          |       87 |       37 |     57% |98, 107-120, 142, 155, 182, 193, 207, 238-245, 283-339, 357-367 |
-| src/xngin/apiserver/routers/experiments/experiments\_common.py       |      316 |       99 |     69% |64, 69, 93, 107, 114, 137-148, 168, 186, 202-211, 235, 246, 319, 333, 356-374, 400-416, 512-531, 585-587, 638-659, 702, 706, 709-714, 736-737, 759-774, 777, 804-900 |
-| src/xngin/apiserver/routers/experiments/test\_experiments\_common.py |      358 |        1 |     99% |       903 |
+| src/xngin/apiserver/routers/experiments/experiments\_common.py       |      316 |       46 |     85% |64, 69, 93, 107, 114, 147-148, 168, 186, 202-211, 235, 246, 319, 333, 369, 400-416, 531, 585-587, 658-659, 702, 706, 709-714, 773-774, 777, 807, 825, 833, 843, 847, 889-890, 896-898 |
+| src/xngin/apiserver/routers/experiments/test\_experiments\_common.py |      466 |        6 |     99% |143-144, 544-546, 1124 |
 | src/xngin/apiserver/routers/healthchecks\_api.py                     |       16 |        2 |     88% |     26-27 |
 | src/xngin/apiserver/routers/test\_common\_api\_types.py              |       41 |        1 |     98% |        74 |
 | src/xngin/apiserver/settings.py                                      |      171 |       28 |     84% |99, 119, 126, 132, 177-178, 238, 243, 246-251, 301-305, 324, 346, 357, 359, 369, 372, 389, 411, 426 |
 | src/xngin/apiserver/sqla/tables.py                                   |      245 |        7 |     97% |49, 126-128, 256, 290-291 |
-| src/xngin/apiserver/storage/storage\_format\_converters.py           |      100 |       24 |     76% |58, 75, 89-90, 109, 162-202, 284, 318-371 |
+| src/xngin/apiserver/storage/storage\_format\_converters.py           |      100 |       13 |     87% |58, 75, 89-90, 109, 167, 170, 202, 284, 357-360, 371 |
 | src/xngin/apiserver/testing/assertions.py                            |       14 |        5 |     64% | 14-17, 23 |
 | src/xngin/apiserver/testing/xurl.py                                  |       29 |        1 |     97% |        37 |
 | src/xngin/cli/main.py                                                |      336 |      197 |     41% |83-99, 115-146, 150-154, 164-166, 253, 256, 261, 273-274, 283, 291-309, 312-348, 350-353, 371-376, 381-382, 411-412, 425-433, 439-445, 451-454, 461-469, 494-499, 514-522, 535-543, 547-550, 590-666, 682-686, 697-698, 706-708, 712 |
@@ -50,16 +50,16 @@
 | src/xngin/events/webhook\_sent.py                                    |       15 |        5 |     67% |     18-23 |
 | src/xngin/stats/assignment.py                                        |       46 |        1 |     98% |       113 |
 | src/xngin/stats/balance.py                                           |       62 |        3 |     95% |106, 134, 137 |
-| src/xngin/stats/bandit\_sampling.py                                  |       73 |       62 |     15% |25-27, 48-54, 71-73, 95-110, 136-160, 179-209, 231-266 |
+| src/xngin/stats/bandit\_sampling.py                                  |       73 |        7 |     90% |158, 182, 187, 210, 234, 236, 268 |
 | src/xngin/stats/power.py                                             |       65 |        5 |     92% |45, 84, 141-151 |
 | src/xngin/xsecrets/gcp\_kms\_provider.py                             |       71 |       26 |     63% |62-77, 84-85, 102-103, 106, 110-118, 122-129 |
 | src/xngin/xsecrets/provider.py                                       |       19 |        1 |     95% |        46 |
 | src/xngin/xsecrets/secretservice.py                                  |       61 |        4 |     93% |42-43, 101, 123 |
 | src/xngin/xsecrets/test\_gcp\_kms\_provider.py                       |      103 |       26 |     75% |40-42, 170-175, 182-189, 195-199, 206, 213-224 |
 | src/xngin/xsecrets/test\_nacl\_provider.py                           |       67 |        1 |     99% |        24 |
-|                                                            **TOTAL** | **6958** | **1196** | **83%** |           |
+|                                                            **TOTAL** | **7181** | **1041** | **86%** |           |
 
-52 files skipped due to complete coverage.
+53 files skipped due to complete coverage.
 
 
 ## Setup coverage badge
