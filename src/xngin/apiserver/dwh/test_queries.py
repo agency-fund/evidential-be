@@ -230,7 +230,7 @@ def fixture_queries_session():
 @pytest.mark.parametrize(
     "select_columns, error_message",
     [
-        (set(), "You must explicitly select at least one valid column."),
+        (set(), "select_columns must have at least one item."),
         ({"missing_column"}, "Column missing_column not found in schema."),
     ],
 )
