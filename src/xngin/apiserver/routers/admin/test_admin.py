@@ -36,6 +36,7 @@ from xngin.apiserver.routers.admin.admin_api_types import (
     GcpServiceAccount,
     GetDatasourceResponse,
     GetOrganizationResponse,
+    GetSnapshotResponse,
     Hidden,
     InspectDatasourceResponse,
     InspectDatasourceTableResponse,
@@ -1601,7 +1602,7 @@ async def test_experiment_webhook_integration(testing_datasource_with_user, ppos
     assert len(created_experiment_no_webhooks["webhooks"]) == 0
 
 
-def test_snapshots(pget, ppost, pdelete):
+def test_snapshots(pget, ppost, pdelete, uget):
     creation_response = ppost(
         "/v1/m/organizations",
         json=CreateOrganizationRequest(name="test_snapshots").model_dump(),
@@ -1678,14 +1679,44 @@ def test_snapshots(pget, ppost, pdelete):
     assert list_snapshot_response.status_code == 200, list_snapshot_response.content
     list_snapshot = ListSnapshotsResponse.model_validate(list_snapshot_response.json())
     assert len(list_snapshot.items) == 1, list_snapshot
-    rendered_snapshot = list_snapshot.items[0]
-    assert rendered_snapshot.id == create_snapshot_response.id
-    assert rendered_snapshot.experiment_id == experiment_id
-    assert rendered_snapshot.status == "success"
-    assert rendered_snapshot.data == {"todo": ["dwh"]}  # TODO(qixotic)
+    listed_snapshot = list_snapshot.items[0]
+    assert listed_snapshot.id == create_snapshot_response.id
+    assert listed_snapshot.experiment_id == experiment_id
+    assert listed_snapshot.status == "success"
+    assert listed_snapshot.data == {"todo": ["dwh"]}  # TODO(qixotic)
+
+    response = pget(
+        f"/v1/m/organizations/{create_organization_response.id}/datasources/{create_datasource_response.id}"
+        f"/experiments/{experiment_id}/snapshots/{listed_snapshot.id}"
+    )
+    assert response.status_code == 200, response.content
+    get_snapshot_response = GetSnapshotResponse.model_validate(response.json())
+    assert get_snapshot_response.snapshot is not None
+    assert get_snapshot_response.snapshot.id == listed_snapshot.id
+    assert get_snapshot_response.snapshot.experiment_id == listed_snapshot.experiment_id
+    assert get_snapshot_response.snapshot.status == listed_snapshot.status
+    assert get_snapshot_response.snapshot.data == listed_snapshot.data
+
+    response = uget(
+        f"/v1/m/organizations/{create_organization_response.id}/datasources/{create_datasource_response.id}"
+        f"/experiments/{experiment_id}/snapshots/{listed_snapshot.id}"
+    )
+    assert response.status_code == 404, response.content
 
     delete_snapshot_response = pdelete(
         f"/v1/m/organizations/{create_organization_response.id}/datasources/{create_datasource_response.id}"
-        f"/experiments/{experiment_id}/snapshots/{rendered_snapshot.id}"
+        f"/experiments/{experiment_id}/snapshots/{listed_snapshot.id}"
     )
     assert delete_snapshot_response.status_code == 204, delete_snapshot_response.content
+
+    delete_snapshot_response = pdelete(
+        f"/v1/m/organizations/{create_organization_response.id}/datasources/{create_datasource_response.id}"
+        f"/experiments/{experiment_id}/snapshots/{listed_snapshot.id}"
+    )
+    assert delete_snapshot_response.status_code == 404, delete_snapshot_response.content
+
+    response = pget(
+        f"/v1/m/organizations/{create_organization_response.id}/datasources/{create_datasource_response.id}"
+        f"/experiments/{experiment_id}/snapshots/{listed_snapshot.id}"
+    )
+    assert response.status_code == 404, response.content
