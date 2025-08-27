@@ -1,12 +1,12 @@
 """tq is a simple Postgres task queue daemon."""
 
-import os
 import sys
 from typing import Annotated
 
 import typer
 from loguru import logger
 
+from xngin.ops import sentry
 from xngin.tq.handlers import make_webhook_outbound_handler
 from xngin.tq.task_payload_types import WEBHOOK_OUTBOUND_TASK_TYPE
 from xngin.tq.task_queue import TaskQueue
@@ -17,30 +17,7 @@ DEFAULT_MAX_RETRIES = 10
 # Default polling interval (in seconds).
 DEFAULT_POLLING_INTERVAL = 60
 
-if sentry_dsn := os.environ.get("SENTRY_DSN"):
-    import sentry_sdk
-    from sentry_sdk import scrubber
-
-    denylist = [
-        *scrubber.DEFAULT_DENYLIST,
-        "dsn",
-    ]
-    pii_denylist = [
-        *scrubber.DEFAULT_PII_DENYLIST,
-        "webhook_token",
-        "email",
-    ]
-
-    sentry_sdk.init(
-        dsn=sentry_dsn,
-        environment=os.environ.get("ENVIRONMENT", "local"),
-        traces_sample_rate=1.0,
-        _experiments={
-            "continuous_profiling_auto_start": True,
-        },
-        send_default_pii=False,
-        event_scrubber=sentry_sdk.scrubber.EventScrubber(denylist=denylist, pii_denylist=pii_denylist),
-    )
+sentry.setup()
 
 app = typer.Typer(help="Task queue processor for xngin")
 

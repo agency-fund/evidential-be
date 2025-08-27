@@ -11,34 +11,12 @@ from loguru import logger
 
 from xngin.apiserver import database
 from xngin.apiserver.snapshots import snapshotter
+from xngin.ops import sentry
 from xngin.xsecrets import secretservice
 
 NPROC = max(4, len(os.sched_getaffinity(0)) // 4)
 
-if sentry_dsn := os.environ.get("SENTRY_DSN"):
-    import sentry_sdk
-    from sentry_sdk import scrubber
-
-    denylist = [
-        *scrubber.DEFAULT_DENYLIST,
-        "dsn",
-    ]
-    pii_denylist = [
-        *scrubber.DEFAULT_PII_DENYLIST,
-        "webhook_token",
-        "email",
-    ]
-
-    sentry_sdk.init(
-        dsn=sentry_dsn,
-        environment=os.environ.get("ENVIRONMENT", "local"),
-        traces_sample_rate=1.0,
-        _experiments={
-            "continuous_profiling_auto_start": True,
-        },
-        send_default_pii=False,
-        event_scrubber=sentry_sdk.scrubber.EventScrubber(denylist=denylist, pii_denylist=pii_denylist),
-    )
+sentry.setup()
 
 app = typer.Typer(help="Collects snapshots as needed.")
 
