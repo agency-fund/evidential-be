@@ -35,16 +35,15 @@ def _sample_normal(
     random_state: int = 66,
 ) -> int:
     """
-        Thompson Sampling with normal prior.
+    Thompson Sampling with normal prior.
 
-        Parameters
-        ----------
-        mus: mean of Normal distribution for each arm
-        covariances: covariance matrix of Normal distribution for each arm
-        context: context vector
-        link_function: link function for the context
-        random_state: int = 66,
-    ) -> int:
+    Parameters
+    ----------
+    mus: mean of Normal distribution for each arm
+    covariances: covariance matrix of Normal distribution for each arm
+    context: context vector
+    link_function: link function for the context
+    random_state: int = 66,
     """
 
     rng = np.random.default_rng(random_state)

@@ -1258,7 +1258,6 @@ def test_create_online_mab_experiment_using_inline_schema_ds(
 ):
     datasource_id = testing_datasource_with_user.ds.id
     request_obj = make_create_online_bandit_experiment_request(reward_type=reward_type, prior_type=prior_type)
-
     response = ppost(
         f"/v1/m/datasources/{datasource_id}/experiments",
         params={"random_state": 42},
