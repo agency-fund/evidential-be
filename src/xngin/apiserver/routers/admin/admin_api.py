@@ -245,9 +245,12 @@ async def get_datasource_or_raise(
     datasource_id: str,
     /,
     *,
+    organization_id: str | None = None,
     preload: list[QueryableAttribute] | None = None,
 ) -> tables.Datasource:
     """Reads the requested datasource from the database.
+
+    Requests that accept organization_id should also pass organization_id= kwarg.
 
     Raises 404 if disallowed or not found.
     """
@@ -260,6 +263,8 @@ async def get_datasource_or_raise(
             tables.Datasource.id == datasource_id,
         )
     )
+    if organization_id:
+        stmt = stmt.where(tables.Organization.id == organization_id)
     if preload:
         stmt = stmt.options(*[selectinload(f) for f in preload])
     result = await session.execute(stmt)
@@ -361,8 +366,9 @@ async def get_snapshot(
     params: Annotated[SnapshotPathParams, Path()],
 ) -> GetSnapshotResponse:
     """Fetches a snapshot by ID."""
-    _ = await get_organization_or_raise(session, user, params.organization_id)
-    datasource = await get_datasource_or_raise(session, user, params.datasource_id)
+    datasource = await get_datasource_or_raise(
+        session, user, params.datasource_id, organization_id=params.organization_id
+    )
     experiment = await get_experiment_via_ds_or_raise(session, datasource, params.experiment_id)
 
     snapshot = await session.scalar(
@@ -384,8 +390,9 @@ async def list_snapshots(
     params: Annotated[ExperimentPathParams, Path()],
 ) -> ListSnapshotsResponse:
     """Lists all snapshots for an experiment, ordered by timestamp."""
-    _ = await get_organization_or_raise(session, user, params.organization_id)
-    datasource = await get_datasource_or_raise(session, user, params.datasource_id)
+    datasource = await get_datasource_or_raise(
+        session, user, params.datasource_id, organization_id=params.organization_id
+    )
     experiment = await get_experiment_via_ds_or_raise(session, datasource, params.experiment_id)
 
     snapshots = await session.scalars(
@@ -430,8 +437,9 @@ async def create_snapshot(
 
     Returns the ID of the snapshot. Poll get_snapshot until the job is completed.
     """
-    _ = await get_organization_or_raise(session, user, params.organization_id)
-    datasource = await get_datasource_or_raise(session, user, params.datasource_id)
+    datasource = await get_datasource_or_raise(
+        session, user, params.datasource_id, organization_id=params.organization_id
+    )
     experiment = await get_experiment_via_ds_or_raise(session, datasource, params.experiment_id)
     snapshot = tables.Snapshot(experiment_id=experiment.id)
     session.add(snapshot)
