@@ -65,7 +65,7 @@
             <a id="nextFileLink" class="nav" href="z_3103cf4b20fd3e3c_healthchecks_api_py.html">&#xbb; next</a>
             &nbsp; &nbsp; &nbsp;
             <a class="nav" href="https://coverage.readthedocs.io/en/7.10.5">coverage.py v7.10.5</a>,
-            created at 2025-08-27 05:55 +0000
+            created at 2025-08-27 17:13 +0000
         </p>
         <aside class="hidden">
             <button type="button" class="button_next_chunk" data-shortcut="j"></button>
@@ -118,7 +118,7 @@
     <p class="run run2"><span class="n"><a id="t36" href="#t36">36</a></span><span class="t">    <span class="nam">commit_experiment_impl</span><span class="op">,</span>&nbsp;</span><span class="r"></span></p>
     <p class="run run2"><span class="n"><a id="t37" href="#t37">37</a></span><span class="t">    <span class="nam">create_assignment_for_participant</span><span class="op">,</span>&nbsp;</span><span class="r"></span></p>
     <p class="run run2"><span class="n"><a id="t38" href="#t38">38</a></span><span class="t">    <span class="nam">create_bandit_online_experiment_impl</span><span class="op">,</span>&nbsp;</span><span class="r"></span></p>
-    <p class="run run2"><span class="n"><a id="t39" href="#t39">39</a></span><span class="t">    <span class="nam">create_dwh_experiment_impl</span><span class="op">,</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run run2"><span class="n"><a id="t39" href="#t39">39</a></span><span class="t">    <span class="nam">create_experiment_impl</span><span class="op">,</span>&nbsp;</span><span class="r"></span></p>
     <p class="run run2"><span class="n"><a id="t40" href="#t40">40</a></span><span class="t">    <span class="nam">create_preassigned_experiment_impl</span><span class="op">,</span>&nbsp;</span><span class="r"></span></p>
     <p class="run run2"><span class="n"><a id="t41" href="#t41">41</a></span><span class="t">    <span class="nam">experiment_assignments_to_csv_generator</span><span class="op">,</span>&nbsp;</span><span class="r"></span></p>
     <p class="run run2"><span class="n"><a id="t42" href="#t42">42</a></span><span class="t">    <span class="nam">get_assign_summary</span><span class="op">,</span>&nbsp;</span><span class="r"></span></p>
@@ -504,7 +504,7 @@
     <p class="pln"><span class="n"><a id="t422" href="#t422">422</a></span><span class="t">    <span class="str">"""Test implementation of creating an online experiment."""</span>&nbsp;</span><span class="r"></span></p>
     <p class="run"><span class="n"><a id="t423" href="#t423">423</a></span><span class="t">    <span class="nam">request</span> <span class="op">=</span> <span class="nam">make_create_online_experiment_request</span><span class="op">(</span><span class="op">)</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t424" href="#t424">424</a></span><span class="t">&nbsp;</span><span class="r"></span></p>
-    <p class="run"><span class="n"><a id="t425" href="#t425">425</a></span><span class="t">    <span class="nam">response</span> <span class="op">=</span> <span class="key">await</span> <span class="nam">create_dwh_experiment_impl</span><span class="op">(</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run"><span class="n"><a id="t425" href="#t425">425</a></span><span class="t">    <span class="nam">response</span> <span class="op">=</span> <span class="key">await</span> <span class="nam">create_experiment_impl</span><span class="op">(</span>&nbsp;</span><span class="r"></span></p>
     <p class="run run2"><span class="n"><a id="t426" href="#t426">426</a></span><span class="t">        <span class="nam">request</span><span class="op">=</span><span class="nam">request</span><span class="op">.</span><span class="nam">model_copy</span><span class="op">(</span><span class="nam">deep</span><span class="op">=</span><span class="key">True</span><span class="op">)</span><span class="op">,</span>&nbsp;</span><span class="r"></span></p>
     <p class="run run2"><span class="n"><a id="t427" href="#t427">427</a></span><span class="t">        <span class="nam">datasource</span><span class="op">=</span><span class="nam">testing_datasource</span><span class="op">.</span><span class="nam">ds</span><span class="op">,</span>&nbsp;</span><span class="r"></span></p>
     <p class="run run2"><span class="n"><a id="t428" href="#t428">428</a></span><span class="t">        <span class="nam">random_state</span><span class="op">=</span><span class="num">42</span><span class="op">,</span>&nbsp;</span><span class="r"></span></p>
@@ -653,7 +653,7 @@
     <p class="run"><span class="n"><a id="t571" href="#t571">571</a></span><span class="t">    <span class="nam">original_experiment_id</span> <span class="op">=</span> <span class="nam">request</span><span class="op">.</span><span class="nam">design_spec</span><span class="op">.</span><span class="nam">experiment_id</span>&nbsp;</span><span class="r"></span></p>
     <p class="run"><span class="n"><a id="t572" href="#t572">572</a></span><span class="t">    <span class="nam">original_arm_ids</span> <span class="op">=</span> <span class="op">[</span><span class="nam">arm</span><span class="op">.</span><span class="nam">arm_id</span> <span class="key">for</span> <span class="nam">arm</span> <span class="key">in</span> <span class="nam">request</span><span class="op">.</span><span class="nam">design_spec</span><span class="op">.</span><span class="nam">arms</span><span class="op">]</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t573" href="#t573">573</a></span><span class="t">&nbsp;</span><span class="r"></span></p>
-    <p class="run"><span class="n"><a id="t574" href="#t574">574</a></span><span class="t">    <span class="nam">response</span> <span class="op">=</span> <span class="key">await</span> <span class="nam">create_dwh_experiment_impl</span><span class="op">(</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run"><span class="n"><a id="t574" href="#t574">574</a></span><span class="t">    <span class="nam">response</span> <span class="op">=</span> <span class="key">await</span> <span class="nam">create_experiment_impl</span><span class="op">(</span>&nbsp;</span><span class="r"></span></p>
     <p class="run run2"><span class="n"><a id="t575" href="#t575">575</a></span><span class="t">        <span class="nam">request</span><span class="op">=</span><span class="nam">request</span><span class="op">,</span>&nbsp;</span><span class="r"></span></p>
     <p class="run run2"><span class="n"><a id="t576" href="#t576">576</a></span><span class="t">        <span class="nam">datasource</span><span class="op">=</span><span class="nam">testing_datasource</span><span class="op">.</span><span class="nam">ds</span><span class="op">,</span>&nbsp;</span><span class="r"></span></p>
     <p class="run run2"><span class="n"><a id="t577" href="#t577">577</a></span><span class="t">        <span class="nam">random_state</span><span class="op">=</span><span class="num">42</span><span class="op">,</span>&nbsp;</span><span class="r"></span></p>
@@ -694,7 +694,7 @@
     <p class="run"><span class="n"><a id="t612" href="#t612">612</a></span><span class="t">    <span class="nam">request</span> <span class="op">=</span> <span class="nam">make_create_preassigned_experiment_request</span><span class="op">(</span><span class="op">)</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t613" href="#t613">613</a></span><span class="t">&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t614" href="#t614">614</a></span><span class="t">    <span class="com"># Test with stratify_on_metrics=False</span>&nbsp;</span><span class="r"></span></p>
-    <p class="run"><span class="n"><a id="t615" href="#t615">615</a></span><span class="t">    <span class="nam">response</span> <span class="op">=</span> <span class="key">await</span> <span class="nam">create_dwh_experiment_impl</span><span class="op">(</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run"><span class="n"><a id="t615" href="#t615">615</a></span><span class="t">    <span class="nam">response</span> <span class="op">=</span> <span class="key">await</span> <span class="nam">create_experiment_impl</span><span class="op">(</span>&nbsp;</span><span class="r"></span></p>
     <p class="run run2"><span class="n"><a id="t616" href="#t616">616</a></span><span class="t">        <span class="nam">request</span><span class="op">=</span><span class="nam">request</span><span class="op">.</span><span class="nam">model_copy</span><span class="op">(</span><span class="nam">deep</span><span class="op">=</span><span class="key">True</span><span class="op">)</span><span class="op">,</span>&nbsp;</span><span class="r"></span></p>
     <p class="run run2"><span class="n"><a id="t617" href="#t617">617</a></span><span class="t">        <span class="nam">datasource</span><span class="op">=</span><span class="nam">testing_datasource</span><span class="op">.</span><span class="nam">ds</span><span class="op">,</span>&nbsp;</span><span class="r"></span></p>
     <p class="run run2"><span class="n"><a id="t618" href="#t618">618</a></span><span class="t">        <span class="nam">random_state</span><span class="op">=</span><span class="num">42</span><span class="op">,</span>&nbsp;</span><span class="r"></span></p>
@@ -1274,7 +1274,7 @@
             <a class="nav" href="z_3103cf4b20fd3e3c_healthchecks_api_py.html">&#xbb; next</a>
             &nbsp; &nbsp; &nbsp;
             <a class="nav" href="https://coverage.readthedocs.io/en/7.10.5">coverage.py v7.10.5</a>,
-            created at 2025-08-27 05:55 +0000
+            created at 2025-08-27 17:13 +0000
         </p>
     </div>
 </footer>
