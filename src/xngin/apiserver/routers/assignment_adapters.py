@@ -73,7 +73,7 @@ def assign_treatments_with_balance(
 
     # Extract Decimal column names from SQLAlchemy table and convert to float.
     # (Decimals are possible if the Table was created with SA's autoload instead of cursor).
-    if decimals := [c.name for c in sa_table.columns if c.type.python_type is decimal.Decimal]:
+    if decimals := [c.name for c in sa_table.columns if c.type.python_type is decimal.Decimal and c.name in df]:
         df[decimals] = df[decimals].astype(float)
 
     # Call the core assignment function
