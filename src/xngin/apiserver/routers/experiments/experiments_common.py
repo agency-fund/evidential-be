@@ -83,10 +83,6 @@ async def create_dwh_experiment_impl(
     random_state: int | None,
     validated_webhooks: list[tables.Webhook],
 ) -> CreateExperimentResponse:
-    # Generate ids for arms, required for doing assignments.
-    for arm in request.design_spec.arms:
-        arm.arm_id = tables.arm_id_factory()
-
     match request.design_spec.experiment_type:
         case ExperimentsType.FREQ_ONLINE | ExperimentsType.FREQ_PREASSIGNED:
             ds_config = datasource.get_config()
@@ -172,9 +168,6 @@ async def create_experiment_with_assignments_impl(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=f"{request.design_spec.experiment_type} experiments are not supported for assignments.",
         )
-
-    for arm in request.design_spec.arms:
-        arm.arm_id = tables.arm_id_factory()
 
     ds_config = datasource.config
     participants_schema = ds_config.find_participants(request.design_spec.participant_type)
