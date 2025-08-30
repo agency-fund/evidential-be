@@ -303,7 +303,7 @@ async def test_assign_and_bulk_insert_with_large_integers_as_participant_ids(
 
     orig_ids = sample_data["id"].copy()
 
-    # We should be able to handle Decimals including those bigger than signed int64s
+    # Test: handle Decimals including those bigger than signed int64s
     # (e.g. from psycopg2 with redshift numerics).
     sample_data["id"] = orig_ids.apply(lambda x: Decimal(MAX_SAFE_INTEGER + x))
     assignments = await _assign_test(sample_data)
@@ -319,7 +319,7 @@ async def test_assign_and_bulk_insert_with_large_integers_as_participant_ids(
     # Reset the assignments
     await xngin_session.execute(delete(tables.ArmAssignment))
 
-    # We should be able to support very big negatives as well
+    # Test: handle very big negatives as well
     sample_data["id"] = orig_ids.apply(lambda x: Decimal(-MAX_SAFE_INTEGER - x))
     assignments = await _assign_test(sample_data)
     # Verify large integer IDs were properly stored as strings
@@ -330,6 +330,24 @@ async def test_assign_and_bulk_insert_with_large_integers_as_participant_ids(
         orig_id = -participant_id_int - MAX_SAFE_INTEGER
         # Assert that the inserted id was derived from the original id
         assert orig_id in orig_ids, f"id {orig_id} not found"
+
+    # Reset the assignments
+    await xngin_session.execute(delete(tables.ArmAssignment))
+
+    # Test: check that stochatreat isn't upcasting int64 to float64:
+    sample_data["id"] = orig_ids.astype("int64")
+    # If cast to float64 would round to 9007199254740992
+    sample_data.loc[1, "id"] = MAX_SAFE_INTEGER + 2
+    # If cast to float64, this next value would be rounded to nonexistent 103241243500726320 and raise a
+    # ValueError in our response construction.
+    sample_data.loc[2, "id"] = 103241243500726324
+    assignments = await _assign_test(sample_data)
+    assert len(assignments) == len(sample_data)
+    # These raise StopIteration if they don't exist
+    next(a for a in assignments if a.participant_id == "9007199254740993")
+    next(a for a in assignments if a.participant_id == "103241243500726324")
+    ids = {a.participant_id for a in assignments}
+    assert ids == set(sample_data["id"].astype(str))
 
 
 async def test_bulk_insert_renders_decimal_and_bool_strata_correctly(
