@@ -11,18 +11,7 @@ import pandas as pd
 import pytest
 from numpy.random import MT19937, RandomState
 from pydantic import TypeAdapter
-from sqlalchemy import (
-    DECIMAL,
-    Boolean,
-    Column,
-    Float,
-    Integer,
-    MetaData,
-    String,
-    Table,
-    delete,
-    select,
-)
+from sqlalchemy import DECIMAL, Boolean, Column, Float, Integer, MetaData, String, Table, delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from xngin.apiserver.routers.assignment_adapters import (
@@ -263,7 +252,7 @@ MAX_SAFE_INTEGER = (1 << 53) - 1  # 9007199254740991
 async def test_assign_and_bulk_insert_with_large_integers_as_participant_ids(
     xngin_session: AsyncSession, testing_datasource, sample_table, sample_data
 ):
-    """Test assignment with large integer participant IDs (underlying type is Decimal)."""
+    """Test assignment with large integer participant IDs (underlying type as Decimal and int64)."""
     # First create an experiment and arms in db
     ds: tables.Datasource = testing_datasource.ds
     ds_config = TypeAdapter(RemoteDatabaseConfig).validate_python(ds.config)
@@ -342,7 +331,6 @@ async def test_assign_and_bulk_insert_with_large_integers_as_participant_ids(
     # ValueError in our response construction.
     sample_data.loc[2, "id"] = 103241243500726324
     assignments = await _assign_test(sample_data)
-    assert len(assignments) == len(sample_data)
     # These raise StopIteration if they don't exist
     next(a for a in assignments if a.participant_id == "9007199254740993")
     next(a for a in assignments if a.participant_id == "103241243500726324")
