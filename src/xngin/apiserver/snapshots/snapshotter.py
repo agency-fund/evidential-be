@@ -105,7 +105,7 @@ async def process_pending_snapshots(snapshot_timeout: int):
             _ = await _handle_one_snapshot_safely(session, snapshot, snapshot_timeout)
 
 
-async def _handle_one_snapshot_safely(session, snapshot, snapshot_timeout):
+async def _handle_one_snapshot_safely(session: AsyncSession, snapshot: tables.Snapshot, snapshot_timeout: int):
     experiment = await snapshot.awaitable_attrs.experiment
     datasource = await experiment.awaitable_attrs.datasource
     logger.info(f"{experiment.id}.{snapshot.id}: processing")
