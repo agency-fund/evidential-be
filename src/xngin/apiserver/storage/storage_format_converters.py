@@ -299,7 +299,6 @@ class ExperimentStorageConverter:
             )
             experiment.arms = [
                 tables.Arm(
-                    id=arm.arm_id,
                     name=arm.arm_name,
                     description=arm.arm_description,
                     experiment_id=experiment.id,
@@ -315,7 +314,6 @@ class ExperimentStorageConverter:
             )
         if isinstance(design_spec, capi.BaseBanditExperimentSpec):
             experiment = tables.Experiment(
-                id=design_spec.experiment_id,
                 datasource_id=datasource_id,
                 experiment_type=experiment_type,
                 participant_type=design_spec.participant_type,
@@ -333,7 +331,6 @@ class ExperimentStorageConverter:
             context_length = len(design_spec.contexts) if design_spec.contexts else 1
             experiment.arms = [
                 tables.Arm(
-                    id=arm.arm_id,
                     name=arm.arm_name,
                     description=arm.arm_description,
                     experiment_id=experiment.id,

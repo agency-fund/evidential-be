@@ -35,8 +35,6 @@ def make_experiment_table(
 
 
 def test_check_arm_draw_is_reproducible():
-    tables.Datasource()
-
     beta_binom_experiment = make_experiment_table(
         experiment_type=ExperimentsType.MAB_ONLINE, prior_type=PriorTypes.BETA, reward_type=LikelihoodTypes.BERNOULLI
     )

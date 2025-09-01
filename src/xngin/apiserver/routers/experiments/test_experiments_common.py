@@ -419,7 +419,7 @@ async def test_create_experiment_impl_for_online(
     assert response.state == ExperimentState.ASSIGNED
 
     # Verify design_spec
-    assert response.design_spec.experiment_id is not None
+    assert response.experiment_id is not None
     assert response.design_spec.arms[0].arm_id is not None
     assert response.design_spec.arms[1].arm_id is not None
     assert response.design_spec.experiment_name == request.design_spec.experiment_name
@@ -439,7 +439,7 @@ async def test_create_experiment_impl_for_online(
     assert all(arm_size.size == 0 for arm_size in response.assign_summary.arm_sizes)
 
     # Verify database state
-    experiment = await xngin_session.get(tables.Experiment, response.design_spec.experiment_id)
+    experiment = await xngin_session.get(tables.Experiment, response.experiment_id)
     assert experiment.experiment_type == ExperimentsType.FREQ_ONLINE
     assert experiment.participant_type == request.design_spec.participant_type
     assert experiment.name == request.design_spec.experiment_name
@@ -493,7 +493,7 @@ async def test_create_experiment_impl_for_mab_online(xngin_session, testing_data
     assert response.state == ExperimentState.ASSIGNED
 
     # Verify design_spec
-    assert response.design_spec.experiment_id is not None
+    assert response.experiment_id is not None
     assert response.design_spec.arms[0].arm_id is not None
     assert response.design_spec.arms[1].arm_id is not None
     assert response.design_spec.experiment_name == request.design_spec.experiment_name
@@ -504,7 +504,7 @@ async def test_create_experiment_impl_for_mab_online(xngin_session, testing_data
     assert response.assign_summary is None
 
     # Verify database state
-    experiment = await xngin_session.get(tables.Experiment, response.design_spec.experiment_id)
+    experiment = await xngin_session.get(tables.Experiment, response.experiment_id)
     assert experiment.experiment_type == ExperimentsType.MAB_ONLINE
     assert experiment.participant_type == request.design_spec.participant_type
     assert experiment.name == request.design_spec.experiment_name

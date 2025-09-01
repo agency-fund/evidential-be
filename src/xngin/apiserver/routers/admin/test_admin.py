@@ -1063,8 +1063,9 @@ async def test_lifecycle_with_db(testing_datasource, ppost, pget, pdelete, udele
     )
     assert response.status_code == 200, response.content
     created_experiment = CreateExperimentResponse.model_validate(response.json())
-    parsed_experiment_id = created_experiment.design_spec.experiment_id
+    parsed_experiment_id = created_experiment.experiment_id
     assert parsed_experiment_id is not None
+    assert created_experiment.design_spec.experiment_id == parsed_experiment_id  # TODO: deprecated
     assert created_experiment.stopped_assignments_at is not None
     assert created_experiment.stopped_assignments_reason == StopAssignmentReason.PREASSIGNED
     parsed_arm_ids = {arm.arm_id for arm in created_experiment.design_spec.arms}
@@ -1075,7 +1076,8 @@ async def test_lifecycle_with_db(testing_datasource, ppost, pget, pdelete, udele
 
     assert response.status_code == 200, response.content
     create_experiment_response = CreateExperimentResponse.model_validate(response.json())
-    assert create_experiment_response.design_spec.experiment_id == parsed_experiment_id
+    assert create_experiment_response.experiment_id == parsed_experiment_id
+    assert create_experiment_response.design_spec.experiment_id == parsed_experiment_id  # TODO: deprecated
 
     # List org experiments.
     response = pget(f"/v1/m/organizations/{testing_datasource.org.id}/experiments")
@@ -1083,7 +1085,7 @@ async def test_lifecycle_with_db(testing_datasource, ppost, pget, pdelete, udele
     experiment_list = ListExperimentsResponse.model_validate(response.json())
     assert len(experiment_list.items) == 1, experiment_list
     experiment_config_0 = experiment_list.items[0]
-    assert experiment_config_0.design_spec.experiment_id == parsed_experiment_id
+    assert experiment_config_0.experiment_id == parsed_experiment_id
 
     # Analyze experiment
     response = pget(f"/v1/m/datasources/{testing_datasource.ds.id}/experiments/{parsed_experiment_id}/analyze")
@@ -1137,7 +1139,7 @@ async def test_create_preassigned_experiment_using_inline_schema_ds(
     )
     assert response.status_code == 200, response.content
     created_experiment = CreateExperimentResponse.model_validate(response.json())
-    parsed_experiment_id = created_experiment.design_spec.experiment_id
+    parsed_experiment_id = created_experiment.experiment_id
     assert parsed_experiment_id is not None
     parsed_arm_ids = {arm.arm_id for arm in created_experiment.design_spec.arms}
     assert len(parsed_arm_ids) == 2
@@ -1145,7 +1147,7 @@ async def test_create_preassigned_experiment_using_inline_schema_ds(
     # Verify basic response
     assert created_experiment.stopped_assignments_at is not None
     assert created_experiment.stopped_assignments_reason == StopAssignmentReason.PREASSIGNED
-    assert created_experiment.design_spec.experiment_id is not None
+    assert created_experiment.design_spec.experiment_id == parsed_experiment_id  # TODO: deprecated
     assert created_experiment.design_spec.arms[0].arm_id is not None
     assert created_experiment.design_spec.arms[1].arm_id is not None
     assert created_experiment.state == ExperimentState.ASSIGNED
@@ -1164,7 +1166,7 @@ async def test_create_preassigned_experiment_using_inline_schema_ds(
     actual_design_spec.arms[1].arm_id = None
     assert actual_design_spec == request_obj.design_spec
 
-    experiment_id = created_experiment.design_spec.experiment_id
+    experiment_id = created_experiment.experiment_id
     (arm1_id, arm2_id) = [arm.arm_id for arm in created_experiment.design_spec.arms]
 
     # Verify database state using the ids in the returned DesignSpec.
@@ -1212,7 +1214,7 @@ def test_create_online_experiment_using_inline_schema_ds(testing_datasource_with
     )
     assert response.status_code == 200, response.content
     created_experiment = CreateExperimentResponse.model_validate(response.json())
-    parsed_experiment_id = created_experiment.design_spec.experiment_id
+    parsed_experiment_id = created_experiment.experiment_id
     assert parsed_experiment_id is not None
     parsed_arm_ids = {arm.arm_id for arm in created_experiment.design_spec.arms}
     assert len(parsed_arm_ids) == 2
@@ -1220,7 +1222,7 @@ def test_create_online_experiment_using_inline_schema_ds(testing_datasource_with
     # Verify basic response
     assert created_experiment.stopped_assignments_at is None
     assert created_experiment.stopped_assignments_reason is None
-    assert created_experiment.design_spec.experiment_id is not None
+    assert created_experiment.design_spec.experiment_id == parsed_experiment_id  # TODO: deprecated
     assert created_experiment.design_spec.arms[0].arm_id is not None
     assert created_experiment.design_spec.arms[1].arm_id is not None
     assert created_experiment.state == ExperimentState.ASSIGNED
@@ -1264,7 +1266,7 @@ def test_create_online_mab_experiment_using_inline_schema_ds(
     )
     assert response.status_code == 200, response.content
     created_experiment = CreateExperimentResponse.model_validate(response.json())
-    parsed_experiment_id = created_experiment.design_spec.experiment_id
+    parsed_experiment_id = created_experiment.experiment_id
     assert parsed_experiment_id is not None
     parsed_arm_ids = {arm.arm_id for arm in created_experiment.design_spec.arms}
     assert len(parsed_arm_ids) == 2
@@ -1273,7 +1275,6 @@ def test_create_online_mab_experiment_using_inline_schema_ds(
     assert isinstance(created_experiment.design_spec, MABExperimentSpec)
     assert created_experiment.stopped_assignments_at is None
     assert created_experiment.stopped_assignments_reason is None
-    assert created_experiment.design_spec.experiment_id is not None
     assert created_experiment.state == ExperimentState.ASSIGNED
     assert created_experiment.assign_summary is None
     assert created_experiment.power_analyses is None
@@ -1294,6 +1295,12 @@ def test_create_online_mab_experiment_using_inline_schema_ds(
     actual_design_spec.experiment_id = None
     for arm in actual_design_spec.arms:
         arm.arm_id = None
+        # Verify the arm parameters were initialized correctly
+        assert arm.alpha == arm.alpha_init
+        assert arm.beta == arm.beta_init
+        assert arm.mu is None if arm.mu_init is None else [arm.mu_init]
+        assert arm.covariance is None if arm.sigma_init is None else [[arm.sigma_init]]
+        # Then scrub for comparing the remainder of the spec
         arm.alpha = None
         arm.beta = None
         arm.mu = None
