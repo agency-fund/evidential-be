@@ -70,6 +70,7 @@ from xngin.apiserver.routers.admin.admin_api_types import (
     CreateSnapshotResponse,
     DatasourceSummary,
     EventSummary,
+    ExperimentPathParams,
     GetDatasourceResponse,
     GetOrganizationResponse,
     GetSnapshotResponse,
@@ -86,6 +87,7 @@ from xngin.apiserver.routers.admin.admin_api_types import (
     OrganizationSummary,
     PostgresDsn,
     RedshiftDsn,
+    SnapshotPathParams,
     SnapshotStatus,
     UpdateDatasourceRequest,
     UpdateOrganizationRequest,
@@ -327,22 +329,6 @@ async def validate_webhooks(
                 detail=f"Invalid webhook IDs: {sorted(missing_webhook_ids)}",
             )
     return validated_webhooks
-
-
-class OrganizationPathParams(BaseModel):
-    organization_id: Annotated[str, Path()]
-
-
-class DatasourcePathParams(OrganizationPathParams):
-    datasource_id: Annotated[str, Path()]
-
-
-class ExperimentPathParams(DatasourcePathParams):
-    experiment_id: Annotated[str, Path()]
-
-
-class SnapshotPathParams(ExperimentPathParams):
-    snapshot_id: Annotated[str, Path()]
 
 
 @router.get("/caller-identity")

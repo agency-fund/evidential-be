@@ -4,6 +4,7 @@ from typing import Annotated, Literal
 from urllib.parse import urlparse
 
 from annotated_types import Ge, Le
+from fastapi import Path
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from xngin.apiserver.common_field_types import FieldName
@@ -451,3 +452,27 @@ class CreateApiKeyResponse(AdminApiBaseModel):
 class CreateUserRequest(AdminApiBaseModel):
     email: Annotated[str, Field(max_length=MAX_LENGTH_OF_EMAIL_VALUE)]
     organization_id: Annotated[str, Field(max_length=MAX_LENGTH_OF_ID_VALUE)]
+
+
+class OrganizationPathParams(BaseModel):
+    """Describes the path parameters when naming an organization."""
+
+    organization_id: Annotated[str, Path()]
+
+
+class DatasourcePathParams(OrganizationPathParams):
+    """Describes the path parameters when naming a datasource."""
+
+    datasource_id: Annotated[str, Path()]
+
+
+class ExperimentPathParams(DatasourcePathParams):
+    """Describes the path parameters when naming an experiment."""
+
+    experiment_id: Annotated[str, Path()]
+
+
+class SnapshotPathParams(ExperimentPathParams):
+    """Describes the path parameters when naming a snapshot."""
+
+    snapshot_id: Annotated[str, Path()]
