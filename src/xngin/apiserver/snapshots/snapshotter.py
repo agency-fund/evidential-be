@@ -113,12 +113,8 @@ async def _handle_one_snapshot_safely(session: AsyncSession, snapshot: tables.Sn
         async with asyncio.timeout(snapshot_timeout):
             snapshot.data = await _query_dwh_for_snapshot_data(session, datasource, experiment)
             snapshot.status = "success"
-    except TimeoutError:
-        logger.info(f"{experiment.id}.{snapshot.id}: timeout")
-        snapshot.status = "failed"
-        snapshot.message = "TimeoutError"
     except Exception as exc:
-        logger.opt(exception=exc).info(f"{experiment.id}.{snapshot.id}: unhandled exception")
+        logger.opt(exception=exc).info(f"{experiment.id}.{snapshot.id}")
         snapshot.status = "failed"
         snapshot.message = f"{type(exc).__name__}: {exc}"
     logger.info(f"{experiment.id}.{snapshot.id}: done")
