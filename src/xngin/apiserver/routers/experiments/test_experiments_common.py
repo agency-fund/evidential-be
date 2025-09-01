@@ -19,11 +19,14 @@ from xngin.apiserver.routers.common_api_types import (
     DesignSpec,
     DesignSpecMetric,
     ExperimentsType,
+    LikelihoodTypes,
+    MABExperimentSpec,
     MetricPowerAnalysis,
     MetricType,
     OnlineFrequentistExperimentSpec,
     PowerResponse,
     PreassignedFrequentistExperimentSpec,
+    PriorTypes,
     Stratum,
 )
 from xngin.apiserver.routers.common_enums import ExperimentState, StopAssignmentReason
@@ -32,13 +35,15 @@ from xngin.apiserver.routers.experiments.experiments_common import (
     abandon_experiment_impl,
     commit_experiment_impl,
     create_assignment_for_participant,
-    create_dwh_experiment_impl,
+    create_bandit_online_experiment_impl,
+    create_experiment_impl,
     create_preassigned_experiment_impl,
     experiment_assignments_to_csv_generator,
     get_assign_summary,
     get_existing_assignment_for_participant,
     get_experiment_assignments_impl,
     list_organization_or_datasource_experiments_impl,
+    update_bandit_arm_with_outcome_impl,
 )
 from xngin.apiserver.sqla import tables
 from xngin.apiserver.storage.storage_format_converters import ExperimentStorageConverter
@@ -49,6 +54,8 @@ def make_createexperimentrequest_json(
     participant_type: str = "test_participant_type",
     experiment_type: str = "freq_preassigned",
     with_ids: bool = False,
+    prior_type: PriorTypes = PriorTypes.NORMAL,
+    reward_type: LikelihoodTypes = LikelihoodTypes.NORMAL,
 ):
     """Make a basic CreateExperimentRequest JSON object.
 
@@ -58,42 +65,83 @@ def make_createexperimentrequest_json(
     arm1_id = tables.arm_id_factory() if with_ids else None
     arm2_id = tables.arm_id_factory() if with_ids else None
 
-    return {
-        "design_spec": {
-            **({"experiment_id": experiment_id} if experiment_id is not None else {}),
-            "participant_type": participant_type,
-            "experiment_name": "test",
-            "description": "test",
-            "experiment_type": experiment_type,
-            # Attach UTC tz, but use dates_equal() to compare to respect db storage support
-            "start_date": "2024-01-01T00:00:00+00:00",
-            # default our experiment to end in the future
-            "end_date": (datetime.now(UTC) + timedelta(days=1)).isoformat(),
-            "arms": [
-                {
-                    **({"arm_id": arm1_id} if arm1_id is not None else {}),
-                    "arm_name": "control",
-                    "arm_description": "control",
-                },
-                {
-                    **({"arm_id": arm2_id} if arm2_id is not None else {}),
-                    "arm_name": "treatment",
-                    "arm_description": "treatment",
-                },
-            ],
-            "filters": [],
-            "strata": [{"field_name": "gender"}],
-            "metrics": [
-                {
-                    "field_name": "is_onboarded",
-                    "metric_pct_change": 0.1,
+    experiment_type = ExperimentsType(experiment_type)
+    match experiment_type:
+        case ExperimentsType.FREQ_PREASSIGNED | ExperimentsType.FREQ_ONLINE:
+            return {
+                "design_spec": {
+                    **({"experiment_id": experiment_id} if experiment_id is not None else {}),
+                    "participant_type": participant_type,
+                    "experiment_name": "test",
+                    "description": "test",
+                    "experiment_type": experiment_type,
+                    # Attach UTC tz, but use dates_equal() to compare to respect db storage support
+                    "start_date": "2024-01-01T00:00:00+00:00",
+                    # default our experiment to end in the future
+                    "end_date": (datetime.now(UTC) + timedelta(days=1)).isoformat(),
+                    "arms": [
+                        {
+                            **({"arm_id": arm1_id} if arm1_id is not None else {}),
+                            "arm_name": "control",
+                            "arm_description": "control",
+                        },
+                        {
+                            **({"arm_id": arm2_id} if arm2_id is not None else {}),
+                            "arm_name": "treatment",
+                            "arm_description": "treatment",
+                        },
+                    ],
+                    "filters": [],
+                    "strata": [{"field_name": "gender"}],
+                    "metrics": [
+                        {
+                            "field_name": "is_onboarded",
+                            "metric_pct_change": 0.1,
+                        }
+                    ],
+                    "power": 0.8,
+                    "alpha": 0.05,
+                    "fstat_thresh": 0.2,
                 }
-            ],
-            "power": 0.8,
-            "alpha": 0.05,
-            "fstat_thresh": 0.2,
-        }
-    }
+            }
+        case ExperimentsType.MAB_ONLINE:
+            return {
+                "design_spec": {
+                    **({"experiment_id": experiment_id} if experiment_id is not None else {}),
+                    "participant_type": "string",
+                    "experiment_name": "test",
+                    "description": "test",
+                    # Attach UTC tz, but use dates_equal() to compare to respect db storage support
+                    "start_date": "2024-01-01T00:00:00+00:00",
+                    # default our experiment to end in the future
+                    "end_date": (datetime.now(UTC) + timedelta(days=1)).isoformat(),
+                    "experiment_type": "mab_online",
+                    "prior_type": prior_type,
+                    "reward_type": reward_type,
+                    "arms": [
+                        {
+                            **({"arm_id": arm1_id} if arm1_id is not None else {}),
+                            "arm_name": "string",
+                            "arm_description": "string",
+                            "alpha_init": 50.0 if prior_type == PriorTypes.BETA else None,
+                            "beta_init": 1.0 if prior_type == PriorTypes.BETA else None,
+                            "mu_init": 10.0 if prior_type == PriorTypes.NORMAL else None,
+                            "sigma_init": 1.0 if prior_type == PriorTypes.NORMAL else None,
+                        },
+                        {
+                            **({"arm_id": arm2_id} if arm2_id is not None else {}),
+                            "arm_name": "string",
+                            "arm_description": "string",
+                            "alpha_init": 1.0 if prior_type == PriorTypes.BETA else None,
+                            "beta_init": 50.0 if prior_type == PriorTypes.BETA else None,
+                            "mu_init": -10.0 if prior_type == PriorTypes.NORMAL else None,
+                            "sigma_init": 1.0 if prior_type == PriorTypes.NORMAL else None,
+                        },
+                    ],
+                }
+            }
+        case _:
+            raise ValueError(f"Invalid experiment type: {experiment_type}")
 
 
 def make_create_preassigned_experiment_request(
@@ -110,23 +158,39 @@ def make_create_online_experiment_request(
     return TypeAdapter(CreateExperimentRequest).validate_python(request)
 
 
+def make_create_online_mab_experiment_request(
+    with_ids: bool = False,
+    reward_type: LikelihoodTypes = LikelihoodTypes.NORMAL,
+    prior_type: PriorTypes = PriorTypes.NORMAL,
+) -> CreateExperimentRequest:
+    request = make_createexperimentrequest_json(
+        with_ids=with_ids, experiment_type=ExperimentsType.MAB_ONLINE, prior_type=prior_type, reward_type=reward_type
+    )
+    return TypeAdapter(CreateExperimentRequest).validate_python(request)
+
+
 def make_insertable_experiment(
     datasource: tables.Datasource,
     state: ExperimentState = ExperimentState.COMMITTED,
     experiment_type: ExperimentsType = ExperimentsType.FREQ_PREASSIGNED,
     with_ids: bool = True,
+    prior_type: PriorTypes = PriorTypes.NORMAL,
+    reward_type: LikelihoodTypes = LikelihoodTypes.NORMAL,
 ) -> tuple[tables.Experiment, DesignSpec]:
     """Make a minimal experiment with arms ready for insertion into the database for tests.
 
     This does not add any power analyses or balance checks.
     """
-    request = make_createexperimentrequest_json(experiment_type=experiment_type, with_ids=with_ids)
+    request = make_createexperimentrequest_json(
+        experiment_type=experiment_type, with_ids=with_ids, prior_type=prior_type, reward_type=reward_type
+    )
     design_spec: DesignSpec = TypeAdapter(DesignSpec).validate_python(request["design_spec"])
     stopped_assignments_at: datetime | None = None
     stopped_assignments_reason: StopAssignmentReason | None = None
     if experiment_type == ExperimentsType.FREQ_PREASSIGNED:
         stopped_assignments_at = datetime.now(UTC)
         stopped_assignments_reason = StopAssignmentReason.PREASSIGNED
+
     experiment_converter = ExperimentStorageConverter.init_from_components(
         datasource_id=datasource.id,
         organization_id=datasource.organization_id,
@@ -146,12 +210,20 @@ async def insert_experiment_and_arms(
     experiment_type: ExperimentsType = ExperimentsType.FREQ_PREASSIGNED,
     state=ExperimentState.COMMITTED,
     end_date: datetime | None = None,
+    prior_type: PriorTypes = PriorTypes.NORMAL,
+    reward_type: LikelihoodTypes = LikelihoodTypes.NORMAL,
 ):
     """Creates an experiment and arms and commits them to the database.
 
     Returns the new ORM experiment object.
     """
-    experiment, _ = make_insertable_experiment(datasource=datasource, state=state, experiment_type=experiment_type)
+    experiment, _ = make_insertable_experiment(
+        datasource=datasource,
+        state=state,
+        experiment_type=experiment_type,
+        prior_type=prior_type,
+        reward_type=reward_type,
+    )
     # Override the end date if provided.
     if end_date is not None:
         experiment.end_date = end_date
@@ -350,7 +422,7 @@ async def test_create_experiment_impl_for_online(
     """Test implementation of creating an online experiment."""
     request = make_create_online_experiment_request()
 
-    response = await create_dwh_experiment_impl(
+    response = await create_experiment_impl(
         request=request.model_copy(deep=True),
         datasource=testing_datasource.ds,
         random_state=42,
@@ -421,6 +493,72 @@ async def test_create_experiment_impl_for_online(
     assert len(assignments) == 0
 
 
+async def test_create_experiment_impl_for_mab_online(xngin_session, testing_datasource):
+    """Test implementation of creating an online experiment."""
+    request = make_create_online_mab_experiment_request(with_ids=True)
+
+    response = await create_bandit_online_experiment_impl(
+        request=request.model_copy(deep=True),
+        chosen_n=None,
+        xngin_session=xngin_session,
+        organization_id=testing_datasource.org.id,
+        datasource_id=testing_datasource.ds.id,
+        validated_webhooks=[],
+    )
+    # Verify response
+    assert response.datasource_id == testing_datasource.ds.id
+    assert response.state == ExperimentState.ASSIGNED
+
+    # Verify design_spec
+    assert response.design_spec.experiment_id is not None
+    assert response.design_spec.arms[0].arm_id is not None
+    assert response.design_spec.arms[1].arm_id is not None
+    assert response.design_spec.experiment_name == request.design_spec.experiment_name
+    assert response.design_spec.description == request.design_spec.description
+    assert response.design_spec.start_date == request.design_spec.start_date
+    assert response.design_spec.end_date == request.design_spec.end_date
+    assert isinstance(response.design_spec, MABExperimentSpec)
+    assert response.assign_summary is None
+
+    # Verify database state
+    experiment = await xngin_session.get(tables.Experiment, response.design_spec.experiment_id)
+    assert experiment.experiment_type == ExperimentsType.MAB_ONLINE
+    assert experiment.participant_type == request.design_spec.participant_type
+    assert experiment.name == request.design_spec.experiment_name
+    assert experiment.description == request.design_spec.description
+    # Online experiments still go through a review step before being committed
+    assert experiment.state == ExperimentState.ASSIGNED
+    assert experiment.datasource_id == testing_datasource.ds.id
+    assert_dates_equal(experiment.start_date, request.design_spec.start_date)
+    assert_dates_equal(experiment.end_date, request.design_spec.end_date)
+
+    # Verify design_spec was stored correctly
+    converter = ExperimentStorageConverter(experiment)
+    converted_design_spec = converter.get_design_spec()
+    assert converted_design_spec == response.design_spec
+    assert isinstance(converted_design_spec, MABExperimentSpec)
+    for arms in converted_design_spec.arms:
+        if response.design_spec.prior_type == PriorTypes.NORMAL:
+            assert arms.mu is not None
+            assert arms.covariance is not None
+        elif response.design_spec.prior_type == PriorTypes.BETA:
+            assert arms.alpha is not None
+            assert arms.beta is not None
+
+    # Verify arms were created in database
+    arms = (await xngin_session.scalars(select(tables.Arm).where(tables.Arm.experiment_id == experiment.id))).all()
+    assert len(arms) == 2
+    arm_ids = {arm.id for arm in arms}
+    expected_arm_ids = {arm.arm_id for arm in response.design_spec.arms}
+    assert arm_ids == expected_arm_ids
+
+    # Verify that no assignments were created for online experiment
+    assignments = (
+        await xngin_session.scalars(select(tables.Draw).where(tables.Draw.experiment_id == experiment.id))
+    ).all()
+    assert len(assignments) == 0
+
+
 async def test_create_experiment_impl_overwrites_uuids(
     xngin_session, testing_datasource, sample_table, use_deterministic_random
 ):
@@ -433,7 +571,7 @@ async def test_create_experiment_impl_overwrites_uuids(
     original_experiment_id = request.design_spec.experiment_id
     original_arm_ids = [arm.arm_id for arm in request.design_spec.arms]
 
-    response = await create_dwh_experiment_impl(
+    response = await create_experiment_impl(
         request=request,
         datasource=testing_datasource.ds,
         random_state=42,
@@ -474,7 +612,7 @@ async def test_create_experiment_impl_no_metric_stratification(
     request = make_create_preassigned_experiment_request()
 
     # Test with stratify_on_metrics=False
-    response = await create_dwh_experiment_impl(
+    response = await create_experiment_impl(
         request=request.model_copy(deep=True),
         datasource=testing_datasource.ds,
         random_state=42,
@@ -751,6 +889,64 @@ async def test_get_experiment_assignments_impl(xngin_session, testing_datasource
     assert assignments[1].created_at is not None
 
 
+async def test_get_experiment_mab_assignments_impl(xngin_session, testing_datasource):
+    # First insert an experiment with assignments
+    experiment = await insert_experiment_and_arms(
+        xngin_session, testing_datasource.ds, experiment_type=ExperimentsType.MAB_ONLINE
+    )
+    await xngin_session.commit()
+
+    experiment_id = experiment.id
+    arm1_id = experiment.arms[0].id
+    arm2_id = experiment.arms[1].id
+    arm_assignments = [
+        tables.Draw(
+            experiment_id=experiment_id,
+            participant_type="test_participant_type",
+            participant_id="p1",
+            arm_id=arm1_id,
+            current_mu=experiment.arms[0].mu,
+            current_covariance=experiment.arms[0].covariance,
+        ),
+        tables.Draw(
+            experiment_id=experiment_id,
+            participant_type="test_participant_type",
+            participant_id="p2",
+            arm_id=arm2_id,
+            current_mu=experiment.arms[1].mu,
+            current_covariance=experiment.arms[1].covariance,
+        ),
+    ]
+    xngin_session.add_all(arm_assignments)
+    await xngin_session.commit()
+    await xngin_session.refresh(experiment, ["arms", "draws"])
+
+    data = get_experiment_assignments_impl(experiment)
+
+    # Check the response structure
+    assert data.experiment_id == experiment.id
+
+    # Check assignments
+    assignments = data.assignments
+    assert len(assignments) == 2
+
+    # Verify first assignment
+    assert assignments[0].participant_id == "p1"
+    assert str(assignments[0].arm_id) == arm1_id
+    assert assignments[0].arm_name == "string"
+
+    # Verify second assignment
+    assert assignments[1].participant_id == "p2"
+    assert str(assignments[1].arm_id) == arm2_id
+    assert assignments[1].arm_name == "string"
+
+    for assignment in assignments:
+        assert assignment.outcome is None
+        assert assignment.context_values is None
+        assert assignment.observed_at is None
+        assert assignment.created_at is not None
+
+
 async def make_experiment_with_assignments(xngin_session, datasource: tables.Datasource):
     """Helper test function that commits a new preassigned experiment with assignments."""
     experiment = await insert_experiment_and_arms(xngin_session, datasource)
@@ -857,22 +1053,46 @@ async def test_create_assignment_for_participant(xngin_session, testing_datasour
     expect_none = await create_assignment_for_participant(xngin_session, preassigned_experiment, "new_id", None)
     assert expect_none is None
 
-    online_experiment = await insert_experiment_and_arms(
+    # Test create assignment for online frequentist and MAB experiments
+    freq_online_experiment = await insert_experiment_and_arms(
         xngin_session,
         testing_datasource.ds,
         experiment_type=ExperimentsType.FREQ_ONLINE,
     )
+    assignment_freq_online = await create_assignment_for_participant(xngin_session, freq_online_experiment, "new_id")
+
+    mab_experiment = await insert_experiment_and_arms(
+        xngin_session,
+        testing_datasource.ds,
+        experiment_type=ExperimentsType.MAB_ONLINE,
+    )
+    mab_assignment = await create_assignment_for_participant(xngin_session, mab_experiment, "new_id")
+
+    # For frequentist experiments
     # Assert that we do create new assignments for online experiments
-    assignment = await create_assignment_for_participant(xngin_session, online_experiment, "new_id", None)
-    assert assignment is not None
-    assert assignment.participant_id == "new_id"
-    online_arm_map = {arm.id: arm.name for arm in online_experiment.arms}
-    assert assignment.arm_name == online_arm_map[str(assignment.arm_id)]
-    assert not assignment.strata
+    assert assignment_freq_online is not None
+    assert assignment_freq_online.participant_id == "new_id"
+    freq_online_arm_map = {arm.id: arm.name for arm in freq_online_experiment.arms}
+    assert assignment_freq_online.arm_name == freq_online_arm_map[str(assignment_freq_online.arm_id)]
+    assert not assignment_freq_online.strata
 
     # But that if we try to create an assignment for a participant that already has one, it triggers an error.
     with pytest.raises(ExperimentsAssignmentError, match="Failed to assign participant"):
-        await create_assignment_for_participant(xngin_session, online_experiment, "new_id", None)
+        await create_assignment_for_participant(xngin_session, freq_online_experiment, "new_id")
+
+    # For MAB experiments
+    # Assert that we do create new assignments for online MAB experiments
+    assert mab_assignment is not None
+    assert mab_assignment.participant_id == "new_id"
+    mab_arms = await mab_experiment.awaitable_attrs.arms
+    mab_arm_map = {arm.id: arm.name for arm in mab_arms}
+    assert mab_assignment.arm_name == mab_arm_map[str(mab_assignment.arm_id)]
+    assert not mab_assignment.context_values
+    assert mab_assignment.created_at is not None
+
+    # But that if we try to create an assignment for a participant that already has one, it triggers an error.
+    with pytest.raises(ExperimentsAssignmentError, match="Failed to assign participant"):
+        await create_assignment_for_participant(xngin_session, mab_experiment, "new_id")
 
 
 @pytest.mark.parametrize(
@@ -880,6 +1100,7 @@ async def test_create_assignment_for_participant(xngin_session, testing_datasour
     [
         (ExperimentsType.FREQ_PREASSIGNED, StopAssignmentReason.PREASSIGNED),
         (ExperimentsType.FREQ_ONLINE, StopAssignmentReason.END_DATE),
+        (ExperimentsType.MAB_ONLINE, StopAssignmentReason.END_DATE),
     ],
 )
 async def test_create_assignment_for_participant_stopped_reason(
@@ -901,6 +1122,61 @@ async def test_create_assignment_for_participant_stopped_reason(
         assert datetime.now(UTC) - experiment.stopped_assignments_at < timedelta(seconds=1)
     else:
         assert experiment.stopped_assignments_at is None
+
+
+@pytest.mark.parametrize(
+    "prior_type,reward_type",
+    [
+        (PriorTypes.NORMAL, LikelihoodTypes.NORMAL),
+        (PriorTypes.BETA, LikelihoodTypes.BERNOULLI),
+        (PriorTypes.NORMAL, LikelihoodTypes.BERNOULLI),
+    ],
+)
+async def test_update_bandit_arm_with_outcome(xngin_session, testing_datasource, prior_type, reward_type):
+    mab_experiment = await insert_experiment_and_arms(
+        xngin_session,
+        testing_datasource.ds,
+        experiment_type=ExperimentsType.MAB_ONLINE,
+        prior_type=prior_type,
+        reward_type=reward_type,
+    )
+    await create_assignment_for_participant(xngin_session, mab_experiment, "test_id")
+
+    updated_arm = await update_bandit_arm_with_outcome_impl(
+        xngin_session=xngin_session, experiment=mab_experiment, participant_id="test_id", outcome=1.0
+    )
+
+    # Refresh experiment; retrieve draws
+    await xngin_session.refresh(mab_experiment)
+    draws = await updated_arm.awaitable_attrs.draws
+    draw = draws[0]
+
+    # Assert that the draw was updated correctly
+    assert len(draws) == 1
+    assert draw.outcome == 1.0
+    assert draw.observed_at is not None
+    await mab_experiment.awaitable_attrs.arms
+    mab_arm_map = {arm.id: arm for arm in mab_experiment.arms}
+    assert draw.current_mu == mab_arm_map[updated_arm.id].mu
+    assert draw.current_covariance == mab_arm_map[updated_arm.id].covariance
+    assert draw.current_alpha == mab_arm_map[updated_arm.id].alpha
+    assert draw.current_beta == mab_arm_map[updated_arm.id].beta
+
+    # Assert that we can't update the arm with an outcome for a participant that doesn't exist
+    with pytest.raises(
+        ExperimentsAssignmentError,
+        match="Participant {participant_id} does not have an assignment for which to record an outcome.".format(
+            participant_id="some_other_id"
+        ),
+    ):
+        await update_bandit_arm_with_outcome_impl(xngin_session, mab_experiment, "some_other_id", 1.0)
+
+    # Assert that we can't update the arm with an outcome for a participant that already has an outcome
+    with pytest.raises(
+        ExperimentsAssignmentError,
+        match="Participant {participant_id} already has an outcome recorded.".format(participant_id="test_id"),
+    ):
+        await update_bandit_arm_with_outcome_impl(xngin_session, mab_experiment, "test_id", 1.0)
 
 
 def test_experiment_sql():

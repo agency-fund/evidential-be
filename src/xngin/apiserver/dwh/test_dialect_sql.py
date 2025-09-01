@@ -56,7 +56,7 @@ DATETIME_SCENARIOS = [
     DateTimeTestCase(
         sqlalchemy_bigquery.dialect(),
         "CREATE TABLE `dtt` ( `id` INT64 NOT NULL, `dt_col` DATETIME NOT NULL, `ts_col` TIMESTAMP NOT NULL)",
-        "SELECT `dtt`.`id`, `dtt`.`dt_col`, `dtt`.`ts_col` "
+        "SELECT `dtt`.`dt_col`, `dtt`.`id`, `dtt`.`ts_col` "
         "FROM `dtt` "
         "WHERE `dtt`.`ts_col` >= TIMESTAMP '2020-01-01 00:00:00' "
         "AND `dtt`.`dt_col` BETWEEN DATETIME '2023-06-01 12:34:56' AND DATETIME '2024-01-01 00:00:00' "
@@ -69,7 +69,7 @@ DATETIME_SCENARIOS = [
             "CREATE TABLE dtt ( id INTEGER NOT NULL, dt_col TIMESTAMP WITHOUT TIME ZONE NOT NULL, "
             "ts_col TIMESTAMP WITHOUT TIME ZONE NOT NULL, PRIMARY KEY (id))"
         ),
-        "SELECT dtt.id, dtt.dt_col, dtt.ts_col "
+        "SELECT dtt.dt_col, dtt.id, dtt.ts_col "
         "FROM dtt "
         "WHERE dtt.ts_col >= '2020-01-01 00:00:00' "
         "AND dtt.dt_col BETWEEN '2023-06-01 12:34:56' AND '2024-01-01 00:00:00' "
@@ -81,7 +81,7 @@ DATETIME_SCENARIOS = [
             "CREATE TABLE dtt ( id INTEGER NOT NULL, dt_col TIMESTAMP WITHOUT TIME ZONE NOT NULL, "
             "ts_col TIMESTAMP WITHOUT TIME ZONE NOT NULL, PRIMARY KEY (id))"
         ),
-        "SELECT dtt.id, dtt.dt_col, dtt.ts_col "
+        "SELECT dtt.dt_col, dtt.id, dtt.ts_col "
         "FROM dtt "
         "WHERE dtt.ts_col >= '2020-01-01 00:00:00' "
         "AND dtt.dt_col BETWEEN '2023-06-01 12:34:56' AND '2024-01-01 00:00:00' "
@@ -96,8 +96,8 @@ def test_datetimes(testcase: DateTimeTestCase):
     sa_table = Datetimes.get_table()
     q = compose_query(
         sa_table,
-        2,
-        create_query_filters(
+        select_columns=set(sa_table.c.keys()),
+        filters=create_query_filters(
             sa_table,
             [
                 Filter(
@@ -112,6 +112,7 @@ def test_datetimes(testcase: DateTimeTestCase):
                 ),
             ],
         ),
+        chosen_n=2,
     )
     ddl = str(CreateTable(sa_table).compile(dialect=testcase.dialect))
     normalized_ddl = re.sub(r"\s+", " ", ddl.replace("\n", "").strip())
@@ -591,8 +592,9 @@ def test_where(testcase: WhereTestCase):
             testcase.where[variant] = ""
 
     sa_table = WhereTable.get_table()
+    select_columns = set(sa_table.c.keys())
     filters = create_query_filters(sa_table, testcase.filters)
-    q = compose_query(sa_table, 3, filters)
+    q = compose_query(sa_table, select_columns=select_columns, filters=filters, chosen_n=3)
 
     failures = {}
     for dbtype in testcase.where:
