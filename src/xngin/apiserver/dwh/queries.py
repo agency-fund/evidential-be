@@ -5,7 +5,6 @@ from datetime import datetime, timedelta
 import sqlalchemy
 from sqlalchemy import (
     ColumnElement,
-    ColumnOperators,
     DateTime,
     Float,
     Integer,
@@ -232,7 +231,7 @@ def create_query_filters(sa_table: sqlalchemy.Table, filters: list[Filter]):
     return [create_one_filter(filter_, sa_table) for filter_ in filters]
 
 
-def create_special_experiment_id_filter(col: sqlalchemy.Column, filter_: Filter) -> ColumnOperators:
+def create_special_experiment_id_filter(col: sqlalchemy.Column, filter_: Filter) -> ColumnElement:
     matching_regex = make_csv_regex(filter_.value)
     match filter_.relation:
         case Relation.INCLUDES:
@@ -276,7 +275,7 @@ def general_excludes_filter(
     )
 
 
-def create_datetime_filter(col: sqlalchemy.Column, filter_: Filter) -> ColumnOperators:
+def create_datetime_filter(col: sqlalchemy.Column, filter_: Filter) -> ColumnElement:
     """Converts a single Filter for a DateTime-typed column into a sqlalchemy filter."""
 
     def str_to_datetime(s: int | float | str | datetime | None) -> datetime | None:
@@ -333,7 +332,7 @@ def create_datetime_filter(col: sqlalchemy.Column, filter_: Filter) -> ColumnOpe
             raise RuntimeError("Bug: invalid filter.")
 
 
-def create_filter(col: sqlalchemy.Column, filter_: Filter) -> ColumnOperators:
+def create_filter(col: sqlalchemy.Column, filter_: Filter) -> ColumnElement:
     """Converts a single Filter to a sqlalchemy filter."""
     match filter_.relation:
         case Relation.BETWEEN:
@@ -358,5 +357,16 @@ def create_filter(col: sqlalchemy.Column, filter_: Filter) -> ColumnOperators:
             raise RuntimeError("Bug: invalid Filter.")
 
 
-def compose_query(sa_table: Table, chosen_n: int, filters):
-    return select(sa_table).filter(*filters).order_by(custom_functions.Random(sa_table=sa_table)).limit(chosen_n)
+def compose_query(sa_table: Table, select_columns: set[str], filters: list[ColumnElement], chosen_n: int):
+    """Builds a query to fetch rows from a list of filters and a set of column names to select."""
+
+    if not select_columns:
+        raise ValueError("select_columns must have at least one item.")
+
+    columns = []
+    for col in sorted(select_columns):  # sort for stable generated sql
+        if col not in sa_table.c:
+            raise ValueError(f"Column {col} not found in schema.")
+        columns.append(sa_table.c[col])
+
+    return select(*columns).filter(*filters).order_by(custom_functions.Random(sa_table=sa_table)).limit(chosen_n)

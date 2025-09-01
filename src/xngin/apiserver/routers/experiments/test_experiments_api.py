@@ -5,7 +5,6 @@ from sqlalchemy import select
 
 from xngin.apiserver import constants
 from xngin.apiserver.routers.common_api_types import (
-    CreateExperimentResponse,
     ExperimentsType,
     GetParticipantAssignmentResponse,
     ListExperimentsResponse,
@@ -14,51 +13,9 @@ from xngin.apiserver.routers.common_api_types import (
 from xngin.apiserver.routers.common_enums import ExperimentState, StopAssignmentReason
 from xngin.apiserver.routers.experiments.test_experiments_common import (
     insert_experiment_and_arms,
-    make_create_preassigned_experiment_request,
 )
 from xngin.apiserver.sqla import tables
 from xngin.apiserver.storage.storage_format_converters import ExperimentStorageConverter
-
-
-def test_create_experiment_impl_invalid_design_spec(client_v1, testing_datasource):
-    """Test creating an experiment and saving assignments to the database."""
-    request = make_create_preassigned_experiment_request(with_ids=True)
-
-    response = client_v1.post(
-        "/experiments/with-assignment",
-        params={"chosen_n": 100},
-        headers={
-            constants.HEADER_CONFIG_ID: testing_datasource.ds.id,
-            constants.HEADER_API_KEY: testing_datasource.key,
-        },
-        content=request.model_dump_json(),
-    )
-    assert response.status_code == 422, response.content
-    assert "UUIDs must not be set" in response.json()["message"]
-
-
-async def test_create_experiment_with_assignment_sl(testing_datasource, use_deterministic_random, client_v1):
-    """Test creating an experiment and saving assignments to the database."""
-    request = make_create_preassigned_experiment_request()
-
-    response = client_v1.post(
-        "/experiments/with-assignment",
-        params={"chosen_n": 100},
-        headers={
-            constants.HEADER_CONFIG_ID: testing_datasource.ds.id,
-            constants.HEADER_API_KEY: testing_datasource.key,
-        },
-        content=request.model_dump_json(),
-    )
-
-    # Verify basic response
-    assert response.status_code == 200, request
-    experiment_config = CreateExperimentResponse.model_validate(response.json())
-    assert experiment_config.design_spec.experiment_id is not None
-    assert experiment_config.design_spec.arms[0].arm_id is not None
-    assert experiment_config.design_spec.arms[1].arm_id is not None
-    assert experiment_config.datasource_id == testing_datasource.ds.id
-    assert experiment_config.state == ExperimentState.ASSIGNED
 
 
 async def test_list_experiments_sl_without_api_key(xngin_session, testing_datasource, client_v1):
