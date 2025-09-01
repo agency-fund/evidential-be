@@ -1354,6 +1354,12 @@ def test_create_online_cmab_experiment_using_inline_schema_ds(
     actual_design_spec.experiment_id = None
     for arm in actual_design_spec.arms:
         arm.arm_id = None
+
+        assert arm.alpha == arm.alpha_init
+        assert arm.beta == arm.beta_init
+        assert arm.mu is None if arm.mu_init is None else [arm.mu_init]
+        assert arm.covariance is None if arm.sigma_init is None else [[arm.sigma_init]]
+
         arm.alpha = None
         arm.beta = None
         arm.mu = None
