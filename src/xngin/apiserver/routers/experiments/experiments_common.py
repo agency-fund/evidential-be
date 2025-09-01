@@ -614,12 +614,6 @@ async def get_existing_assignment_for_participant(
             observed_at=existing_assignment.observed_at if hasattr(existing_assignment, "observed_at") else None,
             outcome=existing_assignment.outcome if hasattr(existing_assignment, "outcome") else None,
             context_values=existing_assignment.context_vals if hasattr(existing_assignment, "context_vals") else None,
-            current_mu=existing_assignment.current_mu if hasattr(existing_assignment, "current_mu") else None,
-            current_covariance=existing_assignment.current_covariance
-            if hasattr(existing_assignment, "current_covariance")
-            else None,
-            current_alpha=existing_assignment.current_alpha if hasattr(existing_assignment, "current_alpha") else None,
-            current_beta=existing_assignment.current_beta if hasattr(existing_assignment, "current_beta") else None,
         )
     return None
 
@@ -715,8 +709,6 @@ async def create_assignment_for_participant(
                             participant_type=experiment.participant_type,
                             arm_id=chosen_arm_id,
                             context_vals=context_vals,
-                            current_alpha=chosen_arm.alpha,
-                            current_beta=chosen_arm.beta,
                         )
                         .returning(tables.Draw.created_at)
                     )
