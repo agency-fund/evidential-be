@@ -27,7 +27,7 @@ dependencies = [
     "sqlalchemy-bigquery>=1.12.0,<2",
     "sqlalchemy[asyncio]==2.0.41",
     "statsmodels>=0.14.1,<0.20",
-    "stochatreat>=0.0.20,<0.1.0",
+    "stochatreat>=0.1.0,<0.2.0",
     "tenacity>=9.1.2,<9.2.0",
     "typer>=0.15.4,<0.16.0",
     "uvicorn[standard]>=0.32.0",

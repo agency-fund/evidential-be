@@ -13,7 +13,6 @@ def make_experiment_table(
 ) -> tables.Experiment:
     request = make_createexperimentrequest_json(
         experiment_type=experiment_type,
-        with_ids=True,
         prior_type=prior_type,
         reward_type=reward_type,
     )
@@ -27,12 +26,15 @@ def make_experiment_table(
         stopped_assignments_at=None,
         stopped_assignments_reason=None,
     )
-    return experiment_converter.get_experiment()
+    fake_experiment = experiment_converter.get_experiment()
+    # Add fake ids to the arms
+    for i, arm in enumerate(fake_experiment.arms):
+        arm.id = f"arm_{i}"
+
+    return fake_experiment
 
 
 def test_check_arm_draw_is_reproducible():
-    tables.Datasource()
-
     beta_binom_experiment = make_experiment_table(
         experiment_type=ExperimentsType.MAB_ONLINE, prior_type=PriorTypes.BETA, reward_type=LikelihoodTypes.BERNOULLI
     )
