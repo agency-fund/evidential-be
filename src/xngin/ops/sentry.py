@@ -15,7 +15,7 @@ def setup():
     sentry_dsn = os.environ.get("SENTRY_DSN")
     if not sentry_dsn:
         return
-    logger.info("Setting up Sentry: %s", sentry_dsn)
+    logger.info("Setting up Sentry: {sentry_dsn}", sentry_dsn=sentry_dsn)
 
     import sentry_sdk  # noqa: PLC0415
     from sentry_sdk import scrubber  # noqa: PLC0415
