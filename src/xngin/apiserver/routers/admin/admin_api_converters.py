@@ -1,7 +1,9 @@
 import base64
+from typing import assert_never
 
 from xngin.apiserver import settings
 from xngin.apiserver.routers.admin import admin_api_types as aapi
+from xngin.apiserver.sqla import tables
 
 CREDENTIALS_UNAVAILABLE_MESSAGE = (
     "Credentials may only be omitted from datasource updates when the existing configuration uses the same "
@@ -107,3 +109,36 @@ def settings_dwh_to_api_dsn(dwh: settings.Dwh) -> aapi.Dsn:
             )
         case _:
             raise TypeError(dwh)
+
+
+def convert_snapshot_to_api_snapshot(snapshot: tables.Snapshot) -> aapi.Snapshot:
+    status: aapi.SnapshotStatus
+    match snapshot.status:
+        case "pending":
+            status = aapi.SnapshotStatus.RUNNING
+        case "success":
+            status = aapi.SnapshotStatus.SUCCESS
+        case "failed":
+            status = aapi.SnapshotStatus.FAILED
+        case _:
+            assert_never(snapshot.status)
+
+    return aapi.Snapshot(
+        experiment_id=snapshot.experiment_id,
+        id=snapshot.id,
+        status=status,
+        created_at=snapshot.created_at,
+        updated_at=snapshot.updated_at,
+        data=snapshot.data,
+        details={"message": snapshot.message} if snapshot.message else None,
+    )
+
+
+def convert_api_snapshot_status_to_snapshot_status(status: aapi.SnapshotStatus) -> tables.SnapshotStatus:
+    match status:
+        case aapi.SnapshotStatus.SUCCESS:
+            return "success"
+        case aapi.SnapshotStatus.RUNNING:
+            return "pending"
+        case aapi.SnapshotStatus.FAILED:
+            return "failed"

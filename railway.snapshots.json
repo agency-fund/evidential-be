@@ -1,0 +1,22 @@
+{
+  "$schema": "https://railway.com/railway.schema.json",
+  "deploy": {
+    "cronSchedule": "0 * * * *"
+  },
+  "build": {
+    "builder": "DOCKERFILE",
+    "dockerfilePath": "Dockerfile.snapshots.railway",
+    "watchPatterns": [
+      ".dockerignore",
+      ".gitignore",
+      "Dockerfile.snapshots.railway",
+      "atlas.hcl",
+      "migrations/**",
+      "pyproject.toml",
+      "railway.snapshots.json",
+      "src/**",
+      "static/**",
+      "uv.lock"
+    ]
+  }
+}

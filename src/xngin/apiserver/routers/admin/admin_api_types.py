@@ -1,3 +1,4 @@
+import enum
 from datetime import datetime
 from typing import Annotated, Literal
 from urllib.parse import urlparse
@@ -38,6 +39,42 @@ def validate_webhook_url(url: str) -> str:
 
 class AdminApiBaseModel(BaseModel):
     model_config = ConfigDict(extra="forbid")
+
+
+class SnapshotStatus(enum.StrEnum):
+    """Describes the status of a snapshot."""
+
+    SUCCESS = "success"
+    RUNNING = "running"
+    FAILED = "failed"
+
+
+class Snapshot(AdminApiBaseModel):
+    experiment_id: Annotated[str, Field(description="The experiment that this snapshot was captured for.")]
+    id: Annotated[str, Field(description="The unique ID of the snapshot.")]
+
+    status: Annotated[
+        SnapshotStatus,
+        Field(description="The status of the snapshot. When not `success`, data will be null."),
+    ]
+    details: Annotated[dict | None, Field(description="Additional data about this snapshot.")]
+    created_at: Annotated[datetime, Field(description="The time the snapshot was requested.")]
+    updated_at: Annotated[datetime, Field(description="The time the snapshot was acquired.")]
+    data: dict | None  # TODO(qixotic)
+
+
+class GetSnapshotResponse(AdminApiBaseModel):
+    """Describes the status and content of a snapshot."""
+
+    snapshot: Annotated[Snapshot | None, Field(description="The completed snapshot.")]
+
+
+class ListSnapshotsResponse(AdminApiBaseModel):
+    items: list[Snapshot]
+
+
+class CreateSnapshotResponse(AdminApiBaseModel):
+    id: str
 
 
 class CreateOrganizationRequest(AdminApiBaseModel):
