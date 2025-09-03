@@ -5,7 +5,7 @@ import dataclasses
 from pathlib import Path
 
 from loguru import logger
-from sqlalchemy import event
+from sqlalchemy import event, make_url
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 from sqlalchemy.ext.asyncio.engine import AsyncEngine
 
@@ -33,7 +33,8 @@ def get_server_database_url():
     """Gets a SQLAlchemy-compatible URL string from the environment."""
     if database_url := flags.DATABASE_URL:
         with_dialect = generic_url_to_sa_url(database_url)
-        logger.info(f"Using application database DSN: {with_dialect}")
+        safe_url = make_url(with_dialect).set(password="redacted")
+        logger.info(f"Using application database DSN: {safe_url}")
         return with_dialect
     raise ValueError("DATABASE_URL is not set")
 
