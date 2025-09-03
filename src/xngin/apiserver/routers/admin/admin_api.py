@@ -354,7 +354,7 @@ async def caller_identity(
 async def get_snapshot(
     session: Annotated[AsyncSession, Depends(xngin_db_session)],
     user: Annotated[tables.User, Depends(user_from_token)],
-    params: Annotated[SnapshotPathParams, Path()],
+    params: Annotated[SnapshotPathParams, Depends()],
 ) -> GetSnapshotResponse:
     """Fetches a snapshot by ID."""
     datasource = await get_datasource_or_raise(
@@ -378,7 +378,7 @@ async def get_snapshot(
 async def list_snapshots(
     session: Annotated[AsyncSession, Depends(xngin_db_session)],
     user: Annotated[tables.User, Depends(user_from_token)],
-    params: Annotated[ExperimentPathParams, Path()],
+    params: Annotated[ExperimentPathParams, Depends()],
     status_: Annotated[
         list[SnapshotStatus] | None,
         Query(
@@ -413,7 +413,7 @@ async def list_snapshots(
 async def delete_snapshot(
     session: Annotated[AsyncSession, Depends(xngin_db_session)],
     user: Annotated[tables.User, Depends(user_from_token)],
-    params: Annotated[SnapshotPathParams, Path()],
+    params: Annotated[SnapshotPathParams, Depends()],
     allow_missing: Annotated[
         bool,
         Query(description="If true, return a 204 even if the resource does not exist."),
@@ -432,7 +432,7 @@ async def delete_snapshot(
 async def create_snapshot(
     session: Annotated[AsyncSession, Depends(xngin_db_session)],
     user: Annotated[tables.User, Depends(user_from_token)],
-    params: Annotated[ExperimentPathParams, Path()],
+    params: Annotated[ExperimentPathParams, Depends()],
     background_tasks: BackgroundTasks,
 ) -> CreateSnapshotResponse:
     """Request the asynchronous creation of a snapshot for an experiment.
