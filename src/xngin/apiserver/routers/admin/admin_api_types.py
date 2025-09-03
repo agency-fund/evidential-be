@@ -52,7 +52,7 @@ class SnapshotStatus(enum.StrEnum):
 
 class Snapshot(AdminApiBaseModel):
     experiment_id: Annotated[str, Field(description="The experiment that this snapshot was captured for.")]
-    id: Annotated[str, Field(description="The unique ID of the experiment.")]
+    id: Annotated[str, Field(description="The unique ID of the snapshot.")]
 
     status: Annotated[
         SnapshotStatus,
