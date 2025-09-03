@@ -70,7 +70,6 @@ from xngin.apiserver.routers.admin.admin_api_types import (
     CreateSnapshotResponse,
     DatasourceSummary,
     EventSummary,
-    ExperimentPathParams,
     GetDatasourceResponse,
     GetOrganizationResponse,
     GetSnapshotResponse,
@@ -87,7 +86,6 @@ from xngin.apiserver.routers.admin.admin_api_types import (
     OrganizationSummary,
     PostgresDsn,
     RedshiftDsn,
-    SnapshotPathParams,
     SnapshotStatus,
     UpdateDatasourceRequest,
     UpdateOrganizationRequest,
@@ -354,18 +352,19 @@ async def caller_identity(
 async def get_snapshot(
     session: Annotated[AsyncSession, Depends(xngin_db_session)],
     user: Annotated[tables.User, Depends(user_from_token)],
-    params: Annotated[SnapshotPathParams, Depends()],
+    organization_id: Annotated[str, Path()],
+    datasource_id: Annotated[str, Path()],
+    experiment_id: Annotated[str, Path()],
+    snapshot_id: Annotated[str, Path()],
 ) -> GetSnapshotResponse:
     """Fetches a snapshot by ID."""
-    datasource = await get_datasource_or_raise(
-        session, user, params.datasource_id, organization_id=params.organization_id
-    )
-    experiment = await get_experiment_via_ds_or_raise(session, datasource, params.experiment_id)
+    datasource = await get_datasource_or_raise(session, user, datasource_id, organization_id=organization_id)
+    experiment = await get_experiment_via_ds_or_raise(session, datasource, experiment_id)
 
     snapshot = await session.scalar(
         select(tables.Snapshot).where(
             tables.Snapshot.experiment_id == experiment.id,
-            tables.Snapshot.id == params.snapshot_id,
+            tables.Snapshot.id == snapshot_id,
         )
     )
     if snapshot is None:
@@ -378,7 +377,9 @@ async def get_snapshot(
 async def list_snapshots(
     session: Annotated[AsyncSession, Depends(xngin_db_session)],
     user: Annotated[tables.User, Depends(user_from_token)],
-    params: Annotated[ExperimentPathParams, Depends()],
+    organization_id: Annotated[str, Path()],
+    datasource_id: Annotated[str, Path()],
+    experiment_id: Annotated[str, Path()],
     status_: Annotated[
         list[SnapshotStatus] | None,
         Query(
@@ -388,10 +389,8 @@ async def list_snapshots(
     ] = None,
 ) -> ListSnapshotsResponse:
     """Lists snapshots for an experiment, ordered by timestamp."""
-    datasource = await get_datasource_or_raise(
-        session, user, params.datasource_id, organization_id=params.organization_id
-    )
-    experiment = await get_experiment_via_ds_or_raise(session, datasource, params.experiment_id)
+    datasource = await get_datasource_or_raise(session, user, datasource_id, organization_id=organization_id)
+    experiment = await get_experiment_via_ds_or_raise(session, datasource, experiment_id)
 
     query = (
         select(tables.Snapshot)
@@ -413,7 +412,10 @@ async def list_snapshots(
 async def delete_snapshot(
     session: Annotated[AsyncSession, Depends(xngin_db_session)],
     user: Annotated[tables.User, Depends(user_from_token)],
-    params: Annotated[SnapshotPathParams, Depends()],
+    _organization_id: Annotated[str, Path(alias="organization_id")],
+    datasource_id: Annotated[str, Path()],
+    experiment_id: Annotated[str, Path()],
+    snapshot_id: Annotated[str, Path()],
     allow_missing: Annotated[
         bool,
         Query(description="If true, return a 204 even if the resource does not exist."),
@@ -421,10 +423,10 @@ async def delete_snapshot(
 ):
     """Deletes a snapshot."""
     resource_query = select(tables.Snapshot).where(
-        tables.Snapshot.experiment_id == params.experiment_id, tables.Snapshot.id == params.snapshot_id
+        tables.Snapshot.experiment_id == experiment_id, tables.Snapshot.id == snapshot_id
     )
     return await handle_delete(
-        session, allow_missing, authz.is_user_authorized_on_datasource(user, params.datasource_id), resource_query
+        session, allow_missing, authz.is_user_authorized_on_datasource(user, datasource_id), resource_query
     )
 
 
@@ -432,17 +434,17 @@ async def delete_snapshot(
 async def create_snapshot(
     session: Annotated[AsyncSession, Depends(xngin_db_session)],
     user: Annotated[tables.User, Depends(user_from_token)],
-    params: Annotated[ExperimentPathParams, Depends()],
+    organization_id: Annotated[str, Path()],
+    datasource_id: Annotated[str, Path()],
+    experiment_id: Annotated[str, Path()],
     background_tasks: BackgroundTasks,
 ) -> CreateSnapshotResponse:
     """Request the asynchronous creation of a snapshot for an experiment.
 
     Returns the ID of the snapshot. Poll get_snapshot until the job is completed.
     """
-    datasource = await get_datasource_or_raise(
-        session, user, params.datasource_id, organization_id=params.organization_id
-    )
-    experiment = await get_experiment_via_ds_or_raise(session, datasource, params.experiment_id)
+    datasource = await get_datasource_or_raise(session, user, datasource_id, organization_id=organization_id)
+    experiment = await get_experiment_via_ds_or_raise(session, datasource, experiment_id)
     # TODO(qixotic): Apply experiment type and state validations.
     snapshot = tables.Snapshot(experiment_id=experiment.id)
     session.add(snapshot)
