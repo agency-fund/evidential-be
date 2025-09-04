@@ -1072,7 +1072,6 @@ async def test_lifecycle_with_db(testing_datasource, ppost, pget, pdelete, udele
     created_experiment = CreateExperimentResponse.model_validate(response.json())
     parsed_experiment_id = created_experiment.experiment_id
     assert parsed_experiment_id is not None
-    assert created_experiment.design_spec.experiment_id == parsed_experiment_id  # TODO: deprecated
     assert created_experiment.stopped_assignments_at is not None
     assert created_experiment.stopped_assignments_reason == StopAssignmentReason.PREASSIGNED
     parsed_arm_ids = {arm.arm_id for arm in created_experiment.design_spec.arms}
@@ -1084,7 +1083,6 @@ async def test_lifecycle_with_db(testing_datasource, ppost, pget, pdelete, udele
     assert response.status_code == 200, response.content
     create_experiment_response = CreateExperimentResponse.model_validate(response.json())
     assert create_experiment_response.experiment_id == parsed_experiment_id
-    assert create_experiment_response.design_spec.experiment_id == parsed_experiment_id  # TODO: deprecated
 
     # List org experiments.
     response = pget(f"/v1/m/organizations/{testing_datasource.org.id}/experiments")
@@ -1154,7 +1152,6 @@ async def test_create_preassigned_experiment_using_inline_schema_ds(
     # Verify basic response
     assert created_experiment.stopped_assignments_at is not None
     assert created_experiment.stopped_assignments_reason == StopAssignmentReason.PREASSIGNED
-    assert created_experiment.design_spec.experiment_id == parsed_experiment_id  # TODO: deprecated
     assert created_experiment.design_spec.arms[0].arm_id is not None
     assert created_experiment.design_spec.arms[1].arm_id is not None
     assert created_experiment.state == ExperimentState.ASSIGNED
@@ -1168,9 +1165,9 @@ async def test_create_preassigned_experiment_using_inline_schema_ds(
     assert created_experiment.power_analyses is None
     # Check if the representations are equivalent; scrub ids from the config for comparison
     actual_design_spec = created_experiment.design_spec.model_copy(deep=True)
-    actual_design_spec.experiment_id = None
     actual_design_spec.arms[0].arm_id = None
     actual_design_spec.arms[1].arm_id = None
+    actual_design_spec.experiment_id = None  # TODO remove in future
     assert actual_design_spec == request_obj.design_spec
 
     experiment_id = created_experiment.experiment_id
@@ -1229,7 +1226,6 @@ def test_create_online_experiment_using_inline_schema_ds(testing_datasource_with
     # Verify basic response
     assert created_experiment.stopped_assignments_at is None
     assert created_experiment.stopped_assignments_reason is None
-    assert created_experiment.design_spec.experiment_id == parsed_experiment_id  # TODO: deprecated
     assert created_experiment.design_spec.arms[0].arm_id is not None
     assert created_experiment.design_spec.arms[1].arm_id is not None
     assert created_experiment.state == ExperimentState.ASSIGNED
@@ -1243,9 +1239,9 @@ def test_create_online_experiment_using_inline_schema_ds(testing_datasource_with
     # Check if the representations are equivalent
     # scrub the ids from the config for comparison
     actual_design_spec = created_experiment.design_spec.model_copy(deep=True)
-    actual_design_spec.experiment_id = None
     actual_design_spec.arms[0].arm_id = None
     actual_design_spec.arms[1].arm_id = None
+    actual_design_spec.experiment_id = None  # TODO remove in future
     assert actual_design_spec == request_obj.design_spec
 
 
@@ -1298,7 +1294,6 @@ def test_create_online_mab_experiment_using_inline_schema_ds(
     # Check if the representations are equivalent
     # scrub the ids from the config for comparison
     actual_design_spec = created_experiment.design_spec.model_copy(deep=True)
-    actual_design_spec.experiment_id = None
     for arm in actual_design_spec.arms:
         arm.arm_id = None
         # Verify the arm parameters were initialized correctly
@@ -1311,6 +1306,7 @@ def test_create_online_mab_experiment_using_inline_schema_ds(
         arm.beta = None
         arm.mu = None
         arm.covariance = None
+    actual_design_spec.experiment_id = None  # TODO remove in future
     assert actual_design_spec == request_obj.design_spec
 
 
@@ -1339,19 +1335,17 @@ def test_create_online_cmab_experiment_using_inline_schema_ds(
     )
     assert response.status_code == 200, response.content
     created_experiment = CreateExperimentResponse.model_validate(response.json())
-    parsed_experiment_id = created_experiment.design_spec.experiment_id
+    parsed_experiment_id = created_experiment.experiment_id
     assert parsed_experiment_id is not None
     parsed_arm_ids = {arm.arm_id for arm in created_experiment.design_spec.arms}
     assert len(parsed_arm_ids) == 2
-
-    print(created_experiment.design_spec)
 
     # Verify basic response
     assert isinstance(created_experiment.design_spec, CMABExperimentSpec)
     assert created_experiment.design_spec.contexts is not None and len(created_experiment.design_spec.contexts) == 2
     assert created_experiment.stopped_assignments_at is None
     assert created_experiment.stopped_assignments_reason is None
-    assert created_experiment.design_spec.experiment_id is not None
+    assert created_experiment.experiment_id is not None
     assert created_experiment.state == ExperimentState.ASSIGNED
     assert created_experiment.assign_summary is None
     assert created_experiment.power_analyses is None
@@ -1365,7 +1359,6 @@ def test_create_online_cmab_experiment_using_inline_schema_ds(
     # Check if the representations are equivalent
     # scrub the ids from the config for comparison
     actual_design_spec = created_experiment.design_spec.model_copy(deep=True)
-    actual_design_spec.experiment_id = None
     for arm in actual_design_spec.arms:
         arm.arm_id = None
 
@@ -1382,6 +1375,7 @@ def test_create_online_cmab_experiment_using_inline_schema_ds(
     assert actual_design_spec.contexts is not None
     for context in actual_design_spec.contexts:
         context.context_id = None
+    actual_design_spec.experiment_id = None  # TODO remove in future
     assert actual_design_spec == request_obj.design_spec
 
 
@@ -1850,7 +1844,7 @@ def test_snapshots(pget, ppost, pdelete, uget, ppatch):
         ).model_dump(mode="json"),
     )
     assert response.status_code == 200, response.content
-    experiment_id = CreateExperimentResponse.model_validate_json(response.content).design_spec.experiment_id
+    experiment_id = CreateExperimentResponse.model_validate_json(response.content).experiment_id
 
     # When run via tests, the TestClient that ppost() is built upon will wait for the backend handler to finish
     # all of its background tasks. Therefore this test will not observe the experiment in a "pending" state.

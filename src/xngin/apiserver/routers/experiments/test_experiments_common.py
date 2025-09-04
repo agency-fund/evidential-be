@@ -603,7 +603,7 @@ async def test_create_experiment_impl_for_cmab_online(xngin_session, testing_dat
 
     # Verify design_spec
     assert isinstance(response.design_spec, CMABExperimentSpec)
-    assert response.design_spec.experiment_id is not None
+    assert response.experiment_id is not None
     assert response.design_spec.arms[0].arm_id is not None
     assert response.design_spec.arms[1].arm_id is not None
     assert response.design_spec.contexts is not None
@@ -617,7 +617,7 @@ async def test_create_experiment_impl_for_cmab_online(xngin_session, testing_dat
     assert response.assign_summary is None
 
     # Verify database state
-    experiment = await xngin_session.get(tables.Experiment, response.design_spec.experiment_id)
+    experiment = await xngin_session.get(tables.Experiment, response.experiment_id)
     assert experiment.experiment_type == ExperimentsType.CMAB_ONLINE
     assert experiment.participant_type == request.design_spec.participant_type
     assert experiment.name == request.design_spec.experiment_name
@@ -663,51 +663,6 @@ async def test_create_experiment_impl_for_cmab_online(xngin_session, testing_dat
         await xngin_session.scalars(select(tables.Draw).where(tables.Draw.experiment_id == experiment.id))
     ).all()
     assert len(assignments) == 0
-
-
-async def test_create_experiment_impl_overwrites_uuids(
-    xngin_session, testing_datasource, sample_table, use_deterministic_random
-):
-    """
-    Test that the function overwrites requests with preset UUIDs
-    (which would otherwise be caught in the route handler).
-    """
-    participants = make_sample_data(n=100)
-    request = make_create_preassigned_experiment_request()
-    original_experiment_id = request.design_spec.experiment_id
-    original_arm_ids = [arm.arm_id for arm in request.design_spec.arms]
-
-    response = await create_experiment_impl(
-        request=request,
-        datasource=testing_datasource.ds,
-        random_state=42,
-        xngin_session=xngin_session,
-        chosen_n=len(participants),
-        stratify_on_metrics=True,
-        validated_webhooks=[],
-    )
-
-    # Verify that new UUIDs were generated
-    assert response.design_spec.experiment_id != original_experiment_id
-    new_arm_ids = [arm.arm_id for arm in response.design_spec.arms]
-    assert set(new_arm_ids) != set(original_arm_ids)
-
-    # Verify database state
-    experiment = (
-        await xngin_session.scalars(
-            select(tables.Experiment).where(tables.Experiment.id == response.design_spec.experiment_id)
-        )
-    ).one()
-    assert experiment.state == ExperimentState.ASSIGNED
-    # Verify assignments were created with the new UUIDs
-    assignments = (
-        await xngin_session.scalars(
-            select(tables.ArmAssignment).where(tables.ArmAssignment.experiment_id == experiment.id)
-        )
-    ).all()
-    # Verify all assignments use the new arm IDs
-    assignment_arm_ids = {a.arm_id for a in assignments}
-    assert assignment_arm_ids == set(new_arm_ids)
 
 
 async def test_create_experiment_impl_no_metric_stratification(
