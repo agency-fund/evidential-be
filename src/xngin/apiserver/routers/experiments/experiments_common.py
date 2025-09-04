@@ -1,3 +1,4 @@
+import asyncio
 import csv
 import io
 import random
@@ -6,11 +7,7 @@ from collections.abc import Sequence
 from datetime import UTC, datetime
 from itertools import batched
 
-from fastapi import (
-    HTTPException,
-    Response,
-    status,
-)
+from fastapi import HTTPException, Response, status
 from fastapi.responses import StreamingResponse
 from sqlalchemy import Select, Table, func, insert, select
 from sqlalchemy.exc import IntegrityError
@@ -19,6 +16,7 @@ from sqlalchemy.orm import selectinload
 
 from xngin.apiserver import constants, flags
 from xngin.apiserver.dwh.dwh_session import DwhSession
+from xngin.apiserver.dwh.queries import get_participant_metrics
 from xngin.apiserver.exceptions_common import LateValidationError
 from xngin.apiserver.routers.assignment_adapters import (
     RowProtocol,
@@ -28,6 +26,7 @@ from xngin.apiserver.routers.assignment_adapters import (
 )
 from xngin.apiserver.routers.common_api_types import (
     Arm,
+    ArmAnalysis,
     ArmSize,
     Assignment,
     AssignSummary,
@@ -35,8 +34,12 @@ from xngin.apiserver.routers.common_api_types import (
     BaseFrequentistDesignSpec,
     CreateExperimentRequest,
     CreateExperimentResponse,
+    DesignSpecMetricRequest,
+    ExperimentAnalysisResponse,
+    FreqExperimentAnalysisResponse,
     GetExperimentAssignmentsResponse,
     ListExperimentsResponse,
+    MetricAnalysis,
     Strata,
 )
 from xngin.apiserver.routers.common_enums import (
@@ -46,14 +49,14 @@ from xngin.apiserver.routers.common_enums import (
     PriorTypes,
     StopAssignmentReason,
 )
-from xngin.apiserver.settings import (
-    ParticipantsDef,
-)
+from xngin.apiserver.settings import DatasourceConfig, ParticipantsDef
 from xngin.apiserver.sqla import tables
 from xngin.apiserver.storage.storage_format_converters import ExperimentStorageConverter
 from xngin.apiserver.webhooks.webhook_types import ExperimentCreatedWebhookBody
 from xngin.events.experiment_created import ExperimentCreatedEvent
+from xngin.stats.analysis import analyze_experiment as analyze_experiment_impl
 from xngin.stats.bandit_sampling import choose_arm, update_arm
+from xngin.stats.stats_errors import StatsAnalysisError
 from xngin.tq.task_payload_types import WEBHOOK_OUTBOUND_TASK_TYPE, WebhookOutboundTask
 
 
@@ -861,4 +864,70 @@ async def get_assign_summary(
         balance_check=balance_check,
         arm_sizes=arm_sizes,
         sample_size=sum(arm_size.size for arm_size in arm_sizes),
+    )
+
+
+async def analyze_experiment_freq_impl(
+    dsconfig: DatasourceConfig,
+    experiment: tables.Experiment,
+    baseline_arm_id: str,
+    metrics: list[DesignSpecMetricRequest],
+) -> ExperimentAnalysisResponse:
+    participants_cfg = dsconfig.find_participants(experiment.participant_type)
+    unique_id_field = participants_cfg.get_unique_id_field()
+
+    assignments = experiment.arm_assignments
+    participant_ids = [assignment.participant_id for assignment in assignments]
+    num_participants = len(participant_ids)
+    if num_participants == 0:
+        raise StatsAnalysisError("No participants found for experiment.")
+
+    async with DwhSession(dsconfig.dwh) as dwh:
+        sa_table = await dwh.inspect_table(participants_cfg.table_name)
+
+        # Mark the start of the analysis as when we begin pulling outcomes.
+        created_at = datetime.now(UTC)
+        participant_outcomes = await asyncio.to_thread(
+            get_participant_metrics,
+            dwh.session,
+            sa_table,
+            metrics,
+            unique_id_field,
+            participant_ids,
+        )
+
+    # We want to notify the user if there are participants assigned to the experiment that are not
+    # in the data warehouse. E.g. in an online experiment, perhaps a new user was assigned
+    # before their info was synced to the dwh.
+    num_missing_participants = num_participants - len(participant_outcomes)
+
+    analyze_results = analyze_experiment_impl(assignments, participant_outcomes, baseline_arm_id)
+
+    metric_analyses = []
+    for metric in metrics:
+        metric_name = metric.field_name
+        arm_analyses = []
+        for arm in experiment.arms:
+            arm_result = analyze_results[metric_name][arm.id]
+            arm_analyses.append(
+                ArmAnalysis(
+                    arm_id=arm.id,
+                    arm_name=arm.name,
+                    arm_description=arm.description,
+                    is_baseline=arm_result.is_baseline,
+                    estimate=arm_result.estimate,
+                    p_value=arm_result.p_value,
+                    t_stat=arm_result.t_stat,
+                    std_error=arm_result.std_error,
+                    num_missing_values=arm_result.num_missing_values,
+                )
+            )
+        metric_analyses.append(MetricAnalysis(metric_name=metric_name, metric=metric, arm_analyses=arm_analyses))
+
+    return FreqExperimentAnalysisResponse(
+        experiment_id=experiment.id,
+        metric_analyses=metric_analyses,
+        num_participants=num_participants,
+        num_missing_participants=num_missing_participants,
+        created_at=created_at,
     )

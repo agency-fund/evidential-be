@@ -312,3 +312,10 @@ class ContextLinkFunctions(enum.StrEnum):
         if self == ContextLinkFunctions.LOGISTIC:
             return np.array(1.0 / (1.0 + np.exp(-x)))
         raise ValueError(f"Unsupported link function: {self}.")
+
+
+class ExperimentAnalysisType(enum.StrEnum):
+    """Enum for the analysis types."""
+
+    FREQ = "freq"
+    BANDIT = "bandit"
