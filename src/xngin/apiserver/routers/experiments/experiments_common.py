@@ -35,7 +35,6 @@ from xngin.apiserver.routers.common_api_types import (
     CreateExperimentRequest,
     CreateExperimentResponse,
     DesignSpecMetricRequest,
-    ExperimentAnalysisResponse,
     FreqExperimentAnalysisResponse,
     GetExperimentAssignmentsResponse,
     ListExperimentsResponse,
@@ -872,7 +871,9 @@ async def analyze_experiment_freq_impl(
     experiment: tables.Experiment,
     baseline_arm_id: str,
     metrics: list[DesignSpecMetricRequest],
-) -> ExperimentAnalysisResponse:
+) -> FreqExperimentAnalysisResponse:
+    """Analyze a frequentist experiment. Assumes arms and arm_assignments are preloaded."""
+
     participants_cfg = dsconfig.find_participants(experiment.participant_type)
     unique_id_field = participants_cfg.get_unique_id_field()
 

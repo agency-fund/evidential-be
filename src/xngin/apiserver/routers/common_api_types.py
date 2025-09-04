@@ -267,9 +267,9 @@ class ArmAnalysis(Arm):
     ]
 
     @field_serializer("t_stat", "p_value", when_used="json")
-    def serialize_float(self, v: float, _info):
+    def serialize_float(self, v: float | None, _info):
         """Serialize floats to None when they are NaN, which becomes null in JSON."""
-        if math.isnan(v):
+        if v is None or math.isnan(v):
             return None
         return v
 

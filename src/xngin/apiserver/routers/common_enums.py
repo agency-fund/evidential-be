@@ -227,6 +227,14 @@ class ExperimentsType(enum.StrEnum):
     FREQ_ONLINE = "freq_online"
     FREQ_PREASSIGNED = "freq_preassigned"
 
+    def is_freq(self) -> bool:
+        """Returns True if the experiment type is a frequentist experiment."""
+        return self in {ExperimentsType.FREQ_ONLINE, ExperimentsType.FREQ_PREASSIGNED}
+
+    def is_mab(self) -> bool:
+        """Returns True if the experiment type is a bandit experiment."""
+        return self in {ExperimentsType.MAB_ONLINE, ExperimentsType.CMAB_ONLINE, ExperimentsType.BAYESAB_ONLINE}
+
 
 class PriorTypes(enum.StrEnum):
     """

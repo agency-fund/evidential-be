@@ -115,6 +115,7 @@ from xngin.apiserver.routers.common_api_types import (
     PowerRequest,
     PowerResponse,
 )
+from xngin.apiserver.routers.common_enums import ExperimentState
 from xngin.apiserver.routers.experiments import experiments_common
 from xngin.apiserver.settings import (
     ParticipantsConfig,
@@ -440,7 +441,16 @@ async def create_snapshot(
     """
     datasource = await get_datasource_or_raise(session, user, datasource_id, organization_id=organization_id)
     experiment = await get_experiment_via_ds_or_raise(session, datasource, experiment_id)
-    # TODO(qixotic): Apply experiment type and state validations.
+
+    # TODO(qixotic): add in support for MABs when we actually support their analysis.
+    # Apply experiment type and state validations.
+    if ExperimentsType(experiment.experiment_type).is_mab():
+        raise LateValidationError("Only frequentist experiments are supported right now.")
+    if experiment.state != ExperimentState.COMMITTED:
+        raise LateValidationError("Only committed experiments can be snapshotted.")
+    if experiment.end_date < datetime.now(UTC):
+        raise LateValidationError("Experiments that have ended cannot be snapshotted.")
+
     snapshot = tables.Snapshot(experiment_id=experiment.id)
     session.add(snapshot)
     await session.commit()
