@@ -664,12 +664,15 @@ class BaseDesignSpec(ApiBaseModel):
     experiment_id: Annotated[
         str | None,
         Field(
+            deprecated=True,
             description=(
                 "ID of the experiment. If creating a new experiment (POST /datasources/{datasource_id}/experiments), "
                 "this is generated for you and made available in the response; you should NOT set this. "
                 "Only generate ids of your own if using the stateless Experiment Design API as you will "
-                "do your own persistence."
-            )
+                "do your own persistence. \n"
+                "DEPRECATED: This field is no longer used and will be removed in a future release. "
+                "Use the Create/GetExperimentResponse field directly."
+            ),
         ),
     ] = None
 
@@ -1074,6 +1077,7 @@ class AssignSummary(ApiBaseModel):
 class ExperimentConfig(ApiBaseModel):
     """Representation of our stored Experiment information."""
 
+    experiment_id: Annotated[str, Field(description="Server-generated ID of the experiment.")]
     datasource_id: str
     state: Annotated[ExperimentState, Field(description="Current state of this experiment.")]
     stopped_assignments_at: Annotated[
@@ -1170,38 +1174,6 @@ class UpdateBanditArmOutcomeRequest(ApiBaseModel):
 
     participant_id: str
     outcome: float
-
-
-class AssignResponse(ApiBaseModel):
-    """Describes assignments for all participants and balance test results."""
-
-    balance_check: Annotated[
-        BalanceCheck | None,
-        Field(
-            description=(
-                "Result of checking that the arms are balanced. May not be present if we are not able "
-                "to stratify on any design metrics or other fields specified for stratification. "
-                "(Fields used must be supported data types whose values are NOT all unique or all the same)."
-            )
-        ),
-    ] = None
-
-    experiment_id: str
-    sample_size: Annotated[
-        int,
-        Field(description="The number of participants across all arms in total."),
-    ]
-    unique_id_field: Annotated[
-        str,
-        Field(
-            description=(
-                "Name of the datasource field used as the unique identifier for the participant_id "
-                "value stored in each Assignment, as configured in the datasource settings. "
-                "Included for frontend convenience."
-            )
-        ),
-    ]
-    assignments: Annotated[list[Assignment], Field()]
 
 
 def validate_gcp_service_account_info_json(serviceaccount_json):

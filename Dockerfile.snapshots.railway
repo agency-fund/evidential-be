@@ -1,0 +1,17 @@
+# Defines a production runtime environment for the snapshotter cronjob hosted on Railway.
+# This is not for development uses.
+FROM python:3.12-bookworm
+ENV ATLAS_NO_ANON_TELEMETRY=true
+ENV PYTHONUNBUFFERED=1
+ENV UV_COMPILE_BYTECODE=1
+ENV UV_LINK_MODE=copy
+ENV UV_PYTHON_DOWNLOADS=0
+COPY --from=ghcr.io/astral-sh/uv:0.8.8 /uv /bin/uv
+WORKDIR /code
+COPY pyproject.toml .
+COPY uv.lock .
+# Note: Railway builders will error if the id= is set via build variables.
+RUN --mount=type=cache,id=s/2beeade6-094a-4c7b-b3b0-7853103c0bd3-/root/.cache/uv,target=/root/.cache/uv /bin/uv sync --frozen --no-install-project --no-dev
+COPY ./src /code/src
+RUN --mount=type=cache,id=s/2beeade6-094a-4c7b-b3b0-7853103c0bd3-/root/.cache/uv,target=/root/.cache/uv /bin/uv sync --frozen --no-dev
+CMD ["/bin/uv", "run", "--no-dev", "xngin-snapshotter"]

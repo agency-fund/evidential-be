@@ -2,6 +2,7 @@ import base64
 import copy
 import json
 from datetime import UTC, datetime, timedelta
+from urllib.parse import urlparse
 
 import numpy as np
 import pytest
@@ -30,11 +31,13 @@ from xngin.apiserver.routers.admin.admin_api_types import (
     CreateOrganizationResponse,
     CreateParticipantsTypeRequest,
     CreateParticipantsTypeResponse,
+    CreateSnapshotResponse,
     DatasourceSummary,
     FieldMetadata,
     GcpServiceAccount,
     GetDatasourceResponse,
     GetOrganizationResponse,
+    GetSnapshotResponse,
     Hidden,
     InspectDatasourceResponse,
     InspectDatasourceTableResponse,
@@ -42,6 +45,7 @@ from xngin.apiserver.routers.admin.admin_api_types import (
     ListDatasourcesResponse,
     ListOrganizationsResponse,
     ListParticipantsTypeResponse,
+    ListSnapshotsResponse,
     ListWebhooksResponse,
     PostgresDsn,
     RedshiftDsn,
@@ -94,6 +98,7 @@ from xngin.apiserver.storage.bootstrap import (
     DEFAULT_ORGANIZATION_NAME,
 )
 from xngin.apiserver.testing.assertions import assert_dates_equal
+from xngin.apiserver.testing.testing_dwh_def import TESTING_DWH_PARTICIPANT_DEF
 from xngin.cli.main import create_testing_dwh
 
 SAMPLE_GCLOUD_SERVICE_ACCOUNT = {
@@ -1065,8 +1070,9 @@ async def test_lifecycle_with_db(testing_datasource, ppost, pget, pdelete, udele
     )
     assert response.status_code == 200, response.content
     created_experiment = CreateExperimentResponse.model_validate(response.json())
-    parsed_experiment_id = created_experiment.design_spec.experiment_id
+    parsed_experiment_id = created_experiment.experiment_id
     assert parsed_experiment_id is not None
+    assert created_experiment.design_spec.experiment_id == parsed_experiment_id  # TODO: deprecated
     assert created_experiment.stopped_assignments_at is not None
     assert created_experiment.stopped_assignments_reason == StopAssignmentReason.PREASSIGNED
     parsed_arm_ids = {arm.arm_id for arm in created_experiment.design_spec.arms}
@@ -1077,7 +1083,8 @@ async def test_lifecycle_with_db(testing_datasource, ppost, pget, pdelete, udele
 
     assert response.status_code == 200, response.content
     create_experiment_response = CreateExperimentResponse.model_validate(response.json())
-    assert create_experiment_response.design_spec.experiment_id == parsed_experiment_id
+    assert create_experiment_response.experiment_id == parsed_experiment_id
+    assert create_experiment_response.design_spec.experiment_id == parsed_experiment_id  # TODO: deprecated
 
     # List org experiments.
     response = pget(f"/v1/m/organizations/{testing_datasource.org.id}/experiments")
@@ -1085,7 +1092,7 @@ async def test_lifecycle_with_db(testing_datasource, ppost, pget, pdelete, udele
     experiment_list = ListExperimentsResponse.model_validate(response.json())
     assert len(experiment_list.items) == 1, experiment_list
     experiment_config_0 = experiment_list.items[0]
-    assert experiment_config_0.design_spec.experiment_id == parsed_experiment_id
+    assert experiment_config_0.experiment_id == parsed_experiment_id
 
     # Analyze experiment
     response = pget(f"/v1/m/datasources/{testing_datasource.ds.id}/experiments/{parsed_experiment_id}/analyze")
@@ -1139,7 +1146,7 @@ async def test_create_preassigned_experiment_using_inline_schema_ds(
     )
     assert response.status_code == 200, response.content
     created_experiment = CreateExperimentResponse.model_validate(response.json())
-    parsed_experiment_id = created_experiment.design_spec.experiment_id
+    parsed_experiment_id = created_experiment.experiment_id
     assert parsed_experiment_id is not None
     parsed_arm_ids = {arm.arm_id for arm in created_experiment.design_spec.arms}
     assert len(parsed_arm_ids) == 2
@@ -1147,7 +1154,7 @@ async def test_create_preassigned_experiment_using_inline_schema_ds(
     # Verify basic response
     assert created_experiment.stopped_assignments_at is not None
     assert created_experiment.stopped_assignments_reason == StopAssignmentReason.PREASSIGNED
-    assert created_experiment.design_spec.experiment_id is not None
+    assert created_experiment.design_spec.experiment_id == parsed_experiment_id  # TODO: deprecated
     assert created_experiment.design_spec.arms[0].arm_id is not None
     assert created_experiment.design_spec.arms[1].arm_id is not None
     assert created_experiment.state == ExperimentState.ASSIGNED
@@ -1166,7 +1173,7 @@ async def test_create_preassigned_experiment_using_inline_schema_ds(
     actual_design_spec.arms[1].arm_id = None
     assert actual_design_spec == request_obj.design_spec
 
-    experiment_id = created_experiment.design_spec.experiment_id
+    experiment_id = created_experiment.experiment_id
     (arm1_id, arm2_id) = [arm.arm_id for arm in created_experiment.design_spec.arms]
 
     # Verify database state using the ids in the returned DesignSpec.
@@ -1214,7 +1221,7 @@ def test_create_online_experiment_using_inline_schema_ds(testing_datasource_with
     )
     assert response.status_code == 200, response.content
     created_experiment = CreateExperimentResponse.model_validate(response.json())
-    parsed_experiment_id = created_experiment.design_spec.experiment_id
+    parsed_experiment_id = created_experiment.experiment_id
     assert parsed_experiment_id is not None
     parsed_arm_ids = {arm.arm_id for arm in created_experiment.design_spec.arms}
     assert len(parsed_arm_ids) == 2
@@ -1222,7 +1229,7 @@ def test_create_online_experiment_using_inline_schema_ds(testing_datasource_with
     # Verify basic response
     assert created_experiment.stopped_assignments_at is None
     assert created_experiment.stopped_assignments_reason is None
-    assert created_experiment.design_spec.experiment_id is not None
+    assert created_experiment.design_spec.experiment_id == parsed_experiment_id  # TODO: deprecated
     assert created_experiment.design_spec.arms[0].arm_id is not None
     assert created_experiment.design_spec.arms[1].arm_id is not None
     assert created_experiment.state == ExperimentState.ASSIGNED
@@ -1265,7 +1272,7 @@ def test_create_online_mab_experiment_using_inline_schema_ds(
     )
     assert response.status_code == 200, response.content
     created_experiment = CreateExperimentResponse.model_validate(response.json())
-    parsed_experiment_id = created_experiment.design_spec.experiment_id
+    parsed_experiment_id = created_experiment.experiment_id
     assert parsed_experiment_id is not None
     parsed_arm_ids = {arm.arm_id for arm in created_experiment.design_spec.arms}
     assert len(parsed_arm_ids) == 2
@@ -1274,7 +1281,6 @@ def test_create_online_mab_experiment_using_inline_schema_ds(
     assert isinstance(created_experiment.design_spec, MABExperimentSpec)
     assert created_experiment.stopped_assignments_at is None
     assert created_experiment.stopped_assignments_reason is None
-    assert created_experiment.design_spec.experiment_id is not None
     assert created_experiment.state == ExperimentState.ASSIGNED
     assert created_experiment.assign_summary is None
     assert created_experiment.power_analyses is None
@@ -1295,6 +1301,12 @@ def test_create_online_mab_experiment_using_inline_schema_ds(
     actual_design_spec.experiment_id = None
     for arm in actual_design_spec.arms:
         arm.arm_id = None
+        # Verify the arm parameters were initialized correctly
+        assert arm.alpha == arm.alpha_init
+        assert arm.beta == arm.beta_init
+        assert arm.mu is None if arm.mu_init is None else [arm.mu_init]
+        assert arm.covariance is None if arm.sigma_init is None else [[arm.sigma_init]]
+        # Then scrub for comparing the remainder of the spec
         arm.alpha = None
         arm.beta = None
         arm.mu = None
@@ -1331,6 +1343,8 @@ def test_create_online_cmab_experiment_using_inline_schema_ds(
     assert parsed_experiment_id is not None
     parsed_arm_ids = {arm.arm_id for arm in created_experiment.design_spec.arms}
     assert len(parsed_arm_ids) == 2
+
+    print(created_experiment.design_spec)
 
     # Verify basic response
     assert isinstance(created_experiment.design_spec, CMABExperimentSpec)
@@ -1774,3 +1788,149 @@ async def test_experiment_webhook_integration(testing_datasource_with_user, ppos
     created_experiment_no_webhooks = create_response_no_webhooks.json()
     assert "webhooks" in created_experiment_no_webhooks
     assert len(created_experiment_no_webhooks["webhooks"]) == 0
+
+
+def test_snapshots(pget, ppost, pdelete, uget, ppatch):
+    creation_response = ppost(
+        "/v1/m/organizations",
+        json=CreateOrganizationRequest(name="test_snapshots").model_dump(),
+    )
+    assert creation_response.status_code == 200, creation_response.content
+    create_organization_response = CreateOrganizationResponse.model_validate(creation_response.json())
+
+    parsed = urlparse(flags.XNGIN_DEVDWH_DSN)
+    valid_dsn = PostgresDsn(
+        type="postgres",
+        host=parsed.hostname,
+        port=parsed.port,
+        user=parsed.username,
+        password=RevealedStr(value=parsed.password),
+        dbname=parsed.path[1:],
+        sslmode="disable",
+        search_path=None,
+    )
+    response = ppost(
+        "/v1/m/datasources",
+        content=CreateDatasourceRequest(
+            name="test_create_datasource",
+            organization_id=create_organization_response.id,
+            dsn=valid_dsn,
+        ).model_dump_json(),
+    )
+    assert response.status_code == 200, response.content
+    create_datasource_response = CreateDatasourceResponse.model_validate(response.json())
+
+    create_participant_type_response = ppost(
+        f"/v1/m/datasources/{create_datasource_response.id}/participants",
+        content=CreateParticipantsTypeRequest(
+            participant_type="test_participant_type",
+            schema_def=TESTING_DWH_PARTICIPANT_DEF,
+        ).model_dump_json(),
+    )
+    assert create_participant_type_response.status_code == 200, create_participant_type_response.content
+
+    response = ppost(
+        f"/v1/m/datasources/{create_datasource_response.id}/experiments?chosen_n=100",
+        json=CreateExperimentRequest(
+            design_spec=PreassignedFrequentistExperimentSpec(
+                experiment_type=ExperimentsType.FREQ_PREASSIGNED,
+                participant_type="test_participant_type",
+                experiment_name="test experiment",
+                description="test experiment",
+                start_date=datetime(2024, 1, 1, tzinfo=UTC),
+                end_date=datetime(2024, 1, 31, 23, 59, 59, tzinfo=UTC),
+                arms=[
+                    Arm(arm_name="control", arm_description="Control group"),
+                    Arm(arm_name="treatment", arm_description="Treatment group"),
+                ],
+                metrics=[DesignSpecMetricRequest(field_name="income", metric_pct_change=5)],
+                strata=[],
+                filters=[],
+            )
+        ).model_dump(mode="json"),
+    )
+    assert response.status_code == 200, response.content
+    experiment_id = CreateExperimentResponse.model_validate_json(response.content).design_spec.experiment_id
+
+    # When run via tests, the TestClient that ppost() is built upon will wait for the backend handler to finish
+    # all of its background tasks. Therefore this test will not observe the experiment in a "pending" state.
+    response = ppost(
+        f"/v1/m/organizations/{create_organization_response.id}/datasources/{create_datasource_response.id}"
+        f"/experiments/{experiment_id}/snapshots"
+    )
+    assert response.status_code == 200, response.content
+    create_snapshot_response = CreateSnapshotResponse.model_validate(response.json())
+
+    # Force the second snapshot to fail by misconfiguring the Postgres port.
+    response = ppatch(
+        f"/v1/m/datasources/{create_datasource_response.id}",
+        content=UpdateDatasourceRequest(
+            dsn=valid_dsn.model_copy(update={"port": valid_dsn.port + 1})
+        ).model_dump_json(),
+    )
+    assert response.status_code == 204, response.content
+
+    response = ppost(
+        f"/v1/m/organizations/{create_organization_response.id}/datasources/{create_datasource_response.id}"
+        f"/experiments/{experiment_id}/snapshots"
+    )
+    assert response.status_code == 200, response.content
+    create_bad_snapshot_response = CreateSnapshotResponse.model_validate(response.json())
+
+    list_snapshot_response = pget(
+        f"/v1/m/organizations/{create_organization_response.id}/datasources/{create_datasource_response.id}"
+        f"/experiments/{experiment_id}/snapshots"
+    )
+    assert list_snapshot_response.status_code == 200, list_snapshot_response.content
+    list_snapshot = ListSnapshotsResponse.model_validate(list_snapshot_response.json())
+    assert len(list_snapshot.items) == 2, list_snapshot
+    assert list_snapshot.items[0].updated_at < list_snapshot.items[1].updated_at, list_snapshot
+
+    success_snapshot, failed_snapshot = list_snapshot.items
+    assert success_snapshot.id == create_snapshot_response.id
+    assert success_snapshot.experiment_id == experiment_id
+    assert success_snapshot.status == "success"
+    assert success_snapshot.data == {"todo": ["dwh"]}  # TODO(qixotic)
+    assert success_snapshot.details is None
+    assert failed_snapshot.id == create_bad_snapshot_response.id
+    assert failed_snapshot.experiment_id == experiment_id
+    assert failed_snapshot.status == "failed"
+    assert failed_snapshot.data is None
+    assert failed_snapshot.details is not None and "OperationalError: " in failed_snapshot.details["message"]
+
+    response = pget(
+        f"/v1/m/organizations/{create_organization_response.id}/datasources/{create_datasource_response.id}"
+        f"/experiments/{experiment_id}/snapshots/{success_snapshot.id}"
+    )
+    assert response.status_code == 200, response.content
+    get_snapshot_response = GetSnapshotResponse.model_validate(response.json())
+    assert get_snapshot_response.snapshot is not None
+    assert get_snapshot_response.snapshot.id == success_snapshot.id
+    assert get_snapshot_response.snapshot.experiment_id == success_snapshot.experiment_id
+    assert get_snapshot_response.snapshot.status == success_snapshot.status
+    assert get_snapshot_response.snapshot.data == success_snapshot.data
+
+    # Attempt to read a snapshot as a user that doesn't have access to the snapshot.
+    response = uget(
+        f"/v1/m/organizations/{create_organization_response.id}/datasources/{create_datasource_response.id}"
+        f"/experiments/{experiment_id}/snapshots/{success_snapshot.id}"
+    )
+    assert response.status_code == 404, response.content
+
+    response = pdelete(
+        f"/v1/m/organizations/{create_organization_response.id}/datasources/{create_datasource_response.id}"
+        f"/experiments/{experiment_id}/snapshots/{success_snapshot.id}"
+    )
+    assert response.status_code == 204, response.content
+
+    response = pdelete(
+        f"/v1/m/organizations/{create_organization_response.id}/datasources/{create_datasource_response.id}"
+        f"/experiments/{experiment_id}/snapshots/{success_snapshot.id}"
+    )
+    assert response.status_code == 404, response.content
+
+    response = pget(
+        f"/v1/m/organizations/{create_organization_response.id}/datasources/{create_datasource_response.id}"
+        f"/experiments/{experiment_id}/snapshots/{success_snapshot.id}"
+    )
+    assert response.status_code == 404, response.content

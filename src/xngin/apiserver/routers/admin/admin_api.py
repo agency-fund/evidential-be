@@ -12,6 +12,7 @@ from typing import Annotated, Any
 
 from fastapi import (
     APIRouter,
+    BackgroundTasks,
     Body,
     Depends,
     FastAPI,
@@ -49,7 +50,11 @@ from xngin.apiserver.dwh.queries import (
 )
 from xngin.apiserver.exceptions_common import LateValidationError
 from xngin.apiserver.routers.admin import admin_api_converters, authz
-from xngin.apiserver.routers.admin.admin_api_converters import api_dsn_to_settings_dwh
+from xngin.apiserver.routers.admin.admin_api_converters import (
+    api_dsn_to_settings_dwh,
+    convert_api_snapshot_status_to_snapshot_status,
+    convert_snapshot_to_api_snapshot,
+)
 from xngin.apiserver.routers.admin.admin_api_types import (
     AddMemberToOrganizationRequest,
     AddWebhookToOrganizationRequest,
@@ -62,10 +67,12 @@ from xngin.apiserver.routers.admin.admin_api_types import (
     CreateOrganizationResponse,
     CreateParticipantsTypeRequest,
     CreateParticipantsTypeResponse,
+    CreateSnapshotResponse,
     DatasourceSummary,
     EventSummary,
     GetDatasourceResponse,
     GetOrganizationResponse,
+    GetSnapshotResponse,
     InspectDatasourceResponse,
     InspectDatasourceTableResponse,
     InspectParticipantTypesResponse,
@@ -74,10 +81,12 @@ from xngin.apiserver.routers.admin.admin_api_types import (
     ListOrganizationEventsResponse,
     ListOrganizationsResponse,
     ListParticipantsTypeResponse,
+    ListSnapshotsResponse,
     ListWebhooksResponse,
     OrganizationSummary,
     PostgresDsn,
     RedshiftDsn,
+    SnapshotStatus,
     UpdateDatasourceRequest,
     UpdateOrganizationRequest,
     UpdateOrganizationWebhookRequest,
@@ -115,6 +124,7 @@ from xngin.apiserver.settings import (
     ParticipantsDef,
     RemoteDatabaseConfig,
 )
+from xngin.apiserver.snapshots import snapshotter
 from xngin.apiserver.sqla import tables
 from xngin.apiserver.storage.bootstrap import (
     add_nodwh_datasource_to_org,
@@ -240,9 +250,12 @@ async def get_datasource_or_raise(
     datasource_id: str,
     /,
     *,
+    organization_id: str | None = None,
     preload: list[QueryableAttribute] | None = None,
 ) -> tables.Datasource:
     """Reads the requested datasource from the database.
+
+    Requests that accept organization_id should also pass organization_id= kwarg.
 
     Raises 404 if disallowed or not found.
     """
@@ -255,6 +268,8 @@ async def get_datasource_or_raise(
             tables.Datasource.id == datasource_id,
         )
     )
+    if organization_id:
+        stmt = stmt.where(tables.Organization.id == organization_id)
     if preload:
         stmt = stmt.options(*[selectinload(f) for f in preload])
     result = await session.execute(stmt)
@@ -329,6 +344,113 @@ async def caller_identity(
         hd=token_info.hd,
         is_privileged=user.is_privileged if user else False,
     )
+
+
+@router.get(
+    "/organizations/{organization_id}/datasources/{datasource_id}/experiments/{experiment_id}/snapshots/{snapshot_id}"
+)
+async def get_snapshot(
+    session: Annotated[AsyncSession, Depends(xngin_db_session)],
+    user: Annotated[tables.User, Depends(user_from_token)],
+    organization_id: Annotated[str, Path()],
+    datasource_id: Annotated[str, Path()],
+    experiment_id: Annotated[str, Path()],
+    snapshot_id: Annotated[str, Path()],
+) -> GetSnapshotResponse:
+    """Fetches a snapshot by ID."""
+    datasource = await get_datasource_or_raise(session, user, datasource_id, organization_id=organization_id)
+    experiment = await get_experiment_via_ds_or_raise(session, datasource, experiment_id)
+
+    snapshot = await session.scalar(
+        select(tables.Snapshot).where(
+            tables.Snapshot.experiment_id == experiment.id,
+            tables.Snapshot.id == snapshot_id,
+        )
+    )
+    if snapshot is None:
+        raise HTTPException(status_code=404, detail="Snapshot not found")
+
+    return GetSnapshotResponse(snapshot=convert_snapshot_to_api_snapshot(snapshot))
+
+
+@router.get("/organizations/{organization_id}/datasources/{datasource_id}/experiments/{experiment_id}/snapshots")
+async def list_snapshots(
+    session: Annotated[AsyncSession, Depends(xngin_db_session)],
+    user: Annotated[tables.User, Depends(user_from_token)],
+    organization_id: Annotated[str, Path()],
+    datasource_id: Annotated[str, Path()],
+    experiment_id: Annotated[str, Path()],
+    status_: Annotated[
+        list[SnapshotStatus] | None,
+        Query(
+            alias="status",
+            description="Filter the returned snapshots to only those of this status. May be specified multiple times.",
+        ),
+    ] = None,
+) -> ListSnapshotsResponse:
+    """Lists snapshots for an experiment, ordered by timestamp."""
+    datasource = await get_datasource_or_raise(session, user, datasource_id, organization_id=organization_id)
+    experiment = await get_experiment_via_ds_or_raise(session, datasource, experiment_id)
+
+    query = (
+        select(tables.Snapshot)
+        .where(tables.Snapshot.experiment_id == experiment.id)
+        .order_by(tables.Snapshot.updated_at)
+    )
+    if status_:
+        query = query.where(
+            tables.Snapshot.status.in_([convert_api_snapshot_status_to_snapshot_status(s) for s in status_])
+        )
+    snapshots = await session.scalars(query)
+
+    return ListSnapshotsResponse(items=[convert_snapshot_to_api_snapshot(snapshot) for snapshot in snapshots])
+
+
+@router.delete(
+    "/organizations/{organization_id}/datasources/{datasource_id}/experiments/{experiment_id}/snapshots/{snapshot_id}"
+)
+async def delete_snapshot(
+    session: Annotated[AsyncSession, Depends(xngin_db_session)],
+    user: Annotated[tables.User, Depends(user_from_token)],
+    _organization_id: Annotated[str, Path(alias="organization_id")],
+    datasource_id: Annotated[str, Path()],
+    experiment_id: Annotated[str, Path()],
+    snapshot_id: Annotated[str, Path()],
+    allow_missing: Annotated[
+        bool,
+        Query(description="If true, return a 204 even if the resource does not exist."),
+    ] = False,
+):
+    """Deletes a snapshot."""
+    resource_query = select(tables.Snapshot).where(
+        tables.Snapshot.experiment_id == experiment_id, tables.Snapshot.id == snapshot_id
+    )
+    return await handle_delete(
+        session, allow_missing, authz.is_user_authorized_on_datasource(user, datasource_id), resource_query
+    )
+
+
+@router.post("/organizations/{organization_id}/datasources/{datasource_id}/experiments/{experiment_id}/snapshots")
+async def create_snapshot(
+    session: Annotated[AsyncSession, Depends(xngin_db_session)],
+    user: Annotated[tables.User, Depends(user_from_token)],
+    organization_id: Annotated[str, Path()],
+    datasource_id: Annotated[str, Path()],
+    experiment_id: Annotated[str, Path()],
+    background_tasks: BackgroundTasks,
+) -> CreateSnapshotResponse:
+    """Request the asynchronous creation of a snapshot for an experiment.
+
+    Returns the ID of the snapshot. Poll get_snapshot until the job is completed.
+    """
+    datasource = await get_datasource_or_raise(session, user, datasource_id, organization_id=organization_id)
+    experiment = await get_experiment_via_ds_or_raise(session, datasource, experiment_id)
+    # TODO(qixotic): Apply experiment type and state validations.
+    snapshot = tables.Snapshot(experiment_id=experiment.id)
+    session.add(snapshot)
+    await session.commit()
+    background_tasks.add_task(snapshotter.make_first_snapshot, snapshot.experiment_id, snapshot.id)
+    return CreateSnapshotResponse(id=snapshot.id)
 
 
 @router.get("/organizations")

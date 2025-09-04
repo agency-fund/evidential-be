@@ -55,7 +55,6 @@ from xngin.apiserver.testing.assertions import assert_dates_equal
 def make_createexperimentrequest_json(
     participant_type: str = "test_participant_type",
     experiment_type: str = "freq_preassigned",
-    with_ids: bool = False,
     prior_type: PriorTypes = PriorTypes.NORMAL,
     reward_type: LikelihoodTypes = LikelihoodTypes.NORMAL,
 ):
@@ -63,16 +62,11 @@ def make_createexperimentrequest_json(
 
     This does not add any power analyses or balance checks, nor do any validation.
     """
-    experiment_id = tables.experiment_id_factory() if with_ids else None
-    arm1_id = tables.arm_id_factory() if with_ids else None
-    arm2_id = tables.arm_id_factory() if with_ids else None
-
     experiment_type = ExperimentsType(experiment_type)
     match experiment_type:
         case ExperimentsType.FREQ_PREASSIGNED | ExperimentsType.FREQ_ONLINE:
             return {
                 "design_spec": {
-                    **({"experiment_id": experiment_id} if experiment_id is not None else {}),
                     "participant_type": participant_type,
                     "experiment_name": "test",
                     "description": "test",
@@ -83,12 +77,10 @@ def make_createexperimentrequest_json(
                     "end_date": (datetime.now(UTC) + timedelta(days=1)).isoformat(),
                     "arms": [
                         {
-                            **({"arm_id": arm1_id} if arm1_id is not None else {}),
                             "arm_name": "control",
                             "arm_description": "control",
                         },
                         {
-                            **({"arm_id": arm2_id} if arm2_id is not None else {}),
                             "arm_name": "treatment",
                             "arm_description": "treatment",
                         },
@@ -109,7 +101,6 @@ def make_createexperimentrequest_json(
         case ExperimentsType.MAB_ONLINE:
             return {
                 "design_spec": {
-                    **({"experiment_id": experiment_id} if experiment_id is not None else {}),
                     "participant_type": participant_type,
                     "experiment_name": "test",
                     "description": "test",
@@ -122,7 +113,6 @@ def make_createexperimentrequest_json(
                     "reward_type": reward_type,
                     "arms": [
                         {
-                            **({"arm_id": arm1_id} if arm1_id is not None else {}),
                             "arm_name": "string",
                             "arm_description": "string",
                             "alpha_init": 50.0 if prior_type == PriorTypes.BETA else None,
@@ -131,7 +121,6 @@ def make_createexperimentrequest_json(
                             "sigma_init": 1.0 if prior_type == PriorTypes.NORMAL else None,
                         },
                         {
-                            **({"arm_id": arm2_id} if arm2_id is not None else {}),
                             "arm_name": "string",
                             "arm_description": "string",
                             "alpha_init": 1.0 if prior_type == PriorTypes.BETA else None,
@@ -143,12 +132,9 @@ def make_createexperimentrequest_json(
                 }
             }
         case ExperimentsType.CMAB_ONLINE:
-            context1_id = tables.context_id_factory() if with_ids else None
-            context2_id = tables.context_id_factory() if with_ids else None
             return {
                 "design_spec": {
-                    **({"experiment_id": experiment_id} if experiment_id is not None else {}),
-                    "participant_type": "string",
+                    "participant_type": participant_type,
                     "experiment_name": "test",
                     "description": "test",
                     # Attach UTC tz, but use dates_equal() to compare to respect db storage support
@@ -160,14 +146,12 @@ def make_createexperimentrequest_json(
                     "reward_type": reward_type,
                     "arms": [
                         {
-                            **({"arm_id": arm1_id} if arm1_id is not None else {}),
                             "arm_name": "Arm 1",
                             "arm_description": "Arm 1",
                             "mu_init": 10.0,
                             "sigma_init": 1.0,
                         },
                         {
-                            **({"arm_id": arm2_id} if arm2_id is not None else {}),
                             "arm_name": "Arm 2",
                             "arm_description": "Arm 2",
                             "mu_init": -10.0,
@@ -176,13 +160,11 @@ def make_createexperimentrequest_json(
                     ],
                     "contexts": [
                         {
-                            **({"context_id": context1_id} if context1_id is not None else {}),
                             "context_name": "Context 1",
                             "context_description": "Context 1",
                             "value_type": "binary",
                         },
                         {
-                            **({"context_id": context2_id} if context2_id is not None else {}),
                             "context_name": "Context 2",
                             "context_description": "Context 2",
                             "value_type": "real-valued",
@@ -194,28 +176,23 @@ def make_createexperimentrequest_json(
             raise ValueError(f"Invalid experiment type: {experiment_type}")
 
 
-def make_create_preassigned_experiment_request(
-    with_ids: bool = False,
-) -> CreateExperimentRequest:
-    request = make_createexperimentrequest_json(with_ids=with_ids, experiment_type=ExperimentsType.FREQ_PREASSIGNED)
+def make_create_preassigned_experiment_request() -> CreateExperimentRequest:
+    request = make_createexperimentrequest_json(experiment_type=ExperimentsType.FREQ_PREASSIGNED)
     return TypeAdapter(CreateExperimentRequest).validate_python(request)
 
 
-def make_create_online_experiment_request(
-    with_ids: bool = False,
-) -> CreateExperimentRequest:
-    request = make_createexperimentrequest_json(with_ids=with_ids, experiment_type=ExperimentsType.FREQ_ONLINE)
+def make_create_online_experiment_request() -> CreateExperimentRequest:
+    request = make_createexperimentrequest_json(experiment_type=ExperimentsType.FREQ_ONLINE)
     return TypeAdapter(CreateExperimentRequest).validate_python(request)
 
 
 def make_create_online_bandit_experiment_request(
     experiment_type: ExperimentsType = ExperimentsType.MAB_ONLINE,
-    with_ids: bool = False,
     reward_type: LikelihoodTypes = LikelihoodTypes.NORMAL,
     prior_type: PriorTypes = PriorTypes.NORMAL,
 ) -> CreateExperimentRequest:
     request = make_createexperimentrequest_json(
-        with_ids=with_ids, experiment_type=experiment_type, prior_type=prior_type, reward_type=reward_type
+        experiment_type=experiment_type, prior_type=prior_type, reward_type=reward_type
     )
     return TypeAdapter(CreateExperimentRequest).validate_python(request)
 
@@ -224,7 +201,6 @@ def make_insertable_experiment(
     datasource: tables.Datasource,
     state: ExperimentState = ExperimentState.COMMITTED,
     experiment_type: ExperimentsType = ExperimentsType.FREQ_PREASSIGNED,
-    with_ids: bool = True,
     prior_type: PriorTypes = PriorTypes.NORMAL,
     reward_type: LikelihoodTypes = LikelihoodTypes.NORMAL,
 ) -> tuple[tables.Experiment, DesignSpec]:
@@ -233,7 +209,7 @@ def make_insertable_experiment(
     This does not add any power analyses or balance checks.
     """
     request = make_createexperimentrequest_json(
-        experiment_type=experiment_type, with_ids=with_ids, prior_type=prior_type, reward_type=reward_type
+        experiment_type=experiment_type, prior_type=prior_type, reward_type=reward_type
     )
     design_spec: DesignSpec = TypeAdapter(DesignSpec).validate_python(request["design_spec"])
     stopped_assignments_at: datetime | None = None
@@ -331,7 +307,7 @@ async def test_create_experiment_impl_for_preassigned(
 ):
     """Test implementation of creating a preassigned experiment."""
     participants = make_sample_data(n=100)
-    request = make_create_preassigned_experiment_request(with_ids=True)
+    request = make_create_preassigned_experiment_request()
     # Add a partial mock PowerResponse just to verify storage
     request.power_analyses = PowerResponse(
         analyses=[
@@ -353,10 +329,10 @@ async def test_create_experiment_impl_for_preassigned(
         validated_webhooks=[],
     )
     # Verify response
+    experiment_id = response.experiment_id
     assert response.datasource_id == testing_datasource.ds.id
     assert response.state == ExperimentState.ASSIGNED
     # Verify design_spec
-    assert response.design_spec.experiment_id is not None
     assert response.design_spec.arms[0].arm_id is not None
     assert response.design_spec.arms[1].arm_id is not None
     assert response.design_spec.experiment_name == request.design_spec.experiment_name
@@ -376,8 +352,8 @@ async def test_create_experiment_impl_for_preassigned(
     assert response.assign_summary.balance_check is not None
     assert response.assign_summary.balance_check.balance_ok is True
 
-    # Verify database state using the ids in the returned DesignSpec.
-    experiment = await xngin_session.get(tables.Experiment, response.design_spec.experiment_id)
+    # Verify database state uses app-generated ids
+    experiment = await xngin_session.get(tables.Experiment, experiment_id)
     assert experiment is not None
     assert experiment.experiment_type == ExperimentsType.FREQ_PREASSIGNED
     assert experiment.participant_type == request.design_spec.participant_type
@@ -443,7 +419,7 @@ async def test_create_preassigned_experiment_impl_raises_on_duplicate_ids(
     use_deterministic_random,
 ):
     """Test that create_preassigned_experiment_impl raises LateValidationError for duplicate participant IDs."""
-    request = make_create_preassigned_experiment_request(with_ids=True)
+    request = make_create_preassigned_experiment_request()
 
     # Create mock participants with a duplicate ID
     participants_with_duplicate = [
@@ -487,7 +463,7 @@ async def test_create_experiment_impl_for_online(
     assert response.state == ExperimentState.ASSIGNED
 
     # Verify design_spec
-    assert response.design_spec.experiment_id is not None
+    assert response.experiment_id is not None
     assert response.design_spec.arms[0].arm_id is not None
     assert response.design_spec.arms[1].arm_id is not None
     assert response.design_spec.experiment_name == request.design_spec.experiment_name
@@ -507,7 +483,7 @@ async def test_create_experiment_impl_for_online(
     assert all(arm_size.size == 0 for arm_size in response.assign_summary.arm_sizes)
 
     # Verify database state
-    experiment = await xngin_session.get(tables.Experiment, response.design_spec.experiment_id)
+    experiment = await xngin_session.get(tables.Experiment, response.experiment_id)
     assert experiment.experiment_type == ExperimentsType.FREQ_ONLINE
     assert experiment.participant_type == request.design_spec.participant_type
     assert experiment.name == request.design_spec.experiment_name
@@ -546,7 +522,7 @@ async def test_create_experiment_impl_for_online(
 
 async def test_create_experiment_impl_for_mab_online(xngin_session, testing_datasource):
     """Test implementation of creating an online experiment."""
-    request = make_create_online_bandit_experiment_request(with_ids=True)
+    request = make_create_online_bandit_experiment_request()
     response = await create_bandit_online_experiment_impl(
         request=request.model_copy(deep=True),
         chosen_n=None,
@@ -560,7 +536,7 @@ async def test_create_experiment_impl_for_mab_online(xngin_session, testing_data
     assert response.state == ExperimentState.ASSIGNED
 
     # Verify design_spec
-    assert response.design_spec.experiment_id is not None
+    assert response.experiment_id is not None
     assert response.design_spec.arms[0].arm_id is not None
     assert response.design_spec.arms[1].arm_id is not None
     assert response.design_spec.experiment_name == request.design_spec.experiment_name
@@ -571,7 +547,7 @@ async def test_create_experiment_impl_for_mab_online(xngin_session, testing_data
     assert response.assign_summary is None
 
     # Verify database state
-    experiment = await xngin_session.get(tables.Experiment, response.design_spec.experiment_id)
+    experiment = await xngin_session.get(tables.Experiment, response.experiment_id)
     assert experiment.experiment_type == ExperimentsType.MAB_ONLINE
     assert experiment.participant_type == request.design_spec.participant_type
     assert experiment.name == request.design_spec.experiment_name
@@ -611,7 +587,7 @@ async def test_create_experiment_impl_for_mab_online(xngin_session, testing_data
 
 async def test_create_experiment_impl_for_cmab_online(xngin_session, testing_datasource):
     """Test implementation of creating an online experiment."""
-    request = make_create_online_bandit_experiment_request(experiment_type=ExperimentsType.CMAB_ONLINE, with_ids=True)
+    request = make_create_online_bandit_experiment_request(experiment_type=ExperimentsType.CMAB_ONLINE)
 
     response = await create_bandit_online_experiment_impl(
         request=request.model_copy(deep=True),
@@ -697,7 +673,7 @@ async def test_create_experiment_impl_overwrites_uuids(
     (which would otherwise be caught in the route handler).
     """
     participants = make_sample_data(n=100)
-    request = make_create_preassigned_experiment_request(with_ids=True)
+    request = make_create_preassigned_experiment_request()
     original_experiment_id = request.design_spec.experiment_id
     original_arm_ids = [arm.arm_id for arm in request.design_spec.arms]
 
@@ -755,7 +731,7 @@ async def test_create_experiment_impl_no_metric_stratification(
     # Verify basic response
     assert response.datasource_id == testing_datasource.ds.id
     assert response.state == ExperimentState.ASSIGNED
-    assert response.design_spec.experiment_id is not None
+    assert response.experiment_id.startswith("exp_")
     assert response.design_spec.arms[0].arm_id is not None
     # Same as in the stratify_on_metrics=True test.
     # Only the output assignments will also store a snapshot of the metric values as strata.
@@ -764,9 +740,7 @@ async def test_create_experiment_impl_no_metric_stratification(
 
     # Verify database state
     experiment = (
-        await xngin_session.scalars(
-            select(tables.Experiment).where(tables.Experiment.id == response.design_spec.experiment_id)
-        )
+        await xngin_session.scalars(select(tables.Experiment).where(tables.Experiment.id == response.experiment_id))
     ).one()
     # Verify assignments were created
     assignments = (
@@ -894,13 +868,7 @@ async def test_list_experiments_impl(
     experiment1_data[0].created_at = datetime.now(UTC) - timedelta(days=1)
     experiment2_data[0].created_at = datetime.now(UTC)
     experiment3_data[0].created_at = datetime.now(UTC) + timedelta(days=1)
-    experiment_data = [
-        experiment1_data,
-        experiment2_data,
-        experiment3_data,
-        experiment4_data,
-        experiment5_data,
-    ]
+    experiment_data = [experiment1_data, experiment2_data, experiment3_data, experiment4_data, experiment5_data]
 
     xngin_session.add_all([data[0] for data in experiment_data])
     await xngin_session.commit()
@@ -916,13 +884,19 @@ async def test_list_experiments_impl(
     actual2_config = experiments.items[1]
     actual3_config = experiments.items[0]
     assert actual1_config.state == ExperimentState.ASSIGNED
-    diff = DeepDiff(actual1_config.design_spec, experiment1_data[1])
+    diff = DeepDiff(
+        actual1_config.design_spec, experiment1_data[1], exclude_regex_paths=["experiment_id", r"arms\[\d+\].arm_id"]
+    )
     assert not diff, f"Objects differ:\n{diff.pretty()}"
     assert actual2_config.state == ExperimentState.COMMITTED
-    diff = DeepDiff(actual2_config.design_spec, experiment2_data[1])
+    diff = DeepDiff(
+        actual2_config.design_spec, experiment2_data[1], exclude_regex_paths=["experiment_id", r"arms\[\d+\].arm_id"]
+    )
     assert not diff, f"Objects differ:\n{diff.pretty()}"
     assert actual3_config.state == ExperimentState.DESIGNING
-    diff = DeepDiff(actual3_config.design_spec, experiment3_data[1])
+    diff = DeepDiff(
+        actual3_config.design_spec, experiment3_data[1], exclude_regex_paths=["experiment_id", r"arms\[\d+\].arm_id"]
+    )
     assert not diff, f"Objects differ:\n{diff.pretty()}"
 
 

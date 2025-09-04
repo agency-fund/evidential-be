@@ -3,7 +3,7 @@
 import json
 import secrets
 from datetime import UTC, datetime
-from typing import ClassVar, Self
+from typing import Any, ClassVar, Literal, Self
 
 import sqlalchemy
 from pydantic import TypeAdapter
@@ -32,16 +32,22 @@ datasource_id_factory = unique_id_factory("ds")
 event_id_factory = unique_id_factory("evt")
 experiment_id_factory = unique_id_factory("exp")
 organization_id_factory = unique_id_factory("o")
+snapshot_id_factory = unique_id_factory("sn")
 task_id_factory = unique_id_factory("task")
 user_id_factory = unique_id_factory("u")
 webhook_id_factory = unique_id_factory("wh")
 context_id_factory = unique_id_factory("ctx")
 
+# Describes the status of a snapshot. SQLAlchemy will represent this Literal type as a string type.
+type SnapshotStatus = Literal["pending", "success", "failed"]
+
 
 class Base(AsyncAttrs, DeclarativeBase):
     # See https://docs.sqlalchemy.org/en/20/orm/declarative_tables.html#customizing-the-type-map
-    type_annotation_map: ClassVar[dict[type, TypeEngine]] = {
+    # Type borrowed from sqlalchemy.orm.decl_api.
+    type_annotation_map: ClassVar[dict[Any, TypeEngine[Any]]] = {
         datetime: sqlalchemy.TIMESTAMP(timezone=True),
+        SnapshotStatus: sqlalchemy.String(16),
     }
 
     def to_dict(self):
@@ -329,7 +335,7 @@ class Experiment(Base):
 
     __tablename__ = "experiments"
 
-    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=experiment_id_factory)
     datasource_id: Mapped[str] = mapped_column(String(255), ForeignKey("datasources.id", ondelete="CASCADE"))
 
     experiment_type: Mapped[str] = mapped_column()
@@ -386,6 +392,7 @@ class Experiment(Base):
     contexts: Mapped[list["Context"]] = relationship(
         "Context", back_populates="experiment", cascade="all, delete-orphan"
     )
+    snapshots: Mapped["Snapshot"] = relationship(viewonly=True)
 
 
 class Arm(Base):
@@ -393,7 +400,7 @@ class Arm(Base):
 
     __tablename__ = "arms"
 
-    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=arm_id_factory)
     name: Mapped[str] = mapped_column(String(255))
     description: Mapped[str] = mapped_column(String(2000))
     experiment_id: Mapped[str] = mapped_column(ForeignKey("experiments.id", ondelete="CASCADE"))
@@ -465,3 +472,23 @@ class Context(Base):
     value_type: Mapped[str] = mapped_column()
 
     experiment: Mapped[Experiment] = relationship("Experiment", back_populates="contexts")
+
+
+class Snapshot(Base):
+    """Snapshots of experiment data."""
+
+    __tablename__ = "snapshots"
+
+    experiment_id: Mapped[str] = mapped_column(ForeignKey("experiments.id", ondelete="CASCADE"), primary_key=True)
+    id: Mapped[str] = mapped_column(primary_key=True, default=snapshot_id_factory, unique=True)
+    created_at: Mapped[datetime] = mapped_column(server_default=sqlalchemy.sql.func.now())
+    updated_at: Mapped[datetime] = mapped_column(
+        server_default=sqlalchemy.sql.func.now(), onupdate=sqlalchemy.sql.func.now()
+    )
+    status: Mapped[SnapshotStatus] = mapped_column(server_default="pending")
+    # An optional informative message about the state of this task (for example, if a snapshot fails, it might contain
+    # an informative error message).
+    message: Mapped[str | None] = mapped_column()
+    data: Mapped[dict | None] = mapped_column(postgresql.JSONB)  # TODO(qixotic): structure data
+
+    experiment: Mapped[Experiment] = relationship(back_populates="snapshots", viewonly=True)
