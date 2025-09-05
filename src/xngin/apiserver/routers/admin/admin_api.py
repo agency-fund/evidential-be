@@ -8,7 +8,7 @@ import json
 import secrets
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime, timedelta
-from typing import Annotated, Any
+from typing import Annotated, Any, assert_never
 
 from fastapi import (
     APIRouter,
@@ -445,11 +445,11 @@ async def create_snapshot(
     # TODO(qixotic): add in support for MABs when we actually support their analysis.
     # Apply experiment type and state validations.
     if ExperimentsType(experiment.experiment_type).is_mab():
-        raise LateValidationError("Only frequentist experiments are supported right now.")
+        raise LateValidationError("You can only snapshot frequentist experiments.")
     if experiment.state != ExperimentState.COMMITTED:
-        raise LateValidationError("Only committed experiments can be snapshotted.")
+        raise LateValidationError("You can only snapshot committed experiments.")
     if experiment.end_date < datetime.now(UTC):
-        raise LateValidationError("Experiments that have ended cannot be snapshotted.")
+        raise LateValidationError("You can only snapshot active experiments.")
 
     snapshot = tables.Snapshot(experiment_id=experiment.id)
     session.add(snapshot)
@@ -1437,6 +1437,8 @@ async def analyze_experiment(
             return await experiments_common.analyze_experiment_freq_impl(
                 ds.get_config(), experiment, baseline_arm_id, design_spec.metrics
             )
+        case _:
+            assert_never(design_spec)
 
 
 EXPERIMENT_STATE_TRANSITION_RESPONSES: dict[int | str, dict[str, Any]] = {

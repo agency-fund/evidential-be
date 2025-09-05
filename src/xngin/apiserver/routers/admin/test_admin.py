@@ -1992,7 +1992,7 @@ def test_snapshot_on_ineligible_experiments(testing_datasource_with_user, ppost,
     # Assert non-committed experiments cannot be snapshotted.
     response = ppost(f"/v1/m/organizations/{org.id}/datasources/{ds.id}/experiments/{experiment_id}/snapshots")
     assert response.status_code == 422
-    assert response.json()["message"] == "Only committed experiments can be snapshotted."
+    assert response.json()["message"] == "You can only snapshot committed experiments."
 
     # So commit the experiment.
     response = ppost(f"/v1/m/datasources/{ds.id}/experiments/{experiment_id}/commit")
@@ -2001,7 +2001,7 @@ def test_snapshot_on_ineligible_experiments(testing_datasource_with_user, ppost,
     # Assert old experiments cannot be snapshotted.
     response = ppost(f"/v1/m/organizations/{org.id}/datasources/{ds.id}/experiments/{experiment_id}/snapshots")
     assert response.status_code == 422
-    assert response.json()["message"] == "Experiments that have ended cannot be snapshotted."
+    assert response.json()["message"] == "You can only snapshot active experiments."
 
 
 def test_snapshot_with_nan(testing_datasource_with_user, ppost, pget):
