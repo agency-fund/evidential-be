@@ -32,6 +32,7 @@ from xngin.apiserver.limits import (
 from xngin.apiserver.routers.common_enums import (
     ContextType,
     DataType,
+    ExperimentAnalysisType,
     ExperimentState,
     ExperimentsType,
     LikelihoodTypes,
@@ -266,9 +267,9 @@ class ArmAnalysis(Arm):
     ]
 
     @field_serializer("t_stat", "p_value", when_used="json")
-    def serialize_float(self, v: float, _info):
+    def serialize_float(self, v: float | None, _info):
         """Serialize floats to None when they are NaN, which becomes null in JSON."""
-        if math.isnan(v):
+        if v is None or math.isnan(v):
             return None
         return v
 
@@ -375,6 +376,8 @@ class MetricAnalysis(ApiBaseModel):
 class BanditExperimentAnalysisResponse(ApiBaseModel):
     """Describes changes in arms for a bandit experiment"""
 
+    type: Literal[ExperimentAnalysisType.BANDIT] = ExperimentAnalysisType.BANDIT
+
     experiment_id: Annotated[
         str,
         Field(description="ID of the experiment."),
@@ -403,6 +406,8 @@ class BanditExperimentAnalysisResponse(ApiBaseModel):
 
 class FreqExperimentAnalysisResponse(ApiBaseModel):
     """Describes the change if any in metrics targeted by an experiment."""
+
+    type: Literal[ExperimentAnalysisType.FREQ] = ExperimentAnalysisType.FREQ
 
     experiment_id: Annotated[
         str,
@@ -434,6 +439,15 @@ class FreqExperimentAnalysisResponse(ApiBaseModel):
         datetime.datetime,
         Field(description="The date and time the experiment analysis was created."),
     ]
+
+
+type ExperimentAnalysisResponse = Annotated[
+    FreqExperimentAnalysisResponse | BanditExperimentAnalysisResponse,
+    Field(
+        discriminator="type",
+        description="The type of experiment analysis response.",
+    ),
+]
 
 
 class MetricPowerAnalysisMessage(ApiBaseModel):

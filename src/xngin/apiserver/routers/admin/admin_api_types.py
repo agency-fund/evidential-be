@@ -19,6 +19,7 @@ from xngin.apiserver.limits import (
 from xngin.apiserver.routers.common_api_types import (
     ApiBaseModel,
     DataType,
+    ExperimentAnalysisResponse,
     GcpServiceAccountBlob,
     GetFiltersResponseElement,
     GetMetricsResponseElement,
@@ -60,7 +61,7 @@ class Snapshot(AdminApiBaseModel):
     details: Annotated[dict | None, Field(description="Additional data about this snapshot.")]
     created_at: Annotated[datetime, Field(description="The time the snapshot was requested.")]
     updated_at: Annotated[datetime, Field(description="The time the snapshot was acquired.")]
-    data: dict | None  # TODO(qixotic)
+    data: Annotated[ExperimentAnalysisResponse | None, Field(description="Analysis results as of the updated_at time.")]
 
 
 class GetSnapshotResponse(AdminApiBaseModel):

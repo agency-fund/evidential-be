@@ -227,6 +227,14 @@ class ExperimentsType(enum.StrEnum):
     FREQ_ONLINE = "freq_online"
     FREQ_PREASSIGNED = "freq_preassigned"
 
+    def is_freq(self) -> bool:
+        """Returns True if the experiment type is a frequentist experiment."""
+        return self in {ExperimentsType.FREQ_ONLINE, ExperimentsType.FREQ_PREASSIGNED}
+
+    def is_mab(self) -> bool:
+        """Returns True if the experiment type is a bandit experiment."""
+        return self in {ExperimentsType.MAB_ONLINE, ExperimentsType.CMAB_ONLINE, ExperimentsType.BAYESAB_ONLINE}
+
 
 class PriorTypes(enum.StrEnum):
     """
@@ -312,3 +320,10 @@ class ContextLinkFunctions(enum.StrEnum):
         if self == ContextLinkFunctions.LOGISTIC:
             return np.array(1.0 / (1.0 + np.exp(-x)))
         raise ValueError(f"Unsupported link function: {self}.")
+
+
+class ExperimentAnalysisType(enum.StrEnum):
+    """Enum for the analysis types."""
+
+    FREQ = "freq"
+    BANDIT = "bandit"

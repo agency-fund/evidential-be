@@ -72,6 +72,7 @@ from xngin.apiserver.routers.common_api_types import (
     DataType,
     DesignSpecMetricRequest,
     ExperimentsType,
+    Filter,
     FreqExperimentAnalysisResponse,
     GetExperimentAssignmentsResponse,
     GetParticipantAssignmentResponse,
@@ -81,7 +82,7 @@ from xngin.apiserver.routers.common_api_types import (
     PreassignedFrequentistExperimentSpec,
     PriorTypes,
 )
-from xngin.apiserver.routers.common_enums import ExperimentState, StopAssignmentReason
+from xngin.apiserver.routers.common_enums import ExperimentState, Relation, StopAssignmentReason
 from xngin.apiserver.routers.experiments.test_experiments_common import (
     insert_experiment_and_arms,
     make_create_online_bandit_experiment_request,
@@ -1832,7 +1833,7 @@ def test_snapshots(pget, ppost, pdelete, uget, ppatch):
                 experiment_name="test experiment",
                 description="test experiment",
                 start_date=datetime(2024, 1, 1, tzinfo=UTC),
-                end_date=datetime(2024, 1, 31, 23, 59, 59, tzinfo=UTC),
+                end_date=datetime.now(UTC) + timedelta(days=1),
                 arms=[
                     Arm(arm_name="control", arm_description="Control group"),
                     Arm(arm_name="treatment", arm_description="Treatment group"),
@@ -1845,6 +1846,10 @@ def test_snapshots(pget, ppost, pdelete, uget, ppatch):
     )
     assert response.status_code == 200, response.content
     experiment_id = CreateExperimentResponse.model_validate_json(response.content).experiment_id
+
+    # Experiments must be in an eligible state to be snapshotted.
+    response = ppost(f"/v1/m/datasources/{create_datasource_response.id}/experiments/{experiment_id}/commit")
+    assert response.status_code == 204
 
     # When run via tests, the TestClient that ppost() is built upon will wait for the backend handler to finish
     # all of its background tasks. Therefore this test will not observe the experiment in a "pending" state.
@@ -1881,11 +1886,38 @@ def test_snapshots(pget, ppost, pdelete, uget, ppatch):
     assert list_snapshot.items[0].updated_at < list_snapshot.items[1].updated_at, list_snapshot
 
     success_snapshot, failed_snapshot = list_snapshot.items
+
     assert success_snapshot.id == create_snapshot_response.id
     assert success_snapshot.experiment_id == experiment_id
     assert success_snapshot.status == "success"
-    assert success_snapshot.data == {"todo": ["dwh"]}  # TODO(qixotic)
     assert success_snapshot.details is None
+    # Verify the snapshot data.
+    analysis_response = FreqExperimentAnalysisResponse.model_validate(success_snapshot.data)
+    assert analysis_response.experiment_id == experiment_id
+    assert analysis_response.num_participants == 100  # chosen_n
+    assert analysis_response.num_missing_participants == 0
+    assert datetime.now(UTC) - analysis_response.created_at < timedelta(seconds=5)
+    assert len(analysis_response.metric_analyses) == 1
+    metric_analysis = analysis_response.metric_analyses[0]
+    assert metric_analysis.metric_name == "income"
+    # Check arm analyses.
+    for analysis, arm_name, arm_description, is_baseline in zip(
+        metric_analysis.arm_analyses,
+        ["control", "treatment"],
+        ["Control group", "Treatment group"],
+        [True, False],
+        strict=False,
+    ):
+        assert analysis.arm_id is not None
+        assert analysis.arm_name == arm_name
+        assert analysis.arm_description == arm_description
+        assert analysis.estimate is not None
+        assert analysis.t_stat is not None
+        assert analysis.p_value is not None
+        assert analysis.std_error > 0
+        assert analysis.num_missing_values == 0
+        assert analysis.is_baseline == is_baseline
+
     assert failed_snapshot.id == create_bad_snapshot_response.id
     assert failed_snapshot.experiment_id == experiment_id
     assert failed_snapshot.status == "failed"
@@ -1928,3 +1960,143 @@ def test_snapshots(pget, ppost, pdelete, uget, ppatch):
         f"/experiments/{experiment_id}/snapshots/{success_snapshot.id}"
     )
     assert response.status_code == 404, response.content
+
+
+def test_snapshot_on_ineligible_experiments(testing_datasource_with_user, ppost, pget):
+    ds = testing_datasource_with_user.ds
+    org = testing_datasource_with_user.org
+    # The experiment created below is both too old and not yet committed.
+    response = ppost(
+        f"/v1/m/datasources/{ds.id}/experiments?chosen_n=10",
+        json=CreateExperimentRequest(
+            design_spec=PreassignedFrequentistExperimentSpec(
+                experiment_type=ExperimentsType.FREQ_PREASSIGNED,
+                participant_type="test_participant_type",
+                experiment_name="test old experiment",
+                description="too old to be snapshotted",
+                start_date=datetime(2024, 1, 1, tzinfo=UTC),
+                end_date=datetime.now(UTC) - timedelta(hours=25),
+                arms=[
+                    Arm(arm_name="control", arm_description="Control group"),
+                    Arm(arm_name="treatment", arm_description="Treatment group"),
+                ],
+                metrics=[DesignSpecMetricRequest(field_name="income", metric_pct_change=5)],
+                strata=[],
+                filters=[],
+            )
+        ).model_dump(mode="json"),
+    )
+    assert response.status_code == 200, response.content
+    experiment_id = CreateExperimentResponse.model_validate_json(response.content).design_spec.experiment_id
+
+    # Assert non-committed experiments cannot be snapshotted.
+    response = ppost(f"/v1/m/organizations/{org.id}/datasources/{ds.id}/experiments/{experiment_id}/snapshots")
+    assert response.status_code == 422
+    assert response.json()["message"] == "You can only snapshot committed experiments."
+
+    # So commit the experiment.
+    response = ppost(f"/v1/m/datasources/{ds.id}/experiments/{experiment_id}/commit")
+    assert response.status_code == 204
+
+    # Assert old experiments cannot be snapshotted.
+    response = ppost(f"/v1/m/organizations/{org.id}/datasources/{ds.id}/experiments/{experiment_id}/snapshots")
+    assert response.status_code == 422
+    assert response.json()["message"] == "You can only snapshot active experiments."
+
+    # But recently ended experiments can be snapshotted within a 1 day buffer.
+    response = ppost(
+        f"/v1/m/datasources/{ds.id}/experiments?chosen_n=10",
+        json=CreateExperimentRequest(
+            design_spec=PreassignedFrequentistExperimentSpec(
+                experiment_type=ExperimentsType.FREQ_PREASSIGNED,
+                participant_type="test_participant_type",
+                experiment_name="test just ended experiment",
+                description="just ended within a day of now, so can be snapshotted",
+                start_date=datetime(2024, 1, 1, tzinfo=UTC),
+                end_date=datetime.now(UTC) - timedelta(hours=23),
+                arms=[
+                    Arm(arm_name="control", arm_description="Control group"),
+                    Arm(arm_name="treatment", arm_description="Treatment group"),
+                ],
+                metrics=[DesignSpecMetricRequest(field_name="income", metric_pct_change=5)],
+                strata=[],
+                filters=[],
+            )
+        ).model_dump(mode="json"),
+    )
+    assert response.status_code == 200, response.content
+    experiment_id = CreateExperimentResponse.model_validate_json(response.content).design_spec.experiment_id
+    response = ppost(f"/v1/m/datasources/{ds.id}/experiments/{experiment_id}/commit")
+    assert response.status_code == 204
+    response = ppost(f"/v1/m/organizations/{org.id}/datasources/{ds.id}/experiments/{experiment_id}/snapshots")
+    assert response.status_code == 200
+    CreateSnapshotResponse.model_validate(response.json())
+
+
+def test_snapshot_with_nan(testing_datasource_with_user, ppost, pget):
+    """Test that a snapshot with a NaN t-stat/p-value is handled correctly roundtrip."""
+    ds = testing_datasource_with_user.ds
+    org = testing_datasource_with_user.org
+    response = ppost(
+        f"/v1/m/datasources/{ds.id}/experiments?chosen_n=10",
+        json=CreateExperimentRequest(
+            design_spec=PreassignedFrequentistExperimentSpec(
+                experiment_type=ExperimentsType.FREQ_PREASSIGNED,
+                participant_type="test_participant_type",
+                experiment_name="test experiment",
+                description="test experiment",
+                start_date=datetime(2024, 1, 1, tzinfo=UTC),
+                end_date=datetime.now(UTC) + timedelta(days=1),
+                arms=[
+                    Arm(arm_name="control", arm_description="Control group"),
+                    Arm(arm_name="treatment", arm_description="Treatment group"),
+                ],
+                metrics=[DesignSpecMetricRequest(field_name="is_engaged", metric_pct_change=5)],
+                strata=[],
+                # Force no variation in the primary metric => t-stat will be NaN
+                filters=[Filter(field_name="is_engaged", relation=Relation.INCLUDES, value=[False])],
+            )
+        ).model_dump(mode="json"),
+    )
+    assert response.status_code == 200, response.content
+    experiment_id = CreateExperimentResponse.model_validate_json(response.content).experiment_id
+
+    response = ppost(f"/v1/m/datasources/{ds.id}/experiments/{experiment_id}/commit")
+    assert response.status_code == 204
+
+    # Take a snapshot.
+    response = ppost(f"/v1/m/organizations/{org.id}/datasources/{ds.id}/experiments/{experiment_id}/snapshots")
+    assert response.status_code == 200, response.content
+    create_snapshot_response = CreateSnapshotResponse.model_validate(response.json())
+
+    # Verify the snapshot.
+    snapshot_id = create_snapshot_response.id
+    response = pget(
+        f"/v1/m/organizations/{org.id}/datasources/{ds.id}/experiments/{experiment_id}/snapshots/{snapshot_id}"
+    )
+    assert response.status_code == 200, response.content
+    snapshot = GetSnapshotResponse.model_validate(response.json()).snapshot
+    assert snapshot is not None
+    assert snapshot.id == snapshot_id
+    assert snapshot.status == "success"
+    assert snapshot.experiment_id == experiment_id
+    assert snapshot.data is not None
+    analysis_response = FreqExperimentAnalysisResponse.model_validate(snapshot.data)
+    assert analysis_response.experiment_id == experiment_id
+    assert analysis_response.num_participants == 10
+    assert analysis_response.num_missing_participants == 0
+    assert datetime.now(UTC) - analysis_response.created_at < timedelta(seconds=5)
+    assert len(analysis_response.metric_analyses) == 1
+    metric_analysis = analysis_response.metric_analyses[0]
+    assert metric_analysis.metric_name == "is_engaged"
+    for analysis, arm_name, is_baseline in zip(
+        metric_analysis.arm_analyses, ["control", "treatment"], [True, False], strict=True
+    ):
+        assert analysis.arm_id is not None
+        assert analysis.arm_name == arm_name
+        assert analysis.estimate == 0
+        assert analysis.t_stat is None
+        assert analysis.p_value is None
+        assert analysis.std_error == 0
+        assert analysis.num_missing_values == 0
+        assert analysis.is_baseline == is_baseline
