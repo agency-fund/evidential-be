@@ -3,6 +3,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from typing import Any, cast
 
+import numpy as np
 import pytest
 from deepdiff import DeepDiff
 from fastapi import HTTPException
@@ -15,6 +16,7 @@ from sqlalchemy.schema import CreateTable
 
 from xngin.apiserver.exceptions_common import LateValidationError
 from xngin.apiserver.routers.common_api_types import (
+    CMABExperimentSpec,
     CreateExperimentRequest,
     DesignSpec,
     DesignSpecMetric,
@@ -99,7 +101,7 @@ def make_createexperimentrequest_json(
         case ExperimentsType.MAB_ONLINE:
             return {
                 "design_spec": {
-                    "participant_type": "string",
+                    "participant_type": participant_type,
                     "experiment_name": "test",
                     "description": "test",
                     # Attach UTC tz, but use dates_equal() to compare to respect db storage support
@@ -129,6 +131,47 @@ def make_createexperimentrequest_json(
                     ],
                 }
             }
+        case ExperimentsType.CMAB_ONLINE:
+            return {
+                "design_spec": {
+                    "participant_type": participant_type,
+                    "experiment_name": "test",
+                    "description": "test",
+                    # Attach UTC tz, but use dates_equal() to compare to respect db storage support
+                    "start_date": "2024-01-01T00:00:00+00:00",
+                    # default our experiment to end in the future
+                    "end_date": (datetime.now(UTC) + timedelta(days=1)).isoformat(),
+                    "experiment_type": "cmab_online",
+                    "prior_type": prior_type,
+                    "reward_type": reward_type,
+                    "arms": [
+                        {
+                            "arm_name": "Arm 1",
+                            "arm_description": "Arm 1",
+                            "mu_init": 10.0,
+                            "sigma_init": 1.0,
+                        },
+                        {
+                            "arm_name": "Arm 2",
+                            "arm_description": "Arm 2",
+                            "mu_init": -10.0,
+                            "sigma_init": 1.0,
+                        },
+                    ],
+                    "contexts": [
+                        {
+                            "context_name": "Context 1",
+                            "context_description": "Context 1",
+                            "value_type": "binary",
+                        },
+                        {
+                            "context_name": "Context 2",
+                            "context_description": "Context 2",
+                            "value_type": "real-valued",
+                        },
+                    ],
+                }
+            }
         case _:
             raise ValueError(f"Invalid experiment type: {experiment_type}")
 
@@ -143,12 +186,13 @@ def make_create_online_experiment_request() -> CreateExperimentRequest:
     return TypeAdapter(CreateExperimentRequest).validate_python(request)
 
 
-def make_create_online_mab_experiment_request(
+def make_create_online_bandit_experiment_request(
+    experiment_type: ExperimentsType = ExperimentsType.MAB_ONLINE,
     reward_type: LikelihoodTypes = LikelihoodTypes.NORMAL,
     prior_type: PriorTypes = PriorTypes.NORMAL,
 ) -> CreateExperimentRequest:
     request = make_createexperimentrequest_json(
-        experiment_type=ExperimentsType.MAB_ONLINE, prior_type=prior_type, reward_type=reward_type
+        experiment_type=experiment_type, prior_type=prior_type, reward_type=reward_type
     )
     return TypeAdapter(CreateExperimentRequest).validate_python(request)
 
@@ -478,8 +522,7 @@ async def test_create_experiment_impl_for_online(
 
 async def test_create_experiment_impl_for_mab_online(xngin_session, testing_datasource):
     """Test implementation of creating an online experiment."""
-    request = make_create_online_mab_experiment_request()
-
+    request = make_create_online_bandit_experiment_request()
     response = await create_bandit_online_experiment_impl(
         request=request.model_copy(deep=True),
         chosen_n=None,
@@ -534,6 +577,86 @@ async def test_create_experiment_impl_for_mab_online(xngin_session, testing_data
     arm_ids = {arm.id for arm in arms}
     expected_arm_ids = {arm.arm_id for arm in response.design_spec.arms}
     assert arm_ids == expected_arm_ids
+
+    # Verify that no assignments were created for online experiment
+    assignments = (
+        await xngin_session.scalars(select(tables.Draw).where(tables.Draw.experiment_id == experiment.id))
+    ).all()
+    assert len(assignments) == 0
+
+
+async def test_create_experiment_impl_for_cmab_online(xngin_session, testing_datasource):
+    """Test implementation of creating an online experiment."""
+    request = make_create_online_bandit_experiment_request(experiment_type=ExperimentsType.CMAB_ONLINE)
+
+    response = await create_bandit_online_experiment_impl(
+        request=request.model_copy(deep=True),
+        chosen_n=None,
+        xngin_session=xngin_session,
+        organization_id=testing_datasource.org.id,
+        datasource_id=testing_datasource.ds.id,
+        validated_webhooks=[],
+    )
+    # Verify response
+    assert response.datasource_id == testing_datasource.ds.id
+    assert response.state == ExperimentState.ASSIGNED
+
+    # Verify design_spec
+    assert isinstance(response.design_spec, CMABExperimentSpec)
+    assert response.experiment_id is not None
+    assert response.design_spec.arms[0].arm_id is not None
+    assert response.design_spec.arms[1].arm_id is not None
+    assert response.design_spec.contexts is not None
+    assert len(response.design_spec.contexts) == 2
+    assert response.design_spec.contexts[0].context_id is not None
+    assert response.design_spec.contexts[1].context_id is not None
+    assert response.design_spec.experiment_name == request.design_spec.experiment_name
+    assert response.design_spec.description == request.design_spec.description
+    assert response.design_spec.start_date == request.design_spec.start_date
+    assert response.design_spec.end_date == request.design_spec.end_date
+    assert response.assign_summary is None
+
+    # Verify database state
+    experiment = await xngin_session.get(tables.Experiment, response.experiment_id)
+    assert experiment.experiment_type == ExperimentsType.CMAB_ONLINE
+    assert experiment.participant_type == request.design_spec.participant_type
+    assert experiment.name == request.design_spec.experiment_name
+    assert experiment.description == request.design_spec.description
+    # Online experiments still go through a review step before being committed
+    assert experiment.state == ExperimentState.ASSIGNED
+    assert experiment.datasource_id == testing_datasource.ds.id
+    assert_dates_equal(experiment.start_date, request.design_spec.start_date)
+    assert_dates_equal(experiment.end_date, request.design_spec.end_date)
+
+    # Verify design_spec was stored correctly
+    converter = ExperimentStorageConverter(experiment)
+    converted_design_spec = converter.get_design_spec()
+    assert converted_design_spec == response.design_spec
+    assert isinstance(converted_design_spec, CMABExperimentSpec)
+    assert converted_design_spec.prior_type == PriorTypes.NORMAL
+    for arms in converted_design_spec.arms:
+        assert arms.mu is not None and len(arms.mu) == 2
+        assert arms.covariance is not None and np.array(arms.covariance).size == 4
+
+    assert converted_design_spec.contexts is not None
+    for context in converted_design_spec.contexts:
+        assert context.context_id is not None
+
+    # Verify arms were created in database
+    arms = (await xngin_session.scalars(select(tables.Arm).where(tables.Arm.experiment_id == experiment.id))).all()
+    assert len(arms) == 2
+    arm_ids = {arm.id for arm in arms}
+    expected_arm_ids = {arm.arm_id for arm in response.design_spec.arms}
+    assert arm_ids == expected_arm_ids
+
+    # Verify contexts were created in database
+    contexts = (
+        await xngin_session.scalars(select(tables.Context).where(tables.Context.experiment_id == experiment.id))
+    ).all()
+    assert len(contexts) == 2
+    context_ids = {context.id for context in contexts}
+    expected_context_ids = {context.context_id for context in response.design_spec.contexts}
+    assert context_ids == expected_context_ids
 
     # Verify that no assignments were created for online experiment
     assignments = (
@@ -989,7 +1112,7 @@ async def test_create_assignment_for_participant(xngin_session, testing_datasour
     expect_none = await create_assignment_for_participant(xngin_session, preassigned_experiment, "new_id", None)
     assert expect_none is None
 
-    # Test create assignment for online frequentist and MAB experiments
+    # Test create assignment for online frequentist and bandit experiments
     freq_online_experiment = await insert_experiment_and_arms(
         xngin_session,
         testing_datasource.ds,
@@ -1037,6 +1160,7 @@ async def test_create_assignment_for_participant(xngin_session, testing_datasour
         (ExperimentsType.FREQ_PREASSIGNED, StopAssignmentReason.PREASSIGNED),
         (ExperimentsType.FREQ_ONLINE, StopAssignmentReason.END_DATE),
         (ExperimentsType.MAB_ONLINE, StopAssignmentReason.END_DATE),
+        (ExperimentsType.CMAB_ONLINE, StopAssignmentReason.END_DATE),
     ],
 )
 async def test_create_assignment_for_participant_stopped_reason(
@@ -1051,7 +1175,9 @@ async def test_create_assignment_for_participant_stopped_reason(
 
     # Assert that we don't create assignments for experiments in the past,
     # but for preassigned experiments we don't set a stopped_reason.
-    assignment = await create_assignment_for_participant(xngin_session, experiment, "new_id", None)
+    assignment = await create_assignment_for_participant(
+        xngin_session, experiment, "new_id", [1.0, 1.0] if experiment_type == ExperimentsType.CMAB_ONLINE else None
+    )
     assert assignment is None
     assert experiment.stopped_assignments_reason == stopped_reason
     if stopped_reason is not None:
@@ -1061,29 +1187,38 @@ async def test_create_assignment_for_participant_stopped_reason(
 
 
 @pytest.mark.parametrize(
-    "prior_type,reward_type",
+    "experiment_type,prior_type,reward_type",
     [
-        (PriorTypes.NORMAL, LikelihoodTypes.NORMAL),
-        (PriorTypes.BETA, LikelihoodTypes.BERNOULLI),
-        (PriorTypes.NORMAL, LikelihoodTypes.BERNOULLI),
+        (ExperimentsType.MAB_ONLINE, PriorTypes.NORMAL, LikelihoodTypes.NORMAL),
+        (ExperimentsType.MAB_ONLINE, PriorTypes.BETA, LikelihoodTypes.BERNOULLI),
+        (ExperimentsType.MAB_ONLINE, PriorTypes.NORMAL, LikelihoodTypes.BERNOULLI),
+        (ExperimentsType.CMAB_ONLINE, PriorTypes.NORMAL, LikelihoodTypes.NORMAL),
+        (ExperimentsType.CMAB_ONLINE, PriorTypes.NORMAL, LikelihoodTypes.BERNOULLI),
     ],
 )
-async def test_update_bandit_arm_with_outcome(xngin_session, testing_datasource, prior_type, reward_type):
-    mab_experiment = await insert_experiment_and_arms(
+async def test_update_bandit_arm_with_outcome(
+    xngin_session, testing_datasource, experiment_type, prior_type, reward_type
+):
+    bandit_experiment = await insert_experiment_and_arms(
         xngin_session,
         testing_datasource.ds,
-        experiment_type=ExperimentsType.MAB_ONLINE,
+        experiment_type=experiment_type,
         prior_type=prior_type,
         reward_type=reward_type,
     )
-    await create_assignment_for_participant(xngin_session, mab_experiment, "test_id")
+    await create_assignment_for_participant(
+        xngin_session,
+        bandit_experiment,
+        "test_id",
+        [1.0, 1.0] if experiment_type == ExperimentsType.CMAB_ONLINE else None,
+    )
 
     updated_arm = await update_bandit_arm_with_outcome_impl(
-        xngin_session=xngin_session, experiment=mab_experiment, participant_id="test_id", outcome=1.0
+        xngin_session=xngin_session, experiment=bandit_experiment, participant_id="test_id", outcome=1.0
     )
 
     # Refresh experiment; retrieve draws
-    await xngin_session.refresh(mab_experiment)
+    await xngin_session.refresh(bandit_experiment)
     draws = await updated_arm.awaitable_attrs.draws
     draw = draws[0]
 
@@ -1091,12 +1226,16 @@ async def test_update_bandit_arm_with_outcome(xngin_session, testing_datasource,
     assert len(draws) == 1
     assert draw.outcome == 1.0
     assert draw.observed_at is not None
-    await mab_experiment.awaitable_attrs.arms
-    mab_arm_map = {arm.id: arm for arm in mab_experiment.arms}
-    assert draw.current_mu == mab_arm_map[updated_arm.id].mu
-    assert draw.current_covariance == mab_arm_map[updated_arm.id].covariance
-    assert draw.current_alpha == mab_arm_map[updated_arm.id].alpha
-    assert draw.current_beta == mab_arm_map[updated_arm.id].beta
+    await bandit_experiment.awaitable_attrs.arms
+    await bandit_experiment.awaitable_attrs.contexts
+    bandit_arm_map = {arm.id: arm for arm in bandit_experiment.arms}
+    assert draw.current_mu == bandit_arm_map[updated_arm.id].mu
+    assert draw.current_covariance == bandit_arm_map[updated_arm.id].covariance
+    assert draw.current_alpha == bandit_arm_map[updated_arm.id].alpha
+    assert draw.current_beta == bandit_arm_map[updated_arm.id].beta
+
+    if experiment_type == ExperimentsType.CMAB_ONLINE:
+        assert draw.context_vals == [1.0, 1.0]
 
     # Assert that we can't update the arm with an outcome for a participant that doesn't exist
     with pytest.raises(
@@ -1105,14 +1244,14 @@ async def test_update_bandit_arm_with_outcome(xngin_session, testing_datasource,
             participant_id="some_other_id"
         ),
     ):
-        await update_bandit_arm_with_outcome_impl(xngin_session, mab_experiment, "some_other_id", 1.0)
+        await update_bandit_arm_with_outcome_impl(xngin_session, bandit_experiment, "some_other_id", 1.0)
 
     # Assert that we can't update the arm with an outcome for a participant that already has an outcome
     with pytest.raises(
         ExperimentsAssignmentError,
         match="Participant {participant_id} already has an outcome recorded.".format(participant_id="test_id"),
     ):
-        await update_bandit_arm_with_outcome_impl(xngin_session, mab_experiment, "test_id", 1.0)
+        await update_bandit_arm_with_outcome_impl(xngin_session, bandit_experiment, "test_id", 1.0)
 
 
 def test_experiment_sql():

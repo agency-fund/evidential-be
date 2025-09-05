@@ -14,6 +14,7 @@ from xngin.apiserver.snapshots import snapshotter
 from xngin.ops import sentry
 from xngin.xsecrets import secretservice
 
+# TODO: replace with max(4, (os.cpu_count() or 4) // 4) for cross-OS compatibility when we drop python 3.8
 NPROC = max(4, len(os.sched_getaffinity(0)) // 4)
 
 sentry.setup()
