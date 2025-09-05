@@ -22,7 +22,6 @@ CREATE TABLE "public"."draws" (
   "participant_id" character varying(255) NOT NULL,
   "created_at" timestamptz NOT NULL DEFAULT now(),
   "observed_at" timestamptz NULL,
-  "observation_type" character varying NULL,
   "participant_type" character varying(255) NOT NULL,
   "arm_id" character varying(36) NOT NULL,
   "outcome" double precision NULL,

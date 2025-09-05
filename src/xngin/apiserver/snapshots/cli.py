@@ -14,6 +14,7 @@ from xngin.apiserver.snapshots import snapshotter
 from xngin.ops import sentry
 from xngin.xsecrets import secretservice
 
+# Use os.rocess_cpu_count() whenever we can move to python 3.13
 NPROC = max(4, len(os.sched_getaffinity(0)) // 4) if hasattr(os, "sched_getaffinity") else os.cpu_count() or 1
 
 sentry.setup()
