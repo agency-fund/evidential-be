@@ -61,7 +61,7 @@ class Snapshot(AdminApiBaseModel):
     details: Annotated[dict | None, Field(description="Additional data about this snapshot.")]
     created_at: Annotated[datetime, Field(description="The time the snapshot was requested.")]
     updated_at: Annotated[datetime, Field(description="The time the snapshot was acquired.")]
-    data: Annotated[ExperimentAnalysisResponse | None, Field(description="Analysis results.")]
+    data: Annotated[ExperimentAnalysisResponse | None, Field(description="Analysis results as of the updated_at time.")]
 
 
 class GetSnapshotResponse(AdminApiBaseModel):

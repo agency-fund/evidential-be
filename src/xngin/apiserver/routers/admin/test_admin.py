@@ -1764,50 +1764,6 @@ def test_snapshots(pget, ppost, pdelete, uget, ppatch):
             design_spec=PreassignedFrequentistExperimentSpec(
                 experiment_type=ExperimentsType.FREQ_PREASSIGNED,
                 participant_type="test_participant_type",
-                experiment_name="test old experiment",
-                description="too old to be snapshotted",
-                start_date=datetime(2024, 1, 1, tzinfo=UTC),
-                end_date=datetime(2024, 1, 2, tzinfo=UTC),
-                arms=[
-                    Arm(arm_name="control", arm_description="Control group"),
-                    Arm(arm_name="treatment", arm_description="Treatment group"),
-                ],
-                metrics=[DesignSpecMetricRequest(field_name="income", metric_pct_change=5)],
-                strata=[],
-                filters=[],
-            )
-        ).model_dump(mode="json"),
-    )
-    assert response.status_code == 200, response.content
-    experiment_id = CreateExperimentResponse.model_validate_json(response.content).design_spec.experiment_id
-
-    # Assert non-committed experiments cannot be snapshotted.
-    response = ppost(
-        f"/v1/m/organizations/{create_organization_response.id}/datasources/{create_datasource_response.id}"
-        f"/experiments/{experiment_id}/snapshots"
-    )
-    assert response.status_code == 422
-    assert response.json()["message"] == "Only committed experiments can be snapshotted."
-
-    # So commit the experiment.
-    response = ppost(f"/v1/m/datasources/{create_datasource_response.id}/experiments/{experiment_id}/commit")
-    assert response.status_code == 204
-
-    # Assert old experiments cannot be snapshotted.
-    response = ppost(
-        f"/v1/m/organizations/{create_organization_response.id}/datasources/{create_datasource_response.id}"
-        f"/experiments/{experiment_id}/snapshots"
-    )
-    assert response.status_code == 422
-    assert response.json()["message"] == "Experiments that have ended cannot be snapshotted."
-
-    # Now work with a recent valid experiment.
-    response = ppost(
-        f"/v1/m/datasources/{create_datasource_response.id}/experiments?chosen_n=100",
-        json=CreateExperimentRequest(
-            design_spec=PreassignedFrequentistExperimentSpec(
-                experiment_type=ExperimentsType.FREQ_PREASSIGNED,
-                participant_type="test_participant_type",
                 experiment_name="test experiment",
                 description="test experiment",
                 start_date=datetime(2024, 1, 1, tzinfo=UTC),
@@ -1825,6 +1781,7 @@ def test_snapshots(pget, ppost, pdelete, uget, ppatch):
     assert response.status_code == 200, response.content
     experiment_id = CreateExperimentResponse.model_validate_json(response.content).design_spec.experiment_id
 
+    # Experiments must be in an eligible state to be snapshotted.
     response = ppost(f"/v1/m/datasources/{create_datasource_response.id}/experiments/{experiment_id}/commit")
     assert response.status_code == 204
 
@@ -1869,25 +1826,31 @@ def test_snapshots(pget, ppost, pdelete, uget, ppatch):
     assert success_snapshot.status == "success"
     assert success_snapshot.details is None
     # Verify the snapshot data.
-    analysis = FreqExperimentAnalysisResponse.model_validate(success_snapshot.data)
-    assert analysis.experiment_id == experiment_id
-    assert analysis.num_participants == 100  # chosen_n
-    assert analysis.num_missing_participants == 0
-    assert datetime.now(UTC) - analysis.created_at < timedelta(seconds=5)
-    assert len(analysis.metric_analyses) == 1
-    metric_analysis = analysis.metric_analyses[0]
+    analysis_response = FreqExperimentAnalysisResponse.model_validate(success_snapshot.data)
+    assert analysis_response.experiment_id == experiment_id
+    assert analysis_response.num_participants == 100  # chosen_n
+    assert analysis_response.num_missing_participants == 0
+    assert datetime.now(UTC) - analysis_response.created_at < timedelta(seconds=5)
+    assert len(analysis_response.metric_analyses) == 1
+    metric_analysis = analysis_response.metric_analyses[0]
     assert metric_analysis.metric_name == "income"
-    # Check one arm's analysis.
-    arm0_analysis = metric_analysis.arm_analyses[0]
-    assert arm0_analysis.arm_id is not None
-    assert arm0_analysis.arm_name == "control"
-    assert arm0_analysis.arm_description == "Control group"
-    assert arm0_analysis.estimate > 0
-    assert arm0_analysis.t_stat is not None
-    assert arm0_analysis.p_value is not None
-    assert arm0_analysis.std_error > 0
-    assert arm0_analysis.num_missing_values == 0
-    assert arm0_analysis.is_baseline
+    # Check arm analyses.
+    for analysis, arm_name, arm_description, is_baseline in zip(
+        metric_analysis.arm_analyses,
+        ["control", "treatment"],
+        ["Control group", "Treatment group"],
+        [True, False],
+        strict=False,
+    ):
+        assert analysis.arm_id is not None
+        assert analysis.arm_name == arm_name
+        assert analysis.arm_description == arm_description
+        assert analysis.estimate is not None
+        assert analysis.t_stat is not None
+        assert analysis.p_value is not None
+        assert analysis.std_error > 0
+        assert analysis.num_missing_values == 0
+        assert analysis.is_baseline == is_baseline
 
     assert failed_snapshot.id == create_bad_snapshot_response.id
     assert failed_snapshot.experiment_id == experiment_id
@@ -1931,6 +1894,48 @@ def test_snapshots(pget, ppost, pdelete, uget, ppatch):
         f"/experiments/{experiment_id}/snapshots/{success_snapshot.id}"
     )
     assert response.status_code == 404, response.content
+
+
+def test_snapshot_on_ineligible_experiments(testing_datasource_with_user, ppost, pget):
+    ds = testing_datasource_with_user.ds
+    org = testing_datasource_with_user.org
+    # The eperiment created below is both too old and not yet committed.
+    response = ppost(
+        f"/v1/m/datasources/{ds.id}/experiments?chosen_n=100",
+        json=CreateExperimentRequest(
+            design_spec=PreassignedFrequentistExperimentSpec(
+                experiment_type=ExperimentsType.FREQ_PREASSIGNED,
+                participant_type="test_participant_type",
+                experiment_name="test old experiment",
+                description="too old to be snapshotted",
+                start_date=datetime(2024, 1, 1, tzinfo=UTC),
+                end_date=datetime(2024, 1, 2, tzinfo=UTC),
+                arms=[
+                    Arm(arm_name="control", arm_description="Control group"),
+                    Arm(arm_name="treatment", arm_description="Treatment group"),
+                ],
+                metrics=[DesignSpecMetricRequest(field_name="income", metric_pct_change=5)],
+                strata=[],
+                filters=[],
+            )
+        ).model_dump(mode="json"),
+    )
+    assert response.status_code == 200, response.content
+    experiment_id = CreateExperimentResponse.model_validate_json(response.content).design_spec.experiment_id
+
+    # Assert non-committed experiments cannot be snapshotted.
+    response = ppost(f"/v1/m/organizations/{org.id}/datasources/{ds.id}/experiments/{experiment_id}/snapshots")
+    assert response.status_code == 422
+    assert response.json()["message"] == "Only committed experiments can be snapshotted."
+
+    # So commit the experiment.
+    response = ppost(f"/v1/m/datasources/{ds.id}/experiments/{experiment_id}/commit")
+    assert response.status_code == 204
+
+    # Assert old experiments cannot be snapshotted.
+    response = ppost(f"/v1/m/organizations/{org.id}/datasources/{ds.id}/experiments/{experiment_id}/snapshots")
+    assert response.status_code == 422
+    assert response.json()["message"] == "Experiments that have ended cannot be snapshotted."
 
 
 def test_snapshot_with_nan(testing_datasource_with_user, ppost, pget):
@@ -1981,24 +1986,22 @@ def test_snapshot_with_nan(testing_datasource_with_user, ppost, pget):
     assert snapshot.status == "success"
     assert snapshot.experiment_id == experiment_id
     assert snapshot.data is not None
-    analysis = FreqExperimentAnalysisResponse.model_validate(snapshot.data)
-    assert analysis.experiment_id == experiment_id
-    assert analysis.num_participants == 10
-    assert analysis.num_missing_participants == 0
-    assert datetime.now(UTC) - analysis.created_at < timedelta(seconds=5)
-    assert len(analysis.metric_analyses) == 1
-    assert analysis.metric_analyses[0].metric_name == "is_engaged"
-    for arm_analysis, arm_name, is_baseline in zip(
-        analysis.metric_analyses[0].arm_analyses,
-        ["control", "treatment"],
-        [True, False],
-        strict=True,
+    analysis_response = FreqExperimentAnalysisResponse.model_validate(snapshot.data)
+    assert analysis_response.experiment_id == experiment_id
+    assert analysis_response.num_participants == 10
+    assert analysis_response.num_missing_participants == 0
+    assert datetime.now(UTC) - analysis_response.created_at < timedelta(seconds=5)
+    assert len(analysis_response.metric_analyses) == 1
+    metric_analysis = analysis_response.metric_analyses[0]
+    assert metric_analysis.metric_name == "is_engaged"
+    for analysis, arm_name, is_baseline in zip(
+        metric_analysis.arm_analyses, ["control", "treatment"], [True, False], strict=True
     ):
-        assert arm_analysis.arm_id is not None
-        assert arm_analysis.arm_name == arm_name
-        assert arm_analysis.estimate == 0
-        assert arm_analysis.t_stat is None
-        assert arm_analysis.p_value is None
-        assert arm_analysis.std_error == 0
-        assert arm_analysis.num_missing_values == 0
-        assert arm_analysis.is_baseline == is_baseline
+        assert analysis.arm_id is not None
+        assert analysis.arm_name == arm_name
+        assert analysis.estimate == 0
+        assert analysis.t_stat is None
+        assert analysis.p_value is None
+        assert analysis.std_error == 0
+        assert analysis.num_missing_values == 0
+        assert analysis.is_baseline == is_baseline
