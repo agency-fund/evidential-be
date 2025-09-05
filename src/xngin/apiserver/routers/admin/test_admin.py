@@ -1965,9 +1965,9 @@ def test_snapshots(pget, ppost, pdelete, uget, ppatch):
 def test_snapshot_on_ineligible_experiments(testing_datasource_with_user, ppost, pget):
     ds = testing_datasource_with_user.ds
     org = testing_datasource_with_user.org
-    # The eperiment created below is both too old and not yet committed.
+    # The experiment created below is both too old and not yet committed.
     response = ppost(
-        f"/v1/m/datasources/{ds.id}/experiments?chosen_n=100",
+        f"/v1/m/datasources/{ds.id}/experiments?chosen_n=10",
         json=CreateExperimentRequest(
             design_spec=PreassignedFrequentistExperimentSpec(
                 experiment_type=ExperimentsType.FREQ_PREASSIGNED,
@@ -1975,7 +1975,7 @@ def test_snapshot_on_ineligible_experiments(testing_datasource_with_user, ppost,
                 experiment_name="test old experiment",
                 description="too old to be snapshotted",
                 start_date=datetime(2024, 1, 1, tzinfo=UTC),
-                end_date=datetime(2024, 1, 2, tzinfo=UTC),
+                end_date=datetime.now(UTC) - timedelta(hours=25),
                 arms=[
                     Arm(arm_name="control", arm_description="Control group"),
                     Arm(arm_name="treatment", arm_description="Treatment group"),
@@ -2002,6 +2002,35 @@ def test_snapshot_on_ineligible_experiments(testing_datasource_with_user, ppost,
     response = ppost(f"/v1/m/organizations/{org.id}/datasources/{ds.id}/experiments/{experiment_id}/snapshots")
     assert response.status_code == 422
     assert response.json()["message"] == "You can only snapshot active experiments."
+
+    # But recently ended experiments can be snapshotted within a 1 day buffer.
+    response = ppost(
+        f"/v1/m/datasources/{ds.id}/experiments?chosen_n=10",
+        json=CreateExperimentRequest(
+            design_spec=PreassignedFrequentistExperimentSpec(
+                experiment_type=ExperimentsType.FREQ_PREASSIGNED,
+                participant_type="test_participant_type",
+                experiment_name="test just ended experiment",
+                description="just ended within a day of now, so can be snapshotted",
+                start_date=datetime(2024, 1, 1, tzinfo=UTC),
+                end_date=datetime.now(UTC) - timedelta(hours=23),
+                arms=[
+                    Arm(arm_name="control", arm_description="Control group"),
+                    Arm(arm_name="treatment", arm_description="Treatment group"),
+                ],
+                metrics=[DesignSpecMetricRequest(field_name="income", metric_pct_change=5)],
+                strata=[],
+                filters=[],
+            )
+        ).model_dump(mode="json"),
+    )
+    assert response.status_code == 200, response.content
+    experiment_id = CreateExperimentResponse.model_validate_json(response.content).design_spec.experiment_id
+    response = ppost(f"/v1/m/datasources/{ds.id}/experiments/{experiment_id}/commit")
+    assert response.status_code == 204
+    response = ppost(f"/v1/m/organizations/{org.id}/datasources/{ds.id}/experiments/{experiment_id}/snapshots")
+    assert response.status_code == 200
+    CreateSnapshotResponse.model_validate(response.json())
 
 
 def test_snapshot_with_nan(testing_datasource_with_user, ppost, pget):

@@ -448,7 +448,8 @@ async def create_snapshot(
         raise LateValidationError("You can only snapshot frequentist experiments.")
     if experiment.state != ExperimentState.COMMITTED:
         raise LateValidationError("You can only snapshot committed experiments.")
-    if experiment.end_date < datetime.now(UTC):
+    # Aligning with the buffer in snapshotter.py, as we wish to capture +/- 1 day on both sides.
+    if experiment.end_date < datetime.now(UTC) - timedelta(days=1):
         raise LateValidationError("You can only snapshot active experiments.")
 
     snapshot = tables.Snapshot(experiment_id=experiment.id)
