@@ -1,17 +1,19 @@
 import asyncio
 import datetime
 import secrets
+import time
 from dataclasses import dataclass
 from typing import Annotated
 
 import httpx
-from fastapi import Depends, HTTPException, Security, status
-from fastapi.security import OpenIdConnect
-from jose import JWTError, jwt
+from fastapi import Depends, HTTPException, status
+from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from loguru import logger
 
 from xngin.apiserver import flags
 from xngin.apiserver.routers.auth.principal import Principal
+from xngin.apiserver.routers.auth.session_token_crypter import SessionTokenCrypter
+from xngin.xsecrets import chafernet
 
 GOOGLE_DISCOVERY_URL = "https://accounts.google.com/.well-known/openid-configuration"
 
@@ -22,10 +24,15 @@ PRIVILEGED_TOKEN_FOR_TESTING = secrets.token_urlsafe(32)
 TESTING_TOKENS_ENABLED = False
 UNPRIVILEGED_EMAIL = "testing-unprivileged@example.com"
 UNPRIVILEGED_TOKEN_FOR_TESTING = secrets.token_urlsafe(32)
-TESTING_TOKENS = {
-    AIRPLANE_TOKEN: Principal(email="testing@example.com", iss="airplane", sub="airplane", hd="example.com"),
-    UNPRIVILEGED_TOKEN_FOR_TESTING: Principal(email=UNPRIVILEGED_EMAIL, iss="testing", sub="testing", hd="example.com"),
+TESTING_TOKENS: dict[str, Principal] = {
+    AIRPLANE_TOKEN: Principal(
+        iat=int(time.time()), email="testing@example.com", iss="airplane", sub="airplane", hd="example.com"
+    ),
+    UNPRIVILEGED_TOKEN_FOR_TESTING: Principal(
+        iat=int(time.time()), email=UNPRIVILEGED_EMAIL, iss="testing", sub="testing", hd="example.com"
+    ),
     PRIVILEGED_TOKEN_FOR_TESTING: Principal(
+        iat=int(time.time()),
         email=PRIVILEGED_EMAIL,
         iss="testing",
         sub="testing",
@@ -105,79 +112,45 @@ async def get_google_configuration() -> GoogleOidcConfig:
             return _google_config
 
 
-async def require_oidc_token(
-    token: Annotated[str, Security(OpenIdConnect(openIdConnectUrl=GOOGLE_DISCOVERY_URL))],
-    oidc_config: Annotated[GoogleOidcConfig, Depends(get_google_configuration)],
-) -> Principal:
-    """Dependency for validating that the Authorization: header is a valid Google JWT.
+def session_token_crypter_dependency():
+    return SessionTokenCrypter()
 
-    This method may raise a 400 or 401, and the oidc_google dependency may raise a 403.
+
+async def require_valid_session_token(
+    authorization: Annotated[HTTPAuthorizationCredentials, Depends(HTTPBearer())],
+    tokencryptor: Annotated[SessionTokenCrypter, Depends(session_token_crypter_dependency)],
+) -> Principal:
+    """Dependency for decoding the session token and retrieving a Principal.
 
     Returns:
-        TokenInfo containing the validated token's claims.
+        Principal containing the validated token's claims.
     """
-    # FastAPI's OpenIDConnect helper only checks that the header exists. It does not verify that the header has the
-    # expected prefix.
-    expected_prefix = "Bearer "
-    if not token.startswith(expected_prefix):
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f'Authorization header must start with "{expected_prefix}".',
-        )
-    token = token[len(expected_prefix) :]
-    if TESTING_TOKENS_ENABLED and token in TESTING_TOKENS:
-        return TESTING_TOKENS[token]
-    if flags.AIRPLANE_MODE and token == AIRPLANE_TOKEN:
-        return TESTING_TOKENS[AIRPLANE_TOKEN]
+    token = authorization.credentials
+    del authorization
+    if principal := get_special_principal(token):
+        return principal
     try:
-        header = jwt.get_unverified_header(token)
-    except JWTError as e:
+        return tokencryptor.decrypt(token)
+    except chafernet.ChafernetError as err:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail=f"Invalid authentication credentials: {e}",
-        ) from e
-    key = next((jwk for jwk in oidc_config.jwks["keys"] if jwk["kid"] == header["kid"]), None)
-    if not key:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Unable to find appropriate key",
-        )
-    try:
-        decoded = jwt.decode(
-            token,
-            key,
-            algorithms=["RS256"],
-            audience=flags.CLIENT_ID,
-            issuer=oidc_config.config.get("issuer"),
-            options={
-                "require_iss": True,
-                "require_aud": True,
-                "require_iat": True,
-                "require_exp": True,
-                "verify_at_hash": False,  # PKCE flow sends at_hash but we don't need to verify it.
-            },
-        )
-        # Confirming that authorized party (azp) and audience (aud) match is not strictly necessary but if Google ever
-        # issues a token where azp an aud don't match then we would like to know about it.
-        if decoded["azp"] != decoded["aud"]:
-            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid azp/aud")
-    except JWTError as e:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail=f"Invalid authentication credentials: {e}",
-        ) from e
-    return Principal(
-        email=decoded["email"],
-        iss=decoded["iss"],
-        sub=decoded["sub"],
-        hd=decoded.get("hd", ""),
-    )
+            detail="Session token invalid or expired.",
+        ) from err
 
 
 def enable_testing_tokens():
     """Configures the authentication system to enable tokens used in unit tests."""
     global TESTING_TOKENS_ENABLED
     TESTING_TOKENS_ENABLED = True
+
+
+def get_special_principal(token: str) -> Principal | None:
+    """In testing or airplane mode, specific tokens map to specific principals."""
+    if TESTING_TOKENS_ENABLED and token in TESTING_TOKENS:
+        return TESTING_TOKENS[token]
+    if flags.AIRPLANE_MODE and token == AIRPLANE_TOKEN:
+        return TESTING_TOKENS[AIRPLANE_TOKEN]
+    return None
 
 
 def disable(app):

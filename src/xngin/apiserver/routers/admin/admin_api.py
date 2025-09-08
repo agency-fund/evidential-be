@@ -96,7 +96,7 @@ from xngin.apiserver.routers.admin.admin_api_types import (
 )
 from xngin.apiserver.routers.admin.generic_handlers import handle_delete
 from xngin.apiserver.routers.auth.auth_api_types import CallerIdentity
-from xngin.apiserver.routers.auth.auth_dependencies import require_oidc_token
+from xngin.apiserver.routers.auth.auth_dependencies import require_valid_session_token
 from xngin.apiserver.routers.auth.principal import Principal
 from xngin.apiserver.routers.common_api_types import (
     BanditExperimentAnalysisResponse,
@@ -188,13 +188,13 @@ router = APIRouter(
     lifespan=lifespan,
     prefix=constants.API_PREFIX_V1 + "/m",
     responses=STANDARD_ADMIN_RESPONSES,
-    dependencies=[Depends(require_oidc_token)],  # All routes in this router require authentication.
+    dependencies=[Depends(require_valid_session_token)],  # All routes in this router require authentication.
 )
 
 
 async def user_from_token(
     session: Annotated[AsyncSession, Depends(xngin_db_session)],
-    token_info: Annotated[Principal, Depends(require_oidc_token)],
+    token_info: Annotated[Principal, Depends(require_valid_session_token)],
 ) -> tables.User:
     """Dependency for fetching the User record matching the authenticated user's email.
 
@@ -328,10 +328,12 @@ async def validate_webhooks(
 @router.get("/caller-identity")
 async def caller_identity(
     session: Annotated[AsyncSession, Depends(xngin_db_session)],
-    token_info: Annotated[Principal, Depends(require_oidc_token)],
+    token_info: Annotated[Principal, Depends(require_valid_session_token)],
 ) -> CallerIdentity:
     """Returns basic metadata about the authenticated caller of this method."""
     user = (await session.scalars(select(tables.User).filter(tables.User.email == token_info.email))).first()
+
+    # TODO: return a refreshed session token if within an hour of expiration
 
     return CallerIdentity(
         email=token_info.email,

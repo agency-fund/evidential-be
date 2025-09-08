@@ -1,6 +1,7 @@
 import base64
 import copy
 import json
+import time
 from datetime import UTC, datetime, timedelta
 from urllib.parse import urlparse
 
@@ -157,7 +158,7 @@ async def test_user_from_token_when_users_exist(xngin_session: AsyncSession):
     with pytest.raises(HTTPException, match="No user found with email") as e:
         await user_from_token(
             xngin_session,
-            Principal(email="usernotfound@example.com", iss="", sub="", hd=""),
+            Principal(email="usernotfound@example.com", iss="", sub="", hd="", iat=int(time.time())),
         )
     assert e.value.status_code == 403
 
@@ -166,7 +167,9 @@ async def test_user_from_token_initial_setup(xngin_session: AsyncSession):
     # emulate first time developer experience by deleting the seeded users
     await delete_seeded_users(xngin_session)
 
-    first_user = await user_from_token(xngin_session, Principal(email="firstuser@example.com", iss="", sub="", hd=""))
+    first_user = await user_from_token(
+        xngin_session, Principal(email="firstuser@example.com", iss="", sub="", hd="", iat=int(time.time()))
+    )
     assert first_user.is_privileged
     await xngin_session.refresh(first_user, ["organizations"])
     assert len(first_user.organizations) == 1
@@ -174,7 +177,7 @@ async def test_user_from_token_initial_setup(xngin_session: AsyncSession):
     with pytest.raises(HTTPException, match="No user found with email") as e:
         await user_from_token(
             xngin_session,
-            Principal(email="seconduser@example.com", iss="", sub="", hd=""),
+            Principal(email="seconduser@example.com", iss="", sub="", hd="", iat=int(time.time())),
         )
     assert e.value.status_code == 403
 
@@ -182,7 +185,9 @@ async def test_user_from_token_initial_setup(xngin_session: AsyncSession):
 async def test_initial_user_setup_matches_testing_dwh(xngin_session):
     await delete_seeded_users(xngin_session)
 
-    first_user = await user_from_token(xngin_session, Principal(email="initial@example.com", iss="", sub="", hd=""))
+    first_user = await user_from_token(
+        xngin_session, Principal(email="initial@example.com", iss="", sub="", hd="", iat=int(time.time()))
+    )
 
     # Validate directly from the db that our default org was created with datasources.
     await xngin_session.refresh(first_user, ["organizations"])
