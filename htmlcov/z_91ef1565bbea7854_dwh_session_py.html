@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
     <meta http-equiv="Content-Type" content="text/html; charset=utf-8">
-    <title>Coverage for src/xngin/apiserver/dwh/dwh_session.py: 59%</title>
+    <title>Coverage for src/xngin/apiserver/dwh/dwh_session.py: 58%</title>
     <link rel="icon" sizes="32x32" href="favicon_32_cb_58284776.png">
     <link rel="stylesheet" href="style_cb_6b508a39.css" type="text/css">
     <script src="coverage_html_cb_6fb7b396.js" defer></script>
@@ -12,7 +12,7 @@
     <div class="content">
         <h1>
             <span class="text">Coverage for </span><b>src/xngin/apiserver/dwh/dwh_session.py</b>:
-            <span class="pc_cov">59%</span>
+            <span class="pc_cov">58%</span>
         </h1>
         <aside id="help_panel_wrapper">
             <input id="help_panel_state" type="checkbox">
@@ -55,8 +55,8 @@
         </aside>
         <h2>
             <span class="text">179 statements &nbsp;</span>
-            <button type="button" class="run button_toggle_run" value="run" data-shortcut="r" title="Toggle lines run">106<span class="text"> run</span></button>
-            <button type="button" class="mis show_mis button_toggle_mis" value="mis" data-shortcut="m" title="Toggle lines missing">73<span class="text"> missing</span></button>
+            <button type="button" class="run button_toggle_run" value="run" data-shortcut="r" title="Toggle lines run">104<span class="text"> run</span></button>
+            <button type="button" class="mis show_mis button_toggle_mis" value="mis" data-shortcut="m" title="Toggle lines missing">75<span class="text"> missing</span></button>
             <button type="button" class="exc show_exc button_toggle_exc" value="exc" data-shortcut="x" title="Toggle lines excluded">0<span class="text"> excluded</span></button>
         </h2>
         <p class="text">
@@ -65,7 +65,7 @@
             <a id="nextFileLink" class="nav" href="z_91ef1565bbea7854_inspection_types_py.html">&#xbb; next</a>
             &nbsp; &nbsp; &nbsp;
             <a class="nav" href="https://coverage.readthedocs.io/en/7.10.5">coverage.py v7.10.5</a>,
-            created at 2025-09-05 12:23 +0000
+            created at 2025-09-08 08:53 +0000
         </p>
         <aside class="hidden">
             <button type="button" class="button_next_chunk" data-shortcut="j"></button>
@@ -122,12 +122,12 @@
     <p class="pln"><span class="n"><a id="t40" href="#t40">40</a></span><span class="t">&nbsp;</span><span class="r"></span></p>
     <p class="run"><span class="n"><a id="t41" href="#t41">41</a></span><span class="t"><span class="key">def</span> <span class="nam">_is_postgres_database_not_found_error</span><span class="op">(</span><span class="nam">exc</span><span class="op">:</span> <span class="nam">OperationalError</span><span class="op">)</span> <span class="op">-></span> <span class="nam">bool</span><span class="op">:</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t42" href="#t42">42</a></span><span class="t">    <span class="str">"""Returns true when the exception indicates a Postgres database does not exist."""</span>&nbsp;</span><span class="r"></span></p>
-    <p class="run"><span class="n"><a id="t43" href="#t43">43</a></span><span class="t">    <span class="key">return</span> <span class="op">(</span>&nbsp;</span><span class="r"></span></p>
-    <p class="run run2"><span class="n"><a id="t44" href="#t44">44</a></span><span class="t">        <span class="nam">len</span><span class="op">(</span><span class="nam">exc</span><span class="op">.</span><span class="nam">args</span><span class="op">)</span> <span class="op">></span> <span class="num">0</span>&nbsp;</span><span class="r"></span></p>
-    <p class="run run2"><span class="n"><a id="t45" href="#t45">45</a></span><span class="t">        <span class="key">and</span> <span class="nam">isinstance</span><span class="op">(</span><span class="nam">exc</span><span class="op">.</span><span class="nam">args</span><span class="op">[</span><span class="num">0</span><span class="op">]</span><span class="op">,</span> <span class="nam">str</span><span class="op">)</span>&nbsp;</span><span class="r"></span></p>
-    <p class="run run2"><span class="n"><a id="t46" href="#t46">46</a></span><span class="t">        <span class="key">and</span> <span class="str">"FATAL:  database"</span> <span class="key">in</span> <span class="nam">exc</span><span class="op">.</span><span class="nam">args</span><span class="op">[</span><span class="num">0</span><span class="op">]</span>&nbsp;</span><span class="r"></span></p>
-    <p class="run run2"><span class="n"><a id="t47" href="#t47">47</a></span><span class="t">        <span class="key">and</span> <span class="str">"does not exist"</span> <span class="key">in</span> <span class="nam">exc</span><span class="op">.</span><span class="nam">args</span><span class="op">[</span><span class="num">0</span><span class="op">]</span>&nbsp;</span><span class="r"></span></p>
-    <p class="run run2"><span class="n"><a id="t48" href="#t48">48</a></span><span class="t">    <span class="op">)</span>&nbsp;</span><span class="r"></span></p>
+    <p class="mis show_mis"><span class="n"><a id="t43" href="#t43">43</a></span><span class="t">    <span class="key">return</span> <span class="op">(</span>&nbsp;</span><span class="r"></span></p>
+    <p class="mis mis2 show_mis"><span class="n"><a id="t44" href="#t44">44</a></span><span class="t">        <span class="nam">len</span><span class="op">(</span><span class="nam">exc</span><span class="op">.</span><span class="nam">args</span><span class="op">)</span> <span class="op">></span> <span class="num">0</span>&nbsp;</span><span class="r"></span></p>
+    <p class="mis mis2 show_mis"><span class="n"><a id="t45" href="#t45">45</a></span><span class="t">        <span class="key">and</span> <span class="nam">isinstance</span><span class="op">(</span><span class="nam">exc</span><span class="op">.</span><span class="nam">args</span><span class="op">[</span><span class="num">0</span><span class="op">]</span><span class="op">,</span> <span class="nam">str</span><span class="op">)</span>&nbsp;</span><span class="r"></span></p>
+    <p class="mis mis2 show_mis"><span class="n"><a id="t46" href="#t46">46</a></span><span class="t">        <span class="key">and</span> <span class="str">"FATAL:  database"</span> <span class="key">in</span> <span class="nam">exc</span><span class="op">.</span><span class="nam">args</span><span class="op">[</span><span class="num">0</span><span class="op">]</span>&nbsp;</span><span class="r"></span></p>
+    <p class="mis mis2 show_mis"><span class="n"><a id="t47" href="#t47">47</a></span><span class="t">        <span class="key">and</span> <span class="str">"does not exist"</span> <span class="key">in</span> <span class="nam">exc</span><span class="op">.</span><span class="nam">args</span><span class="op">[</span><span class="num">0</span><span class="op">]</span>&nbsp;</span><span class="r"></span></p>
+    <p class="mis mis2 show_mis"><span class="n"><a id="t48" href="#t48">48</a></span><span class="t">    <span class="op">)</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t49" href="#t49">49</a></span><span class="t">&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t50" href="#t50">50</a></span><span class="t">&nbsp;</span><span class="r"></span></p>
     <p class="run"><span class="n"><a id="t51" href="#t51">51</a></span><span class="t"><span class="op">@</span><span class="nam">dataclass</span>&nbsp;</span><span class="r"></span></p>
@@ -241,10 +241,10 @@
     <p class="run"><span class="n"><a id="t159" href="#t159">159</a></span><span class="t">                <span class="key">return</span> <span class="nam">sqlalchemy</span><span class="op">.</span><span class="nam">Table</span><span class="op">(</span><span class="nam">table_name</span><span class="op">,</span> <span class="nam">metadata</span><span class="op">,</span> <span class="nam">autoload_with</span><span class="op">=</span><span class="nam">self</span><span class="op">.</span><span class="nam">_safe_engine</span><span class="op">(</span><span class="op">)</span><span class="op">,</span> <span class="nam">quote</span><span class="op">=</span><span class="key">False</span><span class="op">)</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t160" href="#t160">160</a></span><span class="t">            <span class="com"># This method of introspection should only be used if the db dialect doesn't support Sqlalchemy2 reflection.</span>&nbsp;</span><span class="r"></span></p>
     <p class="mis show_mis"><span class="n"><a id="t161" href="#t161">161</a></span><span class="t">            <span class="key">return</span> <span class="nam">self</span><span class="op">.</span><span class="nam">_inspect_table_from_cursor_blocking</span><span class="op">(</span><span class="nam">self</span><span class="op">.</span><span class="nam">_safe_engine</span><span class="op">(</span><span class="op">)</span><span class="op">,</span> <span class="nam">table_name</span><span class="op">)</span>&nbsp;</span><span class="r"></span></p>
-    <p class="mis show_mis"><span class="n"><a id="t162" href="#t162">162</a></span><span class="t">        <span class="key">except</span> <span class="nam">sqlalchemy</span><span class="op">.</span><span class="nam">exc</span><span class="op">.</span><span class="nam">ProgrammingError</span><span class="op">:</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run"><span class="n"><a id="t162" href="#t162">162</a></span><span class="t">        <span class="key">except</span> <span class="nam">sqlalchemy</span><span class="op">.</span><span class="nam">exc</span><span class="op">.</span><span class="nam">ProgrammingError</span><span class="op">:</span>&nbsp;</span><span class="r"></span></p>
     <p class="mis show_mis"><span class="n"><a id="t163" href="#t163">163</a></span><span class="t">            <span class="nam">logger</span><span class="op">.</span><span class="nam">exception</span><span class="op">(</span><span class="str">"Failed to create a Table! use_sa_autoload: {}"</span><span class="op">,</span> <span class="nam">use_sa_autoload</span><span class="op">)</span>&nbsp;</span><span class="r"></span></p>
     <p class="mis show_mis"><span class="n"><a id="t164" href="#t164">164</a></span><span class="t">            <span class="key">raise</span>&nbsp;</span><span class="r"></span></p>
-    <p class="mis show_mis"><span class="n"><a id="t165" href="#t165">165</a></span><span class="t">        <span class="key">except</span> <span class="nam">NoSuchTableError</span> <span class="key">as</span> <span class="nam">nste</span><span class="op">:</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run"><span class="n"><a id="t165" href="#t165">165</a></span><span class="t">        <span class="key">except</span> <span class="nam">NoSuchTableError</span> <span class="key">as</span> <span class="nam">nste</span><span class="op">:</span>&nbsp;</span><span class="r"></span></p>
     <p class="mis show_mis"><span class="n"><a id="t166" href="#t166">166</a></span><span class="t">            <span class="nam">metadata</span><span class="op">.</span><span class="nam">reflect</span><span class="op">(</span><span class="nam">self</span><span class="op">.</span><span class="nam">_safe_engine</span><span class="op">(</span><span class="op">)</span><span class="op">)</span>&nbsp;</span><span class="r"></span></p>
     <p class="mis show_mis"><span class="n"><a id="t167" href="#t167">167</a></span><span class="t">            <span class="nam">existing_tables</span> <span class="op">=</span> <span class="nam">metadata</span><span class="op">.</span><span class="nam">tables</span><span class="op">.</span><span class="nam">keys</span><span class="op">(</span><span class="op">)</span>&nbsp;</span><span class="r"></span></p>
     <p class="mis show_mis"><span class="n"><a id="t168" href="#t168">168</a></span><span class="t">            <span class="key">raise</span> <span class="nam">CannotFindTableError</span><span class="op">(</span><span class="nam">table_name</span><span class="op">,</span> <span class="nam">existing_tables</span><span class="op">)</span> <span class="key">from</span> <span class="nam">nste</span>&nbsp;</span><span class="r"></span></p>
@@ -426,10 +426,10 @@
     <p class="run"><span class="n"><a id="t344" href="#t344">344</a></span><span class="t">            <span class="key">if</span> <span class="key">not</span> <span class="nam">isinstance</span><span class="op">(</span><span class="nam">inspected</span><span class="op">,</span> <span class="nam">Inspector</span><span class="op">)</span><span class="op">:</span>&nbsp;</span><span class="r"></span></p>
     <p class="mis show_mis"><span class="n"><a id="t345" href="#t345">345</a></span><span class="t">                <span class="key">raise</span> <span class="nam">TypeError</span><span class="op">(</span><span class="fst">f"</span><span class="fst">Unexpected type of inspector: </span><span class="op">{</span><span class="nam">type</span><span class="op">(</span><span class="nam">inspected</span><span class="op">)</span><span class="op">}</span><span class="fst">"</span><span class="op">)</span>&nbsp;</span><span class="r"></span></p>
     <p class="run"><span class="n"><a id="t346" href="#t346">346</a></span><span class="t">            <span class="key">return</span> <span class="nam">list</span><span class="op">(</span><span class="nam">sorted</span><span class="op">(</span><span class="nam">inspected</span><span class="op">.</span><span class="nam">get_table_names</span><span class="op">(</span><span class="op">)</span> <span class="op">+</span> <span class="nam">inspected</span><span class="op">.</span><span class="nam">get_view_names</span><span class="op">(</span><span class="op">)</span><span class="op">)</span><span class="op">)</span>&nbsp;</span><span class="r"></span></p>
-    <p class="run"><span class="n"><a id="t347" href="#t347">347</a></span><span class="t">        <span class="key">except</span> <span class="nam">OperationalError</span> <span class="key">as</span> <span class="nam">exc</span><span class="op">:</span>&nbsp;</span><span class="r"></span></p>
-    <p class="run"><span class="n"><a id="t348" href="#t348">348</a></span><span class="t">            <span class="key">if</span> <span class="nam">_is_postgres_database_not_found_error</span><span class="op">(</span><span class="nam">exc</span><span class="op">)</span><span class="op">:</span>&nbsp;</span><span class="r"></span></p>
+    <p class="mis show_mis"><span class="n"><a id="t347" href="#t347">347</a></span><span class="t">        <span class="key">except</span> <span class="nam">OperationalError</span> <span class="key">as</span> <span class="nam">exc</span><span class="op">:</span>&nbsp;</span><span class="r"></span></p>
+    <p class="mis show_mis"><span class="n"><a id="t348" href="#t348">348</a></span><span class="t">            <span class="key">if</span> <span class="nam">_is_postgres_database_not_found_error</span><span class="op">(</span><span class="nam">exc</span><span class="op">)</span><span class="op">:</span>&nbsp;</span><span class="r"></span></p>
     <p class="mis show_mis"><span class="n"><a id="t349" href="#t349">349</a></span><span class="t">                <span class="key">raise</span> <span class="nam">DwhDatabaseDoesNotExistError</span><span class="op">(</span><span class="nam">str</span><span class="op">(</span><span class="nam">exc</span><span class="op">)</span><span class="op">)</span> <span class="key">from</span> <span class="nam">exc</span>&nbsp;</span><span class="r"></span></p>
-    <p class="run"><span class="n"><a id="t350" href="#t350">350</a></span><span class="t">            <span class="key">raise</span>&nbsp;</span><span class="r"></span></p>
+    <p class="mis show_mis"><span class="n"><a id="t350" href="#t350">350</a></span><span class="t">            <span class="key">raise</span>&nbsp;</span><span class="r"></span></p>
     <p class="mis show_mis"><span class="n"><a id="t351" href="#t351">351</a></span><span class="t">        <span class="key">except</span> <span class="nam">google</span><span class="op">.</span><span class="nam">api_core</span><span class="op">.</span><span class="nam">exceptions</span><span class="op">.</span><span class="nam">NotFound</span> <span class="key">as</span> <span class="nam">exc</span><span class="op">:</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t352" href="#t352">352</a></span><span class="t">            <span class="com"># Google returns a 404 when authentication succeeds but when the specified datasource does not exist.</span>&nbsp;</span><span class="r"></span></p>
     <p class="mis show_mis"><span class="n"><a id="t353" href="#t353">353</a></span><span class="t">            <span class="key">raise</span> <span class="nam">DwhDatabaseDoesNotExistError</span><span class="op">(</span><span class="nam">str</span><span class="op">(</span><span class="nam">exc</span><span class="op">)</span><span class="op">)</span> <span class="key">from</span> <span class="nam">exc</span>&nbsp;</span><span class="r"></span></p>
@@ -509,7 +509,7 @@
             <a class="nav" href="z_91ef1565bbea7854_inspection_types_py.html">&#xbb; next</a>
             &nbsp; &nbsp; &nbsp;
             <a class="nav" href="https://coverage.readthedocs.io/en/7.10.5">coverage.py v7.10.5</a>,
-            created at 2025-09-05 12:23 +0000
+            created at 2025-09-08 08:53 +0000
         </p>
     </div>
 </footer>

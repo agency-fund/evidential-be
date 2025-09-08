@@ -65,7 +65,7 @@
             <a id="nextFileLink" class="nav" href="z_4c2f388c36838af7_storage_format_converters_py.html">&#xbb; next</a>
             &nbsp; &nbsp; &nbsp;
             <a class="nav" href="https://coverage.readthedocs.io/en/7.10.5">coverage.py v7.10.5</a>,
-            created at 2025-09-05 12:23 +0000
+            created at 2025-09-08 08:53 +0000
         </p>
         <aside class="hidden">
             <button type="button" class="button_next_chunk" data-shortcut="j"></button>
@@ -571,9 +571,10 @@
     <p class="pln"><span class="n"><a id="t489" href="#t489">489</a></span><span class="t">    <span class="com"># An optional informative message about the state of this task (for example, if a snapshot fails, it might contain</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t490" href="#t490">490</a></span><span class="t">    <span class="com"># an informative error message).</span>&nbsp;</span><span class="r"></span></p>
     <p class="run"><span class="n"><a id="t491" href="#t491">491</a></span><span class="t">    <span class="nam">message</span><span class="op">:</span> <span class="nam">Mapped</span><span class="op">[</span><span class="nam">str</span> <span class="op">|</span> <span class="key">None</span><span class="op">]</span> <span class="op">=</span> <span class="nam">mapped_column</span><span class="op">(</span><span class="op">)</span>&nbsp;</span><span class="r"></span></p>
-    <p class="run"><span class="n"><a id="t492" href="#t492">492</a></span><span class="t">    <span class="nam">data</span><span class="op">:</span> <span class="nam">Mapped</span><span class="op">[</span><span class="nam">dict</span> <span class="op">|</span> <span class="key">None</span><span class="op">]</span> <span class="op">=</span> <span class="nam">mapped_column</span><span class="op">(</span><span class="nam">postgresql</span><span class="op">.</span><span class="nam">JSONB</span><span class="op">)</span>  <span class="com"># TODO(qixotic): structure data</span>&nbsp;</span><span class="r"></span></p>
-    <p class="pln"><span class="n"><a id="t493" href="#t493">493</a></span><span class="t">&nbsp;</span><span class="r"></span></p>
-    <p class="run"><span class="n"><a id="t494" href="#t494">494</a></span><span class="t">    <span class="nam">experiment</span><span class="op">:</span> <span class="nam">Mapped</span><span class="op">[</span><span class="nam">Experiment</span><span class="op">]</span> <span class="op">=</span> <span class="nam">relationship</span><span class="op">(</span><span class="nam">back_populates</span><span class="op">=</span><span class="str">"snapshots"</span><span class="op">,</span> <span class="nam">viewonly</span><span class="op">=</span><span class="key">True</span><span class="op">)</span>&nbsp;</span><span class="r"></span></p>
+    <p class="pln"><span class="n"><a id="t492" href="#t492">492</a></span><span class="t">    <span class="com"># JSON serialized form of an ExperimentAnalysisResponse. May be null if the snapshot is not yet a success.</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run"><span class="n"><a id="t493" href="#t493">493</a></span><span class="t">    <span class="nam">data</span><span class="op">:</span> <span class="nam">Mapped</span><span class="op">[</span><span class="nam">dict</span> <span class="op">|</span> <span class="key">None</span><span class="op">]</span> <span class="op">=</span> <span class="nam">mapped_column</span><span class="op">(</span><span class="nam">postgresql</span><span class="op">.</span><span class="nam">JSONB</span><span class="op">)</span>&nbsp;</span><span class="r"></span></p>
+    <p class="pln"><span class="n"><a id="t494" href="#t494">494</a></span><span class="t">&nbsp;</span><span class="r"></span></p>
+    <p class="run"><span class="n"><a id="t495" href="#t495">495</a></span><span class="t">    <span class="nam">experiment</span><span class="op">:</span> <span class="nam">Mapped</span><span class="op">[</span><span class="nam">Experiment</span><span class="op">]</span> <span class="op">=</span> <span class="nam">relationship</span><span class="op">(</span><span class="nam">back_populates</span><span class="op">=</span><span class="str">"snapshots"</span><span class="op">,</span> <span class="nam">viewonly</span><span class="op">=</span><span class="key">True</span><span class="op">)</span>&nbsp;</span><span class="r"></span></p>
 </main>
 <footer>
     <div class="content">
@@ -583,7 +584,7 @@
             <a class="nav" href="z_4c2f388c36838af7_storage_format_converters_py.html">&#xbb; next</a>
             &nbsp; &nbsp; &nbsp;
             <a class="nav" href="https://coverage.readthedocs.io/en/7.10.5">coverage.py v7.10.5</a>,
-            created at 2025-09-05 12:23 +0000
+            created at 2025-09-08 08:53 +0000
         </p>
     </div>
 </footer>
