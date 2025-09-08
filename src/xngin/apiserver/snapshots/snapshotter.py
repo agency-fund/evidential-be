@@ -3,11 +3,14 @@ import random
 
 from loguru import logger
 from sqlalchemy import func, insert, or_, select, text
-from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
 from xngin.apiserver import database
-from xngin.apiserver.dwh.dwh_session import DwhSession
+from xngin.apiserver.routers.common_api_types import ExperimentAnalysisResponse
+from xngin.apiserver.routers.common_enums import ExperimentsType
+from xngin.apiserver.routers.experiments import experiments_common
 from xngin.apiserver.sqla import tables
+from xngin.apiserver.storage.storage_format_converters import ExperimentStorageConverter
 
 # The amount of time the API server will wait for a snapshot to complete when invoked in response to user request.
 # The snapshotter cron job can specify a different timeout via command line flags.
@@ -75,12 +78,18 @@ async def make_first_snapshot(experiment_id: str, snapshot_id: str):
                     tables.Snapshot.status == "pending",
                 )
                 .with_for_update(skip_locked=True)
+                .options(
+                    selectinload(tables.Snapshot.experiment),
+                    selectinload(tables.Snapshot.experiment).selectinload(tables.Experiment.arms),
+                    selectinload(tables.Snapshot.experiment).selectinload(tables.Experiment.arm_assignments),
+                    selectinload(tables.Snapshot.experiment).selectinload(tables.Experiment.datasource),
+                )
             )
         ).scalar_one_or_none()
         if snapshot is None:
             logger.info(f"{experiment_id}.{snapshot_id} is missing or is already being processed.")
             return
-        await _handle_one_snapshot_safely(session, snapshot, SNAPSHOT_TIMEOUT_SECS)
+        await _handle_one_snapshot_safely(snapshot, SNAPSHOT_TIMEOUT_SECS)
 
 
 async def process_pending_snapshots(snapshot_timeout: int):
@@ -92,7 +101,16 @@ async def process_pending_snapshots(snapshot_timeout: int):
     been aligned.
     """
     one_pending_snapshot = (
-        select(tables.Snapshot).where(tables.Snapshot.status == "pending").limit(1).with_for_update(skip_locked=True)
+        select(tables.Snapshot)
+        .where(tables.Snapshot.status == "pending")
+        .limit(1)
+        .with_for_update(skip_locked=True)
+        .options(
+            selectinload(tables.Snapshot.experiment),
+            selectinload(tables.Snapshot.experiment).selectinload(tables.Experiment.arms),
+            selectinload(tables.Snapshot.experiment).selectinload(tables.Experiment.arm_assignments),
+            selectinload(tables.Snapshot.experiment).selectinload(tables.Experiment.datasource),
+        )
     )
 
     while True:
@@ -102,16 +120,17 @@ async def process_pending_snapshots(snapshot_timeout: int):
             if snapshot is None:
                 logger.info("No pending snapshots available.")
                 return
-            _ = await _handle_one_snapshot_safely(session, snapshot, snapshot_timeout)
+            _ = await _handle_one_snapshot_safely(snapshot, snapshot_timeout)
 
 
-async def _handle_one_snapshot_safely(session: AsyncSession, snapshot: tables.Snapshot, snapshot_timeout: int):
+async def _handle_one_snapshot_safely(snapshot: tables.Snapshot, snapshot_timeout: int):
     experiment = await snapshot.awaitable_attrs.experiment
     datasource = await experiment.awaitable_attrs.datasource
     logger.info(f"{experiment.id}.{snapshot.id}: processing")
     try:
         async with asyncio.timeout(snapshot_timeout):
-            snapshot.data = await _query_dwh_for_snapshot_data(session, datasource, experiment)
+            result = await _query_dwh_for_snapshot_data(datasource, experiment)
+            snapshot.data = result.model_dump(mode="json")
             snapshot.status = "success"
     except Exception as exc:
         logger.opt(exception=exc).info(f"{experiment.id}.{snapshot.id}")
@@ -121,11 +140,18 @@ async def _handle_one_snapshot_safely(session: AsyncSession, snapshot: tables.Sn
 
 
 async def _query_dwh_for_snapshot_data(
-    _session: AsyncSession, datasource: tables.Datasource, _experiment: tables.Experiment
-) -> dict:
+    datasource: tables.Datasource, experiment: tables.Experiment
+) -> ExperimentAnalysisResponse:
     """Collect a snapshot from a customer DWH and returns the snapshot data."""
-    ds_config = datasource.get_config()
-    # TODO(qixotic): replace this dummy implementation with snapshot collection behavior
-    async with DwhSession(ds_config.dwh) as dwh:
-        table_list = await dwh.list_tables()
-    return {"todo": table_list}
+    if ExperimentsType(experiment.experiment_type).is_mab():
+        raise ValueError("Only frequentist experiments are supported right now.")
+
+    # We always assume the first arm is the baseline.
+    arms = experiment.arms
+    assert arms[0].id is not None
+    return await experiments_common.analyze_experiment_freq_impl(
+        dsconfig=datasource.get_config(),
+        experiment=experiment,
+        baseline_arm_id=experiment.arms[0].id,
+        metrics=ExperimentStorageConverter(experiment).get_design_spec_metrics(),
+    )
