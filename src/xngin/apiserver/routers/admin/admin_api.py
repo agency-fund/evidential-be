@@ -28,7 +28,6 @@ from pydantic import BaseModel
 from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import QueryableAttribute, selectinload
-from sqlalchemy.sql.functions import count
 
 from xngin.apiserver import constants, flags
 from xngin.apiserver.apikeys import hash_key_or_raise, make_key
@@ -96,8 +95,7 @@ from xngin.apiserver.routers.admin.admin_api_types import (
 )
 from xngin.apiserver.routers.admin.generic_handlers import handle_delete
 from xngin.apiserver.routers.auth.auth_api_types import CallerIdentity
-from xngin.apiserver.routers.auth.auth_dependencies import require_valid_session_token
-from xngin.apiserver.routers.auth.principal import Principal
+from xngin.apiserver.routers.auth.auth_dependencies import require_user_from_token
 from xngin.apiserver.routers.common_api_types import (
     BanditExperimentAnalysisResponse,
     BaseBanditExperimentSpec,
@@ -126,7 +124,6 @@ from xngin.apiserver.snapshots import snapshotter
 from xngin.apiserver.sqla import tables
 from xngin.apiserver.storage.bootstrap import (
     add_nodwh_datasource_to_org,
-    create_user_and_first_datasource,
 )
 from xngin.apiserver.storage.storage_format_converters import ExperimentStorageConverter
 from xngin.stats import check_power
@@ -188,41 +185,8 @@ router = APIRouter(
     lifespan=lifespan,
     prefix=constants.API_PREFIX_V1 + "/m",
     responses=STANDARD_ADMIN_RESPONSES,
-    dependencies=[Depends(require_valid_session_token)],  # All routes in this router require authentication.
+    dependencies=[Depends(require_user_from_token)],  # All routes in this router require authentication.
 )
-
-
-async def user_from_token(
-    session: Annotated[AsyncSession, Depends(xngin_db_session)],
-    token_info: Annotated[Principal, Depends(require_valid_session_token)],
-) -> tables.User:
-    """Dependency for fetching the User record matching the authenticated user's email.
-
-    This may raise a 400, 401, or 403.
-    """
-    result = await session.scalars(select(tables.User).filter(tables.User.email == token_info.email))
-    user = result.first()
-    if user:
-        return user
-
-    # There are two cases when we create a user on an authenticated request:
-    # 1. Airplane mode: We are in airplane mode and the request is coming from the UI in airplane mode.
-    # 2. First use of installation by a developer: There are no users in the database, and this is the first request.
-    user_count = await session.scalar(select(count(tables.User.id)))
-    if user_count == 0 or (flags.AIRPLANE_MODE and token_info.iss == "airplane"):
-        new_user = create_user_and_first_datasource(
-            session,
-            email=token_info.email,
-            dsn=flags.XNGIN_DEVDWH_DSN,
-            privileged=True,
-        )
-        await session.commit()
-        return new_user
-
-    raise HTTPException(
-        status_code=status.HTTP_403_FORBIDDEN,
-        detail=f"No user found with email: {token_info.email}",
-    )
 
 
 async def get_organization_or_raise(session: AsyncSession, user: tables.User, organization_id: str):
@@ -326,21 +290,14 @@ async def validate_webhooks(
 
 
 @router.get("/caller-identity")
-async def caller_identity(
-    session: Annotated[AsyncSession, Depends(xngin_db_session)],
-    token_info: Annotated[Principal, Depends(require_valid_session_token)],
-) -> CallerIdentity:
+async def caller_identity(user: Annotated[tables.User, Depends(require_user_from_token)]) -> CallerIdentity:
     """Returns basic metadata about the authenticated caller of this method."""
-    user = (await session.scalars(select(tables.User).filter(tables.User.email == token_info.email))).first()
-
-    # TODO: return a refreshed session token if within an hour of expiration
-
     return CallerIdentity(
-        email=token_info.email,
-        iss=token_info.iss,
-        sub=token_info.sub,
-        hd=token_info.hd,
-        is_privileged=user.is_privileged if user else False,
+        email=user.email,
+        iss=user.iss or "",
+        sub=user.sub or "",
+        hd="",
+        is_privileged=user.is_privileged,
     )
 
 
@@ -349,7 +306,7 @@ async def caller_identity(
 )
 async def get_snapshot(
     session: Annotated[AsyncSession, Depends(xngin_db_session)],
-    user: Annotated[tables.User, Depends(user_from_token)],
+    user: Annotated[tables.User, Depends(require_user_from_token)],
     organization_id: Annotated[str, Path()],
     datasource_id: Annotated[str, Path()],
     experiment_id: Annotated[str, Path()],
@@ -374,7 +331,7 @@ async def get_snapshot(
 @router.get("/organizations/{organization_id}/datasources/{datasource_id}/experiments/{experiment_id}/snapshots")
 async def list_snapshots(
     session: Annotated[AsyncSession, Depends(xngin_db_session)],
-    user: Annotated[tables.User, Depends(user_from_token)],
+    user: Annotated[tables.User, Depends(require_user_from_token)],
     organization_id: Annotated[str, Path()],
     datasource_id: Annotated[str, Path()],
     experiment_id: Annotated[str, Path()],
@@ -409,7 +366,7 @@ async def list_snapshots(
 )
 async def delete_snapshot(
     session: Annotated[AsyncSession, Depends(xngin_db_session)],
-    user: Annotated[tables.User, Depends(user_from_token)],
+    user: Annotated[tables.User, Depends(require_user_from_token)],
     _organization_id: Annotated[str, Path(alias="organization_id")],
     datasource_id: Annotated[str, Path()],
     experiment_id: Annotated[str, Path()],
@@ -431,7 +388,7 @@ async def delete_snapshot(
 @router.post("/organizations/{organization_id}/datasources/{datasource_id}/experiments/{experiment_id}/snapshots")
 async def create_snapshot(
     session: Annotated[AsyncSession, Depends(xngin_db_session)],
-    user: Annotated[tables.User, Depends(user_from_token)],
+    user: Annotated[tables.User, Depends(require_user_from_token)],
     organization_id: Annotated[str, Path()],
     datasource_id: Annotated[str, Path()],
     experiment_id: Annotated[str, Path()],
@@ -464,7 +421,7 @@ async def create_snapshot(
 @router.get("/organizations")
 async def list_organizations(
     session: Annotated[AsyncSession, Depends(xngin_db_session)],
-    user: Annotated[tables.User, Depends(user_from_token)],
+    user: Annotated[tables.User, Depends(require_user_from_token)],
 ) -> ListOrganizationsResponse:
     """Returns a list of organizations that the authenticated user is a member of."""
     stmt = (
@@ -489,7 +446,7 @@ async def list_organizations(
 @router.post("/organizations")
 async def create_organizations(
     session: Annotated[AsyncSession, Depends(xngin_db_session)],
-    user: Annotated[tables.User, Depends(user_from_token)],
+    user: Annotated[tables.User, Depends(require_user_from_token)],
     body: Annotated[CreateOrganizationRequest, Body(...)],
 ) -> CreateOrganizationResponse:
     """Creates a new organization.
@@ -515,7 +472,7 @@ async def create_organizations(
 async def add_webhook_to_organization(
     organization_id: str,
     session: Annotated[AsyncSession, Depends(xngin_db_session)],
-    user: Annotated[tables.User, Depends(user_from_token)],
+    user: Annotated[tables.User, Depends(require_user_from_token)],
     body: Annotated[AddWebhookToOrganizationRequest, Body(...)],
 ) -> AddWebhookToOrganizationResponse:
     """Adds a Webhook to an organization."""
@@ -549,7 +506,7 @@ async def add_webhook_to_organization(
 async def list_organization_webhooks(
     organization_id: str,
     session: Annotated[AsyncSession, Depends(xngin_db_session)],
-    user: Annotated[tables.User, Depends(user_from_token)],
+    user: Annotated[tables.User, Depends(require_user_from_token)],
 ) -> ListWebhooksResponse:
     """Lists all the webhooks for an organization."""
     # Verify user has access to the organization
@@ -590,7 +547,7 @@ async def update_organization_webhook(
     organization_id: str,
     webhook_id: str,
     session: Annotated[AsyncSession, Depends(xngin_db_session)],
-    user: Annotated[tables.User, Depends(user_from_token)],
+    user: Annotated[tables.User, Depends(require_user_from_token)],
     body: Annotated[UpdateOrganizationWebhookRequest, Body(...)],
 ):
     """Updates a webhook's name and URL in an organization."""
@@ -624,7 +581,7 @@ async def regenerate_webhook_auth_token(
     organization_id: str,
     webhook_id: str,
     session: Annotated[AsyncSession, Depends(xngin_db_session)],
-    user: Annotated[tables.User, Depends(user_from_token)],
+    user: Annotated[tables.User, Depends(require_user_from_token)],
 ):
     """Regenerates the auth token for a webhook in an organization."""
     # Verify user has access to the organization
@@ -657,7 +614,7 @@ async def delete_webhook_from_organization(
     organization_id: str,
     webhook_id: str,
     session: Annotated[AsyncSession, Depends(xngin_db_session)],
-    user: Annotated[tables.User, Depends(user_from_token)],
+    user: Annotated[tables.User, Depends(require_user_from_token)],
     allow_missing: Annotated[
         bool,
         Query(description="If true, return a 204 even if the resource does not exist."),
@@ -677,7 +634,7 @@ async def delete_webhook_from_organization(
 async def list_organization_events(
     organization_id: str,
     session: Annotated[AsyncSession, Depends(xngin_db_session)],
-    user: Annotated[tables.User, Depends(user_from_token)],
+    user: Annotated[tables.User, Depends(require_user_from_token)],
 ) -> ListOrganizationEventsResponse:
     """Returns the most recent 200 events in an organization."""
     # Verify user has access to the organization
@@ -717,7 +674,7 @@ def convert_events_to_eventsummaries(events):
 async def add_member_to_organization(
     organization_id: str,
     session: Annotated[AsyncSession, Depends(xngin_db_session)],
-    user: Annotated[tables.User, Depends(user_from_token)],
+    user: Annotated[tables.User, Depends(require_user_from_token)],
     body: Annotated[AddMemberToOrganizationRequest, Body(...)],
 ):
     """Adds a new member to an organization.
@@ -757,7 +714,7 @@ async def remove_member_from_organization(
     organization_id: str,
     user_id: str,
     session: Annotated[AsyncSession, Depends(xngin_db_session)],
-    user: Annotated[tables.User, Depends(user_from_token)],
+    user: Annotated[tables.User, Depends(require_user_from_token)],
     allow_missing: Annotated[
         bool,
         Query(description="If true, return a 204 even if the resource does not exist."),
@@ -784,7 +741,7 @@ async def remove_member_from_organization(
 async def update_organization(
     organization_id: str,
     session: Annotated[AsyncSession, Depends(xngin_db_session)],
-    user: Annotated[tables.User, Depends(user_from_token)],
+    user: Annotated[tables.User, Depends(require_user_from_token)],
     body: Annotated[UpdateOrganizationRequest, Body(...)],
 ):
     """Updates an organization's properties.
@@ -805,7 +762,7 @@ async def update_organization(
 async def get_organization(
     organization_id: str,
     session: Annotated[AsyncSession, Depends(xngin_db_session)],
-    user: Annotated[tables.User, Depends(user_from_token)],
+    user: Annotated[tables.User, Depends(require_user_from_token)],
 ) -> GetOrganizationResponse:
     """Returns detailed information about a specific organization.
 
@@ -848,7 +805,7 @@ async def get_organization(
 async def list_organization_datasources(
     organization_id: str,
     session: Annotated[AsyncSession, Depends(xngin_db_session)],
-    user: Annotated[tables.User, Depends(user_from_token)],
+    user: Annotated[tables.User, Depends(require_user_from_token)],
 ) -> ListDatasourcesResponse:
     """Returns a list of datasources accessible to the authenticated user for an org."""
     _authz_check = await get_organization_or_raise(session, user, organization_id)
@@ -882,7 +839,7 @@ async def list_organization_datasources(
 @router.post("/datasources")
 async def create_datasource(
     session: Annotated[AsyncSession, Depends(xngin_db_session)],
-    user: Annotated[tables.User, Depends(user_from_token)],
+    user: Annotated[tables.User, Depends(require_user_from_token)],
     body: Annotated[CreateDatasourceRequest, Body(...)],
 ) -> CreateDatasourceResponse:
     """Creates a new datasource for the specified organization."""
@@ -905,7 +862,7 @@ async def create_datasource(
 async def update_datasource(
     datasource_id: str,
     body: UpdateDatasourceRequest,
-    user: Annotated[tables.User, Depends(user_from_token)],
+    user: Annotated[tables.User, Depends(require_user_from_token)],
     session: Annotated[AsyncSession, Depends(xngin_db_session)],
 ):
     ds = await get_datasource_or_raise(session, user, datasource_id)
@@ -934,7 +891,7 @@ async def update_datasource(
 @router.get("/datasources/{datasource_id}")
 async def get_datasource(
     datasource_id: str,
-    user: Annotated[tables.User, Depends(user_from_token)],
+    user: Annotated[tables.User, Depends(require_user_from_token)],
     session: Annotated[AsyncSession, Depends(xngin_db_session)],
 ) -> GetDatasourceResponse:
     """Returns detailed information about a specific datasource."""
@@ -952,7 +909,7 @@ async def get_datasource(
 @router.get("/datasources/{datasource_id}/inspect")
 async def inspect_datasource(
     datasource_id: str,
-    user: Annotated[tables.User, Depends(user_from_token)],
+    user: Annotated[tables.User, Depends(require_user_from_token)],
     session: Annotated[AsyncSession, Depends(xngin_db_session)],
     refresh: Annotated[bool, Query(description="Refresh the cache.")] = False,
 ) -> InspectDatasourceResponse:
@@ -992,7 +949,7 @@ async def invalidate_inspect_table_cache(session, datasource_id):
 async def inspect_table_in_datasource(
     datasource_id: str,
     table_name: str,
-    user: Annotated[tables.User, Depends(user_from_token)],
+    user: Annotated[tables.User, Depends(require_user_from_token)],
     session: Annotated[AsyncSession, Depends(xngin_db_session)],
     refresh: Annotated[bool, Query(description="Refresh the cache.")] = False,
 ) -> InspectDatasourceTableResponse:
@@ -1035,7 +992,7 @@ async def inspect_table_in_datasource(
 )
 async def delete_datasource(
     session: Annotated[AsyncSession, Depends(xngin_db_session)],
-    user: Annotated[tables.User, Depends(user_from_token)],
+    user: Annotated[tables.User, Depends(require_user_from_token)],
     organization_id: Annotated[str, Path(...)],
     datasource_id: Annotated[str, Path(...)],
     allow_missing: Annotated[
@@ -1060,7 +1017,7 @@ async def delete_datasource(
 async def list_participant_types(
     datasource_id: str,
     session: Annotated[AsyncSession, Depends(xngin_db_session)],
-    user: Annotated[tables.User, Depends(user_from_token)],
+    user: Annotated[tables.User, Depends(require_user_from_token)],
 ) -> ListParticipantsTypeResponse:
     ds = await get_datasource_or_raise(session, user, datasource_id)
     return ListParticipantsTypeResponse(
@@ -1072,7 +1029,7 @@ async def list_participant_types(
 async def create_participant_type(
     datasource_id: str,
     session: Annotated[AsyncSession, Depends(xngin_db_session)],
-    user: Annotated[tables.User, Depends(user_from_token)],
+    user: Annotated[tables.User, Depends(require_user_from_token)],
     body: CreateParticipantsTypeRequest,
 ) -> CreateParticipantsTypeResponse:
     ds = await get_datasource_or_raise(session, user, datasource_id)
@@ -1097,7 +1054,7 @@ async def inspect_participant_types(
     datasource_id: str,
     participant_id: str,
     session: Annotated[AsyncSession, Depends(xngin_db_session)],
-    user: Annotated[tables.User, Depends(user_from_token)],
+    user: Annotated[tables.User, Depends(require_user_from_token)],
     refresh: Annotated[bool, Query(description="Refresh the cache.")] = False,
 ) -> InspectParticipantTypesResponse:
     """Returns filter, strata, and metric field metadata for a participant type, including exemplars for
@@ -1196,7 +1153,7 @@ async def get_participant_types(
     datasource_id: str,
     participant_id: str,
     session: Annotated[AsyncSession, Depends(xngin_db_session)],
-    user: Annotated[tables.User, Depends(user_from_token)],
+    user: Annotated[tables.User, Depends(require_user_from_token)],
 ) -> ParticipantsConfig:
     ds = await get_datasource_or_raise(session, user, datasource_id)
     # CannotFindParticipantsError will be handled by exceptionhandlers.
@@ -1211,7 +1168,7 @@ async def update_participant_type(
     datasource_id: str,
     participant_id: str,
     session: Annotated[AsyncSession, Depends(xngin_db_session)],
-    user: Annotated[tables.User, Depends(user_from_token)],
+    user: Annotated[tables.User, Depends(require_user_from_token)],
     body: UpdateParticipantsTypeRequest,
 ):
     ds = await get_datasource_or_raise(session, user, datasource_id)
@@ -1251,7 +1208,7 @@ async def delete_participant(
     datasource_id: str,
     participant_id: str,
     session: Annotated[AsyncSession, Depends(xngin_db_session)],
-    user: Annotated[tables.User, Depends(user_from_token)],
+    user: Annotated[tables.User, Depends(require_user_from_token)],
     allow_missing: Annotated[
         bool,
         Query(description="If true, return a 204 even if the resource does not exist."),
@@ -1288,7 +1245,7 @@ async def delete_participant(
 async def list_api_keys(
     datasource_id: str,
     session: Annotated[AsyncSession, Depends(xngin_db_session)],
-    user: Annotated[tables.User, Depends(user_from_token)],
+    user: Annotated[tables.User, Depends(require_user_from_token)],
 ) -> ListApiKeysResponse:
     """Returns API keys that have access to the datasource."""
     ds = await get_datasource_or_raise(
@@ -1314,7 +1271,7 @@ async def list_api_keys(
 async def create_api_key(
     datasource_id: str,
     session: Annotated[AsyncSession, Depends(xngin_db_session)],
-    user: Annotated[tables.User, Depends(user_from_token)],
+    user: Annotated[tables.User, Depends(require_user_from_token)],
 ) -> CreateApiKeyResponse:
     """Creates an API key for the specified datasource.
 
@@ -1336,7 +1293,7 @@ async def create_api_key(
 async def delete_api_key(
     datasource_id: str,
     session: Annotated[AsyncSession, Depends(xngin_db_session)],
-    user: Annotated[tables.User, Depends(user_from_token)],
+    user: Annotated[tables.User, Depends(require_user_from_token)],
     api_key_id: Annotated[str, Path(...)],
     allow_missing: Annotated[
         bool,
@@ -1361,7 +1318,7 @@ async def delete_api_key(
 async def create_experiment(
     datasource_id: str,
     session: Annotated[AsyncSession, Depends(xngin_db_session)],
-    user: Annotated[tables.User, Depends(user_from_token)],
+    user: Annotated[tables.User, Depends(require_user_from_token)],
     body: CreateExperimentRequest,
     chosen_n: Annotated[int | None, Query(..., description="Number of participants to assign.")] = None,
     stratify_on_metrics: Annotated[
@@ -1404,7 +1361,7 @@ async def analyze_experiment(
     datasource_id: str,
     experiment_id: str,
     xngin_session: Annotated[AsyncSession, Depends(xngin_db_session)],
-    user: Annotated[tables.User, Depends(user_from_token)],
+    user: Annotated[tables.User, Depends(require_user_from_token)],
     baseline_arm_id: Annotated[
         str | None,
         Query(
@@ -1462,7 +1419,7 @@ async def commit_experiment(
     datasource_id: str,
     experiment_id: str,
     session: Annotated[AsyncSession, Depends(xngin_db_session)],
-    user: Annotated[tables.User, Depends(user_from_token)],
+    user: Annotated[tables.User, Depends(require_user_from_token)],
 ):
     ds = await get_datasource_or_raise(session, user, datasource_id)
     experiment = await get_experiment_via_ds_or_raise(session, ds, experiment_id)
@@ -1477,7 +1434,7 @@ async def abandon_experiment(
     datasource_id: str,
     experiment_id: str,
     session: Annotated[AsyncSession, Depends(xngin_db_session)],
-    user: Annotated[tables.User, Depends(user_from_token)],
+    user: Annotated[tables.User, Depends(require_user_from_token)],
 ):
     ds = await get_datasource_or_raise(session, user, datasource_id)
     experiment = await get_experiment_via_ds_or_raise(session, ds, experiment_id)
@@ -1488,7 +1445,7 @@ async def abandon_experiment(
 async def list_organization_experiments(
     organization_id: str,
     session: Annotated[AsyncSession, Depends(xngin_db_session)],
-    user: Annotated[tables.User, Depends(user_from_token)],
+    user: Annotated[tables.User, Depends(require_user_from_token)],
 ) -> ListExperimentsResponse:
     """Returns a list of experiments in the organization."""
     org = await get_organization_or_raise(session, user, organization_id)
@@ -1502,7 +1459,7 @@ async def get_experiment(
     datasource_id: str,
     experiment_id: str,
     session: Annotated[AsyncSession, Depends(xngin_db_session)],
-    user: Annotated[tables.User, Depends(user_from_token)],
+    user: Annotated[tables.User, Depends(require_user_from_token)],
 ) -> GetExperimentResponse:
     """Returns the experiment with the specified ID."""
     ds = await get_datasource_or_raise(session, user, datasource_id)
@@ -1523,7 +1480,7 @@ async def get_experiment_assignments(
     datasource_id: str,
     experiment_id: str,
     session: Annotated[AsyncSession, Depends(xngin_db_session)],
-    user: Annotated[tables.User, Depends(user_from_token)],
+    user: Annotated[tables.User, Depends(require_user_from_token)],
 ) -> GetExperimentAssignmentsResponse:
     ds = await get_datasource_or_raise(session, user, datasource_id)
     experiment = await get_experiment_via_ds_or_raise(
@@ -1546,7 +1503,7 @@ async def get_experiment_assignments_as_csv(
     datasource_id: str,
     experiment_id: str,
     session: Annotated[AsyncSession, Depends(xngin_db_session)],
-    user: Annotated[tables.User, Depends(user_from_token)],
+    user: Annotated[tables.User, Depends(require_user_from_token)],
 ) -> StreamingResponse:
     # TODO: update for bandits
     ds = await get_datasource_or_raise(session, user, datasource_id)
@@ -1570,7 +1527,7 @@ async def get_experiment_assignment_for_participant(
     experiment_id: str,
     participant_id: str,
     session: Annotated[AsyncSession, Depends(xngin_db_session)],
-    user: Annotated[tables.User, Depends(user_from_token)],
+    user: Annotated[tables.User, Depends(require_user_from_token)],
     create_if_none: Annotated[
         bool,
         Query(
@@ -1626,7 +1583,7 @@ async def delete_experiment(
     datasource_id: str,
     experiment_id: str,
     session: Annotated[AsyncSession, Depends(xngin_db_session)],
-    user: Annotated[tables.User, Depends(user_from_token)],
+    user: Annotated[tables.User, Depends(require_user_from_token)],
     allow_missing: Annotated[
         bool,
         Query(description="If true, return a 204 even if the resource does not exist."),
@@ -1646,7 +1603,7 @@ async def delete_experiment(
 async def power_check(
     datasource_id: str,
     session: Annotated[AsyncSession, Depends(xngin_db_session)],
-    user: Annotated[tables.User, Depends(user_from_token)],
+    user: Annotated[tables.User, Depends(require_user_from_token)],
     body: PowerRequest,
 ) -> PowerResponse:
     """Performs a power check for the specified datasource."""

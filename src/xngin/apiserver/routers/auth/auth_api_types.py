@@ -14,7 +14,7 @@ class CallbackResponse(BaseModel):
 
 
 # This is similar to Principal, except that Principal is an internal type and we can store sensitive information on
-# it whereas CallerIdentity is designed to support frontend authentication needs.
+# it whereas CallerIdentity is designed to inform the frontend about the user's identity and privileges.
 class CallerIdentity(BaseModel):
     """Describes the user's identity in a format suitable for use in the frontend."""
 

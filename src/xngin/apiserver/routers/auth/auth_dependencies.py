@@ -9,11 +9,20 @@ import httpx
 from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from loguru import logger
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.sql.functions import count
 
 from xngin.apiserver import flags
+from xngin.apiserver.dependencies import xngin_db_session
 from xngin.apiserver.routers.auth.principal import Principal
 from xngin.apiserver.routers.auth.session_token_crypter import SessionTokenCrypter
+from xngin.apiserver.sqla import tables
+from xngin.apiserver.storage.bootstrap import create_user_and_first_datasource
 from xngin.xsecrets import chafernet
+
+# The length of time that a session token is considered valid.
+SESSION_TOKEN_LIFETIME = datetime.timedelta(hours=12).seconds
 
 GOOGLE_DISCOVERY_URL = "https://accounts.google.com/.well-known/openid-configuration"
 
@@ -26,17 +35,25 @@ UNPRIVILEGED_EMAIL = "testing-unprivileged@example.com"
 UNPRIVILEGED_TOKEN_FOR_TESTING = secrets.token_urlsafe(32)
 TESTING_TOKENS: dict[str, Principal] = {
     AIRPLANE_TOKEN: Principal(
-        iat=int(time.time()), email="testing@example.com", iss="airplane", sub="airplane", hd="example.com"
+        email="testing@example.com",
+        hd="example.com",
+        iat=int(time.time()),
+        iss="airplane",
+        sub="airplane",
     ),
     UNPRIVILEGED_TOKEN_FOR_TESTING: Principal(
-        iat=int(time.time()), email=UNPRIVILEGED_EMAIL, iss="testing", sub="testing", hd="example.com"
-    ),
-    PRIVILEGED_TOKEN_FOR_TESTING: Principal(
+        email=UNPRIVILEGED_EMAIL,
+        hd="example.com",
         iat=int(time.time()),
-        email=PRIVILEGED_EMAIL,
         iss="testing",
         sub="testing",
+    ),
+    PRIVILEGED_TOKEN_FOR_TESTING: Principal(
+        email=PRIVILEGED_EMAIL,
         hd="example.com",
+        iat=int(time.time()),
+        iss="testing",
+        sub="testing",
     ),
 }
 
@@ -79,7 +96,7 @@ async def _fetch_object_200(client: httpx.AsyncClient, url: str):
 
 
 async def get_google_configuration() -> GoogleOidcConfig:
-    """Fetch and cache Google's OpenID configuration."""
+    """Dependency providing Google's OpenID configuration."""
     global _google_config
     # When config is fresh, we can use it immediately.
     if _google_config and not _google_config.should_refresh():
@@ -113,7 +130,8 @@ async def get_google_configuration() -> GoogleOidcConfig:
 
 
 def session_token_crypter_dependency():
-    return SessionTokenCrypter()
+    """Dependency that provides a configured SessionTokenCrypter."""
+    return SessionTokenCrypter(SESSION_TOKEN_LIFETIME)
 
 
 async def require_valid_session_token(
@@ -123,7 +141,7 @@ async def require_valid_session_token(
     """Dependency for decoding the session token and retrieving a Principal.
 
     Returns:
-        Principal containing the validated token's claims.
+        Principal containing the validated claims from the ID token.
     """
     token = authorization.credentials
     del authorization
@@ -136,6 +154,53 @@ async def require_valid_session_token(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Session token invalid or expired.",
         ) from err
+
+
+async def require_user_from_token(
+    session: Annotated[AsyncSession, Depends(xngin_db_session)],
+    session_token: Annotated[Principal, Depends(require_valid_session_token)],
+) -> tables.User:
+    """Dependency for fetching the User record matching the authenticated user's email."""
+    user = await _lookup_or_create(session, email=session_token.email, iss=session_token.iss, iat=session_token.iat)
+    if user:
+        return user
+    raise HTTPException(
+        status_code=status.HTTP_401_UNAUTHORIZED,
+        detail=f"No user found with email: {session_token.email}",
+    )
+
+
+async def _lookup_or_create(session: AsyncSession, *, email: str, iss: str, iat: int | None) -> tables.User | None:
+    """Lookup or create a user based on email, iss, and generation.
+
+    To support initial deployment, a User will be created if we are in airplane mode or if there are no users in the
+    database yet.
+
+    If generation is provided, we only return a User when the generation argument matches the stored generation.
+    """
+    result = await session.scalars(select(tables.User).where(tables.User.email == email))
+    user = result.first()
+    if user:
+        if iat is None:
+            return user
+        if user.last_logout.timestamp() <= iat:
+            return user
+        return None
+
+    # There are two cases when we create a user on an authenticated request:
+    # 1. Airplane mode: We are in airplane mode and the request is coming from the UI in airplane mode.
+    # 2. First use of installation by a developer: There are no users in the database, and this is the first request.
+    user_count = await session.scalar(select(count(tables.User.id)))
+    if user_count == 0 or (flags.AIRPLANE_MODE and iss == "airplane"):
+        new_user = create_user_and_first_datasource(
+            session,
+            email=email,
+            dsn=flags.XNGIN_DEVDWH_DSN,
+            privileged=True,
+        )
+        await session.commit()
+        return new_user
+    return None
 
 
 def enable_testing_tokens():

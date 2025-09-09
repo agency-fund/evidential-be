@@ -16,7 +16,6 @@ from xngin.apiserver.conftest import delete_seeded_users
 from xngin.apiserver.dns import safe_resolve
 from xngin.apiserver.dwh.dwh_session import DwhSession
 from xngin.apiserver.dwh.inspection_types import FieldDescriptor, ParticipantsSchema
-from xngin.apiserver.routers.admin.admin_api import user_from_token
 from xngin.apiserver.routers.admin.admin_api_converters import (
     CREDENTIALS_UNAVAILABLE_MESSAGE,
 )
@@ -62,6 +61,7 @@ from xngin.apiserver.routers.auth.auth_dependencies import (
     TESTING_TOKENS,
     UNPRIVILEGED_EMAIL,
     UNPRIVILEGED_TOKEN_FOR_TESTING,
+    require_user_from_token,
 )
 from xngin.apiserver.routers.auth.principal import Principal
 from xngin.apiserver.routers.common_api_types import (
@@ -150,13 +150,13 @@ async def fixture_testing_experiment(xngin_session: AsyncSession, testing_dataso
 
 
 async def test_user_from_token_when_users_exist(xngin_session: AsyncSession):
-    unpriv = await user_from_token(xngin_session, TESTING_TOKENS[UNPRIVILEGED_TOKEN_FOR_TESTING])
+    unpriv = await require_user_from_token(xngin_session, TESTING_TOKENS[UNPRIVILEGED_TOKEN_FOR_TESTING])
     assert not unpriv.is_privileged
-    priv = await user_from_token(xngin_session, TESTING_TOKENS[PRIVILEGED_TOKEN_FOR_TESTING])
+    priv = await require_user_from_token(xngin_session, TESTING_TOKENS[PRIVILEGED_TOKEN_FOR_TESTING])
     assert priv.is_privileged
 
     with pytest.raises(HTTPException, match="No user found with email") as e:
-        await user_from_token(
+        await require_user_from_token(
             xngin_session,
             Principal(email="usernotfound@example.com", iss="", sub="", hd="", iat=int(time.time())),
         )
@@ -167,7 +167,7 @@ async def test_user_from_token_initial_setup(xngin_session: AsyncSession):
     # emulate first time developer experience by deleting the seeded users
     await delete_seeded_users(xngin_session)
 
-    first_user = await user_from_token(
+    first_user = await require_user_from_token(
         xngin_session, Principal(email="firstuser@example.com", iss="", sub="", hd="", iat=int(time.time()))
     )
     assert first_user.is_privileged
@@ -175,7 +175,7 @@ async def test_user_from_token_initial_setup(xngin_session: AsyncSession):
     assert len(first_user.organizations) == 1
 
     with pytest.raises(HTTPException, match="No user found with email") as e:
-        await user_from_token(
+        await require_user_from_token(
             xngin_session,
             Principal(email="seconduser@example.com", iss="", sub="", hd="", iat=int(time.time())),
         )
@@ -185,7 +185,7 @@ async def test_user_from_token_initial_setup(xngin_session: AsyncSession):
 async def test_initial_user_setup_matches_testing_dwh(xngin_session):
     await delete_seeded_users(xngin_session)
 
-    first_user = await user_from_token(
+    first_user = await require_user_from_token(
         xngin_session, Principal(email="initial@example.com", iss="", sub="", hd="", iat=int(time.time()))
     )
 

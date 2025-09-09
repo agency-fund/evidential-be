@@ -1,5 +1,4 @@
 import json
-from datetime import timedelta
 
 from pydantic import ValidationError
 
@@ -12,8 +11,9 @@ from xngin.xsecrets.nacl_provider import NaclProvider, NaclProviderKeyset
 class SessionTokenCrypter:
     """Convenience wrapper for Chafernet tokens for encoding a Principal."""
 
-    def __init__(self):
-        self._chafernet = None
+    def __init__(self, ttl: int):
+        self._chafernet: Chafernet | None = None
+        self._ttl = ttl
 
     @property
     def _instance(self):
@@ -32,5 +32,5 @@ class SessionTokenCrypter:
         return self._instance.encrypt(json.dumps(principal.model_dump(), separators=(",", ":")), b"")
 
     def decrypt(self, token: str) -> Principal:
-        decrypted = self._instance.decrypt(token, b"", timedelta(hours=12).seconds)
+        decrypted = self._instance.decrypt(token, b"", self._ttl)
         return Principal.model_validate_json(decrypted)
