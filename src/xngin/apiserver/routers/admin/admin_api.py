@@ -122,9 +122,7 @@ from xngin.apiserver.settings import (
 )
 from xngin.apiserver.snapshots import snapshotter
 from xngin.apiserver.sqla import tables
-from xngin.apiserver.storage.bootstrap import (
-    add_nodwh_datasource_to_org,
-)
+from xngin.apiserver.storage.bootstrap import add_nodwh_datasource_to_org
 from xngin.apiserver.storage.storage_format_converters import ExperimentStorageConverter
 from xngin.stats import check_power
 
