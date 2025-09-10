@@ -166,7 +166,7 @@ async def require_user_from_token(
         return user
     raise HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
-        detail=f"No user found with email: {session_token.email}",
+        detail="Expired session, or user not found.",
     )
 
 
