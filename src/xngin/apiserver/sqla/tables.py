@@ -174,6 +174,9 @@ class User(Base):
     iss: Mapped[str | None] = mapped_column(String(255))
     sub: Mapped[str | None] = mapped_column(String(255))
 
+    # Session tokens issued (iat) before last_logout are not considered valid for this user.
+    last_logout: Mapped[datetime] = mapped_column(server_default=sqlalchemy.sql.func.to_timestamp(0))
+
     # True when this user is considered to be privileged.
     is_privileged: Mapped[bool] = mapped_column(server_default=sqlalchemy.sql.false())
 

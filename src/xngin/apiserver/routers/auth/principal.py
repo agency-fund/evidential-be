@@ -1,14 +1,14 @@
-from dataclasses import dataclass
+from pydantic import BaseModel
 
 
-@dataclass
-class Principal:
-    """Describes a currently authenticated user within the API server.
+class Principal(BaseModel):
+    """Describes a user within the API server.
 
     The fields on this type should be sufficient for uniquely identifying a user using any IDP.
     """
 
-    email: str
+    email: str  # user email
+    hd: str  # hosted domain
+    iat: int  # issued-at timestamp
     iss: str  # issuer
     sub: str  # subject identifier
-    hd: str  # hosted domain
