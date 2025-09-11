@@ -149,7 +149,7 @@ async def require_valid_session_token(
         return principal
     try:
         return tokencryptor.decrypt(token)
-    except chafernet.ChafernetError as err:
+    except chafernet.InvalidTokenError as err:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Session token invalid or expired.",

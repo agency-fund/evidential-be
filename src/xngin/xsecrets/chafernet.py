@@ -14,15 +14,7 @@ _MAX_CLOCK_SKEW = 5
 _VERSION = 1
 
 
-class ChafernetError(Exception):
-    pass
-
-
-class InvalidTokenError(ChafernetError):
-    pass
-
-
-class VersionMismatchError(ChafernetError):
+class InvalidTokenError(Exception):
     pass
 
 
@@ -91,14 +83,14 @@ class Chafernet:
     def _decrypt(self, ciphertext: str, *, aad: bytes, ttl: int, current_time: int) -> bytes:
         try:
             decoded = _safe_decode(ciphertext)
-        except binascii.Error as err:
-            raise InvalidTokenError from err
+        except binascii.Error:
+            raise InvalidTokenError from None
         try:
             plaintext = self.nacl_provider.decrypt(decoded, aad)
-        except nacl.exceptions.CryptoError as err:
-            raise InvalidTokenError from err
+        except nacl.exceptions.CryptoError:
+            raise InvalidTokenError from None
         if plaintext[0] != _VERSION:
-            raise VersionMismatchError
+            raise InvalidTokenError
         timestamp = int.from_bytes(plaintext[1:9], byteorder="big")
         if timestamp + ttl < current_time:
             raise InvalidTokenError
