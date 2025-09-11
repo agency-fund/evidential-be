@@ -37,6 +37,16 @@ def test_chafernet(plaintext, chaf):
         chaf.decrypt(modified, b"", ttl)
 
 
+def test_chafernet_expiration(chaf):
+    now = 100
+    ttl = 30
+    encrypted = chaf.encrypt_at_time("plaintext", b"", now)
+    last_valid_moment = now + ttl
+    chaf.decrypt_at_time(encrypted, aad=b"", ttl=ttl, current_time=last_valid_moment)
+    with pytest.raises(InvalidTokenError):
+        chaf.decrypt_at_time(encrypted, aad=b"", ttl=ttl, current_time=last_valid_moment + 1)
+
+
 @plaintexts
 def test_chafernet_clock_skew(plaintext, chaf):
     now = 100
