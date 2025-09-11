@@ -170,19 +170,15 @@ async def require_user_from_token(
     )
 
 
-async def _lookup_or_create(session: AsyncSession, *, email: str, iss: str, iat: int | None) -> tables.User | None:
-    """Lookup or create a user based on email, iss, and generation.
+async def _lookup_or_create(session: AsyncSession, *, email: str, iss: str, iat: int) -> tables.User | None:
+    """Lookup or create a user based on email, iss, and iat.
 
     To support initial deployment, a User will be created if we are in airplane mode or if there are no users in the
     database yet.
-
-    If generation is provided, we only return a User when the generation argument matches the stored generation.
     """
     result = await session.scalars(select(tables.User).where(tables.User.email == email))
     user = result.first()
     if user:
-        if iat is None:
-            return user
         if user.last_logout.timestamp() <= iat:
             return user
         return None
