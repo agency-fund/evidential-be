@@ -170,7 +170,8 @@ class User(Base):
 
     id: Mapped[str] = mapped_column(primary_key=True, default=user_id_factory)
     email: Mapped[str] = mapped_column(String(255), unique=True)
-    # TODO: properly handle federated auth
+
+    # iss and sub will be None only for users that have been invited but have not yet logged in for the first time.
     iss: Mapped[str | None] = mapped_column(String(255))
     sub: Mapped[str | None] = mapped_column(String(255))
 

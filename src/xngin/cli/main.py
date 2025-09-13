@@ -43,7 +43,7 @@ from xngin.apiserver.settings import (
     SettingsForTesting,
 )
 from xngin.apiserver.sqla import tables
-from xngin.apiserver.storage.bootstrap import create_user_and_first_datasource
+from xngin.apiserver.storage.bootstrap import setup_user_and_first_datasource
 from xngin.apiserver.testing.testing_dwh_def import TESTING_DWH_RAW_DATA
 from xngin.xsecrets import secretservice
 from xngin.xsecrets.nacl_provider import NaclProviderKeyset
@@ -616,7 +616,7 @@ def add_user(
     engine = create_engine(database_url)
     with Session(engine) as session:
         try:
-            user = create_user_and_first_datasource(session, email=email, dsn=dwh, privileged=privileged)
+            user = setup_user_and_first_datasource(session, tables.User(email=email, is_privileged=True), dwh)
             session.commit()
             if output == TextOrJson.text:
                 console.print("\n[bold green]User added successfully:[/bold green]")

@@ -18,7 +18,7 @@ from xngin.apiserver.dependencies import xngin_db_session
 from xngin.apiserver.routers.auth.principal import Principal
 from xngin.apiserver.routers.auth.session_token_crypter import SessionTokenCrypter
 from xngin.apiserver.sqla import tables
-from xngin.apiserver.storage.bootstrap import create_user_and_first_datasource
+from xngin.apiserver.storage.bootstrap import setup_user_and_first_datasource
 from xngin.xsecrets import chafernet
 
 # The length of time that a session token is considered valid.
@@ -158,10 +158,10 @@ async def require_valid_session_token(
 
 async def require_user_from_token(
     session: Annotated[AsyncSession, Depends(xngin_db_session)],
-    session_token: Annotated[Principal, Depends(require_valid_session_token)],
+    principal: Annotated[Principal, Depends(require_valid_session_token)],
 ) -> tables.User:
     """Dependency for fetching the User record matching the authenticated user's email."""
-    user = await _lookup_or_create(session, email=session_token.email, iss=session_token.iss, iat=session_token.iat)
+    user = await _lookup_or_create(session, principal)
     if user:
         return user
     raise HTTPException(
@@ -170,16 +170,26 @@ async def require_user_from_token(
     )
 
 
-async def _lookup_or_create(session: AsyncSession, *, email: str, iss: str, iat: int) -> tables.User | None:
-    """Lookup or create a user based on email, iss, and iat.
+async def _lookup_or_create(session: AsyncSession, principal: Principal) -> tables.User | None:
+    """Lookup or create a user based on email, iss, sub, and iat.
 
     To support initial deployment, a User will be created if we are in airplane mode or if there are no users in the
     database yet.
     """
-    result = await session.scalars(select(tables.User).where(tables.User.email == email))
+    result = await session.scalars(select(tables.User).where(tables.User.email == principal.email))
     user = result.first()
     if user:
-        if user.last_logout.timestamp() <= iat:
+        if user.last_logout.timestamp() > principal.iat:
+            return None
+        if user.iss == principal.iss and user.sub == principal.sub:
+            return user
+        # Users that are invited but who have not yet logged in will have (iss, sub) == (None, None), meaning that they
+        # can authenticate with any IDP. After logging in the first time, they will only ever be able to log in with
+        # that IDP.
+        if user.iss is None:
+            user.iss = principal.iss
+            user.sub = principal.sub
+            await session.commit()
             return user
         return None
 
@@ -187,13 +197,9 @@ async def _lookup_or_create(session: AsyncSession, *, email: str, iss: str, iat:
     # 1. Airplane mode: We are in airplane mode and the request is coming from the UI in airplane mode.
     # 2. First use of installation by a developer: There are no users in the database, and this is the first request.
     user_count = await session.scalar(select(count(tables.User.id)))
-    if user_count == 0 or (flags.AIRPLANE_MODE and iss == "airplane"):
-        new_user = create_user_and_first_datasource(
-            session,
-            email=email,
-            dsn=flags.XNGIN_DEVDWH_DSN,
-            privileged=True,
-        )
+    if user_count == 0 or (flags.AIRPLANE_MODE and principal.iss == "airplane"):
+        user = tables.User(email=principal.email, iss=principal.iss, sub=principal.sub, is_privileged=True)
+        new_user = setup_user_and_first_datasource(session, user, flags.XNGIN_DEVDWH_DSN)
         await session.commit()
         return new_user
     return None

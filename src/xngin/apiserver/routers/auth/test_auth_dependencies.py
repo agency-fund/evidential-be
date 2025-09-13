@@ -103,6 +103,41 @@ async def test_require_valid_session_token_invalid(variant):
         assert exc.value.status_code == 401
 
 
+async def test_user_from_token_invite(xngin_session: AsyncSession, ppost):
+    """
+    Tests that invited users are updated with the IDP details on their first login, and
+    that they are then bound to that IDP afterwards.
+    """
+    await delete_seeded_users(xngin_session)
+
+    xngin_session.add(tables.User(email="u1@example.com", iss="iss", sub="sub"))
+    # Invited users have (iss, sub) = (None, None).
+    xngin_session.add(tables.User(email="inv@example.com", iss=None, sub=None))
+    await xngin_session.commit()
+
+    invited_user_principal = Principal(
+        email="inv@example.com", iss="invited", sub="invited", hd="", iat=int(time.time())
+    )
+
+    second_user = await require_user_from_token(xngin_session, invited_user_principal)
+    assert second_user.iss == "invited"
+    assert second_user.sub == "invited"
+
+    second_user_again = await require_user_from_token(xngin_session, invited_user_principal)
+    assert second_user_again.iss == "invited"
+    assert second_user_again.sub == "invited"
+
+    different_idp_iss = invited_user_principal.model_copy(update={"iss": "otheridp"})
+    with pytest.raises(HTTPException, match="user not found") as exc:
+        await require_user_from_token(xngin_session, different_idp_iss)
+    assert exc.value.status_code == 401
+
+    different_idp_sub = invited_user_principal.model_copy(update={"sub": "othersub"})
+    with pytest.raises(HTTPException, match="user not found") as exc:
+        await require_user_from_token(xngin_session, different_idp_sub)
+    assert exc.value.status_code == 401
+
+
 async def test_user_from_token_when_users_exist(xngin_session: AsyncSession):
     unpriv = await require_user_from_token(xngin_session, TESTING_TOKENS[UNPRIVILEGED_TOKEN_FOR_TESTING])
     assert not unpriv.is_privileged
