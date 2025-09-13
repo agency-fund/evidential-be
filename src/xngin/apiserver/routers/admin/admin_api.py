@@ -299,6 +299,17 @@ async def caller_identity(user: Annotated[tables.User, Depends(require_user_from
     )
 
 
+@router.post("/logout", status_code=status.HTTP_204_NO_CONTENT)
+async def logout(
+    session: Annotated[AsyncSession, Depends(xngin_db_session)],
+    user: Annotated[tables.User, Depends(require_user_from_token)],
+):
+    """Invalidates all previously created session tokens."""
+    user.last_logout = datetime.now(UTC)
+    await session.commit()
+    return GENERIC_SUCCESS
+
+
 @router.get(
     "/organizations/{organization_id}/datasources/{datasource_id}/experiments/{experiment_id}/snapshots/{snapshot_id}"
 )

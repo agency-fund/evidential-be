@@ -2025,3 +2025,17 @@ def test_snapshot_with_nan(testing_datasource_with_user, ppost, pget):
         assert analysis.std_error == 0
         assert analysis.num_missing_values == 0
         assert analysis.is_baseline == is_baseline
+
+
+async def test_logout_updates_last_logout_timestamp(xngin_session: AsyncSession, ppost):
+    """Test that logout endpoint updates user's last_logout timestamp and returns 204."""
+    user = await xngin_session.scalar(select(tables.User).where(tables.User.email == PRIVILEGED_EMAIL))
+    assert user is not None
+
+    initial_last_logout = user.last_logout
+    response = ppost("/v1/m/logout")
+    assert response.status_code == 204, response.content
+    assert response.content == b""
+    await xngin_session.refresh(user)
+    assert user.last_logout > initial_last_logout
+    assert datetime.now(UTC) - user.last_logout < timedelta(seconds=60)
