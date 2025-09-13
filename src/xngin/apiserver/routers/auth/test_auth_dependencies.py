@@ -68,7 +68,6 @@ async def test_require_valid_session_token():
         cryp = SessionTokenCrypter(60)
         expected = Principal(email="test@example.com", hd="", iat=0, iss="", sub="")
         valid_token = cryp.encrypt(expected)
-        print(f"valid token: {valid_token}")
         actual = await require_valid_session_token(
             HTTPAuthorizationCredentials(
                 scheme="Bearer",
