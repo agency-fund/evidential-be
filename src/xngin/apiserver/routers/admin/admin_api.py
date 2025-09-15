@@ -99,7 +99,6 @@ from xngin.apiserver.routers.auth.auth_api_types import CallerIdentity
 from xngin.apiserver.routers.auth.auth_dependencies import require_oidc_token
 from xngin.apiserver.routers.auth.principal import Principal
 from xngin.apiserver.routers.common_api_types import (
-    BanditExperimentAnalysisResponse,
     BaseBanditExperimentSpec,
     BaseFrequentistDesignSpec,
     CreateExperimentRequest,
@@ -1415,22 +1414,18 @@ async def analyze_experiment(
         xngin_session,
         ds,
         experiment_id,
-        preload=[tables.Experiment.arm_assignments],
+        preload=[tables.Experiment.arm_assignments, tables.Experiment.draws, tables.Experiment.contexts],
     )
 
     design_spec = ExperimentStorageConverter(experiment).get_design_spec()
     match design_spec:
         case BaseBanditExperimentSpec():
-            # TODO: implement bandit experiment analysis
-            # For now, we return a placeholder analysis with no data.
-            return BanditExperimentAnalysisResponse(
-                experiment_id=experiment.id,
-                n_trials=experiment.n_trials,
-                n_outcomes=0,
-                posterior_means=[0],
-                posterior_stds=[0],
-                volumes=[0],
-            )
+            if experiment.experiment_type != ExperimentsType.MAB_ONLINE.value:
+                raise LateValidationError(
+                    "Invalid experiment type for bandit analysis; only MABs are supported.",
+                )
+            return experiments_common.analyze_experiment_bandit_impl(experiment)
+
         case BaseFrequentistDesignSpec():
             # Always assume the first arm is the baseline; UI can override this.
             baseline_arm_id = baseline_arm_id or design_spec.arms[0].arm_id
@@ -1439,7 +1434,7 @@ async def analyze_experiment(
                 ds.get_config(), experiment, baseline_arm_id, design_spec.metrics
             )
         case _:
-            assert_never(design_spec)
+            assert_never()
 
 
 EXPERIMENT_STATE_TRANSITION_RESPONSES: dict[int | str, dict[str, Any]] = {

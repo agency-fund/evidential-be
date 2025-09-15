@@ -31,6 +31,7 @@ from xngin.apiserver.routers.common_api_types import (
     Assignment,
     AssignSummary,
     BalanceCheck,
+    BanditExperimentAnalysisResponse,
     BaseFrequentistDesignSpec,
     CreateExperimentRequest,
     CreateExperimentResponse,
@@ -53,7 +54,8 @@ from xngin.apiserver.sqla import tables
 from xngin.apiserver.storage.storage_format_converters import ExperimentStorageConverter
 from xngin.apiserver.webhooks.webhook_types import ExperimentCreatedWebhookBody
 from xngin.events.experiment_created import ExperimentCreatedEvent
-from xngin.stats.analysis import analyze_experiment as analyze_experiment_impl
+from xngin.stats.analysis import analyze_experiment as analyze_freq_experiment_impl
+from xngin.stats.bandit_analysis import analyze_experiment as analyze_bandit_experiment_impl
 from xngin.stats.bandit_sampling import choose_arm, update_arm
 from xngin.stats.stats_errors import StatsAnalysisError
 from xngin.tq.task_payload_types import WEBHOOK_OUTBOUND_TASK_TYPE, WebhookOutboundTask
@@ -802,7 +804,7 @@ async def update_bandit_arm_with_outcome_impl(
             key=lambda d: d.created_at,
             reverse=True,
         )
-        outcomes = [outcome] + [d.outcome for d in relevant_draws]
+        outcomes = [outcome] + [d.outcome for d in relevant_draws if d.outcome is not None]
         context_vals = (
             [draw_record.context_vals] + [d.context_vals for d in relevant_draws] if draw_record.context_vals else None
         )
@@ -922,7 +924,7 @@ async def analyze_experiment_freq_impl(
     # before their info was synced to the dwh.
     num_missing_participants = num_participants - len(participant_outcomes)
 
-    analyze_results = analyze_experiment_impl(assignments, participant_outcomes, baseline_arm_id)
+    analyze_results = analyze_freq_experiment_impl(assignments, participant_outcomes, baseline_arm_id)
 
     metric_analyses = []
     for metric in metrics:
@@ -951,4 +953,26 @@ async def analyze_experiment_freq_impl(
         num_participants=num_participants,
         num_missing_participants=num_missing_participants,
         created_at=created_at,
+    )
+
+
+def analyze_experiment_bandit_impl(
+    experiment: tables.Experiment,
+) -> BanditExperimentAnalysisResponse:
+    """Analyze a bandit experiment. Assumes arms and draws are preloaded."""
+
+    draws = experiment.draws
+    n_outcomes = len([draw for draw in draws if draw.outcome is not None])
+    if n_outcomes == 0:
+        raise StatsAnalysisError("No outcomes found for experiment.")
+
+    arm_analyses = analyze_bandit_experiment_impl(
+        experiment=experiment,
+    )
+
+    return BanditExperimentAnalysisResponse(
+        experiment_id=experiment.id,
+        arm_analyses=arm_analyses,
+        n_outcomes=n_outcomes,
+        created_at=datetime.now(UTC),
     )
