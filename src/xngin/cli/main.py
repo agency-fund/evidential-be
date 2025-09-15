@@ -43,7 +43,7 @@ from xngin.apiserver.settings import (
     SettingsForTesting,
 )
 from xngin.apiserver.sqla import tables
-from xngin.apiserver.storage.bootstrap import create_user_and_first_datasource
+from xngin.apiserver.storage.bootstrap import setup_user_and_first_datasource
 from xngin.apiserver.testing.testing_dwh_def import TESTING_DWH_RAW_DATA
 from xngin.xsecrets import secretservice
 from xngin.xsecrets.nacl_provider import NaclProviderKeyset
@@ -586,6 +586,8 @@ def add_user(
     If the --privileged flag is set, the user will be granted privileged access.
 
     If email is not provided via the --email flag, the command will prompt for it interactively.
+
+    This command is only useful for local development databases; do not use it against production databases.
     """
     if output == TextOrJson.text:
         console.print(f"Using application database: [cyan]{database_url}[/cyan]")
@@ -616,7 +618,7 @@ def add_user(
     engine = create_engine(database_url)
     with Session(engine) as session:
         try:
-            user = create_user_and_first_datasource(session, email=email, dsn=dwh, privileged=privileged)
+            user = setup_user_and_first_datasource(session, tables.User(email=email, is_privileged=privileged), dwh)
             session.commit()
             if output == TextOrJson.text:
                 console.print("\n[bold green]User added successfully:[/bold green]")

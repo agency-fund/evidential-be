@@ -21,20 +21,7 @@ def add_nodwh_datasource_to_org(session, organization):
     session.add(nodwh_datasource)
 
 
-def create_user_and_first_datasource(
-    session: Session | AsyncSession, *, email: str, dsn: str | None, privileged: bool
-) -> tables.User:
-    """Creates a User with an organization, a datasource, and a participant type.
-
-    Assumes dsn refers to a testing_dwh instance.
-    """
-    user = tables.User(email=email, is_privileged=privileged)
-    session.add(user)
-    organization = tables.Organization(name=DEFAULT_ORGANIZATION_NAME)
-    session.add(organization)
-    organization.users.append(user)
-
-    # create a datasource from input
+def _create_first_datasource(session: Session | AsyncSession, organization: tables.Organization, dsn: str | None):
     if dsn:
         config = RemoteDatabaseConfig(
             participants=[TESTING_DWH_PARTICIPANT_DEF],
@@ -47,7 +34,18 @@ def create_user_and_first_datasource(
             organization=organization,
         ).set_config(config)
         session.add(datasource)
-
     add_nodwh_datasource_to_org(session, organization)
 
+
+def setup_user_and_first_datasource(session: Session | AsyncSession, user: tables.User, dsn: str | None) -> tables.User:
+    """Adds models to User such that they can have a good first time experience with the application.
+
+    Users will have an organization and a NoDWH datasource created for them. If dsn is provided, we create that
+    datasource and a participant type for them (assuming DSN refers to a testing_dwh instance).
+    """
+    session.add(user)
+    organization = tables.Organization(name=DEFAULT_ORGANIZATION_NAME)
+    session.add(organization)
+    organization.users.append(user)
+    _create_first_datasource(session, organization, dsn)
     return user

@@ -170,9 +170,13 @@ class User(Base):
 
     id: Mapped[str] = mapped_column(primary_key=True, default=user_id_factory)
     email: Mapped[str] = mapped_column(String(255), unique=True)
-    # TODO: properly handle federated auth
+
+    # iss and sub will be None only for users that have been invited but have not yet logged in for the first time.
     iss: Mapped[str | None] = mapped_column(String(255))
     sub: Mapped[str | None] = mapped_column(String(255))
+
+    # Session tokens issued (iat) before last_logout are not considered valid for this user.
+    last_logout: Mapped[datetime] = mapped_column(server_default=sqlalchemy.sql.func.to_timestamp(0))
 
     # True when this user is considered to be privileged.
     is_privileged: Mapped[bool] = mapped_column(server_default=sqlalchemy.sql.false())

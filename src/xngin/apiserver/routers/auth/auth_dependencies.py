@@ -1,17 +1,28 @@
 import asyncio
 import datetime
 import secrets
+import time
 from dataclasses import dataclass
 from typing import Annotated
 
 import httpx
-from fastapi import Depends, HTTPException, Security, status
-from fastapi.security import OpenIdConnect
-from jose import JWTError, jwt
+from fastapi import Depends, HTTPException, status
+from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from loguru import logger
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.sql.functions import count
 
 from xngin.apiserver import flags
+from xngin.apiserver.dependencies import xngin_db_session
 from xngin.apiserver.routers.auth.principal import Principal
+from xngin.apiserver.routers.auth.session_token_crypter import SessionTokenCrypter
+from xngin.apiserver.sqla import tables
+from xngin.apiserver.storage.bootstrap import setup_user_and_first_datasource
+from xngin.xsecrets import chafernet
+
+# The length of time that a session token is considered valid.
+SESSION_TOKEN_LIFETIME = datetime.timedelta(hours=12).seconds
 
 GOOGLE_DISCOVERY_URL = "https://accounts.google.com/.well-known/openid-configuration"
 
@@ -22,14 +33,27 @@ PRIVILEGED_TOKEN_FOR_TESTING = secrets.token_urlsafe(32)
 TESTING_TOKENS_ENABLED = False
 UNPRIVILEGED_EMAIL = "testing-unprivileged@example.com"
 UNPRIVILEGED_TOKEN_FOR_TESTING = secrets.token_urlsafe(32)
-TESTING_TOKENS = {
-    AIRPLANE_TOKEN: Principal(email="testing@example.com", iss="airplane", sub="airplane", hd="example.com"),
-    UNPRIVILEGED_TOKEN_FOR_TESTING: Principal(email=UNPRIVILEGED_EMAIL, iss="testing", sub="testing", hd="example.com"),
-    PRIVILEGED_TOKEN_FOR_TESTING: Principal(
-        email=PRIVILEGED_EMAIL,
+TESTING_TOKENS: dict[str, Principal] = {
+    AIRPLANE_TOKEN: Principal(
+        email="testing@example.com",
+        hd="example.com",
+        iat=int(time.time()),
+        iss="airplane",
+        sub="airplane",
+    ),
+    UNPRIVILEGED_TOKEN_FOR_TESTING: Principal(
+        email=UNPRIVILEGED_EMAIL,
+        hd="example.com",
+        iat=int(time.time()),
         iss="testing",
         sub="testing",
+    ),
+    PRIVILEGED_TOKEN_FOR_TESTING: Principal(
+        email=PRIVILEGED_EMAIL,
         hd="example.com",
+        iat=int(time.time()),
+        iss="testing",
+        sub="testing",
     ),
 }
 
@@ -72,7 +96,7 @@ async def _fetch_object_200(client: httpx.AsyncClient, url: str):
 
 
 async def get_google_configuration() -> GoogleOidcConfig:
-    """Fetch and cache Google's OpenID configuration."""
+    """Dependency providing Google's OpenID configuration."""
     global _google_config
     # When config is fresh, we can use it immediately.
     if _google_config and not _google_config.should_refresh():
@@ -105,79 +129,95 @@ async def get_google_configuration() -> GoogleOidcConfig:
             return _google_config
 
 
-async def require_oidc_token(
-    token: Annotated[str, Security(OpenIdConnect(openIdConnectUrl=GOOGLE_DISCOVERY_URL))],
-    oidc_config: Annotated[GoogleOidcConfig, Depends(get_google_configuration)],
-) -> Principal:
-    """Dependency for validating that the Authorization: header is a valid Google JWT.
+def session_token_crypter_dependency():
+    """Dependency that provides a configured SessionTokenCrypter."""
+    return SessionTokenCrypter(SESSION_TOKEN_LIFETIME)
 
-    This method may raise a 400 or 401, and the oidc_google dependency may raise a 403.
+
+async def require_valid_session_token(
+    authorization: Annotated[HTTPAuthorizationCredentials, Depends(HTTPBearer())],
+    tokencryptor: Annotated[SessionTokenCrypter, Depends(session_token_crypter_dependency)],
+) -> Principal:
+    """Dependency for decoding the session token and retrieving a Principal.
 
     Returns:
-        TokenInfo containing the validated token's claims.
+        Principal containing the validated claims from the ID token.
     """
-    # FastAPI's OpenIDConnect helper only checks that the header exists. It does not verify that the header has the
-    # expected prefix.
-    expected_prefix = "Bearer "
-    if not token.startswith(expected_prefix):
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f'Authorization header must start with "{expected_prefix}".',
-        )
-    token = token[len(expected_prefix) :]
-    if TESTING_TOKENS_ENABLED and token in TESTING_TOKENS:
-        return TESTING_TOKENS[token]
-    if flags.AIRPLANE_MODE and token == AIRPLANE_TOKEN:
-        return TESTING_TOKENS[AIRPLANE_TOKEN]
+    token = authorization.credentials
+    del authorization
+    if principal := get_special_principal(token):
+        return principal
     try:
-        header = jwt.get_unverified_header(token)
-    except JWTError as e:
+        return tokencryptor.decrypt(token)
+    except chafernet.InvalidTokenError as err:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail=f"Invalid authentication credentials: {e}",
-        ) from e
-    key = next((jwk for jwk in oidc_config.jwks["keys"] if jwk["kid"] == header["kid"]), None)
-    if not key:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Unable to find appropriate key",
-        )
-    try:
-        decoded = jwt.decode(
-            token,
-            key,
-            algorithms=["RS256"],
-            audience=flags.CLIENT_ID,
-            issuer=oidc_config.config.get("issuer"),
-            options={
-                "require_iss": True,
-                "require_aud": True,
-                "require_iat": True,
-                "require_exp": True,
-                "verify_at_hash": False,  # PKCE flow sends at_hash but we don't need to verify it.
-            },
-        )
-        # Confirming that authorized party (azp) and audience (aud) match is not strictly necessary but if Google ever
-        # issues a token where azp an aud don't match then we would like to know about it.
-        if decoded["azp"] != decoded["aud"]:
-            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid azp/aud")
-    except JWTError as e:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail=f"Invalid authentication credentials: {e}",
-        ) from e
-    return Principal(
-        email=decoded["email"],
-        iss=decoded["iss"],
-        sub=decoded["sub"],
-        hd=decoded.get("hd", ""),
+            detail="Session token invalid or expired.",
+        ) from err
+
+
+async def require_user_from_token(
+    session: Annotated[AsyncSession, Depends(xngin_db_session)],
+    principal: Annotated[Principal, Depends(require_valid_session_token)],
+) -> tables.User:
+    """Dependency for fetching the User record matching the authenticated user's email."""
+    user = await _lookup_or_create(session, principal)
+    if user:
+        return user
+    raise HTTPException(
+        status_code=status.HTTP_401_UNAUTHORIZED,
+        detail="Expired session, or user not found.",
     )
+
+
+async def _lookup_or_create(session: AsyncSession, principal: Principal) -> tables.User | None:
+    """Lookup or create a user based on email, iss, sub, and iat.
+
+    To support initial deployment, a User will be created if we are in airplane mode or if there are no users in the
+    database yet.
+    """
+    result = await session.scalars(select(tables.User).where(tables.User.email == principal.email))
+    user = result.first()
+    if user:
+        if user.last_logout.timestamp() > principal.iat:
+            return None
+        if user.iss == principal.iss and user.sub == principal.sub:
+            return user
+        # Users that are invited but who have not yet logged in will have (iss, sub) == (None, None), meaning that they
+        # can authenticate with any IDP. After logging in the first time, they will only ever be able to log in with
+        # that IDP.
+        if user.iss is None:
+            user.iss = principal.iss
+            user.sub = principal.sub
+            await session.commit()
+            return user
+        return None
+
+    # There are two cases when we create a user on an authenticated request:
+    # 1. Airplane mode: We are in airplane mode and the request is coming from the UI in airplane mode.
+    # 2. First use of installation by a developer: There are no users in the database, and this is the first request.
+    user_count = await session.scalar(select(count(tables.User.id)))
+    if user_count == 0 or (flags.AIRPLANE_MODE and principal.iss == "airplane"):
+        user = tables.User(email=principal.email, iss=principal.iss, sub=principal.sub, is_privileged=True)
+        new_user = setup_user_and_first_datasource(session, user, flags.XNGIN_DEVDWH_DSN)
+        await session.commit()
+        return new_user
+    return None
 
 
 def enable_testing_tokens():
     """Configures the authentication system to enable tokens used in unit tests."""
     global TESTING_TOKENS_ENABLED
     TESTING_TOKENS_ENABLED = True
+
+
+def get_special_principal(token: str) -> Principal | None:
+    """In testing or airplane mode, specific tokens map to specific principals."""
+    if TESTING_TOKENS_ENABLED and token in TESTING_TOKENS:
+        return TESTING_TOKENS[token]
+    if flags.AIRPLANE_MODE and token == AIRPLANE_TOKEN:
+        return TESTING_TOKENS[AIRPLANE_TOKEN]
+    return None
 
 
 def disable(app):
