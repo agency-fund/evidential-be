@@ -24,6 +24,7 @@ from xngin.apiserver.limits import (
     MAX_LENGTH_OF_DESCRIPTION_VALUE,
     MAX_LENGTH_OF_NAME_VALUE,
     MAX_LENGTH_OF_PARTICIPANT_ID_VALUE,
+    MAX_LENGTH_OF_URL_VALUE,
     MAX_NUMBER_OF_ARMS,
     MAX_NUMBER_OF_CONTEXTS,
     MAX_NUMBER_OF_FIELDS,
@@ -699,6 +700,8 @@ class BaseDesignSpec(ApiBaseModel):
 
     experiment_name: Annotated[str, Field(max_length=MAX_LENGTH_OF_NAME_VALUE)]
     description: Annotated[str, Field(max_length=MAX_LENGTH_OF_DESCRIPTION_VALUE)]
+    design_url: Annotated[str | None, Field(max_length=MAX_LENGTH_OF_URL_VALUE)] = None
+
     start_date: datetime.datetime
     end_date: datetime.datetime
 

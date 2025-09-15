@@ -6,6 +6,7 @@ from urllib.parse import urlparse
 
 import numpy as np
 import pytest
+from pydantic import TypeAdapter
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -989,15 +990,19 @@ async def test_lifecycle_with_db(testing_datasource, ppost, pget, pdelete, udele
     assert created_participant_type.participant_type == participant_type
 
     # Create experiment using that participant type.
+    create_exp_dict = make_createexperimentrequest_json(participant_type)
+    create_exp_request = TypeAdapter(CreateExperimentRequest).validate_python(create_exp_dict)
+    create_exp_request.design_spec.design_url = "https://example.com/design"
     response = ppost(
         f"/v1/m/datasources/{testing_datasource.ds.id}/experiments",
         params={"chosen_n": 100},
-        json=make_createexperimentrequest_json(participant_type),
+        content=create_exp_request.model_dump_json(),
     )
     assert response.status_code == 200, response.content
     created_experiment = CreateExperimentResponse.model_validate(response.json())
     parsed_experiment_id = created_experiment.experiment_id
     assert parsed_experiment_id is not None
+    assert created_experiment.design_spec.design_url == "https://example.com/design"
     assert created_experiment.stopped_assignments_at is not None
     assert created_experiment.stopped_assignments_reason == StopAssignmentReason.PREASSIGNED
     parsed_arm_ids = {arm.arm_id for arm in created_experiment.design_spec.arms}
@@ -1054,7 +1059,7 @@ async def test_lifecycle_with_db(testing_datasource, ppost, pget, pdelete, udele
     assert response.status_code == 204, response.content
 
 
-async def test_create_preassigned_experiment_using_inline_schema_ds(
+async def test_create_preassigned_experiment(
     xngin_session: AsyncSession,
     testing_datasource_with_user,
     use_deterministic_random,
@@ -1133,7 +1138,7 @@ async def test_create_preassigned_experiment_using_inline_schema_ds(
     assert abs(num_control - num_treat) <= 5  # Allow some wiggle room
 
 
-def test_create_online_experiment_using_inline_schema_ds(testing_datasource_with_user, use_deterministic_random, ppost):
+def test_create_online_experiment(testing_datasource_with_user, use_deterministic_random, ppost):
     datasource_id = testing_datasource_with_user.ds.id
     request_obj = make_create_online_experiment_request()
 
@@ -1179,7 +1184,7 @@ def test_create_online_experiment_using_inline_schema_ds(testing_datasource_with
         (LikelihoodTypes.BERNOULLI, PriorTypes.NORMAL),
     ],
 )
-def test_create_online_mab_experiment_using_inline_schema_ds(
+def test_create_online_mab_experiment(
     testing_datasource_with_user,
     ppost,
     reward_type,
@@ -1243,7 +1248,7 @@ def test_create_online_mab_experiment_using_inline_schema_ds(
         (LikelihoodTypes.BERNOULLI, PriorTypes.NORMAL),
     ],
 )
-def test_create_online_cmab_experiment_using_inline_schema_ds(
+def test_create_online_cmab_experiment(
     testing_datasource_with_user,
     ppost,
     reward_type,
