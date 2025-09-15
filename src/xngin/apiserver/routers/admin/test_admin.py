@@ -6,7 +6,7 @@ from urllib.parse import urlparse
 
 import numpy as np
 import pytest
-from pydantic import TypeAdapter
+from pydantic import AnyHttpUrl, TypeAdapter
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -992,7 +992,7 @@ async def test_lifecycle_with_db(testing_datasource, ppost, pget, pdelete, udele
     # Create experiment using that participant type.
     create_exp_dict = make_createexperimentrequest_json(participant_type)
     create_exp_request = TypeAdapter(CreateExperimentRequest).validate_python(create_exp_dict)
-    create_exp_request.design_spec.design_url = "https://example.com/design"
+    create_exp_request.design_spec.design_url = AnyHttpUrl("https://example.com/design")
     response = ppost(
         f"/v1/m/datasources/{testing_datasource.ds.id}/experiments",
         params={"chosen_n": 100},
@@ -1002,7 +1002,7 @@ async def test_lifecycle_with_db(testing_datasource, ppost, pget, pdelete, udele
     created_experiment = CreateExperimentResponse.model_validate(response.json())
     parsed_experiment_id = created_experiment.experiment_id
     assert parsed_experiment_id is not None
-    assert created_experiment.design_spec.design_url == "https://example.com/design"
+    assert created_experiment.design_spec.design_url == AnyHttpUrl("https://example.com/design")
     assert created_experiment.stopped_assignments_at is not None
     assert created_experiment.stopped_assignments_reason == StopAssignmentReason.PREASSIGNED
     parsed_arm_ids = {arm.arm_id for arm in created_experiment.design_spec.arms}
@@ -1057,6 +1057,21 @@ async def test_lifecycle_with_db(testing_datasource, ppost, pget, pdelete, udele
         f"/v1/m/datasources/{testing_datasource.ds.id}/experiments/{parsed_experiment_id}?allow_missing=true"
     )
     assert response.status_code == 204, response.content
+
+
+async def test_create_experiment_with_invalid_design_url(xngin_session, testing_datasource_with_user, ppost):
+    datasource_id = testing_datasource_with_user.ds.id
+    # Work with the raw json to construct a bad request
+    request_json = make_createexperimentrequest_json(experiment_type=ExperimentsType.FREQ_PREASSIGNED)
+    request_json["design_spec"]["design_url"] = "example.com/"
+
+    response = ppost(
+        f"/v1/m/datasources/{datasource_id}/experiments",
+        params={"chosen_n": 100, "random_state": 42},
+        json=request_json,
+    )
+    assert response.status_code == 422, response.content
+    assert "Input should be a valid URL, relative URL without a base" in response.json()["detail"][0]["msg"]
 
 
 async def test_create_preassigned_experiment(

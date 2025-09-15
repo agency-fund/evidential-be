@@ -292,7 +292,7 @@ class ExperimentStorageConverter:
             participant_type=design_spec.participant_type,
             name=design_spec.experiment_name,
             description=design_spec.description,
-            design_url=design_spec.design_url,
+            design_url=str(design_spec.design_url) if design_spec.design_url else None,
             state=state.value,
             start_date=design_spec.start_date,
             end_date=design_spec.end_date,
