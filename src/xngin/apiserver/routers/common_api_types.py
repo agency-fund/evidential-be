@@ -1186,7 +1186,6 @@ type GetFiltersResponseElement = GetFiltersResponseNumericOrDate | GetFiltersRes
 class UpdateBanditArmOutcomeRequest(ApiBaseModel):
     """Describes the outcome of a bandit experiment."""
 
-    participant_id: str
     outcome: float
 
 
