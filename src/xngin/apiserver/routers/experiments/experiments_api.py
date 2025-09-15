@@ -260,6 +260,7 @@ async def get_cmab_experiment_assignment_for_participant(
     Used only for bandit experiments.""",
 )
 async def update_bandit_arm_with_participant_outcome(
+    participant_id: str,
     body: Annotated[UpdateBanditArmOutcomeRequest, Body()],
     experiment: Annotated[tables.Experiment, Depends(experiment_dependency)],
     session: Annotated[AsyncSession, Depends(xngin_db_session)],
@@ -271,7 +272,7 @@ async def update_bandit_arm_with_participant_outcome(
     updated_arm = await update_bandit_arm_with_outcome_impl(
         xngin_session=session,
         experiment=experiment,
-        participant_id=body.participant_id,
+        participant_id=participant_id,
         outcome=body.outcome,
     )
 
