@@ -8,7 +8,21 @@ from xngin.apiserver.routers.auth.principal import Principal
 from xngin.xsecrets.chafernet import Chafernet, InvalidTokenError
 from xngin.xsecrets.nacl_provider import NaclProvider, NaclProviderKeyset
 
+# File containing the session token key to read when XNGIN_SESSION_TOKEN_KEYSET is set to "local".
+LOCAL_KEYSET_FILE = ".xngin_session_token_keyset"
+
+# The session token value is prefixed with this string to visually distinguish it from other tokens.
 SESSION_TOKEN_PREFIX = "xa_"
+
+
+def _read_local_keyset(keys):
+    """Development environments may use a key in the local filesystem."""
+    try:
+        with open(LOCAL_KEYSET_FILE) as f:
+            keys = f.read()
+    except OSError as err:
+        raise SessionTokenCrypterMisconfiguredError(f"The {LOCAL_KEYSET_FILE} file cannot be read.") from err
+    return keys
 
 
 class SessionTokenCrypterMisconfiguredError(Exception):
@@ -31,6 +45,8 @@ class SessionTokenCrypter:
                     f"{flags.ENV_SESSION_TOKEN_KEYSET} is not set but is required."
                 )
             try:
+                if keys == "local":
+                    keys = _read_local_keyset(keys)
                 keyset = NaclProviderKeyset.deserialize_base64(keys)
             except ValidationError as err:
                 raise SessionTokenCrypterMisconfiguredError(f"{flags.ENV_SESSION_TOKEN_KEYSET} is invalid") from err

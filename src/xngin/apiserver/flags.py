@@ -19,7 +19,9 @@ CLIENT_SECRET = os.environ.get(ENV_GOOGLE_OIDC_CLIENT_SECRET)
 DEFAULT_REDIRECT_URI = f"http://localhost:8000{constants.API_PREFIX_V1}/a/oidc"
 OIDC_REDIRECT_URI = os.environ.get("GOOGLE_OIDC_REDIRECT_URI", DEFAULT_REDIRECT_URI)  # used for testing UI only
 
-# Flags configuring authentication
+# XNGIN_SESSION_TOKEN_KEYSET contains a keyset for encrypting session tokens. This is generated using the
+# `xngin-cli create-nacl-keyset` command. If set to "local", we will read from a local file (see:
+# session_token_crypter).
 ENV_SESSION_TOKEN_KEYSET = "XNGIN_SESSION_TOKEN_KEYSET"
 
 ALLOW_CONNECTING_TO_PRIVATE_IPS = truthy_env("ALLOW_CONNECTING_TO_PRIVATE_IPS")
