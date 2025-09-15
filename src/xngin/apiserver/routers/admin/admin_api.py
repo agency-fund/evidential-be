@@ -1511,7 +1511,12 @@ async def get_experiment(
         preload=[tables.Experiment.webhooks, tables.Experiment.contexts],
     )
     converter = ExperimentStorageConverter(experiment)
-    assign_summary = await experiments_common.get_assign_summary(session, experiment.id, converter.get_balance_check())
+    assign_summary = await experiments_common.get_assign_summary(
+        session,
+        experiment.id,
+        converter.get_balance_check(),
+        experiment_type=ExperimentsType(experiment.experiment_type),
+    )
     webhook_ids = [webhook.id for webhook in experiment.webhooks]
     return converter.get_experiment_config(assign_summary, webhook_ids)
 

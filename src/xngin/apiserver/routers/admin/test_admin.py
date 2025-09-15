@@ -1279,8 +1279,15 @@ def test_create_online_mab_experiment_using_inline_schema_ds(
     assert created_experiment.stopped_assignments_at is None
     assert created_experiment.stopped_assignments_reason is None
     assert created_experiment.state == ExperimentState.ASSIGNED
-    assert created_experiment.assign_summary is None
     assert created_experiment.power_analyses is None
+
+    # Verify assign summary
+    assign_summary = created_experiment.assign_summary
+    assert assign_summary is not None
+    assert assign_summary.balance_check is None
+    assert assign_summary.sample_size == 0
+    assert assign_summary.arm_sizes is not None
+    assert all(a.size == 0 for a in assign_summary.arm_sizes)
 
     for arm in created_experiment.design_spec.arms:
         assert isinstance(arm, ArmBandit)
@@ -1348,8 +1355,15 @@ def test_create_online_cmab_experiment_using_inline_schema_ds(
     assert created_experiment.stopped_assignments_reason is None
     assert created_experiment.experiment_id is not None
     assert created_experiment.state == ExperimentState.ASSIGNED
-    assert created_experiment.assign_summary is None
     assert created_experiment.power_analyses is None
+
+    # Verify assign summary
+    assign_summary = created_experiment.assign_summary
+    assert assign_summary is not None
+    assert assign_summary.balance_check is None
+    assert assign_summary.sample_size == 0
+    assert assign_summary.arm_sizes is not None
+    assert all(a.size == 0 for a in assign_summary.arm_sizes)
 
     for arm in created_experiment.design_spec.arms:
         assert isinstance(arm, ArmBandit)

@@ -87,7 +87,9 @@ async def get_experiment_sl(
 ) -> GetExperimentResponse:
     converter = ExperimentStorageConverter(experiment)
     balance_check = converter.get_balance_check()
-    assign_summary = await get_assign_summary(xngin_session, experiment.id, balance_check)
+    assign_summary = await get_assign_summary(
+        xngin_session, experiment.id, balance_check, experiment_type=ExperimentsType(experiment.experiment_type)
+    )
     return converter.get_experiment_response(assign_summary)
 
 

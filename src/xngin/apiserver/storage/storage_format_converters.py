@@ -232,7 +232,7 @@ class ExperimentStorageConverter:
 
     def get_experiment_config(
         self,
-        assign_summary: capi.AssignSummary | None,
+        assign_summary: capi.AssignSummary,
         webhook_ids: list[str] | None = None,
     ) -> capi.GetExperimentResponse:
         """Construct an ExperimentConfig from the internal Experiment and an AssignSummary.
@@ -257,7 +257,7 @@ class ExperimentStorageConverter:
 
     def get_create_experiment_response(
         self,
-        assign_summary: capi.AssignSummary | None,
+        assign_summary: capi.AssignSummary,
         webhook_ids: list[str] | None = None,
     ) -> capi.CreateExperimentResponse:
         # Revalidate the response in case we ever change the API.
