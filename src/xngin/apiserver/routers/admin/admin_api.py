@@ -86,6 +86,7 @@ from xngin.apiserver.routers.admin.admin_api_types import (
     RedshiftDsn,
     SnapshotStatus,
     UpdateDatasourceRequest,
+    UpdateExperimentRequest,
     UpdateOrganizationRequest,
     UpdateOrganizationWebhookRequest,
     UpdateParticipantsTypeRequest,
@@ -1582,6 +1583,41 @@ async def get_experiment_assignment_for_participant(
         participant_id=participant_id,
         assignment=assignment,
     )
+
+
+@router.patch("/datasources/{datasource_id}/experiments/{experiment_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def update_experiment(
+    datasource_id: str,
+    experiment_id: str,
+    body: UpdateExperimentRequest,
+    user: Annotated[tables.User, Depends(require_user_from_token)],
+    session: Annotated[AsyncSession, Depends(xngin_db_session)],
+):
+    datasource = await get_datasource_or_raise(session, user, datasource_id)
+    experiment = await get_experiment_via_ds_or_raise(session, datasource, experiment_id)
+
+    if experiment.state != ExperimentState.COMMITTED:
+        raise LateValidationError("Experiment must have been committed to be updated.")
+
+    if body.name is not None:
+        experiment.name = body.name
+    if body.description is not None:
+        experiment.description = body.description
+    if body.design_url is not None:
+        experiment.design_url = body.design_url
+
+    if body.start_date is not None:
+        end_date = body.end_date or experiment.end_date
+        if end_date <= body.start_date:
+            raise LateValidationError("New start date must be before end date.")
+        experiment.start_date = body.start_date
+    if body.end_date is not None:
+        if body.end_date <= experiment.start_date:
+            raise LateValidationError("New end date must be after start date.")
+        experiment.end_date = body.end_date
+
+    await session.commit()
+    return GENERIC_SUCCESS
 
 
 @router.delete(

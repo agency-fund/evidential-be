@@ -49,6 +49,7 @@ from xngin.apiserver.routers.admin.admin_api_types import (
     RedshiftDsn,
     RevealedStr,
     UpdateDatasourceRequest,
+    UpdateExperimentRequest,
     UpdateOrganizationWebhookRequest,
     UpdateParticipantsTypeRequest,
     UpdateParticipantsTypeResponse,
@@ -69,6 +70,7 @@ from xngin.apiserver.routers.common_api_types import (
     Filter,
     FreqExperimentAnalysisResponse,
     GetExperimentAssignmentsResponse,
+    GetExperimentResponse,
     GetParticipantAssignmentResponse,
     LikelihoodTypes,
     ListExperimentsResponse,
@@ -870,7 +872,7 @@ def test_create_participants_type_invalid(testing_datasource, ppost):
     assert "no columns marked as unique ID." in response.json()["detail"][0]["msg"], response.content
 
 
-async def test_lifecycle_with_db(testing_datasource, ppost, pget, pdelete, udelete):
+async def test_lifecycle_with_db(testing_datasource, ppost, ppatch, pget, pdelete, udelete):
     """Exercises the admin API methods that require an external database."""
     # Add the privileged user to the organization.
     response = ppost(
@@ -1008,12 +1010,23 @@ async def test_lifecycle_with_db(testing_datasource, ppost, pget, pdelete, udele
     parsed_arm_ids = {arm.arm_id for arm in created_experiment.design_spec.arms}
     assert len(parsed_arm_ids) == 2
 
+    # Commit the new experiment.
+    response = ppost(f"/v1/m/datasources/{testing_datasource.ds.id}/experiments/{parsed_experiment_id}/commit")
+    assert response.status_code == 204, response.content
+
+    # Update the experiment.
+    response = ppatch(
+        f"/v1/m/datasources/{testing_datasource.ds.id}/experiments/{parsed_experiment_id}",
+        content=UpdateExperimentRequest(name="updated").model_dump_json(),
+    )
+    assert response.status_code == 204, response.content
+
     # Get that experiment.
     response = pget(f"/v1/m/datasources/{testing_datasource.ds.id}/experiments/{parsed_experiment_id}")
-
     assert response.status_code == 200, response.content
     create_experiment_response = CreateExperimentResponse.model_validate(response.json())
     assert create_experiment_response.experiment_id == parsed_experiment_id
+    assert create_experiment_response.design_spec.experiment_name == "updated"
 
     # List org experiments.
     response = pget(f"/v1/m/organizations/{testing_datasource.org.id}/experiments")
@@ -1331,6 +1344,66 @@ def test_create_online_cmab_experiment(
         context.context_id = None
     actual_design_spec.experiment_id = None  # TODO remove in future
     assert actual_design_spec == request_obj.design_spec
+
+
+async def test_update_experiment(testing_experiment, ppatch, pget):
+    """Test updating an experiment's metadata."""
+    datasource_id = testing_experiment.datasource_id
+    experiment_id = testing_experiment.id
+    now = datetime.now(UTC)
+    request = UpdateExperimentRequest(
+        name="updated name",
+        description="updated desc",
+        design_url="https://example.com/updated",
+        start_date=now,
+        end_date=now + timedelta(days=1),
+    )
+    response = ppatch(
+        f"/v1/m/datasources/{datasource_id}/experiments/{experiment_id}",
+        content=request.model_dump_json(),
+    )
+    assert response.status_code == 204, response.text
+
+    updated_response = pget(f"/v1/m/datasources/{datasource_id}/experiments/{experiment_id}")
+    design_spec = GetExperimentResponse.model_validate(updated_response.json()).design_spec
+    assert design_spec.experiment_name == "updated name"
+    assert design_spec.description == "updated desc"
+    assert design_spec.design_url == HttpUrl("https://example.com/updated")
+    assert design_spec.start_date == now
+    assert design_spec.end_date == now + timedelta(days=1)
+
+
+async def test_update_experiment_invalid(xngin_session, testing_experiment, ppatch):
+    """Test experiment update validation checks."""
+    datasource_id = testing_experiment.datasource_id
+    experiment_id = testing_experiment.id
+
+    request = UpdateExperimentRequest(start_date=testing_experiment.end_date + timedelta(days=1))
+    response = ppatch(
+        f"/v1/m/datasources/{datasource_id}/experiments/{experiment_id}",
+        content=request.model_dump_json(),
+    )
+    assert response.status_code == 422
+    assert response.json() == {"message": "New start date must be before end date."}
+
+    request = UpdateExperimentRequest(end_date=testing_experiment.start_date - timedelta(days=1))
+    response = ppatch(
+        f"/v1/m/datasources/{datasource_id}/experiments/{experiment_id}",
+        content=request.model_dump_json(),
+    )
+    assert response.status_code == 422
+    assert response.json() == {"message": "New end date must be after start date."}
+
+    # Lastly check invalid experiment state
+    testing_experiment.state = ExperimentState.ASSIGNED
+    await xngin_session.commit()
+
+    response = ppatch(
+        f"/v1/m/datasources/{datasource_id}/experiments/{experiment_id}",
+        content=UpdateExperimentRequest(name="updated").model_dump_json(),
+    )
+    assert response.status_code == 422
+    assert response.json() == {"message": "Experiment must have been committed to be updated."}
 
 
 def test_get_experiment_assignment_for_preassigned_participant(testing_experiment, pget):
