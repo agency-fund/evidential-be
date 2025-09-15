@@ -9,10 +9,11 @@ import sqlalchemy.sql
 from annotated_types import MaxLen, MinLen
 from pydantic import (
     AfterValidator,
-    AnyHttpUrl,
     BaseModel,
     ConfigDict,
     Field,
+    HttpUrl,
+    UrlConstraints,
     field_serializer,
     field_validator,
     model_validator,
@@ -670,6 +671,8 @@ class Stratum(ApiBaseModel):
 
 # -- Experiment Design Specification --
 
+ConstrainedUrl = Annotated[HttpUrl, UrlConstraints(max_length=MAX_LENGTH_OF_URL_VALUE, host_required=True)]
+
 
 class BaseDesignSpec(ApiBaseModel):
     """Experiment design metadata and target metrics common to all experiment types."""
@@ -701,7 +704,10 @@ class BaseDesignSpec(ApiBaseModel):
 
     experiment_name: Annotated[str, Field(max_length=MAX_LENGTH_OF_NAME_VALUE)]
     description: Annotated[str, Field(max_length=MAX_LENGTH_OF_DESCRIPTION_VALUE)]
-    design_url: Annotated[AnyHttpUrl | None, Field(max_length=MAX_LENGTH_OF_URL_VALUE)] = None
+    design_url: Annotated[
+        ConstrainedUrl | None,
+        Field(description="Optional URL to a more detailed experiment design doc."),
+    ] = None
 
     start_date: datetime.datetime
     end_date: datetime.datetime

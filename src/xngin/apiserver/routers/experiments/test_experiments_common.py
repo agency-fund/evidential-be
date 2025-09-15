@@ -8,7 +8,7 @@ import pytest
 from deepdiff import DeepDiff
 from fastapi import HTTPException
 from numpy.random import MT19937, RandomState
-from pydantic import AnyHttpUrl, TypeAdapter
+from pydantic import HttpUrl, TypeAdapter
 from sqlalchemy import Boolean, Column, MetaData, String, Table, select
 from sqlalchemy.dialects import postgresql
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -308,8 +308,8 @@ async def test_create_experiment_impl_for_preassigned(
     """Test implementation of creating a preassigned experiment."""
     participants = make_sample_data(n=100)
     request = make_create_preassigned_experiment_request()
-    expected_design_url = AnyHttpUrl("https://example.com/")
-    request.design_spec.design_url = expected_design_url
+    expected_design_url = "https://example.com/"
+    request.design_spec.design_url = HttpUrl(expected_design_url)
     # Add a partial mock PowerResponse just to verify storage
     request.power_analyses = PowerResponse(
         analyses=[
@@ -339,7 +339,7 @@ async def test_create_experiment_impl_for_preassigned(
     assert response.design_spec.arms[1].arm_id is not None
     assert response.design_spec.experiment_name == request.design_spec.experiment_name
     assert response.design_spec.description == request.design_spec.description
-    assert response.design_spec.design_url == expected_design_url
+    assert response.design_spec.design_url == HttpUrl(expected_design_url)
     assert response.design_spec.start_date == request.design_spec.start_date
     assert response.design_spec.end_date == request.design_spec.end_date
     # although we stratify on target metrics as well in this test, note that the
@@ -362,7 +362,7 @@ async def test_create_experiment_impl_for_preassigned(
     assert experiment.participant_type == request.design_spec.participant_type
     assert experiment.name == request.design_spec.experiment_name
     assert experiment.description == request.design_spec.description
-    assert experiment.design_url == str(expected_design_url)
+    assert experiment.design_url == expected_design_url
     assert experiment.state == ExperimentState.ASSIGNED
     assert experiment.datasource_id == testing_datasource.ds.id
     # This comparison is dependent on whether the db can store tz or not (sqlite does not).
