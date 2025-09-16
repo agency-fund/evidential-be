@@ -60,9 +60,11 @@ def _analyze_normal_binary(
     rng = np.random.default_rng(random_state)
     num_samples = 10000  # TODO: Make this configurable
 
-    parameter_samples = rng.multivariate_normal(mean=mu, cov=covariance, size=num_samples)
+    samples = rng.multivariate_normal(mean=mu, cov=covariance, size=num_samples)
     if context is not None:
-        parameter_samples @= context
+        parameter_samples = samples @ context
+    else:
+        parameter_samples = samples
     transformed_parameter_samples = context_link_functions(parameter_samples)
     outcome_samples = rng.binomial(n=1, p=transformed_parameter_samples)
     return (
