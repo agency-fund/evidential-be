@@ -73,11 +73,14 @@ def _analyse_normal_binary(
 
     transformed_prior_samples = context_link_functions(prior_samples)
     transformed_posterior_samples = context_link_functions(posterior_samples)
+
+    prior_pred_samples = rng.binomial(n=1, p=transformed_prior_samples)
+    post_pred_samples = rng.binomial(n=1, p=transformed_posterior_samples)
     return (
-        transformed_prior_samples.mean(),
-        transformed_prior_samples.std(),
-        transformed_posterior_samples.mean(),
-        transformed_posterior_samples.std(),
+        prior_pred_samples.mean(),
+        prior_pred_samples.std(),
+        post_pred_samples.mean(),
+        post_pred_samples.std(),
     )
 
 
