@@ -6,6 +6,7 @@ from urllib.parse import urlparse
 
 import numpy as np
 import pytest
+from pydantic import HttpUrl, TypeAdapter
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -989,15 +990,19 @@ async def test_lifecycle_with_db(testing_datasource, ppost, pget, pdelete, udele
     assert created_participant_type.participant_type == participant_type
 
     # Create experiment using that participant type.
+    create_exp_dict = make_createexperimentrequest_json(participant_type)
+    create_exp_request = TypeAdapter(CreateExperimentRequest).validate_python(create_exp_dict)
+    create_exp_request.design_spec.design_url = HttpUrl("https://example.com/design")
     response = ppost(
         f"/v1/m/datasources/{testing_datasource.ds.id}/experiments",
         params={"chosen_n": 100},
-        json=make_createexperimentrequest_json(participant_type),
+        content=create_exp_request.model_dump_json(),
     )
     assert response.status_code == 200, response.content
     created_experiment = CreateExperimentResponse.model_validate(response.json())
     parsed_experiment_id = created_experiment.experiment_id
     assert parsed_experiment_id is not None
+    assert created_experiment.design_spec.design_url == HttpUrl("https://example.com/design")
     assert created_experiment.stopped_assignments_at is not None
     assert created_experiment.stopped_assignments_reason == StopAssignmentReason.PREASSIGNED
     parsed_arm_ids = {arm.arm_id for arm in created_experiment.design_spec.arms}
@@ -1054,7 +1059,30 @@ async def test_lifecycle_with_db(testing_datasource, ppost, pget, pdelete, udele
     assert response.status_code == 204, response.content
 
 
-async def test_create_preassigned_experiment_using_inline_schema_ds(
+async def test_create_experiment_with_invalid_design_url(xngin_session, testing_datasource_with_user, ppost):
+    datasource_id = testing_datasource_with_user.ds.id
+    # Work with the raw json to construct a bad request
+    request = make_createexperimentrequest_json()
+    request["design_spec"]["design_url"] = "example.com/"
+
+    response = ppost(f"/v1/m/datasources/{datasource_id}/experiments", params={"chosen_n": 1}, json=request)
+    assert response.status_code == 422, response.content
+    assert "Input should be a valid URL, relative URL without a base" in response.json()["detail"][0]["msg"]
+
+    # Now check that a too long URL is rejected.
+    request["design_spec"]["design_url"] = "http://example.com/" + "a" * 500
+    response = ppost(f"/v1/m/datasources/{datasource_id}/experiments", params={"chosen_n": 1}, json=request)
+    assert response.status_code == 422, response.content
+    assert "URL should have at most 500 characters" in response.json()["detail"][0]["msg"]
+
+    # And we need a host.
+    request["design_spec"]["design_url"] = "https://"
+    response = ppost(f"/v1/m/datasources/{datasource_id}/experiments", params={"chosen_n": 1}, json=request)
+    assert response.status_code == 422, response.content
+    assert "Input should be a valid URL, empty host" in response.json()["detail"][0]["msg"]
+
+
+async def test_create_preassigned_experiment(
     xngin_session: AsyncSession,
     testing_datasource_with_user,
     use_deterministic_random,
@@ -1133,7 +1161,7 @@ async def test_create_preassigned_experiment_using_inline_schema_ds(
     assert abs(num_control - num_treat) <= 5  # Allow some wiggle room
 
 
-def test_create_online_experiment_using_inline_schema_ds(testing_datasource_with_user, use_deterministic_random, ppost):
+def test_create_online_experiment(testing_datasource_with_user, use_deterministic_random, ppost):
     datasource_id = testing_datasource_with_user.ds.id
     request_obj = make_create_online_experiment_request()
 
@@ -1179,7 +1207,7 @@ def test_create_online_experiment_using_inline_schema_ds(testing_datasource_with
         (LikelihoodTypes.BERNOULLI, PriorTypes.NORMAL),
     ],
 )
-def test_create_online_mab_experiment_using_inline_schema_ds(
+def test_create_online_mab_experiment(
     testing_datasource_with_user,
     ppost,
     reward_type,
@@ -1243,7 +1271,7 @@ def test_create_online_mab_experiment_using_inline_schema_ds(
         (LikelihoodTypes.BERNOULLI, PriorTypes.NORMAL),
     ],
 )
-def test_create_online_cmab_experiment_using_inline_schema_ds(
+def test_create_online_cmab_experiment(
     testing_datasource_with_user,
     ppost,
     reward_type,

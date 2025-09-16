@@ -347,6 +347,9 @@ class Experiment(Base):
     name: Mapped[str] = mapped_column(String(255))
     # Describe your experiment and hypothesis here.
     description: Mapped[str] = mapped_column(String(2000))
+    # Allow an explicit link to a more explicit experiment design doc.
+    design_url: Mapped[str] = mapped_column(server_default="")
+
     # The experiment state should be one of xngin.apiserver.routers.common_enums.ExperimentState.
     state: Mapped[str]
     # Target start date of the experiment. Denormalized from design_spec.

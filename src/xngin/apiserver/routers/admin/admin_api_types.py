@@ -13,7 +13,7 @@ from xngin.apiserver.limits import (
     MAX_LENGTH_OF_EMAIL_VALUE,
     MAX_LENGTH_OF_ID_VALUE,
     MAX_LENGTH_OF_NAME_VALUE,
-    MAX_LENGTH_OF_WEBHOOK_URL_VALUE,
+    MAX_LENGTH_OF_URL_VALUE,
     MAX_NUMBER_OF_FIELDS,
 )
 from xngin.apiserver.routers.common_api_types import (
@@ -158,7 +158,7 @@ class AddWebhookToOrganizationRequest(AdminApiBaseModel):
     url: Annotated[
         str,
         Field(
-            max_length=MAX_LENGTH_OF_WEBHOOK_URL_VALUE,
+            max_length=MAX_LENGTH_OF_URL_VALUE,
             description="The HTTP or HTTPS URL that will receive webhook notifications when events occur.",
         ),
     ]
@@ -225,7 +225,7 @@ class UpdateOrganizationWebhookRequest(AdminApiBaseModel):
     url: Annotated[
         str,
         Field(
-            max_length=MAX_LENGTH_OF_WEBHOOK_URL_VALUE,
+            max_length=MAX_LENGTH_OF_URL_VALUE,
             description="The HTTP or HTTPS URL that will receive webhook notifications when events occur.",
         ),
     ]

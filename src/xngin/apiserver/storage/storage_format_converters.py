@@ -136,6 +136,7 @@ class ExperimentStorageConverter:
             "experiment_type": self.experiment.experiment_type,
             "experiment_name": self.experiment.name,
             "description": self.experiment.description,
+            "design_url": self.experiment.design_url or None,
             "start_date": self.experiment.start_date,
             "end_date": self.experiment.end_date,
         }
@@ -284,22 +285,27 @@ class ExperimentStorageConverter:
         Raises:
             ValueError: If the experiment_id is not set in the design_spec.
         """
+        # Initialize common fields
+        experiment = tables.Experiment(
+            datasource_id=datasource_id,
+            experiment_type=experiment_type,
+            participant_type=design_spec.participant_type,
+            name=design_spec.experiment_name,
+            description=design_spec.description,
+            design_url=str(design_spec.design_url) if design_spec.design_url else None,
+            state=state.value,
+            start_date=design_spec.start_date,
+            end_date=design_spec.end_date,
+            stopped_assignments_at=stopped_assignments_at,
+            stopped_assignments_reason=stopped_assignments_reason,
+        )
+
         if isinstance(design_spec, capi.BaseFrequentistDesignSpec):
-            experiment = tables.Experiment(
-                datasource_id=datasource_id,
-                experiment_type=experiment_type,
-                participant_type=design_spec.participant_type,
-                name=design_spec.experiment_name,
-                description=design_spec.description,
-                state=state.value,
-                start_date=design_spec.start_date,
-                end_date=design_spec.end_date,
-                stopped_assignments_at=stopped_assignments_at,
-                stopped_assignments_reason=stopped_assignments_reason,
-                power=design_spec.power,
-                alpha=design_spec.alpha,
-                fstat_thresh=design_spec.fstat_thresh,
-            )
+            # Set frequentist-specific fields
+            experiment.power = design_spec.power
+            experiment.alpha = design_spec.alpha
+            experiment.fstat_thresh = design_spec.fstat_thresh
+
             experiment.arms = [
                 tables.Arm(
                     name=arm.arm_name,
@@ -315,22 +321,13 @@ class ExperimentStorageConverter:
                 .set_balance_check(balance_check)
                 .set_power_response(power_analyses)
             )
+
         if isinstance(design_spec, capi.BaseBanditExperimentSpec):
-            experiment = tables.Experiment(
-                datasource_id=datasource_id,
-                experiment_type=experiment_type,
-                participant_type=design_spec.participant_type,
-                name=design_spec.experiment_name,
-                description=design_spec.description,
-                state=state.value,
-                start_date=design_spec.start_date,
-                end_date=design_spec.end_date,
-                stopped_assignments_at=stopped_assignments_at,
-                stopped_assignments_reason=stopped_assignments_reason,
-                reward_type=design_spec.reward_type.value,
-                prior_type=design_spec.prior_type.value,
-                n_trials=n_trials,
-            )
+            # Set bandit fields
+            experiment.reward_type = design_spec.reward_type.value
+            experiment.prior_type = design_spec.prior_type.value
+            experiment.n_trials = n_trials
+
             context_length = len(design_spec.contexts) if design_spec.contexts else 1
             experiment.arms = [
                 tables.Arm(

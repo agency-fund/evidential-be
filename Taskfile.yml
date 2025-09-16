@@ -299,7 +299,7 @@ tasks:
     desc: "Starts the snapshot collector."
     env:
       DATABASE_URL: "{{.XNGIN_DEVAPP_DSN}}"
-    cmd: uv run xngin-snapshotter
+    cmd: uv run xngin-snapshotter {{.CLI_ARGS}}
   start-tq:
     desc: "Start the task queue."
     env:
