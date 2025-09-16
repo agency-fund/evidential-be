@@ -77,6 +77,7 @@ env:
   # external systems (such as via outbound webhooks).
   XNGIN_PUBLIC_PROTOCOL: "http"
   XNGIN_PUBLIC_HOSTNAME: "localhost:8000"
+
 tasks:
   install-atlas:
     interactive: true
@@ -141,6 +142,16 @@ tasks:
       - start-localpg
     cmds:
       - task: apply-migrations
+  local-session-token-keyset:
+    desc: |
+      Generates an encryption key for the session token. This allows sessions to persist between invocations of the
+      local development server.
+    internal: true
+    status:
+      - test -f .xngin_session_token_keyset
+    cmd: |
+      uv run xngin-cli create-nacl-keyset > .xngin_session_token_keyset
+      chmod og= .xngin_session_token_keyset
   start:
     desc: "Starts apiserver locally with settings compatible with local dash dev server."
     interactive: true
@@ -149,9 +160,11 @@ tasks:
       - .env
     env:
       DATABASE_URL: "{{.XNGIN_DEVAPP_DSN}}"
+      XNGIN_SESSION_TOKEN_KEYSET: "local"
     deps:
       - bootstrap-dwh-database
       - bootstrap-app-database
+      - local-session-token-keyset
     cmds:
       - uv run fastapi dev src/xngin/apiserver/main.py
   start-airplane:
@@ -159,6 +172,9 @@ tasks:
     interactive: true
     env:
       AIRPLANE_MODE: "true"
+      XNGIN_SESSION_TOKEN_KEYSET: "local"
+    deps:
+      - local-session-token-keyset
     cmds:
       - task start
   test-coverage:
@@ -283,7 +299,7 @@ tasks:
     desc: "Starts the snapshot collector."
     env:
       DATABASE_URL: "{{.XNGIN_DEVAPP_DSN}}"
-    cmd: uv run xngin-snapshotter
+    cmd: uv run xngin-snapshotter {{.CLI_ARGS}}
   start-tq:
     desc: "Start the task queue."
     env:

@@ -170,9 +170,13 @@ class User(Base):
 
     id: Mapped[str] = mapped_column(primary_key=True, default=user_id_factory)
     email: Mapped[str] = mapped_column(String(255), unique=True)
-    # TODO: properly handle federated auth
+
+    # iss and sub will be None only for users that have been invited but have not yet logged in for the first time.
     iss: Mapped[str | None] = mapped_column(String(255))
     sub: Mapped[str | None] = mapped_column(String(255))
+
+    # Session tokens issued (iat) before last_logout are not considered valid for this user.
+    last_logout: Mapped[datetime] = mapped_column(server_default=sqlalchemy.sql.func.to_timestamp(0))
 
     # True when this user is considered to be privileged.
     is_privileged: Mapped[bool] = mapped_column(server_default=sqlalchemy.sql.false())
@@ -343,6 +347,9 @@ class Experiment(Base):
     name: Mapped[str] = mapped_column(String(255))
     # Describe your experiment and hypothesis here.
     description: Mapped[str] = mapped_column(String(2000))
+    # Allow an explicit link to a more explicit experiment design doc.
+    design_url: Mapped[str] = mapped_column(server_default="")
+
     # The experiment state should be one of xngin.apiserver.routers.common_enums.ExperimentState.
     state: Mapped[str]
     # Target start date of the experiment. Denormalized from design_spec.

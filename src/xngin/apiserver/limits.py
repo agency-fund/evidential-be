@@ -7,8 +7,8 @@ MAX_LENGTH_OF_EMAIL_VALUE = 64
 # Maximum length of fields that contain identifiers such as primary keys, UUIDs, etc.
 MAX_LENGTH_OF_ID_VALUE = 64
 
-# Maximum length of fields that contain identifiers such as primary keys, UUIDs, etc.
-MAX_LENGTH_OF_WEBHOOK_URL_VALUE = 500
+# Maximum length of fields that hold URLs.
+MAX_LENGTH_OF_URL_VALUE = 500
 
 # Maximum length of fields that contain names of things (such as experiment name, participant types, Arm names).
 MAX_LENGTH_OF_NAME_VALUE = 100
