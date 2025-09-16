@@ -178,8 +178,8 @@ class ContextInput(ApiBaseModel):
     ]
 
 
-class CreateCMABAssignmentRequest(ApiBaseModel):
-    """Request model for creating a new CMAB assignment.
+class CreateCMABExperimentOrAnalysisRequest(ApiBaseModel):
+    """Request model for creating a new CMAB assignment or a CMAB experiment analysis.
 
     When submitting context values for a CMAB experiment, the following rules apply:
     1. Each context_input must reference a valid context_id from the experiment's defined contexts
@@ -453,6 +453,10 @@ class BanditExperimentAnalysisResponse(ApiBaseModel):
         datetime.datetime,
         Field(description="The date and time the experiment analysis was created."),
     ]
+    contexts: Annotated[
+        list[float] | None,
+        Field(description="The context values used for the analysis, if applicable."),
+    ] = None
 
 
 type ExperimentAnalysisResponse = Annotated[

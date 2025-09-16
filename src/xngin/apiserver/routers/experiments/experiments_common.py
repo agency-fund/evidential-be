@@ -55,8 +55,8 @@ from xngin.apiserver.sqla import tables
 from xngin.apiserver.storage.storage_format_converters import ExperimentStorageConverter
 from xngin.apiserver.webhooks.webhook_types import ExperimentCreatedWebhookBody
 from xngin.events.experiment_created import ExperimentCreatedEvent
-from xngin.stats.analysis import analyze_experiment as analyze_freq_experiment_impl
-from xngin.stats.bandit_analysis import analyze_experiment as analyze_bandit_experiment_impl
+from xngin.stats.analysis import analyze_experiment as analyze_freq_experiment
+from xngin.stats.bandit_analysis import analyze_experiment as analyze_bandit_experiment
 from xngin.stats.bandit_sampling import choose_arm, update_arm
 from xngin.stats.stats_errors import StatsAnalysisError
 from xngin.tq.task_payload_types import WEBHOOK_OUTBOUND_TASK_TYPE, WebhookOutboundTask
@@ -925,7 +925,7 @@ async def analyze_experiment_freq_impl(
     # before their info was synced to the dwh.
     num_missing_participants = num_participants - len(participant_outcomes)
 
-    analyze_results = analyze_freq_experiment_impl(assignments, participant_outcomes, baseline_arm_id)
+    analyze_results = analyze_freq_experiment(assignments, participant_outcomes, baseline_arm_id)
 
     metric_analyses = []
     for metric in metrics:
@@ -959,6 +959,7 @@ async def analyze_experiment_freq_impl(
 
 def analyze_experiment_bandit_impl(
     experiment: tables.Experiment,
+    contexts: list[float] | None = None,
 ) -> BanditExperimentAnalysisResponse:
     """Analyze a bandit experiment. Assumes arms and draws are preloaded."""
 
@@ -966,11 +967,12 @@ def analyze_experiment_bandit_impl(
     outcomes = [draw.outcome for draw in draws if draw.outcome is not None]
 
     outcome_std_dev = np.std(outcomes).astype(float) if len(outcomes) > 1 else 0.0
-    arm_analyses = analyze_bandit_experiment_impl(experiment=experiment, outcome_std_dev=outcome_std_dev)
+    arm_analyses = analyze_bandit_experiment(experiment=experiment, outcome_std_dev=outcome_std_dev, contexts=contexts)
 
     return BanditExperimentAnalysisResponse(
         experiment_id=experiment.id,
         arm_analyses=arm_analyses,
         n_outcomes=len(outcomes),
         created_at=datetime.now(UTC),
+        contexts=contexts,
     )

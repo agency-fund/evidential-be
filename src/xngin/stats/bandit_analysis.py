@@ -22,15 +22,23 @@ def _analyze_beta_binomial(alpha: float, beta: float) -> tuple[float, float]:
     return predictive_mean, predictive_stdev
 
 
-def _analyze_normal(mu: np.ndarray, covariance: np.ndarray, outcome_std_dev: float) -> tuple[float, float]:
+def _analyze_normal(
+    mu: np.ndarray, covariance: np.ndarray, outcome_std_dev: float, context: np.ndarray | None
+) -> tuple[float, float]:
     """
     Analyze a single arm with Normal model.
     Args:
-        arm: The arm to analyze.
+        mu: The posterior mean vector of the arm.
+        covariance: The posterior covariance matrix of the arm.
         outcome_std_dev: Standard deviation of the outcomes.
+        context: Optional context vector.
     """
-    predictive_mean = mu[0]
-    predictive_mean_stdev = np.sqrt(covariance.flatten()[0] ** 2 + outcome_std_dev**2)
+    if context is None:
+        predictive_mean = mu[0]
+        predictive_mean_stdev = np.sqrt(covariance.flatten()[0] ** 2 + outcome_std_dev**2)
+    else:
+        predictive_mean = context @ mu
+        predictive_mean_stdev = np.sqrt(context @ covariance @ context + outcome_std_dev**2)
     return predictive_mean, predictive_mean_stdev
 
 
@@ -38,20 +46,23 @@ def _analyze_normal_binary(
     mu: np.ndarray,
     covariance: np.ndarray,
     context_link_functions: ContextLinkFunctions,
+    context: np.ndarray | None = None,
 ) -> tuple[float, float]:
     """
     Analyze a single arm with Normal model for binary outcomes.
     Args:
-        arm: The arm to analyze.
+        mu: The posterior mean vector of the arm.
+        covariance: The posterior covariance matrix of the arm.
         context_link_functions: The link function to use.
-        num_samples: Number of samples to draw from the posterior.
-
+        context: Optional context vector.
     """
     random_state = 66  # TODO: Make this configurable
     rng = np.random.default_rng(random_state)
     num_samples = 10000  # TODO: Make this configurable
 
     parameter_samples = rng.multivariate_normal(mean=mu, cov=covariance, size=num_samples)
+    if context is not None:
+        parameter_samples @= context
     transformed_parameter_samples = context_link_functions(parameter_samples)
     outcome_samples = rng.binomial(n=1, p=transformed_parameter_samples)
     return (
@@ -60,7 +71,9 @@ def _analyze_normal_binary(
     )
 
 
-def analyze_experiment(experiment: tables.Experiment, outcome_std_dev: float = 1.0) -> list[BanditArmAnalysis]:
+def analyze_experiment(
+    experiment: tables.Experiment, outcome_std_dev: float = 1.0, contexts: list | None = None
+) -> list[BanditArmAnalysis]:
     """
     Analyze a bandit experiment. Assumes arms and draws are preloaded.
 
@@ -68,11 +81,13 @@ def analyze_experiment(experiment: tables.Experiment, outcome_std_dev: float = 1
         experiment: The bandit experiment to analyze.
         analyze_for_prior: Whether to analyze for arm prior or posterior.
     """
-    # TODO: Does not support Bayes A/B or CMAB experiments
-    if not experiment.experiment_type == ExperimentsType.MAB_ONLINE.value:
+    # TODO: Does not support Bayes A/B experiments
+    if experiment.experiment_type == ExperimentsType.BAYESAB_ONLINE.value:
         raise ValueError(f"Invalid experiment type: {experiment.experiment_type}.")
     if not experiment.prior_type or not experiment.reward_type:
         raise ValueError("Experiment must have prior and reward types defined.")
+    if (experiment.experiment_type == ExperimentsType.CMAB_ONLINE.value) and (contexts is None):
+        raise ValueError("Contexts must be provided for CMAB experiment analysis.")
 
     likelihood_type = LikelihoodTypes(experiment.reward_type)
     prior_type = PriorTypes(experiment.prior_type)
@@ -96,12 +111,18 @@ def analyze_experiment(experiment: tables.Experiment, outcome_std_dev: float = 1
                     "Arm must have initial mu and sigma parameters."
                 )
                 prior_pred_mean, prior_pred_stdev = _analyze_normal(
-                    np.array([arm.mu_init]), np.diag([arm.sigma_init]), outcome_std_dev
+                    np.array([arm.mu_init] * max(len(experiment.contexts), 1)),
+                    np.diag([arm.sigma_init] * max(len(experiment.contexts), 1)),
+                    outcome_std_dev,
+                    context=np.array(contexts) if contexts else None,
                 )
 
                 assert arm.mu is not None and arm.covariance is not None, "Arm must have mu and covariance parameters."
                 post_pred_mean, post_pred_stdev = _analyze_normal(
-                    np.array(arm.mu), np.array(arm.covariance), outcome_std_dev
+                    np.array(arm.mu),
+                    np.array(arm.covariance),
+                    outcome_std_dev,
+                    context=np.array(contexts) if contexts else None,
                 )
 
             case PriorTypes.NORMAL, LikelihoodTypes.BERNOULLI:
@@ -109,12 +130,18 @@ def analyze_experiment(experiment: tables.Experiment, outcome_std_dev: float = 1
                     "Arm must have initial mu and sigma parameters."
                 )
                 prior_pred_mean, prior_pred_stdev = _analyze_normal_binary(
-                    np.array([arm.mu_init]), np.diag([arm.sigma_init]), ContextLinkFunctions.LOGISTIC
+                    np.array([arm.mu_init] * max(len(experiment.contexts), 1)),
+                    np.diag([arm.sigma_init] * max(len(experiment.contexts), 1)),
+                    ContextLinkFunctions.LOGISTIC,
+                    context=np.array(contexts) if contexts else None,
                 )
 
                 assert arm.mu is not None and arm.covariance is not None, "Arm must have mu and covariance parameters."
                 post_pred_mean, post_pred_stdev = _analyze_normal_binary(
-                    np.array(arm.mu), np.array(arm.covariance), ContextLinkFunctions.LOGISTIC
+                    np.array(arm.mu),
+                    np.array(arm.covariance),
+                    ContextLinkFunctions.LOGISTIC,
+                    context=np.array(contexts) if contexts else None,
                 )
 
             case _:

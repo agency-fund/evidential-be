@@ -101,6 +101,9 @@ from xngin.apiserver.routers.auth.principal import Principal
 from xngin.apiserver.routers.common_api_types import (
     BaseBanditExperimentSpec,
     BaseFrequentistDesignSpec,
+    ContextInput,
+    ContextType,
+    CreateCMABExperimentOrAnalysisRequest,
     CreateExperimentRequest,
     CreateExperimentResponse,
     ExperimentAnalysisResponse,
@@ -322,6 +325,32 @@ async def validate_webhooks(
                 detail=f"Invalid webhook IDs: {sorted(missing_webhook_ids)}",
             )
     return validated_webhooks
+
+
+def sort_contexts_by_id_or_raise(context_defns: list[tables.Context], context_inputs: list[ContextInput]):
+    context_defns = sorted(context_defns, key=lambda c: c.id)
+    context_inputs = sorted(context_inputs, key=lambda c: c.context_id)
+
+    if len(context_inputs) != len(context_defns):
+        raise LateValidationError(
+            f"Expected {len(context_defns)} context inputs, but got {len(context_inputs)} in "
+            f"CreateCMABAssignmentRequest."
+        )
+
+    for context_input, context_def in zip(
+        context_inputs,
+        context_defns,
+        strict=True,
+    ):
+        if context_input.context_id != context_def.id:
+            raise LateValidationError(
+                f"Context input for id {context_input.context_id} does not match expected context id {context_def.id}",
+            )
+        if context_def.value_type == ContextType.BINARY.value and context_input.context_value not in {0.0, 1.0}:
+            raise LateValidationError(
+                f"Context value for id {context_input.context_id} must be binary (0 or 1).",
+            )
+    return context_inputs
 
 
 @router.get("/caller-identity")
@@ -1396,7 +1425,12 @@ async def create_experiment(
     )
 
 
-@router.get("/datasources/{datasource_id}/experiments/{experiment_id}/analyze")
+@router.get(
+    "/datasources/{datasource_id}/experiments/{experiment_id}/analyze",
+    description="""
+    For preassigned experiments, and online experiments (except contextual bandits),
+    returns an analysis of the experiment's performance, given datasource and experiment ID.""",
+)
 async def analyze_experiment(
     datasource_id: str,
     experiment_id: str,
@@ -1422,7 +1456,8 @@ async def analyze_experiment(
         case BaseBanditExperimentSpec():
             if experiment.experiment_type != ExperimentsType.MAB_ONLINE.value:
                 raise LateValidationError(
-                    "Invalid experiment type for bandit analysis; only MABs are supported.",
+                    """Invalid experiment type for bandit analysis; for CMAB experiments,
+                    use the corresponding POST endpoint.""",
                 )
             return experiments_common.analyze_experiment_bandit_impl(experiment)
 
@@ -1435,6 +1470,46 @@ async def analyze_experiment(
             )
         case _:
             assert_never()
+
+
+@router.post(
+    "/datasources/{datasource_id}/experiments/{experiment_id}/analyze_cmab",
+    description="""
+    For contextual bandit experiments, returns an analysis of the experiment's performance,
+    given datasource and experiment ID and context values as input.""",
+)
+async def analyze_cmab_experiment(
+    datasource_id: str,
+    experiment_id: str,
+    body: CreateCMABExperimentOrAnalysisRequest,
+    xngin_session: Annotated[AsyncSession, Depends(xngin_db_session)],
+    user: Annotated[tables.User, Depends(user_from_token)],
+) -> ExperimentAnalysisResponse:
+    ds = await get_datasource_or_raise(xngin_session, user, datasource_id)
+    experiment = await get_experiment_via_ds_or_raise(
+        xngin_session,
+        ds,
+        experiment_id,
+        preload=[tables.Experiment.draws, tables.Experiment.contexts],
+    )
+
+    if experiment.experiment_type != ExperimentsType.CMAB_ONLINE.value:
+        raise LateValidationError(
+            f"Experiment {experiment.id} is a {experiment.experiment_type} experiment, and not a "
+            f"{ExperimentsType.CMAB_ONLINE.value} experiment. Please use the corresponding GET endpoint to "
+            f"retrieve an experiment analysis."
+        )
+
+    context_inputs = body.context_inputs
+    if not context_inputs:
+        raise LateValidationError("Context inputs must be provided for CMAB experiment analysis.")
+
+    context_defns = experiment.contexts
+    context_inputs = sort_contexts_by_id_or_raise(context_defns, context_inputs)
+
+    return experiments_common.analyze_experiment_bandit_impl(
+        experiment, contexts=[ci.context_value for ci in context_inputs]
+    )
 
 
 EXPERIMENT_STATE_TRANSITION_RESPONSES: dict[int | str, dict[str, Any]] = {

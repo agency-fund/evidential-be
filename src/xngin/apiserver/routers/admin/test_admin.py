@@ -150,20 +150,21 @@ async def fixture_testing_experiment(xngin_session: AsyncSession, testing_dataso
     return experiment
 
 
-@pytest.fixture(name="testing_mab_experiment")
-async def fixture_testing_mab_experiment(request, xngin_session: AsyncSession, testing_datasource_with_user):
+@pytest.fixture(name="testing_bandit_experiment")
+async def fixture_testing_bandit_experiment(request, xngin_session: AsyncSession, testing_datasource_with_user):
     """Create an experiment on a test inline schema datasource with proper user permissions."""
-    prior_type, reward_type = request.param
+    experiment_type, prior_type, reward_type, num_participants = request.param
     datasource = testing_datasource_with_user.ds
     experiment = await insert_experiment_and_arms(
-        xngin_session, datasource, ExperimentsType.MAB_ONLINE, prior_type=prior_type, reward_type=reward_type
+        xngin_session, datasource, experiment_type, prior_type=prior_type, reward_type=reward_type
     )
+    contexts = await experiment.awaitable_attrs.contexts
     # Add fake assignments for each arm for real participant ids in our test data.
     arm_ids = [arm.id for arm in experiment.arms]
     arm_map = {arm.id: arm for arm in experiment.arms}
     rng = np.random.default_rng(66)
 
-    for i in range(10):
+    for i in range(num_participants):
         arm_id = arm_ids[i % 2]  # Alternate between the two arms
         outcome = rng.binomial(n=1, p=0.5)  # Randomly generate outcome
         # NB: this step hijacks the algorithm to generate realistic arm parameters
@@ -185,6 +186,7 @@ async def fixture_testing_mab_experiment(request, xngin_session: AsyncSession, t
             current_covariance=current_params[1] if prior_type == PriorTypes.NORMAL else None,
             current_alpha=current_params[0] if prior_type == PriorTypes.BETA else None,
             current_beta=current_params[1] if prior_type == PriorTypes.BETA else None,
+            context_vals=[1.0] * len(contexts) if contexts is not None else None,
         )
         xngin_session.add(assignment)
         xngin_session.add(arm_map[arm_id])
@@ -1600,28 +1602,63 @@ def test_freq_experiments_analyze(testing_experiment, pget):
 
 
 @pytest.mark.parametrize(
-    "testing_mab_experiment",
+    "testing_bandit_experiment",
     [
-        (PriorTypes.BETA, LikelihoodTypes.BERNOULLI),
-        (PriorTypes.NORMAL, LikelihoodTypes.NORMAL),
-        (PriorTypes.NORMAL, LikelihoodTypes.BERNOULLI),
+        (ExperimentsType.MAB_ONLINE, PriorTypes.BETA, LikelihoodTypes.BERNOULLI, 10),
+        (ExperimentsType.MAB_ONLINE, PriorTypes.NORMAL, LikelihoodTypes.NORMAL, 10),
+        (ExperimentsType.MAB_ONLINE, PriorTypes.NORMAL, LikelihoodTypes.BERNOULLI, 10),
     ],
     indirect=True,
 )
-def test_mab_experiments_analyze(testing_mab_experiment, pget):
-    datasource_id = testing_mab_experiment.datasource_id
-    experiment_id = testing_mab_experiment.id
+def test_mab_experiments_analyze(testing_bandit_experiment, pget):
+    datasource_id = testing_bandit_experiment.datasource_id
+    experiment_id = testing_bandit_experiment.id
 
     response = pget(f"/v1/m/datasources/{datasource_id}/experiments/{experiment_id}/analyze")
 
     assert response.status_code == 200, response.content
     experiment_analysis = BanditExperimentAnalysisResponse.model_validate(response.json())
     assert experiment_analysis.experiment_id == experiment_id
-    assert len(experiment_analysis.arm_analyses) == len(testing_mab_experiment.arms)
+    assert len(experiment_analysis.arm_analyses) == len(testing_bandit_experiment.arms)
     assert experiment_analysis.n_outcomes == 10
     assert datetime.now(UTC) - experiment_analysis.created_at < timedelta(seconds=5)
     analyses = experiment_analysis.arm_analyses
-    assert {arm.arm_id for arm in analyses} == {arm.id for arm in testing_mab_experiment.arms}
+    assert {arm.arm_id for arm in analyses} == {arm.id for arm in testing_bandit_experiment.arms}
+    for analysis in analyses:
+        assert analysis.prior_pred_mean is not None
+        assert analysis.prior_pred_stdev is not None
+        assert analysis.post_pred_mean is not None
+        assert analysis.post_pred_stdev is not None
+
+
+@pytest.mark.parametrize(
+    "testing_bandit_experiment",
+    [
+        (ExperimentsType.CMAB_ONLINE, PriorTypes.NORMAL, LikelihoodTypes.NORMAL, 10),
+        (ExperimentsType.CMAB_ONLINE, PriorTypes.NORMAL, LikelihoodTypes.BERNOULLI, 10),
+    ],
+    indirect=True,
+)
+def test_cmab_experiments_analyze(testing_bandit_experiment, ppost):
+    datasource_id = testing_bandit_experiment.datasource_id
+    experiment_id = testing_bandit_experiment.id
+
+    input_data = {
+        "context_inputs": [
+            {"context_id": context.id, "context_value": 1.0}
+            for context in sorted(testing_bandit_experiment.contexts, key=lambda c: c.id)
+        ]
+    }
+    response = ppost(f"/v1/m/datasources/{datasource_id}/experiments/{experiment_id}/analyze_cmab", json=input_data)
+
+    assert response.status_code == 200, response.content
+    experiment_analysis = BanditExperimentAnalysisResponse.model_validate(response.json())
+    assert experiment_analysis.experiment_id == experiment_id
+    assert len(experiment_analysis.arm_analyses) == len(testing_bandit_experiment.arms)
+    assert experiment_analysis.n_outcomes == 10
+    assert datetime.now(UTC) - experiment_analysis.created_at < timedelta(seconds=5)
+    analyses = experiment_analysis.arm_analyses
+    assert {arm.arm_id for arm in analyses} == {arm.id for arm in testing_bandit_experiment.arms}
     for analysis in analyses:
         assert analysis.prior_pred_mean is not None
         assert analysis.prior_pred_stdev is not None
@@ -1641,6 +1678,34 @@ async def test_experiments_analyze_for_experiment_with_no_participants(
     response = pget(f"/v1/m/datasources/{datasource_id}/experiments/{experiment_id}/analyze")
     assert response.status_code == 422, response.content
     assert response.json()["message"] == "No participants found for experiment."
+
+
+@pytest.mark.parametrize(
+    "testing_bandit_experiment",
+    [
+        (ExperimentsType.MAB_ONLINE, PriorTypes.BETA, LikelihoodTypes.BERNOULLI, 0),
+    ],
+    indirect=True,
+)
+def test_mab_experiments_analyze_with_no_participants(testing_bandit_experiment, pget):
+    datasource_id = testing_bandit_experiment.datasource_id
+    experiment_id = testing_bandit_experiment.id
+
+    response = pget(f"/v1/m/datasources/{datasource_id}/experiments/{experiment_id}/analyze")
+
+    assert response.status_code == 200, response.content
+    experiment_analysis = BanditExperimentAnalysisResponse.model_validate(response.json())
+    assert experiment_analysis.experiment_id == experiment_id
+    assert len(experiment_analysis.arm_analyses) == len(testing_bandit_experiment.arms)
+    assert experiment_analysis.n_outcomes == 0
+    assert datetime.now(UTC) - experiment_analysis.created_at < timedelta(seconds=5)
+    analyses = experiment_analysis.arm_analyses
+    assert {arm.arm_id for arm in analyses} == {arm.id for arm in testing_bandit_experiment.arms}
+    for analysis in analyses:
+        assert analysis.prior_pred_mean is not None
+        assert analysis.prior_pred_stdev is not None
+        assert analysis.post_pred_mean == analysis.prior_pred_mean
+        assert analysis.post_pred_stdev == analysis.prior_pred_stdev
 
 
 @pytest.mark.parametrize(
