@@ -493,7 +493,7 @@ async def test_create_experiment_impl_for_online(
     assert experiment.participant_type == request.design_spec.participant_type
     assert experiment.name == request.design_spec.experiment_name
     assert experiment.description == request.design_spec.description
-    assert experiment.design_url is None
+    assert experiment.design_url == ""
     # Online experiments still go through a review step before being committed
     assert experiment.state == ExperimentState.ASSIGNED
     assert experiment.datasource_id == testing_datasource.ds.id

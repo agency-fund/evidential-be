@@ -136,7 +136,7 @@ class ExperimentStorageConverter:
             "experiment_type": self.experiment.experiment_type,
             "experiment_name": self.experiment.name,
             "description": self.experiment.description,
-            "design_url": self.experiment.design_url,
+            "design_url": self.experiment.design_url or None,
             "start_date": self.experiment.start_date,
             "end_date": self.experiment.end_date,
         }
