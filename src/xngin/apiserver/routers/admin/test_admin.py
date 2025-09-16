@@ -66,6 +66,7 @@ from xngin.apiserver.routers.auth.principal import Principal
 from xngin.apiserver.routers.common_api_types import (
     Arm,
     ArmBandit,
+    BanditExperimentAnalysisResponse,
     CMABExperimentSpec,
     CreateExperimentRequest,
     CreateExperimentResponse,
@@ -101,6 +102,7 @@ from xngin.apiserver.storage.bootstrap import (
 from xngin.apiserver.testing.assertions import assert_dates_equal
 from xngin.apiserver.testing.testing_dwh_def import TESTING_DWH_PARTICIPANT_DEF
 from xngin.cli.main import create_testing_dwh
+from xngin.stats.bandit_sampling import update_arm
 
 SAMPLE_GCLOUD_SERVICE_ACCOUNT = {
     "auth_provider_x509_cert_url": "",
@@ -145,6 +147,50 @@ async def fixture_testing_experiment(xngin_session: AsyncSession, testing_dataso
         xngin_session.add(assignment)
     await xngin_session.commit()
     await xngin_session.refresh(experiment, ["arm_assignments"])
+    return experiment
+
+
+@pytest.fixture(name="testing_mab_experiment")
+async def fixture_testing_mab_experiment(request, xngin_session: AsyncSession, testing_datasource_with_user):
+    """Create an experiment on a test inline schema datasource with proper user permissions."""
+    prior_type, reward_type = request.param
+    datasource = testing_datasource_with_user.ds
+    experiment = await insert_experiment_and_arms(
+        xngin_session, datasource, ExperimentsType.MAB_ONLINE, prior_type=prior_type, reward_type=reward_type
+    )
+    # Add fake assignments for each arm for real participant ids in our test data.
+    arm_ids = [arm.id for arm in experiment.arms]
+    arm_map = {arm.id: arm for arm in experiment.arms}
+    rng = np.random.default_rng(66)
+
+    for i in range(10):
+        arm_id = arm_ids[i % 2]  # Alternate between the two arms
+        outcome = rng.binomial(n=1, p=0.5)  # Randomly generate outcome
+        # NB: this step hijacks the algorithm to generate realistic arm parameters
+        # It's not meant to be a test of the bandit algorithm
+        current_params = update_arm(experiment=experiment, arm_to_update=arm_map[arm_id], outcomes=[outcome])
+        arm_map[arm_id].alpha = current_params[0] if prior_type == PriorTypes.BETA else None
+        arm_map[arm_id].beta = current_params[1] if prior_type == PriorTypes.BETA else None
+        arm_map[arm_id].mu = current_params[0] if prior_type == PriorTypes.NORMAL else None
+        arm_map[arm_id].covariance = current_params[1] if prior_type == PriorTypes.NORMAL else None
+
+        assignment = tables.Draw(
+            experiment_id=experiment.id,
+            participant_id=str(i),
+            participant_type=experiment.participant_type,
+            arm_id=arm_id,
+            outcome=outcome,
+            observed_at=datetime.now(tz=UTC),
+            current_mu=current_params[0] if prior_type == PriorTypes.NORMAL else None,
+            current_covariance=current_params[1] if prior_type == PriorTypes.NORMAL else None,
+            current_alpha=current_params[0] if prior_type == PriorTypes.BETA else None,
+            current_beta=current_params[1] if prior_type == PriorTypes.BETA else None,
+        )
+        xngin_session.add(assignment)
+        xngin_session.add(arm_map[arm_id])
+
+    await xngin_session.commit()
+    await xngin_session.refresh(experiment, ["draws", "arms"])
     return experiment
 
 
@@ -1527,7 +1573,7 @@ async def test_get_experiment_assignment_for_online_participant_past_end_date(
     assert new_exp.stopped_assignments_reason == StopAssignmentReason.END_DATE
 
 
-def test_experiments_analyze(testing_experiment, pget):
+def test_freq_experiments_analyze(testing_experiment, pget):
     datasource_id = testing_experiment.datasource_id
     experiment_id = testing_experiment.id
 
@@ -1551,6 +1597,36 @@ def test_experiments_analyze(testing_experiment, pget):
         assert {arm.arm_id for arm in analysis.arm_analyses} == {arm.id for arm in testing_experiment.arms}
         # id=0 doesn't exist in our test data, so we'll have 1 missing value across all arms.
         assert sum([arm.num_missing_values for arm in analysis.arm_analyses]) == 1
+
+
+@pytest.mark.parametrize(
+    "testing_mab_experiment",
+    [
+        (PriorTypes.BETA, LikelihoodTypes.BERNOULLI),
+        (PriorTypes.NORMAL, LikelihoodTypes.NORMAL),
+        (PriorTypes.NORMAL, LikelihoodTypes.BERNOULLI),
+    ],
+    indirect=True,
+)
+def test_mab_experiments_analyze(testing_mab_experiment, pget):
+    datasource_id = testing_mab_experiment.datasource_id
+    experiment_id = testing_mab_experiment.id
+
+    response = pget(f"/v1/m/datasources/{datasource_id}/experiments/{experiment_id}/analyze")
+
+    assert response.status_code == 200, response.content
+    experiment_analysis = BanditExperimentAnalysisResponse.model_validate(response.json())
+    assert experiment_analysis.experiment_id == experiment_id
+    assert len(experiment_analysis.arm_analyses) == len(testing_mab_experiment.arms)
+    assert experiment_analysis.n_outcomes == 10
+    assert datetime.now(UTC) - experiment_analysis.created_at < timedelta(seconds=5)
+    analyses = experiment_analysis.arm_analyses
+    assert {arm.arm_id for arm in analyses} == {arm.id for arm in testing_mab_experiment.arms}
+    for analysis in analyses:
+        assert analysis.prior_pred_mean is not None
+        assert analysis.prior_pred_stdev is not None
+        assert analysis.post_pred_mean is not None
+        assert analysis.post_pred_stdev is not None
 
 
 async def test_experiments_analyze_for_experiment_with_no_participants(
