@@ -15,47 +15,35 @@ def estimate_outcome_std_deviation(draws: list[tables.Draw]) -> float:
     return np.std(outcomes) if len(outcomes) > 1 else 1.0
 
 
-def _analyze_beta_binomial(
-    alpha_init: float, alpha: float, beta: float, beta_init: float
-) -> tuple[float, float, float, float]:
+def _analyze_beta_binomial(alpha: float, beta: float) -> tuple[float, float]:
     """
     Analyze a single arm with Beta-Binomial model.
     Args:
-        alpha_init: The initial alpha parameter of the arm.
         alpha: The posterior alpha parameter of the arm.
         beta: The posterior beta parameter of the arm.
-        beta_init: The initial beta parameter of the arm.
     """
-    prior_pred_mean = alpha_init / (alpha_init + beta_init)
-    prior_pred_sttdev = np.sqrt(alpha_init * beta_init) / (alpha_init + beta_init)
-    post_pred_mean = alpha / (alpha + beta)
-    post_pred_stdev = np.sqrt(alpha * beta) / (alpha + beta)
-    return prior_pred_mean, prior_pred_sttdev, post_pred_mean, post_pred_stdev
+    predictive_mean = alpha / (alpha + beta)
+    predictive_stdev = np.sqrt(alpha * beta) / (alpha + beta)
+    return predictive_mean, predictive_stdev
 
 
-def _analyze_normal(
-    mu_init: float, sigma_init: float, mu: np.ndarray, covariance: np.ndarray, outcome_std_dev: float
-) -> tuple[float, float, float, float]:
+def _analyze_normal(mu: np.ndarray, covariance: np.ndarray, outcome_std_dev: float) -> tuple[float, float]:
     """
     Analyze a single arm with Normal model.
     Args:
         arm: The arm to analyze.
         outcome_std_dev: Standard deviation of the outcomes.
     """
-    prior_pred_mean = mu_init
-    prior_pred_stdev = np.sqrt(sigma_init**2 + outcome_std_dev**2)
-    post_pred_mean = mu[0]
-    post_pred_stdev = np.sqrt(covariance.flatten()[0] ** 2 + outcome_std_dev**2)
-    return prior_pred_mean, prior_pred_stdev, post_pred_mean, post_pred_stdev
+    predictive_mean = mu[0]
+    predictive_mean_stdev = np.sqrt(covariance.flatten()[0] ** 2 + outcome_std_dev**2)
+    return predictive_mean, predictive_mean_stdev
 
 
-def _analyse_normal_binary(
-    mu_init: float,
-    sigma_init: float,
+def _analyze_normal_binary(
     mu: np.ndarray,
     covariance: np.ndarray,
     context_link_functions: ContextLinkFunctions,
-) -> tuple[float, float, float, float]:
+) -> tuple[float, float]:
     """
     Analyze a single arm with Normal model for binary outcomes.
     Args:
@@ -68,30 +56,22 @@ def _analyse_normal_binary(
     rng = np.random.default_rng(random_state)
     num_samples = 10000  # TODO: Make this configurable
 
-    prior_samples = rng.multivariate_normal(mean=np.array([mu_init]), cov=np.array([[sigma_init]]), size=num_samples)
-    posterior_samples = rng.multivariate_normal(mean=mu, cov=covariance, size=num_samples)
-
-    transformed_prior_samples = context_link_functions(prior_samples)
-    transformed_posterior_samples = context_link_functions(posterior_samples)
-
-    prior_pred_samples = rng.binomial(n=1, p=transformed_prior_samples)
-    post_pred_samples = rng.binomial(n=1, p=transformed_posterior_samples)
+    parameter_samples = rng.multivariate_normal(mean=mu, cov=covariance, size=num_samples)
+    transformed_parameter_samples = context_link_functions(parameter_samples)
+    outcome_samples = rng.binomial(n=1, p=transformed_parameter_samples)
     return (
-        prior_pred_samples.mean(),
-        prior_pred_samples.std(),
-        post_pred_samples.mean(),
-        post_pred_samples.std(),
+        outcome_samples.mean(),
+        outcome_samples.std(),
     )
 
 
-def analyze_experiment(
-    experiment: tables.Experiment,
-) -> list[BanditArmAnalysis]:
+def analyze_experiment(experiment: tables.Experiment, outcome_std_dev: float = 1.0) -> list[BanditArmAnalysis]:
     """
     Analyze a bandit experiment. Assumes arms and draws are preloaded.
 
     Args:
         experiment: The bandit experiment to analyze.
+        analyze_for_prior: Whether to analyze for arm prior or posterior.
     """
     # TODO: Does not support Bayes A/B or CMAB experiments
     if not experiment.experiment_type == ExperimentsType.MAB_ONLINE.value:
@@ -104,48 +84,47 @@ def analyze_experiment(
 
     arm_analyses: list[BanditArmAnalysis] = []
     for arm in experiment.arms:
-        prior_pred_mean: float
-        prior_pred_stdev: float
-        post_pred_stdev: float
-        post_pred_mean: float
         match prior_type, likelihood_type:
             case PriorTypes.BETA, LikelihoodTypes.BERNOULLI:
-                assert (
-                    arm.alpha_init is not None
-                    and arm.beta_init is not None
-                    and arm.alpha is not None
-                    and arm.beta is not None
-                ), "Arm must have alpha and beta parameters."
-                (prior_pred_mean, prior_pred_stdev, post_pred_mean, post_pred_stdev) = _analyze_beta_binomial(
-                    alpha_init=(arm.alpha_init), alpha=arm.alpha, beta=arm.beta, beta_init=arm.beta_init
+                assert arm.alpha_init is not None and arm.beta_init is not None, (
+                    "Arm must have initial alpha and beta parameters."
                 )
+                prior_pred_mean, prior_pred_stdev = _analyze_beta_binomial(arm.alpha_init, arm.beta_init)
+
+                assert arm.alpha is not None and arm.beta is not None, (
+                    "Arm must have initial alpha and beta parameters."
+                )
+                post_pred_mean, post_pred_stdev = _analyze_beta_binomial(arm.alpha, arm.beta)
+
             case PriorTypes.NORMAL, LikelihoodTypes.NORMAL:
-                assert (
-                    arm.mu_init is not None
-                    and arm.sigma_init is not None
-                    and arm.mu is not None
-                    and arm.covariance is not None
-                ), "Arm must have mu and sigma parameters."
-                outcome_std_dev = estimate_outcome_std_deviation(experiment.draws)
-                (prior_pred_mean, prior_pred_stdev, post_pred_mean, post_pred_stdev) = _analyze_normal(
-                    arm.mu_init, arm.sigma_init, np.array(arm.mu), np.array(arm.covariance), outcome_std_dev
+                assert arm.mu_init is not None and arm.sigma_init is not None, (
+                    "Arm must have initial mu and sigma parameters."
                 )
+                prior_pred_mean, prior_pred_stdev = _analyze_normal(
+                    np.array([arm.mu_init]), np.diag([arm.sigma_init]), outcome_std_dev
+                )
+
+                assert arm.mu is not None and arm.covariance is not None, "Arm must have mu and covariance parameters."
+                post_pred_mean, post_pred_stdev = _analyze_normal(
+                    np.array(arm.mu), np.array(arm.covariance), outcome_std_dev
+                )
+
             case PriorTypes.NORMAL, LikelihoodTypes.BERNOULLI:
-                assert (
-                    arm.mu_init is not None
-                    and arm.sigma_init is not None
-                    and arm.mu is not None
-                    and arm.covariance is not None
-                ), "Arm must have mu and sigma parameters."
-                (prior_pred_mean, prior_pred_stdev, post_pred_mean, post_pred_stdev) = _analyse_normal_binary(
-                    arm.mu_init,
-                    arm.sigma_init,
-                    np.array(arm.mu),
-                    np.array(arm.covariance),
-                    context_link_functions=ContextLinkFunctions.LOGISTIC,
+                assert arm.mu_init is not None and arm.sigma_init is not None, (
+                    "Arm must have initial mu and sigma parameters."
                 )
+                prior_pred_mean, prior_pred_stdev = _analyze_normal_binary(
+                    np.array([arm.mu_init]), np.diag([arm.sigma_init]), ContextLinkFunctions.LOGISTIC
+                )
+
+                assert arm.mu is not None and arm.covariance is not None, "Arm must have mu and covariance parameters."
+                post_pred_mean, post_pred_stdev = _analyze_normal_binary(
+                    np.array(arm.mu), np.array(arm.covariance), ContextLinkFunctions.LOGISTIC
+                )
+
             case _:
                 raise ValueError(f"Unsupported prior and likelihood combination: {prior_type}, {likelihood_type}")
+
         arm_analyses.append(
             BanditArmAnalysis(
                 arm_id=arm.id,
