@@ -10,11 +10,6 @@ from xngin.apiserver.routers.common_enums import (
 from xngin.apiserver.sqla import tables
 
 
-def estimate_outcome_std_deviation(draws: list[tables.Draw]) -> float:
-    outcomes = np.array([draw.outcome for draw in draws if draw.outcome is not None])
-    return np.std(outcomes) if len(outcomes) > 1 else 1.0
-
-
 def _analyze_beta_binomial(alpha: float, beta: float) -> tuple[float, float]:
     """
     Analyze a single arm with Beta-Binomial model.

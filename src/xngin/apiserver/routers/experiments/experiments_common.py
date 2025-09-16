@@ -7,6 +7,7 @@ from collections.abc import Sequence
 from datetime import UTC, datetime
 from itertools import batched
 
+import numpy as np
 from fastapi import HTTPException, Response, status
 from fastapi.responses import StreamingResponse
 from sqlalchemy import Select, Table, func, insert, select
@@ -962,17 +963,14 @@ def analyze_experiment_bandit_impl(
     """Analyze a bandit experiment. Assumes arms and draws are preloaded."""
 
     draws = experiment.draws
-    n_outcomes = len([draw for draw in draws if draw.outcome is not None])
-    if n_outcomes == 0:
-        raise StatsAnalysisError("No outcomes found for experiment.")
+    outcomes = [draw.outcome for draw in draws if draw.outcome is not None]
 
-    arm_analyses = analyze_bandit_experiment_impl(
-        experiment=experiment,
-    )
+    outcome_std_dev = np.std(outcomes).astype(float) if len(outcomes) > 1 else 0.0
+    arm_analyses = analyze_bandit_experiment_impl(experiment=experiment, outcome_std_dev=outcome_std_dev)
 
     return BanditExperimentAnalysisResponse(
         experiment_id=experiment.id,
         arm_analyses=arm_analyses,
-        n_outcomes=n_outcomes,
+        n_outcomes=len(outcomes),
         created_at=datetime.now(UTC),
     )
