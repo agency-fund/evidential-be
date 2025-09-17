@@ -181,8 +181,8 @@ class ContextInput(ApiBaseModel):
     ]
 
 
-class CreateCMABAssignmentRequest(ApiBaseModel):
-    """Request model for creating a new CMAB assignment.
+class CMABContextInputRequest(ApiBaseModel):
+    """Request model for creating a new CMAB assignment or a CMAB experiment analysis.
 
     When submitting context values for a CMAB experiment, the following rules apply:
     1. Each context_input must reference a valid context_id from the experiment's defined contexts
@@ -200,7 +200,7 @@ class CreateCMABAssignmentRequest(ApiBaseModel):
         "cmab_assignment"  # Adding type field to allow for type-discriminated unions in future
     )
     context_inputs: Annotated[
-        list[ContextInput] | None,
+        list[ContextInput],
         Field(
             description="""
             List of context values for the assignment.
@@ -355,6 +355,28 @@ class ArmBandit(Arm):
         return self
 
 
+class BanditArmAnalysis(ArmBandit):
+    """Describes an experiment arm analysis for bandit experiments."""
+
+    prior_pred_mean: Annotated[
+        float,
+        Field(description="Posterior predictive mean for this arm."),
+    ]
+    prior_pred_stdev: Annotated[
+        float,
+        Field(description="Posterior predictive standard deviation for this arm."),
+    ]
+
+    post_pred_mean: Annotated[
+        float,
+        Field(description="Posterior predictive mean for this arm."),
+    ]
+    post_pred_stdev: Annotated[
+        float,
+        Field(description="Posterior predictive standard deviation for this arm."),
+    ]
+
+
 class MetricAnalysis(ApiBaseModel):
     """Describes the change in a single metric for each arm of an experiment."""
 
@@ -374,37 +396,6 @@ class MetricAnalysis(ApiBaseModel):
                 f"Exactly one arm must be designated as the baseline arm. Found {len(baseline_arms)} baseline arms."
             )
         return self
-
-
-class BanditExperimentAnalysisResponse(ApiBaseModel):
-    """Describes changes in arms for a bandit experiment"""
-
-    type: Literal[ExperimentAnalysisType.BANDIT] = ExperimentAnalysisType.BANDIT
-
-    experiment_id: Annotated[
-        str,
-        Field(description="ID of the experiment."),
-    ]
-    n_trials: Annotated[
-        int,
-        Field(description="The number of trials conducted for this experiment."),
-    ]
-    n_outcomes: Annotated[
-        int,
-        Field(description="The number of outcomes observed for this experiment."),
-    ]
-    posterior_means: Annotated[
-        list[float],
-        Field(description="Posterior means for each arm in the experiment."),
-    ]
-    posterior_stds: Annotated[
-        list[float],
-        Field(description="Posterior standard deviations for each arm in the experiment."),
-    ]
-    volumes: Annotated[
-        list[float],
-        Field(description="Volume of participants for each arm in the experiment."),
-    ]
 
 
 class FreqExperimentAnalysisResponse(ApiBaseModel):
@@ -442,6 +433,33 @@ class FreqExperimentAnalysisResponse(ApiBaseModel):
         datetime.datetime,
         Field(description="The date and time the experiment analysis was created."),
     ]
+
+
+class BanditExperimentAnalysisResponse(ApiBaseModel):
+    """Describes changes in arms for a bandit experiment"""
+
+    type: Literal[ExperimentAnalysisType.BANDIT] = ExperimentAnalysisType.BANDIT
+
+    experiment_id: Annotated[
+        str,
+        Field(description="ID of the experiment."),
+    ]
+    arm_analyses: Annotated[
+        list[BanditArmAnalysis],
+        Field(description="Contains one analysis per metric targeted by the experiment."),
+    ]
+    n_outcomes: Annotated[
+        int,
+        Field(description="The number of outcomes observed for this experiment."),
+    ]
+    created_at: Annotated[
+        datetime.datetime,
+        Field(description="The date and time the experiment analysis was created."),
+    ]
+    contexts: Annotated[
+        list[float] | None,
+        Field(description="The context values used for the analysis, if applicable."),
+    ] = None
 
 
 type ExperimentAnalysisResponse = Annotated[

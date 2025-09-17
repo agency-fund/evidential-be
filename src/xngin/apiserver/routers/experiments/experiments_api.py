@@ -24,10 +24,10 @@ from xngin.apiserver.dependencies import (
     xngin_db_session,
 )
 from xngin.apiserver.exceptions_common import LateValidationError
+from xngin.apiserver.routers.admin.admin_api import sort_contexts_by_id_or_raise
 from xngin.apiserver.routers.common_api_types import (
     ArmBandit,
-    ContextType,
-    CreateCMABAssignmentRequest,
+    CMABContextInputRequest,
     ExperimentsType,
     GetExperimentAssignmentsResponse,
     GetExperimentResponse,
@@ -87,7 +87,9 @@ async def get_experiment_sl(
 ) -> GetExperimentResponse:
     converter = ExperimentStorageConverter(experiment)
     balance_check = converter.get_balance_check()
-    assign_summary = await get_assign_summary(xngin_session, experiment.id, balance_check)
+    assign_summary = await get_assign_summary(
+        xngin_session, experiment.id, balance_check, experiment_type=ExperimentsType(experiment.experiment_type)
+    )
     return converter.get_experiment_response(assign_summary)
 
 
@@ -169,7 +171,7 @@ async def get_assignment_for_participant_with_apikey(
 async def get_cmab_experiment_assignment_for_participant(
     experiment: Annotated[tables.Experiment, Depends(experiment_dependency)],
     participant_id: str,
-    body: CreateCMABAssignmentRequest,
+    body: CMABContextInputRequest,
     session: Annotated[AsyncSession, Depends(xngin_db_session)],
     create_if_none: Annotated[
         bool,
@@ -207,33 +209,8 @@ async def get_cmab_experiment_assignment_for_participant(
     if not assignment and create_if_none and experiment.stopped_assignments_at is None:
         context_inputs = body.context_inputs
 
-        if not context_inputs:
-            raise LateValidationError("Context inputs are required for creating CMAB assignments.")
-
         context_defns = await experiment.awaitable_attrs.contexts
-        context_inputs = sorted(context_inputs, key=lambda x: x.context_id)
-        context_defns = sorted(context_defns, key=lambda x: x.id)
-
-        if len(context_inputs) != len(context_defns):
-            raise LateValidationError(
-                f"Expected {len(context_defns)} context inputs, but got {len(context_inputs)} in "
-                f"CreateCMABAssignmentRequest."
-            )
-
-        for context_input, context_def in zip(
-            context_inputs,
-            context_defns,
-            strict=True,
-        ):
-            if context_input.context_id != context_def.id:
-                raise LateValidationError(
-                    f"Context input for id {context_input.context_id} does not match expected context id "
-                    f"{context_def.id}",
-                )
-            if context_def.value_type == ContextType.BINARY.value and context_input.context_value not in {0.0, 1.0}:
-                raise LateValidationError(
-                    f"Context value for id {context_input.context_id} must be binary (0 or 1).",
-                )
+        context_inputs = sort_contexts_by_id_or_raise(context_defns, context_inputs)
 
         context_vals = [ctx.context_value for ctx in context_inputs]
 

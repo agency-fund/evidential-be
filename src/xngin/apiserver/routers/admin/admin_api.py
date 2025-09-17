@@ -98,9 +98,11 @@ from xngin.apiserver.routers.admin.generic_handlers import handle_delete
 from xngin.apiserver.routers.auth.auth_api_types import CallerIdentity
 from xngin.apiserver.routers.auth.auth_dependencies import require_user_from_token
 from xngin.apiserver.routers.common_api_types import (
-    BanditExperimentAnalysisResponse,
     BaseBanditExperimentSpec,
     BaseFrequentistDesignSpec,
+    CMABContextInputRequest,
+    ContextInput,
+    ContextType,
     CreateExperimentRequest,
     CreateExperimentResponse,
     ExperimentAnalysisResponse,
@@ -286,6 +288,32 @@ async def validate_webhooks(
                 detail=f"Invalid webhook IDs: {sorted(missing_webhook_ids)}",
             )
     return validated_webhooks
+
+
+def sort_contexts_by_id_or_raise(context_defns: list[tables.Context], context_inputs: list[ContextInput]):
+    context_defns = sorted(context_defns, key=lambda c: c.id)
+    context_inputs = sorted(context_inputs, key=lambda c: c.context_id)
+
+    if len(context_inputs) != len(context_defns):
+        raise LateValidationError(
+            f"Expected {len(context_defns)} context inputs, but got {len(context_inputs)} in "
+            f"CreateCMABAssignmentRequest."
+        )
+
+    for context_input, context_def in zip(
+        context_inputs,
+        context_defns,
+        strict=True,
+    ):
+        if context_input.context_id != context_def.id:
+            raise LateValidationError(
+                f"Context input for id {context_input.context_id} does not match expected context id {context_def.id}",
+            )
+        if context_def.value_type == ContextType.BINARY.value and context_input.context_value not in {0.0, 1.0}:
+            raise LateValidationError(
+                f"Context value for id {context_input.context_id} must be binary (0 or 1).",
+            )
+    return context_inputs
 
 
 @router.get("/caller-identity")
@@ -1366,7 +1394,12 @@ async def create_experiment(
     )
 
 
-@router.get("/datasources/{datasource_id}/experiments/{experiment_id}/analyze")
+@router.get(
+    "/datasources/{datasource_id}/experiments/{experiment_id}/analyze",
+    description="""
+    For preassigned experiments, and online experiments (except contextual bandits),
+    returns an analysis of the experiment's performance, given datasource and experiment ID.""",
+)
 async def analyze_experiment(
     datasource_id: str,
     experiment_id: str,
@@ -1384,22 +1417,19 @@ async def analyze_experiment(
         xngin_session,
         ds,
         experiment_id,
-        preload=[tables.Experiment.arm_assignments],
+        preload=[tables.Experiment.arm_assignments, tables.Experiment.draws, tables.Experiment.contexts],
     )
 
     design_spec = ExperimentStorageConverter(experiment).get_design_spec()
     match design_spec:
         case BaseBanditExperimentSpec():
-            # TODO: implement bandit experiment analysis
-            # For now, we return a placeholder analysis with no data.
-            return BanditExperimentAnalysisResponse(
-                experiment_id=experiment.id,
-                n_trials=experiment.n_trials,
-                n_outcomes=0,
-                posterior_means=[0],
-                posterior_stds=[0],
-                volumes=[0],
-            )
+            if experiment.experiment_type != ExperimentsType.MAB_ONLINE.value:
+                raise LateValidationError(
+                    """Invalid experiment type for bandit analysis; for CMAB experiments,
+                    use the corresponding POST endpoint.""",
+                )
+            return experiments_common.analyze_experiment_bandit_impl(experiment)
+
         case BaseFrequentistDesignSpec():
             # Always assume the first arm is the baseline; UI can override this.
             baseline_arm_id = baseline_arm_id or design_spec.arms[0].arm_id
@@ -1408,7 +1438,44 @@ async def analyze_experiment(
                 ds.get_config(), experiment, baseline_arm_id, design_spec.metrics
             )
         case _:
-            assert_never(design_spec)
+            assert_never()
+
+
+@router.post(
+    "/datasources/{datasource_id}/experiments/{experiment_id}/analyze_cmab",
+    description="""
+    For contextual bandit experiments, returns an analysis of the experiment's performance,
+    given datasource and experiment ID and context values as input.""",
+)
+async def analyze_cmab_experiment(
+    datasource_id: str,
+    experiment_id: str,
+    body: CMABContextInputRequest,
+    xngin_session: Annotated[AsyncSession, Depends(xngin_db_session)],
+    user: Annotated[tables.User, Depends(require_user_from_token)],
+) -> ExperimentAnalysisResponse:
+    ds = await get_datasource_or_raise(xngin_session, user, datasource_id)
+    experiment = await get_experiment_via_ds_or_raise(
+        xngin_session,
+        ds,
+        experiment_id,
+        preload=[tables.Experiment.draws, tables.Experiment.contexts],
+    )
+
+    if experiment.experiment_type != ExperimentsType.CMAB_ONLINE.value:
+        raise LateValidationError(
+            f"Experiment {experiment.id} is a {experiment.experiment_type} experiment, and not a "
+            f"{ExperimentsType.CMAB_ONLINE.value} experiment. Please use the corresponding GET endpoint to "
+            f"retrieve an experiment analysis."
+        )
+
+    context_inputs = body.context_inputs
+    context_defns = experiment.contexts
+    context_inputs = sort_contexts_by_id_or_raise(context_defns, context_inputs)
+
+    return experiments_common.analyze_experiment_bandit_impl(
+        experiment, contexts=[ci.context_value for ci in context_inputs]
+    )
 
 
 EXPERIMENT_STATE_TRANSITION_RESPONSES: dict[int | str, dict[str, Any]] = {
@@ -1480,7 +1547,12 @@ async def get_experiment(
         preload=[tables.Experiment.webhooks, tables.Experiment.contexts],
     )
     converter = ExperimentStorageConverter(experiment)
-    assign_summary = await experiments_common.get_assign_summary(session, experiment.id, converter.get_balance_check())
+    assign_summary = await experiments_common.get_assign_summary(
+        session,
+        experiment.id,
+        converter.get_balance_check(),
+        experiment_type=ExperimentsType(experiment.experiment_type),
+    )
     webhook_ids = [webhook.id for webhook in experiment.webhooks]
     return converter.get_experiment_config(assign_summary, webhook_ids)
 
