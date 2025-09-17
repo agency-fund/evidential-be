@@ -181,7 +181,7 @@ class ContextInput(ApiBaseModel):
     ]
 
 
-class CreateCMABExperimentOrAnalysisRequest(ApiBaseModel):
+class CMABContextInputRequest(ApiBaseModel):
     """Request model for creating a new CMAB assignment or a CMAB experiment analysis.
 
     When submitting context values for a CMAB experiment, the following rules apply:

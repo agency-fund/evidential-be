@@ -99,9 +99,9 @@ from xngin.apiserver.routers.auth.auth_dependencies import require_user_from_tok
 from xngin.apiserver.routers.common_api_types import (
     BaseBanditExperimentSpec,
     BaseFrequentistDesignSpec,
+    CMABContextInputRequest,
     ContextInput,
     ContextType,
-    CreateCMABExperimentOrAnalysisRequest,
     CreateExperimentRequest,
     CreateExperimentResponse,
     ExperimentAnalysisResponse,
@@ -1449,7 +1449,7 @@ async def analyze_experiment(
 async def analyze_cmab_experiment(
     datasource_id: str,
     experiment_id: str,
-    body: CreateCMABExperimentOrAnalysisRequest,
+    body: CMABContextInputRequest,
     xngin_session: Annotated[AsyncSession, Depends(xngin_db_session)],
     user: Annotated[tables.User, Depends(require_user_from_token)],
 ) -> ExperimentAnalysisResponse:

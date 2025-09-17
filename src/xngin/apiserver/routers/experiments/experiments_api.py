@@ -27,7 +27,7 @@ from xngin.apiserver.exceptions_common import LateValidationError
 from xngin.apiserver.routers.admin.admin_api import sort_contexts_by_id_or_raise
 from xngin.apiserver.routers.common_api_types import (
     ArmBandit,
-    CreateCMABExperimentOrAnalysisRequest,
+    CMABContextInputRequest,
     ExperimentsType,
     GetExperimentAssignmentsResponse,
     GetExperimentResponse,
@@ -171,7 +171,7 @@ async def get_assignment_for_participant_with_apikey(
 async def get_cmab_experiment_assignment_for_participant(
     experiment: Annotated[tables.Experiment, Depends(experiment_dependency)],
     participant_id: str,
-    body: CreateCMABExperimentOrAnalysisRequest,
+    body: CMABContextInputRequest,
     session: Annotated[AsyncSession, Depends(xngin_db_session)],
     create_if_none: Annotated[
         bool,
