@@ -81,7 +81,8 @@ def analyze_experiment(
 
     Args:
         experiment: The bandit experiment to analyze.
-        analyze_for_prior: Whether to analyze for arm prior or posterior.
+        outcome_std_dev: Standard deviation of the outcomes. Only used for Normal likelihood.
+        contexts: Optional context values for CMAB experiments.
     """
     # TODO: Does not support Bayes A/B experiments
     if experiment.experiment_type == ExperimentsType.BAYESAB_ONLINE.value:
