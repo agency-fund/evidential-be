@@ -850,9 +850,9 @@ async def update_bandit_arm_with_outcome_impl(
 async def get_assign_summary(
     xngin_session: AsyncSession,
     experiment_id: str,
-    balance_check: BalanceCheck | None = None,
+    balance_check: BalanceCheck | None,
+    experiment_type: ExperimentsType,
     # Default to frequentist for backward compatibility
-    experiment_type: ExperimentsType = ExperimentsType.FREQ_PREASSIGNED,
 ) -> AssignSummary:
     """Constructs an AssignSummary from the experiment's arms and arm_assignments."""
     result = None
