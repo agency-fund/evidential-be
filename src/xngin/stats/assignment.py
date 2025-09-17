@@ -37,7 +37,8 @@ def assign_treatment_and_check_balance(
     """
     Perform stratified random assignment and do a balance check of the arm assignments.
 
-    Note: Python Decimal types must be converted to float before calling this function.
+    Note: Python Decimal types must be converted to float before calling this function, else will be
+    treated as a Categorical variable.
 
     Args:
         df: pandas DataFrame containing the data (Decimal types should be converted to float)
