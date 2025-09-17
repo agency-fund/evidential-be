@@ -10,7 +10,7 @@ from xngin.stats.analysis import analyze_experiment
 
 
 @pytest.fixture
-def test_assignments(n=1000, seed=42):
+def test_assignments(n=1000, seed=42):  # noqa: PT028
     rand = random.Random(seed)
     # Use fixed UUIDs instead of randomly generated ones
     arm_ids = [
@@ -31,7 +31,7 @@ def test_assignments(n=1000, seed=42):
 
 
 @pytest.fixture
-def test_outcomes(n=1000, seed=43):
+def test_outcomes(n=1000, seed=43):  # noqa: PT028
     rand = random.Random(seed)
     return [
         ParticipantOutcome(

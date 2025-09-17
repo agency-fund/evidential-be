@@ -13,7 +13,7 @@ TEST_PLAINTEXTS = ["string", b"", b"\0abc", b"\xff", b"\xc0", b"emoji\xe2\x82\xa
 plaintexts = pytest.mark.parametrize("plaintext", TEST_PLAINTEXTS, ids=itemgetter(slice(4)))
 
 
-@pytest.fixture(scope="function")
+@pytest.fixture
 def chaf():
     return Chafernet(NaclProvider(NaclProviderKeyset.create()))
 

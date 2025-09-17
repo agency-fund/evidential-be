@@ -91,6 +91,7 @@ select = [
     "PLE",
     "PLR",
     "PLW1508",
+    "PT",
     "PYI",
     "RET",
     "RUF",
@@ -120,6 +121,9 @@ ignore = [
     "PLR1702", # too many nested blocks
     "PLR2004", # magic value,
     "PLR6301", # method could be a function, class method, or static method
+    "PT006", # Wrong type passed to first argument of `pytest.mark.parametrize`; expected `tuple`
+    "PT011", # pytest.raises(_) is too broad, set the `match` parameter or use a more specific exception
+    "PT018", # Assertion should be broken down into multiple parts
     "PYI041", # Use `float` instead of `int | float`
     "SIM108", # Use ternary operator instead of `if`-`else`-block
     "RUF029",

@@ -141,7 +141,7 @@ def allow_connecting_to_private_ips():
     safe_resolve.ALLOW_CONNECTING_TO_PRIVATE_IPS = True
 
 
-@pytest.fixture(scope="function")
+@pytest.fixture
 def disable_safe_resolve_check():
     prev = flags.DISABLE_SAFEDNS_CHECK
     flags.DISABLE_SAFEDNS_CHECK = True
@@ -241,7 +241,7 @@ def fixture_uget(client):
     )
 
 
-@pytest.fixture(scope="function", name="xngin_session", autouse=True)
+@pytest.fixture(name="xngin_session", autouse=True)
 async def fixture_xngin_db_session():
     """Yields a SQLAlchemy session suitable for direct interaction with the database.
 
@@ -310,7 +310,7 @@ class DatasourceMetadata:
     key_id: str
 
 
-@pytest.fixture(name="testing_datasource", scope="function")
+@pytest.fixture(name="testing_datasource")
 async def fixture_testing_datasource(xngin_session: AsyncSession) -> DatasourceMetadata:
     """Adds to db a new Organization, Datasource, and API key."""
     return await _make_datasource_metadata(
@@ -319,7 +319,7 @@ async def fixture_testing_datasource(xngin_session: AsyncSession) -> DatasourceM
     )
 
 
-@pytest.fixture(name="testing_datasource_with_user", scope="function")
+@pytest.fixture(name="testing_datasource_with_user")
 async def fixture_testing_datasource_with_user(
     xngin_session: AsyncSession,
 ) -> DatasourceMetadata:
