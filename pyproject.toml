@@ -91,6 +91,7 @@ select = [
     "PLE",
     "PLR",
     "PLW1508",
+    "PYI",
     "RET",
     "RUF",
     "SIM",
@@ -119,6 +120,7 @@ ignore = [
     "PLR1702", # too many nested blocks
     "PLR2004", # magic value,
     "PLR6301", # method could be a function, class method, or static method
+    "PYI041", # Use `float` instead of `int | float`
     "SIM108", # Use ternary operator instead of `if`-`else`-block
     "RUF029",
     "TRY003",
@@ -149,7 +151,7 @@ dev-dependencies = [
     "pytest-env>=1.1.5,<1.2",
     "pytest-mock>=3.15.1,<4",
     "pytest>=8.4.2,<9.0.0",
-    "ruff>=0.11.11,<0.12.0",
+    "ruff>=0.11.13,<0.12.0",
     "scipy-stubs>=1.12.0,<2",
     "types-cachetools>=6.0.0.20250525",
     "types-psycopg2>=2.9.10,<3",
