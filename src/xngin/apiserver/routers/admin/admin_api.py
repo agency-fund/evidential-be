@@ -1469,9 +1469,6 @@ async def analyze_cmab_experiment(
         )
 
     context_inputs = body.context_inputs
-    if not context_inputs:
-        raise LateValidationError("Context inputs must be provided for CMAB experiment analysis.")
-
     context_defns = experiment.contexts
     context_inputs = sort_contexts_by_id_or_raise(context_defns, context_inputs)
 

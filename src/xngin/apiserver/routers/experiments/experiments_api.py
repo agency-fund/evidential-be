@@ -209,9 +209,6 @@ async def get_cmab_experiment_assignment_for_participant(
     if not assignment and create_if_none and experiment.stopped_assignments_at is None:
         context_inputs = body.context_inputs
 
-        if not context_inputs:
-            raise LateValidationError("Context inputs are required for creating CMAB assignments.")
-
         context_defns = await experiment.awaitable_attrs.contexts
         context_inputs = sort_contexts_by_id_or_raise(context_defns, context_inputs)
 

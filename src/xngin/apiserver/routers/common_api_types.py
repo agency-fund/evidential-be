@@ -200,7 +200,7 @@ class CreateCMABExperimentOrAnalysisRequest(ApiBaseModel):
         "cmab_assignment"  # Adding type field to allow for type-discriminated unions in future
     )
     context_inputs: Annotated[
-        list[ContextInput] | None,
+        list[ContextInput],
         Field(
             description="""
             List of context values for the assignment.
