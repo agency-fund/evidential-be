@@ -556,7 +556,7 @@ async def get_existing_assignment_for_participant(
                 datetime,
                 list[float] | None,
                 datetime | None,
-                float | None | None,
+                float | None,
             ]
         ]
     )

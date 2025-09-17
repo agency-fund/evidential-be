@@ -70,8 +70,7 @@ INVALID_BETWEEN = [
 def test_between_relation_invalid(value, descr):
     # The third case occurs when Pydantic backtracks internally to solve the constraints on `value`.
     with pytest.raises(ValidationError, match=r"(BETWEEN relation|same type| validation errors )"):
-        v = Filter(field_name="col", relation=Relation.BETWEEN, value=value)
-        print(v)
+        Filter(field_name="col", relation=Relation.BETWEEN, value=value)
 
 
 VALID_OTHER = [

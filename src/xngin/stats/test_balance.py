@@ -274,9 +274,9 @@ def test_preprocessing_with_exclusions():
     assert df.compare(data).empty
 
     # Lastly check that if we did try to assign but have no variability, we raise an error.
+    df["treat"] = [0, 1, 0, 1]  # assignments needed for balance check
+    exclude_all = exclude | {"uniq_int"}
     with pytest.raises(StatsBalanceError) as excinfo:
-        df["treat"] = [0, 1, 0, 1]  # assignments needed for balance check
-        exclude_all = exclude | {"uniq_int"}
         check_balance_of_preprocessed_df(df, exclude_col_set=exclude_all)
     assert "No usable fields for performing a balance check found." in str(excinfo.value)
 
