@@ -452,3 +452,13 @@ class CreateApiKeyResponse(AdminApiBaseModel):
 class CreateUserRequest(AdminApiBaseModel):
     email: Annotated[str, Field(max_length=MAX_LENGTH_OF_EMAIL_VALUE)]
     organization_id: Annotated[str, Field(max_length=MAX_LENGTH_OF_ID_VALUE)]
+
+
+class UpdateExperimentRequest(AdminApiBaseModel):
+    """Defines the subset of fields that can be updated for an experiment after creation."""
+
+    name: Annotated[str | None, Field(max_length=MAX_LENGTH_OF_NAME_VALUE)] = None
+    description: Annotated[str | None, Field(max_length=MAX_LENGTH_OF_DESCRIPTION_VALUE)] = None
+    design_url: Annotated[str | None, Field(max_length=MAX_LENGTH_OF_URL_VALUE)] = None
+    start_date: Annotated[datetime | None, Field()] = None
+    end_date: Annotated[datetime | None, Field()] = None
