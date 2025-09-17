@@ -39,7 +39,6 @@
 | src/xngin/apiserver/routers/experiments/test\_experiments\_common.py |      519 |        6 |     99% |175-176, 582-584, 1207 |
 | src/xngin/apiserver/routers/healthchecks\_api.py                     |       16 |        2 |     88% |     26-27 |
 | src/xngin/apiserver/routers/test\_assignment\_adapters.py            |      198 |        1 |     99% |       111 |
-| src/xngin/apiserver/routers/test\_common\_api\_types.py              |       41 |        1 |     98% |        74 |
 | src/xngin/apiserver/settings.py                                      |      171 |       28 |     84% |99, 119, 126, 132, 177-178, 238, 243, 246-251, 301-305, 324, 346, 357, 359, 369, 372, 389, 411, 426 |
 | src/xngin/apiserver/snapshots/snapshotter.py                         |       57 |       21 |     63% |27-63, 89-92, 103-123, 147 |
 | src/xngin/apiserver/sqla/tables.py                                   |      259 |        6 |     98% |132-134, 266, 300-301 |
@@ -57,16 +56,16 @@
 | src/xngin/stats/balance.py                                           |       62 |        3 |     95% |106, 134, 137 |
 | src/xngin/stats/bandit\_analysis.py                                  |       57 |        5 |     91% |89, 91, 93, 150-151 |
 | src/xngin/stats/bandit\_sampling.py                                  |       73 |        7 |     90% |158, 182, 187, 210, 234, 236, 268 |
-| src/xngin/stats/power.py                                             |       65 |        5 |     92% |45, 84, 141-151 |
+| src/xngin/stats/power.py                                             |       65 |        5 |     92% |44, 83, 140-150 |
 | src/xngin/xsecrets/chafernet.py                                      |       53 |        1 |     98% |        93 |
 | src/xngin/xsecrets/gcp\_kms\_provider.py                             |       71 |       26 |     63% |62-77, 84-85, 102-103, 106, 110-118, 122-129 |
 | src/xngin/xsecrets/provider.py                                       |       19 |        1 |     95% |        46 |
 | src/xngin/xsecrets/secretservice.py                                  |       61 |        4 |     93% |42-43, 101, 123 |
 | src/xngin/xsecrets/test\_gcp\_kms\_provider.py                       |      103 |       26 |     75% |40-42, 170-175, 182-189, 195-199, 206, 213-224 |
 | src/xngin/xsecrets/test\_nacl\_provider.py                           |       67 |        1 |     99% |        24 |
-|                                                            **TOTAL** | **8235** | **1119** | **86%** |           |
+|                                                            **TOTAL** | **8234** | **1118** | **86%** |           |
 
-56 files skipped due to complete coverage.
+57 files skipped due to complete coverage.
 
 
 ## Setup coverage badge

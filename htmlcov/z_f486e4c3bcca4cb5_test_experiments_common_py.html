@@ -65,7 +65,7 @@
             <a id="nextFileLink" class="nav" href="z_3103cf4b20fd3e3c_healthchecks_api_py.html">&#xbb; next</a>
             &nbsp; &nbsp; &nbsp;
             <a class="nav" href="https://coverage.readthedocs.io/en/7.10.6">coverage.py v7.10.6</a>,
-            created at 2025-09-17 12:08 +0000
+            created at 2025-09-17 22:53 +0000
         </p>
         <aside class="hidden">
             <button type="button" class="button_next_chunk" data-shortcut="j"></button>
@@ -900,8 +900,8 @@
     <p class="run"><span class="n"><a id="t818" href="#t818">818</a></span><span class="t">    <span class="key">try</span><span class="op">:</span>&nbsp;</span><span class="r"></span></p>
     <p class="run"><span class="n"><a id="t819" href="#t819">819</a></span><span class="t">        <span class="nam">response</span> <span class="op">=</span> <span class="key">await</span> <span class="nam">method_under_test</span><span class="op">(</span><span class="nam">xngin_session</span><span class="op">,</span> <span class="nam">experiment</span><span class="op">)</span>&nbsp;</span><span class="r"></span></p>
     <p class="run"><span class="n"><a id="t820" href="#t820">820</a></span><span class="t">    <span class="key">except</span> <span class="nam">HTTPException</span> <span class="key">as</span> <span class="nam">e</span><span class="op">:</span>&nbsp;</span><span class="r"></span></p>
-    <p class="run"><span class="n"><a id="t821" href="#t821">821</a></span><span class="t">        <span class="key">assert</span> <span class="nam">e</span><span class="op">.</span><span class="nam">status_code</span> <span class="op">==</span> <span class="nam">expected_status</span>&nbsp;</span><span class="r"></span></p>
-    <p class="run"><span class="n"><a id="t822" href="#t822">822</a></span><span class="t">        <span class="key">assert</span> <span class="nam">e</span><span class="op">.</span><span class="nam">detail</span> <span class="op">==</span> <span class="nam">expected_detail</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run"><span class="n"><a id="t821" href="#t821">821</a></span><span class="t">        <span class="key">assert</span> <span class="nam">e</span><span class="op">.</span><span class="nam">status_code</span> <span class="op">==</span> <span class="nam">expected_status</span>  <span class="com"># noqa: PT017</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run"><span class="n"><a id="t822" href="#t822">822</a></span><span class="t">        <span class="key">assert</span> <span class="nam">e</span><span class="op">.</span><span class="nam">detail</span> <span class="op">==</span> <span class="nam">expected_detail</span>  <span class="com"># noqa: PT017</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t823" href="#t823">823</a></span><span class="t">    <span class="key">else</span><span class="op">:</span>&nbsp;</span><span class="r"></span></p>
     <p class="run"><span class="n"><a id="t824" href="#t824">824</a></span><span class="t">        <span class="key">assert</span> <span class="nam">response</span><span class="op">.</span><span class="nam">status_code</span> <span class="op">==</span> <span class="nam">expected_status</span>&nbsp;</span><span class="r"></span></p>
     <p class="run"><span class="n"><a id="t825" href="#t825">825</a></span><span class="t">        <span class="key">assert</span> <span class="nam">experiment</span><span class="op">.</span><span class="nam">state</span> <span class="op">==</span> <span class="nam">expected_state</span>&nbsp;</span><span class="r"></span></p>
@@ -1370,7 +1370,7 @@
             <a class="nav" href="z_3103cf4b20fd3e3c_healthchecks_api_py.html">&#xbb; next</a>
             &nbsp; &nbsp; &nbsp;
             <a class="nav" href="https://coverage.readthedocs.io/en/7.10.6">coverage.py v7.10.6</a>,
-            created at 2025-09-17 12:08 +0000
+            created at 2025-09-17 22:53 +0000
         </p>
     </div>
 </footer>
