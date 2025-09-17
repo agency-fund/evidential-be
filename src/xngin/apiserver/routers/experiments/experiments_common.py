@@ -7,6 +7,7 @@ from collections.abc import Sequence
 from datetime import UTC, datetime
 from itertools import batched
 
+import numpy as np
 from fastapi import HTTPException, Response, status
 from fastapi.responses import StreamingResponse
 from sqlalchemy import Select, Table, func, insert, select
@@ -31,6 +32,7 @@ from xngin.apiserver.routers.common_api_types import (
     Assignment,
     AssignSummary,
     BalanceCheck,
+    BanditExperimentAnalysisResponse,
     BaseFrequentistDesignSpec,
     CreateExperimentRequest,
     CreateExperimentResponse,
@@ -53,7 +55,8 @@ from xngin.apiserver.sqla import tables
 from xngin.apiserver.storage.storage_format_converters import ExperimentStorageConverter
 from xngin.apiserver.webhooks.webhook_types import ExperimentCreatedWebhookBody
 from xngin.events.experiment_created import ExperimentCreatedEvent
-from xngin.stats.analysis import analyze_experiment as analyze_experiment_impl
+from xngin.stats.analysis import analyze_experiment as analyze_freq_experiment
+from xngin.stats.bandit_analysis import analyze_experiment as analyze_bandit_experiment
 from xngin.stats.bandit_sampling import choose_arm, update_arm
 from xngin.stats.stats_errors import StatsAnalysisError
 from xngin.tq.task_payload_types import WEBHOOK_OUTBOUND_TASK_TYPE, WebhookOutboundTask
@@ -237,7 +240,9 @@ async def create_preassigned_experiment_impl(
 
     await xngin_session.commit()
 
-    assign_summary = await get_assign_summary(xngin_session, experiment.id, balance_check)
+    assign_summary = await get_assign_summary(
+        xngin_session, experiment.id, balance_check, ExperimentsType.FREQ_PREASSIGNED
+    )
     webhook_ids = [webhook.id for webhook in validated_webhooks]
     return experiment_converter.get_create_experiment_response(assign_summary, webhook_ids)
 
@@ -308,8 +313,14 @@ async def create_bandit_online_experiment_impl(
     xngin_session.add(experiment)
 
     await xngin_session.commit()
+    # Online experiments start with no assignments.
+    empty_assign_summary = AssignSummary(
+        balance_check=None,
+        sample_size=0,
+        arm_sizes=[ArmSize(arm=arm.model_copy(), size=0) for arm in design_spec.arms],
+    )
     webhook_ids = [webhook.id for webhook in validated_webhooks]
-    return experiment_converter.get_create_experiment_response(None, webhook_ids)
+    return experiment_converter.get_create_experiment_response(empty_assign_summary, webhook_ids)
 
 
 async def commit_experiment_impl(xngin_session: AsyncSession, experiment: tables.Experiment):
@@ -415,7 +426,9 @@ async def list_organization_or_datasource_experiments_impl(
     for e in experiments:
         converter = ExperimentStorageConverter(e)
         balance_check = converter.get_balance_check()
-        assign_summary = await get_assign_summary(xngin_session, e.id, balance_check)
+        assign_summary = await get_assign_summary(
+            xngin_session, e.id, balance_check, experiment_type=ExperimentsType(e.experiment_type)
+        )
         webhook_ids = [webhook.id for webhook in e.webhooks]
         items.append(converter.get_experiment_config(assign_summary, webhook_ids))
     return ListExperimentsResponse(items=items)
@@ -427,48 +440,42 @@ def get_experiment_assignments_impl(
     # Map arm IDs to names
     arm_id_to_name = {arm.id: arm.name for arm in experiment.arms}
     # Convert ArmAssignment models to Assignment API types
-    if experiment.experiment_type in {
-        ExperimentsType.FREQ_ONLINE,
-        ExperimentsType.FREQ_PREASSIGNED,
-    }:
-        assignments = [
-            Assignment(
-                participant_id=arm_assignment.participant_id,
-                arm_id=arm_assignment.arm_id,
-                arm_name=arm_id_to_name[arm_assignment.arm_id],
-                created_at=arm_assignment.created_at,
-                strata=[Strata.model_validate(s) for s in arm_assignment.strata],
-            )
-            for arm_assignment in experiment.arm_assignments
-        ]
-        return GetExperimentAssignmentsResponse(
-            balance_check=ExperimentStorageConverter(experiment).get_balance_check(),
-            experiment_id=experiment.id,
-            sample_size=len(assignments),
-            assignments=assignments,
-        )
-    if experiment.experiment_type != ExperimentsType.BAYESAB_ONLINE.value:
-        assignments = [
-            Assignment(
-                participant_id=draw.participant_id,
-                arm_id=draw.arm_id,
-                arm_name=arm_id_to_name[draw.arm_id],
-                created_at=draw.created_at,
-                observed_at=draw.observed_at,
-                outcome=draw.outcome,
-                context_values=draw.context_vals,
-            )
-            for draw in experiment.draws
-        ]
-        return GetExperimentAssignmentsResponse(
-            balance_check=None,  # MAB experiments do not have balance checks
-            experiment_id=experiment.id,
-            sample_size=len(assignments),
-            assignments=assignments,
-        )
-    raise HTTPException(
-        status_code=status.HTTP_400_BAD_REQUEST,
-        detail=f"Invalid experiment type: {experiment.experiment_type}",
+
+    assignments: list[Assignment]
+
+    match experiment.experiment_type:
+        case ExperimentsType.FREQ_ONLINE | ExperimentsType.FREQ_PREASSIGNED:
+            assignments = [
+                Assignment(
+                    participant_id=arm_assignment.participant_id,
+                    arm_id=arm_assignment.arm_id,
+                    arm_name=arm_id_to_name[arm_assignment.arm_id],
+                    created_at=arm_assignment.created_at,
+                    strata=[Strata.model_validate(s) for s in arm_assignment.strata],
+                )
+                for arm_assignment in experiment.arm_assignments
+            ]
+        case ExperimentsType.MAB_ONLINE | ExperimentsType.CMAB_ONLINE:
+            assignments = [
+                Assignment(
+                    participant_id=draw.participant_id,
+                    arm_id=draw.arm_id,
+                    arm_name=arm_id_to_name[draw.arm_id],
+                    created_at=draw.created_at,
+                    observed_at=draw.observed_at,
+                    outcome=draw.outcome,
+                    context_values=draw.context_vals,
+                )
+                for draw in experiment.draws
+            ]
+        case _:
+            raise LateValidationError(f"Invalid experiment type: {experiment.experiment_type}")
+
+    return GetExperimentAssignmentsResponse(
+        balance_check=ExperimentStorageConverter(experiment).get_balance_check(),
+        experiment_id=experiment.id,
+        sample_size=len(assignments),
+        assignments=assignments,
     )
 
 
@@ -798,7 +805,7 @@ async def update_bandit_arm_with_outcome_impl(
             key=lambda d: d.created_at,
             reverse=True,
         )
-        outcomes = [outcome] + [d.outcome for d in relevant_draws]
+        outcomes = [outcome] + [d.outcome for d in relevant_draws if d.outcome is not None]
         context_vals = (
             [draw_record.context_vals] + [d.context_vals for d in relevant_draws] if draw_record.context_vals else None
         )
@@ -843,15 +850,31 @@ async def update_bandit_arm_with_outcome_impl(
 async def get_assign_summary(
     xngin_session: AsyncSession,
     experiment_id: str,
-    balance_check: BalanceCheck | None = None,
+    balance_check: BalanceCheck | None,
+    experiment_type: ExperimentsType,
+    # Default to frequentist for backward compatibility
 ) -> AssignSummary:
     """Constructs an AssignSummary from the experiment's arms and arm_assignments."""
-    result = await xngin_session.execute(
-        select(tables.ArmAssignment.arm_id, tables.Arm.name, func.count())
-        .join(tables.Arm)
-        .where(tables.ArmAssignment.experiment_id == experiment_id)
-        .group_by(tables.ArmAssignment.arm_id, tables.Arm.name)
-    )
+    result = None
+    match experiment_type:
+        case ExperimentsType.FREQ_ONLINE | ExperimentsType.FREQ_PREASSIGNED:
+            result = await xngin_session.execute(
+                select(tables.ArmAssignment.arm_id, tables.Arm.name, func.count())
+                .join(tables.Arm)
+                .where(tables.ArmAssignment.experiment_id == experiment_id)
+                .group_by(tables.ArmAssignment.arm_id, tables.Arm.name)
+            )
+        case ExperimentsType.MAB_ONLINE | ExperimentsType.CMAB_ONLINE:
+            result = await xngin_session.execute(
+                select(tables.Draw.arm_id, tables.Arm.name, func.count())
+                .join(tables.Arm)
+                .where(tables.Draw.experiment_id == experiment_id)
+                .group_by(tables.Draw.arm_id, tables.Arm.name)
+            )
+            balance_check = None
+        case _:
+            raise LateValidationError(f"Invalid experiment type: {experiment_type}")
+
     arm_sizes = [
         ArmSize(
             arm=Arm(arm_id=arm_id, arm_name=name),
@@ -902,7 +925,7 @@ async def analyze_experiment_freq_impl(
     # before their info was synced to the dwh.
     num_missing_participants = num_participants - len(participant_outcomes)
 
-    analyze_results = analyze_experiment_impl(assignments, participant_outcomes, baseline_arm_id)
+    analyze_results = analyze_freq_experiment(assignments, participant_outcomes, baseline_arm_id)
 
     metric_analyses = []
     for metric in metrics:
@@ -931,4 +954,25 @@ async def analyze_experiment_freq_impl(
         num_participants=num_participants,
         num_missing_participants=num_missing_participants,
         created_at=created_at,
+    )
+
+
+def analyze_experiment_bandit_impl(
+    experiment: tables.Experiment,
+    contexts: list[float] | None = None,
+) -> BanditExperimentAnalysisResponse:
+    """Analyze a bandit experiment. Assumes arms and draws are preloaded."""
+
+    draws = experiment.draws
+    outcomes = [draw.outcome for draw in draws if draw.outcome is not None]
+
+    outcome_std_dev = np.std(outcomes).astype(float) if len(outcomes) > 1 else 0.0
+    arm_analyses = analyze_bandit_experiment(experiment=experiment, outcome_std_dev=outcome_std_dev, contexts=contexts)
+
+    return BanditExperimentAnalysisResponse(
+        experiment_id=experiment.id,
+        arm_analyses=arm_analyses,
+        n_outcomes=len(outcomes),
+        created_at=datetime.now(UTC),
+        contexts=contexts,
     )

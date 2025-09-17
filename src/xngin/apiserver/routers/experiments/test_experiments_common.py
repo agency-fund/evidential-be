@@ -550,7 +550,13 @@ async def test_create_experiment_impl_for_mab_online(xngin_session, testing_data
     assert response.design_spec.start_date == request.design_spec.start_date
     assert response.design_spec.end_date == request.design_spec.end_date
     assert isinstance(response.design_spec, MABExperimentSpec)
-    assert response.assign_summary is None
+
+    # Verify assign_summary for online experiment
+    assert response.assign_summary is not None
+    assert response.assign_summary.sample_size == 0
+    assert response.assign_summary.balance_check is None
+    assert response.assign_summary.arm_sizes is not None
+    assert all(arm_size.size == 0 for arm_size in response.assign_summary.arm_sizes)
 
     # Verify database state
     experiment = await xngin_session.get(tables.Experiment, response.experiment_id)
@@ -620,7 +626,13 @@ async def test_create_experiment_impl_for_cmab_online(xngin_session, testing_dat
     assert response.design_spec.description == request.design_spec.description
     assert response.design_spec.start_date == request.design_spec.start_date
     assert response.design_spec.end_date == request.design_spec.end_date
-    assert response.assign_summary is None
+
+    # Verify assign_summary for online experiment
+    assert response.assign_summary is not None
+    assert response.assign_summary.sample_size == 0
+    assert response.assign_summary.balance_check is None
+    assert response.assign_summary.arm_sizes is not None
+    assert all(arm_size.size == 0 for arm_size in response.assign_summary.arm_sizes)
 
     # Verify database state
     experiment = await xngin_session.get(tables.Experiment, response.experiment_id)
@@ -928,7 +940,10 @@ async def test_get_experiment_assignments_impl(xngin_session, testing_datasource
 
     # Check the response structure
     assert data.experiment_id == experiment.id
-    assert data.sample_size == (await get_assign_summary(xngin_session, experiment.id)).sample_size
+    assert (
+        data.sample_size
+        == (await get_assign_summary(xngin_session, experiment.id, None, experiment.experiment_type)).sample_size
+    )
     assert data.balance_check == ExperimentStorageConverter(experiment).get_balance_check()
 
     # Check assignments

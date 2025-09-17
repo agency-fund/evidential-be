@@ -49,6 +49,7 @@ from xngin.apiserver.routers.admin.admin_api_types import (
     RedshiftDsn,
     RevealedStr,
     UpdateDatasourceRequest,
+    UpdateExperimentRequest,
     UpdateOrganizationWebhookRequest,
     UpdateParticipantsTypeRequest,
     UpdateParticipantsTypeResponse,
@@ -60,6 +61,7 @@ from xngin.apiserver.routers.auth.auth_dependencies import (
 from xngin.apiserver.routers.common_api_types import (
     Arm,
     ArmBandit,
+    BanditExperimentAnalysisResponse,
     CMABExperimentSpec,
     CreateExperimentRequest,
     CreateExperimentResponse,
@@ -69,6 +71,7 @@ from xngin.apiserver.routers.common_api_types import (
     Filter,
     FreqExperimentAnalysisResponse,
     GetExperimentAssignmentsResponse,
+    GetExperimentResponse,
     GetParticipantAssignmentResponse,
     LikelihoodTypes,
     ListExperimentsResponse,
@@ -91,6 +94,7 @@ from xngin.apiserver.storage.bootstrap import DEFAULT_NO_DWH_SOURCE_NAME
 from xngin.apiserver.testing.assertions import assert_dates_equal
 from xngin.apiserver.testing.testing_dwh_def import TESTING_DWH_PARTICIPANT_DEF
 from xngin.cli.main import create_testing_dwh
+from xngin.stats.bandit_sampling import update_arm
 
 SAMPLE_GCLOUD_SERVICE_ACCOUNT = {
     "auth_provider_x509_cert_url": "",
@@ -135,6 +139,52 @@ async def fixture_testing_experiment(xngin_session: AsyncSession, testing_dataso
         xngin_session.add(assignment)
     await xngin_session.commit()
     await xngin_session.refresh(experiment, ["arm_assignments"])
+    return experiment
+
+
+@pytest.fixture(name="testing_bandit_experiment")
+async def fixture_testing_bandit_experiment(request, xngin_session: AsyncSession, testing_datasource_with_user):
+    """Create an experiment on a test inline schema datasource with proper user permissions."""
+    experiment_type, prior_type, reward_type, num_participants = request.param
+    datasource = testing_datasource_with_user.ds
+    experiment = await insert_experiment_and_arms(
+        xngin_session, datasource, experiment_type, prior_type=prior_type, reward_type=reward_type
+    )
+    contexts = await experiment.awaitable_attrs.contexts
+    # Add fake assignments for each arm for real participant ids in our test data.
+    arm_ids = [arm.id for arm in experiment.arms]
+    arm_map = {arm.id: arm for arm in experiment.arms}
+    rng = np.random.default_rng(66)
+
+    for i in range(num_participants):
+        arm_id = arm_ids[i % 2]  # Alternate between the two arms
+        outcome = rng.binomial(n=1, p=0.5)  # Randomly generate outcome
+        # NB: this step hijacks the algorithm to generate realistic arm parameters
+        # It's not meant to be a test of the bandit algorithm
+        current_params = update_arm(experiment=experiment, arm_to_update=arm_map[arm_id], outcomes=[outcome])
+        arm_map[arm_id].alpha = current_params[0] if prior_type == PriorTypes.BETA else None
+        arm_map[arm_id].beta = current_params[1] if prior_type == PriorTypes.BETA else None
+        arm_map[arm_id].mu = current_params[0] if prior_type == PriorTypes.NORMAL else None
+        arm_map[arm_id].covariance = current_params[1] if prior_type == PriorTypes.NORMAL else None
+
+        assignment = tables.Draw(
+            experiment_id=experiment.id,
+            participant_id=str(i),
+            participant_type=experiment.participant_type,
+            arm_id=arm_id,
+            outcome=outcome,
+            observed_at=datetime.now(tz=UTC),
+            current_mu=current_params[0] if prior_type == PriorTypes.NORMAL else None,
+            current_covariance=current_params[1] if prior_type == PriorTypes.NORMAL else None,
+            current_alpha=current_params[0] if prior_type == PriorTypes.BETA else None,
+            current_beta=current_params[1] if prior_type == PriorTypes.BETA else None,
+            context_vals=[1.0] * len(contexts) if contexts is not None else None,
+        )
+        xngin_session.add(assignment)
+        xngin_session.add(arm_map[arm_id])
+
+    await xngin_session.commit()
+    await xngin_session.refresh(experiment, ["draws", "arms"])
     return experiment
 
 
@@ -870,7 +920,7 @@ def test_create_participants_type_invalid(testing_datasource, ppost):
     assert "no columns marked as unique ID." in response.json()["detail"][0]["msg"], response.content
 
 
-async def test_lifecycle_with_db(testing_datasource, ppost, pget, pdelete, udelete):
+async def test_lifecycle_with_db(testing_datasource, ppost, ppatch, pget, pdelete, udelete):
     """Exercises the admin API methods that require an external database."""
     # Add the privileged user to the organization.
     response = ppost(
@@ -1008,12 +1058,23 @@ async def test_lifecycle_with_db(testing_datasource, ppost, pget, pdelete, udele
     parsed_arm_ids = {arm.arm_id for arm in created_experiment.design_spec.arms}
     assert len(parsed_arm_ids) == 2
 
+    # Commit the new experiment.
+    response = ppost(f"/v1/m/datasources/{testing_datasource.ds.id}/experiments/{parsed_experiment_id}/commit")
+    assert response.status_code == 204, response.content
+
+    # Update the experiment.
+    response = ppatch(
+        f"/v1/m/datasources/{testing_datasource.ds.id}/experiments/{parsed_experiment_id}",
+        content=UpdateExperimentRequest(name="updated").model_dump_json(),
+    )
+    assert response.status_code == 204, response.content
+
     # Get that experiment.
     response = pget(f"/v1/m/datasources/{testing_datasource.ds.id}/experiments/{parsed_experiment_id}")
-
     assert response.status_code == 200, response.content
     create_experiment_response = CreateExperimentResponse.model_validate(response.json())
     assert create_experiment_response.experiment_id == parsed_experiment_id
+    assert create_experiment_response.design_spec.experiment_name == "updated"
 
     # List org experiments.
     response = pget(f"/v1/m/organizations/{testing_datasource.org.id}/experiments")
@@ -1232,8 +1293,15 @@ def test_create_online_mab_experiment(
     assert created_experiment.stopped_assignments_at is None
     assert created_experiment.stopped_assignments_reason is None
     assert created_experiment.state == ExperimentState.ASSIGNED
-    assert created_experiment.assign_summary is None
     assert created_experiment.power_analyses is None
+
+    # Verify assign summary
+    assign_summary = created_experiment.assign_summary
+    assert assign_summary is not None
+    assert assign_summary.balance_check is None
+    assert assign_summary.sample_size == 0
+    assert assign_summary.arm_sizes is not None
+    assert all(a.size == 0 for a in assign_summary.arm_sizes)
 
     for arm in created_experiment.design_spec.arms:
         assert isinstance(arm, ArmBandit)
@@ -1301,8 +1369,15 @@ def test_create_online_cmab_experiment(
     assert created_experiment.stopped_assignments_reason is None
     assert created_experiment.experiment_id is not None
     assert created_experiment.state == ExperimentState.ASSIGNED
-    assert created_experiment.assign_summary is None
     assert created_experiment.power_analyses is None
+
+    # Verify assign summary
+    assign_summary = created_experiment.assign_summary
+    assert assign_summary is not None
+    assert assign_summary.balance_check is None
+    assert assign_summary.sample_size == 0
+    assert assign_summary.arm_sizes is not None
+    assert all(a.size == 0 for a in assign_summary.arm_sizes)
 
     for arm in created_experiment.design_spec.arms:
         assert isinstance(arm, ArmBandit)
@@ -1331,6 +1406,66 @@ def test_create_online_cmab_experiment(
         context.context_id = None
     actual_design_spec.experiment_id = None  # TODO remove in future
     assert actual_design_spec == request_obj.design_spec
+
+
+async def test_update_experiment(testing_experiment, ppatch, pget):
+    """Test updating an experiment's metadata."""
+    datasource_id = testing_experiment.datasource_id
+    experiment_id = testing_experiment.id
+    now = datetime.now(UTC)
+    request = UpdateExperimentRequest(
+        name="updated name",
+        description="updated desc",
+        design_url="https://example.com/updated",
+        start_date=now,
+        end_date=now + timedelta(days=1),
+    )
+    response = ppatch(
+        f"/v1/m/datasources/{datasource_id}/experiments/{experiment_id}",
+        content=request.model_dump_json(),
+    )
+    assert response.status_code == 204, response.text
+
+    updated_response = pget(f"/v1/m/datasources/{datasource_id}/experiments/{experiment_id}")
+    design_spec = GetExperimentResponse.model_validate(updated_response.json()).design_spec
+    assert design_spec.experiment_name == "updated name"
+    assert design_spec.description == "updated desc"
+    assert design_spec.design_url == HttpUrl("https://example.com/updated")
+    assert design_spec.start_date == now
+    assert design_spec.end_date == now + timedelta(days=1)
+
+
+async def test_update_experiment_invalid(xngin_session, testing_experiment, ppatch):
+    """Test experiment update validation checks."""
+    datasource_id = testing_experiment.datasource_id
+    experiment_id = testing_experiment.id
+
+    request = UpdateExperimentRequest(start_date=testing_experiment.end_date + timedelta(days=1))
+    response = ppatch(
+        f"/v1/m/datasources/{datasource_id}/experiments/{experiment_id}",
+        content=request.model_dump_json(),
+    )
+    assert response.status_code == 422
+    assert response.json() == {"message": "New start date must be before end date."}
+
+    request = UpdateExperimentRequest(end_date=testing_experiment.start_date - timedelta(days=1))
+    response = ppatch(
+        f"/v1/m/datasources/{datasource_id}/experiments/{experiment_id}",
+        content=request.model_dump_json(),
+    )
+    assert response.status_code == 422
+    assert response.json() == {"message": "New end date must be after start date."}
+
+    # Lastly check invalid experiment state
+    testing_experiment.state = ExperimentState.ASSIGNED
+    await xngin_session.commit()
+
+    response = ppatch(
+        f"/v1/m/datasources/{datasource_id}/experiments/{experiment_id}",
+        content=UpdateExperimentRequest(name="updated").model_dump_json(),
+    )
+    assert response.status_code == 422
+    assert response.json() == {"message": "Experiment must have been committed to be updated."}
 
 
 def test_get_experiment_assignment_for_preassigned_participant(testing_experiment, pget):
@@ -1466,7 +1601,7 @@ async def test_get_experiment_assignment_for_online_participant_past_end_date(
     assert new_exp.stopped_assignments_reason == StopAssignmentReason.END_DATE
 
 
-def test_experiments_analyze(testing_experiment, pget):
+def test_freq_experiments_analyze(testing_experiment, pget):
     datasource_id = testing_experiment.datasource_id
     experiment_id = testing_experiment.id
 
@@ -1492,6 +1627,71 @@ def test_experiments_analyze(testing_experiment, pget):
         assert sum([arm.num_missing_values for arm in analysis.arm_analyses]) == 1
 
 
+@pytest.mark.parametrize(
+    "testing_bandit_experiment",
+    [
+        (ExperimentsType.MAB_ONLINE, PriorTypes.BETA, LikelihoodTypes.BERNOULLI, 10),
+        (ExperimentsType.MAB_ONLINE, PriorTypes.NORMAL, LikelihoodTypes.NORMAL, 10),
+        (ExperimentsType.MAB_ONLINE, PriorTypes.NORMAL, LikelihoodTypes.BERNOULLI, 10),
+    ],
+    indirect=True,
+)
+def test_mab_experiments_analyze(testing_bandit_experiment, pget):
+    datasource_id = testing_bandit_experiment.datasource_id
+    experiment_id = testing_bandit_experiment.id
+
+    response = pget(f"/v1/m/datasources/{datasource_id}/experiments/{experiment_id}/analyze")
+
+    assert response.status_code == 200, response.content
+    experiment_analysis = BanditExperimentAnalysisResponse.model_validate(response.json())
+    assert experiment_analysis.experiment_id == experiment_id
+    assert len(experiment_analysis.arm_analyses) == len(testing_bandit_experiment.arms)
+    assert experiment_analysis.n_outcomes == 10
+    assert datetime.now(UTC) - experiment_analysis.created_at < timedelta(seconds=5)
+    analyses = experiment_analysis.arm_analyses
+    assert {arm.arm_id for arm in analyses} == {arm.id for arm in testing_bandit_experiment.arms}
+    for analysis in analyses:
+        assert analysis.prior_pred_mean is not None
+        assert analysis.prior_pred_stdev is not None
+        assert analysis.post_pred_mean is not None
+        assert analysis.post_pred_stdev is not None
+
+
+@pytest.mark.parametrize(
+    "testing_bandit_experiment",
+    [
+        (ExperimentsType.CMAB_ONLINE, PriorTypes.NORMAL, LikelihoodTypes.NORMAL, 10),
+        (ExperimentsType.CMAB_ONLINE, PriorTypes.NORMAL, LikelihoodTypes.BERNOULLI, 10),
+    ],
+    indirect=True,
+)
+def test_cmab_experiments_analyze(testing_bandit_experiment, ppost):
+    datasource_id = testing_bandit_experiment.datasource_id
+    experiment_id = testing_bandit_experiment.id
+
+    input_data = {
+        "context_inputs": [
+            {"context_id": context.id, "context_value": 1.0}
+            for context in sorted(testing_bandit_experiment.contexts, key=lambda c: c.id)
+        ]
+    }
+    response = ppost(f"/v1/m/datasources/{datasource_id}/experiments/{experiment_id}/analyze_cmab", json=input_data)
+
+    assert response.status_code == 200, response.content
+    experiment_analysis = BanditExperimentAnalysisResponse.model_validate(response.json())
+    assert experiment_analysis.experiment_id == experiment_id
+    assert len(experiment_analysis.arm_analyses) == len(testing_bandit_experiment.arms)
+    assert experiment_analysis.n_outcomes == 10
+    assert datetime.now(UTC) - experiment_analysis.created_at < timedelta(seconds=5)
+    analyses = experiment_analysis.arm_analyses
+    assert {arm.arm_id for arm in analyses} == {arm.id for arm in testing_bandit_experiment.arms}
+    for analysis in analyses:
+        assert analysis.prior_pred_mean is not None
+        assert analysis.prior_pred_stdev is not None
+        assert analysis.post_pred_mean is not None
+        assert analysis.post_pred_stdev is not None
+
+
 async def test_experiments_analyze_for_experiment_with_no_participants(
     xngin_session: AsyncSession, testing_datasource_with_user, pget
 ):
@@ -1504,6 +1704,34 @@ async def test_experiments_analyze_for_experiment_with_no_participants(
     response = pget(f"/v1/m/datasources/{datasource_id}/experiments/{experiment_id}/analyze")
     assert response.status_code == 422, response.content
     assert response.json()["message"] == "No participants found for experiment."
+
+
+@pytest.mark.parametrize(
+    "testing_bandit_experiment",
+    [
+        (ExperimentsType.MAB_ONLINE, PriorTypes.BETA, LikelihoodTypes.BERNOULLI, 0),
+    ],
+    indirect=True,
+)
+def test_mab_experiments_analyze_with_no_participants(testing_bandit_experiment, pget):
+    datasource_id = testing_bandit_experiment.datasource_id
+    experiment_id = testing_bandit_experiment.id
+
+    response = pget(f"/v1/m/datasources/{datasource_id}/experiments/{experiment_id}/analyze")
+
+    assert response.status_code == 200, response.content
+    experiment_analysis = BanditExperimentAnalysisResponse.model_validate(response.json())
+    assert experiment_analysis.experiment_id == experiment_id
+    assert len(experiment_analysis.arm_analyses) == len(testing_bandit_experiment.arms)
+    assert experiment_analysis.n_outcomes == 0
+    assert datetime.now(UTC) - experiment_analysis.created_at < timedelta(seconds=5)
+    analyses = experiment_analysis.arm_analyses
+    assert {arm.arm_id for arm in analyses} == {arm.id for arm in testing_bandit_experiment.arms}
+    for analysis in analyses:
+        assert analysis.prior_pred_mean is not None
+        assert analysis.prior_pred_stdev is not None
+        assert analysis.post_pred_mean == analysis.prior_pred_mean
+        assert analysis.post_pred_stdev == analysis.prior_pred_stdev
 
 
 @pytest.mark.parametrize(
