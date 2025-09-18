@@ -818,8 +818,8 @@ async def test_state_setting_experiment_impl(
     try:
         response = await method_under_test(xngin_session, experiment)
     except HTTPException as e:
-        assert e.status_code == expected_status
-        assert e.detail == expected_detail
+        assert e.status_code == expected_status  # noqa: PT017
+        assert e.detail == expected_detail  # noqa: PT017
     else:
         assert response.status_code == expected_status
         assert experiment.state == expected_state

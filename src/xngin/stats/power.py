@@ -1,4 +1,3 @@
-# ruff: noqa: RUF027
 import numpy as np
 import statsmodels.stats.api as sms
 
@@ -117,7 +116,7 @@ def analyze_metric_power(
 
     msg_base_stats = (
         "There are {available_n} units available to run your experiment and a "
-        "minimum of {target_n} units are needed to meet your experimental design specs."
+        "minimum of {target_n} units are needed to meet your experimental design specs."  # noqa: RUF027
     )
     msg_null_warning = (
         (
@@ -178,7 +177,7 @@ def analyze_metric_power(
             "You need {additional_n_needed} more units to meet your experimental design "
             "specifications. In order to meet your specification with the available "
             "{available_n} units and a metric baseline value of {metric_baseline}, your metric "
-            "target value needs to be {target_possible} or further from the baseline. Your "
+            "target value needs to be {target_possible} or further from the baseline. Your "  # noqa: RUF027
             "current desired target is {metric_target}."
         )
 
