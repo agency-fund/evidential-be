@@ -161,8 +161,7 @@ def check_balance_of_preprocessed_df(
 
     # We only check the first two treatment groups right now.
     df_analysis = data[data[treatment_col].isin([0, 1])]
-    # Use Patsy's C() to handle categoricals: https://patsy.readthedocs.io/en/latest/categorical-coding.html
-    # and Q() to handle bad column names: https://tedboy.github.io/patsy_doc/generated/patsy.builtins.Q.html
+    # Use Patsy's C() to handle categoricals and Q() to handle bad column names
     covariates = [f"C({_q(col)})" if col in cols_to_dummies else _q(col) for col in covariates]
     formula = f"{_q(treatment_col)} ~ " + " + ".join(covariates)
     # print(f"------FORMULA:\n\t{formula}")
