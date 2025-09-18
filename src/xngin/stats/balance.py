@@ -141,16 +141,14 @@ def check_balance_of_preprocessed_df(
     cols_to_dummies = list(non_numeric_columns - exclude_col_set)
 
     # Create formula excluding specified columns
-    covariates = [col for col in data.columns if col != treatment_col and col not in exclude_col_set]
+    covariates = [col for col in data.columns if col not in {*exclude_col_set, treatment_col}]
     if len(covariates) == 0:
         raise StatsBalanceError(
             "No usable fields for performing a balance check found. Please check your metrics "
             "and fields used for stratification."
         )
 
-    # TODO(roboton): Run multi-class regression via MVLogit
-    # df_analysis[treatment_col] = pd.Categorical(df_analysis[treatment_col])
-    # Only check the first two treatment groups
+    # We only check the first two treatment groups right now.
     df_analysis = data[data[treatment_col].isin([0, 1])]
     # Use Patsy's C() to handle categoricals: https://patsy.readthedocs.io/en/latest/categorical-coding.html
     covariates = [f"C({col})" if col in cols_to_dummies else col for col in covariates]
