@@ -316,3 +316,27 @@ def test_check_balance_with_problematic_categorical():
     assert result.f_statistic is not None
     assert result.f_pvalue is not None
     assert result.f_pvalue > 0.5
+
+
+def test_check_balance_with_reserved_words_and_symbols():
+    # Various errors would be triggered by these column names if not quoted Q() properly, e.g. the
+    # data below produces the formula:
+    #     treat ~ C(log(treat)) + C(if) + C(else) + C(trick + treat) + a:b + class
+    # which triggers these two types of errors depending on the term:
+    # - INTERNALERROR> KeyError: 0
+    # - SyntaxError: invalid syntax
+    # Properly quoted gives:
+    #     treat ~ C(Q('log(treat)')) + C(Q('if')) + C(Q('else')) + C(Q('trick + treat')) + Q('a:b') + Q('class')
+    data = pd.DataFrame({
+        "treat": [0] * 10 + [1] * 10,
+        "log(treat)": ["a", "b"] * 10,
+        "if": ["c", "d"] * 10,
+        "else": ["e", "f"] * 10,
+        "trick + treat": ["g", "h"] * 10,
+        # even non-categorical can have bad column names
+        "a:b": [0.0, 1.0] * 10,
+        "class": [1, 2] * 10,
+    })
+    # Should not error since we use Patsy's C() to handle categoricals.
+    result = check_balance_of_preprocessed_df(data, treatment_col="treat")
+    assert result.f_pvalue > 0.5

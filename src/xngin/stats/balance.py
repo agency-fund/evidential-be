@@ -138,7 +138,7 @@ def check_balance_of_preprocessed_df(
 
     # Convert all non-numeric columns into dummy vars, including booleans
     non_numeric_columns = {c for c in data.columns if not is_any_real_numeric_dtype(data[c])}
-    cols_to_dummies = list(non_numeric_columns - exclude_col_set)
+    cols_to_dummies = list(non_numeric_columns - exclude_col_set - {treatment_col})
 
     # Create formula excluding specified columns
     covariates = [col for col in data.columns if col not in {*exclude_col_set, treatment_col}]
@@ -151,7 +151,8 @@ def check_balance_of_preprocessed_df(
     # We only check the first two treatment groups right now.
     df_analysis = data[data[treatment_col].isin([0, 1])]
     # Use Patsy's C() to handle categoricals: https://patsy.readthedocs.io/en/latest/categorical-coding.html
-    covariates = [f"C({col})" if col in cols_to_dummies else col for col in covariates]
+    # and Q() to handle bad column names: https://tedboy.github.io/patsy_doc/generated/patsy.builtins.Q.html
+    covariates = [f"C(Q('{col}'))" if col in cols_to_dummies else f"Q('{col}')" for col in covariates]
     formula = f"{treatment_col} ~ " + " + ".join(covariates)
     # print(f"------FORMULA:\n\t{formula}")
 
