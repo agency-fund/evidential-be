@@ -111,6 +111,17 @@ def restore_original_numeric_columns(df_orig: pd.DataFrame, df_cleaned: pd.DataF
     return df_cleaned
 
 
+def _q(col: str) -> str:
+    """Quote a column name for use in Patsy formulas."""
+    if '"' not in col:
+        return f'Q("{col}")'
+    if "'" not in col:
+        return f"Q('{col}')"
+    # Else, column contains both ' and "
+    col_escaped = col.replace('"', r"\"")
+    return f'Q("{col_escaped}")'
+
+
 def check_balance_of_preprocessed_df(
     data: pd.DataFrame,
     treatment_col: str = "treat",
@@ -152,8 +163,8 @@ def check_balance_of_preprocessed_df(
     df_analysis = data[data[treatment_col].isin([0, 1])]
     # Use Patsy's C() to handle categoricals: https://patsy.readthedocs.io/en/latest/categorical-coding.html
     # and Q() to handle bad column names: https://tedboy.github.io/patsy_doc/generated/patsy.builtins.Q.html
-    covariates = [f"C(Q('{col}'))" if col in cols_to_dummies else f"Q('{col}')" for col in covariates]
-    formula = f"{treatment_col} ~ " + " + ".join(covariates)
+    covariates = [f"C({_q(col)})" if col in cols_to_dummies else _q(col) for col in covariates]
+    formula = f"{_q(treatment_col)} ~ " + " + ".join(covariates)
     # print(f"------FORMULA:\n\t{formula}")
 
     # Fit regression model

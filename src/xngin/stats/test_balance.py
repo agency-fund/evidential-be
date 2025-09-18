@@ -320,13 +320,16 @@ def test_check_balance_with_problematic_categorical():
 
 def test_check_balance_with_reserved_words_and_symbols():
     # Various errors would be triggered by these column names if not quoted Q() properly, e.g. the
-    # data below produces the formula:
+    # data below produces the buggy formula:
     #     treat ~ C(log(treat)) + C(if) + C(else) + C(trick + treat) + a:b + class
-    # which triggers these two types of errors depending on the term:
-    # - INTERNALERROR> KeyError: 0
-    # - SyntaxError: invalid syntax
+    #             + it's + "double quoted" + 'single-quoted' +  "a'b
+    # which triggers these types of errors depending on the term:
+    #     - INTERNALERROR> KeyError: 0
+    #     - SyntaxError: invalid syntax
+    #     - patsy.PatsyError: error tokenizing input (unterminated string literal
     # Properly quoted gives:
-    #     treat ~ C(Q('log(treat)')) + C(Q('if')) + C(Q('else')) + C(Q('trick + treat')) + Q('a:b') + Q('class')
+    #     Q("treat") ~ C(Q("log(treat)")) + C(Q("if")) + C(Q("else")) + C(Q("trick + treat")) + Q("a:b") + Q("class")
+    #                  + Q("it's") + Q('"double quoted"') + Q("'single-quoted'") + Q(" \"a'b ")
     data = pd.DataFrame({
         "treat": [0] * 10 + [1] * 10,
         "log(treat)": ["a", "b"] * 10,
@@ -336,7 +339,17 @@ def test_check_balance_with_reserved_words_and_symbols():
         # even non-categorical can have bad column names
         "a:b": [0.0, 1.0] * 10,
         "class": [1, 2] * 10,
+        # verify quote handling
+        "it's": [0, 1] * 10,
+        '"double quoted"': [0, 1] * 10,
+        "'single-quoted'": [0, 1] * 10,
+        """ "a'b """: [1, 0] * 10,
+        'treat"s': [0] * 10 + [1] * 10,
     })
-    # Should not error since we use Patsy's C() to handle categoricals.
-    result = check_balance_of_preprocessed_df(data, treatment_col="treat")
+    exclude = {"treat", 'treat"s'}
+    # Should not error since we use Patsy's C() & Q()
+    result = check_balance_of_preprocessed_df(data, treatment_col="treat", exclude_col_set=exclude)
+    assert result.f_pvalue > 0.5
+    # Also check that we handle quoted dependent variable
+    result = check_balance_of_preprocessed_df(data, treatment_col='treat"s', exclude_col_set=exclude)
     assert result.f_pvalue > 0.5
