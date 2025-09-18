@@ -301,3 +301,18 @@ def test_preprocessing_numerics_as_categories():
     assert set(df["ints"]) == {0, 1, 2, 3}
     assert set(df["ints_with_na"]) == {0, 1, 2, 3, "__NULL__"}
     assert set(df["floats"]) == {0, 1, 2, 3}
+
+
+def test_check_balance_with_problematic_categorical():
+    data = pd.DataFrame({
+        "treat": [0] * 10 + [1] * 10,
+        # The comma will show up in a naive dummy encoding with pd.get_dummies,
+        # breaking patsy formulas. e.g. the below would be 'treat ~ categorical_3,4'
+        "categorical": ["1", "3,4"] * 10,
+    })
+    # Should not error since we use Patsy's C() to handle categoricals.
+    result = check_balance_of_preprocessed_df(data, treatment_col="treat")
+
+    assert result.f_statistic is not None
+    assert result.f_pvalue is not None
+    assert result.f_pvalue > 0.5

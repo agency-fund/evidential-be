@@ -139,27 +139,19 @@ def check_balance_of_preprocessed_df(
     # Convert all non-numeric columns into dummy vars, including booleans
     non_numeric_columns = {c for c in data.columns if not is_any_real_numeric_dtype(data[c])}
     cols_to_dummies = list(non_numeric_columns - exclude_col_set)
-    df_analysis = pd.get_dummies(
-        data,
-        columns=cols_to_dummies,
-        prefix=cols_to_dummies,
-        dummy_na=False,
-        drop_first=True,
-    )
 
     # Create formula excluding specified columns
-    covariates = [col for col in df_analysis.columns if col != treatment_col and col not in exclude_col_set]
+    covariates = [col for col in data.columns if col not in {*exclude_col_set, treatment_col}]
     if len(covariates) == 0:
         raise StatsBalanceError(
             "No usable fields for performing a balance check found. Please check your metrics "
             "and fields used for stratification."
         )
 
-    # TODO(roboton): Run multi-class regression via MVLogit
-    # df_analysis[treatment_col] = pd.Categorical(df_analysis[treatment_col])
-    # only check the first two treatment groups
-    df_analysis = df_analysis[df_analysis[treatment_col].isin([0, 1])]
-
+    # We only check the first two treatment groups right now.
+    df_analysis = data[data[treatment_col].isin([0, 1])]
+    # Use Patsy's C() to handle categoricals: https://patsy.readthedocs.io/en/latest/categorical-coding.html
+    covariates = [f"C({col})" if col in cols_to_dummies else col for col in covariates]
     formula = f"{treatment_col} ~ " + " + ".join(covariates)
     # print(f"------FORMULA:\n\t{formula}")
 
