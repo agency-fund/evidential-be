@@ -1586,7 +1586,7 @@ async def get_experiment_assignments_as_csv(
         session,
         ds,
         experiment_id,
-        preload=[tables.Experiment.arms, tables.Experiment.arm_assignments],
+        preload=[tables.Experiment.arm_assignments],
     )
     return await experiments_common.get_experiment_assignments_as_csv_impl(experiment)
 

@@ -35,13 +35,17 @@ from xngin.apiserver.routers.common_api_types import (
     ListExperimentsResponse,
     UpdateBanditArmOutcomeRequest,
 )
-from xngin.apiserver.routers.experiments.dependencies import experiment_dependency
+from xngin.apiserver.routers.experiments.dependencies import (
+    experiment_dependency,
+    experiment_response_dependency,
+    experiment_with_assignments_dependency,
+)
 from xngin.apiserver.routers.experiments.experiments_common import (
     create_assignment_for_participant,
-    get_assign_summary,
     get_existing_assignment_for_participant,
     get_experiment_assignments_as_csv_impl,
     get_experiment_assignments_impl,
+    get_experiment_impl,
     list_organization_or_datasource_experiments_impl,
     update_bandit_arm_with_outcome_impl,
 )
@@ -49,7 +53,6 @@ from xngin.apiserver.settings import (
     Datasource,
 )
 from xngin.apiserver.sqla import tables
-from xngin.apiserver.storage.storage_format_converters import ExperimentStorageConverter
 
 
 @asynccontextmanager
@@ -82,15 +85,10 @@ async def list_experiments(
     summary="Get experiment metadata (design & assignment specs) for a single experiment.",
 )
 async def get_experiment(
-    experiment: Annotated[tables.Experiment, Depends(experiment_dependency)],
+    experiment: Annotated[tables.Experiment, Depends(experiment_response_dependency)],
     xngin_session: Annotated[AsyncSession, Depends(xngin_db_session)],
 ) -> GetExperimentResponse:
-    converter = ExperimentStorageConverter(experiment)
-    balance_check = converter.get_balance_check()
-    assign_summary = await get_assign_summary(
-        xngin_session, experiment.id, balance_check, experiment_type=ExperimentsType(experiment.experiment_type)
-    )
-    return converter.get_experiment_response(assign_summary)
+    return await get_experiment_impl(xngin_session, experiment)
 
 
 # TODO: add a query param to include strata; default to false
@@ -99,7 +97,7 @@ async def get_experiment(
     summary="Fetch list of participant=>arm assignments for the given experiment id.",
 )
 async def get_experiment_assignments(
-    experiment: Annotated[tables.Experiment, Depends(experiment_dependency)],
+    experiment: Annotated[tables.Experiment, Depends(experiment_with_assignments_dependency)],
 ) -> GetExperimentAssignmentsResponse:
     return get_experiment_assignments_impl(experiment)
 
@@ -109,7 +107,7 @@ async def get_experiment_assignments(
     summary="Export experiment assignments as CSV file.",
 )
 async def get_experiment_assignments_as_csv(
-    experiment: Annotated[tables.Experiment, Depends(experiment_dependency)],
+    experiment: Annotated[tables.Experiment, Depends(experiment_with_assignments_dependency)],
 ) -> StreamingResponse:
     """Exports the assignments info with header row as CSV. BalanceCheck not included.
 
