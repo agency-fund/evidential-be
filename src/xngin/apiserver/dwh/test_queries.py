@@ -205,7 +205,6 @@ def fixture_queries_session():
         execution_options={"logging_token": SA_LOGGING_PREFIX_FOR_DWH},
     )
     try:
-        # TODO: consider trying to consolidate dwh-conditional config with that in settings.py
         if test_db.db_type is DbType.RS and hasattr(engine.dialect, "_set_backslash_escapes"):
             engine.dialect._set_backslash_escapes = lambda _: None
 

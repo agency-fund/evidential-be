@@ -20,11 +20,6 @@ class ExperimentState(enum.StrEnum):
     ASSIGNED = "assigned"  # TODO: rename to "REVIEWING"
     ABANDONED = "abandoned"
     COMMITTED = "committed"
-    # TODO: Consider adding two more states:
-    # Add an ACTIVE state that is only derived in a View when the state is COMMITTED and the query
-    # time is between experiment start and end.
-    # Add a COMPLETE state that is only derived in a View when the state is COMMITTED and query time
-    # is after experiment end.
     ABORTED = "aborted"
 
 
@@ -130,7 +125,6 @@ class DataType(enum.StrEnum):
     def filter_class(self, field_name):
         """Classifies a DataType into a filter class."""
         match self:
-            # TODO: is this customer specific?
             case _ if field_name.lower().endswith("_id"):
                 return FilterClass.DISCRETE
             case DataType.BOOLEAN | DataType.CHARACTER_VARYING | DataType.UUID:
