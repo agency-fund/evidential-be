@@ -238,9 +238,7 @@ def test_preprocessing_booleans():
 
 
 def test_preprocessing_with_exclusions():
-    """
-    Verify we exclude certain columns from preprocessing for various reasons.
-    """
+    """Verify we exclude certain columns from preprocessing for various reasons."""
     data = pd.DataFrame({
         # This is explicitly excluded by caller
         "skip": [2, 2, 3, 3],
@@ -282,6 +280,7 @@ def test_preprocessing_with_exclusions():
 
 
 def test_preprocessing_numerics_as_categories():
+    """Test our bucketing of numerics as a pre-processing step."""
     # Motivation: stochatreat doesn't preprocess numerics, so would end up creating 1 strata per
     # unique value, effectively devolving into simple random sampling, which we don't want:
     data = pd.DataFrame({"id": range(0, 100), "a": range(0, 100)})
@@ -304,6 +303,7 @@ def test_preprocessing_numerics_as_categories():
 
 
 def test_check_balance_with_problematic_categorical():
+    """Test categorical columns with values that would break naive dummy encoding."""
     data = pd.DataFrame({
         "treat": [0] * 10 + [1] * 10,
         # The comma will show up in a naive dummy encoding with pd.get_dummies,
@@ -319,8 +319,9 @@ def test_check_balance_with_problematic_categorical():
 
 
 def test_check_balance_with_reserved_words_and_symbols():
-    # Various errors would be triggered by these column names if not quoted Q() properly, e.g. the
-    # data below produces the buggy formula:
+    """Test column names that would break Patsy formulas if not quoted properly."""
+    # Various errors arise if names are not quoted Q() properly.
+    # E.g. data below produces the buggy formula:
     #     treat ~ C(log(treat)) + C(if) + C(else) + C(trick + treat) + a:b + class
     #             + it's + "double quoted" + 'single-quoted' +  "a'b
     # which triggers these types of errors depending on the term:
@@ -346,10 +347,8 @@ def test_check_balance_with_reserved_words_and_symbols():
         """ "a'b """: [1, 0] * 10,
         'treat"s': [0] * 10 + [1] * 10,
     })
-    exclude = {"treat", 'treat"s'}
-    # Should not error since we use Patsy's C() & Q()
-    result = check_balance_of_preprocessed_df(data, treatment_col="treat", exclude_col_set=exclude)
-    assert result.f_pvalue > 0.5
-    # Also check that we handle quoted dependent variable
-    result = check_balance_of_preprocessed_df(data, treatment_col='treat"s', exclude_col_set=exclude)
-    assert result.f_pvalue > 0.5
+
+    treatment_cols = {"treat", 'treat"s'}
+    for t in treatment_cols:
+        result = check_balance_of_preprocessed_df(data, treatment_col=t, exclude_col_set=treatment_cols)
+        assert result.f_pvalue > 0.5

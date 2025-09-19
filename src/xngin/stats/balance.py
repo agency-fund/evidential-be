@@ -144,29 +144,25 @@ def check_balance_of_preprocessed_df(
     if data[treatment_col].nunique() <= 1:
         raise ValueError("Treatment column has insufficient arms.")
 
-    if exclude_col_set is None:
-        exclude_col_set = set()
+    exclude_from_covariates = {treatment_col}
+    if exclude_col_set:
+        exclude_from_covariates |= exclude_col_set
 
-    # Convert all non-numeric columns into dummy vars, including booleans
-    non_numeric_columns = {c for c in data.columns if not is_any_real_numeric_dtype(data[c])}
-    cols_to_dummies = list(non_numeric_columns - exclude_col_set - {treatment_col})
-
-    # Create formula excluding specified columns
-    covariates = [col for col in data.columns if col not in {*exclude_col_set, treatment_col}]
+    covariates = data.columns.difference(list(exclude_from_covariates))
     if len(covariates) == 0:
         raise StatsBalanceError(
             "No usable fields for performing a balance check found. Please check your metrics "
             "and fields used for stratification."
         )
 
-    # We only check the first two treatment groups right now.
-    df_analysis = data[data[treatment_col].isin([0, 1])]
     # Use Patsy's C() to handle categoricals and Q() to handle bad column names
-    covariates = [f"C({_q(col)})" if col in cols_to_dummies else _q(col) for col in covariates]
-    formula = f"{_q(treatment_col)} ~ " + " + ".join(covariates)
+    non_numeric_covariates = [c for c in covariates if not is_any_real_numeric_dtype(data[c])]
+    wrapped_covariates = [f"C({_q(c)})" if c in non_numeric_covariates else _q(c) for c in covariates]
+    formula = f"{_q(treatment_col)} ~ " + " + ".join(wrapped_covariates)
     # print(f"------FORMULA:\n\t{formula}")
 
-    # Fit regression model
+    # Fit regression model; for now only check the first two treatment groups.
+    df_analysis = data[data[treatment_col].isin([0, 1])]
     model = smf.ols(formula=formula, data=df_analysis).fit()
 
     return BalanceResult(
