@@ -20,12 +20,16 @@ def custom_openapi(app: FastAPI):
         return app.openapi_schema
 
     # Overrides the operationId values in the OpenAPI spec to generate humane names
-    # based on the method name. This avoids generating long, ugly names downstream.
+    # based on the Python method name. This avoids downstream code generating ugly names downstream.
     # Note: ensure all API methods have names you'd like to appear in the generated APIs.
+    seen = set()
     for route in app.routes:
         if isinstance(route, APIRoute):
+            if route.name in seen:
+                raise RuntimeError(f"Duplicate route name: {route.name}")
             # uses the Python API method name
             route.operation_id = route.name
+            seen.add(route.name)
 
     visible_tags = [
         TagDocumentation(
