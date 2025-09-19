@@ -68,7 +68,7 @@ router = APIRouter(
     "/experiments",
     summary="List experiments on the datasource.",
 )
-async def list_experiments_sl(
+async def list_experiments(
     datasource: Annotated[Datasource, Depends(datasource_dependency)],
     xngin_session: Annotated[AsyncSession, Depends(xngin_db_session)],
 ) -> ListExperimentsResponse:
@@ -81,7 +81,7 @@ async def list_experiments_sl(
     "/experiments/{experiment_id}",
     summary="Get experiment metadata (design & assignment specs) for a single experiment.",
 )
-async def get_experiment_sl(
+async def get_experiment(
     experiment: Annotated[tables.Experiment, Depends(experiment_dependency)],
     xngin_session: Annotated[AsyncSession, Depends(xngin_db_session)],
 ) -> GetExperimentResponse:
@@ -98,7 +98,7 @@ async def get_experiment_sl(
     "/experiments/{experiment_id}/assignments",
     summary="Fetch list of participant=>arm assignments for the given experiment id.",
 )
-async def get_experiment_assignments_sl(
+async def get_experiment_assignments(
     experiment: Annotated[tables.Experiment, Depends(experiment_dependency)],
 ) -> GetExperimentAssignmentsResponse:
     return get_experiment_assignments_impl(experiment)
@@ -108,7 +108,7 @@ async def get_experiment_assignments_sl(
     "/experiments/{experiment_id}/assignments/csv",
     summary="Export experiment assignments as CSV file.",
 )
-async def get_experiment_assignments_as_csv_sl(
+async def get_experiment_assignments_as_csv(
     experiment: Annotated[tables.Experiment, Depends(experiment_dependency)],
 ) -> StreamingResponse:
     """Exports the assignments info with header row as CSV. BalanceCheck not included.
