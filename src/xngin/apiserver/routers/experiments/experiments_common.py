@@ -39,6 +39,7 @@ from xngin.apiserver.routers.common_api_types import (
     DesignSpecMetricRequest,
     FreqExperimentAnalysisResponse,
     GetExperimentAssignmentsResponse,
+    GetExperimentResponse,
     ListExperimentsResponse,
     MetricAnalysis,
     Strata,
@@ -381,6 +382,21 @@ async def abandon_experiment_impl(xngin_session: AsyncSession, experiment: table
     await xngin_session.commit()
 
     return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+async def get_experiment_impl(
+    xngin_session: AsyncSession,
+    experiment: tables.Experiment,
+) -> GetExperimentResponse:
+    converter = ExperimentStorageConverter(experiment)
+    assign_summary = await get_assign_summary(
+        xngin_session,
+        experiment.id,
+        converter.get_balance_check(),
+        experiment_type=ExperimentsType(experiment.experiment_type),
+    )
+    webhook_ids = [webhook.id for webhook in experiment.webhooks]
+    return converter.get_experiment_response(assign_summary, webhook_ids)
 
 
 async def list_organization_or_datasource_experiments_impl(
