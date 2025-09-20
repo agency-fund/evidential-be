@@ -868,10 +868,8 @@ async def get_assign_summary(
     experiment_id: str,
     balance_check: BalanceCheck | None,
     experiment_type: ExperimentsType,
-    # Default to frequentist for backward compatibility
 ) -> AssignSummary:
     """Constructs an AssignSummary from the experiment's arms and arm_assignments."""
-    result = None
     match experiment_type:
         case ExperimentsType.FREQ_ONLINE | ExperimentsType.FREQ_PREASSIGNED:
             result = await xngin_session.execute(

@@ -110,6 +110,9 @@ jobs:
         with:
           version: 3.x
           repo-token: ${{ secrets.GITHUB_TOKEN }}
+      - name: xngin-cli export-openapi-spec
+        run: |
+          XNGIN_PUBLISH_ALL_DOCS=true uv run xngin-cli export-openapi-spec
       - name: xngin-cli config validators
         run: |
           set -x

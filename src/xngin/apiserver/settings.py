@@ -297,7 +297,7 @@ class Dsn(ConfigBaseModel, BaseDsn, EncryptedDsn):
         """
 
         if url.startswith("bigquery"):
-            # TODO: support URL-encoded bigquery credentials from the query string
+            # This ignores URL-encoded bigquery credentials from the query string
             parsed_url = make_url(url)
             credentials = os.environ.get("GOOGLE_APPLICATION_CREDENTIALS", None)
             if credentials is None:
@@ -389,7 +389,6 @@ class RemoteDatabaseConfig(ParticipantsMixin, ConfigBaseModel):
         return self.dwh.supports_sa_autoload()
 
 
-# TODO: use a Field(discriminator="type") when we support more than just "remote" databases.
 type DatasourceConfig = RemoteDatabaseConfig
 
 

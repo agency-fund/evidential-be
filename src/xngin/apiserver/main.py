@@ -46,7 +46,6 @@ async def lifespan(_app: FastAPI):
             yield
 
 
-# TODO: pass parameters to Swagger to support OIDC/PKCE
 app = FastAPI(lifespan=lifespan)
 exceptionhandlers.setup(app)
 middleware.setup(app)
