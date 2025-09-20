@@ -1551,7 +1551,7 @@ async def get_experiment_for_ui(
 
 
 @router.get("/datasources/{datasource_id}/experiments/{experiment_id}/assignments")
-async def get_experiment_assignments(
+async def get_experiment_assignments_for_ui(
     datasource_id: str,
     experiment_id: str,
     session: Annotated[AsyncSession, Depends(xngin_db_session)],
@@ -1574,7 +1574,7 @@ async def get_experiment_assignments(
         "csv header form: participant_id,arm_id,arm_name,strata_name1,strata_name2,..."
     ),
 )
-async def get_experiment_assignments_as_csv(
+async def get_experiment_assignments_as_csv_for_ui(
     datasource_id: str,
     experiment_id: str,
     session: Annotated[AsyncSession, Depends(xngin_db_session)],
