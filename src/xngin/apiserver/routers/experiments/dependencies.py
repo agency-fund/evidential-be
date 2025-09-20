@@ -15,17 +15,10 @@ from xngin.apiserver.sqla import tables
 
 class ExperimentDependency:
     """
-    Returns the Experiment db object for experiment_id, if the API key grants access to its datasource.
-
-    xngin_session is injected from the database session.
-    experiment_id is pulled from the endpoint's path.
-    api_key is pulled from the API key header.
+    Parameterizable db Experiment dependency (instances are callable) for endpoints that require API keys.
 
     When constructing the dependency, you can provide a list of experiment attributes to preload to avoid N+1 queries.
-
-    Raises:
-        ApiKeyError: If the API key is invalid/missing.
-        HTTPException: 404 if the experiment is not found or the API key is invalid for the experiment's datasource.
+    See __call__ for additional injected parameters when called as a dependency.
     """
 
     def __init__(self, preload: list[QueryableAttribute] | None = None) -> None:
@@ -34,15 +27,17 @@ class ExperimentDependency:
     async def __call__(
         self,
         experiment_id: Annotated[str, Path(..., description="The ID of the experiment to fetch.")],
-        xngin_session: Annotated[AsyncSession, Depends(xngin_db_session)],
         api_key: Annotated[
             str | None,
             Depends(APIKeyHeader(name=constants.HEADER_API_KEY, auto_error=False)),
         ],
+        xngin_session: Annotated[AsyncSession, Depends(xngin_db_session)],
     ) -> tables.Experiment:
         """
-        Returns the Experiment db object for experiment_id, if the API key grants access to its
-        datasource.
+        Returns the Experiment db object for experiment_id, if the API key grants access to its datasource.
+        - experiment_id is pulled from the endpoint's path.
+        - api_key is pulled from the API key header.
+        - xngin_session is our injected database session.
 
         Raises:
             ApiKeyError: If the API key is invalid/missing.
@@ -80,8 +75,10 @@ class ExperimentDependency:
 # Default dependency for experiments that only need arms joined in.
 experiment_dependency = ExperimentDependency()
 
+# Use this version when a full GetExperimentResponse is needed.
 experiment_response_dependency = ExperimentDependency(preload=[tables.Experiment.webhooks, tables.Experiment.contexts])
 
+# This version is used with processing assignments, e.g. exporting them.
 experiment_with_assignments_dependency = ExperimentDependency(
     preload=[tables.Experiment.arm_assignments, tables.Experiment.draws],
 )
