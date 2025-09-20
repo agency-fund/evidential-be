@@ -18,7 +18,7 @@ from xngin.apiserver.sqla import tables
 from xngin.apiserver.storage.storage_format_converters import ExperimentStorageConverter
 
 
-async def test_list_experiments_sl_without_api_key(xngin_session, testing_datasource, client_v1):
+async def test_list_experiments_without_api_key(xngin_session, testing_datasource, client_v1):
     """Tests that listing experiments tied to a db datasource requires an API key."""
     await insert_experiment_and_arms(xngin_session, testing_datasource.ds, state=ExperimentState.ASSIGNED)
 
@@ -30,7 +30,7 @@ async def test_list_experiments_sl_without_api_key(xngin_session, testing_dataso
     assert response.json()["message"] == "API key missing or invalid."
 
 
-async def test_list_experiments_sl_with_api_key(xngin_session, testing_datasource, client_v1):
+async def test_list_experiments_with_api_key(xngin_session, testing_datasource, client_v1):
     """Tests that listing experiments tied to a db datasource with an API key works."""
     expected_experiment = await insert_experiment_and_arms(
         xngin_session, testing_datasource.ds, state=ExperimentState.ASSIGNED

@@ -48,6 +48,7 @@ from xngin.apiserver.routers.admin.admin_api_types import (
     PostgresDsn,
     RedshiftDsn,
     RevealedStr,
+    UpdateArmRequest,
     UpdateDatasourceRequest,
     UpdateExperimentRequest,
     UpdateOrganizationWebhookRequest,
@@ -1055,7 +1056,7 @@ async def test_lifecycle_with_db(testing_datasource, ppost, ppatch, pget, pdelet
     assert created_experiment.design_spec.design_url == HttpUrl("https://example.com/design")
     assert created_experiment.stopped_assignments_at is not None
     assert created_experiment.stopped_assignments_reason == StopAssignmentReason.PREASSIGNED
-    parsed_arm_ids = {arm.arm_id for arm in created_experiment.design_spec.arms}
+    parsed_arm_ids = [arm.arm_id for arm in created_experiment.design_spec.arms]
     assert len(parsed_arm_ids) == 2
 
     # Commit the new experiment.
@@ -1069,12 +1070,23 @@ async def test_lifecycle_with_db(testing_datasource, ppost, ppatch, pget, pdelet
     )
     assert response.status_code == 204, response.content
 
+    # Update an arm.
+    updated_arm_id = parsed_arm_ids[0]
+    response = ppatch(
+        f"/v1/m/datasources/{testing_datasource.ds.id}/experiments/{parsed_experiment_id}/arms/{updated_arm_id}",
+        content=UpdateArmRequest(name="updated arm").model_dump_json(),
+    )
+    assert response.status_code == 204, response.content
+
     # Get that experiment.
     response = pget(f"/v1/m/datasources/{testing_datasource.ds.id}/experiments/{parsed_experiment_id}")
     assert response.status_code == 200, response.content
     create_experiment_response = CreateExperimentResponse.model_validate(response.json())
     assert create_experiment_response.experiment_id == parsed_experiment_id
     assert create_experiment_response.design_spec.experiment_name == "updated"
+    arm = next((arm for arm in create_experiment_response.design_spec.arms if arm.arm_id == updated_arm_id), None)
+    assert arm is not None
+    assert arm.arm_name == "updated arm"
 
     # List org experiments.
     response = pget(f"/v1/m/organizations/{testing_datasource.org.id}/experiments")
@@ -1098,8 +1110,8 @@ async def test_lifecycle_with_db(testing_datasource, ppost, ppatch, pget, pdelet
     assert assignments.sample_size == 100
     assert assignments.balance_check is not None
     assert len(assignments.assignments) == 100
-    assert {arm.arm_name for arm in assignments.assignments} == {"control", "treatment"}
-    assert {arm.arm_id for arm in assignments.assignments} == parsed_arm_ids
+    assert {arm.arm_name for arm in assignments.assignments} == {"updated arm", "treatment"}
+    assert {arm.arm_id for arm in assignments.assignments} == {*parsed_arm_ids}
 
     # Unprivileged user attempts to delete the experiment
     response = udelete(f"/v1/m/datasources/{testing_datasource.ds.id}/experiments/{parsed_experiment_id}")
@@ -1466,6 +1478,51 @@ async def test_update_experiment_invalid(xngin_session, testing_experiment, ppat
     )
     assert response.status_code == 422
     assert response.json() == {"message": "Experiment must have been committed to be updated."}
+
+
+async def test_update_arm(testing_experiment, ppatch, pget):
+    """Test updating an arm's metadata."""
+    datasource_id = testing_experiment.datasource_id
+    experiment_id = testing_experiment.id
+    arm_id = testing_experiment.arms[0].id
+    request = UpdateArmRequest(name="updated name", description="updated desc")
+    response = ppatch(
+        f"/v1/m/datasources/{datasource_id}/experiments/{experiment_id}/arms/{arm_id}",
+        content=request.model_dump_json(),
+    )
+    assert response.status_code == 204, response.text
+
+    updated_response = pget(f"/v1/m/datasources/{datasource_id}/experiments/{experiment_id}")
+    design_spec = GetExperimentResponse.model_validate(updated_response.json()).design_spec
+    arm = next((arm for arm in design_spec.arms if arm.arm_id == arm_id), None)
+    assert arm is not None
+    assert arm.arm_name == "updated name"
+    assert arm.arm_description == "updated desc"
+
+
+async def test_update_arm_invalid(xngin_session, testing_experiment, ppatch):
+    """Test arm update validation checks."""
+    datasource_id = testing_experiment.datasource_id
+    experiment_id = testing_experiment.id
+
+    # check invalid arm id
+    response = ppatch(
+        f"/v1/m/datasources/{datasource_id}/experiments/{experiment_id}/arms/invalid_id",
+        content=UpdateArmRequest(name="updated").model_dump_json(),
+    )
+    assert response.status_code == 404
+    assert response.json() == {"detail": "Arm not found."}
+
+    # check invalid experiment state
+    testing_experiment.state = ExperimentState.ASSIGNED
+    await xngin_session.commit()
+
+    response = ppatch(
+        f"/v1/m/datasources/{datasource_id}/experiments/{experiment_id}/arms/{testing_experiment.arms[0].id}",
+        content=UpdateArmRequest(name="updated").model_dump_json(),
+    )
+    assert response.status_code == 422
+    assert response.json() == {"message": "Experiment must have been committed to update arms."}
 
 
 def test_get_experiment_assignment_for_preassigned_participant(testing_experiment, pget):
