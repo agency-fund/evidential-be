@@ -1533,7 +1533,7 @@ async def list_organization_experiments(
 
 
 @router.get("/datasources/{datasource_id}/experiments/{experiment_id}")
-async def get_experiment(
+async def get_experiment_for_ui(
     datasource_id: str,
     experiment_id: str,
     session: Annotated[AsyncSession, Depends(xngin_db_session)],
