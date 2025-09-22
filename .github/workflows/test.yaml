@@ -36,6 +36,7 @@ env:
   GOOGLE_OIDC_CLIENT_ID: "unset-google-oidc-client-id"
   GOOGLE_OIDC_CLIENT_SECRET: "unset-google-oidc-client-secret"
 jobs:
+
   osx-setup:
     timeout-minutes: 15
     runs-on: macos-14
@@ -45,6 +46,7 @@ jobs:
       - name: Install dependencies
         run: |
           uv sync --locked --compile-bytecode
+
   unittests:
     timeout-minutes: 15
     runs-on: ubuntu-22.04
@@ -78,6 +80,7 @@ jobs:
         run: |
           export GOOGLE_APPLICATION_CREDENTIALS=$HOME/.config/gspread/service_account.json
           task test-integration
+
   smoke-cli:
     timeout-minutes: 15
     runs-on: ubuntu-22.04
@@ -131,6 +134,7 @@ jobs:
 
           # Create the application database.
           uv run xngin-cli create-apiserver-db
+
   bq-integration:
     timeout-minutes: 15
     runs-on: ubuntu-22.04
@@ -165,13 +169,18 @@ jobs:
           install_components: "bq"
       - name: bq integration tests
         env:
+          ECHO_SQL: "1"
           GCLOUD_SERVICE_ACCOUNT_CREDENTIALS: ${{ secrets.GOOGLE_APPLICATION_CREDENTIALS_CONTENT }}
         run: |
           bq --location=us-west1 mk --dataset --default_table_expiration=86400 xngin-development-dc:$DATASET_NAME
 
-          export ECHO_SQL="1"
-          mkdir -p ~/.config/gspread && echo "${GCLOUD_SERVICE_ACCOUNT_CREDENTIALS}" > ~/.config/gspread/service_account.json
+          # Verify that we can populate a testing data warehouse in BigQuery.
           export GOOGLE_APPLICATION_CREDENTIALS=$HOME/.config/gspread/service_account.json
+          mkdir -p ~/.config/gspread && echo "${GCLOUD_SERVICE_ACCOUNT_CREDENTIALS}" > ~/.config/gspread/service_account.json
+          uv run xngin-cli create-testing-dwh --dsn bigquery://xngin-development-dc/${DATASET_NAME} --nrows 10
+          unset GOOGLE_APPLICATION_CREDENTIALS
+
+          # Verify that the query generation unit tests pass when run on BigQuery.
           export XNGIN_QUERIES_TEST_URI="bigquery://xngin-development-dc/${DATASET_NAME}?credentials_base64=$(cat ${GOOGLE_APPLICATION_CREDENTIALS} | base64 -w 0)"
           export DATABASE_URL="postgresql+psycopg://postgres:postgres@localhost:5499/test_xngin?sslmode=disable"
           uv run pytest -rA src/xngin/apiserver/dwh/test_queries.py
@@ -182,71 +191,10 @@ jobs:
             --project-id xngin-development-dc \
             --dataset-id ${DATASET_NAME} \
             || /bin/true
+
   docker-builds:
     timeout-minutes: 15
     runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@v4
       - run: docker buildx bake
-
-  smoke-server-bq:
-    runs-on: ubuntu-22.04
-    timeout-minutes: 15
-    env:
-      DATABASE_URL: "postgresql+psycopg://postgres:postgres@localhost:5499/postgres?sslmode=disable"
-      XNGIN_CLI_TABLE_NAME: smoke_${{ github.run_id }}_${{ github.run_attempt }}
-    services:
-      postgres:
-        image: postgres:17
-        env:
-          POSTGRES_DB: postgres
-          POSTGRES_PASSWORD: postgres
-        options: >-
-          --health-cmd pg_isready
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 5
-        ports:
-          - 5499:5432
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          lfs: true
-      - uses: astral-sh/setup-uv@v6
-      - run: uv sync --locked
-      - name: write secrets
-        env:
-          GCLOUD_SERVICE_ACCOUNT_CREDENTIALS: ${{ secrets.GOOGLE_APPLICATION_CREDENTIALS_CONTENT }}
-        run: |
-          mkdir -p ~/.config/gspread && echo "${GCLOUD_SERVICE_ACCOUNT_CREDENTIALS}" > service_account.json
-          openssl sha256 service_account.json
-      - name: bq smoke tests
-        env:
-          DATABASE_URL: "postgresql+psycopg://postgres:postgres@localhost:5499/postgres?sslmode=disable"
-        run: |
-          set -x
-
-          # Authenticate with environment variable because the CLI doesn't support
-          # specifying credentials explicitly.
-          export GOOGLE_APPLICATION_CREDENTIALS=service_account.json
-
-          # Populate the test warehouse. This is read by the two CLI commands and the server we start below.
-          uv run xngin-cli create-testing-dwh --dsn bigquery://xngin-development-dc/ds --nrows 1000
-
-          # Unset the environment variable because we want to ensure the server is authenticating with the credentials
-          # configured in the settings file and not relying on fallback behavior.
-          unset GOOGLE_APPLICATION_CREDENTIALS
-
-          # Create the application database.
-          uv run xngin-cli create-apiserver-db
-
-          # TODO: Add xngin-cli command to convert xngin.gha.settings.json into database entries and generate API key
-          # suitable for use in integration tests.
-      - name: bq cleanup
-        if: success() || failure()
-        run: |
-          export GOOGLE_APPLICATION_CREDENTIALS=service_account.json
-          uv run xngin-cli bigquery-table-delete \
-            --project-id xngin-development-dc \
-            --dataset-id ds \
-            --table-id ${XNGIN_CLI_TABLE_NAME} || /bin/true
