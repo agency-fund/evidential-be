@@ -168,7 +168,7 @@ async def _query_dwh_for_snapshot_data(
                 mean_context_val = np.mean(all_context_vals, axis=0)
                 rng = np.random.default_rng(RANDOM_STATE)
                 context_vals = [
-                    rng.binomial(1, m) if context.type == ContextType.BINARY else m
+                    rng.binomial(1, m) if context.value_type == ContextType.BINARY else m
                     for m, context in zip(mean_context_val, sorted_contexts, strict=False)
                 ]
 
