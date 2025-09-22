@@ -297,6 +297,7 @@ tasks:
       uv run xngin-cli add-user
   start-snapshotter:
     desc: "Starts the snapshot collector."
+    interactive: true
     env:
       DATABASE_URL: "{{.XNGIN_DEVAPP_DSN}}"
     cmd: uv run xngin-snapshotter --verbose-exceptions {{.CLI_ARGS}}
