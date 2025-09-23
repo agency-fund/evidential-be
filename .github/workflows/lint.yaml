@@ -28,6 +28,8 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
+        with:
+          persist-credentials: false
       - uses: astral-sh/setup-uv@v6
       - name: Run ruff
         run: uv run ruff check --output-format=github .
@@ -37,6 +39,8 @@ jobs:
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
       - uses: astral-sh/setup-uv@v6
       - run: echo PYTHON_DIR=$(uv python dir) | tee -a $GITHUB_ENV
       - name: Configure cache for pre-commit
