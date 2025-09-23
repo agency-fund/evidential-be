@@ -63,6 +63,13 @@ class ApiKey(Base):
     id: Mapped[str] = mapped_column(primary_key=True)
     key: Mapped[str] = mapped_column(unique=True)
     datasource_id: Mapped[str] = mapped_column(ForeignKey("datasources.id", ondelete="CASCADE"))
+
+    created_at: Mapped[datetime] = mapped_column(server_default=sqlalchemy.sql.func.now())
+    updated_at: Mapped[datetime] = mapped_column(
+        server_default=sqlalchemy.sql.func.now(),
+        onupdate=sqlalchemy.sql.func.now(),
+    )
+
     datasource: Mapped["Datasource"] = relationship(back_populates="api_keys")
 
 
@@ -73,6 +80,12 @@ class Organization(Base):
 
     id: Mapped[str] = mapped_column(primary_key=True, default=organization_id_factory)
     name: Mapped[str] = mapped_column(String(255))
+
+    created_at: Mapped[datetime] = mapped_column(server_default=sqlalchemy.sql.func.now())
+    updated_at: Mapped[datetime] = mapped_column(
+        server_default=sqlalchemy.sql.func.now(),
+        onupdate=sqlalchemy.sql.func.now(),
+    )
 
     arms: Mapped[list["Arm"]] = relationship(back_populates="organization", cascade="all, delete-orphan")
     users: Mapped[list["User"]] = relationship(secondary="user_organizations", back_populates="organizations")
@@ -100,6 +113,13 @@ class Webhook(Base):
     auth_token: Mapped[str | None] = mapped_column()
 
     organization_id: Mapped[str] = mapped_column(ForeignKey("organizations.id", ondelete="CASCADE"))
+
+    created_at: Mapped[datetime] = mapped_column(server_default=sqlalchemy.sql.func.now())
+    updated_at: Mapped[datetime] = mapped_column(
+        server_default=sqlalchemy.sql.func.now(),
+        onupdate=sqlalchemy.sql.func.now(),
+    )
+
     organization: Mapped["Organization"] = relationship(back_populates="webhooks")
     experiments: Mapped[list["Experiment"]] = relationship(secondary="experiment_webhooks", back_populates="webhooks")
 
@@ -181,6 +201,12 @@ class User(Base):
     # True when this user is considered to be privileged.
     is_privileged: Mapped[bool] = mapped_column(server_default=sqlalchemy.sql.false())
 
+    created_at: Mapped[datetime] = mapped_column(server_default=sqlalchemy.sql.func.now())
+    updated_at: Mapped[datetime] = mapped_column(
+        server_default=sqlalchemy.sql.func.now(),
+        onupdate=sqlalchemy.sql.func.now(),
+    )
+
     organizations: Mapped[list["Organization"]] = relationship(secondary="user_organizations", back_populates="users")
 
 
@@ -191,6 +217,8 @@ class UserOrganization(Base):
 
     user_id: Mapped[str] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), primary_key=True)
     organization_id: Mapped[str] = mapped_column(ForeignKey("organizations.id", ondelete="CASCADE"), primary_key=True)
+
+    created_at: Mapped[datetime] = mapped_column(server_default=sqlalchemy.sql.func.now())
 
     organization: Mapped["Organization"] = relationship(viewonly=True)
     user: Mapped["User"] = relationship(viewonly=True)
@@ -227,6 +255,12 @@ class Datasource(Base):
     table_list: Mapped[list[str] | None] = mapped_column(postgresql.JSONB)
     # Timestamp of the last update to `inspected_tables`
     table_list_updated: Mapped[datetime | None] = mapped_column()
+
+    created_at: Mapped[datetime] = mapped_column(server_default=sqlalchemy.sql.func.now())
+    updated_at: Mapped[datetime] = mapped_column(
+        server_default=sqlalchemy.sql.func.now(),
+        onupdate=sqlalchemy.sql.func.now(),
+    )
 
     organization: Mapped["Organization"] = relationship(back_populates="datasources")
     api_keys: Mapped[list["ApiKey"]] = relationship(back_populates="datasource", cascade="all, delete-orphan")
@@ -447,7 +481,7 @@ class Draw(Base):
 
     experiment_id: Mapped[str] = mapped_column(ForeignKey("experiments.id", ondelete="CASCADE"), primary_key=True)
     participant_id: Mapped[str] = mapped_column(String(255), primary_key=True)
-    participant_type: Mapped[str] = mapped_column(String(255))  # TODO:
+    participant_type: Mapped[str] = mapped_column(String(255))
     arm_id: Mapped[str] = mapped_column(ForeignKey("arms.id", ondelete="CASCADE"))
     created_at: Mapped[datetime] = mapped_column(server_default=sqlalchemy.sql.func.now())
 

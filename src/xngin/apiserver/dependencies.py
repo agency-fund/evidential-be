@@ -45,7 +45,6 @@ async def datasource_dependency(
 ):
     """Returns the configuration for the current request, as determined by the Datasource-ID HTTP request header."""
     if not datasource_id:
-        # TODO: 400, replace header parameters with header model for cleaner validation
         raise CannotFindDatasourceError(f"{constants.HEADER_CONFIG_ID} is required.")
 
     if from_db := await xngin_session.get(tables.Datasource, datasource_id):

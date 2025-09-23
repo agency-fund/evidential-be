@@ -237,8 +237,6 @@ class DwhSession:
         The only fields guaranteed to be set on the the returned Table.columns field are
         .name, .type, and .nullable.
 
-        TODO: replace with our own return type
-
         Args:
             table_name: Name of the table to inspect
             use_sa_autoload: Whether to use SQLAlchemy reflection. If None, uses config default.

@@ -62,6 +62,9 @@ def collect(
             "that may occur simultaneously.",
         ),
     ] = NPROC,
+    verbose_exceptions: Annotated[
+        bool, typer.Option(help="Configures loguru to print very detailed stack traces when exceptions occur.")
+    ] = False,
 ):
     """Collect snapshots from the experiments that need them.
 
@@ -74,7 +77,7 @@ def collect(
     behaviors, and some tolerance for unpredictable cron scheduling or missed invocations.
     """
     logger.remove()
-    logger.add(sys.stderr, level=log_level)
+    logger.add(sys.stderr, level=log_level, backtrace=verbose_exceptions, diagnose=verbose_exceptions)
     secretservice.setup()
 
     # Typer doesn't support async.
