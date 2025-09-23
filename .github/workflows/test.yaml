@@ -197,7 +197,7 @@ jobs:
           # Verify that the query generation unit tests pass when run on BigQuery.
           export XNGIN_QUERIES_TEST_URI="bigquery://xngin-development-dc/${QUERIES_DATASET_NAME}?${CREDENTIALS}"
           export DATABASE_URL="postgresql+psycopg://postgres:postgres@localhost:5499/test_xngin?sslmode=disable"
-          uv run pytest -rA src/xngin/apiserver/dwh/test_queries.py
+          uv run pytest -v -rA src/xngin/apiserver/dwh/test_queries.py
       - name: bq cleanup
         if: failure() || success()
         run: |
