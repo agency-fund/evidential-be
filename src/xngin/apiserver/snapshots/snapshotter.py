@@ -29,7 +29,7 @@ async def create_pending_snapshots(snapshot_interval: int):
     freshness_threshold = text(f"interval '{snapshot_interval} seconds'")
 
     async with database.async_session() as session, session.begin():
-        # All active frequentist experiments will be snapshot by this method. We also include experiments
+        # All active experiments will be snapshot by this method. We also include experiments
         # that start tomorrow, or ended yesterday, to collect +/- 1 day on both sides of the experiment.
         buffer = text("interval '1 day'")
 
@@ -39,7 +39,6 @@ async def create_pending_snapshots(snapshot_interval: int):
             .join(tables.Snapshot, isouter=True)
             .distinct(tables.Experiment.id)  # generates a PostgreSQL "DISTINCT ON"
             .where(
-                # tables.Experiment.experiment_type.like("freq%"),
                 func.now().between(
                     func.date_trunc("minute", tables.Experiment.start_date - buffer),
                     func.date_trunc("minute", tables.Experiment.end_date + buffer),
@@ -60,6 +59,7 @@ async def create_pending_snapshots(snapshot_interval: int):
                 experiments_snapshot_status.c.status.is_(None),
             )
         )
+
         # Create a new snapshot with status=pending for each experiment that needs one.
         for experiment_id in (await session.execute(candidate_experiments)).scalars():
             await session.execute(insert(tables.Snapshot).values(experiment_id=experiment_id))
