@@ -140,7 +140,9 @@ jobs:
     runs-on: ubuntu-22.04
     if: contains(github.event.pull_request.body, 'run:bqintegration') || inputs.run-bq-integration
     env:
-      DATASET_NAME: bqintegration_${{ github.run_id }}_${{ github.run_attempt }}
+      ECHO_SQL: "1"
+      DWH_DATASET_NAME: bqintegration_${{ github.run_id }}_${{ github.run_attempt }}_dwh
+      QUERIES_DATASET_NAME: bqintegration_${{ github.run_id }}_${{ github.run_attempt }}_q
     services:
       postgres:
         image: postgres:17
@@ -167,30 +169,39 @@ jobs:
         with:
           project_id: "xngin-development-dc"
           install_components: "bq"
-      - name: bq integration tests
+      - name: dwh queries unit test
         env:
-          ECHO_SQL: "1"
           GCLOUD_SERVICE_ACCOUNT_CREDENTIALS: ${{ secrets.GOOGLE_APPLICATION_CREDENTIALS_CONTENT }}
         run: |
-          bq --location=us-west1 mk --dataset --default_table_expiration=86400 xngin-development-dc:$DATASET_NAME
+          bq --location=us-west1 mk --dataset --default_table_expiration=86400 \
+            xngin-development-dc:"${QUERIES_DATASET_NAME}"
 
-          # Verify that we can populate a testing data warehouse in BigQuery.
-          export GOOGLE_APPLICATION_CREDENTIALS=$HOME/.config/gspread/service_account.json
-          mkdir -p ~/.config/gspread && echo "${GCLOUD_SERVICE_ACCOUNT_CREDENTIALS}" > ~/.config/gspread/service_account.json
-          uv run xngin-cli create-testing-dwh --dsn bigquery://xngin-development-dc/${DATASET_NAME} --nrows 10
-          unset GOOGLE_APPLICATION_CREDENTIALS
-
+          CREDENTIALS=credentials_base64=$(echo "${GCLOUD_SERVICE_ACCOUNT_CREDENTIALS}" | base64 -w 0)
           # Verify that the query generation unit tests pass when run on BigQuery.
-          export XNGIN_QUERIES_TEST_URI="bigquery://xngin-development-dc/${DATASET_NAME}?credentials_base64=$(cat ${GOOGLE_APPLICATION_CREDENTIALS} | base64 -w 0)"
+          export XNGIN_QUERIES_TEST_URI="bigquery://xngin-development-dc/${QUERIES_DATASET_NAME}?${CREDENTIALS}"
           export DATABASE_URL="postgresql+psycopg://postgres:postgres@localhost:5499/test_xngin?sslmode=disable"
           uv run pytest -rA src/xngin/apiserver/dwh/test_queries.py
+      - name: cli populates testing dwh in BigQuery
+        env:
+          GCLOUD_SERVICE_ACCOUNT_CREDENTIALS: ${{ secrets.GOOGLE_APPLICATION_CREDENTIALS_CONTENT }}
+        run: |
+          bq --location=us-west1 mk --dataset --default_table_expiration=86400 \
+            xngin-development-dc:"${DWH_DATASET_NAME}"
+
+          # Verify that we can populate a testing data warehouse in BigQuery.
+          export GOOGLE_APPLICATION_CREDENTIALS=$HOME/.config/service_account.json
+          mkdir -p ~/.config && echo "${GCLOUD_SERVICE_ACCOUNT_CREDENTIALS}" > ~/.config/service_account.json
+          uv run xngin-cli create-testing-dwh --dsn bigquery://xngin-development-dc/"${DWH_DATASET_NAME}" --nrows 10
+
       - name: bq cleanup
         if: failure() || success()
         run: |
-          uv run xngin-cli bigquery-dataset-delete \
-            --project-id xngin-development-dc \
-            --dataset-id ${DATASET_NAME} \
-            || /bin/true
+          for ds in "${DWH_DATASET_NAME}" "${QUERIES_DATASET_NAME}"; do
+            uv run xngin-cli bigquery-dataset-delete \
+              --project-id xngin-development-dc \
+              --dataset-id "${ds}" \
+              || /bin/true
+          done
 
   docker-builds:
     timeout-minutes: 15
