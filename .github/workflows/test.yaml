@@ -37,7 +37,31 @@ env:
   GOOGLE_OIDC_CLIENT_SECRET: "unset-google-oidc-client-secret"
 jobs:
 
+  changes:
+    runs-on: ubuntu-22.04
+    permissions:
+      pull-requests: read
+    outputs:
+      pydependencies: ${{ steps.filter.outputs.pydependencies }}
+      queries: ${{ steps.filter.outputs.queries }}
+    steps:
+      - if: github.event_name != 'pull_request'
+        uses: actions/checkout@v4
+      - uses: dorny/paths-filter@de90cc6fb38fc0963ad72b210f1f284cd68cea36  # v3.0.2
+        id: filter
+        with:
+          filters: |
+            pydependencies:
+              - 'pyproject.toml'
+              - 'uv.lock'
+            queries:
+              - 'src/xngin/apiserver/dwh/**'
+              - 'src/xngin/apiserver/conftest.py'
+
+
   osx-setup:
+    needs: changes
+    if: ${{ needs.changes.outputs.pydependencies == 'true' }}
     timeout-minutes: 15
     runs-on: macos-14
     steps:
@@ -144,9 +168,9 @@ jobs:
   bq-integration:
     timeout-minutes: 15
     runs-on: ubuntu-22.04
-    if: contains(github.event.pull_request.body, 'run:bqintegration') || inputs.run-bq-integration
+    needs: changes
+    if: needs.changes.outputs.queries == 'true' || inputs.run-bq-integration
     env:
-      ECHO_SQL: "1"
       DWH_DATASET_NAME: bqintegration_${{ github.run_id }}_${{ github.run_attempt }}_dwh
       QUERIES_DATASET_NAME: bqintegration_${{ github.run_id }}_${{ github.run_attempt }}_q
     services:
