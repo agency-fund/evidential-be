@@ -230,7 +230,7 @@ class ExperimentsType(enum.StrEnum):
         return self in {ExperimentsType.MAB_ONLINE, ExperimentsType.CMAB_ONLINE, ExperimentsType.BAYESAB_ONLINE}
 
     def is_cmab(self) -> bool:
-        """Returns True if the experiment type is a mab experiment."""
+        """Returns True if the experiment type is a CMAB experiment."""
         return self == ExperimentsType.CMAB_ONLINE
 
 
