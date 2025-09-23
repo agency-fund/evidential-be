@@ -251,10 +251,16 @@ class ExperimentStorageConverter:
             webhooks=webhook_ids or [],
         )
 
-    def get_experiment_response(self, assign_summary: capi.AssignSummary) -> capi.GetExperimentResponse:
+    def get_experiment_response(
+        self,
+        assign_summary: capi.AssignSummary,
+        webhook_ids: list[str] | None = None,
+    ) -> capi.GetExperimentResponse:
         # Although GetExperimentResponse is a subclass of ExperimentConfig, we revalidate the
         # response in case we ever change the API.
-        return capi.GetExperimentResponse.model_validate(self.get_experiment_config(assign_summary).model_dump())
+        return capi.GetExperimentResponse.model_validate(
+            self.get_experiment_config(assign_summary, webhook_ids).model_dump()
+        )
 
     def get_create_experiment_response(
         self,

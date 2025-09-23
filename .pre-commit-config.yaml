@@ -58,3 +58,10 @@ repos:
         name: mypy
         pass_filenames: false
         require_serial: true
+      - id: export-openapi-spec
+        entry: uv run xngin-cli export-openapi-spec --output /dev/null
+        files: ^(?!.*test_).*api\.py$
+        language: system
+        name: export-openapi-spec check
+        pass_filenames: false
+        require_serial: true
