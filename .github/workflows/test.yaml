@@ -175,6 +175,17 @@ jobs:
         with:
           project_id: "xngin-development-dc"
           install_components: "bq"
+      - name: cli populates testing dwh in BigQuery
+        env:
+          GCLOUD_SERVICE_ACCOUNT_CREDENTIALS: ${{ secrets.GOOGLE_APPLICATION_CREDENTIALS_CONTENT }}
+        run: |
+          bq --location=us-west1 mk --dataset --default_table_expiration=86400 \
+            xngin-development-dc:"${DWH_DATASET_NAME}"
+
+          # Verify that we can populate a testing data warehouse in BigQuery.
+          export GOOGLE_APPLICATION_CREDENTIALS=$HOME/.config/service_account.json
+          mkdir -p ~/.config && echo "${GCLOUD_SERVICE_ACCOUNT_CREDENTIALS}" > ~/.config/service_account.json
+          uv run xngin-cli create-testing-dwh --dsn bigquery://xngin-development-dc/"${DWH_DATASET_NAME}" --nrows 10
       - name: dwh queries unit test
         env:
           GCLOUD_SERVICE_ACCOUNT_CREDENTIALS: ${{ secrets.GOOGLE_APPLICATION_CREDENTIALS_CONTENT }}
@@ -187,18 +198,6 @@ jobs:
           export XNGIN_QUERIES_TEST_URI="bigquery://xngin-development-dc/${QUERIES_DATASET_NAME}?${CREDENTIALS}"
           export DATABASE_URL="postgresql+psycopg://postgres:postgres@localhost:5499/test_xngin?sslmode=disable"
           uv run pytest -rA src/xngin/apiserver/dwh/test_queries.py
-      - name: cli populates testing dwh in BigQuery
-        env:
-          GCLOUD_SERVICE_ACCOUNT_CREDENTIALS: ${{ secrets.GOOGLE_APPLICATION_CREDENTIALS_CONTENT }}
-        run: |
-          bq --location=us-west1 mk --dataset --default_table_expiration=86400 \
-            xngin-development-dc:"${DWH_DATASET_NAME}"
-
-          # Verify that we can populate a testing data warehouse in BigQuery.
-          export GOOGLE_APPLICATION_CREDENTIALS=$HOME/.config/service_account.json
-          mkdir -p ~/.config && echo "${GCLOUD_SERVICE_ACCOUNT_CREDENTIALS}" > ~/.config/service_account.json
-          uv run xngin-cli create-testing-dwh --dsn bigquery://xngin-development-dc/"${DWH_DATASET_NAME}" --nrows 10
-
       - name: bq cleanup
         if: failure() || success()
         run: |
