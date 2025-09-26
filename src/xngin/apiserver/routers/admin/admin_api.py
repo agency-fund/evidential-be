@@ -85,6 +85,7 @@ from xngin.apiserver.routers.admin.admin_api_types import (
     PostgresDsn,
     RedshiftDsn,
     SnapshotStatus,
+    UpdateArmRequest,
     UpdateDatasourceRequest,
     UpdateExperimentRequest,
     UpdateOrganizationRequest,
@@ -1528,7 +1529,7 @@ async def list_organization_experiments(
 
 
 @router.get("/datasources/{datasource_id}/experiments/{experiment_id}")
-async def get_experiment(
+async def get_experiment_for_ui(
     datasource_id: str,
     experiment_id: str,
     session: Annotated[AsyncSession, Depends(xngin_db_session)],
@@ -1542,19 +1543,11 @@ async def get_experiment(
         experiment_id,
         preload=[tables.Experiment.webhooks, tables.Experiment.contexts],
     )
-    converter = ExperimentStorageConverter(experiment)
-    assign_summary = await experiments_common.get_assign_summary(
-        session,
-        experiment.id,
-        converter.get_balance_check(),
-        experiment_type=ExperimentsType(experiment.experiment_type),
-    )
-    webhook_ids = [webhook.id for webhook in experiment.webhooks]
-    return converter.get_experiment_config(assign_summary, webhook_ids)
+    return await experiments_common.get_experiment_impl(session, experiment)
 
 
 @router.get("/datasources/{datasource_id}/experiments/{experiment_id}/assignments")
-async def get_experiment_assignments(
+async def get_experiment_assignments_for_ui(
     datasource_id: str,
     experiment_id: str,
     session: Annotated[AsyncSession, Depends(xngin_db_session)],
@@ -1577,7 +1570,7 @@ async def get_experiment_assignments(
         "csv header form: participant_id,arm_id,arm_name,strata_name1,strata_name2,..."
     ),
 )
-async def get_experiment_assignments_as_csv(
+async def get_experiment_assignments_as_csv_for_ui(
     datasource_id: str,
     experiment_id: str,
     session: Annotated[AsyncSession, Depends(xngin_db_session)],
@@ -1589,7 +1582,7 @@ async def get_experiment_assignments_as_csv(
         session,
         ds,
         experiment_id,
-        preload=[tables.Experiment.arms, tables.Experiment.arm_assignments],
+        preload=[tables.Experiment.arm_assignments],
     )
     return await experiments_common.get_experiment_assignments_as_csv_impl(experiment)
 
@@ -1710,6 +1703,37 @@ async def delete_experiment(
         authz.is_user_authorized_on_datasource(user, datasource_id),
         resource_query,
     )
+
+
+@router.patch(
+    "/datasources/{datasource_id}/experiments/{experiment_id}/arms/{arm_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+)
+async def update_arm(
+    datasource_id: str,
+    experiment_id: str,
+    arm_id: str,
+    body: UpdateArmRequest,
+    user: Annotated[tables.User, Depends(require_user_from_token)],
+    session: Annotated[AsyncSession, Depends(xngin_db_session)],
+):
+    datasource = await get_datasource_or_raise(session, user, datasource_id)
+    experiment = await get_experiment_via_ds_or_raise(session, datasource, experiment_id)
+
+    if experiment.state != ExperimentState.COMMITTED:
+        raise LateValidationError("Experiment must have been committed to update arms.")
+
+    arm = next((arm for arm in experiment.arms if arm.id == arm_id), None)
+    if arm is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Arm not found.")
+
+    if body.name is not None:
+        arm.name = body.name
+    if body.description is not None:
+        arm.description = body.description
+
+    await session.commit()
+    return GENERIC_SUCCESS
 
 
 @router.post("/datasources/{datasource_id}/power")
