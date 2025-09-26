@@ -65,3 +65,7 @@ repos:
         name: export-openapi-spec check
         pass_filenames: false
         require_serial: true
+  - repo: https://github.com/zizmorcore/zizmor-pre-commit
+    rev: v1.13.0
+    hooks:
+      - id: zizmor
