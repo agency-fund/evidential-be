@@ -16,7 +16,6 @@ from xngin.apiserver.storage.storage_format_converters import ExperimentStorageC
 # The amount of time the API server will wait for a snapshot to complete when invoked in response to user request.
 # The snapshotter cron job can specify a different timeout via command line flags.
 SNAPSHOT_TIMEOUT_SECS = 90
-RANDOM_STATE = 66
 
 
 async def create_pending_snapshots(snapshot_interval: int):
@@ -166,9 +165,8 @@ async def _query_dwh_for_snapshot_data(
                 sorted_contexts = sorted(contexts, key=lambda c: c.id)
                 all_context_vals = [draw.context_vals for draw in draws if draw.context_vals is not None]
                 mean_context_val = np.mean(all_context_vals, axis=0)
-                rng = np.random.default_rng(RANDOM_STATE)
                 context_vals = [
-                    rng.binomial(1, m) if context.value_type == ContextType.BINARY else m
+                    abs(float(np.ceil(m - 0.5))) if context.value_type == ContextType.BINARY else m
                     for m, context in zip(mean_context_val, sorted_contexts, strict=False)
                 ]
 
