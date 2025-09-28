@@ -1,13 +1,14 @@
 import asyncio
 import random
 
+import numpy as np
 from loguru import logger
 from sqlalchemy import func, insert, or_, select, text
 from sqlalchemy.orm import selectinload
 
 from xngin.apiserver import database
 from xngin.apiserver.routers.common_api_types import ExperimentAnalysisResponse
-from xngin.apiserver.routers.common_enums import ExperimentsType
+from xngin.apiserver.routers.common_enums import ContextType, ExperimentsType
 from xngin.apiserver.routers.experiments import experiments_common
 from xngin.apiserver.sqla import tables
 from xngin.apiserver.storage.storage_format_converters import ExperimentStorageConverter
@@ -27,7 +28,7 @@ async def create_pending_snapshots(snapshot_interval: int):
     freshness_threshold = text(f"interval '{snapshot_interval} seconds'")
 
     async with database.async_session() as session, session.begin():
-        # All active frequentist experiments will be snapshot by this method. We also include experiments
+        # All active experiments will be snapshot by this method. We also include experiments
         # that start tomorrow, or ended yesterday, to collect +/- 1 day on both sides of the experiment.
         buffer = text("interval '1 day'")
 
@@ -37,7 +38,6 @@ async def create_pending_snapshots(snapshot_interval: int):
             .join(tables.Snapshot, isouter=True)
             .distinct(tables.Experiment.id)  # generates a PostgreSQL "DISTINCT ON"
             .where(
-                tables.Experiment.experiment_type.like("freq%"),
                 func.now().between(
                     func.date_trunc("minute", tables.Experiment.start_date - buffer),
                     func.date_trunc("minute", tables.Experiment.end_date + buffer),
@@ -58,6 +58,7 @@ async def create_pending_snapshots(snapshot_interval: int):
                 experiments_snapshot_status.c.status.is_(None),
             )
         )
+
         # Create a new snapshot with status=pending for each experiment that needs one.
         for experiment_id in (await session.execute(candidate_experiments)).scalars():
             await session.execute(insert(tables.Snapshot).values(experiment_id=experiment_id))
@@ -82,6 +83,8 @@ async def make_first_snapshot(experiment_id: str, snapshot_id: str):
                     selectinload(tables.Snapshot.experiment),
                     selectinload(tables.Snapshot.experiment).selectinload(tables.Experiment.arms),
                     selectinload(tables.Snapshot.experiment).selectinload(tables.Experiment.arm_assignments),
+                    selectinload(tables.Snapshot.experiment).selectinload(tables.Experiment.draws),
+                    selectinload(tables.Snapshot.experiment).selectinload(tables.Experiment.contexts),
                     selectinload(tables.Snapshot.experiment).selectinload(tables.Experiment.datasource),
                 )
             )
@@ -109,6 +112,8 @@ async def process_pending_snapshots(snapshot_timeout: int):
             selectinload(tables.Snapshot.experiment),
             selectinload(tables.Snapshot.experiment).selectinload(tables.Experiment.arms),
             selectinload(tables.Snapshot.experiment).selectinload(tables.Experiment.arm_assignments),
+            selectinload(tables.Snapshot.experiment).selectinload(tables.Experiment.draws),
+            selectinload(tables.Snapshot.experiment).selectinload(tables.Experiment.contexts),
             selectinload(tables.Snapshot.experiment).selectinload(tables.Experiment.datasource),
         )
     )
@@ -143,15 +148,40 @@ async def _query_dwh_for_snapshot_data(
     datasource: tables.Datasource, experiment: tables.Experiment
 ) -> ExperimentAnalysisResponse:
     """Collect a snapshot from a customer DWH and returns the snapshot data."""
-    if ExperimentsType(experiment.experiment_type).is_mab():
-        raise ValueError("Only frequentist experiments are supported right now.")
+    if ExperimentsType(experiment.experiment_type).is_bayesian():
+        context_vals = None
 
-    # We always assume the first arm is the baseline.
-    arms = experiment.arms
-    assert arms[0].id is not None
-    return await experiments_common.analyze_experiment_freq_impl(
-        dsconfig=datasource.get_config(),
-        experiment=experiment,
-        baseline_arm_id=experiment.arms[0].id,
-        metrics=ExperimentStorageConverter(experiment).get_design_spec_metrics(),
-    )
+        # TODO: If the experiment is a CMAB, we need to pass in context values.
+        # Ideally we should marginalize over contexts, but we'll start with just using
+        # the mean context values. Captured in issue 140
+        # (https://github.com/agency-fund/evidential-sprint/issues/140)
+        if ExperimentsType(experiment.experiment_type).is_cmab():
+            draws = await experiment.awaitable_attrs.draws
+            contexts = await experiment.awaitable_attrs.contexts
+
+            if len(draws) == 0:
+                context_vals = [0.0] * len(contexts)
+            else:
+                sorted_context_defns = sorted(contexts, key=lambda c: c.id)
+                # draw.context_vals were already sorted corresponding to the sorted_context_defns
+                # ordering when the assignment was made.
+                all_context_vals = [draw.context_vals for draw in draws if draw.context_vals is not None]
+                mean_context_val = np.mean(all_context_vals, axis=0)
+                context_vals = [
+                    abs(float(np.ceil(m - 0.5))) if context.value_type == ContextType.BINARY else m
+                    for m, context in zip(mean_context_val, sorted_context_defns, strict=False)
+                ]
+
+        return experiments_common.analyze_experiment_bandit_impl(experiment=experiment, contexts=context_vals)
+
+    if ExperimentsType(experiment.experiment_type).is_freq():
+        # We always assume the first arm is the baseline.
+        arms = experiment.arms
+        assert arms[0].id is not None
+        return await experiments_common.analyze_experiment_freq_impl(
+            dsconfig=datasource.get_config(),
+            experiment=experiment,
+            baseline_arm_id=experiment.arms[0].id,
+            metrics=ExperimentStorageConverter(experiment).get_design_spec_metrics(),
+        )
+    raise ValueError(f"Unsupported experiment type: {experiment.experiment_type}")

@@ -440,10 +440,6 @@ async def create_snapshot(
     datasource = await get_datasource_or_raise(session, user, datasource_id, organization_id=organization_id)
     experiment = await get_experiment_via_ds_or_raise(session, datasource, experiment_id)
 
-    # TODO(qixotic): add in support for MABs when we actually support their analysis.
-    # Apply experiment type and state validations.
-    if ExperimentsType(experiment.experiment_type).is_mab():
-        raise LateValidationError("You can only snapshot frequentist experiments.")
     if experiment.state != ExperimentState.COMMITTED:
         raise LateValidationError("You can only snapshot committed experiments.")
     # Aligning with the buffer in snapshotter.py, as we wish to capture +/- 1 day on both sides.
