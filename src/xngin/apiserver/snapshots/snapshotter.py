@@ -162,12 +162,14 @@ async def _query_dwh_for_snapshot_data(
             if len(draws) == 0:
                 context_vals = [0.0] * len(contexts)
             else:
-                sorted_contexts = sorted(contexts, key=lambda c: c.id)
+                sorted_context_defns = sorted(contexts, key=lambda c: c.id)
+                # draw.context_vals were already sorted corresponding to the sorted_context_defns
+                # ordering when the assignment was made.
                 all_context_vals = [draw.context_vals for draw in draws if draw.context_vals is not None]
                 mean_context_val = np.mean(all_context_vals, axis=0)
                 context_vals = [
                     abs(float(np.ceil(m - 0.5))) if context.value_type == ContextType.BINARY else m
-                    for m, context in zip(mean_context_val, sorted_contexts, strict=False)
+                    for m, context in zip(mean_context_val, sorted_context_defns, strict=False)
                 ]
 
         return experiments_common.analyze_experiment_bandit_impl(experiment=experiment, contexts=context_vals)
