@@ -727,9 +727,6 @@ async def create_assignment_for_participant(
         await xngin_session.commit()
         return None
 
-    if not random_state:
-        # TODO: Remove this once tests use a fixed value
-        random_state = 66  # Default seed for deterministic behavior in tests.
     # For online frequentist or Bayesian A/B experiments, create a new assignment
     # with simple random assignment.
     match experiment_type:

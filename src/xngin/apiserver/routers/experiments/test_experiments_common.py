@@ -1104,7 +1104,7 @@ async def test_create_assignment_for_participant_errors(xngin_session, testing_d
         experiment_type=ExperimentsType.FREQ_PREASSIGNED,
     )
     experiment.arms = []
-    response = await create_assignment_for_participant(xngin_session, experiment, "p1", None)
+    response = await create_assignment_for_participant(xngin_session, experiment, "p1", None, random_state=66)
     assert response is None
 
     # But an online experiment in this invalid state will raise.
@@ -1114,7 +1114,7 @@ async def test_create_assignment_for_participant_errors(xngin_session, testing_d
         experiment_type=ExperimentsType.FREQ_ONLINE,
     )
     with pytest.raises(ExperimentsAssignmentError, match="Invalid experiment state: assigned"):
-        await create_assignment_for_participant(xngin_session, experiment, "p1", None)
+        await create_assignment_for_participant(xngin_session, experiment, "p1", None, random_state=66)
 
     # Test that an online experiment with no arms will raise.
     experiment, _ = make_insertable_experiment(
@@ -1124,13 +1124,15 @@ async def test_create_assignment_for_participant_errors(xngin_session, testing_d
     )
     experiment.arms = []
     with pytest.raises(ExperimentsAssignmentError, match="Experiment has no arms"):
-        await create_assignment_for_participant(xngin_session, experiment, "p1", None)
+        await create_assignment_for_participant(xngin_session, experiment, "p1", None, random_state=66)
 
 
 async def test_create_assignment_for_participant(xngin_session, testing_datasource):
     preassigned_experiment = await insert_experiment_and_arms(xngin_session, testing_datasource.ds)
     # Assert that we won't create new assignments for preassigned experiments
-    expect_none = await create_assignment_for_participant(xngin_session, preassigned_experiment, "new_id", None)
+    expect_none = await create_assignment_for_participant(
+        xngin_session, preassigned_experiment, "new_id", None, random_state=66
+    )
     assert expect_none is None
 
     # Test create assignment for online frequentist and bandit experiments
@@ -1139,14 +1141,16 @@ async def test_create_assignment_for_participant(xngin_session, testing_datasour
         testing_datasource.ds,
         experiment_type=ExperimentsType.FREQ_ONLINE,
     )
-    assignment_freq_online = await create_assignment_for_participant(xngin_session, freq_online_experiment, "new_id")
+    assignment_freq_online = await create_assignment_for_participant(
+        xngin_session, freq_online_experiment, "new_id", random_state=66
+    )
 
     mab_experiment = await insert_experiment_and_arms(
         xngin_session,
         testing_datasource.ds,
         experiment_type=ExperimentsType.MAB_ONLINE,
     )
-    mab_assignment = await create_assignment_for_participant(xngin_session, mab_experiment, "new_id")
+    mab_assignment = await create_assignment_for_participant(xngin_session, mab_experiment, "new_id", random_state=66)
 
     # For frequentist experiments
     # Assert that we do create new assignments for online experiments
@@ -1197,7 +1201,11 @@ async def test_create_assignment_for_participant_stopped_reason(
     # Assert that we don't create assignments for experiments in the past,
     # but for preassigned experiments we don't set a stopped_reason.
     assignment = await create_assignment_for_participant(
-        xngin_session, experiment, "new_id", [1.0, 1.0] if experiment_type == ExperimentsType.CMAB_ONLINE else None
+        xngin_session,
+        experiment,
+        "new_id",
+        [1.0, 1.0] if experiment_type == ExperimentsType.CMAB_ONLINE else None,
+        random_state=66,
     )
     assert assignment is None
     assert experiment.stopped_assignments_reason == stopped_reason
@@ -1232,6 +1240,7 @@ async def test_update_bandit_arm_with_outcome(
         bandit_experiment,
         "test_id",
         [1.0, 1.0] if experiment_type == ExperimentsType.CMAB_ONLINE else None,
+        random_state=66,
     )
 
     updated_arm = await update_bandit_arm_with_outcome_impl(
