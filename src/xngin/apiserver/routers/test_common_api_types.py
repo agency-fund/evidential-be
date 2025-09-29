@@ -18,6 +18,24 @@ def test_valid_field_names(name):
     Filter(field_name=name, relation=Relation.INCLUDES, value=[1])
 
 
+def test_boolean_filter_validation():
+    with pytest.raises(ValueError) as excinfo:
+        Filter(field_name="bool", relation=Relation.BETWEEN, value=[True, False])
+    assert "Values do not support BETWEEN." in str(excinfo.value)
+
+    with pytest.raises(ValueError) as excinfo:
+        Filter(field_name="bool", relation=Relation.INCLUDES, value=[True, True, True])
+    assert "Duplicate values" in str(excinfo.value)
+
+    with pytest.raises(ValueError) as excinfo:
+        Filter(field_name="bool", relation=Relation.INCLUDES, value=[True, False, None])
+    assert "allows all possible values" in str(excinfo.value)
+
+    with pytest.raises(ValueError) as excinfo:
+        Filter(field_name="bool", relation=Relation.EXCLUDES, value=[True, False, None])
+    assert "rejects all possible values" in str(excinfo.value)
+
+
 INVALID_COLUMN_NAMES = [
     "123column",  # Can't start with number
     "column-name",  # No hyphens allowed
