@@ -1027,7 +1027,7 @@ def analyze_experiment_bandit_impl(
     arm_analyses = analyze_bandit_experiment(
         experiment=experiment,
         outcome_std_dev=outcome_std_dev,
-        contexts=context_vals,
+        context_vals=context_vals,
     )
 
     return BanditExperimentAnalysisResponse(
