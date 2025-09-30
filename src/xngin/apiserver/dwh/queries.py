@@ -328,6 +328,12 @@ def create_datetime_filter(col: sqlalchemy.Column, filter_: Filter) -> ColumnEle
             return col <= right
         case (left, right):
             return col.between(left, right)
+        case (left, None, None):
+            return or_(col >= left, col.is_(sqlalchemy.null()))
+        case (None, right, None):
+            return or_(col <= right, col.is_(sqlalchemy.null()))
+        case (left, right, None):
+            return or_(col.between(left, right), col.is_(sqlalchemy.null()))
         case _:
             raise RuntimeError("Bug: invalid filter.")
 
@@ -343,6 +349,12 @@ def create_filter(col: sqlalchemy.Column, filter_: Filter) -> ColumnElement:
                     return col <= right
                 case (left, right):
                     return col.between(left, right)
+                case (left, None, None):
+                    return or_(col >= left, col.is_(sqlalchemy.null()))
+                case (None, right, None):
+                    return or_(col <= right, col.is_(sqlalchemy.null()))
+                case (left, right, None):
+                    return or_(col.between(left, right), col.is_(sqlalchemy.null()))
                 case _:
                     raise RuntimeError("Bug: invalid filter.")
         case Relation.EXCLUDES if isinstance(col.type, sqlalchemy.Boolean):

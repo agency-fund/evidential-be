@@ -63,6 +63,9 @@ VALID_BETWEEN = [
     ([None, 1], "with left None"),
     ([1.0, 2], "float and int"),  # pydantic coerces to [1.0, 2.0]
     ([1.5, 2.5], "floats again"),
+    ([1, 2, None], "between integers or None"),
+    ([1, None, None], "greater than integer or None"),
+    ([None, 1, None], "less than integer or None"),
 ]
 
 

@@ -563,19 +563,28 @@ class Filter(ApiBaseModel):
 
     ## Examples
 
-    | Relation | Value       | logical Result                                    |
-    |----------|-------------|---------------------------------------------------|
-    | INCLUDES | [None]      | Match when `x IS NULL`                            |
-    | INCLUDES | ["a"]       | Match when `x IN ("a")`                           |
-    | INCLUDES | ["a", None] | Match when `x IS NULL OR x IN ("a")`              |
-    | INCLUDES | ["a", "b"]  | Match when `x IN ("a", "b")`                      |
-    | EXCLUDES | [None]      | Match `x IS NOT NULL`                             |
-    | EXCLUDES | ["a", None] | Match `x IS NOT NULL AND x NOT IN ("a")`          |
-    | EXCLUDES | ["a", "b"]  | Match `x IS NULL OR (x NOT IN ("a", "b"))`        |
-    | BETWEEN  | ["a", "z"]  | Match `"a" <= x <= "z"`                           |
-    | BETWEEN  | ["a", None] | Match `x >= "a"`                                  |
+    | Relation | Value             | logical Result                                    |
+    |----------|-------------------|---------------------------------------------------|
+    | INCLUDES | [None]            | Match when `x IS NULL`                            |
+    | INCLUDES | ["a"]             | Match when `x IN ("a")`                           |
+    | INCLUDES | ["a", None]       | Match when `x IS NULL OR x IN ("a")`              |
+    | INCLUDES | ["a", "b"]        | Match when `x IN ("a", "b")`                      |
+    | EXCLUDES | [None]            | Match `x IS NOT NULL`                             |
+    | EXCLUDES | ["a", None]       | Match `x IS NOT NULL AND x NOT IN ("a")`          |
+    | EXCLUDES | ["a", "b"]        | Match `x IS NULL OR (x NOT IN ("a", "b"))`        |
+    | BETWEEN  | ["a", "z"]        | Match `"a" <= x <= "z"`                           |
+    | BETWEEN  | ["a", "z", None]  | Match `"a" <= x <= "z"` or `x IS NULL`            |
+    | BETWEEN  | [None, "z"]       | Match `x <= "z"`                                  |
+    | BETWEEN  | ["a", None]       | Match `x >= "a"`                                  |
+    | BETWEEN  | [None, "a", None] | Match `x <= "a"` or `x IS NULL`                   |
 
     String comparisons are case-sensitive.
+
+    ## Special Handling for BETWEEN support of including null
+
+    When the relation is BETWEEN, we allow for up to 3 values to support the special case of
+    including null in addition to the values in the between range via an OR IS NULL clause, as
+    indicated by a 3rd value of None. Any other 3rd value is invalid.
 
     ## Special Handling for Comma-Separated Fields
 
@@ -649,12 +658,17 @@ class Filter(ApiBaseModel):
         are probably some bugs in this.
         """
         if self.relation == Relation.BETWEEN:
-            if len(self.value) != 2:
-                raise ValueError("BETWEEN relation requires exactly 2 values")
+            num_values = len(self.value)
+            # We allow for up to 3 values to support the special case of including null,
+            # as indicated by a 3rd value of None. Any other 3rd value is invalid.
+            if num_values not in {2, 3}:
+                raise ValueError("BETWEEN relation requires exactly 2 or 3 values")
+            if num_values == 3 and self.value[2] is not None:
+                raise ValueError("BETWEEN relation 3rd value can only be None if present")
 
             none_count = sum(1 for v in self.value if v is None)
-            if none_count > 1:
-                raise ValueError("BETWEEN relation can have at most one None value")
+            if num_values == 2 and none_count > 1:
+                raise ValueError("BETWEEN relation can have at most one None value for its extents")
             if none_count == 0 and type(self.value[0]) is not type(self.value[1]):
                 raise ValueError("BETWEEN relation requires same values to be of the same type")
         elif not self.value:

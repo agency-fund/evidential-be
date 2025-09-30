@@ -426,6 +426,48 @@ IS_NULLABLE_CASES = [
         ],
         matches=[ROW_10, ROW_30],
     ),
+    # verify BETWEEN
+    Case(
+        filters=[
+            Filter(field_name="float_col", relation=Relation.BETWEEN, value=[1, 3]),
+        ],
+        matches=[ROW_10, ROW_20],
+    ),
+    Case(
+        filters=[
+            Filter(field_name="float_col", relation=Relation.BETWEEN, value=[1, 3, None]),
+        ],
+        matches=[ROW_10, ROW_20, ROW_30],
+    ),
+    # >=
+    Case(
+        filters=[
+            Filter(field_name="float_col", relation=Relation.BETWEEN, value=[2, None, None]),
+        ],
+        matches=[ROW_20, ROW_30],
+    ),
+    # <=
+    Case(
+        filters=[
+            Filter(field_name="float_col", relation=Relation.BETWEEN, value=[None, 2, None]),
+        ],
+        matches=[ROW_10, ROW_30],
+    ),
+    # between datetimes
+    Case(
+        filters=[
+            Filter(
+                field_name="date_col",
+                relation=Relation.BETWEEN,
+                value=[
+                    ROW_10.date_col and ROW_10.date_col.isoformat(),
+                    ROW_20.date_col and ROW_20.date_col.isoformat(),
+                    None,
+                ],
+            ),
+        ],
+        matches=[ROW_10, ROW_20, ROW_30],
+    ),
 ]
 
 
