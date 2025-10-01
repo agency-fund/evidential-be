@@ -15,7 +15,7 @@ from dataclasses import dataclass
 import pytest
 import sqlalchemy
 import sqlalchemy_bigquery
-from sqlalchemy import TIMESTAMP, Boolean, DateTime, Float, Integer, String, Table
+from sqlalchemy import TIMESTAMP, Boolean, Date, DateTime, Float, Integer, String, Table
 from sqlalchemy.dialects.postgresql import psycopg, psycopg2
 from sqlalchemy.orm import DeclarativeBase, mapped_column
 from sqlalchemy.sql.ddl import CreateTable
@@ -157,6 +157,7 @@ class WhereTable(HelpfulBase):
     experiment_ids = mapped_column(String, nullable=False)
     dt_col = mapped_column(DateTime, nullable=False)
     ts_col = mapped_column(TIMESTAMP, nullable=False)
+    date_col = mapped_column(Date, nullable=False)
 
 
 WHERE_TESTCASES = [
@@ -612,6 +613,49 @@ WHERE_TESTCASES = [
             DbType.BQ: "`tt`.`bool_col` IS NOT false AND `tt`.`bool_col` IS NOT NULL ORDER BY rand() LIMIT 3",
             DbType.RS: "tt.bool_col IS NOT false AND tt.bool_col IS NOT NULL ORDER BY random()  LIMIT 3",
             DbType.PG: "tt.bool_col IS NOT false AND tt.bool_col IS NOT NULL ORDER BY random()  LIMIT 3",
+        },
+    ),
+    # Date column tests
+    WhereTestCase(
+        filters=[Filter(field_name="date_col", relation=Relation.EXCLUDES, value=["2024-01-01"])],
+        where={
+            DbType.RS: "tt.date_col IS NULL OR (tt.date_col NOT IN ('2024-01-01')) ORDER BY random()  LIMIT 3",
+            DbType.PG: "tt.date_col IS NULL OR (tt.date_col NOT IN ('2024-01-01')) ORDER BY random()  LIMIT 3",
+            DbType.BQ: (
+                "`tt`.`date_col` IS NULL OR (`tt`.`date_col` NOT IN (DATE '2024-01-01')) ORDER BY rand() LIMIT 3"
+            ),
+        },
+    ),
+    WhereTestCase(
+        filters=[Filter(field_name="date_col", relation=Relation.INCLUDES, value=["2024-01-01"])],
+        where={
+            DbType.RS: "NOT (tt.date_col IS NULL OR (tt.date_col NOT IN ('2024-01-01'))) ORDER BY random()  LIMIT 3",
+            DbType.PG: "NOT (tt.date_col IS NULL OR (tt.date_col NOT IN ('2024-01-01'))) ORDER BY random()  LIMIT 3",
+            DbType.BQ: (
+                "NOT (`tt`.`date_col` IS NULL OR (`tt`.`date_col` NOT IN (DATE '2024-01-01'))) ORDER BY rand() LIMIT 3"
+            ),
+        },
+    ),
+    WhereTestCase(
+        filters=[Filter(field_name="date_col", relation=Relation.BETWEEN, value=["2024-01-01", None, None])],
+        where={
+            DbType.RS: "tt.date_col >= '2024-01-01' OR tt.date_col IS NULL ORDER BY random()  LIMIT 3",
+            DbType.PG: "tt.date_col >= '2024-01-01' OR tt.date_col IS NULL ORDER BY random()  LIMIT 3",
+            DbType.BQ: "`tt`.`date_col` >= DATE '2024-01-01' OR `tt`.`date_col` IS NULL ORDER BY rand() LIMIT 3",
+        },
+    ),
+    WhereTestCase(
+        filters=[
+            Filter(
+                field_name="date_col",
+                relation=Relation.BETWEEN,
+                value=["2024-01-01T12:30:00Z", "2024-12-31 23:59:59+00:00"],
+            )
+        ],
+        where={
+            DbType.RS: "tt.date_col BETWEEN '2024-01-01' AND '2024-12-31' ORDER BY random()  LIMIT 3",
+            DbType.PG: "tt.date_col BETWEEN '2024-01-01' AND '2024-12-31' ORDER BY random()  LIMIT 3",
+            DbType.BQ: ("`tt`.`date_col` BETWEEN DATE '2024-01-01' AND DATE '2024-12-31' ORDER BY rand() LIMIT 3"),
         },
     ),
 ]
