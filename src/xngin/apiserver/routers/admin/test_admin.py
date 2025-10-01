@@ -1478,6 +1478,27 @@ async def test_update_experiment_url_valid(testing_experiment, ppatch, pget, url
     assert parsed_response.design_spec.design_url.encoded_string() == expected_url
 
 
+async def test_update_experiment_url_null_when_empty(testing_experiment, ppatch, pget):
+    datasource_id = testing_experiment.datasource_id
+    experiment_id = testing_experiment.id
+    experiment_url = f"/v1/m/datasources/{datasource_id}/experiments/{experiment_id}"
+
+    response = ppatch(experiment_url, json={"design_url": "https://example.com/"})
+    assert response.status_code == 204, response.content
+    response = pget(experiment_url)
+    assert response.status_code == 200, response.content
+    parsed_response = GetExperimentResponse.model_validate(response.json())
+    assert parsed_response.design_spec.design_url is not None
+    assert parsed_response.design_spec.design_url.encoded_string() == "https://example.com/"
+
+    response = ppatch(experiment_url, json={"design_url": ""})
+    assert response.status_code == 204, response.content
+    response = pget(experiment_url)
+    assert response.status_code == 200, response.content
+    parsed_response = GetExperimentResponse.model_validate(response.json())
+    assert parsed_response.design_spec.design_url is None, parsed_response
+
+
 async def test_update_experiment_invalid(xngin_session, testing_experiment, ppatch):
     """Test experiment update validation checks."""
     datasource_id = testing_experiment.datasource_id
