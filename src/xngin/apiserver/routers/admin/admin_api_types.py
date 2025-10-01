@@ -18,6 +18,7 @@ from xngin.apiserver.limits import (
 )
 from xngin.apiserver.routers.common_api_types import (
     ApiBaseModel,
+    ConstrainedUrl,
     DataType,
     ExperimentAnalysisResponse,
     GcpServiceAccountBlob,
@@ -462,6 +463,15 @@ class UpdateExperimentRequest(AdminApiBaseModel):
     design_url: Annotated[str | None, Field(max_length=MAX_LENGTH_OF_URL_VALUE)] = None
     start_date: Annotated[datetime | None, Field()] = None
     end_date: Annotated[datetime | None, Field()] = None
+
+    @field_validator("design_url")
+    @classmethod
+    def validate_design_url(cls, design_url: str | None) -> str | None:
+        if design_url is None:
+            return design_url
+        if design_url == "":
+            return design_url
+        return str(ConstrainedUrl(design_url))
 
 
 class UpdateArmRequest(AdminApiBaseModel):
