@@ -79,6 +79,7 @@ INVALID_BETWEEN = [
     ([1], "single value"),
     ([1, 2, 3], "three values"),
     ([None, None], "both None"),
+    ([None, None, None], "three None"),
     ([1, "2"], "int and string int"),
     (["1", 2.0], "string int and float"),
     (["1.0", 2], "string float and int"),

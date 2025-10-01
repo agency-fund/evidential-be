@@ -569,7 +569,6 @@ def test_where(testcase: WhereTestCase):
         sql = str(q.compile(dialect=dbtype.dialect(), compile_kwargs={"literal_binds": True}))
         normalized = sql.replace("\n", "")
         normalized = normalized[normalized.find("WHERE ") + len("WHERE ") :]
-        assert normalized == testcase.where[dbtype]
         if normalized != testcase.where[dbtype]:
             failures[str(dbtype)] = normalized
 

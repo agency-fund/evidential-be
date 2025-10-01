@@ -663,14 +663,12 @@ class Filter(ApiBaseModel):
             # as indicated by a 3rd value of None. Any other 3rd value is invalid.
             if num_values not in {2, 3}:
                 raise ValueError("BETWEEN relation requires exactly 2 or 3 values")
+            if self.value[0] is None and self.value[1] is None:
+                raise ValueError("BETWEEN relation can have at most one None value for its extents")
             if num_values == 3 and self.value[2] is not None:
                 raise ValueError("BETWEEN relation 3rd value can only be None if present")
-
-            none_count = sum(1 for v in self.value if v is None)
-            if num_values == 2 and none_count > 1:
-                raise ValueError("BETWEEN relation can have at most one None value for its extents")
-            if none_count == 0 and type(self.value[0]) is not type(self.value[1]):
-                raise ValueError("BETWEEN relation requires same values to be of the same type")
+            if all(v is not None for v in self.value) and type(self.value[0]) is not type(self.value[1]):
+                raise ValueError("BETWEEN relation requires values to be of the same type")
         elif not self.value:
             raise ValueError("value must be a non-empty list")
 
