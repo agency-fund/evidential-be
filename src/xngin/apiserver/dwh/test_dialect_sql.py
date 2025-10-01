@@ -59,6 +59,7 @@ DATETIME_SCENARIOS = [
         "SELECT `dtt`.`dt_col`, `dtt`.`id`, `dtt`.`ts_col` "
         "FROM `dtt` "
         "WHERE `dtt`.`ts_col` >= TIMESTAMP '2020-01-01 00:00:00' "
+        "AND (`dtt`.`ts_col` <= TIMESTAMP '2025-01-01 00:00:00' OR `dtt`.`ts_col` IS NULL) "
         "AND `dtt`.`dt_col` BETWEEN DATETIME '2023-06-01 12:34:56' AND DATETIME '2024-01-01 00:00:00' "
         "ORDER BY rand() "
         "LIMIT 2",
@@ -72,6 +73,7 @@ DATETIME_SCENARIOS = [
         "SELECT dtt.dt_col, dtt.id, dtt.ts_col "
         "FROM dtt "
         "WHERE dtt.ts_col >= '2020-01-01 00:00:00' "
+        "AND (dtt.ts_col <= '2025-01-01 00:00:00' OR dtt.ts_col IS NULL) "
         "AND dtt.dt_col BETWEEN '2023-06-01 12:34:56' AND '2024-01-01 00:00:00' "
         "ORDER BY random()  LIMIT 2",
     ),
@@ -84,6 +86,7 @@ DATETIME_SCENARIOS = [
         "SELECT dtt.dt_col, dtt.id, dtt.ts_col "
         "FROM dtt "
         "WHERE dtt.ts_col >= '2020-01-01 00:00:00' "
+        "AND (dtt.ts_col <= '2025-01-01 00:00:00' OR dtt.ts_col IS NULL) "
         "AND dtt.dt_col BETWEEN '2023-06-01 12:34:56' AND '2024-01-01 00:00:00' "
         "ORDER BY random()  LIMIT 2",
     ),
@@ -100,11 +103,19 @@ def test_datetimes(testcase: DateTimeTestCase):
         filters=create_query_filters(
             sa_table,
             [
+                # >=
                 Filter(
                     field_name="ts_col",
                     relation=Relation.BETWEEN,
                     value=["2020-01-01 00:00:00", None],
                 ),
+                # <= or null
+                Filter(
+                    field_name="ts_col",
+                    relation=Relation.BETWEEN,
+                    value=[None, "2025-01-01", None],
+                ),
+                # between
                 Filter(
                     field_name="dt_col",
                     relation=Relation.BETWEEN,
@@ -443,6 +454,30 @@ WHERE_TESTCASES = [
             DbType.RS: "tt.int_col BETWEEN -17 AND 42 ORDER BY random()  LIMIT 3",
             DbType.PG: "tt.int_col BETWEEN -17 AND 42 ORDER BY random()  LIMIT 3",
             DbType.BQ: "`tt`.`int_col` BETWEEN -17 AND 42 ORDER BY rand() LIMIT 3",
+        },
+    ),
+    WhereTestCase(
+        filters=[Filter(field_name="int_col", relation=Relation.BETWEEN, value=[-17, 42, None])],
+        where={
+            DbType.RS: "tt.int_col BETWEEN -17 AND 42 OR tt.int_col IS NULL ORDER BY random()  LIMIT 3",
+            DbType.PG: "tt.int_col BETWEEN -17 AND 42 OR tt.int_col IS NULL ORDER BY random()  LIMIT 3",
+            DbType.BQ: "`tt`.`int_col` BETWEEN -17 AND 42 OR `tt`.`int_col` IS NULL ORDER BY rand() LIMIT 3",
+        },
+    ),
+    WhereTestCase(
+        filters=[Filter(field_name="float_col", relation=Relation.BETWEEN, value=[1.0, None, None])],
+        where={
+            DbType.RS: "tt.float_col >= 1.0 OR tt.float_col IS NULL ORDER BY random()  LIMIT 3",
+            DbType.PG: "tt.float_col >= 1.0 OR tt.float_col IS NULL ORDER BY random()  LIMIT 3",
+            DbType.BQ: "`tt`.`float_col` >= 1.0 OR `tt`.`float_col` IS NULL ORDER BY rand() LIMIT 3",
+        },
+    ),
+    WhereTestCase(
+        filters=[Filter(field_name="float_col", relation=Relation.BETWEEN, value=[None, 1.0, None])],
+        where={
+            DbType.RS: "tt.float_col <= 1.0 OR tt.float_col IS NULL ORDER BY random()  LIMIT 3",
+            DbType.PG: "tt.float_col <= 1.0 OR tt.float_col IS NULL ORDER BY random()  LIMIT 3",
+            DbType.BQ: "`tt`.`float_col` <= 1.0 OR `tt`.`float_col` IS NULL ORDER BY rand() LIMIT 3",
         },
     ),
     WhereTestCase(
