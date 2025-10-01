@@ -161,6 +161,7 @@ class WhereTable(HelpfulBase):
 
 
 WHERE_TESTCASES = [
+    # EXCLUDES basic tests
     WhereTestCase(
         filters=[Filter(field_name="float_col", relation=Relation.EXCLUDES, value=[2, 3])],
         where={
@@ -170,13 +171,7 @@ WHERE_TESTCASES = [
         },
     ),
     WhereTestCase(
-        filters=[
-            Filter(
-                field_name="int_col",
-                relation=Relation.EXCLUDES,
-                value=[None],
-            )
-        ],
+        filters=[Filter(field_name="int_col", relation=Relation.EXCLUDES, value=[None])],
         where={
             DbType.RS: "tt.int_col IS NOT NULL ORDER BY random()  LIMIT 3",
             DbType.PG: "tt.int_col IS NOT NULL ORDER BY random()  LIMIT 3",
@@ -184,13 +179,7 @@ WHERE_TESTCASES = [
         },
     ),
     WhereTestCase(
-        filters=[
-            Filter(
-                field_name="int_col",
-                relation=Relation.EXCLUDES,
-                value=[1],
-            )
-        ],
+        filters=[Filter(field_name="int_col", relation=Relation.EXCLUDES, value=[1])],
         where={
             DbType.RS: "tt.int_col IS NULL OR (tt.int_col NOT IN (1)) ORDER BY random()  LIMIT 3",
             DbType.PG: "tt.int_col IS NULL OR (tt.int_col NOT IN (1)) ORDER BY random()  LIMIT 3",
@@ -198,65 +187,26 @@ WHERE_TESTCASES = [
         },
     ),
     WhereTestCase(
-        filters=[
-            Filter(
-                field_name="int_col",
-                relation=Relation.EXCLUDES,
-                value=[None, 1],
-            )
-        ],
+        filters=[Filter(field_name="int_col", relation=Relation.EXCLUDES, value=[None, 1])],
         where={
             DbType.RS: "tt.int_col IS NOT NULL AND (tt.int_col NOT IN (1)) ORDER BY random()  LIMIT 3",
             DbType.PG: "tt.int_col IS NOT NULL AND (tt.int_col NOT IN (1)) ORDER BY random()  LIMIT 3",
             DbType.BQ: "`tt`.`int_col` IS NOT NULL AND (`tt`.`int_col` NOT IN (1)) ORDER BY rand() LIMIT 3",
         },
     ),
+    # INCLUDES basic tests
     WhereTestCase(
-        filters=[
-            Filter(
-                field_name="dt_col",
-                relation=Relation.EXCLUDES,
-                value=["2024-01-01"],
-            )
-        ],
+        filters=[Filter(field_name="string_col", relation=Relation.INCLUDES, value=["a", "b"])],
         where={
-            DbType.RS: "tt.dt_col IS NULL OR (tt.dt_col NOT IN ('2024-01-01 00:00:00')) ORDER BY random()  LIMIT 3",
-            DbType.PG: "tt.dt_col IS NULL OR (tt.dt_col NOT IN ('2024-01-01 00:00:00')) ORDER BY random()  LIMIT 3",
+            DbType.RS: "NOT (tt.string_col IS NULL OR (tt.string_col NOT IN ('a', 'b'))) ORDER BY random()  LIMIT 3",
+            DbType.PG: "NOT (tt.string_col IS NULL OR (tt.string_col NOT IN ('a', 'b'))) ORDER BY random()  LIMIT 3",
             DbType.BQ: (
-                "`tt`.`dt_col` IS NULL OR (`tt`.`dt_col` NOT IN (DATETIME '2024-01-01 00:00:00')) "
-                "ORDER BY rand() LIMIT 3"
+                "NOT (`tt`.`string_col` IS NULL OR (`tt`.`string_col` NOT IN ('a', 'b'))) ORDER BY rand() LIMIT 3"
             ),
         },
     ),
     WhereTestCase(
-        filters=[
-            Filter(
-                field_name="dt_col",
-                relation=Relation.EXCLUDES,
-                value=["2024-01-01", None],
-            )
-        ],
-        where={
-            DbType.RS: (
-                "tt.dt_col IS NOT NULL AND (tt.dt_col NOT IN ('2024-01-01 00:00:00')) ORDER BY random()  LIMIT 3"
-            ),
-            DbType.PG: (
-                "tt.dt_col IS NOT NULL AND (tt.dt_col NOT IN ('2024-01-01 00:00:00')) ORDER BY random()  LIMIT 3"
-            ),
-            DbType.BQ: (
-                "`tt`.`dt_col` IS NOT NULL AND (`tt`.`dt_col` NOT IN (DATETIME '2024-01-01 00:00:00')) "
-                "ORDER BY rand() LIMIT 3"
-            ),
-        },
-    ),
-    WhereTestCase(
-        filters=[
-            Filter(
-                field_name="int_col",
-                relation=Relation.INCLUDES,
-                value=[None],
-            )
-        ],
+        filters=[Filter(field_name="int_col", relation=Relation.INCLUDES, value=[None])],
         where={
             DbType.RS: "tt.int_col IS NULL ORDER BY random()  LIMIT 3",
             DbType.PG: "tt.int_col IS NULL ORDER BY random()  LIMIT 3",
@@ -264,13 +214,7 @@ WHERE_TESTCASES = [
         },
     ),
     WhereTestCase(
-        filters=[
-            Filter(
-                field_name="int_col",
-                relation=Relation.INCLUDES,
-                value=[42],
-            )
-        ],
+        filters=[Filter(field_name="int_col", relation=Relation.INCLUDES, value=[42])],
         where={
             DbType.RS: "NOT (tt.int_col IS NULL OR (tt.int_col NOT IN (42))) ORDER BY random()  LIMIT 3",
             DbType.PG: "NOT (tt.int_col IS NULL OR (tt.int_col NOT IN (42))) ORDER BY random()  LIMIT 3",
@@ -278,27 +222,16 @@ WHERE_TESTCASES = [
         },
     ),
     WhereTestCase(
-        filters=[
-            Filter(
-                field_name="int_col",
-                relation=Relation.INCLUDES,
-                value=[None, 1],
-            )
-        ],
+        filters=[Filter(field_name="int_col", relation=Relation.INCLUDES, value=[None, 1])],
         where={
             DbType.RS: "NOT (tt.int_col IS NOT NULL AND (tt.int_col NOT IN (1))) ORDER BY random()  LIMIT 3",
             DbType.PG: "NOT (tt.int_col IS NOT NULL AND (tt.int_col NOT IN (1))) ORDER BY random()  LIMIT 3",
             DbType.BQ: "NOT (`tt`.`int_col` IS NOT NULL AND (`tt`.`int_col` NOT IN (1))) ORDER BY rand() LIMIT 3",
         },
     ),
+    # DATETIME tests
     WhereTestCase(
-        filters=[
-            Filter(
-                field_name="dt_col",
-                relation=Relation.INCLUDES,
-                value=["2024-01-01"],
-            )
-        ],
+        filters=[Filter(field_name="dt_col", relation=Relation.INCLUDES, value=["2024-01-01"])],
         where={
             DbType.RS: (
                 "NOT (tt.dt_col IS NULL OR (tt.dt_col NOT IN ('2024-01-01 00:00:00'))) ORDER BY random()  LIMIT 3"
@@ -313,13 +246,7 @@ WHERE_TESTCASES = [
         },
     ),
     WhereTestCase(
-        filters=[
-            Filter(
-                field_name="dt_col",
-                relation=Relation.INCLUDES,
-                value=["2024-01-01", None],
-            )
-        ],
+        filters=[Filter(field_name="dt_col", relation=Relation.INCLUDES, value=["2024-01-01", None])],
         where={
             DbType.RS: (
                 "NOT (tt.dt_col IS NOT NULL AND (tt.dt_col NOT IN ('2024-01-01 00:00:00'))) ORDER BY random()  LIMIT 3"
@@ -334,13 +261,33 @@ WHERE_TESTCASES = [
         },
     ),
     WhereTestCase(
-        filters=[
-            Filter(
-                field_name="dt_col",
-                relation=Relation.BETWEEN,
-                value=["2024-01-01", "2024-01-02"],
-            )
-        ],
+        filters=[Filter(field_name="dt_col", relation=Relation.EXCLUDES, value=["2024-01-01"])],
+        where={
+            DbType.RS: "tt.dt_col IS NULL OR (tt.dt_col NOT IN ('2024-01-01 00:00:00')) ORDER BY random()  LIMIT 3",
+            DbType.PG: "tt.dt_col IS NULL OR (tt.dt_col NOT IN ('2024-01-01 00:00:00')) ORDER BY random()  LIMIT 3",
+            DbType.BQ: (
+                "`tt`.`dt_col` IS NULL OR (`tt`.`dt_col` NOT IN (DATETIME '2024-01-01 00:00:00')) "
+                "ORDER BY rand() LIMIT 3"
+            ),
+        },
+    ),
+    WhereTestCase(
+        filters=[Filter(field_name="dt_col", relation=Relation.EXCLUDES, value=["2024-01-01", None])],
+        where={
+            DbType.RS: (
+                "tt.dt_col IS NOT NULL AND (tt.dt_col NOT IN ('2024-01-01 00:00:00')) ORDER BY random()  LIMIT 3"
+            ),
+            DbType.PG: (
+                "tt.dt_col IS NOT NULL AND (tt.dt_col NOT IN ('2024-01-01 00:00:00')) ORDER BY random()  LIMIT 3"
+            ),
+            DbType.BQ: (
+                "`tt`.`dt_col` IS NOT NULL AND (`tt`.`dt_col` NOT IN (DATETIME '2024-01-01 00:00:00')) "
+                "ORDER BY rand() LIMIT 3"
+            ),
+        },
+    ),
+    WhereTestCase(
+        filters=[Filter(field_name="dt_col", relation=Relation.BETWEEN, value=["2024-01-01", "2024-01-02"])],
         where={
             DbType.RS: "tt.dt_col BETWEEN '2024-01-01 00:00:00' AND '2024-01-02 00:00:00' ORDER BY random()  LIMIT 3",
             DbType.PG: "tt.dt_col BETWEEN '2024-01-01 00:00:00' AND '2024-01-02 00:00:00' ORDER BY random()  LIMIT 3",
@@ -350,13 +297,25 @@ WHERE_TESTCASES = [
             ),
         },
     ),
+    # TIMESTAMP tests
+    WhereTestCase(
+        filters=[Filter(field_name="ts_col", relation=Relation.EXCLUDES, value=["2024-01-01T23:00:00+00:00", None])],
+        where={
+            DbType.RS: (
+                "tt.ts_col IS NOT NULL AND (tt.ts_col NOT IN ('2024-01-01 23:00:00')) ORDER BY random()  LIMIT 3"
+            ),
+            DbType.PG: (
+                "tt.ts_col IS NOT NULL AND (tt.ts_col NOT IN ('2024-01-01 23:00:00')) ORDER BY random()  LIMIT 3"
+            ),
+            DbType.BQ: (
+                "`tt`.`ts_col` IS NOT NULL AND (`tt`.`ts_col` NOT IN (TIMESTAMP '2024-01-01 23:00:00')) "
+                "ORDER BY rand() LIMIT 3"
+            ),
+        },
+    ),
     WhereTestCase(
         filters=[
-            Filter(
-                field_name="ts_col",
-                relation=Relation.BETWEEN,
-                value=["2024-01-01", "2024-01-02"],
-            )
+            Filter(field_name="ts_col", relation=Relation.BETWEEN, value=["2024-01-01", "2024-01-02"]),
         ],
         where={
             DbType.RS: "tt.ts_col BETWEEN '2024-01-01 00:00:00' AND '2024-01-02 00:00:00' ORDER BY random()  LIMIT 3",
@@ -369,11 +328,7 @@ WHERE_TESTCASES = [
     ),
     WhereTestCase(
         filters=[
-            Filter(
-                field_name="ts_col",
-                relation=Relation.BETWEEN,
-                value=["2024-01-01 01:02:03.100000", "2024-01-02"],
-            )
+            Filter(field_name="ts_col", relation=Relation.BETWEEN, value=["2024-01-01 01:02:03.100000", "2024-01-02"]),
         ],
         where={
             DbType.RS: "tt.ts_col BETWEEN '2024-01-01 01:02:03' AND '2024-01-02 00:00:00' ORDER BY random()  LIMIT 3",
@@ -384,18 +339,11 @@ WHERE_TESTCASES = [
             ),
         },
     ),
+    # experiment_ids inclusion/exclusion tests
     WhereTestCase(
         filters=[
-            Filter(
-                field_name="int_col",
-                relation=Relation.INCLUDES,
-                value=[42, -17],
-            ),
-            Filter(
-                field_name="experiment_ids",
-                relation=Relation.INCLUDES,
-                value=["b", "C"],
-            ),
+            Filter(field_name="int_col", relation=Relation.INCLUDES, value=[42, -17]),
+            Filter(field_name="experiment_ids", relation=Relation.INCLUDES, value=["b", "C"]),
         ],
         where={
             DbType.BQ: (
@@ -417,16 +365,8 @@ WHERE_TESTCASES = [
     ),
     WhereTestCase(
         filters=[
-            Filter(
-                field_name="int_col",
-                relation=Relation.INCLUDES,
-                value=[42, -17],
-            ),
-            Filter(
-                field_name="experiment_ids",
-                relation=Relation.EXCLUDES,
-                value=["b", "c"],
-            ),
+            Filter(field_name="int_col", relation=Relation.INCLUDES, value=[42, -17]),
+            Filter(field_name="experiment_ids", relation=Relation.EXCLUDES, value=["b", "c"]),
         ],
         where={
             DbType.BQ: (
@@ -449,6 +389,7 @@ WHERE_TESTCASES = [
             ),
         },
     ),
+    # BETWEEN tests, without and with NULL
     WhereTestCase(
         filters=[Filter(field_name="int_col", relation=Relation.BETWEEN, value=[-17, 42])],
         where={
@@ -465,6 +406,7 @@ WHERE_TESTCASES = [
             DbType.BQ: "`tt`.`int_col` BETWEEN -17 AND 42 OR `tt`.`int_col` IS NULL ORDER BY rand() LIMIT 3",
         },
     ),
+    # >=, <= with NULL tests
     WhereTestCase(
         filters=[Filter(field_name="float_col", relation=Relation.BETWEEN, value=[1.0, None, None])],
         where={
@@ -481,14 +423,9 @@ WHERE_TESTCASES = [
             DbType.BQ: "`tt`.`float_col` <= 1.0 OR `tt`.`float_col` IS NULL ORDER BY rand() LIMIT 3",
         },
     ),
+    # BOOLEAN tests
     WhereTestCase(
-        filters=[
-            Filter(
-                field_name="bool_col",
-                relation=Relation.INCLUDES,
-                value=[True],
-            )
-        ],
+        filters=[Filter(field_name="bool_col", relation=Relation.INCLUDES, value=[True])],
         where={
             DbType.RS: "tt.bool_col IS true ORDER BY random()  LIMIT 3",
             DbType.PG: "tt.bool_col IS true ORDER BY random()  LIMIT 3",
@@ -496,13 +433,15 @@ WHERE_TESTCASES = [
         },
     ),
     WhereTestCase(
-        filters=[
-            Filter(
-                field_name="bool_col",
-                relation=Relation.EXCLUDES,
-                value=[True],
-            )
-        ],
+        filters=[Filter(field_name="bool_col", relation=Relation.INCLUDES, value=[False])],
+        where={
+            DbType.RS: "tt.bool_col IS false ORDER BY random()  LIMIT 3",
+            DbType.PG: "tt.bool_col IS false ORDER BY random()  LIMIT 3",
+            DbType.BQ: "`tt`.`bool_col` IS false ORDER BY rand() LIMIT 3",
+        },
+    ),
+    WhereTestCase(
+        filters=[Filter(field_name="bool_col", relation=Relation.EXCLUDES, value=[True])],
         where={
             DbType.RS: "tt.bool_col IS NOT true ORDER BY random()  LIMIT 3",
             DbType.PG: "tt.bool_col IS NOT true ORDER BY random()  LIMIT 3",
@@ -510,27 +449,7 @@ WHERE_TESTCASES = [
         },
     ),
     WhereTestCase(
-        filters=[
-            Filter(
-                field_name="bool_col",
-                relation=Relation.EXCLUDES,
-                value=[None],
-            )
-        ],
-        where={
-            DbType.RS: "tt.bool_col IS NOT NULL ORDER BY random()  LIMIT 3",
-            DbType.PG: "tt.bool_col IS NOT NULL ORDER BY random()  LIMIT 3",
-            DbType.BQ: "`tt`.`bool_col` IS NOT NULL ORDER BY rand() LIMIT 3",
-        },
-    ),
-    WhereTestCase(
-        filters=[
-            Filter(
-                field_name="bool_col",
-                relation=Relation.INCLUDES,
-                value=[None],
-            )
-        ],
+        filters=[Filter(field_name="bool_col", relation=Relation.INCLUDES, value=[None])],
         where={
             DbType.RS: "tt.bool_col IS NULL ORDER BY random()  LIMIT 3",
             DbType.PG: "tt.bool_col IS NULL ORDER BY random()  LIMIT 3",
@@ -538,21 +457,15 @@ WHERE_TESTCASES = [
         },
     ),
     WhereTestCase(
-        filters=[Filter(field_name="bool_col", relation=Relation.INCLUDES, value=[False])],
+        filters=[Filter(field_name="bool_col", relation=Relation.EXCLUDES, value=[None])],
         where={
-            DbType.BQ: "`tt`.`bool_col` IS false ORDER BY rand() LIMIT 3",
-            DbType.RS: "tt.bool_col IS false ORDER BY random()  LIMIT 3",
-            DbType.PG: "tt.bool_col IS false ORDER BY random()  LIMIT 3",
+            DbType.RS: "tt.bool_col IS NOT NULL ORDER BY random()  LIMIT 3",
+            DbType.PG: "tt.bool_col IS NOT NULL ORDER BY random()  LIMIT 3",
+            DbType.BQ: "`tt`.`bool_col` IS NOT NULL ORDER BY rand() LIMIT 3",
         },
     ),
     WhereTestCase(
-        filters=[
-            Filter(
-                field_name="bool_col",
-                relation=Relation.EXCLUDES,
-                value=[None, True],
-            )
-        ],
+        filters=[Filter(field_name="bool_col", relation=Relation.EXCLUDES, value=[None, True])],
         where={
             DbType.RS: "tt.bool_col IS NOT NULL AND tt.bool_col IS NOT true ORDER BY random()  LIMIT 3",
             DbType.PG: "tt.bool_col IS NOT NULL AND tt.bool_col IS NOT true ORDER BY random()  LIMIT 3",
@@ -560,13 +473,15 @@ WHERE_TESTCASES = [
         },
     ),
     WhereTestCase(
-        filters=[
-            Filter(
-                field_name="bool_col",
-                relation=Relation.INCLUDES,
-                value=[None, False],
-            )
-        ],
+        filters=[Filter(field_name="bool_col", relation=Relation.EXCLUDES, value=[False, None])],
+        where={
+            DbType.BQ: "`tt`.`bool_col` IS NOT false AND `tt`.`bool_col` IS NOT NULL ORDER BY rand() LIMIT 3",
+            DbType.RS: "tt.bool_col IS NOT false AND tt.bool_col IS NOT NULL ORDER BY random()  LIMIT 3",
+            DbType.PG: "tt.bool_col IS NOT false AND tt.bool_col IS NOT NULL ORDER BY random()  LIMIT 3",
+        },
+    ),
+    WhereTestCase(
+        filters=[Filter(field_name="bool_col", relation=Relation.INCLUDES, value=[None, False])],
         where={
             DbType.RS: "tt.bool_col IS NULL OR tt.bool_col IS false ORDER BY random()  LIMIT 3",
             DbType.PG: "tt.bool_col IS NULL OR tt.bool_col IS false ORDER BY random()  LIMIT 3",
@@ -574,13 +489,7 @@ WHERE_TESTCASES = [
         },
     ),
     WhereTestCase(
-        filters=[
-            Filter(
-                field_name="bool_col",
-                relation=Relation.INCLUDES,
-                value=[True, None],
-            )
-        ],
+        filters=[Filter(field_name="bool_col", relation=Relation.INCLUDES, value=[True, None])],
         where={
             DbType.BQ: "`tt`.`bool_col` IS true OR `tt`.`bool_col` IS NULL ORDER BY rand() LIMIT 3",
             DbType.RS: "tt.bool_col IS true OR tt.bool_col IS NULL ORDER BY random()  LIMIT 3",
@@ -588,34 +497,14 @@ WHERE_TESTCASES = [
         },
     ),
     WhereTestCase(
-        filters=[
-            Filter(
-                field_name="bool_col",
-                relation=Relation.EXCLUDES,
-                value=[False, True],
-            )
-        ],
+        filters=[Filter(field_name="bool_col", relation=Relation.EXCLUDES, value=[False, True])],
         where={
             DbType.RS: "tt.bool_col IS NOT false AND tt.bool_col IS NOT true ORDER BY random()  LIMIT 3",
             DbType.PG: "tt.bool_col IS NOT false AND tt.bool_col IS NOT true ORDER BY random()  LIMIT 3",
             DbType.BQ: "`tt`.`bool_col` IS NOT false AND `tt`.`bool_col` IS NOT true ORDER BY rand() LIMIT 3",
         },
     ),
-    WhereTestCase(
-        filters=[
-            Filter(
-                field_name="bool_col",
-                relation=Relation.EXCLUDES,
-                value=[False, None],
-            )
-        ],
-        where={
-            DbType.BQ: "`tt`.`bool_col` IS NOT false AND `tt`.`bool_col` IS NOT NULL ORDER BY rand() LIMIT 3",
-            DbType.RS: "tt.bool_col IS NOT false AND tt.bool_col IS NOT NULL ORDER BY random()  LIMIT 3",
-            DbType.PG: "tt.bool_col IS NOT false AND tt.bool_col IS NOT NULL ORDER BY random()  LIMIT 3",
-        },
-    ),
-    # Date column tests
+    # DATE tests
     WhereTestCase(
         filters=[Filter(field_name="date_col", relation=Relation.EXCLUDES, value=["2024-01-01"])],
         where={
@@ -680,6 +569,7 @@ def test_where(testcase: WhereTestCase):
         sql = str(q.compile(dialect=dbtype.dialect(), compile_kwargs={"literal_binds": True}))
         normalized = sql.replace("\n", "")
         normalized = normalized[normalized.find("WHERE ") + len("WHERE ") :]
+        assert normalized == testcase.where[dbtype]
         if normalized != testcase.where[dbtype]:
             failures[str(dbtype)] = normalized
 

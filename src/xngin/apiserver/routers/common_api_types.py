@@ -580,7 +580,7 @@ class Filter(ApiBaseModel):
 
     String comparisons are case-sensitive.
 
-    ## Special Handling for BETWEEN support of including null
+    ## Special Handling for BETWEEN support of including NULL
 
     When the relation is BETWEEN, we allow for up to 3 values to support the special case of
     including null in addition to the values in the between range via an OR IS NULL clause, as
@@ -601,9 +601,9 @@ class Filter(ApiBaseModel):
 
     Note: CSV field comparisons are case-insensitive.
 
-    ## Handling of datetime and timestamp values
+    ## Handling of DATE, DATETIME and TIMESTAMP values
 
-    DATETIME or TIMESTAMP-type columns support INCLUDES/EXCLUDES/BETWEEN, similar to numerics.
+    DATE, DATETIME or TIMESTAMP-type columns support INCLUDES/EXCLUDES/BETWEEN, similar to numerics.
 
     Values must be expressed as ISO8601 datetime strings compatible with Python's datetime.fromisoformat()
     (https://docs.python.org/3/library/datetime.html#datetime.datetime.fromisoformat).
