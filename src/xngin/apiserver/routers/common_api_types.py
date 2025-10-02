@@ -658,17 +658,17 @@ class Filter(ApiBaseModel):
         are probably some bugs in this.
         """
         if self.relation == Relation.BETWEEN:
-            num_values = len(self.value)
             # We allow for up to 3 values to support the special case of including null,
             # as indicated by a 3rd value of None. Any other 3rd value is invalid.
-            if num_values not in {2, 3}:
+            if not 2 <= len(self.value) <= 3:
                 raise ValueError("BETWEEN relation requires exactly 2 or 3 values")
-            if self.value[0] is None and self.value[1] is None:
+            left, right, *rest = self.value
+            if (left, right) == (None, None):
                 raise ValueError("BETWEEN relation can have at most one None value for its extents")
-            if num_values == 3 and self.value[2] is not None:
-                raise ValueError("BETWEEN relation 3rd value can only be None if present")
-            if all(v is not None for v in self.value) and type(self.value[0]) is not type(self.value[1]):
+            if left is not None and right is not None and type(left) is not type(right):
                 raise ValueError("BETWEEN relation requires values to be of the same type")
+            if rest and rest[0] is not None:
+                raise ValueError("BETWEEN relation 3rd value can only be None if present")
         elif not self.value:
             raise ValueError("value must be a non-empty list")
 
