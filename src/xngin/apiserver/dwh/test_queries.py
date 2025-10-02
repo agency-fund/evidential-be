@@ -214,7 +214,6 @@ def fixture_queries_session():
         if test_db.db_type is DbType.RS and hasattr(engine.dialect, "_set_backslash_escapes"):
             engine.dialect._set_backslash_escapes = lambda _: None
 
-        Base.metadata.drop_all(engine)
         Base.metadata.create_all(engine)
         with Session(engine) as session:
             for row in SAMPLE_TABLE_ROWS:
@@ -229,6 +228,7 @@ def fixture_queries_session():
             finally:
                 session.close()
     finally:
+        Base.metadata.drop_all(engine)
         engine.dispose()
 
 
