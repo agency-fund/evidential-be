@@ -12,7 +12,7 @@ from xngin.apiserver.sqla import tables
 
 # ------------- Utilities for sampling and updating arms ----------------
 # --- Sampling functions for Thompson Sampling ---
-def _sample_beta_binomial(alphas: np.ndarray, betas: np.ndarray, random_state: int = 66) -> int:
+def _sample_beta_binomial(alphas: np.ndarray, betas: np.ndarray, random_state: int | None = None) -> int:
     """
     Thompson Sampling with Beta-Binomial distribution.
 
@@ -20,7 +20,7 @@ def _sample_beta_binomial(alphas: np.ndarray, betas: np.ndarray, random_state: i
     ----------
     alphas: alpha parameter of Beta distribution for each arm
     betas: beta parameter of Beta distribution for each arm
-    random_state: random number generator
+    random_state: use a fixed int for deterministic behavior in tests
     """
     rng = np.random.default_rng(random_state)
     samples = rng.beta(alphas, betas)
@@ -32,7 +32,7 @@ def _sample_normal(
     covariances: list[np.ndarray],
     context: np.ndarray,
     link_function: ContextLinkFunctions,
-    random_state: int = 66,
+    random_state: int | None = None,
 ) -> int:
     """
     Thompson Sampling with normal prior.
@@ -43,17 +43,18 @@ def _sample_normal(
     covariances: covariance matrix of Normal distribution for each arm
     context: context vector
     link_function: link function for the context
-    random_state: int = 66,
+    random_state: use a fixed int for deterministic behavior in tests
     """
 
     rng = np.random.default_rng(random_state)
 
+    # Sample model parameters for each arm relating context to outcome
     samples = np.array([
-        rng.multivariate_normal(mean=mu, cov=cov) for mu, cov in zip(mus, covariances, strict=False)
+        rng.multivariate_normal(mean=mu, cov=cov) for mu, cov in zip(mus, covariances, strict=True)
     ]).reshape(-1, len(context))
 
-    probs = link_function(samples @ context)
-    return int(probs.argmax())
+    scores = link_function(samples @ context)
+    return int(scores.argmax())
 
 
 # --- Arm update functions ---
@@ -166,8 +167,8 @@ def _update_arm_laplace(
 # --- Choose arm function ---
 def choose_arm(
     experiment: tables.Experiment,
-    context: list[float] | None = None,
-    random_state: int = 66,
+    sorted_context_vals: list[float] | None = None,
+    random_state: int | None = None,
 ) -> tables.Arm:
     """
     Choose arm based on posterior using Thompson Sampling.
@@ -194,7 +195,7 @@ def choose_arm(
         mus = [np.array(arm.mu) for arm in sorted_arms]
         covariances = [np.array(arm.covariance) for arm in sorted_arms]
 
-        context_array = np.ones_like(mus[0]) if context is None else np.array(context)
+        context_array = np.ones_like(mus[0]) if sorted_context_vals is None else np.array(sorted_context_vals)
         arm_index = _sample_normal(
             mus=mus,
             covariances=covariances,

@@ -172,7 +172,7 @@ async def _query_dwh_for_snapshot_data(
                     for m, context in zip(mean_context_val, sorted_context_defns, strict=False)
                 ]
 
-        return experiments_common.analyze_experiment_bandit_impl(experiment=experiment, contexts=context_vals)
+        return experiments_common.analyze_experiment_bandit_impl(experiment=experiment, context_vals=context_vals)
 
     if ExperimentsType(experiment.experiment_type).is_freq():
         # We always assume the first arm is the baseline.

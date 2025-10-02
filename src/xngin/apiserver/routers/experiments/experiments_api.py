@@ -39,6 +39,7 @@ from xngin.apiserver.routers.experiments.dependencies import (
     experiment_dependency,
     experiment_response_dependency,
     experiment_with_assignments_dependency,
+    experiment_with_contexts_dependency,
 )
 from xngin.apiserver.routers.experiments.experiments_common import (
     create_assignment_for_participant,
@@ -46,12 +47,11 @@ from xngin.apiserver.routers.experiments.experiments_common import (
     get_experiment_assignments_as_csv_impl,
     get_experiment_assignments_impl,
     get_experiment_impl,
+    get_or_create_assignment_for_participant,
     list_organization_or_datasource_experiments_impl,
     update_bandit_arm_with_outcome_impl,
 )
-from xngin.apiserver.settings import (
-    Datasource,
-)
+from xngin.apiserver.settings import Datasource
 from xngin.apiserver.sqla import tables
 
 
@@ -61,16 +61,10 @@ async def lifespan(_app: FastAPI):
     yield
 
 
-router = APIRouter(
-    lifespan=lifespan,
-    prefix=constants.API_PREFIX_V1,
-)
+router = APIRouter(lifespan=lifespan, prefix=constants.API_PREFIX_V1)
 
 
-@router.get(
-    "/experiments",
-    summary="List experiments on the datasource.",
-)
+@router.get("/experiments", summary="List experiments on the datasource.")
 async def list_experiments(
     datasource: Annotated[Datasource, Depends(datasource_dependency)],
     xngin_session: Annotated[AsyncSession, Depends(xngin_db_session)],
@@ -119,9 +113,11 @@ async def get_experiment_assignments_as_csv(
 @router.get(
     "/experiments/{experiment_id}/assignments/{participant_id}",
     summary="Get the assignment for a specific participant, excluding strata if any.",
-    description="""For preassigned experiments, the participant's Assignment is returned if it
-    exists.  For all online experiments (except contextual bandits), returns the assignment if
-    it exists, else generates an assignment""",
+    description="""
+    For preassigned experiments, the participant's Assignment is returned if it exists.
+    For all online experiments (except contextual bandits), returns the assignment if it exists,
+    else generates an assignment.
+    """,
 )
 async def get_assignment_for_participant_with_apikey(
     experiment: Annotated[tables.Experiment, Depends(experiment_dependency)],
@@ -138,23 +134,12 @@ async def get_assignment_for_participant_with_apikey(
     ] = True,
     random_state: Annotated[int | None, Depends(random_seed_dependency)] = None,
 ) -> GetParticipantAssignmentResponse:
-    assignment = await get_existing_assignment_for_participant(
+    return await get_or_create_assignment_for_participant(
         xngin_session=xngin_session,
-        experiment_id=experiment.id,
+        experiment=experiment,
         participant_id=participant_id,
-        experiment_type=experiment.experiment_type,
-    )
-    if not assignment and create_if_none:
-        assignment = await create_assignment_for_participant(
-            xngin_session=xngin_session,
-            experiment=experiment,
-            participant_id=participant_id,
-            random_state=random_state,
-        )
-    return GetParticipantAssignmentResponse(
-        experiment_id=experiment.id,
-        participant_id=participant_id,
-        assignment=assignment,
+        create_if_none=create_if_none,
+        random_state=random_state,
     )
 
 
@@ -167,17 +152,13 @@ async def get_assignment_for_participant_with_apikey(
     """,
 )
 async def get_cmab_experiment_assignment_for_participant(
-    experiment: Annotated[tables.Experiment, Depends(experiment_dependency)],
+    experiment: Annotated[tables.Experiment, Depends(experiment_with_contexts_dependency)],
     participant_id: str,
     body: CMABContextInputRequest,
     session: Annotated[AsyncSession, Depends(xngin_db_session)],
     create_if_none: Annotated[
         bool,
-        Query(
-            description=(
-                "Create an assignment if none exists. Override if you just want to check if an assignment exists."
-            )
-        ),
+        Query(description=("Create an assignment if none exists. Override to just check for existence.")),
     ] = True,
     random_state: Annotated[
         int | None,
@@ -196,7 +177,6 @@ async def get_cmab_experiment_assignment_for_participant(
             f"create assignments."
         )
 
-    # Look up the participant's assignment if it exists
     assignment = await get_existing_assignment_for_participant(
         xngin_session=session,
         experiment_id=experiment.id,
@@ -206,17 +186,15 @@ async def get_cmab_experiment_assignment_for_participant(
 
     if not assignment and create_if_none and experiment.stopped_assignments_at is None:
         context_inputs = body.context_inputs
-
-        context_defns = await experiment.awaitable_attrs.contexts
-        context_inputs = sort_contexts_by_id_or_raise(context_defns, context_inputs)
-
-        context_vals = [ctx.context_value for ctx in context_inputs]
+        context_defns = experiment.contexts
+        sorted_context_inputs = sort_contexts_by_id_or_raise(context_defns, context_inputs)
+        sorted_context_vals = [ctx.context_value for ctx in sorted_context_inputs]
 
         assignment = await create_assignment_for_participant(
             xngin_session=session,
             experiment=experiment,
             participant_id=participant_id,
-            context_vals=context_vals,
+            sorted_context_vals=sorted_context_vals,
             random_state=random_state,
         )
 
