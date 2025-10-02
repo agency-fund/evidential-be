@@ -2,7 +2,7 @@
 
 import re
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 
 import pytest
 import sqlalchemy
@@ -20,13 +20,14 @@ from sqlalchemy import (
     text,
 )
 from sqlalchemy.orm import DeclarativeBase, Session, mapped_column
+from sqlalchemy.types import Date
 
 from xngin.apiserver import flags
 from xngin.apiserver.conftest import DbType, get_queries_test_uri
 from xngin.apiserver.dwh.analysis_types import MetricValue, ParticipantOutcome
 from xngin.apiserver.dwh.queries import (
     compose_query,
-    create_datetime_filter,
+    create_date_or_datetime_filter,
     create_query_filters,
     get_participant_metrics,
     get_stats_on_metrics,
@@ -64,7 +65,8 @@ class SampleNullableTable(Base):
     int_col = mapped_column(Integer, nullable=True)
     float_col = mapped_column(Float, nullable=True)
     string_col = mapped_column(String, nullable=True)
-    date_col = mapped_column(DateTime, nullable=True)
+    datetime_col = mapped_column(DateTime, nullable=True)
+    date_col = mapped_column(Date, nullable=True)
 
 
 @dataclass
@@ -74,7 +76,8 @@ class NullableRow:
     int_col: int | None
     float_col: float | None
     string_col: str | None
-    date_col: datetime | None
+    datetime_col: datetime | None
+    date_col: date | None
 
 
 ROW_10 = NullableRow(
@@ -83,7 +86,8 @@ ROW_10 = NullableRow(
     int_col=None,
     float_col=1.01,
     string_col="10",
-    date_col=datetime(2025, 1, 1, 0, 0),
+    datetime_col=datetime(2025, 1, 1, 0, 0),
+    date_col=date(2025, 1, 1),
 )
 ROW_20 = NullableRow(
     id=20,
@@ -91,7 +95,8 @@ ROW_20 = NullableRow(
     int_col=1,
     float_col=2.02,
     string_col=None,
-    date_col=datetime.fromisoformat("2025-01-02"),
+    datetime_col=datetime.fromisoformat("2025-01-02"),
+    date_col=date(2025, 1, 2),
 )
 ROW_30 = NullableRow(
     id=30,
@@ -99,6 +104,7 @@ ROW_30 = NullableRow(
     int_col=3,
     float_col=None,
     string_col="30",
+    datetime_col=None,
     date_col=None,
 )
 SAMPLE_NULLABLE_TABLE_ROWS = [
@@ -208,7 +214,6 @@ def fixture_queries_session():
         if test_db.db_type is DbType.RS and hasattr(engine.dialect, "_set_backslash_escapes"):
             engine.dialect._set_backslash_escapes = lambda _: None
 
-        Base.metadata.drop_all(engine)
         Base.metadata.create_all(engine)
         with Session(engine) as session:
             for row in SAMPLE_TABLE_ROWS:
@@ -223,6 +228,7 @@ def fixture_queries_session():
             finally:
                 session.close()
     finally:
+        Base.metadata.drop_all(engine)
         engine.dispose()
 
 
@@ -345,7 +351,7 @@ IS_NULLABLE_CASES = [
             Filter(
                 field_name="date_col",
                 relation=Relation.EXCLUDES,
-                value=[None, ROW_10.date_col and ROW_10.date_col.isoformat()],
+                value=[None, ROW_10.datetime_col and ROW_10.datetime_col.isoformat()],
             ),
         ],
         matches=[ROW_20],
@@ -421,10 +427,67 @@ IS_NULLABLE_CASES = [
             Filter(
                 field_name="date_col",
                 relation=Relation.INCLUDES,
-                value=[None, ROW_10.date_col and ROW_10.date_col.isoformat()],
+                value=[None, ROW_10.datetime_col and ROW_10.datetime_col.isoformat()],
             ),
         ],
         matches=[ROW_10, ROW_30],
+    ),
+    # verify BETWEEN
+    Case(
+        filters=[
+            Filter(field_name="float_col", relation=Relation.BETWEEN, value=[1, 3]),
+        ],
+        matches=[ROW_10, ROW_20],
+    ),
+    Case(
+        filters=[
+            Filter(field_name="float_col", relation=Relation.BETWEEN, value=[1, 3, None]),
+        ],
+        matches=[ROW_10, ROW_20, ROW_30],
+    ),
+    # >=
+    Case(
+        filters=[
+            Filter(field_name="float_col", relation=Relation.BETWEEN, value=[2, None, None]),
+        ],
+        matches=[ROW_20, ROW_30],
+    ),
+    # <=
+    Case(
+        filters=[
+            Filter(field_name="float_col", relation=Relation.BETWEEN, value=[None, 2, None]),
+        ],
+        matches=[ROW_10, ROW_30],
+    ),
+    # between datetimes
+    Case(
+        filters=[
+            Filter(
+                field_name="date_col",
+                relation=Relation.BETWEEN,
+                value=[
+                    ROW_10.datetime_col and ROW_10.datetime_col.isoformat(),
+                    ROW_20.datetime_col and ROW_20.datetime_col.isoformat(),
+                    None,
+                ],
+            ),
+        ],
+        matches=[ROW_10, ROW_20, ROW_30],
+    ),
+    # Between dates
+    Case(
+        filters=[
+            Filter(
+                field_name="date_col",
+                relation=Relation.BETWEEN,
+                value=[
+                    ROW_10.date_col and ROW_10.date_col.isoformat(),
+                    ROW_20.date_col and ROW_20.date_col.isoformat(),
+                    None,
+                ],
+            ),
+        ],
+        matches=[ROW_10, ROW_20, ROW_30],
     ),
 ]
 
@@ -576,18 +639,20 @@ def test_relations(testcase, queries_session, use_deterministic_random):
     assert list(sorted([r.id for r in query_results])) == list(sorted(r.id for r in testcase.matches)), testcase
 
 
-def test_datetime_filter_validation():
-    col = Column("x", DateTime)
+@pytest.mark.parametrize("column_type", [DateTime, Date])
+def test_date_or_datetime_filter_validation(column_type):
+    """Test validation for DateTime and Date-typed columns."""
+    col = Column("x", column_type)
 
     with pytest.raises(LateValidationError) as exc:
-        create_datetime_filter(
+        create_date_or_datetime_filter(
             col,
             Filter(field_name="x", relation=Relation.INCLUDES, value=[123, 456]),
         )
-    assert "ISO8601 formatted date" in str(exc)
+    assert "must be strings containing an ISO8601 formatted date" in str(exc)
 
     with pytest.raises(LateValidationError) as exc:
-        create_datetime_filter(
+        create_date_or_datetime_filter(
             col,
             Filter(
                 field_name="x",
@@ -595,10 +660,11 @@ def test_datetime_filter_validation():
                 value=["2024-01-01 00:00:00", "bark"],
             ),
         )
-    assert "ISO8601 formatted date" in str(exc)
+    assert "must be strings containing an ISO8601 formatted date" in str(exc)
 
+    # Test timezone validation for both DateTime and Date columns
     with pytest.raises(LateValidationError) as exc:
-        create_datetime_filter(
+        create_date_or_datetime_filter(
             col,
             Filter(
                 field_name="x",
@@ -606,33 +672,32 @@ def test_datetime_filter_validation():
                 value=["2024-01-01 00:00:00", "2024-01-01 00:00:00+08:00"],
             ),
         )
-    assert "timezone" in str(exc)
+    assert "must be in UTC" in str(exc)
 
 
-def test_allowed_datetime_filter_validation():
-    col = Column("x", DateTime)
+def test_date_or_datetime_filter_wrong_column_type():
+    """Test that we reject non-DateTime/Date columns for datetime/date filters."""
+    col = Column("x", String)
+    with pytest.raises(LateValidationError) as exc:
+        create_date_or_datetime_filter(col, Filter(field_name="x", relation=Relation.INCLUDES, value=["2024-01-01"]))
+    assert "not a DateTime or Date type" in str(exc)
 
-    create_datetime_filter(
-        col,
-        Filter(
-            field_name="x",
-            relation=Relation.EXCLUDES,
-            value=[None],
-        ),
-    )
 
-    create_datetime_filter(
-        col,
-        Filter(
-            field_name="x",
-            relation=Relation.INCLUDES,
-            value=[None],
-        ),
-    )
+@pytest.mark.parametrize("column_type", [DateTime, Date])
+def test_allowed_date_or_datetime_filter_validation(column_type):
+    """Test valid Date and DateTime filter scenarios."""
+    col = Column("x", column_type)
+
+    # Singular None is allowed for both column types
+    create_date_or_datetime_filter(col, Filter(field_name="x", relation=Relation.EXCLUDES, value=[None]))
+    create_date_or_datetime_filter(col, Filter(field_name="x", relation=Relation.INCLUDES, value=[None]))
+    # as are mixed None and date values
+    create_date_or_datetime_filter(col, Filter(field_name="x", relation=Relation.BETWEEN, value=[None, "2024-12-31"]))
+    create_date_or_datetime_filter(col, Filter(field_name="x", relation=Relation.BETWEEN, value=["2024-01-01", None]))
 
     # now without microseconds
     now = datetime.now(UTC).replace(microsecond=0)
-    create_datetime_filter(
+    create_date_or_datetime_filter(
         col,
         Filter(
             field_name="x",
@@ -641,11 +706,11 @@ def test_allowed_datetime_filter_validation():
         ),
     )
 
-    # zero offset is allowed
+    # zero offset is allowed (i.e. UTC timezone)
     # We strip the tz info because in the test below we want to control the tz format;
     # `now.isoformat()` by default will render with +00:00.
     now_no_tz = now.replace(tzinfo=None)
-    create_datetime_filter(
+    create_date_or_datetime_filter(
         col,
         Filter(
             field_name="x",
@@ -653,10 +718,18 @@ def test_allowed_datetime_filter_validation():
             value=[now_no_tz.isoformat() + "Z", now_no_tz.isoformat() + "-00:00"],
         ),
     )
+    create_date_or_datetime_filter(
+        col,
+        Filter(field_name="x", relation=Relation.INCLUDES, value=["2024-01-01T12:30:00Z"]),
+    )
+    create_date_or_datetime_filter(
+        col,
+        Filter(field_name="x", relation=Relation.INCLUDES, value=["2024-01-01T12:30:00+00:00"]),
+    )
 
     # now with microseconds
     now_with_microsecond = now.replace(microsecond=1)
-    create_datetime_filter(
+    create_date_or_datetime_filter(
         col,
         Filter(
             field_name="x",
@@ -665,43 +738,24 @@ def test_allowed_datetime_filter_validation():
         ),
     )
 
+    # Check strings with and without the time delimiter.
     midnight = "2024-01-01 00:00:00"
-    create_datetime_filter(
+    create_date_or_datetime_filter(
         col,
         Filter(field_name="x", relation=Relation.BETWEEN, value=[None, midnight]),
     )
 
     midnight_with_delim = "2024-01-01T00:00:00"
-    create_datetime_filter(
+    create_date_or_datetime_filter(
         col,
         Filter(field_name="x", relation=Relation.BETWEEN, value=[None, midnight_with_delim]),
     )
 
-    # bare dates are allowed
-    bare_date = "2024-01-01"
-    create_datetime_filter(
+    # Bare dates are allowed
+    create_date_or_datetime_filter(
         col,
-        Filter(field_name="x", relation=Relation.BETWEEN, value=[None, bare_date]),
+        Filter(field_name="x", relation=Relation.BETWEEN, value=["2024-01-01", "2024-12-31"]),
     )
-
-
-# TODO: move to api_types
-def test_boolean_filter_validation():
-    with pytest.raises(ValueError) as excinfo:
-        Filter(field_name="bool", relation=Relation.BETWEEN, value=[True, False])
-    assert "Values do not support BETWEEN." in str(excinfo.value)
-
-    with pytest.raises(ValueError) as excinfo:
-        Filter(field_name="bool", relation=Relation.INCLUDES, value=[True, True, True])
-    assert "Duplicate values" in str(excinfo.value)
-
-    with pytest.raises(ValueError) as excinfo:
-        Filter(field_name="bool", relation=Relation.INCLUDES, value=[True, False, None])
-    assert "allows all possible values" in str(excinfo.value)
-
-    with pytest.raises(ValueError) as excinfo:
-        Filter(field_name="bool", relation=Relation.EXCLUDES, value=[True, False, None])
-    assert "rejects all possible values" in str(excinfo.value)
 
 
 REGEX_TESTS = [

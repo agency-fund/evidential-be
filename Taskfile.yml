@@ -217,6 +217,15 @@ tasks:
       - bootstrap-dwh-database
     cmds:
       - uv run pytest {{.CLI_ARGS}}
+  test-psycopg2:
+    desc: "Runs unit tests with the older psycopg2 driver"
+    interactive: true
+    env:
+      DATABASE_URL: "{{.DATABASE_URL_FOR_TEST}}"
+      XNGIN_DEVDWH_DSN: "{{regexReplaceAll `psycopg\\d*` .XNGIN_DEVDWH_DSN `psycopg2`}}"
+      XNGIN_QUERIES_TEST_URI: "{{regexReplaceAll `psycopg\\d*` .XNGIN_QUERIES_TEST_URI `psycopg2`}}"
+    cmds:
+      - uv run pytest {{.CLI_ARGS}}
   test-airplane:
     desc: "Run unit tests (in airplane mode)."
     interactive: true

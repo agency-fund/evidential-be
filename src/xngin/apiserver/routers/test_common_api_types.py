@@ -18,6 +18,24 @@ def test_valid_field_names(name):
     Filter(field_name=name, relation=Relation.INCLUDES, value=[1])
 
 
+def test_boolean_filter_validation():
+    with pytest.raises(ValueError) as excinfo:
+        Filter(field_name="bool", relation=Relation.BETWEEN, value=[True, False])
+    assert "Values do not support BETWEEN." in str(excinfo.value)
+
+    with pytest.raises(ValueError) as excinfo:
+        Filter(field_name="bool", relation=Relation.INCLUDES, value=[True, True, True])
+    assert "Duplicate values" in str(excinfo.value)
+
+    with pytest.raises(ValueError) as excinfo:
+        Filter(field_name="bool", relation=Relation.INCLUDES, value=[True, False, None])
+    assert "allows all possible values" in str(excinfo.value)
+
+    with pytest.raises(ValueError) as excinfo:
+        Filter(field_name="bool", relation=Relation.EXCLUDES, value=[True, False, None])
+    assert "rejects all possible values" in str(excinfo.value)
+
+
 INVALID_COLUMN_NAMES = [
     "123column",  # Can't start with number
     "column-name",  # No hyphens allowed
@@ -41,10 +59,15 @@ VALID_BETWEEN = [
     ([1, 2], "integers"),
     ([1.0, 2.0], "floats"),
     (["a", "b"], "strings"),
+    (["2025-01-01T00:00:00Z", "2025-10-01 00:00:00+00:00"], "iso8601 strings"),
     ([1, None], "with right None"),
     ([None, 1], "with left None"),
     ([1.0, 2], "float and int"),  # pydantic coerces to [1.0, 2.0]
     ([1.5, 2.5], "floats again"),
+    ([0, 0, None], "two zeros and None"),
+    ([1, 2, None], "between integers or None"),
+    ([1, None, None], "greater than integer or None"),
+    ([None, 1, None], "less than integer or None"),
 ]
 
 
@@ -58,6 +81,9 @@ INVALID_BETWEEN = [
     ([1], "single value"),
     ([1, 2, 3], "three values"),
     ([None, None], "both None"),
+    ([None, None, None], "three None"),
+    ([None, None, "None"], "bad 3rd value"),
+    (["a", 1, None], "string and int and None"),
     ([1, "2"], "int and string int"),
     (["1", 2.0], "string int and float"),
     (["1.0", 2], "string float and int"),

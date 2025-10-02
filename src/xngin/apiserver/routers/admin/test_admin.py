@@ -930,7 +930,7 @@ async def test_lifecycle_with_db(testing_datasource, ppost, ppatch, pget, pdelet
     )
     assert response.status_code == 204, response.content
 
-    # Populate the testing data warehouse. NOTE: This will drop and recreate the database!
+    # Populate the testing data warehouse. NOTE: This will drop and recreate the dwh table!
     create_testing_dwh(dsn=testing_datasource.dsn, nrows=100)
 
     # Inspect the datasource.

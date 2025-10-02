@@ -1,10 +1,12 @@
 import re
 from collections.abc import Sequence
-from datetime import datetime, timedelta
+from datetime import date, datetime, time, timedelta
+from typing import Literal
 
 import sqlalchemy
 from sqlalchemy import (
     ColumnElement,
+    Date,
     DateTime,
     Float,
     Integer,
@@ -219,8 +221,8 @@ def get_participant_metrics(
 
 def create_one_filter(filter_: Filter, sa_table: sqlalchemy.Table):
     """Converts a Filter into a SQLAlchemy filter."""
-    if isinstance(sa_table.columns[filter_.field_name].type, DateTime):
-        return create_datetime_filter(sa_table.columns[filter_.field_name], filter_)
+    if isinstance(sa_table.columns[filter_.field_name].type, (DateTime, Date)):
+        return create_date_or_datetime_filter(sa_table.columns[filter_.field_name], filter_)
     if filter_.field_name.endswith(EXPERIMENT_IDS_SUFFIX):
         return create_special_experiment_id_filter(sa_table.columns[filter_.field_name], filter_)
     return create_filter(sa_table.columns[filter_.field_name], filter_)
@@ -258,7 +260,7 @@ def make_csv_regex(values):
 
 
 def general_excludes_filter(
-    col: sqlalchemy.Column, value: FilterValueTypes | Sequence[datetime | None]
+    col: sqlalchemy.Column, value: FilterValueTypes | Sequence[datetime | None] | Sequence[date | None]
 ) -> ColumnElement[bool]:
     if None in value:
         non_null_list = [v for v in value if v is not None]
@@ -275,45 +277,62 @@ def general_excludes_filter(
     )
 
 
-def create_datetime_filter(col: sqlalchemy.Column, filter_: Filter) -> ColumnElement:
-    """Converts a single Filter for a DateTime-typed column into a sqlalchemy filter."""
+def create_date_or_datetime_filter(col: sqlalchemy.Column, filter_: Filter) -> ColumnElement:
+    """Converts a single Filter for a DateTime or Date-typed column into a sqlalchemy filter."""
 
-    def str_to_datetime(s: int | float | str | datetime | None) -> datetime | None:
-        """Convert an ISO8601 string to a timezone-unaware datetime.
+    def str_to_date_or_datetime(
+        s: int | float | str | date | datetime | None, target_type: Literal["date", "datetime"]
+    ) -> date | datetime | None:
+        """Convert an ISO8601 string to a date or datetime based on target_type.
 
         LateValidationError is raised if the ISO8601 string specifies a non-UTC timezone.
 
-        For maximum compatibility between backends, any microseconds value, if specified, is truncated to zero.
-
-        If `s` is already a datetime, it is returned as-is, but with microseconds set to zero.
+        For "datetime": microseconds are truncated to zero for maximum compatibility between backends.
+            If `s` is already a datetime, it is returned as-is, but with microseconds set to zero.
+        For "date": datetime strings are converted to dates, dropping time information.
+            If `s` is already a date, it is returned as-is.
         """
         if s is None:
             return None
+
         if isinstance(s, datetime):
-            return s.replace(microsecond=0)
+            return s.date() if target_type == "date" else s.replace(microsecond=0)
+
+        if isinstance(s, date):
+            # convert date to datetime at midnight if target_type is datetime
+            return s if target_type == "date" else datetime.combine(s, time.min)
+
         if not isinstance(s, str):
             raise LateValidationError(
-                f"{col.name}: datetime-type filter values must be strings containing an ISO8601 formatted date."
+                f"{col.name}: {target_type}-type filter values must be strings containing an ISO8601 formatted date."
             )
+
+        # Always parse as datetime first to validate timezone
         try:
             parsed = datetime.fromisoformat(s).replace(microsecond=0)
         except (ValueError, TypeError) as exc:
             raise LateValidationError(
-                "{col.name}: datetime-type filter values must be strings containing an ISO8601 formatted date."
+                f"{col.name}: {target_type}-type filter values must be strings containing an ISO8601 formatted date."
             ) from exc
-        if not parsed.tzinfo:
-            return parsed
-        offset = parsed.tzinfo.utcoffset(parsed)
-        if offset == timedelta():  # 0 timedelta is equivalent to UTC
-            return parsed.replace(tzinfo=None)
-        raise LateValidationError(
-            f"{col.name}: datetime-type filter values must be in UTC, or not be tagged with an explicit timezone: {s}"
-        )
 
-    if not isinstance(col.type, DateTime):
-        raise LateValidationError(f"Column {col.name} is not a DateTime type, cannot apply datetime filter.")
+        if parsed.tzinfo:
+            offset = parsed.tzinfo.utcoffset(parsed)
+            if offset != timedelta():  # 0 timedelta is equivalent to UTC
+                raise LateValidationError(
+                    f"{col.name}: {target_type}-type filter values must be in UTC, "
+                    f"or not be tagged with an explicit timezone: {s}"
+                )
+            parsed = parsed.replace(tzinfo=None)
 
-    parsed_values = list(map(str_to_datetime, filter_.value))
+        return parsed.date() if target_type == "date" else parsed
+
+    # First validate that we're working with the right column type.
+    if not isinstance(col.type, (DateTime, Date)):
+        raise LateValidationError(f"Column {col.name} is not a DateTime or Date type; cannot create filter.")
+
+    target_type: Literal["date", "datetime"] = "date" if isinstance(col.type, Date) else "datetime"
+    parsed_values = list(map(lambda s: str_to_date_or_datetime(s, target_type), filter_.value))
+
     if filter_.relation == Relation.EXCLUDES:
         return general_excludes_filter(col, parsed_values)
 
@@ -328,6 +347,12 @@ def create_datetime_filter(col: sqlalchemy.Column, filter_: Filter) -> ColumnEle
             return col <= right
         case (left, right):
             return col.between(left, right)
+        case (left, None, None):
+            return or_(col >= left, col.is_(sqlalchemy.null()))
+        case (None, right, None):
+            return or_(col <= right, col.is_(sqlalchemy.null()))
+        case (left, right, None):
+            return or_(col.between(left, right), col.is_(sqlalchemy.null()))
         case _:
             raise RuntimeError("Bug: invalid filter.")
 
@@ -343,6 +368,12 @@ def create_filter(col: sqlalchemy.Column, filter_: Filter) -> ColumnElement:
                     return col <= right
                 case (left, right):
                     return col.between(left, right)
+                case (left, None, None):
+                    return or_(col >= left, col.is_(sqlalchemy.null()))
+                case (None, right, None):
+                    return or_(col <= right, col.is_(sqlalchemy.null()))
+                case (left, right, None):
+                    return or_(col.between(left, right), col.is_(sqlalchemy.null()))
                 case _:
                     raise RuntimeError("Bug: invalid filter.")
         case Relation.EXCLUDES if isinstance(col.type, sqlalchemy.Boolean):
