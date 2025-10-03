@@ -11,7 +11,7 @@
 | src/xngin/apiserver/customlogging.py                                 |       54 |        5 |     91% |35-36, 41, 56-57 |
 | src/xngin/apiserver/database.py                                      |       62 |       16 |     74% |28, 39, 56, 62, 69, 90-102 |
 | src/xngin/apiserver/dependencies.py                                  |       27 |        9 |     67% |22, 48, 51-55, 60-62 |
-| src/xngin/apiserver/dns/safe\_resolve.py                             |       44 |        9 |     80% |28-29, 33-34, 47, 69, 72, 77-78 |
+| src/xngin/apiserver/dns/safe\_resolve.py                             |       47 |       12 |     74% |28-32, 36-37, 50, 72, 75, 80-81 |
 | src/xngin/apiserver/dwh/dwh\_session.py                              |      179 |       75 |     58% |37, 43, 71-78, 81, 144, 150, 161, 163-164, 166-168, 175-232, 252-254, 269, 335-340, 343, 345-351, 369, 403-410, 418 |
 | src/xngin/apiserver/dwh/inspection\_types.py                         |       61 |        5 |     92% |27, 45, 67, 78, 84 |
 | src/xngin/apiserver/dwh/inspections.py                               |       28 |        1 |     96% |        63 |
@@ -63,7 +63,7 @@
 | src/xngin/xsecrets/secretservice.py                                  |       61 |        4 |     93% |42-43, 101, 123 |
 | src/xngin/xsecrets/test\_gcp\_kms\_provider.py                       |      103 |       26 |     75% |40-42, 170-175, 182-189, 195-199, 206, 213-224 |
 | src/xngin/xsecrets/test\_nacl\_provider.py                           |       67 |        1 |     99% |        24 |
-|                                                            **TOTAL** | **8411** | **1139** | **86%** |           |
+|                                                            **TOTAL** | **8414** | **1142** | **86%** |           |
 
 57 files skipped due to complete coverage.
 
