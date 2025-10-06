@@ -489,6 +489,7 @@ class Draw(Base):
     # after arm parameters are updated.
     observed_at: Mapped[datetime | None] = mapped_column()
     outcome: Mapped[float | None] = mapped_column()
+    # Context values are assumed to be sorted by the experiment's corresponding context ids in ascending order.
     context_vals: Mapped[list[float] | None] = mapped_column(ARRAY(Float))
     current_mu: Mapped[list[float] | None] = mapped_column(ARRAY(Float))
     current_covariance: Mapped[list[list[float]] | None] = mapped_column(ARRAY(Float))

@@ -31,7 +31,7 @@ def test_mab_analysis(prior_type, reward_type):
             arm.alpha = arm.alpha_init + (i + 1) * 10
             arm.beta = arm.beta_init + (2 - i) * 10
 
-    arm_analyses = analyze_experiment(mab_experiment)
+    arm_analyses = analyze_experiment(mab_experiment, random_state=66)
     assert len(arm_analyses) == len(mab_experiment.arms)
     for arm_analysis in arm_analyses:
         assert arm_analysis.prior_pred_mean != arm_analysis.post_pred_mean
@@ -57,7 +57,7 @@ def test_cmab_analysis(prior_type, reward_type):
         arm.covariance = np.diag([arm.sigma_init * (i + 2)] * len(cmab_experiment.contexts)).tolist()
 
     contexts = [1.0] * len(cmab_experiment.contexts)
-    arm_analyses = analyze_experiment(cmab_experiment, contexts=contexts)
+    arm_analyses = analyze_experiment(cmab_experiment, context_vals=contexts, random_state=66)
     assert len(arm_analyses) == len(cmab_experiment.arms)
     for arm_analysis in arm_analyses:
         assert arm_analysis.prior_pred_mean != arm_analysis.post_pred_mean

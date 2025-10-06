@@ -40,6 +40,7 @@ from xngin.apiserver.routers.common_api_types import (
     FreqExperimentAnalysisResponse,
     GetExperimentAssignmentsResponse,
     GetExperimentResponse,
+    GetParticipantAssignmentResponse,
     ListExperimentsResponse,
     MetricAnalysis,
     Strata,
@@ -58,7 +59,8 @@ from xngin.apiserver.webhooks.webhook_types import ExperimentCreatedWebhookBody
 from xngin.events.experiment_created import ExperimentCreatedEvent
 from xngin.stats.analysis import analyze_experiment as analyze_freq_experiment
 from xngin.stats.bandit_analysis import analyze_experiment as analyze_bandit_experiment
-from xngin.stats.bandit_sampling import choose_arm, update_arm
+from xngin.stats.bandit_sampling import choose_arm as choose_bandit_arm
+from xngin.stats.bandit_sampling import update_arm as update_bandit_arm
 from xngin.stats.stats_errors import StatsAnalysisError
 from xngin.tq.task_payload_types import WEBHOOK_OUTBOUND_TASK_TYPE, WebhookOutboundTask
 
@@ -636,14 +638,56 @@ async def get_existing_assignment_for_participant(
     return None
 
 
+async def get_or_create_assignment_for_participant(
+    xngin_session: AsyncSession,
+    experiment: tables.Experiment,
+    participant_id: str,
+    create_if_none: bool,
+    random_state: int | None = None,
+) -> GetParticipantAssignmentResponse:
+    """Get or create the arm assignment for a specific participant in a non-CMAB experiment.
+
+    Set create_if_none=False to only get an assignment if it already exists; do not create a new one.
+    """
+
+    assignment = await get_existing_assignment_for_participant(
+        xngin_session=xngin_session,
+        experiment_id=experiment.id,
+        participant_id=participant_id,
+        experiment_type=experiment.experiment_type,
+    )
+
+    if not assignment and create_if_none and experiment.stopped_assignments_at is None:
+        if experiment.experiment_type == ExperimentsType.CMAB_ONLINE.value:
+            raise LateValidationError(
+                f"New arm assignments for {ExperimentsType.CMAB_ONLINE.value} cannot be created at this endpoint, "
+                f"please use the corresponding POST endpoint instead."
+            )
+
+        assignment = await create_assignment_for_participant(
+            xngin_session=xngin_session,
+            experiment=experiment,
+            participant_id=participant_id,
+            random_state=random_state,
+        )
+
+    return GetParticipantAssignmentResponse(
+        experiment_id=experiment.id,
+        participant_id=participant_id,
+        assignment=assignment,
+    )
+
+
 async def create_assignment_for_participant(
     xngin_session: AsyncSession,
     experiment: tables.Experiment,
     participant_id: str,
-    context_vals: list[float] | None = None,
+    sorted_context_vals: list[float] | None = None,
     random_state: int | None = None,
 ) -> Assignment | None:
     """Helper to persist a new assignment for a participant. Returned value excludes strata.
+
+    sorted_context_vals are assumed to be sorted by the experiment's corresponding context ids in ascending order.
 
     Has side effect of updating the experiment's stopped_at and stopped_reason if we discover we should stop assigning.
     """
@@ -667,13 +711,13 @@ async def create_assignment_for_participant(
         raise ValueError("Bayesian A/B experiments are not supported for assignments")
 
     if experiment_type == ExperimentsType.CMAB_ONLINE:
-        if not context_vals:
+        if not sorted_context_vals:
             raise ExperimentsAssignmentError(
                 "Context values are required for contextual multi-armed bandit experiments"
             )
-        if len(context_vals) != len(experiment.contexts):
+        if len(sorted_context_vals) != len(experiment.contexts):
             raise ExperimentsAssignmentError(
-                f"Expected {len(experiment.contexts)} context values, got {len(context_vals)}"
+                f"Expected {len(experiment.contexts)} context values, got {len(sorted_context_vals)}"
             )
 
     # Don't allow new assignments for experiments that have ended.
@@ -683,19 +727,18 @@ async def create_assignment_for_participant(
         await xngin_session.commit()
         return None
 
-    if not random_state:
-        random_state = 66  # Default seed for deterministic behavior in tests.
     # For online frequentist or Bayesian A/B experiments, create a new assignment
     # with simple random assignment.
     match experiment_type:
         case ExperimentsType.FREQ_ONLINE | ExperimentsType.BAYESAB_ONLINE:
             # Sort by arm name to ensure deterministic assignment with seed for tests.
-            chosen_arm = random_choice(
-                sorted(experiment.arms, key=lambda a: a.name),
-                seed=random_state,
-            )
+            chosen_arm = random_choice(sorted(experiment.arms, key=lambda a: a.name), seed=random_state)
         case ExperimentsType.MAB_ONLINE | ExperimentsType.CMAB_ONLINE:
-            chosen_arm = choose_arm(experiment=experiment, context=context_vals, random_state=random_state)
+            chosen_arm = choose_bandit_arm(
+                experiment=experiment,
+                sorted_context_vals=sorted_context_vals,
+                random_state=random_state,
+            )
 
     chosen_arm_id = chosen_arm.id
 
@@ -726,7 +769,7 @@ async def create_assignment_for_participant(
                             participant_id=participant_id,
                             participant_type=experiment.participant_type,
                             arm_id=chosen_arm_id,
-                            context_vals=context_vals,
+                            context_vals=sorted_context_vals,
                         )
                         .returning(tables.Draw.created_at)
                     )
@@ -750,7 +793,7 @@ async def create_assignment_for_participant(
         arm_name=chosen_arm.name,
         created_at=created_at,
         strata=[],
-        context_values=context_vals,
+        context_values=sorted_context_vals,
     )
 
 
@@ -831,7 +874,7 @@ async def update_bandit_arm_with_outcome_impl(
         outcomes = outcomes[:100]
         context_vals = context_vals[:100] if context_vals else None
 
-        updated_parameters = update_arm(
+        updated_parameters = update_bandit_arm(
             experiment=experiment,
             arm_to_update=arm_to_update,
             outcomes=outcomes,
@@ -973,7 +1016,7 @@ async def analyze_experiment_freq_impl(
 
 def analyze_experiment_bandit_impl(
     experiment: tables.Experiment,
-    contexts: list[float] | None = None,
+    context_vals: list[float] | None = None,
 ) -> BanditExperimentAnalysisResponse:
     """Analyze a bandit experiment. Assumes arms and draws are preloaded."""
 
@@ -981,12 +1024,16 @@ def analyze_experiment_bandit_impl(
     outcomes = [draw.outcome for draw in draws if draw.outcome is not None]
 
     outcome_std_dev = np.std(outcomes).astype(float) if len(outcomes) > 1 else 0.0
-    arm_analyses = analyze_bandit_experiment(experiment=experiment, outcome_std_dev=outcome_std_dev, contexts=contexts)
+    arm_analyses = analyze_bandit_experiment(
+        experiment=experiment,
+        outcome_std_dev=outcome_std_dev,
+        context_vals=context_vals,
+    )
 
     return BanditExperimentAnalysisResponse(
         experiment_id=experiment.id,
         arm_analyses=arm_analyses,
         n_outcomes=len(outcomes),
         created_at=datetime.now(UTC),
-        contexts=contexts,
+        contexts=context_vals,
     )
