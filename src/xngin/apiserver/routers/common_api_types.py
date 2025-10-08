@@ -299,7 +299,7 @@ class ArmAnalysis(Arm):
         Field(description="Whether this arm is the baseline/control arm for comparison."),
     ]
 
-    @field_serializer("t_stat", "p_value", when_used="json")
+    @field_serializer("estimate", "t_stat", "p_value", "std_error", when_used="json")
     def serialize_float(self, v: float | None, _info):
         """Serialize floats to None when they are NaN, which becomes null in JSON."""
         if v is None or math.isnan(v):

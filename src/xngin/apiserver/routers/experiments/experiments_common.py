@@ -1022,20 +1022,36 @@ async def analyze_experiment_freq_impl(
         metric_name = metric.field_name
         arm_analyses = []
         for arm in experiment.arms:
-            arm_result = analyze_results[metric_name][arm.id]
-            arm_analyses.append(
-                ArmAnalysis(
-                    arm_id=arm.id,
-                    arm_name=arm.name,
-                    arm_description=arm.description,
-                    is_baseline=arm_result.is_baseline,
-                    estimate=arm_result.estimate,
-                    p_value=arm_result.p_value,
-                    t_stat=arm_result.t_stat,
-                    std_error=arm_result.std_error,
-                    num_missing_values=arm_result.num_missing_values,
+            if arm.id in analyze_results[metric_name]:
+                arm_result = analyze_results[metric_name][arm.id]
+                arm_analyses.append(
+                    ArmAnalysis(
+                        arm_id=arm.id,
+                        arm_name=arm.name,
+                        arm_description=arm.description,
+                        is_baseline=arm_result.is_baseline,
+                        estimate=arm_result.estimate,
+                        p_value=arm_result.p_value,
+                        t_stat=arm_result.t_stat,
+                        std_error=arm_result.std_error,
+                        num_missing_values=arm_result.num_missing_values,
+                    )
                 )
-            )
+            else:
+                # If arm.id is missing due to no participants yet, append a default
+                arm_analyses.append(
+                    ArmAnalysis(
+                        arm_id=arm.id,
+                        arm_name=arm.name,
+                        arm_description=arm.description,
+                        is_baseline=arm.id == baseline_arm_id,
+                        estimate=float("nan"),
+                        p_value=float("nan"),
+                        t_stat=float("nan"),
+                        std_error=float("nan"),
+                        num_missing_values=0,
+                    )
+                )
         metric_analyses.append(MetricAnalysis(metric_name=metric_name, metric=metric, arm_analyses=arm_analyses))
 
     return FreqExperimentAnalysisResponse(
