@@ -410,8 +410,8 @@ class BanditArmAnalysis(ArmBandit):
 class MetricAnalysis(ApiBaseModel):
     """Describes the change in a single metric for each arm of an experiment."""
 
-    metric_name: str | None = None
-    metric: DesignSpecMetricRequest | None = None
+    metric_name: str
+    metric: DesignSpecMetricRequest
     arm_analyses: Annotated[
         list[ArmAnalysis],
         Field(description="The results of the analysis for each arm (coefficient) for this specific metric."),
