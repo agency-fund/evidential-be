@@ -337,3 +337,54 @@ async def test_get_cmab_experiment_assignment_for_online_participant(xngin_sessi
     assert assignment.outcome is None
     assert assignment.experiment.stopped_assignments_at is None
     assert assignment.experiment.stopped_assignments_reason is None
+
+
+async def test_get_cmab_experiment_assignment_for_online_participant_glific_unwrap(
+    xngin_session, testing_datasource, client_v1
+):
+    """
+    Verifies that a call resembling the webhook request from Glific can use the ?_unwrap=
+    parameter to encapsulate an object satisfying the API's request body constraints in a
+    message structure that is not fully under the client's control.
+
+    This is the same as test_get_cmab_experiment_assignment_for_online_participant_glific_unwrap
+    but with different HTTP client behavior.
+    """
+    online_experiment = await insert_experiment_and_arms(
+        xngin_session,
+        testing_datasource.ds,
+        experiment_type=ExperimentsType.CMAB_ONLINE,
+    )
+
+    input_data = {
+        "context_inputs": [
+            {"context_id": context.id, "context_value": 1.0}
+            for context in sorted(online_experiment.contexts, key=lambda c: c.id)
+        ]
+    }
+
+    fake_glific_request = {
+        "@contact": "...",
+        "@wa_group": "...",
+        "organization_id": "1234",
+        "@results": "...",
+        "variables/custom": {  # requires JSONPointer escaping as: variables~1custom
+            "controllable_field": input_data,
+        },
+    }
+    response = client_v1.post(
+        f"/experiments/{online_experiment.id}/assignments/1/assign_cmab?_unwrap=/variables~1custom/controllable_field",
+        headers={constants.HEADER_API_KEY: testing_datasource.key},
+        json=fake_glific_request,
+    )
+    assert response.status_code == 200, response.content
+    parsed = GetParticipantAssignmentResponse.model_validate_json(response.text)
+    assert parsed.experiment_id == online_experiment.id
+    assert parsed.participant_id == "1"
+    arms_map = {arm.id: arm.name for arm in online_experiment.arms}
+    assert parsed.assignment is not None
+    assert parsed.assignment.arm_name == arms_map[str(parsed.assignment.arm_id)]
+    assert not parsed.assignment.strata
+    assert parsed.assignment.observed_at is None
+    assert parsed.assignment.outcome is None
+    assert parsed.assignment.context_values == [1.0, 1.0]

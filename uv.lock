@@ -1218,6 +1218,15 @@ wheels = [
 ]
 
 [[package]]
+name = "python-jsonpath"
+version = "2.0.1"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/f3/db/f1f19205b0df6eb0195de154dc6c967448802dfb573487fa8a4206a243cd/python_jsonpath-2.0.1.tar.gz", hash = "sha256:32a84ebb2dc0ec1b42a6e165b0f9174aef8310bad29154ad9aee31ac37cca18f", size = 49659, upload-time = "2025-09-13T08:01:47.82Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/d8/d4/64d7cdc01269f5fed45e6a69f5395c30451958c299ca5cbc1442a4f3f9b9/python_jsonpath-2.0.1-py3-none-any.whl", hash = "sha256:ebd518b7c883acc5b976518d76b6c96288405edec7d9ef838641869c1e1a5eb7", size = 64060, upload-time = "2025-09-13T08:01:46.184Z" },
+]
+
+[[package]]
 name = "python-multipart"
 version = "0.0.19"
 source = { registry = "https://pypi.org/simple" }
@@ -1777,6 +1786,7 @@ dependencies = [
     { name = "pydantic", marker = "sys_platform == 'darwin' or sys_platform == 'linux'" },
     { name = "pynacl", marker = "sys_platform == 'darwin' or sys_platform == 'linux'" },
     { name = "python-jose", marker = "sys_platform == 'darwin' or sys_platform == 'linux'" },
+    { name = "python-jsonpath", marker = "sys_platform == 'darwin' or sys_platform == 'linux'" },
     { name = "scipy", marker = "sys_platform == 'darwin' or sys_platform == 'linux'" },
     { name = "sentry-sdk", extra = ["fastapi", "loguru"], marker = "sys_platform == 'darwin' or sys_platform == 'linux'" },
     { name = "sqlalchemy", extra = ["asyncio"], marker = "sys_platform == 'darwin' or sys_platform == 'linux'" },
@@ -1829,6 +1839,7 @@ requires-dist = [
     { name = "pydantic", specifier = ">=2.11.9,<3.0.0" },
     { name = "pynacl", specifier = ">=1.6.0" },
     { name = "python-jose", specifier = ">=3.3.0,<3.4" },
+    { name = "python-jsonpath", specifier = ">=2.0.1" },
     { name = "scipy", specifier = ">=1.12.0,<2" },
     { name = "sentry-sdk", extras = ["fastapi", "loguru"], specifier = ">=2.38.0,<3" },
     { name = "sqlalchemy", extras = ["asyncio"], specifier = "==2.0.41" },
