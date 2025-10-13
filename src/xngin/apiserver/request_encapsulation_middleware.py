@@ -33,7 +33,7 @@ class RequestEncapsulationMiddleware:
         self._unwrap_param = unwrap_param
 
     async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
-        if scope["type"] != "http":  # pragma: no cover
+        if scope["type"] != "http":
             await self._app(scope, receive, send)
             return
         method = scope["method"]
