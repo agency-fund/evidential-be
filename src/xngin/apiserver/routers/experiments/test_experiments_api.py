@@ -347,7 +347,7 @@ async def test_get_cmab_experiment_assignment_for_online_participant_glific_unwr
     parameter to encapsulate an object satisfying the API's request body constraints in a
     message structure that is not fully under the client's control.
 
-    This is the same as test_get_cmab_experiment_assignment_for_online_participant_glific_unwrap
+    This is the same as test_get_cmab_experiment_assignment_for_online_participant
     but with different HTTP client behavior.
     """
     online_experiment = await insert_experiment_and_arms(
