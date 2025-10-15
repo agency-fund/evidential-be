@@ -41,7 +41,7 @@ def create_test_app(unwrap_param: str = "_unwrap") -> Starlette:
 @pytest.fixture(scope="module")
 def client():
     app = create_test_app()
-    return TestClient(app)
+    return TestClient(app, raise_server_exceptions=False)
 
 
 @pytest.mark.parametrize(
@@ -193,8 +193,8 @@ def test_handles_empty_request_body(client):
         headers={"Content-Type": "application/json"},
     )
 
-    assert response.status_code == 200
-    assert response.json() == {"received": None}
+    assert response.status_code == 400
+    assert "empty request body" in response.json()["message"]
 
 
 @pytest.mark.parametrize(

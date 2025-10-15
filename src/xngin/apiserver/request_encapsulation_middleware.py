@@ -16,9 +16,14 @@ class RequestEncapsulationBadRequestError(Exception):
 class RequestEncapsulationMiddleware:
     """ASGI middleware that unwraps nested JSON request bodies using JSON Pointer paths.
 
-    Activates on POST requests with application/json content when the unwrap_param
-    query parameter is present. Extracts a nested value from the request body and
-    replaces the body with that extracted value.
+    Activates on POST, PATCH, or PUT requests with Content-Type: application/json when the
+    unwrap_param query parameter is present. Extracts a value from the request
+    body and replaces the body with that extracted value.
+
+    This middleware will block requests and return a 400 in these cases: when an empty request body
+    is sent, or when the JSON pointer is invalid, or when the JSON pointer doesn't refer to
+    a defined value within the request body. This middleware does not explicitly handle
+    JSONDecodeErrors.
 
     In this example, the request handler will receive {"actual": "content"}.
 
@@ -92,7 +97,7 @@ class _RequestRewriter:
         assert message["type"] == "http.request"
         body = message["body"]
         if body == b"":
-            return message
+            raise RequestEncapsulationBadRequestError(f"{self._unwrap_arg} requires a non-empty request body.")
         more_body = message.get("more_body", False)
         if more_body:
             message = await self._recv()
