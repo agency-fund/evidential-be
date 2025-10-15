@@ -22,6 +22,7 @@ dependencies = [
     "pydantic>=2.11.9,<3.0.0",
     "pynacl>=1.6.0",
     "python-jose>=3.3.0,<3.4",
+    "python-jsonpath>=2.0.1",
     "scipy>=1.12.0,<2",
     "sentry-sdk[fastapi,loguru]>=2.38.0,<3",
     "sqlalchemy-bigquery>=1.12.0,<2",

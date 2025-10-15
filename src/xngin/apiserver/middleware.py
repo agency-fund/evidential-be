@@ -1,5 +1,7 @@
 from fastapi.middleware.cors import CORSMiddleware
 
+from xngin.apiserver.request_encapsulation_middleware import RequestEncapsulationMiddleware
+
 
 def setup(app):
     """Registers middleware with the FastAPI app."""
@@ -11,3 +13,4 @@ def setup(app):
         allow_origins=["*"],
         max_age=7200,  # https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/Access-Control-Max-Age
     )
+    app.add_middleware(RequestEncapsulationMiddleware)
