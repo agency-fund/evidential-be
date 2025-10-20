@@ -1430,6 +1430,9 @@ fastapi = [
 loguru = [
     { name = "loguru", marker = "sys_platform == 'darwin' or sys_platform == 'linux'" },
 ]
+sqlalchemy = [
+    { name = "sqlalchemy", marker = "sys_platform == 'darwin' or sys_platform == 'linux'" },
+]
 
 [[package]]
 name = "setuptools"
@@ -1788,7 +1791,7 @@ dependencies = [
     { name = "python-jose", marker = "sys_platform == 'darwin' or sys_platform == 'linux'" },
     { name = "python-jsonpath", marker = "sys_platform == 'darwin' or sys_platform == 'linux'" },
     { name = "scipy", marker = "sys_platform == 'darwin' or sys_platform == 'linux'" },
-    { name = "sentry-sdk", extra = ["fastapi", "loguru"], marker = "sys_platform == 'darwin' or sys_platform == 'linux'" },
+    { name = "sentry-sdk", extra = ["fastapi", "loguru", "sqlalchemy"], marker = "sys_platform == 'darwin' or sys_platform == 'linux'" },
     { name = "sqlalchemy", extra = ["asyncio"], marker = "sys_platform == 'darwin' or sys_platform == 'linux'" },
     { name = "sqlalchemy-bigquery", marker = "sys_platform == 'darwin' or sys_platform == 'linux'" },
     { name = "statsmodels", marker = "sys_platform == 'darwin' or sys_platform == 'linux'" },
@@ -1841,7 +1844,7 @@ requires-dist = [
     { name = "python-jose", specifier = ">=3.3.0,<3.4" },
     { name = "python-jsonpath", specifier = ">=2.0.1" },
     { name = "scipy", specifier = ">=1.12.0,<2" },
-    { name = "sentry-sdk", extras = ["fastapi", "loguru"], specifier = ">=2.38.0,<3" },
+    { name = "sentry-sdk", extras = ["fastapi", "loguru", "sqlalchemy"], specifier = ">=2.38.0,<3" },
     { name = "sqlalchemy", extras = ["asyncio"], specifier = "==2.0.41" },
     { name = "sqlalchemy-bigquery", specifier = ">=1.12.0,<2" },
     { name = "statsmodels", specifier = ">=0.14.1,<0.20" },
