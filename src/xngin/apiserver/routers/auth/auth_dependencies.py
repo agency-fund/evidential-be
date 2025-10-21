@@ -135,7 +135,10 @@ def session_token_crypter_dependency():
 
 
 async def require_valid_session_token(
-    authorization: Annotated[HTTPAuthorizationCredentials, Depends(HTTPBearer())],
+    authorization: Annotated[
+        HTTPAuthorizationCredentials,
+        Depends(HTTPBearer(description="Session token obtained from the auth_callback operation.")),
+    ],
     tokencryptor: Annotated[SessionTokenCrypter, Depends(session_token_crypter_dependency)],
 ) -> Principal:
     """Dependency for decoding the session token and retrieving a Principal.
