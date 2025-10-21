@@ -64,7 +64,7 @@ filterwarnings = [
     "ignore:.+unnest will not make use of SQL compilation caching:sqlalchemy.exc.SAWarning:"
 ]
 env = [
-    "SENTRY_DSX="  # Disable Sentry in unit tests.
+    "SENTRY_DSN="  # Disable Sentry in unit tests.
 ]
 
 [tool.ruff]
