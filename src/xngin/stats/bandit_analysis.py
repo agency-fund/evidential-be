@@ -47,6 +47,7 @@ def _analyze_normal_binary(
     covariance: np.ndarray,
     context_link_functions: ContextLinkFunctions,
     context: np.ndarray | None = None,
+    random_state: int | None = None,
 ) -> tuple[float, float]:
     """
     Analyze a single arm with Normal model for binary outcomes.
@@ -55,8 +56,8 @@ def _analyze_normal_binary(
         covariance: The posterior covariance matrix of the arm.
         context_link_functions: The link function to use.
         context: Optional context vector.
+        random_state: Use a fixed int for deterministic behavior in tests.
     """
-    random_state = 66  # TODO: Make this configurable
     rng = np.random.default_rng(random_state)
     num_samples = 10000  # TODO: Make this configurable
 
@@ -74,7 +75,10 @@ def _analyze_normal_binary(
 
 
 def analyze_experiment(
-    experiment: tables.Experiment, outcome_std_dev: float = 1.0, contexts: list | None = None
+    experiment: tables.Experiment,
+    outcome_std_dev: float = 1.0,
+    context_vals: list | None = None,
+    random_state: int | None = None,
 ) -> list[BanditArmAnalysis]:
     """
     Analyze a bandit experiment. Assumes arms and draws are preloaded.
@@ -82,14 +86,15 @@ def analyze_experiment(
     Args:
         experiment: The bandit experiment to analyze.
         outcome_std_dev: Standard deviation of the outcomes. Only used for Normal likelihood.
-        contexts: Optional context values for CMAB experiments.
+        context_vals: Optional context values for CMAB experiments.
+        random_state: Use a fixed int for deterministic behavior in tests.
     """
     # TODO: Does not support Bayes A/B experiments
     if experiment.experiment_type == ExperimentsType.BAYESAB_ONLINE.value:
         raise ValueError(f"Invalid experiment type: {experiment.experiment_type}.")
     if not experiment.prior_type or not experiment.reward_type:
         raise ValueError("Experiment must have prior and reward types defined.")
-    if (experiment.experiment_type == ExperimentsType.CMAB_ONLINE.value) and (contexts is None):
+    if (experiment.experiment_type == ExperimentsType.CMAB_ONLINE.value) and (context_vals is None):
         raise ValueError("Contexts must be provided for CMAB experiment analysis.")
 
     likelihood_type = LikelihoodTypes(experiment.reward_type)
@@ -117,7 +122,7 @@ def analyze_experiment(
                     np.array([arm.mu_init] * max(len(experiment.contexts), 1)),
                     np.diag([arm.sigma_init] * max(len(experiment.contexts), 1)),
                     outcome_std_dev,
-                    context=np.array(contexts) if contexts else None,
+                    context=np.array(context_vals) if context_vals else None,
                 )
 
                 assert arm.mu is not None and arm.covariance is not None, "Arm must have mu and covariance parameters."
@@ -125,7 +130,7 @@ def analyze_experiment(
                     np.array(arm.mu),
                     np.array(arm.covariance),
                     outcome_std_dev,
-                    context=np.array(contexts) if contexts else None,
+                    context=np.array(context_vals) if context_vals else None,
                 )
 
             case PriorTypes.NORMAL, LikelihoodTypes.BERNOULLI:
@@ -136,7 +141,8 @@ def analyze_experiment(
                     np.array([arm.mu_init] * max(len(experiment.contexts), 1)),
                     np.diag([arm.sigma_init] * max(len(experiment.contexts), 1)),
                     ContextLinkFunctions.LOGISTIC,
-                    context=np.array(contexts) if contexts else None,
+                    context=np.array(context_vals) if context_vals else None,
+                    random_state=random_state,
                 )
 
                 assert arm.mu is not None and arm.covariance is not None, "Arm must have mu and covariance parameters."
@@ -144,7 +150,8 @@ def analyze_experiment(
                     np.array(arm.mu),
                     np.array(arm.covariance),
                     ContextLinkFunctions.LOGISTIC,
-                    context=np.array(contexts) if contexts else None,
+                    context=np.array(context_vals) if context_vals else None,
+                    random_state=random_state,
                 )
 
             case _:

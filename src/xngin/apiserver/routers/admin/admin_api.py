@@ -1468,10 +1468,10 @@ async def analyze_cmab_experiment(
 
     context_inputs = body.context_inputs
     context_defns = experiment.contexts
-    context_inputs = sort_contexts_by_id_or_raise(context_defns, context_inputs)
+    sorted_context_inputs = sort_contexts_by_id_or_raise(context_defns, context_inputs)
 
     return experiments_common.analyze_experiment_bandit_impl(
-        experiment, contexts=[ci.context_value for ci in context_inputs]
+        experiment, context_vals=[ci.context_value for ci in sorted_context_inputs]
     )
 
 
@@ -1623,28 +1623,12 @@ async def get_experiment_assignment_for_participant(
     ds = await get_datasource_or_raise(session, user, datasource_id)
     experiment = await get_experiment_via_ds_or_raise(session, ds, experiment_id)
 
-    # Look up the participant's assignment if it exists
-    assignment = await experiments_common.get_existing_assignment_for_participant(
-        session, experiment.id, participant_id, experiment.experiment_type
-    )
-
-    if not assignment and create_if_none and experiment.stopped_assignments_at is None:
-        if experiment.experiment_type == ExperimentsType.CMAB_ONLINE.value:
-            raise LateValidationError(
-                f"New arm assignments for {ExperimentsType.CMAB_ONLINE.value} cannot be created at this endpoint, "
-                f"please use the corresponding POST endpoint instead."
-            )
-        assignment = await experiments_common.create_assignment_for_participant(
-            xngin_session=session,
-            experiment=experiment,
-            participant_id=participant_id,
-            random_state=random_state,
-        )
-
-    return GetParticipantAssignmentResponse(
-        experiment_id=experiment_id,
+    return await experiments_common.get_or_create_assignment_for_participant(
+        xngin_session=session,
+        experiment=experiment,
         participant_id=participant_id,
-        assignment=assignment,
+        create_if_none=create_if_none,
+        random_state=random_state,
     )
 
 

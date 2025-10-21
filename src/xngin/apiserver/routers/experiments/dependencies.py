@@ -112,6 +112,9 @@ class ExperimentDependency:
 # Default dependency for experiments that only need arms joined in.
 experiment_dependency = ExperimentDependency()
 
+# Use this version when you also want contexts for assignment responses.
+experiment_with_contexts_dependency = ExperimentDependency(preload=[tables.Experiment.contexts])
+
 # Use this version when a full GetExperimentResponse is needed.
 experiment_response_dependency = ExperimentDependency(preload=[tables.Experiment.webhooks, tables.Experiment.contexts])
 
