@@ -1168,8 +1168,9 @@ async def test_create_assignment_for_participant(xngin_session, testing_datasour
     # Assert that we do create new assignments for online MAB experiments
     assert mab_assignment is not None
     assert mab_assignment.participant_id == "new_id"
-    mab_arms = await mab_experiment.awaitable_attrs.arms
-    mab_arm_map = {arm.id: arm.name for arm in mab_arms}
+
+    await mab_experiment.awaitable_attrs.arms
+    mab_arm_map = {arm.id: arm.name for arm in mab_experiment.arms}
     assert mab_assignment.arm_name == mab_arm_map[str(mab_assignment.arm_id)]
     assert not mab_assignment.context_values
     assert mab_assignment.created_at is not None
