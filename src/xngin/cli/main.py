@@ -245,9 +245,10 @@ def create_testing_dwh(
     is_compressed = src.suffix == ".zst"
 
     url = make_url(dsn)
-    print(f"Backend Name: {url.get_backend_name()}")
-    print(f"Driver Name: {url.get_driver_name()}")
-    print(f"Dialect: {url.get_dialect()}")
+    print(f"create_testing_dwh for: {url.set(password=None)}")
+    print(f"\tBackend Name: {url.get_backend_name()}")
+    print(f"\tDriver Name: {url.get_driver_name()}")
+    print(f"\tDialect: {url.get_dialect()}")
 
     if password is not None and url.username is not None:
         url = url.set(password=password)

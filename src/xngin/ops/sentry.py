@@ -40,10 +40,10 @@ def setup():
     sentry_sdk.init(
         dsn=sentry_dsn,
         environment=os.environ.get("ENVIRONMENT", "local"),
-        traces_sample_rate=1.0,
-        _experiments={
-            "continuous_profiling_auto_start": True,
-        },
         send_default_pii=False,
         event_scrubber=sentry_sdk.scrubber.EventScrubber(denylist=denylist, pii_denylist=pii_denylist),
+        # "Continuous Profiling"
+        traces_sample_rate=1.0,
+        profile_session_sample_rate=1.0,
+        profile_lifecycle="trace",
     )

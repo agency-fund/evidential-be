@@ -19,7 +19,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from xngin.apiserver import constants
 from xngin.apiserver.dependencies import (
-    datasource_dependency,
     random_seed_dependency,
     xngin_db_session,
 )
@@ -36,6 +35,7 @@ from xngin.apiserver.routers.common_api_types import (
     UpdateBanditArmOutcomeRequest,
 )
 from xngin.apiserver.routers.experiments.dependencies import (
+    datasource_dependency,
     experiment_dependency,
     experiment_response_dependency,
     experiment_with_assignments_dependency,

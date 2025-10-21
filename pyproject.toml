@@ -22,8 +22,9 @@ dependencies = [
     "pydantic>=2.11.9,<3.0.0",
     "pynacl>=1.6.0",
     "python-jose>=3.3.0,<3.4",
+    "python-jsonpath>=2.0.1",
     "scipy>=1.12.0,<2",
-    "sentry-sdk[fastapi,loguru]>=2.38.0,<3",
+    "sentry-sdk[fastapi,loguru,sqlalchemy]>=2.42.1,<3",
     "sqlalchemy-bigquery>=1.12.0,<2",
     "sqlalchemy[asyncio]==2.0.41",
     "statsmodels>=0.14.1,<0.20",
@@ -63,7 +64,7 @@ filterwarnings = [
     "ignore:.+unnest will not make use of SQL compilation caching:sqlalchemy.exc.SAWarning:"
 ]
 env = [
-    "SENTRY_DSX="  # Disable Sentry in unit tests.
+    "SENTRY_DSN="  # Disable Sentry in unit tests.
 ]
 
 [tool.ruff]

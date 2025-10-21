@@ -893,7 +893,7 @@ async def create_datasource(
     return CreateDatasourceResponse(id=datasource.id)
 
 
-@router.patch("/datasources/{datasource_id}")
+@router.patch("/datasources/{datasource_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def update_datasource(
     datasource_id: str,
     body: UpdateDatasourceRequest,
@@ -1488,6 +1488,7 @@ EXPERIMENT_STATE_TRANSITION_RESPONSES: dict[int | str, dict[str, Any]] = {
 @router.post(
     "/datasources/{datasource_id}/experiments/{experiment_id}/commit",
     responses=EXPERIMENT_STATE_TRANSITION_RESPONSES,
+    status_code=status.HTTP_204_NO_CONTENT,
 )
 async def commit_experiment(
     datasource_id: str,
@@ -1503,6 +1504,7 @@ async def commit_experiment(
 @router.post(
     "/datasources/{datasource_id}/experiments/{experiment_id}/abandon",
     responses=EXPERIMENT_STATE_TRANSITION_RESPONSES,
+    status_code=status.HTTP_204_NO_CONTENT,
 )
 async def abandon_experiment(
     datasource_id: str,

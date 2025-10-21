@@ -1,6 +1,6 @@
 from typing import Annotated
 
-from fastapi import Depends, HTTPException, Path
+from fastapi import Depends, Header, HTTPException, Path
 from fastapi.security import APIKeyHeader
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -8,9 +8,46 @@ from sqlalchemy.orm import QueryableAttribute, joinedload, selectinload
 from starlette import status
 
 from xngin.apiserver import constants
-from xngin.apiserver.apikeys import hash_key_or_raise
-from xngin.apiserver.dependencies import xngin_db_session
+from xngin.apiserver.apikeys import hash_key_or_raise, require_valid_api_key
+from xngin.apiserver.dependencies import CannotFindDatasourceError, xngin_db_session
+from xngin.apiserver.settings import (
+    Datasource,
+)
 from xngin.apiserver.sqla import tables
+
+API_KEY_HEADER = APIKeyHeader(
+    name=constants.HEADER_API_KEY,
+    auto_error=False,
+    description="API key obtained from organization settings in the Evidential UI, "
+    "or created with the create_api_key operation.",
+)
+
+
+async def datasource_dependency(
+    datasource_id: Annotated[
+        str,
+        Header(
+            example="testing",
+            alias=constants.HEADER_CONFIG_ID,
+            description="The ID of the datasource to operate on.",
+        ),
+    ],
+    xngin_session: Annotated[AsyncSession, Depends(xngin_db_session)],
+    api_key: Annotated[
+        str | None,
+        Depends(API_KEY_HEADER),
+    ],
+):
+    """Returns the configuration for the current request, as determined by the Datasource-ID HTTP request header."""
+    if not datasource_id:
+        raise CannotFindDatasourceError(f"{constants.HEADER_CONFIG_ID} is required.")
+
+    if from_db := await xngin_session.get(tables.Datasource, datasource_id):
+        await require_valid_api_key(xngin_session, api_key, datasource_id)
+        dsconfig = from_db.get_config()
+        return Datasource(id=datasource_id, config=dsconfig)
+
+    raise CannotFindDatasourceError("Datasource not found.")
 
 
 class ExperimentDependency:
@@ -29,7 +66,7 @@ class ExperimentDependency:
         experiment_id: Annotated[str, Path(..., description="The ID of the experiment to fetch.")],
         api_key: Annotated[
             str | None,
-            Depends(APIKeyHeader(name=constants.HEADER_API_KEY, auto_error=False)),
+            Depends(API_KEY_HEADER),
         ],
         xngin_session: Annotated[AsyncSession, Depends(xngin_db_session)],
     ) -> tables.Experiment:
