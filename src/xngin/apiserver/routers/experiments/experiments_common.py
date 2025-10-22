@@ -6,6 +6,7 @@ import secrets
 from collections.abc import Sequence
 from datetime import UTC, datetime
 from itertools import batched
+from typing import cast
 
 import numpy as np
 from fastapi import HTTPException, Response, status
@@ -858,21 +859,25 @@ async def update_bandit_arm_with_outcome_impl(
         arm_to_update = next(arm for arm in experiment.arms if arm.id == draw_record.arm_id)
 
         # Get all prior draws for this arm, sorted by creation date
-        draws = await experiment.awaitable_attrs.draws
-        relevant_draws = sorted(
-            (d for d in draws if d.arm_id == draw_record.arm_id),
-            key=lambda d: d.created_at,
-            reverse=True,
-        )
-        outcomes = [outcome] + [d.outcome for d in relevant_draws if d.outcome is not None]
-        context_vals = (
-            [draw_record.context_vals] + [d.context_vals for d in relevant_draws] if draw_record.context_vals else None
+        stmt = (
+            select(tables.Draw)
+            .where(
+                tables.Draw.experiment_id == experiment.id,
+                tables.Draw.arm_id == draw_record.arm_id,
+                tables.Draw.outcome.is_not(None),
+            )
+            .order_by(tables.Draw.created_at.desc())
+            .limit(100)  # TODO: Make draw limiting configurable
         )
 
-        # Limit to most recent 100 draws
-        # TODO: Make draw limiting configurable
-        outcomes = outcomes[:100]
-        context_vals = context_vals[:100] if context_vals else None
+        relevant_draws = await xngin_session.scalars(stmt)
+
+        outcomes = [outcome] + [cast(float, d.outcome) for d in relevant_draws]
+        context_vals = (
+            None
+            if draw_record.context_vals is None
+            else ([draw_record.context_vals] + [cast(list[float], d.context_vals) for d in relevant_draws])
+        )
 
         updated_parameters = update_bandit_arm(
             experiment=experiment,
