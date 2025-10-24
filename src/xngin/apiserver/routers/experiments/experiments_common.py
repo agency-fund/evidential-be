@@ -44,6 +44,7 @@ from xngin.apiserver.routers.common_api_types import (
     GetParticipantAssignmentResponse,
     ListExperimentsResponse,
     MetricAnalysis,
+    ParticipantProperty,
     Strata,
 )
 from xngin.apiserver.routers.common_enums import (
@@ -53,6 +54,7 @@ from xngin.apiserver.routers.common_enums import (
     PriorTypes,
     StopAssignmentReason,
 )
+from xngin.apiserver.routers.experiments.property_filters import passes_filters
 from xngin.apiserver.settings import DatasourceConfig, ParticipantsDef
 from xngin.apiserver.sqla import tables
 from xngin.apiserver.storage.storage_format_converters import ExperimentStorageConverter
@@ -68,6 +70,10 @@ from xngin.tq.task_payload_types import WEBHOOK_OUTBOUND_TASK_TYPE, WebhookOutbo
 
 class ExperimentsAssignmentError(Exception):
     """Wrapper for errors raised by our xngin.apiserver.routers.experiments_common module."""
+
+
+# class ExperimentsAssignmentFilterError(Exception):
+#     """Error raised when a participant does not match the experiment's filters during assignment."""
 
 
 def random_choice[T](choices: Sequence[T], seed: int | None = None) -> T:
@@ -639,14 +645,30 @@ async def get_existing_assignment_for_participant(
     return None
 
 
+def _participant_passes_filters(experiment: tables.Experiment, properties: list[ParticipantProperty]) -> bool:
+    if not properties or experiment.experiment_type != ExperimentsType.FREQ_ONLINE.value:
+        return True
+
+    datasource_config = experiment.datasource.get_config()
+    participant_type = datasource_config.find_participants(experiment.participant_type)
+    experiment_converter = ExperimentStorageConverter(experiment)
+    props_map = {p.field_name: p.value for p in properties}
+    field_map = {field.field_name: field.data_type for field in participant_type.fields}
+    return passes_filters(props_map, field_map, experiment_converter.get_design_spec_filters())
+
+
 async def get_or_create_assignment_for_participant(
     xngin_session: AsyncSession,
     experiment: tables.Experiment,
     participant_id: str,
     create_if_none: bool,
+    properties: list[ParticipantProperty] | None = None,
     random_state: int | None = None,
 ) -> GetParticipantAssignmentResponse:
     """Get or create the arm assignment for a specific participant in a non-CMAB experiment.
+
+    If properties are provided for a FREQ_ONLINE experiment, they are used to filter the participant
+    to determine eligibility.  Assignment is None if it does not pass the filters.
 
     Set create_if_none=False to only get an assignment if it already exists; do not create a new one.
     """
@@ -665,12 +687,13 @@ async def get_or_create_assignment_for_participant(
                 f"please use the corresponding POST endpoint instead."
             )
 
-        assignment = await create_assignment_for_participant(
-            xngin_session=xngin_session,
-            experiment=experiment,
-            participant_id=participant_id,
-            random_state=random_state,
-        )
+        if not properties or _participant_passes_filters(experiment, properties):
+            assignment = await create_assignment_for_participant(
+                xngin_session=xngin_session,
+                experiment=experiment,
+                participant_id=participant_id,
+                random_state=random_state,
+            )
 
     return GetParticipantAssignmentResponse(
         experiment_id=experiment.id,
