@@ -112,6 +112,8 @@ class ExperimentDependency:
 # Default dependency for experiments that only need arms joined in.
 experiment_dependency = ExperimentDependency()
 
+experiment_and_datasource_dependency = ExperimentDependency(preload=[tables.Experiment.datasource])
+
 # Use this version when you also want contexts for assignment responses.
 experiment_with_contexts_dependency = ExperimentDependency(preload=[tables.Experiment.contexts])
 
