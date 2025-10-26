@@ -2,10 +2,9 @@
 
 import contextlib
 import dataclasses
-from pathlib import Path
 
 from loguru import logger
-from sqlalchemy import event, make_url
+from sqlalchemy import make_url
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 from sqlalchemy.ext.asyncio.engine import AsyncEngine
 
@@ -85,21 +84,6 @@ async def setup():
 
     # We use expire_on_commit for reasons described in docs/SQLALCHEMY.md.
     sessionmaker = async_sessionmaker(bind=async_engine, expire_on_commit=False)
-
-    if flags.LOG_SQL_APP_DB:
-        import inspect  # noqa: PLC0415
-
-        @event.listens_for(async_engine.sync_engine, "before_cursor_execute", retval=True)
-        def _apply_comment(_connection, _cursor, statement, parameters, _context, _executemany):
-            annotation = "unknown"
-            frame = inspect.stack()
-            # Find the first frame that is likely to be in our project, but skip the current frame.
-            for f in frame[1:]:
-                if Path(__file__).is_relative_to(Path(f.filename).parent.parent):
-                    annotation = f"{f.filename}:{f.lineno}"
-                    break
-            statement = statement + " " + f"\n--- {annotation}"
-            return statement, parameters
 
     _GLOBAL_STATE = DatabaseState(database_url, async_engine, sessionmaker)
     try:
