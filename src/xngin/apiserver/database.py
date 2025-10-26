@@ -76,10 +76,7 @@ async def setup():
     database_url = get_server_database_url()
 
     async_engine = create_async_engine(
-        database_url,
-        execution_options={"logging_token": "app_async"},
-        logging_name=SA_LOGGER_NAME_FOR_APP,
-        echo=flags.ECHO_SQL_APP_DB,
+        database_url, execution_options={"logging_token": "app_async"}, logging_name=SA_LOGGER_NAME_FOR_APP
     )
 
     # We use expire_on_commit for reasons described in docs/SQLALCHEMY.md.
