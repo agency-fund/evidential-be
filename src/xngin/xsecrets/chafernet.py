@@ -2,7 +2,6 @@ import base64
 import binascii
 import time
 
-import nacl
 import nacl.exceptions
 
 from xngin.xsecrets.nacl_provider import NaclProvider
