@@ -1,5 +1,6 @@
 """Flags describes values that are read from the environment."""
 
+import enum
 import os
 
 from xngin.apiserver import constants
@@ -7,6 +8,10 @@ from xngin.apiserver import constants
 
 def is_dev_environment():
     return os.environ.get("ENVIRONMENT", "") in {"dev", ""}
+
+
+def is_railway() -> bool:
+    return os.environ.get("RAILWAY_SERVICE_NAME", "") != ""
 
 
 def truthy_env(env_var: str):
@@ -55,4 +60,19 @@ XNGIN_SUPPORT_EMAIL = os.environ.get("XNGIN_SUPPORT_EMAIL", "support@example.com
 LOG_SQL_APP_DB = truthy_env("LOG_SQL_APP_DB")
 LOG_SQL_DWH = truthy_env("LOG_SQL_DWH")
 
-FRIENDLY_DEV_LOGGING = is_dev_environment()
+
+class LogFormat(enum.StrEnum):
+    FRIENDLY = "friendly"
+    STRUCTURED_RAILWAY = "structured_railway"
+    DEFAULT = "default"
+
+    @classmethod
+    def from_env(cls):
+        if is_railway():
+            return LogFormat.STRUCTURED_RAILWAY
+        if is_dev_environment():
+            return LogFormat.FRIENDLY
+        return LogFormat.DEFAULT
+
+
+LOG_FORMAT = LogFormat.from_env()

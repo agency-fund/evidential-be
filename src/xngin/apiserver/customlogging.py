@@ -1,6 +1,15 @@
 import inspect
+import json
 import logging
 import sys
+import typing
+
+from xngin.apiserver.flags import LogFormat
+
+if typing.TYPE_CHECKING:
+    from loguru import Message as loguru_Message
+    from loguru import Record as loguru_Record
+
 
 from loguru import logger
 
@@ -29,8 +38,36 @@ class InterceptHandler(logging.Handler):
         logger.opt(depth=depth, exception=record.exc_info).log(level, record.getMessage())
 
 
+def _customize_loguru():
+    # Loguru's default icon for "DEBUG" is no icon.
+    logger.level("DEBUG", icon="D ")
+
+
+def _record_to_railway_json(record: "loguru_Record"):
+    return json.dumps({
+        "timestamp": record["time"].isoformat(),
+        "message": record["message"],
+        "level": record["level"].name,
+        "name": record["name"],
+        "function": record["function"],
+        "line": record["line"],
+        "extra": record["extra"],
+        "process_id": record["process"].id,
+        "process_name": record["process"].name,
+        "thread_id": record["thread"].id,
+        "thread_name": record["thread"].name,
+    })
+
+
+def _stdout_railway_sink(message: "loguru_Message"):
+    """Railway's log viewer expects a simple structured format with "message" and "level" fields."""
+    serialized = _record_to_railway_json(message.record)
+    print(serialized)
+
+
 def setup():
     logging.basicConfig(handlers=[InterceptHandler()], level=logging.NOTSET, force=True)
+    _customize_loguru()
 
     for name in logging.root.manager.loggerDict:
         existing_logger = logging.getLogger(name)
@@ -41,17 +78,24 @@ def setup():
 
     _silence_noisy_loggers()
 
-    # Development environments don't need the date or full level names; this makes it easier to read in terminal output.
-    # When this flag isn't set, loguru's default more verbose format is used by default.
-    # TODO: process ID, thread ID
-    if flags.FRIENDLY_DEV_LOGGING:
-        logger.remove()
-        logger.add(
-            sys.stdout,
-            format="<green>{time:HH:mm:ss}</green> | "
-            "<level>{level.icon}</level> | "
-            "<cyan>{name}</cyan>:<cyan>{function}</cyan>:<cyan>{line}</cyan> - {extra} <level>{message}</level>",
-        )
+    # Different runtime environments benefit from different logging formats. We can improve legibility for developers
+    # by using a custom format when in a development environment, and generate structured logs when running in
+    # production environments.
+    match flags.LOG_FORMAT:
+        case LogFormat.FRIENDLY:
+            logger.remove()
+            logger.add(
+                sys.stdout,
+                format="<cyan>{process.id}.{thread.name}</cyan> | <green>{time:HH:mm:ss}</green> | "
+                "<level>{level.icon}</level> | "
+                "<cyan>{name}</cyan>:<cyan>{function}</cyan>:<cyan>{line}</cyan> - {extra} <level>{message}</level>",
+            )
+        case LogFormat.STRUCTURED_RAILWAY:
+            logger.remove()
+            logger.add(_stdout_railway_sink)
+        case _:
+            # allow loguru default behavior
+            pass
 
 
 def _silence_noisy_loggers():
@@ -87,4 +131,5 @@ def _configure_third_party_levels():
 
     logging.getLogger("httpcore").setLevel(logging.WARN)
     logging.getLogger("httpx").setLevel(logging.WARN)
+    logging.getLogger("urllib3").setLevel(logging.WARN)
     logging.getLogger("watchfiles.main").setLevel(logging.WARN)
