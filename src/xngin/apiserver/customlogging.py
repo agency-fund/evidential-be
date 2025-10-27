@@ -64,7 +64,6 @@ def _configure_third_party_levels():
     # inspection shows that they generally put loggers in the `google` namespace. There are also some old docs:
     # https://cloud.google.com/python/docs/reference/google-cloud-developerconnect/latest
     logging.getLogger("google").setLevel(logging.INFO)  # Tip: set to WARN to log HTTP interactions with BigQuery APIs.
-    logging.getLogger("google").propagate = True
 
     # Only show warnings from SQLAlchemy pool classes. DEBUG will log on every connection open/close.
     logging.getLogger("sqlalchemy.pool").setLevel(logging.WARN)
