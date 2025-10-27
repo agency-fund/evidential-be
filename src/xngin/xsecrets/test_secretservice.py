@@ -1,8 +1,6 @@
 import json
 
 import nacl.exceptions
-import nacl.secret
-import nacl.utils
 import pytest
 
 from xngin.xsecrets import nacl_provider

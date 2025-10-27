@@ -132,7 +132,6 @@ ignore = [
     "PD002", # `inplace=True` should be avoided; it has inconsistent behavior
     "PD003", # `.isna` is preferred to `.isnull`; functionality is equivalent"
     "PD101", # Using `series.nunique()` for checking that a series is constant is inefficient
-    "PD901", # Avoid using the generic variable name `df` for DataFrames
     "PIE808", # Unnecessary `start` argument in `range`
     "PLC1901", # x == "" can be simplified to not x
     "PLR0911", # too many return statements
