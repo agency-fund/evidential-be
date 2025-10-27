@@ -2257,7 +2257,7 @@ def test_snapshot_on_ineligible_experiments(testing_datasource_with_user, ppost,
     org = testing_datasource_with_user.org
     # The experiment created below is both too old and not yet committed.
     response = ppost(
-        f"/v1/m/datasources/{ds.id}/experiments?chosen_n=10",
+        f"/v1/m/datasources/{ds.id}/experiments?chosen_n=20",
         json=CreateExperimentRequest(
             design_spec=PreassignedFrequentistExperimentSpec(
                 experiment_type=ExperimentsType.FREQ_PREASSIGNED,
@@ -2277,7 +2277,7 @@ def test_snapshot_on_ineligible_experiments(testing_datasource_with_user, ppost,
         ).model_dump(mode="json"),
     )
     assert response.status_code == 200, response.content
-    experiment_id = CreateExperimentResponse.model_validate_json(response.content).design_spec.experiment_id
+    experiment_id = CreateExperimentResponse.model_validate_json(response.content).experiment_id
 
     # Assert non-committed experiments cannot be snapshotted.
     response = ppost(f"/v1/m/organizations/{org.id}/datasources/{ds.id}/experiments/{experiment_id}/snapshots")
@@ -2295,7 +2295,7 @@ def test_snapshot_on_ineligible_experiments(testing_datasource_with_user, ppost,
 
     # But recently ended experiments can be snapshotted within a 1 day buffer.
     response = ppost(
-        f"/v1/m/datasources/{ds.id}/experiments?chosen_n=10",
+        f"/v1/m/datasources/{ds.id}/experiments?chosen_n=20",
         json=CreateExperimentRequest(
             design_spec=PreassignedFrequentistExperimentSpec(
                 experiment_type=ExperimentsType.FREQ_PREASSIGNED,
@@ -2315,7 +2315,7 @@ def test_snapshot_on_ineligible_experiments(testing_datasource_with_user, ppost,
         ).model_dump(mode="json"),
     )
     assert response.status_code == 200, response.content
-    experiment_id = CreateExperimentResponse.model_validate_json(response.content).design_spec.experiment_id
+    experiment_id = CreateExperimentResponse.model_validate_json(response.content).experiment_id
     response = ppost(f"/v1/m/datasources/{ds.id}/experiments/{experiment_id}/commit")
     assert response.status_code == 204
     response = ppost(f"/v1/m/organizations/{org.id}/datasources/{ds.id}/experiments/{experiment_id}/snapshots")
