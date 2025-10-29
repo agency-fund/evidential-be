@@ -747,7 +747,7 @@ class BaseDesignSpec(ApiBaseModel):
 
     def ids_are_present(self) -> bool:
         """True if any IDs are present."""
-        return self.experiment_id is not None or any(arm.arm_id is not None for arm in self.arms)
+        return any(arm.arm_id is not None for arm in self.arms)
 
 
 class BaseFrequentistDesignSpec(BaseDesignSpec):
