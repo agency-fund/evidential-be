@@ -4,7 +4,6 @@ import json
 import os
 from typing import Annotated
 
-import nacl.encoding
 import nacl.exceptions
 import nacl.secret
 import nacl.utils

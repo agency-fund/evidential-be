@@ -32,7 +32,6 @@ from sqlalchemy.orm import Session
 from sqlalchemy.sql.compiler import IdentifierPreparer
 
 import xngin.apiserver.openapi
-import xngin.apiserver.routes
 from xngin.apiserver import apikeys, routes
 from xngin.apiserver.dwh.dwh_session import CannotFindTableError, DwhSession
 from xngin.apiserver.dwh.inspection_types import ParticipantsSchema
