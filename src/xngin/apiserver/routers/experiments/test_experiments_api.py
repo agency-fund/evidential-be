@@ -105,7 +105,7 @@ async def test_get_experiment_assignments_wrong_datasource(
     assert response.json()["detail"] == "Experiment not found or not authorized."
 
 
-async def test_get_assignment_for_participant_with_apikey_preassigned(xngin_session, testing_datasource, client_v1):
+async def test_get_assignment_preassigned(xngin_session, testing_datasource, client_v1):
     preassigned_experiment = await insert_experiment_and_arms(xngin_session, testing_datasource.ds)
     assignment = tables.ArmAssignment(
         experiment_id=preassigned_experiment.id,
@@ -139,7 +139,7 @@ async def test_get_assignment_for_participant_with_apikey_preassigned(xngin_sess
     assert parsed.assignment.arm_name == "control"
 
 
-async def test_get_assignment_for_participant_with_apikey_online(xngin_session, testing_datasource, client_v1):
+async def test_get_assignment_online(xngin_session, testing_datasource, client_v1):
     """Test endpoint that gets an assignment for a participant via API key."""
     online_experiment = await insert_experiment_and_arms(
         xngin_session,
@@ -183,7 +183,7 @@ async def test_get_assignment_for_participant_with_apikey_online(xngin_session, 
     assert assignment.experiment.stopped_assignments_reason is None
 
 
-async def test_get_assignment_for_participant_with_apikey_mab_online(xngin_session, testing_datasource, client_v1):
+async def test_get_assignment_mab_online(xngin_session, testing_datasource, client_v1):
     """Test endpoint that gets an assignment for a participant via API key."""
     online_experiment = await insert_experiment_and_arms(
         xngin_session,
@@ -234,9 +234,7 @@ async def test_get_assignment_for_participant_with_apikey_mab_online(xngin_sessi
     assert assignment.experiment.stopped_assignments_reason is None
 
 
-async def test_get_assignment_for_participant_with_apikey_online_dont_create(
-    xngin_session, testing_datasource, client_v1
-):
+async def test_get_assignment_online_dont_create(xngin_session, testing_datasource, client_v1):
     """Verify endpoint doesn't create an assignment when create_if_none=False."""
     online_experiment = await insert_experiment_and_arms(
         xngin_session,
@@ -256,9 +254,7 @@ async def test_get_assignment_for_participant_with_apikey_online_dont_create(
     assert parsed.assignment is None
 
 
-async def test_get_assignment_for_participant_with_apikey_online_past_end_date(
-    xngin_session, testing_datasource, client_v1
-):
+async def test_get_assignment_online_past_end_date(xngin_session, testing_datasource, client_v1):
     """Verify endpoint doesn't create an assignment for an online experiment that has ended."""
     online_experiment = await insert_experiment_and_arms(
         xngin_session,

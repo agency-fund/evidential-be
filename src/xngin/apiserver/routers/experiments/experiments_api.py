@@ -121,7 +121,7 @@ async def get_experiment_assignments_as_csv(
     else generates an assignment.
     """,
 )
-async def get_assignment_for_participant_with_apikey(
+async def get_assignment(
     experiment: Annotated[tables.Experiment, Depends(experiment_dependency)],
     participant_id: str,
     xngin_session: Annotated[AsyncSession, Depends(xngin_db_session)],
@@ -194,7 +194,7 @@ async def get_assignment_filtered(
     CreateCMABAssignmentRequest can be None, and will be disregarded if they are not None.
     """,
 )
-async def get_cmab_experiment_assignment_for_participant(
+async def get_assignment_cmab(
     experiment: Annotated[tables.Experiment, Depends(experiment_with_contexts_dependency)],
     participant_id: str,
     body: CMABContextInputRequest,
