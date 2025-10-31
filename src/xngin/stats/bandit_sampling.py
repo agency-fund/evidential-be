@@ -152,7 +152,7 @@ def _update_arm_laplace(
 
         return float(-log_prior - log_likelihood)
 
-    result = minimize(objective, x0=np.zeros_like(current_mu), method="L-BFGS-B", hess="2-point")
+    result = minimize(objective, x0=np.zeros_like(current_mu), method="L-BFGS-B")
     new_mu = result.x
     hess_inv = result.hess_inv
     if not hasattr(hess_inv, "todense"):

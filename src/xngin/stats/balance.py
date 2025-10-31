@@ -163,7 +163,7 @@ def check_balance_of_preprocessed_df(
 
     # Fit regression model; for now only check the first two treatment groups.
     df_analysis = data[data[treatment_col].isin([0, 1])]
-    model = smf.ols(formula=formula, data=df_analysis).fit()
+    model = smf.ols(formula=formula, data=df_analysis).fit(method="pinv")
 
     return BalanceResult(
         f_statistic=model.fvalue,
