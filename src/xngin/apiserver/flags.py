@@ -1,8 +1,17 @@
 """Flags describes values that are read from the environment."""
 
+import enum
 import os
 
 from xngin.apiserver import constants
+
+
+def is_dev_environment():
+    return os.environ.get("ENVIRONMENT", "") in {"dev", ""}
+
+
+def is_railway() -> bool:
+    return os.environ.get("RAILWAY_SERVICE_NAME", "") != ""
 
 
 def truthy_env(env_var: str):
@@ -26,8 +35,6 @@ ENV_SESSION_TOKEN_KEYSET = "XNGIN_SESSION_TOKEN_KEYSET"
 
 ALLOW_CONNECTING_TO_PRIVATE_IPS = truthy_env("ALLOW_CONNECTING_TO_PRIVATE_IPS")
 DISABLE_SAFEDNS_CHECK = truthy_env("DISABLE_SAFEDNS_CHECK")
-ECHO_SQL = truthy_env("ECHO_SQL")
-ECHO_SQL_APP_DB = truthy_env("ECHO_SQL_APP_DB")
 PUBLISH_ALL_DOCS = truthy_env("XNGIN_PUBLISH_ALL_DOCS")
 UPDATE_API_TESTS = truthy_env("UPDATE_API_TESTS")
 
@@ -50,8 +57,22 @@ XNGIN_PRODUCT_HOMEPAGE = os.environ.get("XNGIN_PRODUCT_HOMEPAGE", "https://examp
 # XNGIN_SUPPORT_EMAIL defines the email address that end-users can message for support.
 XNGIN_SUPPORT_EMAIL = os.environ.get("XNGIN_SUPPORT_EMAIL", "support@example.com")
 
-LOG_SQL = truthy_env("LOG_SQL")
 LOG_SQL_APP_DB = truthy_env("LOG_SQL_APP_DB")
+LOG_SQL_DWH = truthy_env("LOG_SQL_DWH")
 
-DEBUG_LOGGING = truthy_env("DEBUG_LOGGING")
-FRIENDLY_DEV_LOGGING = truthy_env("FRIENDLY_DEV_LOGGING")
+
+class LogFormat(enum.StrEnum):
+    FRIENDLY = "friendly"
+    STRUCTURED_RAILWAY = "structured_railway"
+    DEFAULT = "default"
+
+    @classmethod
+    def from_env(cls):
+        if is_railway():
+            return LogFormat.STRUCTURED_RAILWAY
+        if is_dev_environment():
+            return LogFormat.FRIENDLY
+        return LogFormat.DEFAULT
+
+
+LOG_FORMAT = LogFormat.from_env()

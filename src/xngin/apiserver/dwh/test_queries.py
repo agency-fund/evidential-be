@@ -22,7 +22,6 @@ from sqlalchemy import (
 from sqlalchemy.orm import DeclarativeBase, Session, mapped_column
 from sqlalchemy.types import Date
 
-from xngin.apiserver import flags
 from xngin.apiserver.conftest import DbType, get_queries_test_uri
 from xngin.apiserver.dwh.analysis_types import MetricValue, ParticipantOutcome
 from xngin.apiserver.dwh.queries import (
@@ -190,7 +189,6 @@ def fixture_queries_session():
     if test_db.db_type == DbType.PG:
         default_engine = create_engine(
             management_db,
-            echo=flags.ECHO_SQL,
             logging_name=SA_LOGGER_NAME_FOR_DWH,
             poolclass=sqlalchemy.pool.NullPool,
             execution_options={"logging_token": SA_LOGGING_PREFIX_FOR_DWH},
@@ -207,7 +205,6 @@ def fixture_queries_session():
     engine = create_engine(
         test_db.connect_url,
         logging_name=SA_LOGGER_NAME_FOR_DWH,
-        echo=flags.ECHO_SQL,
         execution_options={"logging_token": SA_LOGGING_PREFIX_FOR_DWH},
     )
     try:

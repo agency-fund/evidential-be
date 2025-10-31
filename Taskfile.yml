@@ -39,21 +39,8 @@ env:
   #GOOGLE_OIDC_CLIENT_ID: "314428509782-j8fgiq5dvoic01432s2bcu3isinc9kam.apps.googleusercontent.com"
   #GOOGLE_OIDC_REDIRECT_URI: "http://localhost:3000/"
 
-  # Configure SQLAlchemy to log the generated SQL statements used on customer DWH via its own logger.
-  ECHO_SQL: "false"
-
-  # Configure SQLAlchemy to log the generated SQL statements used on xngin app database via its own logger.
-  ECHO_SQL_APP_DB: "false"
-
-  # Use a concise log line formatter for improved readability in the terminal.
-  FRIENDLY_DEV_LOGGING: "true"
-
-  # Set DEBUG_LOGGING to true to display detailed information about logging configuration to stdout. Only set this to
-  # true if you are debugging issues with logs.
-  DEBUG_LOGGING: "false"
-
   # Configure customlogging.py to log dwh SQL to the custom log.
-  LOG_SQL: "true"
+  LOG_SQL_DWH: "true"
 
   # Configure customlogging.py to log app SQL to the custom log.
   LOG_SQL_APP_DB: "false"

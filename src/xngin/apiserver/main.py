@@ -16,6 +16,7 @@ from xngin.apiserver.routers.auth import auth_dependencies
 from xngin.ops import sentry
 from xngin.xsecrets import secretservice
 
+customlogging.setup()
 sentry.setup()
 
 
@@ -49,7 +50,6 @@ async def lifespan(_app: FastAPI):
 app = FastAPI(lifespan=lifespan)
 exceptionhandlers.setup(app)
 middleware.setup(app)
-customlogging.setup()
 secretservice.setup()
 routes.register(app)
 auth_dependencies.setup(app)

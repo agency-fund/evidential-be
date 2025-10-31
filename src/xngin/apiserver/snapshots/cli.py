@@ -9,7 +9,7 @@ from typing import Annotated
 import typer
 from loguru import logger
 
-from xngin.apiserver import database
+from xngin.apiserver import customlogging, database
 from xngin.apiserver.snapshots import snapshotter
 from xngin.ops import sentry
 from xngin.xsecrets import secretservice
@@ -17,6 +17,7 @@ from xngin.xsecrets import secretservice
 # Use os.process_cpu_count() whenever we can move to python 3.13
 NPROC = max(4, len(os.sched_getaffinity(0)) // 4) if hasattr(os, "sched_getaffinity") else os.cpu_count() or 4
 
+customlogging.setup()
 sentry.setup()
 
 app = typer.Typer(help="Collects snapshots as needed.")
