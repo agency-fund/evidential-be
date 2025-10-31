@@ -54,9 +54,9 @@
             </div>
         </aside>
         <h2>
-            <span class="text">557 statements &nbsp;</span>
+            <span class="text">558 statements &nbsp;</span>
             <button type="button" class="run button_toggle_run" value="run" data-shortcut="r" title="Toggle lines run">267<span class="text"> run</span></button>
-            <button type="button" class="mis show_mis button_toggle_mis" value="mis" data-shortcut="m" title="Toggle lines missing">290<span class="text"> missing</span></button>
+            <button type="button" class="mis show_mis button_toggle_mis" value="mis" data-shortcut="m" title="Toggle lines missing">291<span class="text"> missing</span></button>
             <button type="button" class="exc show_exc button_toggle_exc" value="exc" data-shortcut="x" title="Toggle lines excluded">0<span class="text"> excluded</span></button>
         </h2>
         <p class="text">
@@ -65,7 +65,7 @@
             <a id="nextFileLink" class="nav" href="z_272f90c4dc99306b_admin_api_converters_py.html">&#xbb; next</a>
             &nbsp; &nbsp; &nbsp;
             <a class="nav" href="https://coverage.readthedocs.io/en/7.11.0">coverage.py v7.11.0</a>,
-            created at 2025-10-29 08:12 +0000
+            created at 2025-10-31 19:56 +0000
         </p>
         <aside class="hidden">
             <button type="button" class="button_next_chunk" data-shortcut="j"></button>
@@ -811,13 +811,13 @@
     <p class="pln"><span class="n"><a id="t729" href="#t729">729</a></span><span class="t">        <span class="com"># Verify user is a member of the organization</span>&nbsp;</span><span class="r"></span></p>
     <p class="mis show_mis"><span class="n"><a id="t730" href="#t730">730</a></span><span class="t">        <span class="nam">_authz_check</span> <span class="op">=</span> <span class="key">await</span> <span class="nam">get_organization_or_raise</span><span class="op">(</span><span class="nam">session</span><span class="op">,</span> <span class="nam">user</span><span class="op">,</span> <span class="nam">organization_id</span><span class="op">)</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t731" href="#t731">731</a></span><span class="t">&nbsp;</span><span class="r"></span></p>
-    <p class="pln"><span class="n"><a id="t732" href="#t732">732</a></span><span class="t">    <span class="com"># Add the new member</span>&nbsp;</span><span class="r"></span></p>
-    <p class="mis show_mis"><span class="n"><a id="t733" href="#t733">733</a></span><span class="t">    <span class="nam">result</span> <span class="op">=</span> <span class="key">await</span> <span class="nam">session</span><span class="op">.</span><span class="nam">scalars</span><span class="op">(</span><span class="nam">select</span><span class="op">(</span><span class="nam">tables</span><span class="op">.</span><span class="nam">User</span><span class="op">)</span><span class="op">.</span><span class="nam">filter</span><span class="op">(</span><span class="nam">tables</span><span class="op">.</span><span class="nam">User</span><span class="op">.</span><span class="nam">email</span> <span class="op">==</span> <span class="nam">body</span><span class="op">.</span><span class="nam">email</span><span class="op">)</span><span class="op">)</span>&nbsp;</span><span class="r"></span></p>
-    <p class="mis show_mis"><span class="n"><a id="t734" href="#t734">734</a></span><span class="t">    <span class="nam">new_user</span> <span class="op">=</span> <span class="nam">result</span><span class="op">.</span><span class="nam">first</span><span class="op">(</span><span class="op">)</span>&nbsp;</span><span class="r"></span></p>
-    <p class="mis show_mis"><span class="n"><a id="t735" href="#t735">735</a></span><span class="t">    <span class="key">if</span> <span class="key">not</span> <span class="nam">new_user</span><span class="op">:</span>&nbsp;</span><span class="r"></span></p>
-    <p class="mis show_mis"><span class="n"><a id="t736" href="#t736">736</a></span><span class="t">        <span class="nam">new_user</span> <span class="op">=</span> <span class="nam">tables</span><span class="op">.</span><span class="nam">User</span><span class="op">(</span><span class="nam">email</span><span class="op">=</span><span class="nam">body</span><span class="op">.</span><span class="nam">email</span><span class="op">)</span>&nbsp;</span><span class="r"></span></p>
-    <p class="mis show_mis"><span class="n"><a id="t737" href="#t737">737</a></span><span class="t">        <span class="nam">session</span><span class="op">.</span><span class="nam">add</span><span class="op">(</span><span class="nam">new_user</span><span class="op">)</span>&nbsp;</span><span class="r"></span></p>
-    <p class="pln"><span class="n"><a id="t738" href="#t738">738</a></span><span class="t">&nbsp;</span><span class="r"></span></p>
+    <p class="mis show_mis"><span class="n"><a id="t732" href="#t732">732</a></span><span class="t">    <span class="key">if</span> <span class="nam">body</span><span class="op">.</span><span class="nam">email</span> <span class="key">in</span> <span class="op">{</span><span class="nam">u</span><span class="op">.</span><span class="nam">email</span> <span class="key">for</span> <span class="nam">u</span> <span class="key">in</span> <span class="nam">org</span><span class="op">.</span><span class="nam">users</span><span class="op">}</span><span class="op">:</span>&nbsp;</span><span class="r"></span></p>
+    <p class="mis show_mis"><span class="n"><a id="t733" href="#t733">733</a></span><span class="t">        <span class="key">return</span> <span class="nam">GENERIC_SUCCESS</span>&nbsp;</span><span class="r"></span></p>
+    <p class="pln"><span class="n"><a id="t734" href="#t734">734</a></span><span class="t">&nbsp;</span><span class="r"></span></p>
+    <p class="mis show_mis"><span class="n"><a id="t735" href="#t735">735</a></span><span class="t">    <span class="nam">new_user</span> <span class="op">=</span> <span class="op">(</span><span class="key">await</span> <span class="nam">session</span><span class="op">.</span><span class="nam">execute</span><span class="op">(</span><span class="nam">select</span><span class="op">(</span><span class="nam">tables</span><span class="op">.</span><span class="nam">User</span><span class="op">)</span><span class="op">.</span><span class="nam">where</span><span class="op">(</span><span class="nam">tables</span><span class="op">.</span><span class="nam">User</span><span class="op">.</span><span class="nam">email</span> <span class="op">==</span> <span class="nam">body</span><span class="op">.</span><span class="nam">email</span><span class="op">)</span><span class="op">)</span><span class="op">)</span><span class="op">.</span><span class="nam">scalar_one_or_none</span><span class="op">(</span><span class="op">)</span>&nbsp;</span><span class="r"></span></p>
+    <p class="mis show_mis"><span class="n"><a id="t736" href="#t736">736</a></span><span class="t">    <span class="key">if</span> <span class="nam">new_user</span> <span class="key">is</span> <span class="key">None</span><span class="op">:</span>&nbsp;</span><span class="r"></span></p>
+    <p class="mis show_mis"><span class="n"><a id="t737" href="#t737">737</a></span><span class="t">        <span class="nam">new_user</span> <span class="op">=</span> <span class="nam">tables</span><span class="op">.</span><span class="nam">User</span><span class="op">(</span><span class="nam">email</span><span class="op">=</span><span class="nam">body</span><span class="op">.</span><span class="nam">email</span><span class="op">)</span>&nbsp;</span><span class="r"></span></p>
+    <p class="mis show_mis"><span class="n"><a id="t738" href="#t738">738</a></span><span class="t">        <span class="nam">session</span><span class="op">.</span><span class="nam">add</span><span class="op">(</span><span class="nam">new_user</span><span class="op">)</span>&nbsp;</span><span class="r"></span></p>
     <p class="mis show_mis"><span class="n"><a id="t739" href="#t739">739</a></span><span class="t">    <span class="nam">org</span><span class="op">.</span><span class="nam">users</span><span class="op">.</span><span class="nam">append</span><span class="op">(</span><span class="nam">new_user</span><span class="op">)</span>&nbsp;</span><span class="r"></span></p>
     <p class="mis show_mis"><span class="n"><a id="t740" href="#t740">740</a></span><span class="t">    <span class="key">await</span> <span class="nam">session</span><span class="op">.</span><span class="nam">commit</span><span class="op">(</span><span class="op">)</span>&nbsp;</span><span class="r"></span></p>
     <p class="mis show_mis"><span class="n"><a id="t741" href="#t741">741</a></span><span class="t">    <span class="key">return</span> <span class="nam">GENERIC_SUCCESS</span>&nbsp;</span><span class="r"></span></p>
@@ -1879,7 +1879,7 @@
             <a class="nav" href="z_272f90c4dc99306b_admin_api_converters_py.html">&#xbb; next</a>
             &nbsp; &nbsp; &nbsp;
             <a class="nav" href="https://coverage.readthedocs.io/en/7.11.0">coverage.py v7.11.0</a>,
-            created at 2025-10-29 08:12 +0000
+            created at 2025-10-31 19:56 +0000
         </p>
     </div>
 </footer>
