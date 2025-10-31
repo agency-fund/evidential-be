@@ -248,6 +248,45 @@ DATETIME_CASES = [
         expected=False,
         description="datetime_between_out_of_range",
     ),
+    Case(
+        props={"created_at": "2025-01-15T12:00:00+00:00"},
+        fields={"created_at": DataType.TIMESTAMP_WITHOUT_TIMEZONE},
+        filters=[
+            Filter(
+                field_name="created_at",
+                relation=Relation.BETWEEN,
+                value=[None, "2025-01-15T12:00:00+00:00"],
+            )
+        ],
+        expected=True,
+        description="datetime_tz_allows_zero_offset",
+    ),
+    Case(
+        props={"created_at": "2025-01-15T12:00:00+08:00"},
+        fields={"created_at": DataType.TIMESTAMP_WITHOUT_TIMEZONE},
+        filters=[
+            Filter(
+                field_name="created_at",
+                relation=Relation.BETWEEN,
+                value=[None, "2025-01-15T12:00:00+00:00"],
+            )
+        ],
+        expected=False,
+        description="datetime_tz_disallows_nonzero_offset",
+    ),
+    Case(
+        props={"created_at": "2025-01-15T00:00:00.001000"},
+        fields={"created_at": DataType.TIMESTAMP_WITHOUT_TIMEZONE},
+        filters=[
+            Filter(
+                field_name="created_at",
+                relation=Relation.BETWEEN,
+                value=[None, "2025-01-15T00:00:00"],
+            )
+        ],
+        expected=True,
+        description="datetime_tz_truncates_microseconds",
+    ),
 ]
 
 
@@ -265,6 +304,13 @@ DATE_CASES = [
         filters=[Filter(field_name="birth_date", relation=Relation.BETWEEN, value=["2000-01-01", "2000-12-31"])],
         expected=True,
         description="date_between_in_range",
+    ),
+    Case(
+        props={"created_at": "2025-01-01T12:00:00"},
+        fields={"created_at": DataType.DATE},
+        filters=[Filter(field_name="created_at", relation=Relation.INCLUDES, value=["2025-01-01"])],
+        expected=True,
+        description="date_with_hms_truncated",
     ),
 ]
 
