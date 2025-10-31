@@ -125,6 +125,9 @@ class ExperimentStorageConverter:
     def get_design_spec_fields(self) -> DesignSpecFields:
         return DesignSpecFields.model_validate(self.experiment.design_spec_fields)
 
+    def get_design_spec_filters(self) -> list[capi.Filter]:
+        return ExperimentStorageConverter.get_api_filters(self.get_design_spec_fields())
+
     def get_design_spec_metrics(self) -> list[capi.DesignSpecMetricRequest]:
         return ExperimentStorageConverter.get_api_metrics(self.get_design_spec_fields())
 
