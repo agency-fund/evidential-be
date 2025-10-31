@@ -279,59 +279,12 @@ def general_excludes_filter(
 
 def create_date_or_datetime_filter(col: sqlalchemy.Column, filter_: Filter) -> ColumnElement:
     """Converts a single Filter for a DateTime or Date-typed column into a sqlalchemy filter."""
-
-    def str_to_date_or_datetime(
-        s: int | float | str | date | datetime | None, target_type: Literal["date", "datetime"]
-    ) -> date | datetime | None:
-        """Convert an ISO8601 string to a date or datetime based on target_type.
-
-        LateValidationError is raised if the ISO8601 string specifies a non-UTC timezone.
-
-        For "datetime": microseconds are truncated to zero for maximum compatibility between backends.
-            If `s` is already a datetime, it is returned as-is, but with microseconds set to zero.
-        For "date": datetime strings are converted to dates, dropping time information.
-            If `s` is already a date, it is returned as-is.
-        """
-        if s is None:
-            return None
-
-        if isinstance(s, datetime):
-            return s.date() if target_type == "date" else s.replace(microsecond=0)
-
-        if isinstance(s, date):
-            # convert date to datetime at midnight if target_type is datetime
-            return s if target_type == "date" else datetime.combine(s, time.min)
-
-        if not isinstance(s, str):
-            raise LateValidationError(
-                f"{col.name}: {target_type}-type filter values must be strings containing an ISO8601 formatted date."
-            )
-
-        # Always parse as datetime first to validate timezone
-        try:
-            parsed = datetime.fromisoformat(s).replace(microsecond=0)
-        except (ValueError, TypeError) as exc:
-            raise LateValidationError(
-                f"{col.name}: {target_type}-type filter values must be strings containing an ISO8601 formatted date."
-            ) from exc
-
-        if parsed.tzinfo:
-            offset = parsed.tzinfo.utcoffset(parsed)
-            if offset != timedelta():  # 0 timedelta is equivalent to UTC
-                raise LateValidationError(
-                    f"{col.name}: {target_type}-type filter values must be in UTC, "
-                    f"or not be tagged with an explicit timezone: {s}"
-                )
-            parsed = parsed.replace(tzinfo=None)
-
-        return parsed.date() if target_type == "date" else parsed
-
     # First validate that we're working with the right column type.
     if not isinstance(col.type, (DateTime, Date)):
         raise LateValidationError(f"Column {col.name} is not a DateTime or Date type; cannot create filter.")
 
     target_type: Literal["date", "datetime"] = "date" if isinstance(col.type, Date) else "datetime"
-    parsed_values = list(map(lambda s: str_to_date_or_datetime(s, target_type), filter_.value))
+    parsed_values = list(map(lambda s: str_to_date_or_datetime(col.name, s, target_type), filter_.value))
 
     if filter_.relation == Relation.EXCLUDES:
         return general_excludes_filter(col, parsed_values)
@@ -401,3 +354,52 @@ def compose_query(sa_table: Table, select_columns: set[str], filters: list[Colum
         columns.append(sa_table.c[col])
 
     return select(*columns).filter(*filters).order_by(custom_functions.Random(sa_table=sa_table)).limit(chosen_n)
+
+
+def str_to_date_or_datetime(
+    col_name: str,
+    s: int | float | str | date | datetime | None,
+    target_type: Literal["date", "datetime"],
+) -> date | datetime | None:
+    """Convert an ISO8601 string to a date or datetime based on target_type.
+
+    LateValidationError is raised if the ISO8601 string specifies a non-UTC timezone.
+
+    For "datetime": microseconds are truncated to zero for maximum compatibility between backends.
+        If `s` is already a datetime, it is returned as-is, but with microseconds set to zero.
+    For "date": datetime strings are converted to dates, dropping time information.
+        If `s` is already a date, it is returned as-is.
+    """
+    if s is None:
+        return None
+
+    if isinstance(s, datetime):
+        return s.date() if target_type == "date" else s.replace(microsecond=0)
+
+    if isinstance(s, date):
+        # convert date to datetime at midnight if target_type is datetime
+        return s if target_type == "date" else datetime.combine(s, time.min)
+
+    if not isinstance(s, str):
+        raise LateValidationError(
+            f"{col_name}: {target_type}-type filter values must be strings containing an ISO8601 formatted date."
+        )
+
+    # Always parse as datetime first to validate timezone
+    try:
+        parsed = datetime.fromisoformat(s).replace(microsecond=0)
+    except (ValueError, TypeError) as exc:
+        raise LateValidationError(
+            f"{col_name}: {target_type}-type filter values must be strings containing an ISO8601 formatted date."
+        ) from exc
+
+    if parsed.tzinfo:
+        offset = parsed.tzinfo.utcoffset(parsed)
+        if offset != timedelta():  # 0 timedelta is equivalent to UTC
+            raise LateValidationError(
+                f"{col_name}: {target_type}-type filter values must be in UTC, "
+                f"or not be tagged with an explicit timezone: {s}"
+            )
+        parsed = parsed.replace(tzinfo=None)
+
+    return parsed.date() if target_type == "date" else parsed

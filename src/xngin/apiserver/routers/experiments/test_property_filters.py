@@ -4,6 +4,7 @@ from dataclasses import dataclass
 
 import pytest
 
+from xngin.apiserver.exceptions_common import LateValidationError
 from xngin.apiserver.routers.common_api_types import DataType, Filter, PropertyValueTypes
 from xngin.apiserver.routers.common_enums import Relation
 from xngin.apiserver.routers.experiments.property_filters import passes_filters
@@ -262,19 +263,6 @@ DATETIME_CASES = [
         description="datetime_tz_allows_zero_offset",
     ),
     Case(
-        props={"created_at": "2025-01-15T12:00:00+08:00"},
-        fields={"created_at": DataType.TIMESTAMP_WITHOUT_TIMEZONE},
-        filters=[
-            Filter(
-                field_name="created_at",
-                relation=Relation.BETWEEN,
-                value=[None, "2025-01-15T12:00:00+00:00"],
-            )
-        ],
-        expected=False,
-        description="datetime_tz_disallows_nonzero_offset",
-    ),
-    Case(
         props={"created_at": "2025-01-15T00:00:00.001000"},
         fields={"created_at": DataType.TIMESTAMP_WITHOUT_TIMEZONE},
         filters=[
@@ -511,7 +499,7 @@ def test_passes_filters_numeric_between_with_wrong_type():
     fields = {"name": DataType.CHARACTER_VARYING}
     filters = [Filter(field_name="name", relation=Relation.BETWEEN, value=["Alice", "Bob"])]
 
-    with pytest.raises(TypeError, match="BETWEEN relation is only supported for int/float/datetime fields"):
+    with pytest.raises(TypeError, match="BETWEEN relation is only supported for int/float/datetime/date fields"):
         passes_filters(props, fields, filters)
 
 
@@ -521,7 +509,22 @@ def test_passes_filters_invalid_datetime():
     fields = {"created_at": DataType.TIMESTAMP_WITH_TIMEZONE}
     filters = [Filter(field_name="created_at", relation=Relation.INCLUDES, value=["2025-01-01T00:00:00"])]
 
-    with pytest.raises(ValueError):
+    with pytest.raises(
+        LateValidationError,
+        match="created_at: datetime-type filter values must be strings containing an ISO8601 formatted date",
+    ):
+        passes_filters(props, fields, filters)
+
+
+def test_passes_filters_invalid_datetime_with_nonzero_offset():
+    props: dict[str, PropertyValueTypes] = {"created_at": "2025-01-15T12:00:00+08:00"}
+    fields = {"created_at": DataType.TIMESTAMP_WITHOUT_TIMEZONE}
+    filters = [Filter(field_name="created_at", relation=Relation.BETWEEN, value=[None, "2025-01-15T12:00:00+08:00"])]
+
+    with pytest.raises(
+        LateValidationError,
+        match="created_at: datetime-type filter values must be in UTC, or not be tagged with an explicit timezone",
+    ):
         passes_filters(props, fields, filters)
 
 

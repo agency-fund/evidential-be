@@ -1,6 +1,7 @@
 import uuid
-from datetime import datetime
+from datetime import date, datetime
 
+from xngin.apiserver.dwh.queries import str_to_date_or_datetime
 from xngin.apiserver.routers.common_api_types import DataType, Filter, PropertyValueTypes
 from xngin.apiserver.routers.common_enums import Relation
 
@@ -23,8 +24,8 @@ def passes_filters(props: dict[str, PropertyValueTypes], fields: dict[str, DataT
 
 def _passes_filter(exp_filter: Filter, field_type: DataType, value: PropertyValueTypes) -> bool:
     """Check that a value passes a filter."""
-    py_value = _validate_value(value, field_type)
-    parsed_values = [_validate_value(v, field_type) for v in exp_filter.value]
+    py_value = _validate_value(exp_filter.field_name, value, field_type)
+    parsed_values = [_validate_value(exp_filter.field_name, v, field_type) for v in exp_filter.value]
 
     match exp_filter.relation:
         case Relation.INCLUDES:
@@ -35,8 +36,8 @@ def _passes_filter(exp_filter: Filter, field_type: DataType, value: PropertyValu
             if len(exp_filter.value) == 3 and py_value is None:
                 return True
 
-            if not isinstance(py_value, (int, float, datetime, type(None))):
-                raise TypeError("BETWEEN relation is only supported for int/float/datetime fields.")
+            if not isinstance(py_value, (int, float, datetime, date, type(None))):
+                raise TypeError("BETWEEN relation is only supported for int/float/datetime/date fields.")
 
             match parsed_values:
                 case (left, None):
@@ -49,7 +50,9 @@ def _passes_filter(exp_filter: Filter, field_type: DataType, value: PropertyValu
                     raise ValueError(f"Invalid between value: {exp_filter.value}")
 
 
-def _validate_value(value: PropertyValueTypes, field_type: DataType) -> str | int | float | bool | datetime | None:
+def _validate_value(
+    field_name: str, value: PropertyValueTypes, field_type: DataType
+) -> str | int | float | bool | datetime | date | None:
     """Validate a value is of the appropriate type and possibly cast it to the appropriate Python type."""
     if value is None:
         return None
@@ -88,17 +91,17 @@ def _validate_value(value: PropertyValueTypes, field_type: DataType) -> str | in
         case DataType.DATE:
             if not isinstance(value, str):
                 raise TypeError("Date input must be an ISO8601 string to be converted to a date.")
-            return datetime.fromisoformat(value)
+            return str_to_date_or_datetime(field_name, value, "date")
 
         case DataType.TIMESTAMP_WITH_TIMEZONE:
             if not isinstance(value, str):
                 raise TypeError("timestamp_tz input must be an ISO8601 string to be converted to a date.")
-            return datetime.fromisoformat(value)
+            return str_to_date_or_datetime(field_name, value, "datetime")
 
         case DataType.TIMESTAMP_WITHOUT_TIMEZONE:
             if not isinstance(value, str):
                 raise TypeError("timestamp input must be an ISO8601 string to be converted to a date.")
-            return datetime.fromisoformat(value)
+            return str_to_date_or_datetime(field_name, value, "datetime")
 
         case _:
             raise ValueError(f"Unsupported field type: {field_type}")
