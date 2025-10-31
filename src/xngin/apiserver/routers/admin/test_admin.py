@@ -451,7 +451,7 @@ def test_create_datasource_invalid_dns(testing_datasource, ppost):
     assert "DNS resolution failed" in str(response.content)
 
 
-def test_add_member_to_org(testing_datasource, ppost):
+def test_add_member_to_org(testing_datasource, ppost, pget):
     """Test adding a user to an org."""
     # Add privileged user to existing organization
     response = ppost(
@@ -466,6 +466,26 @@ def test_add_member_to_org(testing_datasource, ppost):
         json={"email": UNPRIVILEGED_EMAIL},
     )
     assert response.status_code == 204, response.content
+
+    # Adding a user to an existing organization (again)
+    response = ppost(
+        f"/v1/m/organizations/{testing_datasource.org.id}/members",
+        json={"email": UNPRIVILEGED_EMAIL},
+    )
+    assert response.status_code == 204, response.content
+
+    # Adding a new user to an existing organization
+    response = ppost(
+        f"/v1/m/organizations/{testing_datasource.org.id}/members",
+        json={"email": "newuser@example.com"},
+    )
+    assert response.status_code == 204, response.content
+
+    # Confirm all users added.
+    org_response = pget(f"/v1/m/organizations/{testing_datasource.org.id}")
+    assert org_response.status_code == 200, org_response.content
+    member_list = {u.email for u in GetOrganizationResponse.model_validate(org_response.json()).users}
+    assert member_list == {UNPRIVILEGED_EMAIL, PRIVILEGED_EMAIL, "newuser@example.com"}, member_list
 
 
 def test_remove_member_from_org(xngin_session, pget, ppost, pdelete):

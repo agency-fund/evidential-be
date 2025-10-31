@@ -729,13 +729,13 @@ async def add_member_to_organization(
         # Verify user is a member of the organization
         _authz_check = await get_organization_or_raise(session, user, organization_id)
 
-    # Add the new member
-    result = await session.scalars(select(tables.User).filter(tables.User.email == body.email))
-    new_user = result.first()
-    if not new_user:
+    if body.email in {u.email for u in org.users}:
+        return GENERIC_SUCCESS
+
+    new_user = (await session.execute(select(tables.User).where(tables.User.email == body.email))).scalar_one_or_none()
+    if new_user is None:
         new_user = tables.User(email=body.email)
         session.add(new_user)
-
     org.users.append(new_user)
     await session.commit()
     return GENERIC_SUCCESS
