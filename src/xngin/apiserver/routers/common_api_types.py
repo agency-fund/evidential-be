@@ -160,6 +160,8 @@ class OnlineAssignmentWithFiltersRequest(ApiBaseModel):
     4. Property names must reference a valid field_name from the participant_type defined in the experiment.
     5. Property list may be empty.
     6. If a filter is specified but no value is found, it is treated as NULL.
+    7. Other differences from the SQL-based filtering logic:
+        - NO support for special experiment_id-based filters.
     """
 
     properties: Annotated[

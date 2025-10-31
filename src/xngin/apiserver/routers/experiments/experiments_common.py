@@ -662,7 +662,7 @@ async def get_or_create_assignment_for_participant(
     experiment: tables.Experiment,
     participant_id: str,
     create_if_none: bool,
-    properties: list[ParticipantProperty] | None = None,
+    properties: list[ParticipantProperty] | None,
     random_state: int | None = None,
 ) -> GetParticipantAssignmentResponse:
     """Get or create the arm assignment for a specific participant in a non-CMAB experiment.

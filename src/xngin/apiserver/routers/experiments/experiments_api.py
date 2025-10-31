@@ -153,14 +153,14 @@ async def get_assignment_for_participant_with_apikey(
     filtering. If an assignment already exists, the properties in the
     OnlineAssignmentWithFiltersRequest are ignored and the existing assignment is returned.""",
 )
-async def get_online_experiment_assignment_for_participant(
+async def get_assignment_filtered(
     experiment: Annotated[tables.Experiment, Depends(experiment_and_datasource_dependency)],
     participant_id: str,
     body: OnlineAssignmentWithFiltersRequest,
     session: Annotated[AsyncSession, Depends(xngin_db_session)],
     create_if_none: Annotated[
         bool,
-        Query(description=("Create an assignment if none exists. Override to just check for existence.")),
+        Query(description="Create an assignment if none exists. Override to just check for existence."),
     ] = True,
     random_state: Annotated[
         int | None,
