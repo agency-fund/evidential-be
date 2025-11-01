@@ -94,7 +94,6 @@ from xngin.apiserver.sqla import tables
 from xngin.apiserver.storage.bootstrap import DEFAULT_NO_DWH_SOURCE_NAME
 from xngin.apiserver.testing.assertions import assert_dates_equal
 from xngin.apiserver.testing.testing_dwh_def import TESTING_DWH_PARTICIPANT_DEF
-from xngin.cli.main import create_testing_dwh
 from xngin.stats.bandit_sampling import update_arm
 
 SAMPLE_GCLOUD_SERVICE_ACCOUNT = {
@@ -949,9 +948,6 @@ async def test_lifecycle_with_db(testing_datasource, ppost, ppatch, pget, pdelet
         json={"email": PRIVILEGED_EMAIL},
     )
     assert response.status_code == 204, response.content
-
-    # Populate the testing data warehouse. NOTE: This will drop and recreate the dwh table!
-    create_testing_dwh(dsn=testing_datasource.dsn, nrows=100)
 
     # Inspect the datasource.
     response = pget(f"/v1/m/datasources/{testing_datasource.ds.id}/inspect")
