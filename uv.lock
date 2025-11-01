@@ -1183,6 +1183,18 @@ wheels = [
 ]
 
 [[package]]
+name = "pytest-randomly"
+version = "4.0.1"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "pytest", marker = "sys_platform == 'darwin' or sys_platform == 'linux'" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/c4/1d/258a4bf1109258c00c35043f40433be5c16647387b6e7cd5582d638c116b/pytest_randomly-4.0.1.tar.gz", hash = "sha256:174e57bb12ac2c26f3578188490bd333f0e80620c3f47340158a86eca0593cd8", size = 14130, upload-time = "2025-09-12T15:23:00.085Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/33/3e/a4a9227807b56869790aad3e24472a554b585974fe7e551ea350f50897ae/pytest_randomly-4.0.1-py3-none-any.whl", hash = "sha256:e0dfad2fd4f35e07beff1e47c17fbafcf98f9bf4531fd369d9260e2f858bfcb7", size = 8304, upload-time = "2025-09-12T15:22:58.946Z" },
+]
+
+[[package]]
 name = "python-dateutil"
 version = "2.9.0.post0"
 source = { registry = "https://pypi.org/simple" }
@@ -1813,6 +1825,7 @@ dev = [
     { name = "pytest-asyncio", marker = "sys_platform == 'darwin' or sys_platform == 'linux'" },
     { name = "pytest-env", marker = "sys_platform == 'darwin' or sys_platform == 'linux'" },
     { name = "pytest-mock", marker = "sys_platform == 'darwin' or sys_platform == 'linux'" },
+    { name = "pytest-randomly", marker = "sys_platform == 'darwin' or sys_platform == 'linux'" },
     { name = "ruff", marker = "sys_platform == 'darwin' or sys_platform == 'linux'" },
     { name = "scipy-stubs", marker = "sys_platform == 'darwin' or sys_platform == 'linux'" },
     { name = "types-cachetools", marker = "sys_platform == 'darwin' or sys_platform == 'linux'" },
@@ -1866,6 +1879,7 @@ dev = [
     { name = "pytest-asyncio", specifier = ">=1.2.0" },
     { name = "pytest-env", specifier = ">=1.1.5,<1.2" },
     { name = "pytest-mock", specifier = ">=3.15.1,<4" },
+    { name = "pytest-randomly", specifier = ">=4.0.1" },
     { name = "ruff", specifier = ">=0.11.13,<0.12.0" },
     { name = "scipy-stubs", specifier = ">=1.12.0,<2" },
     { name = "types-cachetools", specifier = ">=6.0.0.20250525" },
