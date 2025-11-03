@@ -8,11 +8,9 @@ import sys
 import uuid
 from enum import StrEnum
 from pathlib import Path
-from typing import Annotated
+from typing import TYPE_CHECKING, Annotated
 
 import boto3
-import pandas as pd
-import pandas_gbq
 import psycopg
 import psycopg2
 import sqlalchemy
@@ -20,9 +18,6 @@ import typer
 import zstandard
 from email_validator import EmailNotValidError, validate_email
 from fastapi import FastAPI
-from google.cloud import bigquery
-from google.cloud.exceptions import NotFound
-from pandas import DataFrame
 from pydantic import ValidationError
 from pydantic_core import from_json
 from rich.console import Console
@@ -32,8 +27,6 @@ from sqlalchemy.orm import Session
 from sqlalchemy.sql.compiler import IdentifierPreparer
 
 import xngin.apiserver.openapi
-import xngin.apiserver.routes
-from xngin.apiserver import apikeys, routes
 from xngin.apiserver.dwh.dwh_session import CannotFindTableError, DwhSession
 from xngin.apiserver.dwh.inspection_types import ParticipantsSchema
 from xngin.apiserver.dwh.inspections import create_schema_from_table
@@ -47,6 +40,9 @@ from xngin.apiserver.storage.bootstrap import setup_user_and_first_datasource
 from xngin.apiserver.testing.testing_dwh_def import TESTING_DWH_RAW_DATA
 from xngin.xsecrets import secretservice
 from xngin.xsecrets.nacl_provider import NaclProviderKeyset
+
+if TYPE_CHECKING:
+    from pandas import DataFrame
 
 SA_LOGGER_NAME_FOR_CLI = "cli_dwh"
 
@@ -105,7 +101,7 @@ def create_engine_and_database(url: sqlalchemy.URL):
 
 
 def df_to_ddl(
-    df: DataFrame,
+    df: "DataFrame",
     *,
     table_name: str,
     quoter: IdentifierPreparer,
@@ -239,6 +235,7 @@ def create_testing_dwh(
     Due to variations in all of the above, the loaded data may vary in small ways when loaded with different data
     stores. E.g. floats may not roundtrip.
     """
+
     create_schema_ddl = f"CREATE SCHEMA IF NOT EXISTS {schema_name}" if schema_name else ""
     full_table_name = f"{schema_name}.{table_name}" if schema_name else table_name
     drop_table_ddl = f"DROP TABLE IF EXISTS {full_table_name}"
@@ -254,7 +251,9 @@ def create_testing_dwh(
         url = url.set(password=password)
 
     def read_csv():
-        return pd.read_csv(src, nrows=nrows)
+        from pandas import read_csv as pd_read_csv  # noqa: PLC0415
+
+        return pd_read_csv(src, nrows=nrows)
 
     def drop_and_create(cur, create_table_ddl: str):
         cur.execute(drop_table_ddl)
@@ -348,6 +347,8 @@ def create_testing_dwh(
                 print("Deleting temporary file...")
                 s3.delete_object(Bucket=bucket, Key=key)
     elif url.drivername == "bigquery":
+        import pandas_gbq  # noqa: PLC0415
+
         df = read_csv()
         destination_table = f"{url.database}.{table_name}"
         print("Loading using an inferred schema (warning: may lose fidelity!)...")
@@ -450,6 +451,8 @@ def export_json_schemas(output: Path = Path(".schemas")):
 def export_openapi_spec(output: Path = Path("openapi.json")):
     """Writes the OpenAPI spec to the file specified by --output."""
     app = FastAPI()
+    from xngin.apiserver import routes  # noqa: PLC0415
+
     routes.register(app)
     with open(output, "w") as outf:
         json.dump(xngin.apiserver.openapi.custom_openapi(app), outf, sort_keys=True, indent=2)
@@ -493,6 +496,8 @@ def bigquery_dataset_set_default_expiration(
     This is useful in testing environments that create BigQuery tables that are of minimal use when testing completes.
     """
     new_expiration_ms = days * 24 * 60 * 60 * 1000
+    from google.cloud import bigquery  # noqa: PLC0415
+
     client = bigquery.Client()
     dataset = client.get_dataset(f"{project_id}.{dataset_id}")
     dataset.default_table_expiration_ms = new_expiration_ms
@@ -512,6 +517,9 @@ def bigquery_dataset_delete(
     dataset_id: Annotated[str, typer.Option(..., help="The dataset name.")],
 ):
     """Deletes a BigQuery dataset."""
+    from google.cloud import bigquery  # noqa: PLC0415
+    from google.cloud.exceptions import NotFound  # noqa: PLC0415
+
     client = bigquery.Client()
     dataset_ref = f"{project_id}.{dataset_id}"
     try:
@@ -533,6 +541,9 @@ def bigquery_table_delete(
     table_id: Annotated[str, typer.Option(..., help="The table name.")],
 ):
     """Deletes a BigQuery table."""
+    from google.cloud import bigquery  # noqa: PLC0415
+    from google.cloud.exceptions import NotFound  # noqa: PLC0415
+
     client = bigquery.Client()
     table_ref = f"{project_id}.{dataset_id}.{table_id}"
     try:
@@ -631,6 +642,8 @@ def add_user(
                 if output == TextOrJson.text:
                     console.print(f"Organization ID: [cyan]{organization.id}[/cyan]")
                 for datasource in organization.datasources:
+                    from xngin.apiserver import apikeys  # noqa: PLC0415
+
                     label, key = apikeys.make_key()
                     key_hash = apikeys.hash_key_or_raise(key)
                     api_keys[datasource.id] = key
