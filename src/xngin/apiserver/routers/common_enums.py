@@ -66,7 +66,7 @@ class DataType(enum.StrEnum):
             return DataType[value]
         if value is str:
             return DataType.CHARACTER_VARYING
-        if isinstance(value, sqlalchemy.sql.sqltypes.UUID):
+        if isinstance(value, sqlalchemy.sql.sqltypes.Uuid):
             return DataType.UUID
         if isinstance(value, sqlalchemy.sql.sqltypes.String):
             return DataType.CHARACTER_VARYING

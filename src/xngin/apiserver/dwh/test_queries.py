@@ -9,21 +9,14 @@ import pytest
 import sqlalchemy
 import sqlalchemy_bigquery
 from sqlalchemy import (
-    Boolean,
     Column,
-    DateTime,
-    Float,
-    Integer,
-    Numeric,
-    String,
     Table,
     create_engine,
     make_url,
     text,
 )
-from sqlalchemy.dialects.postgresql import BIGINT, DOUBLE_PRECISION, UUID
 from sqlalchemy.orm import DeclarativeBase, Session, mapped_column
-from sqlalchemy.types import Date
+from sqlalchemy.types import BigInteger, Boolean, Date, DateTime, Double, Float, Integer, Numeric, String, Uuid
 
 from xngin.apiserver import flags
 from xngin.apiserver.conftest import DbType, get_queries_test_uri
@@ -643,19 +636,22 @@ def test_relations(testcase, queries_session, use_deterministic_random):
     assert list(sorted([r.id for r in query_results])) == list(sorted(r.id for r in testcase.matches)), testcase
 
 
-def _datatype_to_sqlalchemy_type(data_type: DataType):
-    """Maps DataType enum to SQLAlchemy column type. Helper to create tables for filter tests."""
+def _datatype_to_sqlalchemy_type(dialect: str, data_type: DataType):
+    """Maps DataType enum to generic camel-case SQLAlchemy column type. Helper to create tables for filter tests."""
+    # DDL for sqlalchemy.types.Uuid is not supported by sqlalchemy-bigquery (falls back to invalidCHAR(32))
+    my_uuid_type: Uuid = Uuid().with_variant(String(), "bigquery")
+    my_double_type: Double = Double().with_variant(Float(), "bigquery")
     mapping = {
         DataType.BOOLEAN: Boolean,
         DataType.CHARACTER_VARYING: String,
-        DataType.UUID: UUID,
+        DataType.UUID: my_uuid_type,
         DataType.DATE: Date,
         DataType.INTEGER: Integer,
-        DataType.DOUBLE_PRECISION: DOUBLE_PRECISION,
+        DataType.DOUBLE_PRECISION: my_double_type,
         DataType.NUMERIC: Numeric,
         DataType.TIMESTAMP_WITHOUT_TIMEZONE: DateTime,
         DataType.TIMESTAMP_WITH_TIMEZONE: DateTime(timezone=True),
-        DataType.BIGINT: BIGINT,
+        DataType.BIGINT: BigInteger,
     }
     if data_type not in mapping:
         raise ValueError(f"Unsupported DataType: {data_type}")
@@ -665,20 +661,23 @@ def _datatype_to_sqlalchemy_type(data_type: DataType):
 @pytest.mark.parametrize("testcase", ALL_FILTER_CASES, ids=lambda d: str(d))
 def test_property_filters_in_sql(testcase, queries_session):
     """Test that SQL query generation matches the in-memory filtering logic from property_filters.py."""
+    engine = queries_session.bind
+    dialect = engine.dialect.name
+
     # Create a dynamic table based on the testcase fields
     columns = [Column("id", Integer, primary_key=True)]
     for field_name, data_type in testcase.fields.items():
-        col_type = _datatype_to_sqlalchemy_type(data_type)
+        col_type = _datatype_to_sqlalchemy_type(dialect, data_type)
         columns.append(Column(field_name, col_type, nullable=True))
 
     metadata = sqlalchemy.MetaData()
     table_name = f"tpf_{str(testcase).replace(' ', '_')}"
-    # Determine temp table prefix depending on backend
-    engine = queries_session.bind
-    dialect_name = engine.dialect.name or ""
-    temp_prefix = ["TEMP"] if dialect_name == "bigquery" else ["TEMPORARY"]
-    table = Table(table_name, metadata, *columns, prefixes=temp_prefix)
-    metadata.create_all(engine)
+    table = Table(table_name, metadata, *columns)
+
+    # Create the table using a separate connection to avoid transaction issues
+    exec_options = {} if dialect == "bigquery" else {"isolation_level": "AUTOCOMMIT"}
+    with engine.connect().execution_options(**exec_options) as conn:
+        metadata.create_all(conn)
 
     try:
         # Insert a single row with id=1 and the properties from the test case
@@ -703,8 +702,11 @@ def test_property_filters_in_sql(testcase, queries_session):
             assert len(query_results) == 0, f"Expected row to NOT pass filters for case: {testcase}"
 
     finally:
-        # Rollback any uncommitted transaction and clean up the temp table
+        # Rollback any uncommitted transaction
         queries_session.rollback()
+        # Then drop using a separate connection
+        with engine.connect().execution_options(**exec_options) as conn:
+            metadata.drop_all(conn)
 
 
 @pytest.mark.parametrize("column_type", [DateTime, Date])
