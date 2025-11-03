@@ -636,7 +636,7 @@ def test_relations(testcase, queries_session, use_deterministic_random):
     assert list(sorted([r.id for r in query_results])) == list(sorted(r.id for r in testcase.matches)), testcase
 
 
-def _datatype_to_sqlalchemy_type(dialect: str, data_type: DataType):
+def _datatype_to_sqlalchemy_type(data_type: DataType):
     """Maps DataType enum to generic camel-case SQLAlchemy column type. Helper to create tables for filter tests."""
     # DDL for sqlalchemy.types.Uuid is not supported by sqlalchemy-bigquery (falls back to invalidCHAR(32))
     my_uuid_type: Uuid = Uuid().with_variant(String(), "bigquery")
@@ -658,54 +658,82 @@ def _datatype_to_sqlalchemy_type(dialect: str, data_type: DataType):
     return mapping[data_type]
 
 
-@pytest.mark.parametrize("testcase", ALL_FILTER_CASES, ids=lambda d: str(d))
-def test_property_filters_in_sql(testcase, queries_session):
-    """Test that SQL query generation matches the in-memory filtering logic from property_filters.py."""
-    engine = queries_session.bind
+@pytest.fixture(scope="module")
+def shared_filter_table():
+    """Creates a single shared table with all columns needed for property filter tests.
+
+    This fixture avoids repeated CREATE/DROP TABLE operations. Instead, each test uses a unique
+    ID to isolate its test data.
+    """
+    # Create a new engine since we can't use the function-scoped queries_session fixture with our module scope.
+    test_db = get_queries_test_uri()
+    engine = create_engine(
+        test_db.connect_url,
+        logging_name=SA_LOGGER_NAME_FOR_DWH,
+        echo=flags.ECHO_SQL,
+        execution_options={"logging_token": SA_LOGGING_PREFIX_FOR_DWH},
+    )
     dialect = engine.dialect.name
 
-    # Create a dynamic table based on the testcase fields
+    # Collect all unique field names and types from ALL_FILTER_CASES.
+    all_fields: dict[str, DataType] = {}
+    for case in ALL_FILTER_CASES:
+        for field_name, data_type in case.fields.items():
+            if field_name in all_fields and all_fields[field_name] != data_type:
+                raise ValueError(f"Conflicting types for {field_name}: {all_fields[field_name]} vs {data_type}")
+            all_fields[field_name] = data_type
+
+    # Create table with all columns
     columns = [Column("id", Integer, primary_key=True)]
-    for field_name, data_type in testcase.fields.items():
-        col_type = _datatype_to_sqlalchemy_type(dialect, data_type)
+    for field_name, data_type in sorted(all_fields.items()):
+        col_type = _datatype_to_sqlalchemy_type(data_type)
         columns.append(Column(field_name, col_type, nullable=True))
 
     metadata = sqlalchemy.MetaData()
-    table_name = f"tpf_{str(testcase).replace(' ', '_')}"
-    table = Table(table_name, metadata, *columns)
+    table = Table("shared_filter_table", metadata, *columns)
 
-    # Create the table using a separate connection to avoid transaction issues
     exec_options = {} if dialect == "bigquery" else {"isolation_level": "AUTOCOMMIT"}
     with engine.connect().execution_options(**exec_options) as conn:
         metadata.create_all(conn)
 
     try:
-        # Insert a single row with id=1 and the properties from the test case
-        insert_values: dict[str, Any] = {"id": 1}
-        for field_name, value in testcase.props.items():
-            data_type = testcase.fields[field_name]
-            insert_values[field_name] = value
-
-        queries_session.execute(table.insert().values(insert_values))
-
-        # Finally test the query with filters
-        select_columns = set(table.c.keys())
-        filters = create_query_filters(table, testcase.filters)
-        q = compose_query(table, select_columns, filters, chosen_n=1)
-        query_results = list(queries_session.execute(q))
-
-        if testcase.expected:
-            assert len(query_results) == 1, f"Expected row to pass filters for case: {testcase}"
-            assert query_results[0].id == 1
-        else:
-            assert len(query_results) == 0, f"Expected row to NOT pass filters for case: {testcase}"
-
+        yield table, engine
     finally:
-        # Rollback any uncommitted transaction
-        queries_session.rollback()
-        # Then drop using a separate connection
         with engine.connect().execution_options(**exec_options) as conn:
             metadata.drop_all(conn)
+        engine.dispose()
+
+
+@pytest.mark.parametrize("testcase", ALL_FILTER_CASES, ids=lambda d: str(d))
+def test_property_filters_in_sql(testcase, shared_filter_table):
+    """Test that SQL query generation matches the in-memory filtering logic from property_filters.py."""
+    table, engine = shared_filter_table
+    # Hash the test case description to get a consistent integer ID for each case to avoid conflicts.
+    test_id = hash(str(testcase)) % (2**31 - 1)
+
+    with Session(engine) as session:
+        try:
+            # Insert a row with the unique test ID and properties from the test case
+            insert_values: dict[str, Any] = {"id": test_id}
+            for field_name, value in testcase.props.items():
+                insert_values[field_name] = value
+
+            session.execute(table.insert().values(insert_values))
+
+            # Test the query with filters.
+            select_columns = {"id"}
+            filters = create_query_filters(table, testcase.filters)
+            q = compose_query(table, select_columns, filters, chosen_n=1).where(table.c.id == test_id)
+            query_results = list(session.execute(q))
+
+            if testcase.expected:
+                assert len(query_results) == 1, f"Expected row to pass filters for case: {testcase}"
+                assert query_results[0].id == test_id
+            else:
+                assert len(query_results) == 0, f"Expected row to NOT pass filters for case: {testcase}"
+
+        finally:
+            session.rollback()
 
 
 @pytest.mark.parametrize("column_type", [DateTime, Date])
