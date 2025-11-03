@@ -673,11 +673,9 @@ def test_property_filters_in_sql(testcase, queries_session):
 
     metadata = sqlalchemy.MetaData()
     table_name = f"tpf_{str(testcase).replace(' ', '_')}"
-    table = Table(table_name, metadata, *columns)
-    # Create the table using a separate connection to avoid transaction issues
-    engine = queries_session.bind
-    with engine.connect().execution_options(isolation_level="AUTOCOMMIT") as conn:
-        metadata.create_all(conn)
+    # Use a temp table that is automatically cleaned up when session ends
+    table = Table(table_name, metadata, *columns, prefixes=["TEMPORARY"])
+    metadata.create_all(queries_session.bind)
 
     try:
         # Insert a single row with id=1 and the properties from the test case
@@ -702,10 +700,8 @@ def test_property_filters_in_sql(testcase, queries_session):
             assert len(query_results) == 0, f"Expected row to NOT pass filters for case: {testcase}"
 
     finally:
-        # Rollback any uncommitted transaction, then drop using a separate connection
+        # Rollback any uncommitted transaction and clean up the temp table
         queries_session.rollback()
-        with engine.connect().execution_options(isolation_level="AUTOCOMMIT") as conn:
-            metadata.drop_all(conn)
 
 
 @pytest.mark.parametrize("column_type", [DateTime, Date])
