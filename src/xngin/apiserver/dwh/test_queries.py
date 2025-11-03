@@ -3,6 +3,7 @@
 import re
 from dataclasses import dataclass
 from datetime import UTC, date, datetime
+from typing import Any
 
 import pytest
 import sqlalchemy
@@ -13,12 +14,14 @@ from sqlalchemy import (
     DateTime,
     Float,
     Integer,
+    Numeric,
     String,
     Table,
     create_engine,
     make_url,
     text,
 )
+from sqlalchemy.dialects.postgresql import BIGINT, DOUBLE_PRECISION, UUID
 from sqlalchemy.orm import DeclarativeBase, Session, mapped_column
 from sqlalchemy.types import Date
 
@@ -40,7 +43,8 @@ from xngin.apiserver.routers.common_api_types import (
     Filter,
     Relation,
 )
-from xngin.apiserver.routers.common_enums import MetricType
+from xngin.apiserver.routers.common_enums import DataType, MetricType
+from xngin.apiserver.routers.experiments.test_property_filters import ALL_FILTER_CASES
 
 SA_LOGGER_NAME_FOR_DWH = "xngin_dwh"
 SA_LOGGING_PREFIX_FOR_DWH = "dwh"
@@ -637,6 +641,71 @@ def test_relations(testcase, queries_session, use_deterministic_random):
     q = compose_query(table, select_columns, filters, testcase.chosen_n)
     query_results = queries_session.execute(q)
     assert list(sorted([r.id for r in query_results])) == list(sorted(r.id for r in testcase.matches)), testcase
+
+
+def _datatype_to_sqlalchemy_type(data_type: DataType):
+    """Maps DataType enum to SQLAlchemy column type. Helper to create tables for filter tests."""
+    mapping = {
+        DataType.BOOLEAN: Boolean,
+        DataType.CHARACTER_VARYING: String,
+        DataType.UUID: UUID,
+        DataType.DATE: Date,
+        DataType.INTEGER: Integer,
+        DataType.DOUBLE_PRECISION: DOUBLE_PRECISION,
+        DataType.NUMERIC: Numeric,
+        DataType.TIMESTAMP_WITHOUT_TIMEZONE: DateTime,
+        DataType.TIMESTAMP_WITH_TIMEZONE: DateTime(timezone=True),
+        DataType.BIGINT: BIGINT,
+    }
+    if data_type not in mapping:
+        raise ValueError(f"Unsupported DataType: {data_type}")
+    return mapping[data_type]
+
+
+@pytest.mark.parametrize("testcase", ALL_FILTER_CASES, ids=lambda d: str(d))
+def test_property_filters_in_sql(testcase, queries_session):
+    """Test that SQL query generation matches the in-memory filtering logic from property_filters.py."""
+    # Create a dynamic table based on the testcase fields
+    columns = [Column("id", Integer, primary_key=True)]
+    for field_name, data_type in testcase.fields.items():
+        col_type = _datatype_to_sqlalchemy_type(data_type)
+        columns.append(Column(field_name, col_type, nullable=True))
+
+    metadata = sqlalchemy.MetaData()
+    table_name = f"tpf_{str(testcase).replace(' ', '_')}"
+    table = Table(table_name, metadata, *columns)
+    # Create the table using a separate connection to avoid transaction issues
+    engine = queries_session.bind
+    with engine.connect().execution_options(isolation_level="AUTOCOMMIT") as conn:
+        metadata.create_all(conn)
+
+    try:
+        # Insert a single row with id=1 and the properties from the test case
+        insert_values: dict[str, Any] = {"id": 1}
+        for field_name, value in testcase.props.items():
+            data_type = testcase.fields[field_name]
+            insert_values[field_name] = value
+
+        queries_session.execute(table.insert().values(insert_values))
+        queries_session.commit()
+
+        # Finally test the query with filters
+        select_columns = set(table.c.keys())
+        filters = create_query_filters(table, testcase.filters)
+        q = compose_query(table, select_columns, filters, chosen_n=1)
+        query_results = list(queries_session.execute(q))
+
+        if testcase.expected:
+            assert len(query_results) == 1, f"Expected row to pass filters for case: {testcase}"
+            assert query_results[0].id == 1
+        else:
+            assert len(query_results) == 0, f"Expected row to NOT pass filters for case: {testcase}"
+
+    finally:
+        # Rollback any uncommitted transaction, then drop using a separate connection
+        queries_session.rollback()
+        with engine.connect().execution_options(isolation_level="AUTOCOMMIT") as conn:
+            metadata.drop_all(conn)
 
 
 @pytest.mark.parametrize("column_type", [DateTime, Date])

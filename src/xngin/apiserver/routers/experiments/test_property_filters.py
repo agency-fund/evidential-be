@@ -199,9 +199,9 @@ UUID_CASES = [
 
 BIGINT_CASES = [
     Case(
-        props={"big_number": "18446744073709551616"},  # 2^64
+        props={"big_number": str(2**53 + 1)},  # MAX_SAFE_INTEGER + 1
         fields={"big_number": DataType.BIGINT},
-        filters=[Filter(field_name="big_number", relation=Relation.INCLUDES, value=["18446744073709551616"])],
+        filters=[Filter(field_name="big_number", relation=Relation.INCLUDES, value=["9007199254740993"])],
         expected=True,
         description="bigint_includes_match",
     ),
@@ -262,6 +262,7 @@ DATETIME_CASES = [
         expected=True,
         description="datetime_tz_allows_zero_offset",
     ),
+    # If we didn't truncate microseconds, the stored ts would be earlier than the filtered range.
     Case(
         props={"created_at": "2025-01-15T00:00:00.001000"},
         fields={"created_at": DataType.TIMESTAMP_WITHOUT_TIMEZONE},
@@ -269,7 +270,7 @@ DATETIME_CASES = [
             Filter(
                 field_name="created_at",
                 relation=Relation.BETWEEN,
-                value=[None, "2025-01-15T00:00:00"],
+                value=["2025-01-15T00:00:00.100000", None],
             )
         ],
         expected=True,
@@ -419,7 +420,7 @@ COMPOUND_CASES = [
 ]
 
 
-ALL_CASES = (
+ALL_FILTER_CASES = (
     BASIC_CASES
     + INTEGER_CASES
     + FLOAT_CASES
@@ -433,7 +434,7 @@ ALL_CASES = (
 )
 
 
-@pytest.mark.parametrize("testcase", ALL_CASES, ids=lambda d: str(d))
+@pytest.mark.parametrize("testcase", ALL_FILTER_CASES, ids=lambda d: str(d))
 def test_passes_filters(testcase: Case):
     """Test that passes_filters correctly evaluates filter criteria."""
     actual = passes_filters(testcase.props, testcase.fields, testcase.filters)

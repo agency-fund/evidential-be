@@ -1,9 +1,59 @@
 import uuid
-from datetime import date, datetime
+from datetime import date, datetime, time, timedelta
+from typing import Literal
 
-from xngin.apiserver.dwh.queries import str_to_date_or_datetime
+from xngin.apiserver.exceptions_common import LateValidationError
 from xngin.apiserver.routers.common_api_types import DataType, Filter, PropertyValueTypes
 from xngin.apiserver.routers.common_enums import Relation
+
+
+def str_to_date_or_datetime(
+    col_name: str,
+    s: int | float | str | date | datetime | None,
+    target_type: Literal["date", "datetime"],
+) -> date | datetime | None:
+    """Convert an ISO8601 string to a date or datetime based on target_type.
+
+    LateValidationError is raised if the ISO8601 string specifies a non-UTC timezone.
+
+    For "datetime": microseconds are truncated to zero for maximum compatibility between backends.
+        If `s` is already a datetime, it is returned as-is, but with microseconds set to zero.
+    For "date": datetime strings are converted to dates, dropping time information.
+        If `s` is already a date, it is returned as-is.
+    """
+    if s is None:
+        return None
+
+    if isinstance(s, datetime):
+        return s.date() if target_type == "date" else s.replace(microsecond=0)
+
+    if isinstance(s, date):
+        # convert date to datetime at midnight if target_type is datetime
+        return s if target_type == "date" else datetime.combine(s, time.min)
+
+    if not isinstance(s, str):
+        raise LateValidationError(
+            f"{col_name}: {target_type}-type filter values must be strings containing an ISO8601 formatted date."
+        )
+
+    # Always parse as datetime first to validate timezone
+    try:
+        parsed = datetime.fromisoformat(s).replace(microsecond=0)
+    except (ValueError, TypeError) as exc:
+        raise LateValidationError(
+            f"{col_name}: {target_type}-type filter values must be strings containing an ISO8601 formatted date."
+        ) from exc
+
+    if parsed.tzinfo:
+        offset = parsed.tzinfo.utcoffset(parsed)
+        if offset != timedelta():  # 0 timedelta is equivalent to UTC
+            raise LateValidationError(
+                f"{col_name}: {target_type}-type filter values must be in UTC, "
+                f"or not be tagged with an explicit timezone: {s}"
+            )
+        parsed = parsed.replace(tzinfo=None)
+
+    return parsed.date() if target_type == "date" else parsed
 
 
 def passes_filters(props: dict[str, PropertyValueTypes], fields: dict[str, DataType], filters: list[Filter]) -> bool:
@@ -24,8 +74,8 @@ def passes_filters(props: dict[str, PropertyValueTypes], fields: dict[str, DataT
 
 def _passes_filter(exp_filter: Filter, field_type: DataType, value: PropertyValueTypes) -> bool:
     """Check that a value passes a filter."""
-    py_value = _validate_value(exp_filter.field_name, value, field_type)
-    parsed_values = [_validate_value(exp_filter.field_name, v, field_type) for v in exp_filter.value]
+    py_value = validate_filter_value(exp_filter.field_name, value, field_type)
+    parsed_values = [validate_filter_value(exp_filter.field_name, v, field_type) for v in exp_filter.value]
 
     match exp_filter.relation:
         case Relation.INCLUDES:
@@ -50,7 +100,7 @@ def _passes_filter(exp_filter: Filter, field_type: DataType, value: PropertyValu
                     raise ValueError(f"Invalid between value: {exp_filter.value}")
 
 
-def _validate_value(
+def validate_filter_value(
     field_name: str, value: PropertyValueTypes, field_type: DataType
 ) -> str | int | float | bool | datetime | date | None:
     """Validate a value is of the appropriate type and possibly cast it to the appropriate Python type."""
@@ -81,7 +131,7 @@ def _validate_value(
         case DataType.DOUBLE_PRECISION | DataType.NUMERIC:
             if not isinstance(value, (int, float)):
                 raise TypeError("Double/Numeric input must be an integer or float.")
-            return float(value)
+            return value
 
         case DataType.BIGINT:
             if not isinstance(value, (int, str)):  # int for backwards compatibility
