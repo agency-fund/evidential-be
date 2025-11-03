@@ -119,9 +119,9 @@ INTEGER_CASES = [
 # Float/Numeric tests
 FLOAT_CASES = [
     Case(
-        props={"score": 95.5},
-        fields={"score": DataType.DOUBLE_PRECISION},
-        filters=[Filter(field_name="score", relation=Relation.INCLUDES, value=[95.5, 100.0])],
+        props={"score_dp": 95.5},
+        fields={"score_dp": DataType.DOUBLE_PRECISION},
+        filters=[Filter(field_name="score_dp", relation=Relation.INCLUDES, value=[95.5, 100.0])],
         expected=True,
         description="float_includes_match",
     ),
@@ -133,9 +133,9 @@ FLOAT_CASES = [
         description="numeric_between_in_range",
     ),
     Case(
-        props={"score": 95.5},
-        fields={"score": DataType.DOUBLE_PRECISION},
-        filters=[Filter(field_name="score", relation=Relation.BETWEEN, value=[80.0, 90.0])],
+        props={"score_dp": 95.5},
+        fields={"score_dp": DataType.DOUBLE_PRECISION},
+        filters=[Filter(field_name="score_dp", relation=Relation.BETWEEN, value=[80.0, 90.0])],
         expected=False,
         description="float_between_out_of_range",
     ),
@@ -217,18 +217,18 @@ BIGINT_CASES = [
 
 DATETIME_CASES = [
     Case(
-        props={"created_at": "2025-01-01T00:00:00"},
-        fields={"created_at": DataType.TIMESTAMP_WITH_TIMEZONE},
-        filters=[Filter(field_name="created_at", relation=Relation.INCLUDES, value=["2025-01-01T00:00:00"])],
+        props={"created_at_tz": "2025-01-01T00:00:00"},
+        fields={"created_at_tz": DataType.TIMESTAMP_WITH_TIMEZONE},
+        filters=[Filter(field_name="created_at_tz", relation=Relation.INCLUDES, value=["2025-01-01T00:00:00"])],
         expected=True,
         description="datetime_tz_includes_match",
     ),
     Case(
-        props={"created_at": "2025-01-15T12:00:00"},
-        fields={"created_at": DataType.TIMESTAMP_WITH_TIMEZONE},
+        props={"created_at_tz": "2025-01-15T12:00:00"},
+        fields={"created_at_tz": DataType.TIMESTAMP_WITH_TIMEZONE},
         filters=[
             Filter(
-                field_name="created_at",
+                field_name="created_at_tz",
                 relation=Relation.BETWEEN,
                 value=["2025-01-01T00:00:00", "2025-01-31T23:59:59"],
             )
@@ -237,11 +237,11 @@ DATETIME_CASES = [
         description="datetime_tz_between_in_range",
     ),
     Case(
-        props={"created_at": "2025-01-15T12:00:00"},
-        fields={"created_at": DataType.TIMESTAMP_WITH_TIMEZONE},
+        props={"created_at_tz": "2025-01-15T12:00:00"},
+        fields={"created_at_tz": DataType.TIMESTAMP_WITH_TIMEZONE},
         filters=[
             Filter(
-                field_name="created_at",
+                field_name="created_at_tz",
                 relation=Relation.BETWEEN,
                 value=["2025-01-15T12:00:00+00:00", None],
             )
@@ -308,9 +308,9 @@ DATE_CASES = [
         description="date_between_in_range",
     ),
     Case(
-        props={"created_at": "2025-01-01"},
-        fields={"created_at": DataType.DATE},
-        filters=[Filter(field_name="created_at", relation=Relation.INCLUDES, value=["2025-01-01T12:00:00"])],
+        props={"birth_date": "2025-01-01"},
+        fields={"birth_date": DataType.DATE},
+        filters=[Filter(field_name="birth_date", relation=Relation.INCLUDES, value=["2025-01-01T12:00:00"])],
         expected=True,
         description="date_with_hms_truncated",
     ),
@@ -416,16 +416,16 @@ COMPOUND_CASES = [
         description="compound_second_filter_fails",
     ),
     Case(
-        props={"age": 25, "is_active": True, "score": 95.5},
+        props={"age": 25, "is_active": True, "score_dp": 95.5},
         fields={
             "age": DataType.INTEGER,
             "is_active": DataType.BOOLEAN,
-            "score": DataType.DOUBLE_PRECISION,
+            "score_dp": DataType.DOUBLE_PRECISION,
         },
         filters=[
             Filter(field_name="age", relation=Relation.BETWEEN, value=[20, 30]),
             Filter(field_name="is_active", relation=Relation.INCLUDES, value=[True]),
-            Filter(field_name="score", relation=Relation.BETWEEN, value=[90.0, 100.0]),
+            Filter(field_name="score_dp", relation=Relation.BETWEEN, value=[90.0, 100.0]),
         ],
         expected=True,
         description="compound_three_filters_all_pass",
