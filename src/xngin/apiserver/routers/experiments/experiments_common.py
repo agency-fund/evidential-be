@@ -72,10 +72,6 @@ class ExperimentsAssignmentError(Exception):
     """Wrapper for errors raised by our xngin.apiserver.routers.experiments_common module."""
 
 
-# class ExperimentsAssignmentFilterError(Exception):
-#     """Error raised when a participant does not match the experiment's filters during assignment."""
-
-
 def random_choice[T](choices: Sequence[T], seed: int | None = None) -> T:
     """Choose a random value from choices."""
     if seed:
