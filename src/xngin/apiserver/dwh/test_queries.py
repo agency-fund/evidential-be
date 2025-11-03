@@ -673,9 +673,12 @@ def test_property_filters_in_sql(testcase, queries_session):
 
     metadata = sqlalchemy.MetaData()
     table_name = f"tpf_{str(testcase).replace(' ', '_')}"
-    # Use a temp table that is automatically cleaned up when session ends
-    table = Table(table_name, metadata, *columns, prefixes=["TEMPORARY"])
-    metadata.create_all(queries_session.bind)
+    # Determine temp table prefix depending on backend
+    engine = queries_session.bind
+    dialect_name = engine.dialect.name or ""
+    temp_prefix = ["TEMP"] if dialect_name == "bigquery" else ["TEMPORARY"]
+    table = Table(table_name, metadata, *columns, prefixes=temp_prefix)
+    metadata.create_all(engine)
 
     try:
         # Insert a single row with id=1 and the properties from the test case
