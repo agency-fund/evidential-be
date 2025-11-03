@@ -54,7 +54,7 @@ from xngin.apiserver.routers.common_enums import (
     PriorTypes,
     StopAssignmentReason,
 )
-from xngin.apiserver.routers.experiments.property_filters import passes_filters
+from xngin.apiserver.routers.experiments.property_filters import passes_filters, validate_filter_value
 from xngin.apiserver.settings import DatasourceConfig, ParticipantsDef
 from xngin.apiserver.sqla import tables
 from xngin.apiserver.storage.storage_format_converters import ExperimentStorageConverter
@@ -106,6 +106,15 @@ async def create_experiment_impl(
             participants_cfg = ds_config.find_participants(design_spec.participant_type)
             if not isinstance(participants_cfg, ParticipantsDef):
                 raise LateValidationError("Invalid ParticipantsConfig: Participants must be of type schema.")
+
+            # Validate the filter values
+            field_map = {field.field_name: field.data_type for field in participants_cfg.fields}
+            for filter_ in design_spec.filters:
+                field_type = field_map.get(filter_.field_name)
+                if field_type is None:
+                    raise LateValidationError(f"Field {filter_.field_name} not found in participants schema.")
+                for value in filter_.value:
+                    validate_filter_value(filter_.field_name, value, field_type)
 
             # Get participants and their schema info from the client dwh.
             # Only fetch the columns we might need for stratified random assignment.

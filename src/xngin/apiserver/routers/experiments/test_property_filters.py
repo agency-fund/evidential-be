@@ -447,7 +447,7 @@ def test_passes_filters_field_not_found():
     fields = {"age": DataType.INTEGER}
     filters = [Filter(field_name="missing_field", relation=Relation.INCLUDES, value=[25])]
 
-    with pytest.raises(ValueError, match="Field missing_field not found in participant type"):
+    with pytest.raises(ValueError, match=r"Field missing_field data type is missing \(field not found\?\)"):
         passes_filters(props, fields, filters)
 
 

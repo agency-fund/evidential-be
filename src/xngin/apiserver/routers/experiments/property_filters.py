@@ -63,16 +63,13 @@ def passes_filters(props: dict[str, PropertyValueTypes], fields: dict[str, DataT
 
     for f in filters:
         field_type = fields.get(f.field_name)
-        if not field_type:
-            raise ValueError(f"Field {f.field_name} not found in participant type.")
-
         if not _passes_filter(f, field_type, props.get(f.field_name)):
             return False
 
     return True
 
 
-def _passes_filter(exp_filter: Filter, field_type: DataType, value: PropertyValueTypes) -> bool:
+def _passes_filter(exp_filter: Filter, field_type: DataType | None, value: PropertyValueTypes) -> bool:
     """Check that a value passes a filter."""
     py_value = validate_filter_value(exp_filter.field_name, value, field_type)
     parsed_values = [validate_filter_value(exp_filter.field_name, v, field_type) for v in exp_filter.value]
@@ -101,9 +98,18 @@ def _passes_filter(exp_filter: Filter, field_type: DataType, value: PropertyValu
 
 
 def validate_filter_value(
-    field_name: str, value: PropertyValueTypes, field_type: DataType
+    field_name: str, value: PropertyValueTypes, field_type: DataType | None
 ) -> str | int | float | bool | datetime | date | None:
-    """Validate a value is of the appropriate type and possibly cast it to the appropriate Python type."""
+    """Validate a value is of the appropriate type and possibly cast it to the appropriate Python type.
+
+    Raises:
+        TypeError if the value is not of the appropriate type.
+        ValueError if the value cannot be converted to the appropriate type.
+        LateValidationError for date/datetime values issues, or if the field_type is missing.
+    """
+    if not field_type:
+        raise ValueError(f"Field {field_name} data type is missing (field not found?).")
+
     if value is None:
         return None
 
