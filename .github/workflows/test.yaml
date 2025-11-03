@@ -164,7 +164,7 @@ jobs:
           uv run xngin-cli create-apiserver-db
 
   bq-integration:
-    timeout-minutes: 25
+    timeout-minutes: 20
     runs-on: ubuntu-22.04
     needs: changes
     if: needs.changes.outputs.queries == 'true'
