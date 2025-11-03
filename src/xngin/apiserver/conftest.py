@@ -179,8 +179,8 @@ def fixture_override_app_dependencies():
     auth_dependencies.enable_testing_tokens()
 
 
-@pytest.fixture(scope="session", name="client")
-def fixture_client():
+@pytest.fixture(name="client")
+def fixture_client(xngin_session):
     """Returns a FastAPI TestClient.
 
     TestClient manages the lifecycle of the app and will invoke the FastAPI app and router @lifespan methods.
@@ -189,8 +189,8 @@ def fixture_client():
         yield client
 
 
-@pytest.fixture(scope="session", name="client_v1")
-def fixture_client_v1():
+@pytest.fixture(name="client_v1")
+def fixture_client_v1(xngin_session):
     """Returns a FastAPI TestClient with the {constants.API_PREFIX_V1} as a prefix on the request path.
 
     TestClient manages the lifecycle of the app and will invoke the FastAPI app and router @lifespan methods.
@@ -199,17 +199,17 @@ def fixture_client_v1():
         yield client
 
 
-@pytest.fixture(scope="session", name="pget")
+@pytest.fixture(name="pget")
 def fixture_pget(client):
     return partial(client.get, headers={"Authorization": f"Bearer {PRIVILEGED_TOKEN_FOR_TESTING}"})
 
 
-@pytest.fixture(scope="session", name="ppost")
+@pytest.fixture(name="ppost")
 def fixture_ppost(client):
     return partial(client.post, headers={"Authorization": f"Bearer {PRIVILEGED_TOKEN_FOR_TESTING}"})
 
 
-@pytest.fixture(scope="session", name="ppatch")
+@pytest.fixture(name="ppatch")
 def fixture_ppatch(client):
     return partial(
         client.patch,
@@ -217,7 +217,7 @@ def fixture_ppatch(client):
     )
 
 
-@pytest.fixture(scope="session", name="pdelete")
+@pytest.fixture(name="pdelete")
 def fixture_pdelete(client):
     return partial(
         client.delete,
@@ -225,7 +225,7 @@ def fixture_pdelete(client):
     )
 
 
-@pytest.fixture(scope="session", name="udelete")
+@pytest.fixture(name="udelete")
 def fixture_udelete(client):
     return partial(
         client.delete,
@@ -233,7 +233,7 @@ def fixture_udelete(client):
     )
 
 
-@pytest.fixture(scope="session", name="uget")
+@pytest.fixture(name="uget")
 def fixture_uget(client):
     return partial(
         client.get,
@@ -241,7 +241,7 @@ def fixture_uget(client):
     )
 
 
-@pytest.fixture(name="xngin_session", autouse=True)
+@pytest.fixture(name="xngin_session")
 async def fixture_xngin_db_session():
     """Yields a SQLAlchemy session suitable for direct interaction with the database.
 
