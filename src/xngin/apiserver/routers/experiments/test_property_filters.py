@@ -237,6 +237,19 @@ DATETIME_CASES = [
         description="datetime_tz_between_in_range",
     ),
     Case(
+        props={"created_at": "2025-01-15T12:00:00"},
+        fields={"created_at": DataType.TIMESTAMP_WITH_TIMEZONE},
+        filters=[
+            Filter(
+                field_name="created_at",
+                relation=Relation.BETWEEN,
+                value=["2025-01-15T12:00:00+00:00", None],
+            )
+        ],
+        expected=True,
+        description="datetime_tz_allows_zero_offset",
+    ),
+    Case(
         props={"created_at": "2025-02-15T12:00:00"},
         fields={"created_at": DataType.TIMESTAMP_WITHOUT_TIMEZONE},
         filters=[
@@ -247,10 +260,10 @@ DATETIME_CASES = [
             )
         ],
         expected=False,
-        description="datetime_between_out_of_range",
+        description="datetime_without_tz_between_out_of_range",
     ),
     Case(
-        props={"created_at": "2025-01-15T12:00:00+00:00"},
+        props={"created_at": "2025-01-15T12:00:00"},
         fields={"created_at": DataType.TIMESTAMP_WITHOUT_TIMEZONE},
         filters=[
             Filter(
@@ -260,7 +273,7 @@ DATETIME_CASES = [
             )
         ],
         expected=True,
-        description="datetime_tz_allows_zero_offset",
+        description="datetime_without_tz_truncates_zero_offset",
     ),
     # If we didn't truncate microseconds, the stored ts would be earlier than the filtered range.
     Case(
@@ -274,7 +287,7 @@ DATETIME_CASES = [
             )
         ],
         expected=True,
-        description="datetime_tz_truncates_microseconds",
+        description="datetime_without_tz_truncates_microseconds",
     ),
 ]
 
@@ -295,9 +308,9 @@ DATE_CASES = [
         description="date_between_in_range",
     ),
     Case(
-        props={"created_at": "2025-01-01T12:00:00"},
+        props={"created_at": "2025-01-01"},
         fields={"created_at": DataType.DATE},
-        filters=[Filter(field_name="created_at", relation=Relation.INCLUDES, value=["2025-01-01"])],
+        filters=[Filter(field_name="created_at", relation=Relation.INCLUDES, value=["2025-01-01T12:00:00"])],
         expected=True,
         description="date_with_hms_truncated",
     ),
@@ -435,7 +448,7 @@ ALL_FILTER_CASES = (
 
 
 @pytest.mark.parametrize("testcase", ALL_FILTER_CASES, ids=lambda d: str(d))
-def test_passes_filters(testcase: Case):
+def test_passes_filters_tf(testcase: Case):
     """Test that passes_filters correctly evaluates filter criteria."""
     actual = passes_filters(testcase.props, testcase.fields, testcase.filters)
     assert actual == testcase.expected, f"Failed for case: {testcase}"
@@ -519,7 +532,7 @@ def test_passes_filters_invalid_datetime():
 
 def test_passes_filters_invalid_datetime_with_nonzero_offset():
     props: dict[str, PropertyValueTypes] = {"created_at": "2025-01-15T12:00:00+08:00"}
-    fields = {"created_at": DataType.TIMESTAMP_WITHOUT_TIMEZONE}
+    fields = {"created_at": DataType.TIMESTAMP_WITH_TIMEZONE}
     filters = [Filter(field_name="created_at", relation=Relation.BETWEEN, value=[None, "2025-01-15T12:00:00+08:00"])]
 
     with pytest.raises(

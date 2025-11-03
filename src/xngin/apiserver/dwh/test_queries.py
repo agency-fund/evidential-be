@@ -687,7 +687,6 @@ def test_property_filters_in_sql(testcase, queries_session):
             insert_values[field_name] = value
 
         queries_session.execute(table.insert().values(insert_values))
-        queries_session.commit()
 
         # Finally test the query with filters
         select_columns = set(table.c.keys())
