@@ -3,7 +3,7 @@
 import re
 from dataclasses import dataclass
 from datetime import UTC, date, datetime
-from typing import Any
+from typing import Any, NamedTuple
 
 import pytest
 import sqlalchemy
@@ -122,6 +122,11 @@ class SampleTable(Base):
     experiment_ids = mapped_column(String, nullable=False)
 
 
+class SampleTables(NamedTuple):
+    sample_table: Table
+    sample_nullable_table: Table
+
+
 @dataclass
 class Row:
     id: int
@@ -229,9 +234,10 @@ def shared_sample_tables(queries_dwh_engine):
             session.add(SampleNullableTable(**nullable_row.__dict__))
         session.commit()
 
-    yield SampleTable.get_table(), SampleNullableTable.get_table()
-
-    Base.metadata.drop_all(queries_dwh_engine)
+    try:
+        yield SampleTables(SampleTable.get_table(), SampleNullableTable.get_table())
+    finally:
+        Base.metadata.drop_all(queries_dwh_engine)
 
 
 @pytest.fixture
@@ -498,7 +504,7 @@ IS_NULLABLE_CASES = [
 @pytest.mark.parametrize("testcase", IS_NULLABLE_CASES, ids=lambda d: str(d))
 def test_is_nullable(testcase, queries_dwh_session, shared_sample_tables, use_deterministic_random):
     testcase.filters = [Filter.model_validate(filt.model_dump()) for filt in testcase.filters]
-    table = SampleNullableTable.get_table()
+    table: Table = shared_sample_tables.sample_nullable_table
     select_columns = set(table.c.keys())
     filters = create_query_filters(table, testcase.filters)
     q = compose_query(table, select_columns, filters, testcase.chosen_n)
@@ -634,7 +640,7 @@ RELATION_CASES = [
 @pytest.mark.parametrize("testcase", RELATION_CASES)
 def test_relations(testcase, queries_dwh_session, shared_sample_tables, use_deterministic_random):
     testcase.filters = [Filter.model_validate(filt.model_dump()) for filt in testcase.filters]
-    table = SampleTable.get_table()
+    table: Table = shared_sample_tables.sample_table
     select_columns = set(table.c.keys())
     filters = create_query_filters(table, testcase.filters)
     q = compose_query(table, select_columns, filters, testcase.chosen_n)
@@ -876,7 +882,7 @@ def test_get_stats_on_missing_metric_raises_error(queries_dwh_session, shared_sa
     with pytest.raises(LateValidationError) as exc:
         get_stats_on_metrics(
             queries_dwh_session,
-            SampleTable.get_table(),
+            shared_sample_tables.sample_table,
             [DesignSpecMetricRequest(field_name="missing_col", metric_pct_change=0.1)],
             filters=[],
         )
@@ -887,7 +893,7 @@ def test_get_stats_on_integer_metric(queries_dwh_session, shared_sample_tables):
     """Test would fail on postgres and redshift without a cast to float for different reasons."""
     rows = get_stats_on_metrics(
         queries_dwh_session,
-        SampleTable.get_table(),
+        shared_sample_tables.sample_table,
         [DesignSpecMetricRequest(field_name="int_col", metric_pct_change=0.1)],
         filters=[],
     )
@@ -918,7 +924,7 @@ def test_get_stats_on_integer_metric(queries_dwh_session, shared_sample_tables):
 def test_get_stats_on_nullable_integer_metric(queries_dwh_session, shared_sample_tables):
     rows = get_stats_on_metrics(
         queries_dwh_session,
-        SampleNullableTable.get_table(),
+        shared_sample_tables.sample_nullable_table,
         [DesignSpecMetricRequest(field_name="int_col", metric_pct_change=0.1)],
         filters=[],
     )
@@ -948,7 +954,7 @@ def test_get_stats_on_boolean_metric(queries_dwh_session, shared_sample_tables):
     """Test would fail on postgres and redshift without casting to int to float."""
     rows = get_stats_on_metrics(
         queries_dwh_session,
-        SampleTable.get_table(),
+        shared_sample_tables.sample_table,
         [DesignSpecMetricRequest(field_name="bool_col", metric_pct_change=0.1)],
         filters=[],
     )
@@ -977,7 +983,7 @@ def test_get_stats_on_boolean_metric(queries_dwh_session, shared_sample_tables):
 def test_get_stats_on_numeric_metric(queries_dwh_session, shared_sample_tables):
     rows = get_stats_on_metrics(
         queries_dwh_session,
-        SampleTable.get_table(),
+        shared_sample_tables.sample_table,
         [DesignSpecMetricRequest(field_name="float_col", metric_pct_change=0.1)],
         filters=[],
     )
@@ -1008,7 +1014,7 @@ def test_get_participant_metrics(queries_dwh_session, shared_sample_tables):
     participant_ids = ["100", "200"]
     rows = get_participant_metrics(
         queries_dwh_session,
-        SampleTable.get_table(),
+        shared_sample_tables.sample_table,
         [
             DesignSpecMetricRequest(field_name="float_col", metric_pct_change=0.1),
             DesignSpecMetricRequest(field_name="bool_col", metric_pct_change=0.1),
