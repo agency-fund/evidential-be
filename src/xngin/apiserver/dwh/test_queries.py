@@ -173,18 +173,18 @@ class Case:
         return " and ".join([f"{f.field_name} {f.relation.name} {f.value}" for f in self.filters])
 
 
-@pytest.fixture(name="queries_session")
-def fixture_queries_session():
-    """Yields a session that tests can use to operate on a testing database.
+@pytest.fixture(scope="module")
+def queries_dwh_engine():
+    """Yields a SQLAlchemy Engine for tests to ooperate on a test data warehouse.
 
-    The testing data warehouse is specified by the XNGIN_QUERIES_TEST_URI environment variable. Usually this is a local
-    Postgres instance, but some integration tests may point these tests at a BigQuery dataset (see CI for example).
+    This dwh is specified by the XNGIN_QUERIES_TEST_URI environment variable. Usually this is a
+    local Postgres, but some integration tests may point at a BigQuery dataset (see CI for example).
 
     SampleTable and SampleNullableTable are recreated and populated on each invocation.
     """
     test_db = get_queries_test_uri()
-    management_db = make_url(test_db.connect_url)._replace(database=None)
     if test_db.db_type == DbType.PG:
+        management_db = make_url(test_db.connect_url)._replace(database=None)
         default_engine = create_engine(
             management_db,
             echo=flags.ECHO_SQL,
@@ -203,30 +203,41 @@ def fixture_queries_session():
 
     engine = create_engine(
         test_db.connect_url,
-        logging_name=SA_LOGGER_NAME_FOR_DWH,
         echo=flags.ECHO_SQL,
+        logging_name=SA_LOGGER_NAME_FOR_DWH,
         execution_options={"logging_token": SA_LOGGING_PREFIX_FOR_DWH},
     )
     try:
         if test_db.db_type is DbType.RS and hasattr(engine.dialect, "_set_backslash_escapes"):
             engine.dialect._set_backslash_escapes = lambda _: None
 
-        Base.metadata.create_all(engine)
-        with Session(engine) as session:
-            for row in SAMPLE_TABLE_ROWS:
-                session.add(SampleTable(**row.__dict__))
-            for nullable_row in SAMPLE_NULLABLE_TABLE_ROWS:
-                session.add(SampleNullableTable(**nullable_row.__dict__))
-            session.commit()
-
-        with Session(engine) as session:
-            try:
-                yield session
-            finally:
-                session.close()
+        yield engine
     finally:
-        Base.metadata.drop_all(engine)
         engine.dispose()
+
+
+@pytest.fixture(scope="module")
+def shared_sample_tables(queries_dwh_engine):
+    """Creates and populates SampleTable and SampleNullableTable."""
+    # Create using the DeclarativeBase approach
+    Base.metadata.create_all(queries_dwh_engine)
+    # and then populate with our sample data.
+    with Session(queries_dwh_engine) as session:
+        for row in SAMPLE_TABLE_ROWS:
+            session.add(SampleTable(**row.__dict__))
+        for nullable_row in SAMPLE_NULLABLE_TABLE_ROWS:
+            session.add(SampleNullableTable(**nullable_row.__dict__))
+        session.commit()
+
+    yield SampleTable.get_table(), SampleNullableTable.get_table()
+
+    Base.metadata.drop_all(queries_dwh_engine)
+
+
+@pytest.fixture
+def queries_dwh_session(queries_dwh_engine):
+    with Session(queries_dwh_engine) as session:
+        yield session  # context manager will close it on exit
 
 
 @pytest.mark.parametrize(
@@ -485,13 +496,13 @@ IS_NULLABLE_CASES = [
 
 
 @pytest.mark.parametrize("testcase", IS_NULLABLE_CASES, ids=lambda d: str(d))
-def test_is_nullable(testcase, queries_session, use_deterministic_random):
+def test_is_nullable(testcase, queries_dwh_session, shared_sample_tables, use_deterministic_random):
     testcase.filters = [Filter.model_validate(filt.model_dump()) for filt in testcase.filters]
     table = SampleNullableTable.get_table()
     select_columns = set(table.c.keys())
     filters = create_query_filters(table, testcase.filters)
     q = compose_query(table, select_columns, filters, testcase.chosen_n)
-    query_results = queries_session.execute(q)
+    query_results = queries_dwh_session.execute(q)
     assert list(sorted([r.id for r in query_results])) == list(sorted(r.id for r in testcase.matches)), testcase
 
 
@@ -621,13 +632,13 @@ RELATION_CASES = [
 
 
 @pytest.mark.parametrize("testcase", RELATION_CASES)
-def test_relations(testcase, queries_session, use_deterministic_random):
+def test_relations(testcase, queries_dwh_session, shared_sample_tables, use_deterministic_random):
     testcase.filters = [Filter.model_validate(filt.model_dump()) for filt in testcase.filters]
     table = SampleTable.get_table()
     select_columns = set(table.c.keys())
     filters = create_query_filters(table, testcase.filters)
     q = compose_query(table, select_columns, filters, testcase.chosen_n)
-    query_results = queries_session.execute(q)
+    query_results = queries_dwh_session.execute(q)
     assert list(sorted([r.id for r in query_results])) == list(sorted(r.id for r in testcase.matches)), testcase
 
 
@@ -655,81 +666,63 @@ def _datatype_to_sqlalchemy_type(data_type: DataType):
 
 
 @pytest.fixture(scope="module")
-def shared_filter_table():
+def shared_filter_table(queries_dwh_engine):
     """Creates a single shared table with all columns needed for property filter tests.
 
-    This fixture avoids repeated CREATE/DROP TABLE operations. Instead, each test uses a unique
-    ID to isolate its test data.
+    We use this to avoid repeated CREATE/DROP TABLE operations.
+    Instead, each test should use a unique ID to isolate its test data.
     """
-    # Create a new engine since we can't use the function-scoped queries_session fixture with our module scope.
-    test_db = get_queries_test_uri()
-    engine = create_engine(
-        test_db.connect_url,
-        logging_name=SA_LOGGER_NAME_FOR_DWH,
-        echo=flags.ECHO_SQL,
-        execution_options={"logging_token": SA_LOGGING_PREFIX_FOR_DWH},
-    )
-    dialect = engine.dialect.name
-
     # Collect all unique field names and types from ALL_FILTER_CASES.
     all_fields: dict[str, DataType] = {}
     for case in ALL_FILTER_CASES:
         for field_name, data_type in case.fields.items():
+            # Ensure test writer didn't accidentally use multiple types for the same field.
             if field_name in all_fields and all_fields[field_name] != data_type:
                 raise ValueError(f"Conflicting types for {field_name}: {all_fields[field_name]} vs {data_type}")
             all_fields[field_name] = data_type
 
-    # Create table with all columns
-    columns = [Column("id", Integer, primary_key=True)]
+    # Create table with all columns needed for filter tests.
+    columns = [Column("id", String, primary_key=True)]
     for field_name, data_type in sorted(all_fields.items()):
         col_type = _datatype_to_sqlalchemy_type(data_type)
         columns.append(Column(field_name, col_type, nullable=True))
 
     metadata = sqlalchemy.MetaData()
     table = Table("shared_filter_table", metadata, *columns)
-
-    exec_options = {} if dialect == "bigquery" else {"isolation_level": "AUTOCOMMIT"}
-    with engine.connect().execution_options(**exec_options) as conn:
-        metadata.create_all(conn)
+    metadata.create_all(queries_dwh_engine)
 
     try:
-        yield table, engine
+        yield table
     finally:
-        with engine.connect().execution_options(**exec_options) as conn:
-            metadata.drop_all(conn)
-        engine.dispose()
+        metadata.drop_all(queries_dwh_engine)
 
 
 @pytest.mark.parametrize("testcase", ALL_FILTER_CASES, ids=lambda d: str(d))
-def test_property_filters_in_sql(testcase, shared_filter_table):
+def test_property_filters_in_sql(testcase, shared_filter_table, queries_dwh_session):
     """Test that SQL query generation matches the in-memory filtering logic from property_filters.py."""
-    table, engine = shared_filter_table
-    # Hash the test case description to get a consistent integer ID for each case to avoid conflicts.
-    test_id = hash(str(testcase)) % (2**31 - 1)
+    test_id = str(testcase.description)
 
-    with Session(engine) as session:
-        try:
-            # Insert a row with the unique test ID and properties from the test case
-            insert_values: dict[str, Any] = {"id": test_id}
-            for field_name, value in testcase.props.items():
-                insert_values[field_name] = value
+    # Insert a row with the unique test ID and properties from the test case.
+    insert_values: dict[str, Any] = {"id": test_id}
+    for field_name, value in testcase.props.items():
+        insert_values[field_name] = value
 
-            session.execute(table.insert().values(insert_values))
+    queries_dwh_session.execute(shared_filter_table.insert().values(insert_values))
 
-            # Test the query with filters.
-            select_columns = {"id"}
-            filters = create_query_filters(table, testcase.filters)
-            q = compose_query(table, select_columns, filters, chosen_n=1).where(table.c.id == test_id)
-            query_results = list(session.execute(q))
+    # Test the query with filters.
+    filters = create_query_filters(shared_filter_table, testcase.filters)
+    q = compose_query(shared_filter_table, select_columns={"id"}, filters=filters, chosen_n=1).where(
+        shared_filter_table.c.id == test_id
+    )
+    result = queries_dwh_session.execute(q).scalar_one_or_none()
 
-            if testcase.expected:
-                assert len(query_results) == 1, f"Expected row to pass filters for case: {testcase}"
-                assert query_results[0].id == test_id
-            else:
-                assert len(query_results) == 0, f"Expected row to NOT pass filters for case: {testcase}"
+    if testcase.expected:
+        assert result == test_id, f"Expected row to pass filters for case: {testcase}"
+    else:
+        assert result is None, f"Expected row to NOT pass filters for case: {testcase}"
 
-        finally:
-            session.rollback()
+    # Cleanup our inserted test row.
+    queries_dwh_session.rollback()
 
 
 @pytest.mark.parametrize("column_type", [DateTime, Date])
@@ -879,10 +872,10 @@ def test_make_csv_regex(csv, values, expected):
     )
 
 
-def test_get_stats_on_missing_metric_raises_error(queries_session):
+def test_get_stats_on_missing_metric_raises_error(queries_dwh_session, shared_sample_tables):
     with pytest.raises(LateValidationError) as exc:
         get_stats_on_metrics(
-            queries_session,
+            queries_dwh_session,
             SampleTable.get_table(),
             [DesignSpecMetricRequest(field_name="missing_col", metric_pct_change=0.1)],
             filters=[],
@@ -890,10 +883,10 @@ def test_get_stats_on_missing_metric_raises_error(queries_session):
     assert "Missing metrics (check your Datasource configuration): {'missing_col'}" in str(exc)
 
 
-def test_get_stats_on_integer_metric(queries_session):
+def test_get_stats_on_integer_metric(queries_dwh_session, shared_sample_tables):
     """Test would fail on postgres and redshift without a cast to float for different reasons."""
     rows = get_stats_on_metrics(
-        queries_session,
+        queries_dwh_session,
         SampleTable.get_table(),
         [DesignSpecMetricRequest(field_name="int_col", metric_pct_change=0.1)],
         filters=[],
@@ -922,9 +915,9 @@ def test_get_stats_on_integer_metric(queries_session):
     assert actual.model_dump(include=numeric_fields) == pytest.approx(expected.model_dump(include=numeric_fields))
 
 
-def test_get_stats_on_nullable_integer_metric(queries_session):
+def test_get_stats_on_nullable_integer_metric(queries_dwh_session, shared_sample_tables):
     rows = get_stats_on_metrics(
-        queries_session,
+        queries_dwh_session,
         SampleNullableTable.get_table(),
         [DesignSpecMetricRequest(field_name="int_col", metric_pct_change=0.1)],
         filters=[],
@@ -951,10 +944,10 @@ def test_get_stats_on_nullable_integer_metric(queries_session):
     assert actual.model_dump(include=numeric_fields) == pytest.approx(expected.model_dump(include=numeric_fields))
 
 
-def test_get_stats_on_boolean_metric(queries_session):
+def test_get_stats_on_boolean_metric(queries_dwh_session, shared_sample_tables):
     """Test would fail on postgres and redshift without casting to int to float."""
     rows = get_stats_on_metrics(
-        queries_session,
+        queries_dwh_session,
         SampleTable.get_table(),
         [DesignSpecMetricRequest(field_name="bool_col", metric_pct_change=0.1)],
         filters=[],
@@ -981,9 +974,9 @@ def test_get_stats_on_boolean_metric(queries_session):
     assert actual.model_dump(include=numeric_fields) == pytest.approx(expected.model_dump(include=numeric_fields))
 
 
-def test_get_stats_on_numeric_metric(queries_session):
+def test_get_stats_on_numeric_metric(queries_dwh_session, shared_sample_tables):
     rows = get_stats_on_metrics(
-        queries_session,
+        queries_dwh_session,
         SampleTable.get_table(),
         [DesignSpecMetricRequest(field_name="float_col", metric_pct_change=0.1)],
         filters=[],
@@ -1011,10 +1004,10 @@ def test_get_stats_on_numeric_metric(queries_session):
     assert actual.model_dump(include=numeric_fields) == pytest.approx(expected.model_dump(include=numeric_fields))
 
 
-def test_get_participant_metrics(queries_session):
+def test_get_participant_metrics(queries_dwh_session, shared_sample_tables):
     participant_ids = ["100", "200"]
     rows = get_participant_metrics(
-        queries_session,
+        queries_dwh_session,
         SampleTable.get_table(),
         [
             DesignSpecMetricRequest(field_name="float_col", metric_pct_change=0.1),

@@ -70,7 +70,7 @@ env:
   # test fixture.
   DATABASE_URL_FOR_TEST: "postgresql+psycopg://postgres:postgres@localhost:5499/test_xngin?sslmode=disable"
 
-  # Datasource for the tests using the xngin.apiserver.dwh.test_queries.fixture_queries_session fixture.
+  # Datasource for the tests using the xngin.apiserver.dwh.test_queries.fixture_queries_dwh_session fixture.
   XNGIN_QUERIES_TEST_URI: "postgresql+psycopg://postgres:postgres@localhost:5499/test_queries?sslmode=disable"
 
   # XNGIN_PUBLIC_HOSTNAME defines the base hostname (and optional port) we use when constructing URLs to send to

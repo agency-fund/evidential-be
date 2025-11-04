@@ -101,7 +101,7 @@ def fixture_static_settings() -> SettingsForTesting:
 def get_queries_test_uri() -> TestUriInfo:
     """Gets the DSN of the testing data warehouse to use in tests.
 
-    See xngin.apiserver.dwh.test_queries.fixture_queries_session.
+    See xngin.apiserver.dwh.test_queries.fixture_queries_dwh_session.
     """
     connection_uri = os.environ.get("XNGIN_QUERIES_TEST_URI", "")
     if not connection_uri:
