@@ -48,8 +48,7 @@ def str_to_date_or_datetime(
         offset = parsed.tzinfo.utcoffset(parsed)
         if offset != timedelta():  # 0 timedelta is equivalent to UTC
             raise LateValidationError(
-                f"{col_name}: {target_type}-type filter values must be in UTC, "
-                f"or not be tagged with an explicit timezone: {s}"
+                f"{col_name}: {target_type}-type filter values must be in UTC, and not include timezone offsets: {s}"
             )
         parsed = parsed.replace(tzinfo=None)
 

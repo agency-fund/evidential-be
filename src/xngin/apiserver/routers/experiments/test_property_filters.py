@@ -15,13 +15,22 @@ class Case:
     props: dict[str, PropertyValueTypes]  # properties to filter on
     fields: dict[str, DataType]  # simulated db fields
     filters: list[Filter]  # filters to apply
-    expected: bool  # expected result: true if passes
+    expected: bool | None = None  # expected result: true if passes (None for error cases)
     description: str = ""  # test case name
 
     def __str__(self):
         if self.description:
             return self.description
         return " and ".join([f"{f.field_name} {f.relation.name} {f.value}" for f in self.filters])
+
+
+@dataclass
+class ErrorCase(Case):
+    exception_type: type[Exception] = Exception  # expected exception type
+    match_pattern: str | None = None  # optional regex pattern for error message
+
+    def __str__(self):
+        return f"{super().__str__()}_raises_{self.exception_type.__name__}"
 
 
 STRING_CASES = [
@@ -494,89 +503,79 @@ def test_passes_filters_tf(testcase: Case):
     assert actual == testcase.expected, f"Failed for case: {testcase}"
 
 
-def test_passes_filters_field_not_found():
-    """Test that ValueError is raised when field is not in fields dict."""
-    props: dict[str, PropertyValueTypes] = {"age": 25}
-    fields = {"age": DataType.INTEGER}
-    filters = [Filter(field_name="missing_field", relation=Relation.INCLUDES, value=[25])]
-
-    with pytest.raises(ValueError, match=r"Field missing_field data type is missing \(field not found\?\)"):
-        passes_filters(props, fields, filters)
-
-
-def test_passes_filters_invalid_boolean_type():
-    """Test that TypeError is raised for invalid boolean value."""
-    # Intentionally passing wrong type to test error handling
-    props: dict[str, PropertyValueTypes] = {"is_active": "not_a_bool"}
-    fields = {"is_active": DataType.BOOLEAN}
-    filters = [Filter(field_name="is_active", relation=Relation.INCLUDES, value=[True])]
-
-    with pytest.raises(TypeError, match="Boolean input is not a boolean"):
-        passes_filters(props, fields, filters)
-
-
-def test_passes_filters_invalid_varchar_type():
-    """Test that TypeError is raised for invalid varchar value."""
-    # Intentionally passing wrong type to test error handling
-    props: dict[str, PropertyValueTypes] = {"name": 1.0}
-    fields = {"name": DataType.CHARACTER_VARYING}
-    filters = [Filter(field_name="name", relation=Relation.INCLUDES, value=["Alice"])]
-
-    with pytest.raises(TypeError, match="varchar input is not a string"):
-        passes_filters(props, fields, filters)
-
-
-def test_passes_filters_invalid_uuid():
-    """Test that ValueError is raised for invalid UUID string."""
-    props: dict[str, PropertyValueTypes] = {"user_id": "not-a-valid-uuid"}
-    fields = {"user_id": DataType.UUID}
-    filters = [Filter(field_name="user_id", relation=Relation.INCLUDES, value=["550e8400-e29b-41d4-a716-446655440000"])]
-
-    with pytest.raises(ValueError):
-        passes_filters(props, fields, filters)
-
-
-def test_passes_filters_invalid_integer_type():
-    """Test that TypeError is raised for invalid integer value."""
-    # Intentionally passing wrong type to test error handling
-    props: dict[str, PropertyValueTypes] = {"age": "not_an_int"}
-    fields = {"age": DataType.INTEGER}
-    filters = [Filter(field_name="age", relation=Relation.INCLUDES, value=[25])]
-
-    with pytest.raises(TypeError, match="Integer input must be an int"):
-        passes_filters(props, fields, filters)
-
-
-def test_passes_filters_numeric_between_with_wrong_type():
-    """Test that TypeError is raised when BETWEEN is used on non-numeric/datetime fields."""
-    props: dict[str, PropertyValueTypes] = {"name": "Alice"}
-    fields = {"name": DataType.CHARACTER_VARYING}
-    filters = [Filter(field_name="name", relation=Relation.BETWEEN, value=["Alice", "Bob"])]
-
-    with pytest.raises(TypeError, match="BETWEEN relation is only supported for int/float/datetime/date fields"):
-        passes_filters(props, fields, filters)
-
-
-def test_passes_filters_invalid_datetime():
-    """Test that ValueError is raised for invalid datetime string."""
-    props: dict[str, PropertyValueTypes] = {"created_at": "not-a-valid-datetime"}
-    fields = {"created_at": DataType.TIMESTAMP_WITH_TIMEZONE}
-    filters = [Filter(field_name="created_at", relation=Relation.INCLUDES, value=["2025-01-01T00:00:00"])]
-
-    with pytest.raises(
-        LateValidationError,
-        match="created_at: datetime-type filter values must be strings containing an ISO8601 formatted date",
-    ):
-        passes_filters(props, fields, filters)
+ERROR_CASES = [
+    ErrorCase(
+        props={"age": 25},
+        fields={"age": DataType.INTEGER},
+        filters=[Filter(field_name="missing_field", relation=Relation.INCLUDES, value=[25])],
+        exception_type=ValueError,
+        match_pattern=r"Field missing_field data type is missing \(field not found\?\)",
+        description="field_not_found",
+    ),
+    ErrorCase(
+        props={"is_active": "not_a_bool"},
+        fields={"is_active": DataType.BOOLEAN},
+        filters=[Filter(field_name="is_active", relation=Relation.INCLUDES, value=[True])],
+        exception_type=TypeError,
+        match_pattern="Boolean input is not a boolean",
+        description="invalid_boolean_type",
+    ),
+    ErrorCase(
+        props={"name": 1.0},
+        fields={"name": DataType.CHARACTER_VARYING},
+        filters=[Filter(field_name="name", relation=Relation.INCLUDES, value=["Alice"])],
+        exception_type=TypeError,
+        match_pattern="varchar input is not a string",
+        description="invalid_varchar_type",
+    ),
+    ErrorCase(
+        props={"user_id": "not-a-valid-uuid"},
+        fields={"user_id": DataType.UUID},
+        filters=[
+            Filter(field_name="user_id", relation=Relation.INCLUDES, value=["550e8400-e29b-41d4-a716-446655440000"])
+        ],
+        exception_type=ValueError,
+        match_pattern=None,
+        description="invalid_uuid",
+    ),
+    ErrorCase(
+        props={"age": "not_an_int"},
+        fields={"age": DataType.INTEGER},
+        filters=[Filter(field_name="age", relation=Relation.INCLUDES, value=[25])],
+        exception_type=TypeError,
+        match_pattern="Integer input must be an int",
+        description="invalid_integer_type",
+    ),
+    ErrorCase(
+        props={"name": "Alice"},
+        fields={"name": DataType.CHARACTER_VARYING},
+        filters=[Filter(field_name="name", relation=Relation.BETWEEN, value=["Alice", "Bob"])],
+        exception_type=TypeError,
+        match_pattern="BETWEEN relation is only supported for int/float/datetime/date fields",
+        description="numeric_between_with_wrong_type",
+    ),
+    ErrorCase(
+        props={"created_at": "not-a-valid-datetime"},
+        fields={"created_at": DataType.TIMESTAMP_WITHOUT_TIMEZONE},
+        filters=[Filter(field_name="created_at", relation=Relation.INCLUDES, value=["2025-01-01T00:00:00"])],
+        exception_type=LateValidationError,
+        match_pattern="created_at: datetime-type filter values must be strings containing an ISO8601 formatted date",
+        description="invalid_datetime",
+    ),
+    ErrorCase(
+        props={"created_at": "2025-01-15T12:00:00+08:00"},
+        fields={"created_at": DataType.TIMESTAMP_WITH_TIMEZONE},
+        filters=[Filter(field_name="created_at", relation=Relation.BETWEEN, value=[None, "2025-01-15T12:00:00+08:00"])],
+        exception_type=LateValidationError,
+        match_pattern="created_at: datetime-type filter values must be in UTC, and not include timezone offsets",
+        description="invalid_datetime_with_nonzero_offset",
+    ),
+]
 
 
-def test_passes_filters_invalid_datetime_with_nonzero_offset():
-    props: dict[str, PropertyValueTypes] = {"created_at": "2025-01-15T12:00:00+08:00"}
-    fields = {"created_at": DataType.TIMESTAMP_WITH_TIMEZONE}
-    filters = [Filter(field_name="created_at", relation=Relation.BETWEEN, value=[None, "2025-01-15T12:00:00+08:00"])]
-
-    with pytest.raises(
-        LateValidationError,
-        match="created_at: datetime-type filter values must be in UTC, or not be tagged with an explicit timezone",
-    ):
-        passes_filters(props, fields, filters)
+@pytest.mark.parametrize("testcase", ERROR_CASES, ids=lambda d: str(d))
+def test_passes_filters_errors(testcase: ErrorCase):
+    """Test that passes_filters raises expected exceptions for invalid inputs."""
+    match_pattern = testcase.match_pattern or ".*"
+    with pytest.raises(testcase.exception_type, match=match_pattern):
+        passes_filters(testcase.props, testcase.fields, testcase.filters)
