@@ -450,24 +450,21 @@ async def test_create_preassigned_experiment_impl_raises_on_duplicate_ids(
 
 
 @pytest.mark.parametrize(
-    "experiment_type, filters, exception_type, match",
+    "experiment_type, filters, match",
     [
         (
             ExperimentsType.FREQ_ONLINE,
             [Filter(field_name="uuid_filter", relation=Relation.INCLUDES, value=[1])],
-            TypeError,
             "must be a valid UUID string",
         ),
         (
             ExperimentsType.FREQ_ONLINE,
             [Filter(field_name="uuid_filter", relation=Relation.INCLUDES, value=["not_a_uuid"])],
-            ValueError,
-            "badly formed hexadecimal UUID string",
+            "UUID input must be a valid UUID string",
         ),
         (
             ExperimentsType.FREQ_PREASSIGNED,
             [Filter(field_name="is_onboarded", relation=Relation.INCLUDES, value=[1])],
-            TypeError,
             "input is not a boolean",
         ),
     ],
@@ -477,7 +474,6 @@ async def test_create_online_experiment_impl_raises_on_bad_filters(
     testing_datasource,
     experiment_type: ExperimentsType,
     filters: list[Filter],
-    exception_type: type[Exception],
     match: str | None,
 ):
     """Test that validate_filter_value is being called correctly during experiment creation."""
@@ -487,7 +483,7 @@ async def test_create_online_experiment_impl_raises_on_bad_filters(
     assert isinstance(request.design_spec, BaseFrequentistDesignSpec)
     request.design_spec.filters = filters
 
-    with pytest.raises(exception_type, match=match):
+    with pytest.raises(LateValidationError, match=match):
         await create_experiment_impl(
             request=request,
             datasource=testing_datasource.ds,

@@ -26,11 +26,10 @@ class Case:
 
 @dataclass
 class ErrorCase(Case):
-    exception_type: type[Exception] = Exception  # expected exception type
     match_pattern: str | None = None  # optional regex pattern for error message
 
     def __str__(self):
-        return f"{super().__str__()}_raises_{self.exception_type.__name__}"
+        return f"{super().__str__()}_raises_LateValidationError"
 
 
 STRING_CASES = [
@@ -508,7 +507,6 @@ ERROR_CASES = [
         props={"age": 25},
         fields={"age": DataType.INTEGER},
         filters=[Filter(field_name="missing_field", relation=Relation.INCLUDES, value=[25])],
-        exception_type=ValueError,
         match_pattern=r"Field missing_field data type is missing \(field not found\?\)",
         description="field_not_found",
     ),
@@ -516,7 +514,6 @@ ERROR_CASES = [
         props={"is_active": "not_a_bool"},
         fields={"is_active": DataType.BOOLEAN},
         filters=[Filter(field_name="is_active", relation=Relation.INCLUDES, value=[True])],
-        exception_type=TypeError,
         match_pattern="Boolean input is not a boolean",
         description="invalid_boolean_type",
     ),
@@ -524,7 +521,6 @@ ERROR_CASES = [
         props={"name": 1.0},
         fields={"name": DataType.CHARACTER_VARYING},
         filters=[Filter(field_name="name", relation=Relation.INCLUDES, value=["Alice"])],
-        exception_type=TypeError,
         match_pattern="varchar input is not a string",
         description="invalid_varchar_type",
     ),
@@ -534,7 +530,6 @@ ERROR_CASES = [
         filters=[
             Filter(field_name="user_id", relation=Relation.INCLUDES, value=["550e8400-e29b-41d4-a716-446655440000"])
         ],
-        exception_type=ValueError,
         match_pattern=None,
         description="invalid_uuid",
     ),
@@ -542,15 +537,20 @@ ERROR_CASES = [
         props={"age": "not_an_int"},
         fields={"age": DataType.INTEGER},
         filters=[Filter(field_name="age", relation=Relation.INCLUDES, value=[25])],
-        exception_type=TypeError,
         match_pattern="Integer input must be an int",
         description="invalid_integer_type",
+    ),
+    ErrorCase(
+        props={"score_dp": "not_a_double"},
+        fields={"score_dp": DataType.DOUBLE_PRECISION},
+        filters=[Filter(field_name="score_dp", relation=Relation.INCLUDES, value=[95.5])],
+        match_pattern="Double/Numeric input must be an integer or float",
+        description="invalid_double_type",
     ),
     ErrorCase(
         props={"name": "Alice"},
         fields={"name": DataType.CHARACTER_VARYING},
         filters=[Filter(field_name="name", relation=Relation.BETWEEN, value=["Alice", "Bob"])],
-        exception_type=TypeError,
         match_pattern="BETWEEN relation is only supported for int/float/datetime/date fields",
         description="numeric_between_with_wrong_type",
     ),
@@ -558,7 +558,6 @@ ERROR_CASES = [
         props={"created_at": "not-a-valid-datetime"},
         fields={"created_at": DataType.TIMESTAMP_WITHOUT_TIMEZONE},
         filters=[Filter(field_name="created_at", relation=Relation.INCLUDES, value=["2025-01-01T00:00:00"])],
-        exception_type=LateValidationError,
         match_pattern="created_at: datetime-type filter values must be strings containing an ISO8601 formatted date",
         description="invalid_datetime",
     ),
@@ -566,7 +565,6 @@ ERROR_CASES = [
         props={"created_at": "2025-01-15T12:00:00+08:00"},
         fields={"created_at": DataType.TIMESTAMP_WITH_TIMEZONE},
         filters=[Filter(field_name="created_at", relation=Relation.BETWEEN, value=[None, "2025-01-15T12:00:00+08:00"])],
-        exception_type=LateValidationError,
         match_pattern="created_at: datetime-type filter values must be in UTC, and not include timezone offsets",
         description="invalid_datetime_with_nonzero_offset",
     ),
@@ -577,5 +575,5 @@ ERROR_CASES = [
 def test_passes_filters_errors(testcase: ErrorCase):
     """Test that passes_filters raises expected exceptions for invalid inputs."""
     match_pattern = testcase.match_pattern or ".*"
-    with pytest.raises(testcase.exception_type, match=match_pattern):
+    with pytest.raises(LateValidationError, match=match_pattern):
         passes_filters(testcase.props, testcase.fields, testcase.filters)

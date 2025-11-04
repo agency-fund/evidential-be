@@ -83,7 +83,7 @@ def _passes_filter(exp_filter: Filter, field_type: DataType | None, value: Prope
                 return True
 
             if not isinstance(py_value, (int, float, datetime, date, type(None))):
-                raise TypeError("BETWEEN relation is only supported for int/float/datetime/date fields.")
+                raise LateValidationError("BETWEEN relation is only supported for int/float/datetime/date fields.")
 
             match parsed_values:
                 case (left, None):
@@ -93,21 +93,23 @@ def _passes_filter(exp_filter: Filter, field_type: DataType | None, value: Prope
                 case (left, right):
                     return left <= py_value <= right  # type: ignore
                 case _:
-                    raise ValueError(f"Invalid between value: {exp_filter.value}")
+                    raise LateValidationError(f"Invalid between value: {exp_filter.value}")
 
 
 def validate_filter_value(
     field_name: str, value: PropertyValueTypes, field_type: DataType | None
 ) -> str | int | float | bool | datetime | date | None:
-    """Validate a value is of the appropriate type and possibly cast it to the appropriate Python type.
+    """Validate a value is of the appropriate type and possibly transform into the appropriate Python type.
 
     Raises:
-        TypeError if the value is not of the appropriate type.
-        ValueError if the value cannot be converted to the appropriate type.
-        LateValidationError for date/datetime values issues, or if the field_type is missing.
+        LateValidationError if:
+        - field_type is missing
+        - the value is not of the appropriate input type for the target DataType
+        - the value is not formatted correctly for the target DataType
+          (e.g. malformed uuid string, or a date/datetime string with a non-UTC timezone).
     """
     if not field_type:
-        raise ValueError(f"Field {field_name} data type is missing (field not found?).")
+        raise LateValidationError(f"Field {field_name} data type is missing (field not found?).")
 
     if value is None:
         return None
@@ -115,48 +117,45 @@ def validate_filter_value(
     match field_type:
         case DataType.BOOLEAN:
             if not isinstance(value, bool):
-                raise TypeError("Boolean input is not a boolean.")
+                raise LateValidationError("Boolean input is not a boolean.")
             return value
 
         case DataType.CHARACTER_VARYING:
             if not isinstance(value, str):
-                raise TypeError("varchar input is not a string.")
+                raise LateValidationError("varchar input is not a string.")
             return value
 
         case DataType.UUID:
             if not isinstance(value, str):
-                raise TypeError("UUID input must be a valid UUID string.")
-            return str(uuid.UUID(value))  # must pass parsing but keep as a string
+                raise LateValidationError("UUID input must be a valid UUID string.")
+            try:
+                return str(uuid.UUID(value))  # must pass parsing but keep as a string
+            except ValueError as exc:
+                raise LateValidationError("UUID input must be a valid UUID string.") from exc
 
         case DataType.INTEGER:
             if not isinstance(value, int):
-                raise TypeError("Integer input must be an int.")
+                raise LateValidationError("Integer input must be an int.")
             return value
 
         case DataType.DOUBLE_PRECISION | DataType.NUMERIC:
             if not isinstance(value, (int, float)):
-                raise TypeError("Double/Numeric input must be an integer or float.")
+                raise LateValidationError("Double/Numeric input must be an integer or float.")
             return value
 
         case DataType.BIGINT:
             if not isinstance(value, (int, str)):  # int for backwards compatibility
-                raise TypeError("Bigint input must be a string to be converted to a bigint.")
+                raise LateValidationError("Bigint input must be a string to be converted to a bigint.")
             return int(value)
 
         case DataType.DATE:
-            if not isinstance(value, str):
-                raise TypeError("Date input must be an ISO8601 string to be converted to a date.")
             return str_to_date_or_datetime(field_name, value, "date")
 
         case DataType.TIMESTAMP_WITH_TIMEZONE:
-            if not isinstance(value, str):
-                raise TypeError("timestamp_tz input must be an ISO8601 string to be converted to a date.")
             return str_to_date_or_datetime(field_name, value, "datetime")
 
         case DataType.TIMESTAMP_WITHOUT_TIMEZONE:
-            if not isinstance(value, str):
-                raise TypeError("timestamp input must be an ISO8601 string to be converted to a date.")
             return str_to_date_or_datetime(field_name, value, "datetime")
 
         case _:
-            raise ValueError(f"Unsupported field type: {field_type}")
+            raise LateValidationError(f"Unsupported field type: {field_type}")
