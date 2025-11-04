@@ -24,14 +24,7 @@ class Case:
         return " and ".join([f"{f.field_name} {f.relation.name} {f.value}" for f in self.filters])
 
 
-BASIC_CASES = [
-    Case(
-        props={"age": 25},
-        fields={"age": DataType.INTEGER},
-        filters=[],
-        expected=True,
-        description="empty_filters_returns_true",
-    ),
+STRING_CASES = [
     Case(
         props={"name": "Alice"},
         fields={"name": DataType.CHARACTER_VARYING},
@@ -45,6 +38,20 @@ BASIC_CASES = [
         filters=[Filter(field_name="name", relation=Relation.INCLUDES, value=["Alice", "bob"])],
         expected=False,
         description="string_includes_no_match",
+    ),
+    Case(
+        props={"name": "Carl"},
+        fields={"name": DataType.CHARACTER_VARYING},
+        filters=[Filter(field_name="name", relation=Relation.EXCLUDES, value=["alice", "bob"])],
+        expected=True,
+        description="string_excludes_match",
+    ),
+    Case(
+        props={"name": "Carl"},
+        fields={"name": DataType.CHARACTER_VARYING},
+        filters=[Filter(field_name="name", relation=Relation.EXCLUDES, value=["Carl", "Dave"])],
+        expected=False,
+        description="string_excludes_no_match",
     ),
 ]
 
@@ -433,8 +440,40 @@ COMPOUND_CASES = [
 ]
 
 
+OTHER_EDGE_CASES = [
+    Case(
+        props={"age": 25},
+        fields={"age": DataType.INTEGER},
+        filters=[],
+        expected=True,
+        description="empty_filters_returns_true",
+    ),
+    Case(
+        props={"age": 25},  # 'name' is missing
+        fields={"age": DataType.INTEGER, "name": DataType.CHARACTER_VARYING},
+        filters=[Filter(field_name="name", relation=Relation.INCLUDES, value=["Alice"])],
+        expected=False,
+        description="missing_property_key_treated_as_none",
+    ),
+    Case(
+        props={},  # 'age' is missing (treated as NULL)
+        fields={"age": DataType.INTEGER},
+        filters=[Filter(field_name="age", relation=Relation.INCLUDES, value=[None, 25])],
+        expected=True,
+        description="missing_property_treated_as_null",
+    ),
+    Case(
+        props={"age": None},
+        fields={"age": DataType.INTEGER},
+        filters=[Filter(field_name="age", relation=Relation.INCLUDES, value=[None, 25])],
+        expected=True,
+        description="explicit_none_value_includes_match",
+    ),
+]
+
+
 ALL_FILTER_CASES = (
-    BASIC_CASES
+    STRING_CASES
     + INTEGER_CASES
     + FLOAT_CASES
     + BIGINT_CASES
@@ -444,6 +483,7 @@ ALL_FILTER_CASES = (
     + DATE_CASES
     + NULLABLE_CASES
     + COMPOUND_CASES
+    + OTHER_EDGE_CASES
 )
 
 
@@ -540,29 +580,3 @@ def test_passes_filters_invalid_datetime_with_nonzero_offset():
         match="created_at: datetime-type filter values must be in UTC, or not be tagged with an explicit timezone",
     ):
         passes_filters(props, fields, filters)
-
-
-# Edge cases
-def test_passes_filters_missing_property_key():
-    """Test behavior when a property key is missing from props dict."""
-    props: dict[str, PropertyValueTypes] = {"age": 25}  # 'name' is missing
-    fields = {"age": DataType.INTEGER, "name": DataType.CHARACTER_VARYING}
-    filters = [Filter(field_name="name", relation=Relation.INCLUDES, value=["Alice"])]
-
-    # Missing property should be treated as None
-    result = passes_filters(props, fields, filters)
-    assert result is False
-
-
-def test_passes_filters_property_with_none_value():
-    """Test that properties with explicit None values are handled correctly."""
-    props: dict[str, PropertyValueTypes] = {"age": None}
-    fields = {"age": DataType.INTEGER}
-    filters = [Filter(field_name="age", relation=Relation.INCLUDES, value=[None, 25])]
-
-    result = passes_filters(props, fields, filters)
-    assert result is True
-
-    # Another teset of missing properties treated as NULL
-    result = passes_filters({}, fields, filters)
-    assert result is True
