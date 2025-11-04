@@ -10,7 +10,6 @@ from sqlalchemy import Engine, Inspector, event, text
 from sqlalchemy.exc import NoSuchTableError, OperationalError
 from sqlalchemy.orm import Session
 
-from xngin.apiserver import flags
 from xngin.apiserver.dns.safe_resolve import safe_resolve
 from xngin.apiserver.dwh import queries
 from xngin.apiserver.dwh.inspection_types import FieldDescriptor
@@ -385,7 +384,6 @@ class DwhSession:
             connect_args=connect_args,
             logging_name=SA_LOGGER_NAME_FOR_DWH,
             execution_options={"logging_token": "dwh"},
-            echo=flags.ECHO_SQL,
             poolclass=sqlalchemy.pool.NullPool,
         )
 
