@@ -236,14 +236,9 @@ def fixture_queries_session():
         ({"missing_column"}, "Column missing_column not found in schema."),
     ],
 )
-def test_compile_query_with_empty_select_column(select_columns, error_message):
+def test_compile_query_with_invalid_select_column(select_columns, error_message):
     with pytest.raises(ValueError, match=error_message):
         compose_query(SampleTable.get_table(), select_columns, [], 2)
-
-
-def test_compile_query_with_missing_select_column():
-    with pytest.raises(ValueError, match=r"Column missing_column not found in schema."):
-        compose_query(SampleTable.get_table(), {"missing_column"}, [], 2)
 
 
 SELECT_COLUMNS_CASES_PG = [
@@ -638,8 +633,9 @@ def test_relations(testcase, queries_session, use_deterministic_random):
 
 def _datatype_to_sqlalchemy_type(data_type: DataType):
     """Maps DataType enum to generic camel-case SQLAlchemy column type. Helper to create tables for filter tests."""
-    # DDL for sqlalchemy.types.Uuid is not supported by sqlalchemy-bigquery (falls back to invalidCHAR(32))
+    # DDL for sqlalchemy.types.Uuid is not supported by sqlalchemy-bigquery (falls back to invalid CHAR(32)).
     my_uuid_type: Uuid = Uuid().with_variant(String(), "bigquery")
+    # DDL for bigquery mapped to invalid DOUBLE, so force it to FLOAT64.
     my_double_type: Double = Double().with_variant(Float(), "bigquery")
     mapping = {
         DataType.BOOLEAN: Boolean,
