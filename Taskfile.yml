@@ -165,10 +165,10 @@ tasks:
       RAILWAY_SERVICE_NAME: "local"  # detected by flags.is_railway
       XNGIN_SESSION_TOKEN_KEYSET: "local"
     cmds:
-      - uv run xngin-apiserver-live
+      - uv run --no-dev xngin-apiserver-live
   start-airplane:
     desc: "Like start, but runs the backend in airplane mode. All Admin API interactions will be authenticated as testing@example.com automatically."
-    interactive: true
+    interactive: false
     env:
       AIRPLANE_MODE: "true"
       XNGIN_SESSION_TOKEN_KEYSET: "local"

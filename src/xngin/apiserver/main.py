@@ -68,6 +68,6 @@ def main_live():
     uvicorn.run(
         "xngin.apiserver.main:app",
         host="0.0.0.0",
-        port=int(os.environ.get("PORT", "8000")),
+        port=8000,
         log_config={"version": 1, "disable_existing_loggers": False},
     )
