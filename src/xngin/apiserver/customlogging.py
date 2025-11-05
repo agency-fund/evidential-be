@@ -2,6 +2,7 @@ import inspect
 import json
 import logging
 import sys
+import traceback
 import typing
 
 from xngin.apiserver.flags import LogFormat
@@ -44,7 +45,7 @@ def _customize_loguru():
 
 
 def _record_to_railway_json(record: "loguru_Record"):
-    return json.dumps({
+    structured: dict[str, int | str | list[str] | dict[typing.Any, typing.Any] | None] = {
         "timestamp": record["time"].isoformat(),
         "message": record["message"],
         "level": record["level"].name,
@@ -56,7 +57,14 @@ def _record_to_railway_json(record: "loguru_Record"):
         "process_name": record["process"].name,
         "thread_id": record["thread"].id,
         "thread_name": record["thread"].name,
-    })
+    }
+    if (exc := record["exception"]) is not None:
+        structured.update({
+            "exc_type": str(exc.type.__name__) if exc.type else None,
+            "exc_msg": str(exc.value) if exc.value else None,
+            "exc_tb": traceback.format_exception(exc.value, limit=15, chain=True) if exc.value else None,
+        })
+    return json.dumps(structured)
 
 
 def _stdout_railway_sink(message: "loguru_Message"):
