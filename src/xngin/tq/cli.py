@@ -6,6 +6,7 @@ from typing import Annotated
 import typer
 from loguru import logger
 
+from xngin.apiserver import customlogging
 from xngin.ops import sentry
 from xngin.tq.handlers import make_webhook_outbound_handler
 from xngin.tq.task_payload_types import WEBHOOK_OUTBOUND_TASK_TYPE
@@ -17,6 +18,7 @@ DEFAULT_MAX_RETRIES = 10
 # Default polling interval (in seconds).
 DEFAULT_POLLING_INTERVAL = 60
 
+customlogging.setup()
 sentry.setup()
 
 app = typer.Typer(help="Task queue processor for xngin")

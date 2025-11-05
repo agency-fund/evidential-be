@@ -18,7 +18,6 @@ from sqlalchemy import (
 from sqlalchemy.orm import DeclarativeBase, Session, mapped_column
 from sqlalchemy.types import BigInteger, Boolean, Date, DateTime, Double, Float, Integer, Numeric, String, Uuid
 
-from xngin.apiserver import flags
 from xngin.apiserver.conftest import DbType, get_queries_test_uri
 from xngin.apiserver.dwh.analysis_types import MetricValue, ParticipantOutcome
 from xngin.apiserver.dwh.queries import (
@@ -192,7 +191,6 @@ def fixture_queries_dwh_engine():
         management_db = make_url(test_db.connect_url)._replace(database=None)
         default_engine = create_engine(
             management_db,
-            echo=flags.ECHO_SQL,
             logging_name=SA_LOGGER_NAME_FOR_DWH,
             poolclass=sqlalchemy.pool.NullPool,
             execution_options={"logging_token": SA_LOGGING_PREFIX_FOR_DWH},
@@ -208,7 +206,6 @@ def fixture_queries_dwh_engine():
 
     engine = create_engine(
         test_db.connect_url,
-        echo=flags.ECHO_SQL,
         logging_name=SA_LOGGER_NAME_FOR_DWH,
         execution_options={"logging_token": SA_LOGGING_PREFIX_FOR_DWH},
     )
