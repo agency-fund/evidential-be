@@ -8,7 +8,7 @@
 | src/xngin/apiserver/certs/certs.py                                   |       16 |        9 |     44% |19-23, 37-44 |
 | src/xngin/apiserver/common\_field\_types.py                          |       12 |        1 |     92% |        13 |
 | src/xngin/apiserver/conftest.py                                      |      193 |       10 |     95% |74, 89, 91, 103-105, 115, 166, 168, 172 |
-| src/xngin/apiserver/customlogging.py                                 |       62 |       10 |     84% |24-25, 47, 64-65, 93-98 |
+| src/xngin/apiserver/customlogging.py                                 |       66 |       13 |     80% |25-26, 48-68, 73-74, 102-107 |
 | src/xngin/apiserver/database.py                                      |       49 |        5 |     90% |27, 38, 55, 61, 68 |
 | src/xngin/apiserver/dependencies.py                                  |       12 |        4 |     67% | 12, 23-25 |
 | src/xngin/apiserver/dns/safe\_resolve.py                             |       47 |       12 |     74% |28-32, 36-37, 50, 72, 75, 80-81 |
@@ -20,7 +20,7 @@
 | src/xngin/apiserver/dwh/test\_queries.py                             |      237 |        1 |     99% |       212 |
 | src/xngin/apiserver/exceptionhandlers.py                             |       49 |        9 |     82% |31, 35, 43, 51-56, 70 |
 | src/xngin/apiserver/flags.py                                         |       41 |        2 |     95% |    72, 75 |
-| src/xngin/apiserver/main.py                                          |       29 |        1 |     97% |        38 |
+| src/xngin/apiserver/main.py                                          |       33 |        3 |     91% | 39, 66-68 |
 | src/xngin/apiserver/openapi.py                                       |       24 |       13 |     46% |     19-71 |
 | src/xngin/apiserver/request\_encapsulation\_middleware.py            |       63 |        3 |     95% |   103-105 |
 | src/xngin/apiserver/routers/admin/admin\_api.py                      |      558 |      291 |     48% |173, 203-206, 238-241, 266-269, 283-287, 299, 310, 314, 323, 340, 356-367, 387-400, 441-453, 470, 492, 503, 518-531, 551-561, 593-608, 626-641, 676-688, 692-705, 725-741, 787-793, 810-818, 847-858, 883-893, 904-923, 934-935, 954-961, 967-973, 993-1004, 1021, 1071-1081, 1097-1183, 1195, 1210-1231, 1256-1262, 1316-1321, 1374-1383, 1413-1438, 1455-1473, 1500-1501, 1516-1517, 1528, 1542-1548, 1559-1565, 1582-1589, 1624-1626, 1644-1667, 1707-1710, 1713-1722, 1733-1759, 1770-1774 |
@@ -64,7 +64,7 @@
 | src/xngin/xsecrets/secretservice.py                                  |       61 |        4 |     93% |42-43, 101, 123 |
 | src/xngin/xsecrets/test\_gcp\_kms\_provider.py                       |      103 |       26 |     75% |40-42, 170-175, 182-189, 195-199, 206, 213-224 |
 | src/xngin/xsecrets/test\_nacl\_provider.py                           |       67 |        1 |     99% |        24 |
-|                                                            **TOTAL** | **8258** |  **943** | **89%** |           |
+|                                                            **TOTAL** | **8266** |  **948** | **89%** |           |
 
 56 files skipped due to complete coverage.
 
