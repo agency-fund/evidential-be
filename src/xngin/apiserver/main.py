@@ -1,6 +1,7 @@
 import os
 from contextlib import asynccontextmanager
 
+import uvicorn
 from fastapi import FastAPI
 from loguru import logger
 
@@ -55,3 +56,18 @@ routes.register(app)
 auth_dependencies.setup(app)
 
 app.openapi = lambda: custom_openapi(app)  # type: ignore[method-assign]
+
+
+def main_live():
+    """Entrypoint for instances of this service running in environments where structured logging is desired.
+
+    This is equivalent to the default `fastapi run` CLI behavior.
+    """
+    logger.info(f"Starting Uvicorn from custom entrypoint: {__name__}.main_live.")
+    # This replicates the `fastapi run` CLI behavior and also disables Uvicorn's default logging behavior.
+    uvicorn.run(
+        "xngin.apiserver.main:app",
+        host="0.0.0.0",
+        port=int(os.environ.get("PORT", "8000")),
+        log_config={"version": 1, "disable_existing_loggers": False},
+    )
