@@ -82,7 +82,14 @@ class TestUriInfo:
     db_type: DbType
 
     def __str__(self):
-        return f"{self.connect_url} (detected type: {self.db_type})"
+        """Display-safe string representation of the URL."""
+
+        safe_url = self.connect_url.set(password=None)
+        if "password" in safe_url.query:
+            safe_url = safe_url.update_query_dict({"password": "***"})
+        if "credentials_base64" in safe_url.query:
+            safe_url = safe_url.update_query_dict({"credentials_base64": "REDACTED"})
+        return f"{safe_url} (detected type: {self.db_type})"
 
 
 @pytest.fixture(name="static_settings")
@@ -113,19 +120,21 @@ def get_queries_test_uri() -> TestUriInfo:
 def print_database_env_vars():
     """Prints debugging information sometimes useful for working with tests to stdout."""
 
-    database_url = "(unset)"
+    database_url = None
     with contextlib.suppress(ValueError):
-        database_url = database.get_server_database_url()
+        database_url = get_test_uri_info(database.get_server_database_url())
 
-    queries_url = "(unset)"
+    queries_url = None
     with contextlib.suppress(ValueError):
-        queries_url = str(get_queries_test_uri())
+        queries_url = get_queries_test_uri()
 
-    dwh_url = flags.XNGIN_DEVDWH_DSN or "(unset)"
+    dwh_url = None
+    with contextlib.suppress(ValueError):
+        dwh_url = get_test_uri_info(flags.XNGIN_DEVDWH_DSN)
 
     print(
         "Running tests with "
-        f"\n\tDATABASE_URL: {database_url} "
+        f"\n\tDATABASE_URL: {database_url}"
         f"\n\tXNGIN_DEVDWH_DSN: {dwh_url}"
         f"\n\tXNGIN_QUERIES_TEST_URI: {queries_url}"
     )
