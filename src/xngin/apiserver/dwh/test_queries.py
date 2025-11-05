@@ -178,8 +178,8 @@ class Case:
         return " and ".join([f"{f.field_name} {f.relation.name} {f.value}" for f in self.filters])
 
 
-@pytest.fixture(scope="module")
-def queries_dwh_engine():
+@pytest.fixture(name="queries_dwh_engine", scope="module")
+def fixture_queries_dwh_engine():
     """Yields a SQLAlchemy Engine for tests to ooperate on a test data warehouse.
 
     This dwh is specified by the XNGIN_QUERIES_TEST_URI environment variable. Usually this is a
@@ -221,8 +221,8 @@ def queries_dwh_engine():
         engine.dispose()
 
 
-@pytest.fixture(scope="module")
-def shared_sample_tables(queries_dwh_engine):
+@pytest.fixture(name="shared_sample_tables", scope="module")
+def fixture_shared_sample_tables(queries_dwh_engine):
     """Creates and populates SampleTable and SampleNullableTable."""
     # Create using the DeclarativeBase approach
     Base.metadata.create_all(queries_dwh_engine)
@@ -240,8 +240,8 @@ def shared_sample_tables(queries_dwh_engine):
         Base.metadata.drop_all(queries_dwh_engine)
 
 
-@pytest.fixture
-def queries_dwh_session(queries_dwh_engine):
+@pytest.fixture(name="queries_dwh_session")
+def fixture_queries_dwh_session(queries_dwh_engine):
     with Session(queries_dwh_engine) as session:
         yield session  # context manager will close it on exit
 
@@ -671,8 +671,8 @@ def _datatype_to_sqlalchemy_type(data_type: DataType):
     return mapping[data_type]
 
 
-@pytest.fixture(scope="module")
-def shared_filter_table(queries_dwh_engine):
+@pytest.fixture(name="shared_filter_table", scope="module")
+def fixture_shared_filter_table(queries_dwh_engine):
     """Creates a single shared table with all columns needed for property filter tests.
 
     We use this to avoid repeated CREATE/DROP TABLE operations.
