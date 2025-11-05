@@ -180,10 +180,10 @@ class Case:
 
 @pytest.fixture(name="queries_dwh_engine", scope="module")
 def fixture_queries_dwh_engine():
-    """Yields a SQLAlchemy Engine for tests to ooperate on a test data warehouse.
+    """Yields a SQLAlchemy Engine for tests to operate on a test data warehouse.
 
     This dwh is specified by the XNGIN_QUERIES_TEST_URI environment variable. Usually this is a
-    local Postgres, but some integration tests may point at a BigQuery dataset (see CI for example).
+    local Postgres, but some integration tests may point at an existing BigQuery dataset (see CI for example).
 
     SampleTable and SampleNullableTable are recreated and populated on each invocation.
     """
