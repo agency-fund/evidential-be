@@ -1,13 +1,10 @@
 import re
 from collections.abc import Sequence
 from datetime import date, datetime
-from typing import Literal
 
 import sqlalchemy
 from sqlalchemy import (
     ColumnElement,
-    Date,
-    DateTime,
     Float,
     Integer,
     Label,
@@ -39,7 +36,7 @@ from xngin.apiserver.routers.common_api_types import (
     Relation,
 )
 from xngin.apiserver.routers.common_enums import DataType, FilterClass, MetricType
-from xngin.apiserver.routers.experiments.property_filters import str_to_date_or_datetime, validate_filter_value
+from xngin.apiserver.routers.experiments.property_filters import validate_filter_value
 from xngin.db_extensions import custom_functions
 
 
@@ -222,8 +219,6 @@ def get_participant_metrics(
 
 def create_one_filter(filter_: Filter, sa_table: sqlalchemy.Table):
     """Converts a Filter into a SQLAlchemy filter."""
-    if isinstance(sa_table.columns[filter_.field_name].type, (DateTime, Date)):
-        return create_date_or_datetime_filter(sa_table.columns[filter_.field_name], filter_)
     if filter_.field_name.endswith(EXPERIMENT_IDS_SUFFIX):
         return create_special_experiment_id_filter(sa_table.columns[filter_.field_name], filter_)
     return create_filter(sa_table.columns[filter_.field_name], filter_)
@@ -300,25 +295,6 @@ def create_between_filter(col: sqlalchemy.Column, values: Sequence) -> ColumnEle
             return or_(col.between(left, right), col.is_(sqlalchemy.null()))
         case _:
             raise RuntimeError("Bug: invalid filter.")
-
-
-def create_date_or_datetime_filter(col: sqlalchemy.Column, filter_: Filter) -> ColumnElement:
-    """Converts a single Filter for a DateTime or Date-typed column into a sqlalchemy filter."""
-    # First validate that we're working with the right column type.
-    if not isinstance(col.type, (DateTime, Date)):
-        raise LateValidationError(f"Column {col.name} is not a DateTime or Date type; cannot create filter.")
-
-    target_type: Literal["date", "datetime"] = "date" if isinstance(col.type, Date) else "datetime"
-    parsed_values = list(map(lambda s: str_to_date_or_datetime(col.name, s, target_type), filter_.value))
-
-    if filter_.relation == Relation.EXCLUDES:
-        return general_excludes_filter(col, parsed_values)
-
-    if filter_.relation == Relation.INCLUDES:
-        return sqlalchemy.not_(general_excludes_filter(col, parsed_values))
-
-    # Else it's Relation.BETWEEN:
-    return create_between_filter(col, parsed_values)
 
 
 def create_filter(col: sqlalchemy.Column, filter_: Filter) -> ColumnElement:

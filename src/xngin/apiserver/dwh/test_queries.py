@@ -23,7 +23,7 @@ from xngin.apiserver.conftest import DbType, get_queries_test_uri
 from xngin.apiserver.dwh.analysis_types import MetricValue, ParticipantOutcome
 from xngin.apiserver.dwh.queries import (
     compose_query,
-    create_date_or_datetime_filter,
+    create_filter,
     create_query_filters,
     get_participant_metrics,
     get_stats_on_metrics,
@@ -737,14 +737,14 @@ def test_date_or_datetime_filter_validation(column_type):
     col = Column("x", column_type)
 
     with pytest.raises(LateValidationError) as exc:
-        create_date_or_datetime_filter(
+        create_filter(
             col,
             Filter(field_name="x", relation=Relation.INCLUDES, value=[123, 456]),
         )
     assert "must be strings containing an ISO8601 formatted date" in str(exc)
 
     with pytest.raises(LateValidationError) as exc:
-        create_date_or_datetime_filter(
+        create_filter(
             col,
             Filter(
                 field_name="x",
@@ -756,7 +756,7 @@ def test_date_or_datetime_filter_validation(column_type):
 
     # Test timezone validation for both DateTime and Date columns
     with pytest.raises(LateValidationError) as exc:
-        create_date_or_datetime_filter(
+        create_filter(
             col,
             Filter(
                 field_name="x",
@@ -767,29 +767,21 @@ def test_date_or_datetime_filter_validation(column_type):
     assert "must be in UTC" in str(exc)
 
 
-def test_date_or_datetime_filter_wrong_column_type():
-    """Test that we reject non-DateTime/Date columns for datetime/date filters."""
-    col = Column("x", String)
-    with pytest.raises(LateValidationError) as exc:
-        create_date_or_datetime_filter(col, Filter(field_name="x", relation=Relation.INCLUDES, value=["2024-01-01"]))
-    assert "not a DateTime or Date type" in str(exc)
-
-
 @pytest.mark.parametrize("column_type", [DateTime, Date])
 def test_allowed_date_or_datetime_filter_validation(column_type):
     """Test valid Date and DateTime filter scenarios."""
     col = Column("x", column_type)
 
     # Singular None is allowed for both column types
-    create_date_or_datetime_filter(col, Filter(field_name="x", relation=Relation.EXCLUDES, value=[None]))
-    create_date_or_datetime_filter(col, Filter(field_name="x", relation=Relation.INCLUDES, value=[None]))
+    create_filter(col, Filter(field_name="x", relation=Relation.EXCLUDES, value=[None]))
+    create_filter(col, Filter(field_name="x", relation=Relation.INCLUDES, value=[None]))
     # as are mixed None and date values
-    create_date_or_datetime_filter(col, Filter(field_name="x", relation=Relation.BETWEEN, value=[None, "2024-12-31"]))
-    create_date_or_datetime_filter(col, Filter(field_name="x", relation=Relation.BETWEEN, value=["2024-01-01", None]))
+    create_filter(col, Filter(field_name="x", relation=Relation.BETWEEN, value=[None, "2024-12-31"]))
+    create_filter(col, Filter(field_name="x", relation=Relation.BETWEEN, value=["2024-01-01", None]))
 
     # now without microseconds
     now = datetime.now(UTC).replace(microsecond=0)
-    create_date_or_datetime_filter(
+    create_filter(
         col,
         Filter(
             field_name="x",
@@ -802,7 +794,7 @@ def test_allowed_date_or_datetime_filter_validation(column_type):
     # We strip the tz info because in the test below we want to control the tz format;
     # `now.isoformat()` by default will render with +00:00.
     now_no_tz = now.replace(tzinfo=None)
-    create_date_or_datetime_filter(
+    create_filter(
         col,
         Filter(
             field_name="x",
@@ -810,18 +802,18 @@ def test_allowed_date_or_datetime_filter_validation(column_type):
             value=[now_no_tz.isoformat() + "Z", now_no_tz.isoformat() + "-00:00"],
         ),
     )
-    create_date_or_datetime_filter(
+    create_filter(
         col,
         Filter(field_name="x", relation=Relation.INCLUDES, value=["2024-01-01T12:30:00Z"]),
     )
-    create_date_or_datetime_filter(
+    create_filter(
         col,
         Filter(field_name="x", relation=Relation.INCLUDES, value=["2024-01-01T12:30:00+00:00"]),
     )
 
     # now with microseconds
     now_with_microsecond = now.replace(microsecond=1)
-    create_date_or_datetime_filter(
+    create_filter(
         col,
         Filter(
             field_name="x",
@@ -832,19 +824,19 @@ def test_allowed_date_or_datetime_filter_validation(column_type):
 
     # Check strings with and without the time delimiter.
     midnight = "2024-01-01 00:00:00"
-    create_date_or_datetime_filter(
+    create_filter(
         col,
         Filter(field_name="x", relation=Relation.BETWEEN, value=[None, midnight]),
     )
 
     midnight_with_delim = "2024-01-01T00:00:00"
-    create_date_or_datetime_filter(
+    create_filter(
         col,
         Filter(field_name="x", relation=Relation.BETWEEN, value=[None, midnight_with_delim]),
     )
 
     # Bare dates are allowed
-    create_date_or_datetime_filter(
+    create_filter(
         col,
         Filter(field_name="x", relation=Relation.BETWEEN, value=["2024-01-01", "2024-12-31"]),
     )
