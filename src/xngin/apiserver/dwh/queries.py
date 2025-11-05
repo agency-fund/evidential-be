@@ -278,6 +278,30 @@ def general_excludes_filter(
     )
 
 
+def create_between_filter(col: sqlalchemy.Column, values: Sequence) -> ColumnElement:
+    """Helper function to create a BETWEEN SQLAlchemy filter expression.
+
+    Args:
+        col: SQLAlchemy column to filter on
+        values: Tuple of (left, right) or (left, right, None). None indicates NULL inclusion.
+    """
+    match values:
+        case (left, None):
+            return col >= left  # type: ignore
+        case (None, right):
+            return col <= right  # type: ignore
+        case (left, right):
+            return col.between(left, right)
+        case (left, None, None):
+            return or_(col >= left, col.is_(sqlalchemy.null()))
+        case (None, right, None):
+            return or_(col <= right, col.is_(sqlalchemy.null()))
+        case (left, right, None):
+            return or_(col.between(left, right), col.is_(sqlalchemy.null()))
+        case _:
+            raise RuntimeError("Bug: invalid filter.")
+
+
 def create_date_or_datetime_filter(col: sqlalchemy.Column, filter_: Filter) -> ColumnElement:
     """Converts a single Filter for a DateTime or Date-typed column into a sqlalchemy filter."""
     # First validate that we're working with the right column type.
@@ -294,21 +318,7 @@ def create_date_or_datetime_filter(col: sqlalchemy.Column, filter_: Filter) -> C
         return sqlalchemy.not_(general_excludes_filter(col, parsed_values))
 
     # Else it's Relation.BETWEEN:
-    match parsed_values:
-        case (left, None):
-            return col >= left
-        case (None, right):
-            return col <= right
-        case (left, right):
-            return col.between(left, right)
-        case (left, None, None):
-            return or_(col >= left, col.is_(sqlalchemy.null()))
-        case (None, right, None):
-            return or_(col <= right, col.is_(sqlalchemy.null()))
-        case (left, right, None):
-            return or_(col.between(left, right), col.is_(sqlalchemy.null()))
-        case _:
-            raise RuntimeError("Bug: invalid filter.")
+    return create_between_filter(col, parsed_values)
 
 
 def create_filter(col: sqlalchemy.Column, filter_: Filter) -> ColumnElement:
@@ -318,21 +328,7 @@ def create_filter(col: sqlalchemy.Column, filter_: Filter) -> ColumnElement:
     ]
     match filter_.relation:
         case Relation.BETWEEN:
-            match parsed_values:
-                case (left, None):
-                    return col >= left  # type: ignore
-                case (None, right):
-                    return col <= right  # type: ignore
-                case (left, right):
-                    return col.between(left, right)
-                case (left, None, None):
-                    return or_(col >= left, col.is_(sqlalchemy.null()))
-                case (None, right, None):
-                    return or_(col <= right, col.is_(sqlalchemy.null()))
-                case (left, right, None):
-                    return or_(col.between(left, right), col.is_(sqlalchemy.null()))
-                case _:
-                    raise RuntimeError("Bug: invalid filter.")
+            return create_between_filter(col, parsed_values)
         case Relation.EXCLUDES if isinstance(col.type, sqlalchemy.Boolean):
             return and_(*[col.is_not(value) if value is not None else col.is_not(None) for value in parsed_values])
         case Relation.EXCLUDES:
