@@ -49,6 +49,7 @@ from xngin.apiserver.routers.common_enums import (
 type StrictInt = Annotated[int | None, Field(strict=True)]
 type StrictFloat = Annotated[float | None, Field(strict=True, allow_inf_nan=False)]
 type FilterValueTypes = Sequence[StrictInt] | Sequence[StrictFloat] | Sequence[str | None] | Sequence[bool | None]
+type PropertyValueTypes = StrictInt | StrictFloat | str | bool | None
 
 
 class ApiBaseModel(BaseModel):
@@ -138,6 +139,35 @@ class DesignSpecMetricRequest(DesignSpecMetricBase):
         if self.metric_pct_change is None and self.metric_target is None:
             raise ValueError("Must set one of metric_pct_change or metric_target")
         return self
+
+
+class ParticipantProperty(ApiBaseModel):
+    """
+    Properties about a participant that are used to filter the assignment.
+    """
+
+    field_name: FieldName
+    value: PropertyValueTypes
+
+
+class OnlineAssignmentWithFiltersRequest(ApiBaseModel):
+    """Request model for creating a new frequentist online assignment with server-side filtering.
+
+    Usage notes:
+    1. Currently only used for FREQ_ONLINE experiments.
+    2. If the experiment defines no filters, use the corresponding GET endpoint instead.
+    3. If an assignment already exists for a given participant, the property list is ignored and assignment returned.
+    4. Property names must reference a valid field_name from the participant_type defined in the experiment.
+    5. Property list may be empty.
+    6. If a filter is specified but no value is found, it is treated as NULL.
+    7. Other differences from the SQL-based filtering logic:
+        - NO support for special experiment_id-based filters.
+    """
+
+    properties: Annotated[
+        list[ParticipantProperty],
+        Field(description="List of participant properties to potentially filter against the experiment's filters."),
+    ]
 
 
 class Context(ApiBaseModel):

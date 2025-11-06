@@ -44,6 +44,7 @@ from xngin.apiserver.routers.common_api_types import (
     GetParticipantAssignmentResponse,
     ListExperimentsResponse,
     MetricAnalysis,
+    ParticipantProperty,
     Strata,
 )
 from xngin.apiserver.routers.common_enums import (
@@ -53,6 +54,7 @@ from xngin.apiserver.routers.common_enums import (
     PriorTypes,
     StopAssignmentReason,
 )
+from xngin.apiserver.routers.experiments.property_filters import passes_filters, validate_filter_value
 from xngin.apiserver.settings import DatasourceConfig, ParticipantsDef
 from xngin.apiserver.sqla import tables
 from xngin.apiserver.storage.storage_format_converters import ExperimentStorageConverter
@@ -100,6 +102,15 @@ async def create_experiment_impl(
             participants_cfg = ds_config.find_participants(design_spec.participant_type)
             if not isinstance(participants_cfg, ParticipantsDef):
                 raise LateValidationError("Invalid ParticipantsConfig: Participants must be of type schema.")
+
+            # Validate the filter values
+            field_map = {field.field_name: field.data_type for field in participants_cfg.fields}
+            for filter_ in design_spec.filters:
+                field_type = field_map.get(filter_.field_name)
+                if field_type is None:
+                    raise LateValidationError(f"Field {filter_.field_name} not found in participants schema.")
+                for value in filter_.value:
+                    validate_filter_value(filter_.field_name, value, field_type)
 
             # Get participants and their schema info from the client dwh.
             # Only fetch the columns we might need for stratified random assignment.
@@ -639,14 +650,30 @@ async def get_existing_assignment_for_participant(
     return None
 
 
+def _participant_passes_filters(experiment: tables.Experiment, properties: list[ParticipantProperty]) -> bool:
+    if not properties or experiment.experiment_type != ExperimentsType.FREQ_ONLINE.value:
+        return True
+
+    datasource_config = experiment.datasource.get_config()
+    participant_type = datasource_config.find_participants(experiment.participant_type)
+    experiment_converter = ExperimentStorageConverter(experiment)
+    props_map = {p.field_name: p.value for p in properties}
+    field_map = {field.field_name: field.data_type for field in participant_type.fields}
+    return passes_filters(props_map, field_map, experiment_converter.get_design_spec_filters())
+
+
 async def get_or_create_assignment_for_participant(
     xngin_session: AsyncSession,
     experiment: tables.Experiment,
     participant_id: str,
     create_if_none: bool,
+    properties: list[ParticipantProperty] | None,
     random_state: int | None = None,
 ) -> GetParticipantAssignmentResponse:
     """Get or create the arm assignment for a specific participant in a non-CMAB experiment.
+
+    If properties are provided for a FREQ_ONLINE experiment, they are used to filter the participant
+    to determine eligibility.  Assignment is None if it does not pass the filters.
 
     Set create_if_none=False to only get an assignment if it already exists; do not create a new one.
     """
@@ -665,12 +692,13 @@ async def get_or_create_assignment_for_participant(
                 f"please use the corresponding POST endpoint instead."
             )
 
-        assignment = await create_assignment_for_participant(
-            xngin_session=xngin_session,
-            experiment=experiment,
-            participant_id=participant_id,
-            random_state=random_state,
-        )
+        if not properties or _participant_passes_filters(experiment, properties):
+            assignment = await create_assignment_for_participant(
+                xngin_session=xngin_session,
+                experiment=experiment,
+                participant_id=participant_id,
+                random_state=random_state,
+            )
 
     return GetParticipantAssignmentResponse(
         experiment_id=experiment.id,

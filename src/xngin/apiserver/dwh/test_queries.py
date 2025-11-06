@@ -3,30 +3,26 @@
 import re
 from dataclasses import dataclass
 from datetime import UTC, date, datetime
+from typing import Any, NamedTuple
 
 import pytest
 import sqlalchemy
 import sqlalchemy_bigquery
 from sqlalchemy import (
-    Boolean,
     Column,
-    DateTime,
-    Float,
-    Integer,
-    String,
     Table,
     create_engine,
     make_url,
     text,
 )
 from sqlalchemy.orm import DeclarativeBase, Session, mapped_column
-from sqlalchemy.types import Date
+from sqlalchemy.types import BigInteger, Boolean, Date, DateTime, Double, Float, Integer, Numeric, String, Uuid
 
 from xngin.apiserver.conftest import DbType, get_queries_test_uri
 from xngin.apiserver.dwh.analysis_types import MetricValue, ParticipantOutcome
 from xngin.apiserver.dwh.queries import (
     compose_query,
-    create_date_or_datetime_filter,
+    create_filter,
     create_query_filters,
     get_participant_metrics,
     get_stats_on_metrics,
@@ -39,7 +35,8 @@ from xngin.apiserver.routers.common_api_types import (
     Filter,
     Relation,
 )
-from xngin.apiserver.routers.common_enums import MetricType
+from xngin.apiserver.routers.common_enums import DataType, MetricType
+from xngin.apiserver.routers.experiments.test_property_filters import ALL_FILTER_CASES
 
 SA_LOGGER_NAME_FOR_DWH = "xngin_dwh"
 SA_LOGGING_PREFIX_FOR_DWH = "dwh"
@@ -124,6 +121,11 @@ class SampleTable(Base):
     experiment_ids = mapped_column(String, nullable=False)
 
 
+class SampleTables(NamedTuple):
+    sample_table: Table
+    sample_nullable_table: Table
+
+
 @dataclass
 class Row:
     id: int
@@ -175,18 +177,18 @@ class Case:
         return " and ".join([f"{f.field_name} {f.relation.name} {f.value}" for f in self.filters])
 
 
-@pytest.fixture(name="queries_session")
-def fixture_queries_session():
-    """Yields a session that tests can use to operate on a testing database.
+@pytest.fixture(name="queries_dwh_engine", scope="module")
+def fixture_queries_dwh_engine():
+    """Yields a SQLAlchemy Engine for tests to operate on a test data warehouse.
 
-    The testing data warehouse is specified by the XNGIN_QUERIES_TEST_URI environment variable. Usually this is a local
-    Postgres instance, but some integration tests may point these tests at a BigQuery dataset (see CI for example).
+    This dwh is specified by the XNGIN_QUERIES_TEST_URI environment variable. Usually this is a
+    local Postgres, but some integration tests may point at an existing BigQuery dataset (see CI for example).
 
     SampleTable and SampleNullableTable are recreated and populated on each invocation.
     """
     test_db = get_queries_test_uri()
-    management_db = make_url(test_db.connect_url)._replace(database=None)
     if test_db.db_type == DbType.PG:
+        management_db = make_url(test_db.connect_url)._replace(database=None)
         default_engine = create_engine(
             management_db,
             logging_name=SA_LOGGER_NAME_FOR_DWH,
@@ -211,22 +213,35 @@ def fixture_queries_session():
         if test_db.db_type is DbType.RS and hasattr(engine.dialect, "_set_backslash_escapes"):
             engine.dialect._set_backslash_escapes = lambda _: None
 
-        Base.metadata.create_all(engine)
-        with Session(engine) as session:
-            for row in SAMPLE_TABLE_ROWS:
-                session.add(SampleTable(**row.__dict__))
-            for nullable_row in SAMPLE_NULLABLE_TABLE_ROWS:
-                session.add(SampleNullableTable(**nullable_row.__dict__))
-            session.commit()
-
-        with Session(engine) as session:
-            try:
-                yield session
-            finally:
-                session.close()
+        yield engine
     finally:
-        Base.metadata.drop_all(engine)
         engine.dispose()
+
+
+@pytest.fixture(name="shared_sample_tables", scope="module")
+def fixture_shared_sample_tables(queries_dwh_engine):
+    """Creates and populates SampleTable and SampleNullableTable."""
+    # Create using the DeclarativeBase approach. First drop in case they exist from a bad run.
+    Base.metadata.drop_all(queries_dwh_engine)
+    Base.metadata.create_all(queries_dwh_engine)
+    # and then populate with our sample data.
+    with Session(queries_dwh_engine) as session:
+        for row in SAMPLE_TABLE_ROWS:
+            session.add(SampleTable(**row.__dict__))
+        for nullable_row in SAMPLE_NULLABLE_TABLE_ROWS:
+            session.add(SampleNullableTable(**nullable_row.__dict__))
+        session.commit()
+
+    try:
+        yield SampleTables(SampleTable.get_table(), SampleNullableTable.get_table())
+    finally:
+        Base.metadata.drop_all(queries_dwh_engine)
+
+
+@pytest.fixture(name="queries_dwh_session")
+def fixture_queries_dwh_session(queries_dwh_engine):
+    with Session(queries_dwh_engine) as session:
+        yield session  # context manager will close it on exit
 
 
 @pytest.mark.parametrize(
@@ -236,14 +251,9 @@ def fixture_queries_session():
         ({"missing_column"}, "Column missing_column not found in schema."),
     ],
 )
-def test_compile_query_with_empty_select_column(select_columns, error_message):
+def test_compile_query_with_invalid_select_column(select_columns, error_message):
     with pytest.raises(ValueError, match=error_message):
         compose_query(SampleTable.get_table(), select_columns, [], 2)
-
-
-def test_compile_query_with_missing_select_column():
-    with pytest.raises(ValueError, match=r"Column missing_column not found in schema."):
-        compose_query(SampleTable.get_table(), {"missing_column"}, [], 2)
 
 
 SELECT_COLUMNS_CASES_PG = [
@@ -490,13 +500,13 @@ IS_NULLABLE_CASES = [
 
 
 @pytest.mark.parametrize("testcase", IS_NULLABLE_CASES, ids=lambda d: str(d))
-def test_is_nullable(testcase, queries_session, use_deterministic_random):
+def test_is_nullable(testcase, queries_dwh_session, shared_sample_tables, use_deterministic_random):
     testcase.filters = [Filter.model_validate(filt.model_dump()) for filt in testcase.filters]
-    table = SampleNullableTable.get_table()
+    table: Table = shared_sample_tables.sample_nullable_table
     select_columns = set(table.c.keys())
     filters = create_query_filters(table, testcase.filters)
     q = compose_query(table, select_columns, filters, testcase.chosen_n)
-    query_results = queries_session.execute(q)
+    query_results = queries_dwh_session.execute(q)
     assert list(sorted([r.id for r in query_results])) == list(sorted(r.id for r in testcase.matches)), testcase
 
 
@@ -626,14 +636,98 @@ RELATION_CASES = [
 
 
 @pytest.mark.parametrize("testcase", RELATION_CASES)
-def test_relations(testcase, queries_session, use_deterministic_random):
+def test_relations(testcase, queries_dwh_session, shared_sample_tables, use_deterministic_random):
     testcase.filters = [Filter.model_validate(filt.model_dump()) for filt in testcase.filters]
-    table = SampleTable.get_table()
+    table: Table = shared_sample_tables.sample_table
     select_columns = set(table.c.keys())
     filters = create_query_filters(table, testcase.filters)
     q = compose_query(table, select_columns, filters, testcase.chosen_n)
-    query_results = queries_session.execute(q)
+    query_results = queries_dwh_session.execute(q)
     assert list(sorted([r.id for r in query_results])) == list(sorted(r.id for r in testcase.matches)), testcase
+
+
+def _datatype_to_sqlalchemy_type(data_type: DataType):
+    """Maps DataType enum to generic camel-case SQLAlchemy column type. Helper to create tables for filter tests."""
+    # DDL for sqlalchemy.types.Uuid is not supported by sqlalchemy-bigquery (falls back to invalid CHAR(32)).
+    my_uuid_type: Uuid = Uuid().with_variant(String(), "bigquery")
+    # DDL for bigquery mapped to invalid DOUBLE, so force it to FLOAT64.
+    my_double_type: Double = Double().with_variant(Float(), "bigquery")
+    mapping = {
+        DataType.BOOLEAN: Boolean,
+        DataType.CHARACTER_VARYING: String,
+        DataType.UUID: my_uuid_type,
+        DataType.DATE: Date,
+        DataType.INTEGER: Integer,
+        DataType.DOUBLE_PRECISION: my_double_type,
+        DataType.NUMERIC: Numeric,
+        DataType.TIMESTAMP_WITHOUT_TIMEZONE: DateTime,
+        DataType.TIMESTAMP_WITH_TIMEZONE: DateTime(timezone=True),
+        DataType.BIGINT: BigInteger,
+    }
+    if data_type not in mapping:
+        raise ValueError(f"Unsupported DataType: {data_type}")
+    return mapping[data_type]
+
+
+@pytest.fixture(name="shared_filter_table", scope="module")
+def fixture_shared_filter_table(queries_dwh_engine):
+    """Creates a single shared table with all columns needed for property filter tests.
+
+    We use this to avoid repeated CREATE/DROP TABLE operations.
+    Instead, each test should use a unique ID to isolate its test data.
+    """
+    # Collect all unique field names and types from ALL_FILTER_CASES.
+    all_fields: dict[str, DataType] = {}
+    for case in ALL_FILTER_CASES:
+        for field_name, data_type in case.fields.items():
+            # Ensure test writer didn't accidentally use multiple types for the same field.
+            if field_name in all_fields and all_fields[field_name] != data_type:
+                raise ValueError(f"Conflicting types for {field_name}: {all_fields[field_name]} vs {data_type}")
+            all_fields[field_name] = data_type
+
+    # Create table with all columns needed for filter tests.
+    columns = [Column("id", String, primary_key=True)]
+    for field_name, data_type in sorted(all_fields.items()):
+        col_type = _datatype_to_sqlalchemy_type(data_type)
+        columns.append(Column(field_name, col_type, nullable=True))
+
+    metadata = sqlalchemy.MetaData()
+    table = Table("shared_filter_table", metadata, *columns)
+    metadata.drop_all(queries_dwh_engine)
+    metadata.create_all(queries_dwh_engine)
+
+    try:
+        yield table
+    finally:
+        metadata.drop_all(queries_dwh_engine)
+
+
+@pytest.mark.parametrize("testcase", ALL_FILTER_CASES, ids=lambda d: str(d))
+def test_property_filters_in_sql(testcase, shared_filter_table, queries_dwh_session):
+    """Test that SQL query generation matches the in-memory filtering logic from property_filters.py."""
+    test_id = str(testcase.description)
+
+    # Insert a row with the unique test ID and properties from the test case.
+    insert_values: dict[str, Any] = {"id": test_id}
+    for field_name, value in testcase.props.items():
+        insert_values[field_name] = value
+
+    queries_dwh_session.execute(shared_filter_table.insert().values(insert_values))
+
+    # Test the query with filters.
+    filters = create_query_filters(shared_filter_table, testcase.filters)
+    q = compose_query(shared_filter_table, select_columns={"id"}, filters=filters, chosen_n=1).where(
+        shared_filter_table.c.id == test_id
+    )
+    result = queries_dwh_session.execute(q).scalar_one_or_none()
+
+    if testcase.expected:
+        assert result == test_id, f"Expected row to pass filters for case: {testcase}"
+    else:
+        assert result is None, f"Expected row to NOT pass filters for case: {testcase}"
+
+    # Cleanup our inserted test row.
+    queries_dwh_session.rollback()
 
 
 @pytest.mark.parametrize("column_type", [DateTime, Date])
@@ -642,14 +736,14 @@ def test_date_or_datetime_filter_validation(column_type):
     col = Column("x", column_type)
 
     with pytest.raises(LateValidationError) as exc:
-        create_date_or_datetime_filter(
+        create_filter(
             col,
             Filter(field_name="x", relation=Relation.INCLUDES, value=[123, 456]),
         )
     assert "must be strings containing an ISO8601 formatted date" in str(exc)
 
     with pytest.raises(LateValidationError) as exc:
-        create_date_or_datetime_filter(
+        create_filter(
             col,
             Filter(
                 field_name="x",
@@ -661,7 +755,7 @@ def test_date_or_datetime_filter_validation(column_type):
 
     # Test timezone validation for both DateTime and Date columns
     with pytest.raises(LateValidationError) as exc:
-        create_date_or_datetime_filter(
+        create_filter(
             col,
             Filter(
                 field_name="x",
@@ -672,29 +766,21 @@ def test_date_or_datetime_filter_validation(column_type):
     assert "must be in UTC" in str(exc)
 
 
-def test_date_or_datetime_filter_wrong_column_type():
-    """Test that we reject non-DateTime/Date columns for datetime/date filters."""
-    col = Column("x", String)
-    with pytest.raises(LateValidationError) as exc:
-        create_date_or_datetime_filter(col, Filter(field_name="x", relation=Relation.INCLUDES, value=["2024-01-01"]))
-    assert "not a DateTime or Date type" in str(exc)
-
-
 @pytest.mark.parametrize("column_type", [DateTime, Date])
 def test_allowed_date_or_datetime_filter_validation(column_type):
     """Test valid Date and DateTime filter scenarios."""
     col = Column("x", column_type)
 
     # Singular None is allowed for both column types
-    create_date_or_datetime_filter(col, Filter(field_name="x", relation=Relation.EXCLUDES, value=[None]))
-    create_date_or_datetime_filter(col, Filter(field_name="x", relation=Relation.INCLUDES, value=[None]))
+    create_filter(col, Filter(field_name="x", relation=Relation.EXCLUDES, value=[None]))
+    create_filter(col, Filter(field_name="x", relation=Relation.INCLUDES, value=[None]))
     # as are mixed None and date values
-    create_date_or_datetime_filter(col, Filter(field_name="x", relation=Relation.BETWEEN, value=[None, "2024-12-31"]))
-    create_date_or_datetime_filter(col, Filter(field_name="x", relation=Relation.BETWEEN, value=["2024-01-01", None]))
+    create_filter(col, Filter(field_name="x", relation=Relation.BETWEEN, value=[None, "2024-12-31"]))
+    create_filter(col, Filter(field_name="x", relation=Relation.BETWEEN, value=["2024-01-01", None]))
 
     # now without microseconds
     now = datetime.now(UTC).replace(microsecond=0)
-    create_date_or_datetime_filter(
+    create_filter(
         col,
         Filter(
             field_name="x",
@@ -707,7 +793,7 @@ def test_allowed_date_or_datetime_filter_validation(column_type):
     # We strip the tz info because in the test below we want to control the tz format;
     # `now.isoformat()` by default will render with +00:00.
     now_no_tz = now.replace(tzinfo=None)
-    create_date_or_datetime_filter(
+    create_filter(
         col,
         Filter(
             field_name="x",
@@ -715,18 +801,18 @@ def test_allowed_date_or_datetime_filter_validation(column_type):
             value=[now_no_tz.isoformat() + "Z", now_no_tz.isoformat() + "-00:00"],
         ),
     )
-    create_date_or_datetime_filter(
+    create_filter(
         col,
         Filter(field_name="x", relation=Relation.INCLUDES, value=["2024-01-01T12:30:00Z"]),
     )
-    create_date_or_datetime_filter(
+    create_filter(
         col,
         Filter(field_name="x", relation=Relation.INCLUDES, value=["2024-01-01T12:30:00+00:00"]),
     )
 
     # now with microseconds
     now_with_microsecond = now.replace(microsecond=1)
-    create_date_or_datetime_filter(
+    create_filter(
         col,
         Filter(
             field_name="x",
@@ -737,19 +823,19 @@ def test_allowed_date_or_datetime_filter_validation(column_type):
 
     # Check strings with and without the time delimiter.
     midnight = "2024-01-01 00:00:00"
-    create_date_or_datetime_filter(
+    create_filter(
         col,
         Filter(field_name="x", relation=Relation.BETWEEN, value=[None, midnight]),
     )
 
     midnight_with_delim = "2024-01-01T00:00:00"
-    create_date_or_datetime_filter(
+    create_filter(
         col,
         Filter(field_name="x", relation=Relation.BETWEEN, value=[None, midnight_with_delim]),
     )
 
     # Bare dates are allowed
-    create_date_or_datetime_filter(
+    create_filter(
         col,
         Filter(field_name="x", relation=Relation.BETWEEN, value=["2024-01-01", "2024-12-31"]),
     )
@@ -783,22 +869,22 @@ def test_make_csv_regex(csv, values, expected):
     )
 
 
-def test_get_stats_on_missing_metric_raises_error(queries_session):
+def test_get_stats_on_missing_metric_raises_error(queries_dwh_session, shared_sample_tables):
     with pytest.raises(LateValidationError) as exc:
         get_stats_on_metrics(
-            queries_session,
-            SampleTable.get_table(),
+            queries_dwh_session,
+            shared_sample_tables.sample_table,
             [DesignSpecMetricRequest(field_name="missing_col", metric_pct_change=0.1)],
             filters=[],
         )
     assert "Missing metrics (check your Datasource configuration): {'missing_col'}" in str(exc)
 
 
-def test_get_stats_on_integer_metric(queries_session):
+def test_get_stats_on_integer_metric(queries_dwh_session, shared_sample_tables):
     """Test would fail on postgres and redshift without a cast to float for different reasons."""
     rows = get_stats_on_metrics(
-        queries_session,
-        SampleTable.get_table(),
+        queries_dwh_session,
+        shared_sample_tables.sample_table,
         [DesignSpecMetricRequest(field_name="int_col", metric_pct_change=0.1)],
         filters=[],
     )
@@ -826,10 +912,10 @@ def test_get_stats_on_integer_metric(queries_session):
     assert actual.model_dump(include=numeric_fields) == pytest.approx(expected.model_dump(include=numeric_fields))
 
 
-def test_get_stats_on_nullable_integer_metric(queries_session):
+def test_get_stats_on_nullable_integer_metric(queries_dwh_session, shared_sample_tables):
     rows = get_stats_on_metrics(
-        queries_session,
-        SampleNullableTable.get_table(),
+        queries_dwh_session,
+        shared_sample_tables.sample_nullable_table,
         [DesignSpecMetricRequest(field_name="int_col", metric_pct_change=0.1)],
         filters=[],
     )
@@ -855,11 +941,11 @@ def test_get_stats_on_nullable_integer_metric(queries_session):
     assert actual.model_dump(include=numeric_fields) == pytest.approx(expected.model_dump(include=numeric_fields))
 
 
-def test_get_stats_on_boolean_metric(queries_session):
+def test_get_stats_on_boolean_metric(queries_dwh_session, shared_sample_tables):
     """Test would fail on postgres and redshift without casting to int to float."""
     rows = get_stats_on_metrics(
-        queries_session,
-        SampleTable.get_table(),
+        queries_dwh_session,
+        shared_sample_tables.sample_table,
         [DesignSpecMetricRequest(field_name="bool_col", metric_pct_change=0.1)],
         filters=[],
     )
@@ -885,10 +971,10 @@ def test_get_stats_on_boolean_metric(queries_session):
     assert actual.model_dump(include=numeric_fields) == pytest.approx(expected.model_dump(include=numeric_fields))
 
 
-def test_get_stats_on_numeric_metric(queries_session):
+def test_get_stats_on_numeric_metric(queries_dwh_session, shared_sample_tables):
     rows = get_stats_on_metrics(
-        queries_session,
-        SampleTable.get_table(),
+        queries_dwh_session,
+        shared_sample_tables.sample_table,
         [DesignSpecMetricRequest(field_name="float_col", metric_pct_change=0.1)],
         filters=[],
     )
@@ -915,11 +1001,11 @@ def test_get_stats_on_numeric_metric(queries_session):
     assert actual.model_dump(include=numeric_fields) == pytest.approx(expected.model_dump(include=numeric_fields))
 
 
-def test_get_participant_metrics(queries_session):
+def test_get_participant_metrics(queries_dwh_session, shared_sample_tables):
     participant_ids = ["100", "200"]
     rows = get_participant_metrics(
-        queries_session,
-        SampleTable.get_table(),
+        queries_dwh_session,
+        shared_sample_tables.sample_table,
         [
             DesignSpecMetricRequest(field_name="float_col", metric_pct_change=0.1),
             DesignSpecMetricRequest(field_name="bool_col", metric_pct_change=0.1),

@@ -32,10 +32,12 @@ from xngin.apiserver.routers.common_api_types import (
     GetExperimentResponse,
     GetParticipantAssignmentResponse,
     ListExperimentsResponse,
+    OnlineAssignmentWithFiltersRequest,
     UpdateBanditArmOutcomeRequest,
 )
 from xngin.apiserver.routers.experiments.dependencies import (
     datasource_dependency,
+    experiment_and_datasource_dependency,
     experiment_dependency,
     experiment_response_dependency,
     experiment_with_assignments_dependency,
@@ -119,7 +121,7 @@ async def get_experiment_assignments_as_csv(
     else generates an assignment.
     """,
 )
-async def get_assignment_for_participant_with_apikey(
+async def get_assignment(
     experiment: Annotated[tables.Experiment, Depends(experiment_dependency)],
     participant_id: str,
     xngin_session: Annotated[AsyncSession, Depends(xngin_db_session)],
@@ -139,6 +141,47 @@ async def get_assignment_for_participant_with_apikey(
         experiment=experiment,
         participant_id=participant_id,
         create_if_none=create_if_none,
+        properties=None,
+        random_state=random_state,
+    )
+
+
+@router.post(
+    "/experiments/{experiment_id}/assignments/{participant_id}/assign_with_filters",
+    description="""
+    Get or create a frequentist online arm assignment for a participant that requires server-side
+    filtering. If an assignment already exists, the properties in the
+    OnlineAssignmentWithFiltersRequest are ignored and the existing assignment is returned.""",
+)
+async def get_assignment_filtered(
+    experiment: Annotated[tables.Experiment, Depends(experiment_and_datasource_dependency)],
+    participant_id: str,
+    body: OnlineAssignmentWithFiltersRequest,
+    session: Annotated[AsyncSession, Depends(xngin_db_session)],
+    create_if_none: Annotated[
+        bool,
+        Query(description="Create an assignment if none exists. Override to just check for existence."),
+    ] = True,
+    random_state: Annotated[
+        int | None,
+        Query(description="Specify a random seed for reproducibility.", include_in_schema=False),
+    ] = None,
+) -> GetParticipantAssignmentResponse:
+    """Get or create the frequentist online arm assignment for a participant in an experiment."""
+
+    if experiment.experiment_type != ExperimentsType.FREQ_ONLINE.value:
+        raise LateValidationError(
+            f"Experiment {experiment.id} is a {experiment.experiment_type} experiment, and not a "
+            f"{ExperimentsType.FREQ_ONLINE.value} experiment. Please use the corresponding GET endpoint to "
+            f"create assignments."
+        )
+
+    return await get_or_create_assignment_for_participant(
+        xngin_session=session,
+        experiment=experiment,
+        participant_id=participant_id,
+        create_if_none=create_if_none,
+        properties=body.properties,
         random_state=random_state,
     )
 
@@ -151,7 +194,7 @@ async def get_assignment_for_participant_with_apikey(
     CreateCMABAssignmentRequest can be None, and will be disregarded if they are not None.
     """,
 )
-async def get_cmab_experiment_assignment_for_participant(
+async def get_assignment_cmab(
     experiment: Annotated[tables.Experiment, Depends(experiment_with_contexts_dependency)],
     participant_id: str,
     body: CMABContextInputRequest,

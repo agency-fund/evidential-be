@@ -1,18 +1,22 @@
 from datetime import UTC, datetime, timedelta
 
 from deepdiff import DeepDiff
+from pydantic import TypeAdapter
 from sqlalchemy import select
 
 from xngin.apiserver import constants
 from xngin.apiserver.routers.common_api_types import (
     ExperimentsType,
+    Filter,
     GetParticipantAssignmentResponse,
     ListExperimentsResponse,
+    OnlineFrequentistExperimentSpec,
     PreassignedFrequentistExperimentSpec,
 )
-from xngin.apiserver.routers.common_enums import ExperimentState, StopAssignmentReason
+from xngin.apiserver.routers.common_enums import ExperimentState, Relation, StopAssignmentReason
 from xngin.apiserver.routers.experiments.test_experiments_common import (
     insert_experiment_and_arms,
+    make_insertable_experiment,
 )
 from xngin.apiserver.sqla import tables
 from xngin.apiserver.storage.storage_format_converters import ExperimentStorageConverter
@@ -101,7 +105,7 @@ async def test_get_experiment_assignments_wrong_datasource(
     assert response.json()["detail"] == "Experiment not found or not authorized."
 
 
-async def test_get_assignment_for_participant_with_apikey_preassigned(xngin_session, testing_datasource, client_v1):
+async def test_get_assignment_preassigned(xngin_session, testing_datasource, client_v1):
     preassigned_experiment = await insert_experiment_and_arms(xngin_session, testing_datasource.ds)
     assignment = tables.ArmAssignment(
         experiment_id=preassigned_experiment.id,
@@ -135,7 +139,7 @@ async def test_get_assignment_for_participant_with_apikey_preassigned(xngin_sess
     assert parsed.assignment.arm_name == "control"
 
 
-async def test_get_assignment_for_participant_with_apikey_online(xngin_session, testing_datasource, client_v1):
+async def test_get_assignment_online(xngin_session, testing_datasource, client_v1):
     """Test endpoint that gets an assignment for a participant via API key."""
     online_experiment = await insert_experiment_and_arms(
         xngin_session,
@@ -179,7 +183,7 @@ async def test_get_assignment_for_participant_with_apikey_online(xngin_session, 
     assert assignment.experiment.stopped_assignments_reason is None
 
 
-async def test_get_assignment_for_participant_with_apikey_mab_online(xngin_session, testing_datasource, client_v1):
+async def test_get_assignment_mab_online(xngin_session, testing_datasource, client_v1):
     """Test endpoint that gets an assignment for a participant via API key."""
     online_experiment = await insert_experiment_and_arms(
         xngin_session,
@@ -230,9 +234,7 @@ async def test_get_assignment_for_participant_with_apikey_mab_online(xngin_sessi
     assert assignment.experiment.stopped_assignments_reason is None
 
 
-async def test_get_assignment_for_participant_with_apikey_online_dont_create(
-    xngin_session, testing_datasource, client_v1
-):
+async def test_get_assignment_online_dont_create(xngin_session, testing_datasource, client_v1):
     """Verify endpoint doesn't create an assignment when create_if_none=False."""
     online_experiment = await insert_experiment_and_arms(
         xngin_session,
@@ -252,9 +254,7 @@ async def test_get_assignment_for_participant_with_apikey_online_dont_create(
     assert parsed.assignment is None
 
 
-async def test_get_assignment_for_participant_with_apikey_online_past_end_date(
-    xngin_session, testing_datasource, client_v1
-):
+async def test_get_assignment_online_past_end_date(xngin_session, testing_datasource, client_v1):
     """Verify endpoint doesn't create an assignment for an online experiment that has ended."""
     online_experiment = await insert_experiment_and_arms(
         xngin_session,
@@ -388,3 +388,48 @@ async def test_get_cmab_experiment_assignment_for_online_participant_glific_unwr
     assert parsed.assignment.observed_at is None
     assert parsed.assignment.outcome is None
     assert parsed.assignment.context_values == [1.0, 1.0]
+
+
+async def test_assign_with_filters_wrong_experiment_type(xngin_session, testing_datasource, client_v1):
+    """Test that assign_with_filters endpoint rejects non-FREQ_ONLINE experiments."""
+    preassigned_exp = await insert_experiment_and_arms(
+        xngin_session,
+        testing_datasource.ds,
+        experiment_type=ExperimentsType.FREQ_PREASSIGNED,
+    )
+
+    response = client_v1.post(
+        f"/experiments/{preassigned_exp.id}/assignments/participant_1/assign_with_filters",
+        headers={constants.HEADER_API_KEY: testing_datasource.key},
+        json={"properties": []},
+    )
+    assert response.status_code == 422
+    detail_text = response.json().get("message")
+    assert "is a freq_preassigned experiment, and not a freq_online experiment" in detail_text
+
+
+async def test_assign_with_filters_participant_passes_filters(xngin_session, testing_datasource, client_v1):
+    """Test that participant passing filters gets assigned."""
+    # Create an experiment with a current_income filter: current_income BETWEEN 1000 and 5000
+    experiment, design_spec = make_insertable_experiment(
+        datasource=testing_datasource.ds,
+        state=ExperimentState.COMMITTED,
+        experiment_type=ExperimentsType.FREQ_ONLINE,
+    )
+    design_spec = TypeAdapter(OnlineFrequentistExperimentSpec).validate_python(design_spec)
+    design_spec.filters = [Filter(field_name="current_income", relation=Relation.BETWEEN, value=[1000, 5000])]
+    experiment = ExperimentStorageConverter(experiment).set_design_spec_fields(design_spec).get_experiment()
+    xngin_session.add(experiment)
+    await xngin_session.commit()
+
+    response = client_v1.post(
+        f"/experiments/{experiment.id}/assignments/participant_1/assign_with_filters?random_state=42",
+        headers={constants.HEADER_API_KEY: testing_datasource.key},
+        json={"properties": [{"field_name": "current_income", "value": 2500}]},
+    )
+    assert response.status_code == 200
+    parsed = GetParticipantAssignmentResponse.model_validate_json(response.text)
+    assert parsed.experiment_id == experiment.id
+    assert parsed.participant_id == "participant_1"
+    assert parsed.assignment is not None
+    assert parsed.assignment.arm_name in {"control", "treatment"}
