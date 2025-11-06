@@ -154,9 +154,21 @@ tasks:
       - local-session-token-keyset
     cmds:
       - uv run fastapi dev src/xngin/apiserver/main.py
+  start-live:
+    desc: "Starts apiserver locally with settings similar to the Railway environment."
+    interactive: false
+    dotenv:
+      - .env
+    env:
+      DATABASE_URL: "{{.XNGIN_DEVAPP_DSN}}"
+      PYTHONUNBUFFERED: "1"
+      RAILWAY_SERVICE_NAME: "local"  # detected by flags.is_railway
+      XNGIN_SESSION_TOKEN_KEYSET: "local"
+    cmds:
+      - uv run --no-dev xngin-apiserver-live
   start-airplane:
     desc: "Like start, but runs the backend in airplane mode. All Admin API interactions will be authenticated as testing@example.com automatically."
-    interactive: true
+    interactive: false
     env:
       AIRPLANE_MODE: "true"
       XNGIN_SESSION_TOKEN_KEYSET: "local"

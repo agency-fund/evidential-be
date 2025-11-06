@@ -18,4 +18,4 @@ RUN --mount=type=cache,id=s/53dd800c-90e7-49cd-b7f6-549131ff038e-/root/.cache/uv
 ADD --chmod=555 https://release.ariga.io/atlas/atlas-linux-amd64-latest ./atlas
 COPY atlas.hcl .
 COPY ./migrations ./migrations
-CMD ["/bin/uv", "run", "--no-dev", "fastapi", "run", "src/xngin/apiserver/main.py"]
+CMD ["/bin/uv", "run", "--no-dev", "xngin-apiserver-live"]
