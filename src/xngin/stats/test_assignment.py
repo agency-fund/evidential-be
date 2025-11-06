@@ -5,7 +5,6 @@ from decimal import Decimal
 import numpy as np
 import pandas as pd
 import pytest
-from numpy.random import MT19937, RandomState
 from stochatreat import stochatreat
 
 from xngin.stats.assignment import (
@@ -17,8 +16,7 @@ from xngin.stats.balance import BalanceResult
 
 def make_sample_data_dict(n=1000):
     """Create sample data dictionary for testing core stats functionality."""
-    rs = RandomState(MT19937())
-    rs.seed(42)
+    rs = np.random.default_rng(42)
     data = {
         "id": range(n),
         "age": np.round(rs.normal(30, 5, n), 0),
