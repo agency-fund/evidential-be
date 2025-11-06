@@ -147,7 +147,7 @@ def test_assign_treatment_with_infer_objects():
         .assign(
             id=np.arange(n),
             # nullable, non-unique numeric => 3 levels (NaN, 0, 1)
-            col1=[None, 1, 2] * (n // 3),
+            col1=[None, 1, 2] * (n // 3),  # type: ignore
             # nullable, unique numeric => 5 levels since default quantiles=4, but only 1 None to stratify on
             col2=np.concatenate([[None], np.arange(n - 1)]),
             # non-unique numeric => 2 levels
