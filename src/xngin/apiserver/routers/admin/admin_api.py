@@ -1628,6 +1628,7 @@ async def get_experiment_assignment_for_participant(
         experiment=experiment,
         participant_id=participant_id,
         create_if_none=create_if_none,
+        properties=None,
         random_state=random_state,
     )
 

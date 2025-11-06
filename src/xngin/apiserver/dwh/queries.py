@@ -1,13 +1,10 @@
 import re
 from collections.abc import Sequence
-from datetime import date, datetime, time, timedelta
-from typing import Literal
+from datetime import date, datetime
 
 import sqlalchemy
 from sqlalchemy import (
     ColumnElement,
-    Date,
-    DateTime,
     Float,
     Integer,
     Label,
@@ -38,7 +35,8 @@ from xngin.apiserver.routers.common_api_types import (
     GetFiltersResponseNumericOrDate,
     Relation,
 )
-from xngin.apiserver.routers.common_enums import FilterClass, MetricType
+from xngin.apiserver.routers.common_enums import DataType, FilterClass, MetricType
+from xngin.apiserver.routers.experiments.property_filters import validate_filter_value
 from xngin.db_extensions import custom_functions
 
 
@@ -221,8 +219,6 @@ def get_participant_metrics(
 
 def create_one_filter(filter_: Filter, sa_table: sqlalchemy.Table):
     """Converts a Filter into a SQLAlchemy filter."""
-    if isinstance(sa_table.columns[filter_.field_name].type, (DateTime, Date)):
-        return create_date_or_datetime_filter(sa_table.columns[filter_.field_name], filter_)
     if filter_.field_name.endswith(EXPERIMENT_IDS_SUFFIX):
         return create_special_experiment_id_filter(sa_table.columns[filter_.field_name], filter_)
     return create_filter(sa_table.columns[filter_.field_name], filter_)
@@ -277,74 +273,18 @@ def general_excludes_filter(
     )
 
 
-def create_date_or_datetime_filter(col: sqlalchemy.Column, filter_: Filter) -> ColumnElement:
-    """Converts a single Filter for a DateTime or Date-typed column into a sqlalchemy filter."""
+def create_between_filter(col: sqlalchemy.Column, values: Sequence) -> ColumnElement:
+    """Helper function to create a BETWEEN SQLAlchemy filter expression.
 
-    def str_to_date_or_datetime(
-        s: int | float | str | date | datetime | None, target_type: Literal["date", "datetime"]
-    ) -> date | datetime | None:
-        """Convert an ISO8601 string to a date or datetime based on target_type.
-
-        LateValidationError is raised if the ISO8601 string specifies a non-UTC timezone.
-
-        For "datetime": microseconds are truncated to zero for maximum compatibility between backends.
-            If `s` is already a datetime, it is returned as-is, but with microseconds set to zero.
-        For "date": datetime strings are converted to dates, dropping time information.
-            If `s` is already a date, it is returned as-is.
-        """
-        if s is None:
-            return None
-
-        if isinstance(s, datetime):
-            return s.date() if target_type == "date" else s.replace(microsecond=0)
-
-        if isinstance(s, date):
-            # convert date to datetime at midnight if target_type is datetime
-            return s if target_type == "date" else datetime.combine(s, time.min)
-
-        if not isinstance(s, str):
-            raise LateValidationError(
-                f"{col.name}: {target_type}-type filter values must be strings containing an ISO8601 formatted date."
-            )
-
-        # Always parse as datetime first to validate timezone
-        try:
-            parsed = datetime.fromisoformat(s).replace(microsecond=0)
-        except (ValueError, TypeError) as exc:
-            raise LateValidationError(
-                f"{col.name}: {target_type}-type filter values must be strings containing an ISO8601 formatted date."
-            ) from exc
-
-        if parsed.tzinfo:
-            offset = parsed.tzinfo.utcoffset(parsed)
-            if offset != timedelta():  # 0 timedelta is equivalent to UTC
-                raise LateValidationError(
-                    f"{col.name}: {target_type}-type filter values must be in UTC, "
-                    f"or not be tagged with an explicit timezone: {s}"
-                )
-            parsed = parsed.replace(tzinfo=None)
-
-        return parsed.date() if target_type == "date" else parsed
-
-    # First validate that we're working with the right column type.
-    if not isinstance(col.type, (DateTime, Date)):
-        raise LateValidationError(f"Column {col.name} is not a DateTime or Date type; cannot create filter.")
-
-    target_type: Literal["date", "datetime"] = "date" if isinstance(col.type, Date) else "datetime"
-    parsed_values = list(map(lambda s: str_to_date_or_datetime(s, target_type), filter_.value))
-
-    if filter_.relation == Relation.EXCLUDES:
-        return general_excludes_filter(col, parsed_values)
-
-    if filter_.relation == Relation.INCLUDES:
-        return sqlalchemy.not_(general_excludes_filter(col, parsed_values))
-
-    # Else it's Relation.BETWEEN:
-    match parsed_values:
+    Args:
+        col: SQLAlchemy column to filter on
+        values: Tuple of (left, right) or (left, right, None). None indicates NULL inclusion.
+    """
+    match values:
         case (left, None):
-            return col >= left
+            return col >= left  # type: ignore
         case (None, right):
-            return col <= right
+            return col <= right  # type: ignore
         case (left, right):
             return col.between(left, right)
         case (left, None, None):
@@ -359,31 +299,20 @@ def create_date_or_datetime_filter(col: sqlalchemy.Column, filter_: Filter) -> C
 
 def create_filter(col: sqlalchemy.Column, filter_: Filter) -> ColumnElement:
     """Converts a single Filter to a sqlalchemy filter."""
+    parsed_values: Sequence = [
+        validate_filter_value(filter_.field_name, value, DataType.match(col.type)) for value in filter_.value
+    ]
     match filter_.relation:
         case Relation.BETWEEN:
-            match filter_.value:
-                case (left, None):
-                    return col >= left
-                case (None, right):
-                    return col <= right
-                case (left, right):
-                    return col.between(left, right)
-                case (left, None, None):
-                    return or_(col >= left, col.is_(sqlalchemy.null()))
-                case (None, right, None):
-                    return or_(col <= right, col.is_(sqlalchemy.null()))
-                case (left, right, None):
-                    return or_(col.between(left, right), col.is_(sqlalchemy.null()))
-                case _:
-                    raise RuntimeError("Bug: invalid filter.")
+            return create_between_filter(col, parsed_values)
         case Relation.EXCLUDES if isinstance(col.type, sqlalchemy.Boolean):
-            return and_(*[col.is_not(value) if value is not None else col.is_not(None) for value in filter_.value])
+            return and_(*[col.is_not(value) if value is not None else col.is_not(None) for value in parsed_values])
         case Relation.EXCLUDES:
-            return general_excludes_filter(col, filter_.value)
+            return general_excludes_filter(col, parsed_values)
         case Relation.INCLUDES if isinstance(col.type, sqlalchemy.Boolean):
-            return or_(*[col.is_(value) if value is not None else col.is_(None) for value in filter_.value])
+            return or_(*[col.is_(value) if value is not None else col.is_(None) for value in parsed_values])
         case Relation.INCLUDES:
-            return sqlalchemy.not_(general_excludes_filter(col, filter_.value))
+            return sqlalchemy.not_(general_excludes_filter(col, parsed_values))
         case _:
             raise RuntimeError("Bug: invalid Filter.")
 

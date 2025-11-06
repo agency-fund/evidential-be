@@ -16,11 +16,13 @@ from sqlalchemy.schema import CreateTable
 
 from xngin.apiserver.exceptions_common import LateValidationError
 from xngin.apiserver.routers.common_api_types import (
+    BaseFrequentistDesignSpec,
     CMABExperimentSpec,
     CreateExperimentRequest,
     DesignSpec,
     DesignSpecMetric,
     ExperimentsType,
+    Filter,
     LikelihoodTypes,
     MABExperimentSpec,
     MetricPowerAnalysis,
@@ -31,7 +33,7 @@ from xngin.apiserver.routers.common_api_types import (
     PriorTypes,
     Stratum,
 )
-from xngin.apiserver.routers.common_enums import ExperimentState, StopAssignmentReason
+from xngin.apiserver.routers.common_enums import ExperimentState, Relation, StopAssignmentReason
 from xngin.apiserver.routers.experiments.experiments_common import (
     ExperimentsAssignmentError,
     abandon_experiment_impl,
@@ -264,8 +266,8 @@ class MockRow:
     """Simulate the bits of a sqlalchemy Row that we need here."""
 
     participant_id: str
-    gender: str
-    is_onboarded: bool
+    gender: str = "M"
+    is_onboarded: bool = True
     region: str = "North"  # Default value for backward compatibility
 
     def _asdict(self) -> dict[str, Any]:
@@ -443,6 +445,52 @@ async def test_create_preassigned_experiment_impl_raises_on_duplicate_ids(
             random_state=42,
             xngin_session=xngin_session,
             stratify_on_metrics=False,
+            validated_webhooks=[],
+        )
+
+
+@pytest.mark.parametrize(
+    "experiment_type, filters, match",
+    [
+        (
+            ExperimentsType.FREQ_ONLINE,
+            [Filter(field_name="uuid_filter", relation=Relation.INCLUDES, value=[1])],
+            "must be a valid UUID string",
+        ),
+        (
+            ExperimentsType.FREQ_ONLINE,
+            [Filter(field_name="uuid_filter", relation=Relation.INCLUDES, value=["not_a_uuid"])],
+            "UUID input must be a valid UUID string",
+        ),
+        (
+            ExperimentsType.FREQ_PREASSIGNED,
+            [Filter(field_name="is_onboarded", relation=Relation.INCLUDES, value=[1])],
+            "input is not a boolean",
+        ),
+    ],
+)
+async def test_create_online_experiment_impl_raises_on_bad_filters(
+    xngin_session: AsyncSession,
+    testing_datasource,
+    experiment_type: ExperimentsType,
+    filters: list[Filter],
+    match: str | None,
+):
+    """Test that validate_filter_value is being called correctly during experiment creation."""
+    request = make_createexperimentrequest_json(experiment_type=experiment_type)
+    request = TypeAdapter(CreateExperimentRequest).validate_python(request)
+    # Attach test filters
+    assert isinstance(request.design_spec, BaseFrequentistDesignSpec)
+    request.design_spec.filters = filters
+
+    with pytest.raises(LateValidationError, match=match):
+        await create_experiment_impl(
+            request=request,
+            datasource=testing_datasource.ds,
+            xngin_session=xngin_session,
+            chosen_n=10,
+            stratify_on_metrics=False,
+            random_state=42,
             validated_webhooks=[],
         )
 
