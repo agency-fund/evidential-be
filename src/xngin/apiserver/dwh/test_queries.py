@@ -221,7 +221,8 @@ def fixture_queries_dwh_engine():
 @pytest.fixture(name="shared_sample_tables", scope="module")
 def fixture_shared_sample_tables(queries_dwh_engine):
     """Creates and populates SampleTable and SampleNullableTable."""
-    # Create using the DeclarativeBase approach
+    # Create using the DeclarativeBase approach. First drop in case they exist from a bad run.
+    Base.metadata.drop_all(queries_dwh_engine)
     Base.metadata.create_all(queries_dwh_engine)
     # and then populate with our sample data.
     with Session(queries_dwh_engine) as session:
@@ -692,6 +693,7 @@ def fixture_shared_filter_table(queries_dwh_engine):
 
     metadata = sqlalchemy.MetaData()
     table = Table("shared_filter_table", metadata, *columns)
+    metadata.drop_all(queries_dwh_engine)
     metadata.create_all(queries_dwh_engine)
 
     try:
