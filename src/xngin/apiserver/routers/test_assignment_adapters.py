@@ -74,8 +74,7 @@ def sample_table():
 
 
 def make_sample_data_dict(n=1000):
-    rs = RandomState(MT19937())
-    rs.seed(42)
+    rs = RandomState(MT19937(42))
     data = {
         "id": range(n),
         "age": np.round(rs.normal(30, 5, n), 0),
@@ -183,8 +182,8 @@ def test_assign_treatments_with_balance_basic(sample_table, sample_rows):
     assert len(result.treatment_ids) == len(sample_rows)
     assert result.orig_stratum_cols == ["gender", "region"]
     assert result.balance_result is not None
-    assert result.balance_result.f_statistic == pytest.approx(0.006156735, abs=1e-5)
-    assert result.balance_result.f_pvalue == pytest.approx(0.99992466, abs=1e-5)
+    assert result.balance_result.f_statistic == pytest.approx(0.00384, abs=1e-5)
+    assert result.balance_result.f_pvalue == pytest.approx(0.99997, abs=1e-5)
 
 
 @pytest.mark.parametrize("stratum_id_name", [None, "stratum_id"])
