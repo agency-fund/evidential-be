@@ -7,7 +7,6 @@ import numpy as np
 import pytest
 from deepdiff import DeepDiff
 from fastapi import HTTPException
-from numpy.random import MT19937, RandomState
 from pydantic import HttpUrl, TypeAdapter
 from sqlalchemy import Boolean, Column, MetaData, String, Table, select
 from sqlalchemy.dialects import postgresql
@@ -289,8 +288,7 @@ def sample_table():
 
 def make_sample_data(n=100):
     """Create mock participant data that works with our sample_table"""
-    rs = RandomState(MT19937())
-    rs.seed(42)
+    rs = np.random.default_rng(42)
     return [
         MockRow(
             participant_id=f"p{i}",
