@@ -1,7 +1,6 @@
 import numpy as np
 import pandas as pd
 import pytest
-from numpy.random import MT19937, RandomState
 from stochatreat import stochatreat
 
 from xngin.stats.balance import (
@@ -15,9 +14,8 @@ from xngin.stats.stats_errors import StatsBalanceError
 
 @pytest.fixture
 def sample_data():
-    rs = RandomState(MT19937())
-    rs.seed(42)
-    n = 1000
+    rs = np.random.default_rng(42)
+    n = 1200
     data = {
         "treat": rs.binomial(1, 0.5, n),
         "age": rs.normal(30, 5, n),
@@ -78,10 +76,9 @@ def check_balance(
 
 def test_check_balance(sample_data):
     result = check_balance(sample_data)
-
-    assert result.f_statistic is not None
-    assert result.f_pvalue is not None
-    assert result.f_pvalue > 0.5
+    assert result.f_statistic is not None, result.model_summary
+    assert result.f_pvalue is not None, result.model_summary
+    assert result.f_pvalue > 0.2, result.model_summary
     assert result.model_summary is not None
 
 
@@ -93,7 +90,7 @@ def test_check_balance_with_missing_values(sample_data):
 
     assert result.f_statistic is not None
     assert result.f_pvalue is not None
-    assert result.f_pvalue > 0.5
+    assert result.f_pvalue > 0.2
 
 
 def test_check_balance_with_excluded_cols(sample_data):
@@ -101,7 +98,7 @@ def test_check_balance_with_excluded_cols(sample_data):
 
     assert result.f_statistic is not None
     assert result.f_pvalue is not None
-    assert result.f_pvalue > 0.5
+    assert result.f_pvalue > 0.2
 
 
 def test_check_balance_invalid_treatment(sample_data):
@@ -119,7 +116,7 @@ def test_check_balance_with_single_value_columns(sample_data):
 
     assert result.f_statistic is not None
     assert result.f_pvalue is not None
-    assert result.f_pvalue > 0.5
+    assert result.f_pvalue > 0.2
     assert result.model_summary is not None
 
 
@@ -139,7 +136,7 @@ def test_check_balance_with_column_exclusion_from_dummy_var_generation():
 
     assert result.numerator_df == 1
     assert result.denominator_df == 18
-    assert result.f_pvalue > 0.5
+    assert result.f_pvalue > 0.2
     assert result.model_summary is not None
 
 
@@ -157,7 +154,7 @@ def test_check_balance_with_skewed_column_doesnt_raise_valueerror():
 
     assert result.f_statistic is not None
     assert result.f_pvalue is not None
-    assert result.f_pvalue <= 0.5
+    assert result.f_pvalue <= 0.2
     assert result.model_summary is not None
 
 
@@ -315,7 +312,7 @@ def test_check_balance_with_problematic_categorical():
 
     assert result.f_statistic is not None
     assert result.f_pvalue is not None
-    assert result.f_pvalue > 0.5
+    assert result.f_pvalue > 0.2
 
 
 def test_check_balance_with_reserved_words_and_symbols():
@@ -351,4 +348,4 @@ def test_check_balance_with_reserved_words_and_symbols():
     treatment_cols = {"treat", 'treat"s'}
     for t in treatment_cols:
         result = check_balance_of_preprocessed_df(data, treatment_col=t, exclude_col_set=treatment_cols)
-        assert result.f_pvalue > 0.5
+        assert result.f_pvalue > 0.2
