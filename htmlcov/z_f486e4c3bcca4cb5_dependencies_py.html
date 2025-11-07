@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
     <meta http-equiv="Content-Type" content="text/html; charset=utf-8">
-    <title>Coverage for src/xngin/apiserver/routers/experiments/dependencies.py: 78%</title>
+    <title>Coverage for src/xngin/apiserver/routers/experiments/dependencies.py: 79%</title>
     <link rel="icon" sizes="32x32" href="favicon_32_cb_58284776.png">
     <link rel="stylesheet" href="style_cb_6b508a39.css" type="text/css">
     <script src="coverage_html_cb_6fb7b396.js" defer></script>
@@ -12,7 +12,7 @@
     <div class="content">
         <h1>
             <span class="text">Coverage for </span><b>src/xngin/apiserver/routers/experiments/dependencies.py</b>:
-            <span class="pc_cov">78%</span>
+            <span class="pc_cov">79%</span>
         </h1>
         <aside id="help_panel_wrapper">
             <input id="help_panel_state" type="checkbox">
@@ -54,8 +54,8 @@
             </div>
         </aside>
         <h2>
-            <span class="text">37 statements &nbsp;</span>
-            <button type="button" class="run button_toggle_run" value="run" data-shortcut="r" title="Toggle lines run">29<span class="text"> run</span></button>
+            <span class="text">38 statements &nbsp;</span>
+            <button type="button" class="run button_toggle_run" value="run" data-shortcut="r" title="Toggle lines run">30<span class="text"> run</span></button>
             <button type="button" class="mis show_mis button_toggle_mis" value="mis" data-shortcut="m" title="Toggle lines missing">8<span class="text"> missing</span></button>
             <button type="button" class="exc show_exc button_toggle_exc" value="exc" data-shortcut="x" title="Toggle lines excluded">0<span class="text"> excluded</span></button>
         </h2>
@@ -65,7 +65,7 @@
             <a id="nextFileLink" class="nav" href="z_f486e4c3bcca4cb5_experiments_api_py.html">&#xbb; next</a>
             &nbsp; &nbsp; &nbsp;
             <a class="nav" href="https://coverage.readthedocs.io/en/7.11.0">coverage.py v7.11.0</a>,
-            created at 2025-11-06 00:33 +0000
+            created at 2025-11-07 04:18 +0000
         </p>
         <aside class="hidden">
             <button type="button" class="button_next_chunk" data-shortcut="j"></button>
@@ -194,16 +194,18 @@
     <p class="pln"><span class="n"><a id="t112" href="#t112">112</a></span><span class="t"><span class="com"># Default dependency for experiments that only need arms joined in.</span>&nbsp;</span><span class="r"></span></p>
     <p class="run"><span class="n"><a id="t113" href="#t113">113</a></span><span class="t"><span class="nam">experiment_dependency</span> <span class="op">=</span> <span class="nam">ExperimentDependency</span><span class="op">(</span><span class="op">)</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t114" href="#t114">114</a></span><span class="t">&nbsp;</span><span class="r"></span></p>
-    <p class="pln"><span class="n"><a id="t115" href="#t115">115</a></span><span class="t"><span class="com"># Use this version when you also want contexts for assignment responses.</span>&nbsp;</span><span class="r"></span></p>
-    <p class="run"><span class="n"><a id="t116" href="#t116">116</a></span><span class="t"><span class="nam">experiment_with_contexts_dependency</span> <span class="op">=</span> <span class="nam">ExperimentDependency</span><span class="op">(</span><span class="nam">preload</span><span class="op">=</span><span class="op">[</span><span class="nam">tables</span><span class="op">.</span><span class="nam">Experiment</span><span class="op">.</span><span class="nam">contexts</span><span class="op">]</span><span class="op">)</span>&nbsp;</span><span class="r"></span></p>
-    <p class="pln"><span class="n"><a id="t117" href="#t117">117</a></span><span class="t">&nbsp;</span><span class="r"></span></p>
-    <p class="pln"><span class="n"><a id="t118" href="#t118">118</a></span><span class="t"><span class="com"># Use this version when a full GetExperimentResponse is needed.</span>&nbsp;</span><span class="r"></span></p>
-    <p class="run"><span class="n"><a id="t119" href="#t119">119</a></span><span class="t"><span class="nam">experiment_response_dependency</span> <span class="op">=</span> <span class="nam">ExperimentDependency</span><span class="op">(</span><span class="nam">preload</span><span class="op">=</span><span class="op">[</span><span class="nam">tables</span><span class="op">.</span><span class="nam">Experiment</span><span class="op">.</span><span class="nam">webhooks</span><span class="op">,</span> <span class="nam">tables</span><span class="op">.</span><span class="nam">Experiment</span><span class="op">.</span><span class="nam">contexts</span><span class="op">]</span><span class="op">)</span>&nbsp;</span><span class="r"></span></p>
-    <p class="pln"><span class="n"><a id="t120" href="#t120">120</a></span><span class="t">&nbsp;</span><span class="r"></span></p>
-    <p class="pln"><span class="n"><a id="t121" href="#t121">121</a></span><span class="t"><span class="com"># This version is used with processing assignments, e.g. exporting them.</span>&nbsp;</span><span class="r"></span></p>
-    <p class="run"><span class="n"><a id="t122" href="#t122">122</a></span><span class="t"><span class="nam">experiment_with_assignments_dependency</span> <span class="op">=</span> <span class="nam">ExperimentDependency</span><span class="op">(</span>&nbsp;</span><span class="r"></span></p>
-    <p class="run run2"><span class="n"><a id="t123" href="#t123">123</a></span><span class="t">    <span class="nam">preload</span><span class="op">=</span><span class="op">[</span><span class="nam">tables</span><span class="op">.</span><span class="nam">Experiment</span><span class="op">.</span><span class="nam">arm_assignments</span><span class="op">,</span> <span class="nam">tables</span><span class="op">.</span><span class="nam">Experiment</span><span class="op">.</span><span class="nam">draws</span><span class="op">]</span><span class="op">,</span>&nbsp;</span><span class="r"></span></p>
-    <p class="run run2"><span class="n"><a id="t124" href="#t124">124</a></span><span class="t"><span class="op">)</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run"><span class="n"><a id="t115" href="#t115">115</a></span><span class="t"><span class="nam">experiment_and_datasource_dependency</span> <span class="op">=</span> <span class="nam">ExperimentDependency</span><span class="op">(</span><span class="nam">preload</span><span class="op">=</span><span class="op">[</span><span class="nam">tables</span><span class="op">.</span><span class="nam">Experiment</span><span class="op">.</span><span class="nam">datasource</span><span class="op">]</span><span class="op">)</span>&nbsp;</span><span class="r"></span></p>
+    <p class="pln"><span class="n"><a id="t116" href="#t116">116</a></span><span class="t">&nbsp;</span><span class="r"></span></p>
+    <p class="pln"><span class="n"><a id="t117" href="#t117">117</a></span><span class="t"><span class="com"># Use this version when you also want contexts for assignment responses.</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run"><span class="n"><a id="t118" href="#t118">118</a></span><span class="t"><span class="nam">experiment_with_contexts_dependency</span> <span class="op">=</span> <span class="nam">ExperimentDependency</span><span class="op">(</span><span class="nam">preload</span><span class="op">=</span><span class="op">[</span><span class="nam">tables</span><span class="op">.</span><span class="nam">Experiment</span><span class="op">.</span><span class="nam">contexts</span><span class="op">]</span><span class="op">)</span>&nbsp;</span><span class="r"></span></p>
+    <p class="pln"><span class="n"><a id="t119" href="#t119">119</a></span><span class="t">&nbsp;</span><span class="r"></span></p>
+    <p class="pln"><span class="n"><a id="t120" href="#t120">120</a></span><span class="t"><span class="com"># Use this version when a full GetExperimentResponse is needed.</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run"><span class="n"><a id="t121" href="#t121">121</a></span><span class="t"><span class="nam">experiment_response_dependency</span> <span class="op">=</span> <span class="nam">ExperimentDependency</span><span class="op">(</span><span class="nam">preload</span><span class="op">=</span><span class="op">[</span><span class="nam">tables</span><span class="op">.</span><span class="nam">Experiment</span><span class="op">.</span><span class="nam">webhooks</span><span class="op">,</span> <span class="nam">tables</span><span class="op">.</span><span class="nam">Experiment</span><span class="op">.</span><span class="nam">contexts</span><span class="op">]</span><span class="op">)</span>&nbsp;</span><span class="r"></span></p>
+    <p class="pln"><span class="n"><a id="t122" href="#t122">122</a></span><span class="t">&nbsp;</span><span class="r"></span></p>
+    <p class="pln"><span class="n"><a id="t123" href="#t123">123</a></span><span class="t"><span class="com"># This version is used with processing assignments, e.g. exporting them.</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run"><span class="n"><a id="t124" href="#t124">124</a></span><span class="t"><span class="nam">experiment_with_assignments_dependency</span> <span class="op">=</span> <span class="nam">ExperimentDependency</span><span class="op">(</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run run2"><span class="n"><a id="t125" href="#t125">125</a></span><span class="t">    <span class="nam">preload</span><span class="op">=</span><span class="op">[</span><span class="nam">tables</span><span class="op">.</span><span class="nam">Experiment</span><span class="op">.</span><span class="nam">arm_assignments</span><span class="op">,</span> <span class="nam">tables</span><span class="op">.</span><span class="nam">Experiment</span><span class="op">.</span><span class="nam">draws</span><span class="op">]</span><span class="op">,</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run run2"><span class="n"><a id="t126" href="#t126">126</a></span><span class="t"><span class="op">)</span>&nbsp;</span><span class="r"></span></p>
 </main>
 <footer>
     <div class="content">
@@ -213,7 +215,7 @@
             <a class="nav" href="z_f486e4c3bcca4cb5_experiments_api_py.html">&#xbb; next</a>
             &nbsp; &nbsp; &nbsp;
             <a class="nav" href="https://coverage.readthedocs.io/en/7.11.0">coverage.py v7.11.0</a>,
-            created at 2025-11-06 00:33 +0000
+            created at 2025-11-07 04:18 +0000
         </p>
     </div>
 </footer>

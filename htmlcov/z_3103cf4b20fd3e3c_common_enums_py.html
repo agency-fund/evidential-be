@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
     <meta http-equiv="Content-Type" content="text/html; charset=utf-8">
-    <title>Coverage for src/xngin/apiserver/routers/common_enums.py: 77%</title>
+    <title>Coverage for src/xngin/apiserver/routers/common_enums.py: 78%</title>
     <link rel="icon" sizes="32x32" href="favicon_32_cb_58284776.png">
     <link rel="stylesheet" href="style_cb_6b508a39.css" type="text/css">
     <script src="coverage_html_cb_6fb7b396.js" defer></script>
@@ -12,7 +12,7 @@
     <div class="content">
         <h1>
             <span class="text">Coverage for </span><b>src/xngin/apiserver/routers/common_enums.py</b>:
-            <span class="pc_cov">77%</span>
+            <span class="pc_cov">78%</span>
         </h1>
         <aside id="help_panel_wrapper">
             <input id="help_panel_state" type="checkbox">
@@ -55,8 +55,8 @@
         </aside>
         <h2>
             <span class="text">176 statements &nbsp;</span>
-            <button type="button" class="run button_toggle_run" value="run" data-shortcut="r" title="Toggle lines run">136<span class="text"> run</span></button>
-            <button type="button" class="mis show_mis button_toggle_mis" value="mis" data-shortcut="m" title="Toggle lines missing">40<span class="text"> missing</span></button>
+            <button type="button" class="run button_toggle_run" value="run" data-shortcut="r" title="Toggle lines run">138<span class="text"> run</span></button>
+            <button type="button" class="mis show_mis button_toggle_mis" value="mis" data-shortcut="m" title="Toggle lines missing">38<span class="text"> missing</span></button>
             <button type="button" class="exc show_exc button_toggle_exc" value="exc" data-shortcut="x" title="Toggle lines excluded">0<span class="text"> excluded</span></button>
         </h2>
         <p class="text">
@@ -65,7 +65,7 @@
             <a id="nextFileLink" class="nav" href="z_f486e4c3bcca4cb5_dependencies_py.html">&#xbb; next</a>
             &nbsp; &nbsp; &nbsp;
             <a class="nav" href="https://coverage.readthedocs.io/en/7.11.0">coverage.py v7.11.0</a>,
-            created at 2025-11-06 00:33 +0000
+            created at 2025-11-07 04:18 +0000
         </p>
         <aside class="hidden">
             <button type="button" class="button_next_chunk" data-shortcut="j"></button>
@@ -148,7 +148,7 @@
     <p class="mis show_mis"><span class="n"><a id="t66" href="#t66">66</a></span><span class="t">            <span class="key">return</span> <span class="nam">DataType</span><span class="op">[</span><span class="nam">value</span><span class="op">]</span>&nbsp;</span><span class="r"></span></p>
     <p class="run"><span class="n"><a id="t67" href="#t67">67</a></span><span class="t">        <span class="key">if</span> <span class="nam">value</span> <span class="key">is</span> <span class="nam">str</span><span class="op">:</span>&nbsp;</span><span class="r"></span></p>
     <p class="mis show_mis"><span class="n"><a id="t68" href="#t68">68</a></span><span class="t">            <span class="key">return</span> <span class="nam">DataType</span><span class="op">.</span><span class="nam">CHARACTER_VARYING</span>&nbsp;</span><span class="r"></span></p>
-    <p class="run"><span class="n"><a id="t69" href="#t69">69</a></span><span class="t">        <span class="key">if</span> <span class="nam">isinstance</span><span class="op">(</span><span class="nam">value</span><span class="op">,</span> <span class="nam">sqlalchemy</span><span class="op">.</span><span class="nam">sql</span><span class="op">.</span><span class="nam">sqltypes</span><span class="op">.</span><span class="nam">UUID</span><span class="op">)</span><span class="op">:</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run"><span class="n"><a id="t69" href="#t69">69</a></span><span class="t">        <span class="key">if</span> <span class="nam">isinstance</span><span class="op">(</span><span class="nam">value</span><span class="op">,</span> <span class="nam">sqlalchemy</span><span class="op">.</span><span class="nam">sql</span><span class="op">.</span><span class="nam">sqltypes</span><span class="op">.</span><span class="nam">Uuid</span><span class="op">)</span><span class="op">:</span>&nbsp;</span><span class="r"></span></p>
     <p class="run"><span class="n"><a id="t70" href="#t70">70</a></span><span class="t">            <span class="key">return</span> <span class="nam">DataType</span><span class="op">.</span><span class="nam">UUID</span>&nbsp;</span><span class="r"></span></p>
     <p class="run"><span class="n"><a id="t71" href="#t71">71</a></span><span class="t">        <span class="key">if</span> <span class="nam">isinstance</span><span class="op">(</span><span class="nam">value</span><span class="op">,</span> <span class="nam">sqlalchemy</span><span class="op">.</span><span class="nam">sql</span><span class="op">.</span><span class="nam">sqltypes</span><span class="op">.</span><span class="nam">String</span><span class="op">)</span><span class="op">:</span>&nbsp;</span><span class="r"></span></p>
     <p class="run"><span class="n"><a id="t72" href="#t72">72</a></span><span class="t">            <span class="key">return</span> <span class="nam">DataType</span><span class="op">.</span><span class="nam">CHARACTER_VARYING</span>&nbsp;</span><span class="r"></span></p>
@@ -159,9 +159,9 @@
     <p class="run"><span class="n"><a id="t77" href="#t77">77</a></span><span class="t">        <span class="key">if</span> <span class="nam">isinstance</span><span class="op">(</span><span class="nam">value</span><span class="op">,</span> <span class="nam">sqlalchemy</span><span class="op">.</span><span class="nam">sql</span><span class="op">.</span><span class="nam">sqltypes</span><span class="op">.</span><span class="nam">Integer</span><span class="op">)</span><span class="op">:</span>&nbsp;</span><span class="r"></span></p>
     <p class="run"><span class="n"><a id="t78" href="#t78">78</a></span><span class="t">            <span class="key">return</span> <span class="nam">DataType</span><span class="op">.</span><span class="nam">INTEGER</span>&nbsp;</span><span class="r"></span></p>
     <p class="run"><span class="n"><a id="t79" href="#t79">79</a></span><span class="t">        <span class="key">if</span> <span class="nam">isinstance</span><span class="op">(</span><span class="nam">value</span><span class="op">,</span> <span class="nam">sqlalchemy</span><span class="op">.</span><span class="nam">sql</span><span class="op">.</span><span class="nam">sqltypes</span><span class="op">.</span><span class="nam">Double</span><span class="op">)</span><span class="op">:</span>&nbsp;</span><span class="r"></span></p>
-    <p class="mis show_mis"><span class="n"><a id="t80" href="#t80">80</a></span><span class="t">            <span class="key">return</span> <span class="nam">DataType</span><span class="op">.</span><span class="nam">DOUBLE_PRECISION</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run"><span class="n"><a id="t80" href="#t80">80</a></span><span class="t">            <span class="key">return</span> <span class="nam">DataType</span><span class="op">.</span><span class="nam">DOUBLE_PRECISION</span>&nbsp;</span><span class="r"></span></p>
     <p class="run"><span class="n"><a id="t81" href="#t81">81</a></span><span class="t">        <span class="key">if</span> <span class="nam">isinstance</span><span class="op">(</span><span class="nam">value</span><span class="op">,</span> <span class="nam">sqlalchemy</span><span class="op">.</span><span class="nam">sql</span><span class="op">.</span><span class="nam">sqltypes</span><span class="op">.</span><span class="nam">Float</span><span class="op">)</span><span class="op">:</span>&nbsp;</span><span class="r"></span></p>
-    <p class="mis show_mis"><span class="n"><a id="t82" href="#t82">82</a></span><span class="t">            <span class="key">return</span> <span class="nam">DataType</span><span class="op">.</span><span class="nam">DOUBLE_PRECISION</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run"><span class="n"><a id="t82" href="#t82">82</a></span><span class="t">            <span class="key">return</span> <span class="nam">DataType</span><span class="op">.</span><span class="nam">DOUBLE_PRECISION</span>&nbsp;</span><span class="r"></span></p>
     <p class="run"><span class="n"><a id="t83" href="#t83">83</a></span><span class="t">        <span class="key">if</span> <span class="nam">isinstance</span><span class="op">(</span><span class="nam">value</span><span class="op">,</span> <span class="nam">sqlalchemy</span><span class="op">.</span><span class="nam">sql</span><span class="op">.</span><span class="nam">sqltypes</span><span class="op">.</span><span class="nam">Numeric</span><span class="op">)</span><span class="op">:</span>&nbsp;</span><span class="r"></span></p>
     <p class="run"><span class="n"><a id="t84" href="#t84">84</a></span><span class="t">            <span class="key">return</span> <span class="nam">DataType</span><span class="op">.</span><span class="nam">NUMERIC</span>&nbsp;</span><span class="r"></span></p>
     <p class="run"><span class="n"><a id="t85" href="#t85">85</a></span><span class="t">        <span class="key">if</span> <span class="nam">isinstance</span><span class="op">(</span><span class="nam">value</span><span class="op">,</span> <span class="nam">sqlalchemy</span><span class="op">.</span><span class="nam">sql</span><span class="op">.</span><span class="nam">sqltypes</span><span class="op">.</span><span class="nam">Date</span><span class="op">)</span><span class="op">:</span>&nbsp;</span><span class="r"></span></p>
@@ -416,7 +416,7 @@
             <a class="nav" href="z_f486e4c3bcca4cb5_dependencies_py.html">&#xbb; next</a>
             &nbsp; &nbsp; &nbsp;
             <a class="nav" href="https://coverage.readthedocs.io/en/7.11.0">coverage.py v7.11.0</a>,
-            created at 2025-11-06 00:33 +0000
+            created at 2025-11-07 04:18 +0000
         </p>
     </div>
 </footer>
