@@ -83,18 +83,17 @@ def test_check_balance(sample_data):
     assert len(result.params) == 7  # 1 intercept + 3 continuous + 3 dummies [from 4-category encoding]
     assert len(result.std_errors) == 7
     assert result.model_summary is not None
-    print(result.model_summary)
 
 
 def test_robust_vs_nonrobust_standard_errors_small_sample():
     """
-    Demonstrate that robust standard errors (HC1) matter in small samples with heteroskedasticity.
+    Test that robust standard errors matter in small samples with heteroskedasticity.
 
-    This demonstrates why using robust standard errors can be important in correcting for
+    Demonstrates how using robust standard errors can be important in correcting for
     heteroskedasticity, especially when we have:
     - Small samples with potential outliers or extreme values
     - Count data (variance increases with mean)
-    - Binary/proportion dependent variables
+    - Binary/proportion dependent variables (variance varies with proportion)
     """
     rng = np.random.default_rng(42)
     n = 40
@@ -123,44 +122,29 @@ def test_robust_vs_nonrobust_standard_errors_small_sample():
         "cov3_bina": binary_covar,
     })
 
-    # Do a balance check with non-robust standard errors
-    # In small samples with heteroskedasticity, the non-robust covariance matrix assumes constant
-    # variance (homoskedasticity). When violated, standard errors are incorrect, leading to
-    # unreliable inference.
+    # Do a balance check with non-robust standard errors, whose covariance matrix assumes constant
+    # variance (homoskedasticity). When heteroskedasticity is present, standard errors are
+    # incorrect, leading to unreliable inference particularly in small samples.
     covariates = data.columns.difference(["treat"])
-    for covar in covariates:
-        print(f"------ {covar} by treatment group \n{data.groupby('treat')[covar].describe()}")
     formula = "treat ~ " + " + ".join([c for c in covariates])
     model_nonrobust = smf.ols(formula=formula, data=data).fit(method="pinv", cov_type="nonrobust")
 
     # Compare with our balance check that uses robust standard errors
     result = check_balance(data)
-    print(result.model_summary)
 
     # Both should have the same coefficients (OLS estimates are consistent)
     assert result.params == pytest.approx(model_nonrobust.params)
 
     # But standard errors can differ
     for se_r, se_nonr in zip(result.std_errors, model_nonrobust.bse, strict=True):
-        assert se_r != pytest.approx(se_nonr, rel=1e-2)
-
-    se_robust_ratio = result.std_errors / model_nonrobust.bse
-    print("\nStandard Error Ratios (robust/nonrobust):")
-    for param, ratio in se_robust_ratio.items():
-        print(f"  {param}: {ratio:.4f}")
-
-    # F-statistics and p-values will differ.
-    # With heteroskedasticity, non-robust SEs can be systematically wrong leading to different conclusions.
+        assert se_r != pytest.approx(se_nonr, rel=1e-2), "\n".join([
+            f"------ {covar} by treatment group \n{data.groupby('treat')[covar].describe()}" for covar in covariates
+        ])
+    # and so F-statistics and p-values will differ.
     assert model_nonrobust.fvalue != pytest.approx(result.f_statistic, abs=1e-10)
     assert model_nonrobust.f_pvalue > 0.05
     assert result.f_pvalue < 0.05
     assert model_nonrobust.f_pvalue != pytest.approx(result.f_pvalue, abs=0.01)
-
-    f_nonrobust = model_nonrobust.fvalue
-    p_nonrobust = model_nonrobust.f_pvalue
-    print(f"\nNon-robust SE: F={f_nonrobust:.4f}, p={p_nonrobust:.4f}")
-    print(f"HC1 robust SE: F={result.f_statistic:.4f}, p={result.f_pvalue:.4f}")
-    print(f"Difference in p-value: {abs(result.f_pvalue - p_nonrobust):.4f}")
 
 
 def test_check_balance_with_missing_values(sample_data):
@@ -432,5 +416,4 @@ def test_check_balance_with_reserved_words_and_symbols():
     treatment_cols = {"treat", 'treat"s'}
     for t in treatment_cols:
         result = check_balance_of_preprocessed_df(data, treatment_col=t, exclude_col_set=treatment_cols)
-        print(result.model_summary)
         assert result.f_pvalue > 0.2
