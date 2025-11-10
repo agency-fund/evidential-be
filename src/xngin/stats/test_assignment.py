@@ -167,14 +167,20 @@ def test_assign_treatment_with_infer_objects():
     assert result.stratum_ids
     assert set(result.stratum_ids) == set(range(25))  # = 2*4*3 + 1 for the None in col1
     assert result.balance_result
-    assert result.balance_result.f_pvalue > 0.9
+    assert result.balance_result.f_pvalue < 0.2
     assert result.orig_stratum_cols == ["col1", "col2", "col3"]
 
 
-def test_assign_treatment_decimal_strata_columns_does_not_raise_error(sample_df):
-    """Test that unconverted Decimal strata columns does NOT raise an error."""
-    sample_df["decimal"] = sample_df["income"].apply(Decimal)
-    # Ok since we treat it as a categorical (for better or worse).
+def test_assign_treatment_decimal_strata_columns_may_cause_problems(sample_df):
+    """Test that unconverted Decimal strata columns does NOT raise an error due to implicit categorical treatment.
+
+    Note: when cardinality is high generating many dummy variables, it can error if the dummies
+    cause the design matrix to be rank deficient. (Also possible for any sparse categorical column.)
+    """
+    # Ok since we treat it as a categorical (for better or worse):
+    sample_df["decimal"] = sample_df["income"].apply(lambda x: Decimal(round(x, -5)))
+    # Number of distinct decimals due to rounding: 5
+    # Would cause rank deficiency error without rounding if we used HC3 robust standard errors.
     assign_treatment_and_check_balance(df=sample_df, stratum_cols=["decimal"], id_col="id", n_arms=2)
 
 

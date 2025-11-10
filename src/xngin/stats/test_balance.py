@@ -1,6 +1,7 @@
 import numpy as np
 import pandas as pd
 import pytest
+import statsmodels.formula.api as smf
 from stochatreat import stochatreat
 
 from xngin.stats.balance import (
@@ -79,7 +80,87 @@ def test_check_balance(sample_data):
     assert result.f_statistic is not None, result.model_summary
     assert result.f_pvalue is not None, result.model_summary
     assert result.f_pvalue > 0.2, result.model_summary
+    assert len(result.params) == 7  # 1 intercept + 3 continuous + 3 dummies [from 4-category encoding]
+    assert len(result.std_errors) == 7
     assert result.model_summary is not None
+    print(result.model_summary)
+
+
+def test_robust_vs_nonrobust_standard_errors_small_sample():
+    """
+    Demonstrate that robust standard errors (HC1) matter in small samples with heteroskedasticity.
+
+    This demonstrates why using robust standard errors can be important in correcting for
+    heteroskedasticity, especially when we have:
+    - Small samples with potential outliers or extreme values
+    - Count data (variance increases with mean)
+    - Binary/proportion dependent variables
+    """
+    rng = np.random.default_rng(42)
+    n = 40
+    n_half = n // 2
+
+    # Create treatment assignment
+    treat = np.array([0] * n_half + [1] * n_half)
+
+    # Induce heteroskedasticity in a covariate where variance differs dramatically by group.
+    x_control = rng.normal(10, 1, n_half)  # tight distribution
+    x_treatment = rng.normal(11, 5, n_half)  # wider distribution
+    norm_covar = np.concatenate([x_control, x_treatment])
+
+    # Simulate a count metric using a Poisson distribution, with a mean that varies with treatment.
+    lambd = 3 + treat * 1  # Control mean=3, Treatment mean=4 => variance differs by group
+    poisson_covar = rng.poisson(lam=lambd, size=n)
+
+    # Add a binary covariate (variance=p(1-p)), which varies by group
+    prob_success = 0.1 + 0.3 * treat
+    binary_covar = rng.binomial(1, prob_success, n)
+
+    data = pd.DataFrame({
+        "treat": treat,
+        "cov1_norm": norm_covar,
+        "cov2_pois": poisson_covar,
+        "cov3_bina": binary_covar,
+    })
+
+    # Do a balance check with non-robust standard errors
+    # In small samples with heteroskedasticity, the non-robust covariance matrix assumes constant
+    # variance (homoskedasticity). When violated, standard errors are incorrect, leading to
+    # unreliable inference.
+    covariates = data.columns.difference(["treat"])
+    for covar in covariates:
+        print(f"------ {covar} by treatment group \n{data.groupby('treat')[covar].describe()}")
+    formula = "treat ~ " + " + ".join([c for c in covariates])
+    model_nonrobust = smf.ols(formula=formula, data=data).fit(method="pinv", cov_type="nonrobust")
+
+    # Compare with our balance check that uses robust standard errors
+    result = check_balance(data)
+    print(result.model_summary)
+
+    # Both should have the same coefficients (OLS estimates are consistent)
+    assert result.params == pytest.approx(model_nonrobust.params)
+
+    # But standard errors can differ
+    for se_r, se_nonr in zip(result.std_errors, model_nonrobust.bse, strict=True):
+        assert se_r != pytest.approx(se_nonr, rel=1e-2)
+
+    se_robust_ratio = result.std_errors / model_nonrobust.bse
+    print("\nStandard Error Ratios (robust/nonrobust):")
+    for param, ratio in se_robust_ratio.items():
+        print(f"  {param}: {ratio:.4f}")
+
+    # F-statistics and p-values will differ.
+    # With heteroskedasticity, non-robust SEs can be systematically wrong leading to different conclusions.
+    assert model_nonrobust.fvalue != pytest.approx(result.f_statistic, abs=1e-10)
+    assert model_nonrobust.f_pvalue > 0.05
+    assert result.f_pvalue < 0.05
+    assert model_nonrobust.f_pvalue != pytest.approx(result.f_pvalue, abs=0.01)
+
+    f_nonrobust = model_nonrobust.fvalue
+    p_nonrobust = model_nonrobust.f_pvalue
+    print(f"\nNon-robust SE: F={f_nonrobust:.4f}, p={p_nonrobust:.4f}")
+    print(f"HC1 robust SE: F={result.f_statistic:.4f}, p={result.f_pvalue:.4f}")
+    print(f"Difference in p-value: {abs(result.f_pvalue - p_nonrobust):.4f}")
 
 
 def test_check_balance_with_missing_values(sample_data):
@@ -328,24 +409,28 @@ def test_check_balance_with_reserved_words_and_symbols():
     # Properly quoted gives:
     #     Q("treat") ~ C(Q("log(treat)")) + C(Q("if")) + C(Q("else")) + C(Q("trick + treat")) + Q("a:b") + Q("class")
     #                  + Q("it's") + Q('"double quoted"') + Q("'single-quoted'") + Q(" \"a'b ")
+    rng = np.random.default_rng(42)
+    n = 40
+    n_half = n // 2
     data = pd.DataFrame({
-        "treat": [0] * 10 + [1] * 10,
-        "log(treat)": ["a", "b"] * 10,
-        "if": ["c", "d"] * 10,
-        "else": ["e", "f"] * 10,
-        "trick + treat": ["g", "h"] * 10,
+        "treat": [0] * n_half + [1] * n_half,
+        'treat"s': [0] * n_half + [1] * n_half,
+        "log(treat)": rng.choice(["a", "b"], size=n),
+        "if": rng.choice(["c", "d"], size=n),
+        "else": rng.choice(["e", "f"], size=n),
+        "trick + treat": rng.choice(["g", "h"], size=n),
         # even non-categorical can have bad column names
-        "a:b": [0.0, 1.0] * 10,
-        "class": [1, 2] * 10,
+        "a:b": rng.choice([0.0, 1.0], size=n),
+        "class": rng.choice([1, 2], size=n),
         # verify quote handling
-        "it's": [0, 1] * 10,
-        '"double quoted"': [0, 1] * 10,
-        "'single-quoted'": [0, 1] * 10,
-        """ "a'b """: [1, 0] * 10,
-        'treat"s': [0] * 10 + [1] * 10,
+        "it's": rng.choice([0, 1], size=n),
+        '"double quoted"': rng.choice([0, 1], size=n),
+        "'single-quoted'": rng.choice([0, 1], size=n),
+        """ "a'b """: rng.choice([1, 0], size=n),
     })
 
     treatment_cols = {"treat", 'treat"s'}
     for t in treatment_cols:
         result = check_balance_of_preprocessed_df(data, treatment_col=t, exclude_col_set=treatment_cols)
+        print(result.model_summary)
         assert result.f_pvalue > 0.2

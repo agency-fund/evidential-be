@@ -120,6 +120,8 @@ def test_make_balance_check():
         f_statistic=1.234567890123456,
         f_pvalue=0.876543210987654,
         model_summary="test summary",
+        params=[],
+        std_errors=[],
         numerator_df=5.0,
         denominator_df=100.0,
     )
@@ -139,6 +141,8 @@ def test_make_balance_check_with_different_thresholds():
         f_statistic=2.5,
         f_pvalue=0.3,
         model_summary="test summary",
+        params=[],
+        std_errors=[],
         numerator_df=3.0,
         denominator_df=50.0,
     )
