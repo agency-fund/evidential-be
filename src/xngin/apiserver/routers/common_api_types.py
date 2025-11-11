@@ -390,20 +390,36 @@ class BanditArmAnalysis(ArmBandit):
 
     prior_pred_mean: Annotated[
         float,
-        Field(description="Posterior predictive mean for this arm."),
+        Field(description="Prior predictive mean for this arm."),
     ]
     prior_pred_stdev: Annotated[
         float,
-        Field(description="Posterior predictive standard deviation for this arm."),
+        Field(description="Prior predictive standard deviation for this arm."),
+    ]
+    prior_pred_ci_upper: Annotated[
+        float,
+        Field(description="Prior predictive upper bound of 95% confidence interval for this arm."),
+    ]
+    prior_pred_ci_lower: Annotated[
+        float,
+        Field(description="Prior predictive lower bound of 95% confidence interval for this arm."),
     ]
 
     post_pred_mean: Annotated[
         float,
-        Field(description="Posterior predictive mean for this arm."),
+        Field(description="Prior predictive mean for this arm."),
     ]
     post_pred_stdev: Annotated[
         float,
-        Field(description="Posterior predictive standard deviation for this arm."),
+        Field(description="Prior predictive standard deviation for this arm."),
+    ]
+    post_pred_ci_upper: Annotated[
+        float,
+        Field(description="Posterior predictive upper bound of 95% confidence interval for this arm."),
+    ]
+    post_pred_ci_lower: Annotated[
+        float,
+        Field(description="Posterior predictive lower bound of 95% confidence interval for this arm."),
     ]
 
 

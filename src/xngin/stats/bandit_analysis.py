@@ -10,21 +10,32 @@ from xngin.apiserver.routers.common_enums import (
 from xngin.apiserver.sqla import tables
 
 
-def _analyze_beta_binomial(alpha: float, beta: float) -> tuple[float, float]:
+def _analyze_beta_binomial(
+    alpha: float, beta: float, random_state: int | None = None, n_random_samples: int = 100000
+) -> tuple[float, float, float, float]:
     """
     Analyze a single arm with Beta-Binomial model.
     Args:
         alpha: The posterior alpha parameter of the arm.
         beta: The posterior beta parameter of the arm.
+        random_state: Use a fixed int for deterministic behavior in tests.
+        n_random_samples: Number of samples to draw for estimation.
     """
     predictive_mean = alpha / (alpha + beta)
     predictive_stdev = np.sqrt(alpha * beta) / (alpha + beta)
-    return predictive_mean, predictive_stdev
+
+    rng = np.random.default_rng(random_state)
+    samples = rng.beta(a=alpha, b=beta, size=n_random_samples)
+    alpha_level = (1 - 0.95) / 2
+    ci_lower = np.percentile(samples, alpha_level * 100)
+    ci_upper = np.percentile(samples, (1 - alpha_level) * 100)
+
+    return predictive_mean, predictive_stdev, ci_upper, ci_lower
 
 
 def _analyze_normal(
     mu: np.ndarray, covariance: np.ndarray, outcome_std_dev: float, context: np.ndarray | None
-) -> tuple[float, float]:
+) -> tuple[float, float, float, float]:
     """
     Analyze a single arm with Normal model.
     Args:
@@ -39,7 +50,10 @@ def _analyze_normal(
     else:
         predictive_mean = context @ mu
         predictive_mean_stdev = np.sqrt(context @ covariance @ context + outcome_std_dev**2)
-    return predictive_mean, predictive_mean_stdev
+
+    ci_upper = predictive_mean + 1.96 * predictive_mean_stdev
+    ci_lower = predictive_mean - 1.96 * predictive_mean_stdev
+    return predictive_mean, predictive_mean_stdev, ci_upper, ci_lower
 
 
 def _analyze_normal_binary(
@@ -48,7 +62,7 @@ def _analyze_normal_binary(
     context_link_functions: ContextLinkFunctions,
     context: np.ndarray | None = None,
     random_state: int | None = None,
-) -> tuple[float, float]:
+) -> tuple[float, float, float, float]:
     """
     Analyze a single arm with Normal model for binary outcomes.
     Args:
@@ -68,10 +82,12 @@ def _analyze_normal_binary(
         parameter_samples = samples
     transformed_parameter_samples = context_link_functions(parameter_samples)
     outcome_samples = rng.binomial(n=1, p=transformed_parameter_samples)
-    return (
-        outcome_samples.mean(),
-        outcome_samples.std(),
-    )
+
+    mean = outcome_samples.mean()
+    std = outcome_samples.std()
+    ci_upper = mean + 1.96 * std / np.sqrt(num_samples)
+    ci_lower = mean - 1.96 * std / np.sqrt(num_samples)
+    return (outcome_samples.mean(), outcome_samples.std(), ci_upper, ci_lower)
 
 
 def analyze_experiment(
@@ -107,18 +123,22 @@ def analyze_experiment(
                 assert arm.alpha_init is not None and arm.beta_init is not None, (
                     "Arm must have initial alpha and beta parameters."
                 )
-                prior_pred_mean, prior_pred_stdev = _analyze_beta_binomial(arm.alpha_init, arm.beta_init)
+                (prior_pred_mean, prior_pred_stdev, prior_pred_ci_upper, prior_pred_ci_lower) = _analyze_beta_binomial(
+                    arm.alpha_init, arm.beta_init, random_state=random_state
+                )
 
                 assert arm.alpha is not None and arm.beta is not None, (
                     "Arm must have initial alpha and beta parameters."
                 )
-                post_pred_mean, post_pred_stdev = _analyze_beta_binomial(arm.alpha, arm.beta)
+                (post_pred_mean, post_pred_stdev, post_pred_ci_upper, post_pred_ci_lower) = _analyze_beta_binomial(
+                    arm.alpha, arm.beta, random_state=random_state
+                )
 
             case PriorTypes.NORMAL, LikelihoodTypes.NORMAL:
                 assert arm.mu_init is not None and arm.sigma_init is not None, (
                     "Arm must have initial mu and sigma parameters."
                 )
-                prior_pred_mean, prior_pred_stdev = _analyze_normal(
+                (prior_pred_mean, prior_pred_stdev, prior_pred_ci_upper, prior_pred_ci_lower) = _analyze_normal(
                     np.array([arm.mu_init] * max(len(experiment.contexts), 1)),
                     np.diag([arm.sigma_init] * max(len(experiment.contexts), 1)),
                     outcome_std_dev,
@@ -126,7 +146,7 @@ def analyze_experiment(
                 )
 
                 assert arm.mu is not None and arm.covariance is not None, "Arm must have mu and covariance parameters."
-                post_pred_mean, post_pred_stdev = _analyze_normal(
+                (post_pred_mean, post_pred_stdev, post_pred_ci_upper, post_pred_ci_lower) = _analyze_normal(
                     np.array(arm.mu),
                     np.array(arm.covariance),
                     outcome_std_dev,
@@ -137,7 +157,7 @@ def analyze_experiment(
                 assert arm.mu_init is not None and arm.sigma_init is not None, (
                     "Arm must have initial mu and sigma parameters."
                 )
-                prior_pred_mean, prior_pred_stdev = _analyze_normal_binary(
+                (prior_pred_mean, prior_pred_stdev, prior_pred_ci_upper, prior_pred_ci_lower) = _analyze_normal_binary(
                     np.array([arm.mu_init] * max(len(experiment.contexts), 1)),
                     np.diag([arm.sigma_init] * max(len(experiment.contexts), 1)),
                     ContextLinkFunctions.LOGISTIC,
@@ -146,7 +166,7 @@ def analyze_experiment(
                 )
 
                 assert arm.mu is not None and arm.covariance is not None, "Arm must have mu and covariance parameters."
-                post_pred_mean, post_pred_stdev = _analyze_normal_binary(
+                (post_pred_mean, post_pred_stdev, post_pred_ci_upper, post_pred_ci_lower) = _analyze_normal_binary(
                     np.array(arm.mu),
                     np.array(arm.covariance),
                     ContextLinkFunctions.LOGISTIC,
@@ -164,8 +184,12 @@ def analyze_experiment(
                 arm_description=arm.description,
                 prior_pred_mean=prior_pred_mean,
                 prior_pred_stdev=prior_pred_stdev,
+                prior_pred_ci_upper=prior_pred_ci_upper,
+                prior_pred_ci_lower=prior_pred_ci_lower,
                 post_pred_mean=post_pred_mean,
                 post_pred_stdev=post_pred_stdev,
+                post_pred_ci_upper=post_pred_ci_upper,
+                post_pred_ci_lower=post_pred_ci_lower,
                 alpha_init=arm.alpha_init,
                 beta_init=arm.beta_init,
                 alpha=arm.alpha,
