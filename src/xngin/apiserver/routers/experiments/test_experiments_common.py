@@ -450,6 +450,107 @@ async def test_create_preassigned_experiment_impl_raises_on_duplicate_ids(
         )
 
 
+async def test_create_preassigned_experiment_impl_with_unbalanced_arms(
+    xngin_session: AsyncSession,
+    testing_datasource,
+    sample_table,
+    use_deterministic_random,
+):
+    """Test implementation of creating a preassigned experiment with unbalanced arms."""
+    participants = make_sample_data(n=100)
+    request = make_create_preassigned_experiment_request()
+    spec = cast(BaseFrequentistDesignSpec, request.design_spec)
+    spec.arm_weights = [20.0, 80.0]
+
+    response = await create_preassigned_experiment_impl(
+        request=request,
+        datasource_id=testing_datasource.ds.id,
+        organization_id=testing_datasource.ds.organization_id,
+        participant_unique_id_field="participant_id",
+        dwh_sa_table=sample_table,
+        dwh_participants=participants,
+        random_state=42,
+        xngin_session=xngin_session,
+        stratify_on_metrics=True,
+        validated_webhooks=[],
+    )
+
+    experiment_id = response.experiment_id
+    assert response.datasource_id == testing_datasource.ds.id
+    assert response.state == ExperimentState.ASSIGNED
+    assert cast(BaseFrequentistDesignSpec, response.design_spec).arm_weights == [20.0, 80.0]
+
+    # Verify assignments were created with correct proportions
+    assignments = (
+        await xngin_session.scalars(
+            select(tables.ArmAssignment).where(tables.ArmAssignment.experiment_id == experiment_id)
+        )
+    ).all()
+    assert len(assignments) == len(participants)
+
+    # Check for unbalanced arm assignments
+    arm1_id = response.design_spec.arms[0].arm_id
+    arm2_id = response.design_spec.arms[1].arm_id
+    num_control = sum(1 for a in assignments if a.arm_id == arm1_id)
+    num_treat = sum(1 for a in assignments if a.arm_id == arm2_id)
+
+    assert num_control / len(participants) == pytest.approx(0.2)
+    assert num_treat / len(participants) == pytest.approx(0.8)
+
+
+async def test_create_preassigned_experiment_impl_with_three_unbalanced_arms(
+    xngin_session: AsyncSession,
+    testing_datasource,
+    sample_table,
+    use_deterministic_random,
+):
+    """Test implementation of creating a preassigned experiment with three unbalanced arms."""
+    participants = make_sample_data(n=150)
+    request = make_createexperimentrequest_json(experiment_type=ExperimentsType.FREQ_PREASSIGNED)
+    request["design_spec"]["arms"].append({"arm_name": "T2", "arm_description": "T2"})
+    request["design_spec"]["arm_weights"] = [20.0, 20.0, 60.0]
+    request = TypeAdapter(CreateExperimentRequest).validate_python(request)
+
+    response = await create_preassigned_experiment_impl(
+        request=request,
+        datasource_id=testing_datasource.ds.id,
+        organization_id=testing_datasource.ds.organization_id,
+        participant_unique_id_field="participant_id",
+        dwh_sa_table=sample_table,
+        dwh_participants=participants,
+        random_state=42,
+        xngin_session=xngin_session,
+        stratify_on_metrics=False,
+        validated_webhooks=[],
+    )
+
+    experiment_id = response.experiment_id
+    assert response.datasource_id == testing_datasource.ds.id
+    assert response.state == ExperimentState.ASSIGNED
+    assert cast(BaseFrequentistDesignSpec, response.design_spec).arm_weights == [20.0, 20.0, 60.0]
+    assert len(response.design_spec.arms) == 3
+
+    # Verify assignments were created with correct proportions
+    assignments = (
+        await xngin_session.scalars(
+            select(tables.ArmAssignment).where(tables.ArmAssignment.experiment_id == experiment_id)
+        )
+    ).all()
+    assert len(assignments) == len(participants)
+
+    # Check for unbalanced arm assignments
+    arm1_id = response.design_spec.arms[0].arm_id
+    arm2_id = response.design_spec.arms[1].arm_id
+    arm3_id = response.design_spec.arms[2].arm_id
+    num_arm1 = sum(1 for a in assignments if a.arm_id == arm1_id)
+    num_arm2 = sum(1 for a in assignments if a.arm_id == arm2_id)
+    num_arm3 = sum(1 for a in assignments if a.arm_id == arm3_id)
+
+    assert num_arm1 / len(participants) == pytest.approx(0.2, rel=0.05)
+    assert num_arm2 / len(participants) == pytest.approx(0.2, rel=0.05)
+    assert num_arm3 / len(participants) == pytest.approx(0.6, rel=0.05)
+
+
 @pytest.mark.parametrize(
     "experiment_type, filters, match",
     [

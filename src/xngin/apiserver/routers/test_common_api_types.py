@@ -1,7 +1,7 @@
 import pytest
-from pydantic import ValidationError
+from pydantic import TypeAdapter, ValidationError
 
-from xngin.apiserver.routers.common_api_types import Filter
+from xngin.apiserver.routers.common_api_types import Filter, PreassignedFrequentistExperimentSpec
 from xngin.apiserver.routers.common_enums import Relation
 
 VALID_COLUMN_NAMES = [
@@ -147,3 +147,66 @@ EXPERIMENT_IDS_FILTER_GOOD = [
 @pytest.mark.parametrize("relation,value,descr", EXPERIMENT_IDS_FILTER_GOOD)
 def test_experiment_ids_hack_validators_valid(relation, value, descr):
     Filter(field_name="_experiment_ids", relation=relation, value=value)
+
+
+def test_arm_weights_validation():
+    """Test validation of arm_weights in BaseFrequentistDesignSpec"""
+    # Test: weights sum to 100 and match number of arms
+    valid_spec = {
+        "participant_type": "test_participant",
+        "experiment_type": "freq_preassigned",
+        "experiment_name": "test",
+        "description": "test",
+        "start_date": "2024-01-01T00:00:00+00:00",
+        "end_date": "2024-12-31T00:00:00+00:00",
+        "arms": [
+            {"arm_name": "control", "arm_description": "control"},
+            {"arm_name": "treatment", "arm_description": "treatment"},
+        ],
+        "arm_weights": [20.0, 80.0],
+        "strata": [],
+        "metrics": [{"field_name": "metric1", "metric_pct_change": 0.1}],
+        "filters": [],
+    }
+    spec = TypeAdapter(PreassignedFrequentistExperimentSpec).validate_python(valid_spec)
+    assert spec.arm_weights == [20.0, 80.0]
+
+    # Test: three arms with weights summing to 100
+    valid_spec_3arms = valid_spec.copy()
+    valid_spec_3arms["arms"] = [
+        {"arm_name": "control", "arm_description": "control"},
+        {"arm_name": "treatment1", "arm_description": "treatment1"},
+        {"arm_name": "treatment2", "arm_description": "treatment2"},
+    ]
+    valid_spec_3arms["arm_weights"] = [20.1, 19.9, 60.0]
+    spec = TypeAdapter(PreassignedFrequentistExperimentSpec).validate_python(valid_spec_3arms)
+    assert spec.arm_weights == [20.1, 19.9, 60.0]
+
+    invalid_sum = valid_spec.copy()
+    invalid_sum["arm_weights"] = [30.0, 80.0]
+    with pytest.raises(ValidationError, match="arm_weights must sum to 100"):
+        TypeAdapter(PreassignedFrequentistExperimentSpec).validate_python(invalid_sum)
+
+    # Invalid case: number of weights doesn't match number of arms
+    invalid_count = valid_spec.copy()
+    invalid_count["arm_weights"] = [50.0, 50.0, 20.0]
+    with pytest.raises(ValidationError, match=r"Number of arm_weights .* must match number of arms"):
+        TypeAdapter(PreassignedFrequentistExperimentSpec).validate_python(invalid_count)
+
+    # Invalid case: weights too small and large
+    invalid_negative = valid_spec.copy()
+    invalid_negative["arm_weights"] = [-20.0, 120.0]
+    with pytest.raises(
+        ValidationError,
+        match=r"(?s)Input should be greater than 0.*Input should be less than 100",
+    ):
+        TypeAdapter(PreassignedFrequentistExperimentSpec).validate_python(invalid_negative)
+
+    # Invalid case: zero weight
+    invalid_zero = valid_spec.copy()
+    invalid_zero["arm_weights"] = [0.0, 100.0]
+    with pytest.raises(
+        ValidationError,
+        match=r"(?s)Input should be greater than 0.*Input should be less than 100",
+    ):
+        TypeAdapter(PreassignedFrequentistExperimentSpec).validate_python(invalid_zero)

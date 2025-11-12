@@ -74,3 +74,10 @@ class DesignSpecFields(StorageBaseModel):
             max_length=MAX_NUMBER_OF_FILTERS,
         ),
     ] = None
+
+    arm_weights: Annotated[
+        list[float] | None,
+        Field(
+            description="Optional weights for unequal arm sizes. Weights must be floats in (0, 100) and sum to 100.",
+        ),
+    ] = None

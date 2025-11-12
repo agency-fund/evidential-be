@@ -783,6 +783,9 @@ class BaseDesignSpec(ApiBaseModel):
         return any(arm.arm_id is not None for arm in self.arms)
 
 
+type ArmWeight = Annotated[float, Field(gt=0, lt=100)]
+
+
 class BaseFrequentistDesignSpec(BaseDesignSpec):
     """Experiment design parameters for frequentist experiments."""
 
@@ -815,6 +818,32 @@ class BaseFrequentistDesignSpec(BaseDesignSpec):
             max_length=MAX_NUMBER_OF_FILTERS,
         ),
     ]
+
+    arm_weights: Annotated[
+        list[ArmWeight] | None,
+        Field(
+            description="Optional weights for unequal arm sizes. Weights must be floats in (0, 100) and sum to 100.",
+            max_length=MAX_NUMBER_OF_ARMS,
+        ),
+    ] = None
+
+    @model_validator(mode="after")
+    def validate_arm_weights(self) -> Self:
+        """Validate that arm_weights match the number of arms and sum to 100."""
+        if self.arm_weights is None:
+            return self
+
+        if len(self.arm_weights) != len(self.arms):
+            raise ValueError(
+                f"Number of arm_weights ({len(self.arm_weights)}) must match number of arms ({len(self.arms)})"
+            )
+
+        # Check that weights sum to 100 (tolerance aligned with stochatreat's own check)
+        total = sum(self.arm_weights)
+        if not math.isclose(total, 100.0, rel_tol=1e-9):
+            raise ValueError(f"arm_weights must sum to 100, got {total}")
+
+        return self
 
     # stat parameters
     power: Annotated[

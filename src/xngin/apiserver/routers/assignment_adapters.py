@@ -50,6 +50,7 @@ def assign_treatments_with_balance(
     n_arms: int,
     quantiles: int = 4,
     random_state: int | None = None,
+    arm_weights: list[float] | None = None,
 ) -> AssignmentResult:
     """
     Perform stratified random assignment and balance checking.
@@ -64,6 +65,7 @@ def assign_treatments_with_balance(
         n_arms: Number of treatment arms
         quantiles: number of buckets to use for stratification of numerics
         random_state: Random seed for reproducibility
+        arm_weights: Optional list of weights (summing to 100) for unbalanced arm allocation
 
     Returns:
         AssignmentResult containing assignments and balance check results
@@ -84,6 +86,7 @@ def assign_treatments_with_balance(
         n_arms=n_arms,
         quantiles=quantiles,
         random_state=random_state,
+        arm_weights=arm_weights,
     )
 
 

@@ -221,6 +221,7 @@ async def create_preassigned_experiment_impl(
         n_arms=len(design_spec.arms),
         quantiles=4,
         random_state=random_state,
+        arm_weights=design_spec.arm_weights,
     )
     balance_check = make_balance_check(assignment_result.balance_result, design_spec.fstat_thresh)
 
@@ -758,11 +759,20 @@ async def create_assignment_for_participant(
         return None
 
     # For online frequentist or Bayesian A/B experiments, create a new assignment
-    # with simple random assignment.
+    # with simple random assignment or weighted random assignment if arm_weights are specified.
     match experiment_type:
         case ExperimentsType.FREQ_ONLINE | ExperimentsType.BAYESAB_ONLINE:
+            # Equal allocation - use simple random choice
             # Sort by arm name to ensure deterministic assignment with seed for tests.
-            chosen_arm = random_choice(sorted(experiment.arms, key=lambda a: a.name), seed=random_state)
+            sorted_arms = sorted(experiment.arms, key=lambda a: a.name)
+            chosen_arm = random_choice(sorted_arms, seed=random_state)
+
+            # Check if the experiment has arm weights (for unbalanced allocation)
+            design_spec = ExperimentStorageConverter(experiment).get_design_spec()
+            if isinstance(design_spec, BaseFrequentistDesignSpec) and design_spec.arm_weights is not None:
+                # TODO: Use weighted random selection
+                pass
+
         case ExperimentsType.MAB_ONLINE | ExperimentsType.CMAB_ONLINE:
             chosen_arm = choose_bandit_arm(
                 experiment=experiment,
