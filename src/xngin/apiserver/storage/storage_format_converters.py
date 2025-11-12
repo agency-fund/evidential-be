@@ -252,6 +252,8 @@ class ExperimentStorageConverter:
             power_analyses=self.get_power_response(),
             assign_summary=assign_summary,
             webhooks=webhook_ids or [],
+            decision=self.experiment.decision,
+            impact=self.experiment.impact,
         )
 
     def get_experiment_response(

@@ -1187,6 +1187,9 @@ class ExperimentConfig(ApiBaseModel):
         ),
     ] = []
 
+    decision: Annotated[str, Field()] = ""
+    impact: Annotated[str, Field()] = ""
+
 
 class GetExperimentResponse(ExperimentConfig):
     """An experiment configuration capturing all info at design time when assignment was made."""

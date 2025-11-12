@@ -419,6 +419,10 @@ class Experiment(Base):
     alpha: Mapped[float | None] = mapped_column()
     fstat_thresh: Mapped[float | None] = mapped_column()
 
+    # Experiment Registry
+    impact: Mapped[str] = mapped_column(server_default="")
+    decision: Mapped[str] = mapped_column(server_default="")
+
     arm_assignments: Mapped[list["ArmAssignment"]] = relationship(
         back_populates="experiment", cascade="all, delete-orphan", lazy="raise"
     )
