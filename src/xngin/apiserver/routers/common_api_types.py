@@ -288,10 +288,12 @@ class ArmAnalysis(Arm):
     num_missing_values: Annotated[
         int,
         Field(
+            ge=-1,
             description=(
                 "The number of participants assigned to this arm with missing values (NaNs) for this "
-                "metric. These rows are excluded from the analysis."
-            )
+                "metric. These rows are excluded from the analysis. -1 indicates arm analysis not "
+                "available due to all assignments missing outcomes for this metric."
+            ),
         ),
     ]
     is_baseline: Annotated[

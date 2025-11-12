@@ -68,6 +68,10 @@ def analyze_experiment(
     nan_counts_df = merged_df.groupby("arm_id", observed=False)[metric_columns].agg(lambda s: s.isna().sum())
 
     for metric_name in metric_columns:
+        # If all arms have missing values for this metric, we can't perform the analysis.
+        if sum(nan_counts_df[metric_name]) == len(merged_df):
+            continue
+
         # smf.ols internally actually drops missing values by default (see Model.from_formula),
         # but make it explicit here for developer clarity.
         model = smf.ols(f"{metric_name} ~ arm_id", data=merged_df, missing="drop").fit(cov_type="HC1")

@@ -1045,7 +1045,7 @@ async def analyze_experiment_freq_impl(
                     )
                 )
             else:
-                # If arm.id is missing due to no participants yet, append a default
+                # If arm.id is missing due to no participants or partcipants with outcomes yet, append a default
                 arm_analyses.append(
                     ArmAnalysis(
                         arm_id=arm.id,
@@ -1056,7 +1056,7 @@ async def analyze_experiment_freq_impl(
                         p_value=float("nan"),
                         t_stat=float("nan"),
                         std_error=float("nan"),
-                        num_missing_values=num_participants,
+                        num_missing_values=-1,  # -1 indicates arm analysis not available
                     )
                 )
         metric_analyses.append(MetricAnalysis(metric_name=metric_name, metric=metric, arm_analyses=arm_analyses))

@@ -1,3 +1,4 @@
+import math
 import random
 import uuid
 from typing import Any
@@ -167,3 +168,39 @@ def test_analysis_with_missing_outcomes(test_assignments, test_outcomes):
         )
 
     assert sum(arm_results.num_missing_values for arm_results in bool_field_results.values()) == 200
+
+
+def test_analysis_with_one_arm_missing_all_outcomes(test_assignments, test_outcomes):
+    # Make all outcomes missing for one arm. Should still be processed, but result in NaNs
+    arm_map = {a.participant_id: a.arm_id for a in test_assignments}
+    num_missing_values = 0
+    for i in range(len(test_outcomes)):
+        if arm_map[test_outcomes[i].participant_id] == "b1d90769-6e6e-4973-a7eb-d9da1c6ddcd5":
+            test_outcomes[i].metric_values[0].metric_value = None
+            num_missing_values += 1
+
+    result = analyze_experiment(test_assignments, test_outcomes)
+    assert len(result) == 1  # One metric
+    metric_results = result["bool_field"]
+    assert len(metric_results) == 3  # Three arms
+    for arm_id in metric_results:
+        if arm_id == "b1d90769-6e6e-4973-a7eb-d9da1c6ddcd5":
+            assert metric_results[arm_id].estimate == 0
+            assert math.isnan(metric_results[arm_id].p_value)
+            assert math.isnan(metric_results[arm_id].t_stat)
+            assert metric_results[arm_id].std_error == 0
+            assert metric_results[arm_id].num_missing_values == num_missing_values
+        else:
+            assert metric_results[arm_id].estimate is not None
+            assert metric_results[arm_id].p_value is not None
+            assert metric_results[arm_id].t_stat is not None
+            assert metric_results[arm_id].std_error is not None
+            assert metric_results[arm_id].num_missing_values == 0
+
+    # But when *all* arms are missing values, we should get an empty result,
+    # since no regression was performed.
+    num_missing_values = len(test_outcomes)
+    for i in range(len(test_outcomes)):
+        test_outcomes[i].metric_values[0].metric_value = None
+    result = analyze_experiment(test_assignments, test_outcomes)
+    assert len(result) == 0
