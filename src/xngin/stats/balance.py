@@ -16,8 +16,8 @@ class BalanceResult:
     numerator_df: float
     denominator_df: float
     # More values for debugging
-    params: list[float]
-    std_errors: list[float]
+    model_params: list[float]
+    model_param_std_errors: list[float]
     model_summary: str
 
 
@@ -176,7 +176,7 @@ def check_balance_of_preprocessed_df(
         f_pvalue=model.f_pvalue,
         numerator_df=model.df_model,
         denominator_df=model.df_resid,
-        params=list(model.params),
-        std_errors=list(model.bse),
+        model_params=list(model.params),
+        model_param_std_errors=list(model.bse),
         model_summary=model.summary().as_text(),
     )

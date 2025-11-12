@@ -80,8 +80,8 @@ def test_check_balance(sample_data):
     assert result.f_statistic is not None, result.model_summary
     assert result.f_pvalue is not None, result.model_summary
     assert result.f_pvalue > 0.2, result.model_summary
-    assert len(result.params) == 7  # 1 intercept + 3 continuous + 3 dummies [from 4-category encoding]
-    assert len(result.std_errors) == 7
+    assert len(result.model_params) == 7  # 1 intercept + 3 continuous + 3 dummies [from 4-category encoding]
+    assert len(result.model_param_std_errors) == 7
     assert result.model_summary is not None
 
 
@@ -133,10 +133,10 @@ def test_robust_vs_nonrobust_standard_errors_small_sample():
     result = check_balance(data)
 
     # Both should have the same coefficients (OLS estimates are consistent)
-    assert result.params == pytest.approx(model_nonrobust.params)
+    assert result.model_params == pytest.approx(model_nonrobust.params)
 
     # But standard errors can differ
-    for se_r, se_nonr in zip(result.std_errors, model_nonrobust.bse, strict=True):
+    for se_r, se_nonr in zip(result.model_param_std_errors, model_nonrobust.bse, strict=True):
         assert se_r != pytest.approx(se_nonr, rel=1e-2), "\n".join([
             f"------ {covar} by treatment group \n{data.groupby('treat')[covar].describe()}" for covar in covariates
         ])
