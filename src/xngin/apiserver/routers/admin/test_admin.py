@@ -1831,6 +1831,24 @@ async def test_experiments_analyze_for_experiment_with_no_participants(
     assert response.json()["message"] == "No participants found for experiment."
 
 
+async def test_experiments_analyze_for_experiment_whose_assignments_have_no_dwh_data(
+    xngin_session: AsyncSession, testing_datasource_with_user, pget
+):
+    test_experiment = await insert_experiment_and_arms(
+        xngin_session, testing_datasource_with_user.ds, ExperimentsType.FREQ_ONLINE
+    )
+    datasource_id = test_experiment.datasource_id
+    experiment_id = test_experiment.id
+
+    # Create a new participant assignment for an id missing in the dwh.
+    response = pget(f"/v1/m/datasources/{datasource_id}/experiments/{experiment_id}/assignments/0")
+    assert response.status_code == 200, response.content
+
+    response = pget(f"/v1/m/datasources/{datasource_id}/experiments/{experiment_id}/analyze")
+    assert response.status_code == 422, response.content
+    assert "Check that ids used in assignment are usable with your unique identifier (id)" in response.json()["message"]
+
+
 @pytest.mark.parametrize(
     "testing_bandit_experiment",
     [

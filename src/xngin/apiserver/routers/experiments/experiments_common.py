@@ -1010,6 +1010,13 @@ async def analyze_experiment_freq_impl(
             participant_ids,
         )
 
+    if len(participant_outcomes) == 0:
+        raise StatsAnalysisError(
+            "No assigned participants found in the datasource. Check that "
+            f"ids used in assignment are usable with your unique identifier ({unique_id_field}), and "
+            "that metric data exists for them."
+        )
+
     # We want to notify the user if there are participants assigned to the experiment that are not
     # in the data warehouse. E.g. in an online experiment, perhaps a new user was assigned
     # before their info was synced to the dwh.
