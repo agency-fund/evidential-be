@@ -1882,7 +1882,7 @@ async def test_analyze_experiment_with_no_assignments_in_one_arm_yet(
             assert analysis.std_error is None
             assert analysis.num_missing_values == 0
         else:
-            assert analysis.estimate is None
+            assert analysis.estimate == 0
             assert analysis.p_value is None
             assert analysis.t_stat is None
             assert analysis.std_error is None

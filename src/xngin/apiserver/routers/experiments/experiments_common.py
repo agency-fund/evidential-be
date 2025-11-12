@@ -1052,7 +1052,7 @@ async def analyze_experiment_freq_impl(
                         arm_name=arm.name,
                         arm_description=arm.description,
                         is_baseline=arm.id == baseline_arm_id,
-                        estimate=float("nan"),
+                        estimate=0,
                         p_value=float("nan"),
                         t_stat=float("nan"),
                         std_error=float("nan"),
