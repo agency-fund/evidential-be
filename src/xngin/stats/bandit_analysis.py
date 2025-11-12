@@ -26,7 +26,7 @@ def _analyze_beta_binomial(
 
     rng = np.random.default_rng(random_state)
     samples = rng.beta(a=alpha, b=beta, size=n_random_samples)
-    alpha_level = (1 - 0.95) / 2
+    alpha_level = 0.025  # 95% credible interval = (1 - 0.95) / 2
     ci_lower = np.percentile(samples, alpha_level * 100)
     ci_upper = np.percentile(samples, (1 - alpha_level) * 100)
 
@@ -46,7 +46,7 @@ def _analyze_normal(
     """
     if context is None:
         predictive_mean = mu[0]
-        predictive_mean_stdev = np.sqrt(covariance.flatten()[0] ** 2 + outcome_std_dev**2)
+        predictive_mean_stdev = np.sqrt(covariance.flatten()[0] + outcome_std_dev**2)
     else:
         predictive_mean = context @ mu
         predictive_mean_stdev = np.sqrt(context @ covariance @ context + outcome_std_dev**2)
@@ -81,13 +81,19 @@ def _analyze_normal_binary(
     else:
         parameter_samples = samples
     transformed_parameter_samples = context_link_functions(parameter_samples)
+    transformed_parameter_mean = transformed_parameter_samples.mean()
+    transformed_parameter_std = transformed_parameter_samples.std()
     outcome_samples = rng.binomial(n=1, p=transformed_parameter_samples)
 
     mean = outcome_samples.mean()
     std = outcome_samples.std()
-    ci_upper = mean + 1.96 * std / np.sqrt(num_samples)
-    ci_lower = mean - 1.96 * std / np.sqrt(num_samples)
-    return (outcome_samples.mean(), outcome_samples.std(), ci_upper, ci_lower)
+    ci_upper = context_link_functions(
+        transformed_parameter_mean + 1.96 * transformed_parameter_std / np.sqrt(num_samples)
+    )
+    ci_lower = context_link_functions(
+        transformed_parameter_mean - 1.96 * transformed_parameter_std / np.sqrt(num_samples)
+    )
+    return mean, std, float(ci_upper), float(ci_lower)
 
 
 def analyze_experiment(
