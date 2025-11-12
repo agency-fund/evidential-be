@@ -13,9 +13,12 @@ class BalanceResult:
 
     f_statistic: float
     f_pvalue: float
-    model_summary: str
     numerator_df: float
     denominator_df: float
+    # More values for debugging
+    model_params: list[float]
+    model_param_std_errors: list[float]
+    model_summary: str
 
 
 def preprocess_for_balance_and_stratification(
@@ -163,12 +166,17 @@ def check_balance_of_preprocessed_df(
 
     # Fit regression model; for now only check the first two treatment groups.
     df_analysis = data[data[treatment_col].isin([0, 1])]
-    model = smf.ols(formula=formula, data=df_analysis).fit(method="pinv")
+    # While HC3 may be better at low sample sizes (Long & Ervin 2000), it is sensitive to high
+    # leverage points, so use HC1 for now. Future work should consider:
+    # https://blog.stata.com/2022/10/06/heteroskedasticity-robust-standard-errors-some-practical-considerations/
+    model = smf.ols(formula=formula, data=df_analysis).fit(method="pinv", cov_type="HC1")
 
     return BalanceResult(
         f_statistic=model.fvalue,
         f_pvalue=model.f_pvalue,
         numerator_df=model.df_model,
         denominator_df=model.df_resid,
+        model_params=list(model.params),
+        model_param_std_errors=list(model.bse),
         model_summary=model.summary().as_text(),
     )
