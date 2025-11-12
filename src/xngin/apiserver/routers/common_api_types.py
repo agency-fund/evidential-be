@@ -263,7 +263,7 @@ class Arm(ApiBaseModel):
 
 class ArmAnalysis(Arm):
     estimate: Annotated[
-        float,
+        float | None,
         Field(description="The estimated treatment effect relative to the baseline arm."),
     ]
     p_value: Annotated[
@@ -284,7 +284,7 @@ class ArmAnalysis(Arm):
             )
         ),
     ]
-    std_error: Annotated[float, Field(description="The standard error of the treatment effect estimate.")]
+    std_error: Annotated[float | None, Field(description="The standard error of the treatment effect estimate.")]
     num_missing_values: Annotated[
         int,
         Field(

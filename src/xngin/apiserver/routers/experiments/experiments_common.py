@@ -1056,7 +1056,7 @@ async def analyze_experiment_freq_impl(
                         p_value=float("nan"),
                         t_stat=float("nan"),
                         std_error=float("nan"),
-                        num_missing_values=0,
+                        num_missing_values=num_participants,
                     )
                 )
         metric_analyses.append(MetricAnalysis(metric_name=metric_name, metric=metric, arm_analyses=arm_analyses))

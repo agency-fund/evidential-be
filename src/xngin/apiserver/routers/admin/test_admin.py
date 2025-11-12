@@ -1817,9 +1817,7 @@ def test_cmab_experiments_analyze(testing_bandit_experiment, ppost):
         assert analysis.post_pred_stdev is not None
 
 
-async def test_experiments_analyze_for_experiment_with_no_participants(
-    xngin_session: AsyncSession, testing_datasource_with_user, pget
-):
+async def test_analyze_experiment_with_no_participants(xngin_session: AsyncSession, testing_datasource_with_user, pget):
     test_experiment = await insert_experiment_and_arms(
         xngin_session, testing_datasource_with_user.ds, ExperimentsType.FREQ_ONLINE
     )
@@ -1831,7 +1829,7 @@ async def test_experiments_analyze_for_experiment_with_no_participants(
     assert response.json()["message"] == "No participants found for experiment."
 
 
-async def test_experiments_analyze_for_experiment_whose_assignments_have_no_dwh_data(
+async def test_analyze_experiment_whose_assignments_have_no_dwh_data(
     xngin_session: AsyncSession, testing_datasource_with_user, pget
 ):
     test_experiment = await insert_experiment_and_arms(
@@ -1847,6 +1845,48 @@ async def test_experiments_analyze_for_experiment_whose_assignments_have_no_dwh_
     response = pget(f"/v1/m/datasources/{datasource_id}/experiments/{experiment_id}/analyze")
     assert response.status_code == 422, response.content
     assert "Check that ids used in assignment are usable with your unique identifier (id)" in response.json()["message"]
+
+
+async def test_analyze_experiment_with_no_assignments_in_one_arm_yet(
+    xngin_session: AsyncSession, testing_datasource_with_user, pget
+):
+    test_experiment = await insert_experiment_and_arms(
+        xngin_session, testing_datasource_with_user.ds, ExperimentsType.FREQ_ONLINE
+    )
+    datasource_id = test_experiment.datasource_id
+    experiment_id = test_experiment.id
+
+    # Create a new participant assignment for one arm.
+    response = pget(f"/v1/m/datasources/{datasource_id}/experiments/{experiment_id}/assignments/1")
+    assert response.status_code == 200, response.content
+    assignment_response = GetParticipantAssignmentResponse.model_validate(response.json())
+    assert assignment_response.assignment is not None
+    assigned_arm_id = assignment_response.assignment.arm_id
+
+    response = pget(f"/v1/m/datasources/{datasource_id}/experiments/{experiment_id}/analyze")
+    assert response.status_code == 200, response.content
+    analysis_response = FreqExperimentAnalysisResponse.model_validate(response.json())
+    assert analysis_response.experiment_id == experiment_id
+    assert analysis_response.num_participants == 1
+    assert analysis_response.num_missing_participants == 0
+    assert len(analysis_response.metric_analyses) == 1
+    metric_analysis = analysis_response.metric_analyses[0]
+    assert metric_analysis.metric_name == "is_onboarded"
+    assert len(metric_analysis.arm_analyses) == 2
+    for analysis in metric_analysis.arm_analyses:
+        if analysis.arm_id == assigned_arm_id:
+            assert analysis.estimate is not None
+            # Next 3 are all none because stderr is None with only 1 data point
+            assert analysis.p_value is None
+            assert analysis.t_stat is None
+            assert analysis.std_error is None
+            assert analysis.num_missing_values == 0
+        else:
+            assert analysis.estimate is None
+            assert analysis.p_value is None
+            assert analysis.t_stat is None
+            assert analysis.std_error is None
+            assert analysis.num_missing_values == 1
 
 
 @pytest.mark.parametrize(
@@ -2238,7 +2278,7 @@ def test_snapshots(pget, ppost, pdelete, uget, ppatch):
         assert analysis.estimate is not None
         assert analysis.t_stat is not None
         assert analysis.p_value is not None
-        assert analysis.std_error > 0
+        assert analysis.std_error is not None
         assert analysis.num_missing_values == 0
         assert analysis.is_baseline == is_baseline
 
