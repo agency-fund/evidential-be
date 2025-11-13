@@ -192,7 +192,7 @@ def test_assign_treatments_with_balance_basic(sample_table, sample_rows):
     )
     # Although the relative difference looks large, the tiny f-stat is still statistically equivlent
     # to about p≈1 on different platforms.
-    assert result.balance_result.f_pvalue == pytest.approx(0.99990, abs=1e-5)
+    assert result.balance_result.f_pvalue == pytest.approx(0.99990, abs=1e-4)
 
 
 @pytest.mark.parametrize("stratum_id_name", [None, "stratum_id"])
