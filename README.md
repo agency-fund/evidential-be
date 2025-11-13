@@ -56,7 +56,7 @@
 | src/xngin/events/webhook\_sent.py                                    |       15 |        5 |     67% |     18-23 |
 | src/xngin/ops/sentry.py                                              |       13 |        6 |     54% |     18-40 |
 | src/xngin/stats/assignment.py                                        |       45 |        1 |     98% |       112 |
-| src/xngin/stats/balance.py                                           |       69 |        2 |     97% |  106, 145 |
+| src/xngin/stats/balance.py                                           |       71 |        2 |     97% |  109, 148 |
 | src/xngin/stats/bandit\_analysis.py                                  |       56 |        5 |     91% |94, 96, 98, 157-158 |
 | src/xngin/stats/bandit\_sampling.py                                  |       73 |        7 |     90% |159, 183, 188, 211, 235, 237, 269 |
 | src/xngin/stats/power.py                                             |       65 |        5 |     92% |44, 83, 140-150 |
@@ -66,7 +66,7 @@
 | src/xngin/xsecrets/secretservice.py                                  |       61 |        4 |     93% |42-43, 101, 123 |
 | src/xngin/xsecrets/test\_gcp\_kms\_provider.py                       |      103 |       26 |     75% |40-42, 170-175, 182-189, 195-199, 206, 213-224 |
 | src/xngin/xsecrets/test\_nacl\_provider.py                           |       67 |        1 |     99% |        24 |
-|                                                            **TOTAL** | **8456** |  **954** | **89%** |           |
+|                                                            **TOTAL** | **8488** |  **954** | **89%** |           |
 
 56 files skipped due to complete coverage.
 
