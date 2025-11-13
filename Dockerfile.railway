@@ -7,13 +7,11 @@ ENV UV_COMPILE_BYTECODE=1
 ENV UV_LINK_MODE=copy
 ENV UV_PYTHON_DOWNLOADS=0
 WORKDIR /code
-# Note: Railway builders will error if the id= is set via build variables.
-RUN --mount=type=cache,id=s/53dd800c-90e7-49cd-b7f6-549131ff038e-/root/.cache/uv,target=/root/.cache/uv \
-    --mount=type=bind,source=pyproject.toml,target=pyproject.toml,ro \
-    --mount=type=bind,source=uv.lock,target=uv.lock,ro \
-    /usr/local/bin/uv sync --locked --no-install-project --no-dev
 COPY pyproject.toml .
 COPY uv.lock .
+# Note: Railway builders will error if the id= is set via build variables.
+RUN --mount=type=cache,id=s/53dd800c-90e7-49cd-b7f6-549131ff038e-/root/.cache/uv,target=/root/.cache/uv \
+    /usr/local/bin/uv sync --locked --no-install-project --no-dev
 COPY ./src /code/src
 RUN --mount=type=cache,id=s/53dd800c-90e7-49cd-b7f6-549131ff038e-/root/.cache/uv,target=/root/.cache/uv \
     /usr/local/bin/uv sync --locked --no-dev
