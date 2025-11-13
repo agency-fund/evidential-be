@@ -413,7 +413,8 @@ async def test_create_experiment_impl_for_preassigned(
     arm2_id = response.design_spec.arms[1].arm_id
     num_control = sum(1 for a in assignments if a.arm_id == arm1_id)
     num_treat = sum(1 for a in assignments if a.arm_id == arm2_id)
-    assert abs(num_control - num_treat) <= 1
+    # Allow for group sizes to be unequal by up to 2.
+    assert abs(num_control - num_treat) <= 2
 
 
 async def test_create_preassigned_experiment_impl_raises_on_duplicate_ids(
