@@ -51,8 +51,9 @@ from xngin.apiserver.routers.common_enums import (
     ExperimentState,
     ExperimentsType,
     LikelihoodTypes,
-    PriorTypes,
     StopAssignmentReason,
+    UpdateTypeBeta,
+    UpdateTypeNormal,
 )
 from xngin.apiserver.routers.experiments.property_filters import passes_filters, validate_filter_value
 from xngin.apiserver.settings import DatasourceConfig, ParticipantsDef
@@ -915,16 +916,21 @@ async def update_bandit_arm_with_outcome_impl(
         )
 
         # Update the draw record and arm with the new parameters
-        match experiment.prior_type:
-            case PriorTypes.BETA.value:
-                draw_record.current_alpha, draw_record.current_beta = updated_parameters
-                arm_to_update.alpha, arm_to_update.beta = updated_parameters
-
-            case PriorTypes.NORMAL.value:
-                draw_record.current_mu, draw_record.current_covariance = updated_parameters
-                arm_to_update.mu, arm_to_update.covariance = updated_parameters
+        match updated_parameters:
+            case UpdateTypeBeta():
+                draw_record.current_alpha = updated_parameters.alpha
+                draw_record.current_beta = updated_parameters.beta
+                arm_to_update.alpha = updated_parameters.alpha
+                arm_to_update.beta = updated_parameters.beta
+            case UpdateTypeNormal():
+                draw_record.current_mu = updated_parameters.mu
+                draw_record.current_covariance = updated_parameters.covariance
+                arm_to_update.mu = updated_parameters.mu
+                arm_to_update.covariance = updated_parameters.covariance
             case _:
-                raise ExperimentsAssignmentError(f"Unsupported prior type: {experiment.prior_type}")
+                raise ExperimentsAssignmentError(
+                    f"Unsupported prior update type: {type(updated_parameters)} for prior type {experiment.prior_type}"
+                )
 
         xngin_session.add(draw_record)
         xngin_session.add(arm_to_update)
