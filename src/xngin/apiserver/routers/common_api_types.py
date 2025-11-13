@@ -740,21 +740,6 @@ class BaseDesignSpec(ApiBaseModel):
     # --- Experiment metadata ---
     participant_type: Annotated[str, Field(max_length=MAX_LENGTH_OF_NAME_VALUE)]
 
-    experiment_id: Annotated[
-        str | None,
-        Field(
-            deprecated=True,
-            description=(
-                "ID of the experiment. If creating a new experiment (POST /datasources/{datasource_id}/experiments), "
-                "this is generated for you and made available in the response; you should NOT set this. "
-                "Only generate ids of your own if using the stateless Experiment Design API as you will "
-                "do your own persistence. \n"
-                "DEPRECATED: This field is no longer used and will be removed in a future release. "
-                "Use the Create/GetExperimentResponse field directly."
-            ),
-        ),
-    ] = None
-
     experiment_type: Annotated[
         ExperimentsType,
         Field(
