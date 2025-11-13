@@ -54,7 +54,7 @@ def preprocess_for_balance_and_stratification(
     single_value_cols = []
     unique_non_numeric_cols = []
     working_list = []
-    for col in set(df_analysis.columns) - exclude_set:
+    for col in sorted(set(df_analysis.columns) - exclude_set):
         unique_count = df_analysis[col].nunique(dropna=True)
         if unique_count <= 1:
             single_value_cols.append(col)
