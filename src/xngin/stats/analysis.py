@@ -70,7 +70,7 @@ def analyze_experiment(
     for metric_name in metric_columns:
         # smf.ols internally actually drops missing values by default (see Model.from_formula),
         # but make it explicit here for developer clarity.
-        model = smf.ols(f"{metric_name} ~ arm_id", data=merged_df, missing="drop").fit()
+        model = smf.ols(f"{metric_name} ~ arm_id", data=merged_df, missing="drop").fit(cov_type="HC1")
         arm_ids = model.model.data.design_info.factor_infos[EvalFactor("arm_id")].categories
         arm_analyses: dict[str, ArmAnalysisResult] = {}
         for i, arm_id in enumerate(arm_ids):

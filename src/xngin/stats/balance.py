@@ -13,9 +13,12 @@ class BalanceResult:
 
     f_statistic: float
     f_pvalue: float
-    model_summary: str
     numerator_df: float
     denominator_df: float
+    # More values for debugging
+    model_params: list[float]
+    model_param_std_errors: list[float]
+    model_summary: str
 
 
 def preprocess_for_balance_and_stratification(
@@ -51,7 +54,7 @@ def preprocess_for_balance_and_stratification(
     single_value_cols = []
     unique_non_numeric_cols = []
     working_list = []
-    for col in set(df_analysis.columns) - exclude_set:
+    for col in sorted(set(df_analysis.columns) - exclude_set):
         unique_count = df_analysis[col].nunique(dropna=True)
         if unique_count <= 1:
             single_value_cols.append(col)
@@ -144,11 +147,11 @@ def check_balance_of_preprocessed_df(
     if data[treatment_col].nunique() <= 1:
         raise ValueError("Treatment column has insufficient arms.")
 
-    exclude_from_covariates = {treatment_col}
+    exclude_from_covariates_set = {treatment_col}
     if exclude_col_set:
-        exclude_from_covariates |= exclude_col_set
+        exclude_from_covariates_set |= exclude_col_set
 
-    covariates = data.columns.difference(list(exclude_from_covariates))
+    covariates = sorted(set(data.columns) - exclude_from_covariates_set)
     if len(covariates) == 0:
         raise StatsBalanceError(
             "No usable fields for performing a balance check found. Please check your metrics "
@@ -163,12 +166,17 @@ def check_balance_of_preprocessed_df(
 
     # Fit regression model; for now only check the first two treatment groups.
     df_analysis = data[data[treatment_col].isin([0, 1])]
-    model = smf.ols(formula=formula, data=df_analysis).fit(method="pinv")
+    # While HC3 may be better at low sample sizes (Long & Ervin 2000), it is sensitive to high
+    # leverage points, so use HC1 for now. Future work should consider:
+    # https://blog.stata.com/2022/10/06/heteroskedasticity-robust-standard-errors-some-practical-considerations/
+    model = smf.ols(formula=formula, data=df_analysis).fit(method="pinv", cov_type="HC1")
 
     return BalanceResult(
         f_statistic=model.fvalue,
         f_pvalue=model.f_pvalue,
         numerator_df=model.df_model,
         denominator_df=model.df_resid,
+        model_params=list(model.params),
+        model_param_std_errors=list(model.bse),
         model_summary=model.summary().as_text(),
     )
