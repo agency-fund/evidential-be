@@ -992,6 +992,7 @@ async def test_lifecycle_with_db(testing_datasource, ppost, ppatch, pget, pdelet
             FieldMetadata(field_name="income", data_type=DataType.NUMERIC, description=""),
             FieldMetadata(field_name="is_engaged", data_type=DataType.BOOLEAN, description=""),
             FieldMetadata(field_name="is_onboarded", data_type=DataType.BOOLEAN, description=""),
+            FieldMetadata(field_name="is_onboarded_onetime", data_type=DataType.BOOLEAN, description=""),
             FieldMetadata(field_name="is_recruited", data_type=DataType.BOOLEAN, description=""),
             FieldMetadata(
                 field_name="is_registered",
