@@ -1,6 +1,6 @@
 import decimal
 import enum
-from typing import Any, Self
+from typing import Any, NamedTuple, Self
 
 import numpy as np
 import sqlalchemy.sql
@@ -260,6 +260,24 @@ class PriorTypes(enum.StrEnum):
             pdf = -0.5 * x @ inv_cov @ x
             return np.array(pdf)
         raise ValueError(f"Unsupported prior type: {self}.")
+
+
+class UpdateTypeBeta(NamedTuple):
+    """Update parameters for Beta prior distributions."""
+
+    alpha: float
+    beta: float
+
+
+class UpdateTypeNormal(NamedTuple):
+    """Update parameters for Normal prior distributions."""
+
+    mu: list[float]
+    covariance: list[list[float]]
+
+
+# Union type for all prior updates
+PriorUpdateType = UpdateTypeBeta | UpdateTypeNormal
 
 
 class LikelihoodTypes(enum.StrEnum):
