@@ -73,6 +73,13 @@ TESTING_DWH_PARTICIPANT_DEF = ParticipantsDef(
             is_strata=True,
         ),
         FieldDescriptor(
+            field_name="is_onboarded_onetime",
+            data_type=DataType.BOOLEAN,
+            is_filter=True,
+            is_metric=True,
+            is_strata=True,
+        ),
+        FieldDescriptor(
             field_name="is_engaged",
             data_type=DataType.BOOLEAN,
             is_filter=True,
