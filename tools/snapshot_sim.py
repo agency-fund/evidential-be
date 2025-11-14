@@ -55,10 +55,10 @@ def recalculate_t_and_p(arm_analysis: ArmAnalysis, df: int = 100) -> None:
         arm_analysis.t_stat = arm_analysis.estimate / arm_analysis.std_error
         arm_analysis.p_value = float(2 * (1 - stats.t.cdf(abs(arm_analysis.t_stat), df=df)))
     elif arm_analysis.estimate > 0:
-        arm_analysis.t_stat = float("inf")
+        arm_analysis.t_stat = float("inf")  # get serialized as null in JSON
         arm_analysis.p_value = 0.0
     elif arm_analysis.estimate < 0:
-        arm_analysis.t_stat = float("-inf")
+        arm_analysis.t_stat = float("-inf")  # get serialized as null in JSON
         arm_analysis.p_value = 0.0
     else:
         arm_analysis.t_stat = None
@@ -173,9 +173,10 @@ def create(
     ] = None,
     values: Annotated[list[float] | None, typer.Argument(help="Values to apply to the field")] = None,
     random_seed: Annotated[int | None, typer.Option("--random-seed", "-r", help="Random seed")] = None,
+    echo: Annotated[bool, typer.Option("--echo", "-e", help="Echo SQL queries")] = False,
 ) -> None:
     """Create new fake snapshots for a frequentist experiment."""
-    engine = create_engine(dsn)
+    engine = create_engine(dsn, echo=echo)
 
     with Session(engine) as session:
         # Fetch experiment with arms
