@@ -6,6 +6,9 @@ from xngin.apiserver.routers.common_enums import (
     ExperimentsType,
     LikelihoodTypes,
     PriorTypes,
+    PriorUpdateType,
+    UpdateTypeBeta,
+    UpdateTypeNormal,
 )
 from xngin.apiserver.sqla import tables
 
@@ -58,7 +61,7 @@ def _sample_normal(
 
 
 # --- Arm update functions ---
-def _update_arm_beta_binomial(alpha: float, beta: float, reward: bool) -> tuple[float, float]:
+def _update_arm_beta_binomial(alpha: float, beta: float, reward: bool) -> UpdateTypeBeta:
     """
     Update the alpha and beta parameters of the Beta distribution.
 
@@ -72,8 +75,8 @@ def _update_arm_beta_binomial(alpha: float, beta: float, reward: bool) -> tuple[
         The reward of the arm.
     """
     if reward:
-        return alpha + 1, beta
-    return alpha, beta + 1
+        return UpdateTypeBeta(alpha=alpha + 1, beta=beta)
+    return UpdateTypeBeta(alpha=alpha, beta=beta + 1)
 
 
 def _update_arm_normal(
@@ -82,7 +85,7 @@ def _update_arm_normal(
     reward: float,
     llhood_sigma: float,
     context: np.ndarray,
-) -> tuple[float, np.ndarray]:
+) -> UpdateTypeNormal:
     """
     Update the mean and standard deviation of the Normal distribution.
 
@@ -110,7 +113,7 @@ def _update_arm_normal(
         llhood_term = (context * llhood_term).squeeze()
 
     new_mu = new_covariance @ ((prior_covariance_inv @ current_mu) + llhood_term)
-    return new_mu.tolist(), new_covariance.tolist()
+    return UpdateTypeNormal(mu=new_mu.tolist(), covariance=new_covariance.tolist())
 
 
 def _update_arm_laplace(
@@ -121,7 +124,7 @@ def _update_arm_laplace(
     link_function: ContextLinkFunctions,
     reward_likelihood: LikelihoodTypes,
     prior_type: PriorTypes,
-) -> tuple[np.ndarray, np.ndarray]:
+) -> UpdateTypeNormal:
     """
     Update the mean and covariance using the Laplace approximation.
 
@@ -160,7 +163,7 @@ def _update_arm_laplace(
     covariance = hess_inv.todense()
 
     new_covariance = 0.5 * (covariance + covariance.T)
-    return new_mu.tolist(), new_covariance.tolist()
+    return UpdateTypeNormal(mu=new_mu.tolist(), covariance=new_covariance.tolist())
 
 
 # ------------- Import functions ----------------
@@ -218,7 +221,7 @@ def update_arm(
     arm_to_update: tables.Arm,
     outcomes: list[float],
     context: list[list[float]] | None = None,
-) -> tuple:
+) -> PriorUpdateType:
     """
     Update the arm parameters based on the experiment type and reward.
 
