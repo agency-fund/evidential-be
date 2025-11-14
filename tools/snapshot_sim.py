@@ -17,8 +17,7 @@ example usages:
         --dsn "postgresql+psycopg://postgres:postgres@localhost:5499/xngin?sslmode=disable" \
         --exp-id exp_TBM4J2KfOq5J3SMZ \
         --arm-id arm_am9zslDFJ940VO7p \
-        --metric "current_income" \
-        --field "estimate" \
+        --metric current_income \
         --field estimate \
         -n 7 \
         -- 0 3 5 10 4 1 -8
@@ -32,9 +31,14 @@ from typing import Annotated
 import typer
 from scipy import stats
 from sqlalchemy import create_engine, select
-from sqlalchemy.orm import Session, joinedload
+from sqlalchemy.orm import Session, attributes, joinedload
 
-from xngin.apiserver.routers.common_api_types import FreqExperimentAnalysisResponse
+from xngin.apiserver.routers.common_api_types import (
+    ArmAnalysis,
+    DesignSpecMetricRequest,
+    FreqExperimentAnalysisResponse,
+    MetricAnalysis,
+)
 from xngin.apiserver.routers.common_enums import ExperimentsType
 from xngin.apiserver.sqla import tables
 from xngin.apiserver.storage.storage_format_converters import ExperimentStorageConverter
@@ -49,17 +53,17 @@ def generate_default_arm_analysis(arm: tables.Arm, is_baseline: bool, rng: rando
     t_stat = estimate / std_error if std_error != 0 else 0
     p_value = 2 * (1 - stats.t.cdf(abs(t_stat), df=df))
 
-    return {
-        "arm_id": arm.id,
-        "arm_name": arm.name,
-        "arm_description": arm.description,
-        "is_baseline": is_baseline,
-        "num_missing_values": 0,
-        "estimate": estimate,
-        "std_error": std_error,
-        "t_stat": t_stat,
-        "p_value": float(p_value),
-    }
+    return ArmAnalysis(
+        arm_id=arm.id,
+        arm_name=arm.name,
+        arm_description=arm.description,
+        is_baseline=is_baseline,
+        num_missing_values=0,
+        estimate=estimate,
+        std_error=std_error,
+        t_stat=t_stat,
+        p_value=float(p_value),
+    )
 
 
 def create_freq_experiment_analysis(
@@ -79,7 +83,7 @@ def create_freq_experiment_analysis(
     design_spec_fields = converter.get_design_spec_fields()
 
     if not design_spec_fields.metrics:
-        raise ValueError("Experiment has no metrics defined")
+        raise ValueError("❌ Experiment has no metrics defined")
 
     metric_analyses = []
 
@@ -101,32 +105,33 @@ def create_freq_experiment_analysis(
             )
 
             if should_apply:
-                arm_analysis[field] = value
+                setattr(arm_analysis, field, value)
                 # Recalculate dependent fields if needed
-                if field in {"estimate", "std_error"} and arm_analysis["std_error"] != 0:
-                    arm_analysis["t_stat"] = arm_analysis["estimate"] / arm_analysis["std_error"]
-                    arm_analysis["p_value"] = float(2 * (1 - stats.t.cdf(abs(arm_analysis["t_stat"]), df=100)))
+                if field in {"estimate", "std_error"} and arm_analysis.std_error != 0:
+                    arm_analysis.t_stat = arm_analysis.estimate / arm_analysis.std_error
+                    arm_analysis.p_value = float(2 * (1 - stats.t.cdf(abs(arm_analysis.t_stat), df=100)))
 
             arm_analyses.append(arm_analysis)
 
-        metric_analyses.append({
-            "metric": {
-                "field_name": metric_field_name,
-                "metric_target": metric_obj.metric_target,
-                "metric_pct_change": metric_obj.metric_pct_change,
-            },
-            "metric_name": metric_field_name,
-            "arm_analyses": arm_analyses,
-        })
+        metric_analyses.append(
+            MetricAnalysis(
+                metric_name=metric_field_name,
+                metric=DesignSpecMetricRequest(
+                    field_name=metric_field_name,
+                    metric_target=metric_obj.metric_target,
+                    metric_pct_change=metric_obj.metric_pct_change,
+                ),
+                arm_analyses=arm_analyses,
+            )
+        )
 
-    return {
-        "type": "freq",
-        "created_at": created_at.isoformat(),
-        "experiment_id": experiment.id,
-        "metric_analyses": metric_analyses,
-        "num_participants": rng.randint(500, 2000),
-        "num_missing_participants": rng.randint(0, 50),
-    }
+    return FreqExperimentAnalysisResponse(
+        experiment_id=experiment.id,
+        metric_analyses=metric_analyses,
+        num_participants=rng.randint(500, 2000),
+        num_missing_participants=rng.randint(0, 50),
+        created_at=created_at,
+    )
 
 
 @app.command()
@@ -162,12 +167,12 @@ def create(
         experiment = session.scalars(stmt).unique().one_or_none()
 
         if not experiment:
-            typer.echo(f"Error: Experiment {exp_id} not found", err=True)
+            typer.echo(f"❌ Experiment {exp_id} not found", err=True)
             raise typer.Exit(1)
 
         if experiment.experiment_type not in {ExperimentsType.FREQ_ONLINE, ExperimentsType.FREQ_PREASSIGNED}:
             typer.echo(
-                f"Error: Experiment type must be freq_online or freq_preassigned, got {experiment.experiment_type}",
+                f"❌ Experiment type must be freq_online or freq_preassigned, got {experiment.experiment_type}",
                 err=True,
             )
             raise typer.Exit(1)
@@ -179,7 +184,7 @@ def create(
             metric_names = [m.field_name for m in (design_spec_fields.metrics or [])]
             if metric not in metric_names:
                 typer.echo(
-                    f"Error: Metric '{metric}' not found in experiment. Available: {metric_names}",
+                    f"❌ Metric '{metric}' not found in experiment. Available: {metric_names}",
                     err=True,
                 )
                 raise typer.Exit(1)
@@ -189,7 +194,7 @@ def create(
             arm_ids = [arm.id for arm in experiment.arms]
             if arm_id not in arm_ids:
                 typer.echo(
-                    f"Error: Arm ID '{arm_id}' not found in experiment. Available: {arm_ids}",
+                    f"❌ Arm ID '{arm_id}' not found in experiment. Available: {arm_ids}",
                     err=True,
                 )
                 raise typer.Exit(1)
@@ -199,7 +204,7 @@ def create(
             valid_fields = ["num_missing_values", "estimate", "std_error", "p_value", "t_stat"]
             if field not in valid_fields:
                 typer.echo(
-                    f"Error: Field '{field}' not valid. Must be one of: {valid_fields}",
+                    f"❌ Field '{field}' not valid. Must be one of: {valid_fields}",
                     err=True,
                 )
                 raise typer.Exit(1)
@@ -235,7 +240,7 @@ def create(
                 created_at=snapshot_date,
                 updated_at=snapshot_date,
                 status="success",
-                data=snapshot_data,
+                data=snapshot_data.model_dump(mode="json"),
             )
             session.add(snapshot)
             typer.echo(f"Created snapshot at {snapshot_date.isoformat()}")
@@ -266,13 +271,14 @@ def update(
         typer.Option("--start-date", "-s", help="Start date to filter snapshots (ISO format)"),
     ] = None,
     n: Annotated[int, typer.Option("--n", "-n", help="Maximum number of snapshots to update")] = 1,
+    echo: Annotated[bool, typer.Option("--echo", "-e", help="Echo SQL queries")] = False,
 ) -> None:
     """Update existing snapshots with specific field values."""
     if not values:
-        typer.echo("Error: values are REQUIRED for update mode", err=True)
+        typer.echo("❌ values are REQUIRED for update mode", err=True)
         raise typer.Exit(1)
 
-    engine = create_engine(dsn)
+    engine = create_engine(dsn, echo=echo)
 
     with Session(engine) as session:
         # Fetch experiment
@@ -280,14 +286,14 @@ def update(
         experiment = session.execute(stmt).scalar_one_or_none()
 
         if not experiment:
-            typer.echo(f"Error: Experiment {exp_id} not found", err=True)
+            typer.echo(f"❌ Experiment {exp_id} not found", err=True)
             raise typer.Exit(1)
 
         # Validate field
         valid_fields = ["num_missing_values", "estimate", "std_error", "p_value", "t_stat"]
         if field not in valid_fields:
             typer.echo(
-                f"Error: Field '{field}' not valid. Must be one of: {valid_fields}",
+                f"❌ Field '{field}' invalid. Must be one of: {valid_fields}",
                 err=True,
             )
             raise typer.Exit(1)
@@ -299,13 +305,11 @@ def update(
             .order_by(tables.Snapshot.created_at.asc())
             .limit(n)
         )
-
         if start_date:
             filter_date = datetime.fromisoformat(start_date)
             if filter_date.tzinfo is None:
                 filter_date = filter_date.replace(tzinfo=UTC)
             snapshot_stmt = snapshot_stmt.where(tables.Snapshot.created_at >= filter_date)
-
         snapshots = list(session.execute(snapshot_stmt).scalars().all())
 
         if not snapshots:
@@ -348,21 +352,19 @@ def update(
                     break
 
             if updated:
-                # Note: not updating updated_at since that is the timestamp used for grouping and
-                # ordering the snapshots in the plots, and we assume the existing time reflects the
-                # time we want to use in the frontend.
-                snapshot.updated_at = snapshot.created_at
+                # Tell SQLAlchemy to update the updated_at column with the same value.
+                # We don't actually change updated_at since that is the timestamp used for grouping
+                # and ordering the snapshots in the plots, and we assume the existing time reflects
+                # what the user wants, e.g. you could have modified it manually in the db.
+                attributes.flag_modified(snapshot, "updated_at")
                 snapshot.data = new_data.model_dump(mode="json")
                 updated_count += 1
-                typer.echo(
-                    f"Updated snapshot {snapshot.id} (created at {snapshot.created_at.isoformat()}) "
-                    f"with {field}={value}"
-                )
+                typer.echo(f"✅ {snapshot.id} (created at {snapshot.created_at.isoformat()}) with {field}={value}")
             else:
-                typer.echo(f"Warning: Could not find metric '{metric}' and arm '{arm_id}' in snapshot {snapshot.id}")
+                typer.echo(f"⚠️ metric {metric} arm {arm_id} not found in {snapshot.id}")
 
         session.commit()
-        typer.echo(f"Successfully updated {updated_count} snapshots")
+        typer.echo(f"➡️ Successfully updated {updated_count} snapshots")
 
 
 if __name__ == "__main__":
