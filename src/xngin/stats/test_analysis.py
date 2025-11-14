@@ -197,10 +197,10 @@ def test_analysis_with_one_arm_missing_all_outcomes(test_assignments, test_outco
             assert metric_results[arm_id].std_error is not None
             assert metric_results[arm_id].num_missing_values == 0
 
-    # But when *all* arms are missing values, we should get an empty result,
-    # since no regression was performed.
-    num_missing_values = len(test_outcomes)
+    # But when *all* arms are missing values, we should get a dict with the metrics but no arm
+    # analyses since no regression was performed.
     for i in range(len(test_outcomes)):
         test_outcomes[i].metric_values[0].metric_value = None
     result = analyze_experiment(test_assignments, test_outcomes)
-    assert len(result) == 0
+    assert len(result) == 1  # One metric
+    assert len(result["bool_field"]) == 0  # No arm analyses
