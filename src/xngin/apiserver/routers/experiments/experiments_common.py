@@ -51,8 +51,9 @@ from xngin.apiserver.routers.common_enums import (
     ExperimentState,
     ExperimentsType,
     LikelihoodTypes,
-    PriorTypes,
     StopAssignmentReason,
+    UpdateTypeBeta,
+    UpdateTypeNormal,
 )
 from xngin.apiserver.routers.experiments.property_filters import passes_filters, validate_filter_value
 from xngin.apiserver.settings import DatasourceConfig, ParticipantsDef
@@ -915,16 +916,21 @@ async def update_bandit_arm_with_outcome_impl(
         )
 
         # Update the draw record and arm with the new parameters
-        match experiment.prior_type:
-            case PriorTypes.BETA.value:
-                draw_record.current_alpha, draw_record.current_beta = updated_parameters
-                arm_to_update.alpha, arm_to_update.beta = updated_parameters
-
-            case PriorTypes.NORMAL.value:
-                draw_record.current_mu, draw_record.current_covariance = updated_parameters
-                arm_to_update.mu, arm_to_update.covariance = updated_parameters
+        match updated_parameters:
+            case UpdateTypeBeta():
+                draw_record.current_alpha = updated_parameters.alpha
+                draw_record.current_beta = updated_parameters.beta
+                arm_to_update.alpha = updated_parameters.alpha
+                arm_to_update.beta = updated_parameters.beta
+            case UpdateTypeNormal():
+                draw_record.current_mu = updated_parameters.mu
+                draw_record.current_covariance = updated_parameters.covariance
+                arm_to_update.mu = updated_parameters.mu
+                arm_to_update.covariance = updated_parameters.covariance
             case _:
-                raise ExperimentsAssignmentError(f"Unsupported prior type: {experiment.prior_type}")
+                raise ExperimentsAssignmentError(
+                    f"Unsupported prior update type: {type(updated_parameters)} for prior type {experiment.prior_type}"
+                )
 
         xngin_session.add(draw_record)
         xngin_session.add(arm_to_update)
@@ -1010,6 +1016,13 @@ async def analyze_experiment_freq_impl(
             participant_ids,
         )
 
+    if len(participant_outcomes) == 0:
+        raise StatsAnalysisError(
+            "No assigned participants found in the datasource. Check that "
+            f"ids used in assignment are usable with your unique identifier ({unique_id_field}), and "
+            "that metric data exists for them."
+        )
+
     # We want to notify the user if there are participants assigned to the experiment that are not
     # in the data warehouse. E.g. in an online experiment, perhaps a new user was assigned
     # before their info was synced to the dwh.
@@ -1022,20 +1035,36 @@ async def analyze_experiment_freq_impl(
         metric_name = metric.field_name
         arm_analyses = []
         for arm in experiment.arms:
-            arm_result = analyze_results[metric_name][arm.id]
-            arm_analyses.append(
-                ArmAnalysis(
-                    arm_id=arm.id,
-                    arm_name=arm.name,
-                    arm_description=arm.description,
-                    is_baseline=arm_result.is_baseline,
-                    estimate=arm_result.estimate,
-                    p_value=arm_result.p_value,
-                    t_stat=arm_result.t_stat,
-                    std_error=arm_result.std_error,
-                    num_missing_values=arm_result.num_missing_values,
+            if arm.id in analyze_results[metric_name]:
+                arm_result = analyze_results[metric_name][arm.id]
+                arm_analyses.append(
+                    ArmAnalysis(
+                        arm_id=arm.id,
+                        arm_name=arm.name,
+                        arm_description=arm.description,
+                        is_baseline=arm_result.is_baseline,
+                        estimate=arm_result.estimate,
+                        p_value=arm_result.p_value,
+                        t_stat=arm_result.t_stat,
+                        std_error=arm_result.std_error,
+                        num_missing_values=arm_result.num_missing_values,
+                    )
                 )
-            )
+            else:
+                # If arm.id is missing due to no participants or partcipants with outcomes yet, append a default
+                arm_analyses.append(
+                    ArmAnalysis(
+                        arm_id=arm.id,
+                        arm_name=arm.name,
+                        arm_description=arm.description,
+                        is_baseline=arm.id == baseline_arm_id,
+                        estimate=0,
+                        p_value=float("nan"),
+                        t_stat=float("nan"),
+                        std_error=float("nan"),
+                        num_missing_values=-1,  # -1 indicates arm analysis not available
+                    )
+                )
         metric_analyses.append(MetricAnalysis(metric_name=metric_name, metric=metric, arm_analyses=arm_analyses))
 
     return FreqExperimentAnalysisResponse(
