@@ -46,14 +46,31 @@ from xngin.apiserver.storage.storage_format_converters import ExperimentStorageC
 app = typer.Typer()
 
 
-def generate_default_arm_analysis(arm: tables.Arm, is_baseline: bool, rng: random.Random, df: int = 100) -> dict:
+def recalculate_t_and_p(arm_analysis: ArmAnalysis, df: int = 100) -> None:
+    """Recalculate t_stat and p_value for an ArmAnalysis object based on estimate and std_error.
+
+    Modifies the object in place.
+    """
+    if arm_analysis.std_error != 0:
+        arm_analysis.t_stat = arm_analysis.estimate / arm_analysis.std_error
+        arm_analysis.p_value = float(2 * (1 - stats.t.cdf(abs(arm_analysis.t_stat), df=df)))
+    elif arm_analysis.estimate > 0:
+        arm_analysis.t_stat = float("inf")
+        arm_analysis.p_value = 0.0
+    elif arm_analysis.estimate < 0:
+        arm_analysis.t_stat = float("-inf")
+        arm_analysis.p_value = 0.0
+    else:
+        arm_analysis.t_stat = None
+        arm_analysis.p_value = None
+
+
+def generate_default_arm_analysis(arm: tables.Arm, is_baseline: bool, rng: random.Random, df: int = 100) -> ArmAnalysis:
     """Generate default arm analysis with random noise."""
     estimate = rng.gauss(0, 1) if not is_baseline else rng.gauss(0, 1) * 10
     std_error = abs(rng.gauss(1, 0.2))
-    t_stat = estimate / std_error if std_error != 0 else 0
-    p_value = 2 * (1 - stats.t.cdf(abs(t_stat), df=df))
 
-    return ArmAnalysis(
+    arm_analysis = ArmAnalysis(
         arm_id=arm.id,
         arm_name=arm.name,
         arm_description=arm.description,
@@ -61,9 +78,11 @@ def generate_default_arm_analysis(arm: tables.Arm, is_baseline: bool, rng: rando
         num_missing_values=0,
         estimate=estimate,
         std_error=std_error,
-        t_stat=t_stat,
-        p_value=float(p_value),
+        t_stat=None,
+        p_value=None,
     )
+    recalculate_t_and_p(arm_analysis, df=df)
+    return arm_analysis
 
 
 def create_freq_experiment_analysis(
@@ -107,9 +126,8 @@ def create_freq_experiment_analysis(
             if should_apply:
                 setattr(arm_analysis, field, value)
                 # Recalculate dependent fields if needed
-                if field in {"estimate", "std_error"} and arm_analysis.std_error != 0:
-                    arm_analysis.t_stat = arm_analysis.estimate / arm_analysis.std_error
-                    arm_analysis.p_value = float(2 * (1 - stats.t.cdf(abs(arm_analysis.t_stat), df=100)))
+                if field in {"estimate", "std_error"}:
+                    recalculate_t_and_p(arm_analysis, df=100)
 
             arm_analyses.append(arm_analysis)
 
@@ -339,12 +357,7 @@ def update(
 
                             # Recalculate dependent fields if needed
                             if field in {"estimate", "std_error"}:
-                                std_error = arm_analysis.std_error
-                                if std_error != 0:
-                                    arm_analysis.t_stat = arm_analysis.estimate / std_error
-                                    arm_analysis.p_value = float(
-                                        2 * (1 - stats.t.cdf(abs(arm_analysis.t_stat), df=100))
-                                    )
+                                recalculate_t_and_p(arm_analysis, df=100)
 
                             updated = True
                             break
