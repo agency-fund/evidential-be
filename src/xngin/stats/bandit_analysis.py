@@ -30,7 +30,7 @@ def _analyze_beta_binomial(
     ci_lower = np.percentile(samples, alpha_level * 100)
     ci_upper = np.percentile(samples, (1 - alpha_level) * 100)
 
-    return predictive_mean, predictive_stdev, ci_upper, ci_lower
+    return predictive_mean, float(predictive_stdev), float(ci_upper), float(ci_lower)
 
 
 def _analyze_normal(
@@ -53,7 +53,7 @@ def _analyze_normal(
 
     ci_upper = predictive_mean + 1.96 * predictive_mean_stdev
     ci_lower = predictive_mean - 1.96 * predictive_mean_stdev
-    return predictive_mean, predictive_mean_stdev, ci_upper, ci_lower
+    return float(predictive_mean), float(predictive_mean_stdev), float(ci_upper), float(ci_lower)
 
 
 def _analyze_normal_binary(
@@ -93,7 +93,7 @@ def _analyze_normal_binary(
     ci_lower = context_link_functions(
         transformed_parameter_mean - 1.96 * transformed_parameter_std / np.sqrt(num_samples)
     )
-    return mean, std, float(ci_upper), float(ci_lower)
+    return float(mean), float(std), float(ci_upper), float(ci_lower)
 
 
 def analyze_experiment(
