@@ -1211,7 +1211,6 @@ async def test_create_preassigned_experiment(
     actual_design_spec = created_experiment.design_spec.model_copy(deep=True)
     actual_design_spec.arms[0].arm_id = None
     actual_design_spec.arms[1].arm_id = None
-    actual_design_spec.experiment_id = None  # TODO remove in future
     assert actual_design_spec == request_obj.design_spec
 
     experiment_id = created_experiment.experiment_id
@@ -1285,7 +1284,6 @@ def test_create_online_experiment(testing_datasource_with_user, use_deterministi
     actual_design_spec = created_experiment.design_spec.model_copy(deep=True)
     actual_design_spec.arms[0].arm_id = None
     actual_design_spec.arms[1].arm_id = None
-    actual_design_spec.experiment_id = None  # TODO remove in future
     assert actual_design_spec == request_obj.design_spec
 
 
@@ -1357,7 +1355,6 @@ def test_create_online_mab_experiment(
         arm.beta = None
         arm.mu = None
         arm.covariance = None
-    actual_design_spec.experiment_id = None  # TODO remove in future
     assert actual_design_spec == request_obj.design_spec
 
 
@@ -1433,7 +1430,6 @@ def test_create_online_cmab_experiment(
     assert actual_design_spec.contexts is not None
     for context in actual_design_spec.contexts:
         context.context_id = None
-    actual_design_spec.experiment_id = None  # TODO remove in future
     assert actual_design_spec == request_obj.design_spec
 
 
@@ -2104,7 +2100,7 @@ async def test_experiment_webhook_integration(testing_datasource_with_user, ppos
     assert created_experiment["webhooks"][0] == webhook1_id
 
     # Get the experiment ID for further testing
-    experiment_id = created_experiment["design_spec"]["experiment_id"]
+    experiment_id = created_experiment["experiment_id"]
 
     # Get the experiment and verify webhook is included
     get_response = pget(f"/v1/m/datasources/{datasource_id}/experiments/{experiment_id}")
