@@ -33,7 +33,7 @@
 | src/xngin/apiserver/routers/auth/auth\_dependencies.py               |      125 |       32 |     74% |76, 89-95, 102-129, 222, 230, 243-245 |
 | src/xngin/apiserver/routers/auth/session\_token\_crypter.py          |       43 |        9 |     79% |20-25, 49, 51-52 |
 | src/xngin/apiserver/routers/auth/test\_auth\_dependencies.py         |      125 |        1 |     99% |        48 |
-| src/xngin/apiserver/routers/common\_api\_types.py                    |      363 |       24 |     93% |112, 138, 140, 382, 384, 386, 427, 661-663, 701, 902, 911, 914-915, 925, 927, 937, 939, 1141, 1276, 1278-1280 |
+| src/xngin/apiserver/routers/common\_api\_types.py                    |      367 |       24 |     93% |112, 138, 140, 382, 384, 386, 443, 677-679, 717, 918, 927, 930-931, 941, 943, 953, 955, 1157, 1292, 1294-1296 |
 | src/xngin/apiserver/routers/common\_enums.py                         |      183 |       38 |     79% |66, 68, 91-100, 105, 127-143, 154-158, 199, 234, 250-253, 262, 301-302, 306, 338 |
 | src/xngin/apiserver/routers/experiments/dependencies.py              |       38 |        8 |     79% |43, 46-50, 103-109 |
 | src/xngin/apiserver/routers/experiments/experiments\_api.py          |       58 |       14 |     76% |98, 112, 217, 230-244, 263-273 |
@@ -57,7 +57,7 @@
 | src/xngin/ops/sentry.py                                              |       13 |        6 |     54% |     18-40 |
 | src/xngin/stats/assignment.py                                        |       45 |        1 |     98% |       112 |
 | src/xngin/stats/balance.py                                           |       71 |        2 |     97% |  109, 148 |
-| src/xngin/stats/bandit\_analysis.py                                  |       56 |        5 |     91% |94, 96, 98, 157-158 |
+| src/xngin/stats/bandit\_analysis.py                                  |       69 |        5 |     93% |116, 118, 120, 183-184 |
 | src/xngin/stats/bandit\_sampling.py                                  |       73 |        7 |     90% |162, 186, 191, 214, 238, 240, 272 |
 | src/xngin/stats/power.py                                             |       65 |        5 |     92% |44, 83, 140-150 |
 | src/xngin/xsecrets/chafernet.py                                      |       52 |        1 |     98% |        92 |
@@ -66,7 +66,7 @@
 | src/xngin/xsecrets/secretservice.py                                  |       61 |        4 |     93% |42-43, 101, 123 |
 | src/xngin/xsecrets/test\_gcp\_kms\_provider.py                       |      103 |       26 |     75% |40-42, 170-175, 182-189, 195-199, 206, 213-224 |
 | src/xngin/xsecrets/test\_nacl\_provider.py                           |       67 |        1 |     99% |        24 |
-|                                                            **TOTAL** | **8602** |  **954** | **89%** |           |
+|                                                            **TOTAL** | **8623** |  **954** | **89%** |           |
 
 56 files skipped due to complete coverage.
 
