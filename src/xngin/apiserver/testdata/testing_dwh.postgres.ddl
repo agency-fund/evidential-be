@@ -10,6 +10,7 @@ CREATE TABLE {{table_name}} (
   is_recruited BOOLEAN,
   is_registered BOOLEAN,
   is_onboarded BOOLEAN,
+  is_onboarded_onetime BOOLEAN,
   is_engaged BOOLEAN,
   is_retained BOOLEAN,
   baseline_income DECIMAL,

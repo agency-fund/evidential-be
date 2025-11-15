@@ -1016,6 +1016,13 @@ async def analyze_experiment_freq_impl(
             participant_ids,
         )
 
+    if len(participant_outcomes) == 0:
+        raise StatsAnalysisError(
+            "No assigned participants found in the datasource. Check that "
+            f"ids used in assignment are usable with your unique identifier ({unique_id_field}), and "
+            "that metric data exists for them."
+        )
+
     # We want to notify the user if there are participants assigned to the experiment that are not
     # in the data warehouse. E.g. in an online experiment, perhaps a new user was assigned
     # before their info was synced to the dwh.
@@ -1028,20 +1035,36 @@ async def analyze_experiment_freq_impl(
         metric_name = metric.field_name
         arm_analyses = []
         for arm in experiment.arms:
-            arm_result = analyze_results[metric_name][arm.id]
-            arm_analyses.append(
-                ArmAnalysis(
-                    arm_id=arm.id,
-                    arm_name=arm.name,
-                    arm_description=arm.description,
-                    is_baseline=arm_result.is_baseline,
-                    estimate=arm_result.estimate,
-                    p_value=arm_result.p_value,
-                    t_stat=arm_result.t_stat,
-                    std_error=arm_result.std_error,
-                    num_missing_values=arm_result.num_missing_values,
+            if arm.id in analyze_results[metric_name]:
+                arm_result = analyze_results[metric_name][arm.id]
+                arm_analyses.append(
+                    ArmAnalysis(
+                        arm_id=arm.id,
+                        arm_name=arm.name,
+                        arm_description=arm.description,
+                        is_baseline=arm_result.is_baseline,
+                        estimate=arm_result.estimate,
+                        p_value=arm_result.p_value,
+                        t_stat=arm_result.t_stat,
+                        std_error=arm_result.std_error,
+                        num_missing_values=arm_result.num_missing_values,
+                    )
                 )
-            )
+            else:
+                # If arm.id is missing due to no participants or partcipants with outcomes yet, append a default
+                arm_analyses.append(
+                    ArmAnalysis(
+                        arm_id=arm.id,
+                        arm_name=arm.name,
+                        arm_description=arm.description,
+                        is_baseline=arm.id == baseline_arm_id,
+                        estimate=0,
+                        p_value=float("nan"),
+                        t_stat=float("nan"),
+                        std_error=float("nan"),
+                        num_missing_values=-1,  # -1 indicates arm analysis not available
+                    )
+                )
         metric_analyses.append(MetricAnalysis(metric_name=metric_name, metric=metric, arm_analyses=arm_analyses))
 
     return FreqExperimentAnalysisResponse(
