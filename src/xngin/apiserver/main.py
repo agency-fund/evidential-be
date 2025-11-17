@@ -58,12 +58,30 @@ auth_dependencies.setup(app)
 app.openapi = lambda: custom_openapi(app)  # type: ignore[method-assign]
 
 
+def main_dev():
+    """Entrypoint for instances of this service running in development environments.
+
+    This is used instead of `fastapi dev` because it starts faster.
+    """
+    logger.info(f"Starting Uvicorn for development: {__name__}.main_dev.")
+    uvicorn.run(
+        "xngin.apiserver.main:app",
+        host="127.0.0.1",
+        port=8000,
+        reload=True,
+        proxy_headers=False,
+        reload_dirs=["src"],
+        reload_excludes=["test_*"],
+        log_config={"version": 1, "disable_existing_loggers": False},
+    )
+
+
 def main_live():
     """Entrypoint for instances of this service running in environments where structured logging is desired.
 
     This is equivalent to the default `fastapi run` CLI behavior.
     """
-    logger.info(f"Starting Uvicorn from custom entrypoint: {__name__}.main_live.")
+    logger.info(f"Starting Uvicorn for live deployments: {__name__}.main_live.")
     # This replicates the `fastapi run` CLI behavior and also disables Uvicorn's default logging behavior.
     uvicorn.run(
         "xngin.apiserver.main:app",
