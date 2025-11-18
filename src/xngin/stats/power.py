@@ -113,12 +113,13 @@ def analyze_metric_power(
     else:
         # For unbalanced arms, we need to calculate based on the ratio of treatment to control
         # Convert weights (sum to 100) to probabilities
-        probs = [w / 100.0 for w in arm_weights]
+        sum_weights = sum(arm_weights)
+        weights = [w / sum_weights for w in arm_weights]
         # We always assume the first arm is control.
-        control_prob = probs[0]
+        control_prob = weights[0]
         # Use the largest treatment arm for a conservative estimate.
         # (larger ratio requires a larger total sample size)
-        max_treatment_prob = max(probs[1:])
+        max_treatment_prob = max(weights[1:])
         ratio = max_treatment_prob / control_prob
         power_analysis = sms.TTestIndPower()
         # solve_power returns the required sample size for the control group
@@ -171,9 +172,10 @@ def analyze_metric_power(
             ratio = 1.0
             control_n_available = metric.available_n // n_arms
         else:
-            probs = [w / 100.0 for w in arm_weights]
-            control_prob = probs[0]
-            max_treatment_prob = max(probs[1:])
+            sum_weights = sum(arm_weights)
+            weights = [w / sum_weights for w in arm_weights]
+            control_prob = weights[0]
+            max_treatment_prob = max(weights[1:])
             ratio = max_treatment_prob / control_prob
             control_n_available = int(metric.available_n * control_prob)
 

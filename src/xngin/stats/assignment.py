@@ -169,34 +169,34 @@ def simple_random_assignment(
         List of treatment ids
     """
     rng = np.random.default_rng(random_state)
+    treatment_ids = list(range(n_arms))
 
+    # Create the treatment mask, an array with the right arm index proportions that we'll shuffle to
+    # get the random assignments for all rows.
     if arm_weights is not None:
         # Convert weights to probabilities
-        probs = [w / 100.0 for w in arm_weights]
-        # Create treatment ids based on weights
-        treatment_ids = list(range(n_arms))
-        n_samples = len(df)
+        sum_weights = sum(arm_weights)
+        weights = [w / sum_weights for w in arm_weights]
 
         # Use "largest remainder method" for fair allocation with rounding
-        exact_counts = [n_samples * p for p in probs]
+        n_samples = len(df)
+        exact_counts = [n_samples * w for w in weights]
         arm_counts = [int(np.floor(count)) for count in exact_counts]
         remainders = [exact - arm for exact, arm in zip(exact_counts, arm_counts, strict=True)]
 
         # Allocate remaining samples to arms with largest remainders
         remaining = n_samples - sum(arm_counts)
         if remaining > 0:
-            # Get indices sorted by remainder (descending)
-            indices_by_remainder = sorted(range(n_arms), key=lambda i: remainders[i], reverse=True)
+            # Get indices sorted descending by remainder
+            indices_by_remainder = sorted(treatment_ids, key=lambda i: remainders[i], reverse=True)
             for i in range(remaining):
                 arm_counts[indices_by_remainder[i]] += 1
 
-        # Create the treatment mask
-        treatment_mask = np.concatenate([np.full(count, arm_id) for arm_id, count in enumerate(arm_counts)])
-        rng.shuffle(treatment_mask)
+        # Create the treatment mask now that we know exactly how many items to assign to each arm.
+        treatment_mask = np.concatenate([np.full(count, arm_index) for arm_index, count in enumerate(arm_counts)])
     else:
         # Create an equal number of treatment ids for each arm and shuffle to ensure arms are as balanced as possible.
-        treatment_ids = list(range(n_arms))
         treatment_mask = np.repeat(treatment_ids, np.ceil(len(df) / n_arms))
-        rng.shuffle(treatment_mask)
 
+    rng.shuffle(treatment_mask)
     return [int(x) for x in treatment_mask[: len(df)]]
