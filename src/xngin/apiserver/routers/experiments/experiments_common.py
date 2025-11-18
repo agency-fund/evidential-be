@@ -765,14 +765,19 @@ async def create_assignment_for_participant(
             # Equal allocation - use simple random choice
             # Sort by arm name to ensure deterministic assignment with seed for tests.
             sorted_arms = sorted(experiment.arms, key=lambda a: a.name)
-            chosen_arm = random_choice(sorted_arms, seed=random_state)
+            arm_weights_sorted = None
 
-            # Check if the experiment has arm weights (for unbalanced allocation)
-            design_spec = ExperimentStorageConverter(experiment).get_design_spec()
-            if isinstance(design_spec, BaseFrequentistDesignSpec) and design_spec.arm_weights is not None:
-                # TODO: Use weighted random selection
-                pass
+            if experiment.arm_weights is not None:
+                # Weighted random selection. First convert to probabilities.
+                sum_weights = sum(experiment.arm_weights)
+                weights = [w / sum_weights for w in experiment.arm_weights]
+                # Get weights in the same order as sorted_arms.
+                arm_id_to_weight = {arm.id: w for arm, w in zip(experiment.arms, weights, strict=True)}
+                arm_weights_sorted = [arm_id_to_weight[arm.id] for arm in sorted_arms]
 
+            rng = np.random.default_rng(random_state)
+            index = rng.choice(len(sorted_arms), p=arm_weights_sorted)
+            chosen_arm = sorted_arms[index]
         case ExperimentsType.MAB_ONLINE | ExperimentsType.CMAB_ONLINE:
             chosen_arm = choose_bandit_arm(
                 experiment=experiment,
