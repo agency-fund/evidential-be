@@ -144,13 +144,11 @@ jobs:
           uv run xngin-cli --help
           uv run xngin-cli export-json-schemas
           uv run xngin-cli validate-testing-settings ./src/xngin/apiserver/testdata/xngin.testing.settings.json
-          uv run xngin-cli validate-testing-settings ./src/xngin/apiserver/testdata/xngin.gha.settings.json
       - name: xngin-cli smoke tests
         env:
           DATABASE_URL: "postgresql+psycopg://postgres:postgres@localhost:5499/postgres?sslmode=disable"
           PGPASSWORD: postgres
         run: |
-          # These imports correspond to entries in xngin.gha.settings.json.
           uv run xngin-cli create-testing-dwh --dsn postgresql+psycopg://postgres@127.0.0.1:5499/postgres
           uv run xngin-cli create-testing-dwh --dsn postgresql+psycopg://postgres@127.0.0.1:5499/postgres \
             --schema-name alt --table-name=alt_table
