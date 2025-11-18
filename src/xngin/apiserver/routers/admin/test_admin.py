@@ -77,6 +77,8 @@ from xngin.apiserver.routers.common_api_types import (
     LikelihoodTypes,
     ListExperimentsResponse,
     MABExperimentSpec,
+    PowerRequest,
+    PowerResponse,
     PreassignedFrequentistExperimentSpec,
     PriorTypes,
 )
@@ -1147,6 +1149,54 @@ async def test_lifecycle_with_db(testing_datasource, ppost, ppatch, pget, pdelet
         f"/v1/m/datasources/{testing_datasource.ds.id}/experiments/{parsed_experiment_id}?allow_missing=true"
     )
     assert response.status_code == 204, response.content
+
+
+async def test_power_check_with_unbalanced_arms(testing_datasource_with_user, ppost):
+    """Test power check endpoint with balanced vs unbalanced arms."""
+    design_spec = PreassignedFrequentistExperimentSpec(
+        experiment_type=ExperimentsType.FREQ_PREASSIGNED,
+        participant_type="test_participant_type",
+        experiment_name="test power check",
+        description="test power check with unbalanced arms",
+        start_date=datetime(2024, 1, 1, tzinfo=UTC),
+        end_date=datetime.now(UTC) + timedelta(days=1),
+        arms=[
+            Arm(arm_name="control", arm_description="Control group"),
+            Arm(arm_name="treatment", arm_description="Treatment group"),
+        ],
+        metrics=[DesignSpecMetricRequest(field_name="current_income", metric_pct_change=0.1)],
+        strata=[],
+        filters=[],
+    )
+
+    # Call the power check endpoint
+    response = ppost(
+        f"/v1/m/datasources/{testing_datasource_with_user.ds.id}/power",
+        content=PowerRequest(design_spec=design_spec).model_dump_json(),
+    )
+
+    assert response.status_code == 200, response.content
+    power_response = PowerResponse.model_validate(response.json())
+    assert len(power_response.analyses) == 1
+    metric_analysis = power_response.analyses[0]
+    assert metric_analysis.metric_spec.field_name == "current_income"
+    assert metric_analysis.target_n == 474
+    assert metric_analysis.sufficient_n is True
+
+    # Now check with unbalanced arms
+    design_spec.arm_weights = [20.0, 80.0]
+    response = ppost(
+        f"/v1/m/datasources/{testing_datasource_with_user.ds.id}/power",
+        content=PowerRequest(design_spec=design_spec).model_dump_json(),
+    )
+
+    assert response.status_code == 200, response.content
+    power_response2 = PowerResponse.model_validate(response.json())
+    assert len(power_response2.analyses) == 1
+    metric_analysis2 = power_response2.analyses[0]
+    assert metric_analysis2.metric_spec.field_name == "current_income"
+    assert metric_analysis2.target_n is not None
+    assert metric_analysis2.target_n > metric_analysis.target_n  # Unbalanced design requires more participants
 
 
 async def test_create_experiment_with_invalid_design_url(xngin_session, testing_datasource_with_user, ppost):
