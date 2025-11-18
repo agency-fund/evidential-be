@@ -1731,13 +1731,9 @@ wheels = [
 [[package]]
 name = "stochatreat"
 version = "0.1.3"
-source = { registry = "https://pypi.org/simple" }
+source = { git = "https://github.com/agency-fund/stochatreat?rev=main#b55836db26edc45b43b56ec6d992614c46355981" }
 dependencies = [
     { name = "pandas", marker = "sys_platform == 'darwin' or sys_platform == 'linux'" },
-]
-sdist = { url = "https://files.pythonhosted.org/packages/68/90/94bca4356f1340db10b185486a5cab1695d8fe5887492871e2a22fe7dc28/stochatreat-0.1.3.tar.gz", hash = "sha256:9aff791e059d4023d6b634f8eb2c0d3403232f01133f7760b38f9f16aefec22a", size = 18707, upload-time = "2025-08-17T03:02:26.865Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/a9/f1/4617c6b3a4c1c5f8a6aa049a30445e6413523bb00b144f171d7ad9f26a49/stochatreat-0.1.3-py3-none-any.whl", hash = "sha256:04235633ef8eaea413fbcd8d96fd43ec850e214c78c42e5638e1c4f2ea212cf5", size = 8273, upload-time = "2025-08-17T03:02:25.42Z" },
 ]
 
 [[package]]
@@ -2062,7 +2058,7 @@ requires-dist = [
     { name = "sqlalchemy", extras = ["asyncio"], specifier = ">=2.0.44,<2.1" },
     { name = "sqlalchemy-bigquery", specifier = ">=1.12.0,<2" },
     { name = "statsmodels", specifier = ">=0.14.5,<0.20" },
-    { name = "stochatreat", specifier = ">=0.1.0,<0.2.0" },
+    { name = "stochatreat", git = "https://github.com/agency-fund/stochatreat?rev=main" },
     { name = "typer", specifier = ">=0.20.0,<0.21.0" },
     { name = "uvicorn", extras = ["standard"], specifier = ">=0.38.0" },
     { name = "zstandard", specifier = ">=0.25.0,<0.26" },
