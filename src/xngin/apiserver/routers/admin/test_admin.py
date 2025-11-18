@@ -1,6 +1,7 @@
 import base64
 import copy
 import json
+import math
 from datetime import UTC, datetime, timedelta
 from urllib.parse import urlparse
 
@@ -1197,6 +1198,23 @@ async def test_power_check_with_unbalanced_arms(testing_datasource_with_user, pp
     assert metric_analysis2.metric_spec.field_name == "current_income"
     assert metric_analysis2.target_n is not None
     assert metric_analysis2.target_n > metric_analysis.target_n  # Unbalanced design requires more participants
+
+    # And again with three arms
+    design_spec.arms = [*design_spec.arms, Arm(arm_name="arm3", arm_description="Arm 3")]
+    design_spec.arm_weights = [15, 60, 25]
+    response = ppost(
+        f"/v1/m/datasources/{testing_datasource_with_user.ds.id}/power",
+        content=PowerRequest(design_spec=design_spec).model_dump_json(),
+    )
+
+    assert response.status_code == 200, response.content
+    power_response3 = PowerResponse.model_validate(response.json())
+    assert len(power_response3.analyses) == 1
+    metric_analysis3 = power_response3.analyses[0]
+    assert metric_analysis3.metric_spec.field_name == "current_income"
+    assert metric_analysis3.target_n is not None
+    # Max ratio is still 4:1 as in case 2, but the control is now 15% of the total instead of 20%.
+    assert metric_analysis3.target_n == math.ceil(metric_analysis2.target_n * 0.2 / 0.15)
 
 
 async def test_create_experiment_with_invalid_design_url(xngin_session, testing_datasource_with_user, ppost):
