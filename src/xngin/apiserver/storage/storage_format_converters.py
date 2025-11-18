@@ -119,7 +119,6 @@ class ExperimentStorageConverter:
             strata=storage_strata,
             metrics=storage_metrics,
             filters=storage_filters,
-            arm_weights=design_spec.arm_weights,
         ).model_dump(mode="json")
         return self
 
@@ -162,7 +161,7 @@ class ExperimentStorageConverter:
                 "strata": ExperimentStorageConverter.get_api_strata(design_spec_fields),
                 "metrics": ExperimentStorageConverter.get_api_metrics(design_spec_fields),
                 "filters": ExperimentStorageConverter.get_api_filters(design_spec_fields),
-                "arm_weights": design_spec_fields.arm_weights,
+                "arm_weights": self.experiment.arm_weights,
                 "power": self.experiment.power,
                 "alpha": self.experiment.alpha,
                 "fstat_thresh": self.experiment.fstat_thresh,
@@ -315,6 +314,7 @@ class ExperimentStorageConverter:
             experiment.power = design_spec.power
             experiment.alpha = design_spec.alpha
             experiment.fstat_thresh = design_spec.fstat_thresh
+            experiment.arm_weights = design_spec.arm_weights
 
             experiment.arms = [
                 tables.Arm(
