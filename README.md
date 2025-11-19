@@ -19,9 +19,9 @@
 | src/xngin/apiserver/dwh/test\_dialect\_sql.py                        |       79 |        6 |     92% |560, 573, 576-579 |
 | src/xngin/apiserver/dwh/test\_queries.py                             |      280 |        3 |     99% |214, 668, 685 |
 | src/xngin/apiserver/exceptionhandlers.py                             |       49 |        9 |     82% |31, 35, 43, 51-56, 70 |
-| src/xngin/apiserver/flags.py                                         |       41 |        2 |     95% |    72, 75 |
+| src/xngin/apiserver/flags.py                                         |       49 |        4 |     92% |67, 70, 88, 91 |
 | src/xngin/apiserver/main.py                                          |       36 |        5 |     86% |39, 66-67, 84-86 |
-| src/xngin/apiserver/openapi.py                                       |       24 |       13 |     46% |     19-71 |
+| src/xngin/apiserver/openapi.py                                       |       24 |       13 |     46% |     19-79 |
 | src/xngin/apiserver/request\_encapsulation\_middleware.py            |       63 |        3 |     95% |   103-105 |
 | src/xngin/apiserver/routers/admin/admin\_api.py                      |      558 |      291 |     48% |173, 203-206, 238-241, 266-269, 283-287, 299, 310, 314, 323, 340, 356-367, 387-400, 441-453, 470, 492, 503, 518-531, 551-561, 593-608, 626-641, 676-688, 692-705, 725-741, 787-793, 810-818, 847-858, 883-893, 904-923, 934-935, 954-961, 967-973, 993-1004, 1021, 1071-1081, 1097-1183, 1195, 1210-1231, 1256-1262, 1316-1321, 1374-1383, 1413-1438, 1455-1473, 1500-1501, 1516-1517, 1528, 1542-1548, 1559-1565, 1582-1589, 1624-1626, 1645-1668, 1708-1711, 1714-1723, 1734-1760, 1771-1775 |
 | src/xngin/apiserver/routers/admin/admin\_api\_converters.py          |       62 |       16 |     74% |29, 73-74, 84, 110-111, 118, 123-124, 138-144 |
@@ -66,7 +66,7 @@
 | src/xngin/xsecrets/secretservice.py                                  |       61 |        4 |     93% |42-43, 101, 123 |
 | src/xngin/xsecrets/test\_gcp\_kms\_provider.py                       |      103 |       26 |     75% |40-42, 170-175, 182-189, 195-199, 206, 213-224 |
 | src/xngin/xsecrets/test\_nacl\_provider.py                           |       67 |        1 |     99% |        24 |
-|                                                            **TOTAL** | **8621** |  **956** | **89%** |           |
+|                                                            **TOTAL** | **8629** |  **958** | **89%** |           |
 
 56 files skipped due to complete coverage.
 
