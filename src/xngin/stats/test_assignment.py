@@ -363,11 +363,11 @@ def test_assign_treatment_equal_weight_three_arms(sample_df):
     assert result.balance_result.f_pvalue > 0.2
 
 
-def test_assign_treatment_unbalanced_three_arms(sample_df):
+def test_assign_treatment_unbalanced_three_arms_with_simple_random_assignment(sample_df):
     """Test assignment with unbalanced three arms using largest remainder method."""
     result = assign_treatment_and_check_balance(
         df=sample_df,
-        stratum_cols=["gender"],
+        stratum_cols=[],  # can't stratify if we want to internally use simple_random_assignment
         id_col="id",
         n_arms=3,
         random_state=42,
@@ -380,12 +380,11 @@ def test_assign_treatment_unbalanced_three_arms(sample_df):
     assert set(result.treatment_ids) == {0, 1, 2}
     assert len(result.treatment_ids) == len(sample_df)
     # Check proportions
-    assert result.treatment_ids.count(0) == 144
-    assert result.treatment_ids.count(1) == 428
-    assert result.treatment_ids.count(2) == 428
-    # Check balance
-    assert isinstance(result.balance_result, BalanceResult)
-    assert result.balance_result.f_pvalue > 0.2
+    assert result.treatment_ids.count(0) == 143  # has biggest remainder so gets allocated +1
+    assert result.treatment_ids.count(1) == 429  # has second biggest remainder so gets allocated +1
+    assert result.treatment_ids.count(2) == 428  # no more remaining to allocate at this point
+    # No balance result since we're using simple random assignment
+    assert result.balance_result is None
 
 
 def test_simple_random_assignment_unbalanced(sample_df):
