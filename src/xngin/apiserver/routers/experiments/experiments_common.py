@@ -709,6 +709,28 @@ async def get_or_create_assignment_for_participant(
     )
 
 
+def choose_online_arm(
+    experiment: tables.Experiment,
+    random_state: int | None = None,
+) -> tables.Arm:
+    """Choose an arm for online experiments using simple or weighted random assignment depending on its design."""
+    # Sort by arm name to ensure deterministic assignment with seed for tests.
+    sorted_arms = sorted(experiment.arms, key=lambda a: a.name)
+    arm_weights_sorted = None
+
+    if experiment.arm_weights is not None:
+        # Weighted random selection. First convert to probabilities.
+        sum_weights = sum(experiment.arm_weights)
+        weights = [w / sum_weights for w in experiment.arm_weights]
+        # Get weights in the same order as sorted_arms.
+        arm_id_to_weight = {arm.id: w for arm, w in zip(experiment.arms, weights, strict=True)}
+        arm_weights_sorted = [arm_id_to_weight[arm.id] for arm in sorted_arms]
+
+    rng = np.random.default_rng(random_state)
+    index = rng.choice(len(sorted_arms), p=arm_weights_sorted)
+    return sorted_arms[index]
+
+
 async def create_assignment_for_participant(
     xngin_session: AsyncSession,
     experiment: tables.Experiment,
@@ -762,22 +784,7 @@ async def create_assignment_for_participant(
     # with simple random assignment or weighted random assignment if arm_weights are specified.
     match experiment_type:
         case ExperimentsType.FREQ_ONLINE | ExperimentsType.BAYESAB_ONLINE:
-            # Equal allocation - use simple random choice
-            # Sort by arm name to ensure deterministic assignment with seed for tests.
-            sorted_arms = sorted(experiment.arms, key=lambda a: a.name)
-            arm_weights_sorted = None
-
-            if experiment.arm_weights is not None:
-                # Weighted random selection. First convert to probabilities.
-                sum_weights = sum(experiment.arm_weights)
-                weights = [w / sum_weights for w in experiment.arm_weights]
-                # Get weights in the same order as sorted_arms.
-                arm_id_to_weight = {arm.id: w for arm, w in zip(experiment.arms, weights, strict=True)}
-                arm_weights_sorted = [arm_id_to_weight[arm.id] for arm in sorted_arms]
-
-            rng = np.random.default_rng(random_state)
-            index = rng.choice(len(sorted_arms), p=arm_weights_sorted)
-            chosen_arm = sorted_arms[index]
+            chosen_arm = choose_online_arm(experiment=experiment, random_state=random_state)
         case ExperimentsType.MAB_ONLINE | ExperimentsType.CMAB_ONLINE:
             chosen_arm = choose_bandit_arm(
                 experiment=experiment,
