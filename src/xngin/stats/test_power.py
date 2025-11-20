@@ -211,3 +211,113 @@ def test_analyze_metric_zero_stddev_returns_friendly_error():
     assert result.msg is not None
     assert result.msg.type == MetricPowerAnalysisMessageType.ZERO_STDDEV
     assert "There is no variation in the metric" in result.msg.msg
+
+
+def test_analyze_metric_power_unbalanced_two_arms():
+    """Test power calculation for unbalanced arms (20-80 split).
+
+    (c.f. test_analyze_metric_power_numeric for balanced case)
+    """
+    metric = DesignSpecMetric(
+        field_name="test_metric",
+        metric_type=MetricType.NUMERIC,
+        metric_baseline=100,
+        metric_target=110,
+        metric_stddev=20,
+        available_nonnull_n=1000,
+        available_n=1000,
+    )
+
+    # 20-80 split: control gets 20%, treatment gets 80%
+    result = analyze_metric_power(metric, n_arms=2, arm_weights=[20.0, 80.0])
+
+    assert result.metric_spec.field_name == "test_metric"
+    assert result.target_n is not None
+    # Unbalanced design (ratio=80/20) requires more total participants than the balanced case above.
+    assert result.target_n == 200
+    assert result.sufficient_n
+    assert result.msg is not None
+    assert result.msg.type == MetricPowerAnalysisMessageType.SUFFICIENT
+
+
+def test_analyze_metric_power_unbalanced_three_arms():
+    """Test power calculation with unbalanced three arms (20-20-60 split)"""
+    metric = DesignSpecMetric(
+        field_name="test_metric",
+        metric_type=MetricType.NUMERIC,
+        metric_baseline=100,
+        metric_target=110,
+        metric_stddev=20,
+        available_nonnull_n=1000,
+        available_n=1000,
+    )
+
+    result = analyze_metric_power(metric, n_arms=3, arm_weights=[20.0, 20.0, 60.0])
+
+    assert result.metric_spec.field_name == "test_metric"
+    # With ratio=3 (60/20), we need more than a balanced 3-arm case.
+    assert result.target_n == 215
+    assert result.sufficient_n
+    assert result.msg is not None
+    assert result.msg.type == MetricPowerAnalysisMessageType.SUFFICIENT
+
+
+def test_analyze_metric_power_unbalanced_binary():
+    """Test power calculation for unbalanced arms for binary metric.
+
+    (c.f. test_analyze_metric_power_binary for balanced case)
+    """
+    metric = DesignSpecMetric(
+        field_name="test_metric",
+        metric_type=MetricType.BINARY,
+        metric_baseline=0.5,
+        metric_target=0.55,
+        available_nonnull_n=5000,
+        available_n=5000,
+    )
+
+    result = analyze_metric_power(metric, n_arms=2, arm_weights=[33.3, 66.7])
+
+    assert result.metric_spec.metric_type == MetricType.BINARY
+    assert result.target_n is not None
+    # Unbalanced requires more than the balanced case above.
+    assert result.target_n == 3526
+    assert result.sufficient_n
+    assert result.msg is not None
+    assert result.msg.type == MetricPowerAnalysisMessageType.SUFFICIENT
+
+
+def test_check_power_unbalanced():
+    """Test check_power with unbalanced arms"""
+    metrics = [
+        DesignSpecMetric(
+            field_name="metric1",
+            metric_type=MetricType.NUMERIC,
+            metric_baseline=100,
+            metric_target=110,
+            metric_stddev=20,
+            available_nonnull_n=1000,
+            available_n=1000,
+        ),
+        DesignSpecMetric(
+            field_name="metric2",
+            metric_type=MetricType.BINARY,
+            metric_baseline=0.5,
+            metric_target=0.55,
+            available_nonnull_n=5000,
+            available_n=5000,
+        ),
+    ]
+
+    results = check_power(metrics, n_arms=2, arm_weights=[20, 80])
+
+    assert len(results) == 2
+    assert results[0].metric_spec.field_name == "metric1"
+    assert results[1].metric_spec.field_name == "metric2"
+    # Both should have sufficient power
+    assert results[0].sufficient_n
+    assert results[1].sufficient_n
+    # Same as test_analyze_metric_power_unbalanced_two_arms since it's the same params.
+    assert results[0].target_n == 200
+    # Even larger than test_analyze_metric_power_unbalanced_binary since the ratio is also larger.
+    assert results[1].target_n == 4895

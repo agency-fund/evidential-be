@@ -23,7 +23,11 @@ def _power_analysis_error(
 
 
 def analyze_metric_power(
-    metric: DesignSpecMetric, n_arms: int, power: float = 0.8, alpha: float = 0.05
+    metric: DesignSpecMetric,
+    n_arms: int,
+    power: float = 0.8,
+    alpha: float = 0.05,
+    arm_weights: list[float] | None = None,
 ) -> MetricPowerAnalysis:
     """
     Analyze power for a single metric.
@@ -33,6 +37,8 @@ def analyze_metric_power(
         n_arms: Number of treatment arms
         power: Desired statistical power
         alpha: Significance level
+        arm_weights: Optional list of weights (summing to 100) for unbalanced arms.
+                     If None, assumes equal allocation.
 
     Returns:
         MetricPowerAnalysis containing power analysis results
@@ -89,19 +95,34 @@ def analyze_metric_power(
             "Cannot detect an effect-size of 0. Try changing your effect-size.",
         )
 
-    power_analysis = sms.TTestIndPower()
-    target_n = (
-        np.ceil(
-            power_analysis.solve_power(
-                effect_size=effect_size,
-                alpha=alpha,
-                power=power,
-                ratio=1,
-            )
-        )
-        * n_arms
-    )
+    # Calculate sample size based on arm allocation
+    arm_ratio = 1.0  # default represents equal allocation
+    control_prob = 1.0 / n_arms
+    if arm_weights is not None:
+        # For unbalanced arms, we need to calculate based on the ratio of treatment to control
+        # Convert weights (sum to 100) to probabilities
+        sum_weights = sum(arm_weights)
+        weights = [w / sum_weights for w in arm_weights]
+        # We always assume the first arm is control.
+        control_prob = weights[0]
+        # Use the largest treatment arm for a conservative estimate.
+        # (larger ratio requires a larger total sample size)
+        max_treatment_prob = max(weights[1:])
+        arm_ratio = max_treatment_prob / control_prob
 
+    # solve_power returns the required sample size for the control group
+    power_analysis = sms.TTestIndPower()
+    control_n = np.ceil(
+        power_analysis.solve_power(
+            effect_size=effect_size,
+            alpha=alpha,
+            power=power,
+            ratio=arm_ratio,
+        )
+    )
+    target_n = int(np.ceil(control_n / control_prob))
+
+    # Prep the response object
     analysis = MetricPowerAnalysis(metric_spec=metric)
     analysis.target_n = int(target_n)
     analysis.sufficient_n = bool(target_n <= metric.available_n)
@@ -135,15 +156,18 @@ def analyze_metric_power(
         msg_body = "There are enough units available."
     else:
         msg_type = MetricPowerAnalysisMessageType.INSUFFICIENT
-        # Calculate needed target if insufficient sample
+        # Calculate the Minimum Detectable Effect that meets the power spec with the available subjects.
+        control_n_available = int(metric.available_n * control_prob)
+
         if metric.metric_type == MetricType.NUMERIC:
             power_analysis = sms.TTestIndPower()
             needed_delta = (
                 power_analysis.solve_power(
-                    nobs1=metric.available_n // n_arms,
+                    nobs1=control_n_available,
                     effect_size=None,
                     alpha=alpha,
                     power=power,
+                    ratio=arm_ratio,
                 )
                 * metric.metric_stddev
             )
@@ -152,10 +176,10 @@ def analyze_metric_power(
             power_analysis = sms.NormalIndPower()
             # Calculate minimum detectable effect size given sample size
             min_effect_size = power_analysis.solve_power(
-                nobs1=metric.available_n // n_arms,
+                nobs1=control_n_available,
                 alpha=alpha,
                 power=power,
-                ratio=1,
+                ratio=arm_ratio,
             )
 
             # Convert Cohen's h back to proportion
@@ -197,6 +221,7 @@ def check_power(
     n_arms: int,
     power: float = 0.8,
     alpha: float = 0.05,
+    arm_weights: list[float] | None = None,
 ) -> list[MetricPowerAnalysis]:
     """
     Check power for multiple metrics.
@@ -206,6 +231,7 @@ def check_power(
         n_arms: Number of treatment arms
         power: Desired statistical power
         alpha: Significance level
+        arm_weights: Optional list of weights (summing to 100) for unbalanced arms
 
     Returns:
         List of MetricPowerAnalysis results
@@ -213,7 +239,7 @@ def check_power(
     analyses = []
     for metric in metrics:
         try:
-            analyses.append(analyze_metric_power(metric, n_arms, power, alpha))
+            analyses.append(analyze_metric_power(metric, n_arms, power, alpha, arm_weights))
         except ValueError as verr:
             raise StatsPowerError(verr, metric) from verr
     return analyses

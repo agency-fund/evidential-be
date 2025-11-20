@@ -405,6 +405,8 @@ class Experiment(Base):
     reward_type: Mapped[str | None] = mapped_column()
 
     # Frequentist config params
+    # Optional weights for unequal arm sizes. Weights must be floats in (0, 100) and sum to 100.
+    arm_weights: Mapped[list[float] | None] = mapped_column(ARRAY(Float))
     # JSON serialized form of an experiment's specified dwh fields used for strata/metrics/filters.
     design_spec_fields: Mapped[dict | None] = mapped_column(postgresql.JSONB)
     # JSON serialized form of a PowerResponse. Not required since some experiments may not have data to run

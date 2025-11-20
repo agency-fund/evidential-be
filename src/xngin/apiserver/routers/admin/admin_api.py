@@ -1763,6 +1763,7 @@ async def power_check(
             n_arms=len(design_spec.arms),
             power=design_spec.power,
             alpha=design_spec.alpha,
+            arm_weights=design_spec.arm_weights,
         )
     )
 

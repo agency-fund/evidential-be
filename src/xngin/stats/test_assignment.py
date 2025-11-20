@@ -311,3 +311,94 @@ def test_assign_treatment_with_bigints_as_participant_ids(sample_df):
     # If stochatreat silently upcasted int64 to float64, we'd lose assignments for both the bigints
     # above, as they would not join back with any of the original ids in the df.
     assert len(result.treatment_ids) == len(sample_df)
+
+
+def test_assign_treatment_unbalanced_arms(sample_df):
+    """Test assignment with unbalanced arms (20-80 split)."""
+    result = assign_treatment_and_check_balance(
+        df=sample_df,
+        stratum_cols=["gender", "region"],
+        id_col="id",
+        n_arms=2,
+        random_state=42,
+        arm_weights=[20, 80],
+    )
+
+    # Check lengths and valid assignments
+    assert len(result.treatment_ids) == len(sample_df)
+    assert set(result.treatment_ids) == {0, 1}
+    assert result.stratum_ids
+    assert len(result.stratum_ids) == len(sample_df)
+    assert result.orig_stratum_cols == ["gender", "region"]
+    # Check proportions
+    n_control = result.treatment_ids.count(0)
+    n_treatment = result.treatment_ids.count(1)
+    assert n_control == 201
+    assert n_treatment == 799
+    # Check balance result structure
+    assert isinstance(result.balance_result, BalanceResult)
+    assert result.balance_result.f_statistic > 0
+    assert result.balance_result.f_pvalue > 0.2
+
+
+def test_assign_treatment_equal_weight_three_arms(sample_df):
+    """Test assignment with ~equal weights for three arms."""
+    result = assign_treatment_and_check_balance(
+        df=sample_df,
+        stratum_cols=["gender"],
+        id_col="id",
+        n_arms=3,
+        random_state=42,
+        arm_weights=[100 / 3.0, 100 / 3.0, 100 / 3.0],
+    )
+
+    # Check that all three arms are represented
+    assert set(result.treatment_ids) == {0, 1, 2}
+    assert len(result.treatment_ids) == len(sample_df)
+    # Check proportions
+    lengths = sorted([result.treatment_ids.count(i) for i in range(3)])
+    assert lengths == [333, 333, 334]
+    # Check balance
+    assert isinstance(result.balance_result, BalanceResult)
+    assert result.balance_result.f_pvalue > 0.2
+
+
+def test_assign_treatment_unbalanced_three_arms_with_simple_random_assignment(sample_df):
+    """Test assignment with unbalanced three arms using largest remainder method."""
+    result = assign_treatment_and_check_balance(
+        df=sample_df,
+        stratum_cols=[],  # can't stratify if we want to internally use simple_random_assignment
+        id_col="id",
+        n_arms=3,
+        random_state=42,
+        # TODO: use these more challenging weights after fixing stochatreat's rounding issues.
+        # arm_weights=[14.28, 42.86, 42.86],  # approximating a 1/7 - 3/7 - 3/7 split
+        arm_weights=[100 / 7.0, 300 / 7.0, 300 / 7.0],
+    )
+
+    # Check that all three arms are represented
+    assert set(result.treatment_ids) == {0, 1, 2}
+    assert len(result.treatment_ids) == len(sample_df)
+    # Check proportions
+    assert result.treatment_ids.count(0) == 143  # has biggest remainder so gets allocated +1
+    assert result.treatment_ids.count(1) == 429  # has second biggest remainder so gets allocated +1
+    assert result.treatment_ids.count(2) == 428  # no more remaining to allocate at this point
+    # No balance result since we're using simple random assignment
+    assert result.balance_result is None
+
+
+def test_simple_random_assignment_unbalanced(sample_df):
+    """Test simple random assignment with unbalanced arms."""
+    assignments = simple_random_assignment(sample_df, n_arms=2, random_state=42, arm_weights=[30, 70])
+    n_control = assignments.count(0)
+    n_treatment = assignments.count(1)
+    assert set(assignments) == {0, 1}
+    assert len(assignments) == len(sample_df)
+    assert n_control == 300
+    assert n_treatment == 700
+
+    # Now test with weights where the sample size is not perfectly divisible.
+    assignments = simple_random_assignment(sample_df, n_arms=2, random_state=42, arm_weights=[66.67, 33.33])
+    assert len(assignments) == len(sample_df)
+    assert assignments.count(0) == 667
+    assert assignments.count(1) == 333

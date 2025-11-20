@@ -33,6 +33,7 @@ def assign_treatment_and_check_balance(
     n_arms: int,
     quantiles: int = 4,
     random_state: int | None = None,
+    arm_weights: list[float] | None = None,
 ) -> AssignmentResult:
     """
     Perform stratified random assignment and do a balance check of the arm assignments.
@@ -47,6 +48,8 @@ def assign_treatment_and_check_balance(
         n_arms: Number of arms in your experiment
         quantiles: number of buckets to use for stratification of numerics
         random_state: Random seed for reproducibility
+        arm_weights: Optional list of weights (summing to 100) for unbalanced arm allocation.
+                     If None, uses equal allocation.
 
     Returns:
         AssignmentResult containing:
@@ -59,7 +62,7 @@ def assign_treatment_and_check_balance(
     """
     if len(stratum_cols) == 0:
         # No stratification, so use simple random assignment
-        treatment_ids = simple_random_assignment(df, n_arms, random_state)
+        treatment_ids = simple_random_assignment(df, n_arms, random_state, arm_weights)
         return AssignmentResult(
             treatment_ids=treatment_ids,
             stratum_ids=None,
@@ -84,7 +87,7 @@ def assign_treatment_and_check_balance(
     if len(post_stratum_cols) == 0:
         # No stratification, so use simple random assignment while still outputting strata, even
         # though they're either all the same value or all unique values.
-        treatment_ids = simple_random_assignment(df, n_arms, random_state)
+        treatment_ids = simple_random_assignment(df, n_arms, random_state, arm_weights)
         return AssignmentResult(
             treatment_ids=treatment_ids,
             stratum_ids=None,
@@ -93,14 +96,19 @@ def assign_treatment_and_check_balance(
         )
 
     # Do stratified random assignment
-    # TODO: when we support unequal arm assignments, be careful about ensuring the right treatment
-    # assignment id is mapped to the right arm_name.
+    # Calculate probabilities from weights or use equal allocation
+    if arm_weights is not None:
+        total_weight = sum(arm_weights)
+        probs = [w / total_weight for w in arm_weights]
+    else:
+        probs = [1 / n_arms] * n_arms
+
     treatment_status = stochatreat(
         data=df_cleaned,
         idx_col=id_col,
         stratum_cols=post_stratum_cols,
         treats=n_arms,
-        probs=[1 / n_arms] * n_arms,
+        probs=probs,
         # internally uses legacy np.random.RandomState which can take None
         random_state=random_state,  # type: ignore[arg-type]
     )
@@ -145,6 +153,7 @@ def simple_random_assignment(
     df: pd.DataFrame,
     n_arms: int,
     random_state: int | None = None,
+    arm_weights: list[float] | None = None,
 ) -> list[int]:
     """
     Perform simple random assignment of DataFrame rows into the given arms.
@@ -153,13 +162,41 @@ def simple_random_assignment(
         df: pandas DataFrame whose rows represent units to assign to arms.
         n_arms: Number of arms in your experiment
         random_state: Random seed for reproducibility
+        arm_weights: Optional list of weights (summing to 100) for unbalanced arm allocation.
+                     If None, uses equal allocation.
 
     Returns:
         List of treatment ids
     """
     rng = np.random.default_rng(random_state)
-    # Create an equal number of treatment ids for each arm and shuffle to ensure arms are as balanced as possible.
     treatment_ids = list(range(n_arms))
-    treatment_mask = np.repeat(treatment_ids, np.ceil(len(df) / n_arms))
+
+    # Create the treatment mask, an array with the right arm index proportions that we'll shuffle to
+    # get the random assignments for all rows.
+    if arm_weights is not None:
+        # Convert weights to probabilities
+        sum_weights = sum(arm_weights)
+        weights = [w / sum_weights for w in arm_weights]
+
+        # Use "largest remainder method" for fair allocation with rounding
+        n_samples = len(df)
+        exact_counts = [n_samples * w for w in weights]
+        arm_counts = [int(np.floor(count)) for count in exact_counts]
+        remainders = [exact - arm for exact, arm in zip(exact_counts, arm_counts, strict=True)]
+
+        # Allocate remaining samples to arms with largest remainders
+        remaining = n_samples - sum(arm_counts)
+        if remaining > 0:
+            # Get indices sorted descending by remainder
+            indices_by_remainder = sorted(treatment_ids, key=lambda i: remainders[i], reverse=True)
+            for i in range(remaining):
+                arm_counts[indices_by_remainder[i]] += 1
+
+        # Create the treatment mask now that we know exactly how many items to assign to each arm.
+        treatment_mask = np.concatenate([np.full(count, arm_index) for arm_index, count in enumerate(arm_counts)])
+    else:
+        # Create an equal number of treatment ids for each arm and shuffle to ensure arms are as balanced as possible.
+        treatment_mask = np.repeat(treatment_ids, np.ceil(len(df) / n_arms))
+
     rng.shuffle(treatment_mask)
     return [int(x) for x in treatment_mask[: len(df)]]
