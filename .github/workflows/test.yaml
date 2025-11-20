@@ -260,5 +260,5 @@ jobs:
         with:
           version: 3.x
           repo-token: ${{ secrets.GITHUB_TOKEN }}
-      - run: uv run pytest -k test_stochatreat_crossplatform_flakiness
+      - run: uv run pytest -k test_stochatreat_crossplatform_flakiness -rA
         continue-on-error: true

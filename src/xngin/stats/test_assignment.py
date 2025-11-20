@@ -187,7 +187,9 @@ def test_assign_treatment_decimal_strata_columns_may_cause_problems(sample_df):
     assign_treatment_and_check_balance(df=sample_df, stratum_cols=["decimal"], id_col="id", n_arms=2)
 
 
-@pytest.mark.parametrize("seed", range(5))
+# @pytest.mark.parametrize("seed", range(5))
+# Great, found that only 2 fails on a mac, but 2,0,4 all fail on ubuntu.
+@pytest.mark.parametrize("seed", list(range(1)))
 def test_stochatreat_crossplatform_flakiness(seed):
     """Test existence of flakiness due to unstable sorting internally in stochatreat."""
     rng = np.random.default_rng(seed)
