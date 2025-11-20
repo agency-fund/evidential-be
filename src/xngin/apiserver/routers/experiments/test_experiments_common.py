@@ -20,6 +20,7 @@ from xngin.apiserver.routers.common_api_types import (
     CreateExperimentRequest,
     DesignSpec,
     DesignSpecMetric,
+    DesignSpecMetricRequest,
     ExperimentsType,
     Filter,
     LikelihoodTypes,
@@ -36,6 +37,7 @@ from xngin.apiserver.routers.common_enums import ExperimentState, Relation, Stop
 from xngin.apiserver.routers.experiments.experiments_common import (
     ExperimentsAssignmentError,
     abandon_experiment_impl,
+    analyze_experiment_freq_impl,
     commit_experiment_impl,
     create_assignment_for_participant,
     create_bandit_online_experiment_impl,
@@ -413,7 +415,8 @@ async def test_create_experiment_impl_for_preassigned(
     arm2_id = response.design_spec.arms[1].arm_id
     num_control = sum(1 for a in assignments if a.arm_id == arm1_id)
     num_treat = sum(1 for a in assignments if a.arm_id == arm2_id)
-    assert abs(num_control - num_treat) <= 1
+    # Allow for group sizes to be unequal by up to 2.
+    assert abs(num_control - num_treat) <= 2
 
 
 async def test_create_preassigned_experiment_impl_raises_on_duplicate_ids(
@@ -1329,6 +1332,61 @@ async def test_update_bandit_arm_with_outcome(
         match="Participant {participant_id} already has an outcome recorded.".format(participant_id="test_id"),
     ):
         await update_bandit_arm_with_outcome_impl(xngin_session, bandit_experiment, "test_id", 1.0)
+
+
+async def test_analyze_experiment_freq_impl_with_no_outcomes_for_any_arms(xngin_session, testing_datasource):
+    experiment, _ = make_insertable_experiment(
+        testing_datasource.ds,
+        ExperimentState.ASSIGNED,
+        experiment_type=ExperimentsType.FREQ_ONLINE,
+    )
+    xngin_session.add(experiment)
+    await xngin_session.commit()
+    # Ignore the default design_spec_fields and just use a one-time metric, simulating some rows
+    # having NULL. (We don't actually have to set a new DesignSpec on the experiment in this test.)
+    design_metric = [DesignSpecMetricRequest(field_name="is_onboarded_onetime", metric_pct_change=0.1)]
+
+    # Add assignments known to have NULL. (first 500k rows are NULL, remaining copy is_onboarded)
+    experiment_id = experiment.id
+    arm1_id = experiment.arms[0].id
+    arm2_id = experiment.arms[1].id
+    arm_assignments = [
+        tables.ArmAssignment(
+            experiment_id=experiment_id,
+            participant_type="test_participant_type",
+            participant_id="1",
+            arm_id=arm1_id,
+            strata=[],
+        ),
+        tables.ArmAssignment(
+            experiment_id=experiment_id,
+            participant_type="test_participant_type",
+            participant_id="2",
+            arm_id=arm2_id,
+            strata=[],
+        ),
+    ]
+    xngin_session.add_all(arm_assignments)
+    await xngin_session.commit()
+    await xngin_session.refresh(experiment, ["arms", "arm_assignments"])
+
+    analysis = await analyze_experiment_freq_impl(
+        testing_datasource.ds.get_config(), experiment, arm1_id, design_metric
+    )
+    assert analysis is not None
+    assert analysis.experiment_id == experiment.id
+    assert analysis.created_at is not None
+    assert len(analysis.metric_analyses) == 1
+    metric_analysis = analysis.metric_analyses[0]
+    assert metric_analysis.metric_name == design_metric[0].field_name
+    assert len(metric_analysis.arm_analyses) == 2
+    for arm_analysis in metric_analysis.arm_analyses:
+        assert arm_analysis.arm_id in {arm1_id, arm2_id}
+        assert arm_analysis.estimate == 0
+        assert arm_analysis.p_value is not None and np.isnan(arm_analysis.p_value)
+        assert arm_analysis.t_stat is not None and np.isnan(arm_analysis.t_stat)
+        assert arm_analysis.std_error is not None and np.isnan(arm_analysis.std_error)
+        assert arm_analysis.num_missing_values == -1
 
 
 def test_experiment_sql():

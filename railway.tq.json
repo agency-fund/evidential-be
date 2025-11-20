@@ -10,7 +10,7 @@
       "atlas.hcl",
       "migrations/**",
       "pyproject.toml",
-      "railway.json",
+      "railway.tq.json",
       "src/**",
       "static/**",
       "uv.lock"

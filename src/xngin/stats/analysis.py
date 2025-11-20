@@ -31,7 +31,11 @@ def analyze_experiment(
     participant_outcomes: list of participant outcomes
     baseline_arm_id: which arm to use as baseline; if not provided, uses the first arm seen
 
-    Returns: map of metric name => map of arm_id => analysis results
+    Returns:
+        map of metric name => map of arm_id (may be partial or empty!) => analysis results
+        - If an arm is missing for a metric, it's because it had no valid data to process.
+        - If *zero* arm analyses exist for a metric (e.g. since zero non-null outcomes were found
+          across all arms), the name will exist, but the inner dict will be empty.
     """
 
     assignments_df = pd.DataFrame([
@@ -60,19 +64,27 @@ def analyze_experiment(
         arm_ids.insert(0, baseline_arm_id)
         merged_df["arm_id"] = merged_df["arm_id"].cat.reorder_categories(arm_ids)
 
-    metric_analyses: dict[str, dict[str, ArmAnalysisResult]] = {}
     metric_columns = [col for col in merged_df.columns if col not in {"arm_id", "participant_id"}]
 
     # Calculate NaN counts for all metrics. Since assignments_df may have participants that are not
     # yet in the dwh (e.g. in an online experiment) we're also counting missing participants as having NaN as well.
     nan_counts_df = merged_df.groupby("arm_id", observed=False)[metric_columns].agg(lambda s: s.isna().sum())
 
+    # Prep our dict of analyses to return.
+    metric_analyses: dict[str, dict[str, ArmAnalysisResult]] = {}
     for metric_name in metric_columns:
+        # First init this metric's empty dict of arm analyses.
+        arm_analyses: dict[str, ArmAnalysisResult] = {}
+        metric_analyses[metric_name] = arm_analyses
+        # If all arms have missing values for this metric, we can't perform the analysis.
+        # Let callers deal with this case, since even treatment_assignments may not have all arms yet.
+        if sum(nan_counts_df[metric_name]) == len(merged_df):
+            continue
+
         # smf.ols internally actually drops missing values by default (see Model.from_formula),
         # but make it explicit here for developer clarity.
-        model = smf.ols(f"{metric_name} ~ arm_id", data=merged_df, missing="drop").fit()
+        model = smf.ols(f"{metric_name} ~ arm_id", data=merged_df, missing="drop").fit(cov_type="HC1")
         arm_ids = model.model.data.design_info.factor_infos[EvalFactor("arm_id")].categories
-        arm_analyses: dict[str, ArmAnalysisResult] = {}
         for i, arm_id in enumerate(arm_ids):
             arm_analyses[arm_id] = ArmAnalysisResult(
                 is_baseline=i == 0 if baseline_arm_id is None else arm_id == baseline_arm_id,

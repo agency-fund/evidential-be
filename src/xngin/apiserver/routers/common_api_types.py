@@ -284,14 +284,16 @@ class ArmAnalysis(Arm):
             )
         ),
     ]
-    std_error: Annotated[float, Field(description="The standard error of the treatment effect estimate.")]
+    std_error: Annotated[float | None, Field(description="The standard error of the treatment effect estimate.")]
     num_missing_values: Annotated[
         int,
         Field(
+            ge=-1,
             description=(
                 "The number of participants assigned to this arm with missing values (NaNs) for this "
-                "metric. These rows are excluded from the analysis."
-            )
+                "metric. These rows are excluded from the analysis. -1 indicates arm analysis not "
+                "available due to all assignments missing outcomes for this metric."
+            ),
         ),
     ]
     is_baseline: Annotated[
@@ -299,7 +301,7 @@ class ArmAnalysis(Arm):
         Field(description="Whether this arm is the baseline/control arm for comparison."),
     ]
 
-    @field_serializer("t_stat", "p_value", when_used="json")
+    @field_serializer("t_stat", "p_value", "std_error", when_used="json")
     def serialize_float(self, v: float | None, _info):
         """Serialize floats to None when they are NaN, which becomes null in JSON."""
         if v is None or math.isnan(v):
@@ -390,28 +392,44 @@ class BanditArmAnalysis(ArmBandit):
 
     prior_pred_mean: Annotated[
         float,
-        Field(description="Posterior predictive mean for this arm."),
+        Field(description="Prior predictive mean for this arm."),
     ]
     prior_pred_stdev: Annotated[
         float,
-        Field(description="Posterior predictive standard deviation for this arm."),
+        Field(description="Prior predictive standard deviation for this arm."),
+    ]
+    prior_pred_ci_upper: Annotated[
+        float,
+        Field(description="Prior predictive upper bound of 95% confidence interval for this arm."),
+    ]
+    prior_pred_ci_lower: Annotated[
+        float,
+        Field(description="Prior predictive lower bound of 95% confidence interval for this arm."),
     ]
 
     post_pred_mean: Annotated[
         float,
-        Field(description="Posterior predictive mean for this arm."),
+        Field(description="Prior predictive mean for this arm."),
     ]
     post_pred_stdev: Annotated[
         float,
-        Field(description="Posterior predictive standard deviation for this arm."),
+        Field(description="Prior predictive standard deviation for this arm."),
+    ]
+    post_pred_ci_upper: Annotated[
+        float,
+        Field(description="Posterior predictive upper bound of 95% confidence interval for this arm."),
+    ]
+    post_pred_ci_lower: Annotated[
+        float,
+        Field(description="Posterior predictive lower bound of 95% confidence interval for this arm."),
     ]
 
 
 class MetricAnalysis(ApiBaseModel):
     """Describes the change in a single metric for each arm of an experiment."""
 
-    metric_name: str | None = None
-    metric: DesignSpecMetricRequest | None = None
+    metric_name: str
+    metric: DesignSpecMetricRequest
     arm_analyses: Annotated[
         list[ArmAnalysis],
         Field(description="The results of the analysis for each arm (coefficient) for this specific metric."),
@@ -739,21 +757,6 @@ class BaseDesignSpec(ApiBaseModel):
 
     # --- Experiment metadata ---
     participant_type: Annotated[str, Field(max_length=MAX_LENGTH_OF_NAME_VALUE)]
-
-    experiment_id: Annotated[
-        str | None,
-        Field(
-            deprecated=True,
-            description=(
-                "ID of the experiment. If creating a new experiment (POST /datasources/{datasource_id}/experiments), "
-                "this is generated for you and made available in the response; you should NOT set this. "
-                "Only generate ids of your own if using the stateless Experiment Design API as you will "
-                "do your own persistence. \n"
-                "DEPRECATED: This field is no longer used and will be removed in a future release. "
-                "Use the Create/GetExperimentResponse field directly."
-            ),
-        ),
-    ] = None
 
     experiment_type: Annotated[
         ExperimentsType,

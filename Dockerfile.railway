@@ -1,21 +1,22 @@
 # Defines a production runtime environment for the service hosted on Railway.
 # This is not for development uses.
-FROM python:3.12-bookworm
+FROM ghcr.io/astral-sh/uv:python3.12-bookworm
 ENV ATLAS_NO_ANON_TELEMETRY=true
 ENV PYTHONUNBUFFERED=1
 ENV UV_COMPILE_BYTECODE=1
 ENV UV_LINK_MODE=copy
 ENV UV_PYTHON_DOWNLOADS=0
-COPY --from=ghcr.io/astral-sh/uv:0.9.4 /uv /bin/uv
 WORKDIR /code
 COPY pyproject.toml .
 COPY uv.lock .
 # Note: Railway builders will error if the id= is set via build variables.
-RUN --mount=type=cache,id=s/53dd800c-90e7-49cd-b7f6-549131ff038e-/root/.cache/uv,target=/root/.cache/uv /bin/uv sync --frozen --no-install-project --no-dev
+RUN --mount=type=cache,id=s/53dd800c-90e7-49cd-b7f6-549131ff038e-/root/.cache/uv,target=/root/.cache/uv \
+    /usr/local/bin/uv sync --locked --no-install-project --no-dev
 COPY ./src /code/src
-RUN --mount=type=cache,id=s/53dd800c-90e7-49cd-b7f6-549131ff038e-/root/.cache/uv,target=/root/.cache/uv /bin/uv sync --frozen --no-dev
+RUN --mount=type=cache,id=s/53dd800c-90e7-49cd-b7f6-549131ff038e-/root/.cache/uv,target=/root/.cache/uv \
+    /usr/local/bin/uv sync --locked --no-dev
 # Atlas is invoked via Railway's preDeployCommand, configured in railway.json.
 ADD --chmod=555 https://release.ariga.io/atlas/atlas-linux-amd64-latest ./atlas
 COPY atlas.hcl .
 COPY ./migrations ./migrations
-CMD ["/bin/uv", "run", "--no-dev", "xngin-apiserver-live"]
+CMD ["./.venv/bin/xngin-apiserver-live"]
