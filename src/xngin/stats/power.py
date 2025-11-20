@@ -96,21 +96,9 @@ def analyze_metric_power(
         )
 
     # Calculate sample size based on arm allocation
-    if arm_weights is None:
-        # Equal allocation across arms
-        power_analysis = sms.TTestIndPower()
-        target_n = int(
-            np.ceil(
-                power_analysis.solve_power(
-                    effect_size=effect_size,
-                    alpha=alpha,
-                    power=power,
-                    ratio=1,
-                )
-            )
-            * n_arms
-        )
-    else:
+    arm_ratio = 1.0  # default represents equal allocation
+    control_prob = 1.0 / n_arms
+    if arm_weights is not None:
         # For unbalanced arms, we need to calculate based on the ratio of treatment to control
         # Convert weights (sum to 100) to probabilities
         sum_weights = sum(arm_weights)
@@ -120,20 +108,21 @@ def analyze_metric_power(
         # Use the largest treatment arm for a conservative estimate.
         # (larger ratio requires a larger total sample size)
         max_treatment_prob = max(weights[1:])
-        ratio = max_treatment_prob / control_prob
-        power_analysis = sms.TTestIndPower()
-        # solve_power returns the required sample size for the control group
-        control_n = np.ceil(
-            power_analysis.solve_power(
-                effect_size=effect_size,
-                alpha=alpha,
-                power=power,
-                ratio=ratio,
-            )
-        )
-        # Total sample size is control_n divided by the control probability
-        target_n = int(np.ceil(control_n / control_prob))
+        arm_ratio = max_treatment_prob / control_prob
 
+    # solve_power returns the required sample size for the control group
+    power_analysis = sms.TTestIndPower()
+    control_n = np.ceil(
+        power_analysis.solve_power(
+            effect_size=effect_size,
+            alpha=alpha,
+            power=power,
+            ratio=arm_ratio,
+        )
+    )
+    target_n = int(np.ceil(control_n / control_prob))
+
+    # Prep the response object
     analysis = MetricPowerAnalysis(metric_spec=metric)
     analysis.target_n = int(target_n)
     analysis.sufficient_n = bool(target_n <= metric.available_n)
@@ -168,16 +157,7 @@ def analyze_metric_power(
     else:
         msg_type = MetricPowerAnalysisMessageType.INSUFFICIENT
         # Calculate the Minimum Detectable Effect that meets the power spec with the available subjects.
-        if arm_weights is None:
-            ratio = 1.0
-            control_n_available = metric.available_n // n_arms
-        else:
-            sum_weights = sum(arm_weights)
-            weights = [w / sum_weights for w in arm_weights]
-            control_prob = weights[0]
-            max_treatment_prob = max(weights[1:])
-            ratio = max_treatment_prob / control_prob
-            control_n_available = int(metric.available_n * control_prob)
+        control_n_available = int(metric.available_n * control_prob)
 
         if metric.metric_type == MetricType.NUMERIC:
             power_analysis = sms.TTestIndPower()
@@ -187,7 +167,7 @@ def analyze_metric_power(
                     effect_size=None,
                     alpha=alpha,
                     power=power,
-                    ratio=ratio,
+                    ratio=arm_ratio,
                 )
                 * metric.metric_stddev
             )
@@ -199,7 +179,7 @@ def analyze_metric_power(
                 nobs1=control_n_available,
                 alpha=alpha,
                 power=power,
-                ratio=ratio,
+                ratio=arm_ratio,
             )
 
             # Convert Cohen's h back to proportion
