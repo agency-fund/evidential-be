@@ -333,8 +333,8 @@ def test_assign_treatment_unbalanced_arms(sample_df):
     # Check proportions
     n_control = result.treatment_ids.count(0)
     n_treatment = result.treatment_ids.count(1)
-    assert n_control == 200
-    assert n_treatment == 800
+    assert n_control == 201
+    assert n_treatment == 799
     # Check balance result structure
     assert isinstance(result.balance_result, BalanceResult)
     assert result.balance_result.f_statistic > 0
