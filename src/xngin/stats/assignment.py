@@ -129,6 +129,7 @@ def assign_treatment_and_check_balance(
         df_cleaned=df_cleaned,
         numeric_notnull_set=numeric_notnull_set,
     )
+    print(f"Stratum counts:\n {df_cleaned.groupby([col for col in df_cleaned.columns if col != id_col]).count()}")
     # Explicitly delete to avoid accidental reuse and free memory. Could gc.collect() if needed.
     del orig_data_to_stratify
     del df_cleaned

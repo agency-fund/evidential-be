@@ -187,6 +187,32 @@ def test_assign_treatment_decimal_strata_columns_may_cause_problems(sample_df):
     assign_treatment_and_check_balance(df=sample_df, stratum_cols=["decimal"], id_col="id", n_arms=2)
 
 
+@pytest.mark.parametrize("seed", range(5))
+def test_stochatreat_crossplatform_flakiness(seed):
+    """Test existence of flakiness due to unstable sorting internally in stochatreat."""
+    rng = np.random.default_rng(seed)
+    n = 100
+    df = pd.DataFrame({
+        "id": range(n),
+        "stratum": rng.choice(["a", "b"], n),
+        # "tf": rng.choice([True, False], n),
+    })
+    assignments = stochatreat(
+        data=df,
+        stratum_cols=["stratum"],
+        treats=2,
+        idx_col="id",
+        probs=[0.2, 0.8],
+    )
+    # print(assignments.groupby(["stratum_id", "treat"]).count())
+    assert assignments["treat"].value_counts(ascending=True).tolist() == [20, 80], f"assignments:\n{
+        assignments.groupby([
+            'stratum_id',
+            'treat',
+        ]).count()
+    }"
+
+
 def test_assign_treatment_with_problematic_values():
     """Test assignment with None/NaN that could break stochatreat due to grouping issues."""
     # Entries with None such that the grouping into strata causes stochatreat to raise a

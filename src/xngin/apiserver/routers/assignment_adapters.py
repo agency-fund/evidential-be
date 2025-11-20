@@ -72,6 +72,7 @@ def assign_treatments_with_balance(
     """
     # Convert SQLAlchemy data to DataFrame
     df = DataFrame(data)
+    print(f"Stratum counts:\n {df.groupby([col for col in df.columns if col != id_col]).count()}")
 
     # Extract Decimal column names from SQLAlchemy table and convert to float.
     # (Decimals are possible if the Table was created with SA's autoload instead of cursor).
