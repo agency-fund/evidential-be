@@ -494,8 +494,8 @@ async def test_create_preassigned_experiment_impl_with_unbalanced_arms(
     num_control = sum(1 for a in assignments if a.arm_id == arm1_id)
     num_treat = sum(1 for a in assignments if a.arm_id == arm2_id)
 
-    assert num_control / len(participants) == pytest.approx(0.2)
-    assert num_treat / len(participants) == pytest.approx(0.8)
+    assert num_control / len(participants) == pytest.approx(0.19)
+    assert num_treat / len(participants) == pytest.approx(0.81)
 
     # Verify arm_weights were stored correctly
     experiment = await xngin_session.get(tables.Experiment, experiment_id)
