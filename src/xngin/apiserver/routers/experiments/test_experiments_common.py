@@ -456,7 +456,6 @@ async def test_create_preassigned_experiment_impl_with_unbalanced_arms(
     sample_table,
     use_deterministic_random,
 ):
-    """Test implementation of creating a preassigned experiment with unbalanced arms."""
     participants = make_sample_data(n=100)
     request = make_create_preassigned_experiment_request()
     spec = cast(BaseFrequentistDesignSpec, request.design_spec)
@@ -510,7 +509,6 @@ async def test_create_preassigned_experiment_impl_with_three_unbalanced_arms(
     sample_table,
     use_deterministic_random,
 ):
-    """Test implementation of creating a preassigned experiment with three unbalanced arms."""
     participants = make_sample_data(n=150)
     request = make_createexperimentrequest_json(experiment_type=ExperimentsType.FREQ_PREASSIGNED)
     request["design_spec"]["arms"].append({"arm_name": "T2", "arm_description": "T2"})
@@ -564,7 +562,6 @@ async def test_create_preassigned_experiment_impl_with_three_unbalanced_arms(
 
 
 async def test_create_online_experiment_impl_with_unbalanced_arms(xngin_session, testing_datasource):
-    """Test creating an online experiment with unbalanced arms."""
     request = make_createexperimentrequest_json(experiment_type=ExperimentsType.FREQ_ONLINE)
     expected_weights = [100 * 1 / 3, 100 * 2 / 3]
     request["design_spec"]["arm_weights"] = expected_weights

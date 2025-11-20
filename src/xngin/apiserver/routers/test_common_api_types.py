@@ -210,3 +210,11 @@ def test_arm_weights_validation():
         match=r"(?s)Input should be greater than 0.*Input should be less than 100",
     ):
         TypeAdapter(PreassignedFrequentistExperimentSpec).validate_python(invalid_zero)
+
+    invalid_inf = valid_spec.copy()
+    invalid_inf["arm_weights"] = [float("inf"), float("nan")]
+    with pytest.raises(
+        ValidationError,
+        match=r"(?s)Input should be a finite number.*Input should be a finite number",
+    ):
+        TypeAdapter(PreassignedFrequentistExperimentSpec).validate_python(invalid_inf)

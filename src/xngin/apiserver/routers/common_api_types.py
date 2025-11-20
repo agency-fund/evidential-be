@@ -50,6 +50,7 @@ type StrictInt = Annotated[int | None, Field(strict=True)]
 type StrictFloat = Annotated[float | None, Field(strict=True, allow_inf_nan=False)]
 type FilterValueTypes = Sequence[StrictInt] | Sequence[StrictFloat] | Sequence[str | None] | Sequence[bool | None]
 type PropertyValueTypes = StrictInt | StrictFloat | str | bool | None
+type ArmWeight = Annotated[float, Field(gt=0, lt=100, allow_inf_nan=False)]
 
 
 class ApiBaseModel(BaseModel):
@@ -781,9 +782,6 @@ class BaseDesignSpec(ApiBaseModel):
     def ids_are_present(self) -> bool:
         """True if any IDs are present."""
         return any(arm.arm_id is not None for arm in self.arms)
-
-
-type ArmWeight = Annotated[float, Field(gt=0, lt=100)]
 
 
 class BaseFrequentistDesignSpec(BaseDesignSpec):
