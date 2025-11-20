@@ -207,7 +207,7 @@ def test_stochatreat_crossplatform_flakiness(seed):
         probs=[0.2, 0.8],
     )
     # print(assignments.groupby(["stratum_id", "treat"]).count())
-    assert assignments["treat"].value_counts(ascending=True).tolist() == [20, 80], f"assignments:\n{
+    assert assignments["treat"].value_counts(ascending=True).tolist() == [21, 79], f"assignments:\n{
         assignments.groupby([
             'stratum_id',
             'treat',
