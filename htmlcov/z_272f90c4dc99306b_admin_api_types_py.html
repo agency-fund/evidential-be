@@ -54,8 +54,8 @@
             </div>
         </aside>
         <h2>
-            <span class="text">214 statements &nbsp;</span>
-            <button type="button" class="run button_toggle_run" value="run" data-shortcut="r" title="Toggle lines run">212<span class="text"> run</span></button>
+            <span class="text">216 statements &nbsp;</span>
+            <button type="button" class="run button_toggle_run" value="run" data-shortcut="r" title="Toggle lines run">214<span class="text"> run</span></button>
             <button type="button" class="mis show_mis button_toggle_mis" value="mis" data-shortcut="m" title="Toggle lines missing">2<span class="text"> missing</span></button>
             <button type="button" class="exc show_exc button_toggle_exc" value="exc" data-shortcut="x" title="Toggle lines excluded">0<span class="text"> excluded</span></button>
         </h2>
@@ -65,7 +65,7 @@
             <a id="nextFileLink" class="nav" href="z_272f90c4dc99306b_generic_handlers_py.html">&#xbb; next</a>
             &nbsp; &nbsp; &nbsp;
             <a class="nav" href="https://coverage.readthedocs.io/en/7.11.0">coverage.py v7.11.0</a>,
-            created at 2025-11-19 18:55 +0000
+            created at 2025-11-21 07:02 +0000
         </p>
         <aside class="hidden">
             <button type="button" class="button_next_chunk" data-shortcut="j"></button>
@@ -546,21 +546,24 @@
     <p class="run"><span class="n"><a id="t464" href="#t464">464</a></span><span class="t">    <span class="nam">start_date</span><span class="op">:</span> <span class="nam">Annotated</span><span class="op">[</span><span class="nam">datetime</span> <span class="op">|</span> <span class="key">None</span><span class="op">,</span> <span class="nam">Field</span><span class="op">(</span><span class="op">)</span><span class="op">]</span> <span class="op">=</span> <span class="key">None</span>&nbsp;</span><span class="r"></span></p>
     <p class="run"><span class="n"><a id="t465" href="#t465">465</a></span><span class="t">    <span class="nam">end_date</span><span class="op">:</span> <span class="nam">Annotated</span><span class="op">[</span><span class="nam">datetime</span> <span class="op">|</span> <span class="key">None</span><span class="op">,</span> <span class="nam">Field</span><span class="op">(</span><span class="op">)</span><span class="op">]</span> <span class="op">=</span> <span class="key">None</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t466" href="#t466">466</a></span><span class="t">&nbsp;</span><span class="r"></span></p>
-    <p class="run"><span class="n"><a id="t467" href="#t467">467</a></span><span class="t">    <span class="op">@</span><span class="nam">field_validator</span><span class="op">(</span><span class="str">"design_url"</span><span class="op">)</span>&nbsp;</span><span class="r"></span></p>
-    <p class="run"><span class="n"><a id="t468" href="#t468">468</a></span><span class="t">    <span class="op">@</span><span class="nam">classmethod</span>&nbsp;</span><span class="r"></span></p>
-    <p class="run"><span class="n"><a id="t469" href="#t469">469</a></span><span class="t">    <span class="key">def</span> <span class="nam">validate_design_url</span><span class="op">(</span><span class="nam">cls</span><span class="op">,</span> <span class="nam">design_url</span><span class="op">:</span> <span class="nam">str</span> <span class="op">|</span> <span class="key">None</span><span class="op">)</span> <span class="op">-></span> <span class="nam">str</span> <span class="op">|</span> <span class="key">None</span><span class="op">:</span>&nbsp;</span><span class="r"></span></p>
-    <p class="run"><span class="n"><a id="t470" href="#t470">470</a></span><span class="t">        <span class="key">if</span> <span class="nam">design_url</span> <span class="key">is</span> <span class="key">None</span><span class="op">:</span>&nbsp;</span><span class="r"></span></p>
-    <p class="run"><span class="n"><a id="t471" href="#t471">471</a></span><span class="t">            <span class="key">return</span> <span class="nam">design_url</span>&nbsp;</span><span class="r"></span></p>
-    <p class="run"><span class="n"><a id="t472" href="#t472">472</a></span><span class="t">        <span class="key">if</span> <span class="nam">design_url</span> <span class="op">==</span> <span class="str">""</span><span class="op">:</span>&nbsp;</span><span class="r"></span></p>
-    <p class="run"><span class="n"><a id="t473" href="#t473">473</a></span><span class="t">            <span class="key">return</span> <span class="nam">design_url</span>&nbsp;</span><span class="r"></span></p>
-    <p class="run"><span class="n"><a id="t474" href="#t474">474</a></span><span class="t">        <span class="key">return</span> <span class="nam">str</span><span class="op">(</span><span class="nam">ConstrainedUrl</span><span class="op">(</span><span class="nam">design_url</span><span class="op">)</span><span class="op">)</span>&nbsp;</span><span class="r"></span></p>
-    <p class="pln"><span class="n"><a id="t475" href="#t475">475</a></span><span class="t">&nbsp;</span><span class="r"></span></p>
-    <p class="pln"><span class="n"><a id="t476" href="#t476">476</a></span><span class="t">&nbsp;</span><span class="r"></span></p>
-    <p class="run"><span class="n"><a id="t477" href="#t477">477</a></span><span class="t"><span class="key">class</span> <span class="nam">UpdateArmRequest</span><span class="op">(</span><span class="nam">AdminApiBaseModel</span><span class="op">)</span><span class="op">:</span>&nbsp;</span><span class="r"></span></p>
-    <p class="pln"><span class="n"><a id="t478" href="#t478">478</a></span><span class="t">    <span class="str">"""Defines the subset of fields that can be updated for an Arm after creation."""</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run"><span class="n"><a id="t467" href="#t467">467</a></span><span class="t">    <span class="nam">impact</span><span class="op">:</span> <span class="nam">Annotated</span><span class="op">[</span><span class="nam">str</span> <span class="op">|</span> <span class="key">None</span><span class="op">,</span> <span class="nam">Field</span><span class="op">(</span><span class="op">)</span><span class="op">]</span> <span class="op">=</span> <span class="key">None</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run"><span class="n"><a id="t468" href="#t468">468</a></span><span class="t">    <span class="nam">decision</span><span class="op">:</span> <span class="nam">Annotated</span><span class="op">[</span><span class="nam">str</span> <span class="op">|</span> <span class="key">None</span><span class="op">,</span> <span class="nam">Field</span><span class="op">(</span><span class="op">)</span><span class="op">]</span> <span class="op">=</span> <span class="key">None</span>&nbsp;</span><span class="r"></span></p>
+    <p class="pln"><span class="n"><a id="t469" href="#t469">469</a></span><span class="t">&nbsp;</span><span class="r"></span></p>
+    <p class="run"><span class="n"><a id="t470" href="#t470">470</a></span><span class="t">    <span class="op">@</span><span class="nam">field_validator</span><span class="op">(</span><span class="str">"design_url"</span><span class="op">)</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run"><span class="n"><a id="t471" href="#t471">471</a></span><span class="t">    <span class="op">@</span><span class="nam">classmethod</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run"><span class="n"><a id="t472" href="#t472">472</a></span><span class="t">    <span class="key">def</span> <span class="nam">validate_design_url</span><span class="op">(</span><span class="nam">cls</span><span class="op">,</span> <span class="nam">design_url</span><span class="op">:</span> <span class="nam">str</span> <span class="op">|</span> <span class="key">None</span><span class="op">)</span> <span class="op">-></span> <span class="nam">str</span> <span class="op">|</span> <span class="key">None</span><span class="op">:</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run"><span class="n"><a id="t473" href="#t473">473</a></span><span class="t">        <span class="key">if</span> <span class="nam">design_url</span> <span class="key">is</span> <span class="key">None</span><span class="op">:</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run"><span class="n"><a id="t474" href="#t474">474</a></span><span class="t">            <span class="key">return</span> <span class="nam">design_url</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run"><span class="n"><a id="t475" href="#t475">475</a></span><span class="t">        <span class="key">if</span> <span class="nam">design_url</span> <span class="op">==</span> <span class="str">""</span><span class="op">:</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run"><span class="n"><a id="t476" href="#t476">476</a></span><span class="t">            <span class="key">return</span> <span class="nam">design_url</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run"><span class="n"><a id="t477" href="#t477">477</a></span><span class="t">        <span class="key">return</span> <span class="nam">str</span><span class="op">(</span><span class="nam">ConstrainedUrl</span><span class="op">(</span><span class="nam">design_url</span><span class="op">)</span><span class="op">)</span>&nbsp;</span><span class="r"></span></p>
+    <p class="pln"><span class="n"><a id="t478" href="#t478">478</a></span><span class="t">&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t479" href="#t479">479</a></span><span class="t">&nbsp;</span><span class="r"></span></p>
-    <p class="run"><span class="n"><a id="t480" href="#t480">480</a></span><span class="t">    <span class="nam">name</span><span class="op">:</span> <span class="nam">Annotated</span><span class="op">[</span><span class="nam">str</span> <span class="op">|</span> <span class="key">None</span><span class="op">,</span> <span class="nam">Field</span><span class="op">(</span><span class="nam">max_length</span><span class="op">=</span><span class="nam">MAX_LENGTH_OF_NAME_VALUE</span><span class="op">)</span><span class="op">]</span> <span class="op">=</span> <span class="key">None</span>&nbsp;</span><span class="r"></span></p>
-    <p class="run"><span class="n"><a id="t481" href="#t481">481</a></span><span class="t">    <span class="nam">description</span><span class="op">:</span> <span class="nam">Annotated</span><span class="op">[</span><span class="nam">str</span> <span class="op">|</span> <span class="key">None</span><span class="op">,</span> <span class="nam">Field</span><span class="op">(</span><span class="nam">max_length</span><span class="op">=</span><span class="nam">MAX_LENGTH_OF_DESCRIPTION_VALUE</span><span class="op">)</span><span class="op">]</span> <span class="op">=</span> <span class="key">None</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run"><span class="n"><a id="t480" href="#t480">480</a></span><span class="t"><span class="key">class</span> <span class="nam">UpdateArmRequest</span><span class="op">(</span><span class="nam">AdminApiBaseModel</span><span class="op">)</span><span class="op">:</span>&nbsp;</span><span class="r"></span></p>
+    <p class="pln"><span class="n"><a id="t481" href="#t481">481</a></span><span class="t">    <span class="str">"""Defines the subset of fields that can be updated for an Arm after creation."""</span>&nbsp;</span><span class="r"></span></p>
+    <p class="pln"><span class="n"><a id="t482" href="#t482">482</a></span><span class="t">&nbsp;</span><span class="r"></span></p>
+    <p class="run"><span class="n"><a id="t483" href="#t483">483</a></span><span class="t">    <span class="nam">name</span><span class="op">:</span> <span class="nam">Annotated</span><span class="op">[</span><span class="nam">str</span> <span class="op">|</span> <span class="key">None</span><span class="op">,</span> <span class="nam">Field</span><span class="op">(</span><span class="nam">max_length</span><span class="op">=</span><span class="nam">MAX_LENGTH_OF_NAME_VALUE</span><span class="op">)</span><span class="op">]</span> <span class="op">=</span> <span class="key">None</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run"><span class="n"><a id="t484" href="#t484">484</a></span><span class="t">    <span class="nam">description</span><span class="op">:</span> <span class="nam">Annotated</span><span class="op">[</span><span class="nam">str</span> <span class="op">|</span> <span class="key">None</span><span class="op">,</span> <span class="nam">Field</span><span class="op">(</span><span class="nam">max_length</span><span class="op">=</span><span class="nam">MAX_LENGTH_OF_DESCRIPTION_VALUE</span><span class="op">)</span><span class="op">]</span> <span class="op">=</span> <span class="key">None</span>&nbsp;</span><span class="r"></span></p>
 </main>
 <footer>
     <div class="content">
@@ -570,7 +573,7 @@
             <a class="nav" href="z_272f90c4dc99306b_generic_handlers_py.html">&#xbb; next</a>
             &nbsp; &nbsp; &nbsp;
             <a class="nav" href="https://coverage.readthedocs.io/en/7.11.0">coverage.py v7.11.0</a>,
-            created at 2025-11-19 18:55 +0000
+            created at 2025-11-21 07:02 +0000
         </p>
     </div>
 </footer>
