@@ -1133,6 +1133,8 @@ class CreateExperimentRequest(ApiBaseModel):
             ),
         ),
     ] = []
+    decision: Annotated[str, Field()] = ""
+    impact: Annotated[str, Field()] = ""
 
     @field_validator("webhooks")
     @classmethod
