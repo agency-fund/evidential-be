@@ -1653,7 +1653,6 @@ async def update_experiment(
         experiment.description = body.description
     if body.design_url is not None:
         experiment.design_url = body.design_url
-
     if body.start_date is not None:
         end_date = body.end_date or experiment.end_date
         if end_date <= body.start_date:
@@ -1663,6 +1662,10 @@ async def update_experiment(
         if body.end_date <= experiment.start_date:
             raise LateValidationError("New end date must be after start date.")
         experiment.end_date = body.end_date
+    if body.decision is not None:
+        experiment.decision = body.decision
+    if body.impact is not None:
+        experiment.impact = body.impact
 
     await session.commit()
     return GENERIC_SUCCESS

@@ -1133,6 +1133,8 @@ class CreateExperimentRequest(ApiBaseModel):
             ),
         ),
     ] = []
+    decision: Annotated[str, Field()] = ""
+    impact: Annotated[str, Field()] = ""
 
     @field_validator("webhooks")
     @classmethod
@@ -1189,6 +1191,23 @@ class ExperimentConfig(ApiBaseModel):
             ),
         ),
     ] = []
+
+    decision: Annotated[
+        str,
+        Field(
+            description="Record any decision(s) made because of this experiment. Will you launch it, and if so when? "
+            "Regardless of positive or negative results, how do any learnings inform next steps or future "
+            "hypotheses?"
+        ),
+    ] = ""
+    impact: Annotated[
+        str,
+        Field(
+            description="Given the results across your tracked metrics and any other observed effects seen elsewhere, "
+            "record an overall summary here. Do they agree or reject your hypotheses? Beyond the metrics tracked, "
+            "did variations affect scalability, cost, feedback, or other aspects?"
+        ),
+    ] = ""
 
 
 class GetExperimentResponse(ExperimentConfig):

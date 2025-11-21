@@ -251,6 +251,8 @@ class ExperimentStorageConverter:
             power_analyses=self.get_power_response(),
             assign_summary=assign_summary,
             webhooks=webhook_ids or [],
+            decision=self.experiment.decision,
+            impact=self.experiment.impact,
         )
 
     def get_experiment_response(
@@ -287,6 +289,8 @@ class ExperimentStorageConverter:
         balance_check: capi.BalanceCheck | None = None,
         power_analyses: capi.PowerResponse | None = None,
         n_trials: int = 0,
+        decision: str = "",
+        impact: str = "",
     ) -> Self:
         """Init experiment with arms from components. Get the final object with get_experiment().
 
@@ -306,6 +310,8 @@ class ExperimentStorageConverter:
             end_date=design_spec.end_date,
             stopped_assignments_at=stopped_assignments_at,
             stopped_assignments_reason=stopped_assignments_reason,
+            decision=decision,
+            impact=impact,
         )
 
         if isinstance(design_spec, capi.BaseFrequentistDesignSpec):

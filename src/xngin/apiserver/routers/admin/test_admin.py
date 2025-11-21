@@ -80,7 +80,13 @@ from xngin.apiserver.routers.common_api_types import (
     PreassignedFrequentistExperimentSpec,
     PriorTypes,
 )
-from xngin.apiserver.routers.common_enums import ExperimentState, Relation, StopAssignmentReason
+from xngin.apiserver.routers.common_enums import (
+    ExperimentState,
+    Relation,
+    StopAssignmentReason,
+    UpdateTypeBeta,
+    UpdateTypeNormal,
+)
 from xngin.apiserver.routers.experiments.test_experiments_common import (
     insert_experiment_and_arms,
     make_create_online_bandit_experiment_request,
@@ -121,7 +127,7 @@ def find_ds_with_name[DSType: tables.Datasource | DatasourceSummary](datasources
 
 
 @pytest.fixture(name="testing_experiment")
-async def fixture_testing_experiment(xngin_session: AsyncSession, testing_datasource_with_user):
+async def fixture_testing_experiment(xngin_session: AsyncSession, testing_datasource_with_user) -> tables.Experiment:
     """Create an experiment on a test inline schema datasource with proper user permissions."""
     datasource = testing_datasource_with_user.ds
     experiment = await insert_experiment_and_arms(xngin_session, datasource, ExperimentsType.FREQ_PREASSIGNED)
@@ -162,10 +168,13 @@ async def fixture_testing_bandit_experiment(request, xngin_session: AsyncSession
         # NB: this step hijacks the algorithm to generate realistic arm parameters
         # It's not meant to be a test of the bandit algorithm
         current_params = update_arm(experiment=experiment, arm_to_update=arm_map[arm_id], outcomes=[outcome])
-        arm_map[arm_id].alpha = current_params[0] if prior_type == PriorTypes.BETA else None
-        arm_map[arm_id].beta = current_params[1] if prior_type == PriorTypes.BETA else None
-        arm_map[arm_id].mu = current_params[0] if prior_type == PriorTypes.NORMAL else None
-        arm_map[arm_id].covariance = current_params[1] if prior_type == PriorTypes.NORMAL else None
+        match current_params:
+            case UpdateTypeNormal():
+                arm_map[arm_id].mu = current_params.mu
+                arm_map[arm_id].covariance = current_params.covariance
+            case UpdateTypeBeta():
+                arm_map[arm_id].alpha = current_params.alpha
+                arm_map[arm_id].beta = current_params.beta
 
         assignment = tables.Draw(
             experiment_id=experiment.id,
@@ -1435,6 +1444,7 @@ def test_create_online_cmab_experiment(
 
 async def test_update_experiment(testing_experiment, ppatch, pget):
     """Test updating an experiment's metadata."""
+    organization_id = testing_experiment.datasource.organization_id
     datasource_id = testing_experiment.datasource_id
     experiment_id = testing_experiment.id
     now = datetime.now(UTC)
@@ -1444,6 +1454,8 @@ async def test_update_experiment(testing_experiment, ppatch, pget):
         design_url="https://example.com/updated",
         start_date=now,
         end_date=now + timedelta(days=1),
+        impact="new impact",
+        decision="new decision",
     )
     response = ppatch(
         f"/v1/m/datasources/{datasource_id}/experiments/{experiment_id}",
@@ -1452,12 +1464,22 @@ async def test_update_experiment(testing_experiment, ppatch, pget):
     assert response.status_code == 204, response.text
 
     updated_response = pget(f"/v1/m/datasources/{datasource_id}/experiments/{experiment_id}")
-    design_spec = GetExperimentResponse.model_validate(updated_response.json()).design_spec
+    experiment = GetExperimentResponse.model_validate(updated_response.json())
+    design_spec = experiment.design_spec
     assert design_spec.experiment_name == "updated name"
     assert design_spec.description == "updated desc"
     assert design_spec.design_url == HttpUrl("https://example.com/updated")
     assert design_spec.start_date == now
     assert design_spec.end_date == now + timedelta(days=1)
+    assert experiment.impact == "new impact"
+    assert experiment.decision == "new decision"
+
+    list_experiments_response = pget(f"/v1/m/organizations/{organization_id}/experiments")
+    assert list_experiments_response.status_code == 200, list_experiments_response.content
+    listing = ListExperimentsResponse.model_validate(list_experiments_response.json())
+    listed = next(i for i in listing.items if i.experiment_id == experiment.experiment_id)
+    assert listed.impact == "new impact"
+    assert listed.decision == "new decision"
 
 
 @pytest.mark.parametrize("url", ["http", "http:", "http://", "http:///", "https:///", "postgres://"])
