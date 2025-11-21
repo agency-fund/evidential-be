@@ -153,7 +153,7 @@ tasks:
       - bootstrap-app-database
       - local-session-token-keyset
     cmds:
-      - uv run fastapi dev src/xngin/apiserver/main.py
+      - uv run xngin-apiserver-dev
   start-live:
     desc: "Starts apiserver locally with settings similar to the Railway environment."
     interactive: false

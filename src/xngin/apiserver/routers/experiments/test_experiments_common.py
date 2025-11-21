@@ -242,7 +242,7 @@ async def insert_experiment_and_arms(
     end_date: datetime | None = None,
     prior_type: PriorTypes = PriorTypes.NORMAL,
     reward_type: LikelihoodTypes = LikelihoodTypes.NORMAL,
-):
+) -> tables.Experiment:
     """Creates an experiment and arms and commits them to the database.
 
     Returns the new ORM experiment object.
@@ -1131,10 +1131,10 @@ async def test_get_experiment_assignments_impl(xngin_session, testing_datasource
 
     # Check the response structure
     assert data.experiment_id == experiment.id
-    assert (
-        data.sample_size
-        == (await get_assign_summary(xngin_session, experiment.id, None, experiment.experiment_type)).sample_size
+    actual_assign_summary = await get_assign_summary(
+        xngin_session, experiment.id, None, ExperimentsType(experiment.experiment_type)
     )
+    assert data.sample_size == actual_assign_summary.sample_size
     assert data.balance_check == ExperimentStorageConverter(experiment).get_balance_check()
 
     # Check assignments
@@ -1483,6 +1483,7 @@ async def test_create_assignment_for_participant_stopped_reason(
     assert assignment is None
     assert experiment.stopped_assignments_reason == stopped_reason
     if stopped_reason is not None:
+        assert experiment.stopped_assignments_at is not None
         assert datetime.now(UTC) - experiment.stopped_assignments_at < timedelta(seconds=1)
     else:
         assert experiment.stopped_assignments_at is None
