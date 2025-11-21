@@ -155,13 +155,13 @@ class ExperimentStorageConverter:
                         "arm_id": arm.id,
                         "arm_name": arm.name,
                         "arm_description": arm.description,
+                        "arm_weight": arm.arm_weight,
                     }
                     for arm in self.experiment.arms
                 ],
                 "strata": ExperimentStorageConverter.get_api_strata(design_spec_fields),
                 "metrics": ExperimentStorageConverter.get_api_metrics(design_spec_fields),
                 "filters": ExperimentStorageConverter.get_api_filters(design_spec_fields),
-                "arm_weights": self.experiment.arm_weights,
                 "power": self.experiment.power,
                 "alpha": self.experiment.alpha,
                 "fstat_thresh": self.experiment.fstat_thresh,
@@ -320,12 +320,12 @@ class ExperimentStorageConverter:
             experiment.power = design_spec.power
             experiment.alpha = design_spec.alpha
             experiment.fstat_thresh = design_spec.fstat_thresh
-            experiment.arm_weights = design_spec.arm_weights
 
             experiment.arms = [
                 tables.Arm(
                     name=arm.arm_name,
                     description=arm.arm_description,
+                    arm_weight=arm.arm_weight,
                     experiment_id=experiment.id,
                     organization_id=organization_id,
                 )

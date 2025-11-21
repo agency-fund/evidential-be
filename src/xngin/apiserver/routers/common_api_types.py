@@ -260,6 +260,15 @@ class Arm(ApiBaseModel):
     ] = None
     arm_name: Annotated[str, Field(max_length=MAX_LENGTH_OF_NAME_VALUE)]
     arm_description: Annotated[str | None, Field(max_length=MAX_LENGTH_OF_DESCRIPTION_VALUE)] = None
+    arm_weight: Annotated[
+        ArmWeight | None,
+        Field(
+            description=(
+                "Optional weight for this arm for unequal allocation. Weight must be a float in (0, 100). "
+                "If provided, all arms must have weights that sum to 100."
+            )
+        ),
+    ] = None
 
 
 class ArmAnalysis(Arm):
@@ -817,30 +826,26 @@ class BaseFrequentistDesignSpec(BaseDesignSpec):
         ),
     ]
 
-    arm_weights: Annotated[
-        list[ArmWeight] | None,
-        Field(
-            description="Optional weights for unequal arm sizes. Weights must be floats in (0, 100) and sum to 100.",
-            max_length=MAX_NUMBER_OF_ARMS,
-        ),
-    ] = None
+    def get_validated_arm_weights(self) -> list[float] | None:
+        """If weights exist, validate they match the number of arms and sum to 100 before returning."""
+        arm_weights = [arm.arm_weight for arm in self.arms if arm.arm_weight is not None]
 
-    @model_validator(mode="after")
-    def validate_arm_weights(self) -> Self:
-        """Validate that arm_weights match the number of arms and sum to 100."""
-        if self.arm_weights is None:
-            return self
+        if len(arm_weights) == 0:
+            return None
 
-        if len(self.arm_weights) != len(self.arms):
-            raise ValueError(
-                f"Number of arm_weights ({len(self.arm_weights)}) must match number of arms ({len(self.arms)})"
-            )
+        if len(arm_weights) != len(self.arms):
+            raise ValueError(f"Number of arm weights ({len(arm_weights)}) must match number of arms ({len(self.arms)})")
 
         # Check that weights sum to 100 (tolerance aligned with stochatreat's own check)
-        total = sum(self.arm_weights)
+        total = sum(arm_weights)
         if not math.isclose(total, 100.0, rel_tol=1e-9):
             raise ValueError(f"arm_weights must sum to 100, got {total}")
 
+        return arm_weights
+
+    @model_validator(mode="after")
+    def validate_arm_weights(self) -> Self:
+        _ = self.get_validated_arm_weights()
         return self
 
     # stat parameters

@@ -160,42 +160,51 @@ def test_arm_weights_validation():
         "start_date": "2024-01-01T00:00:00+00:00",
         "end_date": "2024-12-31T00:00:00+00:00",
         "arms": [
-            {"arm_name": "control", "arm_description": "control"},
-            {"arm_name": "treatment", "arm_description": "treatment"},
+            {"arm_name": "C", "arm_description": "C", "arm_weight": 20.0},
+            {"arm_name": "T", "arm_description": "T", "arm_weight": 80.0},
         ],
-        "arm_weights": [20.0, 80.0],
         "strata": [],
         "metrics": [{"field_name": "metric1", "metric_pct_change": 0.1}],
         "filters": [],
     }
     spec = TypeAdapter(PreassignedFrequentistExperimentSpec).validate_python(valid_spec)
-    assert spec.arm_weights == [20.0, 80.0]
+    assert [arm.arm_weight for arm in spec.arms] == [20.0, 80.0]
 
     # Test: three arms with weights summing to 100
     valid_spec_3arms = valid_spec.copy()
     valid_spec_3arms["arms"] = [
-        {"arm_name": "control", "arm_description": "control"},
-        {"arm_name": "treatment1", "arm_description": "treatment1"},
-        {"arm_name": "treatment2", "arm_description": "treatment2"},
+        {"arm_name": "C", "arm_description": "C", "arm_weight": 20.1},
+        {"arm_name": "T", "arm_description": "T", "arm_weight": 19.9},
+        {"arm_name": "T2", "arm_description": "T2", "arm_weight": 60.0},
     ]
-    valid_spec_3arms["arm_weights"] = [20.1, 19.9, 60.0]
     spec = TypeAdapter(PreassignedFrequentistExperimentSpec).validate_python(valid_spec_3arms)
-    assert spec.arm_weights == [20.1, 19.9, 60.0]
+    assert spec.get_validated_arm_weights() == [20.1, 19.9, 60.0]
 
+    # Invalid case: weights don't sum to 100
     invalid_sum = valid_spec.copy()
-    invalid_sum["arm_weights"] = [30.0, 80.0]
+    invalid_sum["arms"] = [
+        {"arm_name": "C", "arm_description": "C", "arm_weight": 30.0},
+        {"arm_name": "T", "arm_description": "T", "arm_weight": 80.0},
+    ]
     with pytest.raises(ValidationError, match="arm_weights must sum to 100"):
         TypeAdapter(PreassignedFrequentistExperimentSpec).validate_python(invalid_sum)
 
     # Invalid case: number of weights doesn't match number of arms
     invalid_count = valid_spec.copy()
-    invalid_count["arm_weights"] = [50.0, 50.0, 20.0]
-    with pytest.raises(ValidationError, match=r"Number of arm_weights .* must match number of arms"):
+    invalid_count["arms"] = [
+        {"arm_name": "C", "arm_description": "C", "arm_weight": 50.0},
+        {"arm_name": "T", "arm_description": "T", "arm_weight": 50.0},
+        {"arm_name": "T2", "arm_description": "T2"},  # missing arm_weight
+    ]
+    with pytest.raises(ValidationError, match=r"Number of arm weights \(2\) must match number of arms \(3\)"):
         TypeAdapter(PreassignedFrequentistExperimentSpec).validate_python(invalid_count)
 
     # Invalid case: weights too small and large
     invalid_negative = valid_spec.copy()
-    invalid_negative["arm_weights"] = [-20.0, 120.0]
+    invalid_negative["arms"] = [
+        {"arm_name": "C", "arm_description": "C", "arm_weight": -20.0},
+        {"arm_name": "T", "arm_description": "T", "arm_weight": 120.0},
+    ]
     with pytest.raises(
         ValidationError,
         match=r"(?s)Input should be greater than 0.*Input should be less than 100",
@@ -204,7 +213,10 @@ def test_arm_weights_validation():
 
     # Invalid case: zero weight
     invalid_zero = valid_spec.copy()
-    invalid_zero["arm_weights"] = [0.0, 100.0]
+    invalid_zero["arms"] = [
+        {"arm_name": "C", "arm_description": "C", "arm_weight": 0.0},
+        {"arm_name": "T", "arm_description": "T", "arm_weight": 100.0},
+    ]
     with pytest.raises(
         ValidationError,
         match=r"(?s)Input should be greater than 0.*Input should be less than 100",
@@ -212,7 +224,10 @@ def test_arm_weights_validation():
         TypeAdapter(PreassignedFrequentistExperimentSpec).validate_python(invalid_zero)
 
     invalid_inf = valid_spec.copy()
-    invalid_inf["arm_weights"] = [float("inf"), float("nan")]
+    invalid_inf["arms"] = [
+        {"arm_name": "C", "arm_description": "C", "arm_weight": float("inf")},
+        {"arm_name": "T", "arm_description": "T", "arm_weight": float("nan")},
+    ]
     with pytest.raises(
         ValidationError,
         match=r"(?s)Input should be a finite number.*Input should be a finite number",

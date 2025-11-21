@@ -1194,7 +1194,8 @@ async def test_power_check_with_unbalanced_arms(testing_datasource_with_user, pp
     assert metric_analysis.sufficient_n is True
 
     # Now check with unbalanced arms
-    design_spec.arm_weights = [20.0, 80.0]
+    design_spec.arms[0].arm_weight = 20.0
+    design_spec.arms[1].arm_weight = 80.0
     response = ppost(
         f"/v1/m/datasources/{testing_datasource_with_user.ds.id}/power",
         content=PowerRequest(design_spec=design_spec).model_dump_json(),
@@ -1210,7 +1211,9 @@ async def test_power_check_with_unbalanced_arms(testing_datasource_with_user, pp
 
     # And again with three arms
     design_spec.arms = [*design_spec.arms, Arm(arm_name="arm3", arm_description="Arm 3")]
-    design_spec.arm_weights = [15, 60, 25]
+    design_spec.arms[0].arm_weight = 15
+    design_spec.arms[1].arm_weight = 60
+    design_spec.arms[2].arm_weight = 25
     response = ppost(
         f"/v1/m/datasources/{testing_datasource_with_user.ds.id}/power",
         content=PowerRequest(design_spec=design_spec).model_dump_json(),
