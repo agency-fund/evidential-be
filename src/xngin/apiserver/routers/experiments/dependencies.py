@@ -27,7 +27,7 @@ async def datasource_dependency(
     datasource_id: Annotated[
         str,
         Header(
-            examples="testing",
+            examples=["testing"],
             alias=constants.HEADER_CONFIG_ID,
             description="The ID of the datasource to operate on.",
         ),

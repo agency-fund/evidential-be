@@ -1653,7 +1653,6 @@ async def update_experiment(
         experiment.description = body.description
     if body.design_url is not None:
         experiment.design_url = body.design_url
-
     if body.start_date is not None:
         end_date = body.end_date or experiment.end_date
         if end_date <= body.start_date:
@@ -1663,6 +1662,10 @@ async def update_experiment(
         if body.end_date <= experiment.start_date:
             raise LateValidationError("New end date must be after start date.")
         experiment.end_date = body.end_date
+    if body.decision is not None:
+        experiment.decision = body.decision
+    if body.impact is not None:
+        experiment.impact = body.impact
 
     await session.commit()
     return GENERIC_SUCCESS
@@ -1757,13 +1760,16 @@ async def power_check(
             design_spec.metrics,
             design_spec.filters,
         )
+
+    arm_weights = design_spec.get_validated_arm_weights()
+
     return PowerResponse(
         analyses=check_power(
             metrics=metric_stats,
             n_arms=len(design_spec.arms),
             power=design_spec.power,
             alpha=design_spec.alpha,
-            arm_weights=design_spec.arm_weights,
+            arm_weights=arm_weights,
         )
     )
 

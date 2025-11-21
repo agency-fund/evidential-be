@@ -43,12 +43,13 @@ XNGIN_DEVDWH_DSN = os.environ.get("XNGIN_DEVDWH_DSN", "")
 # Hosting providers may set hosted database URL as DATABASE_URL, so we use the same.
 DATABASE_URL = os.environ.get("DATABASE_URL")
 
+
 # XNGIN_PUBLIC_PROTOCOL defines the protocol clients should use on our public URL. This should always be "https",
 # except in dev environments.
 XNGIN_PUBLIC_PROTOCOL = os.environ.get("XNGIN_PUBLIC_PROTOCOL", "https")
 
 # XNGIN_PUBLIC_HOSTNAME defines the base hostname (and optional port) we use when constructing URLs to send to
-# external systems (such as via outbound webhooks).
+# external systems (such as via outbound webhooks or in generated API examples).
 XNGIN_PUBLIC_HOSTNAME = os.environ.get("XNGIN_PUBLIC_HOSTNAME", "example.com")
 
 # XNGIN_PRODUCT_HOMEPAGE defines the homepage of the product.
@@ -59,6 +60,21 @@ XNGIN_SUPPORT_EMAIL = os.environ.get("XNGIN_SUPPORT_EMAIL", "support@example.com
 
 LOG_SQL_APP_DB = truthy_env("LOG_SQL_APP_DB")
 LOG_SQL_DWH = truthy_env("LOG_SQL_DWH")
+
+
+def get_public_api_base_url():
+    if serving_domain := os.environ.get("RAILWAY_PUBLIC_DOMAIN"):
+        return f"https://{serving_domain}"
+    if (hostname := XNGIN_PUBLIC_HOSTNAME) and (proto := XNGIN_PUBLIC_PROTOCOL):
+        return f"{proto}://{hostname}"
+    return ""
+
+
+# The base URL for this API server. This is used only to populate fields in the generated OpenAPI spec.
+XNGIN_PUBLIC_API_BASE_URL = get_public_api_base_url()
+
+# Populates the description field of the generated OpenAPI spec.
+XNGIN_PUBLIC_API_DESCRIPTION = os.environ.get("XNGIN_PUBLIC_API_DESCRIPTION", "")
 
 
 class LogFormat(enum.StrEnum):

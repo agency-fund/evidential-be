@@ -212,6 +212,8 @@ async def create_preassigned_experiment_impl(
             raise LateValidationError(f"Duplicate participant ID found after filtering: '{participant_id}'.")
         seen_participant_ids.add(participant_id)
 
+    arm_weights = design_spec.get_validated_arm_weights()
+
     # Do the raw assignment first so we can store the balance check with the experiment.
     assignment_result = assign_treatments_with_balance(
         sa_table=dwh_sa_table,
@@ -221,7 +223,7 @@ async def create_preassigned_experiment_impl(
         n_arms=len(design_spec.arms),
         quantiles=4,
         random_state=random_state,
-        arm_weights=design_spec.arm_weights,
+        arm_weights=arm_weights,
     )
     balance_check = make_balance_check(assignment_result.balance_result, design_spec.fstat_thresh)
 
@@ -235,6 +237,8 @@ async def create_preassigned_experiment_impl(
         stopped_assignments_reason=StopAssignmentReason.PREASSIGNED,
         balance_check=balance_check,
         power_analyses=request.power_analyses,
+        decision=request.decision,
+        impact=request.impact,
     )
     experiment = experiment_converter.get_experiment()
     # Associate webhooks with the experiment
@@ -286,6 +290,8 @@ async def create_freq_online_experiment_impl(
         organization_id=organization_id,
         experiment_type=ExperimentsType.FREQ_ONLINE,
         design_spec=design_spec,
+        decision=request.decision,
+        impact=request.impact,
     )
     experiment = experiment_converter.get_experiment()
     # Associate webhooks with the experiment
@@ -321,6 +327,8 @@ async def create_bandit_online_experiment_impl(
         experiment_type=design_spec.experiment_type,
         design_spec=design_spec,
         n_trials=chosen_n if chosen_n is not None else 0,
+        decision=request.decision,
+        impact=request.impact,
     )
     experiment = experiment_converter.get_experiment()
 
@@ -716,18 +724,17 @@ def choose_online_arm(
     """Choose an arm for online experiments using simple or weighted random assignment depending on its design."""
     # Sort by arm name to ensure deterministic assignment with seed for tests.
     sorted_arms = sorted(experiment.arms, key=lambda a: a.name)
-    arm_weights_sorted = None
+    arm_weights_as_probabilities = None
 
-    if experiment.arm_weights is not None:
-        # Weighted random selection. First convert to probabilities.
-        sum_weights = sum(experiment.arm_weights)
-        weights = [w / sum_weights for w in experiment.arm_weights]
-        # Get weights in the same order as sorted_arms.
-        arm_id_to_weight = {arm.id: w for arm, w in zip(experiment.arms, weights, strict=True)}
+    arm_id_to_weight = {arm.id: arm.arm_weight for arm in experiment.arms if arm.arm_weight is not None}
+    if len(arm_id_to_weight) == len(experiment.arms):
+        # Convert to probabilities for weighted random selection.
         arm_weights_sorted = [arm_id_to_weight[arm.id] for arm in sorted_arms]
+        sum_weights = sum(arm_weights_sorted)
+        arm_weights_as_probabilities = [w / sum_weights for w in arm_weights_sorted]
 
     rng = np.random.default_rng(random_state)
-    index = rng.choice(len(sorted_arms), p=arm_weights_sorted)
+    index = rng.choice(len(sorted_arms), p=arm_weights_as_probabilities)
     return sorted_arms[index]
 
 

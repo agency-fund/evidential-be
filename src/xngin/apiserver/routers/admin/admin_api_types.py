@@ -464,6 +464,9 @@ class UpdateExperimentRequest(AdminApiBaseModel):
     start_date: Annotated[datetime | None, Field()] = None
     end_date: Annotated[datetime | None, Field()] = None
 
+    impact: Annotated[str | None, Field()] = None
+    decision: Annotated[str | None, Field()] = None
+
     @field_validator("design_url")
     @classmethod
     def validate_design_url(cls, design_url: str | None) -> str | None:

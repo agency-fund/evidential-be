@@ -242,7 +242,7 @@ async def insert_experiment_and_arms(
     end_date: datetime | None = None,
     prior_type: PriorTypes = PriorTypes.NORMAL,
     reward_type: LikelihoodTypes = LikelihoodTypes.NORMAL,
-):
+) -> tables.Experiment:
     """Creates an experiment and arms and commits them to the database.
 
     Returns the new ORM experiment object.
@@ -460,7 +460,8 @@ async def test_create_preassigned_experiment_impl_with_unbalanced_arms(
     request = make_create_preassigned_experiment_request()
     spec = cast(BaseFrequentistDesignSpec, request.design_spec)
     expected_weights = [20.0, 80.0]
-    spec.arm_weights = expected_weights
+    spec.arms[0].arm_weight = expected_weights[0]
+    spec.arms[1].arm_weight = expected_weights[1]
 
     response = await create_preassigned_experiment_impl(
         request=request,
@@ -478,7 +479,8 @@ async def test_create_preassigned_experiment_impl_with_unbalanced_arms(
     experiment_id = response.experiment_id
     assert response.datasource_id == testing_datasource.ds.id
     assert response.state == ExperimentState.ASSIGNED
-    assert cast(BaseFrequentistDesignSpec, response.design_spec).arm_weights == expected_weights
+    assert isinstance(response.design_spec, PreassignedFrequentistExperimentSpec)
+    assert response.design_spec.get_validated_arm_weights() == expected_weights
 
     # Verify assignments were created with correct proportions
     assignments = (
@@ -497,10 +499,11 @@ async def test_create_preassigned_experiment_impl_with_unbalanced_arms(
     assert num_control / len(participants) == pytest.approx(0.19)
     assert num_treat / len(participants) == pytest.approx(0.81)
 
-    # Verify arm_weights were stored correctly
+    # Verify arm weights were stored correctly on individual arms
     experiment = await xngin_session.get(tables.Experiment, experiment_id)
     assert experiment is not None
-    assert experiment.arm_weights == expected_weights
+    await experiment.awaitable_attrs.arms
+    assert [arm.arm_weight for arm in experiment.arms] == expected_weights
 
 
 async def test_create_preassigned_experiment_impl_with_three_unbalanced_arms(
@@ -513,7 +516,9 @@ async def test_create_preassigned_experiment_impl_with_three_unbalanced_arms(
     request = make_createexperimentrequest_json(experiment_type=ExperimentsType.FREQ_PREASSIGNED)
     request["design_spec"]["arms"].append({"arm_name": "T2", "arm_description": "T2"})
     expected_weights = [20.0, 20.0, 60.0]
-    request["design_spec"]["arm_weights"] = expected_weights
+    request["design_spec"]["arms"][0]["arm_weight"] = expected_weights[0]
+    request["design_spec"]["arms"][1]["arm_weight"] = expected_weights[1]
+    request["design_spec"]["arms"][2]["arm_weight"] = expected_weights[2]
     request = TypeAdapter(CreateExperimentRequest).validate_python(request)
 
     response = await create_preassigned_experiment_impl(
@@ -532,7 +537,8 @@ async def test_create_preassigned_experiment_impl_with_three_unbalanced_arms(
     experiment_id = response.experiment_id
     assert response.datasource_id == testing_datasource.ds.id
     assert response.state == ExperimentState.ASSIGNED
-    assert cast(BaseFrequentistDesignSpec, response.design_spec).arm_weights == expected_weights
+    assert isinstance(response.design_spec, PreassignedFrequentistExperimentSpec)
+    assert response.design_spec.get_validated_arm_weights() == expected_weights
     assert len(response.design_spec.arms) == 3
 
     # Verify assignments were created with correct proportions
@@ -555,16 +561,18 @@ async def test_create_preassigned_experiment_impl_with_three_unbalanced_arms(
     assert num_arm2 / len(participants) == pytest.approx(0.2, rel=0.05)
     assert num_arm3 / len(participants) == pytest.approx(0.6, rel=0.05)
 
-    # Verify arm_weights were stored correctly
+    # Verify arm weights were stored correctly on individual arms
     experiment = await xngin_session.get(tables.Experiment, experiment_id)
     assert experiment is not None
-    assert experiment.arm_weights == expected_weights
+    await experiment.awaitable_attrs.arms
+    assert [arm.arm_weight for arm in experiment.arms] == expected_weights
 
 
 async def test_create_online_experiment_impl_with_unbalanced_arms(xngin_session, testing_datasource):
     request = make_createexperimentrequest_json(experiment_type=ExperimentsType.FREQ_ONLINE)
     expected_weights = [100 * 1 / 3, 100 * 2 / 3]
-    request["design_spec"]["arm_weights"] = expected_weights
+    request["design_spec"]["arms"][0]["arm_weight"] = expected_weights[0]
+    request["design_spec"]["arms"][1]["arm_weight"] = expected_weights[1]
     request = TypeAdapter(CreateExperimentRequest).validate_python(request)
 
     response = await create_experiment_impl(
@@ -577,19 +585,19 @@ async def test_create_online_experiment_impl_with_unbalanced_arms(xngin_session,
         validated_webhooks=[],
     )
 
-    # Verify the arm_weights were stored
     assert isinstance(response.design_spec, OnlineFrequentistExperimentSpec)
-    assert response.design_spec.arm_weights == expected_weights
+    assert response.design_spec.get_validated_arm_weights() == expected_weights
 
     # Verify database state
     experiment = await xngin_session.get(tables.Experiment, response.experiment_id)
     assert experiment is not None
-    assert experiment.arm_weights == expected_weights
+    await experiment.awaitable_attrs.arms
+    assert [arm.arm_weight for arm in experiment.arms] == expected_weights
     # and the rehydrated design spec
     converter = ExperimentStorageConverter(experiment)
     design_spec = converter.get_design_spec()
     assert isinstance(design_spec, OnlineFrequentistExperimentSpec)
-    assert design_spec.arm_weights == expected_weights
+    assert design_spec.get_validated_arm_weights() == expected_weights
 
 
 @pytest.mark.parametrize(
@@ -1131,10 +1139,10 @@ async def test_get_experiment_assignments_impl(xngin_session, testing_datasource
 
     # Check the response structure
     assert data.experiment_id == experiment.id
-    assert (
-        data.sample_size
-        == (await get_assign_summary(xngin_session, experiment.id, None, experiment.experiment_type)).sample_size
+    actual_assign_summary = await get_assign_summary(
+        xngin_session, experiment.id, None, ExperimentsType(experiment.experiment_type)
     )
+    assert data.sample_size == actual_assign_summary.sample_size
     assert data.balance_check == ExperimentStorageConverter(experiment).get_balance_check()
 
     # Check assignments
@@ -1375,7 +1383,8 @@ async def test_create_assignment_for_participant_with_unbalanced_arms(xngin_sess
     """Test that online experiments respect arm_weights for unbalanced allocation."""
     request = make_createexperimentrequest_json(experiment_type=ExperimentsType.FREQ_ONLINE)
     expected_weights = [80.0, 20.0]
-    request["design_spec"]["arm_weights"] = expected_weights
+    request["design_spec"]["arms"][0]["arm_weight"] = expected_weights[0]
+    request["design_spec"]["arms"][1]["arm_weight"] = expected_weights[1]
 
     response = await create_experiment_impl(
         request=TypeAdapter(CreateExperimentRequest).validate_python(request),
@@ -1417,7 +1426,9 @@ async def test_create_assignment_for_participant_with_three_weighted_arms(xngin_
     request = make_createexperimentrequest_json(experiment_type=ExperimentsType.FREQ_ONLINE)
     request["design_spec"]["arms"].append({"arm_name": "T2", "arm_description": "treatment2"})
     expected_weights = [33.3, 33.4, 33.3]
-    request["design_spec"]["arm_weights"] = expected_weights
+    request["design_spec"]["arms"][0]["arm_weight"] = expected_weights[0]
+    request["design_spec"]["arms"][1]["arm_weight"] = expected_weights[1]
+    request["design_spec"]["arms"][2]["arm_weight"] = expected_weights[2]
 
     response = await create_experiment_impl(
         request=TypeAdapter(CreateExperimentRequest).validate_python(request),
@@ -1483,6 +1494,7 @@ async def test_create_assignment_for_participant_stopped_reason(
     assert assignment is None
     assert experiment.stopped_assignments_reason == stopped_reason
     if stopped_reason is not None:
+        assert experiment.stopped_assignments_at is not None
         assert datetime.now(UTC) - experiment.stopped_assignments_at < timedelta(seconds=1)
     else:
         assert experiment.stopped_assignments_at is None

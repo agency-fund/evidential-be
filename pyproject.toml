@@ -62,6 +62,7 @@ requires = ["uv_build>=0.9.4,<0.10.0"]
 build-backend = "uv_build"
 
 [project.scripts]
+xngin-apiserver-dev = "xngin.apiserver.main:main_dev"
 xngin-apiserver-live = "xngin.apiserver.main:main_live"
 xngin-cli = "xngin.cli.main:app"
 xngin-snapshotter = "xngin.apiserver.snapshots.cli:app"
