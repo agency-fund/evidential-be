@@ -64,6 +64,14 @@ def custom_openapi(app: FastAPI):
         },
         summary="",
         description="",
+        servers=[
+            {
+                "url": flags.XNGIN_PUBLIC_API_BASE_URL,
+                "description": flags.XNGIN_PUBLIC_API_DESCRIPTION,
+            }
+        ]
+        if flags.XNGIN_PUBLIC_API_BASE_URL
+        else None,
         tags=[tag.definition for tag in sorted(visible_tags, key=lambda t: t.definition["name"]) if tag.visible],
         routes=app.routes,
     )

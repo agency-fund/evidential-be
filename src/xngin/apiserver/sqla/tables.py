@@ -405,8 +405,6 @@ class Experiment(Base):
     reward_type: Mapped[str | None] = mapped_column()
 
     # Frequentist config params
-    # Optional weights for unequal arm sizes. Weights must be floats in (0, 100) and sum to 100.
-    arm_weights: Mapped[list[float] | None] = mapped_column(ARRAY(Float))
     # JSON serialized form of an experiment's specified dwh fields used for strata/metrics/filters.
     design_spec_fields: Mapped[dict | None] = mapped_column(postgresql.JSONB)
     # JSON serialized form of a PowerResponse. Not required since some experiments may not have data to run
@@ -420,6 +418,10 @@ class Experiment(Base):
     power: Mapped[float | None] = mapped_column()
     alpha: Mapped[float | None] = mapped_column()
     fstat_thresh: Mapped[float | None] = mapped_column()
+
+    # Experiment Registry
+    impact: Mapped[str] = mapped_column(server_default="")
+    decision: Mapped[str] = mapped_column(server_default="")
 
     arm_assignments: Mapped[list["ArmAssignment"]] = relationship(
         back_populates="experiment", cascade="all, delete-orphan", lazy="raise"
@@ -452,6 +454,9 @@ class Arm(Base):
     updated_at: Mapped[datetime] = mapped_column(
         server_default=sqlalchemy.sql.func.now(), onupdate=sqlalchemy.sql.func.now()
     )
+
+    # Optional weight for unequal arm allocation. Weight must be in (0, 100) and all arm weights must sum to 100.
+    arm_weight: Mapped[float | None] = mapped_column(Float)
 
     # Prior variables
     mu_init: Mapped[float | None] = mapped_column()
