@@ -330,3 +330,10 @@ tasks:
       - psql "{{.XNGIN_LOCALPG_DSN}}" -c "DROP DATABASE migration_lint WITH (FORCE);" || true
       - psql "{{.XNGIN_LOCALPG_DSN}}" -c "DROP DATABASE test_xngin WITH (FORCE);" || true
       - psql "{{.XNGIN_LOCALPG_DSN}}" -c "DROP DATABASE {{.XNGIN_DEVAPPDB_NAME}} WITH (FORCE);" || true
+  create-database:
+    desc: "Create an empty database with the supplied name. Useful for prepping a pg_restore of your local database after dropping it."
+    interactive: true
+    vars:
+      DBNAME: '{{default "xngin" .DBNAME}}'
+    cmds:
+      - psql "{{.XNGIN_LOCALPG_DSN}}" -c "CREATE DATABASE {{.DBNAME}};"
