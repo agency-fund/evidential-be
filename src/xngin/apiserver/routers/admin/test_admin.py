@@ -1,6 +1,7 @@
 import base64
 import copy
 import json
+import math
 from datetime import UTC, datetime, timedelta
 from urllib.parse import urlparse
 
@@ -77,6 +78,8 @@ from xngin.apiserver.routers.common_api_types import (
     LikelihoodTypes,
     ListExperimentsResponse,
     MABExperimentSpec,
+    PowerRequest,
+    PowerResponse,
     PreassignedFrequentistExperimentSpec,
     PriorTypes,
 )
@@ -1156,6 +1159,74 @@ async def test_lifecycle_with_db(testing_datasource, ppost, ppatch, pget, pdelet
         f"/v1/m/datasources/{testing_datasource.ds.id}/experiments/{parsed_experiment_id}?allow_missing=true"
     )
     assert response.status_code == 204, response.content
+
+
+async def test_power_check_with_unbalanced_arms(testing_datasource_with_user, ppost):
+    """Test power check endpoint with balanced vs unbalanced arms."""
+    design_spec = PreassignedFrequentistExperimentSpec(
+        experiment_type=ExperimentsType.FREQ_PREASSIGNED,
+        participant_type="test_participant_type",
+        experiment_name="test power check",
+        description="test power check with unbalanced arms",
+        start_date=datetime(2024, 1, 1, tzinfo=UTC),
+        end_date=datetime.now(UTC) + timedelta(days=1),
+        arms=[
+            Arm(arm_name="control", arm_description="Control group"),
+            Arm(arm_name="treatment", arm_description="Treatment group"),
+        ],
+        metrics=[DesignSpecMetricRequest(field_name="current_income", metric_pct_change=0.1)],
+        strata=[],
+        filters=[],
+    )
+
+    # Call the power check endpoint
+    response = ppost(
+        f"/v1/m/datasources/{testing_datasource_with_user.ds.id}/power",
+        content=PowerRequest(design_spec=design_spec).model_dump_json(),
+    )
+
+    assert response.status_code == 200, response.content
+    power_response = PowerResponse.model_validate(response.json())
+    assert len(power_response.analyses) == 1
+    metric_analysis = power_response.analyses[0]
+    assert metric_analysis.metric_spec.field_name == "current_income"
+    assert metric_analysis.target_n == 474
+    assert metric_analysis.sufficient_n is True
+
+    # Now check with unbalanced arms
+    design_spec.arms[0].arm_weight = 20.0
+    design_spec.arms[1].arm_weight = 80.0
+    response = ppost(
+        f"/v1/m/datasources/{testing_datasource_with_user.ds.id}/power",
+        content=PowerRequest(design_spec=design_spec).model_dump_json(),
+    )
+
+    assert response.status_code == 200, response.content
+    power_response2 = PowerResponse.model_validate(response.json())
+    assert len(power_response2.analyses) == 1
+    metric_analysis2 = power_response2.analyses[0]
+    assert metric_analysis2.metric_spec.field_name == "current_income"
+    assert metric_analysis2.target_n is not None
+    assert metric_analysis2.target_n > metric_analysis.target_n  # Unbalanced design requires more participants
+
+    # And again with three arms
+    design_spec.arms = [*design_spec.arms, Arm(arm_name="arm3", arm_description="Arm 3")]
+    design_spec.arms[0].arm_weight = 15
+    design_spec.arms[1].arm_weight = 60
+    design_spec.arms[2].arm_weight = 25
+    response = ppost(
+        f"/v1/m/datasources/{testing_datasource_with_user.ds.id}/power",
+        content=PowerRequest(design_spec=design_spec).model_dump_json(),
+    )
+
+    assert response.status_code == 200, response.content
+    power_response3 = PowerResponse.model_validate(response.json())
+    assert len(power_response3.analyses) == 1
+    metric_analysis3 = power_response3.analyses[0]
+    assert metric_analysis3.metric_spec.field_name == "current_income"
+    assert metric_analysis3.target_n is not None
+    # Max ratio is still 4:1 as in case 2, but the control is now 15% of the total instead of 20%.
+    assert metric_analysis3.target_n == math.ceil(metric_analysis2.target_n * 0.2 / 0.15)
 
 
 async def test_create_experiment_with_invalid_design_url(xngin_session, testing_datasource_with_user, ppost):

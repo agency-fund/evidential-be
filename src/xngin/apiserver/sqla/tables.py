@@ -455,6 +455,9 @@ class Arm(Base):
         server_default=sqlalchemy.sql.func.now(), onupdate=sqlalchemy.sql.func.now()
     )
 
+    # Optional weight for unequal arm allocation. Weight must be in (0, 100) and all arm weights must sum to 100.
+    arm_weight: Mapped[float | None] = mapped_column(Float)
+
     # Prior variables
     mu_init: Mapped[float | None] = mapped_column()
     sigma_init: Mapped[float | None] = mapped_column()

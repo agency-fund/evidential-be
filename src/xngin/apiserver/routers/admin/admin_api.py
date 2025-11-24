@@ -1760,12 +1760,16 @@ async def power_check(
             design_spec.metrics,
             design_spec.filters,
         )
+
+    arm_weights = design_spec.get_validated_arm_weights()
+
     return PowerResponse(
         analyses=check_power(
             metrics=metric_stats,
             n_arms=len(design_spec.arms),
             power=design_spec.power,
             alpha=design_spec.alpha,
+            arm_weights=arm_weights,
         )
     )
 

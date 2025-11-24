@@ -450,6 +450,156 @@ async def test_create_preassigned_experiment_impl_raises_on_duplicate_ids(
         )
 
 
+async def test_create_preassigned_experiment_impl_with_unbalanced_arms(
+    xngin_session: AsyncSession,
+    testing_datasource,
+    sample_table,
+    use_deterministic_random,
+):
+    participants = make_sample_data(n=100)
+    request = make_create_preassigned_experiment_request()
+    spec = cast(BaseFrequentistDesignSpec, request.design_spec)
+    expected_weights = [20.0, 80.0]
+    spec.arms[0].arm_weight = expected_weights[0]
+    spec.arms[1].arm_weight = expected_weights[1]
+
+    response = await create_preassigned_experiment_impl(
+        request=request,
+        datasource_id=testing_datasource.ds.id,
+        organization_id=testing_datasource.ds.organization_id,
+        participant_unique_id_field="participant_id",
+        dwh_sa_table=sample_table,
+        dwh_participants=participants,
+        random_state=42,
+        xngin_session=xngin_session,
+        stratify_on_metrics=True,
+        validated_webhooks=[],
+    )
+
+    experiment_id = response.experiment_id
+    assert response.datasource_id == testing_datasource.ds.id
+    assert response.state == ExperimentState.ASSIGNED
+    assert isinstance(response.design_spec, PreassignedFrequentistExperimentSpec)
+    assert response.design_spec.get_validated_arm_weights() == expected_weights
+
+    # Verify assignments were created with correct proportions
+    assignments = (
+        await xngin_session.scalars(
+            select(tables.ArmAssignment).where(tables.ArmAssignment.experiment_id == experiment_id)
+        )
+    ).all()
+    assert len(assignments) == len(participants)
+
+    # Check for unbalanced arm assignments
+    arm1_id = response.design_spec.arms[0].arm_id
+    arm2_id = response.design_spec.arms[1].arm_id
+    num_control = sum(1 for a in assignments if a.arm_id == arm1_id)
+    num_treat = sum(1 for a in assignments if a.arm_id == arm2_id)
+
+    assert num_control / len(participants) == pytest.approx(0.19)
+    assert num_treat / len(participants) == pytest.approx(0.81)
+
+    # Verify arm weights were stored correctly on individual arms
+    experiment = await xngin_session.get(tables.Experiment, experiment_id)
+    assert experiment is not None
+    await experiment.awaitable_attrs.arms
+    assert [arm.arm_weight for arm in experiment.arms] == expected_weights
+
+
+async def test_create_preassigned_experiment_impl_with_three_unbalanced_arms(
+    xngin_session: AsyncSession,
+    testing_datasource,
+    sample_table,
+    use_deterministic_random,
+):
+    participants = make_sample_data(n=150)
+    request = make_createexperimentrequest_json(experiment_type=ExperimentsType.FREQ_PREASSIGNED)
+    request["design_spec"]["arms"].append({"arm_name": "T2", "arm_description": "T2"})
+    expected_weights = [20.0, 20.0, 60.0]
+    request["design_spec"]["arms"][0]["arm_weight"] = expected_weights[0]
+    request["design_spec"]["arms"][1]["arm_weight"] = expected_weights[1]
+    request["design_spec"]["arms"][2]["arm_weight"] = expected_weights[2]
+    request = TypeAdapter(CreateExperimentRequest).validate_python(request)
+
+    response = await create_preassigned_experiment_impl(
+        request=request,
+        datasource_id=testing_datasource.ds.id,
+        organization_id=testing_datasource.ds.organization_id,
+        participant_unique_id_field="participant_id",
+        dwh_sa_table=sample_table,
+        dwh_participants=participants,
+        random_state=42,
+        xngin_session=xngin_session,
+        stratify_on_metrics=False,
+        validated_webhooks=[],
+    )
+
+    experiment_id = response.experiment_id
+    assert response.datasource_id == testing_datasource.ds.id
+    assert response.state == ExperimentState.ASSIGNED
+    assert isinstance(response.design_spec, PreassignedFrequentistExperimentSpec)
+    assert response.design_spec.get_validated_arm_weights() == expected_weights
+    assert len(response.design_spec.arms) == 3
+
+    # Verify assignments were created with correct proportions
+    assignments = (
+        await xngin_session.scalars(
+            select(tables.ArmAssignment).where(tables.ArmAssignment.experiment_id == experiment_id)
+        )
+    ).all()
+    assert len(assignments) == len(participants)
+
+    # Check for unbalanced arm assignments
+    arm1_id = response.design_spec.arms[0].arm_id
+    arm2_id = response.design_spec.arms[1].arm_id
+    arm3_id = response.design_spec.arms[2].arm_id
+    num_arm1 = sum(1 for a in assignments if a.arm_id == arm1_id)
+    num_arm2 = sum(1 for a in assignments if a.arm_id == arm2_id)
+    num_arm3 = sum(1 for a in assignments if a.arm_id == arm3_id)
+
+    assert num_arm1 / len(participants) == pytest.approx(0.2, rel=0.05)
+    assert num_arm2 / len(participants) == pytest.approx(0.2, rel=0.05)
+    assert num_arm3 / len(participants) == pytest.approx(0.6, rel=0.05)
+
+    # Verify arm weights were stored correctly on individual arms
+    experiment = await xngin_session.get(tables.Experiment, experiment_id)
+    assert experiment is not None
+    await experiment.awaitable_attrs.arms
+    assert [arm.arm_weight for arm in experiment.arms] == expected_weights
+
+
+async def test_create_online_experiment_impl_with_unbalanced_arms(xngin_session, testing_datasource):
+    request = make_createexperimentrequest_json(experiment_type=ExperimentsType.FREQ_ONLINE)
+    expected_weights = [100 * 1 / 3, 100 * 2 / 3]
+    request["design_spec"]["arms"][0]["arm_weight"] = expected_weights[0]
+    request["design_spec"]["arms"][1]["arm_weight"] = expected_weights[1]
+    request = TypeAdapter(CreateExperimentRequest).validate_python(request)
+
+    response = await create_experiment_impl(
+        request=request,
+        datasource=testing_datasource.ds,
+        xngin_session=xngin_session,
+        chosen_n=None,
+        stratify_on_metrics=False,
+        random_state=42,
+        validated_webhooks=[],
+    )
+
+    assert isinstance(response.design_spec, OnlineFrequentistExperimentSpec)
+    assert response.design_spec.get_validated_arm_weights() == expected_weights
+
+    # Verify database state
+    experiment = await xngin_session.get(tables.Experiment, response.experiment_id)
+    assert experiment is not None
+    await experiment.awaitable_attrs.arms
+    assert [arm.arm_weight for arm in experiment.arms] == expected_weights
+    # and the rehydrated design spec
+    converter = ExperimentStorageConverter(experiment)
+    design_spec = converter.get_design_spec()
+    assert isinstance(design_spec, OnlineFrequentistExperimentSpec)
+    assert design_spec.get_validated_arm_weights() == expected_weights
+
+
 @pytest.mark.parametrize(
     "experiment_type, filters, match",
     [
@@ -1227,6 +1377,90 @@ async def test_create_assignment_for_participant(xngin_session, testing_datasour
     # But that if we try to create an assignment for a participant that already has one, it triggers an error.
     with pytest.raises(ExperimentsAssignmentError, match="Failed to assign participant"):
         await create_assignment_for_participant(xngin_session, mab_experiment, "new_id")
+
+
+async def test_create_assignment_for_participant_with_unbalanced_arms(xngin_session, testing_datasource):
+    """Test that online experiments respect arm_weights for unbalanced allocation."""
+    request = make_createexperimentrequest_json(experiment_type=ExperimentsType.FREQ_ONLINE)
+    expected_weights = [80.0, 20.0]
+    request["design_spec"]["arms"][0]["arm_weight"] = expected_weights[0]
+    request["design_spec"]["arms"][1]["arm_weight"] = expected_weights[1]
+
+    response = await create_experiment_impl(
+        request=TypeAdapter(CreateExperimentRequest).validate_python(request),
+        datasource=testing_datasource.ds,
+        xngin_session=xngin_session,
+        chosen_n=None,
+        stratify_on_metrics=False,
+        random_state=42,
+        validated_webhooks=[],
+    )
+
+    # Commit the experiment so we can create assignments
+    experiment = await xngin_session.get(tables.Experiment, response.experiment_id)
+    await commit_experiment_impl(xngin_session, experiment)
+    await xngin_session.refresh(experiment, ["arms"])
+
+    # Create many assignments to check the distribution
+    n_assignments = 100
+    arm_counts = {arm.arm_id: 0 for arm in response.design_spec.arms}
+    for i in range(n_assignments):
+        assignment = await create_assignment_for_participant(
+            xngin_session, experiment, f"participant_{i}", random_state=i
+        )
+        assert assignment is not None
+        arm_counts[assignment.arm_id] += 1
+
+    # Check allocation distribution
+    total = sum(arm_counts.values())
+    proportions = {arm_id: count / total for arm_id, count in arm_counts.items()}
+    # Find the control and treatment arms
+    control_arm_id = next(arm.arm_id for arm in response.design_spec.arms if arm.arm_name == "control")
+    treatment_arm_id = next(arm.arm_id for arm in response.design_spec.arms if arm.arm_name == "treatment")
+    assert proportions[control_arm_id] == pytest.approx(expected_weights[0] / 100, abs=0.05)
+    assert proportions[treatment_arm_id] == pytest.approx(expected_weights[1] / 100, abs=0.05)
+
+
+async def test_create_assignment_for_participant_with_three_weighted_arms(xngin_session, testing_datasource):
+    """Test that online experiments respect arm_weights for three weighted arms."""
+    request = make_createexperimentrequest_json(experiment_type=ExperimentsType.FREQ_ONLINE)
+    request["design_spec"]["arms"].append({"arm_name": "T2", "arm_description": "treatment2"})
+    expected_weights = [33.3, 33.4, 33.3]
+    request["design_spec"]["arms"][0]["arm_weight"] = expected_weights[0]
+    request["design_spec"]["arms"][1]["arm_weight"] = expected_weights[1]
+    request["design_spec"]["arms"][2]["arm_weight"] = expected_weights[2]
+
+    response = await create_experiment_impl(
+        request=TypeAdapter(CreateExperimentRequest).validate_python(request),
+        datasource=testing_datasource.ds,
+        xngin_session=xngin_session,
+        chosen_n=None,
+        stratify_on_metrics=False,
+        random_state=42,
+        validated_webhooks=[],
+    )
+
+    # Commit the experiment so we can create assignments
+    experiment = await xngin_session.get(tables.Experiment, response.experiment_id)
+    await commit_experiment_impl(xngin_session, experiment)
+    await xngin_session.refresh(experiment, ["arms"])
+
+    # Create many assignments to check the distribution
+    n_assignments = 200
+    arm_counts = {arm.arm_id: 0 for arm in response.design_spec.arms}
+    for i in range(n_assignments):
+        assignment = await create_assignment_for_participant(
+            xngin_session, experiment, f"participant_{i}", random_state=i
+        )
+        assert assignment is not None
+        arm_counts[assignment.arm_id] += 1
+
+    # Check allocation distribution
+    total = sum(arm_counts.values())
+    proportions = [count / total for count in arm_counts.values()]
+    assert proportions[0] == pytest.approx(expected_weights[0] / 100, abs=0.1)
+    assert proportions[1] == pytest.approx(expected_weights[1] / 100, abs=0.1)
+    assert proportions[2] == pytest.approx(expected_weights[2] / 100, abs=0.1)
 
 
 @pytest.mark.parametrize(

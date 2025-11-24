@@ -212,6 +212,8 @@ async def create_preassigned_experiment_impl(
             raise LateValidationError(f"Duplicate participant ID found after filtering: '{participant_id}'.")
         seen_participant_ids.add(participant_id)
 
+    arm_weights = design_spec.get_validated_arm_weights()
+
     # Do the raw assignment first so we can store the balance check with the experiment.
     assignment_result = assign_treatments_with_balance(
         sa_table=dwh_sa_table,
@@ -221,6 +223,7 @@ async def create_preassigned_experiment_impl(
         n_arms=len(design_spec.arms),
         quantiles=4,
         random_state=random_state,
+        arm_weights=arm_weights,
     )
     balance_check = make_balance_check(assignment_result.balance_result, design_spec.fstat_thresh)
 
@@ -714,6 +717,27 @@ async def get_or_create_assignment_for_participant(
     )
 
 
+def choose_online_arm(
+    experiment: tables.Experiment,
+    random_state: int | None = None,
+) -> tables.Arm:
+    """Choose an arm for online experiments using simple or weighted random assignment depending on its design."""
+    # Sort by arm name to ensure deterministic assignment with seed for tests.
+    sorted_arms = sorted(experiment.arms, key=lambda a: a.name)
+    arm_weights_as_probabilities = None
+
+    arm_id_to_weight = {arm.id: arm.arm_weight for arm in experiment.arms if arm.arm_weight is not None}
+    if len(arm_id_to_weight) == len(experiment.arms):
+        # Convert to probabilities for weighted random selection.
+        arm_weights_sorted = [arm_id_to_weight[arm.id] for arm in sorted_arms]
+        sum_weights = sum(arm_weights_sorted)
+        arm_weights_as_probabilities = [w / sum_weights for w in arm_weights_sorted]
+
+    rng = np.random.default_rng(random_state)
+    index = rng.choice(len(sorted_arms), p=arm_weights_as_probabilities)
+    return sorted_arms[index]
+
+
 async def create_assignment_for_participant(
     xngin_session: AsyncSession,
     experiment: tables.Experiment,
@@ -764,11 +788,10 @@ async def create_assignment_for_participant(
         return None
 
     # For online frequentist or Bayesian A/B experiments, create a new assignment
-    # with simple random assignment.
+    # with simple random assignment or weighted random assignment if arm_weights are specified.
     match experiment_type:
         case ExperimentsType.FREQ_ONLINE | ExperimentsType.BAYESAB_ONLINE:
-            # Sort by arm name to ensure deterministic assignment with seed for tests.
-            chosen_arm = random_choice(sorted(experiment.arms, key=lambda a: a.name), seed=random_state)
+            chosen_arm = choose_online_arm(experiment=experiment, random_state=random_state)
         case ExperimentsType.MAB_ONLINE | ExperimentsType.CMAB_ONLINE:
             chosen_arm = choose_bandit_arm(
                 experiment=experiment,

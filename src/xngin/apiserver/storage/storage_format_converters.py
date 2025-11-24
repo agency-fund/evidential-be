@@ -155,6 +155,7 @@ class ExperimentStorageConverter:
                         "arm_id": arm.id,
                         "arm_name": arm.name,
                         "arm_description": arm.description,
+                        "arm_weight": arm.arm_weight,
                     }
                     for arm in self.experiment.arms
                 ],
@@ -324,6 +325,7 @@ class ExperimentStorageConverter:
                 tables.Arm(
                     name=arm.arm_name,
                     description=arm.arm_description,
+                    arm_weight=arm.arm_weight,
                     experiment_id=experiment.id,
                     organization_id=organization_id,
                 )
