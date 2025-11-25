@@ -301,11 +301,13 @@ def make_sample_data(n=100):
     ]
 
 
+@pytest.mark.parametrize("reorder_arms", [True, False])
 async def test_create_preassigned_experiment_impl(
     xngin_session: AsyncSession,
     testing_datasource,
     sample_table,
     use_deterministic_random,
+    reorder_arms: bool,
 ):
     """Test implementation of creating a preassigned experiment."""
     participants = make_sample_data(n=100)
@@ -360,6 +362,12 @@ async def test_create_preassigned_experiment_impl(
     # Verify database state uses app-generated ids
     experiment = await xngin_session.get(tables.Experiment, experiment_id)
     assert experiment is not None
+
+    # Reorder arms as storage layout to break test assumptions.
+    if reorder_arms:
+        experiment.arms.append(experiment.arms.pop(0))
+        await xngin_session.commit()
+
     assert experiment.experiment_type == ExperimentsType.FREQ_PREASSIGNED
     assert experiment.participant_type == request.design_spec.participant_type
     assert experiment.name == request.design_spec.experiment_name
@@ -587,7 +595,12 @@ async def test_create_preassigned_experiment_impl_with_three_unbalanced_arms(
         assert arm.arm_weight == db_arm.arm_weight
 
 
-async def test_create_freq_online_experiment_impl_with_unbalanced_arms(xngin_session, testing_datasource):
+@pytest.mark.parametrize("reorder_arms", [True, False])
+async def test_create_freq_online_experiment_impl_with_unbalanced_arms(
+    xngin_session,
+    testing_datasource,
+    reorder_arms: bool,
+):
     request = make_createexperimentrequest_json(experiment_type=ExperimentsType.FREQ_ONLINE)
     expected_weights = [100 * 1 / 3, 100 * 2 / 3]
     request["design_spec"]["arms"][0]["arm_weight"] = expected_weights[0]
@@ -612,6 +625,11 @@ async def test_create_freq_online_experiment_impl_with_unbalanced_arms(xngin_ses
     assert experiment is not None
     await experiment.awaitable_attrs.arms
     assert [arm.arm_weight for arm in experiment.arms] == expected_weights
+
+    # Reorder arms as storage layout to break test assumptions.
+    if reorder_arms:
+        experiment.arms.append(experiment.arms.pop(0))
+        await xngin_session.commit()
 
     # and the rehydrated design spec
     converter = ExperimentStorageConverter(experiment)
@@ -766,7 +784,8 @@ async def test_create_experiment_impl_for_freq_online(
     assert len(assignments) == 0
 
 
-async def test_create_experiment_impl_for_mab_online(xngin_session, testing_datasource):
+@pytest.mark.parametrize("reorder_arms", [True, False])
+async def test_create_experiment_impl_for_mab_online(xngin_session, testing_datasource, reorder_arms: bool):
     """Test implementation of creating an online experiment."""
     request = make_create_online_bandit_experiment_request()
     response = await create_bandit_online_experiment_impl(
@@ -800,6 +819,11 @@ async def test_create_experiment_impl_for_mab_online(xngin_session, testing_data
 
     # Verify database state
     experiment = await xngin_session.get(tables.Experiment, response.experiment_id)
+    assert experiment is not None
+    if reorder_arms:
+        experiment.arms.append(experiment.arms.pop(0))
+        await xngin_session.commit()
+
     assert experiment.experiment_type == ExperimentsType.MAB_ONLINE
     assert experiment.participant_type == request.design_spec.participant_type
     assert experiment.name == request.design_spec.experiment_name
