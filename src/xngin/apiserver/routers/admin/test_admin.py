@@ -78,6 +78,7 @@ from xngin.apiserver.routers.common_api_types import (
     LikelihoodTypes,
     ListExperimentsResponse,
     MABExperimentSpec,
+    OnlineFrequentistExperimentSpec,
     PowerRequest,
     PowerResponse,
     PreassignedFrequentistExperimentSpec,
@@ -101,6 +102,7 @@ from xngin.apiserver.routers.experiments.test_experiments_common import (
 from xngin.apiserver.settings import ParticipantsDef
 from xngin.apiserver.sqla import tables
 from xngin.apiserver.storage.bootstrap import DEFAULT_NO_DWH_SOURCE_NAME
+from xngin.apiserver.storage.storage_format_converters import ExperimentStorageConverter
 from xngin.apiserver.testing.assertions import assert_dates_equal
 from xngin.apiserver.testing.testing_dwh_def import TESTING_DWH_PARTICIPANT_DEF
 from xngin.stats.bandit_sampling import update_arm
@@ -129,11 +131,74 @@ def find_ds_with_name[DSType: tables.Datasource | DatasourceSummary](datasources
     return next(ds for ds in datasources if ds.name == name)
 
 
+async def make_freq_online_experiment(
+    datasource_id: str,
+    ppost,
+    pget,
+    end_date: datetime | None = None,
+) -> GetExperimentResponse:
+    """Create a frequentist online experiment using our API (rather than a fixture)."""
+    end_date = end_date or datetime.now(UTC) + timedelta(days=1)
+    response = ppost(
+        f"/v1/m/datasources/{datasource_id}/experiments",
+        params={"random_state": 42},
+        json=CreateExperimentRequest(
+            design_spec=OnlineFrequentistExperimentSpec(
+                experiment_type=ExperimentsType.FREQ_ONLINE,
+                participant_type="test_participant_type",
+                experiment_name="test experiment",
+                description="test experiment",
+                start_date=datetime(2024, 1, 1, tzinfo=UTC),
+                end_date=end_date,
+                arms=[Arm(arm_name="C", arm_description="C"), Arm(arm_name="T", arm_description="T")],
+                metrics=[DesignSpecMetricRequest(field_name="is_engaged", metric_pct_change=0.1)],
+                strata=[],
+                filters=[],
+            )
+        ).model_dump(mode="json"),
+    )
+    assert response.status_code == 200, response.content
+    experiment_id = CreateExperimentResponse.model_validate_json(response.content).experiment_id
+
+    # Experiments must be in an eligible state to be snapshotted.
+    response = ppost(f"/v1/m/datasources/{datasource_id}/experiments/{experiment_id}/commit")
+    assert response.status_code == 204
+
+    response = pget(f"/v1/m/datasources/{datasource_id}/experiments/{experiment_id}")
+    assert response.status_code == 200
+    return GetExperimentResponse.model_validate(response.json())
+
+
 @pytest.fixture(name="testing_experiment")
 async def fixture_testing_experiment(xngin_session: AsyncSession, testing_datasource_with_user) -> tables.Experiment:
-    """Create an experiment on a test inline schema datasource with proper user permissions."""
+    """Create a preassigned experiment directly in our app db on the datasource with proper user permissions."""
     datasource = testing_datasource_with_user.ds
-    experiment = await insert_experiment_and_arms(xngin_session, datasource, ExperimentsType.FREQ_PREASSIGNED)
+
+    design_spec = PreassignedFrequentistExperimentSpec(
+        experiment_type=ExperimentsType.FREQ_PREASSIGNED,
+        participant_type="test_participant_type",
+        experiment_name="test experiment",
+        description="test experiment",
+        start_date=datetime(2024, 1, 1, tzinfo=UTC),
+        end_date=datetime.now(UTC) + timedelta(days=1),
+        arms=[Arm(arm_name="C", arm_description="C"), Arm(arm_name="T", arm_description="T")],
+        metrics=[DesignSpecMetricRequest(field_name="is_engaged", metric_pct_change=0.1)],
+        strata=[],
+        filters=[],
+    )
+    experiment_converter = ExperimentStorageConverter.init_from_components(
+        datasource_id=datasource.id,
+        organization_id=datasource.organization_id,
+        experiment_type=design_spec.experiment_type,
+        design_spec=design_spec,
+        state=ExperimentState.COMMITTED,
+        stopped_assignments_at=datetime.now(UTC),
+        stopped_assignments_reason=StopAssignmentReason.PREASSIGNED,
+    )
+    experiment = experiment_converter.get_experiment()
+    xngin_session.add(experiment)
+    await xngin_session.commit()
+
     # Add fake assignments for each arm for real participant ids in our test data.
     arm_ids = [arm.id for arm in experiment.arms]
     # NOTE: id = 0 doesn't exist in the test data, so we'll have 1 missing participant.
@@ -1706,13 +1771,12 @@ def test_get_experiment_assignment_for_preassigned_participant(testing_experimen
 
 
 async def test_get_experiment_assignment_for_online_participant(
-    xngin_session: AsyncSession, testing_datasource_with_user, pget
+    xngin_session: AsyncSession, testing_datasource_with_user, ppost, pget
 ):
-    test_experiment = await insert_experiment_and_arms(
-        xngin_session, testing_datasource_with_user.ds, ExperimentsType.FREQ_ONLINE
-    )
-    datasource_id = test_experiment.datasource_id
-    experiment_id = test_experiment.id
+    datasource_id = testing_datasource_with_user.ds.id
+    experiment_resp = await make_freq_online_experiment(datasource_id, ppost, pget)
+    experiment_id = experiment_resp.experiment_id
+    experiment_arms = experiment_resp.design_spec.arms
 
     # Check for an assignment that doesn't exist, but don't create it.
     response = pget(
@@ -1731,7 +1795,7 @@ async def test_get_experiment_assignment_for_online_participant(
     assert assignment_response.experiment_id == experiment_id
     assert assignment_response.participant_id == "new_id"
     assert assignment_response.assignment is not None
-    assert str(assignment_response.assignment.arm_id) in {arm.id for arm in test_experiment.arms}
+    assert str(assignment_response.assignment.arm_id) in {arm.arm_id for arm in experiment_arms}
 
     # Get back the same assignment.
     response = pget(f"/v1/m/datasources/{datasource_id}/experiments/{experiment_id}/assignments/new_id")
@@ -1792,16 +1856,11 @@ async def test_get_mab_experiment_assignment_for_online_participant(
 
 
 async def test_get_experiment_assignment_for_online_participant_past_end_date(
-    xngin_session: AsyncSession, testing_datasource_with_user, pget
+    testing_datasource_with_user, ppost, pget
 ):
-    new_exp = await insert_experiment_and_arms(
-        xngin_session,
-        testing_datasource_with_user.ds,
-        ExperimentsType.FREQ_ONLINE,
-        end_date=datetime.now(UTC) - timedelta(days=1),
-    )
-    datasource_id = new_exp.datasource_id
-    experiment_id = new_exp.id
+    datasource_id = testing_datasource_with_user.ds.id
+    end_date = datetime.now(UTC) - timedelta(days=1)
+    experiment_id = (await make_freq_online_experiment(datasource_id, ppost, pget, end_date=end_date)).experiment_id
 
     # Verify no new assignment is created for the ended experiment.
     response = pget(f"/v1/m/datasources/{datasource_id}/experiments/{experiment_id}/assignments/new_id")
@@ -1810,10 +1869,12 @@ async def test_get_experiment_assignment_for_online_participant_past_end_date(
     assert assignment_response.experiment_id == experiment_id
     assert assignment_response.participant_id == "new_id"
     assert assignment_response.assignment is None, assignment_response.model_dump_json()
+
     # Verify that the experiment state was updated.
-    await xngin_session.refresh(new_exp)
-    assert new_exp.stopped_assignments_at is not None
-    assert new_exp.stopped_assignments_reason == StopAssignmentReason.END_DATE
+    response = pget(f"/v1/m/datasources/{datasource_id}/experiments/{experiment_id}")
+    experiment_resp = GetExperimentResponse.model_validate(response.json())
+    assert experiment_resp.stopped_assignments_at is not None
+    assert experiment_resp.stopped_assignments_reason == StopAssignmentReason.END_DATE
 
 
 def test_freq_experiments_analyze(testing_experiment, pget):
@@ -1907,26 +1968,18 @@ def test_cmab_experiments_analyze(testing_bandit_experiment, ppost):
         assert analysis.post_pred_stdev is not None
 
 
-async def test_analyze_experiment_with_no_participants(xngin_session: AsyncSession, testing_datasource_with_user, pget):
-    test_experiment = await insert_experiment_and_arms(
-        xngin_session, testing_datasource_with_user.ds, ExperimentsType.FREQ_ONLINE
-    )
-    datasource_id = test_experiment.datasource_id
-    experiment_id = test_experiment.id
+async def test_analyze_experiment_with_no_participants(testing_datasource_with_user, ppost, pget):
+    datasource_id = testing_datasource_with_user.ds.id
+    experiment_id = (await make_freq_online_experiment(datasource_id, ppost, pget)).experiment_id
 
     response = pget(f"/v1/m/datasources/{datasource_id}/experiments/{experiment_id}/analyze")
     assert response.status_code == 422, response.content
     assert response.json()["message"] == "No participants found for experiment."
 
 
-async def test_analyze_experiment_whose_assignments_have_no_dwh_data(
-    xngin_session: AsyncSession, testing_datasource_with_user, pget
-):
-    test_experiment = await insert_experiment_and_arms(
-        xngin_session, testing_datasource_with_user.ds, ExperimentsType.FREQ_ONLINE
-    )
-    datasource_id = test_experiment.datasource_id
-    experiment_id = test_experiment.id
+async def test_analyze_experiment_whose_assignments_have_no_dwh_data(testing_datasource_with_user, ppost, pget):
+    datasource_id = testing_datasource_with_user.ds.id
+    experiment_id = (await make_freq_online_experiment(datasource_id, ppost, pget)).experiment_id
 
     # Create a new participant assignment for an id missing in the dwh.
     response = pget(f"/v1/m/datasources/{datasource_id}/experiments/{experiment_id}/assignments/0")
@@ -1937,14 +1990,9 @@ async def test_analyze_experiment_whose_assignments_have_no_dwh_data(
     assert "Check that ids used in assignment are usable with your unique identifier (id)" in response.json()["message"]
 
 
-async def test_analyze_experiment_with_no_assignments_in_one_arm_yet(
-    xngin_session: AsyncSession, testing_datasource_with_user, pget
-):
-    test_experiment = await insert_experiment_and_arms(
-        xngin_session, testing_datasource_with_user.ds, ExperimentsType.FREQ_ONLINE
-    )
-    datasource_id = test_experiment.datasource_id
-    experiment_id = test_experiment.id
+async def test_analyze_experiment_with_no_assignments_in_one_arm_yet(testing_datasource_with_user, ppost, pget):
+    datasource_id = testing_datasource_with_user.ds.id
+    experiment_id = (await make_freq_online_experiment(datasource_id, ppost, pget)).experiment_id
 
     # Create a new participant assignment for one arm.
     response = pget(f"/v1/m/datasources/{datasource_id}/experiments/{experiment_id}/assignments/1")
@@ -1961,7 +2009,7 @@ async def test_analyze_experiment_with_no_assignments_in_one_arm_yet(
     assert analysis_response.num_missing_participants == 0
     assert len(analysis_response.metric_analyses) == 1
     metric_analysis = analysis_response.metric_analyses[0]
-    assert metric_analysis.metric_name == "is_onboarded"
+    assert metric_analysis.metric_name == "is_engaged"
     assert len(metric_analysis.arm_analyses) == 2
     for analysis in metric_analysis.arm_analyses:
         if analysis.arm_id == assigned_arm_id:

@@ -20,9 +20,9 @@ async def make_experiment(xngin_session, datasource: tables.Datasource, design_s
     experiment_converter = ExperimentStorageConverter.init_from_components(
         datasource_id=datasource.id,
         organization_id=datasource.organization_id,
-        experiment_type=ExperimentsType.FREQ_PREASSIGNED,
+        experiment_type=design_spec.experiment_type,
         design_spec=design_spec,
-        state=ExperimentState.ASSIGNED,
+        state=ExperimentState.COMMITTED,
         stopped_assignments_at=datetime.now(UTC),
         stopped_assignments_reason=StopAssignmentReason.PREASSIGNED,
     )
