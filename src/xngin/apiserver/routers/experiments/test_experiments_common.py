@@ -184,7 +184,7 @@ def make_create_preassigned_experiment_request() -> CreateExperimentRequest:
     return TypeAdapter(CreateExperimentRequest).validate_python(request)
 
 
-def make_create_online_experiment_request() -> CreateExperimentRequest:
+def make_create_freq_online_experiment_request() -> CreateExperimentRequest:
     request = make_createexperimentrequest_json(experiment_type=ExperimentsType.FREQ_ONLINE)
     return TypeAdapter(CreateExperimentRequest).validate_python(request)
 
@@ -301,7 +301,7 @@ def make_sample_data(n=100):
     ]
 
 
-async def test_create_experiment_impl_for_preassigned(
+async def test_create_preassigned_experiment_impl(
     xngin_session: AsyncSession,
     testing_datasource,
     sample_table,
@@ -319,7 +319,6 @@ async def test_create_experiment_impl_for_preassigned(
         ]
     )
 
-    # Test!
     response = await create_preassigned_experiment_impl(
         request=request.model_copy(deep=True),  # we'll use the original request for assertions
         datasource_id=testing_datasource.ds.id,
@@ -332,6 +331,7 @@ async def test_create_experiment_impl_for_preassigned(
         stratify_on_metrics=True,
         validated_webhooks=[],
     )
+
     # Verify response
     experiment_id = response.experiment_id
     assert response.datasource_id == testing_datasource.ds.id
@@ -394,11 +394,20 @@ async def test_create_experiment_impl_for_preassigned(
     assert len(assignment_participant_ids) == len(participants)
 
     # Verify arms were created in database
-    arms = (await xngin_session.scalars(select(tables.Arm).where(tables.Arm.experiment_id == experiment.id))).all()
+    arms = (
+        await xngin_session.scalars(
+            select(tables.Arm).where(tables.Arm.experiment_id == experiment.id).order_by(tables.Arm.position)
+        )
+    ).all()
     assert len(arms) == 2
     arm_ids = {arm.id for arm in arms}
     expected_arm_ids = {response_arm.arm_id for response_arm in response.design_spec.arms}
     assert arm_ids == expected_arm_ids
+    # Verify arm positions were stored correctly
+    for i, (req_arm, db_arm) in enumerate(zip(request.design_spec.arms, arms, strict=True)):
+        assert db_arm.position == i + 1
+        assert req_arm.arm_name == db_arm.name
+        assert db_arm.arm_weight is None
 
     # Check one assignment to see if it looks roughly right
     sample_assignment = assignments[0]
@@ -504,6 +513,11 @@ async def test_create_preassigned_experiment_impl_with_unbalanced_arms(
     assert experiment is not None
     await experiment.awaitable_attrs.arms
     assert [arm.arm_weight for arm in experiment.arms] == expected_weights
+    # verify arm positions were stored correctly
+    for i, (arm, db_arm) in enumerate(zip(request.design_spec.arms, experiment.arms, strict=True), start=1):
+        assert db_arm.position == i
+        assert arm.arm_name == db_arm.name
+        assert arm.arm_weight == db_arm.arm_weight
 
 
 async def test_create_preassigned_experiment_impl_with_three_unbalanced_arms(
@@ -566,9 +580,14 @@ async def test_create_preassigned_experiment_impl_with_three_unbalanced_arms(
     assert experiment is not None
     await experiment.awaitable_attrs.arms
     assert [arm.arm_weight for arm in experiment.arms] == expected_weights
+    # verify arm positions were stored correctly
+    for i, (arm, db_arm) in enumerate(zip(request.design_spec.arms, experiment.arms, strict=True), start=1):
+        assert db_arm.position == i
+        assert arm.arm_name == db_arm.name
+        assert arm.arm_weight == db_arm.arm_weight
 
 
-async def test_create_online_experiment_impl_with_unbalanced_arms(xngin_session, testing_datasource):
+async def test_create_freq_online_experiment_impl_with_unbalanced_arms(xngin_session, testing_datasource):
     request = make_createexperimentrequest_json(experiment_type=ExperimentsType.FREQ_ONLINE)
     expected_weights = [100 * 1 / 3, 100 * 2 / 3]
     request["design_spec"]["arms"][0]["arm_weight"] = expected_weights[0]
@@ -593,11 +612,18 @@ async def test_create_online_experiment_impl_with_unbalanced_arms(xngin_session,
     assert experiment is not None
     await experiment.awaitable_attrs.arms
     assert [arm.arm_weight for arm in experiment.arms] == expected_weights
+
     # and the rehydrated design spec
     converter = ExperimentStorageConverter(experiment)
     design_spec = converter.get_design_spec()
     assert isinstance(design_spec, OnlineFrequentistExperimentSpec)
     assert design_spec.get_validated_arm_weights() == expected_weights
+    # verify arm positions were stored correctly.
+    # This assertion variation does not assume retrieval order is the same as insertion!
+    for i, req_arm in enumerate(request.design_spec.arms, start=1):
+        db_arm = next(arm for arm in experiment.arms if arm.name == req_arm.arm_name)
+        assert db_arm.position == i
+        assert req_arm.arm_weight == db_arm.arm_weight
 
 
 @pytest.mark.parametrize(
@@ -615,12 +641,22 @@ async def test_create_online_experiment_impl_with_unbalanced_arms(xngin_session,
         ),
         (
             ExperimentsType.FREQ_PREASSIGNED,
+            [Filter(field_name="gender", relation=Relation.INCLUDES, value=[1])],
+            "varchar input is not a string",
+        ),
+        (
+            ExperimentsType.FREQ_PREASSIGNED,
             [Filter(field_name="is_onboarded", relation=Relation.INCLUDES, value=[1])],
             "input is not a boolean",
         ),
+        (
+            ExperimentsType.FREQ_PREASSIGNED,
+            [Filter(field_name="missing_field", relation=Relation.INCLUDES, value=["value"])],
+            "Field missing_field not found in participants schema",
+        ),
     ],
 )
-async def test_create_online_experiment_impl_raises_on_bad_filters(
+async def test_create_frequentist_experiment_impl_raises_on_bad_filters(
     xngin_session: AsyncSession,
     testing_datasource,
     experiment_type: ExperimentsType,
@@ -646,11 +682,11 @@ async def test_create_online_experiment_impl_raises_on_bad_filters(
         )
 
 
-async def test_create_experiment_impl_for_online(
+async def test_create_experiment_impl_for_freq_online(
     xngin_session, testing_datasource, sample_table, use_deterministic_random
 ):
     """Test implementation of creating an online experiment."""
-    request = make_create_online_experiment_request()
+    request = make_create_freq_online_experiment_request()
 
     response = await create_experiment_impl(
         request=request.model_copy(deep=True),
@@ -715,6 +751,11 @@ async def test_create_experiment_impl_for_online(
     arm_ids = {arm.id for arm in arms}
     expected_arm_ids = {arm.arm_id for arm in response.design_spec.arms}
     assert arm_ids == expected_arm_ids
+    # Verify arm positions were stored correctly
+    for i, (req_arm, db_arm) in enumerate(zip(request.design_spec.arms, arms, strict=True), start=1):
+        assert db_arm.position == i
+        assert req_arm.arm_name == db_arm.name
+        assert req_arm.arm_weight is None
 
     # Verify that no assignments were created for online experiment
     assignments = (
@@ -788,6 +829,11 @@ async def test_create_experiment_impl_for_mab_online(xngin_session, testing_data
     arm_ids = {arm.id for arm in arms}
     expected_arm_ids = {arm.arm_id for arm in response.design_spec.arms}
     assert arm_ids == expected_arm_ids
+    # Verify arm positions were stored correctly
+    for i, (req_arm, db_arm) in enumerate(zip(request.design_spec.arms, arms, strict=True), start=1):
+        assert db_arm.position == i
+        assert req_arm.arm_name == db_arm.name
+        assert req_arm.arm_weight is None
 
     # Verify that no assignments were created for online experiment
     assignments = (
@@ -865,6 +911,11 @@ async def test_create_experiment_impl_for_cmab_online(xngin_session, testing_dat
     arm_ids = {arm.id for arm in arms}
     expected_arm_ids = {arm.arm_id for arm in response.design_spec.arms}
     assert arm_ids == expected_arm_ids
+    # Verify arm positions were stored correctly
+    for i, (req_arm, db_arm) in enumerate(zip(request.design_spec.arms, arms, strict=True), start=1):
+        assert db_arm.position == i
+        assert req_arm.arm_name == db_arm.name
+        assert req_arm.arm_weight is None
 
     # Verify contexts were created in database
     contexts = (

@@ -92,8 +92,8 @@ from xngin.apiserver.routers.common_enums import (
 )
 from xngin.apiserver.routers.experiments.test_experiments_common import (
     insert_experiment_and_arms,
+    make_create_freq_online_experiment_request,
     make_create_online_bandit_experiment_request,
-    make_create_online_experiment_request,
     make_create_preassigned_experiment_request,
     make_createexperimentrequest_json,
     make_insertable_experiment,
@@ -1330,9 +1330,9 @@ async def test_create_preassigned_experiment(
     assert abs(num_control - num_treat) <= 5  # Allow some wiggle room
 
 
-def test_create_online_experiment(testing_datasource_with_user, use_deterministic_random, ppost):
+def test_create_freq_online_experiment(testing_datasource_with_user, use_deterministic_random, ppost):
     datasource_id = testing_datasource_with_user.ds.id
-    request_obj = make_create_online_experiment_request()
+    request_obj = make_create_freq_online_experiment_request()
 
     response = ppost(
         f"/v1/m/datasources/{datasource_id}/experiments",
