@@ -1417,7 +1417,7 @@ async def analyze_experiment(
         preload=[tables.Experiment.arm_assignments, tables.Experiment.draws, tables.Experiment.contexts],
     )
 
-    design_spec = ExperimentStorageConverter(experiment).get_design_spec()
+    design_spec = await ExperimentStorageConverter(experiment).get_design_spec()
     match design_spec:
         case BaseBanditExperimentSpec():
             if experiment.experiment_type != ExperimentsType.MAB_ONLINE.value:

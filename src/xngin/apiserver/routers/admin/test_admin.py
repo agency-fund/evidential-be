@@ -2031,7 +2031,7 @@ async def test_admin_experiment_state_setting(
 ):
     # Initialize our state with an existing experiment who's state we want to modify.
     datasource = testing_datasource_with_user.ds
-    experiment, _ = make_insertable_experiment(datasource, initial_state)
+    experiment, _ = await make_insertable_experiment(datasource, initial_state)
     xngin_session.add(experiment)
     await xngin_session.commit()
 

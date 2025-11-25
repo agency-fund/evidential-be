@@ -274,7 +274,7 @@ async def create_preassigned_experiment_impl(
         xngin_session, experiment.id, balance_check, ExperimentsType.FREQ_PREASSIGNED
     )
     webhook_ids = [webhook.id for webhook in validated_webhooks]
-    return experiment_converter.get_create_experiment_response(assign_summary, webhook_ids)
+    return await experiment_converter.get_create_experiment_response(assign_summary, webhook_ids)
 
 
 async def create_freq_online_experiment_impl(
@@ -313,7 +313,7 @@ async def create_freq_online_experiment_impl(
         arm_sizes=[ArmSize(arm=arm.model_copy(), size=0) for arm in design_spec.arms],
     )
     webhook_ids = [webhook.id for webhook in validated_webhooks]
-    return experiment_converter.get_create_experiment_response(empty_assign_summary, webhook_ids)
+    return await experiment_converter.get_create_experiment_response(empty_assign_summary, webhook_ids)
 
 
 async def create_bandit_online_experiment_impl(
@@ -354,7 +354,7 @@ async def create_bandit_online_experiment_impl(
         arm_sizes=[ArmSize(arm=arm.model_copy(), size=0) for arm in design_spec.arms],
     )
     webhook_ids = [webhook.id for webhook in validated_webhooks]
-    return experiment_converter.get_create_experiment_response(empty_assign_summary, webhook_ids)
+    return await experiment_converter.get_create_experiment_response(empty_assign_summary, webhook_ids)
 
 
 async def commit_experiment_impl(xngin_session: AsyncSession, experiment: tables.Experiment):
@@ -429,7 +429,7 @@ async def get_experiment_impl(
         experiment_type=ExperimentsType(experiment.experiment_type),
     )
     webhook_ids = [webhook.id for webhook in experiment.webhooks]
-    return converter.get_experiment_response(assign_summary, webhook_ids)
+    return await converter.get_experiment_response(assign_summary, webhook_ids)
 
 
 async def list_organization_or_datasource_experiments_impl(
@@ -479,7 +479,7 @@ async def list_organization_or_datasource_experiments_impl(
             xngin_session, e.id, balance_check, experiment_type=ExperimentsType(e.experiment_type)
         )
         webhook_ids = [webhook.id for webhook in e.webhooks]
-        items.append(converter.get_experiment_config(assign_summary, webhook_ids))
+        items.append(await converter.get_experiment_config(assign_summary, webhook_ids))
     return ListExperimentsResponse(items=items)
 
 
@@ -873,7 +873,7 @@ async def update_bandit_arm_with_outcome_impl(
 ) -> tables.Arm:
     """Update the Draw table with the outcome for a bandit experiment."""
     # Not supported for frequentist experiments
-    design_spec = ExperimentStorageConverter(experiment).get_design_spec()
+    design_spec = await ExperimentStorageConverter(experiment).get_design_spec()
 
     if isinstance(design_spec, BaseFrequentistDesignSpec):
         raise LateValidationError(

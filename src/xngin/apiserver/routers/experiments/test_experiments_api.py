@@ -51,7 +51,7 @@ async def test_list_experiments_with_api_key(xngin_session, testing_datasource, 
     experiments = ListExperimentsResponse.model_validate(response.json())
     assert len(experiments.items) == 1
     assert experiments.items[0].state == ExperimentState.ASSIGNED
-    expected_design_spec = ExperimentStorageConverter(expected_experiment).get_design_spec()
+    expected_design_spec = await ExperimentStorageConverter(expected_experiment).get_design_spec()
     diff = DeepDiff(expected_design_spec, experiments.items[0].design_spec)
     assert not diff, f"Objects differ:\n{diff.pretty()}"
 
@@ -74,7 +74,7 @@ async def test_get_experiment(xngin_session, testing_datasource, client_v1):
     assert experiment_json["datasource_id"] == new_experiment.datasource_id
     assert experiment_json["state"] == new_experiment.state
     actual = PreassignedFrequentistExperimentSpec.model_validate(experiment_json["design_spec"])
-    expected = ExperimentStorageConverter(new_experiment).get_design_spec()
+    expected = await ExperimentStorageConverter(new_experiment).get_design_spec()
     diff = DeepDiff(actual, expected)
     assert not diff, f"Objects differ:\n{diff.pretty()}"
 
@@ -411,7 +411,7 @@ async def test_assign_with_filters_wrong_experiment_type(xngin_session, testing_
 async def test_assign_with_filters_participant_passes_filters(xngin_session, testing_datasource, client_v1):
     """Test that participant passing filters gets assigned."""
     # Create an experiment with a current_income filter: current_income BETWEEN 1000 and 5000
-    experiment, design_spec = make_insertable_experiment(
+    experiment, design_spec = await make_insertable_experiment(
         datasource=testing_datasource.ds,
         state=ExperimentState.COMMITTED,
         experiment_type=ExperimentsType.FREQ_ONLINE,

@@ -131,7 +131,7 @@ class ExperimentStorageConverter:
     def get_design_spec_metrics(self) -> list[capi.DesignSpecMetricRequest]:
         return ExperimentStorageConverter.get_api_metrics(self.get_design_spec_fields())
 
-    def get_design_spec(self) -> capi.DesignSpec:
+    async def get_design_spec(self) -> capi.DesignSpec:
         """Converts a DesignSpecFields to a DesignSpec object."""
         base_experiment_dict = {
             "participant_type": self.experiment.participant_type,
@@ -142,6 +142,7 @@ class ExperimentStorageConverter:
             "start_date": self.experiment.start_date,
             "end_date": self.experiment.end_date,
         }
+        await self.experiment.awaitable_attrs.arms
 
         if self.experiment.experiment_type in {
             ExperimentsType.FREQ_ONLINE.value,
@@ -234,7 +235,7 @@ class ExperimentStorageConverter:
             return None
         return capi.PowerResponse.model_validate(self.experiment.power_analyses)
 
-    def get_experiment_config(
+    async def get_experiment_config(
         self,
         assign_summary: capi.AssignSummary,
         webhook_ids: list[str] | None = None,
@@ -248,7 +249,7 @@ class ExperimentStorageConverter:
             state=ExperimentState(self.experiment.state),
             stopped_assignments_at=self.experiment.stopped_assignments_at,
             stopped_assignments_reason=StopAssignmentReason.from_str(self.experiment.stopped_assignments_reason),
-            design_spec=self.get_design_spec(),
+            design_spec=await self.get_design_spec(),
             power_analyses=self.get_power_response(),
             assign_summary=assign_summary,
             webhooks=webhook_ids or [],
@@ -256,7 +257,7 @@ class ExperimentStorageConverter:
             impact=self.experiment.impact,
         )
 
-    def get_experiment_response(
+    async def get_experiment_response(
         self,
         assign_summary: capi.AssignSummary,
         webhook_ids: list[str] | None = None,
@@ -264,17 +265,17 @@ class ExperimentStorageConverter:
         # Although GetExperimentResponse is a subclass of ExperimentConfig, we revalidate the
         # response in case we ever change the API.
         return capi.GetExperimentResponse.model_validate(
-            self.get_experiment_config(assign_summary, webhook_ids).model_dump()
+            (await self.get_experiment_config(assign_summary, webhook_ids)).model_dump()
         )
 
-    def get_create_experiment_response(
+    async def get_create_experiment_response(
         self,
         assign_summary: capi.AssignSummary,
         webhook_ids: list[str] | None = None,
     ) -> capi.CreateExperimentResponse:
         # Revalidate the response in case we ever change the API.
         return capi.CreateExperimentResponse.model_validate(
-            self.get_experiment_config(assign_summary, webhook_ids).model_dump()
+            (await self.get_experiment_config(assign_summary, webhook_ids)).model_dump()
         )
 
     @classmethod
