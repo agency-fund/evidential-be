@@ -175,13 +175,13 @@ async def _query_dwh_for_snapshot_data(
         return experiments_common.analyze_experiment_bandit_impl(experiment=experiment, context_vals=context_vals)
 
     if ExperimentsType(experiment.experiment_type).is_freq():
-        # We always assume the first arm is the baseline.
-        arms = experiment.arms
-        assert arms[0].id is not None
+        # Look for the arm in position 1. If not found, use the first arm.
+        baseline_arm = next((arm for arm in experiment.arms if arm.position == 1), experiment.arms[0])
+        assert baseline_arm.id is not None
         return await experiments_common.analyze_experiment_freq_impl(
             dsconfig=datasource.get_config(),
             experiment=experiment,
-            baseline_arm_id=experiment.arms[0].id,
+            baseline_arm_id=baseline_arm.id,
             metrics=ExperimentStorageConverter(experiment).get_design_spec_metrics(),
         )
     raise ValueError(f"Unsupported experiment type: {experiment.experiment_type}")
