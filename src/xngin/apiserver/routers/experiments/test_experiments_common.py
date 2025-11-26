@@ -184,7 +184,7 @@ def make_create_preassigned_experiment_request() -> CreateExperimentRequest:
     return TypeAdapter(CreateExperimentRequest).validate_python(request)
 
 
-def make_create_online_experiment_request() -> CreateExperimentRequest:
+def make_create_freq_online_experiment_request() -> CreateExperimentRequest:
     request = make_createexperimentrequest_json(experiment_type=ExperimentsType.FREQ_ONLINE)
     return TypeAdapter(CreateExperimentRequest).validate_python(request)
 
@@ -200,7 +200,7 @@ def make_create_online_bandit_experiment_request(
     return TypeAdapter(CreateExperimentRequest).validate_python(request)
 
 
-def make_insertable_experiment(
+async def make_insertable_experiment(
     datasource: tables.Datasource,
     state: ExperimentState = ExperimentState.COMMITTED,
     experiment_type: ExperimentsType = ExperimentsType.FREQ_PREASSIGNED,
@@ -231,7 +231,7 @@ def make_insertable_experiment(
         stopped_assignments_reason=stopped_assignments_reason,
     )
     experiment = experiment_converter.get_experiment()
-    return experiment, experiment_converter.get_design_spec()
+    return experiment, await experiment_converter.get_design_spec()
 
 
 async def insert_experiment_and_arms(
@@ -247,7 +247,7 @@ async def insert_experiment_and_arms(
 
     Returns the new ORM experiment object.
     """
-    experiment, _ = make_insertable_experiment(
+    experiment, _ = await make_insertable_experiment(
         datasource=datasource,
         state=state,
         experiment_type=experiment_type,
@@ -301,11 +301,13 @@ def make_sample_data(n=100):
     ]
 
 
-async def test_create_experiment_impl_for_preassigned(
+@pytest.mark.parametrize("reorder_arms", [True, False])
+async def test_create_preassigned_experiment_impl(
     xngin_session: AsyncSession,
     testing_datasource,
     sample_table,
     use_deterministic_random,
+    reorder_arms: bool,
 ):
     """Test implementation of creating a preassigned experiment."""
     participants = make_sample_data(n=100)
@@ -319,7 +321,6 @@ async def test_create_experiment_impl_for_preassigned(
         ]
     )
 
-    # Test!
     response = await create_preassigned_experiment_impl(
         request=request.model_copy(deep=True),  # we'll use the original request for assertions
         datasource_id=testing_datasource.ds.id,
@@ -332,6 +333,7 @@ async def test_create_experiment_impl_for_preassigned(
         stratify_on_metrics=True,
         validated_webhooks=[],
     )
+
     # Verify response
     experiment_id = response.experiment_id
     assert response.datasource_id == testing_datasource.ds.id
@@ -360,6 +362,13 @@ async def test_create_experiment_impl_for_preassigned(
     # Verify database state uses app-generated ids
     experiment = await xngin_session.get(tables.Experiment, experiment_id)
     assert experiment is not None
+
+    # Reorder storage layout for arms to confirm we're able to retrieve in order according to position.
+    if reorder_arms:
+        experiment.arms.append(experiment.arms.pop(0))
+        await xngin_session.commit()
+        await xngin_session.refresh(experiment)
+
     assert experiment.experiment_type == ExperimentsType.FREQ_PREASSIGNED
     assert experiment.participant_type == request.design_spec.participant_type
     assert experiment.name == request.design_spec.experiment_name
@@ -376,10 +385,11 @@ async def test_create_experiment_impl_for_preassigned(
     assert experiment.power == request.design_spec.power
     assert experiment.alpha == request.design_spec.alpha
     assert experiment.fstat_thresh == request.design_spec.fstat_thresh
-    # Verify design_spec was stored correctly
     converter = ExperimentStorageConverter(experiment)
-    assert converter.get_design_spec() == response.design_spec
     assert converter.get_power_response() == response.power_analyses
+    # Verify design_spec was stored correctly.
+    rehydrated_design_spec = await converter.get_design_spec()
+    assert rehydrated_design_spec == response.design_spec
 
     # Verify assignments were created
     assignments = (
@@ -394,11 +404,20 @@ async def test_create_experiment_impl_for_preassigned(
     assert len(assignment_participant_ids) == len(participants)
 
     # Verify arms were created in database
-    arms = (await xngin_session.scalars(select(tables.Arm).where(tables.Arm.experiment_id == experiment.id))).all()
+    arms = (
+        await xngin_session.scalars(
+            select(tables.Arm).where(tables.Arm.experiment_id == experiment.id).order_by(tables.Arm.position)
+        )
+    ).all()
     assert len(arms) == 2
     arm_ids = {arm.id for arm in arms}
     expected_arm_ids = {response_arm.arm_id for response_arm in response.design_spec.arms}
     assert arm_ids == expected_arm_ids
+    # Verify arm positions were stored correctly
+    for i, (req_arm, db_arm) in enumerate(zip(request.design_spec.arms, arms, strict=True)):
+        assert db_arm.position == i + 1
+        assert req_arm.arm_name == db_arm.name
+        assert db_arm.arm_weight is None
 
     # Check one assignment to see if it looks roughly right
     sample_assignment = assignments[0]
@@ -504,6 +523,11 @@ async def test_create_preassigned_experiment_impl_with_unbalanced_arms(
     assert experiment is not None
     await experiment.awaitable_attrs.arms
     assert [arm.arm_weight for arm in experiment.arms] == expected_weights
+    # verify arm positions were stored correctly
+    for i, (arm, db_arm) in enumerate(zip(request.design_spec.arms, experiment.arms, strict=True), start=1):
+        assert db_arm.position == i
+        assert arm.arm_name == db_arm.name
+        assert arm.arm_weight == db_arm.arm_weight
 
 
 async def test_create_preassigned_experiment_impl_with_three_unbalanced_arms(
@@ -566,9 +590,19 @@ async def test_create_preassigned_experiment_impl_with_three_unbalanced_arms(
     assert experiment is not None
     await experiment.awaitable_attrs.arms
     assert [arm.arm_weight for arm in experiment.arms] == expected_weights
+    # verify arm positions were stored correctly
+    for i, (arm, db_arm) in enumerate(zip(request.design_spec.arms, experiment.arms, strict=True), start=1):
+        assert db_arm.position == i
+        assert arm.arm_name == db_arm.name
+        assert arm.arm_weight == db_arm.arm_weight
 
 
-async def test_create_online_experiment_impl_with_unbalanced_arms(xngin_session, testing_datasource):
+@pytest.mark.parametrize("reorder_arms", [True, False])
+async def test_create_freq_online_experiment_impl_with_unbalanced_arms(
+    xngin_session,
+    testing_datasource,
+    reorder_arms: bool,
+):
     request = make_createexperimentrequest_json(experiment_type=ExperimentsType.FREQ_ONLINE)
     expected_weights = [100 * 1 / 3, 100 * 2 / 3]
     request["design_spec"]["arms"][0]["arm_weight"] = expected_weights[0]
@@ -593,11 +627,24 @@ async def test_create_online_experiment_impl_with_unbalanced_arms(xngin_session,
     assert experiment is not None
     await experiment.awaitable_attrs.arms
     assert [arm.arm_weight for arm in experiment.arms] == expected_weights
+
+    # Reorder arms as storage layout to break test assumptions.
+    if reorder_arms:
+        experiment.arms.append(experiment.arms.pop(0))
+        await xngin_session.commit()
+        await xngin_session.refresh(experiment)
+
     # and the rehydrated design spec
     converter = ExperimentStorageConverter(experiment)
-    design_spec = converter.get_design_spec()
+    design_spec = await converter.get_design_spec()
     assert isinstance(design_spec, OnlineFrequentistExperimentSpec)
     assert design_spec.get_validated_arm_weights() == expected_weights
+    # verify arm positions were stored correctly.
+    # This assertion variation does not assume retrieval order is the same as insertion:
+    for i, req_arm in enumerate(request.design_spec.arms, start=1):
+        db_arm = next(arm for arm in experiment.arms if arm.name == req_arm.arm_name)
+        assert db_arm.position == i
+        assert req_arm.arm_weight == db_arm.arm_weight
 
 
 @pytest.mark.parametrize(
@@ -615,12 +662,22 @@ async def test_create_online_experiment_impl_with_unbalanced_arms(xngin_session,
         ),
         (
             ExperimentsType.FREQ_PREASSIGNED,
+            [Filter(field_name="gender", relation=Relation.INCLUDES, value=[1])],
+            "varchar input is not a string",
+        ),
+        (
+            ExperimentsType.FREQ_PREASSIGNED,
             [Filter(field_name="is_onboarded", relation=Relation.INCLUDES, value=[1])],
             "input is not a boolean",
         ),
+        (
+            ExperimentsType.FREQ_PREASSIGNED,
+            [Filter(field_name="missing_field", relation=Relation.INCLUDES, value=["value"])],
+            "Field missing_field not found in participants schema",
+        ),
     ],
 )
-async def test_create_online_experiment_impl_raises_on_bad_filters(
+async def test_create_frequentist_experiment_impl_raises_on_bad_filters(
     xngin_session: AsyncSession,
     testing_datasource,
     experiment_type: ExperimentsType,
@@ -646,11 +703,11 @@ async def test_create_online_experiment_impl_raises_on_bad_filters(
         )
 
 
-async def test_create_experiment_impl_for_online(
+async def test_create_experiment_impl_for_freq_online(
     xngin_session, testing_datasource, sample_table, use_deterministic_random
 ):
     """Test implementation of creating an online experiment."""
-    request = make_create_online_experiment_request()
+    request = make_create_freq_online_experiment_request()
 
     response = await create_experiment_impl(
         request=request.model_copy(deep=True),
@@ -705,7 +762,7 @@ async def test_create_experiment_impl_for_online(
     assert experiment.fstat_thresh == request.design_spec.fstat_thresh
     # Verify design_spec was stored correctly
     converter = ExperimentStorageConverter(experiment)
-    assert converter.get_design_spec() == response.design_spec
+    assert await converter.get_design_spec() == response.design_spec
     # Verify no power_analyses for online experiments
     assert experiment.power_analyses is None
 
@@ -715,6 +772,11 @@ async def test_create_experiment_impl_for_online(
     arm_ids = {arm.id for arm in arms}
     expected_arm_ids = {arm.arm_id for arm in response.design_spec.arms}
     assert arm_ids == expected_arm_ids
+    # Verify arm positions were stored correctly
+    for i, (req_arm, db_arm) in enumerate(zip(request.design_spec.arms, arms, strict=True), start=1):
+        assert db_arm.position == i
+        assert req_arm.arm_name == db_arm.name
+        assert req_arm.arm_weight is None
 
     # Verify that no assignments were created for online experiment
     assignments = (
@@ -725,7 +787,8 @@ async def test_create_experiment_impl_for_online(
     assert len(assignments) == 0
 
 
-async def test_create_experiment_impl_for_mab_online(xngin_session, testing_datasource):
+@pytest.mark.parametrize("reorder_arms", [True, False])
+async def test_create_experiment_impl_for_mab_online(xngin_session, testing_datasource, reorder_arms: bool):
     """Test implementation of creating an online experiment."""
     request = make_create_online_bandit_experiment_request()
     response = await create_bandit_online_experiment_impl(
@@ -759,6 +822,12 @@ async def test_create_experiment_impl_for_mab_online(xngin_session, testing_data
 
     # Verify database state
     experiment = await xngin_session.get(tables.Experiment, response.experiment_id)
+    assert experiment is not None
+    if reorder_arms:
+        experiment.arms.append(experiment.arms.pop(0))
+        await xngin_session.commit()
+        await xngin_session.refresh(experiment)
+
     assert experiment.experiment_type == ExperimentsType.MAB_ONLINE
     assert experiment.participant_type == request.design_spec.participant_type
     assert experiment.name == request.design_spec.experiment_name
@@ -771,7 +840,7 @@ async def test_create_experiment_impl_for_mab_online(xngin_session, testing_data
 
     # Verify design_spec was stored correctly
     converter = ExperimentStorageConverter(experiment)
-    converted_design_spec = converter.get_design_spec()
+    converted_design_spec = await converter.get_design_spec()
     assert converted_design_spec == response.design_spec
     assert isinstance(converted_design_spec, MABExperimentSpec)
     for arms in converted_design_spec.arms:
@@ -788,6 +857,11 @@ async def test_create_experiment_impl_for_mab_online(xngin_session, testing_data
     arm_ids = {arm.id for arm in arms}
     expected_arm_ids = {arm.arm_id for arm in response.design_spec.arms}
     assert arm_ids == expected_arm_ids
+    # Verify arm positions were stored correctly
+    for i, (req_arm, db_arm) in enumerate(zip(request.design_spec.arms, arms, strict=True), start=1):
+        assert db_arm.position == i
+        assert req_arm.arm_name == db_arm.name
+        assert req_arm.arm_weight is None
 
     # Verify that no assignments were created for online experiment
     assignments = (
@@ -847,7 +921,7 @@ async def test_create_experiment_impl_for_cmab_online(xngin_session, testing_dat
 
     # Verify design_spec was stored correctly
     converter = ExperimentStorageConverter(experiment)
-    converted_design_spec = converter.get_design_spec()
+    converted_design_spec = await converter.get_design_spec()
     assert converted_design_spec == response.design_spec
     assert isinstance(converted_design_spec, CMABExperimentSpec)
     assert converted_design_spec.prior_type == PriorTypes.NORMAL
@@ -865,6 +939,11 @@ async def test_create_experiment_impl_for_cmab_online(xngin_session, testing_dat
     arm_ids = {arm.id for arm in arms}
     expected_arm_ids = {arm.arm_id for arm in response.design_spec.arms}
     assert arm_ids == expected_arm_ids
+    # Verify arm positions were stored correctly
+    for i, (req_arm, db_arm) in enumerate(zip(request.design_spec.arms, arms, strict=True), start=1):
+        assert db_arm.position == i
+        assert req_arm.arm_name == db_arm.name
+        assert req_arm.arm_weight is None
 
     # Verify contexts were created in database
     contexts = (
@@ -1030,12 +1109,12 @@ async def test_list_experiments_impl(
     testing_datasource_with_user,
 ):
     """Test that we only get experiments in a valid state for the specified datasource."""
-    experiment1_data = make_insertable_experiment(testing_datasource.ds, ExperimentState.ASSIGNED)
-    experiment2_data = make_insertable_experiment(testing_datasource.ds, ExperimentState.COMMITTED)
-    experiment3_data = make_insertable_experiment(testing_datasource.ds, ExperimentState.DESIGNING)
-    experiment4_data = make_insertable_experiment(testing_datasource.ds, ExperimentState.ABORTED)
+    experiment1_data = await make_insertable_experiment(testing_datasource.ds, ExperimentState.ASSIGNED)
+    experiment2_data = await make_insertable_experiment(testing_datasource.ds, ExperimentState.COMMITTED)
+    experiment3_data = await make_insertable_experiment(testing_datasource.ds, ExperimentState.DESIGNING)
+    experiment4_data = await make_insertable_experiment(testing_datasource.ds, ExperimentState.ABORTED)
     # One more experiment associated with a *different* datasource.
-    experiment5_data = make_insertable_experiment(testing_datasource_with_user.ds, ExperimentState.ASSIGNED)
+    experiment5_data = await make_insertable_experiment(testing_datasource_with_user.ds, ExperimentState.ASSIGNED)
     # Set the created_at time to test ordering
     experiment1_data[0].created_at = datetime.now(UTC) - timedelta(days=1)
     experiment2_data[0].created_at = datetime.now(UTC)
@@ -1079,7 +1158,7 @@ async def test_list_experiments_impl_alt_scenarios(
     with pytest.raises(ValueError, match="Either datasource_id or organization_id must be provided"):
         await list_organization_or_datasource_experiments_impl(xngin_session=xngin_session)
 
-    experiment1_data = make_insertable_experiment(testing_datasource.ds, ExperimentState.ASSIGNED)
+    experiment1_data = await make_insertable_experiment(testing_datasource.ds, ExperimentState.ASSIGNED)
     xngin_session.add(experiment1_data[0])
     org_list = await list_organization_or_datasource_experiments_impl(
         xngin_session=xngin_session, organization_id=testing_datasource.org.id
@@ -1297,7 +1376,7 @@ async def test_get_existing_assignment_for_participant(xngin_session, testing_da
 async def test_create_assignment_for_participant_errors(xngin_session, testing_datasource):
     # Test assignment while in an experiment state not valid for assignments.
     # Preassigned will short circuit before the invalid state check so will NOT raise.
-    experiment, _ = make_insertable_experiment(
+    experiment, _ = await make_insertable_experiment(
         testing_datasource.ds,
         ExperimentState.ASSIGNED,
         experiment_type=ExperimentsType.FREQ_PREASSIGNED,
@@ -1307,7 +1386,7 @@ async def test_create_assignment_for_participant_errors(xngin_session, testing_d
     assert response is None
 
     # But an online experiment in this invalid state will raise.
-    experiment, _ = make_insertable_experiment(
+    experiment, _ = await make_insertable_experiment(
         testing_datasource.ds,
         ExperimentState.ASSIGNED,
         experiment_type=ExperimentsType.FREQ_ONLINE,
@@ -1316,7 +1395,7 @@ async def test_create_assignment_for_participant_errors(xngin_session, testing_d
         await create_assignment_for_participant(xngin_session, experiment, "p1", None, random_state=66)
 
     # Test that an online experiment with no arms will raise.
-    experiment, _ = make_insertable_experiment(
+    experiment, _ = await make_insertable_experiment(
         testing_datasource.ds,
         ExperimentState.COMMITTED,
         experiment_type=ExperimentsType.FREQ_ONLINE,
@@ -1570,7 +1649,7 @@ async def test_update_bandit_arm_with_outcome(
 
 
 async def test_analyze_experiment_freq_impl_with_no_outcomes_for_any_arms(xngin_session, testing_datasource):
-    experiment, _ = make_insertable_experiment(
+    experiment, _ = await make_insertable_experiment(
         testing_datasource.ds,
         ExperimentState.ASSIGNED,
         experiment_type=ExperimentsType.FREQ_ONLINE,

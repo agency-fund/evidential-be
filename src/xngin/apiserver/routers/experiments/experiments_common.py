@@ -73,6 +73,10 @@ class ExperimentsAssignmentError(Exception):
     """Wrapper for errors raised by our xngin.apiserver.routers.experiments_common module."""
 
 
+class MismatchedExperimentTypeError(Exception):
+    """Error raised when an experiment type is mismatched with the expected type, caused by developer error."""
+
+
 def random_choice[T](choices: Sequence[T], seed: int | None = None) -> T:
     """Choose a random value from choices."""
     if seed:
@@ -85,6 +89,30 @@ def random_choice[T](choices: Sequence[T], seed: int | None = None) -> T:
     return secrets.choice(choices)
 
 
+def get_freq_experiment_configs_or_raise(
+    datasource: tables.Datasource,
+    design_spec: BaseFrequentistDesignSpec,
+) -> tuple[DatasourceConfig, ParticipantsDef]:
+    """Get and validate datasource and participants configs for frequentist experiments.
+
+    Returns: Tuple of (DatasourceConfig, ParticipantsDef)
+
+    Raises: LateValidationError if filter values are invalid.
+    """
+    ds_config = datasource.get_config()
+    participants_cfg = ds_config.find_participants(design_spec.participant_type)
+    # Validate the filter values
+    field_map = {field.field_name: field.data_type for field in participants_cfg.fields}
+    for filter_ in design_spec.filters:
+        field_type = field_map.get(filter_.field_name)
+        if field_type is None:
+            raise LateValidationError(f"Field {filter_.field_name} not found in participants schema.")
+        for value in filter_.value:
+            validate_filter_value(filter_.field_name, value, field_type)
+
+    return ds_config, participants_cfg
+
+
 async def create_experiment_impl(
     request: CreateExperimentRequest,
     datasource: tables.Datasource,
@@ -94,24 +122,13 @@ async def create_experiment_impl(
     random_state: int | None,
     validated_webhooks: list[tables.Webhook],
 ) -> CreateExperimentResponse:
-    # Raise error for bandit experiments
     design_spec = request.design_spec
     match design_spec.experiment_type:
-        case ExperimentsType.FREQ_ONLINE | ExperimentsType.FREQ_PREASSIGNED:
-            ds_config = datasource.get_config()
+        case ExperimentsType.FREQ_PREASSIGNED:
+            ds_config, participants_cfg = get_freq_experiment_configs_or_raise(datasource, design_spec)
 
-            participants_cfg = ds_config.find_participants(design_spec.participant_type)
-            if not isinstance(participants_cfg, ParticipantsDef):
-                raise LateValidationError("Invalid ParticipantsConfig: Participants must be of type schema.")
-
-            # Validate the filter values
-            field_map = {field.field_name: field.data_type for field in participants_cfg.fields}
-            for filter_ in design_spec.filters:
-                field_type = field_map.get(filter_.field_name)
-                if field_type is None:
-                    raise LateValidationError(f"Field {filter_.field_name} not found in participants schema.")
-                for value in filter_.value:
-                    validate_filter_value(filter_.field_name, value, field_type)
+            if chosen_n is None:
+                raise LateValidationError("Preassigned experiments must have a chosen_n.")
 
             # Get participants and their schema info from the client dwh.
             # Only fetch the columns we might need for stratified random assignment.
@@ -121,45 +138,40 @@ async def create_experiment_impl(
             stratum_cols = strata_names + metric_names if stratify_on_metrics else strata_names
 
             async with DwhSession(ds_config.dwh) as dwh:
-                if chosen_n is not None:
-                    result = await dwh.get_participants(
-                        participants_cfg.table_name,
-                        select_columns={*stratum_cols, participants_unique_id_field},
-                        filters=design_spec.filters,
-                        n=chosen_n,
-                    )
-                    sa_table, participants = result.sa_table, result.participants
+                result = await dwh.get_participants(
+                    participants_cfg.table_name,
+                    select_columns={*stratum_cols, participants_unique_id_field},
+                    filters=design_spec.filters,
+                    n=chosen_n,
+                )
+                sa_table, participants = result.sa_table, result.participants
 
-                elif design_spec.experiment_type == ExperimentsType.FREQ_PREASSIGNED:
-                    raise LateValidationError("Preassigned experiments must have a chosen_n.")
-                else:
-                    sa_table = await dwh.inspect_table(participants_cfg.table_name)
+            if participants is None:
+                raise LateValidationError("Preassigned experiments must have eligible participants data")
 
-            match design_spec.experiment_type:
-                case ExperimentsType.FREQ_PREASSIGNED:
-                    if participants is None:
-                        raise LateValidationError("Preassigned experiments must have participants data")
-                    return await create_preassigned_experiment_impl(
-                        request=request,
-                        datasource_id=datasource.id,
-                        organization_id=datasource.organization_id,
-                        participant_unique_id_field=participants_unique_id_field,
-                        dwh_sa_table=sa_table,
-                        dwh_participants=participants,
-                        random_state=random_state,
-                        xngin_session=xngin_session,
-                        stratify_on_metrics=stratify_on_metrics,
-                        validated_webhooks=validated_webhooks,
-                    )
+            return await create_preassigned_experiment_impl(
+                request=request,
+                datasource_id=datasource.id,
+                organization_id=datasource.organization_id,
+                participant_unique_id_field=participants_unique_id_field,
+                dwh_sa_table=sa_table,
+                dwh_participants=participants,
+                random_state=random_state,
+                xngin_session=xngin_session,
+                stratify_on_metrics=stratify_on_metrics,
+                validated_webhooks=validated_webhooks,
+            )
 
-                case ExperimentsType.FREQ_ONLINE:
-                    return await create_freq_online_experiment_impl(
-                        request=request,
-                        datasource_id=datasource.id,
-                        organization_id=datasource.organization_id,
-                        xngin_session=xngin_session,
-                        validated_webhooks=validated_webhooks,
-                    )
+        case ExperimentsType.FREQ_ONLINE:
+            _validated_ds_cfg, _validated_p_cfg = get_freq_experiment_configs_or_raise(datasource, design_spec)
+
+            return await create_freq_online_experiment_impl(
+                request=request,
+                datasource_id=datasource.id,
+                organization_id=datasource.organization_id,
+                xngin_session=xngin_session,
+                validated_webhooks=validated_webhooks,
+            )
 
         case ExperimentsType.MAB_ONLINE | ExperimentsType.CMAB_ONLINE:
             return await create_bandit_online_experiment_impl(
@@ -190,16 +202,13 @@ async def create_preassigned_experiment_impl(
     stratify_on_metrics: bool,
     validated_webhooks: list[tables.Webhook],
 ) -> CreateExperimentResponse:
+    """Create a frequentist preassigned experiment and persist it to the database."""
+
     design_spec = request.design_spec
 
-    if not isinstance(
-        design_spec,
-        BaseFrequentistDesignSpec,
-    ):
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Bandit experiments are not supported for preassigned assignments",
-        )
+    if design_spec.experiment_type != ExperimentsType.FREQ_PREASSIGNED:
+        raise MismatchedExperimentTypeError(f"can't create preassigned exp of type: {design_spec.experiment_type}")
+
     metric_names = [m.field_name for m in design_spec.metrics]
     strata_names = [s.field_name for s in design_spec.strata]
     stratum_cols = strata_names + metric_names if stratify_on_metrics else strata_names
@@ -246,8 +255,7 @@ async def create_preassigned_experiment_impl(
         experiment.webhooks.append(webhook)
     xngin_session.add(experiment)
 
-    # Flush to get ids
-    await xngin_session.flush()
+    await xngin_session.flush()  # Flush to get ids
 
     await bulk_insert_arm_assignments(
         xngin_session=xngin_session,
@@ -265,7 +273,7 @@ async def create_preassigned_experiment_impl(
         xngin_session, experiment.id, balance_check, ExperimentsType.FREQ_PREASSIGNED
     )
     webhook_ids = [webhook.id for webhook in validated_webhooks]
-    return experiment_converter.get_create_experiment_response(assign_summary, webhook_ids)
+    return await experiment_converter.get_create_experiment_response(assign_summary, webhook_ids)
 
 
 async def create_freq_online_experiment_impl(
@@ -275,15 +283,11 @@ async def create_freq_online_experiment_impl(
     xngin_session: AsyncSession,
     validated_webhooks: list[tables.Webhook],
 ) -> CreateExperimentResponse:
-    """Create an online experiment and persist it to the database."""
+    """Create a frequentist online experiment and persist it to the database."""
     design_spec = request.design_spec
 
-    # TODO: update to support bandit experiments
-    if not isinstance(design_spec, BaseFrequentistDesignSpec):
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Bandit experiments are not supported for online assignments",
-        )
+    if design_spec.experiment_type != ExperimentsType.FREQ_ONLINE:
+        raise MismatchedExperimentTypeError(f"Can't create freq online exp of type: {design_spec.experiment_type}")
 
     experiment_converter = ExperimentStorageConverter.init_from_components(
         datasource_id=datasource_id,
@@ -300,6 +304,7 @@ async def create_freq_online_experiment_impl(
     xngin_session.add(experiment)
 
     await xngin_session.commit()
+
     # Online experiments start with no assignments.
     empty_assign_summary = AssignSummary(
         balance_check=None,
@@ -307,7 +312,7 @@ async def create_freq_online_experiment_impl(
         arm_sizes=[ArmSize(arm=arm.model_copy(), size=0) for arm in design_spec.arms],
     )
     webhook_ids = [webhook.id for webhook in validated_webhooks]
-    return experiment_converter.get_create_experiment_response(empty_assign_summary, webhook_ids)
+    return await experiment_converter.get_create_experiment_response(empty_assign_summary, webhook_ids)
 
 
 async def create_bandit_online_experiment_impl(
@@ -318,8 +323,11 @@ async def create_bandit_online_experiment_impl(
     datasource_id: str,
     chosen_n: int | None = None,
 ) -> CreateExperimentResponse:
-    """Create an online experiment and persist it to the database."""
+    """Create a bandit experiment and persist it to the database."""
     design_spec = request.design_spec
+
+    if design_spec.experiment_type not in {ExperimentsType.MAB_ONLINE, ExperimentsType.CMAB_ONLINE}:
+        raise MismatchedExperimentTypeError(f"can't create bandit exp of type: {design_spec.experiment_type}")
 
     experiment_converter = ExperimentStorageConverter.init_from_components(
         datasource_id=datasource_id,
@@ -331,13 +339,13 @@ async def create_bandit_online_experiment_impl(
         impact=request.impact,
     )
     experiment = experiment_converter.get_experiment()
-
     # Associate webhooks with the experiment
     for webhook in validated_webhooks:
         experiment.webhooks.append(webhook)
     xngin_session.add(experiment)
 
     await xngin_session.commit()
+
     # Online experiments start with no assignments.
     empty_assign_summary = AssignSummary(
         balance_check=None,
@@ -345,7 +353,7 @@ async def create_bandit_online_experiment_impl(
         arm_sizes=[ArmSize(arm=arm.model_copy(), size=0) for arm in design_spec.arms],
     )
     webhook_ids = [webhook.id for webhook in validated_webhooks]
-    return experiment_converter.get_create_experiment_response(empty_assign_summary, webhook_ids)
+    return await experiment_converter.get_create_experiment_response(empty_assign_summary, webhook_ids)
 
 
 async def commit_experiment_impl(xngin_session: AsyncSession, experiment: tables.Experiment):
@@ -420,7 +428,7 @@ async def get_experiment_impl(
         experiment_type=ExperimentsType(experiment.experiment_type),
     )
     webhook_ids = [webhook.id for webhook in experiment.webhooks]
-    return converter.get_experiment_response(assign_summary, webhook_ids)
+    return await converter.get_experiment_response(assign_summary, webhook_ids)
 
 
 async def list_organization_or_datasource_experiments_impl(
@@ -470,7 +478,7 @@ async def list_organization_or_datasource_experiments_impl(
             xngin_session, e.id, balance_check, experiment_type=ExperimentsType(e.experiment_type)
         )
         webhook_ids = [webhook.id for webhook in e.webhooks]
-        items.append(converter.get_experiment_config(assign_summary, webhook_ids))
+        items.append(await converter.get_experiment_config(assign_summary, webhook_ids))
     return ListExperimentsResponse(items=items)
 
 
@@ -864,7 +872,7 @@ async def update_bandit_arm_with_outcome_impl(
 ) -> tables.Arm:
     """Update the Draw table with the outcome for a bandit experiment."""
     # Not supported for frequentist experiments
-    design_spec = ExperimentStorageConverter(experiment).get_design_spec()
+    design_spec = await ExperimentStorageConverter(experiment).get_design_spec()
 
     if isinstance(design_spec, BaseFrequentistDesignSpec):
         raise LateValidationError(

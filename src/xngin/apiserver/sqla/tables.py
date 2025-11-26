@@ -426,7 +426,11 @@ class Experiment(Base):
     arm_assignments: Mapped[list["ArmAssignment"]] = relationship(
         back_populates="experiment", cascade="all, delete-orphan", lazy="raise"
     )
-    arms: Mapped[list["Arm"]] = relationship(back_populates="experiment", cascade="all, delete-orphan")
+    arms: Mapped[list["Arm"]] = relationship(
+        back_populates="experiment",
+        order_by="asc(Arm.position)",
+        cascade="all, delete-orphan",
+    )
     datasource: Mapped["Datasource"] = relationship(back_populates="experiments")
     webhooks: Mapped[list["Webhook"]] = relationship(secondary="experiment_webhooks", back_populates="experiments")
     draws: Mapped[list["Draw"]] = relationship(
@@ -448,6 +452,9 @@ class Arm(Base):
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=arm_id_factory)
     name: Mapped[str] = mapped_column(String(255))
     description: Mapped[str] = mapped_column(String(2000))
+    # 'position' records the insertion order of the arm in the original design spec,
+    # starting at 1. By convention, 1 represents the baseline/control arm.
+    position: Mapped[int | None] = mapped_column()
     experiment_id: Mapped[str] = mapped_column(ForeignKey("experiments.id", ondelete="CASCADE"))
     organization_id: Mapped[str] = mapped_column(ForeignKey("organizations.id", ondelete="CASCADE"))
     created_at: Mapped[datetime] = mapped_column(server_default=sqlalchemy.sql.func.now())
