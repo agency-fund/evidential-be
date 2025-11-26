@@ -73,6 +73,10 @@ class ExperimentsAssignmentError(Exception):
     """Wrapper for errors raised by our xngin.apiserver.routers.experiments_common module."""
 
 
+class MismatchedExperimentTypeError(Exception):
+    """Error raised when an experiment type is mismatched with the expected type, caused by developer error."""
+
+
 def random_choice[T](choices: Sequence[T], seed: int | None = None) -> T:
     """Choose a random value from choices."""
     if seed:
@@ -93,15 +97,10 @@ def get_freq_experiment_configs_or_raise(
 
     Returns: Tuple of (DatasourceConfig, ParticipantsDef)
 
-    Raises: LateValidationError if participants config is invalid or filter values are invalid.
+    Raises: LateValidationError if filter values are invalid.
     """
     ds_config = datasource.get_config()
-
     participants_cfg = ds_config.find_participants(design_spec.participant_type)
-    # Note: this is a legacy check; we should only have type: "schema" ever now.
-    if not isinstance(participants_cfg, ParticipantsDef):
-        raise LateValidationError("Invalid ParticipantsConfig: Participants must be of type schema.")
-
     # Validate the filter values
     field_map = {field.field_name: field.data_type for field in participants_cfg.fields}
     for filter_ in design_spec.filters:
@@ -164,7 +163,7 @@ async def create_experiment_impl(
             )
 
         case ExperimentsType.FREQ_ONLINE:
-            _, _ = get_freq_experiment_configs_or_raise(datasource, design_spec)
+            _validated_ds_cfg, _validated_p_cfg = get_freq_experiment_configs_or_raise(datasource, design_spec)
 
             return await create_freq_online_experiment_impl(
                 request=request,
@@ -208,7 +207,7 @@ async def create_preassigned_experiment_impl(
     design_spec = request.design_spec
 
     if design_spec.experiment_type != ExperimentsType.FREQ_PREASSIGNED:
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Developer error")
+        raise MismatchedExperimentTypeError(f"can't create preassigned exp of type: {design_spec.experiment_type}")
 
     metric_names = [m.field_name for m in design_spec.metrics]
     strata_names = [s.field_name for s in design_spec.strata]
@@ -288,7 +287,7 @@ async def create_freq_online_experiment_impl(
     design_spec = request.design_spec
 
     if design_spec.experiment_type != ExperimentsType.FREQ_ONLINE:
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Developer error")
+        raise MismatchedExperimentTypeError(f"Can't create freq online exp of type: {design_spec.experiment_type}")
 
     experiment_converter = ExperimentStorageConverter.init_from_components(
         datasource_id=datasource_id,
@@ -328,7 +327,7 @@ async def create_bandit_online_experiment_impl(
     design_spec = request.design_spec
 
     if design_spec.experiment_type not in {ExperimentsType.MAB_ONLINE, ExperimentsType.CMAB_ONLINE}:
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Developer error")
+        raise MismatchedExperimentTypeError(f"can't create bandit exp of type: {design_spec.experiment_type}")
 
     experiment_converter = ExperimentStorageConverter.init_from_components(
         datasource_id=datasource_id,

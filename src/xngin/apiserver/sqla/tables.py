@@ -453,7 +453,7 @@ class Arm(Base):
     name: Mapped[str] = mapped_column(String(255))
     description: Mapped[str] = mapped_column(String(2000))
     # 'position' records the insertion order of the arm in the original design spec,
-    # indexed from 1. By convention, 1 represents the baseline/control arm.
+    # starting at 1. By convention, 1 represents the baseline/control arm.
     position: Mapped[int | None] = mapped_column()
     experiment_id: Mapped[str] = mapped_column(ForeignKey("experiments.id", ondelete="CASCADE"))
     organization_id: Mapped[str] = mapped_column(ForeignKey("organizations.id", ondelete="CASCADE"))
