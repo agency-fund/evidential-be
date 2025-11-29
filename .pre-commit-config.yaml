@@ -1,7 +1,7 @@
 exclude: "[.](ipynb)$"
 repos:
   - repo: https://github.com/pre-commit/pre-commit-hooks
-    rev: v5.0.0
+    rev: 3e8a8703264a2f4a69428a0aa4dcb512790b2c8c  # frozen: v6.0.0
     hooks:
       - id: check-json
       - id: check-toml
@@ -18,17 +18,18 @@ repos:
       - id: check-added-large-files
         exclude: ^src/xngin/apiserver/testdata/testing_dwh.csv.zst$
   - repo: https://github.com/astral-sh/uv-pre-commit
-    rev: 0.9.4
+    rev: ed07c6e8889cf83a7245866d1dd007d1f93bf55e  # frozen: 0.9.13
     hooks:
       - id: uv-lock
   - repo: https://github.com/astral-sh/ruff-pre-commit
-    rev: v0.14.2
+    rev: 36243b70e5ce219623c3503f5afba0f8c96fda55  # frozen: v0.14.7
     hooks:
       - id: ruff-check
         args: [ --fix ]
       - id: ruff-format
+  # mdformat plugins are not all compatible with mdformat 1.0.0 yet.
   - repo: https://github.com/hukkin/mdformat
-    rev: 0.7.22
+    rev: 83dc2ce5ca115d3390b9b5561d2898366faf0742  # frozen: 0.7.2
     hooks:
       - id: mdformat
         additional_dependencies:
@@ -38,14 +39,6 @@ repos:
           - mdformat-gfm-alerts
           - mdformat-ruff
           - mdformat-toc
-  # - repo: https://github.com/econchick/interrogate
-  #   rev: 1.7.0
-  #   hooks:
-  #     - id: interrogate
-  #       name: interrogate
-  #       exclude: '^(.*/)?test_.*\.py$'
-  #       entry: interrogate
-  #       args: [-v, --fail-under=95, --ignore-module]
   - repo: local
     hooks:
       - id: uv-run-mypy
@@ -66,6 +59,6 @@ repos:
         pass_filenames: false
         require_serial: true
   - repo: https://github.com/zizmorcore/zizmor-pre-commit
-    rev: v1.13.0
+    rev: 1e30511413f07e516c1844ba91abce8aca984963  # frozen: v1.18.0
     hooks:
       - id: zizmor
