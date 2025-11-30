@@ -33,12 +33,12 @@ repos:
     hooks:
       - id: mdformat
         additional_dependencies:
-          - mdformat-footnote
-          - mdformat-frontmatter
-          - mdformat-gfm
-          - mdformat-gfm-alerts
-          - mdformat-ruff
-          - mdformat-toc
+          - git+https://github.com/Freed-Wu/mdformat-ruff@6cd00a4d513758d487fa782ab4cac8f1a61e842d   # 0.1.3
+          - git+https://github.com/KyleKing/mdformat-gfm-alerts@989aa51cf459559af5d3dae948cbeeab712bd186  # 2.0.0
+          - git+https://github.com/butler54/mdformat-frontmatter@93bb972b6044d22043d6c191a2e73858ff09d3e5  # 2.0.8
+          - git+https://github.com/executablebooks/mdformat-footnote@8f96af4e089ede7e45979444deedef0fd5fb2aeb  # 0.1.2
+          - git+https://github.com/hukkin/mdformat-gfm@1c2d3c68019d93ff30c69482b0b19098b41b0a17  # 1.0.0
+          - git+https://github.com/hukkin/mdformat-toc@ac1c5c919bf7e8c044153447c8cb853de599b70e  # 0.5.0
   - repo: local
     hooks:
       - id: uv-run-mypy
