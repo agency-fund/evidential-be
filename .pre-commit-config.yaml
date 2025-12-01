@@ -29,7 +29,7 @@ repos:
       - id: ruff-format
   # mdformat plugins are not all compatible with mdformat 1.0.0 yet.
   - repo: https://github.com/hukkin/mdformat
-    rev: 83dc2ce5ca115d3390b9b5561d2898366faf0742  # frozen: 0.7.2
+    rev: 83dc2ce5ca115d3390b9b5561d2898366faf0742  # frozen: 0.7.22
     hooks:
       - id: mdformat
         additional_dependencies:
