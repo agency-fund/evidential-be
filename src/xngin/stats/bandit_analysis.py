@@ -61,6 +61,7 @@ def _analyze_normal_binary(
     covariance: np.ndarray,
     context_link_functions: ContextLinkFunctions,
     context: np.ndarray | None = None,
+    num_samples: int = 10000,
     random_state: int | None = None,
 ) -> tuple[float, float, float, float]:
     """
@@ -70,29 +71,26 @@ def _analyze_normal_binary(
         covariance: The posterior covariance matrix of the arm.
         context_link_functions: The link function to use.
         context: Optional context vector.
+        num_samples: Number of samples to draw for estimation.
         random_state: Use a fixed int for deterministic behavior in tests.
     """
     rng = np.random.default_rng(random_state)
-    num_samples = 10000  # TODO: Make this configurable
-
     samples = rng.multivariate_normal(mean=mu, cov=covariance, size=num_samples)
     if context is not None:
         parameter_samples = samples @ context
     else:
         parameter_samples = samples
+    # Recover the probability of success for each sample
     transformed_parameter_samples = context_link_functions(parameter_samples)
-    transformed_parameter_mean = transformed_parameter_samples.mean()
-    transformed_parameter_std = transformed_parameter_samples.std()
+    # Then randomly generate a binary outcome for each sample
     outcome_samples = rng.binomial(n=1, p=transformed_parameter_samples)
 
     mean = outcome_samples.mean()
     std = outcome_samples.std()
-    ci_upper = context_link_functions(
-        transformed_parameter_mean + 1.96 * transformed_parameter_std / np.sqrt(num_samples)
-    )
-    ci_lower = context_link_functions(
-        transformed_parameter_mean - 1.96 * transformed_parameter_std / np.sqrt(num_samples)
-    )
+    # Derive our CI from the bootstrapped probabilities
+    alpha_level = 0.025  # 95% credible interval
+    ci_upper = np.percentile(transformed_parameter_samples, (1 - alpha_level) * 100)
+    ci_lower = np.percentile(transformed_parameter_samples, alpha_level * 100)
     return float(mean), float(std), float(ci_upper), float(ci_lower)
 
 

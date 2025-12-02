@@ -1,8 +1,13 @@
 import numpy as np
 import pytest
 
-from xngin.apiserver.routers.common_enums import ExperimentsType, LikelihoodTypes, PriorTypes
-from xngin.stats.bandit_analysis import analyze_experiment
+from xngin.apiserver.routers.common_enums import (
+    ContextLinkFunctions,
+    ExperimentsType,
+    LikelihoodTypes,
+    PriorTypes,
+)
+from xngin.stats.bandit_analysis import _analyze_normal_binary, analyze_experiment  # noqa: PLC2701
 from xngin.stats.test_bandit_sampling import make_experiment_table
 
 
@@ -66,3 +71,18 @@ def test_cmab_analysis(prior_type, reward_type):
         assert arm_analysis.prior_pred_stdev != arm_analysis.post_pred_stdev
         assert arm_analysis.prior_pred_ci_upper != arm_analysis.post_pred_ci_upper
         assert arm_analysis.prior_pred_ci_lower != arm_analysis.post_pred_ci_lower
+
+
+def test_normal_binary_analysis_ci_correctness():
+    """Regression test for bug where link function was applied twice to CI calculation."""
+    # Setup a case where mean logit is high (e.g. 2.2 -> p ~ 0.9)
+    # If our (logistic) link function is applied twice, CI upper would be ~0.71, which is < mean 0.9
+    mu = np.array([2.2])
+    cov = np.array([[0.01]])
+
+    mean, _, ci_upper, ci_lower = _analyze_normal_binary(mu, cov, ContextLinkFunctions.LOGISTIC, random_state=42)
+
+    assert 0.8 < mean < 1.0, f"Mean {mean} should be around 0.9"
+    # If the original bug was present, ci_upper would be sigmoid(0.9) approx 0.71
+    assert ci_upper > mean, f"CI upper {ci_upper} should be > mean"
+    assert ci_lower < mean < ci_upper, f"CI [{ci_lower}, {ci_upper}] should contain mean {mean}"
