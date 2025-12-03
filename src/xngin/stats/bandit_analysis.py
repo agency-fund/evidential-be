@@ -61,7 +61,7 @@ def _analyze_normal_binary(
     covariance: np.ndarray,
     context_link_functions: ContextLinkFunctions,
     context: np.ndarray | None = None,
-    num_samples: int = 10000,
+    num_samples: int = 1000,
     random_state: int | None = None,
 ) -> tuple[float, float, float, float]:
     """
@@ -74,7 +74,7 @@ def _analyze_normal_binary(
         num_samples: Number of samples to draw for estimation.
         random_state: Use a fixed int for deterministic behavior in tests.
     """
-    # First derive Confidence Intervals in latent space
+    # First derive the Credible Interval in latent space
     if context is None:
         latent_mean = float(mu[0])
         latent_var = float(covariance[0, 0])
@@ -83,14 +83,15 @@ def _analyze_normal_binary(
         latent_var = float(context @ covariance @ context)
 
     # Calculate 95% CI bounds
-    latent_stdev = np.sqrt(latent_var)
-    latent_ci_upper = latent_mean + 1.96 * latent_stdev
-    latent_ci_lower = latent_mean - 1.96 * latent_stdev
+    latent_stderr = np.sqrt(latent_var)
+    latent_ci_upper = latent_mean + 1.96 * latent_stderr
+    latent_ci_lower = latent_mean - 1.96 * latent_stderr
     # Transform back into to probability space
     latent_bounds = np.array([latent_ci_lower, latent_ci_upper])
     ci_lower, ci_upper = context_link_functions(latent_bounds).tolist()
 
-    # Estimate the mean via sampling in latent space
+    # Estimate the mean via MC integration given the non-linear link function.
+    # First sample in latent space
     rng = np.random.default_rng(random_state)
     samples = rng.multivariate_normal(mean=mu, cov=covariance, size=num_samples)
     if context is not None:
