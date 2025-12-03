@@ -43,6 +43,8 @@ def test_mab_analysis(prior_type, reward_type):
         assert arm_analysis.prior_pred_stdev != arm_analysis.post_pred_stdev
         assert arm_analysis.prior_pred_ci_upper != arm_analysis.post_pred_ci_upper
         assert arm_analysis.prior_pred_ci_lower != arm_analysis.post_pred_ci_lower
+        assert arm_analysis.post_pred_ci_upper > arm_analysis.prior_pred_mean
+        assert arm_analysis.post_pred_ci_lower < arm_analysis.prior_pred_mean
 
 
 @pytest.mark.parametrize(
@@ -71,6 +73,8 @@ def test_cmab_analysis(prior_type, reward_type):
         assert arm_analysis.prior_pred_stdev != arm_analysis.post_pred_stdev
         assert arm_analysis.prior_pred_ci_upper != arm_analysis.post_pred_ci_upper
         assert arm_analysis.prior_pred_ci_lower != arm_analysis.post_pred_ci_lower
+        assert arm_analysis.post_pred_ci_upper > arm_analysis.post_pred_mean
+        assert arm_analysis.post_pred_ci_lower < arm_analysis.post_pred_mean
 
 
 def test_analyze_normal_binary_ci_correctness():
