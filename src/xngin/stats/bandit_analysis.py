@@ -74,24 +74,37 @@ def _analyze_normal_binary(
         num_samples: Number of samples to draw for estimation.
         random_state: Use a fixed int for deterministic behavior in tests.
     """
+    # First derive Confidence Intervals in latent space
+    if context is None:
+        latent_mean = float(mu[0])
+        latent_var = float(covariance[0, 0])
+    else:
+        latent_mean = float(context @ mu)
+        latent_var = float(context @ covariance @ context)
+
+    # Calculate 95% CI bounds
+    latent_stdev = np.sqrt(latent_var)
+    latent_ci_upper = latent_mean + 1.96 * latent_stdev
+    latent_ci_lower = latent_mean - 1.96 * latent_stdev
+    # Transform back into to probability space
+    latent_bounds = np.array([latent_ci_lower, latent_ci_upper])
+    ci_lower, ci_upper = context_link_functions(latent_bounds).tolist()
+
+    # Estimate the mean via sampling in latent space
     rng = np.random.default_rng(random_state)
     samples = rng.multivariate_normal(mean=mu, cov=covariance, size=num_samples)
     if context is not None:
         parameter_samples = samples @ context
     else:
         parameter_samples = samples
-    # Recover the probability of success for each sample
-    transformed_parameter_samples = context_link_functions(parameter_samples)
-    # Then randomly generate a binary outcome for each sample
-    outcome_samples = rng.binomial(n=1, p=transformed_parameter_samples)
+    # Convert to probabilities to compute the posterior predictive mean
+    prob_samples = context_link_functions(parameter_samples)
+    mean_prob = float(prob_samples.mean())
 
-    mean = outcome_samples.mean()
-    std = outcome_samples.std()
-    # Derive our CI from the bootstrapped probabilities
-    alpha_level = 0.025  # 95% credible interval
-    ci_upper = np.percentile(transformed_parameter_samples, (1 - alpha_level) * 100)
-    ci_lower = np.percentile(transformed_parameter_samples, alpha_level * 100)
-    return float(mean), float(std), float(ci_upper), float(ci_lower)
+    # Analytical standard deviation for bernoulli outcomes
+    std_dev = np.sqrt(mean_prob * (1 - mean_prob))
+
+    return mean_prob, float(std_dev), ci_upper, ci_lower
 
 
 def analyze_experiment(

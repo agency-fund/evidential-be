@@ -73,7 +73,7 @@ def test_cmab_analysis(prior_type, reward_type):
         assert arm_analysis.prior_pred_ci_lower != arm_analysis.post_pred_ci_lower
 
 
-def test_normal_binary_analysis_ci_correctness():
+def test_analyze_normal_binary_ci_correctness():
     """Regression test for bug where link function was applied twice to CI calculation."""
     # Setup a case where mean logit is high (e.g. 2.2 -> p ~ 0.9)
     # If our (logistic) link function is applied twice, CI upper would be ~0.71, which is < mean 0.9
