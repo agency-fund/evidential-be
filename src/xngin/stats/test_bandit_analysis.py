@@ -7,7 +7,7 @@ from xngin.apiserver.routers.common_enums import (
     LikelihoodTypes,
     PriorTypes,
 )
-from xngin.stats.bandit_analysis import _analyze_normal_binary, analyze_experiment  # noqa: PLC2701
+from xngin.stats.bandit_analysis import _analyze_normal, _analyze_normal_binary, analyze_experiment  # noqa: PLC2701
 from xngin.stats.test_bandit_sampling import make_experiment_table
 
 
@@ -86,7 +86,33 @@ def test_analyze_normal_binary_ci_correctness():
 
     mean, _, ci_upper, ci_lower = _analyze_normal_binary(mu, cov, ContextLinkFunctions.LOGISTIC, random_state=42)
 
-    assert 0.8 < mean < 1.0, f"Mean {mean} should be around 0.9"
+    assert np.isclose(mean, 0.8996375987246932)
     # If the original bug was present, ci_upper would be sigmoid(0.9) approx 0.71
     assert ci_upper > mean, f"CI upper {ci_upper} should be > mean"
     assert ci_lower < mean < ci_upper, f"CI [{ci_lower}, {ci_upper}] should contain mean {mean}"
+
+
+def test_analyze_normal_ci_correctness():
+    """
+    Verify that CI calculation uses the standard error of the mean (parameter uncertainty only)
+    and NOT the predictive standard deviation (which includes outcome noise).
+    """
+    # Setup:
+    mu = np.array([10.0])  # true mean
+    covariance = np.array([[1.0]])  # uncertainty in our estimate of the mean
+    outcome_std_dev = 10.0  # large intrinsic noise in the outcomes distribution
+    context = None
+
+    mean, stddev, ci_upper, ci_lower = _analyze_normal(mu, covariance, outcome_std_dev, context)
+
+    assert mean == 10.0
+
+    # If we incorrectly used stddev for our CI, SEM = sqrt(1+100), much wider than the real
+    # standard error of the mean = sqrt(1.0). So the correct 95% CI half-width is:
+    expected_ci_width = 1.96 * 1.0
+    assert np.isclose(ci_upper - mean, expected_ci_width), f"CI width {ci_upper - mean}"
+    assert np.isclose(mean - ci_lower, expected_ci_width), f"CI width {mean - ci_lower}"
+
+    # Predictive standard devitaion should include our outcome noise:
+    expected_stddev = np.sqrt(1.0 + 100.0)
+    assert np.isclose(stddev, expected_stddev)

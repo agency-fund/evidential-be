@@ -46,14 +46,21 @@ def _analyze_normal(
     """
     if context is None:
         predictive_mean = mu[0]
-        predictive_mean_stdev = np.sqrt(covariance.flatten()[0] + outcome_std_dev**2)
+        # Variance of our estimate of the mean
+        var_of_mean = covariance.flatten()[0]
     else:
         predictive_mean = context @ mu
-        predictive_mean_stdev = np.sqrt(context @ covariance @ context + outcome_std_dev**2)
+        var_of_mean = context @ covariance @ context
 
-    ci_upper = predictive_mean + 1.96 * predictive_mean_stdev
-    ci_lower = predictive_mean - 1.96 * predictive_mean_stdev
-    return float(predictive_mean), float(predictive_mean_stdev), float(ci_upper), float(ci_lower)
+    # Compute 95% Credible Interval bounds on our estimate of the mean
+    stderr_of_mean = np.sqrt(var_of_mean)
+    ci_upper = predictive_mean + 1.96 * stderr_of_mean
+    ci_lower = predictive_mean - 1.96 * stderr_of_mean
+
+    # Standard deviation of the predictive distribution (includes outcome noise)
+    predictive_stdev = np.sqrt(var_of_mean + outcome_std_dev**2)
+
+    return float(predictive_mean), float(predictive_stdev), float(ci_upper), float(ci_lower)
 
 
 def _analyze_normal_binary(
@@ -100,12 +107,12 @@ def _analyze_normal_binary(
         parameter_samples = samples
     # Convert to probabilities to compute the posterior predictive mean
     prob_samples = context_link_functions(parameter_samples)
-    mean_prob = float(prob_samples.mean())
+    predictive_mean = prob_samples.mean()
 
     # Analytical standard deviation for bernoulli outcomes
-    std_dev = np.sqrt(mean_prob * (1 - mean_prob))
+    predictive_stdev = np.sqrt(predictive_mean * (1 - predictive_mean))
 
-    return mean_prob, float(std_dev), ci_upper, ci_lower
+    return float(predictive_mean), float(predictive_stdev), ci_upper, ci_lower
 
 
 def analyze_experiment(
