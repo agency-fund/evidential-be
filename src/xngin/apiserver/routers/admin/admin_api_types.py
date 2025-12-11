@@ -25,6 +25,7 @@ from xngin.apiserver.routers.common_api_types import (
     GetFiltersResponseElement,
     GetMetricsResponseElement,
     GetStrataResponseElement,
+    Impact,
 )
 from xngin.apiserver.settings import ParticipantsConfig
 
@@ -464,7 +465,7 @@ class UpdateExperimentRequest(AdminApiBaseModel):
     start_date: Annotated[datetime | None, Field()] = None
     end_date: Annotated[datetime | None, Field()] = None
 
-    impact: Annotated[str | None, Field()] = None
+    impact: Annotated[Impact | None, Field()] = None
     decision: Annotated[str | None, Field()] = None
 
     @field_validator("design_url")
