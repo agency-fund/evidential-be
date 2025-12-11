@@ -1578,6 +1578,27 @@ def test_create_online_cmab_experiment(
     assert actual_design_spec == request_obj.design_spec
 
 
+async def test_update_experiment_invalid_impact(testing_experiment, ppatch):
+    """Test updating an experiment's metadata."""
+    datasource_id = testing_experiment.datasource_id
+    experiment_id = testing_experiment.id
+    now = datetime.now(UTC)
+    request = UpdateExperimentRequest.model_construct(
+        name="updated name",
+        description="updated desc",
+        design_url="https://example.com/updated",
+        start_date=now,
+        end_date=now + timedelta(days=1),
+        impact="invalid impact",  # type: ignore[arg-type]
+        decision="new decision",
+    )
+    response = ppatch(
+        f"/v1/m/datasources/{datasource_id}/experiments/{experiment_id}",
+        content=request.model_dump_json(),
+    )
+    assert response.status_code == 422, response.content
+
+
 async def test_update_experiment(testing_experiment, ppatch, pget):
     """Test updating an experiment's metadata."""
     organization_id = testing_experiment.datasource.organization_id
@@ -1590,7 +1611,7 @@ async def test_update_experiment(testing_experiment, ppatch, pget):
         design_url="https://example.com/updated",
         start_date=now,
         end_date=now + timedelta(days=1),
-        impact="new impact",
+        impact="high",
         decision="new decision",
     )
     response = ppatch(
@@ -1607,14 +1628,14 @@ async def test_update_experiment(testing_experiment, ppatch, pget):
     assert design_spec.design_url == HttpUrl("https://example.com/updated")
     assert design_spec.start_date == now
     assert design_spec.end_date == now + timedelta(days=1)
-    assert experiment.impact == "new impact"
+    assert experiment.impact == "high"
     assert experiment.decision == "new decision"
 
     list_experiments_response = pget(f"/v1/m/organizations/{organization_id}/experiments")
     assert list_experiments_response.status_code == 200, list_experiments_response.content
     listing = ListExperimentsResponse.model_validate(list_experiments_response.json())
     listed = next(i for i in listing.items if i.experiment_id == experiment.experiment_id)
-    assert listed.impact == "new impact"
+    assert listed.impact == "high"
     assert listed.decision == "new decision"
 
 

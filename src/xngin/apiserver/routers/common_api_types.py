@@ -1165,8 +1165,6 @@ class CreateExperimentRequest(ApiBaseModel):
             ),
         ),
     ] = []
-    decision: Annotated[str, Field()] = ""
-    impact: Annotated[str, Field()] = ""
 
     @field_validator("webhooks")
     @classmethod
@@ -1193,6 +1191,9 @@ class AssignSummary(ApiBaseModel):
             max_length=MAX_NUMBER_OF_ARMS,
         ),
     ] = None
+
+
+type Impact = Literal["high", "medium", "low", "negative", "unclear", ""]
 
 
 class ExperimentConfig(ApiBaseModel):
@@ -1233,7 +1234,7 @@ class ExperimentConfig(ApiBaseModel):
         ),
     ] = ""
     impact: Annotated[
-        str,
+        Impact,
         Field(
             description="Given the results across your tracked metrics and any other observed effects seen elsewhere, "
             "record an overall summary here. Do they agree or reject your hypotheses? Beyond the metrics tracked, "

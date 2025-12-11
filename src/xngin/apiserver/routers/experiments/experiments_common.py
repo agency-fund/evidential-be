@@ -246,8 +246,6 @@ async def create_preassigned_experiment_impl(
         stopped_assignments_reason=StopAssignmentReason.PREASSIGNED,
         balance_check=balance_check,
         power_analyses=request.power_analyses,
-        decision=request.decision,
-        impact=request.impact,
     )
     experiment = experiment_converter.get_experiment()
     # Associate webhooks with the experiment
@@ -294,8 +292,6 @@ async def create_freq_online_experiment_impl(
         organization_id=organization_id,
         experiment_type=ExperimentsType.FREQ_ONLINE,
         design_spec=design_spec,
-        decision=request.decision,
-        impact=request.impact,
     )
     experiment = experiment_converter.get_experiment()
     # Associate webhooks with the experiment
@@ -335,8 +331,6 @@ async def create_bandit_online_experiment_impl(
         experiment_type=design_spec.experiment_type,
         design_spec=design_spec,
         n_trials=chosen_n if chosen_n is not None else 0,
-        decision=request.decision,
-        impact=request.impact,
     )
     experiment = experiment_converter.get_experiment()
     # Associate webhooks with the experiment
