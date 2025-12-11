@@ -36,6 +36,7 @@ from xngin.apiserver.routers.admin.admin_api_types import (
     GcpServiceAccount,
     GetDatasourceResponse,
     GetOrganizationResponse,
+    GetParticipantsTypeResponse,
     GetSnapshotResponse,
     Hidden,
     InspectDatasourceResponse,
@@ -99,7 +100,6 @@ from xngin.apiserver.routers.experiments.test_experiments_common import (
     make_createexperimentrequest_json,
     make_insertable_experiment,
 )
-from xngin.apiserver.settings import ParticipantsDef
 from xngin.apiserver.sqla import tables
 from xngin.apiserver.storage.bootstrap import DEFAULT_NO_DWH_SOURCE_NAME
 from xngin.apiserver.storage.storage_format_converters import ExperimentStorageConverter
@@ -896,7 +896,7 @@ def test_participants_lifecycle(testing_datasource_with_user, pget, ppost, ppatc
         f"/v1/m/datasources/{ds_id}/participants/test_participant_type",
     )
     assert response.status_code == 200, response.content
-    parsed = ParticipantsDef.model_validate(response.json())
+    parsed = GetParticipantsTypeResponse.model_validate(response.json()).participants_config
     assert parsed.type == "schema"
     assert parsed.participant_type == "test_participant_type"
     assert parsed.table_name == "dwh"
@@ -954,7 +954,7 @@ def test_participants_lifecycle(testing_datasource_with_user, pget, ppost, ppatc
         f"/v1/m/datasources/{ds_id}/participants/renamedpt",
     )
     assert response.status_code == 200, response.content
-    participants_def = ParticipantsDef.model_validate(response.json())
+    participants_def = GetParticipantsTypeResponse.model_validate(response.json()).participants_config
     assert participants_def.participant_type == "renamedpt"
 
     # Delete the renamed participant type.

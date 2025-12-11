@@ -70,6 +70,7 @@ from xngin.apiserver.routers.admin.admin_api_types import (
     EventSummary,
     GetDatasourceResponse,
     GetOrganizationResponse,
+    GetParticipantsTypeResponse,
     GetSnapshotResponse,
     InspectDatasourceResponse,
     InspectDatasourceTableResponse,
@@ -120,7 +121,6 @@ from xngin.apiserver.routers.common_api_types import (
 from xngin.apiserver.routers.common_enums import ExperimentState
 from xngin.apiserver.routers.experiments import experiments_common
 from xngin.apiserver.settings import (
-    ParticipantsConfig,
     ParticipantsDef,
     RemoteDatabaseConfig,
 )
@@ -1189,10 +1189,11 @@ async def get_participant_types(
     participant_id: str,
     session: Annotated[AsyncSession, Depends(xngin_db_session)],
     user: Annotated[tables.User, Depends(require_user_from_token)],
-) -> ParticipantsConfig:
+) -> GetParticipantsTypeResponse:
     ds = await get_datasource_or_raise(session, user, datasource_id)
     # CannotFindParticipantsError will be handled by exceptionhandlers.
-    return ds.get_config().find_participants(participant_id)
+    participants = ds.get_config().find_participants(participant_id)
+    return GetParticipantsTypeResponse(participants_config=participants)
 
 
 @router.patch(
