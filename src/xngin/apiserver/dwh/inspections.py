@@ -4,17 +4,19 @@ import sqlalchemy
 
 from xngin.apiserver.dwh.inspection_types import FieldDescriptor, ParticipantsSchema
 from xngin.apiserver.routers.admin.admin_api_types import (
+    Drift,
     FieldMetadata,
     InspectDatasourceTableResponse,
 )
 from xngin.apiserver.routers.common_enums import DataType
+from xngin.apiserver.settings import ParticipantsDef
 
 
-def create_schema_from_table(table: sqlalchemy.Table, unique_id_col: str | None = None):
+def create_schema_from_table(table: sqlalchemy.Table, unique_id_col: str | None = None, *, set_unique_id: bool = True):
     """Attempts to get name and type info from the database Table itself (formerly done via gsheets).
 
-    If unique_id_col is explicitly set to None, we will look for a primary key else assume "id".
-    (This mode should only be used if bootstrapping a sheet config from a table's schema.)
+    If set_unique_id is True, unique_id_col is set to None, we will look for a primary key or assume a column named "id"
+    is primary key. If set_unique_id is false, no fields will be unique.
     """
 
     collected = []
@@ -22,17 +24,16 @@ def create_schema_from_table(table: sqlalchemy.Table, unique_id_col: str | None 
         unique_id_col = next((c.name for c in table.columns.values() if c.primary_key), "id")
     for column in table.columns.values():
         type_hint = column.type
-        collected.append(
-            FieldDescriptor(
-                field_name=column.name,
-                data_type=DataType.match(type_hint),
-                description="",  # Note: we ignore column.comment
-                is_unique_id=column.name == unique_id_col,
-                is_strata=False,
-                is_filter=False,
-                is_metric=False,
-            )
+        descriptor = FieldDescriptor(
+            field_name=column.name,
+            data_type=DataType.match(type_hint),
+            description="",  # Note: we ignore column.comment
+            is_unique_id=column.name == unique_id_col and set_unique_id,
+            is_strata=False,
+            is_filter=False,
+            is_metric=False,
         )
+        collected.append(descriptor)
     # Sort order is: unique ID first, then string fields, then the rest by name.
     rows = sorted(
         collected,
@@ -88,3 +89,40 @@ def generate_field_descriptors(table: sqlalchemy.Table, unique_id_col: str):
     Uniqueness of the values in the column unique_id_col is assumed, not verified!
     """
     return {c.field_name: c for c in create_schema_from_table(table, unique_id_col).fields}
+
+
+def dehydrate_participants(participants: ParticipantsDef, tables: sqlalchemy.Table) -> ParticipantsDef:
+    """Removes fields from ParticipantsDef that are not a filter, metric, strata, unique ID, described, or annotated."""
+    participants.fields = [
+        f
+        for f in participants.fields
+        if False or f.description or f.extra or f.is_filter or f.is_metric or f.is_strata or f.is_unique_id
+    ]
+    return participants
+
+
+def rehydrate_participants(participants: ParticipantsDef, table: sqlalchemy.Table) -> ParticipantsDef:
+    """Adds fields from table that are not already in participants.fields."""
+    dehydrated = {p.field_name: p for p in participants.fields}
+    full_schema = create_schema_from_table(table, set_unique_id=False)
+
+    def maybe_merge(latest: FieldDescriptor, edited: FieldDescriptor | None) -> FieldDescriptor:
+        if edited is None:  # column is not defined in participant type
+            return latest
+        fd = latest.model_copy()
+        fd.description = edited.description
+        fd.extra = edited.extra
+        fd.is_filter = edited.is_filter
+        fd.is_metric = edited.is_metric
+        fd.is_strata = edited.is_strata
+        fd.is_unique_id = edited.is_unique_id
+        return fd
+
+    new_ptype = participants.model_copy()
+    new_ptype.fields = [maybe_merge(f, dehydrated.get(f.field_name)) for f in full_schema.fields]
+    ParticipantsDef.model_validate(new_ptype)
+    return new_ptype
+
+
+def build_proposed_and_drift(participants: ParticipantsDef, tables: sqlalchemy.Table) -> tuple[ParticipantsDef, Drift]:
+    pass

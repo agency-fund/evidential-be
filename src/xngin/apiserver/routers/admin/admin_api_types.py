@@ -425,11 +425,41 @@ class CreateParticipantsTypeResponse(ApiBaseModel):
 class UpdateParticipantsTypeRequest(ApiBaseModel):
     participant_type: Annotated[str | None, Field(max_length=MAX_LENGTH_OF_NAME_VALUE)] = None
     table_name: Annotated[FieldName | None, Field()] = None
-    fields: Annotated[list[FieldDescriptor] | None, Field(max_length=MAX_NUMBER_OF_FIELDS)] = None
+    fields: Annotated[list[FieldDescriptor] | None, Field()] = None
+
+
+class FieldChangedType(ApiBaseModel):
+    type: Literal["column_changed_type"] = "column_changed_type"
+    table_name: Annotated[str, Field()]
+    column_name: Annotated[str, Field()]
+    old_type: Annotated[DataType, Field()]
+    new_type: Annotated[DataType, Field()]
+
+
+class ColumnDeleted(ApiBaseModel):
+    type: Literal["column_deleted"] = "column_deleted"
+    table_name: Annotated[str, Field()]
+    column_name: Annotated[str, Field()]
+
+
+class TableDeleted(ApiBaseModel):
+    type: Literal["table_deleted"] = "table_deleted"
+    table_name: Annotated[str, Field()]
+
+
+type TableDiff = Annotated[ColumnDeleted | TableDeleted, Field(discriminator="type")]
+
+
+class Drift(ApiBaseModel):
+    """Describes differences between two participant types."""
+
+    schema_diff: list[TableDiff]
 
 
 class GetParticipantsTypeResponse(ApiBaseModel):
-    participants_config: ParticipantsConfig
+    current: ParticipantsConfig
+    proposed: ParticipantsConfig
+    drift: Drift
 
 
 class UpdateParticipantsTypeResponse(ApiBaseModel):
