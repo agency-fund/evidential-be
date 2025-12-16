@@ -1,10 +1,8 @@
 """tq is a simple Postgres task queue daemon."""
 
-import sys
 from typing import Annotated
 
 import typer
-from loguru import logger
 
 from xngin.apiserver import customlogging
 from xngin.ops import sentry
@@ -50,20 +48,8 @@ def run(
             help="Interval in seconds to poll for tasks when no notifications are received",
         ),
     ] = DEFAULT_POLLING_INTERVAL,
-    log_level: Annotated[
-        str,
-        typer.Option(
-            "--log-level",
-            help="Log level",
-            envvar="LOGURU_LEVEL",
-        ),
-    ] = "DEBUG",
 ) -> None:
     """Run the task queue processor."""
-    logger.remove()
-    logger.add(sys.stderr, level=log_level)
-    logger.info(f"Starting task queue with DSN: {dsn}")
-
     queue = TaskQueue(dsn=dsn, max_retries=max_retries, poll_interval_secs=poll_interval)
     queue.register_handler(WEBHOOK_OUTBOUND_TASK_TYPE, make_webhook_outbound_handler(dsn))
     queue.run()
