@@ -2,6 +2,7 @@ import asyncio
 import random
 
 import numpy as np
+import sentry_sdk
 from loguru import logger
 from sqlalchemy import func, insert, or_, select, text
 from sqlalchemy.orm import selectinload
@@ -129,6 +130,7 @@ async def process_pending_snapshots(snapshot_timeout: int):
 
 
 async def _handle_one_snapshot_safely(snapshot: tables.Snapshot, snapshot_timeout: int):
+    sentry_sdk.metrics.count("snapshots.started", 1, attributes={"experiment_id": snapshot.experiment_id})
     experiment = await snapshot.awaitable_attrs.experiment
     datasource = await experiment.awaitable_attrs.datasource
     logger.info(f"{experiment.id}.{snapshot.id}: processing")
@@ -138,9 +140,11 @@ async def _handle_one_snapshot_safely(snapshot: tables.Snapshot, snapshot_timeou
             snapshot.data = result.model_dump(mode="json")
             snapshot.status = "success"
     except Exception as exc:
+        sentry_sdk.metrics.count("snapshots.failed", 1, attributes={"experiment_id": snapshot.experiment_id})
         logger.opt(exception=exc).info(f"{experiment.id}.{snapshot.id}")
         snapshot.status = "failed"
         snapshot.message = f"{type(exc).__name__}: {exc}"
+    sentry_sdk.metrics.count("snapshots.finished", 1, attributes={"experiment_id": snapshot.experiment_id})
     logger.info(f"{experiment.id}.{snapshot.id}: done")
 
 
