@@ -32,7 +32,8 @@ async def acollect(snapshot_interval: int, snapshot_timeout: int, parallelism: i
         await snapshotter.create_pending_snapshots(snapshot_interval)
         async with asyncio.TaskGroup() as task:
             for i in range(parallelism):
-                _ = task.create_task(snapshotter.process_pending_snapshots(snapshot_timeout), name=f"sn{i}")
+                with logger.contextualize(task=i):
+                    _ = task.create_task(snapshotter.process_pending_snapshots(snapshot_timeout), name=f"sn{i}")
 
 
 @app.command()
