@@ -133,19 +133,20 @@ async def _handle_one_snapshot_safely(snapshot: tables.Snapshot, snapshot_timeou
     sentry_sdk.metrics.count("snapshots.started", 1, attributes={"experiment_id": snapshot.experiment_id})
     experiment = await snapshot.awaitable_attrs.experiment
     datasource = await experiment.awaitable_attrs.datasource
-    logger.info(f"{experiment.id}.{snapshot.id}: processing")
-    try:
-        async with asyncio.timeout(snapshot_timeout):
-            result = await _query_dwh_for_snapshot_data(datasource, experiment)
-            snapshot.data = result.model_dump(mode="json")
-            snapshot.status = "success"
-    except Exception as exc:
-        sentry_sdk.metrics.count("snapshots.failed", 1, attributes={"experiment_id": snapshot.experiment_id})
-        logger.opt(exception=exc).info(f"{experiment.id}.{snapshot.id}")
-        snapshot.status = "failed"
-        snapshot.message = f"{type(exc).__name__}: {exc}"
-    sentry_sdk.metrics.count("snapshots.finished", 1, attributes={"experiment_id": snapshot.experiment_id})
-    logger.info(f"{experiment.id}.{snapshot.id}: done")
+    with logger.contextualize(experiment_id=experiment.id):
+        logger.info(f"{experiment.id}.{snapshot.id}: processing")
+        try:
+            async with asyncio.timeout(snapshot_timeout):
+                result = await _query_dwh_for_snapshot_data(datasource, experiment)
+                snapshot.data = result.model_dump(mode="json")
+                snapshot.status = "success"
+        except Exception as exc:
+            sentry_sdk.metrics.count("snapshots.failed", 1, attributes={"experiment_id": snapshot.experiment_id})
+            logger.opt(exception=exc).info(f"{experiment.id}.{snapshot.id}")
+            snapshot.status = "failed"
+            snapshot.message = f"{type(exc).__name__}: {exc}"
+        sentry_sdk.metrics.count("snapshots.finished", 1, attributes={"experiment_id": snapshot.experiment_id})
+        logger.info(f"{experiment.id}.{snapshot.id}: done")
 
 
 async def _query_dwh_for_snapshot_data(
