@@ -8,11 +8,14 @@ from typing import Annotated
 
 import typer
 from loguru import logger
+from sentry_sdk.crons import monitor
 
 from xngin.apiserver import customlogging, database
 from xngin.apiserver.snapshots import snapshotter
 from xngin.ops import sentry
 from xngin.xsecrets import secretservice
+
+ENV_CRONJOB_MONITOR_SLUG = "CRONJOB_MONITOR_SLUG"
 
 # Use os.process_cpu_count() whenever we can move to python 3.13
 NPROC = max(4, len(os.sched_getaffinity(0)) // 4) if hasattr(os, "sched_getaffinity") else os.cpu_count() or 4
@@ -81,5 +84,9 @@ def collect(
     logger.add(sys.stderr, level=log_level, backtrace=verbose_exceptions, diagnose=verbose_exceptions)
     secretservice.setup()
 
-    # Typer doesn't support async.
-    asyncio.run(acollect(snapshot_interval, snapshot_timeout, parallelism))
+    cronjob_monitor_slug = os.environ.get(ENV_CRONJOB_MONITOR_SLUG, "")
+    if cronjob_monitor_slug:
+        with monitor(monitor_slug=cronjob_monitor_slug):
+            asyncio.run(acollect(snapshot_interval, snapshot_timeout, parallelism))
+    else:
+        asyncio.run(acollect(snapshot_interval, snapshot_timeout, parallelism))
