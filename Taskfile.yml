@@ -311,6 +311,7 @@ tasks:
     cmd: uv run xngin-snapshotter {{.CLI_ARGS}}
   start-tq:
     desc: "Start the task queue."
+    interactive: true
     env:
       DATABASE_URL: "{{.XNGIN_DEVAPP_STANDARD_DSN}}"  # tq uses psycopg3 directly (not SQLAlchemy).
     deps:
