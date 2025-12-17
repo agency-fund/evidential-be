@@ -15,6 +15,12 @@ class ArmAnalysisResult:
     p_value: float
     t_stat: float
     std_error: float
+    # Confidence intervals for the estimated coefficient
+    ci_lower: float
+    ci_upper: float
+    # Confidence intervals for the mean of the arm
+    mean_ci_lower: float
+    mean_ci_upper: float
     num_missing_values: int
 
 
@@ -22,6 +28,7 @@ def analyze_experiment(
     treatment_assignments: list[tables.ArmAssignment],
     participant_outcomes: list[ParticipantOutcome],
     baseline_arm_id: str | None = None,
+    alpha: float | None = None,
 ) -> dict[str, dict[str, ArmAnalysisResult]]:
     """
     Perform statistical analysis with DesignSpec metrics and their values
@@ -30,6 +37,7 @@ def analyze_experiment(
     treatment_assignments: list of participant treatment assignments
     participant_outcomes: list of participant outcomes
     baseline_arm_id: which arm to use as baseline; if not provided, uses the first arm seen
+    alpha: significance level for confidence intervals (defaults to 0.05 if None for a 95% CI).
 
     Returns:
         map of metric name => map of arm_id (may be partial or empty!) => analysis results
@@ -37,6 +45,8 @@ def analyze_experiment(
         - If *zero* arm analyses exist for a metric (e.g. since zero non-null outcomes were found
           across all arms), the name will exist, but the inner dict will be empty.
     """
+    if alpha is None:
+        alpha = 0.05
 
     assignments_df = pd.DataFrame([
         {
@@ -85,13 +95,28 @@ def analyze_experiment(
         # but make it explicit here for developer clarity.
         model = smf.ols(f"{metric_name} ~ arm_id", data=merged_df, missing="drop").fit(cov_type="HC1")
         arm_ids = model.model.data.design_info.factor_infos[EvalFactor("arm_id")].categories
+
+        # Calculate CIs for coefficients
+        confidence_intervals = model.conf_int(alpha=alpha)
+        # Calculate predicted means and their CIs (will be extracted from the summary frame)
+        pred_input = pd.DataFrame({"arm_id": arm_ids})
+        predictions = model.get_prediction(pred_input)
+        pred_summary = predictions.summary_frame(alpha=alpha)
+
         for i, arm_id in enumerate(arm_ids):
+            # Determine parameter name to use for lookingup the coefficient CIs
+            param_name = "Intercept" if i == 0 else f"arm_id[T.{arm_id}]"
+
             arm_analyses[arm_id] = ArmAnalysisResult(
                 is_baseline=i == 0 if baseline_arm_id is None else arm_id == baseline_arm_id,
                 estimate=float(model.params.iloc[i]),
                 p_value=float(model.pvalues.iloc[i]),
                 t_stat=float(model.tvalues.iloc[i]),
                 std_error=float(list(model.bse)[i]),
+                ci_lower=float(confidence_intervals.loc[param_name, 0]),
+                ci_upper=float(confidence_intervals.loc[param_name, 1]),
+                mean_ci_lower=float(pred_summary.iloc[i]["mean_ci_lower"]),
+                mean_ci_upper=float(pred_summary.iloc[i]["mean_ci_upper"]),
                 num_missing_values=nan_counts_df.loc[arm_id, metric_name],
             )
         metric_analyses[metric_name] = arm_analyses
