@@ -1700,6 +1700,10 @@ async def test_analyze_experiment_freq_impl_with_no_outcomes_for_any_arms(xngin_
         assert arm_analysis.p_value is not None and np.isnan(arm_analysis.p_value)
         assert arm_analysis.t_stat is not None and np.isnan(arm_analysis.t_stat)
         assert arm_analysis.std_error is not None and np.isnan(arm_analysis.std_error)
+        assert arm_analysis.ci_lower is not None and np.isnan(arm_analysis.ci_lower)
+        assert arm_analysis.ci_upper is not None and np.isnan(arm_analysis.ci_upper)
+        assert arm_analysis.mean_ci_lower is not None and np.isnan(arm_analysis.mean_ci_lower)
+        assert arm_analysis.mean_ci_upper is not None and np.isnan(arm_analysis.mean_ci_upper)
         assert arm_analysis.num_missing_values == -1
 
 

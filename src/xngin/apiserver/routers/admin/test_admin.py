@@ -1917,11 +1917,18 @@ def test_freq_experiments_analyze(testing_experiment, pget):
     baseline_arms = [arm for arm in metric_analysis.arm_analyses if arm.is_baseline]
     assert len(baseline_arms) == 1
     assert baseline_arms[0].is_baseline
-    for analysis in experiment_analysis.metric_analyses:
+    for metric_analysis in experiment_analysis.metric_analyses:
         # Verify arm_ids match the database model.
-        assert {arm.arm_id for arm in analysis.arm_analyses} == {arm.id for arm in testing_experiment.arms}
+        assert {arm.arm_id for arm in metric_analysis.arm_analyses} == {arm.id for arm in testing_experiment.arms}
         # id=0 doesn't exist in our test data, so we'll have 1 missing value across all arms.
-        assert sum([arm.num_missing_values for arm in analysis.arm_analyses]) == 1
+        assert sum([arm.num_missing_values for arm in metric_analysis.arm_analyses]) == 1
+        for analysis in metric_analysis.arm_analyses:
+            assert analysis.ci_lower is not None
+            assert analysis.ci_upper is not None
+            assert analysis.ci_lower < analysis.estimate < analysis.ci_upper
+            assert analysis.mean_ci_lower is not None
+            assert analysis.mean_ci_upper is not None
+            assert analysis.mean_ci_lower < analysis.mean_ci_upper
 
 
 @pytest.mark.parametrize(
