@@ -2018,22 +2018,37 @@ async def test_analyze_experiment_whose_assignments_have_no_dwh_data(testing_dat
     assert "Check that ids used in assignment are usable with your unique identifier (id)" in response.json()["message"]
 
 
-async def test_analyze_experiment_with_no_assignments_in_one_arm_yet(testing_datasource_with_user, ppost, pget):
+async def test_analyze_experiment_with_no_assignments_in_one_arm_yet(
+    xngin_session, testing_datasource_with_user, ppost, pget
+):
     datasource_id = testing_datasource_with_user.ds.id
     experiment_id = (await make_freq_online_experiment(datasource_id, ppost, pget)).experiment_id
 
-    # Create a new participant assignment for one arm.
-    response = pget(f"/v1/m/datasources/{datasource_id}/experiments/{experiment_id}/assignments/1")
-    assert response.status_code == 200, response.content
-    assignment_response = GetParticipantAssignmentResponse.model_validate(response.json())
-    assert assignment_response.assignment is not None
-    assigned_arm_id = assignment_response.assignment.arm_id
+    # Setup: create artificial assignments directly in db to deterministically allocate them all to
+    # one arm. Multiple are used for stable analysis calcs.
+    arms = (await xngin_session.scalars(select(tables.Arm).where(tables.Arm.experiment_id == experiment_id))).all()
+    assigned_arm_id = arms[0].id
+    arm_assignments = []
+    expected_num_assignments = 3
+    for i in range(1, 1 + expected_num_assignments):
+        arm_assignments.append(
+            tables.ArmAssignment(
+                experiment_id=experiment_id,
+                participant_type="test_participant_type",
+                participant_id=f"{i}",
+                arm_id=assigned_arm_id,
+                strata=[],
+            )
+        )
+    xngin_session.add_all(arm_assignments)
+    await xngin_session.commit()
 
+    # Test analysis when one arm has no assignments still has the expected ArmAnalysis for each.
     response = pget(f"/v1/m/datasources/{datasource_id}/experiments/{experiment_id}/analyze")
     assert response.status_code == 200, response.content
     analysis_response = FreqExperimentAnalysisResponse.model_validate(response.json())
     assert analysis_response.experiment_id == experiment_id
-    assert analysis_response.num_participants == 1
+    assert analysis_response.num_participants == expected_num_assignments
     assert analysis_response.num_missing_participants == 0
     assert len(analysis_response.metric_analyses) == 1
     metric_analysis = analysis_response.metric_analyses[0]
@@ -2042,10 +2057,9 @@ async def test_analyze_experiment_with_no_assignments_in_one_arm_yet(testing_dat
     for analysis in metric_analysis.arm_analyses:
         if analysis.arm_id == assigned_arm_id:
             assert analysis.estimate is not None
-            # Next 3 are all none because stderr is None with only 1 data point
-            assert analysis.p_value is None
-            assert analysis.t_stat is None
-            assert analysis.std_error is None
+            assert analysis.p_value is not None
+            assert analysis.t_stat is not None
+            assert analysis.std_error is not None
             assert analysis.num_missing_values == 0
         else:
             assert analysis.estimate == 0
