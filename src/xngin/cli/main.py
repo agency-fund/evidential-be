@@ -18,8 +18,6 @@ import typer
 import zstandard
 from email_validator import EmailNotValidError, validate_email
 from fastapi import FastAPI
-from pydantic import ValidationError
-from pydantic_core import from_json
 from rich.console import Console
 from sqlalchemy import create_engine, make_url
 from sqlalchemy.exc import IntegrityError, OperationalError
@@ -30,11 +28,7 @@ import xngin.apiserver.openapi
 from xngin.apiserver.dwh.dwh_session import CannotFindTableError, DwhSession
 from xngin.apiserver.dwh.inspection_types import ParticipantsSchema
 from xngin.apiserver.dwh.inspections import create_schema_from_table
-from xngin.apiserver.settings import (
-    Datasource,
-    Dsn,
-    SettingsForTesting,
-)
+from xngin.apiserver.settings import Datasource, Dsn
 from xngin.apiserver.sqla import tables
 from xngin.apiserver.storage.bootstrap import setup_user_and_first_datasource
 from xngin.apiserver.testing.testing_dwh_def import TESTING_DWH_RAW_DATA
@@ -440,7 +434,7 @@ def export_json_schemas(output: Path = Path(".schemas")):
     """Generates JSON schemas for Xngin settings files."""
     if not output.exists():
         output.mkdir()
-    for model in (SettingsForTesting, ParticipantsSchema, Datasource):
+    for model in (ParticipantsSchema, Datasource):
         filename = output / (model.__name__ + ".schema.json")
         with open(filename, "w") as outf:
             outf.write(json.dumps(model.model_json_schema(), indent=2, sort_keys=True))
@@ -456,21 +450,6 @@ def export_openapi_spec(output: Path = Path("openapi.json")):
     routes.register(app)
     with open(output, "w") as outf:
         json.dump(xngin.apiserver.openapi.custom_openapi(app), outf, sort_keys=True, indent=2)
-
-
-@app.command()
-def validate_testing_settings(file: Path):
-    """Validates a settings .json file against the SettingsForTesting model."""
-
-    with open(file) as f:
-        config = f.read()
-    try:
-        SettingsForTesting.model_validate(from_json(config))
-    except ValidationError as verr:
-        print(f"{file} failed validation:", file=sys.stderr)
-        for details in verr.errors():
-            print(details, file=sys.stderr)
-        raise typer.Exit(1) from verr
 
 
 @app.command()
