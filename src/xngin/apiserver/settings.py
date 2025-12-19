@@ -399,17 +399,6 @@ class Datasource(ConfigBaseModel):
     config: DatasourceConfig
 
 
-class SettingsForTesting(ConfigBaseModel):
-    datasources: list[Datasource]
-
-    def get_datasource(self, datasource_id):
-        """Finds the datasource for a specific ID if it exists, or returns None."""
-        for datasource in self.datasources:
-            if datasource.id == datasource_id:
-                return datasource
-        return None
-
-
 class CannotFindParticipantsError(Exception):
     """Raised when we cannot find a participant in the configuration."""
 
