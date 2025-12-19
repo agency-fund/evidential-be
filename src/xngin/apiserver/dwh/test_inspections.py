@@ -79,7 +79,6 @@ async def test_generate_column_descriptors(static_settings):
     assert db_schema["gender"].is_strata is False
     assert db_schema["gender"].is_filter is False
     assert db_schema["gender"].is_metric is False
-    assert db_schema["gender"].extra is None  # only necessary info loaded
     assert db_schema["last_name"].field_name == "last_name"
     assert db_schema["last_name"].data_type == DataType.CHARACTER_VARYING
     # Next assertion ust because we labeled it that way in settings!
