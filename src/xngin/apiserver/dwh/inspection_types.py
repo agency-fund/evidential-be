@@ -18,7 +18,7 @@ class FieldDescriptor(SchemaBaseModel):
     is_strata: Annotated[bool, Field(description="Whether this field should be used for stratification")] = False
     is_filter: Annotated[bool, Field(description="Whether this field can be used as a filter")] = False
     is_metric: Annotated[bool, Field(description="Whether this field can be used as a metric")] = False
-    extra: Annotated[dict[str, str] | None, Field(description="Deprecated.")] = None
+    extra: Annotated[dict[str, str] | None, Field(deprecated=True)] = None
 
     @field_validator("description", mode="before")
     @classmethod
