@@ -40,7 +40,10 @@ from xngin.apiserver.dwh.dwh_session import (
 )
 from xngin.apiserver.dwh.inspection_types import ParticipantsSchema
 from xngin.apiserver.dwh.inspections import (
+    build_proposed_and_drift,
     create_inspect_table_response_from_table,
+    dehydrate_participants,
+    rehydrate_participants,
 )
 from xngin.apiserver.dwh.queries import (
     get_stats_on_filters,
@@ -70,6 +73,7 @@ from xngin.apiserver.routers.admin.admin_api_types import (
     EventSummary,
     GetDatasourceResponse,
     GetOrganizationResponse,
+    GetParticipantsTypeResponse,
     GetSnapshotResponse,
     InspectDatasourceResponse,
     InspectDatasourceTableResponse,
@@ -120,7 +124,6 @@ from xngin.apiserver.routers.common_api_types import (
 from xngin.apiserver.routers.common_enums import ExperimentState
 from xngin.apiserver.routers.experiments import experiments_common
 from xngin.apiserver.settings import (
-    ParticipantsConfig,
     ParticipantsDef,
     RemoteDatabaseConfig,
 )
@@ -1189,10 +1192,17 @@ async def get_participant_types(
     participant_id: str,
     session: Annotated[AsyncSession, Depends(xngin_db_session)],
     user: Annotated[tables.User, Depends(require_user_from_token)],
-) -> ParticipantsConfig:
+) -> GetParticipantsTypeResponse:
     ds = await get_datasource_or_raise(session, user, datasource_id)
     # CannotFindParticipantsError will be handled by exceptionhandlers.
-    return ds.get_config().find_participants(participant_id)
+    participants = ds.get_config().find_participants(participant_id)
+    async with DwhSession(ds.get_config().dwh) as dwh:
+        inspected = await dwh.inspect_table(participants.table_name)
+        # Add all of the columns from the DWH that are not already described by participants to participants.
+        hydrated = rehydrate_participants(participants, inspected)
+        # Compose a new participant config from an existing one and build diffs
+        proposed, drift = build_proposed_and_drift(participants, inspected)
+    return GetParticipantsTypeResponse(current=hydrated, proposed=participants, drift=drift)
 
 
 @router.patch(
@@ -1216,6 +1226,10 @@ async def update_participant_type(
         participant.table_name = body.table_name
     if body.fields is not None:
         participant.fields = body.fields
+        async with DwhSession(ds.get_config().dwh) as dwh:
+            inspected = await dwh.inspect_table(participant.table_name)
+            participant = dehydrate_participants(participant, inspected)
+
     config.participants.append(participant)
     ds.set_config(config)
 
