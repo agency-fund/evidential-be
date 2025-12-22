@@ -46,14 +46,21 @@ def _analyze_normal(
     """
     if context is None:
         predictive_mean = mu[0]
-        predictive_mean_stdev = np.sqrt(covariance.flatten()[0] + outcome_std_dev**2)
+        # Variance of our estimate of the mean
+        var_of_mean = covariance.flatten()[0]
     else:
         predictive_mean = context @ mu
-        predictive_mean_stdev = np.sqrt(context @ covariance @ context + outcome_std_dev**2)
+        var_of_mean = context @ covariance @ context
 
-    ci_upper = predictive_mean + 1.96 * predictive_mean_stdev
-    ci_lower = predictive_mean - 1.96 * predictive_mean_stdev
-    return float(predictive_mean), float(predictive_mean_stdev), float(ci_upper), float(ci_lower)
+    # Compute 95% Credible Interval bounds on our estimate of the mean
+    stderr_of_mean = np.sqrt(var_of_mean)
+    ci_upper = predictive_mean + 1.96 * stderr_of_mean
+    ci_lower = predictive_mean - 1.96 * stderr_of_mean
+
+    # Standard deviation of the predictive distribution (includes outcome noise)
+    predictive_stdev = np.sqrt(var_of_mean + outcome_std_dev**2)
+
+    return float(predictive_mean), float(predictive_stdev), float(ci_upper), float(ci_lower)
 
 
 def _analyze_normal_binary(
@@ -61,6 +68,7 @@ def _analyze_normal_binary(
     covariance: np.ndarray,
     context_link_functions: ContextLinkFunctions,
     context: np.ndarray | None = None,
+    num_samples: int = 1000,
     random_state: int | None = None,
 ) -> tuple[float, float, float, float]:
     """
@@ -70,30 +78,41 @@ def _analyze_normal_binary(
         covariance: The posterior covariance matrix of the arm.
         context_link_functions: The link function to use.
         context: Optional context vector.
+        num_samples: Number of samples to draw for estimation.
         random_state: Use a fixed int for deterministic behavior in tests.
     """
-    rng = np.random.default_rng(random_state)
-    num_samples = 10000  # TODO: Make this configurable
+    # First derive the Credible Interval in latent space
+    if context is None:
+        latent_mean = float(mu[0])
+        latent_var = float(covariance[0, 0])
+    else:
+        latent_mean = float(context @ mu)
+        latent_var = float(context @ covariance @ context)
 
+    # Calculate 95% CI bounds
+    latent_stderr = np.sqrt(latent_var)
+    latent_ci_upper = latent_mean + 1.96 * latent_stderr
+    latent_ci_lower = latent_mean - 1.96 * latent_stderr
+    # Transform back into to probability space
+    latent_bounds = np.array([latent_ci_lower, latent_ci_upper])
+    ci_lower, ci_upper = context_link_functions(latent_bounds).tolist()
+
+    # Estimate the mean via MC integration given the non-linear link function.
+    # First sample in latent space
+    rng = np.random.default_rng(random_state)
     samples = rng.multivariate_normal(mean=mu, cov=covariance, size=num_samples)
     if context is not None:
         parameter_samples = samples @ context
     else:
         parameter_samples = samples
-    transformed_parameter_samples = context_link_functions(parameter_samples)
-    transformed_parameter_mean = transformed_parameter_samples.mean()
-    transformed_parameter_std = transformed_parameter_samples.std()
-    outcome_samples = rng.binomial(n=1, p=transformed_parameter_samples)
+    # Convert to probabilities to compute the posterior predictive mean
+    prob_samples = context_link_functions(parameter_samples)
+    predictive_mean = prob_samples.mean()
 
-    mean = outcome_samples.mean()
-    std = outcome_samples.std()
-    ci_upper = context_link_functions(
-        transformed_parameter_mean + 1.96 * transformed_parameter_std / np.sqrt(num_samples)
-    )
-    ci_lower = context_link_functions(
-        transformed_parameter_mean - 1.96 * transformed_parameter_std / np.sqrt(num_samples)
-    )
-    return float(mean), float(std), float(ci_upper), float(ci_lower)
+    # Analytical standard deviation for bernoulli outcomes
+    predictive_stdev = np.sqrt(predictive_mean * (1 - predictive_mean))
+
+    return float(predictive_mean), float(predictive_stdev), ci_upper, ci_lower
 
 
 def analyze_experiment(
