@@ -295,6 +295,22 @@ class ArmAnalysis(Arm):
         ),
     ]
     std_error: Annotated[float | None, Field(description="The standard error of the treatment effect estimate.")]
+    ci_lower: Annotated[
+        float | None,
+        Field(description="Confidence interval lower bound for the regression coefficient estimate."),
+    ] = None
+    ci_upper: Annotated[
+        float | None,
+        Field(description="Confidence interval upper bound for the regression coefficient estimate."),
+    ] = None
+    mean_ci_lower: Annotated[
+        float | None,
+        Field(description="Confidence interval lower bound for the arm's mean."),
+    ] = None
+    mean_ci_upper: Annotated[
+        float | None,
+        Field(description="Confidence interval upper bound for the arm's mean."),
+    ] = None
     num_missing_values: Annotated[
         int,
         Field(
@@ -311,7 +327,16 @@ class ArmAnalysis(Arm):
         Field(description="Whether this arm is the baseline/control arm for comparison."),
     ]
 
-    @field_serializer("t_stat", "p_value", "std_error", when_used="json")
+    @field_serializer(
+        "t_stat",
+        "p_value",
+        "std_error",
+        "ci_lower",
+        "ci_upper",
+        "mean_ci_lower",
+        "mean_ci_upper",
+        when_used="json",
+    )
     def serialize_float(self, v: float | None, _info):
         """Serialize floats to None when they are NaN, which becomes null in JSON."""
         if v is None or math.isnan(v):
