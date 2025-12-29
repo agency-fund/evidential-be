@@ -202,9 +202,9 @@ async def _lookup_or_create(session: AsyncSession, principal: Principal) -> tabl
     user_count = await session.scalar(select(count(tables.User.id)))
     if user_count == 0 or (flags.AIRPLANE_MODE and principal.iss == "airplane"):
         user = tables.User(email=principal.email, iss=principal.iss, sub=principal.sub, is_privileged=True)
-        new_user = setup_user_and_first_datasource(session, user, flags.XNGIN_DEVDWH_DSN)
+        user = await setup_user_and_first_datasource(session, user, flags.XNGIN_DEVDWH_DSN)
         await session.commit()
-        return new_user
+        return user
     return None
 
 
