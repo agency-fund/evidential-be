@@ -7,7 +7,7 @@ import google.api_core.exceptions
 import sqlalchemy
 from loguru import logger
 from sqlalchemy import Engine, Inspector, event, text
-from sqlalchemy.exc import NoSuchTableError, OperationalError
+from sqlalchemy.exc import DatabaseError, NoSuchTableError, OperationalError
 from sqlalchemy.orm import Session
 
 from xngin.apiserver.dns.safe_resolve import safe_resolve
@@ -45,6 +45,13 @@ def _is_postgres_database_not_found_error(exc: OperationalError) -> bool:
         and "FATAL:  database" in exc.args[0]
         and "does not exist" in exc.args[0]
     )
+
+
+class DwhConnectionError(Exception):
+    """Raised when there is a connection error to the data warehouse."""
+
+    def __init__(self, original_error: Exception):
+        super().__init__(f"CONNECTION ERROR: {type(original_error).__name__} | {original_error!s}")
 
 
 @dataclass
@@ -338,13 +345,17 @@ class DwhSession:
                 result = self.session.execute(query, {"search_path": self.dwh_config.search_path or "public"})
                 return list(result.scalars().all())
             inspected = sqlalchemy.inspect(self._safe_engine())
+
             if not isinstance(inspected, Inspector):
                 raise TypeError(f"Unexpected type of inspector: {type(inspected)}")
             return list(sorted(inspected.get_table_names() + inspected.get_view_names()))
+
         except OperationalError as exc:
             if _is_postgres_database_not_found_error(exc):
                 raise DwhDatabaseDoesNotExistError(str(exc)) from exc
-            raise
+            raise DwhConnectionError(exc) from exc
+        except DatabaseError as exc:
+            raise DwhConnectionError(exc) from exc
         except google.api_core.exceptions.NotFound as exc:
             # Google returns a 404 when authentication succeeds but when the specified datasource does not exist.
             raise DwhDatabaseDoesNotExistError(str(exc)) from exc

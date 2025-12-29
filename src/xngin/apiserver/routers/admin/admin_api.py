@@ -34,6 +34,7 @@ from xngin.apiserver.apikeys import hash_key_or_raise, make_key
 from xngin.apiserver.dependencies import xngin_db_session
 from xngin.apiserver.dns.safe_resolve import DnsLookupError, safe_resolve
 from xngin.apiserver.dwh.dwh_session import (
+    DwhConnectionError,
     DwhDatabaseDoesNotExistError,
     DwhSession,
     NoDwh,
@@ -961,12 +962,14 @@ async def inspect_datasource(
             config = ds.get_config()
             async with DwhSession(config.dwh) as dwh:
                 tablenames = await dwh.list_tables()
-
             ds.set_table_list(tablenames)
             await session.commit()
             return InspectDatasourceResponse(tables=tablenames)
+
         except DwhDatabaseDoesNotExistError as exc:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+        except DwhConnectionError as exc:
+            raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc)) from exc
     except:
         ds.clear_table_list()
         await session.commit()
