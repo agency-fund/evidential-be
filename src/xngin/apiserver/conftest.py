@@ -7,12 +7,10 @@ import os
 import secrets
 from dataclasses import dataclass
 from functools import partial
-from pathlib import Path
 from typing import assert_never, cast
 
 import pytest
 import sqlalchemy
-from pydantic import TypeAdapter, ValidationError
 from sqlalchemy import delete, make_url, select
 from sqlalchemy.dialects.postgresql import psycopg
 from sqlalchemy.engine.interfaces import Dialect
@@ -43,7 +41,6 @@ from xngin.apiserver.settings import (
     ParticipantsConfig,
     ParticipantsDef,
     RemoteDatabaseConfig,
-    SettingsForTesting,
 )
 from xngin.apiserver.sqla import tables
 from xngin.apiserver.testing.pg_helpers import create_database_if_not_exists_pg
@@ -90,19 +87,6 @@ class TestUriInfo:
         if "credentials_base64" in safe_url.query:
             safe_url = safe_url.update_query_dict({"credentials_base64": "REDACTED"})
         return f"{safe_url} (detected type: {self.db_type})"
-
-
-@pytest.fixture(name="static_settings")
-def fixture_static_settings() -> SettingsForTesting:
-    """Reads the xngin.testing.settings.json file."""
-    filename = Path(__file__).resolve().parent / "testdata/xngin.testing.settings.json"
-    with open(filename) as f:
-        try:
-            contents = f.read()
-            return TypeAdapter(SettingsForTesting).validate_json(contents)
-        except ValidationError as pyve:
-            print(f"Failed to parse {filename}. Contents:\n{contents}\n\nError:{pyve}")
-            raise
 
 
 def get_queries_test_uri() -> TestUriInfo:

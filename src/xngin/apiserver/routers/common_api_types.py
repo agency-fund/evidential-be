@@ -625,9 +625,6 @@ class GetStrataResponseElement(ApiBaseModel):
     data_type: DataType
     field_name: FieldName
     description: Annotated[str, Field(max_length=MAX_LENGTH_OF_DESCRIPTION_VALUE)]
-    # Extra fields will be stored here in case a user configured their worksheet with extra metadata for their own
-    # downstream use, e.g. to group strata with a friendly identifier.
-    extra: Annotated[dict[str, str] | None, Field(max_length=MAX_NUMBER_OF_FIELDS)] = None
 
 
 class GetMetricsResponseElement(ApiBaseModel):
