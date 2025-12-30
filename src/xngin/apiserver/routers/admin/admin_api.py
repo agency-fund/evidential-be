@@ -969,7 +969,7 @@ async def inspect_datasource(
         except DwhDatabaseDoesNotExistError as exc:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
         except DwhConnectionError as exc:
-            raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc)) from exc
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
     except:
         ds.clear_table_list()
         await session.commit()

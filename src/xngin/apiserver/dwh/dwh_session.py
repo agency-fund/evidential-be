@@ -7,7 +7,7 @@ import google.api_core.exceptions
 import sqlalchemy
 from loguru import logger
 from sqlalchemy import Engine, Inspector, event, text
-from sqlalchemy.exc import DatabaseError, NoSuchTableError, OperationalError
+from sqlalchemy.exc import NoSuchTableError, OperationalError
 from sqlalchemy.orm import Session
 
 from xngin.apiserver.dns.safe_resolve import safe_resolve
@@ -354,8 +354,6 @@ class DwhSession:
             if _is_postgres_database_not_found_error(exc):
                 raise DwhDatabaseDoesNotExistError(str(exc)) from exc
             raise DwhConnectionError(exc) from exc
-        except DatabaseError as exc:
-            raise DwhConnectionError(exc) from exc
         except google.api_core.exceptions.NotFound as exc:
             # Google returns a 404 when authentication succeeds but when the specified datasource does not exist.
             raise DwhDatabaseDoesNotExistError(str(exc)) from exc
@@ -389,14 +387,16 @@ class DwhSession:
             f"Connecting to customer dwh: url={_safe_url(url)}, "
             f"backend={url.get_backend_name()}, connect_args={connect_args}"
         )
-
-        engine = sqlalchemy.create_engine(
-            url,
-            connect_args=connect_args,
-            logging_name=SA_LOGGER_NAME_FOR_DWH,
-            execution_options={"logging_token": "dwh"},
-            poolclass=sqlalchemy.pool.NullPool,
-        )
+        try:
+            engine = sqlalchemy.create_engine(
+                url,
+                connect_args=connect_args,
+                logging_name=SA_LOGGER_NAME_FOR_DWH,
+                execution_options={"logging_token": "dwh"},
+                poolclass=sqlalchemy.pool.NullPool,
+            )
+        except Exception as exc:
+            raise DwhConnectionError(exc) from exc
 
         self._extra_engine_setup(engine)
         return engine

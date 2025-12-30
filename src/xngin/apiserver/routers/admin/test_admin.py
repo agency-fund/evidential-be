@@ -752,6 +752,82 @@ def test_datasource_lifecycle(ppost, pget, ppatch):
     assert test_dwh.driver == "bigquery"
 
 
+def test_datasource_errors(pget, ppost):
+    """Test creating a datasource with various error conditions."""
+    # Create an organization.
+    response = ppost(
+        "/v1/m/organizations",
+        json=CreateOrganizationRequest(name="test_datasource_errors").model_dump(),
+    )
+    org_id = CreateOrganizationResponse.model_validate(response.json()).id
+
+    # Test connection Error (400) - RedShift with wrong port
+    response = ppost(
+        "/v1/m/datasources",
+        content=CreateDatasourceRequest(
+            organization_id=org_id,
+            name="test invalid credentials",
+            dsn=RedshiftDsn(
+                host="127.0.0.1",
+                user="redshift",
+                port=9999,  # Invalid port
+                password=RevealedStr(value="redshift"),
+                dbname="redshift",
+                search_path=None,
+            ),
+        ).model_dump_json(),
+    )
+    ds_id = CreateDatasourceResponse.model_validate(response.json()).id
+
+    response = pget(f"/v1/m/datasources/{ds_id}/inspect")
+    assert response.status_code == 400, response.content
+    assert "CONNECTION ERROR" in response.json()["detail"]
+
+    # Test connection Error (400) - PostgreSQL with wrong port
+    response = ppost(
+        "/v1/m/datasources",
+        content=CreateDatasourceRequest(
+            organization_id=org_id,
+            name="test invalid credentials",
+            dsn=PostgresDsn(
+                host="127.0.0.1",
+                user="postgres",
+                port=9999,  # Invalid port
+                password=RevealedStr(value="postgres"),
+                dbname="postgres",
+                sslmode="disable",
+                search_path=None,
+            ),
+        ).model_dump_json(),
+    )
+    ds_id = CreateDatasourceResponse.model_validate(response.json()).id
+
+    response = pget(f"/v1/m/datasources/{ds_id}/inspect")
+    assert response.status_code == 400, response.content
+    assert "CONNECTION ERROR" in response.json()["detail"]
+
+    # Test credential Error (400) - BigQuery with invalid service account
+    gcloud_invalid = copy.deepcopy(SAMPLE_GCLOUD_SERVICE_ACCOUNT)
+    response = ppost(
+        "/v1/m/datasources",
+        content=CreateDatasourceRequest(
+            organization_id=org_id,
+            name="test invalid credentials",
+            dsn=BqDsn(
+                project_id="some-project",
+                dataset_id="ds",
+                credentials=GcpServiceAccount(content=json.dumps(gcloud_invalid)),
+            ),
+        ).model_dump_json(),
+    )
+    ds_id = CreateDatasourceResponse.model_validate(response.json()).id
+
+    # Inspect datasource should return 400 for credential errors
+    response = pget(f"/v1/m/datasources/{ds_id}/inspect")
+    assert response.status_code == 400, response.content
+    assert "CONNECTION ERROR" in response.json()["detail"]
+
+
 def test_delete_datasource(testing_datasource_with_user, pget, udelete, pdelete):
     """Test deleting a datasource a few different ways."""
     ds_id = testing_datasource_with_user.ds.id
