@@ -1154,8 +1154,6 @@ async def inspect_participant_types(
                         data_type=result.db_schema.get(field_name).data_type,  # type: ignore[union-attr]
                         field_name=field_name,
                         description=field_descriptor.description,
-                        # For strata columns, we will echo back any extra annotations
-                        extra=field_descriptor.extra,
                     )
                     for field_name, field_descriptor in strata_fields.items()
                     if result.db_schema.get(field_name)
