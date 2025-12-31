@@ -1353,7 +1353,7 @@ async def create_experiment(
     session: Annotated[AsyncSession, Depends(xngin_db_session)],
     user: Annotated[tables.User, Depends(require_user_from_token)],
     body: CreateExperimentRequest,
-    chosen_n: Annotated[int | None, Query(..., description="Number of participants to assign.")] = None,
+    chosen_n: Annotated[int | None, Query(..., description="Number of participants to assign.", ge=0)] = None,
     stratify_on_metrics: Annotated[
         bool,
         Query(description="Whether to also stratify on metrics during assignment."),
