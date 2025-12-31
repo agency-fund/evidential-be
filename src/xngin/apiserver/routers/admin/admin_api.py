@@ -47,7 +47,7 @@ from xngin.apiserver.dwh.queries import (
     get_stats_on_metrics,
 )
 from xngin.apiserver.exceptions_common import LateValidationError
-from xngin.apiserver.routers.admin import admin_api_converters, authz
+from xngin.apiserver.routers.admin import admin_api_converters, admin_common, authz
 from xngin.apiserver.routers.admin.admin_api_converters import (
     api_dsn_to_settings_dwh,
     convert_api_snapshot_status_to_snapshot_status,
@@ -95,6 +95,7 @@ from xngin.apiserver.routers.admin.admin_api_types import (
     UserSummary,
     WebhookSummary,
 )
+from xngin.apiserver.routers.admin.admin_common import create_organization_impl
 from xngin.apiserver.routers.admin.generic_handlers import handle_delete
 from xngin.apiserver.routers.auth.auth_api_types import CallerIdentity
 from xngin.apiserver.routers.auth.auth_dependencies import require_user_from_token
@@ -126,7 +127,6 @@ from xngin.apiserver.settings import (
 )
 from xngin.apiserver.snapshots import snapshotter
 from xngin.apiserver.sqla import tables
-from xngin.apiserver.storage.bootstrap import add_nodwh_datasource_to_org
 from xngin.apiserver.storage.storage_format_converters import ExperimentStorageConverter
 from xngin.stats import check_power
 
@@ -494,10 +494,7 @@ async def create_organizations(
             detail="Only privileged users can create organizations",
         )
 
-    organization = tables.Organization(name=body.name)
-    session.add(organization)
-    organization.users.append(user)  # Add the creating user to the organization
-    add_nodwh_datasource_to_org(session, organization)
+    organization = await create_organization_impl(session, user, body.name)
     await session.commit()
 
     return CreateOrganizationResponse(id=organization.id)
@@ -884,10 +881,7 @@ async def create_datasource(
 
     config = RemoteDatabaseConfig(participants=[], type="remote", dwh=api_dsn_to_settings_dwh(body.dsn))
 
-    datasource = tables.Datasource(
-        id=tables.datasource_id_factory(), name=body.name, organization_id=org.id
-    ).set_config(config)
-    session.add(datasource)
+    datasource = await admin_common.create_datasource_impl(session, org, body.name, config)
     await session.commit()
 
     return CreateDatasourceResponse(id=datasource.id)

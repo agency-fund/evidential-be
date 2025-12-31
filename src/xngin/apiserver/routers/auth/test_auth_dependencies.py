@@ -12,6 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from xngin.apiserver import flags
 from xngin.apiserver.conftest import delete_seeded_users
 from xngin.apiserver.dwh.dwh_session import DwhSession
+from xngin.apiserver.routers.admin.admin_common import DEFAULT_NO_DWH_SOURCE_NAME
 from xngin.apiserver.routers.admin.test_admin import find_ds_with_name
 from xngin.apiserver.routers.auth.auth_dependencies import (
     PRIVILEGED_TOKEN_FOR_TESTING,
@@ -30,7 +31,6 @@ from xngin.apiserver.settings import NoDwh, ParticipantsDef
 from xngin.apiserver.sqla import tables
 from xngin.apiserver.storage.bootstrap import (
     DEFAULT_DWH_SOURCE_NAME,
-    DEFAULT_NO_DWH_SOURCE_NAME,
     DEFAULT_ORGANIZATION_NAME,
 )
 from xngin.xsecrets.nacl_provider import NaclProviderKeyset
@@ -190,19 +190,21 @@ async def test_user_from_token_expired(xngin_session: AsyncSession):
     assert exc.value.status_code == 401
 
 
-async def test_initial_user_setup_matches_testing_dwh(xngin_session):
+async def test_initial_user_setup_matches_testing_dwh(xngin_session: AsyncSession):
     await delete_seeded_users(xngin_session)
 
     first_user = await require_user_from_token(
         xngin_session, Principal(email="initial@example.com", iss="", sub="", hd="", iat=int(time.time()))
     )
+    await xngin_session.commit()
 
     # Validate directly from the db that our default org was created with datasources.
     await xngin_session.refresh(first_user, ["organizations"])
+    assert len(first_user.organizations) == 1
     organization = first_user.organizations[0]
     assert organization.name == DEFAULT_ORGANIZATION_NAME
     datasources: list[tables.Datasource] = await organization.awaitable_attrs.datasources
-    assert len(datasources) == 2
+    assert len(datasources) == 2, [d.name for d in datasources]
 
     # Validate that we added the testing dwh datasource.
     ds = find_ds_with_name(datasources, DEFAULT_DWH_SOURCE_NAME)

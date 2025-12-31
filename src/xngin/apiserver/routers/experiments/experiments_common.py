@@ -268,7 +268,7 @@ async def create_preassigned_experiment_impl(
     await xngin_session.commit()
 
     assign_summary = await get_assign_summary(
-        xngin_session, experiment.id, balance_check, ExperimentsType.FREQ_PREASSIGNED
+        xngin_session, (await experiment.awaitable_attrs.id), balance_check, ExperimentsType.FREQ_PREASSIGNED
     )
     webhook_ids = [webhook.id for webhook in validated_webhooks]
     return await experiment_converter.get_create_experiment_response(assign_summary, webhook_ids)

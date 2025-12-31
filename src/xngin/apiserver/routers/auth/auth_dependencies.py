@@ -18,7 +18,7 @@ from xngin.apiserver.dependencies import xngin_db_session
 from xngin.apiserver.routers.auth.principal import Principal
 from xngin.apiserver.routers.auth.session_token_crypter import SessionTokenCrypter
 from xngin.apiserver.sqla import tables
-from xngin.apiserver.storage.bootstrap import setup_user_and_first_datasource
+from xngin.apiserver.storage.bootstrap import create_entities_for_first_time_user
 from xngin.xsecrets import chafernet
 
 # The length of time that a session token is considered valid.
@@ -202,9 +202,9 @@ async def _lookup_or_create(session: AsyncSession, principal: Principal) -> tabl
     user_count = await session.scalar(select(count(tables.User.id)))
     if user_count == 0 or (flags.AIRPLANE_MODE and principal.iss == "airplane"):
         user = tables.User(email=principal.email, iss=principal.iss, sub=principal.sub, is_privileged=True)
-        new_user = setup_user_and_first_datasource(session, user, flags.XNGIN_DEVDWH_DSN)
+        user = await create_entities_for_first_time_user(session, user, flags.XNGIN_DEVDWH_DSN)
         await session.commit()
-        return new_user
+        return user
     return None
 
 
