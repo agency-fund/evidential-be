@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
     <meta http-equiv="Content-Type" content="text/html; charset=utf-8">
-    <title>Coverage for src/xngin/apiserver/routers/experiments/experiments_common.py: 85%</title>
+    <title>Coverage for src/xngin/apiserver/routers/experiments/experiments_common.py: 86%</title>
     <link rel="icon" sizes="32x32" href="favicon_32_cb_58284776.png">
     <link rel="stylesheet" href="style_cb_6b508a39.css" type="text/css">
     <script src="coverage_html_cb_6fb7b396.js" defer></script>
@@ -12,7 +12,7 @@
     <div class="content">
         <h1>
             <span class="text">Coverage for </span><b>src/xngin/apiserver/routers/experiments/experiments_common.py</b>:
-            <span class="pc_cov">85%</span>
+            <span class="pc_cov">86%</span>
         </h1>
         <aside id="help_panel_wrapper">
             <input id="help_panel_state" type="checkbox">
@@ -55,8 +55,8 @@
         </aside>
         <h2>
             <span class="text">390 statements &nbsp;</span>
-            <button type="button" class="run button_toggle_run" value="run" data-shortcut="r" title="Toggle lines run">333<span class="text"> run</span></button>
-            <button type="button" class="mis show_mis button_toggle_mis" value="mis" data-shortcut="m" title="Toggle lines missing">57<span class="text"> missing</span></button>
+            <button type="button" class="run button_toggle_run" value="run" data-shortcut="r" title="Toggle lines run">335<span class="text"> run</span></button>
+            <button type="button" class="mis show_mis button_toggle_mis" value="mis" data-shortcut="m" title="Toggle lines missing">55<span class="text"> missing</span></button>
             <button type="button" class="exc show_exc button_toggle_exc" value="exc" data-shortcut="x" title="Toggle lines excluded">0<span class="text"> excluded</span></button>
         </h2>
         <p class="text">
@@ -65,7 +65,7 @@
             <a id="nextFileLink" class="nav" href="z_f486e4c3bcca4cb5_property_filters_py.html">&#xbb; next</a>
             &nbsp; &nbsp; &nbsp;
             <a class="nav" href="https://coverage.readthedocs.io/en/7.11.0">coverage.py v7.11.0</a>,
-            created at 2025-12-31 22:17 +0000
+            created at 2025-12-31 22:23 +0000
         </p>
         <aside class="hidden">
             <button type="button" class="button_next_chunk" data-shortcut="j"></button>
@@ -350,7 +350,7 @@
     <p class="run"><span class="n"><a id="t268" href="#t268">268</a></span><span class="t">    <span class="key">await</span> <span class="nam">xngin_session</span><span class="op">.</span><span class="nam">commit</span><span class="op">(</span><span class="op">)</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t269" href="#t269">269</a></span><span class="t">&nbsp;</span><span class="r"></span></p>
     <p class="run"><span class="n"><a id="t270" href="#t270">270</a></span><span class="t">    <span class="nam">assign_summary</span> <span class="op">=</span> <span class="key">await</span> <span class="nam">get_assign_summary</span><span class="op">(</span>&nbsp;</span><span class="r"></span></p>
-    <p class="run run2"><span class="n"><a id="t271" href="#t271">271</a></span><span class="t">        <span class="nam">xngin_session</span><span class="op">,</span> <span class="nam">experiment</span><span class="op">.</span><span class="nam">id</span><span class="op">,</span> <span class="nam">balance_check</span><span class="op">,</span> <span class="nam">ExperimentsType</span><span class="op">.</span><span class="nam">FREQ_PREASSIGNED</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run run2"><span class="n"><a id="t271" href="#t271">271</a></span><span class="t">        <span class="nam">xngin_session</span><span class="op">,</span> <span class="op">(</span><span class="key">await</span> <span class="nam">experiment</span><span class="op">.</span><span class="nam">awaitable_attrs</span><span class="op">.</span><span class="nam">id</span><span class="op">)</span><span class="op">,</span> <span class="nam">balance_check</span><span class="op">,</span> <span class="nam">ExperimentsType</span><span class="op">.</span><span class="nam">FREQ_PREASSIGNED</span>&nbsp;</span><span class="r"></span></p>
     <p class="run run2"><span class="n"><a id="t272" href="#t272">272</a></span><span class="t">    <span class="op">)</span>&nbsp;</span><span class="r"></span></p>
     <p class="run"><span class="n"><a id="t273" href="#t273">273</a></span><span class="t">    <span class="nam">webhook_ids</span> <span class="op">=</span> <span class="op">[</span><span class="nam">webhook</span><span class="op">.</span><span class="nam">id</span> <span class="key">for</span> <span class="nam">webhook</span> <span class="key">in</span> <span class="nam">validated_webhooks</span><span class="op">]</span>&nbsp;</span><span class="r"></span></p>
     <p class="run"><span class="n"><a id="t274" href="#t274">274</a></span><span class="t">    <span class="key">return</span> <span class="key">await</span> <span class="nam">experiment_converter</span><span class="op">.</span><span class="nam">get_create_experiment_response</span><span class="op">(</span><span class="nam">assign_summary</span><span class="op">,</span> <span class="nam">webhook_ids</span><span class="op">)</span>&nbsp;</span><span class="r"></span></p>
@@ -1073,13 +1073,13 @@
     <p class="run run2"><span class="n"><a id="t991" href="#t991">991</a></span><span class="t">                <span class="op">.</span><span class="nam">where</span><span class="op">(</span><span class="nam">tables</span><span class="op">.</span><span class="nam">ArmAssignment</span><span class="op">.</span><span class="nam">experiment_id</span> <span class="op">==</span> <span class="nam">experiment_id</span><span class="op">)</span>&nbsp;</span><span class="r"></span></p>
     <p class="run run2"><span class="n"><a id="t992" href="#t992">992</a></span><span class="t">                <span class="op">.</span><span class="nam">group_by</span><span class="op">(</span><span class="nam">tables</span><span class="op">.</span><span class="nam">ArmAssignment</span><span class="op">.</span><span class="nam">arm_id</span><span class="op">,</span> <span class="nam">tables</span><span class="op">.</span><span class="nam">Arm</span><span class="op">.</span><span class="nam">name</span><span class="op">)</span>&nbsp;</span><span class="r"></span></p>
     <p class="run run2"><span class="n"><a id="t993" href="#t993">993</a></span><span class="t">            <span class="op">)</span>&nbsp;</span><span class="r"></span></p>
-    <p class="mis show_mis"><span class="n"><a id="t994" href="#t994">994</a></span><span class="t">        <span class="key">case</span> <span class="nam">ExperimentsType</span><span class="op">.</span><span class="nam">MAB_ONLINE</span> <span class="op">|</span> <span class="nam">ExperimentsType</span><span class="op">.</span><span class="nam">CMAB_ONLINE</span><span class="op">:</span>&nbsp;</span><span class="r"></span></p>
-    <p class="mis show_mis"><span class="n"><a id="t995" href="#t995">995</a></span><span class="t">            <span class="nam">result</span> <span class="op">=</span> <span class="key">await</span> <span class="nam">xngin_session</span><span class="op">.</span><span class="nam">execute</span><span class="op">(</span>&nbsp;</span><span class="r"></span></p>
-    <p class="mis mis2 show_mis"><span class="n"><a id="t996" href="#t996">996</a></span><span class="t">                <span class="nam">select</span><span class="op">(</span><span class="nam">tables</span><span class="op">.</span><span class="nam">Draw</span><span class="op">.</span><span class="nam">arm_id</span><span class="op">,</span> <span class="nam">tables</span><span class="op">.</span><span class="nam">Arm</span><span class="op">.</span><span class="nam">name</span><span class="op">,</span> <span class="nam">func</span><span class="op">.</span><span class="nam">count</span><span class="op">(</span><span class="op">)</span><span class="op">)</span>&nbsp;</span><span class="r"></span></p>
-    <p class="mis mis2 show_mis"><span class="n"><a id="t997" href="#t997">997</a></span><span class="t">                <span class="op">.</span><span class="nam">join</span><span class="op">(</span><span class="nam">tables</span><span class="op">.</span><span class="nam">Arm</span><span class="op">)</span>&nbsp;</span><span class="r"></span></p>
-    <p class="mis mis2 show_mis"><span class="n"><a id="t998" href="#t998">998</a></span><span class="t">                <span class="op">.</span><span class="nam">where</span><span class="op">(</span><span class="nam">tables</span><span class="op">.</span><span class="nam">Draw</span><span class="op">.</span><span class="nam">experiment_id</span> <span class="op">==</span> <span class="nam">experiment_id</span><span class="op">)</span>&nbsp;</span><span class="r"></span></p>
-    <p class="mis mis2 show_mis"><span class="n"><a id="t999" href="#t999">999</a></span><span class="t">                <span class="op">.</span><span class="nam">group_by</span><span class="op">(</span><span class="nam">tables</span><span class="op">.</span><span class="nam">Draw</span><span class="op">.</span><span class="nam">arm_id</span><span class="op">,</span> <span class="nam">tables</span><span class="op">.</span><span class="nam">Arm</span><span class="op">.</span><span class="nam">name</span><span class="op">)</span>&nbsp;</span><span class="r"></span></p>
-    <p class="mis mis2 show_mis"><span class="n"><a id="t1000" href="#t1000">1000</a></span><span class="t">            <span class="op">)</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run"><span class="n"><a id="t994" href="#t994">994</a></span><span class="t">        <span class="key">case</span> <span class="nam">ExperimentsType</span><span class="op">.</span><span class="nam">MAB_ONLINE</span> <span class="op">|</span> <span class="nam">ExperimentsType</span><span class="op">.</span><span class="nam">CMAB_ONLINE</span><span class="op">:</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run"><span class="n"><a id="t995" href="#t995">995</a></span><span class="t">            <span class="nam">result</span> <span class="op">=</span> <span class="key">await</span> <span class="nam">xngin_session</span><span class="op">.</span><span class="nam">execute</span><span class="op">(</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run run2"><span class="n"><a id="t996" href="#t996">996</a></span><span class="t">                <span class="nam">select</span><span class="op">(</span><span class="nam">tables</span><span class="op">.</span><span class="nam">Draw</span><span class="op">.</span><span class="nam">arm_id</span><span class="op">,</span> <span class="nam">tables</span><span class="op">.</span><span class="nam">Arm</span><span class="op">.</span><span class="nam">name</span><span class="op">,</span> <span class="nam">func</span><span class="op">.</span><span class="nam">count</span><span class="op">(</span><span class="op">)</span><span class="op">)</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run run2"><span class="n"><a id="t997" href="#t997">997</a></span><span class="t">                <span class="op">.</span><span class="nam">join</span><span class="op">(</span><span class="nam">tables</span><span class="op">.</span><span class="nam">Arm</span><span class="op">)</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run run2"><span class="n"><a id="t998" href="#t998">998</a></span><span class="t">                <span class="op">.</span><span class="nam">where</span><span class="op">(</span><span class="nam">tables</span><span class="op">.</span><span class="nam">Draw</span><span class="op">.</span><span class="nam">experiment_id</span> <span class="op">==</span> <span class="nam">experiment_id</span><span class="op">)</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run run2"><span class="n"><a id="t999" href="#t999">999</a></span><span class="t">                <span class="op">.</span><span class="nam">group_by</span><span class="op">(</span><span class="nam">tables</span><span class="op">.</span><span class="nam">Draw</span><span class="op">.</span><span class="nam">arm_id</span><span class="op">,</span> <span class="nam">tables</span><span class="op">.</span><span class="nam">Arm</span><span class="op">.</span><span class="nam">name</span><span class="op">)</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run run2"><span class="n"><a id="t1000" href="#t1000">1000</a></span><span class="t">            <span class="op">)</span>&nbsp;</span><span class="r"></span></p>
     <p class="mis show_mis"><span class="n"><a id="t1001" href="#t1001">1001</a></span><span class="t">            <span class="nam">balance_check</span> <span class="op">=</span> <span class="key">None</span>&nbsp;</span><span class="r"></span></p>
     <p class="mis show_mis"><span class="n"><a id="t1002" href="#t1002">1002</a></span><span class="t">        <span class="key">case</span> <span class="nam">_</span><span class="op">:</span>&nbsp;</span><span class="r"></span></p>
     <p class="mis show_mis"><span class="n"><a id="t1003" href="#t1003">1003</a></span><span class="t">            <span class="key">raise</span> <span class="nam">LateValidationError</span><span class="op">(</span><span class="fst">f"</span><span class="fst">Invalid experiment type: </span><span class="op">{</span><span class="nam">experiment_type</span><span class="op">}</span><span class="fst">"</span><span class="op">)</span>&nbsp;</span><span class="r"></span></p>
@@ -1234,7 +1234,7 @@
             <a class="nav" href="z_f486e4c3bcca4cb5_property_filters_py.html">&#xbb; next</a>
             &nbsp; &nbsp; &nbsp;
             <a class="nav" href="https://coverage.readthedocs.io/en/7.11.0">coverage.py v7.11.0</a>,
-            created at 2025-12-31 22:17 +0000
+            created at 2025-12-31 22:23 +0000
         </p>
     </div>
 </footer>

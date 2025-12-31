@@ -23,21 +23,21 @@
 | src/xngin/apiserver/main.py                                          |       36 |        5 |     86% |39, 66-67, 84-86 |
 | src/xngin/apiserver/openapi.py                                       |       24 |       13 |     46% |     19-79 |
 | src/xngin/apiserver/request\_encapsulation\_middleware.py            |       69 |        3 |     96% |   113-115 |
-| src/xngin/apiserver/routers/admin/admin\_api.py                      |      563 |      284 |     50% |173, 203-206, 238-241, 266-269, 283-287, 299, 310, 314, 323, 340, 356-367, 387-400, 441-453, 470, 492, 503, 518-531, 551-561, 593-608, 626-641, 676-688, 692-705, 725-741, 787-793, 810-818, 847-858, 883-893, 904-923, 934-935, 954-961, 967-973, 993-1004, 1021, 1071-1081, 1097-1181, 1193, 1208-1229, 1254-1260, 1314-1319, 1372-1381, 1411-1436, 1453-1471, 1498-1499, 1514-1515, 1526, 1540-1546, 1557-1563, 1580-1587, 1622-1624, 1643-1669, 1709-1712, 1715-1724, 1737, 1742-1750, 1780 |
+| src/xngin/apiserver/routers/admin/admin\_api.py                      |      559 |      283 |     49% |173, 203-206, 238-241, 266-269, 283-287, 299, 310, 314, 323, 340, 356-367, 387-400, 441-453, 470, 492, 500, 515-528, 548-558, 590-605, 623-638, 673-685, 689-702, 722-738, 784-790, 807-815, 844-855, 880-887, 898-917, 928-929, 948-955, 961-967, 987-998, 1015, 1065-1075, 1091-1175, 1187, 1202-1223, 1248-1254, 1308-1313, 1366-1375, 1405-1430, 1447-1465, 1492-1493, 1508-1509, 1520, 1534-1540, 1551-1557, 1574-1581, 1616-1618, 1637-1663, 1703-1706, 1709-1718, 1731, 1736-1744, 1774 |
 | src/xngin/apiserver/routers/admin/admin\_api\_converters.py          |       62 |       16 |     74% |29, 73-74, 84, 110-111, 118, 123-124, 138-144 |
 | src/xngin/apiserver/routers/admin/admin\_api\_types.py               |      216 |        2 |     99% |    37, 39 |
 | src/xngin/apiserver/routers/admin/generic\_handlers.py               |       24 |       14 |     42% |     42-60 |
-| src/xngin/apiserver/routers/admin/test\_admin.py                     |     1246 |        1 |     99% |       387 |
+| src/xngin/apiserver/routers/admin/test\_admin.py                     |     1251 |        1 |     99% |       387 |
 | src/xngin/apiserver/routers/assignment\_adapters.py                  |       41 |        1 |     98% |       144 |
 | src/xngin/apiserver/routers/auth/auth\_api.py                        |       62 |       33 |     47% |34-37, 67-78, 84-108, 113-150 |
 | src/xngin/apiserver/routers/auth/auth\_dependencies.py               |      125 |       32 |     74% |76, 89-95, 102-129, 222, 230, 243-245 |
 | src/xngin/apiserver/routers/auth/session\_token\_crypter.py          |       43 |        9 |     79% |20-25, 49, 51-52 |
-| src/xngin/apiserver/routers/auth/test\_auth\_dependencies.py         |      125 |        1 |     99% |        48 |
+| src/xngin/apiserver/routers/auth/test\_auth\_dependencies.py         |      128 |        1 |     99% |        48 |
 | src/xngin/apiserver/routers/common\_api\_types.py                    |      388 |       24 |     94% |113, 139, 141, 417, 419, 421, 478, 709-711, 749, 957, 966, 969-970, 980, 982, 992, 994, 1196, 1351, 1353-1355 |
 | src/xngin/apiserver/routers/common\_enums.py                         |      183 |       38 |     79% |66, 68, 91-100, 105, 127-143, 154-158, 199, 234, 250-253, 262, 301-302, 306, 338 |
 | src/xngin/apiserver/routers/experiments/dependencies.py              |       38 |        8 |     79% |43, 46-50, 103-109 |
 | src/xngin/apiserver/routers/experiments/experiments\_api.py          |       58 |       14 |     76% |98, 112, 217, 230-244, 263-273 |
-| src/xngin/apiserver/routers/experiments/experiments\_common.py       |      390 |       57 |     85% |82-89, 131, 150, 186-187, 210, 288, 299, 326, 338, 376-392, 424-425, 513-514, 572-574, 645-646, 667, 700-715, 769, 773, 777, 781, 838-839, 842, 872, 890, 898, 908, 912, 961-962, 970-972, 994-1003 |
+| src/xngin/apiserver/routers/experiments/experiments\_common.py       |      390 |       55 |     86% |82-89, 131, 150, 186-187, 210, 288, 299, 326, 338, 376-392, 424-425, 513-514, 572-574, 645-646, 667, 700-715, 769, 773, 777, 781, 838-839, 842, 872, 890, 898, 908, 912, 961-962, 970-972, 1001-1003 |
 | src/xngin/apiserver/routers/experiments/property\_filters.py         |       96 |        8 |     92% |25, 28, 32, 95-96, 148, 160-161 |
 | src/xngin/apiserver/routers/experiments/test\_experiments\_common.py |      719 |        6 |     99% |178-179, 850-852, 1579 |
 | src/xngin/apiserver/routers/experiments/test\_property\_filters.py   |       44 |        1 |     98% |        24 |
@@ -46,6 +46,7 @@
 | src/xngin/apiserver/settings.py                                      |      164 |       27 |     84% |99, 119, 126, 132, 177-178, 238, 243, 246-251, 301-305, 324, 346, 357, 359, 369, 372, 389, 414 |
 | src/xngin/apiserver/snapshots/snapshotter.py                         |       75 |       23 |     69% |94-95, 107-129, 157-180, 192 |
 | src/xngin/apiserver/sqla/tables.py                                   |      274 |        6 |     98% |152-154, 300, 334-335 |
+| src/xngin/apiserver/storage/bootstrap.py                             |       34 |        1 |     97% |        34 |
 | src/xngin/apiserver/storage/storage\_format\_converters.py           |      111 |        8 |     93% |58, 89-90, 175, 210, 346, 385-386 |
 | src/xngin/apiserver/testing/assertions.py                            |       14 |        5 |     64% | 14-17, 23 |
 | src/xngin/apiserver/testing/xurl.py                                  |       29 |        1 |     97% |        37 |
@@ -66,7 +67,7 @@
 | src/xngin/xsecrets/secretservice.py                                  |       61 |        4 |     93% |42-43, 101, 123 |
 | src/xngin/xsecrets/test\_gcp\_kms\_provider.py                       |      103 |       26 |     75% |40-42, 170-175, 182-189, 195-199, 206, 213-224 |
 | src/xngin/xsecrets/test\_nacl\_provider.py                           |       67 |        1 |     99% |        24 |
-|                                                            **TOTAL** | **9178** |  **943** | **90%** |           |
+|                                                            **TOTAL** | **9207** |  **941** | **90%** |           |
 
 57 files skipped due to complete coverage.
 
