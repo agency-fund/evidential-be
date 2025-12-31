@@ -14,6 +14,7 @@ from xngin.apiserver.dns.safe_resolve import safe_resolve
 from xngin.apiserver.dwh import queries
 from xngin.apiserver.dwh.inspection_types import FieldDescriptor
 from xngin.apiserver.dwh.inspections import generate_field_descriptors
+from xngin.apiserver.exceptions_common import DwhConnectionError, DwhDatabaseDoesNotExistError
 from xngin.apiserver.routers.common_api_types import Filter
 from xngin.apiserver.settings import (
     SA_LOGGER_NAME_FOR_DWH,
@@ -22,19 +23,6 @@ from xngin.apiserver.settings import (
     Dwh,
     NoDwh,
 )
-
-
-class DwhDatabaseDoesNotExistError(Exception):
-    """Raised when the target database or dataset does not exist."""
-
-
-def _safe_url(url: sqlalchemy.engine.url.URL) -> sqlalchemy.engine.url.URL:
-    """Prepares a URL for presentation or capture in logs by stripping sensitive values."""
-    cleaned = url.set(password="redacted")
-    for qp in ("credentials_base64", "credentials_info"):
-        if cleaned.query.get(qp):
-            cleaned = cleaned.update_query_dict({qp: "redacted"})
-    return cleaned
 
 
 def _is_postgres_database_not_found_error(exc: OperationalError) -> bool:
@@ -47,11 +35,13 @@ def _is_postgres_database_not_found_error(exc: OperationalError) -> bool:
     )
 
 
-class DwhConnectionError(Exception):
-    """Raised when there is a connection error to the data warehouse."""
-
-    def __init__(self, original_error: Exception):
-        super().__init__(f"CONNECTION ERROR: {type(original_error).__name__} | {original_error!s}")
+def _safe_url(url: sqlalchemy.engine.url.URL) -> sqlalchemy.engine.url.URL:
+    """Prepares a URL for presentation or capture in logs by stripping sensitive values."""
+    cleaned = url.set(password="redacted")
+    for qp in ("credentials_base64", "credentials_info"):
+        if cleaned.query.get(qp):
+            cleaned = cleaned.update_query_dict({qp: "redacted"})
+    return cleaned
 
 
 @dataclass

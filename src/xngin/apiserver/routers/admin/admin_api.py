@@ -34,8 +34,6 @@ from xngin.apiserver.apikeys import hash_key_or_raise, make_key
 from xngin.apiserver.dependencies import xngin_db_session
 from xngin.apiserver.dns.safe_resolve import DnsLookupError, safe_resolve
 from xngin.apiserver.dwh.dwh_session import (
-    DwhConnectionError,
-    DwhDatabaseDoesNotExistError,
     DwhSession,
     NoDwh,
 )
@@ -47,7 +45,7 @@ from xngin.apiserver.dwh.queries import (
     get_stats_on_filters,
     get_stats_on_metrics,
 )
-from xngin.apiserver.exceptions_common import LateValidationError
+from xngin.apiserver.exceptions_common import DwhConnectionError, DwhDatabaseDoesNotExistError, LateValidationError
 from xngin.apiserver.routers.admin import admin_api_converters, authz
 from xngin.apiserver.routers.admin.admin_api_converters import (
     api_dsn_to_settings_dwh,
@@ -969,7 +967,7 @@ async def inspect_datasource(
         except DwhDatabaseDoesNotExistError as exc:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
         except DwhConnectionError as exc:
-            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+            raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc)) from exc
     except:
         ds.clear_table_list()
         await session.commit()

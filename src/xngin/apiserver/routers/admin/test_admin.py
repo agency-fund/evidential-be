@@ -761,7 +761,7 @@ def test_datasource_errors(pget, ppost):
     )
     org_id = CreateOrganizationResponse.model_validate(response.json()).id
 
-    # Test connection Error (400) - RedShift with wrong port
+    # Test connection Error (502) - RedShift with wrong port
     response = ppost(
         "/v1/m/datasources",
         content=CreateDatasourceRequest(
@@ -780,10 +780,10 @@ def test_datasource_errors(pget, ppost):
     ds_id = CreateDatasourceResponse.model_validate(response.json()).id
 
     response = pget(f"/v1/m/datasources/{ds_id}/inspect")
-    assert response.status_code == 400, response.content
+    assert response.status_code == 502, response.content
     assert "CONNECTION ERROR" in response.json()["detail"]
 
-    # Test connection Error (400) - PostgreSQL with wrong port
+    # Test connection Error (502) - PostgreSQL with wrong port
     response = ppost(
         "/v1/m/datasources",
         content=CreateDatasourceRequest(
@@ -803,10 +803,10 @@ def test_datasource_errors(pget, ppost):
     ds_id = CreateDatasourceResponse.model_validate(response.json()).id
 
     response = pget(f"/v1/m/datasources/{ds_id}/inspect")
-    assert response.status_code == 400, response.content
+    assert response.status_code == 502, response.content
     assert "CONNECTION ERROR" in response.json()["detail"]
 
-    # Test credential Error (400) - BigQuery with invalid service account
+    # Test credential Error (502) - BigQuery with invalid service account
     gcloud_invalid = copy.deepcopy(SAMPLE_GCLOUD_SERVICE_ACCOUNT)
     response = ppost(
         "/v1/m/datasources",
@@ -822,9 +822,9 @@ def test_datasource_errors(pget, ppost):
     )
     ds_id = CreateDatasourceResponse.model_validate(response.json()).id
 
-    # Inspect datasource should return 400 for credential errors
+    # Inspect datasource should return 502 for credential errors
     response = pget(f"/v1/m/datasources/{ds_id}/inspect")
-    assert response.status_code == 400, response.content
+    assert response.status_code == 502, response.content
     assert "CONNECTION ERROR" in response.json()["detail"]
 
 
