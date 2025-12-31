@@ -7,13 +7,17 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from xngin.apiserver.routers.admin import admin_common
 from xngin.apiserver.routers.common_api_types import (
     Arm,
+    ArmBandit,
+    CMABExperimentSpec,
+    Context,
     CreateExperimentRequest,
     DesignSpecMetricRequest,
     Filter,
+    MABExperimentSpec,
     OnlineFrequentistExperimentSpec,
     PreassignedFrequentistExperimentSpec,
 )
-from xngin.apiserver.routers.common_enums import Relation
+from xngin.apiserver.routers.common_enums import ContextType, LikelihoodTypes, PriorTypes, Relation
 from xngin.apiserver.routers.experiments import experiments_common
 from xngin.apiserver.settings import Dsn, RemoteDatabaseConfig
 from xngin.apiserver.sqla import tables
@@ -94,6 +98,68 @@ async def _maybe_create_developer_samples(
     )
     online_experiment = await session.get_one(tables.Experiment, create_online_experiment.experiment_id)
     await experiments_common.commit_experiment_impl(session, online_experiment)
+
+    create_mab_experiment = await experiments_common.create_experiment_impl(
+        CreateExperimentRequest(
+            design_spec=MABExperimentSpec(
+                participant_type="testing_dwh_participant",
+                experiment_name="My MAB Experiment",
+                description="Hypothesis",
+                start_date=datetime.datetime.now() - datetime.timedelta(days=7),
+                end_date=datetime.datetime.now() + datetime.timedelta(days=7),
+                prior_type=PriorTypes.BETA,
+                reward_type=LikelihoodTypes.BERNOULLI,
+                arms=[
+                    ArmBandit(arm_name="Control", arm_description="First arm", alpha_init=1.0, beta_init=1.0),
+                    ArmBandit(arm_name="Treatment", arm_description="Second arm", alpha_init=2.0, beta_init=2.0),
+                ],
+            )
+        ),
+        await session.get_one(tables.Datasource, datasource_id),
+        session,
+        chosen_n=100,
+        stratify_on_metrics=False,
+        random_state=None,
+        validated_webhooks=[],
+    )
+    mab_experiment = await session.get_one(tables.Experiment, create_mab_experiment.experiment_id)
+    await experiments_common.commit_experiment_impl(session, mab_experiment)
+
+    create_cmab_experiment = await experiments_common.create_experiment_impl(
+        CreateExperimentRequest(
+            design_spec=CMABExperimentSpec(
+                participant_type="testing_dwh_participant",
+                experiment_name="My CMAB Experiment",
+                description="Hypothesis",
+                start_date=datetime.datetime.now() - datetime.timedelta(days=7),
+                end_date=datetime.datetime.now() + datetime.timedelta(days=7),
+                prior_type=PriorTypes.NORMAL,
+                reward_type=LikelihoodTypes.NORMAL,
+                arms=[
+                    ArmBandit(arm_name="Control", arm_description="First arm", mu_init=0.0, sigma_init=1.0),
+                    ArmBandit(arm_name="Treatment", arm_description="Second arm", mu_init=1.0, sigma_init=2.0),
+                ],
+                contexts=[
+                    Context(
+                        context_name="age", context_description="Age of participant", value_type=ContextType.REAL_VALUED
+                    ),
+                    Context(
+                        context_name="gender",
+                        context_description="Gender of participant",
+                        value_type=ContextType.BINARY,
+                    ),
+                ],
+            )
+        ),
+        await session.get_one(tables.Datasource, datasource_id),
+        session,
+        chosen_n=100,
+        stratify_on_metrics=False,
+        random_state=None,
+        validated_webhooks=[],
+    )
+    cmab_experiment = await session.get_one(tables.Experiment, create_cmab_experiment.experiment_id)
+    await experiments_common.commit_experiment_impl(session, cmab_experiment)
 
 
 async def setup_user_and_first_datasource(

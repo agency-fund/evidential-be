@@ -655,6 +655,8 @@ async def test_first_user_has_an_organization_created_at_login_unprivileged(xngi
     assert {exp.design_spec.experiment_type for exp in list_experiments_response.items} == {
         "freq_preassigned",
         "freq_online",
+        "mab_online",
+        "cmab_online",
     }
 
 
