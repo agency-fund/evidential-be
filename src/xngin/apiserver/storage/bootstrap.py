@@ -162,15 +162,17 @@ async def _maybe_create_developer_samples(
     await experiments_common.commit_experiment_impl(session, cmab_experiment)
 
 
-async def setup_user_and_first_datasource(
+async def create_entities_for_first_time_user(
     session: AsyncSession, user: tables.User, testing_dwh_dsn: str | None
 ) -> tables.User:
-    """Adds models to User such that they can have a good first time experience with the application.
+    """Bootstraps a user with organization, datasources, and optionally experiments.
 
-    Users will have an organization and a NoDWH datasource created for them.
+    When testing_dwh_dsn is provided, we assume that the user is a developer working on a development instance with an
+    accessible instance of a testing DWH. New users created in these environments will have experiments and a testing
+    datasource corresponding to the testing DWH created.
 
-    If testing_dwh_dsn is provided, a datasource and a participant type for that DWH will be created. testing_dwh_dsn
-    must refer to a testing dwh instance. This is usually only used in development environments.
+    When testing_dwh_dsn is None, we create only the minimum entities necessary for the application to function:
+    a NoDWH datasource, and an Organization. This is the standard production deployment configuration.
     """
     organization = await admin_common.create_organization_impl(session, user, DEFAULT_ORGANIZATION_NAME)
     await session.flush()

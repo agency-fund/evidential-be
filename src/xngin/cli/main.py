@@ -31,7 +31,7 @@ from xngin.apiserver.dwh.inspection_types import ParticipantsSchema
 from xngin.apiserver.dwh.inspections import create_schema_from_table
 from xngin.apiserver.settings import Datasource, Dsn
 from xngin.apiserver.sqla import tables
-from xngin.apiserver.storage.bootstrap import setup_user_and_first_datasource
+from xngin.apiserver.storage.bootstrap import create_entities_for_first_time_user
 from xngin.apiserver.testing.testing_dwh_def import TESTING_DWH_RAW_DATA
 from xngin.xsecrets import secretservice
 from xngin.xsecrets.nacl_provider import NaclProviderKeyset
@@ -600,7 +600,7 @@ async def add_user(
     engine = create_async_engine(database_url)
     async with AsyncSession(engine) as session:
         try:
-            user = await setup_user_and_first_datasource(
+            user = await create_entities_for_first_time_user(
                 session, tables.User(email=email, is_privileged=privileged), dwh
             )
             await session.commit()
