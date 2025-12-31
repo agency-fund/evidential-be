@@ -30,7 +30,7 @@ DEFAULT_DWH_SOURCE_NAME = "Local DWH"
 async def _maybe_create_developer_samples(
     session: AsyncSession, organization: tables.Organization, testing_dwh_dsn: str | None
 ):
-    if testing_dwh_dsn is None:
+    if not testing_dwh_dsn:
         return
 
     datasource = await admin_common.create_datasource_impl(
@@ -171,8 +171,8 @@ async def create_entities_for_first_time_user(
     accessible instance of a testing DWH. New users created in these environments will have experiments and a testing
     datasource corresponding to the testing DWH created.
 
-    When testing_dwh_dsn is None, we create only the minimum entities necessary for the application to function:
-    a NoDWH datasource, and an Organization. This is the standard production deployment configuration.
+    When testing_dwh_dsn is None or empty, we create only the minimum entities necessary for the application to
+    function: a NoDWH datasource, and an Organization. This is the standard production deployment configuration.
     """
     organization = await admin_common.create_organization_impl(session, user, DEFAULT_ORGANIZATION_NAME)
     await session.flush()
