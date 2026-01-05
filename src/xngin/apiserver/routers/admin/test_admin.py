@@ -781,7 +781,7 @@ def test_datasource_errors(pget, ppost):
             dsn=PostgresDsn(
                 host="127.0.0.1",
                 user="postgres",
-                port=5432,
+                port=5499,
                 password=RevealedStr(value="postgres"),
                 dbname="nonexistent_db",
                 sslmode="disable",
