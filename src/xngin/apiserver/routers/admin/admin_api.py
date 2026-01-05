@@ -45,7 +45,7 @@ from xngin.apiserver.dwh.queries import (
     get_stats_on_filters,
     get_stats_on_metrics,
 )
-from xngin.apiserver.exceptions_common import DwhConnectionError, DwhDatabaseDoesNotExistError, LateValidationError
+from xngin.apiserver.exceptions_common import LateValidationError
 from xngin.apiserver.routers.admin import admin_api_converters, authz
 from xngin.apiserver.routers.admin.admin_api_converters import (
     api_dsn_to_settings_dwh,
@@ -180,6 +180,17 @@ def cache_is_fresh(updated: datetime | None):
 async def lifespan(_app: FastAPI):
     logger.info(f"Starting router: {__name__} (prefix={router.prefix})")
     yield
+
+
+@asynccontextmanager
+async def clear_db_table_cache_on_error(session: AsyncSession, datasource: tables.Datasource):
+    """Context manager that clears a datasource's cached table list on error."""
+    try:
+        yield
+    except:
+        datasource.clear_table_list()
+        await session.commit()
+        raise
 
 
 router = APIRouter(
@@ -955,23 +966,14 @@ async def inspect_datasource(
 
     if not refresh and cache_is_fresh(ds.table_list_updated) and ds.table_list is not None:
         return InspectDatasourceResponse(tables=ds.table_list)
-    try:
-        try:
-            config = ds.get_config()
-            async with DwhSession(config.dwh) as dwh:
-                tablenames = await dwh.list_tables()
-            ds.set_table_list(tablenames)
-            await session.commit()
-            return InspectDatasourceResponse(tables=tablenames)
 
-        except DwhDatabaseDoesNotExistError as exc:
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
-        except DwhConnectionError as exc:
-            raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc)) from exc
-    except:
-        ds.clear_table_list()
+    async with clear_db_table_cache_on_error(session, ds):
+        config = ds.get_config()
+        async with DwhSession(config.dwh) as dwh:
+            tablenames = await dwh.list_tables()
+        ds.set_table_list(tablenames)
         await session.commit()
-        raise
+        return InspectDatasourceResponse(tables=tablenames)
 
 
 async def invalidate_inspect_table_cache(session, datasource_id):
