@@ -56,6 +56,7 @@ from xngin.apiserver.routers.admin.admin_api_types import (
     UpdateParticipantsTypeRequest,
     UpdateParticipantsTypeResponse,
 )
+from xngin.apiserver.routers.admin.admin_common import DEFAULT_NO_DWH_SOURCE_NAME
 from xngin.apiserver.routers.auth.auth_dependencies import (
     PRIVILEGED_EMAIL,
     UNPRIVILEGED_EMAIL,
@@ -101,7 +102,6 @@ from xngin.apiserver.routers.experiments.test_experiments_common import (
 )
 from xngin.apiserver.settings import ParticipantsDef
 from xngin.apiserver.sqla import tables
-from xngin.apiserver.storage.bootstrap import DEFAULT_NO_DWH_SOURCE_NAME
 from xngin.apiserver.storage.storage_format_converters import ExperimentStorageConverter
 from xngin.apiserver.testing.assertions import assert_dates_equal
 from xngin.apiserver.testing.testing_dwh_def import TESTING_DWH_PARTICIPANT_DEF
@@ -645,8 +645,19 @@ async def test_first_user_has_an_organization_created_at_login_unprivileged(xngi
 
     response = uget("/v1/m/organizations")
     assert response.status_code == 200, response.content
-    assert len(response.json()["items"]) == 1, response.json()
-    assert response.json()["items"][0]["name"] == "My Organization"
+    list_organizations_response = ListOrganizationsResponse.model_validate(response.json())
+    assert len(list_organizations_response.items) == 1, list_organizations_response
+    org_id = list_organizations_response.items[0].id
+
+    response = uget(f"/v1/m/organizations/{org_id}/experiments")
+    assert response.status_code == 200, response.content
+    list_experiments_response = ListExperimentsResponse.model_validate(response.json())
+    assert {exp.design_spec.experiment_type for exp in list_experiments_response.items} == {
+        "freq_preassigned",
+        "freq_online",
+        "mab_online",
+        "cmab_online",
+    }
 
 
 def test_datasource_lifecycle(ppost, pget, ppatch):
@@ -1254,7 +1265,7 @@ async def test_lifecycle_with_db(testing_datasource, ppost, ppatch, pget, pdelet
 
     # Commit the new experiment.
     response = ppost(f"/v1/m/datasources/{testing_datasource.ds.id}/experiments/{parsed_experiment_id}/commit")
-    assert response.status_code == 204, response.content
+    assert response.status_code == 204, (parsed_experiment_id, response.content)
 
     # Update the experiment.
     response = ppatch(

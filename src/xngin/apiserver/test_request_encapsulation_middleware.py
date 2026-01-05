@@ -26,14 +26,21 @@ async def echo_handler(request: Request) -> JSONResponse:
     return JSONResponse({"received": data})
 
 
-def create_test_app(unwrap_param: str = "_unwrap") -> Starlette:
+def create_test_app(
+    unwrap_param: str = "_unwrap", path_prefix: str | None = None, custom_paths: list[str] | None = None
+) -> Starlette:
     """Creates a Starlette app with RequestEncapsulationMiddleware for testing."""
+    routes = [
+        Route("/echo", echo_handler, methods=["GET", "POST", "PUT", "PATCH"]),
+    ]
+    if custom_paths:
+        routes = [
+            Route(custom_path, echo_handler, methods=["GET", "POST", "PUT", "PATCH"]) for custom_path in custom_paths
+        ]
     return Starlette(
-        routes=[
-            Route("/echo", echo_handler, methods=["GET", "POST", "PUT", "PATCH"]),
-        ],
+        routes=routes,
         middleware=[
-            Middleware(RequestEncapsulationMiddleware, unwrap_param=unwrap_param),
+            Middleware(RequestEncapsulationMiddleware, unwrap_param=unwrap_param, path_prefix=path_prefix),
         ],
     )
 
@@ -296,3 +303,27 @@ def test_does_not_unwrap_non_json_content_type(client):
     assert response.status_code == 200
     # Should receive the full body since it wasn't unwrapped due to content type
     assert response.json() == {"received": {"data": "value"}}
+
+
+def test_path_prefix_applied():
+    data_to_unwrap = {"data": {"value": 123}}
+    app = create_test_app(
+        path_prefix="/custom/v1/experiments", custom_paths=["/custom/v1/experiments/echo", "/custom/other/echo"]
+    )
+    client = TestClient(app)
+
+    # This request should be unwrapped
+    response = client.post(
+        "/custom/v1/experiments/echo?_unwrap=/data",
+        json=data_to_unwrap,
+    )
+    assert response.status_code == 200
+    assert response.json() == {"received": data_to_unwrap["data"]}
+
+    # This request should NOT be unwrapped (path does not match prefix)
+    response = client.post(
+        "/custom/other/echo?_unwrap=/data",
+        json=data_to_unwrap,
+    )
+    assert response.status_code == 200
+    assert response.json() == {"received": data_to_unwrap}

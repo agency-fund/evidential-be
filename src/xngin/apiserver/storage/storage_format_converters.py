@@ -244,7 +244,7 @@ class ExperimentStorageConverter:
 
         Expects assign_summary since that typically requires a db lookup."""
         return capi.GetExperimentResponse(
-            experiment_id=self.experiment.id,
+            experiment_id=(await self.experiment.awaitable_attrs.id),
             datasource_id=self.experiment.datasource_id,
             state=ExperimentState(self.experiment.state),
             stopped_assignments_at=self.experiment.stopped_assignments_at,
