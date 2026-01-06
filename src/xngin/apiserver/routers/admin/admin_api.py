@@ -34,7 +34,6 @@ from xngin.apiserver.apikeys import hash_key_or_raise, make_key
 from xngin.apiserver.dependencies import xngin_db_session
 from xngin.apiserver.dns.safe_resolve import DnsLookupError, safe_resolve
 from xngin.apiserver.dwh.dwh_session import (
-    DwhDatabaseDoesNotExistError,
     DwhSession,
     NoDwh,
 )
@@ -181,6 +180,17 @@ def cache_is_fresh(updated: datetime | None):
 async def lifespan(_app: FastAPI):
     logger.info(f"Starting router: {__name__} (prefix={router.prefix})")
     yield
+
+
+@asynccontextmanager
+async def clear_db_table_cache_on_error(session: AsyncSession, datasource: tables.Datasource):
+    """Context manager that clears a datasource's cached table list on error."""
+    try:
+        yield
+    except:
+        datasource.clear_table_list()
+        await session.commit()
+        raise
 
 
 router = APIRouter(
@@ -950,21 +960,14 @@ async def inspect_datasource(
 
     if not refresh and cache_is_fresh(ds.table_list_updated) and ds.table_list is not None:
         return InspectDatasourceResponse(tables=ds.table_list)
-    try:
-        try:
-            config = ds.get_config()
-            async with DwhSession(config.dwh) as dwh:
-                tablenames = await dwh.list_tables()
 
-            ds.set_table_list(tablenames)
-            await session.commit()
-            return InspectDatasourceResponse(tables=tablenames)
-        except DwhDatabaseDoesNotExistError as exc:
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
-    except:
-        ds.clear_table_list()
+    async with clear_db_table_cache_on_error(session, ds):
+        config = ds.get_config()
+        async with DwhSession(config.dwh) as dwh:
+            tablenames = await dwh.list_tables()
+        ds.set_table_list(tablenames)
         await session.commit()
-        raise
+        return InspectDatasourceResponse(tables=tablenames)
 
 
 async def invalidate_inspect_table_cache(session, datasource_id):

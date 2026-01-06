@@ -6,3 +6,14 @@ class LateValidationError(Exception):
     and that information is not available until we have table reflection data.
     - verifying requested dwh fields are present in its configuration for that use.
     """
+
+
+class DwhDatabaseDoesNotExistError(Exception):
+    """Raised when the target database or dataset does not exist."""
+
+
+class DwhConnectionError(Exception):
+    """Raised when there is a connection error to the data warehouse."""
+
+    def __init__(self, original_error: Exception):
+        super().__init__(f"CONNECTION ERROR: {type(original_error).__name__} | {original_error!s}")

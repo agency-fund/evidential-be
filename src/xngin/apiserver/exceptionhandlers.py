@@ -8,7 +8,7 @@ from pydantic import ValidationError
 from xngin.apiserver.apikeys import ApiKeyError
 from xngin.apiserver.dependencies import CannotFindDatasourceError
 from xngin.apiserver.dwh.dwh_session import CannotFindTableError
-from xngin.apiserver.exceptions_common import LateValidationError
+from xngin.apiserver.exceptions_common import DwhConnectionError, DwhDatabaseDoesNotExistError, LateValidationError
 from xngin.apiserver.routers.admin.admin_api_converters import (
     CredentialsUnavailableError,
 )
@@ -75,3 +75,11 @@ def setup(app):
     @app.exception_handler(CredentialsUnavailableError)
     async def exception_handler_credentialsunavailable(_request: Request, exc: ValidationError):
         return JSONResponse(status_code=422, content={"message": str(exc)})
+
+    @app.exception_handler(DwhConnectionError)
+    async def exception_handler_dwhconnectionerror(_request: Request, exc: DwhConnectionError):
+        return JSONResponse(status_code=502, content={"message": str(exc)})
+
+    @app.exception_handler(DwhDatabaseDoesNotExistError)
+    async def exception_handler_dwhdatabasedoesnotexisterror(_request: Request, exc: DwhDatabaseDoesNotExistError):
+        return JSONResponse(status_code=404, content={"message": str(exc)})
