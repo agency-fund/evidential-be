@@ -77,3 +77,4 @@ def collect(
             asyncio.run(acollect(snapshot_interval, snapshot_timeout, parallelism))
     else:
         asyncio.run(acollect(snapshot_interval, snapshot_timeout, parallelism))
+    logger.info("collect() finished successfully.")
