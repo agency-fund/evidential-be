@@ -74,6 +74,13 @@ class GetSnapshotResponse(AdminApiBaseModel):
 
 class ListSnapshotsResponse(AdminApiBaseModel):
     items: list[Snapshot]
+    latest_failure: Annotated[
+        datetime | None,
+        Field(
+            description="The timestamp of the latest snapshot that failed, or "
+            "null if there have been no snapshot failures."
+        ),
+    ]
 
 
 class CreateSnapshotResponse(AdminApiBaseModel):
