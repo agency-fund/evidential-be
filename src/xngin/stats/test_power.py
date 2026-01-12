@@ -5,10 +5,7 @@ from xngin.apiserver.routers.common_enums import (
     MetricPowerAnalysisMessageType,
     MetricType,
 )
-from xngin.stats.power import (
-    analyze_metric_power,
-    check_power,
-)
+from xngin.stats.power import analyze_metric_power, calculate_mde_with_chosen_n, check_power
 from xngin.stats.stats_errors import StatsPowerError
 
 
@@ -321,3 +318,67 @@ def test_check_power_unbalanced():
     assert results[0].target_n == 200
     # Even larger than test_analyze_metric_power_unbalanced_binary since the ratio is also larger.
     assert results[1].target_n == 4895
+
+
+def test_calculate_mde_with_chosen_n():
+    metric = DesignSpecMetric(
+        field_name="test_metric",
+        metric_type=MetricType.NUMERIC,
+        metric_baseline=100,
+        metric_target=110,
+        metric_stddev=20,
+        available_nonnull_n=1000,
+        available_n=1000,
+    )
+
+    target_n, pct_change = calculate_mde_with_chosen_n(20000, metric, n_arms=2)
+    assert target_n == pytest.approx(100.792, rel=1e-3)
+    assert pct_change == pytest.approx(0.00793, rel=1e-3)
+
+
+def test_calculate_mde_with_chosen_n_binary():
+    metric = DesignSpecMetric(
+        field_name="test_metric",
+        metric_type=MetricType.BINARY,
+        metric_baseline=0.5,
+        metric_target=0.55,
+        available_nonnull_n=1000,
+        available_n=1000,
+    )
+
+    target_n, pct_change = calculate_mde_with_chosen_n(20000, metric, n_arms=2)
+    assert target_n == pytest.approx(0.480, rel=1e-3)
+    assert pct_change == pytest.approx(-0.0396, rel=1e-3)
+
+
+def test_calculate_mde_with_chosen_n_zero_n_raises_error():
+    with pytest.raises(ValueError):
+        calculate_mde_with_chosen_n(
+            0,
+            DesignSpecMetric(
+                field_name="test_metric",
+                metric_type=MetricType.NUMERIC,
+                metric_baseline=100,
+                metric_target=110,
+                metric_stddev=20,
+                available_nonnull_n=1000,
+                available_n=1000,
+            ),
+            n_arms=2,
+        )
+
+
+def test_calculate_mde_with_unbalanced_arms():
+    metric = DesignSpecMetric(
+        field_name="test_metric",
+        metric_type=MetricType.NUMERIC,
+        metric_baseline=100,
+        metric_target=110,
+        metric_stddev=20,
+        available_nonnull_n=1000,
+        available_n=1000,
+    )
+
+    target_n, pct_change = calculate_mde_with_chosen_n(20000, metric, n_arms=2, arm_weights=[20, 80])
+    assert target_n == pytest.approx(100.991, rel=1e-3)
+    assert pct_change == pytest.approx(0.00991, rel=1e-3)
