@@ -38,7 +38,11 @@ def custom_openapi(app: FastAPI):
                 "name": "Experiment Integration",
                 "description": (
                     "Methods for a client to use when integrating Evidential experiments and assignments "
-                    "with their own serving infrastructure."
+                    "with their own serving infrastructure.\n\nNote: All methods in this API require a datasource API "
+                    "key to be passed as the `X-API-Key` request header. Manage these in the Settings > Datasources "
+                    "menu."
+                    "\n\n"
+                    'Tip: Click the "Authorize" button at the top of this page to set the Datasource API key value.'
                 ),
             },
         ),
