@@ -133,6 +133,7 @@ GENERIC_SUCCESS = Response(status_code=status.HTTP_204_NO_CONTENT)
 RESPONSE_CACHE_MAX_AGE_SECONDS = timedelta(minutes=15).seconds
 
 
+# Describes the structure of an error raised via `raise HTTPException`.
 class HTTPExceptionError(BaseModel):
     detail: str
 
