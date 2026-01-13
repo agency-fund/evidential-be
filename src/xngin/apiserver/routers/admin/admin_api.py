@@ -169,10 +169,6 @@ STANDARD_ADMIN_RESPONSES: dict[str | int, dict[str, Any]] = {
 }
 
 
-def responses_factory(*codes):
-    return {code: config for code, config in STANDARD_ADMIN_RESPONSES.items() if code in {str(c) for c in codes}}
-
-
 def cache_is_fresh(updated: datetime | None):
     return updated is not None and datetime.now(UTC) - updated < timedelta(minutes=5)
 
