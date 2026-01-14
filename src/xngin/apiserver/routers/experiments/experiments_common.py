@@ -265,7 +265,7 @@ async def create_preassigned_experiment_impl(
         assignment_result=assignment_result,
     )
 
-    await xngin_session.commit()
+    await xngin_session.flush()
 
     assign_summary = await get_assign_summary(
         xngin_session, (await experiment.awaitable_attrs.id), balance_check, ExperimentsType.FREQ_PREASSIGNED
@@ -299,7 +299,7 @@ async def create_freq_online_experiment_impl(
         experiment.webhooks.append(webhook)
     xngin_session.add(experiment)
 
-    await xngin_session.commit()
+    await xngin_session.flush()
 
     # Online experiments start with no assignments.
     empty_assign_summary = AssignSummary(
@@ -338,7 +338,7 @@ async def create_bandit_online_experiment_impl(
         experiment.webhooks.append(webhook)
     xngin_session.add(experiment)
 
-    await xngin_session.commit()
+    await xngin_session.flush()
 
     # Online experiments start with no assignments.
     empty_assign_summary = AssignSummary(

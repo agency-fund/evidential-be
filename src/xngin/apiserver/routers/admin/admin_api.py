@@ -1375,7 +1375,7 @@ async def create_experiment(
         session=session, organization_id=organization_id, request_webhooks=body.webhooks
     )
 
-    return await experiments_common.create_experiment_impl(
+    response = await experiments_common.create_experiment_impl(
         request=body,
         datasource=datasource,
         xngin_session=session,
@@ -1384,6 +1384,8 @@ async def create_experiment(
         random_state=random_state,
         validated_webhooks=validated_webhooks,
     )
+    await session.commit()
+    return response
 
 
 @router.get(
