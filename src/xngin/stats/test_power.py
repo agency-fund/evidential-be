@@ -57,7 +57,7 @@ def test_analyze_metric_power_numeric_insufficient():
 
     result = analyze_metric_power(metric, n_arms=4, power=0.8, alpha=0.05)
 
-    assert result.metric_spec.field_name == "test_metric_"
+    assert result.metric_spec.field_name == "test_metric"
     assert result.metric_spec.metric_type == MetricType.NUMERIC
     assert result.metric_spec.metric_baseline == pytest.approx(13.2065, rel=1e-4)
     assert result.metric_spec.metric_target == pytest.approx(14.5273, rel=1e-4)
