@@ -56,5 +56,4 @@ async def handle_delete(
         await deleter(session, resource)
     else:
         await session.delete(resource)
-    await session.commit()
     return GENERIC_SUCCESS

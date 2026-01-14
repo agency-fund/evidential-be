@@ -429,9 +429,11 @@ async def delete_snapshot(
     resource_query = select(tables.Snapshot).where(
         tables.Snapshot.experiment_id == experiment_id, tables.Snapshot.id == snapshot_id
     )
-    return await handle_delete(
+    response = await handle_delete(
         session, allow_missing, authz.is_user_authorized_on_datasource(user, datasource_id), resource_query
     )
+    await session.commit()
+    return response
 
 
 @router.post("/organizations/{organization_id}/datasources/{datasource_id}/experiments/{experiment_id}/snapshots")
@@ -664,12 +666,14 @@ async def delete_webhook_from_organization(
 ):
     """Removes a Webhook from an organization."""
     resource_query = select(tables.Webhook).where(tables.Webhook.id == webhook_id)
-    return await handle_delete(
+    response = await handle_delete(
         session,
         allow_missing,
         authz.is_user_authorized_on_organization(user, organization_id),
         resource_query,
     )
+    await session.commit()
+    return response
 
 
 @router.get("/organizations/{organization_id}/events")
@@ -771,12 +775,14 @@ async def remove_member_from_organization(
         tables.UserOrganization.user_id == user_id,
         tables.UserOrganization.user_id != user.id,  # not current authenticated user
     )
-    return await handle_delete(
+    response = await handle_delete(
         session,
         allow_missing,
         authz.is_user_authorized_on_organization(user, organization_id),
         resource_query,
     )
+    await session.commit()
+    return response
 
 
 @router.patch("/organizations/{organization_id}")
@@ -1037,12 +1043,14 @@ async def delete_datasource(
     The user must be a member of the organization that owns the datasource.
     """
     resource_query = select(tables.Datasource).where(tables.Datasource.id == datasource_id)
-    return await handle_delete(
+    response = await handle_delete(
         session,
         allow_missing,
         authz.is_user_authorized_on_organization(user, organization_id),
         resource_query,
     )
+    await session.commit()
+    return response
 
 
 @router.get("/datasources/{datasource_id}/participants")
@@ -1262,13 +1270,15 @@ async def delete_participant(
         config.participants.remove(participant)
         resource.set_config(config)
 
-    return await handle_delete(
+    response = await handle_delete(
         session,
         allow_missing,
         authz.is_user_authorized_on_datasource(user, datasource_id),
         get_participants_or_none,
         deleter,
     )
+    await session.commit()
+    return response
 
 
 @router.get("/datasources/{datasource_id}/apikeys")
@@ -1336,12 +1346,14 @@ async def delete_api_key(
         .join(tables.Datasource)
         .where(tables.Datasource.id == datasource_id, tables.ApiKey.id == api_key_id)
     )
-    return await handle_delete(
+    response = await handle_delete(
         session,
         allow_missing,
         authz.is_user_authorized_on_datasource(user, datasource_id),
         resource_query,
     )
+    await session.commit()
+    return response
 
 
 @router.post("/datasources/{datasource_id}/experiments")
@@ -1684,12 +1696,11 @@ async def delete_experiment(
 ):
     """Deletes the experiment with the specified ID."""
     resource_query = select(tables.Experiment).where(tables.Experiment.id == experiment_id)
-    return await handle_delete(
-        session,
-        allow_missing,
-        authz.is_user_authorized_on_datasource(user, datasource_id),
-        resource_query,
+    response = await handle_delete(
+        session, allow_missing, authz.is_user_authorized_on_datasource(user, datasource_id), resource_query
     )
+    await session.commit()
+    return response
 
 
 @router.patch(
