@@ -43,6 +43,42 @@ def test_analyze_metric_power_numeric():
     assert result.msg.msg == result.msg.source_msg.format_map(result.msg.values)
 
 
+def test_analyze_metric_power_numeric_insufficient():
+    metric = DesignSpecMetric(
+        field_name="test_metric",
+        metric_pct_change=0.1,
+        metric_type=MetricType.NUMERIC,
+        metric_baseline=13.206590621039297,
+        metric_target=14.527249683143227,
+        metric_stddev=37.601056495700554,
+        available_nonnull_n=789,
+        available_n=789,
+    )
+
+    result = analyze_metric_power(metric, n_arms=4, power=0.8, alpha=0.05)
+
+    assert result.metric_spec.field_name == "test_metric"
+    assert result.metric_spec.metric_type == MetricType.NUMERIC
+    assert result.metric_spec.metric_baseline == pytest.approx(13.2065, rel=1e-4)
+    assert result.metric_spec.metric_target == pytest.approx(14.5273, rel=1e-4)
+    assert result.metric_spec.available_nonnull_n == 789
+    assert result.metric_spec.available_n == 789
+    assert result.target_n == 50904
+    assert not result.sufficient_n
+    assert result.msg is not None
+    assert result.msg.type == MetricPowerAnalysisMessageType.INSUFFICIENT
+    assert result.msg.values == {
+        "available_n": 789,
+        "target_n": 50904,
+        "available_nonnull_n": 789,
+        "additional_n_needed": 50115,
+        "metric_baseline": 13.2066,
+        "target_possible": 23.8468,
+        "metric_target": 14.5272,
+    }
+    assert result.msg.msg == result.msg.source_msg.format_map(result.msg.values)
+
+
 def test_analyze_metric_power_binary():
     metric = DesignSpecMetric(
         field_name="test_metric",
