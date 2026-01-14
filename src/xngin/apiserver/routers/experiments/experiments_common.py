@@ -390,12 +390,11 @@ async def commit_experiment_impl(xngin_session: AsyncSession, experiment: tables
                 payload=webhook_task.model_dump(),
             )
             xngin_session.add(task)
-    await xngin_session.commit()
 
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
-async def abandon_experiment_impl(xngin_session: AsyncSession, experiment: tables.Experiment):
+async def abandon_experiment_impl(experiment: tables.Experiment):
     if experiment.state == ExperimentState.ABANDONED:
         return Response(status_code=status.HTTP_304_NOT_MODIFIED)
     if experiment.state not in {ExperimentState.DESIGNING, ExperimentState.ASSIGNED}:
@@ -405,7 +404,6 @@ async def abandon_experiment_impl(xngin_session: AsyncSession, experiment: table
         )
 
     experiment.state = ExperimentState.ABANDONED
-    await xngin_session.commit()
 
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 

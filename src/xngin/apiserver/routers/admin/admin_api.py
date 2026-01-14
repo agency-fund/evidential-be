@@ -1507,7 +1507,9 @@ async def commit_experiment(
 ):
     ds = await get_datasource_or_raise(session, user, datasource_id)
     experiment = await get_experiment_via_ds_or_raise(session, ds, experiment_id)
-    return await experiments_common.commit_experiment_impl(session, experiment)
+    response = await experiments_common.commit_experiment_impl(session, experiment)
+    await session.commit()
+    return response
 
 
 @router.post(
@@ -1523,7 +1525,9 @@ async def abandon_experiment(
 ):
     ds = await get_datasource_or_raise(session, user, datasource_id)
     experiment = await get_experiment_via_ds_or_raise(session, ds, experiment_id)
-    return await experiments_common.abandon_experiment_impl(session, experiment)
+    response = await experiments_common.abandon_experiment_impl(experiment)
+    await session.commit()
+    return response
 
 
 @router.get("/organizations/{organization_id}/experiments")

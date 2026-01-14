@@ -1,4 +1,5 @@
 import dataclasses
+import inspect
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from typing import Any, cast
@@ -1094,7 +1095,11 @@ async def test_state_setting_experiment_impl(
     experiment = await insert_experiment_and_arms(xngin_session, testing_datasource.ds, state=initial_state)
 
     try:
-        response = await method_under_test(xngin_session, experiment)
+        sig = inspect.signature(method_under_test)
+        if len(sig.parameters) == 2:
+            response = await method_under_test(xngin_session, experiment)
+        else:
+            response = await method_under_test(experiment)
     except HTTPException as e:
         assert e.status_code == expected_status  # noqa: PT017
         assert e.detail == expected_detail  # noqa: PT017
