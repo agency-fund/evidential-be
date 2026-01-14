@@ -239,7 +239,7 @@ async def insert_experiment_and_arms(
     xngin_session: AsyncSession,
     datasource: tables.Datasource,
     experiment_type: ExperimentsType = ExperimentsType.FREQ_PREASSIGNED,
-    state=ExperimentState.COMMITTED,
+    state: ExperimentState = ExperimentState.COMMITTED,
     end_date: datetime | None = None,
     prior_type: PriorTypes = PriorTypes.NORMAL,
     reward_type: LikelihoodTypes = LikelihoodTypes.NORMAL,
