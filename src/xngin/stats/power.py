@@ -106,7 +106,7 @@ def analyze_metric_power(
         # We always assume the first arm is control.
         control_prob = weights[0]
         # Use the smallest treatment arm for a conservative estimate.
-        # (smaller arm has less power, requires larger total sample size)
+        # (this ensures even the smallest arm has at least the desired statistical power)
         min_treatment_prob = min(weights[1:])
         arm_ratio = min_treatment_prob / control_prob
 
