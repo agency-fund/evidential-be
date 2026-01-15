@@ -108,7 +108,7 @@ def analyze_metric_power(
         # Use the smallest treatment arm for a conservative estimate.
         # (smaller arm has less power, requires larger total sample size)
         min_treatment_prob = min(weights[1:])
-        arm_ratio = min_treatment_prob / control_prob   
+        arm_ratio = min_treatment_prob / control_prob
 
     # solve_power returns the required sample size for the control group
     power_analysis = sms.TTestIndPower()
