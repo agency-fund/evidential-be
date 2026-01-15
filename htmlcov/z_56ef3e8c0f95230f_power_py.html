@@ -65,7 +65,7 @@
             <a id="nextFileLink" class="nav" href="z_c4716056c256099a_chafernet_py.html">&#xbb; next</a>
             &nbsp; &nbsp; &nbsp;
             <a class="nav" href="https://coverage.readthedocs.io/en/7.11.0">coverage.py v7.11.0</a>,
-            created at 2026-01-14 11:07 +0000
+            created at 2026-01-15 10:14 +0000
         </p>
         <aside class="hidden">
             <button type="button" class="button_next_chunk" data-shortcut="j"></button>
@@ -187,10 +187,10 @@
     <p class="run"><span class="n"><a id="t105" href="#t105">105</a></span><span class="t">        <span class="nam">weights</span> <span class="op">=</span> <span class="op">[</span><span class="nam">w</span> <span class="op">/</span> <span class="nam">sum_weights</span> <span class="key">for</span> <span class="nam">w</span> <span class="key">in</span> <span class="nam">arm_weights</span><span class="op">]</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t106" href="#t106">106</a></span><span class="t">        <span class="com"># We always assume the first arm is control.</span>&nbsp;</span><span class="r"></span></p>
     <p class="run"><span class="n"><a id="t107" href="#t107">107</a></span><span class="t">        <span class="nam">control_prob</span> <span class="op">=</span> <span class="nam">weights</span><span class="op">[</span><span class="num">0</span><span class="op">]</span>&nbsp;</span><span class="r"></span></p>
-    <p class="pln"><span class="n"><a id="t108" href="#t108">108</a></span><span class="t">        <span class="com"># Use the largest treatment arm for a conservative estimate.</span>&nbsp;</span><span class="r"></span></p>
-    <p class="pln"><span class="n"><a id="t109" href="#t109">109</a></span><span class="t">        <span class="com"># (larger ratio requires a larger total sample size)</span>&nbsp;</span><span class="r"></span></p>
-    <p class="run"><span class="n"><a id="t110" href="#t110">110</a></span><span class="t">        <span class="nam">max_treatment_prob</span> <span class="op">=</span> <span class="nam">max</span><span class="op">(</span><span class="nam">weights</span><span class="op">[</span><span class="num">1</span><span class="op">:</span><span class="op">]</span><span class="op">)</span>&nbsp;</span><span class="r"></span></p>
-    <p class="run"><span class="n"><a id="t111" href="#t111">111</a></span><span class="t">        <span class="nam">arm_ratio</span> <span class="op">=</span> <span class="nam">max_treatment_prob</span> <span class="op">/</span> <span class="nam">control_prob</span>&nbsp;</span><span class="r"></span></p>
+    <p class="pln"><span class="n"><a id="t108" href="#t108">108</a></span><span class="t">        <span class="com"># Use the smallest treatment arm for a conservative estimate.</span>&nbsp;</span><span class="r"></span></p>
+    <p class="pln"><span class="n"><a id="t109" href="#t109">109</a></span><span class="t">        <span class="com"># (this ensures even the smallest arm has at least the desired statistical power)</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run"><span class="n"><a id="t110" href="#t110">110</a></span><span class="t">        <span class="nam">min_treatment_prob</span> <span class="op">=</span> <span class="nam">min</span><span class="op">(</span><span class="nam">weights</span><span class="op">[</span><span class="num">1</span><span class="op">:</span><span class="op">]</span><span class="op">)</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run"><span class="n"><a id="t111" href="#t111">111</a></span><span class="t">        <span class="nam">arm_ratio</span> <span class="op">=</span> <span class="nam">min_treatment_prob</span> <span class="op">/</span> <span class="nam">control_prob</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t112" href="#t112">112</a></span><span class="t">&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t113" href="#t113">113</a></span><span class="t">    <span class="com"># solve_power returns the required sample size for the control group</span>&nbsp;</span><span class="r"></span></p>
     <p class="run"><span class="n"><a id="t114" href="#t114">114</a></span><span class="t">    <span class="nam">power_analysis</span> <span class="op">=</span> <span class="nam">sms</span><span class="op">.</span><span class="nam">TTestIndPower</span><span class="op">(</span><span class="op">)</span>&nbsp;</span><span class="r"></span></p>
@@ -339,7 +339,7 @@
             <a class="nav" href="z_c4716056c256099a_chafernet_py.html">&#xbb; next</a>
             &nbsp; &nbsp; &nbsp;
             <a class="nav" href="https://coverage.readthedocs.io/en/7.11.0">coverage.py v7.11.0</a>,
-            created at 2026-01-14 11:07 +0000
+            created at 2026-01-15 10:14 +0000
         </p>
     </div>
 </footer>
