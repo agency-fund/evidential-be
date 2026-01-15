@@ -291,8 +291,9 @@ def test_analyze_metric_power_unbalanced_three_arms():
     result = analyze_metric_power(metric, n_arms=3, arm_weights=[20.0, 20.0, 60.0])
 
     assert result.metric_spec.field_name == "test_metric"
-    # With ratio=3 (60/20), we need more than a balanced 3-arm case.
-    assert result.target_n == 215
+    # Using smallest arm (20%) for conservative estimate: ratio=1 (20/20)
+    # This requires more samples than using the largest arm (old buggy behavior)
+    assert result.target_n == 320
     assert result.sufficient_n
     assert result.msg is not None
     assert result.msg.type == MetricPowerAnalysisMessageType.SUFFICIENT
