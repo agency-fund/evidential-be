@@ -133,6 +133,7 @@ GENERIC_SUCCESS = Response(status_code=status.HTTP_204_NO_CONTENT)
 RESPONSE_CACHE_MAX_AGE_SECONDS = timedelta(minutes=15).seconds
 
 
+# Describes the structure of an error raised via `raise HTTPException`.
 class HTTPExceptionError(BaseModel):
     detail: str
 
@@ -166,10 +167,6 @@ STANDARD_ADMIN_RESPONSES: dict[str | int, dict[str, Any]] = {
         "description": "Requested content was not found.",
     },
 }
-
-
-def responses_factory(*codes):
-    return {code: config for code, config in STANDARD_ADMIN_RESPONSES.items() if code in {str(c) for c in codes}}
 
 
 def cache_is_fresh(updated: datetime | None):
