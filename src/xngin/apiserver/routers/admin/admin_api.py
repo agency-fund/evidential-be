@@ -396,15 +396,29 @@ async def list_snapshots(
     query = (
         select(tables.Snapshot)
         .where(tables.Snapshot.experiment_id == experiment.id)
-        .order_by(tables.Snapshot.updated_at)
+        .order_by(tables.Snapshot.updated_at.desc())
     )
     if status_:
         query = query.where(
             tables.Snapshot.status.in_([convert_api_snapshot_status_to_snapshot_status(s) for s in status_])
         )
-    snapshots = await session.scalars(query)
+    # read into a list because we may iterate over it twice
+    snapshots = list(await session.scalars(query))
 
-    return ListSnapshotsResponse(items=[convert_snapshot_to_api_snapshot(snapshot) for snapshot in snapshots])
+    if status_ is None:
+        latest_failure = next((r.updated_at for r in snapshots if r.status == "failed"), None)
+    else:
+        latest_failure = await session.scalar(
+            select(tables.Snapshot.updated_at)
+            .where(tables.Snapshot.experiment_id == experiment.id)
+            .where(tables.Snapshot.status == convert_api_snapshot_status_to_snapshot_status(SnapshotStatus.FAILED))
+            .order_by(tables.Snapshot.updated_at.desc())
+            .limit(1)
+        )
+
+    return ListSnapshotsResponse(
+        items=[convert_snapshot_to_api_snapshot(snapshot) for snapshot in snapshots], latest_failure=latest_failure
+    )
 
 
 @router.delete(
