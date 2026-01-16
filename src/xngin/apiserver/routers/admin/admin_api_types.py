@@ -69,7 +69,7 @@ class Snapshot(AdminApiBaseModel):
 class GetSnapshotResponse(AdminApiBaseModel):
     """Describes the status and content of a snapshot."""
 
-    snapshot: Annotated[Snapshot | None, Field(description="The completed snapshot.")]
+    snapshot: Annotated[Snapshot, Field(description="The snapshot.")]
 
 
 class ListSnapshotsResponse(AdminApiBaseModel):

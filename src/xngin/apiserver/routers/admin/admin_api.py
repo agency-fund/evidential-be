@@ -405,7 +405,8 @@ async def list_snapshots(
         query = query.where(
             tables.Snapshot.status.in_([convert_api_snapshot_status_to_snapshot_status(s) for s in status_])
         )
-    snapshots = await session.scalars(query)
+    # read into a list because we may iterate over it twice
+    snapshots = list(await session.scalars(query))
 
     latest_failure: datetime | None = None
     if status_ is None:
