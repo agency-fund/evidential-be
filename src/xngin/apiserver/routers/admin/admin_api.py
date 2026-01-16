@@ -408,10 +408,9 @@ async def list_snapshots(
     # read into a list because we may iterate over it twice
     snapshots = list(await session.scalars(query))
 
-    latest_failure: datetime | None = None
     if status_ is None:
         latest_failure = next((r.updated_at for r in snapshots if r.status == "failed"), None)
-    elif status_ is not None:
+    else:
         latest_failure = await session.scalar(
             select(tables.Snapshot.updated_at)
             .where(tables.Snapshot.experiment_id == experiment.id)
