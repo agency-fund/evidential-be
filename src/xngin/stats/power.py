@@ -171,7 +171,7 @@ def analyze_metric_power(
                 )
                 * metric.metric_stddev
             )
-            # # need this because solve_power can return array depending on special handling from edge cases
+            # need this because solve_power can return array depending on special handling from edge cases
             needed_delta = float(np.atleast_1d(needed_delta)[0])
             target_possible = needed_delta + metric.metric_baseline
 
