@@ -1267,6 +1267,20 @@ async def test_lifecycle_with_db(testing_datasource, ppost, ppatch, pget, pdelet
     response = ppost(f"/v1/m/datasources/{testing_datasource.ds.id}/experiments/{parsed_experiment_id}/commit")
     assert response.status_code == 204, (parsed_experiment_id, response.content)
 
+    # Verify it committed.
+    response = pget(f"/v1/m/datasources/{testing_datasource.ds.id}/experiments/{parsed_experiment_id}")
+    assert response.status_code == 200, response.content
+    assert GetExperimentResponse.model_validate(response.json()).state == ExperimentState.COMMITTED
+
+    # Attempting to abandon a committed experiment should fail
+    response = ppost(f"/v1/m/datasources/{testing_datasource.ds.id}/experiments/{parsed_experiment_id}/abandon")
+    assert response.status_code == 400, (parsed_experiment_id, response.content)
+
+    # Verify it is still committed.
+    response = pget(f"/v1/m/datasources/{testing_datasource.ds.id}/experiments/{parsed_experiment_id}")
+    assert response.status_code == 200, response.content
+    assert GetExperimentResponse.model_validate(response.json()).state == ExperimentState.COMMITTED
+
     # Update the experiment.
     response = ppatch(
         f"/v1/m/datasources/{testing_datasource.ds.id}/experiments/{parsed_experiment_id}",
@@ -1336,6 +1350,38 @@ async def test_lifecycle_with_db(testing_datasource, ppost, ppatch, pget, pdelet
     assert response.status_code == 204, response.content
 
 
+async def test_abandon_experiment(testing_datasource_with_user, ppost, pget):
+    datasource_id = testing_datasource_with_user.ds.id
+    design_spec = PreassignedFrequentistExperimentSpec(
+        experiment_type=ExperimentsType.FREQ_PREASSIGNED,
+        participant_type="test_participant_type",
+        experiment_name="test experiment",
+        description="test experiment",
+        start_date=datetime(2024, 1, 1, tzinfo=UTC),
+        end_date=datetime.now(UTC) + timedelta(days=1),
+        arms=[Arm(arm_name="C", arm_description="C"), Arm(arm_name="T", arm_description="T")],
+        metrics=[DesignSpecMetricRequest(field_name="is_engaged", metric_pct_change=0.1)],
+        strata=[],
+        filters=[],
+    )
+    response = ppost(
+        f"/v1/m/datasources/{datasource_id}/experiments",
+        params={"chosen_n": 1},
+        content=CreateExperimentRequest(design_spec=design_spec).model_dump_json(),
+    )
+    assert response.status_code == 200, response.content
+    parsed_response = CreateExperimentResponse.model_validate(response.json())
+    assert parsed_response.state == ExperimentState.ASSIGNED
+    parsed_experiment_id = parsed_response.experiment_id
+
+    response = ppost(f"/v1/m/datasources/{datasource_id}/experiments/{parsed_experiment_id}/abandon")
+    assert response.status_code == 204, response.content
+
+    response = pget(f"/v1/m/datasources/{datasource_id}/experiments/{parsed_experiment_id}")
+    assert response.status_code == 200, response.content
+    assert GetExperimentResponse.model_validate(response.json()).state == ExperimentState.ABANDONED
+
+
 async def test_power_check_with_unbalanced_arms(testing_datasource_with_user, ppost):
     """Test power check endpoint with balanced vs unbalanced arms."""
     design_spec = PreassignedFrequentistExperimentSpec(
@@ -1386,9 +1432,9 @@ async def test_power_check_with_unbalanced_arms(testing_datasource_with_user, pp
 
     # And again with three arms
     design_spec.arms = [*design_spec.arms, Arm(arm_name="arm3", arm_description="Arm 3")]
-    design_spec.arms[0].arm_weight = 15
-    design_spec.arms[1].arm_weight = 60
-    design_spec.arms[2].arm_weight = 25
+    design_spec.arms[0].arm_weight = 10
+    design_spec.arms[1].arm_weight = 50
+    design_spec.arms[2].arm_weight = 40
     response = ppost(
         f"/v1/m/datasources/{testing_datasource_with_user.ds.id}/power",
         content=PowerRequest(design_spec=design_spec).model_dump_json(),
@@ -1400,8 +1446,10 @@ async def test_power_check_with_unbalanced_arms(testing_datasource_with_user, pp
     metric_analysis3 = power_response3.analyses[0]
     assert metric_analysis3.metric_spec.field_name == "current_income"
     assert metric_analysis3.target_n is not None
-    # Max ratio is still 4:1 as in case 2, but the control is now 15% of the total instead of 20%.
-    assert metric_analysis3.target_n == math.ceil(metric_analysis2.target_n * 0.2 / 0.15)
+    # Min ratio is still 4:1 (the smallest treatment arm) as in the previous case, but the control
+    # is now only 10% of the total instead of 20%, so we need more participants than before to
+    # ensure that comparison with the smaller arm still has sufficient power.
+    assert metric_analysis3.target_n == math.ceil(metric_analysis2.target_n * 0.2 / 0.10)
 
 
 async def test_create_experiment_with_invalid_design_url(xngin_session, testing_datasource_with_user, ppost):

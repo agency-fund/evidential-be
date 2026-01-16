@@ -1,10 +1,16 @@
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.middleware.gzip import GZipMiddleware
 
 from xngin.apiserver.request_encapsulation_middleware import RequestEncapsulationMiddleware
 
 
 def setup(app):
     """Registers middleware with the FastAPI app."""
+    app.add_middleware(
+        GZipMiddleware,
+        compresslevel=3,
+        minimum_size=16384,
+    )
     app.add_middleware(
         CORSMiddleware,
         allow_credentials=False,
