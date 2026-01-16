@@ -16,6 +16,10 @@ UNSAFE_IP_FOR_TESTING = "127.0.0.9"
 class DnsLookupError(Exception):
     """Raised when the DNS lookup of a customer-specified address failed."""
 
+    def __init__(self, host: str):
+        self.host = host
+        super().__init__(f"DNS issue with host: {host}")
+
 
 class DnsLookupUnsafeError(DnsLookupError):
     """Raised when the DNS lookup of a customer-specified address succeeded but the result was deemed unsafe."""
@@ -72,7 +76,7 @@ def safe_resolve(host: str):
         raise DnsLookupError(host)
     safe = is_safe_ipset(set(answers))
     if not safe:
-        raise DnsLookupUnsafeError(f"lookup({host}) => {answers}")
+        raise DnsLookupUnsafeError(f"{host} => {answers}")
     return answers.pop()
 
 
