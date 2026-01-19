@@ -105,7 +105,7 @@ def calculate_mde_with_chosen_n(
             )
             # need this because solve_power can return array depending on special handling from edge cases
             min_effect_size = float(np.atleast_1d(min_effect_size)[0])
-            
+
             # Convert Cohen's h back to proportion
             # h = 2 * arcsin(sqrt(p1)) - 2 * arcsin(sqrt(p2))
             # where p1 is baseline and p2 is target
