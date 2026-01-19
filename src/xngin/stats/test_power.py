@@ -43,6 +43,42 @@ def test_analyze_metric_power_numeric():
     assert result.msg.msg == result.msg.source_msg.format_map(result.msg.values)
 
 
+def test_analyze_metric_power_numeric_insufficient():
+    metric = DesignSpecMetric(
+        field_name="test_metric",
+        metric_pct_change=0.1,
+        metric_type=MetricType.NUMERIC,
+        metric_baseline=13.206590621039297,
+        metric_target=14.527249683143227,
+        metric_stddev=37.601056495700554,
+        available_nonnull_n=789,
+        available_n=789,
+    )
+
+    result = analyze_metric_power(metric, n_arms=4, power=0.8, alpha=0.05)
+
+    assert result.metric_spec.field_name == "test_metric"
+    assert result.metric_spec.metric_type == MetricType.NUMERIC
+    assert result.metric_spec.metric_baseline == pytest.approx(13.2065, rel=1e-4)
+    assert result.metric_spec.metric_target == pytest.approx(14.5273, rel=1e-4)
+    assert result.metric_spec.available_nonnull_n == 789
+    assert result.metric_spec.available_n == 789
+    assert result.target_n == 50904
+    assert not result.sufficient_n
+    assert result.msg is not None
+    assert result.msg.type == MetricPowerAnalysisMessageType.INSUFFICIENT
+    assert result.msg.values == {
+        "available_n": 789,
+        "target_n": 50904,
+        "available_nonnull_n": 789,
+        "additional_n_needed": 50115,
+        "metric_baseline": 13.2066,
+        "target_possible": 23.8468,
+        "metric_target": 14.5272,
+    }
+    assert result.msg.msg == result.msg.source_msg.format_map(result.msg.values)
+
+
 def test_analyze_metric_power_binary():
     metric = DesignSpecMetric(
         field_name="test_metric",
@@ -158,8 +194,8 @@ def test_analyze_metric_missing_baseline_returns_friendly_error():
 
 @pytest.mark.skip(
     reason="Test expects SUFFICIENT when available_nonnull_n=0, "
-            "but this should return NO_AVAILABLE_N error. "
-            "Needs clarification on expected behavior."
+    "but this should return NO_AVAILABLE_N error. "
+    "Needs clarification on expected behavior."
 )
 def test_analyze_metric_with_no_available_nonnull_n_returns_ok():
     metric = DesignSpecMetric(
@@ -260,8 +296,9 @@ def test_analyze_metric_power_unbalanced_three_arms():
     result = analyze_metric_power(metric, n_arms=3, arm_weights=[20.0, 20.0, 60.0])
 
     assert result.metric_spec.field_name == "test_metric"
-    # With ratio=3 (60/20), we need more than a balanced 3-arm case.
-    assert result.target_n == 215
+    # Using smallest arm (20%) for conservative estimate: ratio=1 (20/20)
+    # This requires more samples than using the largest arm (old buggy behavior)
+    assert result.target_n == 320
     assert result.sufficient_n
     assert result.msg is not None
     assert result.msg.type == MetricPowerAnalysisMessageType.SUFFICIENT
@@ -328,8 +365,6 @@ def test_check_power_unbalanced():
     assert results[1].target_n == 4895
 
 
-
-
 def test_analyze_metric_power_numeric_with_desired_n():
     """Test MDE calculation when desired_n is specified for numeric metric."""
     metric = DesignSpecMetric(
@@ -348,12 +383,16 @@ def test_analyze_metric_power_numeric_with_desired_n():
     assert result.target_possible is not None
     assert result.pct_change_possible is not None
     assert result.sufficient_n is None  # Not applicable in MDE mode
-    
+
     # target_possible should be greater than baseline
+    assert metric.metric_baseline is not None
+    assert result.target_possible is not None
     assert result.target_possible > metric.metric_baseline
-    
+
     # Message should mention MDE
+    assert result.msg is not None
     assert "minimum detectable effect" in result.msg.msg.lower()
+
 
 def test_analyze_metric_power_binary_with_desired_n():
     """Test MDE calculation when desired_n is specified for binary metric."""
@@ -372,12 +411,14 @@ def test_analyze_metric_power_binary_with_desired_n():
     assert result.target_possible is not None
     assert result.pct_change_possible is not None
     assert result.sufficient_n is None
-    
+
     # target_possible should be greater than baseline
     assert result.target_possible != metric.metric_baseline
-    
+
     # Message should mention MDE
+    assert result.msg is not None
     assert "minimum detectable effect" in result.msg.msg.lower()
+
 
 def test_check_power_with_desired_n():
     """Test check_power with desired_n for multiple metrics."""
@@ -411,6 +452,7 @@ def test_check_power_with_desired_n():
         assert result.pct_change_possible is not None
         assert result.sufficient_n is None
 
+
 def test_analyze_metric_power_without_desired_n_still_works():
     """Test that original behavior still works when desired_n not provided."""
     metric = DesignSpecMetric(
@@ -430,7 +472,8 @@ def test_analyze_metric_power_without_desired_n_still_works():
     assert result.target_n is not None
     assert result.target_n > 0
     assert result.sufficient_n is not None  # Should be True or False
-    assert result.target_possible is None or isinstance(result.target_possible, float) 
+    assert result.target_possible is None or isinstance(result.target_possible, float)
+
 
 def test_analyze_metric_power_desired_n_missing_baseline():
     """Test that error is returned when baseline is missing in MDE mode."""
@@ -444,7 +487,9 @@ def test_analyze_metric_power_desired_n_missing_baseline():
     result = analyze_metric_power(metric, n_arms=2, desired_n=500)
 
     # Should return error
+    assert result.msg is not None
     assert result.msg.type == MetricPowerAnalysisMessageType.NO_BASELINE
+
 
 def test_analyze_metric_power_desired_n_zero_stddev():
     """Test that error is returned when stddev is zero for numeric metric in MDE mode."""
@@ -458,7 +503,9 @@ def test_analyze_metric_power_desired_n_zero_stddev():
     result = analyze_metric_power(metric, n_arms=2, desired_n=500)
 
     # Should return error
-    assert result.msg.type == MetricPowerAnalysisMessageType.ZERO_STDDEV    
+    assert result.msg is not None
+    assert result.msg.type == MetricPowerAnalysisMessageType.ZERO_STDDEV
+
 
 def test_analyze_metric_power_desired_n_with_unbalanced_arms():
     """Test MDE calculation with unbalanced arm allocation."""
@@ -471,12 +518,7 @@ def test_analyze_metric_power_desired_n_with_unbalanced_arms():
     )
 
     # 20% control, 80% treatment
-    result = analyze_metric_power(
-        metric, 
-        n_arms=2, 
-        arm_weights=[20.0, 80.0],
-        desired_n=1000
-    )
+    result = analyze_metric_power(metric, n_arms=2, arm_weights=[20.0, 80.0], desired_n=1000)
 
     # Should still work with unbalanced allocation
     assert result.target_n == 1000
