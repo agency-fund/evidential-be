@@ -283,7 +283,7 @@ async def create_preassigned_experiment_impl(
         assignment_result=assignment_result,
     )
 
-    await xngin_session.commit()
+    await xngin_session.flush()
 
     assign_summary = await get_assign_summary(
         xngin_session, (await experiment.awaitable_attrs.id), balance_check, ExperimentsType.FREQ_PREASSIGNED
@@ -317,7 +317,7 @@ async def create_freq_online_experiment_impl(
         experiment.webhooks.append(webhook)
     xngin_session.add(experiment)
 
-    await xngin_session.commit()
+    await xngin_session.flush()
 
     # Online experiments start with no assignments.
     empty_assign_summary = AssignSummary(
@@ -356,7 +356,7 @@ async def create_bandit_online_experiment_impl(
         experiment.webhooks.append(webhook)
     xngin_session.add(experiment)
 
-    await xngin_session.commit()
+    await xngin_session.flush()
 
     # Online experiments start with no assignments.
     empty_assign_summary = AssignSummary(
@@ -408,12 +408,11 @@ async def commit_experiment_impl(xngin_session: AsyncSession, experiment: tables
                 payload=webhook_task.model_dump(),
             )
             xngin_session.add(task)
-    await xngin_session.commit()
 
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
-async def abandon_experiment_impl(xngin_session: AsyncSession, experiment: tables.Experiment):
+async def abandon_experiment_impl(experiment: tables.Experiment):
     if experiment.state == ExperimentState.ABANDONED:
         return Response(status_code=status.HTTP_304_NOT_MODIFIED)
     if experiment.state not in {ExperimentState.DESIGNING, ExperimentState.ASSIGNED}:
@@ -423,7 +422,6 @@ async def abandon_experiment_impl(xngin_session: AsyncSession, experiment: table
         )
 
     experiment.state = ExperimentState.ABANDONED
-    await xngin_session.commit()
 
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 

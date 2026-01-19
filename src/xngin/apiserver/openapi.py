@@ -4,7 +4,7 @@ from fastapi import FastAPI
 from fastapi.openapi.utils import get_openapi
 from fastapi.routing import APIRoute
 
-from xngin.apiserver import flags
+from xngin.apiserver import constants, flags
 from xngin.apiserver.flags import PUBLISH_ALL_DOCS
 
 
@@ -38,7 +38,11 @@ def custom_openapi(app: FastAPI):
                 "name": "Experiment Integration",
                 "description": (
                     "Methods for a client to use when integrating Evidential experiments and assignments "
-                    "with their own serving infrastructure."
+                    "with their own serving infrastructure.\n\nNote: All methods in this API require a datasource API "
+                    f"key to be passed as the `{constants.HEADER_API_KEY}` request header. Manage these in the "
+                    f"Settings > Datasources menu."
+                    "\n\n"
+                    'Tip: Click the "Authorize" button at the top of this page to set the Datasource API key value.'
                 ),
             },
         ),

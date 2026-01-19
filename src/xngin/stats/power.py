@@ -26,10 +26,10 @@ def _calculate_arm_ratio_and_control_prob_from_weights(
         weights = [w / sum_weights for w in arm_weights]
         # We always assume the first arm is control.
         control_prob = weights[0]
-        # Use the largest treatment arm for a conservative estimate.
-        # (larger ratio requires a larger total sample size)
-        max_treatment_prob = max(weights[1:])
-        arm_ratio = max_treatment_prob / control_prob
+        # Use the smallest treatment arm for a conservative estimate.
+        # (this ensures even the smallest arm has at least the desired statistical power)
+        min_treatment_prob = min(weights[1:])
+        arm_ratio = min_treatment_prob / control_prob
 
     return arm_ratio, control_prob
 
@@ -91,6 +91,8 @@ def calculate_mde_with_chosen_n(
                 )
                 * metric.metric_stddev
             )
+            # need this because solve_power can return array depending on special handling from edge cases
+            needed_delta = float(np.atleast_1d(needed_delta)[0])
             target_possible = needed_delta + metric.metric_baseline
         case MetricType.BINARY:
             power_analysis = sms.NormalIndPower()
@@ -101,6 +103,9 @@ def calculate_mde_with_chosen_n(
                 power=power,
                 ratio=arm_ratio,
             )
+            # need this because solve_power can return array depending on special handling from edge cases
+            min_effect_size = float(np.atleast_1d(min_effect_size)[0])
+            
             # Convert Cohen's h back to proportion
             # h = 2 * arcsin(sqrt(p1)) - 2 * arcsin(sqrt(p2))
             # where p1 is baseline and p2 is target

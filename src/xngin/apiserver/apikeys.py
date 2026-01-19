@@ -5,22 +5,35 @@ import string
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from xngin.apiserver import constants
 from xngin.apiserver.sqla import tables
 
 API_KEY_PREFIX = "xat"
 HASH_PURPOSE = b"xnginapikey1"
 
 
-class ApiKeyError(Exception):
-    pass
+class BaseApiKeyError(Exception):
+    status_code = 400
+
+    def __init__(self, *args):
+        super().__init__(*args)
 
 
-class ApiKeyRequiredError(ApiKeyError):
-    pass
+class ApiKeyRequiredError(BaseApiKeyError):
+    def __init__(self, *args):
+        super().__init__(f"{constants.HEADER_API_KEY} request header is required.")
 
 
-class InvalidApiKeyError(ApiKeyError):
-    pass
+class MalformedApiKeyError(BaseApiKeyError):
+    def __init__(self, *args):
+        super().__init__(f"{constants.HEADER_API_KEY} request header is invalid: must start with `{API_KEY_PREFIX}`.")
+
+
+class UnknownApiKeyError(BaseApiKeyError):
+    status_code = 403
+
+    def __init__(self, *args):
+        super().__init__(f"{constants.HEADER_API_KEY} is invalid or does not have access to this resource.")
 
 
 KEY_ALPHABET = [*string.ascii_lowercase, *string.ascii_uppercase, *string.digits]
@@ -28,18 +41,27 @@ KEY_ALPHABET = [*string.ascii_lowercase, *string.ascii_uppercase, *string.digits
 
 def hash_key_or_raise(key: str | bytes | None) -> str:
     """Transforms the plain API key to the hashed (stored) value."""
+    key = validate_api_key(key)
+    return hashlib.blake2b(key, person=HASH_PURPOSE).hexdigest()
+
+
+def validate_api_key(key: str | bytes | None) -> bytes:
+    """Raises an exception unless key represents a valid user-facing API key.
+
+    Returns key as bytes.
+    """
     if not key:
         raise ApiKeyRequiredError()
     if isinstance(key, str):
         if not key.startswith(API_KEY_PREFIX):
-            raise InvalidApiKeyError()
+            raise MalformedApiKeyError()
         key = key.encode()
     elif isinstance(key, bytes):
         if not key.startswith(API_KEY_PREFIX.encode()):
-            raise InvalidApiKeyError()
+            raise MalformedApiKeyError()
     else:
-        raise InvalidApiKeyError()
-    return hashlib.blake2b(key, person=HASH_PURPOSE).hexdigest()
+        raise MalformedApiKeyError()
+    return key
 
 
 def make_key() -> tuple[str, str]:
@@ -70,4 +92,4 @@ async def require_valid_api_key(session: AsyncSession, api_key: str | None, data
     row = result.scalar_one_or_none()
 
     if not row:
-        raise InvalidApiKeyError()
+        raise UnknownApiKeyError()

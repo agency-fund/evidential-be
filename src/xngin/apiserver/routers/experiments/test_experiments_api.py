@@ -1,5 +1,6 @@
 from datetime import UTC, datetime, timedelta
 
+import pytest
 from deepdiff import DeepDiff
 from pydantic import TypeAdapter
 from sqlalchemy import select
@@ -22,16 +23,31 @@ from xngin.apiserver.sqla import tables
 from xngin.apiserver.storage.storage_format_converters import ExperimentStorageConverter
 
 
-async def test_list_experiments_without_api_key(xngin_session, testing_datasource, client_v1):
+@pytest.mark.parametrize(
+    "key,expected_status,expected_message",
+    [
+        ("", 400, "request header is required"),
+        ("a", 400, "must start with"),
+        ("xat_", 403, "invalid or does not have access"),
+        ("xata", 403, "invalid or does not have access"),
+        (None, 400, "request header is required"),
+    ],
+)
+async def test_list_experiments_with_various_insufficient_headers(
+    xngin_session, testing_datasource, client_v1, key, expected_status, expected_message
+):
     """Tests that listing experiments tied to a db datasource requires an API key."""
     await insert_experiment_and_arms(xngin_session, testing_datasource.ds, state=ExperimentState.ASSIGNED)
 
+    headers = {constants.HEADER_CONFIG_ID: testing_datasource.ds.id}
+    if key is not None:
+        headers[constants.HEADER_API_KEY] = key
     response = client_v1.get(
         "/experiments",
-        headers={constants.HEADER_CONFIG_ID: testing_datasource.ds.id},
+        headers=headers,
     )
-    assert response.status_code == 403
-    assert response.json()["message"] == "API key missing or invalid."
+    assert response.status_code == expected_status
+    assert expected_message in response.json()["message"], response.content
 
 
 async def test_list_experiments_with_api_key(xngin_session, testing_datasource, client_v1):
