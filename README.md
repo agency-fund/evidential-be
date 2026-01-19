@@ -11,14 +11,14 @@
 | src/xngin/apiserver/customlogging.py                                 |       66 |       13 |     80% |25-26, 48-68, 73-74, 102-107 |
 | src/xngin/apiserver/database.py                                      |       49 |        5 |     90% |27, 38, 55, 61, 68 |
 | src/xngin/apiserver/dependencies.py                                  |       12 |        4 |     67% | 12, 23-25 |
-| src/xngin/apiserver/dns/safe\_resolve.py                             |       47 |       12 |     74% |28-32, 36-37, 50, 72, 75, 80-81 |
+| src/xngin/apiserver/dns/safe\_resolve.py                             |       50 |       12 |     76% |32-36, 40-41, 54, 76, 79, 84-85 |
 | src/xngin/apiserver/dwh/dwh\_session.py                              |      181 |       69 |     62% |67-74, 77, 140, 146, 157, 159-160, 162-164, 171-228, 248-250, 265, 331-336, 340, 347-349, 367, 402-409, 417 |
 | src/xngin/apiserver/dwh/inspection\_types.py                         |       61 |        5 |     92% |27, 45, 67, 78, 84 |
 | src/xngin/apiserver/dwh/inspections.py                               |       28 |        2 |     93% |    63, 90 |
 | src/xngin/apiserver/dwh/queries.py                                   |      152 |       27 |     82% |116-156, 168, 175, 215, 243-245, 296-297, 316-317 |
 | src/xngin/apiserver/dwh/test\_dialect\_sql.py                        |       79 |        6 |     92% |560, 573, 576-579 |
 | src/xngin/apiserver/dwh/test\_queries.py                             |      280 |        3 |     99% |214, 668, 685 |
-| src/xngin/apiserver/exceptionhandlers.py                             |       55 |        9 |     84% |31, 35, 43, 51-56, 70 |
+| src/xngin/apiserver/exceptionhandlers.py                             |       59 |       10 |     83% |32, 36, 44, 52-57, 71, 90 |
 | src/xngin/apiserver/flags.py                                         |       49 |        4 |     92% |67, 70, 88, 91 |
 | src/xngin/apiserver/main.py                                          |       36 |        5 |     86% |39, 69-70, 87-89 |
 | src/xngin/apiserver/openapi.py                                       |       24 |       13 |     46% |     19-83 |
@@ -67,7 +67,7 @@
 | src/xngin/xsecrets/secretservice.py                                  |       61 |        4 |     93% |42-43, 101, 123 |
 | src/xngin/xsecrets/test\_gcp\_kms\_provider.py                       |      103 |       26 |     75% |40-42, 170-175, 182-189, 195-199, 206, 213-224 |
 | src/xngin/xsecrets/test\_nacl\_provider.py                           |       67 |        1 |     99% |        24 |
-|                                                            **TOTAL** | **9363** |  **934** | **90%** |           |
+|                                                            **TOTAL** | **9370** |  **935** | **90%** |           |
 
 57 files skipped due to complete coverage.
 
