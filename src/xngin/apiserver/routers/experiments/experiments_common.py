@@ -265,10 +265,10 @@ async def create_preassigned_experiment_impl(
         assignment_result=assignment_result,
     )
 
-    await xngin_session.commit()
+    await xngin_session.flush()
 
     assign_summary = await get_assign_summary(
-        xngin_session, experiment.id, balance_check, ExperimentsType.FREQ_PREASSIGNED
+        xngin_session, (await experiment.awaitable_attrs.id), balance_check, ExperimentsType.FREQ_PREASSIGNED
     )
     webhook_ids = [webhook.id for webhook in validated_webhooks]
     return await experiment_converter.get_create_experiment_response(assign_summary, webhook_ids)
@@ -299,7 +299,7 @@ async def create_freq_online_experiment_impl(
         experiment.webhooks.append(webhook)
     xngin_session.add(experiment)
 
-    await xngin_session.commit()
+    await xngin_session.flush()
 
     # Online experiments start with no assignments.
     empty_assign_summary = AssignSummary(
@@ -338,7 +338,7 @@ async def create_bandit_online_experiment_impl(
         experiment.webhooks.append(webhook)
     xngin_session.add(experiment)
 
-    await xngin_session.commit()
+    await xngin_session.flush()
 
     # Online experiments start with no assignments.
     empty_assign_summary = AssignSummary(
@@ -390,12 +390,11 @@ async def commit_experiment_impl(xngin_session: AsyncSession, experiment: tables
                 payload=webhook_task.model_dump(),
             )
             xngin_session.add(task)
-    await xngin_session.commit()
 
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
-async def abandon_experiment_impl(xngin_session: AsyncSession, experiment: tables.Experiment):
+async def abandon_experiment_impl(experiment: tables.Experiment):
     if experiment.state == ExperimentState.ABANDONED:
         return Response(status_code=status.HTTP_304_NOT_MODIFIED)
     if experiment.state not in {ExperimentState.DESIGNING, ExperimentState.ASSIGNED}:
@@ -405,7 +404,6 @@ async def abandon_experiment_impl(xngin_session: AsyncSession, experiment: table
         )
 
     experiment.state = ExperimentState.ABANDONED
-    await xngin_session.commit()
 
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
@@ -1059,7 +1057,12 @@ async def analyze_experiment_freq_impl(
     # before their info was synced to the dwh.
     num_missing_participants = num_participants - len(participant_outcomes)
 
-    analyze_results = analyze_freq_experiment(assignments, participant_outcomes, baseline_arm_id)
+    analyze_results = analyze_freq_experiment(
+        assignments,
+        participant_outcomes,
+        baseline_arm_id,
+        alpha=experiment.alpha,
+    )
 
     metric_analyses = []
     for metric in metrics:
@@ -1078,6 +1081,10 @@ async def analyze_experiment_freq_impl(
                         p_value=arm_result.p_value,
                         t_stat=arm_result.t_stat,
                         std_error=arm_result.std_error,
+                        ci_lower=arm_result.ci_lower,
+                        ci_upper=arm_result.ci_upper,
+                        mean_ci_lower=arm_result.mean_ci_lower,
+                        mean_ci_upper=arm_result.mean_ci_upper,
                         num_missing_values=arm_result.num_missing_values,
                     )
                 )
@@ -1093,6 +1100,10 @@ async def analyze_experiment_freq_impl(
                         p_value=float("nan"),
                         t_stat=float("nan"),
                         std_error=float("nan"),
+                        ci_lower=float("nan"),
+                        ci_upper=float("nan"),
+                        mean_ci_lower=float("nan"),
+                        mean_ci_upper=float("nan"),
                         num_missing_values=-1,  # -1 indicates arm analysis not available
                     )
                 )

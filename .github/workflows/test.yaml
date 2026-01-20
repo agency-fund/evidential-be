@@ -84,15 +84,22 @@ jobs:
           version: 3.x
           repo-token: ${{ secrets.GITHUB_TOKEN }}
       - name: write secrets
+        if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
         run: |
           mkdir -p ~/.config && echo "${GCLOUD_SERVICE_ACCOUNT_CREDENTIALS}" > ~/.config/service_account.json
           openssl sha256 ~/.config/service_account.json
         env:
           GCLOUD_SERVICE_ACCOUNT_CREDENTIALS: ${{ secrets.GOOGLE_APPLICATION_CREDENTIALS_CONTENT }}
+      - name: integration tests
+        if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+        run: |
+          export GOOGLE_APPLICATION_CREDENTIALS=$HOME/.config/service_account.json
+          task test-integration
       - run: task test-coverage
         env:
           DATABASE_URL: "postgresql+psycopg://postgres:postgres@localhost:5499/test_xngin?sslmode=disable"
       - name: Coverage comment
+        if: github.event_name != 'workflow_dispatch'
         id: coverage_comment
         uses: py-cov-action/python-coverage-comment-action@91aaf3b39c7e2331c6bc77767ce017f5160c5f11 # v3.38
         with:
@@ -103,10 +110,6 @@ jobs:
         with:
           name: python-coverage-comment-action
           path: python-coverage-comment-action.txt
-      - name: integration tests
-        run: |
-          export GOOGLE_APPLICATION_CREDENTIALS=$HOME/.config/service_account.json
-          task test-integration
 
   smoke-cli:
     timeout-minutes: 15
@@ -143,7 +146,6 @@ jobs:
           set -x
           uv run xngin-cli --help
           uv run xngin-cli export-json-schemas
-          uv run xngin-cli validate-testing-settings ./src/xngin/apiserver/testdata/xngin.testing.settings.json
       - name: xngin-cli smoke tests
         env:
           DATABASE_URL: "postgresql+psycopg://postgres:postgres@localhost:5499/postgres?sslmode=disable"

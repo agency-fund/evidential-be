@@ -34,7 +34,6 @@ from xngin.apiserver.apikeys import hash_key_or_raise, make_key
 from xngin.apiserver.dependencies import xngin_db_session
 from xngin.apiserver.dns.safe_resolve import DnsLookupError, safe_resolve
 from xngin.apiserver.dwh.dwh_session import (
-    DwhDatabaseDoesNotExistError,
     DwhSession,
     NoDwh,
 )
@@ -50,7 +49,7 @@ from xngin.apiserver.dwh.queries import (
     get_stats_on_metrics,
 )
 from xngin.apiserver.exceptions_common import LateValidationError
-from xngin.apiserver.routers.admin import admin_api_converters, authz
+from xngin.apiserver.routers.admin import admin_api_converters, admin_common, authz
 from xngin.apiserver.routers.admin.admin_api_converters import (
     api_dsn_to_settings_dwh,
     convert_api_snapshot_status_to_snapshot_status,
@@ -99,6 +98,7 @@ from xngin.apiserver.routers.admin.admin_api_types import (
     UserSummary,
     WebhookSummary,
 )
+from xngin.apiserver.routers.admin.admin_common import create_organization_impl
 from xngin.apiserver.routers.admin.generic_handlers import handle_delete
 from xngin.apiserver.routers.auth.auth_api_types import CallerIdentity
 from xngin.apiserver.routers.auth.auth_dependencies import require_user_from_token
@@ -129,7 +129,6 @@ from xngin.apiserver.settings import (
 )
 from xngin.apiserver.snapshots import snapshotter
 from xngin.apiserver.sqla import tables
-from xngin.apiserver.storage.bootstrap import add_nodwh_datasource_to_org
 from xngin.apiserver.storage.storage_format_converters import ExperimentStorageConverter
 from xngin.stats import check_power
 
@@ -137,6 +136,7 @@ GENERIC_SUCCESS = Response(status_code=status.HTTP_204_NO_CONTENT)
 RESPONSE_CACHE_MAX_AGE_SECONDS = timedelta(minutes=15).seconds
 
 
+# Describes the structure of an error raised via `raise HTTPException`.
 class HTTPExceptionError(BaseModel):
     detail: str
 
@@ -172,10 +172,6 @@ STANDARD_ADMIN_RESPONSES: dict[str | int, dict[str, Any]] = {
 }
 
 
-def responses_factory(*codes):
-    return {code: config for code, config in STANDARD_ADMIN_RESPONSES.items() if code in {str(c) for c in codes}}
-
-
 def cache_is_fresh(updated: datetime | None):
     return updated is not None and datetime.now(UTC) - updated < timedelta(minutes=5)
 
@@ -184,6 +180,17 @@ def cache_is_fresh(updated: datetime | None):
 async def lifespan(_app: FastAPI):
     logger.info(f"Starting router: {__name__} (prefix={router.prefix})")
     yield
+
+
+@asynccontextmanager
+async def clear_db_table_cache_on_error(session: AsyncSession, datasource: tables.Datasource):
+    """Context manager that clears a datasource's cached table list on error."""
+    try:
+        yield
+    except:
+        datasource.clear_table_list()
+        await session.commit()
+        raise
 
 
 router = APIRouter(
@@ -392,15 +399,29 @@ async def list_snapshots(
     query = (
         select(tables.Snapshot)
         .where(tables.Snapshot.experiment_id == experiment.id)
-        .order_by(tables.Snapshot.updated_at)
+        .order_by(tables.Snapshot.updated_at.desc())
     )
     if status_:
         query = query.where(
             tables.Snapshot.status.in_([convert_api_snapshot_status_to_snapshot_status(s) for s in status_])
         )
-    snapshots = await session.scalars(query)
+    # read into a list because we may iterate over it twice
+    snapshots = list(await session.scalars(query))
 
-    return ListSnapshotsResponse(items=[convert_snapshot_to_api_snapshot(snapshot) for snapshot in snapshots])
+    if status_ is None:
+        latest_failure = next((r.updated_at for r in snapshots if r.status == "failed"), None)
+    else:
+        latest_failure = await session.scalar(
+            select(tables.Snapshot.updated_at)
+            .where(tables.Snapshot.experiment_id == experiment.id)
+            .where(tables.Snapshot.status == convert_api_snapshot_status_to_snapshot_status(SnapshotStatus.FAILED))
+            .order_by(tables.Snapshot.updated_at.desc())
+            .limit(1)
+        )
+
+    return ListSnapshotsResponse(
+        items=[convert_snapshot_to_api_snapshot(snapshot) for snapshot in snapshots], latest_failure=latest_failure
+    )
 
 
 @router.delete(
@@ -422,9 +443,11 @@ async def delete_snapshot(
     resource_query = select(tables.Snapshot).where(
         tables.Snapshot.experiment_id == experiment_id, tables.Snapshot.id == snapshot_id
     )
-    return await handle_delete(
+    response = await handle_delete(
         session, allow_missing, authz.is_user_authorized_on_datasource(user, datasource_id), resource_query
     )
+    await session.commit()
+    return response
 
 
 @router.post("/organizations/{organization_id}/datasources/{datasource_id}/experiments/{experiment_id}/snapshots")
@@ -497,10 +520,7 @@ async def create_organizations(
             detail="Only privileged users can create organizations",
         )
 
-    organization = tables.Organization(name=body.name)
-    session.add(organization)
-    organization.users.append(user)  # Add the creating user to the organization
-    add_nodwh_datasource_to_org(session, organization)
+    organization = await create_organization_impl(session, user, body.name)
     await session.commit()
 
     return CreateOrganizationResponse(id=organization.id)
@@ -660,12 +680,14 @@ async def delete_webhook_from_organization(
 ):
     """Removes a Webhook from an organization."""
     resource_query = select(tables.Webhook).where(tables.Webhook.id == webhook_id)
-    return await handle_delete(
+    response = await handle_delete(
         session,
         allow_missing,
         authz.is_user_authorized_on_organization(user, organization_id),
         resource_query,
     )
+    await session.commit()
+    return response
 
 
 @router.get("/organizations/{organization_id}/events")
@@ -767,12 +789,14 @@ async def remove_member_from_organization(
         tables.UserOrganization.user_id == user_id,
         tables.UserOrganization.user_id != user.id,  # not current authenticated user
     )
-    return await handle_delete(
+    response = await handle_delete(
         session,
         allow_missing,
         authz.is_user_authorized_on_organization(user, organization_id),
         resource_query,
     )
+    await session.commit()
+    return response
 
 
 @router.patch("/organizations/{organization_id}")
@@ -887,10 +911,7 @@ async def create_datasource(
 
     config = RemoteDatabaseConfig(participants=[], type="remote", dwh=api_dsn_to_settings_dwh(body.dsn))
 
-    datasource = tables.Datasource(
-        id=tables.datasource_id_factory(), name=body.name, organization_id=org.id
-    ).set_config(config)
-    session.add(datasource)
+    datasource = await admin_common.create_datasource_impl(session, org, body.name, config)
     await session.commit()
 
     return CreateDatasourceResponse(id=datasource.id)
@@ -959,21 +980,14 @@ async def inspect_datasource(
 
     if not refresh and cache_is_fresh(ds.table_list_updated) and ds.table_list is not None:
         return InspectDatasourceResponse(tables=ds.table_list)
-    try:
-        try:
-            config = ds.get_config()
-            async with DwhSession(config.dwh) as dwh:
-                tablenames = await dwh.list_tables()
 
-            ds.set_table_list(tablenames)
-            await session.commit()
-            return InspectDatasourceResponse(tables=tablenames)
-        except DwhDatabaseDoesNotExistError as exc:
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
-    except:
-        ds.clear_table_list()
+    async with clear_db_table_cache_on_error(session, ds):
+        config = ds.get_config()
+        async with DwhSession(config.dwh) as dwh:
+            tablenames = await dwh.list_tables()
+        ds.set_table_list(tablenames)
         await session.commit()
-        raise
+        return InspectDatasourceResponse(tables=tablenames)
 
 
 async def invalidate_inspect_table_cache(session, datasource_id):
@@ -1043,12 +1057,14 @@ async def delete_datasource(
     The user must be a member of the organization that owns the datasource.
     """
     resource_query = select(tables.Datasource).where(tables.Datasource.id == datasource_id)
-    return await handle_delete(
+    response = await handle_delete(
         session,
         allow_missing,
         authz.is_user_authorized_on_organization(user, organization_id),
         resource_query,
     )
+    await session.commit()
+    return response
 
 
 @router.get("/datasources/{datasource_id}/participants")
@@ -1154,8 +1170,6 @@ async def inspect_participant_types(
                         data_type=result.db_schema.get(field_name).data_type,  # type: ignore[union-attr]
                         field_name=field_name,
                         description=field_descriptor.description,
-                        # For strata columns, we will echo back any extra annotations
-                        extra=field_descriptor.extra,
                     )
                     for field_name, field_descriptor in strata_fields.items()
                     if result.db_schema.get(field_name)
@@ -1281,13 +1295,15 @@ async def delete_participant(
         config.participants.remove(participant)
         resource.set_config(config)
 
-    return await handle_delete(
+    response = await handle_delete(
         session,
         allow_missing,
         authz.is_user_authorized_on_datasource(user, datasource_id),
         get_participants_or_none,
         deleter,
     )
+    await session.commit()
+    return response
 
 
 @router.get("/datasources/{datasource_id}/apikeys")
@@ -1355,12 +1371,14 @@ async def delete_api_key(
         .join(tables.Datasource)
         .where(tables.Datasource.id == datasource_id, tables.ApiKey.id == api_key_id)
     )
-    return await handle_delete(
+    response = await handle_delete(
         session,
         allow_missing,
         authz.is_user_authorized_on_datasource(user, datasource_id),
         resource_query,
     )
+    await session.commit()
+    return response
 
 
 @router.post("/datasources/{datasource_id}/experiments")
@@ -1369,7 +1387,7 @@ async def create_experiment(
     session: Annotated[AsyncSession, Depends(xngin_db_session)],
     user: Annotated[tables.User, Depends(require_user_from_token)],
     body: CreateExperimentRequest,
-    chosen_n: Annotated[int | None, Query(..., description="Number of participants to assign.")] = None,
+    chosen_n: Annotated[int | None, Query(..., description="Number of participants to assign.", ge=0)] = None,
     stratify_on_metrics: Annotated[
         bool,
         Query(description="Whether to also stratify on metrics during assignment."),
@@ -1394,7 +1412,7 @@ async def create_experiment(
         session=session, organization_id=organization_id, request_webhooks=body.webhooks
     )
 
-    return await experiments_common.create_experiment_impl(
+    response = await experiments_common.create_experiment_impl(
         request=body,
         datasource=datasource,
         xngin_session=session,
@@ -1403,6 +1421,8 @@ async def create_experiment(
         random_state=random_state,
         validated_webhooks=validated_webhooks,
     )
+    await session.commit()
+    return response
 
 
 @router.get(
@@ -1512,7 +1532,9 @@ async def commit_experiment(
 ):
     ds = await get_datasource_or_raise(session, user, datasource_id)
     experiment = await get_experiment_via_ds_or_raise(session, ds, experiment_id)
-    return await experiments_common.commit_experiment_impl(session, experiment)
+    response = await experiments_common.commit_experiment_impl(session, experiment)
+    await session.commit()
+    return response
 
 
 @router.post(
@@ -1528,7 +1550,9 @@ async def abandon_experiment(
 ):
     ds = await get_datasource_or_raise(session, user, datasource_id)
     experiment = await get_experiment_via_ds_or_raise(session, ds, experiment_id)
-    return await experiments_common.abandon_experiment_impl(session, experiment)
+    response = await experiments_common.abandon_experiment_impl(experiment)
+    await session.commit()
+    return response
 
 
 @router.get("/organizations/{organization_id}/experiments")
@@ -1701,12 +1725,11 @@ async def delete_experiment(
 ):
     """Deletes the experiment with the specified ID."""
     resource_query = select(tables.Experiment).where(tables.Experiment.id == experiment_id)
-    return await handle_delete(
-        session,
-        allow_missing,
-        authz.is_user_authorized_on_datasource(user, datasource_id),
-        resource_query,
+    response = await handle_delete(
+        session, allow_missing, authz.is_user_authorized_on_datasource(user, datasource_id), resource_query
     )
+    await session.commit()
+    return response
 
 
 @router.patch(

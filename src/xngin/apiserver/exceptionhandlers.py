@@ -5,10 +5,11 @@ from fastapi.encoders import jsonable_encoder
 from fastapi.responses import JSONResponse
 from pydantic import ValidationError
 
-from xngin.apiserver.apikeys import ApiKeyError
+from xngin.apiserver.apikeys import BaseApiKeyError
 from xngin.apiserver.dependencies import CannotFindDatasourceError
+from xngin.apiserver.dns.safe_resolve import DnsLookupError
 from xngin.apiserver.dwh.dwh_session import CannotFindTableError
-from xngin.apiserver.exceptions_common import LateValidationError
+from xngin.apiserver.exceptions_common import DwhConnectionError, DwhDatabaseDoesNotExistError, LateValidationError
 from xngin.apiserver.routers.admin.admin_api_converters import (
     CredentialsUnavailableError,
 )
@@ -55,9 +56,9 @@ def setup(app):
         # Return a minimal error message
         return JSONResponse(status_code=status, content={"message": str(cause) or str(exc)})
 
-    @app.exception_handler(ApiKeyError)
-    async def exception_handler_apikeys(_request: Request, _exc: ApiKeyError):
-        return JSONResponse(status_code=403, content={"message": "API key missing or invalid."})
+    @app.exception_handler(BaseApiKeyError)
+    async def exception_handler_apikeys(_request: Request, exc: BaseApiKeyError):
+        return JSONResponse(status_code=exc.status_code, content={"message": str(exc)})
 
     @app.exception_handler(LateValidationError)
     async def exception_handler_latevalidation(_request: Request, exc: LateValidationError):
@@ -75,3 +76,15 @@ def setup(app):
     @app.exception_handler(CredentialsUnavailableError)
     async def exception_handler_credentialsunavailable(_request: Request, exc: ValidationError):
         return JSONResponse(status_code=422, content={"message": str(exc)})
+
+    @app.exception_handler(DwhConnectionError)
+    async def exception_handler_dwhconnectionerror(_request: Request, exc: DwhConnectionError):
+        return JSONResponse(status_code=502, content={"message": str(exc)})
+
+    @app.exception_handler(DwhDatabaseDoesNotExistError)
+    async def exception_handler_dwhdatabasedoesnotexisterror(_request: Request, exc: DwhDatabaseDoesNotExistError):
+        return JSONResponse(status_code=404, content={"message": str(exc)})
+
+    @app.exception_handler(DnsLookupError)
+    async def exception_handler_dnslookuperror(_request: Request, exc: DnsLookupError):
+        return JSONResponse(status_code=502, content={"message": str(exc)})

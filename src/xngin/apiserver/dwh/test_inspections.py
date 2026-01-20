@@ -2,11 +2,7 @@ import pytest
 from pydantic import ValidationError
 from sqlalchemy import BigInteger, Column, Integer, MetaData, String, Table
 
-from xngin.apiserver.dwh.dwh_session import DwhSession
-from xngin.apiserver.dwh.inspections import (
-    create_schema_from_table,
-    generate_field_descriptors,
-)
+from xngin.apiserver.dwh.inspections import create_schema_from_table
 from xngin.apiserver.routers.common_enums import DataType
 
 
@@ -62,31 +58,3 @@ def test_create_schema_from_table_fails_if_no_unique_id():
     # Has no primary key or generic "id"
     with pytest.raises(ValidationError):
         create_schema_from_table(my_table, None)
-
-
-async def test_generate_column_descriptors(static_settings):
-    config = static_settings.get_datasource("testing").config
-    async with DwhSession(config.dwh) as dwh:
-        sa_table = await dwh.inspect_table("dwh")
-
-    db_schema = generate_field_descriptors(sa_table, "last_name")
-
-    # Check a few columns:
-    assert db_schema["gender"].field_name == "gender"
-    assert db_schema["gender"].data_type == DataType.CHARACTER_VARYING
-    assert db_schema["gender"].description == ""
-    assert db_schema["gender"].is_unique_id is False
-    assert db_schema["gender"].is_strata is False
-    assert db_schema["gender"].is_filter is False
-    assert db_schema["gender"].is_metric is False
-    assert db_schema["gender"].extra is None  # only necessary info loaded
-    assert db_schema["last_name"].field_name == "last_name"
-    assert db_schema["last_name"].data_type == DataType.CHARACTER_VARYING
-    # Next assertion ust because we labeled it that way in settings!
-    assert db_schema["last_name"].is_unique_id
-    assert db_schema["current_income"].field_name == "current_income"
-    assert db_schema["current_income"].data_type == DataType.NUMERIC
-    assert db_schema["current_income"].is_unique_id is False
-    assert db_schema["is_recruited"].field_name == "is_recruited"
-    assert db_schema["is_recruited"].data_type == DataType.BOOLEAN
-    assert db_schema["is_recruited"].is_unique_id is False

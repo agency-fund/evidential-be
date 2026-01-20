@@ -1,13 +1,15 @@
 from typing import Annotated
 
 from fastapi import Depends, Header, HTTPException, Path
-from fastapi.security import APIKeyHeader
+from fastapi.openapi import models as openapi_models
+from fastapi.security.base import SecurityBase
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import QueryableAttribute, joinedload, selectinload
 from starlette import status
+from starlette.requests import Request
 
-from xngin.apiserver import constants
+from xngin.apiserver import apikeys, constants
 from xngin.apiserver.apikeys import hash_key_or_raise, require_valid_api_key
 from xngin.apiserver.dependencies import CannotFindDatasourceError, xngin_db_session
 from xngin.apiserver.settings import (
@@ -15,12 +17,32 @@ from xngin.apiserver.settings import (
 )
 from xngin.apiserver.sqla import tables
 
-API_KEY_HEADER = APIKeyHeader(
-    name=constants.HEADER_API_KEY,
-    auto_error=False,
-    description="API key obtained from organization settings in the Evidential UI, "
-    "or created with the create_api_key operation.",
-)
+
+class DatasourceApiKeyHeader(SecurityBase):
+    """Defines the request header for the API key in the OpenAPI spec and requires it to exist on a request.
+
+    This does not validate the key; it only checks that it is present.
+    """
+
+    def __init__(self):
+        self.model: openapi_models.APIKey = openapi_models.APIKey(
+            **{"in": openapi_models.APIKeyIn.header},
+            name=constants.HEADER_API_KEY,
+            description=f"The datasource-specific API key. These keys are managed in Settings > Datasources. "
+            f"Datasource keys begin with `{apikeys.API_KEY_PREFIX}`.",
+        )
+        self.scheme_name = "DatasourceApiKey"
+
+    async def __call__(self, request: Request) -> str:
+        api_key = request.headers.get(self.model.name)
+        return self.check_key(api_key)
+
+    def check_key(self, api_key: str | None) -> str:
+        """Confirms that the API key is present and matches the expected structure."""
+        _ = apikeys.validate_api_key(api_key)
+        if api_key is None:
+            raise ValueError("Unexpected: api_key is None")
+        return api_key
 
 
 async def datasource_dependency(
@@ -34,8 +56,8 @@ async def datasource_dependency(
     ],
     xngin_session: Annotated[AsyncSession, Depends(xngin_db_session)],
     api_key: Annotated[
-        str | None,
-        Depends(API_KEY_HEADER),
+        str,
+        Depends(DatasourceApiKeyHeader()),
     ],
 ):
     """Returns the configuration for the current request, as determined by the Datasource-ID HTTP request header."""
@@ -65,8 +87,8 @@ class ExperimentDependency:
         self,
         experiment_id: Annotated[str, Path(..., description="The ID of the experiment to fetch.")],
         api_key: Annotated[
-            str | None,
-            Depends(API_KEY_HEADER),
+            str,
+            Depends(DatasourceApiKeyHeader()),
         ],
         xngin_session: Annotated[AsyncSession, Depends(xngin_db_session)],
     ) -> tables.Experiment:

@@ -50,6 +50,7 @@ from xngin.apiserver.routers.admin.admin_api_types import (
     PostgresDsn,
     RedshiftDsn,
     RevealedStr,
+    SnapshotStatus,
     UpdateArmRequest,
     UpdateDatasourceRequest,
     UpdateExperimentRequest,
@@ -57,6 +58,7 @@ from xngin.apiserver.routers.admin.admin_api_types import (
     UpdateParticipantsTypeRequest,
     UpdateParticipantsTypeResponse,
 )
+from xngin.apiserver.routers.admin.admin_common import DEFAULT_NO_DWH_SOURCE_NAME
 from xngin.apiserver.routers.auth.auth_dependencies import (
     PRIVILEGED_EMAIL,
     UNPRIVILEGED_EMAIL,
@@ -101,7 +103,6 @@ from xngin.apiserver.routers.experiments.test_experiments_common import (
     make_insertable_experiment,
 )
 from xngin.apiserver.sqla import tables
-from xngin.apiserver.storage.bootstrap import DEFAULT_NO_DWH_SOURCE_NAME
 from xngin.apiserver.storage.storage_format_converters import ExperimentStorageConverter
 from xngin.apiserver.testing.assertions import assert_dates_equal
 from xngin.apiserver.testing.testing_dwh_def import TESTING_DWH_PARTICIPANT_DEF
@@ -645,8 +646,19 @@ async def test_first_user_has_an_organization_created_at_login_unprivileged(xngi
 
     response = uget("/v1/m/organizations")
     assert response.status_code == 200, response.content
-    assert len(response.json()["items"]) == 1, response.json()
-    assert response.json()["items"][0]["name"] == "My Organization"
+    list_organizations_response = ListOrganizationsResponse.model_validate(response.json())
+    assert len(list_organizations_response.items) == 1, list_organizations_response
+    org_id = list_organizations_response.items[0].id
+
+    response = uget(f"/v1/m/organizations/{org_id}/experiments")
+    assert response.status_code == 200, response.content
+    list_experiments_response = ListExperimentsResponse.model_validate(response.json())
+    assert {exp.design_spec.experiment_type for exp in list_experiments_response.items} == {
+        "freq_preassigned",
+        "freq_online",
+        "mab_online",
+        "cmab_online",
+    }
 
 
 def test_datasource_lifecycle(ppost, pget, ppatch):
@@ -750,6 +762,105 @@ def test_datasource_lifecycle(ppost, pget, ppatch):
     # Ensure driver changed, name didn't
     assert test_dwh.id == datasource_id
     assert test_dwh.driver == "bigquery"
+
+
+def test_datasource_errors(pget, ppost):
+    """Test creating a datasource with various error conditions."""
+    # Create an organization.
+    response = ppost(
+        "/v1/m/organizations",
+        json=CreateOrganizationRequest(name="test_datasource_errors").model_dump(),
+    )
+    org_id = CreateOrganizationResponse.model_validate(response.json()).id
+
+    # Test DB does not exist Error (404) - Postgres
+    response = ppost(
+        "/v1/m/datasources",
+        content=CreateDatasourceRequest(
+            organization_id=org_id,
+            name="test invalid credentials",
+            dsn=PostgresDsn(
+                host="127.0.0.1",
+                user="postgres",
+                port=5499,
+                password=RevealedStr(value="postgres"),
+                dbname="nonexistent_db",
+                sslmode="disable",
+                search_path=None,
+            ),
+        ).model_dump_json(),
+    )
+    ds_id = CreateDatasourceResponse.model_validate(response.json()).id
+
+    response = pget(f"/v1/m/datasources/{ds_id}/inspect")
+    assert response.status_code == 404, response.content
+    assert 'database "nonexistent_db" does not exist' in response.json()["message"].lower()
+
+    # Test connection Error (502) - RedShift with wrong port
+    response = ppost(
+        "/v1/m/datasources",
+        content=CreateDatasourceRequest(
+            organization_id=org_id,
+            name="test invalid credentials",
+            dsn=RedshiftDsn(
+                host="127.0.0.1",
+                user="redshift",
+                port=9999,  # Invalid port
+                password=RevealedStr(value="redshift"),
+                dbname="redshift",
+                search_path=None,
+            ),
+        ).model_dump_json(),
+    )
+    ds_id = CreateDatasourceResponse.model_validate(response.json()).id
+
+    response = pget(f"/v1/m/datasources/{ds_id}/inspect")
+    assert response.status_code == 502, response.content
+    assert "CONNECTION ERROR" in response.json()["message"]
+
+    # Test connection Error (502) - PostgreSQL with wrong port
+    response = ppost(
+        "/v1/m/datasources",
+        content=CreateDatasourceRequest(
+            organization_id=org_id,
+            name="test invalid credentials",
+            dsn=PostgresDsn(
+                host="127.0.0.1",
+                user="postgres",
+                port=9999,  # Invalid port
+                password=RevealedStr(value="postgres"),
+                dbname="postgres",
+                sslmode="disable",
+                search_path=None,
+            ),
+        ).model_dump_json(),
+    )
+    ds_id = CreateDatasourceResponse.model_validate(response.json()).id
+
+    response = pget(f"/v1/m/datasources/{ds_id}/inspect")
+    assert response.status_code == 502, response.content
+    assert "CONNECTION ERROR" in response.json()["message"]
+
+    # Test credential Error (502) - BigQuery with invalid service account
+    gcloud_invalid = copy.deepcopy(SAMPLE_GCLOUD_SERVICE_ACCOUNT)
+    response = ppost(
+        "/v1/m/datasources",
+        content=CreateDatasourceRequest(
+            organization_id=org_id,
+            name="test invalid credentials",
+            dsn=BqDsn(
+                project_id="some-project",
+                dataset_id="ds",
+                credentials=GcpServiceAccount(content=json.dumps(gcloud_invalid)),
+            ),
+        ).model_dump_json(),
+    )
+    ds_id = CreateDatasourceResponse.model_validate(response.json()).id
+
+    # Inspect datasource should return 502 for credential errors
+    response = pget(f"/v1/m/datasources/{ds_id}/inspect")
+    assert response.status_code == 502, response.content
+    assert "CONNECTION ERROR" in response.json()["message"]
 
 
 def test_delete_datasource(testing_datasource_with_user, pget, udelete, pdelete):
@@ -1155,7 +1266,21 @@ async def test_lifecycle_with_db(testing_datasource, ppost, ppatch, pget, pdelet
 
     # Commit the new experiment.
     response = ppost(f"/v1/m/datasources/{testing_datasource.ds.id}/experiments/{parsed_experiment_id}/commit")
-    assert response.status_code == 204, response.content
+    assert response.status_code == 204, (parsed_experiment_id, response.content)
+
+    # Verify it committed.
+    response = pget(f"/v1/m/datasources/{testing_datasource.ds.id}/experiments/{parsed_experiment_id}")
+    assert response.status_code == 200, response.content
+    assert GetExperimentResponse.model_validate(response.json()).state == ExperimentState.COMMITTED
+
+    # Attempting to abandon a committed experiment should fail
+    response = ppost(f"/v1/m/datasources/{testing_datasource.ds.id}/experiments/{parsed_experiment_id}/abandon")
+    assert response.status_code == 400, (parsed_experiment_id, response.content)
+
+    # Verify it is still committed.
+    response = pget(f"/v1/m/datasources/{testing_datasource.ds.id}/experiments/{parsed_experiment_id}")
+    assert response.status_code == 200, response.content
+    assert GetExperimentResponse.model_validate(response.json()).state == ExperimentState.COMMITTED
 
     # Update the experiment.
     response = ppatch(
@@ -1226,6 +1351,38 @@ async def test_lifecycle_with_db(testing_datasource, ppost, ppatch, pget, pdelet
     assert response.status_code == 204, response.content
 
 
+async def test_abandon_experiment(testing_datasource_with_user, ppost, pget):
+    datasource_id = testing_datasource_with_user.ds.id
+    design_spec = PreassignedFrequentistExperimentSpec(
+        experiment_type=ExperimentsType.FREQ_PREASSIGNED,
+        participant_type="test_participant_type",
+        experiment_name="test experiment",
+        description="test experiment",
+        start_date=datetime(2024, 1, 1, tzinfo=UTC),
+        end_date=datetime.now(UTC) + timedelta(days=1),
+        arms=[Arm(arm_name="C", arm_description="C"), Arm(arm_name="T", arm_description="T")],
+        metrics=[DesignSpecMetricRequest(field_name="is_engaged", metric_pct_change=0.1)],
+        strata=[],
+        filters=[],
+    )
+    response = ppost(
+        f"/v1/m/datasources/{datasource_id}/experiments",
+        params={"chosen_n": 1},
+        content=CreateExperimentRequest(design_spec=design_spec).model_dump_json(),
+    )
+    assert response.status_code == 200, response.content
+    parsed_response = CreateExperimentResponse.model_validate(response.json())
+    assert parsed_response.state == ExperimentState.ASSIGNED
+    parsed_experiment_id = parsed_response.experiment_id
+
+    response = ppost(f"/v1/m/datasources/{datasource_id}/experiments/{parsed_experiment_id}/abandon")
+    assert response.status_code == 204, response.content
+
+    response = pget(f"/v1/m/datasources/{datasource_id}/experiments/{parsed_experiment_id}")
+    assert response.status_code == 200, response.content
+    assert GetExperimentResponse.model_validate(response.json()).state == ExperimentState.ABANDONED
+
+
 async def test_power_check_with_unbalanced_arms(testing_datasource_with_user, ppost):
     """Test power check endpoint with balanced vs unbalanced arms."""
     design_spec = PreassignedFrequentistExperimentSpec(
@@ -1276,9 +1433,9 @@ async def test_power_check_with_unbalanced_arms(testing_datasource_with_user, pp
 
     # And again with three arms
     design_spec.arms = [*design_spec.arms, Arm(arm_name="arm3", arm_description="Arm 3")]
-    design_spec.arms[0].arm_weight = 15
-    design_spec.arms[1].arm_weight = 60
-    design_spec.arms[2].arm_weight = 25
+    design_spec.arms[0].arm_weight = 10
+    design_spec.arms[1].arm_weight = 50
+    design_spec.arms[2].arm_weight = 40
     response = ppost(
         f"/v1/m/datasources/{testing_datasource_with_user.ds.id}/power",
         content=PowerRequest(design_spec=design_spec).model_dump_json(),
@@ -1290,8 +1447,10 @@ async def test_power_check_with_unbalanced_arms(testing_datasource_with_user, pp
     metric_analysis3 = power_response3.analyses[0]
     assert metric_analysis3.metric_spec.field_name == "current_income"
     assert metric_analysis3.target_n is not None
-    # Max ratio is still 4:1 as in case 2, but the control is now 15% of the total instead of 20%.
-    assert metric_analysis3.target_n == math.ceil(metric_analysis2.target_n * 0.2 / 0.15)
+    # Min ratio is still 4:1 (the smallest treatment arm) as in the previous case, but the control
+    # is now only 10% of the total instead of 20%, so we need more participants than before to
+    # ensure that comparison with the smaller arm still has sufficient power.
+    assert metric_analysis3.target_n == math.ceil(metric_analysis2.target_n * 0.2 / 0.10)
 
 
 async def test_create_experiment_with_invalid_design_url(xngin_session, testing_datasource_with_user, ppost):
@@ -1917,11 +2076,18 @@ def test_freq_experiments_analyze(testing_experiment, pget):
     baseline_arms = [arm for arm in metric_analysis.arm_analyses if arm.is_baseline]
     assert len(baseline_arms) == 1
     assert baseline_arms[0].is_baseline
-    for analysis in experiment_analysis.metric_analyses:
+    for metric_analysis in experiment_analysis.metric_analyses:
         # Verify arm_ids match the database model.
-        assert {arm.arm_id for arm in analysis.arm_analyses} == {arm.id for arm in testing_experiment.arms}
+        assert {arm.arm_id for arm in metric_analysis.arm_analyses} == {arm.id for arm in testing_experiment.arms}
         # id=0 doesn't exist in our test data, so we'll have 1 missing value across all arms.
-        assert sum([arm.num_missing_values for arm in analysis.arm_analyses]) == 1
+        assert sum([arm.num_missing_values for arm in metric_analysis.arm_analyses]) == 1
+        for analysis in metric_analysis.arm_analyses:
+            assert analysis.ci_lower is not None
+            assert analysis.ci_upper is not None
+            assert analysis.ci_lower < analysis.estimate < analysis.ci_upper
+            assert analysis.mean_ci_lower is not None
+            assert analysis.mean_ci_upper is not None
+            assert analysis.mean_ci_lower < analysis.mean_ci_upper
 
 
 @pytest.mark.parametrize(
@@ -2011,22 +2177,37 @@ async def test_analyze_experiment_whose_assignments_have_no_dwh_data(testing_dat
     assert "Check that ids used in assignment are usable with your unique identifier (id)" in response.json()["message"]
 
 
-async def test_analyze_experiment_with_no_assignments_in_one_arm_yet(testing_datasource_with_user, ppost, pget):
+async def test_analyze_experiment_with_no_assignments_in_one_arm_yet(
+    xngin_session, testing_datasource_with_user, ppost, pget
+):
     datasource_id = testing_datasource_with_user.ds.id
     experiment_id = (await make_freq_online_experiment(datasource_id, ppost, pget)).experiment_id
 
-    # Create a new participant assignment for one arm.
-    response = pget(f"/v1/m/datasources/{datasource_id}/experiments/{experiment_id}/assignments/1")
-    assert response.status_code == 200, response.content
-    assignment_response = GetParticipantAssignmentResponse.model_validate(response.json())
-    assert assignment_response.assignment is not None
-    assigned_arm_id = assignment_response.assignment.arm_id
+    # Setup: create artificial assignments directly in db to deterministically allocate them all to
+    # one arm. Multiple are used for stable analysis calcs.
+    arms = (await xngin_session.scalars(select(tables.Arm).where(tables.Arm.experiment_id == experiment_id))).all()
+    assigned_arm_id = arms[0].id
+    arm_assignments = []
+    expected_num_assignments = 3
+    for i in range(1, 1 + expected_num_assignments):
+        arm_assignments.append(
+            tables.ArmAssignment(
+                experiment_id=experiment_id,
+                participant_type="test_participant_type",
+                participant_id=f"{i}",
+                arm_id=assigned_arm_id,
+                strata=[],
+            )
+        )
+    xngin_session.add_all(arm_assignments)
+    await xngin_session.commit()
 
+    # Test analysis when one arm has no assignments still has the expected ArmAnalysis for each.
     response = pget(f"/v1/m/datasources/{datasource_id}/experiments/{experiment_id}/analyze")
     assert response.status_code == 200, response.content
     analysis_response = FreqExperimentAnalysisResponse.model_validate(response.json())
     assert analysis_response.experiment_id == experiment_id
-    assert analysis_response.num_participants == 1
+    assert analysis_response.num_participants == expected_num_assignments
     assert analysis_response.num_missing_participants == 0
     assert len(analysis_response.metric_analyses) == 1
     metric_analysis = analysis_response.metric_analyses[0]
@@ -2035,10 +2216,9 @@ async def test_analyze_experiment_with_no_assignments_in_one_arm_yet(testing_dat
     for analysis in metric_analysis.arm_analyses:
         if analysis.arm_id == assigned_arm_id:
             assert analysis.estimate is not None
-            # Next 3 are all none because stderr is None with only 1 data point
-            assert analysis.p_value is None
-            assert analysis.t_stat is None
-            assert analysis.std_error is None
+            assert analysis.p_value is not None
+            assert analysis.t_stat is not None
+            assert analysis.std_error is not None
             assert analysis.num_missing_values == 0
         else:
             assert analysis.estimate == 0
@@ -2399,6 +2579,16 @@ def test_snapshots(pget, ppost, pdelete, uget, ppatch):
     assert response.status_code == 200, response.content
     create_bad_snapshot_response = CreateSnapshotResponse.model_validate(response.json())
 
+    # get the snapshot we just created and verify it is failed
+    response = pget(
+        f"/v1/m/organizations/{create_organization_response.id}/datasources/{create_datasource_response.id}"
+        f"/experiments/{experiment_id}/snapshots/{create_bad_snapshot_response.id}"
+    )
+    assert response.status_code == 200, response.content
+    get_snapshot_response = GetSnapshotResponse.model_validate(response.json())
+    assert get_snapshot_response.snapshot.status == SnapshotStatus.FAILED
+    assert get_snapshot_response.snapshot.data is None
+
     list_snapshot_response = pget(
         f"/v1/m/organizations/{create_organization_response.id}/datasources/{create_datasource_response.id}"
         f"/experiments/{experiment_id}/snapshots"
@@ -2406,9 +2596,10 @@ def test_snapshots(pget, ppost, pdelete, uget, ppatch):
     assert list_snapshot_response.status_code == 200, list_snapshot_response.content
     list_snapshot = ListSnapshotsResponse.model_validate(list_snapshot_response.json())
     assert len(list_snapshot.items) == 2, list_snapshot
-    assert list_snapshot.items[0].updated_at < list_snapshot.items[1].updated_at, list_snapshot
+    assert list_snapshot.items[0].updated_at > list_snapshot.items[1].updated_at, list_snapshot
 
-    success_snapshot, failed_snapshot = list_snapshot.items
+    failed_snapshot, success_snapshot = list_snapshot.items
+    assert list_snapshot.latest_failure == failed_snapshot.updated_at
 
     assert success_snapshot.id == create_snapshot_response.id
     assert success_snapshot.experiment_id == experiment_id
@@ -2458,6 +2649,44 @@ def test_snapshots(pget, ppost, pdelete, uget, ppatch):
     assert get_snapshot_response.snapshot.experiment_id == success_snapshot.experiment_id
     assert get_snapshot_response.snapshot.status == success_snapshot.status
     assert get_snapshot_response.snapshot.data == success_snapshot.data
+
+    # list snapshots with empty status_ param
+    list_snapshot_response = pget(
+        f"/v1/m/organizations/{create_organization_response.id}/datasources/{create_datasource_response.id}"
+        f"/experiments/{experiment_id}/snapshots?status="
+    )
+    assert list_snapshot_response.status_code == 422, list_snapshot_response.content
+
+    # list snapshots filtered for running
+    list_snapshot_response = pget(
+        f"/v1/m/organizations/{create_organization_response.id}/datasources/{create_datasource_response.id}"
+        f"/experiments/{experiment_id}/snapshots?status=running"
+    )
+    assert list_snapshot_response.status_code == 200, list_snapshot_response.content
+    list_snapshot = ListSnapshotsResponse.model_validate(list_snapshot_response.json())
+    assert len(list_snapshot.items) == 0, list_snapshot
+    assert list_snapshot.latest_failure == failed_snapshot.updated_at, list_snapshot
+
+    # list snapshots restricted to success
+    list_snapshot_response = pget(
+        f"/v1/m/organizations/{create_organization_response.id}/datasources/{create_datasource_response.id}"
+        f"/experiments/{experiment_id}/snapshots?status=success"
+    )
+    assert list_snapshot_response.status_code == 200, list_snapshot_response.content
+    list_snapshot = ListSnapshotsResponse.model_validate(list_snapshot_response.json())
+    assert len(list_snapshot.items) == 1, list_snapshot
+    assert list_snapshot.latest_failure == failed_snapshot.updated_at, list_snapshot
+
+    # list snapshots restricted to failed
+    list_snapshot_response = pget(
+        f"/v1/m/organizations/{create_organization_response.id}/datasources/{create_datasource_response.id}"
+        f"/experiments/{experiment_id}/snapshots?status=failed"
+    )
+    assert list_snapshot_response.status_code == 200, list_snapshot_response.content
+    list_snapshot = ListSnapshotsResponse.model_validate(list_snapshot_response.json())
+    assert len(list_snapshot.items) == 1, list_snapshot
+    assert list_snapshot.latest_failure == list_snapshot.items[0].updated_at, list_snapshot
+    assert list_snapshot.latest_failure == failed_snapshot.updated_at, list_snapshot
 
     # Attempt to read a snapshot as a user that doesn't have access to the snapshot.
     response = uget(

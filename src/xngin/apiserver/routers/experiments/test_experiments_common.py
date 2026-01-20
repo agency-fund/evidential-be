@@ -1,4 +1,5 @@
 import dataclasses
+import inspect
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from typing import Any, cast
@@ -238,7 +239,7 @@ async def insert_experiment_and_arms(
     xngin_session: AsyncSession,
     datasource: tables.Datasource,
     experiment_type: ExperimentsType = ExperimentsType.FREQ_PREASSIGNED,
-    state=ExperimentState.COMMITTED,
+    state: ExperimentState = ExperimentState.COMMITTED,
     end_date: datetime | None = None,
     prior_type: PriorTypes = PriorTypes.NORMAL,
     reward_type: LikelihoodTypes = LikelihoodTypes.NORMAL,
@@ -1094,7 +1095,11 @@ async def test_state_setting_experiment_impl(
     experiment = await insert_experiment_and_arms(xngin_session, testing_datasource.ds, state=initial_state)
 
     try:
-        response = await method_under_test(xngin_session, experiment)
+        sig = inspect.signature(method_under_test)
+        if len(sig.parameters) == 2:
+            response = await method_under_test(xngin_session, experiment)
+        else:
+            response = await method_under_test(experiment)
     except HTTPException as e:
         assert e.status_code == expected_status  # noqa: PT017
         assert e.detail == expected_detail  # noqa: PT017
@@ -1700,6 +1705,10 @@ async def test_analyze_experiment_freq_impl_with_no_outcomes_for_any_arms(xngin_
         assert arm_analysis.p_value is not None and np.isnan(arm_analysis.p_value)
         assert arm_analysis.t_stat is not None and np.isnan(arm_analysis.t_stat)
         assert arm_analysis.std_error is not None and np.isnan(arm_analysis.std_error)
+        assert arm_analysis.ci_lower is not None and np.isnan(arm_analysis.ci_lower)
+        assert arm_analysis.ci_upper is not None and np.isnan(arm_analysis.ci_upper)
+        assert arm_analysis.mean_ci_lower is not None and np.isnan(arm_analysis.mean_ci_lower)
+        assert arm_analysis.mean_ci_upper is not None and np.isnan(arm_analysis.mean_ci_upper)
         assert arm_analysis.num_missing_values == -1
 
 

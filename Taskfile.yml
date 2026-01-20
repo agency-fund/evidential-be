@@ -302,7 +302,7 @@ tasks:
     env:
       DATABASE_URL: "{{.XNGIN_DEVAPP_DSN}}"
     cmd: |
-      uv run xngin-cli add-user
+      uv run xngin-cli add-user {{.CLI_ARGS}}
   start-snapshotter:
     desc: "Starts the snapshot collector."
     interactive: true

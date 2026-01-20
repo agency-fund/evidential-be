@@ -142,7 +142,7 @@ async def _handle_one_snapshot_safely(snapshot: tables.Snapshot, snapshot_timeou
                 snapshot.status = "success"
         except Exception as exc:
             sentry_sdk.metrics.count("snapshots.failed", 1, attributes={"experiment_id": snapshot.experiment_id})
-            logger.opt(exception=exc).info(f"{experiment.id}.{snapshot.id}")
+            logger.opt(exception=exc).info(f"{experiment.id}.{snapshot.id}: exception")
             snapshot.status = "failed"
             snapshot.message = f"{type(exc).__name__}: {exc}"
         sentry_sdk.metrics.count("snapshots.finished", 1, attributes={"experiment_id": snapshot.experiment_id})

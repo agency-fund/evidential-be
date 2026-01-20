@@ -1,3 +1,4 @@
+import warnings
 from datetime import UTC, datetime, timedelta
 
 from sqlalchemy import select
@@ -102,7 +103,11 @@ async def test_make_first_snapshot_of_freq_preassigned(xngin_session, testing_da
             .where(tables.Snapshot.status == "pending")
         )
     ).scalar_one()
-    await make_first_snapshot(experiment.id, snapshot_id)
+    # Suppress expected statsmodels warnings due to not actually assigning any units to the arms for
+    # this test, as we're not focused on the actual analysis.
+    with warnings.catch_warnings():
+        warnings.filterwarnings(action="ignore", message=r"(divide by zero|invalid value).*", category=RuntimeWarning)
+        await make_first_snapshot(experiment.id, snapshot_id)
     analysis = await get_latest_snapshot_analysis(xngin_session, experiment.id)
     # Verify analysis payload is in the order of experiment.arms above.
     assert isinstance(analysis, FreqExperimentAnalysisResponse)
@@ -128,7 +133,9 @@ async def test_make_first_snapshot_of_freq_preassigned(xngin_session, testing_da
             .where(tables.Snapshot.status == "pending")
         )
     ).scalar_one()
-    await make_first_snapshot(experiment.id, snapshot_id)
+    with warnings.catch_warnings():
+        warnings.filterwarnings(action="ignore", message=r"(divide by zero|invalid value).*", category=RuntimeWarning)
+        await make_first_snapshot(experiment.id, snapshot_id)
     analysis = await get_latest_snapshot_analysis(xngin_session, experiment.id)
 
     assert isinstance(analysis, FreqExperimentAnalysisResponse)
@@ -156,7 +163,9 @@ async def test_make_first_snapshot_of_freq_preassigned(xngin_session, testing_da
             .where(tables.Snapshot.status == "pending")
         )
     ).scalar_one()
-    await make_first_snapshot(experiment.id, snapshot_id)
+    with warnings.catch_warnings():
+        warnings.filterwarnings(action="ignore", message=r"(divide by zero|invalid value).*", category=RuntimeWarning)
+        await make_first_snapshot(experiment.id, snapshot_id)
     analysis = await get_latest_snapshot_analysis(xngin_session, experiment.id)
 
     assert isinstance(analysis, FreqExperimentAnalysisResponse)

@@ -1,6 +1,7 @@
 """Command line tool for various xngin-related operations."""
 
 import asyncio
+import functools
 import json
 import logging
 import re
@@ -18,25 +19,19 @@ import typer
 import zstandard
 from email_validator import EmailNotValidError, validate_email
 from fastapi import FastAPI
-from pydantic import ValidationError
-from pydantic_core import from_json
 from rich.console import Console
 from sqlalchemy import create_engine, make_url
 from sqlalchemy.exc import IntegrityError, OperationalError
-from sqlalchemy.orm import Session
+from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 from sqlalchemy.sql.compiler import IdentifierPreparer
 
 import xngin.apiserver.openapi
 from xngin.apiserver.dwh.dwh_session import CannotFindTableError, DwhSession
 from xngin.apiserver.dwh.inspection_types import ParticipantsSchema
 from xngin.apiserver.dwh.inspections import create_schema_from_table
-from xngin.apiserver.settings import (
-    Datasource,
-    Dsn,
-    SettingsForTesting,
-)
+from xngin.apiserver.settings import Datasource, Dsn
 from xngin.apiserver.sqla import tables
-from xngin.apiserver.storage.bootstrap import setup_user_and_first_datasource
+from xngin.apiserver.storage.bootstrap import create_entities_for_first_time_user
 from xngin.apiserver.testing.testing_dwh_def import TESTING_DWH_RAW_DATA
 from xngin.xsecrets import secretservice
 from xngin.xsecrets.nacl_provider import NaclProviderKeyset
@@ -55,6 +50,8 @@ app = typer.Typer(help=__doc__)
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s - %(message)s")
 
 secretservice.setup()
+
+async_command = lambda f: functools.wraps(f)(lambda *args, **kwargs: asyncio.run(f(*args, **kwargs)))  # noqa: E731
 
 
 class TextOrJson(StrEnum):
@@ -385,7 +382,8 @@ def create_testing_dwh(
 
 
 @app.command()
-def create_participants_schema(
+@async_command
+async def create_participants_schema(
     dsn: Annotated[str, typer.Argument(..., help="The SQLAlchemy DSN of a data warehouse.")],
     table_name: Annotated[
         str,
@@ -410,7 +408,7 @@ def create_participants_schema(
     ] = True,
 ):
     """Generates a ParticipantsSchema from a datasource."""
-    config = asyncio.run(create_participants_schema_from_table(dsn, table_name, use_sa_autoload, unique_id_col))
+    config = await create_participants_schema_from_table(dsn, table_name, use_sa_autoload, unique_id_col)
     print(json.dumps(config.model_dump(), sort_keys=True, indent=2))
 
 
@@ -440,7 +438,7 @@ def export_json_schemas(output: Path = Path(".schemas")):
     """Generates JSON schemas for Xngin settings files."""
     if not output.exists():
         output.mkdir()
-    for model in (SettingsForTesting, ParticipantsSchema, Datasource):
+    for model in (ParticipantsSchema, Datasource):
         filename = output / (model.__name__ + ".schema.json")
         with open(filename, "w") as outf:
             outf.write(json.dumps(model.model_json_schema(), indent=2, sort_keys=True))
@@ -456,21 +454,6 @@ def export_openapi_spec(output: Path = Path("openapi.json")):
     routes.register(app)
     with open(output, "w") as outf:
         json.dump(xngin.apiserver.openapi.custom_openapi(app), outf, sort_keys=True, indent=2)
-
-
-@app.command()
-def validate_testing_settings(file: Path):
-    """Validates a settings .json file against the SettingsForTesting model."""
-
-    with open(file) as f:
-        config = f.read()
-    try:
-        SettingsForTesting.model_validate(from_json(config))
-    except ValidationError as verr:
-        print(f"{file} failed validation:", file=sys.stderr)
-        for details in verr.errors():
-            print(details, file=sys.stderr)
-        raise typer.Exit(1) from verr
 
 
 @app.command()
@@ -563,7 +546,8 @@ def validate_arg_is_email(email: str):
 
 
 @app.command()
-def add_user(
+@async_command
+async def add_user(
     database_url: Annotated[
         str,
         typer.Option(
@@ -573,12 +557,12 @@ def add_user(
     ],
     email: Annotated[
         str | None,
-        typer.Option(
+        typer.Argument(
             help="Email address of the user to add. If not provided, will prompt interactively.",
             callback=lambda v: validate_arg_is_email(v) if v else None,
             envvar="XNGIN_ADD_USER_EMAIL",
         ),
-    ] = None,
+    ],
     privileged: Annotated[
         bool,
         typer.Option(help="Whether the user should have privileged access."),
@@ -590,95 +574,61 @@ def add_user(
             envvar="XNGIN_DEVDWH_DSN",
         ),
     ] = None,
-    output: Annotated[TextOrJson, typer.Option(help="Output format.")] = TextOrJson.text,
 ):
     """Adds a new user to the database.
 
     This command connects to the specified database and adds a new user with the given email address.
     If the --privileged flag is set, the user will be granted privileged access.
 
-    If email is not provided via the --email flag, the command will prompt for it interactively.
+    If email is not provided as an argument, the command will prompt for it interactively.
 
     This command is only useful for local development databases; do not use it against production databases.
     """
-    if output == TextOrJson.text:
-        console.print(f"Using application database: [cyan]{database_url}[/cyan]")
-        console.print(f"Using data warehouse: [cyan]{dwh}[/cyan]")
+    console.print(f"Using application database: [cyan]{database_url}[/cyan]")
+    console.print(f"Using data warehouse: [cyan]{dwh}[/cyan]")
 
-    if email is None:
-        while True:
-            email_input = typer.prompt("Enter email address")
-            try:
-                email = validate_email(email_input, check_deliverability=False).normalized
-                break
-            except EmailNotValidError as err:
-                err_console.print(f"[bold red]Invalid email:[/bold red] {err!s}")
+    console.print(f"Adding user with email: [cyan]{email}[/cyan]")
+    console.print(f"Privileged access: [cyan]{privileged}[/cyan]")
 
-        privileged = typer.confirm("Should this user have privileged access?", default=False)
+    if not dwh:
+        console.print(
+            "\n[bold yellow]Warning: Not adding a datasource for a data warehouse "
+            "because the --dwh flag was not specified or environment variable "
+            "XNGIN_DEVDWH_DSN is unset.[/bold yellow]"
+        )
 
-    if output == TextOrJson.text:
-        console.print(f"Adding user with email: [cyan]{email}[/cyan]")
-        console.print(f"Privileged access: [cyan]{privileged}[/cyan]")
-
-        if not dwh:
-            console.print(
-                "\n[bold yellow]Warning: Not adding a datasource for a data warehouse "
-                "because the --dwh flag was not specified or environment variable "
-                "XNGIN_DEVDWH_DSN is unset.[/bold yellow]"
-            )
-
-    engine = create_engine(database_url)
-    with Session(engine) as session:
+    engine = create_async_engine(database_url)
+    async with AsyncSession(engine) as session:
         try:
-            user = setup_user_and_first_datasource(session, tables.User(email=email, is_privileged=privileged), dwh)
-            session.commit()
-            if output == TextOrJson.text:
-                console.print("\n[bold green]User added successfully:[/bold green]")
-                console.print(f"User ID: [cyan]{user.id}[/cyan]")
-                console.print(f"Email: [cyan]{user.email}[/cyan]")
-                console.print(f"Privileged: [cyan]{user.is_privileged}[/cyan]")
+            user = await create_entities_for_first_time_user(
+                session, tables.User(email=email, is_privileged=privileged), dwh
+            )
+            await session.commit()
+            await session.refresh(user)
+            console.print("\n[bold green]User added successfully:[/bold green]")
+            console.print(f"User ID: [cyan]{user.id}[/cyan]")
+            console.print(f"Email: [cyan]{user.email}[/cyan]")
+            console.print(f"Privileged: [cyan]{user.is_privileged}[/cyan]")
             api_keys = {}
-            for organization in user.organizations:
-                if output == TextOrJson.text:
-                    console.print(f"Organization ID: [cyan]{organization.id}[/cyan]")
-                for datasource in organization.datasources:
+            for organization in await user.awaitable_attrs.organizations:
+                console.print(f"Organization: [cyan]{organization.name}[/cyan] (ID: {organization.id})")
+                for datasource in await organization.awaitable_attrs.datasources:
                     from xngin.apiserver import apikeys  # noqa: PLC0415
 
                     label, key = apikeys.make_key()
                     key_hash = apikeys.hash_key_or_raise(key)
                     api_keys[datasource.id] = key
-                    datasource.api_keys.append(tables.ApiKey(id=label, key=key_hash))
-                    if output == TextOrJson.text:
-                        console.print(f"  Datasource ID: [cyan]{datasource.id}[/cyan] [blue](API Key: {key})[/blue]")
-
-            if output == TextOrJson.json:
-                console.print(
-                    json.dumps(
-                        {
-                            "database_url": database_url,
-                            "dwh_uri": dwh,
-                            "user": {
-                                "email": user.email,
-                                "id": user.id,
-                                "is_privileged": user.is_privileged,
-                            },
-                            "organizations": [
-                                {
-                                    "id": o.id,
-                                    "datasources": [
-                                        {"id": ds.id, "api_keys": [api_keys[ds.id]]} for ds in o.datasources
-                                    ],
-                                }
-                                for o in user.organizations
-                            ],
-                        },
-                        sort_keys=True,
-                        indent=2,
+                    (await datasource.awaitable_attrs.api_keys).append(tables.ApiKey(id=label, key=key_hash))
+                    console.print(
+                        f"  Datasource: [cyan]{datasource.name}[/cyan] "
+                        f"(ID: {datasource.id}) "
+                        f"[blue](API Key: {key})[/blue]"
                     )
-                )
+                    for experiment in await datasource.awaitable_attrs.experiments:
+                        console.print(f"    Experiment: [cyan]{experiment.name}[/cyan] (ID: {experiment.id})")
         except IntegrityError as err:
-            session.rollback()
-            err_console.print(f"[bold red]Error:[/bold red] User with email '{email}' already exists.")
+            await session.rollback()
+            err_console.print(f"[bold red]Error:[/bold red] {err}")
             raise typer.Exit(1) from err
 
 

@@ -14,6 +14,7 @@ from xngin.apiserver.dns.safe_resolve import safe_resolve
 from xngin.apiserver.dwh import queries
 from xngin.apiserver.dwh.inspection_types import FieldDescriptor
 from xngin.apiserver.dwh.inspections import generate_field_descriptors
+from xngin.apiserver.exceptions_common import DwhConnectionError, DwhDatabaseDoesNotExistError
 from xngin.apiserver.routers.common_api_types import Filter
 from xngin.apiserver.settings import (
     SA_LOGGER_NAME_FOR_DWH,
@@ -24,8 +25,14 @@ from xngin.apiserver.settings import (
 )
 
 
-class DwhDatabaseDoesNotExistError(Exception):
-    """Raised when the target database or dataset does not exist."""
+def _is_postgres_database_not_found_error(exc: OperationalError) -> bool:
+    """Returns true when the exception indicates a Postgres database does not exist."""
+    return (
+        len(exc.args) > 0
+        and isinstance(exc.args[0], str)
+        and "FATAL:  database" in exc.args[0]
+        and "does not exist" in exc.args[0]
+    )
 
 
 def _safe_url(url: sqlalchemy.engine.url.URL) -> sqlalchemy.engine.url.URL:
@@ -35,16 +42,6 @@ def _safe_url(url: sqlalchemy.engine.url.URL) -> sqlalchemy.engine.url.URL:
         if cleaned.query.get(qp):
             cleaned = cleaned.update_query_dict({qp: "redacted"})
     return cleaned
-
-
-def _is_postgres_database_not_found_error(exc: OperationalError) -> bool:
-    """Returns true when the exception indicates a Postgres database does not exist."""
-    return (
-        len(exc.args) > 0
-        and isinstance(exc.args[0], str)
-        and "FATAL:  database" in exc.args[0]
-        and "does not exist" in exc.args[0]
-    )
 
 
 @dataclass
@@ -338,13 +335,15 @@ class DwhSession:
                 result = self.session.execute(query, {"search_path": self.dwh_config.search_path or "public"})
                 return list(result.scalars().all())
             inspected = sqlalchemy.inspect(self._safe_engine())
+
             if not isinstance(inspected, Inspector):
                 raise TypeError(f"Unexpected type of inspector: {type(inspected)}")
             return list(sorted(inspected.get_table_names() + inspected.get_view_names()))
+
         except OperationalError as exc:
             if _is_postgres_database_not_found_error(exc):
                 raise DwhDatabaseDoesNotExistError(str(exc)) from exc
-            raise
+            raise DwhConnectionError(exc) from exc
         except google.api_core.exceptions.NotFound as exc:
             # Google returns a 404 when authentication succeeds but when the specified datasource does not exist.
             raise DwhDatabaseDoesNotExistError(str(exc)) from exc
@@ -378,14 +377,16 @@ class DwhSession:
             f"Connecting to customer dwh: url={_safe_url(url)}, "
             f"backend={url.get_backend_name()}, connect_args={connect_args}"
         )
-
-        engine = sqlalchemy.create_engine(
-            url,
-            connect_args=connect_args,
-            logging_name=SA_LOGGER_NAME_FOR_DWH,
-            execution_options={"logging_token": "dwh"},
-            poolclass=sqlalchemy.pool.NullPool,
-        )
+        try:
+            engine = sqlalchemy.create_engine(
+                url,
+                connect_args=connect_args,
+                logging_name=SA_LOGGER_NAME_FOR_DWH,
+                execution_options={"logging_token": "dwh"},
+                poolclass=sqlalchemy.pool.NullPool,
+            )
+        except Exception as exc:
+            raise DwhConnectionError(exc) from exc
 
         self._extra_engine_setup(engine)
         return engine

@@ -32,20 +32,30 @@ class RequestEncapsulationMiddleware:
         {"data": {"payload": {"actual": "content"}}}
     """
 
-    def __init__(self, app: ASGIApp, *, unwrap_param: str = "_unwrap"):
+    def __init__(self, app: ASGIApp, *, unwrap_param: str = "_unwrap", path_prefix: str | None = None) -> None:
         """Initialize the middleware.
 
         Args:
             app: The ASGI application to wrap.
             unwrap_param: Query parameter name that specifies the JSON Pointer path.
+            path_prefix: Optional prefix to add to the JSON Pointer path.
         """
         self._app = app
         self._unwrap_param = unwrap_param
+        self._path_prefix = path_prefix
 
     async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
         if scope["type"] != "http":
             await self._app(scope, receive, send)
             return
+
+        # Check for matching path prefix
+        if self._path_prefix:
+            path = scope["path"]
+            if not path.startswith(self._path_prefix):
+                await self._app(scope, receive, send)
+                return
+
         method = scope["method"]
         if method not in _SUPPORTED_METHODS:
             await self._app(scope, receive, send)
