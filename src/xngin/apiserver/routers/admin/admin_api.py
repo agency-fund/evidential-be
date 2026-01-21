@@ -34,6 +34,7 @@ from xngin.apiserver.apikeys import hash_key_or_raise, make_key
 from xngin.apiserver.dependencies import xngin_db_session
 from xngin.apiserver.dns.safe_resolve import DnsLookupError, safe_resolve
 from xngin.apiserver.dwh.dwh_session import (
+    CannotFindTableError,
     DwhSession,
     NoDwh,
 )
@@ -42,7 +43,6 @@ from xngin.apiserver.dwh.inspections import (
     build_proposed_and_drift,
     create_inspect_table_response_from_table,
     dehydrate_participants,
-    rehydrate_participants,
 )
 from xngin.apiserver.dwh.queries import (
     get_stats_on_filters,
@@ -69,6 +69,7 @@ from xngin.apiserver.routers.admin.admin_api_types import (
     CreateParticipantsTypeResponse,
     CreateSnapshotResponse,
     DatasourceSummary,
+    Drift,
     EventSummary,
     GetDatasourceResponse,
     GetOrganizationResponse,
@@ -88,6 +89,7 @@ from xngin.apiserver.routers.admin.admin_api_types import (
     PostgresDsn,
     RedshiftDsn,
     SnapshotStatus,
+    TableDeleted,
     UpdateArmRequest,
     UpdateDatasourceRequest,
     UpdateExperimentRequest,
@@ -1199,7 +1201,7 @@ async def inspect_participant_types(
 
 
 @router.get("/datasources/{datasource_id}/participants/{participant_id}")
-async def get_participant_types(
+async def get_participant_type(
     datasource_id: str,
     participant_id: str,
     session: Annotated[AsyncSession, Depends(xngin_db_session)],
@@ -1209,12 +1211,16 @@ async def get_participant_types(
     # CannotFindParticipantsError will be handled by exceptionhandlers.
     participants = ds.get_config().find_participants(participant_id)
     async with DwhSession(ds.get_config().dwh) as dwh:
-        inspected = await dwh.inspect_table(participants.table_name)
-        # Add all of the columns from the DWH that are not already described by participants to participants.
-        hydrated = rehydrate_participants(participants, inspected)
-        # Compose a new participant config from an existing one and build diffs
-        proposed, drift = build_proposed_and_drift(participants, inspected)
-    return GetParticipantsTypeResponse(current=hydrated, proposed=proposed, drift=drift)
+        try:
+            inspected = await dwh.inspect_table(participants.table_name)
+            # Compose a new participant config from an existing one and build diffs
+            # This will add all of the columns from the DWH that are not already described by participants to proposed.
+            proposed, drift = build_proposed_and_drift(participants, inspected)
+        except CannotFindTableError:
+            proposed = participants
+            drift = Drift(schema_diff=[TableDeleted(table_name=participants.table_name)])
+
+        return GetParticipantsTypeResponse(current=participants, proposed=proposed, drift=drift)
 
 
 @router.patch(

@@ -15,6 +15,7 @@ from xngin.apiserver import flags
 from xngin.apiserver.conftest import delete_seeded_users
 from xngin.apiserver.dns import safe_resolve
 from xngin.apiserver.dwh.inspection_types import FieldDescriptor, ParticipantsSchema
+from xngin.apiserver.dwh.inspections import ColumnDeleted, Drift, FieldChangedType
 from xngin.apiserver.routers.admin.admin_api_converters import (
     CREDENTIALS_UNAVAILABLE_MESSAGE,
 )
@@ -51,6 +52,7 @@ from xngin.apiserver.routers.admin.admin_api_types import (
     RedshiftDsn,
     RevealedStr,
     SnapshotStatus,
+    TableDeleted,
     UpdateArmRequest,
     UpdateDatasourceRequest,
     UpdateExperimentRequest,
@@ -1126,6 +1128,103 @@ def test_create_participants_type_invalid(testing_datasource_with_user, ppost):
     )
     assert response.status_code == 422, response.content
     assert "no columns marked as unique ID." in response.json()["detail"][0]["msg"], response.content
+
+
+def test_get_participants_type_with_schema_drift(testing_datasource_with_user, ppost, pget):
+    """Test schema drift detection when a column is missing from the table and a type changed."""
+    ds_id = testing_datasource_with_user.ds.id
+    # Initial schema: simulate a type change and a missing column
+    schema = ParticipantsSchema(
+        table_name="dwh",
+        fields=[
+            FieldDescriptor(
+                field_name="id",
+                data_type=DataType.INTEGER,
+                description="simulating integer -> bigint",
+                is_unique_id=True,
+            ),
+            FieldDescriptor(
+                field_name="is_engaged",
+                data_type=DataType.BOOLEAN,
+                description="ok",
+                is_filter=True,
+            ),
+            FieldDescriptor(
+                field_name="missing_col",
+                data_type=DataType.CHARACTER_VARYING,
+                description="simulates a deleted column",
+                is_metric=True,
+            ),
+        ],
+    )
+
+    # Create participant type with the initial schema
+    response = ppost(
+        f"/v1/m/datasources/{ds_id}/participants",
+        content=CreateParticipantsTypeRequest(participant_type="pt", schema_def=schema).model_dump_json(),
+    )
+    assert response.status_code == 200, response.content
+
+    # Get the participant type to fetch drift info
+    response = pget(f"/v1/m/datasources/{ds_id}/participants/pt")
+    assert response.status_code == 200, response.content
+    get_response = GetParticipantsTypeResponse.model_validate(response.json())
+
+    # First verify the drift is as expected.
+    assert get_response.drift == Drift(
+        schema_diff=[
+            FieldChangedType(table_name="dwh", column_name="id", old_type=DataType.INTEGER, new_type=DataType.BIGINT),
+            ColumnDeleted(table_name="dwh", column_name="missing_col"),
+        ]
+    )
+
+    # Verify that the current (last known) schema is the dehydrated minimal schema.
+    current = get_response.current.fields
+    assert current == schema.fields
+
+    # Verify the full proposed schema has the expected field changes.
+    proposed = get_response.proposed.fields
+    assert len(proposed) > len(current)
+    id_field = next((f for f in proposed if f.field_name == "id"), None)
+    assert id_field == schema.fields[0].model_copy(update={"data_type": DataType.BIGINT})
+    is_engaged_field = next((f for f in proposed if f.field_name == "is_engaged"), None)
+    assert is_engaged_field == schema.fields[1]
+    missing_col_field = next((f for f in proposed if f.field_name == schema.fields[2].field_name), None)
+    assert missing_col_field is None
+
+
+def test_get_participants_type_bad_table(testing_datasource_with_user, ppost, pget):
+    ds_id = testing_datasource_with_user.ds.id
+    schema = ParticipantsSchema(
+        table_name="deleted_dwh",
+        fields=[
+            FieldDescriptor(
+                field_name="newf",
+                data_type=DataType.INTEGER,
+                description="test",
+                is_unique_id=True,
+            )
+        ],
+    )
+    response = ppost(
+        f"/v1/m/datasources/{ds_id}/participants",
+        content=CreateParticipantsTypeRequest(participant_type="newpt", schema_def=schema).model_dump_json(),
+    )
+    assert response.status_code == 200, response.content
+
+    # Get the named participant type
+    response = pget(f"/v1/m/datasources/{ds_id}/participants/newpt")
+    assert response.status_code == 200, response.content
+
+    # Now verify that the underlying table looks like it was deleted.
+    get_response = GetParticipantsTypeResponse.model_validate(response.json())
+    assert get_response.drift == Drift(schema_diff=[TableDeleted(table_name=schema.table_name)])
+    # And that the old known state is still returned as well.
+    current_def = get_response.current
+    assert current_def.participant_type == "newpt"
+    assert current_def.table_name == schema.table_name
+    assert current_def.fields == schema.fields
+    assert get_response.proposed == current_def
 
 
 async def test_lifecycle_with_db(testing_datasource, ppost, ppatch, pget, pdelete, udelete):
