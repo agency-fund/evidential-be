@@ -4,7 +4,7 @@ This module defines the public API for clients to integrate with experiments.
 """
 
 from contextlib import asynccontextmanager
-from typing import Annotated
+from typing import Annotated, Any
 
 from fastapi import (
     APIRouter,
@@ -63,7 +63,28 @@ async def lifespan(_app: FastAPI):
     yield
 
 
-router = APIRouter(lifespan=lifespan, prefix=constants.API_PREFIX_V1)
+STANDARD_INTEGRATION_RESPONSES: dict[str | int, dict[str, Any]] = {
+    "400": {
+        # "object" describes something like "any".
+        "model": "object",
+        "description": "The request is invalid. This usually indicates your request doesn't match the required "
+        "structure of the request, or is missing a field or request header.",
+    },
+    "403": {
+        "model": "object",
+        "description": "Requester does not have sufficient privileges to perform this operation or is not "
+        f"authenticated.\n\nTip: Check that the API key passed in the `{constants.HEADER_API_KEY}` header has "
+        f"access to the requested datasource or experiment.",
+    },
+    "404": {
+        "model": "object",
+        "description": "The requested resource was not found, or you do not have access to it.\n\nTip: Check that the "
+        f"API key passed in the `{constants.HEADER_API_KEY}` header has access to "
+        "the requested datasource or experiment.",
+    },
+}
+
+router = APIRouter(lifespan=lifespan, prefix=constants.API_PREFIX_V1, responses=STANDARD_INTEGRATION_RESPONSES)
 
 
 @router.get("/experiments", summary="List experiments on the datasource.")

@@ -48,7 +48,10 @@ async def lifespan(_app: FastAPI):
             yield
 
 
-app = FastAPI(lifespan=lifespan)
+app = FastAPI(
+    lifespan=lifespan,
+    swagger_ui_parameters={"persistAuthorization": True},
+)
 exceptionhandlers.setup(app)
 middleware.setup(app)
 secretservice.setup()
