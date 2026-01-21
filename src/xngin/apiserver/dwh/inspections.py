@@ -4,9 +4,12 @@ import sqlalchemy
 
 from xngin.apiserver.dwh.inspection_types import FieldDescriptor, ParticipantsSchema
 from xngin.apiserver.routers.admin.admin_api_types import (
+    ColumnDeleted,
     Drift,
+    FieldChangedType,
     FieldMetadata,
     InspectDatasourceTableResponse,
+    TableDiff,
 )
 from xngin.apiserver.routers.common_enums import DataType
 from xngin.apiserver.settings import ParticipantsDef
@@ -126,6 +129,27 @@ def rehydrate_participants(participants: ParticipantsDef, table: sqlalchemy.Tabl
     return new_ptype
 
 
-def build_proposed_and_drift(participants: ParticipantsDef, tables: sqlalchemy.Table) -> tuple[ParticipantsDef, Drift]:
-    # TODO: Implement this
-    return participants, Drift(schema_diff=[])
+def build_proposed_and_drift(participants: ParticipantsDef, table: sqlalchemy.Table) -> tuple[ParticipantsDef, Drift]:
+    schema_diff: list[TableDiff] = []
+    schema = create_schema_from_table(table, set_unique_id=False)
+    schema_fields = {f.field_name: f for f in schema.fields}
+
+    # Check for deleted columns
+    for field in participants.fields:
+        if field.field_name not in schema_fields:
+            schema_diff.append(ColumnDeleted(table_name=participants.table_name, column_name=field.field_name))
+        else:
+            # Check for type mismatch
+            live_field = schema_fields[field.field_name]
+            if field.data_type != live_field.data_type:
+                schema_diff.append(
+                    FieldChangedType(
+                        table_name=participants.table_name,
+                        column_name=field.field_name,
+                        old_type=field.data_type,
+                        new_type=live_field.data_type,
+                    )
+                )
+
+    proposed = rehydrate_participants(participants, table)
+    return proposed, Drift(schema_diff=schema_diff)

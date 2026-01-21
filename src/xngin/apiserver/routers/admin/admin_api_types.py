@@ -454,7 +454,7 @@ class TableDeleted(ApiBaseModel):
     table_name: Annotated[str, Field()]
 
 
-type TableDiff = Annotated[ColumnDeleted | TableDeleted, Field(discriminator="type")]
+type TableDiff = Annotated[ColumnDeleted | FieldChangedType | TableDeleted, Field(discriminator="type")]
 
 
 class Drift(ApiBaseModel):
