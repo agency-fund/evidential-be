@@ -60,6 +60,17 @@ def analyze_metric_power(
             ("You have no available units to run your experiment. Adjust your filters to target more units."),
         )
 
+    effective_n = metric.available_nonnull_n if metric.available_nonnull_n is not None else metric.available_n
+    if effective_n <= 0:
+        return _power_analysis_error(
+            metric,
+            MetricPowerAnalysisMessageType.INSUFFICIENT,
+            (
+                "You have no units with non-null values for this metric. "
+                "Adjust your filters or add a filter to handle nulls."
+            ),
+        )
+
     if metric.metric_target is None or metric.metric_baseline is None:
         return _power_analysis_error(
             metric,
@@ -126,14 +137,14 @@ def analyze_metric_power(
     analysis = MetricPowerAnalysis(metric_spec=metric)
     analysis.target_n = int(target_n)
     # Use nonnull count for power check (only users with data count toward power)
-    effective_n = metric.available_nonnull_n if metric.available_nonnull_n is not None else metric.available_n
+    # effective_n = metric.available_nonnull_n if metric.available_nonnull_n is not None else metric.available_n
     analysis.sufficient_n = bool(target_n <= effective_n)
 
     # Construct potential components of the MetricPowerAnalysisMessage
     values_map: dict[str, float | int] = {
         "available_n": metric.available_n,
         "target_n": analysis.target_n,
-        "available_nonnull_n": metric.available_nonnull_n or 0,
+        "available_nonnull_n": effective_n,
     }
 
     # Check for nulls only if nonnull_n is provided
@@ -161,7 +172,7 @@ def analyze_metric_power(
     else:
         msg_type = MetricPowerAnalysisMessageType.INSUFFICIENT
         # Calculate the Minimum Detectable Effect that meets the power spec with the available subjects.
-        control_n_available = int(metric.available_n * control_prob)
+        control_n_available = int(effective_n * control_prob)
 
         if metric.metric_type == MetricType.NUMERIC:
             power_analysis = sms.TTestIndPower()

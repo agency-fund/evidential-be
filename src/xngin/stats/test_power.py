@@ -192,8 +192,7 @@ def test_analyze_metric_missing_baseline_returns_friendly_error():
     assert "Could not calculate metric baseline" in result.msg.msg
 
 
-@pytest.mark.skip(reason="Test expects incorrect behavior: available_nonnull_n=0 should return INSUFFICIENT")
-def test_analyze_metric_with_no_available_nonnull_n_returns_ok():
+def test_analyze_metric_with_zero_available_nonnull_n_returns_insufficient():
     metric = DesignSpecMetric(
         field_name="no_available_nonnull_n",
         metric_type=MetricType.BINARY,
@@ -205,14 +204,13 @@ def test_analyze_metric_with_no_available_nonnull_n_returns_ok():
 
     result = analyze_metric_power(metric, n_arms=2)
 
-    assert result.msg
-    assert result.msg.type == MetricPowerAnalysisMessageType.SUFFICIENT
-    assert "There are enough units available." in result.msg.msg
-    assert result.msg.values == {
-        "available_n": 1000,
-        "available_nonnull_n": 0,
-        "target_n": 778,
-    }
+    assert result.msg is not None
+    assert result.msg.type == MetricPowerAnalysisMessageType.INSUFFICIENT
+    assert "You have no units with non-null values" in result.msg.msg
+    # When returning early error, values is None
+    assert result.msg.values is None
+    assert result.target_n is None
+    assert result.sufficient_n is None
 
 
 def test_analyze_metric_zero_effect_size_returns_friendly_error():
