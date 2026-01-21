@@ -16,7 +16,7 @@ def create_schema_from_table(table: sqlalchemy.Table, unique_id_col: str | None 
     """Attempts to get name and type info from the database Table itself (formerly done via gsheets).
 
     If set_unique_id is True, unique_id_col is set to None, we will look for a primary key or assume a column named "id"
-    is primary key. If set_unique_id is false, no fields will be unique.
+    is primary key. If set_unique_id is false, no fields will be be marked as the unique id.
     """
 
     collected = []
@@ -43,7 +43,10 @@ def create_schema_from_table(table: sqlalchemy.Table, unique_id_col: str | None 
             r.field_name,
         ),
     )
-    return ParticipantsSchema(table_name=table.name, fields=rows)
+    schema = ParticipantsSchema(table_name=table.name, fields=rows)
+    if set_unique_id:
+        schema.check_one_unique_id()
+    return schema
 
 
 def create_inspect_table_response_from_table(
@@ -96,7 +99,7 @@ def dehydrate_participants(participants: ParticipantsDef, tables: sqlalchemy.Tab
     participants.fields = [
         f
         for f in participants.fields
-        if False or f.description or f.extra or f.is_filter or f.is_metric or f.is_strata or f.is_unique_id
+        if f.description or f.extra or f.is_filter or f.is_metric or f.is_strata or f.is_unique_id
     ]
     return participants
 
@@ -125,4 +128,5 @@ def rehydrate_participants(participants: ParticipantsDef, table: sqlalchemy.Tabl
 
 
 def build_proposed_and_drift(participants: ParticipantsDef, tables: sqlalchemy.Table) -> tuple[ParticipantsDef, Drift]:
-    pass
+    # TODO: Implement this
+    return participants, Drift(schema_diff=[])

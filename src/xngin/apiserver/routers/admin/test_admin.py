@@ -1007,7 +1007,7 @@ def test_participants_lifecycle(testing_datasource_with_user, pget, ppost, ppatc
         f"/v1/m/datasources/{ds_id}/participants/test_participant_type",
     )
     assert response.status_code == 200, response.content
-    parsed = GetParticipantsTypeResponse.model_validate(response.json()).participants_config
+    parsed = GetParticipantsTypeResponse.model_validate(response.json()).current
     assert parsed.type == "schema"
     assert parsed.participant_type == "test_participant_type"
     assert parsed.table_name == "dwh"
@@ -1018,7 +1018,7 @@ def test_participants_lifecycle(testing_datasource_with_user, pget, ppost, ppatc
         content=CreateParticipantsTypeRequest(
             participant_type="newpt",
             schema_def=ParticipantsSchema(
-                table_name="newps",
+                table_name="dwh",
                 fields=[
                     FieldDescriptor(
                         field_name="newf",
@@ -1065,7 +1065,7 @@ def test_participants_lifecycle(testing_datasource_with_user, pget, ppost, ppatc
         f"/v1/m/datasources/{ds_id}/participants/renamedpt",
     )
     assert response.status_code == 200, response.content
-    participants_def = GetParticipantsTypeResponse.model_validate(response.json()).participants_config
+    participants_def = GetParticipantsTypeResponse.model_validate(response.json()).current
     assert participants_def.participant_type == "renamedpt"
 
     # Delete the renamed participant type.
@@ -1103,13 +1103,13 @@ def test_participants_lifecycle(testing_datasource_with_user, pget, ppost, ppatc
     assert response.status_code == 403, response.content
 
 
-def test_create_participants_type_invalid(testing_datasource, ppost):
+def test_create_participants_type_invalid(testing_datasource_with_user, ppost):
     response = ppost(
-        f"/v1/m/datasources/{testing_datasource.ds.id}/participants",
+        f"/v1/m/datasources/{testing_datasource_with_user.ds.id}/participants",
         content=CreateParticipantsTypeRequest.model_construct(
             participant_type="newpt",
             schema_def=ParticipantsSchema.model_construct(
-                table_name="newps",
+                table_name="dwh",
                 fields=[
                     FieldDescriptor(
                         field_name="newf",
@@ -1125,7 +1125,7 @@ def test_create_participants_type_invalid(testing_datasource, ppost):
         ).model_dump_json(),
     )
     assert response.status_code == 422, response.content
-    assert "no columns marked as unique ID." in response.json()["detail"][0]["msg"], response.content
+    assert "no columns marked as unique ID." in response.json()["message"], response.content
 
 
 async def test_lifecycle_with_db(testing_datasource, ppost, ppatch, pget, pdelete, udelete):

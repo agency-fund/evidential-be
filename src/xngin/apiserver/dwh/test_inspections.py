@@ -1,5 +1,4 @@
 import pytest
-from pydantic import ValidationError
 from sqlalchemy import BigInteger, Column, Integer, MetaData, String, Table
 
 from xngin.apiserver.dwh.inspections import create_schema_from_table
@@ -51,10 +50,29 @@ def test_create_schema_from_table_fails_if_no_unique_id():
         Column("name", String),
     )
 
-    # Doesn't find the specified id
-    with pytest.raises(ValidationError):
+    # Doesn't find the specified id:
+    with pytest.raises(ValueError):
         create_schema_from_table(my_table, "id")
 
     # Has no primary key or generic "id"
-    with pytest.raises(ValidationError):
+    with pytest.raises(ValueError):
         create_schema_from_table(my_table, None)
+
+
+def test_create_schema_from_table_does_not_raise_if_no_unique_id_and_set_unique_id_is_false():
+    my_table = Table(
+        "table_name",
+        MetaData(),
+        Column("_id", Integer),
+        Column("name", String),
+    )
+
+    # Doesn't find the specified id
+    schema = create_schema_from_table(my_table, "id", set_unique_id=False)
+    assert schema.get_unique_id_field() is None
+    assert len(schema.fields) == 2
+
+    # Has no primary key or generic "id"
+    schema = create_schema_from_table(my_table, None, set_unique_id=False)
+    assert schema.get_unique_id_field() is None
+    assert len(schema.fields) == 2

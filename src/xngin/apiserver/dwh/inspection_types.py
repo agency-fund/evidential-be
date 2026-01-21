@@ -58,8 +58,12 @@ class ParticipantsSchema(SchemaBaseModel):
         """Gets the name of the unique ID field."""
         return next((i.field_name for i in self.fields if i.is_unique_id), None)
 
-    @model_validator(mode="after")
     def check_one_unique_id(self) -> "ParticipantsSchema":
+        """
+        Checks that there is exactly one column marked as the unique ID.
+
+        Not a validator as we may wish to create a schema without a unique ID.
+        """
         uniques = [r.field_name for r in self.fields if r.is_unique_id]
         if len(uniques) == 0:
             raise ValueError("There are no columns marked as unique ID.")

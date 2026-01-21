@@ -1087,6 +1087,11 @@ async def create_participant_type(
     body: CreateParticipantsTypeRequest,
 ) -> CreateParticipantsTypeResponse:
     ds = await get_datasource_or_raise(session, user, datasource_id)
+    try:
+        body.schema_def.check_one_unique_id()
+    except ValueError as e:
+        raise LateValidationError(str(e)) from e
+
     participants_def = ParticipantsDef(
         type="schema",
         participant_type=body.participant_type,
@@ -1117,8 +1122,6 @@ async def inspect_participant_types(
     dsconfig = ds.get_config()
     # CannotFindParticipantsError will be handled by exceptionhandlers.
     pconfig = dsconfig.find_participants(participant_id)
-    if pconfig.type == "sheet":
-        raise HTTPException(status_code=405, detail="Sheet schemas cannot be inspected.")
 
     if (
         not refresh
@@ -1216,7 +1219,7 @@ async def get_participant_types(
         hydrated = rehydrate_participants(participants, inspected)
         # Compose a new participant config from an existing one and build diffs
         proposed, drift = build_proposed_and_drift(participants, inspected)
-    return GetParticipantsTypeResponse(current=hydrated, proposed=participants, drift=drift)
+    return GetParticipantsTypeResponse(current=hydrated, proposed=proposed, drift=drift)
 
 
 @router.patch(
