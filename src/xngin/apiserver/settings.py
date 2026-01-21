@@ -45,12 +45,16 @@ class ConfigBaseModel(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
 
-class BaseParticipantsRef(ConfigBaseModel):
+class ParticipantsDef(ParticipantsSchema):
     """Participants are a logical representation of a table in the data warehouse.
 
     Participants are defined by a participant_type, table_name and a schema.
     """
 
+    type: Annotated[
+        Literal["schema"],
+        Field(description="Indicates that the schema is determined by an inline schema."),
+    ]
     participant_type: Annotated[
         str,
         Field(
@@ -60,32 +64,22 @@ class BaseParticipantsRef(ConfigBaseModel):
     ]
 
 
-class ParticipantsDef(BaseParticipantsRef, ParticipantsSchema):
-    type: Annotated[
-        Literal["schema"],
-        Field(description="Indicates that the schema is determined by an inline schema."),
-    ]
-
-
-type ParticipantsConfig = Annotated[ParticipantsDef, Field(discriminator="type")]
-
-
 class ParticipantsMixin(ConfigBaseModel):
     """ParticipantsMixin can be added to a config type to add standardized participant definitions."""
 
     participants: Annotated[
-        list[ParticipantsConfig],
+        list[ParticipantsDef],
         Field(),
     ]
 
-    def find_participants(self, participant_type: str) -> ParticipantsConfig:
-        """Returns the ParticipantsConfig matching participant_type or raises CannotFindParticipantsException."""
+    def find_participants(self, participant_type: str) -> ParticipantsDef:
+        """Returns the ParticipantsDef matching participant_type or raises CannotFindParticipantsException."""
         found = self.find_participants_or_none(participant_type)
         if found is None:
             raise CannotFindParticipantsError(participant_type)
         return found
 
-    def find_participants_or_none(self, participant_type) -> ParticipantsConfig | None:
+    def find_participants_or_none(self, participant_type) -> ParticipantsDef | None:
         return next(
             (u for u in self.participants if u.participant_type.lower() == participant_type.lower()),
             None,

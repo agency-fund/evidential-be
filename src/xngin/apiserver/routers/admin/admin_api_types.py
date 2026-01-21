@@ -27,7 +27,7 @@ from xngin.apiserver.routers.common_api_types import (
     GetStrataResponseElement,
     Impact,
 )
-from xngin.apiserver.settings import ParticipantsConfig
+from xngin.apiserver.settings import ParticipantsDef
 
 
 def validate_webhook_url(url: str) -> str:
@@ -416,7 +416,7 @@ class InspectParticipantTypesResponse(ApiBaseModel):
 
 
 class ListParticipantsTypeResponse(ApiBaseModel):
-    items: list[ParticipantsConfig]
+    items: list[ParticipantsDef]
 
 
 class CreateParticipantsTypeRequest(ApiBaseModel):
@@ -460,13 +460,28 @@ type TableDiff = Annotated[ColumnDeleted | FieldChangedType | TableDeleted, Fiel
 class Drift(ApiBaseModel):
     """Describes differences between two participant types."""
 
-    schema_diff: list[TableDiff]
+    schema_diff: Annotated[
+        list[TableDiff], Field(description="List of individual changes detected that might break things.")
+    ]
 
 
 class GetParticipantsTypeResponse(ApiBaseModel):
-    current: ParticipantsConfig
-    proposed: ParticipantsConfig
-    drift: Drift
+    current: Annotated[
+        ParticipantsDef,
+        Field(description="The currently saved configuration capturing the minimal set of fields possibly used."),
+    ]
+    proposed: Annotated[
+        ParticipantsDef,
+        Field(
+            description="The configuration as implied by the live table schema, merged with current config annotations."
+        ),
+    ]
+    drift: Annotated[
+        Drift,
+        Field(
+            description="Differences between the current and proposed configurations that might be breaking changes."
+        ),
+    ]
 
 
 class UpdateParticipantsTypeResponse(ApiBaseModel):
