@@ -1087,11 +1087,6 @@ async def create_participant_type(
     body: CreateParticipantsTypeRequest,
 ) -> CreateParticipantsTypeResponse:
     ds = await get_datasource_or_raise(session, user, datasource_id)
-    try:
-        body.schema_def.check_one_unique_id()
-    except ValueError as e:
-        raise LateValidationError(str(e)) from e
-
     participants_def = ParticipantsDef(
         type="schema",
         participant_type=body.participant_type,

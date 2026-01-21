@@ -1021,8 +1021,8 @@ def test_participants_lifecycle(testing_datasource_with_user, pget, ppost, ppatc
                 table_name="dwh",
                 fields=[
                     FieldDescriptor(
-                        field_name="newf",
-                        data_type=DataType.INTEGER,
+                        field_name="id",
+                        data_type=DataType.BIGINT,
                         description="test",
                         is_unique_id=True,
                         is_strata=False,
@@ -1125,7 +1125,7 @@ def test_create_participants_type_invalid(testing_datasource_with_user, ppost):
         ).model_dump_json(),
     )
     assert response.status_code == 422, response.content
-    assert "no columns marked as unique ID." in response.json()["message"], response.content
+    assert "no columns marked as unique ID." in response.json()["detail"][0]["msg"], response.content
 
 
 async def test_lifecycle_with_db(testing_datasource, ppost, ppatch, pget, pdelete, udelete):
