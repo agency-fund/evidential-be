@@ -67,7 +67,7 @@ def analyze_metric_power(
             MetricPowerAnalysisMessageType.INSUFFICIENT,
             (
                 "You have no units with non-null values for this metric. "
-                "Adjust your filters or add a filter to handle nulls."
+                "Adjust your filters to target units with non-null values."
             ),
         )
 
@@ -211,17 +211,17 @@ def analyze_metric_power(
         analysis.target_possible = target_possible
         analysis.pct_change_possible = target_possible / metric.metric_baseline - 1.0
 
-        values_map["additional_n_needed"] = target_n - metric.available_n
+        values_map["additional_n_needed"] = target_n - effective_n
         values_map["metric_baseline"] = round(metric.metric_baseline, 4)
         values_map["target_possible"] = round(target_possible, 4)
         values_map["metric_target"] = round(metric.metric_target, 4)
         msg_body = (
-            "There are not enough units available. "
-            "You need {additional_n_needed} more units to meet your experimental design "
-            "specifications. In order to meet your specification with the available "
-            "{available_n} units and a metric baseline value of {metric_baseline}, your metric "
-            "target value needs to be {target_possible} or further from the baseline. Your "  # noqa: RUF027
-            "current desired target is {metric_target}."
+            "There are not enough non-null valued units available. "
+            "You need {additional_n_needed} more units to meet your specified "
+            "metric target of {metric_target}. "
+            "Alternatively, with the available {available_nonnull_n} non-null units "
+            "and a metric baseline of {metric_baseline}, your metric target should be "
+            "{target_possible} or further from the baseline. "  # noqa: RUF027
         )
 
     # Construct our response from the parts above
