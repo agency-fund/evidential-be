@@ -137,7 +137,6 @@ def analyze_metric_power(
     analysis = MetricPowerAnalysis(metric_spec=metric)
     analysis.target_n = int(target_n)
     # Use nonnull count for power check (only users with data count toward power)
-    # effective_n = metric.available_nonnull_n if metric.available_nonnull_n is not None else metric.available_n
     analysis.sufficient_n = bool(target_n <= effective_n)
 
     # Construct potential components of the MetricPowerAnalysisMessage
