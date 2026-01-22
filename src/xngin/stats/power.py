@@ -60,6 +60,17 @@ def analyze_metric_power(
             ("You have no available units to run your experiment. Adjust your filters to target more units."),
         )
 
+    effective_n = metric.available_nonnull_n if metric.available_nonnull_n is not None else metric.available_n
+    if effective_n <= 0:
+        return _power_analysis_error(
+            metric,
+            MetricPowerAnalysisMessageType.INSUFFICIENT,
+            (
+                "You have no units with non-null values for this metric. "
+                "Adjust your filters to target units with non-null values."
+            ),
+        )
+
     if metric.metric_target is None or metric.metric_baseline is None:
         return _power_analysis_error(
             metric,
@@ -125,15 +136,18 @@ def analyze_metric_power(
     # Prep the response object
     analysis = MetricPowerAnalysis(metric_spec=metric)
     analysis.target_n = int(target_n)
-    analysis.sufficient_n = bool(target_n <= metric.available_n)
+    # Use nonnull count for power check (only users with data count toward power)
+    analysis.sufficient_n = bool(target_n <= effective_n)
 
     # Construct potential components of the MetricPowerAnalysisMessage
-    has_nulls = metric.available_nonnull_n != metric.available_n
     values_map: dict[str, float | int] = {
         "available_n": metric.available_n,
         "target_n": analysis.target_n,
-        "available_nonnull_n": metric.available_nonnull_n or 0,
+        "available_nonnull_n": effective_n,
     }
+
+    # Check for nulls only if nonnull_n is provided
+    has_nulls = metric.available_nonnull_n is not None and metric.available_nonnull_n != metric.available_n
 
     msg_base_stats = (
         "There are {available_n} units available to run your experiment and a "
@@ -157,7 +171,7 @@ def analyze_metric_power(
     else:
         msg_type = MetricPowerAnalysisMessageType.INSUFFICIENT
         # Calculate the Minimum Detectable Effect that meets the power spec with the available subjects.
-        control_n_available = int(metric.available_n * control_prob)
+        control_n_available = int(effective_n * control_prob)
 
         if metric.metric_type == MetricType.NUMERIC:
             power_analysis = sms.TTestIndPower()
@@ -197,17 +211,17 @@ def analyze_metric_power(
         analysis.target_possible = target_possible
         analysis.pct_change_possible = target_possible / metric.metric_baseline - 1.0
 
-        values_map["additional_n_needed"] = target_n - metric.available_n
+        values_map["additional_n_needed"] = target_n - effective_n
         values_map["metric_baseline"] = round(metric.metric_baseline, 4)
         values_map["target_possible"] = round(target_possible, 4)
         values_map["metric_target"] = round(metric.metric_target, 4)
         msg_body = (
-            "There are not enough units available. "
-            "You need {additional_n_needed} more units to meet your experimental design "
-            "specifications. In order to meet your specification with the available "
-            "{available_n} units and a metric baseline value of {metric_baseline}, your metric "
-            "target value needs to be {target_possible} or further from the baseline. Your "  # noqa: RUF027
-            "current desired target is {metric_target}."
+            "There are not enough non-null valued units available. "
+            "You need {additional_n_needed} more units to meet your specified "
+            "metric target of {metric_target}. "
+            "Alternatively, with the available {available_nonnull_n} non-null units "
+            "and a metric baseline of {metric_baseline}, your metric target should be "
+            "{target_possible} or further from the baseline. "  # noqa: RUF027
         )
 
     # Construct our response from the parts above
