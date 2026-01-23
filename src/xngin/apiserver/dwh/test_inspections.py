@@ -123,8 +123,8 @@ def test_build_proposed_and_drift_column_deleted():
         table_name="test_table",
         fields=[
             FieldDescriptor(field_name="id", data_type=DataType.INTEGER, is_unique_id=True),
-            FieldDescriptor(field_name="deleted_col", data_type=DataType.CHARACTER_VARYING),
-            FieldDescriptor(field_name="deleted_col2", data_type=DataType.INTEGER),
+            FieldDescriptor(field_name="deleted_col_b", data_type=DataType.INTEGER),
+            FieldDescriptor(field_name="deleted_col_a", data_type=DataType.CHARACTER_VARYING),
         ],
     )
 
@@ -132,8 +132,8 @@ def test_build_proposed_and_drift_column_deleted():
 
     assert len(drift.schema_diff) == 2
     assert drift.schema_diff == [
-        ColumnDeleted(table_name="test_table", column_name="deleted_col"),
-        ColumnDeleted(table_name="test_table", column_name="deleted_col2"),
+        ColumnDeleted(table_name="test_table", column_name="deleted_col_a"),
+        ColumnDeleted(table_name="test_table", column_name="deleted_col_b"),
     ]
 
     # Proposed should reflect the merged table state with deleted column removed

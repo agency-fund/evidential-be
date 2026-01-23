@@ -99,11 +99,14 @@ def generate_field_descriptors(table: sqlalchemy.Table, unique_id_col: str):
 def dehydrate_participants(participants: ParticipantsDef, tables: sqlalchemy.Table) -> ParticipantsDef:
     """Removes fields from ParticipantsDef that are not a filter, metric, strata, unique ID, described, or annotated."""
     participants.fields = [
-        f
-        for f in participants.fields
-        if f.description or f.extra or f.is_filter or f.is_metric or f.is_strata or f.is_unique_id
+        f for f in participants.fields if f.description or f.is_filter or f.is_metric or f.is_strata or f.is_unique_id
     ]
     return participants
+
+
+def _sort_by_fields(fields: list[FieldDescriptor]) -> list[FieldDescriptor]:
+    """Sort fields so that unique ID field(s) come first, then by field_name."""
+    return sorted(fields, key=lambda f: (not f.is_unique_id, f.field_name))
 
 
 def rehydrate_participants(participants: ParticipantsDef, table: sqlalchemy.Table) -> ParticipantsDef:
@@ -116,7 +119,6 @@ def rehydrate_participants(participants: ParticipantsDef, table: sqlalchemy.Tabl
             return latest
         fd = latest.model_copy()
         fd.description = edited.description
-        fd.extra = edited.extra
         fd.is_filter = edited.is_filter
         fd.is_metric = edited.is_metric
         fd.is_strata = edited.is_strata
@@ -124,7 +126,8 @@ def rehydrate_participants(participants: ParticipantsDef, table: sqlalchemy.Tabl
         return fd
 
     new_ptype = participants.model_copy()
-    new_ptype.fields = [maybe_merge(f, dehydrated.get(f.field_name)) for f in full_schema.fields]
+    # Ensure a deterministic order of fields.
+    new_ptype.fields = [maybe_merge(f, dehydrated.get(f.field_name)) for f in _sort_by_fields(full_schema.fields)]
     ParticipantsDef.model_validate(new_ptype)
     return new_ptype
 
@@ -134,8 +137,8 @@ def build_proposed_and_drift(participants: ParticipantsDef, table: sqlalchemy.Ta
     schema = create_schema_from_table(table, set_unique_id=False)
     schema_fields = {f.field_name: f for f in schema.fields}
 
-    # Check for deleted columns
-    for field in participants.fields:
+    # Check for changes in a ParticipantsDef at the column level against a full table schema.
+    for field in _sort_by_fields(participants.fields):
         if field.field_name not in schema_fields:
             schema_diff.append(ColumnDeleted(table_name=participants.table_name, column_name=field.field_name))
         else:
