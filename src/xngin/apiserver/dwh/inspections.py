@@ -19,7 +19,7 @@ def create_schema_from_table(table: sqlalchemy.Table, unique_id_col: str | None 
     """Attempts to get name and type info from the database Table itself.
 
     If set_unique_id is True, unique_id_col is set to None, we will look for a primary key or assume a column named "id"
-    is primary key. If set_unique_id is false, no fields will be be marked as the unique id.
+    is primary key. If set_unique_id is false, no fields will be marked as the unique id.
     """
 
     collected = []
