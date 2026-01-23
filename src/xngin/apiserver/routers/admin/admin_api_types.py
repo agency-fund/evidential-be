@@ -27,7 +27,7 @@ from xngin.apiserver.routers.common_api_types import (
     GetStrataResponseElement,
     Impact,
 )
-from xngin.apiserver.settings import ParticipantsConfig
+from xngin.apiserver.settings import ParticipantsDef
 
 
 def validate_webhook_url(url: str) -> str:
@@ -416,7 +416,7 @@ class InspectParticipantTypesResponse(ApiBaseModel):
 
 
 class ListParticipantsTypeResponse(ApiBaseModel):
-    items: list[ParticipantsConfig]
+    items: list[ParticipantsDef]
 
 
 class CreateParticipantsTypeRequest(ApiBaseModel):
@@ -432,7 +432,56 @@ class CreateParticipantsTypeResponse(ApiBaseModel):
 class UpdateParticipantsTypeRequest(ApiBaseModel):
     participant_type: Annotated[str | None, Field(max_length=MAX_LENGTH_OF_NAME_VALUE)] = None
     table_name: Annotated[FieldName | None, Field()] = None
-    fields: Annotated[list[FieldDescriptor] | None, Field(max_length=MAX_NUMBER_OF_FIELDS)] = None
+    fields: Annotated[list[FieldDescriptor] | None, Field()] = None
+
+
+class FieldChangedType(ApiBaseModel):
+    type: Literal["column_changed_type"] = "column_changed_type"
+    table_name: Annotated[str, Field()]
+    column_name: Annotated[str, Field()]
+    old_type: Annotated[DataType, Field()]
+    new_type: Annotated[DataType, Field()]
+
+
+class ColumnDeleted(ApiBaseModel):
+    type: Literal["column_deleted"] = "column_deleted"
+    table_name: Annotated[str, Field()]
+    column_name: Annotated[str, Field()]
+
+
+class TableDeleted(ApiBaseModel):
+    type: Literal["table_deleted"] = "table_deleted"
+    table_name: Annotated[str, Field()]
+
+
+type TableDiff = Annotated[ColumnDeleted | FieldChangedType | TableDeleted, Field(discriminator="type")]
+
+
+class Drift(ApiBaseModel):
+    """Describes differences between two participant types."""
+
+    schema_diff: Annotated[
+        list[TableDiff], Field(description="List of individual changes detected that might break things.")
+    ]
+
+
+class GetParticipantsTypeResponse(ApiBaseModel):
+    current: Annotated[
+        ParticipantsDef,
+        Field(description="The currently saved configuration capturing the minimal set of fields possibly used."),
+    ]
+    proposed: Annotated[
+        ParticipantsDef,
+        Field(
+            description="The configuration as implied by the live table schema, merged with current config annotations."
+        ),
+    ]
+    drift: Annotated[
+        Drift,
+        Field(
+            description="Differences between the current and proposed configurations that might be breaking changes."
+        ),
+    ]
 
 
 class UpdateParticipantsTypeResponse(ApiBaseModel):

@@ -1,7 +1,7 @@
 from collections import Counter
 from typing import Annotated
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+from pydantic import BaseModel, ConfigDict, Field, ValidationInfo, field_validator, model_validator
 
 from xngin.apiserver.routers.common_enums import DataType
 
@@ -59,7 +59,15 @@ class ParticipantsSchema(SchemaBaseModel):
         return next((i.field_name for i in self.fields if i.is_unique_id), None)
 
     @model_validator(mode="after")
-    def check_one_unique_id(self) -> "ParticipantsSchema":
+    def check_one_unique_id(self, info: ValidationInfo) -> "ParticipantsSchema":
+        """
+        Checks that there is exactly one column marked as the unique ID.
+
+        Can conditionally be skipped by passing `skip_unique_id_check=True` to the model validator.
+        """
+        if info.context and info.context.get("skip_unique_id_check"):
+            return self
+
         uniques = [r.field_name for r in self.fields if r.is_unique_id]
         if len(uniques) == 0:
             raise ValueError("There are no columns marked as unique ID.")
