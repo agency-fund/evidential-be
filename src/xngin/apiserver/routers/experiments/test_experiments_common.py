@@ -91,12 +91,7 @@ def make_createexperimentrequest_json(
                     ],
                     "filters": [],
                     "strata": [{"field_name": "gender"}],
-                    "metrics": [
-                        {
-                            "field_name": "is_onboarded",
-                            "metric_pct_change": 0.1,
-                        }
-                    ],
+                    "metrics": [{"field_name": "is_onboarded", "metric_pct_change": 0.1}],
                     "power": 0.8,
                     "alpha": 0.05,
                     "fstat_thresh": 0.2,
@@ -354,6 +349,7 @@ async def test_create_preassigned_experiment_impl(
     assert response.design_spec.strata == [Stratum(field_name="gender")]
     assert response.power_analyses is not None
     assert response.power_analyses == request.power_analyses
+
     # Verify assign_summary
     assert response.assign_summary is not None
     assert response.assign_summary.sample_size == len(participants)
@@ -596,6 +592,47 @@ async def test_create_preassigned_experiment_impl_with_three_unbalanced_arms(
         assert db_arm.position == i
         assert arm.arm_name == db_arm.name
         assert arm.arm_weight == db_arm.arm_weight
+
+
+@pytest.mark.parametrize("chosen_n,expected_pct_change", [(25, -0.387), (50, 0.1), (100, 0.05)])
+async def test_create_freq_preassigned_experiment_with_chosen_n(
+    xngin_session,
+    testing_datasource,
+    chosen_n: int,
+    expected_pct_change: float,
+):
+    """Test that create_experiment_impl return pct_change_with_chosen_n."""
+    # Mock request with power analysis
+    request = make_create_preassigned_experiment_request()
+    request.power_analyses = PowerResponse(
+        analyses=[
+            MetricPowerAnalysis(
+                metric_spec=DesignSpecMetric(
+                    field_name="is_onboarded",
+                    metric_type=MetricType.BINARY,
+                    metric_pct_change=0.1,
+                    available_n=100,
+                    available_nonnull_n=100,
+                    metric_baseline=0.1,
+                ),
+                target_n=50,
+                pct_change_possible=0.05,
+            )
+        ]
+    )
+
+    response = await create_experiment_impl(
+        request=request,
+        datasource=testing_datasource.ds,
+        xngin_session=xngin_session,
+        chosen_n=chosen_n,
+        stratify_on_metrics=False,
+        random_state=42,
+        validated_webhooks=[],
+    )
+    assert response.power_analyses is not None
+    assert response.power_analyses.analyses[0].chosen_n == chosen_n
+    assert response.power_analyses.analyses[0].pct_change_with_chosen_n == pytest.approx(expected_pct_change, rel=1e-2)
 
 
 @pytest.mark.parametrize("reorder_arms", [True, False])

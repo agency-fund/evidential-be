@@ -13,6 +13,27 @@ from xngin.apiserver.routers.common_enums import (
 from xngin.stats.stats_errors import StatsPowerError
 
 
+def _calculate_arm_ratio_and_control_prob_from_weights(
+    arm_weights: list[float] | None, n_arms: int
+) -> tuple[float, float]:
+    # Calculate sample size based on arm allocation
+    arm_ratio = 1.0  # default represents equal allocation
+    control_prob = 1.0 / n_arms
+    if arm_weights is not None:
+        # For unbalanced arms, we need to calculate based on the ratio of treatment to control
+        # Convert weights (sum to 100) to probabilities
+        sum_weights = sum(arm_weights)
+        weights = [w / sum_weights for w in arm_weights]
+        # We always assume the first arm is control.
+        control_prob = weights[0]
+        # Use the smallest treatment arm for a conservative estimate.
+        # (this ensures even the smallest arm has at least the desired statistical power)
+        min_treatment_prob = min(weights[1:])
+        arm_ratio = min_treatment_prob / control_prob
+
+    return arm_ratio, control_prob
+
+
 def _power_analysis_error(
     metric: DesignSpecMetric, msg_type: MetricPowerAnalysisMessageType, msg_body: str
 ) -> MetricPowerAnalysis:
@@ -20,6 +41,83 @@ def _power_analysis_error(
         metric_spec=metric,
         msg=MetricPowerAnalysisMessage(type=msg_type, msg=msg_body, source_msg=msg_body, values=None),
     )
+
+
+def calculate_mde_with_chosen_n(
+    chosen_n: int,
+    metric: DesignSpecMetric,
+    n_arms: int,
+    alpha: float = 0.05,
+    power: float = 0.8,
+    arm_weights: list[float] | None = None,
+) -> tuple[float, float]:
+    """
+    Calculate the Minimum Detectable Effect (MDE) for a given metric and sample size.
+
+    Args:
+        chosen_n: Total sample size to be used in the calculation
+        metric: DesignSpecMetric containing metric details
+        n_arms: Number of treatment arms
+        alpha: Significance level
+        power: Desired statistical power
+        arm_weights: Optional list of weights (summing to 100) for unbalanced arms
+    Returns:
+        Minimum Detectable Effect (MDE) as a float
+    """
+    if chosen_n <= 0:
+        raise ValueError("Chosen sample size must be positive.")
+
+    if metric.metric_baseline is None:
+        raise ValueError("metric_baseline is required for MDE calculation.")
+
+    if metric.metric_type == MetricType.NUMERIC and metric.metric_stddev is None:
+        raise ValueError("metric_stddev is required for NUMERIC metrics.")
+
+    # Calculate sample size based on arm allocation
+    arm_ratio, control_prob = _calculate_arm_ratio_and_control_prob_from_weights(arm_weights, n_arms)
+
+    control_n_available = int(chosen_n * control_prob)
+
+    match metric.metric_type:
+        case MetricType.NUMERIC:
+            power_analysis = sms.TTestIndPower()
+            needed_delta = (
+                power_analysis.solve_power(
+                    nobs1=control_n_available,
+                    effect_size=None,
+                    alpha=alpha,
+                    power=power,
+                    ratio=arm_ratio,
+                )
+                * metric.metric_stddev
+            )
+            # need this because solve_power can return array depending on special handling from edge cases
+            needed_delta = float(np.atleast_1d(needed_delta)[0])
+            target_possible = needed_delta + metric.metric_baseline
+        case MetricType.BINARY:
+            power_analysis = sms.NormalIndPower()
+            # Calculate minimum detectable effect size given sample size
+            min_effect_size = power_analysis.solve_power(
+                nobs1=control_n_available,
+                alpha=alpha,
+                power=power,
+                ratio=arm_ratio,
+            )
+            # need this because solve_power can return array depending on special handling from edge cases
+            min_effect_size = float(np.atleast_1d(min_effect_size)[0])
+
+            # Convert Cohen's h back to proportion
+            # h = 2 * arcsin(sqrt(p1)) - 2 * arcsin(sqrt(p2))
+            # where p1 is baseline and p2 is target
+            p1 = metric.metric_baseline
+            arcsin_p2 = 2 * np.arcsin(np.sqrt(p1)) - min_effect_size
+            target_possible = np.sin(arcsin_p2 / 2) ** 2
+        case _:
+            raise ValueError(f"metric_type must be one of {list(MetricType)}.")
+
+    target_possible = target_possible
+    pct_change_possible = target_possible / metric.metric_baseline - 1.0
+    return target_possible, pct_change_possible
 
 
 def analyze_metric_power(
@@ -70,8 +168,7 @@ def analyze_metric_power(
             ("You have no available units to run your experiment. Adjust your filters to target more units."),
         )
 
-    # Only check target when not in MDE mode
-    if desired_n is None and metric.metric_target is None:
+    if metric.metric_target is None or metric.metric_baseline is None:
         return _power_analysis_error(
             metric,
             MetricPowerAnalysisMessageType.NO_BASELINE,
@@ -81,8 +178,25 @@ def analyze_metric_power(
             ),
         )
 
-    # Always check baseline (needed for both modes)
-    if metric.metric_baseline is None:
+    # Case A: Both target and baseline defined - calculate required n
+    if metric.metric_type == MetricType.NUMERIC:
+        if metric.metric_stddev is None or metric.metric_stddev <= 0:
+            return _power_analysis_error(
+                metric,
+                MetricPowerAnalysisMessageType.ZERO_STDDEV,
+                (
+                    "There is no variation in the metric with the given filters. Standard deviation must be "
+                    "positive to do a sample size calculation."
+                ),
+            )
+
+        effect_size = (metric.metric_target - metric.metric_baseline) / metric.metric_stddev
+    elif metric.metric_type == MetricType.BINARY:
+        effect_size = sms.proportion_effectsize(metric.metric_baseline, metric.metric_target)
+    else:
+        raise ValueError("metric_type must be NUMERIC or BINARY.")
+
+    if effect_size == 0.0:
         return _power_analysis_error(
             metric,
             MetricPowerAnalysisMessageType.NO_BASELINE,
@@ -92,20 +206,7 @@ def analyze_metric_power(
             ),
         )
 
-    # Calculate sample size based on arm allocation
-    arm_ratio = 1.0  # default represents equal allocation
-    control_prob = 1.0 / n_arms
-    if arm_weights is not None:
-        # For unbalanced arms, we need to calculate based on the ratio of treatment to control
-        # Convert weights (sum to 100) to probabilities
-        sum_weights = sum(arm_weights)
-        weights = [w / sum_weights for w in arm_weights]
-        # We always assume the first arm is control.
-        control_prob = weights[0]
-        # Use the smallest treatment arm for a conservative estimate.
-        # (this ensures even the smallest arm has at least the desired statistical power)
-        min_treatment_prob = min(weights[1:])
-        arm_ratio = min_treatment_prob / control_prob
+    arm_ratio, control_prob = _calculate_arm_ratio_and_control_prob_from_weights(arm_weights, n_arms)
 
     # Case A: desired_n is specified - calculate MDE
     if desired_n is not None:
@@ -196,7 +297,7 @@ def analyze_metric_power(
                 ),
             )
 
-        effect_size = (metric.metric_target - metric.metric_baseline) / metric.metric_stddev  # type: ignore[operator]
+        effect_size = (metric.metric_target - metric.metric_baseline) / metric.metric_stddev
     elif metric.metric_type == MetricType.BINARY:
         effect_size = sms.proportion_effectsize(metric.metric_baseline, metric.metric_target)
     else:
@@ -209,20 +310,7 @@ def analyze_metric_power(
             "Cannot detect an effect-size of 0. Try changing your effect-size.",
         )
 
-    # Calculate sample size based on arm allocation
-    arm_ratio = 1.0  # default represents equal allocation
-    control_prob = 1.0 / n_arms
-    if arm_weights is not None:
-        # For unbalanced arms, we need to calculate based on the ratio of treatment to control
-        # Convert weights (sum to 100) to probabilities
-        sum_weights = sum(arm_weights)
-        weights = [w / sum_weights for w in arm_weights]
-        # We always assume the first arm is control.
-        control_prob = weights[0]
-        # Use the smallest treatment arm for a conservative estimate.
-        # (this ensures even the smallest arm has at least the desired statistical power)
-        min_treatment_prob = min(weights[1:])
-        arm_ratio = min_treatment_prob / control_prob
+    arm_ratio, control_prob = _calculate_arm_ratio_and_control_prob_from_weights(arm_weights, n_arms)
 
     # solve_power returns the required sample size for the control group
     power_analysis = sms.TTestIndPower()
@@ -271,47 +359,19 @@ def analyze_metric_power(
     else:
         msg_type = MetricPowerAnalysisMessageType.INSUFFICIENT
         # Calculate the Minimum Detectable Effect that meets the power spec with the available subjects.
-        control_n_available = int(metric.available_n * control_prob) if metric.available_n is not None else 0
-
-        if metric.metric_type == MetricType.NUMERIC:
-            power_analysis = sms.TTestIndPower()
-            needed_delta = (
-                power_analysis.solve_power(
-                    nobs1=control_n_available,
-                    effect_size=None,
-                    alpha=alpha,
-                    power=power,
-                    ratio=arm_ratio,
-                )
-                * metric.metric_stddev
-            )
-            # need this because solve_power can return array depending on special handling from edge cases
-            needed_delta = float(np.atleast_1d(needed_delta)[0])
-            target_possible = needed_delta + (metric.metric_baseline or 0)
-
-        else:  # BINARY
-            power_analysis = sms.NormalIndPower()
-            # Calculate minimum detectable effect size given sample size
-            min_effect_size = power_analysis.solve_power(
-                nobs1=control_n_available,
-                alpha=alpha,
-                power=power,
-                ratio=arm_ratio,
-            )
-            # need this because solve_power can return array depending on special handling from edge cases
-            min_effect_size = float(np.atleast_1d(min_effect_size)[0])
-
-            # Convert Cohen's h back to proportion
-            # h = 2 * arcsin(sqrt(p1)) - 2 * arcsin(sqrt(p2))
-            # where p1 is baseline and p2 is target
-            p1 = metric.metric_baseline
-            arcsin_p2 = 2 * np.arcsin(np.sqrt(p1)) - min_effect_size
-            target_possible = np.sin(arcsin_p2 / 2) ** 2
+        # At this point we know available_n is not None because we checked earlier
+        assert metric.available_n is not None  # Help mypy understand this
+        target_possible, pct_change_possible = calculate_mde_with_chosen_n(
+            chosen_n=metric.available_n,
+            metric=metric,
+            n_arms=n_arms,
+            alpha=alpha,
+            power=power,
+            arm_weights=arm_weights,
+        )
 
         analysis.target_possible = target_possible
-        analysis.pct_change_possible = (
-            (target_possible / metric.metric_baseline - 1.0) if metric.metric_baseline else None
-        )
+        analysis.pct_change_possible = pct_change_possible
 
         values_map["additional_n_needed"] = target_n - (metric.available_n or 0)
         values_map["metric_baseline"] = round(metric.metric_baseline, 4) if metric.metric_baseline else 0.0
