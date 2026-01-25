@@ -38,7 +38,7 @@ from xngin.apiserver.dwh.dwh_session import (
     DwhSession,
     NoDwh,
 )
-from xngin.apiserver.dwh.inspection_types import ParticipantsSchema
+from xngin.apiserver.dwh.inspection_types import FieldDescriptor, ParticipantsSchema
 from xngin.apiserver.dwh.inspections import (
     build_proposed_and_drift,
     create_inspect_table_response_from_table,
@@ -124,7 +124,7 @@ from xngin.apiserver.routers.common_api_types import (
     PowerRequest,
     PowerResponse,
 )
-from xngin.apiserver.routers.common_enums import ExperimentState
+from xngin.apiserver.routers.common_enums import DataType, ExperimentState
 from xngin.apiserver.routers.experiments import experiments_common
 from xngin.apiserver.settings import (
     ParticipantsDef,
@@ -1814,7 +1814,14 @@ async def power_check(
             detail="Power checks are not supported for datasources without a data warehouse.",
         )
     dsconfig = ds.get_config()
-    participants_cfg = dsconfig.find_participants(design_spec.participant_type)
+    if body.table_name is not None and body.primary_key is not None:
+        participants_cfg = synthesize_participants_def(
+            table_name=body.table_name,
+            primary_key=body.primary_key,
+            design_spec=design_spec,
+        )
+    else:
+        participants_cfg = dsconfig.find_participants(design_spec.participant_type)
 
     validate_schema_metrics_or_raise(design_spec, participants_cfg)
     async with DwhSession(dsconfig.dwh) as dwh:
@@ -1849,6 +1856,49 @@ def validate_schema_metrics_or_raise(design_spec: BaseFrequentistDesignSpec, sch
         raise LateValidationError(
             f"Invalid DesignSpec metrics (check your Datasource configuration): {invalid_metrics}"
         )
+
+
+def synthesize_participants_def(
+    table_name: str,
+    primary_key: str,
+    design_spec: BaseFrequentistDesignSpec,
+) -> ParticipantsDef:
+    """Synthesize a ParticipantsDef from table_name, primary_key, and design_spec fields."""
+    field_roles: dict[str, dict[str, bool]] = {}
+
+    # Primary key
+    field_roles.setdefault(primary_key, {})["is_unique_id"] = True
+
+    # Metrics
+    for metric in design_spec.metrics:
+        field_roles.setdefault(metric.field_name, {})["is_metric"] = True
+
+    # Strata
+    for stratum in design_spec.strata:
+        field_roles.setdefault(stratum.field_name, {})["is_strata"] = True
+
+    # Filters
+    for filter_ in design_spec.filters:
+        field_roles.setdefault(filter_.field_name, {})["is_filter"] = True
+
+    fields = [
+        FieldDescriptor(
+            field_name=field_name,
+            data_type=DataType.DOUBLE_PRECISION,
+            is_unique_id=roles.get("is_unique_id", False),
+            is_metric=roles.get("is_metric", False),
+            is_strata=roles.get("is_strata", False),
+            is_filter=roles.get("is_filter", False),
+        )
+        for field_name, roles in field_roles.items()
+    ]
+
+    return ParticipantsDef(
+        type="schema",
+        participant_type=f"_{table_name}",
+        table_name=table_name,
+        fields=fields,
+    )
 
 
 def raise_unless_safe_hostname(dsn):

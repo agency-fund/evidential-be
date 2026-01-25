@@ -1554,6 +1554,40 @@ async def test_power_check_with_unbalanced_arms(testing_datasource_with_user, pp
     assert metric_analysis3.target_n == math.ceil(metric_analysis2.target_n * 0.2 / 0.10)
 
 
+async def test_power_check_with_synthesized_schema(testing_datasource_with_user, ppost):
+    """Test power check with synthesized participant schema via table_name and primary_key."""
+    design_spec = PreassignedFrequentistExperimentSpec(
+        experiment_type=ExperimentsType.FREQ_PREASSIGNED,
+        participant_type="ignored_when_synthesized",
+        experiment_name="test power check with synthesized schema",
+        description="test power check using table_name and primary_key",
+        start_date=datetime(2024, 1, 1, tzinfo=UTC),
+        end_date=datetime.now(UTC) + timedelta(days=1),
+        arms=[
+            Arm(arm_name="control", arm_description="Control group"),
+            Arm(arm_name="treatment", arm_description="Treatment group"),
+        ],
+        metrics=[DesignSpecMetricRequest(field_name="current_income", metric_pct_change=0.1)],
+        strata=[],
+        filters=[],
+    )
+
+    response = ppost(
+        f"/v1/m/datasources/{testing_datasource_with_user.ds.id}/power",
+        content=PowerRequest(
+            design_spec=design_spec,
+            table_name="dwh",  # Test DWH table name
+            primary_key="id",  # Test DWH primary key
+        ).model_dump_json(),
+    )
+
+    assert response.status_code == 200, response.content
+    power_response = PowerResponse.model_validate(response.json())
+    assert len(power_response.analyses) == 1
+    assert power_response.analyses[0].metric_spec.field_name == "current_income"
+    assert power_response.analyses[0].target_n is not None
+
+
 async def test_create_experiment_with_invalid_design_url(xngin_session, testing_datasource_with_user, ppost):
     datasource_id = testing_datasource_with_user.ds.id
     # Work with the raw json to construct a bad request
