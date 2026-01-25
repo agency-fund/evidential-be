@@ -43,8 +43,8 @@ def _power_analysis_error(
     )
 
 
-def calculate_mde_with_chosen_n(
-    chosen_n: int,
+def calculate_mde_with_desired_n(
+    desired_n: int,
     metric: DesignSpecMetric,
     n_arms: int,
     alpha: float = 0.05,
@@ -64,7 +64,7 @@ def calculate_mde_with_chosen_n(
     Returns:
         Minimum Detectable Effect (MDE) as a float
     """
-    if chosen_n <= 0:
+    if desired_n <= 0:
         raise ValueError("Chosen sample size must be positive.")
 
     if metric.metric_baseline is None:
@@ -76,7 +76,7 @@ def calculate_mde_with_chosen_n(
     # Calculate sample size based on arm allocation
     arm_ratio, control_prob = _calculate_arm_ratio_and_control_prob_from_weights(arm_weights, n_arms)
 
-    control_n_available = int(chosen_n * control_prob)
+    control_n_available = int(desired_n * control_prob)
 
     match metric.metric_type:
         case MetricType.NUMERIC:
@@ -152,7 +152,7 @@ def analyze_metric_power(
         metric.metric_target = metric.metric_baseline * (1 + metric.metric_pct_change)
 
     # Validate we have usable input to do the analysis.
-
+    # When in sample size mode, check for zero or negative nonnull_n
     if desired_n is None and (metric.available_n is None or metric.available_n <= 0):
         return _power_analysis_error(
             metric,
@@ -160,109 +160,76 @@ def analyze_metric_power(
             ("You have no available units to run your experiment. Adjust your filters to target more units."),
         )
 
-    # When in sample size mode, check for zero or negative nonnull_n
-    if desired_n is None and metric.available_n is not None and metric.available_n <= 0:
-        return _power_analysis_error(
-            metric,
-            MetricPowerAnalysisMessageType.NO_AVAILABLE_N,
-            ("You have no available units to run your experiment. Adjust your filters to target more units."),
-        )
-
-    if metric.metric_target is None or metric.metric_baseline is None:
+    # The condition covers MDE mode and sample size  mode
+    if (desired_n is not None and metric.metric_baseline is None) or (
+        desired_n is None and (metric.metric_target is None or metric.metric_baseline is None)
+    ):
         return _power_analysis_error(
             metric,
             MetricPowerAnalysisMessageType.NO_BASELINE,
             (
                 "Could not calculate metric baseline with given specification. "
                 "Provide a metric baseline or adjust filters."
+            ),
+        )
+
+    # Validate stddev for NUMERIC metrics (needed for both modes)
+    if metric.metric_type == MetricType.NUMERIC and (metric.metric_stddev is None or metric.metric_stddev <= 0):
+        return _power_analysis_error(
+            metric,
+            MetricPowerAnalysisMessageType.ZERO_STDDEV,
+            (
+                "There is no variation in the metric with the given filters. Standard deviation must be "
+                "positive to do a sample size calculation."
             ),
         )
 
     # Case A: Both target and baseline defined - calculate required n
-    if metric.metric_type == MetricType.NUMERIC:
-        if metric.metric_stddev is None or metric.metric_stddev <= 0:
-            return _power_analysis_error(
-                metric,
-                MetricPowerAnalysisMessageType.ZERO_STDDEV,
-                (
-                    "There is no variation in the metric with the given filters. Standard deviation must be "
-                    "positive to do a sample size calculation."
-                ),
-            )
-
-        effect_size = (metric.metric_target - metric.metric_baseline) / metric.metric_stddev
-    elif metric.metric_type == MetricType.BINARY:
-        effect_size = sms.proportion_effectsize(metric.metric_baseline, metric.metric_target)
-    else:
-        raise ValueError("metric_type must be NUMERIC or BINARY.")
-
-    if effect_size == 0.0:
-        return _power_analysis_error(
-            metric,
-            MetricPowerAnalysisMessageType.NO_BASELINE,
-            (
-                "Could not calculate metric baseline with given specification. "
-                "Provide a metric baseline or adjust filters."
-            ),
-        )
-
-    arm_ratio, control_prob = _calculate_arm_ratio_and_control_prob_from_weights(arm_weights, n_arms)
-
-    # Case A: desired_n is specified - calculate MDE
-    if desired_n is not None:
-        # Validate stddev for NUMERIC metrics
-        if metric.metric_type == MetricType.NUMERIC and (metric.metric_stddev is None or metric.metric_stddev <= 0):
-            return _power_analysis_error(
-                metric,
-                MetricPowerAnalysisMessageType.ZERO_STDDEV,
-                (
-                    "There is no variation in the metric with the given filters. Standard deviation must be "
-                    "positive to do a sample size calculation."
-                ),
-            )
-
-        # Calculate control group size
-        control_n_desired = int(desired_n * control_prob)
-
-        # Calculate MDE based on metric type
+    if desired_n is None:
+        # Help mypy understand these are not None (validated above)
+        assert metric.metric_target is not None
+        assert metric.metric_baseline is not None
         if metric.metric_type == MetricType.NUMERIC:
-            power_analysis = sms.TTestIndPower()
-            needed_delta = (
-                power_analysis.solve_power(
-                    nobs1=control_n_desired,
-                    effect_size=None,  # ← We're solving for this!
-                    alpha=alpha,
-                    power=power,
-                    ratio=arm_ratio,
-                )
-                * metric.metric_stddev
-            )
-            target_possible = needed_delta + metric.metric_baseline
-        else:  # BINARY
-            power_analysis = sms.NormalIndPower()
-            # Calculate minimum detectable effect size
-            min_effect_size = power_analysis.solve_power(
-                nobs1=control_n_desired,
-                alpha=alpha,
-                power=power,
-                ratio=arm_ratio,
+            assert metric.metric_stddev is not None
+            effect_size = (metric.metric_target - metric.metric_baseline) / metric.metric_stddev
+        elif metric.metric_type == MetricType.BINARY:
+            effect_size = sms.proportion_effectsize(metric.metric_baseline, metric.metric_target)
+        else:
+            raise ValueError("metric_type must be NUMERIC or BINARY.")
+
+        if effect_size == 0.0:
+            return _power_analysis_error(
+                metric,
+                MetricPowerAnalysisMessageType.ZERO_EFFECT_SIZE,
+                "Cannot detect an effect-size of 0. Try changing your effect-size.",
             )
 
-            # Convert Cohen's h back to proportion
-            p1 = metric.metric_baseline
-            arcsin_p2 = 2 * np.arcsin(np.sqrt(p1)) - min_effect_size
-            target_possible = np.sin(arcsin_p2 / 2) ** 2
+        arm_ratio, control_prob = _calculate_arm_ratio_and_control_prob_from_weights(arm_weights, n_arms)
+
+    # Case B: desired_n is specified - calculate MDE
+    # Validate stddev for NUMERIC metrics BEFORE calling helper
+
+    elif desired_n is not None:
+        # Use the helper function to calculate MDE
+        target_possible, pct_change_possible = calculate_mde_with_desired_n(
+            desired_n=desired_n,
+            metric=metric,
+            n_arms=n_arms,
+            alpha=alpha,
+            power=power,
+            arm_weights=arm_weights,
+        )
 
         # Build response object for MDE calculation
         analysis = MetricPowerAnalysis(metric_spec=metric)
         analysis.target_n = desired_n
         analysis.target_possible = target_possible
-        analysis.pct_change_possible = (
-            (target_possible / metric.metric_baseline - 1.0) if metric.metric_baseline else None
-        )
+        analysis.pct_change_possible = pct_change_possible
         analysis.sufficient_n = None  # Not applicable in MDE mode
 
         # Create message
+        # Help mypy understand metric_baseline is not None (validated at line 175)
+        assert metric.metric_baseline is not None
         values_map: dict[str, float | int] = {
             "desired_n": desired_n,
             "metric_baseline": round(metric.metric_baseline, 4),
@@ -286,31 +253,6 @@ def analyze_metric_power(
 
     # Case B: Original behavior - calculate required n given target effect
     # (Existing code continues below)
-    if metric.metric_type == MetricType.NUMERIC:
-        if metric.metric_stddev is None or metric.metric_stddev <= 0:
-            return _power_analysis_error(
-                metric,
-                MetricPowerAnalysisMessageType.ZERO_STDDEV,
-                (
-                    "There is no variation in the metric with the given filters. Standard deviation must be "
-                    "positive to do a sample size calculation."
-                ),
-            )
-
-        effect_size = (metric.metric_target - metric.metric_baseline) / metric.metric_stddev
-    elif metric.metric_type == MetricType.BINARY:
-        effect_size = sms.proportion_effectsize(metric.metric_baseline, metric.metric_target)
-    else:
-        raise ValueError("metric_type must be NUMERIC or BINARY.")
-
-    if effect_size == 0.0:
-        return _power_analysis_error(
-            metric,
-            MetricPowerAnalysisMessageType.ZERO_EFFECT_SIZE,
-            "Cannot detect an effect-size of 0. Try changing your effect-size.",
-        )
-
-    arm_ratio, control_prob = _calculate_arm_ratio_and_control_prob_from_weights(arm_weights, n_arms)
 
     # solve_power returns the required sample size for the control group
     power_analysis = sms.TTestIndPower()
@@ -361,8 +303,8 @@ def analyze_metric_power(
         # Calculate the Minimum Detectable Effect that meets the power spec with the available subjects.
         # At this point we know available_n is not None because we checked earlier
         assert metric.available_n is not None  # Help mypy understand this
-        target_possible, pct_change_possible = calculate_mde_with_chosen_n(
-            chosen_n=metric.available_n,
+        target_possible, pct_change_possible = calculate_mde_with_desired_n(
+            desired_n=metric.available_n,
             metric=metric,
             n_arms=n_arms,
             alpha=alpha,
