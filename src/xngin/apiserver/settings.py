@@ -62,6 +62,14 @@ class ParticipantsDef(ParticipantsSchema):
             "within a datasource."
         ),
     ]
+    hidden: Annotated[
+        bool,
+        Field(
+            default=False,
+            description="If true, this participant type is hidden from list_participant_types. "
+            "Used for auto-generated participant types.",
+        ),
+    ] = False
 
 
 class ParticipantsMixin(ConfigBaseModel):

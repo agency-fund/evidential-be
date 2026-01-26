@@ -3226,3 +3226,134 @@ async def test_delete_experiment_data_none_specified(
         await xngin_session.scalars(select(tables.Snapshot).where(tables.Snapshot.experiment_id == experiment_id))
     )
     assert len(snapshots_after) == 1
+
+
+async def test_list_participant_types_excludes_hidden(
+    xngin_session: AsyncSession,
+    testing_datasource_with_user,
+    pget,
+):
+    """Test that list_participant_types excludes hidden participant types."""
+    ds_id = testing_datasource_with_user.ds.id
+    ds = testing_datasource_with_user.ds
+
+    # Add a hidden participant type directly
+    config = ds.get_config()
+    config.participants.append(
+        ParticipantsDef(
+            type="schema",
+            participant_type="hidden_pt",
+            table_name="some_table",
+            fields=[FieldDescriptor(field_name="id", data_type=DataType.BIGINT, is_unique_id=True)],
+            hidden=True,
+        )
+    )
+    ds.set_config(config)
+    await xngin_session.commit()
+
+    # List participants - should not include hidden one
+    response = pget(f"/v1/m/datasources/{ds_id}/participants")
+    assert response.status_code == 200
+    list_response = ListParticipantsTypeResponse.model_validate(response.json())
+    participant_names = [p.participant_type for p in list_response.items]
+    assert "hidden_pt" not in participant_names
+    assert "test_participant_type" in participant_names
+
+
+async def test_create_experiment_with_table_name_and_primary_key(
+    xngin_session: AsyncSession,
+    testing_datasource_with_user,
+    use_deterministic_random,
+    ppost,
+    pget,
+):
+    """Test creating an experiment with table_name and primary_key instead of participant_type."""
+    ds_id = testing_datasource_with_user.ds.id
+
+    request_json = make_createexperimentrequest_json(experiment_type=ExperimentsType.FREQ_ONLINE)
+
+    response = ppost(
+        f"/v1/m/datasources/{ds_id}/experiments",
+        params={"random_state": 42},
+        json={
+            **request_json,
+            "table_name": "dwh",  # The actual table name in test DWH
+            "primary_key": "id",
+        },
+    )
+    assert response.status_code == 200, response.content
+    created = CreateExperimentResponse.model_validate(response.json())
+
+    # Verify auto-generated participant_type name
+    assert created.design_spec.participant_type.startswith("__dwh_")
+    assert len(created.design_spec.participant_type) == len("__dwh_") + 8
+
+    # Verify participant type was persisted and is hidden
+    ds = await xngin_session.get_one(tables.Datasource, ds_id)
+    await xngin_session.refresh(ds)
+    config = ds.get_config()
+    pt = config.find_participants(created.design_spec.participant_type)
+    assert pt is not None
+    assert pt.hidden is True
+
+    # Verify hidden participant type not in list
+    response = pget(f"/v1/m/datasources/{ds_id}/participants")
+    list_response = ListParticipantsTypeResponse.model_validate(response.json())
+    participant_names = [p.participant_type for p in list_response.items]
+    assert created.design_spec.participant_type not in participant_names
+
+
+def test_create_experiment_table_name_requires_primary_key(
+    testing_datasource_with_user,
+    ppost,
+):
+    """Test that table_name requires primary_key."""
+    ds_id = testing_datasource_with_user.ds.id
+    request_json = make_createexperimentrequest_json(experiment_type=ExperimentsType.FREQ_ONLINE)
+
+    response = ppost(
+        f"/v1/m/datasources/{ds_id}/experiments",
+        json={**request_json, "table_name": "some_table"},
+    )
+    assert response.status_code == 422
+    assert "table_name and primary_key must be provided together" in response.text
+
+
+def test_create_experiment_primary_key_requires_table_name(
+    testing_datasource_with_user,
+    ppost,
+):
+    """Test that primary_key requires table_name."""
+    ds_id = testing_datasource_with_user.ds.id
+    request_json = make_createexperimentrequest_json(experiment_type=ExperimentsType.FREQ_ONLINE)
+
+    response = ppost(
+        f"/v1/m/datasources/{ds_id}/experiments",
+        json={**request_json, "primary_key": "id"},
+    )
+    assert response.status_code == 422
+    assert "table_name and primary_key must be provided together" in response.text
+
+
+async def test_create_preassigned_experiment_with_table_name_and_primary_key(
+    xngin_session: AsyncSession,
+    testing_datasource_with_user,
+    use_deterministic_random,
+    ppost,
+):
+    """Test creating a preassigned experiment with table_name and primary_key."""
+    ds_id = testing_datasource_with_user.ds.id
+
+    request_json = make_createexperimentrequest_json(experiment_type=ExperimentsType.FREQ_PREASSIGNED)
+
+    response = ppost(
+        f"/v1/m/datasources/{ds_id}/experiments",
+        params={"chosen_n": 100, "random_state": 42},
+        json={**request_json, "table_name": "dwh", "primary_key": "id"},
+    )
+    assert response.status_code == 200, response.content
+    created = CreateExperimentResponse.model_validate(response.json())
+
+    assert created.design_spec.participant_type.startswith("__dwh_")
+    assert created.assign_summary is not None
+    assert created.assign_summary.sample_size == 100

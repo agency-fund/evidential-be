@@ -24,7 +24,7 @@ from fastapi import (
 )
 from fastapi.responses import StreamingResponse
 from loguru import logger
-from pydantic import BaseModel
+from pydantic import BaseModel, TypeAdapter
 from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import QueryableAttribute, selectinload
@@ -113,6 +113,7 @@ from xngin.apiserver.routers.common_api_types import (
     ContextType,
     CreateExperimentRequest,
     CreateExperimentResponse,
+    DesignSpec,
     ExperimentAnalysisResponse,
     ExperimentsType,
     GetExperimentAssignmentsResponse,
@@ -1078,7 +1079,7 @@ async def list_participant_types(
 ) -> ListParticipantsTypeResponse:
     ds = await get_datasource_or_raise(session, user, datasource_id)
     return ListParticipantsTypeResponse(
-        items=list(sorted(ds.get_config().participants, key=lambda p: p.participant_type))
+        items=list(sorted([p for p in ds.get_config().participants if not p.hidden], key=lambda p: p.participant_type))
     )
 
 
@@ -1413,6 +1414,48 @@ async def create_experiment(
     validated_webhooks = await validate_webhooks(
         session=session, organization_id=organization_id, request_webhooks=body.webhooks
     )
+
+    # Allow creation of experiments w/o a pre-existing participant type by creating a participant type on demand.
+    if body.table_name is not None and body.primary_key is not None:
+        if not isinstance(body.design_spec, BaseFrequentistDesignSpec):
+            raise LateValidationError("table_name/primary_key is only supported for frequentist experiment types")
+
+        # Synthesize participant definition
+        participants_def = synthesize_participants_def(
+            table_name=body.table_name,
+            primary_key=body.primary_key,
+            design_spec=body.design_spec,
+        )
+
+        # Generate unique name: __<table_name>_<8 hex chars>
+        generated_participant_type = f"__{body.table_name}_{secrets.token_hex(4)}"
+
+        # Create ParticipantsDef with generated name and hidden=True
+        new_participants_def = ParticipantsDef(
+            type="schema",
+            participant_type=generated_participant_type,
+            table_name=participants_def.table_name,
+            fields=participants_def.fields,
+            hidden=True,
+        )
+
+        # Persist to datasource config
+        config = datasource.get_config()
+        config.participants.append(new_participants_def)
+        datasource.set_config(config)
+
+        # Update design_spec with generated participant type
+        design_spec_dict = body.design_spec.model_dump()
+        design_spec_dict["participant_type"] = generated_participant_type
+        updated_design_spec: DesignSpec = TypeAdapter(DesignSpec).validate_python(design_spec_dict)
+
+        body = CreateExperimentRequest(
+            design_spec=updated_design_spec,
+            power_analyses=body.power_analyses,
+            webhooks=body.webhooks,
+            table_name=body.table_name,
+            primary_key=body.primary_key,
+        )
 
     response = await experiments_common.create_experiment_impl(
         request=body,
