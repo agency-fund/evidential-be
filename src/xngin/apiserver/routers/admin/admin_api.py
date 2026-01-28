@@ -69,6 +69,7 @@ from xngin.apiserver.routers.admin.admin_api_types import (
     CreateParticipantsTypeResponse,
     CreateSnapshotResponse,
     DatasourceSummary,
+    DeleteExperimentDataRequest,
     Drift,
     EventSummary,
     GetDatasourceResponse,
@@ -1734,6 +1735,34 @@ async def delete_experiment(
     )
     await session.commit()
     return response
+
+
+@router.delete(
+    "/datasources/{datasource_id}/experiments/{experiment_id}/data",
+    status_code=status.HTTP_204_NO_CONTENT,
+)
+async def delete_experiment_data(
+    datasource_id: str,
+    experiment_id: str,
+    session: Annotated[AsyncSession, Depends(xngin_db_session)],
+    user: Annotated[tables.User, Depends(require_user_from_token)],
+    body: DeleteExperimentDataRequest,
+):
+    """Deletes specific data associated with an experiment."""
+    ds = await get_datasource_or_raise(session, user, datasource_id)
+    experiment = await get_experiment_via_ds_or_raise(session, ds, experiment_id)
+
+    if body.assignments:
+        await session.execute(delete(tables.ArmAssignment).where(tables.ArmAssignment.experiment_id == experiment.id))
+
+    if body.draws:
+        await session.execute(delete(tables.Draw).where(tables.Draw.experiment_id == experiment.id))
+
+    if body.snapshots:
+        await session.execute(delete(tables.Snapshot).where(tables.Snapshot.experiment_id == experiment.id))
+
+    await session.commit()
+    return GENERIC_SUCCESS
 
 
 @router.patch(

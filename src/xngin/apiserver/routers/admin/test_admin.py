@@ -33,6 +33,7 @@ from xngin.apiserver.routers.admin.admin_api_types import (
     CreateParticipantsTypeResponse,
     CreateSnapshotResponse,
     DatasourceSummary,
+    DeleteExperimentDataRequest,
     FieldMetadata,
     GcpServiceAccount,
     GetDatasourceResponse,
@@ -63,6 +64,7 @@ from xngin.apiserver.routers.admin.admin_api_types import (
 from xngin.apiserver.routers.admin.admin_common import DEFAULT_NO_DWH_SOURCE_NAME
 from xngin.apiserver.routers.auth.auth_dependencies import (
     PRIVILEGED_EMAIL,
+    PRIVILEGED_TOKEN_FOR_TESTING,
     UNPRIVILEGED_EMAIL,
 )
 from xngin.apiserver.routers.common_api_types import (
@@ -2965,3 +2967,219 @@ async def test_logout_updates_last_logout_timestamp(xngin_session: AsyncSession,
     await xngin_session.refresh(user)
     assert user.last_logout > initial_last_logout
     assert datetime.now(UTC) - user.last_logout < timedelta(seconds=60)
+
+
+async def test_delete_experiment_data_not_authorized(client):
+    """Test that deleting experiment data without authorization returns 401."""
+    response = client.request(
+        "DELETE",
+        "/v1/m/datasources/not-a-datasource/experiments/not-an-experiment/data",
+        json=DeleteExperimentDataRequest(snapshots=True).model_dump(),
+        headers={"Authorization": "Bearer fake-token"},
+    )
+    assert response.status_code == 401
+
+
+async def test_delete_experiment_data_experiment_not_found(testing_datasource_with_user, client):
+    """Test that deleting data for a non-existent experiment returns 404."""
+    ds_id = testing_datasource_with_user.ds.id
+    response = client.request(
+        "DELETE",
+        f"/v1/m/datasources/{ds_id}/experiments/not-an-experiment/data",
+        json=DeleteExperimentDataRequest(snapshots=True).model_dump(),
+        headers={"Authorization": f"Bearer {PRIVILEGED_TOKEN_FOR_TESTING}"},
+    )
+    assert response.status_code == 404
+
+
+async def test_delete_experiment_data_assignments(
+    xngin_session: AsyncSession,
+    testing_experiment: tables.Experiment,
+    testing_datasource_with_user,
+    client,
+):
+    """Test deleting arm assignments for an experiment."""
+    ds_id = testing_datasource_with_user.ds.id
+    experiment_id = testing_experiment.id
+
+    # Verify assignments exist before deletion
+    assignments_before = await xngin_session.scalars(
+        select(tables.ArmAssignment).where(tables.ArmAssignment.experiment_id == experiment_id)
+    )
+    assert len(list(assignments_before)) > 0
+
+    # Delete assignments
+    response = client.request(
+        "DELETE",
+        f"/v1/m/datasources/{ds_id}/experiments/{experiment_id}/data",
+        json=DeleteExperimentDataRequest(assignments=True).model_dump(),
+        headers={"Authorization": f"Bearer {PRIVILEGED_TOKEN_FOR_TESTING}"},
+    )
+    assert response.status_code == 204
+
+    # Verify assignments are deleted
+    xngin_session.expire_all()
+    assignments_after = await xngin_session.scalars(
+        select(tables.ArmAssignment).where(tables.ArmAssignment.experiment_id == experiment_id)
+    )
+    assert len(list(assignments_after)) == 0
+
+
+@pytest.mark.parametrize(
+    "testing_bandit_experiment",
+    [(ExperimentsType.MAB_ONLINE, PriorTypes.BETA, LikelihoodTypes.BERNOULLI, 10)],
+    indirect=True,
+)
+async def test_delete_experiment_data_draws(
+    xngin_session: AsyncSession,
+    testing_bandit_experiment: tables.Experiment,
+    testing_datasource_with_user,
+    client,
+):
+    """Test deleting draws for a bandit experiment."""
+    ds_id = testing_datasource_with_user.ds.id
+    experiment_id = testing_bandit_experiment.id
+
+    # Verify draws exist before deletion
+    draws_before = await xngin_session.scalars(select(tables.Draw).where(tables.Draw.experiment_id == experiment_id))
+    assert len(list(draws_before)) > 0
+
+    # Delete draws
+    response = client.request(
+        "DELETE",
+        f"/v1/m/datasources/{ds_id}/experiments/{experiment_id}/data",
+        json=DeleteExperimentDataRequest(draws=True).model_dump(),
+        headers={"Authorization": f"Bearer {PRIVILEGED_TOKEN_FOR_TESTING}"},
+    )
+    assert response.status_code == 204
+
+    # Verify draws are deleted
+    xngin_session.expire_all()
+    draws_after = await xngin_session.scalars(select(tables.Draw).where(tables.Draw.experiment_id == experiment_id))
+    assert len(list(draws_after)) == 0
+
+
+async def test_delete_experiment_data_snapshots(
+    xngin_session: AsyncSession,
+    testing_experiment: tables.Experiment,
+    testing_datasource_with_user,
+    client,
+):
+    """Test deleting snapshots for an experiment."""
+    ds_id = testing_datasource_with_user.ds.id
+    experiment_id = testing_experiment.id
+
+    # Create a snapshot directly in the database
+    snapshot = tables.Snapshot(experiment_id=experiment_id)
+    xngin_session.add(snapshot)
+    await xngin_session.commit()
+
+    # Verify snapshot exists before deletion
+    snapshots_before = await xngin_session.scalars(
+        select(tables.Snapshot).where(tables.Snapshot.experiment_id == experiment_id)
+    )
+    assert len(list(snapshots_before)) > 0
+
+    # Delete snapshots
+    response = client.request(
+        "DELETE",
+        f"/v1/m/datasources/{ds_id}/experiments/{experiment_id}/data",
+        json=DeleteExperimentDataRequest(snapshots=True).model_dump(),
+        headers={"Authorization": f"Bearer {PRIVILEGED_TOKEN_FOR_TESTING}"},
+    )
+    assert response.status_code == 204
+
+    # Verify snapshots are deleted
+    xngin_session.expire_all()
+    snapshots_after = await xngin_session.scalars(
+        select(tables.Snapshot).where(tables.Snapshot.experiment_id == experiment_id)
+    )
+    assert len(list(snapshots_after)) == 0
+
+
+async def test_delete_experiment_data_multiple(
+    xngin_session: AsyncSession,
+    testing_experiment: tables.Experiment,
+    testing_datasource_with_user,
+    client,
+):
+    """Test deleting multiple data types at once."""
+    ds_id = testing_datasource_with_user.ds.id
+    experiment_id = testing_experiment.id
+
+    # Create a snapshot
+    snapshot = tables.Snapshot(experiment_id=experiment_id)
+    xngin_session.add(snapshot)
+    await xngin_session.commit()
+
+    # Verify data exists before deletion
+    assignments_before = list(
+        await xngin_session.scalars(
+            select(tables.ArmAssignment).where(tables.ArmAssignment.experiment_id == experiment_id)
+        )
+    )
+    snapshots_before = list(
+        await xngin_session.scalars(select(tables.Snapshot).where(tables.Snapshot.experiment_id == experiment_id))
+    )
+    assert len(assignments_before) > 0
+    assert len(snapshots_before) > 0
+
+    # Delete both assignments and snapshots
+    response = client.request(
+        "DELETE",
+        f"/v1/m/datasources/{ds_id}/experiments/{experiment_id}/data",
+        json=DeleteExperimentDataRequest(assignments=True, snapshots=True).model_dump(),
+        headers={"Authorization": f"Bearer {PRIVILEGED_TOKEN_FOR_TESTING}"},
+    )
+    assert response.status_code == 204
+
+    # Verify both are deleted
+    xngin_session.expire_all()
+    assignments_after = list(
+        await xngin_session.scalars(
+            select(tables.ArmAssignment).where(tables.ArmAssignment.experiment_id == experiment_id)
+        )
+    )
+    snapshots_after = list(
+        await xngin_session.scalars(select(tables.Snapshot).where(tables.Snapshot.experiment_id == experiment_id))
+    )
+    assert len(assignments_after) == 0
+    assert len(snapshots_after) == 0
+
+
+async def test_delete_experiment_data_none_specified(
+    xngin_session: AsyncSession,
+    testing_experiment: tables.Experiment,
+    testing_datasource_with_user,
+    client,
+):
+    """Test that specifying no data types deletes nothing."""
+    ds_id = testing_datasource_with_user.ds.id
+    experiment_id = testing_experiment.id
+
+    # Count assignments before
+    assignments_before = list(
+        await xngin_session.scalars(
+            select(tables.ArmAssignment).where(tables.ArmAssignment.experiment_id == experiment_id)
+        )
+    )
+    count_before = len(assignments_before)
+    assert count_before > 0
+
+    # Delete with no flags set
+    response = client.request(
+        "DELETE",
+        f"/v1/m/datasources/{ds_id}/experiments/{experiment_id}/data",
+        json=DeleteExperimentDataRequest().model_dump(),
+        headers={"Authorization": f"Bearer {PRIVILEGED_TOKEN_FOR_TESTING}"},
+    )
+    assert response.status_code == 204
+
+    # Verify nothing was deleted
+    xngin_session.expire_all()
+    assignments_after = list(
+        await xngin_session.scalars(
+            select(tables.ArmAssignment).where(tables.ArmAssignment.experiment_id == experiment_id)
+        )
+    )
+    assert len(assignments_after) == count_before
