@@ -1113,6 +1113,7 @@ async def inspect_participant_types(
     session: Annotated[AsyncSession, Depends(xngin_db_session)],
     user: Annotated[tables.User, Depends(require_user_from_token)],
     refresh: Annotated[bool, Query(description="Refresh the cache.")] = False,
+    expensive: Annotated[bool, Query(description="Whether to run expensive metadata queries.")] = False,
 ) -> InspectParticipantTypesResponse:
     """Returns filter, strata, and metric field metadata for a participant type, including exemplars for
     filter fields."""
@@ -1145,11 +1146,7 @@ async def inspect_participant_types(
         async with DwhSession(dsconfig.dwh) as dwh:
             result = await dwh.inspect_table_with_descriptors(pconfig.table_name, pconfig.get_unique_id_field())
             filter_data = await asyncio.to_thread(
-                get_stats_on_filters,
-                dwh.session,
-                result.sa_table,
-                result.db_schema,
-                filter_fields,
+                get_stats_on_filters, dwh.session, result.sa_table, result.db_schema, filter_fields, expensive
             )
 
         return InspectParticipantTypesResponse(

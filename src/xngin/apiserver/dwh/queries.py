@@ -98,6 +98,7 @@ def get_stats_on_filters(
     sa_table: Table,
     db_schema: dict[str, FieldDescriptor],
     filter_schema: dict[str, FieldDescriptor],
+    expensive: bool,
 ) -> list[GetFiltersResponseElement]:
     """Runs SELECT queries for metrics (min, max, distinct, etc) on filter fields.
 
@@ -108,6 +109,7 @@ def get_stats_on_filters(
         sa_table: SQLAlchemy Table object
         db_schema: The latest table schema in the database described as FieldDescriptors
         filter_schema: The latest filter schema in the participant type config described as FieldDescriptors
+        expensive: If true, we run expensive min/max/distinct queries on all the columns.
 
     Returns:
         A mapper function that takes (column_name, column_descriptor) and returns GetFiltersResponseElement
@@ -124,11 +126,13 @@ def get_stats_on_filters(
         sa_col = sa_table.columns[col_name]
         match filter_class:
             case FilterClass.DISCRETE:
-                stmt: Select = (
-                    sqlalchemy.select(distinct(sa_col)).where(sa_col.is_not(None)).limit(1000).order_by(sa_col)
-                )
-                result_discrete = session.scalars(stmt)
-                distinct_values = [str(v) for v in result_discrete]
+                distinct_values = None
+                if expensive:
+                    stmt: Select = (
+                        sqlalchemy.select(distinct(sa_col)).where(sa_col.is_not(None)).limit(1000).order_by(sa_col)
+                    )
+                    result_discrete = session.scalars(stmt)
+                    distinct_values = [str(v) for v in result_discrete]
                 return GetFiltersResponseDiscrete(
                     field_name=col_name,
                     data_type=db_col.data_type,
@@ -137,11 +141,13 @@ def get_stats_on_filters(
                     distinct_values=distinct_values,
                 )
             case FilterClass.NUMERIC:
-                min_, max_ = session.execute(
-                    sqlalchemy.select(sqlalchemy.func.min(sa_col), sqlalchemy.func.max(sa_col)).where(
-                        sa_col.is_not(None)
-                    )
-                ).one()
+                min_, max_ = None, None
+                if expensive:
+                    min_, max_ = session.execute(
+                        sqlalchemy.select(sqlalchemy.func.min(sa_col), sqlalchemy.func.max(sa_col)).where(
+                            sa_col.is_not(None)
+                        )
+                    ).one()
                 return GetFiltersResponseNumericOrDate(
                     field_name=col_name,
                     data_type=db_col.data_type,
