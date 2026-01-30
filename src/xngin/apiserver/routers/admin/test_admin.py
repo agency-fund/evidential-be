@@ -3157,6 +3157,11 @@ async def test_delete_experiment_data_none_specified(
     ds_id = testing_datasource_with_user.ds.id
     experiment_id = testing_experiment.id
 
+    # Create a snapshot to verify thta it is not deleted
+    snapshot = tables.Snapshot(experiment_id=experiment_id)
+    xngin_session.add(snapshot)
+    await xngin_session.commit()
+
     # Count assignments before
     assignments_before = list(
         await xngin_session.scalars(
@@ -3183,3 +3188,7 @@ async def test_delete_experiment_data_none_specified(
         )
     )
     assert len(assignments_after) == count_before
+    snapshots_after = list(
+        await xngin_session.scalars(select(tables.Snapshot).where(tables.Snapshot.experiment_id == experiment_id))
+    )
+    assert len(snapshots_after) == 1
