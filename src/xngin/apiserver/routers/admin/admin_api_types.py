@@ -539,3 +539,11 @@ class UpdateArmRequest(AdminApiBaseModel):
 
     name: Annotated[str | None, Field(max_length=MAX_LENGTH_OF_NAME_VALUE)] = None
     description: Annotated[str | None, Field(max_length=MAX_LENGTH_OF_DESCRIPTION_VALUE)] = None
+
+
+class DeleteExperimentDataRequest(AdminApiBaseModel):
+    """Request to delete specific data associated with an experiment."""
+
+    assignments: Annotated[bool | None, Field(description="Delete related arm assignments.")] = None
+    draws: Annotated[bool | None, Field(description="Delete related draws.")] = None
+    snapshots: Annotated[bool | None, Field(description="Delete related snapshots.")] = None
