@@ -531,3 +531,94 @@ async def test_get_assignment_online_cache_headers(xngin_session, testing_dataso
         params={"max_age": -100},
     )
     assert response.status_code == 422
+
+
+async def test_get_assignment_mab_cache_headers(xngin_session, testing_datasource, client_v1):
+    """Test Cache-Control headers for MAB experiments (only cached after outcome recorded)."""
+    mab_experiment = await insert_experiment_and_arms(
+        xngin_session,
+        testing_datasource.ds,
+        experiment_type=ExperimentsType.MAB_ONLINE,
+    )
+
+    # Get assignment - no cache header since no outcome yet
+    response = client_v1.get(
+        f"/experiments/{mab_experiment.id!s}/assignments/1",
+        headers={constants.HEADER_API_KEY: testing_datasource.key},
+    )
+    assert response.status_code == 200
+    parsed = GetParticipantAssignmentResponse.model_validate_json(response.text)
+    assert parsed.assignment is not None
+    assert parsed.assignment.outcome is None
+    assert "Cache-Control" not in response.headers
+
+    # Record outcome
+    response = client_v1.post(
+        f"/experiments/{mab_experiment.id!s}/assignments/1/outcome",
+        headers={constants.HEADER_API_KEY: testing_datasource.key},
+        json={"outcome": 1.0},
+    )
+    assert response.status_code == 200
+
+    # Get assignment again - should have cache header now
+    response = client_v1.get(
+        f"/experiments/{mab_experiment.id!s}/assignments/1",
+        headers={constants.HEADER_API_KEY: testing_datasource.key},
+    )
+    assert response.status_code == 200
+    parsed = GetParticipantAssignmentResponse.model_validate_json(response.text)
+    assert parsed.assignment is not None
+    assert parsed.assignment.outcome == 1.0
+    assert response.headers["Cache-Control"] == "private, max-age=3600"
+
+
+async def test_get_assignment_cmab_cache_headers(xngin_session, testing_datasource, client_v1):
+    """Test Cache-Control headers for CMAB experiments (only cached after outcome recorded)."""
+    cmab_experiment = await insert_experiment_and_arms(
+        xngin_session,
+        testing_datasource.ds,
+        experiment_type=ExperimentsType.CMAB_ONLINE,
+    )
+
+    context_inputs = [
+        {"context_id": context.id, "context_value": 1.0}
+        for context in sorted(cmab_experiment.contexts, key=lambda c: c.id)
+    ]
+
+    # Create assignment via CMAB endpoint
+    response = client_v1.post(
+        f"/experiments/{cmab_experiment.id}/assignments/1/assign_cmab",
+        headers={constants.HEADER_API_KEY: testing_datasource.key},
+        json={"context_inputs": context_inputs},
+    )
+    assert response.status_code == 200
+
+    # Get assignment via GET - no cache header since no outcome yet
+    response = client_v1.get(
+        f"/experiments/{cmab_experiment.id!s}/assignments/1",
+        headers={constants.HEADER_API_KEY: testing_datasource.key},
+    )
+    assert response.status_code == 200
+    parsed = GetParticipantAssignmentResponse.model_validate_json(response.text)
+    assert parsed.assignment is not None
+    assert parsed.assignment.outcome is None
+    assert "Cache-Control" not in response.headers
+
+    # Record outcome
+    response = client_v1.post(
+        f"/experiments/{cmab_experiment.id!s}/assignments/1/outcome",
+        headers={constants.HEADER_API_KEY: testing_datasource.key},
+        json={"outcome": 1.0},
+    )
+    assert response.status_code == 200
+
+    # Get assignment again - should have cache header now
+    response = client_v1.get(
+        f"/experiments/{cmab_experiment.id!s}/assignments/1",
+        headers={constants.HEADER_API_KEY: testing_datasource.key},
+    )
+    assert response.status_code == 200
+    parsed = GetParticipantAssignmentResponse.model_validate_json(response.text)
+    assert parsed.assignment is not None
+    assert parsed.assignment.outcome == 1.0
+    assert response.headers["Cache-Control"] == "private, max-age=3600"

@@ -182,15 +182,18 @@ async def get_assignment(
     )
 
     # Only instruct clients to cache responses we know are immutable after creation.
-    if (
-        max_age > 0
-        and assignment_response.assignment
-        and (
-            ExperimentsType(experiment.experiment_type)
-            in {ExperimentsType.FREQ_PREASSIGNED, ExperimentsType.FREQ_ONLINE}
+    if max_age > 0 and assignment_response.assignment:
+        exp_type = ExperimentsType(experiment.experiment_type)
+        is_stable_frequentist = exp_type in {
+            ExperimentsType.FREQ_PREASSIGNED,
+            ExperimentsType.FREQ_ONLINE,
+        }
+        is_bandit_with_outcome = (
+            exp_type in {ExperimentsType.MAB_ONLINE, ExperimentsType.CMAB_ONLINE}
+            and assignment_response.assignment.outcome is not None
         )
-    ):
-        response.headers["Cache-Control"] = f"private, max-age={max_age}"
+        if is_stable_frequentist or is_bandit_with_outcome:
+            response.headers["Cache-Control"] = f"private, max-age={max_age}"
 
     return assignment_response
 
