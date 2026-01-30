@@ -54,8 +54,8 @@
             </div>
         </aside>
         <h2>
-            <span class="text">237 statements &nbsp;</span>
-            <button type="button" class="run button_toggle_run" value="run" data-shortcut="r" title="Toggle lines run">235<span class="text"> run</span></button>
+            <span class="text">241 statements &nbsp;</span>
+            <button type="button" class="run button_toggle_run" value="run" data-shortcut="r" title="Toggle lines run">239<span class="text"> run</span></button>
             <button type="button" class="mis show_mis button_toggle_mis" value="mis" data-shortcut="m" title="Toggle lines missing">2<span class="text"> missing</span></button>
             <button type="button" class="exc show_exc button_toggle_exc" value="exc" data-shortcut="x" title="Toggle lines excluded">0<span class="text"> excluded</span></button>
         </h2>
@@ -65,7 +65,7 @@
             <a id="nextFileLink" class="nav" href="z_272f90c4dc99306b_generic_handlers_py.html">&#xbb; next</a>
             &nbsp; &nbsp; &nbsp;
             <a class="nav" href="https://coverage.readthedocs.io/en/7.11.0">coverage.py v7.11.0</a>,
-            created at 2026-01-29 05:38 +0000
+            created at 2026-01-30 22:22 +0000
         </p>
         <aside class="hidden">
             <button type="button" class="button_next_chunk" data-shortcut="j"></button>
@@ -621,6 +621,14 @@
     <p class="pln"><span class="n"><a id="t539" href="#t539">539</a></span><span class="t">&nbsp;</span><span class="r"></span></p>
     <p class="run"><span class="n"><a id="t540" href="#t540">540</a></span><span class="t">    <span class="nam">name</span><span class="op">:</span> <span class="nam">Annotated</span><span class="op">[</span><span class="nam">str</span> <span class="op">|</span> <span class="key">None</span><span class="op">,</span> <span class="nam">Field</span><span class="op">(</span><span class="nam">max_length</span><span class="op">=</span><span class="nam">MAX_LENGTH_OF_NAME_VALUE</span><span class="op">)</span><span class="op">]</span> <span class="op">=</span> <span class="key">None</span>&nbsp;</span><span class="r"></span></p>
     <p class="run"><span class="n"><a id="t541" href="#t541">541</a></span><span class="t">    <span class="nam">description</span><span class="op">:</span> <span class="nam">Annotated</span><span class="op">[</span><span class="nam">str</span> <span class="op">|</span> <span class="key">None</span><span class="op">,</span> <span class="nam">Field</span><span class="op">(</span><span class="nam">max_length</span><span class="op">=</span><span class="nam">MAX_LENGTH_OF_DESCRIPTION_VALUE</span><span class="op">)</span><span class="op">]</span> <span class="op">=</span> <span class="key">None</span>&nbsp;</span><span class="r"></span></p>
+    <p class="pln"><span class="n"><a id="t542" href="#t542">542</a></span><span class="t">&nbsp;</span><span class="r"></span></p>
+    <p class="pln"><span class="n"><a id="t543" href="#t543">543</a></span><span class="t">&nbsp;</span><span class="r"></span></p>
+    <p class="run"><span class="n"><a id="t544" href="#t544">544</a></span><span class="t"><span class="key">class</span> <span class="nam">DeleteExperimentDataRequest</span><span class="op">(</span><span class="nam">AdminApiBaseModel</span><span class="op">)</span><span class="op">:</span>&nbsp;</span><span class="r"></span></p>
+    <p class="pln"><span class="n"><a id="t545" href="#t545">545</a></span><span class="t">    <span class="str">"""Request to delete specific data associated with an experiment."""</span>&nbsp;</span><span class="r"></span></p>
+    <p class="pln"><span class="n"><a id="t546" href="#t546">546</a></span><span class="t">&nbsp;</span><span class="r"></span></p>
+    <p class="run"><span class="n"><a id="t547" href="#t547">547</a></span><span class="t">    <span class="nam">assignments</span><span class="op">:</span> <span class="nam">Annotated</span><span class="op">[</span><span class="nam">bool</span> <span class="op">|</span> <span class="key">None</span><span class="op">,</span> <span class="nam">Field</span><span class="op">(</span><span class="nam">description</span><span class="op">=</span><span class="str">"Delete related arm assignments."</span><span class="op">)</span><span class="op">]</span> <span class="op">=</span> <span class="key">None</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run"><span class="n"><a id="t548" href="#t548">548</a></span><span class="t">    <span class="nam">draws</span><span class="op">:</span> <span class="nam">Annotated</span><span class="op">[</span><span class="nam">bool</span> <span class="op">|</span> <span class="key">None</span><span class="op">,</span> <span class="nam">Field</span><span class="op">(</span><span class="nam">description</span><span class="op">=</span><span class="str">"Delete related draws."</span><span class="op">)</span><span class="op">]</span> <span class="op">=</span> <span class="key">None</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run"><span class="n"><a id="t549" href="#t549">549</a></span><span class="t">    <span class="nam">snapshots</span><span class="op">:</span> <span class="nam">Annotated</span><span class="op">[</span><span class="nam">bool</span> <span class="op">|</span> <span class="key">None</span><span class="op">,</span> <span class="nam">Field</span><span class="op">(</span><span class="nam">description</span><span class="op">=</span><span class="str">"Delete related snapshots."</span><span class="op">)</span><span class="op">]</span> <span class="op">=</span> <span class="key">None</span>&nbsp;</span><span class="r"></span></p>
 </main>
 <footer>
     <div class="content">
@@ -630,7 +638,7 @@
             <a class="nav" href="z_272f90c4dc99306b_generic_handlers_py.html">&#xbb; next</a>
             &nbsp; &nbsp; &nbsp;
             <a class="nav" href="https://coverage.readthedocs.io/en/7.11.0">coverage.py v7.11.0</a>,
-            created at 2026-01-29 05:38 +0000
+            created at 2026-01-30 22:22 +0000
         </p>
     </div>
 </footer>
