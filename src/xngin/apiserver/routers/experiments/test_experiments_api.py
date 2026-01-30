@@ -449,3 +449,85 @@ async def test_assign_with_filters_participant_passes_filters(xngin_session, tes
     assert parsed.participant_id == "participant_1"
     assert parsed.assignment is not None
     assert parsed.assignment.arm_name in {"control", "treatment"}
+
+
+async def test_get_assignment_preassigned_cache_headers(xngin_session, testing_datasource, client_v1):
+    """Test Cache-Control headers for preassigned experiments."""
+    preassigned_experiment = await insert_experiment_and_arms(xngin_session, testing_datasource.ds)
+    assignment = tables.ArmAssignment(
+        experiment_id=preassigned_experiment.id,
+        participant_id="assigned_id",
+        participant_type=preassigned_experiment.participant_type,
+        arm_id=preassigned_experiment.arms[0].id,
+        strata=[],
+    )
+    xngin_session.add(assignment)
+    await xngin_session.commit()
+
+    # No assignment = no cache header
+    response = client_v1.get(
+        f"/experiments/{preassigned_experiment.id!s}/assignments/unassigned_id",
+        headers={constants.HEADER_API_KEY: testing_datasource.key},
+    )
+    assert response.status_code == 200
+    assert "Cache-Control" not in response.headers
+
+    # With assignment = cache header
+    response = client_v1.get(
+        f"/experiments/{preassigned_experiment.id!s}/assignments/assigned_id",
+        headers={constants.HEADER_API_KEY: testing_datasource.key},
+    )
+    assert response.status_code == 200
+    assert response.headers["Cache-Control"] == "private, max-age=3600"
+
+
+async def test_get_assignment_online_cache_headers(xngin_session, testing_datasource, client_v1):
+    """Test Cache-Control headers for online experiments."""
+    online_experiment = await insert_experiment_and_arms(
+        xngin_session,
+        testing_datasource.ds,
+        experiment_type=ExperimentsType.FREQ_ONLINE,
+    )
+
+    # No assignment when create_if_none=false = no cache header
+    response = client_v1.get(
+        f"/experiments/{online_experiment.id!s}/assignments/1",
+        headers={constants.HEADER_API_KEY: testing_datasource.key},
+        params={"create_if_none": False},
+    )
+    assert response.status_code == 200
+    assert "Cache-Control" not in response.headers
+
+    # Default max_age when assignment created
+    response = client_v1.get(
+        f"/experiments/{online_experiment.id!s}/assignments/1",
+        headers={constants.HEADER_API_KEY: testing_datasource.key},
+    )
+    assert response.status_code == 200
+    assert response.headers["Cache-Control"] == "private, max-age=3600"
+
+    # max_age=0 disables caching
+    response = client_v1.get(
+        f"/experiments/{online_experiment.id!s}/assignments/1",
+        headers={constants.HEADER_API_KEY: testing_datasource.key},
+        params={"max_age": 0},
+    )
+    assert response.status_code == 200
+    assert "Cache-Control" not in response.headers
+
+    # Custom max_age
+    response = client_v1.get(
+        f"/experiments/{online_experiment.id!s}/assignments/1",
+        headers={constants.HEADER_API_KEY: testing_datasource.key},
+        params={"max_age": 100},
+    )
+    assert response.status_code == 200
+    assert response.headers["Cache-Control"] == "private, max-age=100"
+
+    # Invalid max_age returns 422
+    response = client_v1.get(
+        f"/experiments/{online_experiment.id!s}/assignments/1",
+        headers={constants.HEADER_API_KEY: testing_datasource.key},
+        params={"max_age": -100},
+    )
+    assert response.status_code == 422

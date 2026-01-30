@@ -4,14 +4,17 @@ This module defines the public API for clients to integrate with experiments.
 """
 
 from contextlib import asynccontextmanager
+from datetime import timedelta
 from typing import Annotated, Any
 
+from annotated_types import Ge, Le
 from fastapi import (
     APIRouter,
     Body,
     Depends,
     FastAPI,
     Query,
+    Response,
 )
 from fastapi.responses import StreamingResponse
 from loguru import logger
@@ -146,6 +149,7 @@ async def get_assignment(
     experiment: Annotated[tables.Experiment, Depends(experiment_dependency)],
     participant_id: str,
     xngin_session: Annotated[AsyncSession, Depends(xngin_db_session)],
+    response: Response,
     create_if_none: Annotated[
         bool,
         Query(
@@ -156,8 +160,19 @@ async def get_assignment(
         ),
     ] = True,
     random_state: Annotated[int | None, Depends(random_seed_dependency)] = None,
+    max_age: Annotated[
+        int,
+        Query(
+            description=(
+                "Controls the Cache-Control header max-age value returned with stable assignments "
+                "(freq_preassigned, freq_online). Set to 0 to disable caching."
+            )
+        ),
+        Ge(0),
+        Le(86400),
+    ] = int(timedelta(hours=1).total_seconds()),
 ) -> GetParticipantAssignmentResponse:
-    return await get_or_create_assignment_for_participant(
+    assignment_response = await get_or_create_assignment_for_participant(
         xngin_session=xngin_session,
         experiment=experiment,
         participant_id=participant_id,
@@ -165,6 +180,19 @@ async def get_assignment(
         properties=None,
         random_state=random_state,
     )
+
+    # Only instruct clients to cache responses we know are immutable after creation.
+    if (
+        max_age > 0
+        and assignment_response.assignment
+        and (
+            ExperimentsType(experiment.experiment_type)
+            in {ExperimentsType.FREQ_PREASSIGNED, ExperimentsType.FREQ_ONLINE}
+        )
+    ):
+        response.headers["Cache-Control"] = f"private, max-age={max_age}"
+
+    return assignment_response
 
 
 @router.post(
