@@ -65,7 +65,6 @@ from xngin.stats.analysis import analyze_experiment as analyze_freq_experiment
 from xngin.stats.bandit_analysis import analyze_experiment as analyze_bandit_experiment
 from xngin.stats.bandit_sampling import choose_arm as choose_bandit_arm
 from xngin.stats.bandit_sampling import update_arm as update_bandit_arm
-from xngin.stats.power import calculate_mde_with_desired_n
 from xngin.stats.stats_errors import StatsAnalysisError
 from xngin.tq.task_payload_types import WEBHOOK_OUTBOUND_TASK_TYPE, WebhookOutboundTask
 
@@ -137,23 +136,6 @@ async def create_experiment_impl(
             metric_names = [m.field_name for m in design_spec.metrics]
             strata_names = [s.field_name for s in design_spec.strata]
             stratum_cols = strata_names + metric_names if stratify_on_metrics else strata_names
-
-            # Get MDEs for chosen_n if applicable
-            if request.power_analyses:
-                for analysis in request.power_analyses.analyses:
-                    if chosen_n == analysis.target_n:
-                        actual_mde = analysis.metric_spec.metric_pct_change
-                    elif chosen_n == analysis.metric_spec.available_n:
-                        actual_mde = analysis.pct_change_possible
-                    else:
-                        _, actual_mde = calculate_mde_with_desired_n(
-                            metric=analysis.metric_spec,
-                            desired_n=chosen_n,
-                            n_arms=len(design_spec.arms),
-                            arm_weights=design_spec.get_validated_arm_weights(),
-                        )
-                    analysis.chosen_n = chosen_n
-                    analysis.pct_change_with_chosen_n = actual_mde
 
             async with DwhSession(ds_config.dwh) as dwh:
                 result = await dwh.get_participants(

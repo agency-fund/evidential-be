@@ -15,6 +15,7 @@ from xngin.apiserver import flags
 from xngin.apiserver.conftest import delete_seeded_users
 from xngin.apiserver.dns import safe_resolve
 from xngin.apiserver.dwh.inspection_types import FieldDescriptor, ParticipantsSchema
+from xngin.apiserver.dwh.inspections import ColumnDeleted, Drift, FieldChangedType
 from xngin.apiserver.routers.admin.admin_api_converters import (
     CREDENTIALS_UNAVAILABLE_MESSAGE,
 )
@@ -32,10 +33,12 @@ from xngin.apiserver.routers.admin.admin_api_types import (
     CreateParticipantsTypeResponse,
     CreateSnapshotResponse,
     DatasourceSummary,
+    DeleteExperimentDataRequest,
     FieldMetadata,
     GcpServiceAccount,
     GetDatasourceResponse,
     GetOrganizationResponse,
+    GetParticipantsTypeResponse,
     GetSnapshotResponse,
     Hidden,
     InspectDatasourceResponse,
@@ -50,6 +53,7 @@ from xngin.apiserver.routers.admin.admin_api_types import (
     RedshiftDsn,
     RevealedStr,
     SnapshotStatus,
+    TableDeleted,
     UpdateArmRequest,
     UpdateDatasourceRequest,
     UpdateExperimentRequest,
@@ -60,6 +64,7 @@ from xngin.apiserver.routers.admin.admin_api_types import (
 from xngin.apiserver.routers.admin.admin_common import DEFAULT_NO_DWH_SOURCE_NAME
 from xngin.apiserver.routers.auth.auth_dependencies import (
     PRIVILEGED_EMAIL,
+    PRIVILEGED_TOKEN_FOR_TESTING,
     UNPRIVILEGED_EMAIL,
 )
 from xngin.apiserver.routers.common_api_types import (
@@ -101,7 +106,6 @@ from xngin.apiserver.routers.experiments.test_experiments_common import (
     make_createexperimentrequest_json,
     make_insertable_experiment,
 )
-from xngin.apiserver.settings import ParticipantsDef
 from xngin.apiserver.sqla import tables
 from xngin.apiserver.storage.storage_format_converters import ExperimentStorageConverter
 from xngin.apiserver.testing.assertions import assert_dates_equal
@@ -1007,7 +1011,7 @@ def test_participants_lifecycle(testing_datasource_with_user, pget, ppost, ppatc
         f"/v1/m/datasources/{ds_id}/participants/test_participant_type",
     )
     assert response.status_code == 200, response.content
-    parsed = ParticipantsDef.model_validate(response.json())
+    parsed = GetParticipantsTypeResponse.model_validate(response.json()).current
     assert parsed.type == "schema"
     assert parsed.participant_type == "test_participant_type"
     assert parsed.table_name == "dwh"
@@ -1018,11 +1022,11 @@ def test_participants_lifecycle(testing_datasource_with_user, pget, ppost, ppatc
         content=CreateParticipantsTypeRequest(
             participant_type="newpt",
             schema_def=ParticipantsSchema(
-                table_name="newps",
+                table_name="dwh",
                 fields=[
                     FieldDescriptor(
-                        field_name="newf",
-                        data_type=DataType.INTEGER,
+                        field_name="id",
+                        data_type=DataType.BIGINT,
                         description="test",
                         is_unique_id=True,
                         is_strata=False,
@@ -1065,7 +1069,7 @@ def test_participants_lifecycle(testing_datasource_with_user, pget, ppost, ppatc
         f"/v1/m/datasources/{ds_id}/participants/renamedpt",
     )
     assert response.status_code == 200, response.content
-    participants_def = ParticipantsDef.model_validate(response.json())
+    participants_def = GetParticipantsTypeResponse.model_validate(response.json()).current
     assert participants_def.participant_type == "renamedpt"
 
     # Delete the renamed participant type.
@@ -1103,13 +1107,13 @@ def test_participants_lifecycle(testing_datasource_with_user, pget, ppost, ppatc
     assert response.status_code == 403, response.content
 
 
-def test_create_participants_type_invalid(testing_datasource, ppost):
+def test_create_participants_type_invalid(testing_datasource_with_user, ppost):
     response = ppost(
-        f"/v1/m/datasources/{testing_datasource.ds.id}/participants",
+        f"/v1/m/datasources/{testing_datasource_with_user.ds.id}/participants",
         content=CreateParticipantsTypeRequest.model_construct(
             participant_type="newpt",
             schema_def=ParticipantsSchema.model_construct(
-                table_name="newps",
+                table_name="dwh",
                 fields=[
                     FieldDescriptor(
                         field_name="newf",
@@ -1126,6 +1130,103 @@ def test_create_participants_type_invalid(testing_datasource, ppost):
     )
     assert response.status_code == 422, response.content
     assert "no columns marked as unique ID." in response.json()["detail"][0]["msg"], response.content
+
+
+def test_get_participants_type_with_schema_drift(testing_datasource_with_user, ppost, pget):
+    """Test schema drift detection when a column is missing from the table and a type changed."""
+    ds_id = testing_datasource_with_user.ds.id
+    # Initial schema: simulate a type change and a missing column
+    schema = ParticipantsSchema(
+        table_name="dwh",
+        fields=[
+            FieldDescriptor(
+                field_name="id",
+                data_type=DataType.INTEGER,
+                description="simulating integer -> bigint",
+                is_unique_id=True,
+            ),
+            FieldDescriptor(
+                field_name="is_engaged",
+                data_type=DataType.BOOLEAN,
+                description="ok",
+                is_filter=True,
+            ),
+            FieldDescriptor(
+                field_name="missing_col",
+                data_type=DataType.CHARACTER_VARYING,
+                description="simulates a deleted column",
+                is_metric=True,
+            ),
+        ],
+    )
+
+    # Create participant type with the initial schema
+    response = ppost(
+        f"/v1/m/datasources/{ds_id}/participants",
+        content=CreateParticipantsTypeRequest(participant_type="pt", schema_def=schema).model_dump_json(),
+    )
+    assert response.status_code == 200, response.content
+
+    # Get the participant type to fetch drift info
+    response = pget(f"/v1/m/datasources/{ds_id}/participants/pt")
+    assert response.status_code == 200, response.content
+    get_response = GetParticipantsTypeResponse.model_validate(response.json())
+
+    # First verify the drift is as expected.
+    assert get_response.drift == Drift(
+        schema_diff=[
+            FieldChangedType(table_name="dwh", column_name="id", old_type=DataType.INTEGER, new_type=DataType.BIGINT),
+            ColumnDeleted(table_name="dwh", column_name="missing_col"),
+        ]
+    )
+
+    # Verify that the current (last known) schema is the dehydrated minimal schema.
+    current = get_response.current.fields
+    assert current == schema.fields
+
+    # Verify the full proposed schema has the expected field changes.
+    proposed = get_response.proposed.fields
+    assert len(proposed) > len(current)
+    id_field = next((f for f in proposed if f.field_name == "id"), None)
+    assert id_field == schema.fields[0].model_copy(update={"data_type": DataType.BIGINT})
+    is_engaged_field = next((f for f in proposed if f.field_name == "is_engaged"), None)
+    assert is_engaged_field == schema.fields[1]
+    missing_col_field = next((f for f in proposed if f.field_name == schema.fields[2].field_name), None)
+    assert missing_col_field is None
+
+
+def test_get_participants_type_bad_table(testing_datasource_with_user, ppost, pget):
+    ds_id = testing_datasource_with_user.ds.id
+    schema = ParticipantsSchema(
+        table_name="deleted_dwh",
+        fields=[
+            FieldDescriptor(
+                field_name="newf",
+                data_type=DataType.INTEGER,
+                description="test",
+                is_unique_id=True,
+            )
+        ],
+    )
+    response = ppost(
+        f"/v1/m/datasources/{ds_id}/participants",
+        content=CreateParticipantsTypeRequest(participant_type="newpt", schema_def=schema).model_dump_json(),
+    )
+    assert response.status_code == 200, response.content
+
+    # Get the named participant type
+    response = pget(f"/v1/m/datasources/{ds_id}/participants/newpt")
+    assert response.status_code == 200, response.content
+
+    # Now verify that the underlying table looks like it was deleted.
+    get_response = GetParticipantsTypeResponse.model_validate(response.json())
+    assert get_response.drift == Drift(schema_diff=[TableDeleted(table_name=schema.table_name)])
+    # And that the old known state is still returned as well.
+    current_def = get_response.current
+    assert current_def.participant_type == "newpt"
+    assert current_def.table_name == schema.table_name
+    assert current_def.fields == schema.fields
+    assert get_response.proposed == current_def
 
 
 async def test_lifecycle_with_db(testing_datasource, ppost, ppatch, pget, pdelete, udelete):
@@ -2866,3 +2967,228 @@ async def test_logout_updates_last_logout_timestamp(xngin_session: AsyncSession,
     await xngin_session.refresh(user)
     assert user.last_logout > initial_last_logout
     assert datetime.now(UTC) - user.last_logout < timedelta(seconds=60)
+
+
+async def test_delete_experiment_data_not_authorized(client):
+    """Test that deleting experiment data without authorization returns 401."""
+    response = client.request(
+        "DELETE",
+        "/v1/m/datasources/not-a-datasource/experiments/not-an-experiment/data",
+        json=DeleteExperimentDataRequest(snapshots=True).model_dump(),
+        headers={"Authorization": "Bearer fake-token"},
+    )
+    assert response.status_code == 401
+
+
+async def test_delete_experiment_data_experiment_not_found(testing_datasource_with_user, client):
+    """Test that deleting data for a non-existent experiment returns 404."""
+    ds_id = testing_datasource_with_user.ds.id
+    response = client.request(
+        "DELETE",
+        f"/v1/m/datasources/{ds_id}/experiments/not-an-experiment/data",
+        json=DeleteExperimentDataRequest(snapshots=True).model_dump(),
+        headers={"Authorization": f"Bearer {PRIVILEGED_TOKEN_FOR_TESTING}"},
+    )
+    assert response.status_code == 404
+
+
+async def test_delete_experiment_data_assignments(
+    xngin_session: AsyncSession,
+    testing_experiment: tables.Experiment,
+    testing_datasource_with_user,
+    client,
+):
+    """Test deleting arm assignments for an experiment."""
+    ds_id = testing_datasource_with_user.ds.id
+    experiment_id = testing_experiment.id
+
+    # Verify assignments exist before deletion
+    assignments_before = await xngin_session.scalars(
+        select(tables.ArmAssignment).where(tables.ArmAssignment.experiment_id == experiment_id)
+    )
+    assert len(list(assignments_before)) > 0
+
+    # Delete assignments
+    response = client.request(
+        "DELETE",
+        f"/v1/m/datasources/{ds_id}/experiments/{experiment_id}/data",
+        json=DeleteExperimentDataRequest(assignments=True).model_dump(),
+        headers={"Authorization": f"Bearer {PRIVILEGED_TOKEN_FOR_TESTING}"},
+    )
+    assert response.status_code == 204
+
+    # Verify assignments are deleted
+    xngin_session.expire_all()
+    assignments_after = await xngin_session.scalars(
+        select(tables.ArmAssignment).where(tables.ArmAssignment.experiment_id == experiment_id)
+    )
+    assert len(list(assignments_after)) == 0
+
+
+@pytest.mark.parametrize(
+    "testing_bandit_experiment",
+    [(ExperimentsType.MAB_ONLINE, PriorTypes.BETA, LikelihoodTypes.BERNOULLI, 10)],
+    indirect=True,
+)
+async def test_delete_experiment_data_draws(
+    xngin_session: AsyncSession,
+    testing_bandit_experiment: tables.Experiment,
+    testing_datasource_with_user,
+    client,
+):
+    """Test deleting draws for a bandit experiment."""
+    ds_id = testing_datasource_with_user.ds.id
+    experiment_id = testing_bandit_experiment.id
+
+    # Verify draws exist before deletion
+    draws_before = await xngin_session.scalars(select(tables.Draw).where(tables.Draw.experiment_id == experiment_id))
+    assert len(list(draws_before)) > 0
+
+    # Delete draws
+    response = client.request(
+        "DELETE",
+        f"/v1/m/datasources/{ds_id}/experiments/{experiment_id}/data",
+        json=DeleteExperimentDataRequest(draws=True).model_dump(),
+        headers={"Authorization": f"Bearer {PRIVILEGED_TOKEN_FOR_TESTING}"},
+    )
+    assert response.status_code == 204
+
+    # Verify draws are deleted
+    xngin_session.expire_all()
+    draws_after = await xngin_session.scalars(select(tables.Draw).where(tables.Draw.experiment_id == experiment_id))
+    assert len(list(draws_after)) == 0
+
+
+async def test_delete_experiment_data_snapshots(
+    xngin_session: AsyncSession,
+    testing_experiment: tables.Experiment,
+    testing_datasource_with_user,
+    client,
+):
+    """Test deleting snapshots for an experiment."""
+    ds_id = testing_datasource_with_user.ds.id
+    experiment_id = testing_experiment.id
+
+    # Create a snapshot directly in the database
+    snapshot = tables.Snapshot(experiment_id=experiment_id)
+    xngin_session.add(snapshot)
+    await xngin_session.commit()
+
+    # Verify snapshot exists before deletion
+    snapshots_before = await xngin_session.scalars(
+        select(tables.Snapshot).where(tables.Snapshot.experiment_id == experiment_id)
+    )
+    assert len(list(snapshots_before)) > 0
+
+    # Delete snapshots
+    response = client.request(
+        "DELETE",
+        f"/v1/m/datasources/{ds_id}/experiments/{experiment_id}/data",
+        json=DeleteExperimentDataRequest(snapshots=True).model_dump(),
+        headers={"Authorization": f"Bearer {PRIVILEGED_TOKEN_FOR_TESTING}"},
+    )
+    assert response.status_code == 204
+
+    # Verify snapshots are deleted
+    xngin_session.expire_all()
+    snapshots_after = await xngin_session.scalars(
+        select(tables.Snapshot).where(tables.Snapshot.experiment_id == experiment_id)
+    )
+    assert len(list(snapshots_after)) == 0
+
+
+async def test_delete_experiment_data_multiple(
+    xngin_session: AsyncSession,
+    testing_experiment: tables.Experiment,
+    testing_datasource_with_user,
+    client,
+):
+    """Test deleting multiple data types at once."""
+    ds_id = testing_datasource_with_user.ds.id
+    experiment_id = testing_experiment.id
+
+    # Create a snapshot
+    snapshot = tables.Snapshot(experiment_id=experiment_id)
+    xngin_session.add(snapshot)
+    await xngin_session.commit()
+
+    # Verify data exists before deletion
+    assignments_before = list(
+        await xngin_session.scalars(
+            select(tables.ArmAssignment).where(tables.ArmAssignment.experiment_id == experiment_id)
+        )
+    )
+    snapshots_before = list(
+        await xngin_session.scalars(select(tables.Snapshot).where(tables.Snapshot.experiment_id == experiment_id))
+    )
+    assert len(assignments_before) > 0
+    assert len(snapshots_before) > 0
+
+    # Delete both assignments and snapshots
+    response = client.request(
+        "DELETE",
+        f"/v1/m/datasources/{ds_id}/experiments/{experiment_id}/data",
+        json=DeleteExperimentDataRequest(assignments=True, snapshots=True).model_dump(),
+        headers={"Authorization": f"Bearer {PRIVILEGED_TOKEN_FOR_TESTING}"},
+    )
+    assert response.status_code == 204
+
+    # Verify both are deleted
+    xngin_session.expire_all()
+    assignments_after = list(
+        await xngin_session.scalars(
+            select(tables.ArmAssignment).where(tables.ArmAssignment.experiment_id == experiment_id)
+        )
+    )
+    snapshots_after = list(
+        await xngin_session.scalars(select(tables.Snapshot).where(tables.Snapshot.experiment_id == experiment_id))
+    )
+    assert len(assignments_after) == 0
+    assert len(snapshots_after) == 0
+
+
+async def test_delete_experiment_data_none_specified(
+    xngin_session: AsyncSession,
+    testing_experiment: tables.Experiment,
+    testing_datasource_with_user,
+    client,
+):
+    """Test that specifying no data types deletes nothing."""
+    ds_id = testing_datasource_with_user.ds.id
+    experiment_id = testing_experiment.id
+
+    # Create a snapshot to verify thta it is not deleted
+    snapshot = tables.Snapshot(experiment_id=experiment_id)
+    xngin_session.add(snapshot)
+    await xngin_session.commit()
+
+    # Count assignments before
+    assignments_before = list(
+        await xngin_session.scalars(
+            select(tables.ArmAssignment).where(tables.ArmAssignment.experiment_id == experiment_id)
+        )
+    )
+    count_before = len(assignments_before)
+    assert count_before > 0
+
+    # Delete with no flags set
+    response = client.request(
+        "DELETE",
+        f"/v1/m/datasources/{ds_id}/experiments/{experiment_id}/data",
+        json=DeleteExperimentDataRequest().model_dump(),
+        headers={"Authorization": f"Bearer {PRIVILEGED_TOKEN_FOR_TESTING}"},
+    )
+    assert response.status_code == 204
+
+    # Verify nothing was deleted
+    xngin_session.expire_all()
+    assignments_after = list(
+        await xngin_session.scalars(
+            select(tables.ArmAssignment).where(tables.ArmAssignment.experiment_id == experiment_id)
+        )
+    )
+    assert len(assignments_after) == count_before
+    snapshots_after = list(
+        await xngin_session.scalars(select(tables.Snapshot).where(tables.Snapshot.experiment_id == experiment_id))
+    )
+    assert len(snapshots_after) == 1

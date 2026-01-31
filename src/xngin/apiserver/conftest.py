@@ -38,7 +38,6 @@ from xngin.apiserver.routers.auth.auth_dependencies import (
 )
 from xngin.apiserver.settings import (
     Dsn,
-    ParticipantsConfig,
     ParticipantsDef,
     RemoteDatabaseConfig,
 )
@@ -338,7 +337,7 @@ async def _make_datasource_metadata(
     *,
     new_name: str,
     new_datasource_id: str | None = None,
-    participants_def_list: list[ParticipantsConfig] | None = None,
+    participants_def_list: list[ParticipantsDef] | None = None,
 ) -> DatasourceMetadata:
     """Generates a new Organization, Datasource, and API key in the database for testing.
 

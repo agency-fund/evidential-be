@@ -40,7 +40,16 @@ def test_analyze_metric_power_numeric():
     assert result.msg.msg == result.msg.source_msg.format_map(result.msg.values)
 
 
-def test_analyze_metric_power_numeric_insufficient():
+@pytest.mark.parametrize(
+    "available_nonnull_n,available_n,target_possible",
+    [
+        (789, 789, 23.8468),
+        (104, 789, 42.9997),
+        # This last test would pass if we compared against available_n instead of nonulls.
+        (789, 100000, 23.8468),
+    ],
+)
+def test_analyze_metric_power_numeric_insufficient(available_nonnull_n, available_n, target_possible):
     metric = DesignSpecMetric(
         field_name="test_metric",
         metric_pct_change=0.1,
@@ -48,8 +57,8 @@ def test_analyze_metric_power_numeric_insufficient():
         metric_baseline=13.206590621039297,
         metric_target=14.527249683143227,
         metric_stddev=37.601056495700554,
-        available_nonnull_n=789,
-        available_n=789,
+        available_nonnull_n=available_nonnull_n,
+        available_n=available_n,
     )
 
     result = analyze_metric_power(metric, n_arms=4, power=0.8, alpha=0.05)
@@ -58,21 +67,28 @@ def test_analyze_metric_power_numeric_insufficient():
     assert result.metric_spec.metric_type == MetricType.NUMERIC
     assert result.metric_spec.metric_baseline == pytest.approx(13.2065, rel=1e-4)
     assert result.metric_spec.metric_target == pytest.approx(14.5273, rel=1e-4)
-    assert result.metric_spec.available_nonnull_n == 789
-    assert result.metric_spec.available_n == 789
+    assert result.metric_spec.available_nonnull_n == available_nonnull_n
+    assert result.metric_spec.available_n == available_n
     assert result.target_n == 50904
     assert not result.sufficient_n
     assert result.msg is not None
     assert result.msg.type == MetricPowerAnalysisMessageType.INSUFFICIENT
     assert result.msg.values == {
-        "available_n": 789,
+        "available_n": available_n,
         "target_n": 50904,
-        "available_nonnull_n": 789,
-        "additional_n_needed": 50115,
+        "available_nonnull_n": available_nonnull_n,
+        "additional_n_needed": 50904 - available_nonnull_n,
         "metric_baseline": 13.2066,
-        "target_possible": 23.8468,
+        "target_possible": target_possible,
         "metric_target": 14.5272,
     }
+
+    # Check that null warning appears when there are nulls
+    if available_nonnull_n != available_n:
+        assert "WARNING" in result.msg.msg
+    else:
+        assert "WARNING" not in result.msg.msg
+
     assert result.msg.msg == result.msg.source_msg.format_map(result.msg.values)
 
 
@@ -189,12 +205,7 @@ def test_analyze_metric_missing_baseline_returns_friendly_error():
     assert "Could not calculate metric baseline" in result.msg.msg
 
 
-@pytest.mark.skip(
-    reason="Test expects SUFFICIENT when available_nonnull_n=0, "
-    "but this should return NO_AVAILABLE_N error. "
-    "Needs clarification on expected behavior."
-)
-def test_analyze_metric_with_no_available_nonnull_n_returns_ok():
+def test_analyze_metric_with_zero_available_nonnull_n_returns_insufficient():
     metric = DesignSpecMetric(
         field_name="no_available_nonnull_n",
         metric_type=MetricType.BINARY,
@@ -206,14 +217,13 @@ def test_analyze_metric_with_no_available_nonnull_n_returns_ok():
 
     result = analyze_metric_power(metric, n_arms=2)
 
-    assert result.msg
-    assert result.msg.type == MetricPowerAnalysisMessageType.SUFFICIENT
-    assert "There are enough units available." in result.msg.msg
-    assert result.msg.values == {
-        "available_n": 1000,
-        "available_nonnull_n": 0,
-        "target_n": 778,
-    }
+    assert result.msg is not None
+    assert result.msg.type == MetricPowerAnalysisMessageType.INSUFFICIENT
+    assert "You have no units with non-null values" in result.msg.msg
+    # When returning early error, values is None
+    assert result.msg.values is None
+    assert result.target_n is None
+    assert result.sufficient_n is None
 
 
 def test_analyze_metric_zero_effect_size_returns_friendly_error():
