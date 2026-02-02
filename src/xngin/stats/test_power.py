@@ -451,14 +451,9 @@ def test_analyze_metric_power_numeric_with_desired_n():
 
     # Should return MDE results
     assert result.target_n == 500
-    assert result.target_possible is not None
-    assert result.pct_change_possible is not None
+    assert result.target_possible == pytest.approx(105.0213)
+    assert result.pct_change_possible == pytest.approx(0.0502, abs=1e-4)
     assert result.sufficient_n is None  # Not applicable in MDE mode
-
-    # target_possible should be greater than baseline
-    assert metric.metric_baseline is not None
-    assert result.target_possible is not None
-    assert result.target_possible > metric.metric_baseline
 
     # Message should mention MDE
     assert result.msg is not None
@@ -479,12 +474,10 @@ def test_analyze_metric_power_binary_with_desired_n():
 
     # Should return MDE results
     assert result.target_n == 1000
-    assert result.target_possible is not None
-    assert result.pct_change_possible is not None
+    assert result.target_possible == pytest.approx(0.0186, abs=1e-4)
+    # re: % change = (target possible / baseline) - 1
+    assert result.pct_change_possible == pytest.approx(-0.6274, abs=1e-4)
     assert result.sufficient_n is None
-
-    # target_possible should be greater than baseline
-    assert result.target_possible != metric.metric_baseline
 
     # Message should mention MDE
     assert result.msg is not None
@@ -519,9 +512,13 @@ def test_check_power_with_desired_n():
     # Both should have MDE calculated
     for result in results:
         assert result.target_n == 500
-        assert result.target_possible is not None
-        assert result.pct_change_possible is not None
         assert result.sufficient_n is None
+
+    assert results[0].target_possible == pytest.approx(105.0213)
+    assert results[0].pct_change_possible == pytest.approx(0.0502, abs=1e-4)
+    # standardized effect size (Cohen's h) = 0.2505810918259752
+    assert results[1].target_possible == pytest.approx(0.0100, abs=1e-4)
+    assert results[1].pct_change_possible == pytest.approx(-0.7998, abs=1e-4)
 
 
 def test_analyze_metric_power_without_desired_n_still_works():
@@ -542,8 +539,8 @@ def test_analyze_metric_power_without_desired_n_still_works():
     # Should calculate required sample size (not MDE)
     assert result.target_n is not None
     assert result.target_n > 0
-    assert result.sufficient_n is not None  # Should be True or False
-    assert result.target_possible is None or isinstance(result.target_possible, float)
+    assert result.sufficient_n is True
+    assert result.target_possible is None
 
 
 def test_analyze_metric_power_desired_n_missing_baseline():
@@ -551,7 +548,7 @@ def test_analyze_metric_power_desired_n_missing_baseline():
     metric = DesignSpecMetric(
         field_name="test_metric",
         metric_type=MetricType.NUMERIC,
-        metric_baseline=None,  # ← Missing!
+        metric_baseline=None,
         metric_stddev=20.0,
     )
 
@@ -568,7 +565,7 @@ def test_analyze_metric_power_desired_n_zero_stddev():
         field_name="test_metric",
         metric_type=MetricType.NUMERIC,
         metric_baseline=100.0,
-        metric_stddev=0.0,  # ← Zero stddev!
+        metric_stddev=0.0,
     )
 
     result = analyze_metric_power(metric, n_arms=2, desired_n=500)
@@ -593,5 +590,6 @@ def test_analyze_metric_power_desired_n_with_unbalanced_arms():
 
     # Should still work with unbalanced allocation
     assert result.target_n == 1000
+    assert metric.metric_baseline is not None
     assert result.target_possible is not None
-    assert result.target_possible != metric.metric_baseline
+    assert result.target_possible < metric.metric_baseline

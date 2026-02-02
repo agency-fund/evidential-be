@@ -109,9 +109,12 @@ def calculate_mde_with_desired_n(
             # Convert Cohen's h back to proportion
             # h = 2 * arcsin(sqrt(p1)) - 2 * arcsin(sqrt(p2))
             # where p1 is baseline and p2 is target
+            # NOTE: typically the target proportion is > baseline, so h will be negative. But when
+            # solving for an effect size given n, it will always be positive, meaning the target
+            # will be *smaller* than baseline.
             p1 = metric.metric_baseline
-            arcsin_p2 = 2 * np.arcsin(np.sqrt(p1)) - min_effect_size
-            target_possible = np.sin(arcsin_p2 / 2) ** 2
+            arcsin_p2 = (2 * np.arcsin(np.sqrt(p1)) - min_effect_size) / 2.0
+            target_possible = np.sin(arcsin_p2) ** 2
         case _:
             raise ValueError(f"metric_type must be one of {list(MetricType)}.")
 
@@ -127,7 +130,7 @@ def _analyze_power_sample_size_mode(
     arm_weights: list[float] | None,
 ) -> MetricPowerAnalysis:
     """
-    Calculate required sample size given target effect.
+    Calculate required sample size given target effect (in the DesignSpecMetric).
 
     This function validates its own inputs and returns appropriate errors.
     """
@@ -173,7 +176,7 @@ def _analyze_power_sample_size_mode(
             ),
         )
 
-    # Calculate effect size
+    # Derive the user's desired effect size from the metric inputs
     if metric.metric_type == MetricType.NUMERIC:
         # Validate stddev for NUMERIC metrics
         if metric.metric_stddev is None or metric.metric_stddev <= 0:
@@ -200,7 +203,8 @@ def _analyze_power_sample_size_mode(
 
     arm_ratio, control_prob = _calculate_arm_ratio_and_control_prob_from_weights(arm_weights, n_arms)
 
-    # solve_power returns the required sample size for the control group
+    # Finally, calculate the minimum sample size for the desired effect size.
+    # solve_power returns the required sample size for the control, from which we derive the total n needed.
     power_analysis = sms.TTestIndPower()
     control_n = np.ceil(
         power_analysis.solve_power(
@@ -322,7 +326,6 @@ def _analyze_power_mde_mode(
             ),
         )
 
-    # Use the helper function to calculate MDE
     target_possible, pct_change_possible = calculate_mde_with_desired_n(
         desired_n=desired_n,
         metric=metric,
