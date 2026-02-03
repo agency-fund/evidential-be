@@ -140,7 +140,9 @@ experiment_and_datasource_dependency = ExperimentDependency(preload=[tables.Expe
 experiment_with_contexts_dependency = ExperimentDependency(preload=[tables.Experiment.contexts])
 
 # Use this version when a full GetExperimentResponse is needed.
-experiment_response_dependency = ExperimentDependency(preload=[tables.Experiment.webhooks, tables.Experiment.contexts])
+experiment_response_dependency = ExperimentDependency(
+    preload=[tables.Experiment.webhooks, tables.Experiment.contexts, tables.Experiment.design_fields]
+)
 
 # This version is used with processing assignments, e.g. exporting them.
 experiment_with_assignments_dependency = ExperimentDependency(

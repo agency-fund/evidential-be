@@ -31,6 +31,7 @@ arm_id_factory = unique_id_factory("arm")
 datasource_id_factory = unique_id_factory("ds")
 event_id_factory = unique_id_factory("evt")
 experiment_id_factory = unique_id_factory("exp")
+experiment_field_id_factory = unique_id_factory("expf")
 organization_id_factory = unique_id_factory("o")
 snapshot_id_factory = unique_id_factory("sn")
 task_id_factory = unique_id_factory("task")
@@ -441,6 +442,11 @@ class Experiment(Base):
     contexts: Mapped[list["Context"]] = relationship(
         "Context", back_populates="experiment", cascade="all, delete-orphan"
     )
+    design_fields: Mapped[list["ExperimentField"]] = relationship(
+        back_populates="experiment",
+        cascade="all, delete-orphan",
+        lazy="raise",
+    )
     snapshots: Mapped["Snapshot"] = relationship(viewonly=True)
 
 
@@ -528,6 +534,32 @@ class Context(Base):
     value_type: Mapped[str] = mapped_column()
 
     experiment: Mapped[Experiment] = relationship("Experiment", back_populates="contexts")
+
+
+class ExperimentField(Base):
+    """Stores individual fields used in an experiment's design specification.
+
+    Each row represents one field with a specific use (filter, metric, stratum, or unique_id).
+    The same field_name can appear multiple times, even with the same 'use' value, to support
+    configurations like multiple filters on the same field with different criteria.
+    """
+
+    __tablename__ = "experiment_fields"
+
+    id: Mapped[str] = mapped_column(primary_key=True, default=experiment_field_id_factory)
+    experiment_id: Mapped[str] = mapped_column(String(36), ForeignKey("experiments.id", ondelete="CASCADE"))
+    field_name: Mapped[str] = mapped_column(String(255))
+    # Stores the enum value of the field's use: filter, metric, stratum, or id
+    use: Mapped[str] = mapped_column(String(20))
+    # Stores the enum value of the field's common_enums.DataType. Nullable in case our migration
+    # can't find a type for all fields, or for experiments not backed by a datasource.
+    data_type: Mapped[str | None] = mapped_column(String(50))
+    # Extra metadata related to the field's use.
+    other: Mapped[dict | None] = mapped_column(postgresql.JSONB)
+
+    experiment: Mapped["Experiment"] = relationship(back_populates="design_fields")
+
+    __table_args__ = (Index("idx_experiment_fields_experiment_id", "experiment_id"),)
 
 
 class Snapshot(Base):

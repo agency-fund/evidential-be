@@ -11,6 +11,7 @@ from typing import Self
 
 import numpy as np
 from pydantic import TypeAdapter
+from sqlalchemy import inspect
 
 from xngin.apiserver.routers import common_api_types as capi
 from xngin.apiserver.routers.common_enums import (
@@ -87,8 +88,54 @@ class ExperimentStorageConverter:
         """Saves the components of a DesignSpec to the experiment."""
         if not isinstance(design_spec, capi.BaseFrequentistDesignSpec):
             self.experiment.design_spec_fields = None
+            self.experiment.design_fields = []
             return self
 
+        # Clear existing design fields
+        self.experiment.design_fields = []
+
+        # Add filters
+        if design_spec.filters:
+            for filter_item in design_spec.filters:
+                self.experiment.design_fields.append(
+                    tables.ExperimentField(
+                        field_name=filter_item.field_name,
+                        use="filter",
+                        data_type=None,  # Will be populated during migration or by future logic
+                        other={"relation": filter_item.relation, "value": list(filter_item.value)},
+                    )
+                )
+
+        # Add metrics
+        if design_spec.metrics:
+            for metric in design_spec.metrics:
+                other_data = {}
+                if metric.metric_pct_change is not None:
+                    other_data["metric_pct_change"] = metric.metric_pct_change
+                if metric.metric_target is not None:
+                    other_data["metric_target"] = metric.metric_target
+                self.experiment.design_fields.append(
+                    tables.ExperimentField(
+                        field_name=metric.field_name,
+                        use="metric",
+                        data_type=None,  # Will be populated during migration or by future logic
+                        other=other_data or None,
+                    )
+                )
+
+        # Add strata
+        if design_spec.strata:
+            for stratum in design_spec.strata:
+                self.experiment.design_fields.append(
+                    tables.ExperimentField(
+                        field_name=stratum.field_name,
+                        use="stratum",
+                        data_type=None,  # Will be populated during migration or by future logic
+                        other=None,
+                    )
+                )
+
+        # Keep JSONB column in sync for backwards compatibility during transition
         storage_strata = None
         if design_spec.strata:
             storage_strata = [StorageStratum(field_name=s.field_name) for s in design_spec.strata]
@@ -123,7 +170,49 @@ class ExperimentStorageConverter:
         return self
 
     def get_design_spec_fields(self) -> DesignSpecFields:
-        return DesignSpecFields.model_validate(self.experiment.design_spec_fields)
+        # Reconstruct DesignSpecFields from design_fields relationship
+        # Check if design_fields relationship is loaded without triggering lazy='raise'
+        insp = inspect(self.experiment)
+        is_design_fields_loaded = "design_fields" not in insp.unloaded
+        # Fallback to JSONB column if design_fields is not loaded or empty
+        # (for backwards compatibility during transition)
+        if not is_design_fields_loaded or not self.experiment.design_fields:
+            return DesignSpecFields.model_validate(self.experiment.design_spec_fields)
+
+        filters = None
+        metrics = None
+        strata = None
+
+        # Extract filters from design_fields
+        filter_fields = [df for df in self.experiment.design_fields if df.use == "filter"]
+        if filter_fields:
+            filters = [
+                StorageFilter(
+                    field_name=df.field_name,
+                    relation=df.other.get("relation") if df.other else "",
+                    value=df.other.get("value") if df.other else [],
+                )
+                for df in filter_fields
+            ]
+
+        # Extract metrics from design_fields
+        metric_fields = [df for df in self.experiment.design_fields if df.use == "metric"]
+        if metric_fields:
+            metrics = [
+                StorageMetric(
+                    field_name=df.field_name,
+                    metric_pct_change=df.other.get("metric_pct_change") if df.other else None,
+                    metric_target=df.other.get("metric_target") if df.other else None,
+                )
+                for df in metric_fields
+            ]
+
+        # Extract strata from design_fields
+        strata_fields = [df for df in self.experiment.design_fields if df.use == "stratum"]
+        if strata_fields:
+            strata = [StorageStratum(field_name=df.field_name) for df in strata_fields]
+
+        return DesignSpecFields(filters=filters, metrics=metrics, strata=strata)
 
     def get_design_spec_filters(self) -> list[capi.Filter]:
         return ExperimentStorageConverter.get_api_filters(self.get_design_spec_fields())
@@ -148,6 +237,8 @@ class ExperimentStorageConverter:
             ExperimentsType.FREQ_ONLINE.value,
             ExperimentsType.FREQ_PREASSIGNED.value,
         }:
+            # Load design_fields relationship if needed
+            await self.experiment.awaitable_attrs.design_fields
             design_spec_fields = self.get_design_spec_fields()
             return TypeAdapter(capi.DesignSpec).validate_python({
                 **base_experiment_dict,
