@@ -34,6 +34,40 @@ def _calculate_arm_ratio_and_control_prob_from_weights(
     return arm_ratio, control_prob
 
 
+def calculate_design_effect(icc: float, avg_cluster_size: float) -> float:
+    """
+    Calculate design effect (DEFF) for cluster-randomized designs.
+
+    The design effect quantifies loss of statistical power due to clustering.
+    When participants are grouped in clusters (schools, hospitals, etc.),
+    observations within clusters are more similar than between clusters.
+
+    Formula: DEFF = 1 + (m - 1) * icc
+
+    Args:
+        icc: Intracluster correlation coefficient, range [0, 1]
+             Example: 0.15 means 15% of variance is between clusters
+        avg_cluster_size: Average number of individuals per cluster (m)
+
+    Returns:
+        Design effect (DEFF). Always >= 1.
+
+    Raises:
+        ValueError: If icc not in [0, 1] or avg_cluster_size < 1
+
+    Examples:
+        >>> calculate_design_effect(icc=0.15, avg_cluster_size=30)
+        5.35
+    """
+    if not 0 <= icc <= 1:
+        raise ValueError(f"ICC must be between 0 and 1, got {icc}")
+
+    if avg_cluster_size < 1:
+        raise ValueError(f"Cluster size must be >= 1, got {avg_cluster_size}")
+    # return DEFF = 1 + (m - 1) * icc
+    return 1 + (avg_cluster_size - 1) * icc
+
+
 def _power_analysis_error(
     metric: DesignSpecMetric, msg_type: MetricPowerAnalysisMessageType, msg_body: str
 ) -> MetricPowerAnalysis:
