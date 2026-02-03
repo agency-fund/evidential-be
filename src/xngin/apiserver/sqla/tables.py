@@ -445,7 +445,6 @@ class Experiment(Base):
     design_fields: Mapped[list["ExperimentField"]] = relationship(
         back_populates="experiment",
         cascade="all, delete-orphan",
-        lazy="raise",
     )
     snapshots: Mapped["Snapshot"] = relationship(viewonly=True)
 

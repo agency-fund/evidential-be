@@ -11,7 +11,6 @@ from typing import Self
 
 import numpy as np
 from pydantic import TypeAdapter
-from sqlalchemy import inspect
 
 from xngin.apiserver.routers import common_api_types as capi
 from xngin.apiserver.routers.common_enums import (
@@ -170,13 +169,10 @@ class ExperimentStorageConverter:
         return self
 
     def get_design_spec_fields(self) -> DesignSpecFields:
-        # Reconstruct DesignSpecFields from design_fields relationship
-        # Check if design_fields relationship is loaded without triggering lazy='raise'
-        insp = inspect(self.experiment)
-        is_design_fields_loaded = "design_fields" not in insp.unloaded
+        """Reconstruct DesignSpecFields from design_fields relationship, which must be already eager-loaded."""
         # Fallback to JSONB column if design_fields is not loaded or empty
         # (for backwards compatibility during transition)
-        if not is_design_fields_loaded or not self.experiment.design_fields:
+        if not self.experiment.design_fields:
             return DesignSpecFields.model_validate(self.experiment.design_spec_fields)
 
         filters = None
