@@ -5,7 +5,13 @@ from xngin.apiserver.routers.common_enums import (
     MetricPowerAnalysisMessageType,
     MetricType,
 )
-from xngin.stats.power import analyze_metric_power, calculate_design_effect, calculate_mde_with_desired_n, check_power
+from xngin.stats.power import (
+    analyze_metric_power,
+    calculate_design_effect,
+    calculate_mde_with_desired_n,
+    calculate_num_clusters_needed,
+    check_power,
+)
 from xngin.stats.stats_errors import StatsPowerError
 
 
@@ -642,3 +648,36 @@ def test_calculate_design_effect_invalid_cluster_size():
 
     with pytest.raises(ValueError, match="Cluster size must be"):
         calculate_design_effect(icc=0.15, avg_cluster_size=0)
+
+
+def test_calculate_num_clusters_needed_typical_school():
+    """Example: Need 63 individuals, clusters of 30, DEFF=5.35."""
+    n_clusters = calculate_num_clusters_needed(individual_n=63, avg_cluster_size=30, deff=5.35)
+    # (63 / 30) * 5.35 = 11.24 → rounds up to 12
+    assert n_clusters == 12
+
+
+def test_calculate_num_clusters_needed_rounds_up():
+    """Always round up to ensure adequate power."""
+    n = calculate_num_clusters_needed(individual_n=60, avg_cluster_size=30, deff=5.0)
+    assert n == 10
+
+    n = calculate_num_clusters_needed(individual_n=60.03, avg_cluster_size=30, deff=5.0)
+    assert n == 11
+
+
+def test_calculate_num_clusters_needed_no_clustering():
+    """With DEFF=1, clusters equal individuals divided by cluster size."""
+    n = calculate_num_clusters_needed(individual_n=100, avg_cluster_size=25, deff=1.0)
+    assert n == 4
+
+
+def test_calculate_num_clusters_needed_high_deff():
+    """Higher DEFF means more clusters needed."""
+    n_low = calculate_num_clusters_needed(individual_n=60, avg_cluster_size=30, deff=2.0)
+
+    n_high = calculate_num_clusters_needed(individual_n=60, avg_cluster_size=30, deff=10.0)
+
+    assert n_high > n_low
+    assert n_low == 4
+    assert n_high == 20

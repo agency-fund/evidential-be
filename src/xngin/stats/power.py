@@ -1,3 +1,5 @@
+import math
+
 import numpy as np
 import statsmodels.stats.api as sms
 
@@ -37,35 +39,49 @@ def _calculate_arm_ratio_and_control_prob_from_weights(
 def calculate_design_effect(icc: float, avg_cluster_size: float) -> float:
     """
     Calculate design effect (DEFF) for cluster-randomized designs.
-
-    The design effect quantifies loss of statistical power due to clustering.
-    When participants are grouped in clusters (schools, hospitals, etc.),
-    observations within clusters are more similar than between clusters.
-
     Formula: DEFF = 1 + (m - 1) * icc
 
     Args:
         icc: Intracluster correlation coefficient, range [0, 1]
-             Example: 0.15 means 15% of variance is between clusters
         avg_cluster_size: Average number of individuals per cluster (m)
 
     Returns:
         Design effect (DEFF). Always >= 1.
 
-    Raises:
-        ValueError: If icc not in [0, 1] or avg_cluster_size < 1
-
-    Examples:
-        >>> calculate_design_effect(icc=0.15, avg_cluster_size=30)
-        5.35
     """
     if not 0 <= icc <= 1:
         raise ValueError(f"ICC must be between 0 and 1, got {icc}")
 
     if avg_cluster_size < 1:
         raise ValueError(f"Cluster size must be >= 1, got {avg_cluster_size}")
-    # return DEFF = 1 + (m - 1) * icc
+
     return 1 + (avg_cluster_size - 1) * icc
+
+
+def calculate_num_clusters_needed(
+    individual_n: float,
+    avg_cluster_size: float,
+    deff: float,
+) -> int:
+    """
+    Calculate number of clusters needed per arm for cluster-randomized design.
+
+    Formula: J = ceil((n_individual / cluster_size) * DEFF)
+
+    Args:
+        n_individual: Sample size needed per arm for individual randomization.
+                     This comes from standard power analysis (e.g., from
+                     statsmodels TTestIndPower.solve_power())
+        avg_cluster_size: Average number of individuals per cluster (m)
+        deff: Design effect from calculate_design_effect()
+
+    Returns:
+        Number of clusters needed per arm (always rounds up to ensure power)
+
+    """
+
+    clusters_needed = (individual_n / avg_cluster_size) * deff
+    return math.ceil(clusters_needed)
 
 
 def _power_analysis_error(
