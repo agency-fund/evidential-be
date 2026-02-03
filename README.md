@@ -60,14 +60,14 @@
 | src/xngin/stats/balance.py                                           |       71 |        2 |     97% |  109, 148 |
 | src/xngin/stats/bandit\_analysis.py                                  |       75 |        5 |     93% |135, 137, 139, 202-203 |
 | src/xngin/stats/bandit\_sampling.py                                  |       73 |        7 |     90% |162, 186, 191, 214, 238, 240, 272 |
-| src/xngin/stats/power.py                                             |       80 |        1 |     99% |       100 |
+| src/xngin/stats/power.py                                             |      118 |        5 |     96% |71, 74, 118-119, 195 |
 | src/xngin/xsecrets/chafernet.py                                      |       52 |        1 |     98% |        92 |
 | src/xngin/xsecrets/gcp\_kms\_provider.py                             |       71 |       26 |     63% |62-77, 84-85, 102-103, 106, 110-118, 122-129 |
 | src/xngin/xsecrets/provider.py                                       |       19 |        1 |     95% |        46 |
 | src/xngin/xsecrets/secretservice.py                                  |       61 |        4 |     93% |42-43, 101, 123 |
 | src/xngin/xsecrets/test\_gcp\_kms\_provider.py                       |      103 |       26 |     75% |40-42, 170-175, 182-189, 195-199, 206, 213-224 |
 | src/xngin/xsecrets/test\_nacl\_provider.py                           |       67 |        1 |     99% |        24 |
-|                                                            **TOTAL** | **9617** |  **944** | **90%** |           |
+|                                                            **TOTAL** | **9726** |  **948** | **90%** |           |
 
 57 files skipped due to complete coverage.
 
