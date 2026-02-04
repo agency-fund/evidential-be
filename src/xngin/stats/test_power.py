@@ -5,13 +5,7 @@ from xngin.apiserver.routers.common_enums import (
     MetricPowerAnalysisMessageType,
     MetricType,
 )
-from xngin.stats.power import (
-    analyze_metric_power,
-    calculate_design_effect,
-    calculate_mde_with_desired_n,
-    calculate_num_clusters_needed,
-    check_power,
-)
+from xngin.stats.power import analyze_metric_power, calculate_mde_with_desired_n, check_power
 from xngin.stats.stats_errors import StatsPowerError
 
 
@@ -599,85 +593,3 @@ def test_analyze_metric_power_desired_n_with_unbalanced_arms():
     assert metric.metric_baseline is not None
     assert result.target_possible is not None
     assert result.target_possible < metric.metric_baseline
-
-
-# ========== CLUSTER RANDOMIZATION TESTS ==========
-
-
-def test_calculate_design_effect_no_clustering():
-    """When ICC=0, there is no clustering effect (DEFF=1)."""
-
-    # If ICC = 0, people in same cluster are no more similar than different clusters
-    # So DEFF should be 1 (no penalty)
-    deff = calculate_design_effect(icc=0.0, avg_cluster_size=30)
-    assert deff == 1.0
-
-
-def test_calculate_design_effect_perfect_clustering():
-    """When ICC=1, DEFF equals cluster size."""
-
-    # If ICC = 1, everyone in cluster is identical
-    # DEFF = 1 + (30-1) * 1 = 30
-    deff = calculate_design_effect(icc=1.0, avg_cluster_size=30)
-    assert deff == 30.0
-
-
-def test_calculate_design_effect_typical_school():
-    """General scenario: ICC=0.15, m=30."""
-
-    # Real-world example: students in schools
-    # DEFF = 1 + (30-1) * 0.15 = 1 + 4.35 = 5.35
-    deff = calculate_design_effect(icc=0.15, avg_cluster_size=30)
-    assert deff == pytest.approx(5.35)
-
-
-def test_calculate_design_effect_invalid_icc():
-    """ICC must be between 0 and 1."""
-
-    # Test too high
-    with pytest.raises(ValueError, match="ICC must be"):
-        calculate_design_effect(icc=1.5, avg_cluster_size=30)
-
-    # Test negative
-    with pytest.raises(ValueError, match="ICC must be"):
-        calculate_design_effect(icc=-0.1, avg_cluster_size=30)
-
-
-def test_calculate_design_effect_invalid_cluster_size():
-    """Cluster size must be >= 1."""
-
-    with pytest.raises(ValueError, match="Cluster size must be"):
-        calculate_design_effect(icc=0.15, avg_cluster_size=0)
-
-
-def test_calculate_num_clusters_needed_typical_school():
-    """Example: Need 63 individuals, clusters of 30, DEFF=5.35."""
-    n_clusters = calculate_num_clusters_needed(individual_n=63, avg_cluster_size=30, deff=5.35)
-    # (63 / 30) * 5.35 = 11.24 → rounds up to 12
-    assert n_clusters == 12
-
-
-def test_calculate_num_clusters_needed_rounds_up():
-    """Always round up to ensure adequate power."""
-    n = calculate_num_clusters_needed(individual_n=60, avg_cluster_size=30, deff=5.0)
-    assert n == 10
-
-    n = calculate_num_clusters_needed(individual_n=60.03, avg_cluster_size=30, deff=5.0)
-    assert n == 11
-
-
-def test_calculate_num_clusters_needed_no_clustering():
-    """With DEFF=1, clusters equal individuals divided by cluster size."""
-    n = calculate_num_clusters_needed(individual_n=100, avg_cluster_size=25, deff=1.0)
-    assert n == 4
-
-
-def test_calculate_num_clusters_needed_high_deff():
-    """Higher DEFF means more clusters needed."""
-    n_low = calculate_num_clusters_needed(individual_n=60, avg_cluster_size=30, deff=2.0)
-
-    n_high = calculate_num_clusters_needed(individual_n=60, avg_cluster_size=30, deff=10.0)
-
-    assert n_high > n_low
-    assert n_low == 4
-    assert n_high == 20
