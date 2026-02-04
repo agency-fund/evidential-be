@@ -1837,6 +1837,7 @@ async def power_check(
             power=design_spec.power,
             alpha=design_spec.alpha,
             arm_weights=arm_weights,
+            desired_n=design_spec.desired_n,
         )
     )
 
