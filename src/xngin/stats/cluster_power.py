@@ -1,20 +1,38 @@
 """
 Power analysis for cluster-randomized designs.
-Calculate minimum detectable effect (MDE) for cluster-randomized design.
+
+Handles experiments where randomization occurs at the cluster level
+(schools, hospitals, clinics) rather than individual level.
 """
 
-from xngin.apiserver.routers.common_api_types import DesignSpecMetric
-from xngin.stats.power import calculate_mde_with_desired_n
+import math
 
 
 def calculate_design_effect(icc: float, avg_cluster_size: float) -> float:
     """
-    Calculate design effect DEFF (>= 1)
+    Calculate design effect (DEFF) for cluster-randomized designs.
+
+    The design effect quantifies loss of statistical power due to clustering.
+    When participants are grouped in clusters (schools, hospitals, etc.),
+    observations within clusters are more similar than between clusters.
+
+    Formula: DEFF = 1 + (m - 1) * icc
+
     Args:
         icc: Intracluster correlation coefficient, range [0, 1]
-        avg_cluster_size: Average number of individuals per cluster
-    """
+             Example: 0.15 means 15% of variance is between clusters
+        avg_cluster_size: Average number of individuals per cluster (m)
 
+    Returns:
+        Design effect (DEFF). Always >= 1.
+
+    Raises:
+        ValueError: If icc not in [0, 1] or avg_cluster_size < 1
+
+    Examples:
+        >>> calculate_design_effect(icc=0.15, avg_cluster_size=30)
+        5.35
+    """
     if not 0 <= icc <= 1:
         raise ValueError(f"ICC must be between 0 and 1, got {icc}")
 
@@ -24,58 +42,36 @@ def calculate_design_effect(icc: float, avg_cluster_size: float) -> float:
     return 1 + (avg_cluster_size - 1) * icc
 
 
-def calculate_effective_sample_size(
-    total_n: int,
+def calculate_num_clusters_needed(
+    n_individual: float,
+    avg_cluster_size: float,
     deff: float,
 ) -> int:
     """
+    Calculate number of clusters needed per arm for cluster-randomized design.
+
+    When randomizing at the cluster level (e.g., schools, hospitals), you need
+    to determine how many clusters are required to achieve the same power as
+    individual randomization.
+
+    Formula: J = ceil((n_individual / cluster_size) * DEFF)
+
     Args:
-        total_n: Total number of participants across all clusters
+        n_individual: Sample size per arm from individual randomization power analysis.
+                     This is what you'd need if randomizing individuals instead of clusters.
+        avg_cluster_size: Average number of individuals per cluster (m)
         deff: Design effect from calculate_design_effect()
-    """
-
-    return int(total_n / deff)
-
-
-def calculate_mde_cluster(
-    available_n: int,
-    metric: DesignSpecMetric,
-    n_arms: int,
-    icc: float,
-    avg_cluster_size: float,
-    power: float = 0.8,
-    alpha: float = 0.05,
-    arm_weights: list[float] | None = None,
-) -> tuple[float, float]:
-    """
-    Given available sample size,
-    calculate minimum detectable effect (MDE) for cluster-randomized design.
-
-    Args:
-        available_n: Total number of participants available across all arms
-        metric: DesignSpecMetric with baseline and variance information
-        n_arms: Number of treatment arms
-        icc: Intracluster correlation coefficient, range [0, 1]
-        avg_cluster_size: Average number of individuals per cluster
-        power: Desired statistical power (default 0.8)
-        alpha: Significance level (default 0.05)
-        arm_weights: Optional allocation weights for unbalanced designs
 
     Returns:
-        Tuple of (target_value, pct_change):
-        - target_value: The minimum detectable effect in absolute terms
-        - pct_change: The minimum detectable effect as percent change from baseline
+        Number of clusters needed per arm (always rounds up to ensure power)
+
+    Examples:
+        >>> calculate_num_clusters_needed(
+        ...     n_individual=63,
+        ...     avg_cluster_size=30,
+        ...     deff=5.35
+        ... )
+        12
     """
-
-    deff = calculate_design_effect(icc, avg_cluster_size)
-
-    effective_n = calculate_effective_sample_size(available_n, deff)
-
-    return calculate_mde_with_desired_n(
-        desired_n=effective_n,
-        metric=metric,
-        n_arms=n_arms,
-        alpha=alpha,
-        power=power,
-        arm_weights=arm_weights,
-    )
+    clusters_needed = (n_individual / avg_cluster_size) * deff
+    return math.ceil(clusters_needed)
