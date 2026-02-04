@@ -619,6 +619,54 @@ class MetricPowerAnalysis(ApiBaseModel):
     ] = None
 
 
+class ClusterMetricPowerAnalysis(MetricPowerAnalysis):
+    """
+    Power analysis results for cluster-randomized designs.
+
+    Extends MetricPowerAnalysis with cluster-specific information
+    for designs where randomization occurs at the cluster level
+    (e.g., schools, hospitals, clinics) rather than individual level.
+    """
+
+    # Total across all arms
+    num_clusters_total: Annotated[
+        int,
+        Field(description="Total number of clusters needed across all arms"),
+    ]
+
+    # Per-arm breakdowns
+    clusters_per_arm: Annotated[
+        list[int],
+        Field(description="Number of clusters needed for each arm (one entry per arm)"),
+    ]
+
+    n_per_arm: Annotated[
+        list[int],
+        Field(description="Number of participants for each arm (one entry per arm)"),
+    ]
+
+    # Design parameters
+    design_effect: Annotated[
+        float,
+        Field(description="Design effect (DEFF) - clustering penalty multiplier"),
+    ]
+
+    icc: Annotated[
+        float,
+        Field(description="Intracluster correlation coefficient used in calculation"),
+    ]
+
+    avg_cluster_size: Annotated[
+        float,
+        Field(description="Average number of individuals per cluster"),
+    ]
+
+    effective_sample_size: Annotated[
+        int,
+        Field(description="Effective sample size accounting for clustering (total_n / DEFF)"),
+    ]
+
+
 class GetStrataResponseElement(ApiBaseModel):
     """Describes a stratification variable."""
 
