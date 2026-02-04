@@ -2,7 +2,10 @@
 
 import pytest
 
+from xngin.apiserver.routers.common_api_types import DesignSpecMetric
+from xngin.apiserver.routers.common_enums import MetricType
 from xngin.stats.cluster_power import (
+    analyze_metric_power_cluster,
     calculate_design_effect,
     calculate_num_clusters_needed,
 )
@@ -71,3 +74,236 @@ def test_calculate_num_clusters_needed_high_deff():
     assert n_high > n_low
     assert n_low == 4
     assert n_high == 20
+
+
+def test_analyze_metric_power_cluster_missing_baseline():
+    """When baseline is missing, should return analysis with None cluster fields."""
+
+    metric = DesignSpecMetric(
+        field_name="test_metric",
+        metric_type=MetricType.NUMERIC,
+        metric_baseline=None,  # Missing!
+        metric_target=110,
+        metric_stddev=20,
+        available_n=1000,
+        available_nonnull_n=1000,
+    )
+
+    result = analyze_metric_power_cluster(
+        metric=metric,
+        n_arms=2,
+        icc=0.15,
+        avg_cluster_size=30,
+    )
+
+    # Should return error state
+    assert result.target_n is None
+    assert result.num_clusters_total is None
+    assert result.clusters_per_arm is None
+    assert result.n_per_arm is None
+    assert result.design_effect is None
+    assert result.effective_sample_size is None
+
+    # But ICC and cluster size should be preserved
+    assert result.icc == 0.15
+    assert result.avg_cluster_size == 30
+
+    # Should have an error message
+    assert result.msg is not None
+
+
+def test_analyze_metric_power_cluster_balanced():
+    """Test balanced 2-arm cluster design."""
+    metric = DesignSpecMetric(
+        field_name="reading_score",
+        metric_type=MetricType.NUMERIC,
+        metric_baseline=100,
+        metric_target=110,
+        metric_stddev=20,
+        available_n=1000,
+        available_nonnull_n=1000,
+    )
+
+    result = analyze_metric_power_cluster(
+        metric=metric,
+        n_arms=2,
+        icc=0.15,
+        avg_cluster_size=30,
+    )
+
+    # Should succeed
+    assert result.target_n is not None
+    assert result.num_clusters_total == 24
+    assert result.clusters_per_arm == [12, 12]
+    assert result.n_per_arm == [360, 360]
+    assert result.design_effect == pytest.approx(5.35)
+    assert result.icc == 0.15
+    assert result.avg_cluster_size == 30
+    assert result.effective_sample_size == 134
+
+
+def test_analyze_metric_power_cluster_no_clustering():
+    """With ICC=0, should have DEFF=1 and minimal inflation."""
+    metric = DesignSpecMetric(
+        field_name="test_metric",
+        metric_type=MetricType.NUMERIC,
+        metric_baseline=100,
+        metric_target=110,
+        metric_stddev=20,
+        available_n=1000,
+        available_nonnull_n=1000,
+    )
+
+    result = analyze_metric_power_cluster(
+        metric=metric,
+        n_arms=2,
+        icc=0.0,  # No clustering
+        avg_cluster_size=30,
+    )
+
+    # With ICC=0, DEFF should be 1
+    assert result.design_effect == 1.0
+
+    # Should need minimal clusters
+    assert result.num_clusters_total is not None
+    assert result.num_clusters_total < 10  # Much fewer than with clustering
+
+    # Effective N should equal target N
+    assert result.effective_sample_size == result.target_n
+
+
+def test_analyze_metric_power_cluster_unbalanced():
+    """Test unbalanced allocation (20% control, 80% treatment)."""
+    metric = DesignSpecMetric(
+        field_name="conversion",
+        metric_type=MetricType.NUMERIC,
+        metric_baseline=100,
+        metric_target=110,
+        metric_stddev=20,
+        available_n=2000,
+        available_nonnull_n=2000,
+    )
+
+    result = analyze_metric_power_cluster(
+        metric=metric,
+        n_arms=2,
+        icc=0.15,
+        avg_cluster_size=30,
+        arm_weights=[20, 80],  # 20% control, 80% treatment
+    )
+
+    # Should succeed
+    assert result.target_n is not None
+    assert result.num_clusters_total is not None
+    assert result.clusters_per_arm is not None
+    assert result.n_per_arm is not None
+
+    # Should have 2 arms
+    assert len(result.clusters_per_arm) == 2
+    assert len(result.n_per_arm) == 2
+
+    # Treatment arm should have more clusters than control
+    assert result.clusters_per_arm[1] > result.clusters_per_arm[0]
+    assert result.n_per_arm[1] > result.n_per_arm[0]
+
+    # Total should sum correctly
+    assert result.num_clusters_total == sum(result.clusters_per_arm)
+    assert result.target_n == sum(result.n_per_arm)
+
+
+def test_analyze_metric_power_cluster_three_arms():
+    """Test 3-arm design."""
+    metric = DesignSpecMetric(
+        field_name="test_metric",
+        metric_type=MetricType.NUMERIC,
+        metric_baseline=100,
+        metric_target=110,
+        metric_stddev=20,
+        available_n=2000,
+        available_nonnull_n=2000,
+    )
+
+    result = analyze_metric_power_cluster(
+        metric=metric,
+        n_arms=3,
+        icc=0.15,
+        avg_cluster_size=30,
+    )
+
+    # Add assertions that fields are not None
+    assert result.clusters_per_arm is not None
+    assert result.n_per_arm is not None
+
+    # Should have 3 arms
+    assert len(result.clusters_per_arm) == 3
+    assert len(result.n_per_arm) == 3
+
+    # All arms should be equal (balanced)
+    assert result.clusters_per_arm[0] == result.clusters_per_arm[1]
+    assert result.clusters_per_arm[1] == result.clusters_per_arm[2]
+
+    # Totals should sum correctly
+    assert result.num_clusters_total == sum(result.clusters_per_arm)
+    assert result.target_n == sum(result.n_per_arm)
+
+
+def test_analyze_metric_power_cluster_binary_metric():
+    """Test with binary metric."""
+    metric = DesignSpecMetric(
+        field_name="conversion",
+        metric_type=MetricType.BINARY,
+        metric_baseline=0.10,
+        metric_target=0.15,
+        available_n=5000,
+        available_nonnull_n=5000,
+    )
+
+    result = analyze_metric_power_cluster(
+        metric=metric,
+        n_arms=2,
+        icc=0.05,
+        avg_cluster_size=50,
+    )
+
+    # Should succeed
+    assert result.target_n is not None
+    assert result.num_clusters_total is not None
+    assert result.design_effect == pytest.approx(3.45)  # 1 + (50-1)*0.05
+
+
+def test_analyze_metric_power_cluster_high_icc():
+    """Higher ICC should require more clusters."""
+    metric = DesignSpecMetric(
+        field_name="test_metric",
+        metric_type=MetricType.NUMERIC,
+        metric_baseline=100,
+        metric_target=110,
+        metric_stddev=20,
+        available_n=2000,
+        available_nonnull_n=2000,
+    )
+
+    # Low ICC
+    result_low = analyze_metric_power_cluster(
+        metric=metric,
+        n_arms=2,
+        icc=0.05,
+        avg_cluster_size=30,
+    )
+
+    # High ICC
+    result_high = analyze_metric_power_cluster(
+        metric=metric,
+        n_arms=2,
+        icc=0.30,
+        avg_cluster_size=30,
+    )
+    # Add assertions before comparisons
+    assert result_low.num_clusters_total is not None
+    assert result_high.num_clusters_total is not None
+    assert result_low.design_effect is not None
+    assert result_high.design_effect is not None
+
+    # Higher ICC should need more clusters
+    assert result_high.num_clusters_total > result_low.num_clusters_total
+    assert result_high.design_effect > result_low.design_effect

@@ -626,31 +626,12 @@ class ClusterMetricPowerAnalysis(MetricPowerAnalysis):
     Extends MetricPowerAnalysis with cluster-specific information
     for designs where randomization occurs at the cluster level
     (e.g., schools, hospitals, clinics) rather than individual level.
+
+    Note: Cluster-specific fields will be None if the power analysis failed
+    (e.g., missing baseline, zero variance, insufficient data).
     """
 
-    # Total across all arms
-    num_clusters_total: Annotated[
-        int,
-        Field(description="Total number of clusters needed across all arms"),
-    ]
-
-    # Per-arm breakdowns
-    clusters_per_arm: Annotated[
-        list[int],
-        Field(description="Number of clusters needed for each arm (one entry per arm)"),
-    ]
-
-    n_per_arm: Annotated[
-        list[int],
-        Field(description="Number of participants for each arm (one entry per arm)"),
-    ]
-
-    # Design parameters
-    design_effect: Annotated[
-        float,
-        Field(description="Design effect (DEFF) - clustering penalty multiplier"),
-    ]
-
+    # Design parameters (always present - user provides these)
     icc: Annotated[
         float,
         Field(description="Intracluster correlation coefficient used in calculation"),
@@ -661,10 +642,31 @@ class ClusterMetricPowerAnalysis(MetricPowerAnalysis):
         Field(description="Average number of individuals per cluster"),
     ]
 
+    # Results (None if analysis failed)
+    num_clusters_total: Annotated[
+        int | None,
+        Field(description="Total number of clusters needed across all arms"),
+    ] = None
+
+    clusters_per_arm: Annotated[
+        list[int] | None,
+        Field(description="Number of clusters needed for each arm (one entry per arm)"),
+    ] = None
+
+    n_per_arm: Annotated[
+        list[int] | None,
+        Field(description="Number of participants for each arm (one entry per arm)"),
+    ] = None
+
+    design_effect: Annotated[
+        float | None,
+        Field(description="Design effect (DEFF) - clustering penalty multiplier"),
+    ] = None
+
     effective_sample_size: Annotated[
-        int,
+        int | None,
         Field(description="Effective sample size accounting for clustering (total_n / DEFF)"),
-    ]
+    ] = None
 
 
 class GetStrataResponseElement(ApiBaseModel):
