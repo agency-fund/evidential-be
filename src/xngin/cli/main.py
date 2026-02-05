@@ -36,6 +36,8 @@ from xngin.apiserver.testing.testing_dwh_def import TESTING_DWH_RAW_DATA
 from xngin.xsecrets import secretservice
 from xngin.xsecrets.nacl_provider import NaclProviderKeyset
 
+DWH_VIEW_NAMES = ("a_dwh", "z_dwh")
+
 if TYPE_CHECKING:
     from pandas import DataFrame
 
@@ -214,6 +216,13 @@ def create_testing_dwh(
         bool,
         typer.Option(help="True if you only want to create the table if it does not exist."),
     ] = False,
+    create_views: Annotated[
+        bool,
+        typer.Option(
+            help="True if you want to create aliases for the dwh table after it is created. Only "
+            "supported on Postgres and Redshift."
+        ),
+    ] = False,
 ):
     """Loads the testing data warehouse CSV into a database.
 
@@ -284,6 +293,14 @@ def create_testing_dwh(
         print(f"{full_table_name} has {ct} rows.")
         return ct
 
+    def maybe_create_views(cur):
+        if not create_views:
+            return
+        for view_name in DWH_VIEW_NAMES:
+            qualified_view_name = f"{schema_name}.{view_name}" if schema_name else view_name
+            print(f"Creating view {qualified_view_name}...")
+            cur.execute(f"CREATE OR REPLACE VIEW {qualified_view_name} AS SELECT * FROM {full_table_name}")
+
     if allow_existing:
         if create_db:
             engine = create_engine_and_database(url)
@@ -343,6 +360,7 @@ def create_testing_dwh(
             finally:
                 print("Deleting temporary file...")
                 s3.delete_object(Bucket=bucket, Key=key)
+            maybe_create_views(cur)
     elif url.drivername == "bigquery":
         import pandas_gbq  # noqa: PLC0415
 
@@ -375,6 +393,7 @@ def create_testing_dwh(
                     cursor.copy_expert(sql, reader)
 
             count(cursor)
+            maybe_create_views(cursor)
 
     else:
         err_console.print("Unrecognized database driver.")
