@@ -1,5 +1,8 @@
+import secrets
+
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from xngin.apiserver.routers.admin.admin_api_types import AddWebhookToOrganizationRequest
 from xngin.apiserver.settings import NoDwh, RemoteDatabaseConfig
 from xngin.apiserver.sqla import tables
 
@@ -25,3 +28,19 @@ async def create_organization_impl(session: AsyncSession, user: tables.User, nam
     )
     session.add(nodwh_datasource)
     return organization
+
+
+def create_webhook_impl(
+    session: AsyncSession, org_id: str, webhook: AddWebhookToOrganizationRequest
+) -> tuple[str, tables.Webhook]:
+    """Creates a webhook and returns its auth token and its entity."""
+    auth_token = secrets.token_hex(16)
+    entity = tables.Webhook(
+        type=webhook.type,
+        name=webhook.name,
+        url=webhook.url,
+        auth_token=auth_token,
+        organization_id=org_id,
+    )
+    session.add(entity)
+    return auth_token, entity
