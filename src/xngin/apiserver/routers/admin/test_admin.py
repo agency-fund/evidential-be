@@ -1251,6 +1251,7 @@ async def test_lifecycle_with_db(testing_datasource, ppost, ppatch, pget, pdelet
     table_inspection = InspectDatasourceTableResponse.model_validate(response.json())
     assert table_inspection == InspectDatasourceTableResponse(
         # Note: create_inspect_table_response_from_table() doesn't explicitly check for uniqueness.
+        primary_key_fields=["id"],
         detected_unique_id_fields=["id", "uuid_filter"],
         fields=[
             FieldMetadata(

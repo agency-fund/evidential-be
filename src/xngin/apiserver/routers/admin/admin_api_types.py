@@ -400,6 +400,7 @@ class FieldMetadata(ApiBaseModel):
 class InspectDatasourceTableResponse(ApiBaseModel):
     """Describes a table in the datasource."""
 
+    primary_key_fields: Annotated[list[str], Field(description="Fields that are primary keys.")]
     detected_unique_id_fields: Annotated[
         list[str],
         Field(description="Fields that are possibly candidates for unique IDs."),

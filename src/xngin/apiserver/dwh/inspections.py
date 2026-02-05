@@ -83,6 +83,7 @@ def create_inspect_table_response_from_table(
             )
 
     return InspectDatasourceTableResponse(
+        primary_key_fields=list(sorted(primary_key_columns)),
         detected_unique_id_fields=list(sorted(possible_id_columns)),
         fields=list(sorted(collected, key=lambda f: f.field_name)),
     )
