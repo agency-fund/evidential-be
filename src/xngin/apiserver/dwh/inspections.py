@@ -61,7 +61,7 @@ def create_inspect_table_response_from_table(
     possible_id_columns = {
         c.name
         for c in table.columns.values()
-        if c.name.endswith("id") or isinstance(c.type, sqlalchemy.sql.sqltypes.UUID)
+        if c.name.endswith("id") or c.name.endswith("hash") or isinstance(c.type, sqlalchemy.sql.sqltypes.UUID)
     }
     primary_key_columns = {c.name for c in table.columns.values() if c.primary_key}
     if len(primary_key_columns) > 1:

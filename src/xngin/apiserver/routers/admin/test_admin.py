@@ -106,6 +106,7 @@ from xngin.apiserver.routers.experiments.test_experiments_common import (
     make_createexperimentrequest_json,
     make_insertable_experiment,
 )
+from xngin.apiserver.settings import ParticipantsDef
 from xngin.apiserver.sqla import tables
 from xngin.apiserver.storage.storage_format_converters import ExperimentStorageConverter
 from xngin.apiserver.testing.assertions import assert_dates_equal
