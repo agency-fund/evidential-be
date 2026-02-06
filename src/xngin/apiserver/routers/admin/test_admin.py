@@ -1242,7 +1242,7 @@ async def test_lifecycle_with_db(testing_datasource, ppost, ppatch, pget, pdelet
     response = pget(f"/v1/m/datasources/{testing_datasource.ds.id}/inspect")
     assert response.status_code == 200, response.content
     datasource_inspection = InspectDatasourceResponse.model_validate(response.json())
-    assert datasource_inspection.tables == ["dwh"], response.json()
+    assert "dwh" in datasource_inspection.tables, response.json()
 
     # Inspect one table in the datasource.
     response = pget(f"/v1/m/datasources/{testing_datasource.ds.id}/inspect/dwh")

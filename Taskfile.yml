@@ -119,7 +119,7 @@ tasks:
     deps:
       - start-localpg
     cmds:
-      - uv run xngin-cli create-testing-dwh --dsn "$XNGIN_DEVDWH_DSN" --allow-existing --create-db
+      - uv run xngin-cli create-testing-dwh --dsn "$XNGIN_DEVDWH_DSN" --allow-existing --create-db --create-views
   bootstrap-app-database:
     interactive: true
     desc: >-
