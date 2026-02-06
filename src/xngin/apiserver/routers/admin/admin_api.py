@@ -25,7 +25,7 @@ from fastapi import (
 from fastapi.responses import StreamingResponse
 from loguru import logger
 from pydantic import BaseModel, TypeAdapter
-from sqlalchemy import delete, select
+from sqlalchemy import delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import QueryableAttribute, selectinload
 
@@ -875,11 +875,21 @@ async def list_organization_datasources(
 ) -> ListDatasourcesResponse:
     """Returns a list of datasources accessible to the authenticated user for an org."""
     _authz_check = await get_organization_or_raise(session, user, organization_id)
+    experiment_count = (
+        select(tables.Experiment.datasource_id, func.count().label("experiment_count"))
+        .group_by(tables.Experiment.datasource_id)
+        .subquery()
+    )
     stmt = (
         select(tables.Datasource)
         .join(tables.Organization)
         .join(tables.Organization.users)
+        .outerjoin(experiment_count, tables.Datasource.id == experiment_count.c.datasource_id)
         .where(tables.User.id == user.id)
+        .order_by(
+            func.coalesce(experiment_count.c.experiment_count, 0).desc(),
+            tables.Datasource.name.asc(),
+        )
     )
     if organization_id is not None:
         stmt = stmt.where(tables.Organization.id == organization_id)
@@ -897,9 +907,7 @@ async def list_organization_datasources(
             organization_name=ds.organization.name,
         )
 
-    return ListDatasourcesResponse(
-        items=[convert_ds_to_summary(ds) for ds in sorted(datasources, key=lambda d: d.name)]
-    )
+    return ListDatasourcesResponse(items=[convert_ds_to_summary(ds) for ds in datasources])
 
 
 @router.post("/datasources")

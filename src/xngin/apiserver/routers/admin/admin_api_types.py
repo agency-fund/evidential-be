@@ -149,7 +149,13 @@ class AddMemberToOrganizationRequest(AdminApiBaseModel):
 
 
 class ListDatasourcesResponse(AdminApiBaseModel):
-    items: list[DatasourceSummary]
+    items: Annotated[
+        list[DatasourceSummary],
+        Field(
+            description="Descriptions of the datasources in this organization, ordered in descending order of "
+            "frequency of use."
+        ),
+    ]
 
 
 class AddWebhookToOrganizationRequest(AdminApiBaseModel):

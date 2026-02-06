@@ -106,7 +106,7 @@ from xngin.apiserver.routers.experiments.test_experiments_common import (
     make_createexperimentrequest_json,
     make_insertable_experiment,
 )
-from xngin.apiserver.settings import ParticipantsDef
+from xngin.apiserver.settings import NoDwh, ParticipantsDef, RemoteDatabaseConfig
 from xngin.apiserver.sqla import tables
 from xngin.apiserver.storage.storage_format_converters import ExperimentStorageConverter
 from xngin.apiserver.testing.assertions import assert_dates_equal
@@ -767,6 +767,38 @@ def test_datasource_lifecycle(ppost, pget, ppatch):
     # Ensure driver changed, name didn't
     assert test_dwh.id == datasource_id
     assert test_dwh.driver == "bigquery"
+
+
+async def test_list_datasources_ordered_by_experiment_count(
+    xngin_session: AsyncSession, testing_datasource_with_user, pget
+):
+    """Datasources should be ordered by number of experiments (desc), then by name (asc)."""
+    org = testing_datasource_with_user.org
+    ds_a = testing_datasource_with_user.ds
+
+    # Create two additional datasources in the same org.
+    nodwh_config = RemoteDatabaseConfig(participants=[], type="remote", dwh=NoDwh())
+    ds_b = tables.Datasource(id=tables.datasource_id_factory(), name="AAA datasource", organization=org)
+    ds_b.set_config(nodwh_config)
+    ds_c = tables.Datasource(id=tables.datasource_id_factory(), name="ZZZ datasource", organization=org)
+    ds_c.set_config(nodwh_config)
+    xngin_session.add_all([ds_b, ds_c])
+    await xngin_session.commit()
+
+    # Add experiments: ds_b gets 3, ds_a gets 1, ds_c gets 0.
+    for ds, count in [(ds_b, 3), (ds_a, 1)]:
+        for _ in range(count):
+            await insert_experiment_and_arms(xngin_session, ds)
+
+    response = pget(f"/v1/m/organizations/{org.id}/datasources")
+    assert response.status_code == 200, response.content
+    items = ListDatasourcesResponse.model_validate(response.json()).items
+    assert len(items) == 3
+
+    # ds_b (3 experiments) first, ds_a (1 experiment) second, ds_c (0 experiments) last.
+    assert items[0].id == ds_b.id
+    assert items[1].id == ds_a.id
+    assert items[2].id == ds_c.id
 
 
 def test_datasource_errors(pget, ppost):
