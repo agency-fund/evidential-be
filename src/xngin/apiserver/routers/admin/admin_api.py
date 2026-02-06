@@ -24,8 +24,8 @@ from fastapi import (
 )
 from fastapi.responses import StreamingResponse
 from loguru import logger
-from pydantic import BaseModel
-from sqlalchemy import delete, select
+from pydantic import BaseModel, TypeAdapter
+from sqlalchemy import delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import QueryableAttribute, selectinload
 
@@ -38,7 +38,7 @@ from xngin.apiserver.dwh.dwh_session import (
     DwhSession,
     NoDwh,
 )
-from xngin.apiserver.dwh.inspection_types import ParticipantsSchema
+from xngin.apiserver.dwh.inspection_types import FieldDescriptor, ParticipantsSchema
 from xngin.apiserver.dwh.inspections import (
     build_proposed_and_drift,
     create_inspect_table_response_from_table,
@@ -113,6 +113,7 @@ from xngin.apiserver.routers.common_api_types import (
     ContextType,
     CreateExperimentRequest,
     CreateExperimentResponse,
+    DesignSpec,
     ExperimentAnalysisResponse,
     ExperimentsType,
     GetExperimentAssignmentsResponse,
@@ -124,7 +125,7 @@ from xngin.apiserver.routers.common_api_types import (
     PowerRequest,
     PowerResponse,
 )
-from xngin.apiserver.routers.common_enums import ExperimentState
+from xngin.apiserver.routers.common_enums import DataType, ExperimentState
 from xngin.apiserver.routers.experiments import experiments_common
 from xngin.apiserver.settings import (
     ParticipantsDef,
@@ -874,11 +875,21 @@ async def list_organization_datasources(
 ) -> ListDatasourcesResponse:
     """Returns a list of datasources accessible to the authenticated user for an org."""
     _authz_check = await get_organization_or_raise(session, user, organization_id)
+    experiment_count = (
+        select(tables.Experiment.datasource_id, func.count().label("experiment_count"))
+        .group_by(tables.Experiment.datasource_id)
+        .subquery()
+    )
     stmt = (
         select(tables.Datasource)
         .join(tables.Organization)
         .join(tables.Organization.users)
+        .outerjoin(experiment_count, tables.Datasource.id == experiment_count.c.datasource_id)
         .where(tables.User.id == user.id)
+        .order_by(
+            func.coalesce(experiment_count.c.experiment_count, 0).desc(),
+            tables.Datasource.name.asc(),
+        )
     )
     if organization_id is not None:
         stmt = stmt.where(tables.Organization.id == organization_id)
@@ -896,9 +907,7 @@ async def list_organization_datasources(
             organization_name=ds.organization.name,
         )
 
-    return ListDatasourcesResponse(
-        items=[convert_ds_to_summary(ds) for ds in sorted(datasources, key=lambda d: d.name)]
-    )
+    return ListDatasourcesResponse(items=[convert_ds_to_summary(ds) for ds in datasources])
 
 
 @router.post("/datasources")
@@ -1078,7 +1087,7 @@ async def list_participant_types(
 ) -> ListParticipantsTypeResponse:
     ds = await get_datasource_or_raise(session, user, datasource_id)
     return ListParticipantsTypeResponse(
-        items=list(sorted(ds.get_config().participants, key=lambda p: p.participant_type))
+        items=list(sorted([p for p in ds.get_config().participants if not p.hidden], key=lambda p: p.participant_type))
     )
 
 
@@ -1413,6 +1422,48 @@ async def create_experiment(
     validated_webhooks = await validate_webhooks(
         session=session, organization_id=organization_id, request_webhooks=body.webhooks
     )
+
+    # Allow creation of experiments w/o a pre-existing participant type by creating a participant type on demand.
+    if body.table_name is not None and body.primary_key is not None:
+        if not isinstance(body.design_spec, BaseFrequentistDesignSpec):
+            raise LateValidationError("table_name/primary_key is only supported for frequentist experiment types")
+
+        # Synthesize participant definition
+        participants_def = synthesize_participants_def(
+            table_name=body.table_name,
+            primary_key=body.primary_key,
+            design_spec=body.design_spec,
+        )
+
+        # Generate unique name: __<table_name>_<8 hex chars>
+        generated_participant_type = f"__{body.table_name}_{secrets.token_hex(4)}"
+
+        # Create ParticipantsDef with generated name and hidden=True
+        new_participants_def = ParticipantsDef(
+            type="schema",
+            participant_type=generated_participant_type,
+            table_name=participants_def.table_name,
+            fields=participants_def.fields,
+            hidden=True,
+        )
+
+        # Persist to datasource config
+        config = datasource.get_config()
+        config.participants.append(new_participants_def)
+        datasource.set_config(config)
+
+        # Update design_spec with generated participant type
+        design_spec_dict = body.design_spec.model_dump()
+        design_spec_dict["participant_type"] = generated_participant_type
+        updated_design_spec: DesignSpec = TypeAdapter(DesignSpec).validate_python(design_spec_dict)
+
+        body = CreateExperimentRequest(
+            design_spec=updated_design_spec,
+            power_analyses=body.power_analyses,
+            webhooks=body.webhooks,
+            table_name=body.table_name,
+            primary_key=body.primary_key,
+        )
 
     response = await experiments_common.create_experiment_impl(
         request=body,
@@ -1814,7 +1865,14 @@ async def power_check(
             detail="Power checks are not supported for datasources without a data warehouse.",
         )
     dsconfig = ds.get_config()
-    participants_cfg = dsconfig.find_participants(design_spec.participant_type)
+    if body.table_name is not None and body.primary_key is not None:
+        participants_cfg = synthesize_participants_def(
+            table_name=body.table_name,
+            primary_key=body.primary_key,
+            design_spec=design_spec,
+        )
+    else:
+        participants_cfg = dsconfig.find_participants(design_spec.participant_type)
 
     validate_schema_metrics_or_raise(design_spec, participants_cfg)
     async with DwhSession(dsconfig.dwh) as dwh:
@@ -1849,6 +1907,49 @@ def validate_schema_metrics_or_raise(design_spec: BaseFrequentistDesignSpec, sch
         raise LateValidationError(
             f"Invalid DesignSpec metrics (check your Datasource configuration): {invalid_metrics}"
         )
+
+
+def synthesize_participants_def(
+    table_name: str,
+    primary_key: str,
+    design_spec: BaseFrequentistDesignSpec,
+) -> ParticipantsDef:
+    """Synthesize a ParticipantsDef from table_name, primary_key, and design_spec fields."""
+    field_roles: dict[str, dict[str, bool]] = {}
+
+    # Primary key
+    field_roles.setdefault(primary_key, {})["is_unique_id"] = True
+
+    # Metrics
+    for metric in design_spec.metrics:
+        field_roles.setdefault(metric.field_name, {})["is_metric"] = True
+
+    # Strata
+    for stratum in design_spec.strata:
+        field_roles.setdefault(stratum.field_name, {})["is_strata"] = True
+
+    # Filters
+    for filter_ in design_spec.filters:
+        field_roles.setdefault(filter_.field_name, {})["is_filter"] = True
+
+    fields = [
+        FieldDescriptor(
+            field_name=field_name,
+            data_type=DataType.DOUBLE_PRECISION,
+            is_unique_id=roles.get("is_unique_id", False),
+            is_metric=roles.get("is_metric", False),
+            is_strata=roles.get("is_strata", False),
+            is_filter=roles.get("is_filter", False),
+        )
+        for field_name, roles in field_roles.items()
+    ]
+
+    return ParticipantsDef(
+        type="schema",
+        participant_type=f"_{table_name}",
+        table_name=table_name,
+        fields=fields,
+    )
 
 
 def raise_unless_safe_hostname(dsn):
