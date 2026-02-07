@@ -36,8 +36,6 @@ from xngin.apiserver.testing.testing_dwh_def import TESTING_DWH_RAW_DATA
 from xngin.xsecrets import secretservice
 from xngin.xsecrets.nacl_provider import NaclProviderKeyset
 
-DWH_VIEW_NAMES = ("a_dwh", "z_dwh")
-
 if TYPE_CHECKING:
     from pandas import DataFrame
 
@@ -64,6 +62,12 @@ class TextOrJson(StrEnum):
 class Base64OrJson(StrEnum):
     base64 = "base64"
     json = "json"
+
+
+def truncate_with_ellipsis(value: str) -> str:
+    if len(value) > 250:
+        return value[:247] + "..."
+    return value
 
 
 def create_engine_and_database(url: sqlalchemy.URL):
@@ -216,18 +220,11 @@ def create_testing_dwh(
         bool,
         typer.Option(help="True if you only want to create the table if it does not exist."),
     ] = False,
-    create_views: Annotated[
-        bool,
-        typer.Option(
-            help="True if you want to create aliases for the dwh table after it is created. Only "
-            "supported on Postgres and Redshift."
-        ),
-    ] = False,
-    view_names: Annotated[
+    views: Annotated[
         str | None,
         typer.Option(
-            help="Comma-separated view names to create as aliases. Overrides defaults. "
-            "Ignored unless --create-views is used."
+            help="Comma-separated view names to create as aliases for the dwh table. "
+            "Only supported on Postgres and Redshift."
         ),
     ] = None,
 ):
@@ -272,7 +269,7 @@ def create_testing_dwh(
         cur.execute(drop_table_ddl)
         if schema_name is not None:
             cur.execute(create_schema_ddl)
-        print(f"Creating table:\n{create_table_ddl}")
+        print(f"Creating table:\n{truncate_with_ellipsis(create_table_ddl)}")
         cur.execute(create_table_ddl)
 
     def get_ddl_magic(quoter: IdentifierPreparer, flavor: str):
@@ -301,10 +298,9 @@ def create_testing_dwh(
         return ct
 
     def maybe_create_views(cur):
-        if not create_views:
+        if not views:
             return
-        names = view_names.split(",") if view_names else DWH_VIEW_NAMES
-        for view_name in names:
+        for view_name in views.split(","):
             qualified_view_name = f"{schema_name}.{view_name}" if schema_name else view_name
             print(f"Creating view {qualified_view_name}...")
             cur.execute(f"CREATE OR REPLACE VIEW {qualified_view_name} AS SELECT * FROM {full_table_name}")
@@ -388,7 +384,7 @@ def create_testing_dwh(
                 with opener(src) as reader:
                     cols = [h.strip() for h in reader.readline().split(",")]
                     sql = f"COPY {full_table_name} ({', '.join(cols)}) FROM STDIN (FORMAT CSV, DELIMITER ',')"
-                    print(f"SQL: {sql}")
+                    print(f"SQL: {truncate_with_ellipsis(sql)}")
                     with cursor.copy(sql) as copy:
                         while data := reader.read(1 << 20):
                             copy.write(data)
@@ -397,7 +393,7 @@ def create_testing_dwh(
                 with opener(src) as reader:
                     cols = [h.strip() for h in reader.readline().split(",")]
                     sql = f"COPY {full_table_name} ({', '.join(cols)}) FROM STDIN (FORMAT CSV, DELIMITER ',')"
-                    print(f"SQL: {sql}")
+                    print(f"SQL: {truncate_with_ellipsis(sql)}")
                     cursor.copy_expert(sql, reader)
 
             count(cursor)
