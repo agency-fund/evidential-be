@@ -223,6 +223,13 @@ def create_testing_dwh(
             "supported on Postgres and Redshift."
         ),
     ] = False,
+    view_names: Annotated[
+        str | None,
+        typer.Option(
+            help="Comma-separated view names to create as aliases. Overrides defaults. "
+            "Ignored unless --create-views is used."
+        ),
+    ] = None,
 ):
     """Loads the testing data warehouse CSV into a database.
 
@@ -296,7 +303,8 @@ def create_testing_dwh(
     def maybe_create_views(cur):
         if not create_views:
             return
-        for view_name in DWH_VIEW_NAMES:
+        names = view_names.split(",") if view_names else DWH_VIEW_NAMES
+        for view_name in names:
             qualified_view_name = f"{schema_name}.{view_name}" if schema_name else view_name
             print(f"Creating view {qualified_view_name}...")
             cur.execute(f"CREATE OR REPLACE VIEW {qualified_view_name} AS SELECT * FROM {full_table_name}")
