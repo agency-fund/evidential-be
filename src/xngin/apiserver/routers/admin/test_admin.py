@@ -191,6 +191,9 @@ async def fixture_testing_experiment(xngin_session: AsyncSession, testing_dataso
         strata=[],
         filters=[],
     )
+    # Get participants schema from datasource for data type resolution
+    ds_config = datasource.get_config()
+    participants_schema = ds_config.find_participants(design_spec.participant_type)
     experiment_converter = ExperimentStorageConverter.init_from_components(
         datasource_id=datasource.id,
         organization_id=datasource.organization_id,
@@ -199,6 +202,7 @@ async def fixture_testing_experiment(xngin_session: AsyncSession, testing_dataso
         state=ExperimentState.COMMITTED,
         stopped_assignments_at=datetime.now(UTC),
         stopped_assignments_reason=StopAssignmentReason.PREASSIGNED,
+        participants_schema=participants_schema,
     )
     experiment = experiment_converter.get_experiment()
     xngin_session.add(experiment)
@@ -1577,7 +1581,7 @@ async def test_create_experiment_with_invalid_design_url(xngin_session, testing_
     assert "Input should be a valid URL, empty host" in response.json()["detail"][0]["msg"]
 
 
-async def test_create_preassigned_experiment(
+async def test_create_freq_preassigned_experiment(
     xngin_session: AsyncSession,
     testing_datasource_with_user,
     use_deterministic_random,
@@ -1640,6 +1644,18 @@ async def test_create_preassigned_experiment(
         )
     ).all()
     assert len(assignments) == 100, {e.name: getattr(experiment, e.name) for e in tables.Experiment.__table__.columns}
+
+    # Verify that design_fields were stored correctly (see defaults in make_createexperimentrequest_json)
+    design_fields = await experiment.awaitable_attrs.design_fields
+    assert len(design_fields) == 2
+    gender_field = next((f for f in design_fields if f.field_name == "gender"), None)
+    assert gender_field is not None
+    assert gender_field.use == "stratum"
+    assert gender_field.data_type == "character varying"
+    is_onboarded_field = next((f for f in design_fields if f.field_name == "is_onboarded"), None)
+    assert is_onboarded_field is not None
+    assert is_onboarded_field.use == "metric"
+    assert is_onboarded_field.data_type == "boolean"
 
     # Check one assignment to see if it looks roughly right
     sample_assignment: tables.ArmAssignment = assignments[0]

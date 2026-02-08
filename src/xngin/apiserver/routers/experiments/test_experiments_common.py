@@ -222,6 +222,12 @@ async def make_insertable_experiment(
         stopped_assignments_at = datetime.now(UTC)
         stopped_assignments_reason = StopAssignmentReason.PREASSIGNED
 
+    # Get participants schema from datasource for frequentist experiments
+    participants_schema = None
+    if experiment_type in {ExperimentsType.FREQ_PREASSIGNED, ExperimentsType.FREQ_ONLINE}:
+        ds_config = datasource.get_config()
+        participants_schema = ds_config.find_participants(design_spec.participant_type)
+
     experiment_converter = ExperimentStorageConverter.init_from_components(
         datasource_id=datasource.id,
         organization_id=datasource.organization_id,
@@ -230,6 +236,7 @@ async def make_insertable_experiment(
         state=state,
         stopped_assignments_at=stopped_assignments_at,
         stopped_assignments_reason=stopped_assignments_reason,
+        participants_schema=participants_schema,
     )
     experiment = experiment_converter.get_experiment()
     return experiment, await experiment_converter.get_design_spec()
@@ -322,6 +329,10 @@ async def test_create_preassigned_experiment_impl(
         ]
     )
 
+    # Get participants schema from datasource
+    ds_config = testing_datasource.ds.get_config()
+    participants_schema = ds_config.find_participants(request.design_spec.participant_type)
+
     response = await create_preassigned_experiment_impl(
         request=request.model_copy(deep=True),  # we'll use the original request for assertions
         datasource_id=testing_datasource.ds.id,
@@ -333,6 +344,7 @@ async def test_create_preassigned_experiment_impl(
         xngin_session=xngin_session,
         stratify_on_metrics=True,
         validated_webhooks=[],
+        participants_schema=participants_schema,
     )
 
     # Verify response
@@ -363,6 +375,18 @@ async def test_create_preassigned_experiment_impl(
     # Verify database state uses app-generated ids
     experiment = await xngin_session.get(tables.Experiment, experiment_id)
     assert experiment is not None
+
+    # Verify that design_fields were stored correctly (see defaults in make_createexperimentrequest_json)
+    design_fields = experiment.design_fields
+    assert len(design_fields) == 2
+    gender_field = next((f for f in design_fields if f.field_name == "gender"), None)
+    assert gender_field is not None
+    assert gender_field.use == "stratum"
+    assert gender_field.data_type == "character varying"
+    is_onboarded_field = next((f for f in design_fields if f.field_name == "is_onboarded"), None)
+    assert is_onboarded_field is not None
+    assert is_onboarded_field.use == "metric"
+    assert is_onboarded_field.data_type == "boolean"
 
     # Reorder storage layout for arms to confirm we're able to retrieve in order according to position.
     if reorder_arms:
@@ -455,6 +479,10 @@ async def test_create_preassigned_experiment_impl_raises_on_duplicate_ids(
         MockRow(participant_id="id_1", gender="F", is_onboarded=True),  # Duplicate ID
     ]
 
+    # Get participants schema from datasource
+    ds_config = testing_datasource.ds.get_config()
+    participants_schema = ds_config.find_participants(request.design_spec.participant_type)
+
     with pytest.raises(LateValidationError, match="Duplicate participant ID found after filtering:"):
         await create_preassigned_experiment_impl(
             request=request,
@@ -467,6 +495,7 @@ async def test_create_preassigned_experiment_impl_raises_on_duplicate_ids(
             xngin_session=xngin_session,
             stratify_on_metrics=False,
             validated_webhooks=[],
+            participants_schema=participants_schema,
         )
 
 
@@ -483,6 +512,10 @@ async def test_create_preassigned_experiment_impl_with_unbalanced_arms(
     spec.arms[0].arm_weight = expected_weights[0]
     spec.arms[1].arm_weight = expected_weights[1]
 
+    # Get participants schema from datasource
+    ds_config = testing_datasource.ds.get_config()
+    participants_schema = ds_config.find_participants(request.design_spec.participant_type)
+
     response = await create_preassigned_experiment_impl(
         request=request,
         datasource_id=testing_datasource.ds.id,
@@ -494,6 +527,7 @@ async def test_create_preassigned_experiment_impl_with_unbalanced_arms(
         xngin_session=xngin_session,
         stratify_on_metrics=True,
         validated_webhooks=[],
+        participants_schema=participants_schema,
     )
 
     experiment_id = response.experiment_id
@@ -546,6 +580,10 @@ async def test_create_preassigned_experiment_impl_with_three_unbalanced_arms(
     request["design_spec"]["arms"][2]["arm_weight"] = expected_weights[2]
     request = TypeAdapter(CreateExperimentRequest).validate_python(request)
 
+    # Get participants schema from datasource
+    ds_config = testing_datasource.ds.get_config()
+    participants_schema = ds_config.find_participants(request.design_spec.participant_type)
+
     response = await create_preassigned_experiment_impl(
         request=request,
         datasource_id=testing_datasource.ds.id,
@@ -557,6 +595,7 @@ async def test_create_preassigned_experiment_impl_with_three_unbalanced_arms(
         xngin_session=xngin_session,
         stratify_on_metrics=False,
         validated_webhooks=[],
+        participants_schema=participants_schema,
     )
 
     experiment_id = response.experiment_id
@@ -599,7 +638,7 @@ async def test_create_preassigned_experiment_impl_with_three_unbalanced_arms(
 
 
 @pytest.mark.parametrize("reorder_arms", [True, False])
-async def test_create_freq_online_experiment_impl_with_unbalanced_arms(
+async def test_create_experiment_impl_for_freq_online_with_unbalanced_arms(
     xngin_session,
     testing_datasource,
     reorder_arms: bool,
@@ -628,6 +667,18 @@ async def test_create_freq_online_experiment_impl_with_unbalanced_arms(
     assert experiment is not None
     await experiment.awaitable_attrs.arms
     assert [arm.arm_weight for arm in experiment.arms] == expected_weights
+
+    # Verify that design_fields were stored correctly (see defaults in make_createexperimentrequest_json)
+    design_fields = experiment.design_fields
+    assert len(design_fields) == 2
+    gender_field = next((f for f in design_fields if f.field_name == "gender"), None)
+    assert gender_field is not None
+    assert gender_field.use == "stratum"
+    assert gender_field.data_type == "character varying"
+    is_onboarded_field = next((f for f in design_fields if f.field_name == "is_onboarded"), None)
+    assert is_onboarded_field is not None
+    assert is_onboarded_field.use == "metric"
+    assert is_onboarded_field.data_type == "boolean"
 
     # Reorder arms as storage layout to break test assumptions.
     if reorder_arms:
@@ -678,7 +729,7 @@ async def test_create_freq_online_experiment_impl_with_unbalanced_arms(
         ),
     ],
 )
-async def test_create_frequentist_experiment_impl_raises_on_bad_filters(
+async def test_create_experiment_impl_for_freq_raises_on_bad_filters(
     xngin_session: AsyncSession,
     testing_datasource,
     experiment_type: ExperimentsType,

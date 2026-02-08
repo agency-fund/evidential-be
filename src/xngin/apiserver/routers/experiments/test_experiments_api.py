@@ -434,7 +434,12 @@ async def test_assign_with_filters_participant_passes_filters(xngin_session, tes
     )
     design_spec = TypeAdapter(OnlineFrequentistExperimentSpec).validate_python(design_spec)
     design_spec.filters = [Filter(field_name="current_income", relation=Relation.BETWEEN, value=[1000, 5000])]
-    experiment = ExperimentStorageConverter(experiment).set_design_spec_fields(design_spec).get_experiment()
+    # Get participants schema from datasource for data type resolution
+    ds_config = testing_datasource.ds.get_config()
+    participants_schema = ds_config.find_participants(design_spec.participant_type)
+    experiment = (
+        ExperimentStorageConverter(experiment).set_design_spec_fields(design_spec, participants_schema).get_experiment()
+    )
     xngin_session.add(experiment)
     await xngin_session.commit()
 

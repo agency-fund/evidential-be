@@ -12,6 +12,7 @@ from typing import Self
 import numpy as np
 from pydantic import TypeAdapter
 
+from xngin.apiserver.dwh.inspection_types import ParticipantsSchema
 from xngin.apiserver.routers import common_api_types as capi
 from xngin.apiserver.routers.common_enums import (
     ExperimentState,
@@ -83,12 +84,26 @@ class ExperimentStorageConverter:
             for f in design_spec_fields.filters
         ]
 
-    def set_design_spec_fields(self, design_spec: capi.DesignSpec) -> Self:
-        """Saves the components of a DesignSpec to the experiment."""
+    def set_design_spec_fields(
+        self,
+        design_spec: capi.DesignSpec,
+        participants_schema: ParticipantsSchema | None = None,
+    ) -> Self:
+        """Saves the components of a DesignSpec to the experiment.
+
+        Args:
+            design_spec: The design specification to save.
+            participants_schema: Optional schema to resolve data types for fields.
+        """
         if not isinstance(design_spec, capi.BaseFrequentistDesignSpec):
             self.experiment.design_spec_fields = None
             self.experiment.design_fields = []
             return self
+
+        # Build field name to data type mapping from participants schema
+        field_type_map = {}
+        if participants_schema:
+            field_type_map = {field.field_name: field.data_type.value for field in participants_schema.fields}
 
         # Clear existing design fields
         self.experiment.design_fields = []
@@ -100,7 +115,7 @@ class ExperimentStorageConverter:
                     tables.ExperimentField(
                         field_name=filter_item.field_name,
                         use="filter",
-                        data_type=None,  # Will be populated during migration or by future logic
+                        data_type=field_type_map.get(filter_item.field_name),
                         other={"relation": filter_item.relation, "value": list(filter_item.value)},
                     )
                 )
@@ -117,7 +132,7 @@ class ExperimentStorageConverter:
                     tables.ExperimentField(
                         field_name=metric.field_name,
                         use="metric",
-                        data_type=None,  # Will be populated during migration or by future logic
+                        data_type=field_type_map.get(metric.field_name),
                         other=other_data or None,
                     )
                 )
@@ -129,7 +144,7 @@ class ExperimentStorageConverter:
                     tables.ExperimentField(
                         field_name=stratum.field_name,
                         use="stratum",
-                        data_type=None,  # Will be populated during migration or by future logic
+                        data_type=field_type_map.get(stratum.field_name),
                         other=None,
                     )
                 )
@@ -380,6 +395,7 @@ class ExperimentStorageConverter:
         n_trials: int = 0,
         decision: str = "",
         impact: str = "",
+        participants_schema: ParticipantsSchema | None = None,
     ) -> Self:
         """Init experiment with arms from components. Get the final object with get_experiment().
 
@@ -423,7 +439,7 @@ class ExperimentStorageConverter:
                 ]
                 return (
                     cls(experiment)
-                    .set_design_spec_fields(design_spec)
+                    .set_design_spec_fields(design_spec, participants_schema)
                     .set_balance_check(balance_check)
                     .set_power_response(power_analyses)
                 )

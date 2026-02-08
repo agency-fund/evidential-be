@@ -18,6 +18,7 @@ from sqlalchemy.orm import selectinload
 
 from xngin.apiserver import constants, flags
 from xngin.apiserver.dwh.dwh_session import DwhSession
+from xngin.apiserver.dwh.inspection_types import ParticipantsSchema
 from xngin.apiserver.dwh.queries import get_participant_metrics
 from xngin.apiserver.exceptions_common import LateValidationError
 from xngin.apiserver.routers.assignment_adapters import (
@@ -160,10 +161,11 @@ async def create_experiment_impl(
                 xngin_session=xngin_session,
                 stratify_on_metrics=stratify_on_metrics,
                 validated_webhooks=validated_webhooks,
+                participants_schema=participants_cfg,
             )
 
         case ExperimentsType.FREQ_ONLINE:
-            _validated_ds_cfg, _validated_p_cfg = get_freq_experiment_configs_or_raise(datasource, design_spec)
+            _validated_ds_cfg, validated_p_cfg = get_freq_experiment_configs_or_raise(datasource, design_spec)
 
             return await create_freq_online_experiment_impl(
                 request=request,
@@ -171,6 +173,7 @@ async def create_experiment_impl(
                 organization_id=datasource.organization_id,
                 xngin_session=xngin_session,
                 validated_webhooks=validated_webhooks,
+                participants_schema=validated_p_cfg,
             )
 
         case ExperimentsType.MAB_ONLINE | ExperimentsType.CMAB_ONLINE:
@@ -201,6 +204,7 @@ async def create_preassigned_experiment_impl(
     xngin_session: AsyncSession,
     stratify_on_metrics: bool,
     validated_webhooks: list[tables.Webhook],
+    participants_schema: ParticipantsSchema,
 ) -> CreateExperimentResponse:
     """Create a frequentist preassigned experiment and persist it to the database."""
 
@@ -246,6 +250,7 @@ async def create_preassigned_experiment_impl(
         stopped_assignments_reason=StopAssignmentReason.PREASSIGNED,
         balance_check=balance_check,
         power_analyses=request.power_analyses,
+        participants_schema=participants_schema,
     )
     experiment = experiment_converter.get_experiment()
     # Associate webhooks with the experiment
@@ -280,6 +285,7 @@ async def create_freq_online_experiment_impl(
     organization_id: str,
     xngin_session: AsyncSession,
     validated_webhooks: list[tables.Webhook],
+    participants_schema: ParticipantsSchema,
 ) -> CreateExperimentResponse:
     """Create a frequentist online experiment and persist it to the database."""
     design_spec = request.design_spec
@@ -292,6 +298,7 @@ async def create_freq_online_experiment_impl(
         organization_id=organization_id,
         experiment_type=ExperimentsType.FREQ_ONLINE,
         design_spec=design_spec,
+        participants_schema=participants_schema,
     )
     experiment = experiment_converter.get_experiment()
     # Associate webhooks with the experiment
