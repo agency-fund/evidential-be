@@ -548,7 +548,7 @@ class ExperimentField(Base):
     id: Mapped[str] = mapped_column(primary_key=True, default=experiment_field_id_factory)
     experiment_id: Mapped[str] = mapped_column(String(36), ForeignKey("experiments.id", ondelete="CASCADE"))
     field_name: Mapped[str] = mapped_column(String(255))
-    # Stores the enum value of the field's use: filter, metric, stratum, or id
+    # Stores the enum value (storage_types.py::FieldUse) of the field's use.
     use: Mapped[str] = mapped_column(String(20))
     # Stores the enum value of the field's common_enums.DataType. Nullable in case our migration
     # can't find a type for all fields, or for experiments not backed by a datasource.

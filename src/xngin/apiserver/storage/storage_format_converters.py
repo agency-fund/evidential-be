@@ -22,8 +22,11 @@ from xngin.apiserver.routers.common_enums import (
 from xngin.apiserver.sqla import tables
 from xngin.apiserver.storage.storage_types import (
     DesignSpecFields,
+    FieldUse,
     StorageFilter,
+    StorageFilterMetadata,
     StorageMetric,
+    StorageMetricMetadata,
     StorageStratum,
 )
 
@@ -102,38 +105,53 @@ class ExperimentStorageConverter:
 
         # Build field name to data type mapping from participants schema
         field_type_map = {}
+        unique_id_name = None
         if participants_schema:
             field_type_map = {field.field_name: field.data_type.value for field in participants_schema.fields}
+            unique_id_name = participants_schema.get_unique_id_field()
 
         # Clear existing design fields
         self.experiment.design_fields = []
 
+        # Add unique ID
+        if unique_id_name:
+            self.experiment.design_fields.append(
+                tables.ExperimentField(
+                    field_name=unique_id_name,
+                    use=FieldUse.ID,
+                    data_type=field_type_map.get(unique_id_name),
+                )
+            )
+
         # Add filters
         if design_spec.filters:
             for filter_item in design_spec.filters:
+                filter_metadata = StorageFilterMetadata(
+                    relation=filter_item.relation,
+                    value=list(filter_item.value),
+                )
                 self.experiment.design_fields.append(
                     tables.ExperimentField(
                         field_name=filter_item.field_name,
-                        use="filter",
+                        use=FieldUse.FILTER,
                         data_type=field_type_map.get(filter_item.field_name),
-                        other={"relation": filter_item.relation, "value": list(filter_item.value)},
+                        other=filter_metadata.model_dump(mode="json"),
                     )
                 )
 
         # Add metrics
         if design_spec.metrics:
             for metric in design_spec.metrics:
-                other_data = {}
-                if metric.metric_pct_change is not None:
-                    other_data["metric_pct_change"] = metric.metric_pct_change
-                if metric.metric_target is not None:
-                    other_data["metric_target"] = metric.metric_target
+                metric_metadata = StorageMetricMetadata(
+                    metric_pct_change=metric.metric_pct_change,
+                    metric_target=metric.metric_target,
+                )
                 self.experiment.design_fields.append(
                     tables.ExperimentField(
                         field_name=metric.field_name,
-                        use="metric",
+                        use=FieldUse.METRIC,
                         data_type=field_type_map.get(metric.field_name),
-                        other=other_data or None,
+                        other=metric_metadata.model_dump(mode="json"),
                     )
                 )
 
@@ -143,7 +161,7 @@ class ExperimentStorageConverter:
                 self.experiment.design_fields.append(
                     tables.ExperimentField(
                         field_name=stratum.field_name,
-                        use="stratum",
+                        use=FieldUse.STRATUM,
                         data_type=field_type_map.get(stratum.field_name),
                         other=None,
                     )
@@ -190,38 +208,36 @@ class ExperimentStorageConverter:
         if not self.experiment.design_fields:
             return DesignSpecFields.model_validate(self.experiment.design_spec_fields)
 
-        filters = None
-        metrics = None
-        strata = None
+        filters = []
+        metrics = []
+        strata = []
 
-        # Extract filters from design_fields
-        filter_fields = [df for df in self.experiment.design_fields if df.use == "filter"]
-        if filter_fields:
-            filters = [
-                StorageFilter(
-                    field_name=df.field_name,
-                    relation=df.other.get("relation") if df.other else "",
-                    value=df.other.get("value") if df.other else [],
-                )
-                for df in filter_fields
-            ]
-
-        # Extract metrics from design_fields
-        metric_fields = [df for df in self.experiment.design_fields if df.use == "metric"]
-        if metric_fields:
-            metrics = [
-                StorageMetric(
-                    field_name=df.field_name,
-                    metric_pct_change=df.other.get("metric_pct_change") if df.other else None,
-                    metric_target=df.other.get("metric_target") if df.other else None,
-                )
-                for df in metric_fields
-            ]
-
-        # Extract strata from design_fields
-        strata_fields = [df for df in self.experiment.design_fields if df.use == "stratum"]
-        if strata_fields:
-            strata = [StorageStratum(field_name=df.field_name) for df in strata_fields]
+        for df in self.experiment.design_fields:
+            match df.use:
+                case FieldUse.FILTER:
+                    filter_data = StorageFilterMetadata.model_validate(df.other or {})
+                    filters.append(
+                        StorageFilter(
+                            field_name=df.field_name,
+                            relation=filter_data.relation,
+                            value=filter_data.value,
+                        )
+                    )
+                case FieldUse.METRIC:
+                    metric_data = StorageMetricMetadata.model_validate(df.other or {})
+                    metrics.append(
+                        StorageMetric(
+                            field_name=df.field_name,
+                            metric_pct_change=metric_data.metric_pct_change,
+                            metric_target=metric_data.metric_target,
+                        )
+                    )
+                case FieldUse.STRATUM:
+                    strata.append(StorageStratum(field_name=df.field_name))
+                case FieldUse.ID:
+                    pass
+                case _:
+                    raise ValueError(f"Unsupported field use: {df.use}")
 
         return DesignSpecFields(filters=filters, metrics=metrics, strata=strata)
 
