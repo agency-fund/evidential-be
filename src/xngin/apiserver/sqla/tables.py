@@ -442,7 +442,7 @@ class Experiment(Base):
     contexts: Mapped[list["Context"]] = relationship(
         "Context", back_populates="experiment", cascade="all, delete-orphan"
     )
-    design_fields: Mapped[list["ExperimentField"]] = relationship(
+    experiment_fields: Mapped[list["ExperimentField"]] = relationship(
         back_populates="experiment",
         cascade="all, delete-orphan",
     )
@@ -556,7 +556,7 @@ class ExperimentField(Base):
     # Extra metadata related to the field's use.
     other: Mapped[dict | None] = mapped_column(postgresql.JSONB)
 
-    experiment: Mapped["Experiment"] = relationship(back_populates="design_fields")
+    experiment: Mapped["Experiment"] = relationship(back_populates="experiment_fields")
 
     __table_args__ = (Index("idx_experiment_fields_experiment_id", "experiment_id"),)
 

@@ -1646,18 +1646,18 @@ async def test_create_freq_preassigned_experiment(
     ).all()
     assert len(assignments) == 100, {e.name: getattr(experiment, e.name) for e in tables.Experiment.__table__.columns}
 
-    # Verify that design_fields were stored correctly (see defaults in make_createexperimentrequest_json)
-    design_fields = await experiment.awaitable_attrs.design_fields
-    assert len(design_fields) == 3
-    unique_id_field = next((f for f in design_fields if f.use == FieldUse.ID), None)
+    # Verify that experiment_fields were stored correctly (see defaults in make_createexperimentrequest_json)
+    experiment_fields = await experiment.awaitable_attrs.experiment_fields
+    assert len(experiment_fields) == 3
+    unique_id_field = next((f for f in experiment_fields if f.use == FieldUse.ID), None)
     assert unique_id_field is not None
     assert unique_id_field.use == FieldUse.ID
     assert unique_id_field.data_type == "bigint"
-    gender_field = next((f for f in design_fields if f.field_name == "gender"), None)
+    gender_field = next((f for f in experiment_fields if f.field_name == "gender"), None)
     assert gender_field is not None
     assert gender_field.use == FieldUse.STRATUM
     assert gender_field.data_type == "character varying"
-    is_onboarded_field = next((f for f in design_fields if f.field_name == "is_onboarded"), None)
+    is_onboarded_field = next((f for f in experiment_fields if f.field_name == "is_onboarded"), None)
     assert is_onboarded_field is not None
     assert is_onboarded_field.use == FieldUse.METRIC
     assert is_onboarded_field.data_type == "boolean"

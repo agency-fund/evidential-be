@@ -137,7 +137,7 @@ experiment_dependency = ExperimentDependency()
 # Use this when you need an experiment with info on the fields it uses.
 # TODO: remove the datasource dependency as part of the participant type cleanup.
 experiment_and_datasource_dependency = ExperimentDependency(
-    preload=[tables.Experiment.datasource, tables.Experiment.design_fields]
+    preload=[tables.Experiment.datasource, tables.Experiment.experiment_fields]
 )
 
 # Use this version when you also want contexts for assignment responses.
@@ -145,7 +145,7 @@ experiment_with_contexts_dependency = ExperimentDependency(preload=[tables.Exper
 
 # Use this version when a full GetExperimentResponse is needed.
 experiment_response_dependency = ExperimentDependency(
-    preload=[tables.Experiment.webhooks, tables.Experiment.contexts, tables.Experiment.design_fields]
+    preload=[tables.Experiment.webhooks, tables.Experiment.contexts, tables.Experiment.experiment_fields]
 )
 
 # This version is used with processing assignments, e.g. exporting them.

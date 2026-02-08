@@ -100,7 +100,7 @@ class ExperimentStorageConverter:
         """
         if not isinstance(design_spec, capi.BaseFrequentistDesignSpec):
             self.experiment.design_spec_fields = None
-            self.experiment.design_fields = []
+            self.experiment.experiment_fields = []
             return self
 
         # Build field name to data type mapping from participants schema
@@ -111,11 +111,11 @@ class ExperimentStorageConverter:
             unique_id_name = participants_schema.get_unique_id_field()
 
         # Clear existing design fields
-        self.experiment.design_fields = []
+        self.experiment.experiment_fields = []
 
         # Add unique ID
         if unique_id_name:
-            self.experiment.design_fields.append(
+            self.experiment.experiment_fields.append(
                 tables.ExperimentField(
                     field_name=unique_id_name,
                     use=FieldUse.ID,
@@ -130,7 +130,7 @@ class ExperimentStorageConverter:
                     relation=filter_item.relation,
                     value=list(filter_item.value),
                 )
-                self.experiment.design_fields.append(
+                self.experiment.experiment_fields.append(
                     tables.ExperimentField(
                         field_name=filter_item.field_name,
                         use=FieldUse.FILTER,
@@ -146,7 +146,7 @@ class ExperimentStorageConverter:
                     metric_pct_change=metric.metric_pct_change,
                     metric_target=metric.metric_target,
                 )
-                self.experiment.design_fields.append(
+                self.experiment.experiment_fields.append(
                     tables.ExperimentField(
                         field_name=metric.field_name,
                         use=FieldUse.METRIC,
@@ -158,7 +158,7 @@ class ExperimentStorageConverter:
         # Add strata
         if design_spec.strata:
             for stratum in design_spec.strata:
-                self.experiment.design_fields.append(
+                self.experiment.experiment_fields.append(
                     tables.ExperimentField(
                         field_name=stratum.field_name,
                         use=FieldUse.STRATUM,
@@ -202,17 +202,17 @@ class ExperimentStorageConverter:
         return self
 
     def get_design_spec_fields(self) -> DesignSpecFields:
-        """Reconstruct DesignSpecFields from design_fields relationship, which must be already eager-loaded."""
-        # Fallback to JSONB column if design_fields is not loaded or empty
+        """Reconstruct DesignSpecFields from experiment_fields relationship, which must be already eager-loaded."""
+        # Fallback to JSONB column if experiment_fields is not loaded or empty
         # (for backwards compatibility during transition)
-        if not self.experiment.design_fields:
+        if not self.experiment.experiment_fields:
             return DesignSpecFields.model_validate(self.experiment.design_spec_fields)
 
         filters = []
         metrics = []
         strata = []
 
-        for df in self.experiment.design_fields:
+        for df in self.experiment.experiment_fields:
             match df.use:
                 case FieldUse.FILTER:
                     filter_data = StorageFilterMetadata.model_validate(df.other or {})
@@ -264,8 +264,8 @@ class ExperimentStorageConverter:
             ExperimentsType.FREQ_ONLINE.value,
             ExperimentsType.FREQ_PREASSIGNED.value,
         }:
-            # Load design_fields relationship if needed
-            await self.experiment.awaitable_attrs.design_fields
+            # Load experiment_fields relationship if needed
+            await self.experiment.awaitable_attrs.experiment_fields
             design_spec_fields = self.get_design_spec_fields()
             return TypeAdapter(capi.DesignSpec).validate_python({
                 **base_experiment_dict,
