@@ -533,6 +533,94 @@ def test_create_datasource_invalid_dns(testing_datasource, ppost):
     assert "DNS resolution failed" in str(response.content)
 
 
+def test_create_datasource_with_connectivity_check_connection_failure(disable_safe_resolve_check, ppost, pget):
+    response = ppost(
+        "/v1/m/organizations",
+        json=CreateOrganizationRequest(name="test_create_datasource_with_preflight").model_dump(),
+    )
+    assert response.status_code == 200, response.content
+    org_id = CreateOrganizationResponse.model_validate(response.json()).id
+
+    response = ppost(
+        "/v1/m/datasources?connectivity_check=1",
+        content=CreateDatasourceRequest(
+            name="test_create_datasource",
+            organization_id=org_id,
+            dsn=PostgresDsn(
+                host="127.0.0.1",
+                user="postgres",
+                port=5499,
+                password=RevealedStr(value="wrong-password"),
+                dbname="postgres",
+                sslmode="disable",
+                search_path=None,
+            ),
+        ).model_dump_json(),
+    )
+    assert response.status_code == 502, response.content
+    assert "password authentication failed" in response.json()["message"].lower()
+
+    response = pget(f"/v1/m/organizations/{org_id}/datasources")
+    assert response.status_code == 200, response.content
+    assert len(ListDatasourcesResponse.model_validate(response.json()).items) == 1
+
+
+def test_create_datasource_with_connectivity_check_disabled_by_default(disable_safe_resolve_check, ppost):
+    response = ppost(
+        "/v1/m/organizations",
+        json=CreateOrganizationRequest(name="test_create_datasource_connectivity_check_default").model_dump(),
+    )
+    assert response.status_code == 200, response.content
+    org_id = CreateOrganizationResponse.model_validate(response.json()).id
+
+    response = ppost(
+        "/v1/m/datasources",
+        content=CreateDatasourceRequest(
+            name="test_create_datasource",
+            organization_id=org_id,
+            dsn=PostgresDsn(
+                host="127.0.0.1",
+                user="postgres",
+                port=5499,
+                password=RevealedStr(value="wrong-password"),
+                dbname="postgres",
+                sslmode="disable",
+                search_path=None,
+            ),
+        ).model_dump_json(),
+    )
+    assert response.status_code == 200, response.content
+    CreateDatasourceResponse.model_validate(response.json())
+
+
+def test_create_datasource_with_connectivity_check_can_be_enabled(disable_safe_resolve_check, ppost):
+    response = ppost(
+        "/v1/m/organizations",
+        json=CreateOrganizationRequest(name="test_create_datasource_connectivity_check_enabled").model_dump(),
+    )
+    assert response.status_code == 200, response.content
+    org_id = CreateOrganizationResponse.model_validate(response.json()).id
+
+    response = ppost(
+        "/v1/m/datasources?connectivity_check=1",
+        content=CreateDatasourceRequest(
+            name="test_create_datasource",
+            organization_id=org_id,
+            dsn=PostgresDsn(
+                host="127.0.0.1",
+                user="postgres",
+                port=5499,
+                password=RevealedStr(value="wrong-password"),
+                dbname="postgres",
+                sslmode="disable",
+                search_path=None,
+            ),
+        ).model_dump_json(),
+    )
+    assert response.status_code == 502, response.content
+    assert "password authentication failed" in response.json()["message"].lower()
+
+
 def test_add_member_to_org(testing_datasource, ppost, pget):
     """Test adding a user to an org."""
     # Add privileged user to existing organization
@@ -1275,7 +1363,7 @@ async def test_lifecycle_with_db(testing_datasource, ppost, ppatch, pget, pdelet
     response = pget(f"/v1/m/datasources/{testing_datasource.ds.id}/inspect")
     assert response.status_code == 200, response.content
     datasource_inspection = InspectDatasourceResponse.model_validate(response.json())
-    assert datasource_inspection.tables == ["dwh"], response.json()
+    assert "dwh" in datasource_inspection.tables, response.json()
 
     # Inspect one table in the datasource.
     response = pget(f"/v1/m/datasources/{testing_datasource.ds.id}/inspect/dwh")

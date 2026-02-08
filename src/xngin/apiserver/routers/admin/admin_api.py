@@ -915,6 +915,10 @@ async def create_datasource(
     session: Annotated[AsyncSession, Depends(xngin_db_session)],
     user: Annotated[tables.User, Depends(require_user_from_token)],
     body: Annotated[CreateDatasourceRequest, Body(...)],
+    connectivity_check: Annotated[
+        bool,
+        Query(description="When true, validate datasource connectivity before creation."),
+    ] = False,
 ) -> CreateDatasourceResponse:
     """Creates a new datasource for the specified organization."""
     org = await get_organization_or_raise(session, user, body.organization_id)
@@ -922,6 +926,9 @@ async def create_datasource(
     raise_unless_safe_hostname(body.dsn)
 
     config = RemoteDatabaseConfig(participants=[], type="remote", dwh=api_dsn_to_settings_dwh(body.dsn))
+    if connectivity_check and config.dwh.driver != "none":
+        async with DwhSession(config.dwh) as dwh:
+            await dwh.connectivity_check()
 
     datasource = await admin_common.create_datasource_impl(session, org, body.name, config)
     await session.commit()
