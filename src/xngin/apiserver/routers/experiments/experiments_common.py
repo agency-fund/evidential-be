@@ -65,7 +65,7 @@ from xngin.stats.analysis import analyze_experiment as analyze_freq_experiment
 from xngin.stats.bandit_analysis import analyze_experiment as analyze_bandit_experiment
 from xngin.stats.bandit_sampling import choose_arm as choose_bandit_arm
 from xngin.stats.bandit_sampling import update_arm as update_bandit_arm
-from xngin.stats.power import calculate_mde_with_chosen_n
+from xngin.stats.power import calculate_mde_with_desired_n
 from xngin.stats.stats_errors import StatsAnalysisError
 from xngin.tq.task_payload_types import WEBHOOK_OUTBOUND_TASK_TYPE, WebhookOutboundTask
 
@@ -146,11 +146,13 @@ async def create_experiment_impl(
                     elif chosen_n == analysis.metric_spec.available_n:
                         actual_mde = analysis.pct_change_possible
                     else:
-                        _, actual_mde = calculate_mde_with_chosen_n(
+                        _, actual_mde = calculate_mde_with_desired_n(
                             metric=analysis.metric_spec,
-                            chosen_n=chosen_n,
+                            desired_n=chosen_n,
                             n_arms=len(design_spec.arms),
                             arm_weights=design_spec.get_validated_arm_weights(),
+                            alpha=design_spec.alpha,
+                            power=design_spec.power,
                         )
                     analysis.chosen_n = chosen_n
                     analysis.pct_change_with_chosen_n = actual_mde
