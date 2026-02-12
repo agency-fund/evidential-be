@@ -5,6 +5,7 @@ import datetime
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from xngin.apiserver.routers.admin import admin_common
+from xngin.apiserver.routers.admin.admin_api_types import AddWebhookToOrganizationRequest
 from xngin.apiserver.routers.common_api_types import (
     Arm,
     ArmBandit,
@@ -32,6 +33,12 @@ async def _maybe_create_developer_samples(
 ):
     if not testing_dwh_dsn:
         return
+
+    _ = admin_common.create_webhook_impl(
+        session,
+        organization.id,
+        AddWebhookToOrganizationRequest(type="experiment.created", name="My Webhook", url="http://localhost:8000"),
+    )
 
     datasource = await admin_common.create_datasource_impl(
         session,
