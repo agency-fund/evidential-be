@@ -148,7 +148,7 @@ def test_analyze_metric_power_cluster_no_clustering():
     assert result.design_effect == 1.0
 
     assert result.num_clusters_total is not None
-    assert result.num_clusters_total < 10
+    assert result.num_clusters_total == 6
 
     assert result.effective_sample_size == result.target_n
 
@@ -180,8 +180,8 @@ def test_analyze_metric_power_cluster_unbalanced():
     assert len(result.clusters_per_arm) == 2
     assert len(result.n_per_arm) == 2
 
-    assert result.clusters_per_arm[1] > result.clusters_per_arm[0]
-    assert result.n_per_arm[1] > result.n_per_arm[0]
+    assert result.clusters_per_arm == [8, 29]
+    assert result.n_per_arm == [240, 870]
 
     assert result.num_clusters_total == sum(result.clusters_per_arm)
     assert result.target_n == sum(result.n_per_arm)
@@ -211,8 +211,8 @@ def test_analyze_metric_power_cluster_three_arms():
     assert len(result.clusters_per_arm) == 3
     assert len(result.n_per_arm) == 3
 
-    assert result.clusters_per_arm[0] == result.clusters_per_arm[1]
-    assert result.clusters_per_arm[1] == result.clusters_per_arm[2]
+    assert result.clusters_per_arm == [12, 12, 12]
+    assert result.n_per_arm == [360, 360, 360]
 
     assert result.num_clusters_total == sum(result.clusters_per_arm)
     assert result.target_n == sum(result.n_per_arm)
@@ -270,5 +270,6 @@ def test_analyze_metric_power_cluster_high_icc():
     assert result_low.design_effect is not None
     assert result_high.design_effect is not None
 
-    assert result_high.num_clusters_total > result_low.num_clusters_total
+    assert result_low.num_clusters_total == 12
+    assert result_high.num_clusters_total == 42
     assert result_high.design_effect > result_low.design_effect
