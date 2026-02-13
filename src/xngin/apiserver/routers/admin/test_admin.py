@@ -320,6 +320,11 @@ def test_create_and_get_organization(ppost, pget):
     assert response.status_code == 200, response.content
     assert InspectDatasourceResponse.model_validate(response.json()).tables == []
 
+    # Inspecting a specific table for NoDwh should fail.
+    response = pget(f"/v1/m/datasources/{nodwh_summary.id}/inspect/notable")
+    assert response.status_code == 400, response.content
+    assert response.json() == {"detail": "Only remote datasources may be inspected."}
+
 
 @pytest.mark.skipif(
     flags.AIRPLANE_MODE,

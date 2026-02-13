@@ -1036,6 +1036,12 @@ async def inspect_table_in_datasource(
 
     config = ds.get_config()
 
+    if config.dwh.driver == "none":
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Only remote datasources may be inspected.",
+        )
+
     await invalidate_inspect_table_cache(session, datasource_id)
     await session.commit()
 
