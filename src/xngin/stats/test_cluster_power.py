@@ -64,8 +64,8 @@ def test_calculate_mde_cluster_basic():
         avg_cluster_size=30,
     )
 
-    assert target > 100
-    assert pct_change > 0
+    assert target == pytest.approx(110.68, rel=0.01)
+    assert pct_change == pytest.approx(0.1068, rel=0.01)
 
 
 def test_calculate_mde_cluster_no_clustering():
@@ -116,7 +116,8 @@ def test_calculate_mde_cluster_higher_with_clustering():
         avg_cluster_size=30,
     )
 
-    assert clust_target > ind_target
+    assert ind_target == pytest.approx(105.2, rel=0.01)
+    assert clust_target == pytest.approx(110.8, rel=0.01)
 
 
 def test_calculate_mde_cluster_binary_metric():
@@ -134,9 +135,8 @@ def test_calculate_mde_cluster_binary_metric():
         avg_cluster_size=50,
     )
 
-    assert 0 < target < 1
-    assert target != 0.10
-    assert pct_change != 0
+    assert target == pytest.approx(0.0243, rel=0.01)
+    assert pct_change == pytest.approx(-0.7566, rel=0.01)
 
 
 def test_calculate_mde_cluster_unbalanced():
@@ -156,5 +156,5 @@ def test_calculate_mde_cluster_unbalanced():
         arm_weights=[20, 80],
     )
 
-    assert target > 100
-    assert pct_change > 0
+    assert target == pytest.approx(110.35, rel=0.01)
+    assert pct_change == pytest.approx(0.1035, rel=0.01)
