@@ -541,18 +541,7 @@ async def add_webhook_to_organization(
     # Verify user has access to the organization
     org = await get_organization_or_raise(session, user, organization_id)
 
-    # Generate a secure auth token
-    auth_token = secrets.token_hex(16)
-
-    # Create and save the webhook
-    webhook = tables.Webhook(
-        type=body.type,
-        name=body.name,
-        url=body.url,
-        auth_token=auth_token,
-        organization_id=org.id,
-    )
-    session.add(webhook)
+    auth_token, webhook = admin_common.create_webhook_impl(session, org.id, body)
     await session.commit()
 
     return AddWebhookToOrganizationResponse(
