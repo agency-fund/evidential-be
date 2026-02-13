@@ -106,6 +106,7 @@ from xngin.apiserver.routers.experiments.test_experiments_common import (
     make_createexperimentrequest_json,
     make_insertable_experiment,
 )
+from xngin.apiserver.settings import NoDwh, ParticipantsDef, RemoteDatabaseConfig
 from xngin.apiserver.sqla import tables
 from xngin.apiserver.storage.storage_format_converters import ExperimentStorageConverter
 from xngin.apiserver.testing.assertions import assert_dates_equal
@@ -319,6 +320,11 @@ def test_create_and_get_organization(ppost, pget):
     assert response.status_code == 200, response.content
     assert InspectDatasourceResponse.model_validate(response.json()).tables == []
 
+    # Inspecting a specific table for NoDwh should fail.
+    response = pget(f"/v1/m/datasources/{nodwh_summary.id}/inspect/notable")
+    assert response.status_code == 400, response.content
+    assert response.json() == {"detail": "Only remote datasources may be inspected."}
+
 
 @pytest.mark.skipif(
     flags.AIRPLANE_MODE,
@@ -530,6 +536,94 @@ def test_create_datasource_invalid_dns(testing_datasource, ppost):
     )
     assert response.status_code == 400, response.content
     assert "DNS resolution failed" in str(response.content)
+
+
+def test_create_datasource_with_connectivity_check_connection_failure(disable_safe_resolve_check, ppost, pget):
+    response = ppost(
+        "/v1/m/organizations",
+        json=CreateOrganizationRequest(name="test_create_datasource_with_preflight").model_dump(),
+    )
+    assert response.status_code == 200, response.content
+    org_id = CreateOrganizationResponse.model_validate(response.json()).id
+
+    response = ppost(
+        "/v1/m/datasources?connectivity_check=1",
+        content=CreateDatasourceRequest(
+            name="test_create_datasource",
+            organization_id=org_id,
+            dsn=PostgresDsn(
+                host="127.0.0.1",
+                user="postgres",
+                port=5499,
+                password=RevealedStr(value="wrong-password"),
+                dbname="postgres",
+                sslmode="disable",
+                search_path=None,
+            ),
+        ).model_dump_json(),
+    )
+    assert response.status_code == 502, response.content
+    assert "password authentication failed" in response.json()["message"].lower()
+
+    response = pget(f"/v1/m/organizations/{org_id}/datasources")
+    assert response.status_code == 200, response.content
+    assert len(ListDatasourcesResponse.model_validate(response.json()).items) == 1
+
+
+def test_create_datasource_with_connectivity_check_disabled_by_default(disable_safe_resolve_check, ppost):
+    response = ppost(
+        "/v1/m/organizations",
+        json=CreateOrganizationRequest(name="test_create_datasource_connectivity_check_default").model_dump(),
+    )
+    assert response.status_code == 200, response.content
+    org_id = CreateOrganizationResponse.model_validate(response.json()).id
+
+    response = ppost(
+        "/v1/m/datasources",
+        content=CreateDatasourceRequest(
+            name="test_create_datasource",
+            organization_id=org_id,
+            dsn=PostgresDsn(
+                host="127.0.0.1",
+                user="postgres",
+                port=5499,
+                password=RevealedStr(value="wrong-password"),
+                dbname="postgres",
+                sslmode="disable",
+                search_path=None,
+            ),
+        ).model_dump_json(),
+    )
+    assert response.status_code == 200, response.content
+    CreateDatasourceResponse.model_validate(response.json())
+
+
+def test_create_datasource_with_connectivity_check_can_be_enabled(disable_safe_resolve_check, ppost):
+    response = ppost(
+        "/v1/m/organizations",
+        json=CreateOrganizationRequest(name="test_create_datasource_connectivity_check_enabled").model_dump(),
+    )
+    assert response.status_code == 200, response.content
+    org_id = CreateOrganizationResponse.model_validate(response.json()).id
+
+    response = ppost(
+        "/v1/m/datasources?connectivity_check=1",
+        content=CreateDatasourceRequest(
+            name="test_create_datasource",
+            organization_id=org_id,
+            dsn=PostgresDsn(
+                host="127.0.0.1",
+                user="postgres",
+                port=5499,
+                password=RevealedStr(value="wrong-password"),
+                dbname="postgres",
+                sslmode="disable",
+                search_path=None,
+            ),
+        ).model_dump_json(),
+    )
+    assert response.status_code == 502, response.content
+    assert "password authentication failed" in response.json()["message"].lower()
 
 
 def test_add_member_to_org(testing_datasource, ppost, pget):
@@ -766,6 +860,38 @@ def test_datasource_lifecycle(ppost, pget, ppatch):
     # Ensure driver changed, name didn't
     assert test_dwh.id == datasource_id
     assert test_dwh.driver == "bigquery"
+
+
+async def test_list_datasources_ordered_by_experiment_count(
+    xngin_session: AsyncSession, testing_datasource_with_user, pget
+):
+    """Datasources should be ordered by number of experiments (desc), then by name (asc)."""
+    org = testing_datasource_with_user.org
+    ds_a = testing_datasource_with_user.ds
+
+    # Create two additional datasources in the same org.
+    nodwh_config = RemoteDatabaseConfig(participants=[], type="remote", dwh=NoDwh())
+    ds_b = tables.Datasource(id=tables.datasource_id_factory(), name="AAA datasource", organization=org)
+    ds_b.set_config(nodwh_config)
+    ds_c = tables.Datasource(id=tables.datasource_id_factory(), name="ZZZ datasource", organization=org)
+    ds_c.set_config(nodwh_config)
+    xngin_session.add_all([ds_b, ds_c])
+    await xngin_session.commit()
+
+    # Add experiments: ds_b gets 3, ds_a gets 1, ds_c gets 0.
+    for ds, count in [(ds_b, 3), (ds_a, 1)]:
+        for _ in range(count):
+            await insert_experiment_and_arms(xngin_session, ds)
+
+    response = pget(f"/v1/m/organizations/{org.id}/datasources")
+    assert response.status_code == 200, response.content
+    items = ListDatasourcesResponse.model_validate(response.json()).items
+    assert len(items) == 3
+
+    # ds_b (3 experiments) first, ds_a (1 experiment) second, ds_c (0 experiments) last.
+    assert items[0].id == ds_b.id
+    assert items[1].id == ds_a.id
+    assert items[2].id == ds_c.id
 
 
 def test_datasource_errors(pget, ppost):
@@ -1250,6 +1376,7 @@ async def test_lifecycle_with_db(testing_datasource, ppost, ppatch, pget, pdelet
     table_inspection = InspectDatasourceTableResponse.model_validate(response.json())
     assert table_inspection == InspectDatasourceTableResponse(
         # Note: create_inspect_table_response_from_table() doesn't explicitly check for uniqueness.
+        primary_key_fields=["id"],
         detected_unique_id_fields=["id", "uuid_filter"],
         fields=[
             FieldMetadata(
@@ -1552,6 +1679,40 @@ async def test_power_check_with_unbalanced_arms(testing_datasource_with_user, pp
     # is now only 10% of the total instead of 20%, so we need more participants than before to
     # ensure that comparison with the smaller arm still has sufficient power.
     assert metric_analysis3.target_n == math.ceil(metric_analysis2.target_n * 0.2 / 0.10)
+
+
+async def test_power_check_with_synthesized_schema(testing_datasource_with_user, ppost):
+    """Test power check with synthesized participant schema via table_name and primary_key."""
+    design_spec = PreassignedFrequentistExperimentSpec(
+        experiment_type=ExperimentsType.FREQ_PREASSIGNED,
+        participant_type="ignored_when_synthesized",
+        experiment_name="test power check with synthesized schema",
+        description="test power check using table_name and primary_key",
+        start_date=datetime(2024, 1, 1, tzinfo=UTC),
+        end_date=datetime.now(UTC) + timedelta(days=1),
+        arms=[
+            Arm(arm_name="control", arm_description="Control group"),
+            Arm(arm_name="treatment", arm_description="Treatment group"),
+        ],
+        metrics=[DesignSpecMetricRequest(field_name="current_income", metric_pct_change=0.1)],
+        strata=[],
+        filters=[],
+    )
+
+    response = ppost(
+        f"/v1/m/datasources/{testing_datasource_with_user.ds.id}/power",
+        content=PowerRequest(
+            design_spec=design_spec,
+            table_name="dwh",  # Test DWH table name
+            primary_key="id",  # Test DWH primary key
+        ).model_dump_json(),
+    )
+
+    assert response.status_code == 200, response.content
+    power_response = PowerResponse.model_validate(response.json())
+    assert len(power_response.analyses) == 1
+    assert power_response.analyses[0].metric_spec.field_name == "current_income"
+    assert power_response.analyses[0].target_n is not None
 
 
 async def test_create_experiment_with_invalid_design_url(xngin_session, testing_datasource_with_user, ppost):
@@ -3192,3 +3353,134 @@ async def test_delete_experiment_data_none_specified(
         await xngin_session.scalars(select(tables.Snapshot).where(tables.Snapshot.experiment_id == experiment_id))
     )
     assert len(snapshots_after) == 1
+
+
+async def test_list_participant_types_excludes_hidden(
+    xngin_session: AsyncSession,
+    testing_datasource_with_user,
+    pget,
+):
+    """Test that list_participant_types excludes hidden participant types."""
+    ds_id = testing_datasource_with_user.ds.id
+    ds = testing_datasource_with_user.ds
+
+    # Add a hidden participant type directly
+    config = ds.get_config()
+    config.participants.append(
+        ParticipantsDef(
+            type="schema",
+            participant_type="hidden_pt",
+            table_name="some_table",
+            fields=[FieldDescriptor(field_name="id", data_type=DataType.BIGINT, is_unique_id=True)],
+            hidden=True,
+        )
+    )
+    ds.set_config(config)
+    await xngin_session.commit()
+
+    # List participants - should not include hidden one
+    response = pget(f"/v1/m/datasources/{ds_id}/participants")
+    assert response.status_code == 200
+    list_response = ListParticipantsTypeResponse.model_validate(response.json())
+    participant_names = [p.participant_type for p in list_response.items]
+    assert "hidden_pt" not in participant_names
+    assert "test_participant_type" in participant_names
+
+
+async def test_create_experiment_with_table_name_and_primary_key(
+    xngin_session: AsyncSession,
+    testing_datasource_with_user,
+    use_deterministic_random,
+    ppost,
+    pget,
+):
+    """Test creating an experiment with table_name and primary_key instead of participant_type."""
+    ds_id = testing_datasource_with_user.ds.id
+
+    request_json = make_createexperimentrequest_json(experiment_type=ExperimentsType.FREQ_ONLINE)
+
+    response = ppost(
+        f"/v1/m/datasources/{ds_id}/experiments",
+        params={"random_state": 42},
+        json={
+            **request_json,
+            "table_name": "dwh",  # The actual table name in test DWH
+            "primary_key": "id",
+        },
+    )
+    assert response.status_code == 200, response.content
+    created = CreateExperimentResponse.model_validate(response.json())
+
+    # Verify auto-generated participant_type name
+    assert created.design_spec.participant_type.startswith("__dwh_")
+    assert len(created.design_spec.participant_type) == len("__dwh_") + 8
+
+    # Verify participant type was persisted and is hidden
+    ds = await xngin_session.get_one(tables.Datasource, ds_id)
+    await xngin_session.refresh(ds)
+    config = ds.get_config()
+    pt = config.find_participants(created.design_spec.participant_type)
+    assert pt is not None
+    assert pt.hidden is True
+
+    # Verify hidden participant type not in list
+    response = pget(f"/v1/m/datasources/{ds_id}/participants")
+    list_response = ListParticipantsTypeResponse.model_validate(response.json())
+    participant_names = [p.participant_type for p in list_response.items]
+    assert created.design_spec.participant_type not in participant_names
+
+
+def test_create_experiment_table_name_requires_primary_key(
+    testing_datasource_with_user,
+    ppost,
+):
+    """Test that table_name requires primary_key."""
+    ds_id = testing_datasource_with_user.ds.id
+    request_json = make_createexperimentrequest_json(experiment_type=ExperimentsType.FREQ_ONLINE)
+
+    response = ppost(
+        f"/v1/m/datasources/{ds_id}/experiments",
+        json={**request_json, "table_name": "some_table"},
+    )
+    assert response.status_code == 422
+    assert "table_name and primary_key must be provided together" in response.text
+
+
+def test_create_experiment_primary_key_requires_table_name(
+    testing_datasource_with_user,
+    ppost,
+):
+    """Test that primary_key requires table_name."""
+    ds_id = testing_datasource_with_user.ds.id
+    request_json = make_createexperimentrequest_json(experiment_type=ExperimentsType.FREQ_ONLINE)
+
+    response = ppost(
+        f"/v1/m/datasources/{ds_id}/experiments",
+        json={**request_json, "primary_key": "id"},
+    )
+    assert response.status_code == 422
+    assert "table_name and primary_key must be provided together" in response.text
+
+
+async def test_create_preassigned_experiment_with_table_name_and_primary_key(
+    xngin_session: AsyncSession,
+    testing_datasource_with_user,
+    use_deterministic_random,
+    ppost,
+):
+    """Test creating a preassigned experiment with table_name and primary_key."""
+    ds_id = testing_datasource_with_user.ds.id
+
+    request_json = make_createexperimentrequest_json(experiment_type=ExperimentsType.FREQ_PREASSIGNED)
+
+    response = ppost(
+        f"/v1/m/datasources/{ds_id}/experiments",
+        params={"chosen_n": 100, "random_state": 42},
+        json={**request_json, "table_name": "dwh", "primary_key": "id"},
+    )
+    assert response.status_code == 200, response.content
+    created = CreateExperimentResponse.model_validate(response.json())
+
+    assert created.design_spec.participant_type.startswith("__dwh_")
+    assert created.assign_summary is not None
+    assert created.assign_summary.sample_size == 100

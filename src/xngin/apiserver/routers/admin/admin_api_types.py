@@ -149,7 +149,13 @@ class AddMemberToOrganizationRequest(AdminApiBaseModel):
 
 
 class ListDatasourcesResponse(AdminApiBaseModel):
-    items: list[DatasourceSummary]
+    items: Annotated[
+        list[DatasourceSummary],
+        Field(
+            description="Descriptions of the datasources in this organization, ordered in descending order of "
+            "frequency of use."
+        ),
+    ]
 
 
 class AddWebhookToOrganizationRequest(AdminApiBaseModel):
@@ -400,6 +406,7 @@ class FieldMetadata(ApiBaseModel):
 class InspectDatasourceTableResponse(ApiBaseModel):
     """Describes a table in the datasource."""
 
+    primary_key_fields: Annotated[list[str], Field(description="Fields that are primary keys.")]
     detected_unique_id_fields: Annotated[
         list[str],
         Field(description="Fields that are possibly candidates for unique IDs."),
