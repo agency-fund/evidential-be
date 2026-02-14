@@ -64,6 +64,12 @@ class Base64OrJson(StrEnum):
     json = "json"
 
 
+def truncate_with_ellipsis(value: str) -> str:
+    if len(value) > 250:
+        return value[:247] + "..."
+    return value
+
+
 def create_engine_and_database(url: sqlalchemy.URL):
     """Connects to a SQLAlchemy URL and creates the database if it doesn't exist.
 
@@ -214,6 +220,13 @@ def create_testing_dwh(
         bool,
         typer.Option(help="True if you only want to create the table if it does not exist."),
     ] = False,
+    views: Annotated[
+        str | None,
+        typer.Option(
+            help="Comma-separated view names to create as aliases for the dwh table. "
+            "Only supported on Postgres and Redshift."
+        ),
+    ] = None,
 ):
     """Loads the testing data warehouse CSV into a database.
 
@@ -256,7 +269,7 @@ def create_testing_dwh(
         cur.execute(drop_table_ddl)
         if schema_name is not None:
             cur.execute(create_schema_ddl)
-        print(f"Creating table:\n{create_table_ddl}")
+        print(f"Creating table:\n{truncate_with_ellipsis(create_table_ddl)}")
         cur.execute(create_table_ddl)
 
     def get_ddl_magic(quoter: IdentifierPreparer, flavor: str):
@@ -283,6 +296,14 @@ def create_testing_dwh(
         ct = cur.fetchone()[0]
         print(f"{full_table_name} has {ct} rows.")
         return ct
+
+    def maybe_create_views(cur):
+        if not views:
+            return
+        for view_name in views.split(","):
+            qualified_view_name = f"{schema_name}.{view_name}" if schema_name else view_name
+            print(f"Creating view {qualified_view_name}...")
+            cur.execute(f"CREATE OR REPLACE VIEW {qualified_view_name} AS SELECT * FROM {full_table_name}")
 
     if allow_existing:
         if create_db:
@@ -343,6 +364,7 @@ def create_testing_dwh(
             finally:
                 print("Deleting temporary file...")
                 s3.delete_object(Bucket=bucket, Key=key)
+            maybe_create_views(cur)
     elif url.drivername == "bigquery":
         import pandas_gbq  # noqa: PLC0415
 
@@ -362,7 +384,7 @@ def create_testing_dwh(
                 with opener(src) as reader:
                     cols = [h.strip() for h in reader.readline().split(",")]
                     sql = f"COPY {full_table_name} ({', '.join(cols)}) FROM STDIN (FORMAT CSV, DELIMITER ',')"
-                    print(f"SQL: {sql}")
+                    print(f"SQL: {truncate_with_ellipsis(sql)}")
                     with cursor.copy(sql) as copy:
                         while data := reader.read(1 << 20):
                             copy.write(data)
@@ -371,10 +393,11 @@ def create_testing_dwh(
                 with opener(src) as reader:
                     cols = [h.strip() for h in reader.readline().split(",")]
                     sql = f"COPY {full_table_name} ({', '.join(cols)}) FROM STDIN (FORMAT CSV, DELIMITER ',')"
-                    print(f"SQL: {sql}")
+                    print(f"SQL: {truncate_with_ellipsis(sql)}")
                     cursor.copy_expert(sql, reader)
 
             count(cursor)
+            maybe_create_views(cursor)
 
     else:
         err_console.print("Unrecognized database driver.")
