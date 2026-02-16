@@ -445,7 +445,7 @@ async def list_organization_or_datasource_experiments_impl(
         selectinload(tables.Experiment.arms),
         selectinload(tables.Experiment.contexts),
         selectinload(tables.Experiment.webhooks),
-        selectinload(tables.Experiment.experiment_fields),
+        selectinload(tables.Experiment.experiment_fields).selectinload(tables.ExperimentField.experiment_filters),
     )
 
     if datasource_id:

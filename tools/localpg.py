@@ -2,9 +2,9 @@
 # /// script
 # requires-python = ">=3.12"
 # dependencies = [
-#     "typer==0.15.1",
+#     "typer>=0.20.0,<0.21.0",
 #     "rich==13.7.0",
-#     "psycopg==3.1.18",
+#     "psycopg[binary]>=3.2.10,<4",
 # ]
 # ///
 #

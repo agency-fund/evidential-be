@@ -76,11 +76,14 @@ class ExperimentDependency:
     """
     Parameterizable db Experiment dependency (instances are callable) for endpoints that require API keys.
 
-    When constructing the dependency, you can provide a list of experiment attributes to preload to avoid N+1 queries.
+    When constructing the dependency, you can provide a list of experiment attributes to preload to
+    avoid N+1 queries.  If a *list* is provided as an item in preload, we treat it as pre-loading a
+    set of nested relationships.
+
     See __call__ for additional injected parameters when called as a dependency.
     """
 
-    def __init__(self, preload: list[QueryableAttribute] | None = None) -> None:
+    def __init__(self, preload: list[QueryableAttribute | list[QueryableAttribute]] | None = None) -> None:
         self.preload = preload
 
     async def __call__(
@@ -119,7 +122,17 @@ class ExperimentDependency:
             )
         )
         if self.preload:
-            query = query.options(*[selectinload(f) for f in self.preload])
+            options = []
+            for f in self.preload:
+                # If a list is provided, treat it as loading a nested relationship.
+                if isinstance(f, list) and f:
+                    nested_load = selectinload(f[0])
+                    for attr in f[1:]:
+                        nested_load = nested_load.selectinload(attr)
+                    options.append(nested_load)
+                elif isinstance(f, QueryableAttribute):
+                    options.append(selectinload(f))
+            query = query.options(*options)
         experiment = (await xngin_session.scalars(query)).unique().one_or_none()
 
         if not experiment:
@@ -137,7 +150,10 @@ experiment_dependency = ExperimentDependency()
 # Use this when you need an experiment with info on the fields it uses.
 # TODO: remove the datasource dependency as part of the participant type cleanup.
 experiment_and_datasource_dependency = ExperimentDependency(
-    preload=[tables.Experiment.datasource, tables.Experiment.experiment_fields]
+    preload=[
+        tables.Experiment.datasource,
+        [tables.Experiment.experiment_fields, tables.ExperimentField.experiment_filters],
+    ]
 )
 
 # Use this version when you also want contexts for assignment responses.
@@ -145,7 +161,11 @@ experiment_with_contexts_dependency = ExperimentDependency(preload=[tables.Exper
 
 # Use this version when a full GetExperimentResponse is needed.
 experiment_response_dependency = ExperimentDependency(
-    preload=[tables.Experiment.webhooks, tables.Experiment.contexts, tables.Experiment.experiment_fields]
+    preload=[
+        tables.Experiment.webhooks,
+        tables.Experiment.contexts,
+        [tables.Experiment.experiment_fields, tables.ExperimentField.experiment_filters],
+    ]
 )
 
 # This version is used with processing assignments, e.g. exporting them.

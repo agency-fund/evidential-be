@@ -448,7 +448,7 @@ async def test_assign_with_filters_participant_passes_filters(xngin_session, tes
         headers={constants.HEADER_API_KEY: testing_datasource.key},
         json={"properties": [{"field_name": "current_income", "value": 2500}]},
     )
-    assert response.status_code == 200
+    assert response.status_code == 200, response.content
     parsed = GetParticipantAssignmentResponse.model_validate_json(response.text)
     assert parsed.experiment_id == experiment.id
     assert parsed.participant_id == "participant_1"

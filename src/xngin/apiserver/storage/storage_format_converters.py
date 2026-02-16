@@ -15,18 +15,17 @@ from pydantic import TypeAdapter
 from xngin.apiserver.dwh.inspection_types import ParticipantsSchema
 from xngin.apiserver.routers import common_api_types as capi
 from xngin.apiserver.routers.common_enums import (
+    DataType,
     ExperimentState,
     ExperimentsType,
+    FilterClass,
     StopAssignmentReason,
 )
 from xngin.apiserver.sqla import tables
 from xngin.apiserver.storage.storage_types import (
     DesignSpecFields,
-    FieldUse,
     StorageFilter,
-    StorageFilterMetadata,
     StorageMetric,
-    StorageMetricMetadata,
     StorageStratum,
 )
 
@@ -87,87 +86,11 @@ class ExperimentStorageConverter:
             for f in design_spec_fields.filters
         ]
 
-    def set_design_spec_fields(
-        self,
-        design_spec: capi.DesignSpec,
-        participants_schema: ParticipantsSchema | None = None,
-    ) -> Self:
-        """Saves the components of a DesignSpec to the experiment.
-
-        Args:
-            design_spec: The design specification to save.
-            participants_schema: Optional schema to resolve data types for fields.
-        """
+    def _set_deprecated_design_spec_fields(self, design_spec: capi.DesignSpec) -> Self:
+        """Sets the deprecated design_spec_fields JSONB column for backwards compatibility during transition."""
         if not isinstance(design_spec, capi.BaseFrequentistDesignSpec):
-            self.experiment.design_spec_fields = None
-            self.experiment.experiment_fields = []
             return self
 
-        # Build field name to data type mapping from participants schema
-        field_type_map = {}
-        unique_id_name = None
-        if participants_schema:
-            field_type_map = {field.field_name: field.data_type.value for field in participants_schema.fields}
-            unique_id_name = participants_schema.get_unique_id_field()
-
-        # Clear existing design fields
-        self.experiment.experiment_fields = []
-
-        # Add unique ID
-        if unique_id_name:
-            self.experiment.experiment_fields.append(
-                tables.ExperimentField(
-                    field_name=unique_id_name,
-                    use=FieldUse.ID,
-                    data_type=field_type_map.get(unique_id_name),
-                )
-            )
-
-        # Add filters
-        if design_spec.filters:
-            for filter_item in design_spec.filters:
-                filter_metadata = StorageFilterMetadata(
-                    relation=filter_item.relation,
-                    value=list(filter_item.value),
-                )
-                self.experiment.experiment_fields.append(
-                    tables.ExperimentField(
-                        field_name=filter_item.field_name,
-                        use=FieldUse.FILTER,
-                        data_type=field_type_map.get(filter_item.field_name),
-                        other=filter_metadata.model_dump(mode="json"),
-                    )
-                )
-
-        # Add metrics
-        if design_spec.metrics:
-            for metric in design_spec.metrics:
-                metric_metadata = StorageMetricMetadata(
-                    metric_pct_change=metric.metric_pct_change,
-                    metric_target=metric.metric_target,
-                )
-                self.experiment.experiment_fields.append(
-                    tables.ExperimentField(
-                        field_name=metric.field_name,
-                        use=FieldUse.METRIC,
-                        data_type=field_type_map.get(metric.field_name),
-                        other=metric_metadata.model_dump(mode="json"),
-                    )
-                )
-
-        # Add strata
-        if design_spec.strata:
-            for stratum in design_spec.strata:
-                self.experiment.experiment_fields.append(
-                    tables.ExperimentField(
-                        field_name=stratum.field_name,
-                        use=FieldUse.STRATUM,
-                        data_type=field_type_map.get(stratum.field_name),
-                        other=None,
-                    )
-                )
-
-        # Keep JSONB column in sync for backwards compatibility during transition
         storage_strata = None
         if design_spec.strata:
             storage_strata = [StorageStratum(field_name=s.field_name) for s in design_spec.strata]
@@ -201,6 +124,114 @@ class ExperimentStorageConverter:
         ).model_dump(mode="json")
         return self
 
+    def set_design_spec_fields(
+        self,
+        design_spec: capi.DesignSpec,
+        participants_schema: ParticipantsSchema | None = None,
+    ) -> Self:
+        """Saves the components of a DesignSpec to the experiment.
+
+        Args:
+            design_spec: The design specification to save.
+            participants_schema: Optional schema to resolve data types for fields.
+        """
+        if not isinstance(design_spec, capi.BaseFrequentistDesignSpec):
+            self.experiment.design_spec_fields = None
+            self.experiment.experiment_fields = []
+            return self
+
+        # Build field name to data type mapping from participants schema
+        field_type_map = {}
+        unique_id_name = None
+        if participants_schema:
+            field_type_map = {field.field_name: field.data_type for field in participants_schema.fields}
+            unique_id_name = participants_schema.get_unique_id_field()
+
+        # Clear existing design fields
+        self.experiment.experiment_fields = []
+
+        # New fields used in the experiment. Each key is a field name and maps to a ExperimentField object.
+        fields_used_map = {}
+
+        # Add unique ID
+        if unique_id_name:
+            fields_used_map[unique_id_name] = tables.ExperimentField(
+                field_name=unique_id_name,
+                data_type=field_type_map.get(unique_id_name, DataType.UNKNOWN).value,
+                is_unique_id=True,
+            )
+
+        # Add filters. Fields used as filters technically could be reused with different filter values.
+        if design_spec.filters:
+            for filter_item in design_spec.filters:
+                field = fields_used_map.get(filter_item.field_name)
+                datatype = field_type_map.get(filter_item.field_name, DataType.UNKNOWN)
+                # Create the new field if it doesn't exist
+                if field is None:
+                    field = tables.ExperimentField(
+                        field_name=filter_item.field_name,
+                        data_type=datatype.value,
+                    )
+                    fields_used_map[filter_item.field_name] = field
+
+                # and associate new filter metadata with the field
+                filters = field.experiment_filters or []
+                if datatype.filter_class(filter_item.field_name) == FilterClass.DISCRETE or datatype in {
+                    DataType.DATE,
+                    DataType.TIMESTAMP_WITHOUT_TIMEZONE,
+                    DataType.TIMESTAMP_WITH_TIMEZONE,
+                }:
+                    filters.append(
+                        tables.ExperimentFilter(
+                            relation=filter_item.relation,
+                            string_values=filter_item.value,
+                        )
+                    )
+                else:
+                    filters.append(
+                        tables.ExperimentFilter(
+                            relation=filter_item.relation,
+                            numeric_values=filter_item.value,
+                        )
+                    )
+                field.experiment_filters = filters
+                field.is_filter = True
+
+        # Add metrics
+        if design_spec.metrics:
+            for index, metric in enumerate(design_spec.metrics):
+                field = fields_used_map.get(metric.field_name)
+                if field is None:
+                    field = tables.ExperimentField(
+                        field_name=metric.field_name,
+                        data_type=field_type_map.get(metric.field_name, DataType.UNKNOWN).value,
+                    )
+                    fields_used_map[metric.field_name] = field
+
+                if index == 0:
+                    field.is_primary_metric = True
+                field.metric_pct_change = metric.metric_pct_change
+                field.metric_target = metric.metric_target
+
+        # Add strata
+        if design_spec.strata:
+            for stratum in design_spec.strata:
+                field = fields_used_map.get(stratum.field_name)
+                if field is None:
+                    field = tables.ExperimentField(
+                        field_name=stratum.field_name,
+                        data_type=field_type_map.get(stratum.field_name),
+                    )
+                    fields_used_map[stratum.field_name] = field
+
+                field.is_strata = True
+
+        # add fields_used_map to experiment_fields
+        self.experiment.experiment_fields = list(fields_used_map.values())
+
+        self._set_deprecated_design_spec_fields(design_spec)
+        return self
+
     def get_design_spec_fields(self) -> DesignSpecFields:
         """Reconstruct DesignSpecFields from experiment_fields relationship, which must be already eager-loaded."""
         # Fallback to JSONB column if experiment_fields is not loaded or empty
@@ -212,32 +243,26 @@ class ExperimentStorageConverter:
         metrics = []
         strata = []
 
-        for df in self.experiment.experiment_fields:
-            match df.use:
-                case FieldUse.FILTER:
-                    filter_data = StorageFilterMetadata.model_validate(df.other or {})
+        for ef in self.experiment.experiment_fields:
+            if ef.is_filter and ef.experiment_filters:
+                for f in ef.experiment_filters:
                     filters.append(
                         StorageFilter(
-                            field_name=df.field_name,
-                            relation=filter_data.relation,
-                            value=filter_data.value,
+                            field_name=ef.field_name,
+                            relation=f.relation,
+                            value=f.string_values or f.numeric_values or [],
                         )
                     )
-                case FieldUse.METRIC:
-                    metric_data = StorageMetricMetadata.model_validate(df.other or {})
-                    metrics.append(
-                        StorageMetric(
-                            field_name=df.field_name,
-                            metric_pct_change=metric_data.metric_pct_change,
-                            metric_target=metric_data.metric_target,
-                        )
+            if ef.is_metric:
+                metrics.append(
+                    StorageMetric(
+                        field_name=ef.field_name,
+                        metric_pct_change=ef.metric_pct_change,
+                        metric_target=ef.metric_target,
                     )
-                case FieldUse.STRATUM:
-                    strata.append(StorageStratum(field_name=df.field_name))
-                case FieldUse.ID:
-                    pass
-                case _:
-                    raise ValueError(f"Unsupported field use: {df.use}")
+                )
+            if ef.is_strata:
+                strata.append(StorageStratum(field_name=ef.field_name))
 
         return DesignSpecFields(filters=filters, metrics=metrics, strata=strata)
 

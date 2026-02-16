@@ -1,22 +1,12 @@
 """Internal models stored as json data in our app db. Used to decouple API types from storage."""
 
 from collections.abc import Sequence
-from enum import StrEnum
 from typing import Annotated, Any
 
 from pydantic import BaseModel, ConfigDict, Field
 
 from xngin.apiserver.common_field_types import FieldName
 from xngin.apiserver.limits import MAX_NUMBER_OF_FIELDS, MAX_NUMBER_OF_FILTERS
-
-
-class FieldUse(StrEnum):
-    """Enum for possible uses of a dwh table's field in an experiment design, and stored in experiment_fields.use."""
-
-    ID = "id"
-    FILTER = "filter"
-    METRIC = "metric"
-    STRATUM = "stratum"
 
 
 class StorageBaseModel(BaseModel):

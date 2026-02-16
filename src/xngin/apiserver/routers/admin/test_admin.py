@@ -10,6 +10,7 @@ import pytest
 from pydantic import HttpUrl, TypeAdapter
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
 from xngin.apiserver import flags
 from xngin.apiserver.conftest import delete_seeded_users
@@ -90,6 +91,7 @@ from xngin.apiserver.routers.common_api_types import (
     PowerResponse,
     PreassignedFrequentistExperimentSpec,
     PriorTypes,
+    Stratum,
 )
 from xngin.apiserver.routers.common_enums import (
     ExperimentState,
@@ -108,7 +110,6 @@ from xngin.apiserver.routers.experiments.test_experiments_common import (
 )
 from xngin.apiserver.sqla import tables
 from xngin.apiserver.storage.storage_format_converters import ExperimentStorageConverter
-from xngin.apiserver.storage.storage_types import FieldUse
 from xngin.apiserver.testing.assertions import assert_dates_equal
 from xngin.apiserver.testing.testing_dwh_def import TESTING_DWH_PARTICIPANT_DEF
 from xngin.stats.bandit_sampling import update_arm
@@ -1649,17 +1650,16 @@ async def test_create_freq_preassigned_experiment(
     # Verify that experiment_fields were stored correctly (see defaults in make_createexperimentrequest_json)
     experiment_fields = await experiment.awaitable_attrs.experiment_fields
     assert len(experiment_fields) == 3
-    unique_id_field = next((f for f in experiment_fields if f.use == FieldUse.ID), None)
+    unique_id_field = next((f for f in experiment_fields if f.is_unique_id), None)
     assert unique_id_field is not None
-    assert unique_id_field.use == FieldUse.ID
     assert unique_id_field.data_type == "bigint"
     gender_field = next((f for f in experiment_fields if f.field_name == "gender"), None)
     assert gender_field is not None
-    assert gender_field.use == FieldUse.STRATUM
+    assert gender_field.is_strata
     assert gender_field.data_type == "character varying"
     is_onboarded_field = next((f for f in experiment_fields if f.field_name == "is_onboarded"), None)
     assert is_onboarded_field is not None
-    assert is_onboarded_field.use == FieldUse.METRIC
+    assert is_onboarded_field.is_metric
     assert is_onboarded_field.data_type == "boolean"
 
     # Check one assignment to see if it looks roughly right
@@ -1674,6 +1674,137 @@ async def test_create_freq_preassigned_experiment(
     num_control = sum(1 for a in assignments if a.arm_id == arm1_id)
     num_treat = sum(1 for a in assignments if a.arm_id == arm2_id)
     assert abs(num_control - num_treat) <= 5  # Allow some wiggle room
+
+
+async def test_create_freq_preassigned_experiment_fields_use_roundtrip(
+    xngin_session: AsyncSession,
+    testing_datasource_with_user,
+    use_deterministic_random,
+    ppost,
+):
+    datasource_id = testing_datasource_with_user.ds.id
+    experiment_request = CreateExperimentRequest(
+        design_spec=PreassignedFrequentistExperimentSpec(
+            participant_type="test_participant_type",
+            experiment_type="freq_preassigned",
+            experiment_name="Test Experiment with Filters",
+            description="Testing filters roundtrip",
+            start_date=datetime(2024, 1, 1, tzinfo=UTC),
+            end_date=datetime(2024, 1, 31, 23, 59, 59, tzinfo=UTC),
+            arms=[
+                Arm(arm_name="control", arm_description="Control group"),
+                Arm(arm_name="treatment", arm_description="Treatment group"),
+            ],
+            metrics=[
+                DesignSpecMetricRequest(field_name="current_income", metric_pct_change=5),
+                DesignSpecMetricRequest(field_name="is_engaged", metric_target=0.5),
+            ],
+            strata=[Stratum(field_name="ethnicity"), Stratum(field_name="baseline_income")],
+            filters=[
+                Filter(field_name="gender", relation=Relation.INCLUDES, value=["Male"]),
+                Filter(field_name="current_income", relation=Relation.BETWEEN, value=[0.0, 100000.0]),
+                Filter(field_name="is_engaged", relation=Relation.INCLUDES, value=[True, None]),
+                Filter(field_name="id", relation=Relation.EXCLUDES, value=[(2 << 52) + 1, None]),
+                Filter(field_name="sample_date", relation=Relation.BETWEEN, value=["2024-01-01", "2026-01-01"]),
+                Filter(
+                    field_name="uuid_filter", relation=Relation.EXCLUDES, value=["123e4567-e89b-12d3-a456-426614174000"]
+                ),
+            ],
+        ),
+        webhooks=[],
+    )
+
+    response = ppost(
+        f"/v1/m/datasources/{datasource_id}/experiments",
+        params={"chosen_n": 100, "random_state": 42},
+        content=experiment_request.model_dump_json(),
+    )
+    assert response.status_code == 200, response.content
+    created_experiment = CreateExperimentResponse.model_validate(response.json())
+    experiment_id = created_experiment.experiment_id
+
+    # Verify basic response
+    spec = created_experiment.design_spec
+    assert isinstance(spec, PreassignedFrequentistExperimentSpec)
+
+    assert len(spec.metrics) == 2
+    assert spec.metrics[0].field_name == "current_income"
+    assert spec.metrics[0].metric_pct_change == 5
+    assert spec.metrics[1].field_name == "is_engaged"
+    assert spec.metrics[1].metric_target == 0.5
+
+    assert len(spec.strata) == 2
+    assert spec.strata[0].field_name == "ethnicity"
+    assert spec.strata[1].field_name == "baseline_income"
+
+    assert len(spec.filters) == 6
+    a_filter = next(f for f in spec.filters if f.field_name == "gender")
+    assert a_filter.field_name == "gender"
+    assert a_filter.relation == Relation.INCLUDES
+    assert a_filter.value == ["Male"]
+    a_filter = next(f for f in spec.filters if f.field_name == "current_income")
+    assert a_filter.field_name == "current_income"
+    assert a_filter.relation == Relation.BETWEEN
+    assert a_filter.value == [0.0, 100000.0]
+    a_filter = next(f for f in spec.filters if f.field_name == "is_engaged")
+    assert a_filter.field_name == "is_engaged"
+    assert a_filter.relation == Relation.INCLUDES
+    assert a_filter.value == [True, None]
+    a_filter = next(f for f in spec.filters if f.field_name == "id")
+    assert a_filter.field_name == "id"
+    assert a_filter.relation == Relation.EXCLUDES
+    assert a_filter.value == [(2 << 52) + 1, None]
+    a_filter = next(f for f in spec.filters if f.field_name == "sample_date")
+    assert a_filter.field_name == "sample_date"
+    assert a_filter.relation == Relation.BETWEEN
+    assert a_filter.value == ["2024-01-01", "2026-01-01"]
+    a_filter = next(f for f in spec.filters if f.field_name == "uuid_filter")
+    assert a_filter.field_name == "uuid_filter"
+    assert a_filter.relation == Relation.EXCLUDES
+    assert a_filter.value == ["123e4567-e89b-12d3-a456-426614174000"]
+
+    # Verify database state of fields
+    experiment = (
+        await xngin_session.execute(
+            select(tables.Experiment)
+            .where(tables.Experiment.id == experiment_id)
+            .options(
+                selectinload(tables.Experiment.experiment_filters),
+                selectinload(tables.Experiment.experiment_fields).selectinload(
+                    tables.ExperimentField.experiment_filters
+                ),
+            )
+        )
+    ).scalar_one()
+    assert len(experiment.experiment_filters) == 6
+    assert len(experiment.experiment_fields) == 8
+    unique_id_field = next(f for f in experiment.experiment_fields if f.field_name == "id")
+    assert unique_id_field.data_type == "bigint"
+    assert unique_id_field.is_unique_id
+    assert unique_id_field.is_filter
+    current_income_field = next(f for f in experiment.experiment_fields if f.field_name == "current_income")
+    assert current_income_field.data_type == "numeric"
+    assert current_income_field.is_metric
+    assert current_income_field.is_filter
+    is_onboarded_field = next(f for f in experiment.experiment_fields if f.field_name == "is_engaged")
+    assert is_onboarded_field.data_type == "boolean"
+    assert is_onboarded_field.is_metric
+    assert is_onboarded_field.is_filter
+    ethnicity_field = next(f for f in experiment.experiment_fields if f.field_name == "ethnicity")
+    assert ethnicity_field.data_type == "character varying"
+    assert ethnicity_field.is_strata
+    baseline_income_field = next(f for f in experiment.experiment_fields if f.field_name == "baseline_income")
+    assert baseline_income_field.data_type == "numeric"
+    assert baseline_income_field.is_strata
+    gender_field = next(f for f in experiment.experiment_fields if f.field_name == "gender")
+    assert gender_field.data_type == "character varying"
+    assert gender_field.is_filter
+    sample_date_field = next(f for f in experiment.experiment_fields if f.field_name == "sample_date")
+    assert sample_date_field.data_type == "date"
+    assert sample_date_field.is_filter
+    uuid_filter_field = next(f for f in experiment.experiment_fields if f.field_name == "uuid_filter")
+    assert uuid_filter_field.data_type == "uuid"
+    assert uuid_filter_field.is_filter
 
 
 def test_create_freq_online_experiment(testing_datasource_with_user, use_deterministic_random, ppost):

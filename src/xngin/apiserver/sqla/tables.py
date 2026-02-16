@@ -7,10 +7,11 @@ from typing import Any, ClassVar, Literal, Self
 
 import sqlalchemy
 from pydantic import TypeAdapter
-from sqlalchemy import Float, ForeignKey, Index, String
+from sqlalchemy import Float, ForeignKey, ForeignKeyConstraint, Index, Numeric, String
 from sqlalchemy.dialects import postgresql
 from sqlalchemy.dialects.postgresql import ARRAY
 from sqlalchemy.ext.asyncio import AsyncAttrs
+from sqlalchemy.ext.hybrid import hybrid_property
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 from sqlalchemy.types import TypeEngine
 
@@ -31,7 +32,7 @@ arm_id_factory = unique_id_factory("arm")
 datasource_id_factory = unique_id_factory("ds")
 event_id_factory = unique_id_factory("evt")
 experiment_id_factory = unique_id_factory("exp")
-experiment_field_id_factory = unique_id_factory("expf")
+experiment_filter_id_factory = unique_id_factory("eflt")
 organization_id_factory = unique_id_factory("o")
 snapshot_id_factory = unique_id_factory("sn")
 task_id_factory = unique_id_factory("task")
@@ -446,6 +447,12 @@ class Experiment(Base):
         back_populates="experiment",
         cascade="all, delete-orphan",
     )
+    # All edits to experiment_filters should be done through experiment_fields.
+    experiment_filters: Mapped[list["ExperimentFilter"]] = relationship(
+        back_populates="experiment",
+        viewonly=True,
+        overlaps="experiment_field,experiment_filters",
+    )
     snapshots: Mapped["Snapshot"] = relationship(viewonly=True)
 
 
@@ -538,27 +545,74 @@ class Context(Base):
 class ExperimentField(Base):
     """Stores individual fields used in an experiment's design specification.
 
-    Each row represents one field with a specific use (filter, metric, stratum, or unique_id).
-    The same field_name can appear multiple times, even with the same 'use' value, to support
-    configurations like multiple filters on the same field with different criteria.
+    Each row represents a table column used for one or more purposes (filter, metric, stratum, or
+    unique_id). If a field is used for filtering, one should also join on the ExperimentFilter table
+    to get the filter criteria.
     """
 
     __tablename__ = "experiment_fields"
 
-    id: Mapped[str] = mapped_column(primary_key=True, default=experiment_field_id_factory)
-    experiment_id: Mapped[str] = mapped_column(String(36), ForeignKey("experiments.id", ondelete="CASCADE"))
-    field_name: Mapped[str] = mapped_column(String(255))
-    # Stores the enum value (storage_types.py::FieldUse) of the field's use.
-    use: Mapped[str] = mapped_column(String(20))
+    experiment_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("experiments.id", ondelete="CASCADE"), primary_key=True
+    )
+    field_name: Mapped[str] = mapped_column(String(255), primary_key=True)
     # Stores the enum value of the field's common_enums.DataType. Nullable in case our migration
     # can't find a type for all fields, or for experiments not backed by a datasource.
     data_type: Mapped[str | None] = mapped_column(String(50))
-    # Extra metadata related to the field's use.
-    other: Mapped[dict | None] = mapped_column(postgresql.JSONB)
+
+    # Unique ID metadata
+    is_unique_id: Mapped[bool] = mapped_column(server_default=sqlalchemy.sql.false())
+    # Filters metadata: determined by joining with ExperimentFilter
+    is_filter: Mapped[bool] = mapped_column(server_default=sqlalchemy.sql.false())
+    # Strata metadata
+    is_strata: Mapped[bool] = mapped_column(server_default=sqlalchemy.sql.false())
+    # Metrics metadata
+    is_primary_metric: Mapped[bool] = mapped_column(server_default=sqlalchemy.sql.false())
+    metric_pct_change: Mapped[float | None] = mapped_column(Float)
+    metric_target: Mapped[float | None] = mapped_column(Float)
+
+    @hybrid_property
+    def is_metric(self) -> bool:
+        return self.is_primary_metric or self.metric_pct_change is not None or self.metric_target is not None
 
     experiment: Mapped["Experiment"] = relationship(back_populates="experiment_fields")
+    experiment_filters: Mapped[list["ExperimentFilter"] | None] = relationship(
+        back_populates="experiment_field",
+        cascade="all, delete-orphan",
+        passive_deletes=True,
+    )
 
     __table_args__ = (Index("idx_experiment_fields_experiment_id", "experiment_id"),)
+
+
+class ExperimentFilter(Base):
+    """Stores individual filters used in an experiment's design specification."""
+
+    __tablename__ = "experiment_filters"
+
+    id: Mapped[str] = mapped_column(primary_key=True, default=experiment_filter_id_factory)
+    experiment_id: Mapped[str] = mapped_column(String(36), ForeignKey("experiments.id", ondelete="CASCADE"))
+    field_name: Mapped[str] = mapped_column(String(255))
+    relation: Mapped[str] = mapped_column(String(20))
+    string_values: Mapped[list[str] | None] = mapped_column(ARRAY(String(255)))
+    numeric_values: Mapped[list[Numeric] | None] = mapped_column(ARRAY(Numeric))
+
+    experiment: Mapped[Experiment] = relationship(
+        back_populates="experiment_filters",
+        overlaps="experiment_filters",
+    )
+    experiment_field: Mapped[ExperimentField] = relationship(
+        back_populates="experiment_filters",
+        overlaps="experiment",
+    )
+
+    __table_args__ = (
+        ForeignKeyConstraint(
+            ["experiment_id", "field_name"],
+            ["experiment_fields.experiment_id", "experiment_fields.field_name"],
+            ondelete="CASCADE",
+        ),
+    )
 
 
 class Snapshot(Base):
