@@ -323,7 +323,7 @@ def create_filter(col: sqlalchemy.Column, filter_: Filter) -> ColumnElement:
             raise RuntimeError("Bug: invalid Filter.")
 
 
-def compose_query(sa_table: Table, select_columns: set[str], filters: list[ColumnElement], chosen_n: int):
+def compose_query(sa_table: Table, select_columns: set[str], filters: list[ColumnElement], desired_n: int):
     """Builds a query to fetch rows from a list of filters and a set of column names to select."""
 
     if not select_columns:
@@ -335,4 +335,4 @@ def compose_query(sa_table: Table, select_columns: set[str], filters: list[Colum
             raise ValueError(f"Column {col} not found in schema.")
         columns.append(sa_table.c[col])
 
-    return select(*columns).filter(*filters).order_by(custom_functions.Random(sa_table=sa_table)).limit(chosen_n)
+    return select(*columns).filter(*filters).order_by(custom_functions.Random(sa_table=sa_table)).limit(desired_n)
