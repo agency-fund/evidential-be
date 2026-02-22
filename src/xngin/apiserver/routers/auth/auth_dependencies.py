@@ -16,13 +16,15 @@ from sqlalchemy.sql.functions import count
 from xngin.apiserver import flags
 from xngin.apiserver.dependencies import xngin_db_session
 from xngin.apiserver.routers.auth.principal import Principal
-from xngin.apiserver.routers.auth.session_token_crypter import SessionTokenCrypter
+from xngin.apiserver.routers.auth.token_crypter import TokenCrypter
 from xngin.apiserver.sqla import tables
 from xngin.apiserver.storage.bootstrap import create_entities_for_first_time_user
 from xngin.xsecrets import chafernet
 
 # The length of time that a session token is considered valid.
 SESSION_TOKEN_LIFETIME = datetime.timedelta(hours=12).seconds
+SESSION_TOKEN_LOCAL_KEYSET_FILE = ".xngin_session_token_keyset"
+SESSION_TOKEN_PREFIX = "xa_"
 
 GOOGLE_DISCOVERY_URL = "https://accounts.google.com/.well-known/openid-configuration"
 
@@ -129,9 +131,14 @@ async def get_google_configuration() -> GoogleOidcConfig:
             return _google_config
 
 
-def session_token_crypter_dependency():
-    """Dependency that provides a configured SessionTokenCrypter."""
-    return SessionTokenCrypter(SESSION_TOKEN_LIFETIME)
+def session_token_crypter_dependency(*, ttl: int = SESSION_TOKEN_LIFETIME):
+    """Dependency that provides a configured session token crypter."""
+    return TokenCrypter(
+        ttl=ttl,
+        keyset_env_var=flags.ENV_SESSION_TOKEN_KEYSET,
+        local_keyset_filename=SESSION_TOKEN_LOCAL_KEYSET_FILE,
+        prefix=SESSION_TOKEN_PREFIX,
+    )
 
 
 async def require_valid_session_token(
@@ -139,7 +146,7 @@ async def require_valid_session_token(
         HTTPAuthorizationCredentials,
         Depends(HTTPBearer(description="Session token obtained from the auth_callback operation.")),
     ],
-    tokencryptor: Annotated[SessionTokenCrypter, Depends(session_token_crypter_dependency)],
+    tokencryptor: Annotated[TokenCrypter, Depends(session_token_crypter_dependency)],
 ) -> Principal:
     """Dependency for decoding the session token and retrieving a Principal.
 
@@ -151,7 +158,8 @@ async def require_valid_session_token(
     if principal := get_special_principal(token):
         return principal
     try:
-        return tokencryptor.decrypt(token)
+        decrypted = tokencryptor.decrypt(token)
+        return Principal.model_validate_json(decrypted)
     except chafernet.InvalidTokenError as err:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
