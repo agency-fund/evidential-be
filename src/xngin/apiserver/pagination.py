@@ -148,7 +148,7 @@ class SortField:
 def encode_page_token(values: Sequence[Any]) -> str:
     """Encode a cursor position as an opaque, URL-safe page token."""
     cursor = PageCursor(keys=list(values))
-    return base64.urlsafe_b64encode(cursor.model_dump_json().encode()).decode().rstrip("=")
+    return base64.urlsafe_b64encode(cursor.model_dump_json().encode()).decode()
 
 
 def decode_page_token(token: str) -> PageCursor:
@@ -157,8 +157,7 @@ def decode_page_token(token: str) -> PageCursor:
     Raises InvalidPageTokenError if the token is malformed.
     """
     try:
-        padded = token + "=" * (-len(token) % 4)
-        raw = base64.urlsafe_b64decode(padded)
+        raw = base64.urlsafe_b64decode(token)
         cursor = PageCursor.model_validate_json(raw)
     except Exception as exc:
         raise InvalidPageTokenError() from exc

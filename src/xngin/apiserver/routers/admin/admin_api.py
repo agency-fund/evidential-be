@@ -422,7 +422,7 @@ async def list_snapshots(
         query = query.where(
             tables.Snapshot.status.in_([convert_api_snapshot_status_to_snapshot_status(s) for s in status_])
         )
-    sort_fields = [
+    ordering = [
         SortField.timestamp(
             column=tables.Snapshot.updated_at,
             attr="updated_at",
@@ -430,16 +430,15 @@ async def list_snapshots(
         ),
         SortField(column=tables.Snapshot.id, attr="id", direction="desc"),
     ]
-
     query = paginate(
         query,
-        sort_fields=sort_fields,
+        sort_fields=ordering,
         page_token=page_token,
         page_size=page_size,
         skip=skip,
     )
     snapshots = list(await session.scalars(query))
-    snapshots, next_page_token = build_next_page_token(snapshots, page_size, sort_fields)
+    snapshots, next_page_token = build_next_page_token(snapshots, page_size, ordering)
 
     latest_failure = await session.scalar(
         select(tables.Snapshot.updated_at)
@@ -732,7 +731,7 @@ async def list_organization_events(
     """Returns events in an organization, newest first."""
     org = await get_organization_or_raise(session, user, organization_id)
     stmt = select(tables.Event).where(tables.Event.organization_id == org.id)
-    sort_fields = [
+    ordering = [
         SortField.timestamp(
             column=tables.Event.created_at,
             attr="created_at",
@@ -742,13 +741,13 @@ async def list_organization_events(
     ]
     stmt = paginate(
         stmt,
-        sort_fields=sort_fields,
+        sort_fields=ordering,
         page_token=page_token,
         page_size=page_size,
         skip=skip,
     )
     events = list(await session.scalars(stmt))
-    events, next_page_token = build_next_page_token(events, page_size, sort_fields)
+    events, next_page_token = build_next_page_token(events, page_size, ordering)
 
     event_summaries = convert_events_to_eventsummaries(events)
     return ListOrganizationEventsResponse(items=event_summaries, next_page_token=next_page_token)
