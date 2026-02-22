@@ -4,7 +4,6 @@ from pydantic import ValidationError
 
 from xngin.xsecrets.chafernet import Chafernet, InvalidTokenError
 from xngin.xsecrets.nacl_provider import NaclProvider, NaclProviderKeyset
-from xngin.xsecrets.noop_provider import NoopProvider
 
 LOCAL_KEYSET_SENTINEL = "local"
 
@@ -23,32 +22,23 @@ class TokenCryptorMisconfiguredError(Exception):
 
 
 class TokenCryptor:
-    """Convenience wrapper for Chafernet tokens with configurable keyset source and token prefix."""
+    """TokenCryptor configures a Chafernet with NaclProvider using environment variables as the primary source of keys.
 
-    def __init__(
-        self,
-        ttl: int,
-        keyset_env_var: str,
-        local_keyset_filename: str,
-        prefix: str,
-        allow_noop_fallback: bool = False,
-    ):
+    These tokens allow passing opaque blobs of authenticated and encrypted data to the client. They can only be
+    decoded by the server.
+    """
+
+    def __init__(self, ttl: int, keyset_env_var: str, local_keyset_filename: str, prefix: str):
         self._chafernet: Chafernet | None = None
         self._ttl = ttl
         self._keyset_env_var = keyset_env_var
         self._local_keyset_filename = local_keyset_filename
         self._prefix = prefix
-        self._allow_noop_fallback = allow_noop_fallback
 
     @property
     def _instance(self) -> Chafernet:
         if not self._chafernet:
-            try:
-                provider = self._new_provider()
-            except TokenCryptorMisconfiguredError:
-                if not self._allow_noop_fallback:
-                    raise
-                provider = NoopProvider()
+            provider = self._new_provider()
             self._chafernet = Chafernet(provider)
         return self._chafernet
 

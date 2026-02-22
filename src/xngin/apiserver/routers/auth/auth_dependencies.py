@@ -1,5 +1,6 @@
 import asyncio
 import datetime
+import json
 import secrets
 import time
 from dataclasses import dataclass
@@ -68,6 +69,26 @@ class ServerAppearsOfflineError(Exception):
     pass
 
 
+class SessionTokenCryptor:
+    """Codec for encrypted serializations of Principals."""
+
+    def __init__(self):
+        self._token_cryptor = TokenCryptor(
+            ttl=SESSION_TOKEN_LIFETIME,
+            keyset_env_var=flags.ENV_SESSION_TOKEN_KEYSET,
+            local_keyset_filename=SESSION_TOKEN_LOCAL_KEYSET_FILE,
+            prefix=SESSION_TOKEN_PREFIX,
+        )
+
+    def encode(self, principal: Principal) -> str:
+        payload = json.dumps(principal.model_dump(), separators=(",", ":")).encode()
+        return self._token_cryptor.encrypt(payload)
+
+    def decode(self, token: str) -> Principal:
+        decrypted = self._token_cryptor.decrypt(token)
+        return Principal.model_validate_json(decrypted)
+
+
 @dataclass
 class GoogleOidcConfig:
     last_refreshed: datetime.datetime
@@ -131,22 +152,12 @@ async def get_google_configuration() -> GoogleOidcConfig:
             return _google_config
 
 
-def session_token_cryptor_dependency(*, ttl: int = SESSION_TOKEN_LIFETIME):
-    """Dependency that provides a configured session token cryptor."""
-    return TokenCryptor(
-        ttl=ttl,
-        keyset_env_var=flags.ENV_SESSION_TOKEN_KEYSET,
-        local_keyset_filename=SESSION_TOKEN_LOCAL_KEYSET_FILE,
-        prefix=SESSION_TOKEN_PREFIX,
-    )
-
-
 async def require_valid_session_token(
     authorization: Annotated[
         HTTPAuthorizationCredentials,
         Depends(HTTPBearer(description="Session token obtained from the auth_callback operation.")),
     ],
-    tokencryptor: Annotated[TokenCryptor, Depends(session_token_cryptor_dependency)],
+    session_cryptor: Annotated[SessionTokenCryptor, Depends()],
 ) -> Principal:
     """Dependency for decoding the session token and retrieving a Principal.
 
@@ -158,8 +169,7 @@ async def require_valid_session_token(
     if principal := get_special_principal(token):
         return principal
     try:
-        decrypted = tokencryptor.decrypt(token)
-        return Principal.model_validate_json(decrypted)
+        return session_cryptor.decode(token)
     except chafernet.InvalidTokenError as err:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
