@@ -17,10 +17,10 @@ from xngin.apiserver.routers.auth.auth_api_types import CallbackResponse
 from xngin.apiserver.routers.auth.auth_dependencies import (
     GoogleOidcConfig,
     get_google_configuration,
-    session_token_crypter_dependency,
+    session_token_cryptor_dependency,
 )
 from xngin.apiserver.routers.auth.principal import Principal
-from xngin.apiserver.routers.auth.token_crypter import TokenCrypter
+from xngin.apiserver.routers.auth.token_cryptor import TokenCryptor
 
 
 class OidcMisconfiguredError(Exception):
@@ -57,7 +57,7 @@ async def auth_callback(
     code_verifier: Annotated[str, Query(min_length=43, max_length=128, pattern=r"^[A-Za-z0-9._~-]+$")],
     oidc_config: Annotated[GoogleOidcConfig, Depends(get_google_configuration)],
     httpx_client: Annotated[httpx.AsyncClient, Depends(retrying_httpx_dependency)],
-    tokencryptor: Annotated[TokenCrypter, Depends(session_token_crypter_dependency)],
+    tokencryptor: Annotated[TokenCryptor, Depends(session_token_cryptor_dependency)],
 ) -> CallbackResponse:
     """Exchanges the OIDC authorization code and verifier for an identity token (JWT), and then creates a session token.
 

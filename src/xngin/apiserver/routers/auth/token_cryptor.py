@@ -15,14 +15,14 @@ def _read_local_keyset(local_keyset_filename: str) -> str:
         with open(local_keyset_filename) as f:
             return f.read()
     except OSError as err:
-        raise TokenCrypterMisconfiguredError(f"The {local_keyset_filename} file cannot be read.") from err
+        raise TokenCryptorMisconfiguredError(f"The {local_keyset_filename} file cannot be read.") from err
 
 
-class TokenCrypterMisconfiguredError(Exception):
+class TokenCryptorMisconfiguredError(Exception):
     pass
 
 
-class TokenCrypter:
+class TokenCryptor:
     """Convenience wrapper for Chafernet tokens with configurable keyset source and token prefix."""
 
     def __init__(
@@ -45,7 +45,7 @@ class TokenCrypter:
         if not self._chafernet:
             try:
                 provider = self._new_provider()
-            except TokenCrypterMisconfiguredError:
+            except TokenCryptorMisconfiguredError:
                 if not self._allow_noop_fallback:
                     raise
                 provider = NoopProvider()
@@ -55,13 +55,13 @@ class TokenCrypter:
     def _new_provider(self):
         keys = os.environ.get(self._keyset_env_var, "")
         if not keys:
-            raise TokenCrypterMisconfiguredError(f"{self._keyset_env_var} is not set but is required.")
+            raise TokenCryptorMisconfiguredError(f"{self._keyset_env_var} is not set but is required.")
         if keys == LOCAL_KEYSET_SENTINEL:
             keys = _read_local_keyset(self._local_keyset_filename)
         try:
             keyset = NaclProviderKeyset.deserialize_base64(keys)
         except ValidationError as err:
-            raise TokenCrypterMisconfiguredError(f"{self._keyset_env_var} is invalid") from err
+            raise TokenCryptorMisconfiguredError(f"{self._keyset_env_var} is invalid") from err
         return NaclProvider(keyset)
 
     def encrypt(self, plaintext: bytes | str) -> str:

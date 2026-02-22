@@ -20,10 +20,10 @@ from xngin.apiserver.routers.auth.auth_dependencies import (
     UNPRIVILEGED_TOKEN_FOR_TESTING,
     require_user_from_token,
     require_valid_session_token,
-    session_token_crypter_dependency,
+    session_token_cryptor_dependency,
 )
 from xngin.apiserver.routers.auth.principal import Principal
-from xngin.apiserver.routers.auth.token_crypter import TokenCrypter, TokenCrypterMisconfiguredError
+from xngin.apiserver.routers.auth.token_cryptor import TokenCryptor, TokenCryptorMisconfiguredError
 from xngin.apiserver.routers.common_enums import DataType
 from xngin.apiserver.settings import NoDwh, ParticipantsDef
 from xngin.apiserver.sqla import tables
@@ -61,21 +61,21 @@ def temporary_unset_env_var(name: str):
 
 
 async def test_require_valid_session_token_missing_prefix():
-    cryp = session_token_crypter_dependency(ttl=60)
+    cryp = session_token_cryptor_dependency(ttl=60)
     with pytest.raises(HTTPException, match="token invalid") as exc:
         await require_valid_session_token(HTTPAuthorizationCredentials(scheme="Bearer", credentials="abc"), cryp)
     assert exc.value.status_code == 401
 
 
 async def test_require_valid_session_token_misconfigured():
-    cryp = session_token_crypter_dependency(ttl=60)
-    with pytest.raises(TokenCrypterMisconfiguredError):
+    cryp = session_token_cryptor_dependency(ttl=60)
+    with pytest.raises(TokenCryptorMisconfiguredError):
         await require_valid_session_token(HTTPAuthorizationCredentials(scheme="Bearer", credentials="xa_abc"), cryp)
 
 
 async def test_require_valid_session_token():
     with temporary_env_var(flags.ENV_SESSION_TOKEN_KEYSET, NaclProviderKeyset.create().serialize_base64()):
-        cryp = session_token_crypter_dependency(ttl=60)
+        cryp = session_token_cryptor_dependency(ttl=60)
         expected = Principal(email="test@example.com", hd="", iat=0, iss="", sub="")
         valid_token = cryp.encrypt(expected.model_dump_json().encode())
         actual = await require_valid_session_token(
@@ -91,7 +91,7 @@ async def test_require_valid_session_token():
 @pytest.mark.parametrize("variant", ["x", ".", " ", "==", "  ", "===", ";", "\n"])
 async def test_require_valid_session_token_invalid(variant):
     with temporary_env_var(flags.ENV_SESSION_TOKEN_KEYSET, NaclProviderKeyset.create().serialize_base64()):
-        cryp = session_token_crypter_dependency(ttl=60)
+        cryp = session_token_cryptor_dependency(ttl=60)
         expected = Principal(email="test@example.com", hd="", iat=0, iss="", sub="")
         with pytest.raises(HTTPException, match="token invalid") as exc:
             await require_valid_session_token(
@@ -113,47 +113,47 @@ async def test_require_valid_session_token_invalid(variant):
         assert exc.value.status_code == 401
 
 
-def test_token_crypter_uses_custom_prefix_and_env_var():
+def test_token_cryptor_uses_custom_prefix_and_env_var():
     env_var_name = "XNGIN_TEST_TOKEN_KEYSET"
     with temporary_env_var(env_var_name, NaclProviderKeyset.create().serialize_base64()):
-        crypter = TokenCrypter(
+        cryptor = TokenCryptor(
             ttl=60,
             keyset_env_var=env_var_name,
             local_keyset_filename=".xngin_test_token_keyset",
             prefix="xp_",
         )
-        token = crypter.encrypt(b"payload")
+        token = cryptor.encrypt(b"payload")
         assert token.startswith("xp_")
-        assert crypter.decrypt(token) == b"payload"
+        assert cryptor.decrypt(token) == b"payload"
 
 
-def test_token_crypter_reads_configured_local_keyset_file(tmp_path):
+def test_token_cryptor_reads_configured_local_keyset_file(tmp_path):
     keyset_file = tmp_path / "my-local-keyset"
     keyset_file.write_text(NaclProviderKeyset.create().serialize_base64())
     env_var_name = "XNGIN_TEST_TOKEN_KEYSET"
     with temporary_env_var(env_var_name, "local"):
-        crypter = TokenCrypter(
+        cryptor = TokenCryptor(
             ttl=60,
             keyset_env_var=env_var_name,
             local_keyset_filename=str(keyset_file),
             prefix="xp_",
         )
-        token = crypter.encrypt(b"payload")
-        assert crypter.decrypt(token) == b"payload"
+        token = cryptor.encrypt(b"payload")
+        assert cryptor.decrypt(token) == b"payload"
 
 
-def test_token_crypter_can_fallback_to_noop_provider_when_keyset_missing():
+def test_token_cryptor_can_fallback_to_noop_provider_when_keyset_missing():
     env_var_name = "XNGIN_TEST_TOKEN_KEYSET"
     with temporary_unset_env_var(env_var_name):
-        crypter = TokenCrypter(
+        cryptor = TokenCryptor(
             ttl=60,
             keyset_env_var=env_var_name,
             local_keyset_filename=".xngin_test_token_keyset",
             prefix="xp_",
             allow_noop_fallback=True,
         )
-        token = crypter.encrypt("payload")
-        assert crypter.decrypt(token) == b"payload"
+        token = cryptor.encrypt("payload")
+        assert cryptor.decrypt(token) == b"payload"
 
 
 async def test_user_from_token_invite(xngin_session: AsyncSession, ppost):

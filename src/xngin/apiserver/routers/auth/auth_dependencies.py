@@ -16,7 +16,7 @@ from sqlalchemy.sql.functions import count
 from xngin.apiserver import flags
 from xngin.apiserver.dependencies import xngin_db_session
 from xngin.apiserver.routers.auth.principal import Principal
-from xngin.apiserver.routers.auth.token_crypter import TokenCrypter
+from xngin.apiserver.routers.auth.token_cryptor import TokenCryptor
 from xngin.apiserver.sqla import tables
 from xngin.apiserver.storage.bootstrap import create_entities_for_first_time_user
 from xngin.xsecrets import chafernet
@@ -131,9 +131,9 @@ async def get_google_configuration() -> GoogleOidcConfig:
             return _google_config
 
 
-def session_token_crypter_dependency(*, ttl: int = SESSION_TOKEN_LIFETIME):
-    """Dependency that provides a configured session token crypter."""
-    return TokenCrypter(
+def session_token_cryptor_dependency(*, ttl: int = SESSION_TOKEN_LIFETIME):
+    """Dependency that provides a configured session token cryptor."""
+    return TokenCryptor(
         ttl=ttl,
         keyset_env_var=flags.ENV_SESSION_TOKEN_KEYSET,
         local_keyset_filename=SESSION_TOKEN_LOCAL_KEYSET_FILE,
@@ -146,7 +146,7 @@ async def require_valid_session_token(
         HTTPAuthorizationCredentials,
         Depends(HTTPBearer(description="Session token obtained from the auth_callback operation.")),
     ],
-    tokencryptor: Annotated[TokenCrypter, Depends(session_token_crypter_dependency)],
+    tokencryptor: Annotated[TokenCryptor, Depends(session_token_cryptor_dependency)],
 ) -> Principal:
     """Dependency for decoding the session token and retrieving a Principal.
 
