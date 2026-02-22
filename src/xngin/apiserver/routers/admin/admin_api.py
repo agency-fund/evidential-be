@@ -50,11 +50,11 @@ from xngin.apiserver.dwh.queries import (
 )
 from xngin.apiserver.exceptions_common import LateValidationError
 from xngin.apiserver.pagination import (
-    DEFAULT_PAGE_SIZE,
-    MAX_PAGE_SIZE,
+    PaginationQuery,
     SortField,
     build_next_page_token,
     paginate,
+    pagination_query_params,
 )
 from xngin.apiserver.routers.admin import admin_api_converters, admin_common, authz
 from xngin.apiserver.routers.admin.admin_api_converters import (
@@ -394,6 +394,7 @@ async def list_snapshots(
     organization_id: Annotated[str, Path()],
     datasource_id: Annotated[str, Path()],
     experiment_id: Annotated[str, Path()],
+    pagination: Annotated[PaginationQuery, Depends(pagination_query_params)],
     status_: Annotated[
         list[SnapshotStatus] | None,
         Query(
@@ -401,18 +402,6 @@ async def list_snapshots(
             description="Filter the returned snapshots to only those of this status. May be specified multiple times.",
         ),
     ] = None,
-    page_size: Annotated[
-        int,
-        Query(
-            description="Maximum number of snapshots to return per page.",
-            ge=1,
-            le=MAX_PAGE_SIZE,
-        ),
-    ] = DEFAULT_PAGE_SIZE,
-    page_token: Annotated[
-        str | None, Query(description="Token from a previous response to fetch the next page.")
-    ] = None,
-    skip: Annotated[int, Query(description="Number of records to skip from the start of the result set.", ge=0)] = 0,
 ) -> ListSnapshotsResponse:
     """Lists snapshots for an experiment, ordered by timestamp."""
     datasource = await get_datasource_or_raise(session, user, datasource_id, organization_id=organization_id)
@@ -433,12 +422,12 @@ async def list_snapshots(
     query = paginate(
         query,
         sort_fields=ordering,
-        page_token=page_token,
-        page_size=page_size,
-        skip=skip,
+        page_token=pagination.page_token,
+        page_size=pagination.page_size,
+        skip=pagination.skip,
     )
     snapshots = list(await session.scalars(query))
-    snapshots, next_page_token = build_next_page_token(snapshots, page_size, ordering)
+    snapshots, next_page_token = build_next_page_token(snapshots, pagination.page_size, ordering)
 
     latest_failure = await session.scalar(
         select(tables.Snapshot.updated_at)
@@ -715,18 +704,7 @@ async def list_organization_events(
     organization_id: str,
     session: Annotated[AsyncSession, Depends(xngin_db_session)],
     user: Annotated[tables.User, Depends(require_user_from_token)],
-    page_size: Annotated[
-        int,
-        Query(
-            description="Maximum number of events to return per page.",
-            ge=1,
-            le=MAX_PAGE_SIZE,
-        ),
-    ] = DEFAULT_PAGE_SIZE,
-    page_token: Annotated[
-        str | None, Query(description="Token from a previous response to fetch the next page.")
-    ] = None,
-    skip: Annotated[int, Query(description="Number of records to skip from the start of the result set.", ge=0)] = 0,
+    pagination: Annotated[PaginationQuery, Depends(pagination_query_params)],
 ) -> ListOrganizationEventsResponse:
     """Returns events in an organization, newest first."""
     org = await get_organization_or_raise(session, user, organization_id)
@@ -742,12 +720,12 @@ async def list_organization_events(
     stmt = paginate(
         stmt,
         sort_fields=ordering,
-        page_token=page_token,
-        page_size=page_size,
-        skip=skip,
+        page_token=pagination.page_token,
+        page_size=pagination.page_size,
+        skip=pagination.skip,
     )
     events = list(await session.scalars(stmt))
-    events, next_page_token = build_next_page_token(events, page_size, ordering)
+    events, next_page_token = build_next_page_token(events, pagination.page_size, ordering)
 
     event_summaries = convert_events_to_eventsummaries(events)
     return ListOrganizationEventsResponse(items=event_summaries, next_page_token=next_page_token)

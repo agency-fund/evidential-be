@@ -4,8 +4,9 @@ import base64
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime
-from typing import Any, Literal
+from typing import Annotated, Any, Literal
 
+from fastapi import Query
 from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import Select, and_, or_
 from sqlalchemy.sql.elements import SQLColumnExpression
@@ -168,18 +169,6 @@ def decode_page_token(token: str) -> PageCursor:
     return cursor
 
 
-def clamp_page_size(
-    requested: int | None,
-    *,
-    default: int = DEFAULT_PAGE_SIZE,
-    maximum: int = MAX_PAGE_SIZE,
-) -> int:
-    """Return a page size within [1, maximum], defaulting when None or 0."""
-    if requested is None or requested == 0:
-        return default
-    return max(1, min(requested, maximum))
-
-
 def paginate(
     query: Select[Any],
     *,
@@ -243,3 +232,37 @@ def build_next_page_token(
         token = encode_page_token(values)
         return rows, token
     return rows, ""
+
+
+@dataclass
+class PaginationQuery:
+    """Describes the pagination request parameters."""
+
+    page_size: int
+    page_token: str | None
+    skip: int = 0
+
+
+def pagination_query_params(
+    page_size: Annotated[
+        int,
+        Query(
+            description="Maximum number of items to return per page.",
+            ge=1,
+            le=MAX_PAGE_SIZE,
+        ),
+    ] = DEFAULT_PAGE_SIZE,
+    page_token: Annotated[
+        str | None,
+        Query(description="Token from a previous response to fetch the next page."),
+    ] = None,
+    skip: Annotated[
+        int,
+        Query(
+            description="Number of items to skip after page_token (or from the start when page_token is omitted).",
+            ge=0,
+        ),
+    ] = 0,
+) -> PaginationQuery:
+    """Dependency describing pagination request parameters."""
+    return PaginationQuery(page_size=page_size, page_token=page_token or None, skip=skip)

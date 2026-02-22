@@ -11,7 +11,6 @@ from xngin.apiserver.pagination import (
     InvalidPageTokenError,
     SortField,
     build_next_page_token,
-    clamp_page_size,
     decode_datetime,
     decode_page_token,
     encode_datetime,
@@ -60,31 +59,6 @@ def test_decode_empty_json():
     token = base64.urlsafe_b64encode(b"{}").decode().rstrip("=")
     with pytest.raises(InvalidPageTokenError, match="Invalid page token"):
         decode_page_token(token)
-
-
-def test_clamp_page_size_none():
-    assert clamp_page_size(None) == 20
-
-
-def test_clamp_page_size_zero():
-    assert clamp_page_size(0) == 20
-
-
-def test_clamp_page_size_within_range():
-    assert clamp_page_size(50) == 50
-
-
-def test_clamp_page_size_exceeds_max():
-    assert clamp_page_size(200) == 100
-
-
-def test_clamp_page_size_negative():
-    assert clamp_page_size(-5) == 1
-
-
-def test_clamp_page_size_custom_defaults():
-    assert clamp_page_size(None, default=10, maximum=50) == 10
-    assert clamp_page_size(100, default=10, maximum=50) == 50
 
 
 def test_paginate_supports_multi_field_cursor_desc():
