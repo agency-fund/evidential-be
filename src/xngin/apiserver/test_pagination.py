@@ -97,6 +97,42 @@ def test_paginate_supports_multi_field_cursor_desc():
     assert rows == [(5, "c"), (4, "z"), (3, "a")]
 
 
+def test_paginate_supports_multi_field_cursor_mixed_directions_with_tiebreaker():
+    engine = create_engine("sqlite:///:memory:")
+    metadata = MetaData()
+    events = Table(
+        "events",
+        metadata,
+        Column("id", String, primary_key=True),
+        Column("score", Integer, nullable=False),
+    )
+    metadata.create_all(engine)
+    with engine.begin() as conn:
+        conn.execute(
+            events.insert(),
+            [
+                {"id": "m", "score": 6},
+                {"id": "a", "score": 5},
+                {"id": "b", "score": 5},
+                {"id": "d", "score": 5},
+                {"id": "w", "score": 4},
+                {"id": "x", "score": 4},
+            ],
+        )
+        token = _encode_page_token([5, "b"])
+        query = paginate(
+            select(events.c.score, events.c.id),
+            sort_fields=[
+                SortField.numeric(column=events.c.score, attr="score", direction="desc"),
+                SortField(column=events.c.id, attr="id", direction="asc"),
+            ],
+            page_token=token,
+            page_size=10,
+        )
+        rows = conn.execute(query).all()
+    assert rows == [(5, "d"), (4, "w"), (4, "x")]
+
+
 def test_paginate_applies_skip_after_cursor():
     engine = create_engine("sqlite:///:memory:")
     metadata = MetaData()

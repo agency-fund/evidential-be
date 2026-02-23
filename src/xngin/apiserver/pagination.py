@@ -203,6 +203,8 @@ def paginate(
             raise
         except Exception as exc:
             raise InvalidPageTokenError() from exc
+        # Expand lexicographic cursor comparison into OR-of-prefix predicates. This allows mixed-direction orderings
+        # (e.g. score DESC, id ASC).
         disjuncts = []
         for idx, field in enumerate(sort_fields):
             prefix = [sort_fields[prefix_idx].column == cursor_values[prefix_idx] for prefix_idx in range(idx)]
