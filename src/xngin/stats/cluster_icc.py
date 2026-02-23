@@ -14,7 +14,6 @@ def calculate_icc_from_database(
 ) -> float:
     """
     Calculate ICC using Linear Mixed Model (more robust than ANOVA).
-
     Uses statsmodels MixedLM for better variance component estimation,
     especially with unbalanced clusters.
 
@@ -39,9 +38,6 @@ def calculate_icc_from_database(
     if len(df) == 0:
         raise ValueError(f"No data found in {table_name}.{outcome_column}")
 
-    # 2. Fit Linear Mixed Model
-    # Formula: outcome ~ 1 (intercept only, variance comes from random effect)
-    # groups = cluster_column (random intercept for each cluster)
     model = MixedLM.from_formula(
         f"{outcome_column} ~ 1",  # Fixed effects: just intercept
         data=df,
@@ -50,18 +46,12 @@ def calculate_icc_from_database(
 
     result = model.fit(method="lbfgs", reml=True)  # REML = Restricted Maximum Likelihood
 
-    # 3. Extract variance components
-    # Between-cluster variance (random effect variance)
-    variance_between = float(result.cov_re.iloc[0, 0])
+    variance_between = float(result.cov_re.iloc[0, 0])  # Between-cluster variance: random effect variance
 
-    # Within-cluster variance (residual variance)
-    variance_within = float(result.scale)
+    variance_within = float(result.scale)  # Within-cluster variance: residual variance
 
-    # 4. Calculate ICC
-    # ICC = σ²_between / (σ²_between + σ²_within)
     icc = variance_between / (variance_between + variance_within)
 
-    # 5. Clamp to valid range [0, 1]
     return max(0.0, min(1.0, icc))
 
 
