@@ -17,7 +17,6 @@ Tests for ICC and CV calculation from database.
 
 @pytest.fixture
 def test_db_session() -> Generator[Session, None, None]:
-    """Create a test database session connected to our PostgreSQL instance."""
     engine = create_engine("postgresql://localhost/evidential_test")
     session_local = sessionmaker(bind=engine)  # Lowercase
     session = session_local()
@@ -27,10 +26,7 @@ def test_db_session() -> Generator[Session, None, None]:
 
 @pytest.mark.skip(reason="Requires local PostgreSQL - for development only")
 class TestICCCalculation:
-    """Test ICC calculation from database."""
-
     def test_calculate_icc_from_database(self, test_db_session):
-        """Test ICC calculation with real database data."""
         icc = calculate_icc_from_database(
             session=test_db_session,
             table_name="wide_dwh",
@@ -40,7 +36,6 @@ class TestICCCalculation:
 
         print(f"\nICC for num_refunds: {icc:.6f}")
 
-        # Should match what we calculated before
         assert 0 <= icc <= 1
         assert icc > 0  # num_refunds has clustering
         assert icc == pytest.approx(0.0212, abs=0.001)
@@ -48,10 +43,7 @@ class TestICCCalculation:
 
 @pytest.mark.skip(reason="Requires local PostgreSQL - for development only")
 class TestClusterSizeCalculation:
-    """Test cluster size and CV calculation."""
-
     def test_calculate_cluster_sizes(self, test_db_session):
-        """Test cluster size calculation."""
         stats = calculate_cluster_sizes(
             session=test_db_session,
             table_name="wide_dwh",
@@ -72,10 +64,7 @@ class TestClusterSizeCalculation:
 
 @pytest.mark.skip(reason="Requires local PostgreSQL - for development only")
 class TestCombinedCalculation:
-    """Test combined ICC and CV calculation."""
-
     def test_calculate_icc_and_cv_from_database(self, test_db_session):
-        """Test combined calculation."""
         result = calculate_icc_and_cv_from_database(
             session=test_db_session,
             table_name="wide_dwh",
@@ -89,7 +78,6 @@ class TestCombinedCalculation:
         print(f"  Avg cluster size: {result['avg_cluster_size']:.1f}")
         print(f"  Num clusters: {result['num_clusters']}")
 
-        # All values should be positive
         assert result["icc"] > 0
         assert result["cv"] > 0
         assert result["avg_cluster_size"] > 0
