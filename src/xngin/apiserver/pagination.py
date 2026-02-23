@@ -35,12 +35,12 @@ class PageCursor(BaseModel):
     keys: list[Any] = Field(validation_alias="k", serialization_alias="k", min_length=1)
 
 
-def encode_datetime(value: datetime) -> str:
+def _encode_datetime(value: datetime) -> str:
     """Encode a datetime value for cursor serialization."""
     return value.isoformat()
 
 
-def decode_datetime(value: Any) -> datetime:
+def _decode_datetime(value: Any) -> datetime:
     """Decode a datetime value from cursor serialization."""
     try:
         return datetime.fromisoformat(value)
@@ -48,28 +48,28 @@ def decode_datetime(value: Any) -> datetime:
         raise InvalidPageTokenError() from exc
 
 
-def encode_numeric(value: object) -> int | float:
+def _encode_numeric(value: object) -> int | float:
     """Encode an int/float value for cursor serialization."""
     if isinstance(value, bool) or not isinstance(value, (int, float)):
         raise InvalidPageTokenError()
     return value
 
 
-def decode_numeric(value: object) -> int | float:
+def _decode_numeric(value: object) -> int | float:
     """Decode an int/float value from cursor serialization."""
     if isinstance(value, bool) or not isinstance(value, (int, float)):
         raise InvalidPageTokenError()
     return value
 
 
-def encode_bool(value: object) -> int:
+def _encode_bool(value: object) -> int:
     """Encode a bool value for cursor serialization as 0 or 1."""
     if not isinstance(value, bool):
         raise InvalidPageTokenError()
     return 1 if value else 0
 
 
-def decode_bool(value: object) -> bool:
+def _decode_bool(value: object) -> bool:
     """Decode a bool value from cursor serialization (expects integer 0 or 1)."""
     if isinstance(value, bool) or not isinstance(value, int) or value not in {0, 1}:
         raise InvalidPageTokenError()
@@ -111,8 +111,8 @@ class SortField:
             column=column,
             attr=attr,
             direction=direction,
-            encode=encode_datetime,
-            decode=decode_datetime,
+            encode=_encode_datetime,
+            decode=_decode_datetime,
         )
 
     @staticmethod
@@ -126,8 +126,8 @@ class SortField:
             column=column,
             attr=attr,
             direction=direction,
-            encode=encode_numeric,
-            decode=decode_numeric,
+            encode=_encode_numeric,
+            decode=_decode_numeric,
         )
 
     @staticmethod
@@ -141,18 +141,18 @@ class SortField:
             column=column,
             attr=attr,
             direction=direction,
-            encode=encode_bool,
-            decode=decode_bool,
+            encode=_encode_bool,
+            decode=_decode_bool,
         )
 
 
-def encode_page_token(values: Sequence[Any]) -> str:
+def _encode_page_token(values: Sequence[Any]) -> str:
     """Encode a cursor position as an opaque, URL-safe page token."""
     cursor = PageCursor(keys=list(values))
     return base64.urlsafe_b64encode(cursor.model_dump_json().encode()).decode()
 
 
-def decode_page_token(token: str) -> PageCursor:
+def _decode_page_token(token: str) -> PageCursor:
     """Decode a page token into a PageCursor.
 
     Raises InvalidPageTokenError if the token is malformed.
@@ -194,7 +194,7 @@ def paginate(
     query = query.order_by(None).order_by(*order_by)
 
     if page_token:
-        cursor = decode_page_token(page_token)
+        cursor = _decode_page_token(page_token)
         if len(cursor.keys) != len(sort_fields):
             raise InvalidPageTokenError()
         try:
@@ -229,12 +229,12 @@ def build_next_page_token(
         rows = rows[:page_size]
         last = rows[-1]
         values = [field.encode(getattr(last, field.attr)) for field in sort_fields]
-        token = encode_page_token(values)
+        token = _encode_page_token(values)
         return rows, token
     return rows, ""
 
 
-@dataclass
+@dataclass(frozen=True)
 class PaginationQuery:
     """Describes the pagination request parameters."""
 

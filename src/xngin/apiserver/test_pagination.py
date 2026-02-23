@@ -6,36 +6,37 @@ from types import SimpleNamespace
 import pytest
 from sqlalchemy import Column, Integer, MetaData, String, Table, create_engine, select
 
+# ruff: noqa: PLC2701
 from xngin.apiserver.pagination import (
     MAX_PAGE_TOKEN_AGE_SECONDS,
     InvalidPageTokenError,
     SortField,
+    _decode_datetime,
+    _decode_page_token,
+    _encode_datetime,
+    _encode_page_token,
     build_next_page_token,
-    decode_datetime,
-    decode_page_token,
-    encode_datetime,
-    encode_page_token,
     paginate,
 )
 
 
 def test_page_token_round_trip():
-    token = encode_page_token(["sn_abc123", 42])
-    cursor = decode_page_token(token)
+    token = _encode_page_token(["sn_abc123", 42])
+    cursor = _decode_page_token(token)
     assert cursor.created_at > 0
     assert cursor.keys == ["sn_abc123", 42]
 
 
 def test_page_token_round_trip_with_microseconds():
     ts = datetime(2025, 6, 15, 10, 30, 0, 123456, tzinfo=UTC)
-    token = encode_page_token([encode_datetime(ts), "ev_xyz"])
-    cursor = decode_page_token(token)
-    assert decode_datetime(cursor.keys[0]) == ts
+    token = _encode_page_token([_encode_datetime(ts), "ev_xyz"])
+    cursor = _decode_page_token(token)
+    assert _decode_datetime(cursor.keys[0]) == ts
     assert cursor.keys[1] == "ev_xyz"
 
 
 def test_page_token_uses_compact_aliases():
-    token = encode_page_token(["v1", "v2"])
+    token = _encode_page_token(["v1", "v2"])
     padded = token + "=" * (-len(token) % 4)
     payload = json.loads(base64.urlsafe_b64decode(padded))
     assert payload["k"] == ["v1", "v2"]
@@ -47,18 +48,18 @@ def test_decode_expired_token():
     payload = {"c": now - MAX_PAGE_TOKEN_AGE_SECONDS - 1, "k": ["v1"]}
     token = base64.urlsafe_b64encode(json.dumps(payload).encode()).decode().rstrip("=")
     with pytest.raises(InvalidPageTokenError, match="Invalid page token"):
-        decode_page_token(token)
+        _decode_page_token(token)
 
 
 def test_decode_invalid_token():
     with pytest.raises(InvalidPageTokenError, match="Invalid page token"):
-        decode_page_token("not-a-valid-token!!!")
+        _decode_page_token("not-a-valid-token!!!")
 
 
 def test_decode_empty_json():
     token = base64.urlsafe_b64encode(b"{}").decode().rstrip("=")
     with pytest.raises(InvalidPageTokenError, match="Invalid page token"):
-        decode_page_token(token)
+        _decode_page_token(token)
 
 
 def test_paginate_supports_multi_field_cursor_desc():
@@ -82,7 +83,7 @@ def test_paginate_supports_multi_field_cursor_desc():
                 {"id": "a", "score": 3},
             ],
         )
-        token = encode_page_token([5, "d"])
+        token = _encode_page_token([5, "d"])
         query = paginate(
             select(events.c.score, events.c.id),
             sort_fields=[
@@ -117,7 +118,7 @@ def test_paginate_applies_skip_after_cursor():
                 {"id": "a", "score": 3},
             ],
         )
-        token = encode_page_token([5, "d"])
+        token = _encode_page_token([5, "d"])
         query = paginate(
             select(events.c.score, events.c.id),
             sort_fields=[
@@ -142,7 +143,7 @@ def test_paginate_rejects_cursor_with_wrong_field_count():
         Column("score", Integer, nullable=False),
     )
     metadata.create_all(engine)
-    token = encode_page_token([5])
+    token = _encode_page_token([5])
     with pytest.raises(InvalidPageTokenError, match="Invalid page token"):
         paginate(
             select(events.c.score, events.c.id),
@@ -194,8 +195,8 @@ def test_build_next_page_token_has_more_pages():
     assert trimmed[0].id == "c"
     assert trimmed[1].id == "b"
     assert token != ""
-    cursor = decode_page_token(token)
-    assert decode_datetime(cursor.keys[0]) == datetime(2025, 1, 2, tzinfo=UTC)
+    cursor = _decode_page_token(token)
+    assert _decode_datetime(cursor.keys[0]) == datetime(2025, 1, 2, tzinfo=UTC)
     assert cursor.keys[1] == "b"
 
 
