@@ -10,6 +10,7 @@ from sqlalchemy import Column, Integer, MetaData, String, Table, create_engine, 
 from xngin.apiserver.pagination import (
     MAX_PAGE_TOKEN_AGE_SECONDS,
     InvalidPageTokenError,
+    PaginationQuery,
     SortField,
     _decode_datetime,
     _decode_page_token,
@@ -86,12 +87,11 @@ def test_paginate_supports_multi_field_cursor_desc():
         token = _encode_page_token([5, "d"])
         query = paginate(
             select(events.c.score, events.c.id),
-            sort_fields=[
+            [
                 SortField.numeric(column=events.c.score, attr="score", direction="desc"),
                 SortField(column=events.c.id, attr="id", direction="desc"),
             ],
-            page_token=token,
-            page_size=10,
+            PaginationQuery(page_size=10, page_token=token),
         )
         rows = conn.execute(query).all()
     assert rows == [(5, "c"), (4, "z"), (3, "a")]
@@ -122,12 +122,11 @@ def test_paginate_supports_multi_field_cursor_mixed_directions_with_tiebreaker()
         token = _encode_page_token([5, "b"])
         query = paginate(
             select(events.c.score, events.c.id),
-            sort_fields=[
+            [
                 SortField.numeric(column=events.c.score, attr="score", direction="desc"),
                 SortField(column=events.c.id, attr="id", direction="asc"),
             ],
-            page_token=token,
-            page_size=10,
+            PaginationQuery(page_size=10, page_token=token),
         )
         rows = conn.execute(query).all()
     assert rows == [(5, "d"), (4, "w"), (4, "x")]
@@ -157,13 +156,11 @@ def test_paginate_applies_skip_after_cursor():
         token = _encode_page_token([5, "d"])
         query = paginate(
             select(events.c.score, events.c.id),
-            sort_fields=[
+            [
                 SortField.numeric(column=events.c.score, attr="score", direction="desc"),
                 SortField(column=events.c.id, attr="id", direction="desc"),
             ],
-            page_token=token,
-            page_size=10,
-            skip=1,
+            PaginationQuery(page_size=10, page_token=token, skip=1),
         )
         rows = conn.execute(query).all()
     assert rows == [(4, "z"), (3, "a")]
@@ -183,12 +180,11 @@ def test_paginate_rejects_cursor_with_wrong_field_count():
     with pytest.raises(InvalidPageTokenError, match="Invalid page token"):
         paginate(
             select(events.c.score, events.c.id),
-            sort_fields=[
+            [
                 SortField.numeric(column=events.c.score, attr="score", direction="desc"),
                 SortField(column=events.c.id, attr="id", direction="desc"),
             ],
-            page_token=token,
-            page_size=10,
+            PaginationQuery(page_size=10, page_token=token),
         )
 
 
@@ -211,7 +207,7 @@ def test_build_next_page_token_no_more_pages():
         SortField.timestamp(column=Column("created_at"), attr="created_at", direction="desc"),
         SortField(column=Column("id"), attr="id", direction="desc"),
     ]
-    trimmed, token = build_next_page_token(rows, page_size=5, sort_fields=sort_fields)
+    trimmed, token = build_next_page_token(rows, page_size=5, ordering=sort_fields)
     assert trimmed == rows
     assert token == ""
 
@@ -226,7 +222,7 @@ def test_build_next_page_token_has_more_pages():
         SortField.timestamp(column=Column("created_at"), attr="created_at", direction="desc"),
         SortField(column=Column("id"), attr="id", direction="desc"),
     ]
-    trimmed, token = build_next_page_token(rows, page_size=2, sort_fields=sort_fields)
+    trimmed, token = build_next_page_token(rows, page_size=2, ordering=sort_fields)
     assert len(trimmed) == 2
     assert trimmed[0].id == "c"
     assert trimmed[1].id == "b"
@@ -245,6 +241,6 @@ def test_build_next_page_token_exact_page_size():
         SortField.timestamp(column=Column("created_at"), attr="created_at", direction="desc"),
         SortField(column=Column("id"), attr="id", direction="desc"),
     ]
-    trimmed, token = build_next_page_token(rows, page_size=2, sort_fields=sort_fields)
+    trimmed, token = build_next_page_token(rows, page_size=2, ordering=sort_fields)
     assert len(trimmed) == 2
     assert token == ""

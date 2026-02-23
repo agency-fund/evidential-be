@@ -77,6 +77,40 @@ def _decode_bool(value: object) -> bool:
 
 
 @dataclass(frozen=True)
+class PaginationQuery:
+    """Describes the pagination request parameters."""
+
+    page_size: int
+    page_token: str | None
+    skip: int = 0
+
+
+def pagination_query_params(
+    page_size: Annotated[
+        int,
+        Query(
+            description="Maximum number of items to return per page.",
+            ge=1,
+            le=MAX_PAGE_SIZE,
+        ),
+    ] = DEFAULT_PAGE_SIZE,
+    page_token: Annotated[
+        str | None,
+        Query(description="Token from a previous response to fetch the next page."),
+    ] = None,
+    skip: Annotated[
+        int,
+        Query(
+            description="Number of items to skip after page_token (or from the start when page_token is omitted).",
+            ge=0,
+        ),
+    ] = 0,
+) -> PaginationQuery:
+    """Dependency describing pagination request parameters."""
+    return PaginationQuery(page_size=page_size, page_token=page_token or None, skip=skip)
+
+
+@dataclass(frozen=True)
 class SortField:
     """Describes one ordered field used for seek-pagination and token generation.
 
@@ -171,34 +205,31 @@ def _decode_page_token(token: str) -> PageCursor:
 
 def paginate(
     query: Select[Any],
-    *,
-    sort_fields: Sequence[SortField],
-    page_token: str | None,
-    page_size: int,
-    skip: int = 0,
+    ordering: Sequence[SortField],
+    pagination: PaginationQuery,
 ) -> Select[Any]:
     """Apply cursor-based WHERE, ORDER BY, OFFSET, and LIMIT.
 
-    sort_fields MUST define a deterministic order, usually with a unique tie-breaker
+    ordering must define a deterministic order, usually with a unique tie-breaker
     (e.g. id) as the last field.
     Fetches page_size + 1 rows so the caller can detect a next page.
 
     Raises InvalidPageTokenError if page_token is present but invalid.
     """
-    if not sort_fields:
-        raise ValueError("sort_fields must not be empty")
-    if skip < 0:
+    if not ordering:
+        raise ValueError("ordering must not be empty")
+    if pagination.skip < 0:
         raise ValueError("skip must be non-negative")
 
-    order_by = [field.column.desc() if field.direction == "desc" else field.column.asc() for field in sort_fields]
+    order_by = [field.column.desc() if field.direction == "desc" else field.column.asc() for field in ordering]
     query = query.order_by(None).order_by(*order_by)
 
-    if page_token:
-        cursor = _decode_page_token(page_token)
-        if len(cursor.keys) != len(sort_fields):
+    if pagination.page_token:
+        cursor = _decode_page_token(pagination.page_token)
+        if len(cursor.keys) != len(ordering):
             raise InvalidPageTokenError()
         try:
-            cursor_values = [field.decode(value) for field, value in zip(sort_fields, cursor.keys, strict=True)]
+            cursor_values = [field.decode(value) for field, value in zip(ordering, cursor.keys, strict=True)]
         except InvalidPageTokenError:
             raise
         except Exception as exc:
@@ -206,21 +237,21 @@ def paginate(
         # Expand lexicographic cursor comparison into OR-of-prefix predicates. This allows mixed-direction orderings
         # (e.g. score DESC, id ASC).
         disjuncts = []
-        for idx, field in enumerate(sort_fields):
-            prefix = [sort_fields[prefix_idx].column == cursor_values[prefix_idx] for prefix_idx in range(idx)]
+        for idx, field in enumerate(ordering):
+            prefix = [ordering[prefix_idx].column == cursor_values[prefix_idx] for prefix_idx in range(idx)]
             op = field.column < cursor_values[idx] if field.direction == "desc" else field.column > cursor_values[idx]
             disjuncts.append(and_(*prefix, op))
         query = query.where(or_(*disjuncts))
 
-    if skip:
-        query = query.offset(skip)
-    return query.limit(page_size + 1)
+    if pagination.skip:
+        query = query.offset(pagination.skip)
+    return query.limit(pagination.page_size + 1)
 
 
 def build_next_page_token(
     rows: list[Any],
     page_size: int,
-    sort_fields: Sequence[SortField],
+    ordering: Sequence[SortField],
 ) -> tuple[list[Any], str]:
     """Given rows (possibly page_size+1 long), return (trimmed_rows, next_page_token).
 
@@ -230,41 +261,7 @@ def build_next_page_token(
     if len(rows) > page_size:
         rows = rows[:page_size]
         last = rows[-1]
-        values = [field.encode(getattr(last, field.attr)) for field in sort_fields]
+        values = [field.encode(getattr(last, field.attr)) for field in ordering]
         token = _encode_page_token(values)
         return rows, token
     return rows, ""
-
-
-@dataclass(frozen=True)
-class PaginationQuery:
-    """Describes the pagination request parameters."""
-
-    page_size: int
-    page_token: str | None
-    skip: int = 0
-
-
-def pagination_query_params(
-    page_size: Annotated[
-        int,
-        Query(
-            description="Maximum number of items to return per page.",
-            ge=1,
-            le=MAX_PAGE_SIZE,
-        ),
-    ] = DEFAULT_PAGE_SIZE,
-    page_token: Annotated[
-        str | None,
-        Query(description="Token from a previous response to fetch the next page."),
-    ] = None,
-    skip: Annotated[
-        int,
-        Query(
-            description="Number of items to skip after page_token (or from the start when page_token is omitted).",
-            ge=0,
-        ),
-    ] = 0,
-) -> PaginationQuery:
-    """Dependency describing pagination request parameters."""
-    return PaginationQuery(page_size=page_size, page_token=page_token or None, skip=skip)

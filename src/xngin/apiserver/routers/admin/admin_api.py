@@ -419,13 +419,7 @@ async def list_snapshots(
         ),
         SortField(column=tables.Snapshot.id, attr="id", direction="desc"),
     ]
-    query = paginate(
-        query,
-        sort_fields=ordering,
-        page_token=pagination.page_token,
-        page_size=pagination.page_size,
-        skip=pagination.skip,
-    )
+    query = paginate(query, ordering, pagination)
     snapshots = list(await session.scalars(query))
     snapshots, next_page_token = build_next_page_token(snapshots, pagination.page_size, ordering)
 
@@ -717,13 +711,7 @@ async def list_organization_events(
         ),
         SortField(column=tables.Event.id, attr="id", direction="desc"),
     ]
-    stmt = paginate(
-        stmt,
-        sort_fields=ordering,
-        page_token=pagination.page_token,
-        page_size=pagination.page_size,
-        skip=pagination.skip,
-    )
+    stmt = paginate(stmt, ordering, pagination)
     events = list(await session.scalars(stmt))
     events, next_page_token = build_next_page_token(events, pagination.page_size, ordering)
 
