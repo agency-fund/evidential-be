@@ -14,24 +14,35 @@ from xngin.stats.power import (
 )
 
 
-def calculate_design_effect(icc: float, avg_cluster_size: float) -> float:
+def calculate_design_effect(
+    icc: float,
+    avg_cluster_size: float,
+    cv: float = 0.0,  # NEW parameter
+) -> float:
     """
-    Calculate design effect (DEFF >= 1) for cluster-randomized designs.
+    Calculate design effect with CV adjustment.
 
-    Formula: DEFF = 1 + (m - 1) * icc
+    Formula: DEFF = [1 + (m - 1) * ICC] * (1 + CV²)
 
     Args:
         icc: Intracluster correlation coefficient (0 to 1)
         avg_cluster_size: Average individuals per cluster
-
+        cv: Coefficient of variation of cluster sizes (default 0)
     """
     if not 0 <= icc <= 1:
         raise ValueError(f"ICC must be between 0 and 1, got {icc}")
-
     if avg_cluster_size < 1:
         raise ValueError(f"Cluster size must be >= 1, got {avg_cluster_size}")
+    if cv < 0:
+        raise ValueError(f"CV must be >= 0, got {cv}")
 
-    return 1 + (avg_cluster_size - 1) * icc
+    # Base design effect
+    base_deff = 1 + (avg_cluster_size - 1) * icc
+
+    # CV adjustment for unequal cluster sizes
+    cv_adjustment = 1 + (cv**2)
+
+    return base_deff * cv_adjustment
 
 
 def calculate_effective_sample_size(
