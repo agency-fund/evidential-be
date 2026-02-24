@@ -57,6 +57,15 @@ class ApiBaseModel(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
 
+class PaginatedResponse(ApiBaseModel):
+    """Base response model for endpoints that return cursor-paginated lists using pagination.py."""
+
+    next_page_token: Annotated[
+        str,
+        Field(description="Token to retrieve the next page. Empty when no more results."),
+    ] = ""
+
+
 class DesignSpecMetricBase(ApiBaseModel):
     """Base class for defining a metric to measure in the experiment."""
 

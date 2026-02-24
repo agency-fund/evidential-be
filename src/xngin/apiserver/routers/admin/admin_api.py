@@ -49,6 +49,13 @@ from xngin.apiserver.dwh.queries import (
     get_stats_on_metrics,
 )
 from xngin.apiserver.exceptions_common import LateValidationError
+from xngin.apiserver.pagination import (
+    PaginationQuery,
+    SortField,
+    build_next_page_token,
+    paginate,
+    pagination_query_params,
+)
 from xngin.apiserver.routers.admin import admin_api_converters, admin_common, authz
 from xngin.apiserver.routers.admin.admin_api_converters import (
     api_dsn_to_settings_dwh,
@@ -387,6 +394,7 @@ async def list_snapshots(
     organization_id: Annotated[str, Path()],
     datasource_id: Annotated[str, Path()],
     experiment_id: Annotated[str, Path()],
+    pagination: Annotated[PaginationQuery, Depends(pagination_query_params)],
     status_: Annotated[
         list[SnapshotStatus] | None,
         Query(
@@ -398,32 +406,35 @@ async def list_snapshots(
     """Lists snapshots for an experiment, ordered by timestamp."""
     datasource = await get_datasource_or_raise(session, user, datasource_id, organization_id=organization_id)
     experiment = await get_experiment_via_ds_or_raise(session, datasource, experiment_id)
-
-    query = (
-        select(tables.Snapshot)
-        .where(tables.Snapshot.experiment_id == experiment.id)
-        .order_by(tables.Snapshot.updated_at.desc())
-    )
+    query = select(tables.Snapshot).where(tables.Snapshot.experiment_id == experiment.id)
     if status_:
         query = query.where(
             tables.Snapshot.status.in_([convert_api_snapshot_status_to_snapshot_status(s) for s in status_])
         )
-    # read into a list because we may iterate over it twice
+    ordering = [
+        SortField.timestamp(
+            column=tables.Snapshot.updated_at,
+            attr="updated_at",
+            direction="desc",
+        ),
+        SortField(column=tables.Snapshot.id, attr="id", direction="desc"),
+    ]
+    query = paginate(query, ordering, pagination)
     snapshots = list(await session.scalars(query))
+    snapshots, next_page_token = build_next_page_token(snapshots, pagination.page_size, ordering)
 
-    if status_ is None:
-        latest_failure = next((r.updated_at for r in snapshots if r.status == "failed"), None)
-    else:
-        latest_failure = await session.scalar(
-            select(tables.Snapshot.updated_at)
-            .where(tables.Snapshot.experiment_id == experiment.id)
-            .where(tables.Snapshot.status == convert_api_snapshot_status_to_snapshot_status(SnapshotStatus.FAILED))
-            .order_by(tables.Snapshot.updated_at.desc())
-            .limit(1)
-        )
+    latest_failure = await session.scalar(
+        select(tables.Snapshot.updated_at)
+        .where(tables.Snapshot.experiment_id == experiment.id)
+        .where(tables.Snapshot.status == convert_api_snapshot_status_to_snapshot_status(SnapshotStatus.FAILED))
+        .order_by(tables.Snapshot.updated_at.desc())
+        .limit(1)
+    )
 
     return ListSnapshotsResponse(
-        items=[convert_snapshot_to_api_snapshot(snapshot) for snapshot in snapshots], latest_failure=latest_failure
+        items=[convert_snapshot_to_api_snapshot(snapshot) for snapshot in snapshots],
+        latest_failure=latest_failure,
+        next_page_token=next_page_token,
     )
 
 
@@ -687,22 +698,25 @@ async def list_organization_events(
     organization_id: str,
     session: Annotated[AsyncSession, Depends(xngin_db_session)],
     user: Annotated[tables.User, Depends(require_user_from_token)],
+    pagination: Annotated[PaginationQuery, Depends(pagination_query_params)],
 ) -> ListOrganizationEventsResponse:
-    """Returns the most recent 200 events in an organization."""
-    # Verify user has access to the organization
+    """Returns events in an organization, newest first."""
     org = await get_organization_or_raise(session, user, organization_id)
-
-    # Query for the most recent 200 events
-    stmt = (
-        select(tables.Event)
-        .where(tables.Event.organization_id == org.id)
-        .order_by(tables.Event.created_at.desc())
-        .limit(200)
-    )
-    events = await session.scalars(stmt)
+    stmt = select(tables.Event).where(tables.Event.organization_id == org.id)
+    ordering = [
+        SortField.timestamp(
+            column=tables.Event.created_at,
+            attr="created_at",
+            direction="desc",
+        ),
+        SortField(column=tables.Event.id, attr="id", direction="desc"),
+    ]
+    stmt = paginate(stmt, ordering, pagination)
+    events = list(await session.scalars(stmt))
+    events, next_page_token = build_next_page_token(events, pagination.page_size, ordering)
 
     event_summaries = convert_events_to_eventsummaries(events)
-    return ListOrganizationEventsResponse(items=event_summaries)
+    return ListOrganizationEventsResponse(items=event_summaries, next_page_token=next_page_token)
 
 
 def convert_events_to_eventsummaries(events):
