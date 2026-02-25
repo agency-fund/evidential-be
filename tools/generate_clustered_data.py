@@ -95,7 +95,6 @@ def generate_continuous_outcome_with_icc(
     """
     rng = np.random.RandomState(seed)
 
-    # Decompose variance into between and within components
     total_var = total_std**2
     between_var = icc * total_var
     within_var = (1 - icc) * total_var
@@ -103,11 +102,9 @@ def generate_continuous_outcome_with_icc(
     between_std = np.sqrt(between_var)
     within_std = np.sqrt(within_var)
 
-    # Generate cluster effects
     n_clusters = len(cluster_sizes)
     cluster_effects = rng.normal(0, between_std, n_clusters)
 
-    # Generate individual outcomes
     outcomes = []
     for cluster_idx, size in enumerate(cluster_sizes):
         cluster_effect = cluster_effects[cluster_idx]
@@ -171,7 +168,6 @@ def generate_binary_outcome_with_icc(
     n_clusters = len(cluster_sizes)
     cluster_probs = rng.beta(alpha, beta, n_clusters)
 
-    # Generate outcomes for each cluster
     outcomes = []
     for cluster_idx, size in enumerate(cluster_sizes):
         prob = cluster_probs[cluster_idx]
@@ -242,10 +238,9 @@ def generate_multi_cluster_data(
             if powerlaw_sizes[idx] > 1:
                 powerlaw_sizes[idx] -= 1
 
-    # Shuffle powerlaw
+    # Randomize which cluster gets which size
     rng.shuffle(powerlaw_sizes)
 
-    # Calculate CVs
     cv_equal = equal_sizes.std() / equal_sizes.mean() if equal_sizes.mean() > 0 else 0
     cv_moderate = moderate_sizes.std() / moderate_sizes.mean()
     cv_powerlaw = powerlaw_sizes.std() / powerlaw_sizes.mean()
@@ -260,7 +255,6 @@ def generate_multi_cluster_data(
     print(f"  Moderate: [{moderate_sizes.min()}, {moderate_sizes.max()}], median={np.median(moderate_sizes):.0f}")
     print(f"  Power-law: [{powerlaw_sizes.min()}, {powerlaw_sizes.max()}], median={np.median(powerlaw_sizes):.0f}")
 
-    # Verify
     print("\nVerifying sums:")
     print(f"  Equal: {equal_sizes.sum()} (target: {total_n})")
     print(f"  Moderate: {moderate_sizes.sum()} (target: {total_n})")
@@ -275,13 +269,8 @@ def generate_multi_cluster_data(
     cluster_moderate = np.repeat(range(n_clusters_per_scheme), moderate_sizes)
     cluster_powerlaw = np.repeat(range(n_clusters_per_scheme), powerlaw_sizes)
 
-    # Shuffle
-    rng.shuffle(cluster_moderate)
-    rng.shuffle(cluster_powerlaw)
-
     print("\nGenerating outcomes with different ICCs...")
 
-    # Generate outcomes
     continuous_low_icc = generate_continuous_outcome_with_icc(
         equal_sizes, icc=0.05, mean=50000, total_std=20000, seed=seed + 10
     )
@@ -291,7 +280,6 @@ def generate_multi_cluster_data(
     binary_low_icc = generate_binary_outcome_with_icc(moderate_sizes, icc=0.03, base_prob=0.25, seed=seed + 20)
     binary_high_icc = generate_binary_outcome_with_icc(powerlaw_sizes, icc=0.15, base_prob=0.35, seed=seed + 21)
 
-    # Create DataFrame
     df = pd.DataFrame({
         "participant_id": range(total_n),
         "cluster_equal": cluster_equal,
@@ -344,7 +332,6 @@ CREATE INDEX idx_cluster_moderate ON {{table_name}}(cluster_moderate);
 CREATE INDEX idx_cluster_powerlaw ON {{table_name}}(cluster_powerlaw);
 """
 
-    # Save DDL file
     ddl_path = output_path.with_suffix(".postgres.ddl")
     ddl_path.write_text(ddl)
     print(f"Saved DDL to: {ddl_path}")
@@ -362,7 +349,6 @@ def main():
 
     args = parser.parse_args()
 
-    # Generate data
     print(f"Generating clustered data with seed={args.seed}...")
     df = generate_multi_cluster_data(
         total_n=args.n_participants,
@@ -370,14 +356,12 @@ def main():
         seed=args.seed,
     )
 
-    # Save
     output_path = Path(args.output)
     df.to_csv(output_path, index=False)
     print(f"\nSaved to: {output_path}")
 
     generate_ddl(output_path)
 
-    # Show summary statistics
     print("\n" + "=" * 60)
     print("SUMMARY STATISTICS")
     print("=" * 60)
