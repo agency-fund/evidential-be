@@ -627,6 +627,27 @@ class MetricPowerAnalysis(ApiBaseModel):
         Field(description="Human friendly message about the above results."),
     ] = None
 
+    chosen_n: Annotated[
+        int | None,
+        Field(
+            description=(
+                "If the user provided a chosen sample size to evaluate for pre-assigned experiments, "
+                "this is that value. "
+                "Otherwise, it is None."
+            )
+        ),
+    ] = None
+
+    pct_change_with_chosen_n: Annotated[
+        float | None,
+        Field(
+            description=(
+                "Given a chosen sample size, what is the minimum detectable percent change for this metric. "
+                "This is None because it is only calculated when a chosen sample size is provided."
+            )
+        ),
+    ] = None
+
 
 class GetStrataResponseElement(ApiBaseModel):
     """Describes a stratification variable."""
