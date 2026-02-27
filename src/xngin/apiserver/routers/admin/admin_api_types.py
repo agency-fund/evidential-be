@@ -26,6 +26,7 @@ from xngin.apiserver.routers.common_api_types import (
     GetMetricsResponseElement,
     GetStrataResponseElement,
     Impact,
+    PaginatedResponse,
 )
 from xngin.apiserver.settings import ParticipantsDef
 
@@ -72,7 +73,7 @@ class GetSnapshotResponse(AdminApiBaseModel):
     snapshot: Annotated[Snapshot, Field(description="The snapshot.")]
 
 
-class ListSnapshotsResponse(AdminApiBaseModel):
+class ListSnapshotsResponse(PaginatedResponse, AdminApiBaseModel):
     items: list[Snapshot]
     latest_failure: Annotated[
         datetime | None,
@@ -133,7 +134,7 @@ class EventSummary(AdminApiBaseModel):
     details: Annotated[dict | None, Field(description="Details")]
 
 
-class ListOrganizationEventsResponse(AdminApiBaseModel):
+class ListOrganizationEventsResponse(PaginatedResponse, AdminApiBaseModel):
     items: list[EventSummary]
 
 

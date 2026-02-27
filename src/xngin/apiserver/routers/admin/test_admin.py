@@ -8,7 +8,7 @@ from urllib.parse import urlparse
 import numpy as np
 import pytest
 from pydantic import HttpUrl, TypeAdapter
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from xngin.apiserver import flags
@@ -45,6 +45,7 @@ from xngin.apiserver.routers.admin.admin_api_types import (
     InspectDatasourceTableResponse,
     ListApiKeysResponse,
     ListDatasourcesResponse,
+    ListOrganizationEventsResponse,
     ListOrganizationsResponse,
     ListParticipantsTypeResponse,
     ListSnapshotsResponse,
@@ -3484,3 +3485,312 @@ async def test_create_preassigned_experiment_with_table_name_and_primary_key(
     assert created.design_spec.participant_type.startswith("__dwh_")
     assert created.assign_summary is not None
     assert created.assign_summary.sample_size == 100
+
+
+def test_list_snapshots_pagination(pget, ppost, ppatch):
+    """Test cursor-based pagination of the list_snapshots endpoint."""
+    creation_response = ppost(
+        "/v1/m/organizations",
+        json=CreateOrganizationRequest(name="test_snapshots_pagination").model_dump(),
+    )
+    assert creation_response.status_code == 200, creation_response.content
+    org = CreateOrganizationResponse.model_validate(creation_response.json())
+
+    parsed = urlparse(flags.XNGIN_DEVDWH_DSN)
+    valid_dsn = PostgresDsn(
+        type="postgres",
+        host=parsed.hostname,
+        port=parsed.port,
+        user=parsed.username,
+        password=RevealedStr(value=parsed.password),
+        dbname=parsed.path[1:],
+        sslmode="disable",
+        search_path=None,
+    )
+    response = ppost(
+        "/v1/m/datasources",
+        content=CreateDatasourceRequest(
+            name="test_snapshots_pagination_ds",
+            organization_id=org.id,
+            dsn=valid_dsn,
+        ).model_dump_json(),
+    )
+    assert response.status_code == 200, response.content
+    ds = CreateDatasourceResponse.model_validate(response.json())
+
+    ppost(
+        f"/v1/m/datasources/{ds.id}/participants",
+        content=CreateParticipantsTypeRequest(
+            participant_type="test_participant_type",
+            schema_def=TESTING_DWH_PARTICIPANT_DEF,
+        ).model_dump_json(),
+    )
+
+    response = ppost(
+        f"/v1/m/datasources/{ds.id}/experiments?chosen_n=100",
+        json=CreateExperimentRequest(
+            design_spec=PreassignedFrequentistExperimentSpec(
+                experiment_type=ExperimentsType.FREQ_PREASSIGNED,
+                participant_type="test_participant_type",
+                experiment_name="pagination test",
+                description="pagination test",
+                start_date=datetime(2024, 1, 1, tzinfo=UTC),
+                end_date=datetime.now(UTC) + timedelta(days=1),
+                arms=[
+                    Arm(arm_name="control", arm_description="Control"),
+                    Arm(arm_name="treatment", arm_description="Treatment"),
+                ],
+                metrics=[DesignSpecMetricRequest(field_name="income", metric_pct_change=5)],
+                strata=[],
+                filters=[],
+            )
+        ).model_dump(mode="json"),
+    )
+    assert response.status_code == 200, response.content
+    experiment_id = CreateExperimentResponse.model_validate_json(response.content).experiment_id
+
+    response = ppost(f"/v1/m/datasources/{ds.id}/experiments/{experiment_id}/commit")
+    assert response.status_code == 204
+
+    snapshots_url = f"/v1/m/organizations/{org.id}/datasources/{ds.id}/experiments/{experiment_id}/snapshots"
+
+    # Create two snapshots
+    response = ppost(snapshots_url)
+    assert response.status_code == 200, response.content
+
+    # Force second snapshot to fail
+    response = ppatch(
+        f"/v1/m/datasources/{ds.id}",
+        content=UpdateDatasourceRequest(
+            dsn=valid_dsn.model_copy(update={"port": valid_dsn.port + 1})
+        ).model_dump_json(),
+    )
+    assert response.status_code == 204, response.content
+    response = ppost(snapshots_url)
+    assert response.status_code == 200, response.content
+
+    # Page through with page_size=1
+    response = pget(f"{snapshots_url}?page_size=1")
+    assert response.status_code == 200, response.content
+    page1 = ListSnapshotsResponse.model_validate(response.json())
+    assert len(page1.items) == 1
+    assert page1.next_page_token != ""
+    assert page1.latest_failure is not None
+
+    response = pget(f"{snapshots_url}?page_size=1&page_token={page1.next_page_token}")
+    assert response.status_code == 200, response.content
+    page2 = ListSnapshotsResponse.model_validate(response.json())
+    assert len(page2.items) == 1
+    assert page2.next_page_token == ""
+    assert page2.latest_failure is not None
+
+    # No overlap between pages
+    assert page1.items[0].id != page2.items[0].id
+    # Descending order maintained
+    assert page1.items[0].updated_at >= page2.items[0].updated_at
+
+    # Without pagination params, all results returned on one page
+    response = pget(snapshots_url)
+    assert response.status_code == 200, response.content
+    all_items = ListSnapshotsResponse.model_validate(response.json())
+    assert len(all_items.items) == 2
+    assert all_items.next_page_token == ""
+
+    # Skip works from the beginning of the result set.
+    response = pget(f"{snapshots_url}?page_size=1&skip=1")
+    assert response.status_code == 200, response.content
+    skipped_page = ListSnapshotsResponse.model_validate(response.json())
+    assert len(skipped_page.items) == 1
+    assert skipped_page.items[0].id == all_items.items[1].id
+
+    # Invalid page_token returns 400
+    response = pget(f"{snapshots_url}?page_token=bogus")
+    assert response.status_code == 400, response.content
+    assert response.json() == {"detail": "Invalid page_token."}
+
+
+def test_list_organization_events_pagination(testing_datasource_with_user, ppost, pget):
+    """Test cursor-based pagination of the list_organization_events endpoint."""
+    org_id = testing_datasource_with_user.org.id
+    ds_id = testing_datasource_with_user.ds.id
+
+    # Create a webhook
+    response = ppost(
+        f"/v1/m/organizations/{org_id}/webhooks",
+        json=AddWebhookToOrganizationRequest(
+            type="experiment.created",
+            url="https://example.com/webhook",
+            name="test webhook",
+        ).model_dump(),
+    )
+    assert response.status_code == 200, response.content
+    webhook_id = AddWebhookToOrganizationResponse.model_validate(response.json()).id
+
+    response = pget(f"/v1/m/organizations/{org_id}/webhooks")
+    assert response.status_code == 200, response.content
+    webhooks = ListWebhooksResponse.model_validate(response.json()).items
+    assert len(webhooks) == 1
+
+    # Creating experiments generates events. Create a few to ensure we have enough.
+    for i in range(3):
+        response = ppost(
+            f"/v1/m/datasources/{ds_id}/experiments?chosen_n=100",
+            json=CreateExperimentRequest(
+                webhooks=[webhook_id],
+                design_spec=PreassignedFrequentistExperimentSpec(
+                    experiment_type=ExperimentsType.FREQ_PREASSIGNED,
+                    participant_type="test_participant_type",
+                    experiment_name=f"pagination event test {i}",
+                    description=f"pagination event test {i}",
+                    start_date=datetime(2024, 1, 1, tzinfo=UTC),
+                    end_date=datetime.now(UTC) + timedelta(days=1),
+                    arms=[
+                        Arm(arm_name="control", arm_description="Control"),
+                        Arm(arm_name="treatment", arm_description="Treatment"),
+                    ],
+                    metrics=[DesignSpecMetricRequest(field_name="income", metric_pct_change=5)],
+                    strata=[],
+                    filters=[],
+                ),
+            ).model_dump(mode="json"),
+        )
+        assert response.status_code == 200, response.content
+        experiment = CreateExperimentResponse.model_validate(response.json())
+        response = ppost(f"/v1/m/datasources/{ds_id}/experiments/{experiment.experiment_id}/commit")
+        assert response.status_code == 204, response.content
+
+    events_url = f"/v1/m/organizations/{org_id}/events"
+
+    # Get all events first to know how many we have
+    response = pget(events_url)
+    assert response.status_code == 200, response.content
+    all_events = ListOrganizationEventsResponse.model_validate(response.json())
+    total = len(all_events.items)
+    assert total >= 3
+
+    # Page through with page_size=1
+    response = pget(f"{events_url}?page_size=1")
+    assert response.status_code == 200, response.content
+    page1 = ListOrganizationEventsResponse.model_validate(response.json())
+    assert len(page1.items) == 1
+    assert page1.next_page_token != ""
+
+    response = pget(f"{events_url}?page_size=1&page_token={page1.next_page_token}")
+    assert response.status_code == 200, response.content
+    page2 = ListOrganizationEventsResponse.model_validate(response.json())
+    assert len(page2.items) == 1
+
+    # No overlap
+    assert page1.items[0].id != page2.items[0].id
+    # Descending order
+    assert page1.items[0].created_at >= page2.items[0].created_at
+
+    # Skip works from the beginning of the result set.
+    response = pget(f"{events_url}?page_size=3")
+    assert response.status_code == 200, response.content
+    first_page = ListOrganizationEventsResponse.model_validate(response.json())
+    assert len(first_page.items) >= 3
+    response = pget(f"{events_url}?page_size=2&skip=1")
+    assert response.status_code == 200, response.content
+    skipped_page = ListOrganizationEventsResponse.model_validate(response.json())
+    assert [item.id for item in skipped_page.items] == [item.id for item in first_page.items[1:3]]
+
+    # Collect all pages
+    all_ids: set[str] = set()
+    token: str | None = None
+    pages = 0
+    while True:
+        url = f"{events_url}?page_size=2"
+        if token:
+            url += f"&page_token={token}"
+        response = pget(url)
+        assert response.status_code == 200, response.content
+        page = ListOrganizationEventsResponse.model_validate(response.json())
+        for item in page.items:
+            assert item.id not in all_ids, f"Duplicate event {item.id}"
+            all_ids.add(item.id)
+        pages += 1
+        if not page.next_page_token:
+            break
+        token = page.next_page_token
+    assert len(all_ids) == total
+    assert pages > 1
+
+    # Invalid page_token returns 400
+    response = pget(f"{events_url}?page_token=bogus")
+    assert response.status_code == 400, response.content
+    assert response.json() == {"detail": "Invalid page_token."}
+
+
+async def test_list_organization_events_pagination_with_same_timestamp_is_id_desc(
+    testing_datasource_with_user,
+    xngin_session: AsyncSession,
+    ppost,
+    pget,
+):
+    """Events with identical created_at must paginate deterministically by id (descending)."""
+    org_id = testing_datasource_with_user.org.id
+    ds_id = testing_datasource_with_user.ds.id
+
+    # Create events by creating and committing experiments.
+    for i in range(2):
+        response = ppost(
+            f"/v1/m/datasources/{ds_id}/experiments?chosen_n=100",
+            json=CreateExperimentRequest(
+                design_spec=PreassignedFrequentistExperimentSpec(
+                    experiment_type=ExperimentsType.FREQ_PREASSIGNED,
+                    participant_type="test_participant_type",
+                    experiment_name=f"same-ts event test {i}",
+                    description=f"same-ts event test {i}",
+                    start_date=datetime(2024, 1, 1, tzinfo=UTC),
+                    end_date=datetime.now(UTC) + timedelta(days=1),
+                    arms=[
+                        Arm(arm_name="control", arm_description="Control"),
+                        Arm(arm_name="treatment", arm_description="Treatment"),
+                    ],
+                    metrics=[DesignSpecMetricRequest(field_name="income", metric_pct_change=5)],
+                    strata=[],
+                    filters=[],
+                ),
+            ).model_dump(mode="json"),
+        )
+        assert response.status_code == 200, response.content
+        experiment = CreateExperimentResponse.model_validate(response.json())
+        response = ppost(f"/v1/m/datasources/{ds_id}/experiments/{experiment.experiment_id}/commit")
+        assert response.status_code == 204, response.content
+
+    events_url = f"/v1/m/organizations/{org_id}/events"
+    response = pget(events_url)
+    assert response.status_code == 200, response.content
+    all_events = ListOrganizationEventsResponse.model_validate(response.json()).items
+    assert len(all_events) >= 2
+
+    tied_event_ids = [all_events[0].id, all_events[1].id]
+    tied_created_at = datetime(2099, 1, 1, tzinfo=UTC)
+    await xngin_session.execute(
+        update(tables.Event).where(tables.Event.id.in_(tied_event_ids)).values(created_at=tied_created_at)
+    )
+    await xngin_session.commit()
+
+    expected_tied_order = list(
+        await xngin_session.scalars(
+            select(tables.Event.id).where(tables.Event.id.in_(tied_event_ids)).order_by(tables.Event.id.desc())
+        )
+    )
+    assert len(expected_tied_order) == 2
+
+    response = pget(f"{events_url}?page_size=1")
+    assert response.status_code == 200, response.content
+    page1 = ListOrganizationEventsResponse.model_validate(response.json())
+    assert len(page1.items) == 1
+    assert page1.next_page_token != ""
+    assert page1.items[0].id == expected_tied_order[0]
+    assert page1.items[0].created_at == tied_created_at
+
+    response = pget(f"{events_url}?page_size=1&page_token={page1.next_page_token}")
+    assert response.status_code == 200, response.content
+    page2 = ListOrganizationEventsResponse.model_validate(response.json())
+    assert len(page2.items) == 1
+    assert page2.items[0].id == expected_tied_order[1]
+    assert page2.items[0].id != page1.items[0].id
+    assert page2.items[0].created_at == tied_created_at
