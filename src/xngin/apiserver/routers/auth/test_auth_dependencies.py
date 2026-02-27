@@ -119,7 +119,7 @@ def test_token_cryptor_uses_custom_prefix_and_env_var():
         cryptor = TokenCryptor(
             ttl=60,
             keyset_env_var=env_var_name,
-            local_keyset_filename=".xngin_test_token_keyset",
+            local_keyset_filename="file-does-not-exist",
             prefix="xp_",
         )
         token = cryptor.encrypt(b"payload")
