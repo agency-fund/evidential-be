@@ -80,6 +80,7 @@ from xngin.apiserver.routers.admin.admin_api_types import (
     Drift,
     EventSummary,
     GetDatasourceResponse,
+    GetExperimentForUiResponse,
     GetOrganizationResponse,
     GetParticipantsTypeResponse,
     GetSnapshotResponse,
@@ -124,7 +125,6 @@ from xngin.apiserver.routers.common_api_types import (
     ExperimentAnalysisResponse,
     ExperimentsType,
     GetExperimentAssignmentsResponse,
-    GetExperimentResponse,
     GetMetricsResponseElement,
     GetParticipantAssignmentResponse,
     GetStrataResponseElement,
@@ -1643,7 +1643,7 @@ async def get_experiment_for_ui(
     experiment_id: str,
     session: Annotated[AsyncSession, Depends(xngin_db_session)],
     user: Annotated[tables.User, Depends(require_user_from_token)],
-) -> GetExperimentResponse:
+) -> GetExperimentForUiResponse:
     """Returns the experiment with the specified ID."""
     ds = await get_datasource_or_raise(session, user, datasource_id)
     experiment = await get_experiment_via_ds_or_raise(
@@ -1652,7 +1652,11 @@ async def get_experiment_for_ui(
         experiment_id,
         preload=[tables.Experiment.webhooks, tables.Experiment.contexts],
     )
-    return await experiments_common.get_experiment_impl(session, experiment)
+    participants = ds.get_config().find_participants_or_none(experiment.participant_type)
+    return GetExperimentForUiResponse(
+        config=await experiments_common.get_experiment_impl(session, experiment),
+        participant_type=participants,
+    )
 
 
 @router.get("/datasources/{datasource_id}/experiments/{experiment_id}/assignments")

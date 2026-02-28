@@ -21,6 +21,7 @@ from xngin.apiserver.routers.common_api_types import (
     ConstrainedUrl,
     DataType,
     ExperimentAnalysisResponse,
+    ExperimentConfig,
     GcpServiceAccountBlob,
     GetFiltersResponseElement,
     GetMetricsResponseElement,
@@ -518,6 +519,15 @@ class CreateApiKeyResponse(AdminApiBaseModel):
 class CreateUserRequest(AdminApiBaseModel):
     email: Annotated[str, Field(max_length=MAX_LENGTH_OF_EMAIL_VALUE)]
     organization_id: Annotated[str, Field(max_length=MAX_LENGTH_OF_ID_VALUE)]
+
+
+class GetExperimentForUiResponse(AdminApiBaseModel):
+    """Experiment configuration and participant type information."""
+
+    config: Annotated[ExperimentConfig, Field()]
+    participant_type: Annotated[
+        ParticipantsDef | None, Field(description="If available, the Participant Type information for this experiment.")
+    ]
 
 
 class UpdateExperimentRequest(AdminApiBaseModel):

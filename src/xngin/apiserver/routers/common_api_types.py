@@ -796,7 +796,7 @@ ConstrainedUrl = Annotated[HttpUrl, UrlConstraints(max_length=MAX_LENGTH_OF_URL_
 class BaseDesignSpec(ApiBaseModel):
     """Experiment design metadata and target metrics common to all experiment types."""
 
-    # --- Experiment metadata ---
+    # The name of the participant type. This may be "user" for some MAB and CMAB experiments.
     participant_type: Annotated[str, Field(max_length=MAX_LENGTH_OF_NAME_VALUE)]
 
     experiment_type: Annotated[
