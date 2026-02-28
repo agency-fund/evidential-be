@@ -425,7 +425,8 @@ class InspectParticipantTypesResponse(ApiBaseModel):
 
 
 class ListParticipantsTypeResponse(ApiBaseModel):
-    items: list[ParticipantsDef]
+    items: Annotated[list[ParticipantsDef], Field(description="List of participant type definitions.")]
+    has_hidden: Annotated[bool, Field(description="True when the datasource has hidden participant types.")]
 
 
 class CreateParticipantsTypeRequest(ApiBaseModel):

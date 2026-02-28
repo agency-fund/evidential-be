@@ -1101,8 +1101,15 @@ async def list_participant_types(
     user: Annotated[tables.User, Depends(require_user_from_token)],
 ) -> ListParticipantsTypeResponse:
     ds = await get_datasource_or_raise(session, user, datasource_id)
+    participants = ds.get_config().participants
     return ListParticipantsTypeResponse(
-        items=list(sorted([p for p in ds.get_config().participants if not p.hidden], key=lambda p: p.participant_type))
+        items=list(
+            sorted(
+                [p for p in participants if not p.hidden],
+                key=lambda p: p.participant_type,
+            )
+        ),
+        has_hidden=any(p for p in participants if p.hidden),
     )
 
 
