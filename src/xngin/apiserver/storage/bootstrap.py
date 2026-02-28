@@ -123,7 +123,7 @@ async def _maybe_create_developer_samples(
         session,
         datasource,
         MABExperimentSpec(
-            participant_type="testing_dwh_participant",
+            participant_type="user",
             experiment_name="MAB",
             description="Hypothesis",
             start_date=datetime.datetime.now() - datetime.timedelta(days=7),
@@ -141,7 +141,7 @@ async def _maybe_create_developer_samples(
         session,
         datasource,
         CMABExperimentSpec(
-            participant_type="testing_dwh_participant",
+            participant_type="user",
             experiment_name="CMAB",
             description="Hypothesis",
             start_date=datetime.datetime.now() - datetime.timedelta(days=7),
