@@ -15,11 +15,10 @@ from xngin.apiserver.routers.auth import auth_dependencies
 from xngin.apiserver.routers.auth.auth_api_types import CallbackResponse
 from xngin.apiserver.routers.auth.auth_dependencies import (
     GoogleOidcConfig,
+    SessionTokenCryptor,
     get_google_configuration,
-    session_token_crypter_dependency,
 )
 from xngin.apiserver.routers.auth.principal import Principal
-from xngin.apiserver.routers.auth.session_token_crypter import SessionTokenCrypter
 
 
 class OidcMisconfiguredError(Exception):
@@ -56,7 +55,7 @@ async def auth_callback(
     code_verifier: Annotated[str, Query(min_length=43, max_length=128, pattern=r"^[A-Za-z0-9._~-]+$")],
     oidc_config: Annotated[GoogleOidcConfig, Depends(get_google_configuration)],
     httpx_client: Annotated[httpx.AsyncClient, Depends(retrying_httpx_dependency)],
-    tokencryptor: Annotated[SessionTokenCrypter, Depends(session_token_crypter_dependency)],
+    session_cryptor: Annotated[SessionTokenCryptor, Depends()],
 ) -> CallbackResponse:
     """Exchanges the OIDC authorization code and verifier for an identity token (JWT), and then creates a session token.
 
@@ -66,7 +65,7 @@ async def auth_callback(
     """
     id_token = await _exchange_code_for_idtoken(oidc_config, httpx_client, code, code_verifier)
     decoded = _validate_idtoken(oidc_config, id_token)
-    session_token = tokencryptor.encrypt(
+    session_token = session_cryptor.encode(
         Principal(
             email=decoded["email"],
             hd=decoded.get("hd", ""),  # optional claim only on Google hosted domains
