@@ -12,7 +12,6 @@ from xngin.apiserver.routers.common_api_types import (
     CMABExperimentSpec,
     Context,
     CreateExperimentRequest,
-    DesignSpec,
     DesignSpecMetricRequest,
     Filter,
     MABExperimentSpec,
@@ -30,9 +29,11 @@ TESTING_DWH_DATASOURCE_NAME = "Local DWH"
 ALT_TESTING_DWH_DATASOURCE_NAME = "Alternate Local DWH"
 
 
-async def _create_and_commit_experiment(session: AsyncSession, datasource: tables.Datasource, design_spec: DesignSpec):
+async def _create_and_commit_experiment(
+    session: AsyncSession, datasource: tables.Datasource, create_experiment_request: CreateExperimentRequest
+):
     result = await experiments_common.create_experiment_impl(
-        CreateExperimentRequest(design_spec=design_spec),
+        create_experiment_request,
         datasource,
         session,
         chosen_n=100,
@@ -84,103 +85,160 @@ async def _maybe_create_developer_samples(
     await _create_and_commit_experiment(
         session,
         datasource,
-        PreassignedFrequentistExperimentSpec(
-            participant_type=TESTING_DWH_PARTICIPANT_DEF.participant_type,
-            experiment_name="Preassigned",
-            description="Hypothesis",
-            start_date=datetime.datetime.now() - datetime.timedelta(days=7),
-            end_date=datetime.datetime.now() + datetime.timedelta(days=7),
-            arms=[
-                Arm(arm_name="Control", arm_description="First arm"),
-                Arm(arm_name="Treatment", arm_description="Second arm"),
-            ],
-            filters=[Filter(field_name="baseline_income", relation=Relation.BETWEEN, value=[100, None])],
-            strata=[],
-            metrics=[DesignSpecMetricRequest(field_name="current_income", metric_pct_change=0.10)],
+        CreateExperimentRequest(
+            design_spec=PreassignedFrequentistExperimentSpec(
+                participant_type=TESTING_DWH_PARTICIPANT_DEF.participant_type,
+                experiment_name="Preassigned",
+                description="Hypothesis",
+                start_date=datetime.datetime.now() - datetime.timedelta(days=7),
+                end_date=datetime.datetime.now() + datetime.timedelta(days=7),
+                arms=[
+                    Arm(arm_name="Control", arm_description="First arm"),
+                    Arm(arm_name="Treatment", arm_description="Second arm"),
+                ],
+                filters=[Filter(field_name="baseline_income", relation=Relation.BETWEEN, value=[100, None])],
+                strata=[],
+                metrics=[DesignSpecMetricRequest(field_name="current_income", metric_pct_change=0.10)],
+            )
         ),
     )
 
     await _create_and_commit_experiment(
         session,
         datasource,
-        OnlineFrequentistExperimentSpec(
-            participant_type=TESTING_DWH_PARTICIPANT_DEF.participant_type,
-            experiment_name="Online",
-            description="Hypothesis",
-            start_date=datetime.datetime.now() - datetime.timedelta(days=7),
-            end_date=datetime.datetime.now() + datetime.timedelta(days=7),
-            arms=[
-                Arm(arm_name="Control", arm_description="First arm"),
-                Arm(arm_name="Treatment", arm_description="Second arm"),
-            ],
-            filters=[],
-            strata=[],
-            metrics=[DesignSpecMetricRequest(field_name="current_income", metric_pct_change=0.10)],
+        CreateExperimentRequest(
+            table_name=TESTING_DWH_PARTICIPANT_DEF.table_name,
+            primary_key="id",
+            design_spec=PreassignedFrequentistExperimentSpec(
+                participant_type="",
+                experiment_name="Preassigned 2.0",
+                description="Hypothesis",
+                start_date=datetime.datetime.now() - datetime.timedelta(days=7),
+                end_date=datetime.datetime.now() + datetime.timedelta(days=7),
+                arms=[
+                    Arm(arm_name="Control", arm_description="First arm"),
+                    Arm(arm_name="Treatment", arm_description="Second arm"),
+                ],
+                filters=[Filter(field_name="baseline_income", relation=Relation.BETWEEN, value=[100, None])],
+                strata=[],
+                metrics=[DesignSpecMetricRequest(field_name="current_income", metric_pct_change=0.10)],
+            ),
         ),
     )
 
     await _create_and_commit_experiment(
         session,
         datasource,
-        MABExperimentSpec(
-            participant_type="user",
-            experiment_name="MAB",
-            description="Hypothesis",
-            start_date=datetime.datetime.now() - datetime.timedelta(days=7),
-            end_date=datetime.datetime.now() + datetime.timedelta(days=7),
-            prior_type=PriorTypes.BETA,
-            reward_type=LikelihoodTypes.BERNOULLI,
-            arms=[
-                ArmBandit(arm_name="Control", arm_description="First arm", alpha_init=1.0, beta_init=1.0),
-                ArmBandit(arm_name="Treatment", arm_description="Second arm", alpha_init=2.0, beta_init=2.0),
-            ],
+        CreateExperimentRequest(
+            design_spec=OnlineFrequentistExperimentSpec(
+                participant_type=TESTING_DWH_PARTICIPANT_DEF.participant_type,
+                experiment_name="Online",
+                description="Hypothesis",
+                start_date=datetime.datetime.now() - datetime.timedelta(days=7),
+                end_date=datetime.datetime.now() + datetime.timedelta(days=7),
+                arms=[
+                    Arm(arm_name="Control", arm_description="First arm"),
+                    Arm(arm_name="Treatment", arm_description="Second arm"),
+                ],
+                filters=[],
+                strata=[],
+                metrics=[DesignSpecMetricRequest(field_name="current_income", metric_pct_change=0.10)],
+            )
+        ),
+    )
+
+    # Create an online frequentist experiment with table name and primary key instead of a participant type
+    await _create_and_commit_experiment(
+        session,
+        datasource,
+        CreateExperimentRequest(
+            table_name=TESTING_DWH_PARTICIPANT_DEF.table_name,
+            primary_key="id",
+            design_spec=OnlineFrequentistExperimentSpec(
+                participant_type="",
+                experiment_name="Online 2.0",
+                description="Hypothesis",
+                start_date=datetime.datetime.now() - datetime.timedelta(days=7),
+                end_date=datetime.datetime.now() + datetime.timedelta(days=7),
+                arms=[
+                    Arm(arm_name="Control", arm_description="First arm"),
+                    Arm(arm_name="Treatment", arm_description="Second arm"),
+                ],
+                filters=[],
+                strata=[],
+                metrics=[DesignSpecMetricRequest(field_name="current_income", metric_pct_change=0.10)],
+            ),
         ),
     )
 
     await _create_and_commit_experiment(
         session,
         datasource,
-        CMABExperimentSpec(
-            participant_type="user",
-            experiment_name="CMAB",
-            description="Hypothesis",
-            start_date=datetime.datetime.now() - datetime.timedelta(days=7),
-            end_date=datetime.datetime.now() + datetime.timedelta(days=7),
-            prior_type=PriorTypes.NORMAL,
-            reward_type=LikelihoodTypes.NORMAL,
-            arms=[
-                ArmBandit(arm_name="Control", arm_description="First arm", mu_init=0.0, sigma_init=1.0),
-                ArmBandit(arm_name="Treatment", arm_description="Second arm", mu_init=1.0, sigma_init=2.0),
-            ],
-            contexts=[
-                Context(
-                    context_name="age", context_description="Age of participant", value_type=ContextType.REAL_VALUED
-                ),
-                Context(
-                    context_name="gender",
-                    context_description="Gender of participant",
-                    value_type=ContextType.BINARY,
-                ),
-            ],
+        CreateExperimentRequest(
+            design_spec=MABExperimentSpec(
+                participant_type="user",
+                experiment_name="MAB",
+                description="Hypothesis",
+                start_date=datetime.datetime.now() - datetime.timedelta(days=7),
+                end_date=datetime.datetime.now() + datetime.timedelta(days=7),
+                prior_type=PriorTypes.BETA,
+                reward_type=LikelihoodTypes.BERNOULLI,
+                arms=[
+                    ArmBandit(arm_name="Control", arm_description="First arm", alpha_init=1.0, beta_init=1.0),
+                    ArmBandit(arm_name="Treatment", arm_description="Second arm", alpha_init=2.0, beta_init=2.0),
+                ],
+            )
+        ),
+    )
+
+    await _create_and_commit_experiment(
+        session,
+        datasource,
+        CreateExperimentRequest(
+            design_spec=CMABExperimentSpec(
+                participant_type="user",
+                experiment_name="CMAB",
+                description="Hypothesis",
+                start_date=datetime.datetime.now() - datetime.timedelta(days=7),
+                end_date=datetime.datetime.now() + datetime.timedelta(days=7),
+                prior_type=PriorTypes.NORMAL,
+                reward_type=LikelihoodTypes.NORMAL,
+                arms=[
+                    ArmBandit(arm_name="Control", arm_description="First arm", mu_init=0.0, sigma_init=1.0),
+                    ArmBandit(arm_name="Treatment", arm_description="Second arm", mu_init=1.0, sigma_init=2.0),
+                ],
+                contexts=[
+                    Context(
+                        context_name="age", context_description="Age of participant", value_type=ContextType.REAL_VALUED
+                    ),
+                    Context(
+                        context_name="gender",
+                        context_description="Gender of participant",
+                        value_type=ContextType.BINARY,
+                    ),
+                ],
+            )
         ),
     )
 
     await _create_and_commit_experiment(
         session,
         alt_datasource,
-        PreassignedFrequentistExperimentSpec(
-            participant_type=WIDE_DWH_PARTICIPANT_DEF.participant_type,
-            experiment_name="Wide Preassigned",
-            description="Hypothesis",
-            start_date=datetime.datetime.now() - datetime.timedelta(days=7),
-            end_date=datetime.datetime.now() + datetime.timedelta(days=7),
-            arms=[
-                Arm(arm_name="Control", arm_description="First arm"),
-                Arm(arm_name="Treatment", arm_description="Second arm"),
-            ],
-            filters=[Filter(field_name="household_income", relation=Relation.BETWEEN, value=[100, None])],
-            strata=[],
-            metrics=[DesignSpecMetricRequest(field_name="savings_balance", metric_pct_change=0.10)],
+        CreateExperimentRequest(
+            design_spec=PreassignedFrequentistExperimentSpec(
+                participant_type=WIDE_DWH_PARTICIPANT_DEF.participant_type,
+                experiment_name="Wide Preassigned",
+                description="Hypothesis",
+                start_date=datetime.datetime.now() - datetime.timedelta(days=7),
+                end_date=datetime.datetime.now() + datetime.timedelta(days=7),
+                arms=[
+                    Arm(arm_name="Control", arm_description="First arm"),
+                    Arm(arm_name="Treatment", arm_description="Second arm"),
+                ],
+                filters=[Filter(field_name="household_income", relation=Relation.BETWEEN, value=[100, None])],
+                strata=[],
+                metrics=[DesignSpecMetricRequest(field_name="savings_balance", metric_pct_change=0.10)],
+            )
         ),
     )
 

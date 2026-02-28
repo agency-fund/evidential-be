@@ -24,7 +24,7 @@ from fastapi import (
 )
 from fastapi.responses import StreamingResponse
 from loguru import logger
-from pydantic import BaseModel, TypeAdapter
+from pydantic import BaseModel
 from sqlalchemy import delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import QueryableAttribute, selectinload
@@ -38,7 +38,7 @@ from xngin.apiserver.dwh.dwh_session import (
     DwhSession,
     NoDwh,
 )
-from xngin.apiserver.dwh.inspection_types import FieldDescriptor, ParticipantsSchema
+from xngin.apiserver.dwh.inspection_types import ParticipantsSchema
 from xngin.apiserver.dwh.inspections import (
     build_proposed_and_drift,
     create_inspect_table_response_from_table,
@@ -121,7 +121,6 @@ from xngin.apiserver.routers.common_api_types import (
     ContextType,
     CreateExperimentRequest,
     CreateExperimentResponse,
-    DesignSpec,
     ExperimentAnalysisResponse,
     ExperimentsType,
     GetExperimentAssignmentsResponse,
@@ -132,7 +131,7 @@ from xngin.apiserver.routers.common_api_types import (
     PowerRequest,
     PowerResponse,
 )
-from xngin.apiserver.routers.common_enums import DataType, ExperimentState
+from xngin.apiserver.routers.common_enums import ExperimentState
 from xngin.apiserver.routers.experiments import experiments_common
 from xngin.apiserver.settings import (
     ParticipantsDef,
@@ -1433,53 +1432,16 @@ async def create_experiment(
     if body.design_spec.ids_are_present():
         raise LateValidationError("Invalid DesignSpec: UUIDs must not be set.")
 
+    if (body.table_name is not None or body.primary_key is not None) and not isinstance(
+        body.design_spec, BaseFrequentistDesignSpec
+    ):
+        raise LateValidationError("table_name/primary_key is only supported for frequentist experiment types")
+
     # Validate webhook IDs exist and belong to organization
     organization_id = datasource.organization_id
     validated_webhooks = await validate_webhooks(
         session=session, organization_id=organization_id, request_webhooks=body.webhooks
     )
-
-    # Allow creation of experiments w/o a pre-existing participant type by creating a participant type on demand.
-    if body.table_name is not None and body.primary_key is not None:
-        if not isinstance(body.design_spec, BaseFrequentistDesignSpec):
-            raise LateValidationError("table_name/primary_key is only supported for frequentist experiment types")
-
-        # Synthesize participant definition
-        participants_def = synthesize_participants_def(
-            table_name=body.table_name,
-            primary_key=body.primary_key,
-            design_spec=body.design_spec,
-        )
-
-        # Generate unique name: __<table_name>_<8 hex chars>
-        generated_participant_type = f"__{body.table_name}_{secrets.token_hex(4)}"
-
-        # Create ParticipantsDef with generated name and hidden=True
-        new_participants_def = ParticipantsDef(
-            type="schema",
-            participant_type=generated_participant_type,
-            table_name=participants_def.table_name,
-            fields=participants_def.fields,
-            hidden=True,
-        )
-
-        # Persist to datasource config
-        config = datasource.get_config()
-        config.participants.append(new_participants_def)
-        datasource.set_config(config)
-
-        # Update design_spec with generated participant type
-        design_spec_dict = body.design_spec.model_dump()
-        design_spec_dict["participant_type"] = generated_participant_type
-        updated_design_spec: DesignSpec = TypeAdapter(DesignSpec).validate_python(design_spec_dict)
-
-        body = CreateExperimentRequest(
-            design_spec=updated_design_spec,
-            power_analyses=body.power_analyses,
-            webhooks=body.webhooks,
-            table_name=body.table_name,
-            primary_key=body.primary_key,
-        )
 
     response = await experiments_common.create_experiment_impl(
         request=body,
@@ -1885,19 +1847,19 @@ async def power_check(
             detail="Power checks are not supported for datasources without a data warehouse.",
         )
     dsconfig = ds.get_config()
+
     if body.table_name is not None and body.primary_key is not None:
-        participants_cfg = synthesize_participants_def(
-            table_name=body.table_name,
-            primary_key=body.primary_key,
-            design_spec=design_spec,
-        )
+        # If the power check request includes a table name and primary key, we trust the table name.
+        table_name = body.table_name
     else:
+        # If the power check request refers to a participant type, we look up the participant type and validate it
+        # against the design spec.
         participants_cfg = dsconfig.find_participants(design_spec.participant_type)
+        validate_schema_metrics_or_raise(design_spec, participants_cfg)
+        table_name = participants_cfg.table_name
 
-    validate_schema_metrics_or_raise(design_spec, participants_cfg)
     async with DwhSession(dsconfig.dwh) as dwh:
-        sa_table = await dwh.inspect_table(participants_cfg.table_name)
-
+        sa_table = await dwh.inspect_table(table_name)
         metric_stats = await asyncio.to_thread(
             get_stats_on_metrics,
             dwh.session,
@@ -1927,49 +1889,6 @@ def validate_schema_metrics_or_raise(design_spec: BaseFrequentistDesignSpec, sch
         raise LateValidationError(
             f"Invalid DesignSpec metrics (check your Datasource configuration): {invalid_metrics}"
         )
-
-
-def synthesize_participants_def(
-    table_name: str,
-    primary_key: str,
-    design_spec: BaseFrequentistDesignSpec,
-) -> ParticipantsDef:
-    """Synthesize a ParticipantsDef from table_name, primary_key, and design_spec fields."""
-    field_roles: dict[str, dict[str, bool]] = {}
-
-    # Primary key
-    field_roles.setdefault(primary_key, {})["is_unique_id"] = True
-
-    # Metrics
-    for metric in design_spec.metrics:
-        field_roles.setdefault(metric.field_name, {})["is_metric"] = True
-
-    # Strata
-    for stratum in design_spec.strata:
-        field_roles.setdefault(stratum.field_name, {})["is_strata"] = True
-
-    # Filters
-    for filter_ in design_spec.filters:
-        field_roles.setdefault(filter_.field_name, {})["is_filter"] = True
-
-    fields = [
-        FieldDescriptor(
-            field_name=field_name,
-            data_type=DataType.DOUBLE_PRECISION,
-            is_unique_id=roles.get("is_unique_id", False),
-            is_metric=roles.get("is_metric", False),
-            is_strata=roles.get("is_strata", False),
-            is_filter=roles.get("is_filter", False),
-        )
-        for field_name, roles in field_roles.items()
-    ]
-
-    return ParticipantsDef(
-        type="schema",
-        participant_type=f"_{table_name}",
-        table_name=table_name,
-        fields=fields,
-    )
 
 
 def raise_unless_safe_hostname(dsn):

@@ -37,6 +37,7 @@ from xngin.apiserver.routers.admin.admin_api_types import (
     FieldMetadata,
     GcpServiceAccount,
     GetDatasourceResponse,
+    GetExperimentForUiResponse,
     GetOrganizationResponse,
     GetParticipantsTypeResponse,
     GetSnapshotResponse,
@@ -81,7 +82,6 @@ from xngin.apiserver.routers.common_api_types import (
     Filter,
     FreqExperimentAnalysisResponse,
     GetExperimentAssignmentsResponse,
-    GetExperimentResponse,
     GetParticipantAssignmentResponse,
     LikelihoodTypes,
     ListExperimentsResponse,
@@ -143,7 +143,7 @@ async def make_freq_online_experiment(
     ppost,
     pget,
     end_date: datetime | None = None,
-) -> GetExperimentResponse:
+) -> GetExperimentForUiResponse:
     """Create a frequentist online experiment using our API (rather than a fixture)."""
     end_date = end_date or datetime.now(UTC) + timedelta(days=1)
     response = ppost(
@@ -173,7 +173,7 @@ async def make_freq_online_experiment(
 
     response = pget(f"/v1/m/datasources/{datasource_id}/experiments/{experiment_id}")
     assert response.status_code == 200
-    return GetExperimentResponse.model_validate(response.json())
+    return GetExperimentForUiResponse.model_validate(response.json())
 
 
 @pytest.fixture(name="testing_experiment")
@@ -1500,7 +1500,7 @@ async def test_lifecycle_with_db(testing_datasource, ppost, ppatch, pget, pdelet
     # Verify it committed.
     response = pget(f"/v1/m/datasources/{testing_datasource.ds.id}/experiments/{parsed_experiment_id}")
     assert response.status_code == 200, response.content
-    assert GetExperimentResponse.model_validate(response.json()).state == ExperimentState.COMMITTED
+    assert GetExperimentForUiResponse.model_validate(response.json()).config.state == ExperimentState.COMMITTED
 
     # Attempting to abandon a committed experiment should fail
     response = ppost(f"/v1/m/datasources/{testing_datasource.ds.id}/experiments/{parsed_experiment_id}/abandon")
@@ -1509,7 +1509,7 @@ async def test_lifecycle_with_db(testing_datasource, ppost, ppatch, pget, pdelet
     # Verify it is still committed.
     response = pget(f"/v1/m/datasources/{testing_datasource.ds.id}/experiments/{parsed_experiment_id}")
     assert response.status_code == 200, response.content
-    assert GetExperimentResponse.model_validate(response.json()).state == ExperimentState.COMMITTED
+    assert GetExperimentForUiResponse.model_validate(response.json()).config.state == ExperimentState.COMMITTED
 
     # Update the experiment.
     response = ppatch(
@@ -1529,10 +1529,10 @@ async def test_lifecycle_with_db(testing_datasource, ppost, ppatch, pget, pdelet
     # Get that experiment.
     response = pget(f"/v1/m/datasources/{testing_datasource.ds.id}/experiments/{parsed_experiment_id}")
     assert response.status_code == 200, response.content
-    create_experiment_response = CreateExperimentResponse.model_validate(response.json())
-    assert create_experiment_response.experiment_id == parsed_experiment_id
-    assert create_experiment_response.design_spec.experiment_name == "updated"
-    arm = next((arm for arm in create_experiment_response.design_spec.arms if arm.arm_id == updated_arm_id), None)
+    get_experiment_response = GetExperimentForUiResponse.model_validate(response.json())
+    assert get_experiment_response.config.experiment_id == parsed_experiment_id
+    assert get_experiment_response.config.design_spec.experiment_name == "updated"
+    arm = next((arm for arm in get_experiment_response.config.design_spec.arms if arm.arm_id == updated_arm_id), None)
     assert arm is not None
     assert arm.arm_name == "updated arm"
 
@@ -1609,7 +1609,7 @@ async def test_abandon_experiment(testing_datasource_with_user, ppost, pget):
 
     response = pget(f"/v1/m/datasources/{datasource_id}/experiments/{parsed_experiment_id}")
     assert response.status_code == 200, response.content
-    assert GetExperimentResponse.model_validate(response.json()).state == ExperimentState.ABANDONED
+    assert GetExperimentForUiResponse.model_validate(response.json()).config.state == ExperimentState.ABANDONED
 
 
 async def test_power_check_with_unbalanced_arms(testing_datasource_with_user, ppost):
@@ -2043,20 +2043,20 @@ async def test_update_experiment(testing_experiment, ppatch, pget):
     assert response.status_code == 204, response.text
 
     updated_response = pget(f"/v1/m/datasources/{datasource_id}/experiments/{experiment_id}")
-    experiment = GetExperimentResponse.model_validate(updated_response.json())
-    design_spec = experiment.design_spec
+    experiment = GetExperimentForUiResponse.model_validate(updated_response.json())
+    design_spec = experiment.config.design_spec
     assert design_spec.experiment_name == "updated name"
     assert design_spec.description == "updated desc"
     assert design_spec.design_url == HttpUrl("https://example.com/updated")
     assert design_spec.start_date == now
     assert design_spec.end_date == now + timedelta(days=1)
-    assert experiment.impact == "high"
-    assert experiment.decision == "new decision"
+    assert experiment.config.impact == "high"
+    assert experiment.config.decision == "new decision"
 
     list_experiments_response = pget(f"/v1/m/organizations/{organization_id}/experiments")
     assert list_experiments_response.status_code == 200, list_experiments_response.content
     listing = ListExperimentsResponse.model_validate(list_experiments_response.json())
-    listed = next(i for i in listing.items if i.experiment_id == experiment.experiment_id)
+    listed = next(i for i in listing.items if i.experiment_id == experiment.config.experiment_id)
     assert listed.impact == "high"
     assert listed.decision == "new decision"
 
@@ -2087,9 +2087,9 @@ async def test_update_experiment_url_valid(testing_experiment, ppatch, pget, url
     assert response.status_code == 204, response.content
     response = pget(experiment_url)
     assert response.status_code == 200, response.content
-    parsed_response = GetExperimentResponse.model_validate(response.json())
-    assert parsed_response.design_spec.design_url is not None
-    assert parsed_response.design_spec.design_url.encoded_string() == expected_url
+    parsed_response = GetExperimentForUiResponse.model_validate(response.json())
+    assert parsed_response.config.design_spec.design_url is not None
+    assert parsed_response.config.design_spec.design_url.encoded_string() == expected_url
 
 
 async def test_update_experiment_url_null_when_empty(testing_experiment, ppatch, pget):
@@ -2101,16 +2101,16 @@ async def test_update_experiment_url_null_when_empty(testing_experiment, ppatch,
     assert response.status_code == 204, response.content
     response = pget(experiment_url)
     assert response.status_code == 200, response.content
-    parsed_response = GetExperimentResponse.model_validate(response.json())
-    assert parsed_response.design_spec.design_url is not None
-    assert parsed_response.design_spec.design_url.encoded_string() == "https://example.com/"
+    parsed_response = GetExperimentForUiResponse.model_validate(response.json())
+    assert parsed_response.config.design_spec.design_url is not None
+    assert parsed_response.config.design_spec.design_url.encoded_string() == "https://example.com/"
 
     response = ppatch(experiment_url, json={"design_url": ""})
     assert response.status_code == 204, response.content
     response = pget(experiment_url)
     assert response.status_code == 200, response.content
-    parsed_response = GetExperimentResponse.model_validate(response.json())
-    assert parsed_response.design_spec.design_url is None, parsed_response
+    parsed_response = GetExperimentForUiResponse.model_validate(response.json())
+    assert parsed_response.config.design_spec.design_url is None, parsed_response
 
 
 async def test_update_experiment_invalid(xngin_session, testing_experiment, ppatch):
@@ -2159,7 +2159,7 @@ async def test_update_arm(testing_experiment, ppatch, pget):
     assert response.status_code == 204, response.text
 
     updated_response = pget(f"/v1/m/datasources/{datasource_id}/experiments/{experiment_id}")
-    design_spec = GetExperimentResponse.model_validate(updated_response.json()).design_spec
+    design_spec = GetExperimentForUiResponse.model_validate(updated_response.json()).config.design_spec
     arm = next((arm for arm in design_spec.arms if arm.arm_id == arm_id), None)
     assert arm is not None
     assert arm.arm_name == "updated name"
@@ -2218,8 +2218,8 @@ async def test_get_experiment_assignment_for_online_participant(
 ):
     datasource_id = testing_datasource_with_user.ds.id
     experiment_resp = await make_freq_online_experiment(datasource_id, ppost, pget)
-    experiment_id = experiment_resp.experiment_id
-    experiment_arms = experiment_resp.design_spec.arms
+    experiment_id = experiment_resp.config.experiment_id
+    experiment_arms = experiment_resp.config.design_spec.arms
 
     # Check for an assignment that doesn't exist, but don't create it.
     response = pget(
@@ -2303,7 +2303,9 @@ async def test_get_experiment_assignment_for_online_participant_past_end_date(
 ):
     datasource_id = testing_datasource_with_user.ds.id
     end_date = datetime.now(UTC) - timedelta(days=1)
-    experiment_id = (await make_freq_online_experiment(datasource_id, ppost, pget, end_date=end_date)).experiment_id
+    experiment_id = (
+        await make_freq_online_experiment(datasource_id, ppost, pget, end_date=end_date)
+    ).config.experiment_id
 
     # Verify no new assignment is created for the ended experiment.
     response = pget(f"/v1/m/datasources/{datasource_id}/experiments/{experiment_id}/assignments/new_id")
@@ -2315,9 +2317,9 @@ async def test_get_experiment_assignment_for_online_participant_past_end_date(
 
     # Verify that the experiment state was updated.
     response = pget(f"/v1/m/datasources/{datasource_id}/experiments/{experiment_id}")
-    experiment_resp = GetExperimentResponse.model_validate(response.json())
-    assert experiment_resp.stopped_assignments_at is not None
-    assert experiment_resp.stopped_assignments_reason == StopAssignmentReason.END_DATE
+    experiment_resp = GetExperimentForUiResponse.model_validate(response.json())
+    assert experiment_resp.config.stopped_assignments_at is not None
+    assert experiment_resp.config.stopped_assignments_reason == StopAssignmentReason.END_DATE
 
 
 def test_freq_experiments_analyze(testing_experiment, pget):
@@ -2420,7 +2422,7 @@ def test_cmab_experiments_analyze(testing_bandit_experiment, ppost):
 
 async def test_analyze_experiment_with_no_participants(testing_datasource_with_user, ppost, pget):
     datasource_id = testing_datasource_with_user.ds.id
-    experiment_id = (await make_freq_online_experiment(datasource_id, ppost, pget)).experiment_id
+    experiment_id = (await make_freq_online_experiment(datasource_id, ppost, pget)).config.experiment_id
 
     response = pget(f"/v1/m/datasources/{datasource_id}/experiments/{experiment_id}/analyze")
     assert response.status_code == 422, response.content
@@ -2429,7 +2431,7 @@ async def test_analyze_experiment_with_no_participants(testing_datasource_with_u
 
 async def test_analyze_experiment_whose_assignments_have_no_dwh_data(testing_datasource_with_user, ppost, pget):
     datasource_id = testing_datasource_with_user.ds.id
-    experiment_id = (await make_freq_online_experiment(datasource_id, ppost, pget)).experiment_id
+    experiment_id = (await make_freq_online_experiment(datasource_id, ppost, pget)).config.experiment_id
 
     # Create a new participant assignment for an id missing in the dwh.
     response = pget(f"/v1/m/datasources/{datasource_id}/experiments/{experiment_id}/assignments/0")
@@ -2444,7 +2446,7 @@ async def test_analyze_experiment_with_no_assignments_in_one_arm_yet(
     xngin_session, testing_datasource_with_user, ppost, pget
 ):
     datasource_id = testing_datasource_with_user.ds.id
-    experiment_id = (await make_freq_online_experiment(datasource_id, ppost, pget)).experiment_id
+    experiment_id = (await make_freq_online_experiment(datasource_id, ppost, pget)).config.experiment_id
 
     # Setup: create artificial assignments directly in db to deterministically allocate them all to
     # one arm. Multiple are used for stable analysis calcs.
@@ -2670,7 +2672,6 @@ async def test_experiment_webhook_integration(testing_datasource_with_user, ppos
         ).model_dump(),
     )
     assert webhook2_response.status_code == 200, webhook2_response.content
-    webhook2_id = webhook2_response.json()["id"]
 
     # Create an experiment with only the first webhook using proper Pydantic models
     experiment_request = CreateExperimentRequest(
@@ -2710,14 +2711,9 @@ async def test_experiment_webhook_integration(testing_datasource_with_user, ppos
     # Get the experiment and verify webhook is included
     get_response = pget(f"/v1/m/datasources/{datasource_id}/experiments/{experiment_id}")
     assert get_response.status_code == 200, get_response.content
-
-    retrieved_experiment = get_response.json()
-    assert "webhooks" in retrieved_experiment
-    assert len(retrieved_experiment["webhooks"]) == 1
-    assert retrieved_experiment["webhooks"][0] == webhook1_id
-
-    # Verify the second webhook is not included
-    assert webhook2_id not in retrieved_experiment["webhooks"]
+    experiment = GetExperimentForUiResponse.model_validate(get_response.json())
+    assert len(experiment.config.webhooks) == 1
+    assert experiment.config.webhooks[0] == webhook1_id
 
     # Test creating an experiment with no webhooks using proper Pydantic models
     experiment_request_no_webhooks = CreateExperimentRequest(
