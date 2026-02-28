@@ -21,6 +21,7 @@ from xngin.apiserver.routers.common_api_types import (
     ConstrainedUrl,
     DataType,
     ExperimentAnalysisResponse,
+    ExperimentConfig,
     GcpServiceAccountBlob,
     GetFiltersResponseElement,
     GetMetricsResponseElement,
@@ -150,7 +151,13 @@ class AddMemberToOrganizationRequest(AdminApiBaseModel):
 
 
 class ListDatasourcesResponse(AdminApiBaseModel):
-    items: list[DatasourceSummary]
+    items: Annotated[
+        list[DatasourceSummary],
+        Field(
+            description="Descriptions of the datasources in this organization, ordered in descending order of "
+            "frequency of use."
+        ),
+    ]
 
 
 class AddWebhookToOrganizationRequest(AdminApiBaseModel):
@@ -401,6 +408,7 @@ class FieldMetadata(ApiBaseModel):
 class InspectDatasourceTableResponse(ApiBaseModel):
     """Describes a table in the datasource."""
 
+    primary_key_fields: Annotated[list[str], Field(description="Fields that are primary keys.")]
     detected_unique_id_fields: Annotated[
         list[str],
         Field(description="Fields that are possibly candidates for unique IDs."),
@@ -417,7 +425,8 @@ class InspectParticipantTypesResponse(ApiBaseModel):
 
 
 class ListParticipantsTypeResponse(ApiBaseModel):
-    items: list[ParticipantsDef]
+    items: Annotated[list[ParticipantsDef], Field(description="List of participant type definitions.")]
+    has_hidden: Annotated[bool, Field(description="True when the datasource has hidden participant types.")]
 
 
 class CreateParticipantsTypeRequest(ApiBaseModel):
@@ -511,6 +520,15 @@ class CreateApiKeyResponse(AdminApiBaseModel):
 class CreateUserRequest(AdminApiBaseModel):
     email: Annotated[str, Field(max_length=MAX_LENGTH_OF_EMAIL_VALUE)]
     organization_id: Annotated[str, Field(max_length=MAX_LENGTH_OF_ID_VALUE)]
+
+
+class GetExperimentForUiResponse(AdminApiBaseModel):
+    """Experiment configuration and participant type information."""
+
+    config: Annotated[ExperimentConfig, Field()]
+    participant_type: Annotated[
+        ParticipantsDef | None, Field(description="If available, the Participant Type information for this experiment.")
+    ]
 
 
 class UpdateExperimentRequest(AdminApiBaseModel):

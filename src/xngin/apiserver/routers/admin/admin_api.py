@@ -25,7 +25,7 @@ from fastapi import (
 from fastapi.responses import StreamingResponse
 from loguru import logger
 from pydantic import BaseModel
-from sqlalchemy import delete, select
+from sqlalchemy import delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import QueryableAttribute, selectinload
 
@@ -80,6 +80,7 @@ from xngin.apiserver.routers.admin.admin_api_types import (
     Drift,
     EventSummary,
     GetDatasourceResponse,
+    GetExperimentForUiResponse,
     GetOrganizationResponse,
     GetParticipantsTypeResponse,
     GetSnapshotResponse,
@@ -123,7 +124,6 @@ from xngin.apiserver.routers.common_api_types import (
     ExperimentAnalysisResponse,
     ExperimentsType,
     GetExperimentAssignmentsResponse,
-    GetExperimentResponse,
     GetMetricsResponseElement,
     GetParticipantAssignmentResponse,
     GetStrataResponseElement,
@@ -877,11 +877,21 @@ async def list_organization_datasources(
 ) -> ListDatasourcesResponse:
     """Returns a list of datasources accessible to the authenticated user for an org."""
     _authz_check = await get_organization_or_raise(session, user, organization_id)
+    experiment_count = (
+        select(tables.Experiment.datasource_id, func.count().label("experiment_count"))
+        .group_by(tables.Experiment.datasource_id)
+        .subquery()
+    )
     stmt = (
         select(tables.Datasource)
         .join(tables.Organization)
         .join(tables.Organization.users)
+        .outerjoin(experiment_count, tables.Datasource.id == experiment_count.c.datasource_id)
         .where(tables.User.id == user.id)
+        .order_by(
+            func.coalesce(experiment_count.c.experiment_count, 0).desc(),
+            tables.Datasource.name.asc(),
+        )
     )
     if organization_id is not None:
         stmt = stmt.where(tables.Organization.id == organization_id)
@@ -899,9 +909,7 @@ async def list_organization_datasources(
             organization_name=ds.organization.name,
         )
 
-    return ListDatasourcesResponse(
-        items=[convert_ds_to_summary(ds) for ds in sorted(datasources, key=lambda d: d.name)]
-    )
+    return ListDatasourcesResponse(items=[convert_ds_to_summary(ds) for ds in datasources])
 
 
 @router.post("/datasources")
@@ -909,6 +917,10 @@ async def create_datasource(
     session: Annotated[AsyncSession, Depends(xngin_db_session)],
     user: Annotated[tables.User, Depends(require_user_from_token)],
     body: Annotated[CreateDatasourceRequest, Body(...)],
+    connectivity_check: Annotated[
+        bool,
+        Query(description="When true, validate datasource connectivity before creation."),
+    ] = False,
 ) -> CreateDatasourceResponse:
     """Creates a new datasource for the specified organization."""
     org = await get_organization_or_raise(session, user, body.organization_id)
@@ -916,6 +928,9 @@ async def create_datasource(
     raise_unless_safe_hostname(body.dsn)
 
     config = RemoteDatabaseConfig(participants=[], type="remote", dwh=api_dsn_to_settings_dwh(body.dsn))
+    if connectivity_check and config.dwh.driver != "none":
+        async with DwhSession(config.dwh) as dwh:
+            await dwh.connectivity_check()
 
     datasource = await admin_common.create_datasource_impl(session, org, body.name, config)
     await session.commit()
@@ -1023,6 +1038,12 @@ async def inspect_table_in_datasource(
 
     config = ds.get_config()
 
+    if config.dwh.driver == "none":
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Only remote datasources may be inspected.",
+        )
+
     await invalidate_inspect_table_cache(session, datasource_id)
     await session.commit()
 
@@ -1080,8 +1101,15 @@ async def list_participant_types(
     user: Annotated[tables.User, Depends(require_user_from_token)],
 ) -> ListParticipantsTypeResponse:
     ds = await get_datasource_or_raise(session, user, datasource_id)
+    participants = ds.get_config().participants
     return ListParticipantsTypeResponse(
-        items=list(sorted(ds.get_config().participants, key=lambda p: p.participant_type))
+        items=list(
+            sorted(
+                [p for p in participants if not p.hidden],
+                key=lambda p: p.participant_type,
+            )
+        ),
+        has_hidden=any(p for p in participants if p.hidden),
     )
 
 
@@ -1411,6 +1439,11 @@ async def create_experiment(
     if body.design_spec.ids_are_present():
         raise LateValidationError("Invalid DesignSpec: UUIDs must not be set.")
 
+    if (body.table_name is not None or body.primary_key is not None) and not isinstance(
+        body.design_spec, BaseFrequentistDesignSpec
+    ):
+        raise LateValidationError("table_name/primary_key is only supported for frequentist experiment types")
+
     # Validate webhook IDs exist and belong to organization
     organization_id = datasource.organization_id
     validated_webhooks = await validate_webhooks(
@@ -1579,7 +1612,7 @@ async def get_experiment_for_ui(
     experiment_id: str,
     session: Annotated[AsyncSession, Depends(xngin_db_session)],
     user: Annotated[tables.User, Depends(require_user_from_token)],
-) -> GetExperimentResponse:
+) -> GetExperimentForUiResponse:
     """Returns the experiment with the specified ID."""
     ds = await get_datasource_or_raise(session, user, datasource_id)
     experiment = await get_experiment_via_ds_or_raise(
@@ -1588,7 +1621,11 @@ async def get_experiment_for_ui(
         experiment_id,
         preload=[tables.Experiment.webhooks, tables.Experiment.contexts],
     )
-    return await experiments_common.get_experiment_impl(session, experiment)
+    participants = ds.get_config().find_participants_or_none(experiment.participant_type)
+    return GetExperimentForUiResponse(
+        config=await experiments_common.get_experiment_impl(session, experiment),
+        participant_type=participants,
+    )
 
 
 @router.get("/datasources/{datasource_id}/experiments/{experiment_id}/assignments")
@@ -1817,12 +1854,19 @@ async def power_check(
             detail="Power checks are not supported for datasources without a data warehouse.",
         )
     dsconfig = ds.get_config()
-    participants_cfg = dsconfig.find_participants(design_spec.participant_type)
 
-    validate_schema_metrics_or_raise(design_spec, participants_cfg)
+    if body.table_name is not None and body.primary_key is not None:
+        # If the power check request includes a table name and primary key, we trust the table name.
+        table_name = body.table_name
+    else:
+        # If the power check request refers to a participant type, we look up the participant type and validate it
+        # against the design spec.
+        participants_cfg = dsconfig.find_participants(design_spec.participant_type)
+        validate_schema_metrics_or_raise(design_spec, participants_cfg)
+        table_name = participants_cfg.table_name
+
     async with DwhSession(dsconfig.dwh) as dwh:
-        sa_table = await dwh.inspect_table(participants_cfg.table_name)
-
+        sa_table = await dwh.inspect_table(table_name)
         metric_stats = await asyncio.to_thread(
             get_stats_on_metrics,
             dwh.session,

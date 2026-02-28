@@ -37,6 +37,7 @@ from xngin.apiserver.routers.admin.admin_api_types import (
     FieldMetadata,
     GcpServiceAccount,
     GetDatasourceResponse,
+    GetExperimentForUiResponse,
     GetOrganizationResponse,
     GetParticipantsTypeResponse,
     GetSnapshotResponse,
@@ -81,7 +82,6 @@ from xngin.apiserver.routers.common_api_types import (
     Filter,
     FreqExperimentAnalysisResponse,
     GetExperimentAssignmentsResponse,
-    GetExperimentResponse,
     GetParticipantAssignmentResponse,
     LikelihoodTypes,
     ListExperimentsResponse,
@@ -107,6 +107,7 @@ from xngin.apiserver.routers.experiments.test_experiments_common import (
     make_createexperimentrequest_json,
     make_insertable_experiment,
 )
+from xngin.apiserver.settings import NoDwh, ParticipantsDef, RemoteDatabaseConfig
 from xngin.apiserver.sqla import tables
 from xngin.apiserver.storage.storage_format_converters import ExperimentStorageConverter
 from xngin.apiserver.testing.assertions import assert_dates_equal
@@ -142,7 +143,7 @@ async def make_freq_online_experiment(
     ppost,
     pget,
     end_date: datetime | None = None,
-) -> GetExperimentResponse:
+) -> GetExperimentForUiResponse:
     """Create a frequentist online experiment using our API (rather than a fixture)."""
     end_date = end_date or datetime.now(UTC) + timedelta(days=1)
     response = ppost(
@@ -172,7 +173,7 @@ async def make_freq_online_experiment(
 
     response = pget(f"/v1/m/datasources/{datasource_id}/experiments/{experiment_id}")
     assert response.status_code == 200
-    return GetExperimentResponse.model_validate(response.json())
+    return GetExperimentForUiResponse.model_validate(response.json())
 
 
 @pytest.fixture(name="testing_experiment")
@@ -319,6 +320,11 @@ def test_create_and_get_organization(ppost, pget):
     response = pget(f"/v1/m/datasources/{nodwh_summary.id}/inspect")
     assert response.status_code == 200, response.content
     assert InspectDatasourceResponse.model_validate(response.json()).tables == []
+
+    # Inspecting a specific table for NoDwh should fail.
+    response = pget(f"/v1/m/datasources/{nodwh_summary.id}/inspect/notable")
+    assert response.status_code == 400, response.content
+    assert response.json() == {"detail": "Only remote datasources may be inspected."}
 
 
 @pytest.mark.skipif(
@@ -531,6 +537,94 @@ def test_create_datasource_invalid_dns(testing_datasource, ppost):
     )
     assert response.status_code == 400, response.content
     assert "DNS resolution failed" in str(response.content)
+
+
+def test_create_datasource_with_connectivity_check_connection_failure(disable_safe_resolve_check, ppost, pget):
+    response = ppost(
+        "/v1/m/organizations",
+        json=CreateOrganizationRequest(name="test_create_datasource_with_preflight").model_dump(),
+    )
+    assert response.status_code == 200, response.content
+    org_id = CreateOrganizationResponse.model_validate(response.json()).id
+
+    response = ppost(
+        "/v1/m/datasources?connectivity_check=1",
+        content=CreateDatasourceRequest(
+            name="test_create_datasource",
+            organization_id=org_id,
+            dsn=PostgresDsn(
+                host="127.0.0.1",
+                user="postgres",
+                port=5499,
+                password=RevealedStr(value="wrong-password"),
+                dbname="postgres",
+                sslmode="disable",
+                search_path=None,
+            ),
+        ).model_dump_json(),
+    )
+    assert response.status_code == 502, response.content
+    assert "password authentication failed" in response.json()["message"].lower()
+
+    response = pget(f"/v1/m/organizations/{org_id}/datasources")
+    assert response.status_code == 200, response.content
+    assert len(ListDatasourcesResponse.model_validate(response.json()).items) == 1
+
+
+def test_create_datasource_with_connectivity_check_disabled_by_default(disable_safe_resolve_check, ppost):
+    response = ppost(
+        "/v1/m/organizations",
+        json=CreateOrganizationRequest(name="test_create_datasource_connectivity_check_default").model_dump(),
+    )
+    assert response.status_code == 200, response.content
+    org_id = CreateOrganizationResponse.model_validate(response.json()).id
+
+    response = ppost(
+        "/v1/m/datasources",
+        content=CreateDatasourceRequest(
+            name="test_create_datasource",
+            organization_id=org_id,
+            dsn=PostgresDsn(
+                host="127.0.0.1",
+                user="postgres",
+                port=5499,
+                password=RevealedStr(value="wrong-password"),
+                dbname="postgres",
+                sslmode="disable",
+                search_path=None,
+            ),
+        ).model_dump_json(),
+    )
+    assert response.status_code == 200, response.content
+    CreateDatasourceResponse.model_validate(response.json())
+
+
+def test_create_datasource_with_connectivity_check_can_be_enabled(disable_safe_resolve_check, ppost):
+    response = ppost(
+        "/v1/m/organizations",
+        json=CreateOrganizationRequest(name="test_create_datasource_connectivity_check_enabled").model_dump(),
+    )
+    assert response.status_code == 200, response.content
+    org_id = CreateOrganizationResponse.model_validate(response.json()).id
+
+    response = ppost(
+        "/v1/m/datasources?connectivity_check=1",
+        content=CreateDatasourceRequest(
+            name="test_create_datasource",
+            organization_id=org_id,
+            dsn=PostgresDsn(
+                host="127.0.0.1",
+                user="postgres",
+                port=5499,
+                password=RevealedStr(value="wrong-password"),
+                dbname="postgres",
+                sslmode="disable",
+                search_path=None,
+            ),
+        ).model_dump_json(),
+    )
+    assert response.status_code == 502, response.content
+    assert "password authentication failed" in response.json()["message"].lower()
 
 
 def test_add_member_to_org(testing_datasource, ppost, pget):
@@ -767,6 +861,38 @@ def test_datasource_lifecycle(ppost, pget, ppatch):
     # Ensure driver changed, name didn't
     assert test_dwh.id == datasource_id
     assert test_dwh.driver == "bigquery"
+
+
+async def test_list_datasources_ordered_by_experiment_count(
+    xngin_session: AsyncSession, testing_datasource_with_user, pget
+):
+    """Datasources should be ordered by number of experiments (desc), then by name (asc)."""
+    org = testing_datasource_with_user.org
+    ds_a = testing_datasource_with_user.ds
+
+    # Create two additional datasources in the same org.
+    nodwh_config = RemoteDatabaseConfig(participants=[], type="remote", dwh=NoDwh())
+    ds_b = tables.Datasource(id=tables.datasource_id_factory(), name="AAA datasource", organization=org)
+    ds_b.set_config(nodwh_config)
+    ds_c = tables.Datasource(id=tables.datasource_id_factory(), name="ZZZ datasource", organization=org)
+    ds_c.set_config(nodwh_config)
+    xngin_session.add_all([ds_b, ds_c])
+    await xngin_session.commit()
+
+    # Add experiments: ds_b gets 3, ds_a gets 1, ds_c gets 0.
+    for ds, count in [(ds_b, 3), (ds_a, 1)]:
+        for _ in range(count):
+            await insert_experiment_and_arms(xngin_session, ds)
+
+    response = pget(f"/v1/m/organizations/{org.id}/datasources")
+    assert response.status_code == 200, response.content
+    items = ListDatasourcesResponse.model_validate(response.json()).items
+    assert len(items) == 3
+
+    # ds_b (3 experiments) first, ds_a (1 experiment) second, ds_c (0 experiments) last.
+    assert items[0].id == ds_b.id
+    assert items[1].id == ds_a.id
+    assert items[2].id == ds_c.id
 
 
 def test_datasource_errors(pget, ppost):
@@ -1251,6 +1377,7 @@ async def test_lifecycle_with_db(testing_datasource, ppost, ppatch, pget, pdelet
     table_inspection = InspectDatasourceTableResponse.model_validate(response.json())
     assert table_inspection == InspectDatasourceTableResponse(
         # Note: create_inspect_table_response_from_table() doesn't explicitly check for uniqueness.
+        primary_key_fields=["id"],
         detected_unique_id_fields=["id", "uuid_filter"],
         fields=[
             FieldMetadata(
@@ -1373,7 +1500,7 @@ async def test_lifecycle_with_db(testing_datasource, ppost, ppatch, pget, pdelet
     # Verify it committed.
     response = pget(f"/v1/m/datasources/{testing_datasource.ds.id}/experiments/{parsed_experiment_id}")
     assert response.status_code == 200, response.content
-    assert GetExperimentResponse.model_validate(response.json()).state == ExperimentState.COMMITTED
+    assert GetExperimentForUiResponse.model_validate(response.json()).config.state == ExperimentState.COMMITTED
 
     # Attempting to abandon a committed experiment should fail
     response = ppost(f"/v1/m/datasources/{testing_datasource.ds.id}/experiments/{parsed_experiment_id}/abandon")
@@ -1382,7 +1509,7 @@ async def test_lifecycle_with_db(testing_datasource, ppost, ppatch, pget, pdelet
     # Verify it is still committed.
     response = pget(f"/v1/m/datasources/{testing_datasource.ds.id}/experiments/{parsed_experiment_id}")
     assert response.status_code == 200, response.content
-    assert GetExperimentResponse.model_validate(response.json()).state == ExperimentState.COMMITTED
+    assert GetExperimentForUiResponse.model_validate(response.json()).config.state == ExperimentState.COMMITTED
 
     # Update the experiment.
     response = ppatch(
@@ -1402,10 +1529,10 @@ async def test_lifecycle_with_db(testing_datasource, ppost, ppatch, pget, pdelet
     # Get that experiment.
     response = pget(f"/v1/m/datasources/{testing_datasource.ds.id}/experiments/{parsed_experiment_id}")
     assert response.status_code == 200, response.content
-    create_experiment_response = CreateExperimentResponse.model_validate(response.json())
-    assert create_experiment_response.experiment_id == parsed_experiment_id
-    assert create_experiment_response.design_spec.experiment_name == "updated"
-    arm = next((arm for arm in create_experiment_response.design_spec.arms if arm.arm_id == updated_arm_id), None)
+    get_experiment_response = GetExperimentForUiResponse.model_validate(response.json())
+    assert get_experiment_response.config.experiment_id == parsed_experiment_id
+    assert get_experiment_response.config.design_spec.experiment_name == "updated"
+    arm = next((arm for arm in get_experiment_response.config.design_spec.arms if arm.arm_id == updated_arm_id), None)
     assert arm is not None
     assert arm.arm_name == "updated arm"
 
@@ -1482,7 +1609,7 @@ async def test_abandon_experiment(testing_datasource_with_user, ppost, pget):
 
     response = pget(f"/v1/m/datasources/{datasource_id}/experiments/{parsed_experiment_id}")
     assert response.status_code == 200, response.content
-    assert GetExperimentResponse.model_validate(response.json()).state == ExperimentState.ABANDONED
+    assert GetExperimentForUiResponse.model_validate(response.json()).config.state == ExperimentState.ABANDONED
 
 
 async def test_power_check_with_unbalanced_arms(testing_datasource_with_user, ppost):
@@ -1553,6 +1680,40 @@ async def test_power_check_with_unbalanced_arms(testing_datasource_with_user, pp
     # is now only 10% of the total instead of 20%, so we need more participants than before to
     # ensure that comparison with the smaller arm still has sufficient power.
     assert metric_analysis3.target_n == math.ceil(metric_analysis2.target_n * 0.2 / 0.10)
+
+
+async def test_power_check_with_synthesized_schema(testing_datasource_with_user, ppost):
+    """Test power check with synthesized participant schema via table_name and primary_key."""
+    design_spec = PreassignedFrequentistExperimentSpec(
+        experiment_type=ExperimentsType.FREQ_PREASSIGNED,
+        participant_type="ignored_when_synthesized",
+        experiment_name="test power check with synthesized schema",
+        description="test power check using table_name and primary_key",
+        start_date=datetime(2024, 1, 1, tzinfo=UTC),
+        end_date=datetime.now(UTC) + timedelta(days=1),
+        arms=[
+            Arm(arm_name="control", arm_description="Control group"),
+            Arm(arm_name="treatment", arm_description="Treatment group"),
+        ],
+        metrics=[DesignSpecMetricRequest(field_name="current_income", metric_pct_change=0.1)],
+        strata=[],
+        filters=[],
+    )
+
+    response = ppost(
+        f"/v1/m/datasources/{testing_datasource_with_user.ds.id}/power",
+        content=PowerRequest(
+            design_spec=design_spec,
+            table_name="dwh",  # Test DWH table name
+            primary_key="id",  # Test DWH primary key
+        ).model_dump_json(),
+    )
+
+    assert response.status_code == 200, response.content
+    power_response = PowerResponse.model_validate(response.json())
+    assert len(power_response.analyses) == 1
+    assert power_response.analyses[0].metric_spec.field_name == "current_income"
+    assert power_response.analyses[0].target_n is not None
 
 
 async def test_create_experiment_with_invalid_design_url(xngin_session, testing_datasource_with_user, ppost):
@@ -1882,20 +2043,20 @@ async def test_update_experiment(testing_experiment, ppatch, pget):
     assert response.status_code == 204, response.text
 
     updated_response = pget(f"/v1/m/datasources/{datasource_id}/experiments/{experiment_id}")
-    experiment = GetExperimentResponse.model_validate(updated_response.json())
-    design_spec = experiment.design_spec
+    experiment = GetExperimentForUiResponse.model_validate(updated_response.json())
+    design_spec = experiment.config.design_spec
     assert design_spec.experiment_name == "updated name"
     assert design_spec.description == "updated desc"
     assert design_spec.design_url == HttpUrl("https://example.com/updated")
     assert design_spec.start_date == now
     assert design_spec.end_date == now + timedelta(days=1)
-    assert experiment.impact == "high"
-    assert experiment.decision == "new decision"
+    assert experiment.config.impact == "high"
+    assert experiment.config.decision == "new decision"
 
     list_experiments_response = pget(f"/v1/m/organizations/{organization_id}/experiments")
     assert list_experiments_response.status_code == 200, list_experiments_response.content
     listing = ListExperimentsResponse.model_validate(list_experiments_response.json())
-    listed = next(i for i in listing.items if i.experiment_id == experiment.experiment_id)
+    listed = next(i for i in listing.items if i.experiment_id == experiment.config.experiment_id)
     assert listed.impact == "high"
     assert listed.decision == "new decision"
 
@@ -1926,9 +2087,9 @@ async def test_update_experiment_url_valid(testing_experiment, ppatch, pget, url
     assert response.status_code == 204, response.content
     response = pget(experiment_url)
     assert response.status_code == 200, response.content
-    parsed_response = GetExperimentResponse.model_validate(response.json())
-    assert parsed_response.design_spec.design_url is not None
-    assert parsed_response.design_spec.design_url.encoded_string() == expected_url
+    parsed_response = GetExperimentForUiResponse.model_validate(response.json())
+    assert parsed_response.config.design_spec.design_url is not None
+    assert parsed_response.config.design_spec.design_url.encoded_string() == expected_url
 
 
 async def test_update_experiment_url_null_when_empty(testing_experiment, ppatch, pget):
@@ -1940,16 +2101,16 @@ async def test_update_experiment_url_null_when_empty(testing_experiment, ppatch,
     assert response.status_code == 204, response.content
     response = pget(experiment_url)
     assert response.status_code == 200, response.content
-    parsed_response = GetExperimentResponse.model_validate(response.json())
-    assert parsed_response.design_spec.design_url is not None
-    assert parsed_response.design_spec.design_url.encoded_string() == "https://example.com/"
+    parsed_response = GetExperimentForUiResponse.model_validate(response.json())
+    assert parsed_response.config.design_spec.design_url is not None
+    assert parsed_response.config.design_spec.design_url.encoded_string() == "https://example.com/"
 
     response = ppatch(experiment_url, json={"design_url": ""})
     assert response.status_code == 204, response.content
     response = pget(experiment_url)
     assert response.status_code == 200, response.content
-    parsed_response = GetExperimentResponse.model_validate(response.json())
-    assert parsed_response.design_spec.design_url is None, parsed_response
+    parsed_response = GetExperimentForUiResponse.model_validate(response.json())
+    assert parsed_response.config.design_spec.design_url is None, parsed_response
 
 
 async def test_update_experiment_invalid(xngin_session, testing_experiment, ppatch):
@@ -1998,7 +2159,7 @@ async def test_update_arm(testing_experiment, ppatch, pget):
     assert response.status_code == 204, response.text
 
     updated_response = pget(f"/v1/m/datasources/{datasource_id}/experiments/{experiment_id}")
-    design_spec = GetExperimentResponse.model_validate(updated_response.json()).design_spec
+    design_spec = GetExperimentForUiResponse.model_validate(updated_response.json()).config.design_spec
     arm = next((arm for arm in design_spec.arms if arm.arm_id == arm_id), None)
     assert arm is not None
     assert arm.arm_name == "updated name"
@@ -2057,8 +2218,8 @@ async def test_get_experiment_assignment_for_online_participant(
 ):
     datasource_id = testing_datasource_with_user.ds.id
     experiment_resp = await make_freq_online_experiment(datasource_id, ppost, pget)
-    experiment_id = experiment_resp.experiment_id
-    experiment_arms = experiment_resp.design_spec.arms
+    experiment_id = experiment_resp.config.experiment_id
+    experiment_arms = experiment_resp.config.design_spec.arms
 
     # Check for an assignment that doesn't exist, but don't create it.
     response = pget(
@@ -2142,7 +2303,9 @@ async def test_get_experiment_assignment_for_online_participant_past_end_date(
 ):
     datasource_id = testing_datasource_with_user.ds.id
     end_date = datetime.now(UTC) - timedelta(days=1)
-    experiment_id = (await make_freq_online_experiment(datasource_id, ppost, pget, end_date=end_date)).experiment_id
+    experiment_id = (
+        await make_freq_online_experiment(datasource_id, ppost, pget, end_date=end_date)
+    ).config.experiment_id
 
     # Verify no new assignment is created for the ended experiment.
     response = pget(f"/v1/m/datasources/{datasource_id}/experiments/{experiment_id}/assignments/new_id")
@@ -2154,9 +2317,9 @@ async def test_get_experiment_assignment_for_online_participant_past_end_date(
 
     # Verify that the experiment state was updated.
     response = pget(f"/v1/m/datasources/{datasource_id}/experiments/{experiment_id}")
-    experiment_resp = GetExperimentResponse.model_validate(response.json())
-    assert experiment_resp.stopped_assignments_at is not None
-    assert experiment_resp.stopped_assignments_reason == StopAssignmentReason.END_DATE
+    experiment_resp = GetExperimentForUiResponse.model_validate(response.json())
+    assert experiment_resp.config.stopped_assignments_at is not None
+    assert experiment_resp.config.stopped_assignments_reason == StopAssignmentReason.END_DATE
 
 
 def test_freq_experiments_analyze(testing_experiment, pget):
@@ -2259,7 +2422,7 @@ def test_cmab_experiments_analyze(testing_bandit_experiment, ppost):
 
 async def test_analyze_experiment_with_no_participants(testing_datasource_with_user, ppost, pget):
     datasource_id = testing_datasource_with_user.ds.id
-    experiment_id = (await make_freq_online_experiment(datasource_id, ppost, pget)).experiment_id
+    experiment_id = (await make_freq_online_experiment(datasource_id, ppost, pget)).config.experiment_id
 
     response = pget(f"/v1/m/datasources/{datasource_id}/experiments/{experiment_id}/analyze")
     assert response.status_code == 422, response.content
@@ -2268,7 +2431,7 @@ async def test_analyze_experiment_with_no_participants(testing_datasource_with_u
 
 async def test_analyze_experiment_whose_assignments_have_no_dwh_data(testing_datasource_with_user, ppost, pget):
     datasource_id = testing_datasource_with_user.ds.id
-    experiment_id = (await make_freq_online_experiment(datasource_id, ppost, pget)).experiment_id
+    experiment_id = (await make_freq_online_experiment(datasource_id, ppost, pget)).config.experiment_id
 
     # Create a new participant assignment for an id missing in the dwh.
     response = pget(f"/v1/m/datasources/{datasource_id}/experiments/{experiment_id}/assignments/0")
@@ -2283,7 +2446,7 @@ async def test_analyze_experiment_with_no_assignments_in_one_arm_yet(
     xngin_session, testing_datasource_with_user, ppost, pget
 ):
     datasource_id = testing_datasource_with_user.ds.id
-    experiment_id = (await make_freq_online_experiment(datasource_id, ppost, pget)).experiment_id
+    experiment_id = (await make_freq_online_experiment(datasource_id, ppost, pget)).config.experiment_id
 
     # Setup: create artificial assignments directly in db to deterministically allocate them all to
     # one arm. Multiple are used for stable analysis calcs.
@@ -2509,7 +2672,6 @@ async def test_experiment_webhook_integration(testing_datasource_with_user, ppos
         ).model_dump(),
     )
     assert webhook2_response.status_code == 200, webhook2_response.content
-    webhook2_id = webhook2_response.json()["id"]
 
     # Create an experiment with only the first webhook using proper Pydantic models
     experiment_request = CreateExperimentRequest(
@@ -2549,14 +2711,9 @@ async def test_experiment_webhook_integration(testing_datasource_with_user, ppos
     # Get the experiment and verify webhook is included
     get_response = pget(f"/v1/m/datasources/{datasource_id}/experiments/{experiment_id}")
     assert get_response.status_code == 200, get_response.content
-
-    retrieved_experiment = get_response.json()
-    assert "webhooks" in retrieved_experiment
-    assert len(retrieved_experiment["webhooks"]) == 1
-    assert retrieved_experiment["webhooks"][0] == webhook1_id
-
-    # Verify the second webhook is not included
-    assert webhook2_id not in retrieved_experiment["webhooks"]
+    experiment = GetExperimentForUiResponse.model_validate(get_response.json())
+    assert len(experiment.config.webhooks) == 1
+    assert experiment.config.webhooks[0] == webhook1_id
 
     # Test creating an experiment with no webhooks using proper Pydantic models
     experiment_request_no_webhooks = CreateExperimentRequest(
@@ -3193,6 +3350,137 @@ async def test_delete_experiment_data_none_specified(
         await xngin_session.scalars(select(tables.Snapshot).where(tables.Snapshot.experiment_id == experiment_id))
     )
     assert len(snapshots_after) == 1
+
+
+async def test_list_participant_types_excludes_hidden(
+    xngin_session: AsyncSession,
+    testing_datasource_with_user,
+    pget,
+):
+    """Test that list_participant_types excludes hidden participant types."""
+    ds_id = testing_datasource_with_user.ds.id
+    ds = testing_datasource_with_user.ds
+
+    # Add a hidden participant type directly
+    config = ds.get_config()
+    config.participants.append(
+        ParticipantsDef(
+            type="schema",
+            participant_type="hidden_pt",
+            table_name="some_table",
+            fields=[FieldDescriptor(field_name="id", data_type=DataType.BIGINT, is_unique_id=True)],
+            hidden=True,
+        )
+    )
+    ds.set_config(config)
+    await xngin_session.commit()
+
+    # List participants - should not include hidden one
+    response = pget(f"/v1/m/datasources/{ds_id}/participants")
+    assert response.status_code == 200
+    list_response = ListParticipantsTypeResponse.model_validate(response.json())
+    participant_names = [p.participant_type for p in list_response.items]
+    assert "hidden_pt" not in participant_names
+    assert "test_participant_type" in participant_names
+
+
+async def test_create_experiment_with_table_name_and_primary_key(
+    xngin_session: AsyncSession,
+    testing_datasource_with_user,
+    use_deterministic_random,
+    ppost,
+    pget,
+):
+    """Test creating an experiment with table_name and primary_key instead of participant_type."""
+    ds_id = testing_datasource_with_user.ds.id
+
+    request_json = make_createexperimentrequest_json(experiment_type=ExperimentsType.FREQ_ONLINE)
+
+    response = ppost(
+        f"/v1/m/datasources/{ds_id}/experiments",
+        params={"random_state": 42},
+        json={
+            **request_json,
+            "table_name": "dwh",  # The actual table name in test DWH
+            "primary_key": "id",
+        },
+    )
+    assert response.status_code == 200, response.content
+    created = CreateExperimentResponse.model_validate(response.json())
+
+    # Verify auto-generated participant_type name
+    assert created.design_spec.participant_type.startswith("__dwh_")
+    assert len(created.design_spec.participant_type) == len("__dwh_") + 8
+
+    # Verify participant type was persisted and is hidden
+    ds = await xngin_session.get_one(tables.Datasource, ds_id)
+    await xngin_session.refresh(ds)
+    config = ds.get_config()
+    pt = config.find_participants(created.design_spec.participant_type)
+    assert pt is not None
+    assert pt.hidden is True
+
+    # Verify hidden participant type not in list
+    response = pget(f"/v1/m/datasources/{ds_id}/participants")
+    list_response = ListParticipantsTypeResponse.model_validate(response.json())
+    participant_names = [p.participant_type for p in list_response.items]
+    assert created.design_spec.participant_type not in participant_names
+
+
+def test_create_experiment_table_name_requires_primary_key(
+    testing_datasource_with_user,
+    ppost,
+):
+    """Test that table_name requires primary_key."""
+    ds_id = testing_datasource_with_user.ds.id
+    request_json = make_createexperimentrequest_json(experiment_type=ExperimentsType.FREQ_ONLINE)
+
+    response = ppost(
+        f"/v1/m/datasources/{ds_id}/experiments",
+        json={**request_json, "table_name": "some_table"},
+    )
+    assert response.status_code == 422
+    assert "table_name and primary_key must be provided together" in response.text
+
+
+def test_create_experiment_primary_key_requires_table_name(
+    testing_datasource_with_user,
+    ppost,
+):
+    """Test that primary_key requires table_name."""
+    ds_id = testing_datasource_with_user.ds.id
+    request_json = make_createexperimentrequest_json(experiment_type=ExperimentsType.FREQ_ONLINE)
+
+    response = ppost(
+        f"/v1/m/datasources/{ds_id}/experiments",
+        json={**request_json, "primary_key": "id"},
+    )
+    assert response.status_code == 422
+    assert "table_name and primary_key must be provided together" in response.text
+
+
+async def test_create_preassigned_experiment_with_table_name_and_primary_key(
+    xngin_session: AsyncSession,
+    testing_datasource_with_user,
+    use_deterministic_random,
+    ppost,
+):
+    """Test creating a preassigned experiment with table_name and primary_key."""
+    ds_id = testing_datasource_with_user.ds.id
+
+    request_json = make_createexperimentrequest_json(experiment_type=ExperimentsType.FREQ_PREASSIGNED)
+
+    response = ppost(
+        f"/v1/m/datasources/{ds_id}/experiments",
+        params={"chosen_n": 100, "random_state": 42},
+        json={**request_json, "table_name": "dwh", "primary_key": "id"},
+    )
+    assert response.status_code == 200, response.content
+    created = CreateExperimentResponse.model_validate(response.json())
+
+    assert created.design_spec.participant_type.startswith("__dwh_")
+    assert created.assign_summary is not None
+    assert created.assign_summary.sample_size == 100
 
 
 def test_list_snapshots_pagination(pget, ppost, ppatch):

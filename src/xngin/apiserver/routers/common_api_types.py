@@ -796,7 +796,7 @@ ConstrainedUrl = Annotated[HttpUrl, UrlConstraints(max_length=MAX_LENGTH_OF_URL_
 class BaseDesignSpec(ApiBaseModel):
     """Experiment design metadata and target metrics common to all experiment types."""
 
-    # --- Experiment metadata ---
+    # The name of the participant type. This may be "user" for some MAB and CMAB experiments.
     participant_type: Annotated[str, Field(max_length=MAX_LENGTH_OF_NAME_VALUE)]
 
     experiment_type: Annotated[
@@ -1065,6 +1065,29 @@ type DesignSpec = Annotated[
 
 class PowerRequest(ApiBaseModel):
     design_spec: DesignSpec
+    table_name: Annotated[
+        str | None,
+        Field(
+            default=None,
+            description="Optional table name for ad-hoc power calculations. When provided with primary_key, "
+            "synthesizes a participant schema instead of looking up from datasource configuration. When set, the "
+            "participant_type value is ignored.",
+        ),
+    ] = None
+    primary_key: Annotated[
+        str | None,
+        Field(
+            default=None,
+            description="Optional primary key field name. Must be provided together with table_name. When set, the "
+            "participant_type value is ignored.",
+        ),
+    ] = None
+
+    @model_validator(mode="after")
+    def check_table_name_and_primary_key_together(self) -> Self:
+        if (self.table_name is None) != (self.primary_key is None):
+            raise ValueError("table_name and primary_key must be provided together or both omitted")
+        return self
 
 
 class PowerResponse(ApiBaseModel):
@@ -1196,6 +1219,22 @@ class CreateExperimentRequest(ApiBaseModel):
             ),
         ),
     ] = []
+    table_name: Annotated[
+        str | None,
+        Field(
+            default=None,
+            description="Optional table name for creating experiments without a pre-registered participant type. "
+            "When provided with primary_key, synthesizes a participant schema and persists it. "
+            "The design_spec.participant_type field is ignored when this is set.",
+        ),
+    ] = None
+    primary_key: Annotated[
+        str | None,
+        Field(
+            default=None,
+            description="Optional primary key field name. Must be provided together with table_name.",
+        ),
+    ] = None
 
     @field_validator("webhooks")
     @classmethod
@@ -1204,6 +1243,12 @@ class CreateExperimentRequest(ApiBaseModel):
         if len(v) != len(set(v)):
             raise ValueError("Webhook IDs must be unique")
         return v
+
+    @model_validator(mode="after")
+    def check_table_name_and_primary_key_together(self) -> Self:
+        if (self.table_name is None) != (self.primary_key is None):
+            raise ValueError("table_name and primary_key must be provided together or both omitted")
+        return self
 
 
 # TODO: make this class work with the Bayesian experiment types and their Draw records.
