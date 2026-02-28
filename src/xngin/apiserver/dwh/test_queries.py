@@ -171,7 +171,7 @@ SAMPLE_TABLE_ROWS = [
 class Case:
     filters: list[Filter]
     matches: list[Row | NullableRow]
-    chosen_n: int = 3
+    desired_n: int = 3
 
     def __str__(self):
         return " and ".join([f"{f.field_name} {f.relation.name} {f.value}" for f in self.filters])
@@ -505,7 +505,7 @@ def test_is_nullable(testcase, queries_dwh_session, shared_sample_tables, use_de
     table: Table = shared_sample_tables.sample_nullable_table
     select_columns = set(table.c.keys())
     filters = create_query_filters(table, testcase.filters)
-    q = compose_query(table, select_columns, filters, testcase.chosen_n)
+    q = compose_query(table, select_columns, filters, testcase.desired_n)
     query_results = queries_dwh_session.execute(q)
     assert list(sorted([r.id for r in query_results])) == list(sorted(r.id for r in testcase.matches)), testcase
 
@@ -641,7 +641,7 @@ def test_relations(testcase, queries_dwh_session, shared_sample_tables, use_dete
     table: Table = shared_sample_tables.sample_table
     select_columns = set(table.c.keys())
     filters = create_query_filters(table, testcase.filters)
-    q = compose_query(table, select_columns, filters, testcase.chosen_n)
+    q = compose_query(table, select_columns, filters, testcase.desired_n)
     query_results = queries_dwh_session.execute(q)
     assert list(sorted([r.id for r in query_results])) == list(sorted(r.id for r in testcase.matches)), testcase
 
@@ -716,7 +716,7 @@ def test_property_filters_in_sql(testcase, shared_filter_table, queries_dwh_sess
 
     # Test the query with filters.
     filters = create_query_filters(shared_filter_table, testcase.filters)
-    q = compose_query(shared_filter_table, select_columns={"id"}, filters=filters, chosen_n=1).where(
+    q = compose_query(shared_filter_table, select_columns={"id"}, filters=filters, desired_n=1).where(
         shared_filter_table.c.id == test_id
     )
     result = queries_dwh_session.execute(q).scalar_one_or_none()

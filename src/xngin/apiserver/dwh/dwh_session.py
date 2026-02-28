@@ -274,11 +274,11 @@ class DwhSession:
         sa_table: sqlalchemy.Table,
         select_columns: set[str],
         filters: list[Filter],
-        chosen_n: int,
+        desired_n: int,
     ):
         """Samples participants."""
         sqla_filters = queries.create_query_filters(sa_table, filters)
-        query = queries.compose_query(sa_table, select_columns, sqla_filters, chosen_n)
+        query = queries.compose_query(sa_table, select_columns, sqla_filters, desired_n)
         return self.session.execute(query).all()
 
     def _get_participants_blocking(

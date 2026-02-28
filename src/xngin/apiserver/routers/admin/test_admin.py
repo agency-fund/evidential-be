@@ -1353,7 +1353,7 @@ async def test_lifecycle_with_db(testing_datasource, ppost, ppatch, pget, pdelet
     create_exp_request.design_spec.design_url = HttpUrl("https://example.com/design")
     response = ppost(
         f"/v1/m/datasources/{testing_datasource.ds.id}/experiments",
-        params={"chosen_n": 100},
+        params={"desired_n": 100},
         content=create_exp_request.model_dump_json(),
     )
     assert response.status_code == 200, response.content
@@ -1469,7 +1469,7 @@ async def test_abandon_experiment(testing_datasource_with_user, ppost, pget):
     )
     response = ppost(
         f"/v1/m/datasources/{datasource_id}/experiments",
-        params={"chosen_n": 1},
+        params={"desired_n": 1},
         content=CreateExperimentRequest(design_spec=design_spec).model_dump_json(),
     )
     assert response.status_code == 200, response.content
@@ -1561,19 +1561,19 @@ async def test_create_experiment_with_invalid_design_url(xngin_session, testing_
     request = make_createexperimentrequest_json()
     request["design_spec"]["design_url"] = "example.com/"
 
-    response = ppost(f"/v1/m/datasources/{datasource_id}/experiments", params={"chosen_n": 1}, json=request)
+    response = ppost(f"/v1/m/datasources/{datasource_id}/experiments", params={"desired_n": 1}, json=request)
     assert response.status_code == 422, response.content
     assert "Input should be a valid URL, relative URL without a base" in response.json()["detail"][0]["msg"]
 
     # Now check that a too long URL is rejected.
     request["design_spec"]["design_url"] = "http://example.com/" + "a" * 500
-    response = ppost(f"/v1/m/datasources/{datasource_id}/experiments", params={"chosen_n": 1}, json=request)
+    response = ppost(f"/v1/m/datasources/{datasource_id}/experiments", params={"desired_n": 1}, json=request)
     assert response.status_code == 422, response.content
     assert "URL should have at most 500 characters" in response.json()["detail"][0]["msg"]
 
     # And we need a host.
     request["design_spec"]["design_url"] = "https://"
-    response = ppost(f"/v1/m/datasources/{datasource_id}/experiments", params={"chosen_n": 1}, json=request)
+    response = ppost(f"/v1/m/datasources/{datasource_id}/experiments", params={"desired_n": 1}, json=request)
     assert response.status_code == 422, response.content
     assert "Input should be a valid URL, empty host" in response.json()["detail"][0]["msg"]
 
@@ -1589,7 +1589,7 @@ async def test_create_preassigned_experiment(
 
     response = ppost(
         f"/v1/m/datasources/{datasource_id}/experiments",
-        params={"chosen_n": 100, "random_state": 42},
+        params={"desired_n": 100, "random_state": 42},
         content=request_obj.model_dump_json(),
     )
     assert response.status_code == 200, response.content
@@ -2532,7 +2532,7 @@ async def test_experiment_webhook_integration(testing_datasource_with_user, ppos
     )
 
     create_response = ppost(
-        f"/v1/m/datasources/{datasource_id}/experiments?chosen_n=100",
+        f"/v1/m/datasources/{datasource_id}/experiments?desired_n=100",
         json=experiment_request.model_dump(mode="json"),
     )
     assert create_response.status_code == 200, create_response.content
@@ -2579,7 +2579,7 @@ async def test_experiment_webhook_integration(testing_datasource_with_user, ppos
     )
 
     create_response_no_webhooks = ppost(
-        f"/v1/m/datasources/{datasource_id}/experiments?chosen_n=100",
+        f"/v1/m/datasources/{datasource_id}/experiments?desired_n=100",
         json=experiment_request_no_webhooks.model_dump(mode="json"),
     )
     assert create_response_no_webhooks.status_code == 200, create_response_no_webhooks.content
@@ -2630,7 +2630,7 @@ def test_snapshots(pget, ppost, pdelete, uget, ppatch):
     assert create_participant_type_response.status_code == 200, create_participant_type_response.content
 
     response = ppost(
-        f"/v1/m/datasources/{create_datasource_response.id}/experiments?chosen_n=100",
+        f"/v1/m/datasources/{create_datasource_response.id}/experiments?desired_n=100",
         json=CreateExperimentRequest(
             design_spec=PreassignedFrequentistExperimentSpec(
                 experiment_type=ExperimentsType.FREQ_PREASSIGNED,
@@ -2710,7 +2710,7 @@ def test_snapshots(pget, ppost, pdelete, uget, ppatch):
     # Verify the snapshot data.
     analysis_response = FreqExperimentAnalysisResponse.model_validate(success_snapshot.data)
     assert analysis_response.experiment_id == experiment_id
-    assert analysis_response.num_participants == 100  # chosen_n
+    assert analysis_response.num_participants == 100  # desired_n
     assert analysis_response.num_missing_participants == 0
     assert datetime.now(UTC) - analysis_response.created_at < timedelta(seconds=5)
     assert len(analysis_response.metric_analyses) == 1
@@ -2821,7 +2821,7 @@ def test_snapshot_on_ineligible_experiments(testing_datasource_with_user, ppost,
     org = testing_datasource_with_user.org
     # The experiment created below is both too old and not yet committed.
     response = ppost(
-        f"/v1/m/datasources/{ds.id}/experiments?chosen_n=20",
+        f"/v1/m/datasources/{ds.id}/experiments?desired_n=20",
         json=CreateExperimentRequest(
             design_spec=PreassignedFrequentistExperimentSpec(
                 experiment_type=ExperimentsType.FREQ_PREASSIGNED,
@@ -2859,7 +2859,7 @@ def test_snapshot_on_ineligible_experiments(testing_datasource_with_user, ppost,
 
     # But recently ended experiments can be snapshotted within a 1 day buffer.
     response = ppost(
-        f"/v1/m/datasources/{ds.id}/experiments?chosen_n=20",
+        f"/v1/m/datasources/{ds.id}/experiments?desired_n=20",
         json=CreateExperimentRequest(
             design_spec=PreassignedFrequentistExperimentSpec(
                 experiment_type=ExperimentsType.FREQ_PREASSIGNED,
@@ -2892,7 +2892,7 @@ def test_snapshot_with_nan(testing_datasource_with_user, ppost, pget):
     ds = testing_datasource_with_user.ds
     org = testing_datasource_with_user.org
     response = ppost(
-        f"/v1/m/datasources/{ds.id}/experiments?chosen_n=10",
+        f"/v1/m/datasources/{ds.id}/experiments?desired_n=10",
         json=CreateExperimentRequest(
             design_spec=PreassignedFrequentistExperimentSpec(
                 experiment_type=ExperimentsType.FREQ_PREASSIGNED,
