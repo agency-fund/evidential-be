@@ -84,6 +84,7 @@ def calculate_mde_cluster(
     n_arms: int,
     icc: float,
     avg_cluster_size: float,
+    cv: float = 0.0,
     power: float = 0.8,
     alpha: float = 0.05,
     arm_weights: list[float] | None = None,
@@ -98,6 +99,7 @@ def calculate_mde_cluster(
         n_arms: Number of treatment arms
         icc: Intracluster correlation coefficient, range [0, 1]
         avg_cluster_size: Average number of individuals per cluster
+        cv: Coefficient of variation in cluster sizes (default 0.0)
         power: Desired statistical power (default 0.8)
         alpha: Significance level (default 0.05)
         arm_weights: Optional allocation weights for unbalanced designs
@@ -108,7 +110,7 @@ def calculate_mde_cluster(
         - pct_change: The minimum detectable effect as percent change from baseline
 
     """
-    deff = calculate_design_effect(icc, avg_cluster_size)
+    deff = calculate_design_effect(icc, avg_cluster_size, cv)
 
     effective_n = calculate_effective_sample_size(available_n, deff)
 
