@@ -1,153 +1,464 @@
-"""
-Tests for cluster randomization power analysis using wide_dwh test data.
-"""
+"""Tests for cluster randomization power analysis."""
 
-import math
-from pathlib import Path
-
-import pandas as pd
 import pytest
 
+from xngin.apiserver.routers.common_api_types import DesignSpecMetric
+from xngin.apiserver.routers.common_enums import MetricType
 from xngin.stats.cluster_power import (
+    analyze_metric_power_cluster,
     calculate_design_effect,
-    calculate_effective_sample_size,
+    calculate_num_clusters_needed,
 )
 
 
-@pytest.fixture
-def wide_dwh_data():
-    """Load the wide_dwh test dataset."""
-    data_path = Path(__file__).parent.parent / "apiserver" / "testdata" / "wide_dwh.csv"
-    return pd.read_csv(data_path)
+def test_calculate_design_effect_no_clustering():
+    deff = calculate_design_effect(icc=0.0, avg_cluster_size=30)
+    assert deff == 1.0
 
 
-class TestDataExploration:
-    """Explore and verify the wide_dwh test data structure."""
-
-    def test_data_loads(self, wide_dwh_data):
-        """Verify we can load the test data."""
-        assert len(wide_dwh_data) == 1000
-        assert "cluster_id" in wide_dwh_data.columns
-        print(f"\n✓ Loaded {len(wide_dwh_data)} participants")
-
-    def test_cluster_structure(self, wide_dwh_data):
-        """Verify cluster structure."""
-        n_clusters = wide_dwh_data["cluster_id"].nunique()
-        cluster_sizes = wide_dwh_data.groupby("cluster_id").size()
-
-        print(f"\n✓ Found {n_clusters} clusters")
-        print(f"  Cluster sizes: min={cluster_sizes.min()}, max={cluster_sizes.max()}, mean={cluster_sizes.mean():.1f}")
-
-        assert n_clusters == 20
-        assert cluster_sizes.min() > 0  # No empty clusters
+def test_calculate_design_effect_perfect_clustering():
+    deff = calculate_design_effect(icc=1.0, avg_cluster_size=30)
+    assert deff == 30.0
 
 
-class TestHelperFunctions:
-    """Test the helper calculation functions."""
-
-    def test_calculate_design_effect(self):
-        """Test design effect calculation."""
-        # ICC=0 → DEFF=1 (no clustering effect)
-        assert calculate_design_effect(icc=0.0, avg_cluster_size=50) == 1.0
-
-        # ICC=0.05, m=50 → DEFF = 1 + (50-1)*0.05 = 3.45
-        deff = calculate_design_effect(icc=0.05, avg_cluster_size=50)
-        assert deff == pytest.approx(3.45)
-
-    def test_calculate_effective_sample_size(self):
-        """Test effective sample size calculation."""
-        # 1000 participants / DEFF of 2 = 500 effective
-        effective_n = calculate_effective_sample_size(total_n=1000, deff=2.0)
-        assert effective_n == 500
-
-    def test_deff_world_bank_example(self):
-        """
-        Verify DEFF formula against World Bank blog example.
-
-        Example values:
-        - ICC = 0.39
-        - Average cluster size = 6.0
-        - CV = 5.16
-
-        World Bank reports:
-        - Standard design effect (DEFT) = 1.72 → DEFF = 2.95
-        - With CV adjustment (DEFT) = 8.08 → DEFF = 65.25
-        """
-
-        icc = 0.39
-        avg_cluster_size = 6.0
-        cv = 5.16
-
-        # Test standard DEFF (without CV)
-        deff_standard = calculate_design_effect(icc, avg_cluster_size, cv=0.0)
-        expected_deff_standard = 1 + (avg_cluster_size - 1) * icc  # 2.95
-        assert deff_standard == pytest.approx(expected_deff_standard, abs=0.01)
-
-        # World Bank reports DEFT = 1.72, which means DEFF = 1.72² = 2.9584
-        deft_standard = math.sqrt(deff_standard)
-        assert deft_standard == pytest.approx(1.72, abs=0.01)
-
-        # Test DEFF with CV adjustment
-        deff_with_cv = calculate_design_effect(icc, avg_cluster_size, cv)
-
-        # World Bank reports DEFT = 8.08, which means DEFF = 8.08² = 65.2864
-        expected_deff_cv = 65.25
-        assert deff_with_cv == pytest.approx(expected_deff_cv, abs=0.5)
-
-        # Verify DEFT matches what World Bank reports
-        deft_with_cv = math.sqrt(deff_with_cv)
-        assert deft_with_cv == pytest.approx(8.08, abs=0.01)
-
-        print("\n✅ World Bank verification:")
-        print(f"  Standard DEFF: {deff_standard:.2f} (DEFT: {deft_standard:.2f})")
-        print(f"  DEFF with CV: {deff_with_cv:.2f} (DEFT: {deft_with_cv:.2f})")
-
-    def test_world_bank_mde_calculation(self):
-        """
-        Replicate World Bank MDE calculation to verify DEFF formula.
-
-        Their parameters:
-        - N = 31,068 workers
-        - 5,172 firms (clusters)
-        - Average cluster size = 6.0
-        - ICC = 0.39
-        - CV = 5.16
-
-        They report:
-        - Standard MDE = 0.055 s.d. (with basic DEFF)
-        - MDE with CV = 0.26 s.d. (from simulations)
-        - Ratio = 4.73
-        """
-
-        # World Bank parameters
-        icc = 0.39
-        avg_cluster_size = 6.0
-        cv = 5.16
-
-        # Calculate DEFFs
-        deff_standard = calculate_design_effect(icc, avg_cluster_size, cv=0.0)
-        deff_with_cv = calculate_design_effect(icc, avg_cluster_size, cv)
-
-        # Calculate DEFTs
-        deft_standard = math.sqrt(deff_standard)
-        deft_with_cv = math.sqrt(deff_with_cv)
-
-        # MDE scales with DEFT (square root of DEFF)
-        # So the ratio of MDEs should equal the ratio of DEFTs
-        mde_ratio = 0.26 / 0.055  # From World Bank
-        deft_ratio = deft_with_cv / deft_standard
-
-        print("\n📊 World Bank MDE verification:")
-        print(f"  Standard DEFT: {deft_standard:.2f}")
-        print(f"  DEFT with CV: {deft_with_cv:.2f}")
-        print(f"  DEFT ratio: {deft_ratio:.2f}")
-        print(f"  MDE ratio (from blog): {mde_ratio:.2f}")
-        print(f"  Difference: {abs(deft_ratio - mde_ratio):.3f}")
-
-        # The ratios should match
-        assert deft_ratio == pytest.approx(mde_ratio, abs=0.05)
-
-        print("  ✅ DEFT ratio matches MDE ratio!")
+def test_calculate_design_effect_typical_school():
+    deff = calculate_design_effect(icc=0.15, avg_cluster_size=30)
+    assert deff == pytest.approx(5.35)
 
 
-# TODO: Add more test classes for the main functions
+def test_calculate_design_effect_invalid_icc():
+    with pytest.raises(ValueError, match="ICC must be"):
+        calculate_design_effect(icc=1.5, avg_cluster_size=30)
+
+    with pytest.raises(ValueError, match="ICC must be"):
+        calculate_design_effect(icc=-0.1, avg_cluster_size=30)
+
+
+def test_calculate_design_effect_invalid_cluster_size():
+    with pytest.raises(ValueError, match="Cluster size must be"):
+        calculate_design_effect(icc=0.15, avg_cluster_size=0)
+
+
+def test_calculate_num_clusters_needed_typical_school():
+    n_clusters = calculate_num_clusters_needed(n_individual=63, avg_cluster_size=30, deff=5.35)
+    assert n_clusters == 12
+
+
+def test_calculate_num_clusters_needed_rounds_up():
+    n = calculate_num_clusters_needed(n_individual=60, avg_cluster_size=30, deff=5.0)
+    assert n == 10
+
+    n = calculate_num_clusters_needed(n_individual=60.03, avg_cluster_size=30, deff=5.0)
+    assert n == 11
+
+
+def test_calculate_num_clusters_needed_no_clustering():
+    n = calculate_num_clusters_needed(n_individual=100, avg_cluster_size=25, deff=1.0)
+    assert n == 4
+
+
+def test_calculate_num_clusters_needed_high_deff():
+    n_low = calculate_num_clusters_needed(n_individual=60, avg_cluster_size=30, deff=2.0)
+
+    n_high = calculate_num_clusters_needed(n_individual=60, avg_cluster_size=30, deff=10.0)
+
+    assert n_high > n_low
+    assert n_low == 4
+    assert n_high == 20
+
+
+def test_analyze_metric_power_cluster_missing_baseline():
+
+    metric = DesignSpecMetric(
+        field_name="test_metric",
+        metric_type=MetricType.NUMERIC,
+        metric_baseline=None,  # Missing!
+        metric_target=110,
+        metric_stddev=20,
+        available_n=1000,
+        available_nonnull_n=1000,
+    )
+
+    result = analyze_metric_power_cluster(
+        metric=metric,
+        n_arms=2,
+        icc=0.15,
+        avg_cluster_size=30,
+    )
+
+    assert result.target_n is None
+    assert result.num_clusters_total is None
+    assert result.clusters_per_arm is None
+    assert result.n_per_arm is None
+    assert result.design_effect is None
+    assert result.effective_sample_size is None
+
+    assert result.icc == 0.15
+    assert result.avg_cluster_size == 30
+
+    assert result.msg is not None
+
+
+def test_analyze_metric_power_cluster_balanced():
+    metric = DesignSpecMetric(
+        field_name="reading_score",
+        metric_type=MetricType.NUMERIC,
+        metric_baseline=100,
+        metric_target=110,
+        metric_stddev=20,
+        available_n=1000,
+        available_nonnull_n=1000,
+    )
+
+    result = analyze_metric_power_cluster(
+        metric=metric,
+        n_arms=2,
+        icc=0.15,
+        avg_cluster_size=30,
+    )
+
+    assert result.target_n is not None
+    assert result.num_clusters_total == 24
+    assert result.clusters_per_arm == [12, 12]
+    assert result.n_per_arm == [360, 360]
+    assert result.design_effect == pytest.approx(5.35)
+    assert result.icc == 0.15
+    assert result.avg_cluster_size == 30
+    assert result.effective_sample_size == 134
+
+
+def test_analyze_metric_power_cluster_no_clustering():
+    metric = DesignSpecMetric(
+        field_name="test_metric",
+        metric_type=MetricType.NUMERIC,
+        metric_baseline=100,
+        metric_target=110,
+        metric_stddev=20,
+        available_n=1000,
+        available_nonnull_n=1000,
+    )
+
+    result = analyze_metric_power_cluster(
+        metric=metric,
+        n_arms=2,
+        icc=0.0,
+        avg_cluster_size=30,
+    )
+
+    assert result.design_effect == 1.0
+
+    assert result.num_clusters_total is not None
+    assert result.num_clusters_total == 6
+
+    assert result.effective_sample_size == result.target_n
+
+
+def test_analyze_metric_power_cluster_unbalanced():
+    metric = DesignSpecMetric(
+        field_name="conversion",
+        metric_type=MetricType.NUMERIC,
+        metric_baseline=100,
+        metric_target=110,
+        metric_stddev=20,
+        available_n=2000,
+        available_nonnull_n=2000,
+    )
+
+    result = analyze_metric_power_cluster(
+        metric=metric,
+        n_arms=2,
+        icc=0.15,
+        avg_cluster_size=30,
+        arm_weights=[20, 80],
+    )
+
+    assert result.target_n is not None
+    assert result.num_clusters_total is not None
+    assert result.clusters_per_arm is not None
+    assert result.n_per_arm is not None
+
+    assert len(result.clusters_per_arm) == 2
+    assert len(result.n_per_arm) == 2
+
+    assert result.clusters_per_arm == [8, 29]
+    assert result.n_per_arm == [240, 870]
+
+    assert result.num_clusters_total == sum(result.clusters_per_arm)
+    assert result.target_n == sum(result.n_per_arm)
+
+
+def test_analyze_metric_power_cluster_three_arms():
+    metric = DesignSpecMetric(
+        field_name="test_metric",
+        metric_type=MetricType.NUMERIC,
+        metric_baseline=100,
+        metric_target=110,
+        metric_stddev=20,
+        available_n=2000,
+        available_nonnull_n=2000,
+    )
+
+    result = analyze_metric_power_cluster(
+        metric=metric,
+        n_arms=3,
+        icc=0.15,
+        avg_cluster_size=30,
+    )
+
+    assert result.clusters_per_arm is not None
+    assert result.n_per_arm is not None
+
+    assert len(result.clusters_per_arm) == 3
+    assert len(result.n_per_arm) == 3
+
+    assert result.clusters_per_arm == [12, 12, 12]
+    assert result.n_per_arm == [360, 360, 360]
+
+    assert result.num_clusters_total == sum(result.clusters_per_arm)
+    assert result.target_n == sum(result.n_per_arm)
+
+
+def test_analyze_metric_power_cluster_binary_metric():
+    metric = DesignSpecMetric(
+        field_name="conversion",
+        metric_type=MetricType.BINARY,
+        metric_baseline=0.10,
+        metric_target=0.15,
+        available_n=5000,
+        available_nonnull_n=5000,
+    )
+
+    result = analyze_metric_power_cluster(
+        metric=metric,
+        n_arms=2,
+        icc=0.05,
+        avg_cluster_size=50,
+    )
+
+    assert result.target_n is not None
+    assert result.num_clusters_total is not None
+    assert result.design_effect == pytest.approx(3.45)  # 1 + (50-1)*0.05
+
+
+def test_analyze_metric_power_cluster_high_icc():
+    metric = DesignSpecMetric(
+        field_name="test_metric",
+        metric_type=MetricType.NUMERIC,
+        metric_baseline=100,
+        metric_target=110,
+        metric_stddev=20,
+        available_n=2000,
+        available_nonnull_n=2000,
+    )
+
+    result_low = analyze_metric_power_cluster(
+        metric=metric,
+        n_arms=2,
+        icc=0.05,
+        avg_cluster_size=30,
+    )
+
+    result_high = analyze_metric_power_cluster(
+        metric=metric,
+        n_arms=2,
+        icc=0.30,
+        avg_cluster_size=30,
+    )
+
+    assert result_low.num_clusters_total is not None
+    assert result_high.num_clusters_total is not None
+    assert result_low.design_effect is not None
+    assert result_high.design_effect is not None
+
+    assert result_low.num_clusters_total == 12
+    assert result_high.num_clusters_total == 42
+    assert result_high.design_effect > result_low.design_effect
+
+
+def test_calculate_design_effect_with_cv():
+    """Test CV-adjusted design effect with specific values."""
+
+    deff_no_cv = calculate_design_effect(icc=0.15, avg_cluster_size=30, cv=0.0)
+    assert deff_no_cv == pytest.approx(5.35)  # 1 + (30-1)*0.15 = 5.35
+
+    deff_cv = calculate_design_effect(icc=0.15, avg_cluster_size=30, cv=1.5)
+    # DEFF = 1 + 0.15 * [(30-1) + 30*(1.5²)] = 15.475
+    assert deff_cv == pytest.approx(15.475)
+
+    assert deff_cv > deff_no_cv
+    assert deff_cv / deff_no_cv == pytest.approx(2.89, rel=0.01)
+
+
+def test_analyze_metric_power_cluster_cv_increases_clusters():
+    """Test that higher CV requires more clusters."""
+    metric = DesignSpecMetric(
+        field_name="test_metric",
+        metric_type=MetricType.NUMERIC,
+        metric_baseline=100,
+        metric_target=110,
+        metric_stddev=20,
+        available_n=5000,
+        available_nonnull_n=5000,
+    )
+
+    result_low_cv = analyze_metric_power_cluster(
+        metric=metric,
+        n_arms=2,
+        icc=0.15,
+        avg_cluster_size=30,
+        cv=0.3,
+    )
+
+    result_high_cv = analyze_metric_power_cluster(
+        metric=metric,
+        n_arms=2,
+        icc=0.15,
+        avg_cluster_size=30,
+        cv=2.0,
+    )
+
+    assert result_low_cv.num_clusters_total is not None
+    assert result_high_cv.num_clusters_total is not None
+    assert result_low_cv.design_effect is not None
+    assert result_high_cv.design_effect is not None
+
+    assert result_high_cv.num_clusters_total > result_low_cv.num_clusters_total
+    assert result_high_cv.design_effect > result_low_cv.design_effect
+
+    assert result_low_cv.design_effect == pytest.approx(5.755, rel=0.01)  # 1 + 0.15*[(29) + 30*0.09]
+    assert result_high_cv.design_effect == pytest.approx(23.35, rel=0.01)  # 1 + 0.15*[(29) + 30*4]
+
+    assert result_high_cv.num_clusters_total is not None
+    assert result_low_cv.num_clusters_total is not None
+
+    ratio = result_high_cv.num_clusters_total / result_low_cv.num_clusters_total
+    assert ratio == pytest.approx(4.06, rel=0.1)
+
+
+def test_analyze_metric_power_cluster_cv_affects_all_arms():
+    """Test that CV adjustment applies to all arms in multi-arm design."""
+    metric = DesignSpecMetric(
+        field_name="test_metric",
+        metric_type=MetricType.NUMERIC,
+        metric_baseline=100,
+        metric_target=110,
+        metric_stddev=20,
+        available_n=5000,
+        available_nonnull_n=5000,
+    )
+
+    result = analyze_metric_power_cluster(
+        metric=metric,
+        n_arms=3,
+        icc=0.15,
+        avg_cluster_size=30,
+        cv=1.2,
+    )
+
+    assert result.clusters_per_arm is not None
+
+    assert len(result.clusters_per_arm) == 3
+    assert result.cv == 1.2
+    assert result.design_effect == pytest.approx(11.86, rel=0.01)  # 1 + 0.15*[(29) + 30*1.44]
+
+
+def test_analyze_metric_power_cluster_cv_warning_high():
+    """Test that high CV (>1.0) adds warning to message."""
+    metric = DesignSpecMetric(
+        field_name="test_metric",
+        metric_type=MetricType.NUMERIC,
+        metric_baseline=100,
+        metric_target=110,
+        metric_stddev=20,
+        available_n=2000,
+        available_nonnull_n=2000,
+    )
+
+    result = analyze_metric_power_cluster(
+        metric=metric,
+        n_arms=2,
+        icc=0.15,
+        avg_cluster_size=30,
+        cv=1.5,  # High CV
+    )
+
+    # Check warning is in message
+    assert result.msg is not None
+    assert "Warning" in result.msg.msg
+    assert "CV=1.5" in result.msg.msg or "CV=1.50" in result.msg.msg
+    assert "cluster size variation" in result.msg.msg.lower()
+
+
+def test_analyze_metric_power_cluster_cv_warning_low():
+    """Test that low CV (<=1.0) does NOT add warning."""
+    metric = DesignSpecMetric(
+        field_name="test_metric",
+        metric_type=MetricType.NUMERIC,
+        metric_baseline=100,
+        metric_target=110,
+        metric_stddev=20,
+        available_n=2000,
+        available_nonnull_n=2000,
+    )
+
+    result = analyze_metric_power_cluster(
+        metric=metric,
+        n_arms=2,
+        icc=0.15,
+        avg_cluster_size=30,
+        cv=0.5,  # Low CV
+    )
+
+    # Check NO warning in message
+    assert result.msg is not None
+    assert "Warning" not in result.msg.msg
+    assert "CV=" not in result.msg.msg
+
+
+def test_analyze_metric_power_cluster_cv_zero_no_warning():
+    """Test that CV=0 (equal clusters) has no warning."""
+    metric = DesignSpecMetric(
+        field_name="test_metric",
+        metric_type=MetricType.NUMERIC,
+        metric_baseline=100,
+        metric_target=110,
+        metric_stddev=20,
+        available_n=2000,
+        available_nonnull_n=2000,
+    )
+
+    result = analyze_metric_power_cluster(
+        metric=metric,
+        n_arms=2,
+        icc=0.15,
+        avg_cluster_size=30,
+        cv=0.0,  # Equal clusters
+    )
+
+    # Check NO warning
+    assert result.msg is not None
+    assert "Warning" not in result.msg.msg
+
+
+def test_analyze_metric_power_cluster_cv_stored():
+    """Test that CV value is stored in result."""
+    metric = DesignSpecMetric(
+        field_name="test_metric",
+        metric_type=MetricType.NUMERIC,
+        metric_baseline=100,
+        metric_target=110,
+        metric_stddev=20,
+        available_n=2000,
+        available_nonnull_n=2000,
+    )
+
+    result = analyze_metric_power_cluster(
+        metric=metric,
+        n_arms=2,
+        icc=0.15,
+        avg_cluster_size=30,
+        cv=1.8,
+    )
+
+    # CV should be stored
+    assert result.cv == 1.8
