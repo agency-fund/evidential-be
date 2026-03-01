@@ -9,7 +9,10 @@ from xngin.apiserver.routers.common_api_types import (
     DesignSpecMetric,
     MetricPowerAnalysisMessage,
 )
-from xngin.stats.power import _analyze_power_sample_size_mode  # noqa: PLC2701
+from xngin.stats.power import (
+    _analyze_power_sample_size_mode,  # noqa: PLC2701
+    calculate_mde_with_desired_n,
+)
 
 
 def calculate_design_effect(
@@ -18,9 +21,10 @@ def calculate_design_effect(
     cv: float = 0.0,
 ) -> float:
     """
-    Calculate design effect (DEFF >= 1) for cluster-randomized designs.
+    Calculate design effect (DEFF) for cluster randomization.
 
     Formula: DEFF = 1 + (m - 1) * icc          (when cv=0)
+    Formula from Eldridge et al. (2006):
     Formula: DEFF = 1 + icc * [(m-1) + m*CV^2] (with CV^2 adjustment)
 
     Args:
@@ -31,14 +35,27 @@ def calculate_design_effect(
     """
     if not 0 <= icc <= 1:
         raise ValueError(f"ICC must be between 0 and 1, got {icc}")
-
     if avg_cluster_size < 1:
         raise ValueError(f"Cluster size must be >= 1, got {avg_cluster_size}")
-
     if cv < 0:
         raise ValueError(f"CV must be >= 0, got {cv}")
 
     return 1 + icc * ((avg_cluster_size - 1) + avg_cluster_size * (cv**2))
+
+
+def calculate_effective_sample_size(
+    total_n: int,
+    deff: float,
+) -> int:
+    """
+    Calculate effective sample size for cluster-randomized design.
+
+    Args:
+        total_n: Total number of participants across all clusters
+        deff: Design effect from calculate_design_effect()
+
+    """
+    return int(total_n / deff)
 
 
 def calculate_num_clusters_needed(
@@ -59,6 +76,52 @@ def calculate_num_clusters_needed(
     """
     clusters_needed = (n_individual / avg_cluster_size) * deff
     return math.ceil(clusters_needed)
+
+
+def calculate_mde_cluster(
+    available_n: int,
+    metric: DesignSpecMetric,
+    n_arms: int,
+    icc: float,
+    avg_cluster_size: float,
+    cv: float = 0.0,
+    power: float = 0.8,
+    alpha: float = 0.05,
+    arm_weights: list[float] | None = None,
+) -> tuple[float, float]:
+    """
+    Given available sample size,
+    calculate minimum detectable effect (MDE) for cluster-randomized design.
+
+    Args:
+        available_n: Total number of participants available across all arms
+        metric: DesignSpecMetric with baseline and variance information
+        n_arms: Number of treatment arms
+        icc: Intracluster correlation coefficient, range [0, 1]
+        avg_cluster_size: Average number of individuals per cluster
+        cv: Coefficient of variation in cluster sizes (default 0.0)
+        power: Desired statistical power (default 0.8)
+        alpha: Significance level (default 0.05)
+        arm_weights: Optional allocation weights for unbalanced designs
+
+    Returns:
+        Tuple of (target_value, pct_change):
+        - target_value: The minimum detectable effect in absolute terms
+        - pct_change: The minimum detectable effect as percent change from baseline
+
+    """
+    deff = calculate_design_effect(icc, avg_cluster_size, cv)
+
+    effective_n = calculate_effective_sample_size(available_n, deff)
+
+    return calculate_mde_with_desired_n(
+        desired_n=effective_n,
+        metric=metric,
+        n_arms=n_arms,
+        alpha=alpha,
+        power=power,
+        arm_weights=arm_weights,
+    )
 
 
 def analyze_metric_power_cluster(
@@ -84,7 +147,6 @@ def analyze_metric_power_cluster(
         arm_weights: Allocation weights for unbalanced designs
 
     """
-
     individual_analysis = _analyze_power_sample_size_mode(
         metric=metric,
         n_arms=n_arms,
