@@ -651,6 +651,11 @@ class ClusterMetricPowerAnalysis(MetricPowerAnalysis):
         Field(description="Average number of individuals per cluster"),
     ]
 
+    cv: Annotated[
+        float,
+        Field(description="Coefficient of variation in cluster sizes (0 = equal sizes)"),
+    ] = 0.0
+
     # Results (None if analysis failed)
     num_clusters_total: Annotated[
         int | None,
