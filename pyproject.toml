@@ -30,7 +30,8 @@ dependencies = [
     "statsmodels>=0.14.5,<0.20",
     "stochatreat @ git+https://github.com/agency-fund/stochatreat@prod",
     "typer>=0.20.0,<0.21.0",
-    "uvicorn[standard]>=0.38.0"
+    "uvicorn[standard]>=0.38.0",
+    "zstandard>=0.25.0,<0.26",  # undeclared dependency of pandas-gbq
 ]
 requires-python = ">=3.14,<3.15"
 
