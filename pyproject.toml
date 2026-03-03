@@ -172,6 +172,9 @@ environments = [
     "sys_platform == 'darwin'",
     "sys_platform == 'linux'",
 ]
+override-dependencies = [
+    "clickhouse-sqlalchemy ; sys_platform == 'never'" # Unused heavy dependency
+]
 
 [tool.mypy]
 python_version = 3.14
