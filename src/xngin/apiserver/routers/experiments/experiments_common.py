@@ -66,8 +66,11 @@ from xngin.stats.analysis import analyze_experiment as analyze_freq_experiment
 from xngin.stats.bandit_analysis import analyze_experiment as analyze_bandit_experiment
 from xngin.stats.bandit_sampling import choose_arm as choose_bandit_arm
 from xngin.stats.bandit_sampling import update_arm as update_bandit_arm
+from xngin.stats.block_randomize import BlockRandomize
 from xngin.stats.stats_errors import StatsAnalysisError
 from xngin.tq.task_payload_types import WEBHOOK_OUTBOUND_TASK_TYPE, WebhookOutboundTask
+
+_block_randomizer = BlockRandomize()
 
 
 class ExperimentsAssignmentError(Exception):
@@ -795,20 +798,19 @@ def choose_online_arm(
     experiment: tables.Experiment,
     random_state: int | None = None,
 ) -> tables.Arm:
-    """Choose an arm for online experiments using simple or weighted random assignment depending on its design."""
+    """Choose an arm for online experiments using block randomization."""
     # Sort by arm name to ensure deterministic assignment with seed for tests.
     sorted_arms = sorted(experiment.arms, key=lambda a: a.name)
-    arm_weights_as_probabilities = None
 
     arm_id_to_weight = {arm.id: arm.arm_weight for arm in experiment.arms if arm.arm_weight is not None}
-    if len(arm_id_to_weight) == len(experiment.arms):
-        # Convert to probabilities for weighted random selection.
-        arm_weights_sorted = [arm_id_to_weight[arm.id] for arm in sorted_arms]
-        sum_weights = sum(arm_weights_sorted)
-        arm_weights_as_probabilities = [w / sum_weights for w in arm_weights_sorted]
+    arm_weights_sorted = (
+        [arm_id_to_weight[arm.id] for arm in sorted_arms] if len(arm_id_to_weight) == len(experiment.arms) else None
+    )
 
-    rng = np.random.default_rng(random_state)
-    index = rng.choice(len(sorted_arms), p=arm_weights_as_probabilities)
+    index = _block_randomizer.random_index_for(
+        experiment.id, len(sorted_arms), weights=arm_weights_sorted, random_state=random_state
+    )
+
     return sorted_arms[index]
 
 

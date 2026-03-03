@@ -66,17 +66,23 @@ class BlockRandomize:
         identifier: str,
         length: int,
         weights: Sequence[float] | None = None,
+        random_state: int | None = None,
     ) -> int:
         """Return a random arm index in `[0, length)` via permuted block randomization.
 
         When *weights* is `None` every arm is equally likely within each
         block.  When provided, arms appear in proportion to their weights.
 
+        *random_state* seeds the RNG used to shuffle each newly generated
+        block, making the sequence reproducible for tests.  It has no effect
+        when drawing from an already-existing block.
+
         Args:
             identifier: Experiment identifier (block-map key).
             length: Number of arms.  Must be >= 1.
             weights: Optional per-arm weights (need not sum to 1).
                 Length must equal *length* and every weight must be > 0.
+            random_state: Optional integer seed for the block-shuffle RNG.
 
         Returns:
             An integer in `[0, length)`.
@@ -99,11 +105,16 @@ class BlockRandomize:
         with self._lock:
             block = self._blocks.get(key)
             if not block:  # None or empty deque
-                block = self._make_block(length, weights_key)
+                block = self._make_block(length, weights_key, random_state)
                 self._blocks[key] = block
             return block.popleft()
 
-    def _make_block(self, length: int, weights: tuple[float, ...] | None = None) -> deque[int]:
+    def _make_block(
+        self,
+        length: int,
+        weights: tuple[float, ...] | None = None,
+        random_state: int | None = None,
+    ) -> deque[int]:
         if weights is not None:
             total = sum(weights)
             probs = [w / total for w in weights]
@@ -119,5 +130,5 @@ class BlockRandomize:
         for idx, count in enumerate(base_counts):
             indices.extend([idx] * (count * effective_multiple))
 
-        np.random.default_rng().shuffle(indices)
+        np.random.default_rng(random_state).shuffle(indices)
         return deque(indices)

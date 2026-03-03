@@ -123,9 +123,9 @@ def print_database_env_vars():
     )
 
 
-def get_random_seed_for_test():
-    """Returns a seed for testing."""
-    return 42
+def get_random_seed_for_test(random_state: int | None = None):
+    """Returns a static seed for testing if no random_state is provided."""
+    return random_state or 42
 
 
 @pytest.fixture(scope="session", autouse=True)

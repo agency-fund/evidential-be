@@ -273,3 +273,67 @@ class TestWeightedConcurrentAccess:
         # 4 blocks * 15 = 60 for arm 0, 4 * 35 = 140 for arm 1
         assert counts[0] == 60
         assert counts[1] == 140
+
+
+class TestRandomState:
+    def test_seeded_block_is_reproducible(self):
+        """Same random_state produces the same block order on a fresh instance."""
+        length, block_multiple = 4, 5
+        block_size = length * block_multiple
+
+        br1 = BlockRandomize(block_multiple=block_multiple)
+        br2 = BlockRandomize(block_multiple=block_multiple)
+        br3 = BlockRandomize(block_multiple=block_multiple)
+
+        results1 = [br1.random_index_for("exp-seed", length, random_state=42) for _ in range(block_size)]
+        results2 = [br2.random_index_for("exp-seed", length, random_state=42) for _ in range(block_size)]
+        # But different seeds produce different blocks
+        results3 = [br3.random_index_for("exp-seed-diff", length, random_state=41) for _ in range(block_size)]
+
+        assert results1 == results2
+        assert results1 != results3
+
+    def test_seeded_block_is_balanced(self):
+        """random_state seeds the shuffle but does not break balance guarantees."""
+        length, block_multiple = 3, 4
+        block_size = length * block_multiple
+        br = BlockRandomize(block_multiple=block_multiple)
+
+        results = [br.random_index_for("exp-seed-bal", length, random_state=7) for _ in range(block_size)]
+        counts = Counter(results)
+        for arm_idx in range(length):
+            assert counts[arm_idx] == block_multiple
+
+    def test_seed_only_affects_new_block_generation(self):
+        """Once a block exists, subsequent random_state values are ignored for that block."""
+        length, block_multiple = 2, 4
+        block_size = length * block_multiple
+        # br = BlockRandomize(block_multiple=block_multiple)
+        br1 = BlockRandomize(block_multiple=block_multiple)
+        br2 = BlockRandomize(block_multiple=block_multiple)
+
+        reference = [br1.random_index_for("exp-seed-firstcall", length, random_state=42) for _ in range(block_size)]
+        # Seed is used on first call (creates block)
+        first = br2.random_index_for("exp-seed-firstcall2", length, random_state=42)
+        # Subsequent calls drain the same block regardless of random_state
+        rest = [br2.random_index_for("exp-seed-firstcall2", length, random_state=i) for i in range(block_size - 1)]
+        all_results = [first, *rest]
+
+        assert reference == all_results
+
+    def test_seeded_weighted_block_is_reproducible(self):
+        """random_state also seeds weighted block shuffles."""
+        length, block_multiple = 2, 5
+        block_size = 50  # weights [30,70] → base 10, * 5 = 50
+
+        br1 = BlockRandomize(block_multiple=block_multiple)
+        br2 = BlockRandomize(block_multiple=block_multiple)
+
+        r1 = [br1.random_index_for("exp-w-seed", length, weights=[30, 70], random_state=13) for _ in range(block_size)]
+        r2 = [br2.random_index_for("exp-w-seed", length, weights=[30, 70], random_state=13) for _ in range(block_size)]
+
+        assert r1 == r2
+        # Still balanced
+        counts = Counter(r1)
+        assert counts[0] == 15
+        assert counts[1] == 35

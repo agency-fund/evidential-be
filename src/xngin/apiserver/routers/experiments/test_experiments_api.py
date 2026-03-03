@@ -174,7 +174,7 @@ async def test_get_assignment_online(xngin_session, testing_datasource, client_v
     arms_map = {arm.id: arm.name for arm in online_experiment.arms}
     assert parsed.assignment is not None
     assert parsed.assignment.arm_name == arms_map[str(parsed.assignment.arm_id)]
-    assert parsed.assignment.arm_name == "control"
+    assert parsed.assignment.arm_name == "treatment"
     assert not parsed.assignment.strata
 
     # Test that we get the same assignment for the same participant.
@@ -197,6 +197,30 @@ async def test_get_assignment_online(xngin_session, testing_datasource, client_v
     # Verify no update to experiment lifecycle info.
     assert assignment.experiment.stopped_assignments_at is None
     assert assignment.experiment.stopped_assignments_reason is None
+
+
+async def test_get_assignment_online_is_balanced(xngin_session, testing_datasource, client_v1):
+    """Test that the assignment is balanced with the block randomizer."""
+    online_experiment = await insert_experiment_and_arms(
+        xngin_session,
+        testing_datasource.ds,
+        experiment_type=ExperimentsType.FREQ_ONLINE,
+    )
+
+    counts = {arm.id: 0 for arm in online_experiment.arms}
+    for i in range(10):
+        response = client_v1.get(
+            f"/experiments/{online_experiment.id!s}/assignments/{i}",
+            headers={constants.HEADER_API_KEY: testing_datasource.key},
+            params={"random_state": i},
+        )
+        parsed = GetParticipantAssignmentResponse.model_validate_json(response.text)
+        assert parsed.assignment is not None
+        counts[parsed.assignment.arm_id] += 1
+
+    # This would fail for the particular sequence of random states with the old rng.choice logic.
+    assert counts[online_experiment.arms[0].id] == 5
+    assert counts[online_experiment.arms[1].id] == 5
 
 
 async def test_get_assignment_mab_online(xngin_session, testing_datasource, client_v1):
