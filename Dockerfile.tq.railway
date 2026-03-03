@@ -1,6 +1,6 @@
 # Defines a production runtime environment for the task queue service hosted on Railway.
 # This is not for development uses.
-FROM ghcr.io/astral-sh/uv:python3.12-bookworm
+FROM ghcr.io/astral-sh/uv:python3.14-bookworm
 ENV ATLAS_NO_ANON_TELEMETRY=true
 ENV PYTHONUNBUFFERED=1
 ENV UV_COMPILE_BYTECODE=1

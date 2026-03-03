@@ -104,7 +104,7 @@ def create_engine_and_database(url: sqlalchemy.URL):
 
 
 def df_to_ddl(
-    df: "DataFrame",
+    df: DataFrame,
     *,
     table_name: str,
     quoter: IdentifierPreparer,
@@ -136,7 +136,7 @@ def df_to_ddl(
             try:
                 uuid.UUID(first_val)
                 df_dtypes[col] = "uuid"  # override with our special case
-            except (ValueError, AttributeError, TypeError):
+            except ValueError, AttributeError, TypeError:
                 pass  # Not a UUID
     # Now generate the DDL.
     columns = [

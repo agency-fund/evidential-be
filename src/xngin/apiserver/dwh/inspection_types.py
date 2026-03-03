@@ -59,7 +59,7 @@ class ParticipantsSchema(SchemaBaseModel):
         return next((i.field_name for i in self.fields if i.is_unique_id), None)
 
     @model_validator(mode="after")
-    def check_one_unique_id(self, info: ValidationInfo) -> "ParticipantsSchema":
+    def check_one_unique_id(self, info: ValidationInfo) -> ParticipantsSchema:
         """
         Checks that there is exactly one column marked as the unique ID.
 
@@ -79,7 +79,7 @@ class ParticipantsSchema(SchemaBaseModel):
         return self
 
     @model_validator(mode="after")
-    def check_unique_fields(self) -> "ParticipantsSchema":
+    def check_unique_fields(self) -> ParticipantsSchema:
         counted = Counter([".".join(row.field_name) for row in self.fields])
         duplicates = [item for item, count in counted.items() if count > 1]
         if duplicates:
@@ -87,7 +87,7 @@ class ParticipantsSchema(SchemaBaseModel):
         return self
 
     @model_validator(mode="after")
-    def check_non_empty_rows(self) -> "ParticipantsSchema":
+    def check_non_empty_rows(self) -> ParticipantsSchema:
         if len(self.fields) == 0:
             raise ValueError(f"{self.__class__} must contain at least one FieldDescriptor.")
         return self
