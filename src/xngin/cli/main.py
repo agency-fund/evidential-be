@@ -7,6 +7,7 @@ import logging
 import re
 import sys
 import uuid
+from compression import zstd
 from enum import StrEnum
 from pathlib import Path
 from typing import TYPE_CHECKING, Annotated
@@ -16,7 +17,6 @@ import psycopg
 import psycopg2
 import sqlalchemy
 import typer
-import zstandard
 from email_validator import EmailNotValidError, validate_email
 from fastapi import FastAPI
 from rich.console import Console
@@ -355,10 +355,10 @@ def create_testing_dwh(
             s3.upload_file(src, bucket, f"{key}")
             try:
                 print("Loading...")
-                zstd = "ZSTD" if is_compressed else ""
+                compression_hint = "ZSTD" if is_compressed else ""
                 cur.execute(
                     f"COPY {full_table_name} FROM 's3://{bucket}/{key}' "
-                    f"IAM_ROLE '{iam_role}' FORMAT CSV IGNOREHEADER 1 {zstd};"
+                    f"IAM_ROLE '{iam_role}' FORMAT CSV IGNOREHEADER 1 {compression_hint};"
                 )
                 count(cur)
             finally:
@@ -378,7 +378,7 @@ def create_testing_dwh(
         with engine.begin() as conn:
             cursor = conn.connection.cursor()
             drop_and_create(cursor, ddl)
-            opener = (lambda x: zstandard.open(x, "r")) if is_compressed else open
+            opener = (lambda x: zstd.open(x, "rt")) if is_compressed else open
             if url.get_driver_name() == "psycopg":
                 print("Loading via psycopg3 COPY FROM STDIN...")
                 with opener(src) as reader:
