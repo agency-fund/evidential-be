@@ -17,7 +17,7 @@ from xngin.stats.cluster_power import (
 @pytest.fixture
 def wide_dwh_data():
     """Load the wide_dwh test dataset."""
-    data_path = Path(__file__).parent.parent / "apiserver" / "testdata" / "wide_dwh.csv"
+    data_path = Path(__file__).parent.parent / "apiserver" / "testdata" / "wide_dwh.csv.zst"
     return pd.read_csv(data_path)
 
 
