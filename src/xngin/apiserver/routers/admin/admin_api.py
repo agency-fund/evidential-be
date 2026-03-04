@@ -25,7 +25,7 @@ from fastapi import (
 from fastapi.responses import StreamingResponse
 from loguru import logger
 from pydantic import BaseModel
-from sqlalchemy import delete, select
+from sqlalchemy import delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import QueryableAttribute, selectinload
 
@@ -49,6 +49,13 @@ from xngin.apiserver.dwh.queries import (
     get_stats_on_metrics,
 )
 from xngin.apiserver.exceptions_common import LateValidationError
+from xngin.apiserver.pagination import (
+    PaginationQuery,
+    SortField,
+    build_next_page_token,
+    paginate,
+    pagination_query_params,
+)
 from xngin.apiserver.routers.admin import admin_api_converters, admin_common, authz
 from xngin.apiserver.routers.admin.admin_api_converters import (
     api_dsn_to_settings_dwh,
@@ -73,6 +80,7 @@ from xngin.apiserver.routers.admin.admin_api_types import (
     Drift,
     EventSummary,
     GetDatasourceResponse,
+    GetExperimentForUiResponse,
     GetOrganizationResponse,
     GetParticipantsTypeResponse,
     GetSnapshotResponse,
@@ -116,7 +124,6 @@ from xngin.apiserver.routers.common_api_types import (
     ExperimentAnalysisResponse,
     ExperimentsType,
     GetExperimentAssignmentsResponse,
-    GetExperimentResponse,
     GetMetricsResponseElement,
     GetParticipantAssignmentResponse,
     GetStrataResponseElement,
@@ -387,6 +394,7 @@ async def list_snapshots(
     organization_id: Annotated[str, Path()],
     datasource_id: Annotated[str, Path()],
     experiment_id: Annotated[str, Path()],
+    pagination: Annotated[PaginationQuery, Depends(pagination_query_params)],
     status_: Annotated[
         list[SnapshotStatus] | None,
         Query(
@@ -398,32 +406,35 @@ async def list_snapshots(
     """Lists snapshots for an experiment, ordered by timestamp."""
     datasource = await get_datasource_or_raise(session, user, datasource_id, organization_id=organization_id)
     experiment = await get_experiment_via_ds_or_raise(session, datasource, experiment_id)
-
-    query = (
-        select(tables.Snapshot)
-        .where(tables.Snapshot.experiment_id == experiment.id)
-        .order_by(tables.Snapshot.updated_at.desc())
-    )
+    query = select(tables.Snapshot).where(tables.Snapshot.experiment_id == experiment.id)
     if status_:
         query = query.where(
             tables.Snapshot.status.in_([convert_api_snapshot_status_to_snapshot_status(s) for s in status_])
         )
-    # read into a list because we may iterate over it twice
+    ordering = [
+        SortField.timestamp(
+            column=tables.Snapshot.updated_at,
+            attr="updated_at",
+            direction="desc",
+        ),
+        SortField(column=tables.Snapshot.id, attr="id", direction="desc"),
+    ]
+    query = paginate(query, ordering, pagination)
     snapshots = list(await session.scalars(query))
+    snapshots, next_page_token = build_next_page_token(snapshots, pagination.page_size, ordering)
 
-    if status_ is None:
-        latest_failure = next((r.updated_at for r in snapshots if r.status == "failed"), None)
-    else:
-        latest_failure = await session.scalar(
-            select(tables.Snapshot.updated_at)
-            .where(tables.Snapshot.experiment_id == experiment.id)
-            .where(tables.Snapshot.status == convert_api_snapshot_status_to_snapshot_status(SnapshotStatus.FAILED))
-            .order_by(tables.Snapshot.updated_at.desc())
-            .limit(1)
-        )
+    latest_failure = await session.scalar(
+        select(tables.Snapshot.updated_at)
+        .where(tables.Snapshot.experiment_id == experiment.id)
+        .where(tables.Snapshot.status == convert_api_snapshot_status_to_snapshot_status(SnapshotStatus.FAILED))
+        .order_by(tables.Snapshot.updated_at.desc())
+        .limit(1)
+    )
 
     return ListSnapshotsResponse(
-        items=[convert_snapshot_to_api_snapshot(snapshot) for snapshot in snapshots], latest_failure=latest_failure
+        items=[convert_snapshot_to_api_snapshot(snapshot) for snapshot in snapshots],
+        latest_failure=latest_failure,
+        next_page_token=next_page_token,
     )
 
 
@@ -687,22 +698,25 @@ async def list_organization_events(
     organization_id: str,
     session: Annotated[AsyncSession, Depends(xngin_db_session)],
     user: Annotated[tables.User, Depends(require_user_from_token)],
+    pagination: Annotated[PaginationQuery, Depends(pagination_query_params)],
 ) -> ListOrganizationEventsResponse:
-    """Returns the most recent 200 events in an organization."""
-    # Verify user has access to the organization
+    """Returns events in an organization, newest first."""
     org = await get_organization_or_raise(session, user, organization_id)
-
-    # Query for the most recent 200 events
-    stmt = (
-        select(tables.Event)
-        .where(tables.Event.organization_id == org.id)
-        .order_by(tables.Event.created_at.desc())
-        .limit(200)
-    )
-    events = await session.scalars(stmt)
+    stmt = select(tables.Event).where(tables.Event.organization_id == org.id)
+    ordering = [
+        SortField.timestamp(
+            column=tables.Event.created_at,
+            attr="created_at",
+            direction="desc",
+        ),
+        SortField(column=tables.Event.id, attr="id", direction="desc"),
+    ]
+    stmt = paginate(stmt, ordering, pagination)
+    events = list(await session.scalars(stmt))
+    events, next_page_token = build_next_page_token(events, pagination.page_size, ordering)
 
     event_summaries = convert_events_to_eventsummaries(events)
-    return ListOrganizationEventsResponse(items=event_summaries)
+    return ListOrganizationEventsResponse(items=event_summaries, next_page_token=next_page_token)
 
 
 def convert_events_to_eventsummaries(events):
@@ -863,11 +877,21 @@ async def list_organization_datasources(
 ) -> ListDatasourcesResponse:
     """Returns a list of datasources accessible to the authenticated user for an org."""
     _authz_check = await get_organization_or_raise(session, user, organization_id)
+    experiment_count = (
+        select(tables.Experiment.datasource_id, func.count().label("experiment_count"))
+        .group_by(tables.Experiment.datasource_id)
+        .subquery()
+    )
     stmt = (
         select(tables.Datasource)
         .join(tables.Organization)
         .join(tables.Organization.users)
+        .outerjoin(experiment_count, tables.Datasource.id == experiment_count.c.datasource_id)
         .where(tables.User.id == user.id)
+        .order_by(
+            func.coalesce(experiment_count.c.experiment_count, 0).desc(),
+            tables.Datasource.name.asc(),
+        )
     )
     if organization_id is not None:
         stmt = stmt.where(tables.Organization.id == organization_id)
@@ -885,9 +909,7 @@ async def list_organization_datasources(
             organization_name=ds.organization.name,
         )
 
-    return ListDatasourcesResponse(
-        items=[convert_ds_to_summary(ds) for ds in sorted(datasources, key=lambda d: d.name)]
-    )
+    return ListDatasourcesResponse(items=[convert_ds_to_summary(ds) for ds in datasources])
 
 
 @router.post("/datasources")
@@ -895,6 +917,10 @@ async def create_datasource(
     session: Annotated[AsyncSession, Depends(xngin_db_session)],
     user: Annotated[tables.User, Depends(require_user_from_token)],
     body: Annotated[CreateDatasourceRequest, Body(...)],
+    connectivity_check: Annotated[
+        bool,
+        Query(description="When true, validate datasource connectivity before creation."),
+    ] = False,
 ) -> CreateDatasourceResponse:
     """Creates a new datasource for the specified organization."""
     org = await get_organization_or_raise(session, user, body.organization_id)
@@ -902,6 +928,9 @@ async def create_datasource(
     raise_unless_safe_hostname(body.dsn)
 
     config = RemoteDatabaseConfig(participants=[], type="remote", dwh=api_dsn_to_settings_dwh(body.dsn))
+    if connectivity_check and config.dwh.driver != "none":
+        async with DwhSession(config.dwh) as dwh:
+            await dwh.connectivity_check()
 
     datasource = await admin_common.create_datasource_impl(session, org, body.name, config)
     await session.commit()
@@ -1009,6 +1038,12 @@ async def inspect_table_in_datasource(
 
     config = ds.get_config()
 
+    if config.dwh.driver == "none":
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Only remote datasources may be inspected.",
+        )
+
     await invalidate_inspect_table_cache(session, datasource_id)
     await session.commit()
 
@@ -1066,8 +1101,15 @@ async def list_participant_types(
     user: Annotated[tables.User, Depends(require_user_from_token)],
 ) -> ListParticipantsTypeResponse:
     ds = await get_datasource_or_raise(session, user, datasource_id)
+    participants = ds.get_config().participants
     return ListParticipantsTypeResponse(
-        items=list(sorted(ds.get_config().participants, key=lambda p: p.participant_type))
+        items=list(
+            sorted(
+                [p for p in participants if not p.hidden],
+                key=lambda p: p.participant_type,
+            )
+        ),
+        has_hidden=any(p for p in participants if p.hidden),
     )
 
 
@@ -1397,6 +1439,11 @@ async def create_experiment(
     if body.design_spec.ids_are_present():
         raise LateValidationError("Invalid DesignSpec: UUIDs must not be set.")
 
+    if (body.table_name is not None or body.primary_key is not None) and not isinstance(
+        body.design_spec, BaseFrequentistDesignSpec
+    ):
+        raise LateValidationError("table_name/primary_key is only supported for frequentist experiment types")
+
     # Validate webhook IDs exist and belong to organization
     organization_id = datasource.organization_id
     validated_webhooks = await validate_webhooks(
@@ -1565,7 +1612,7 @@ async def get_experiment_for_ui(
     experiment_id: str,
     session: Annotated[AsyncSession, Depends(xngin_db_session)],
     user: Annotated[tables.User, Depends(require_user_from_token)],
-) -> GetExperimentResponse:
+) -> GetExperimentForUiResponse:
     """Returns the experiment with the specified ID."""
     ds = await get_datasource_or_raise(session, user, datasource_id)
     experiment = await get_experiment_via_ds_or_raise(
@@ -1574,7 +1621,11 @@ async def get_experiment_for_ui(
         experiment_id,
         preload=[tables.Experiment.webhooks, tables.Experiment.contexts],
     )
-    return await experiments_common.get_experiment_impl(session, experiment)
+    participants = ds.get_config().find_participants_or_none(experiment.participant_type)
+    return GetExperimentForUiResponse(
+        config=await experiments_common.get_experiment_impl(session, experiment),
+        participant_type=participants,
+    )
 
 
 @router.get("/datasources/{datasource_id}/experiments/{experiment_id}/assignments")
@@ -1803,12 +1854,19 @@ async def power_check(
             detail="Power checks are not supported for datasources without a data warehouse.",
         )
     dsconfig = ds.get_config()
-    participants_cfg = dsconfig.find_participants(design_spec.participant_type)
 
-    validate_schema_metrics_or_raise(design_spec, participants_cfg)
+    if body.table_name is not None and body.primary_key is not None:
+        # If the power check request includes a table name and primary key, we trust the table name.
+        table_name = body.table_name
+    else:
+        # If the power check request refers to a participant type, we look up the participant type and validate it
+        # against the design spec.
+        participants_cfg = dsconfig.find_participants(design_spec.participant_type)
+        validate_schema_metrics_or_raise(design_spec, participants_cfg)
+        table_name = participants_cfg.table_name
+
     async with DwhSession(dsconfig.dwh) as dwh:
-        sa_table = await dwh.inspect_table(participants_cfg.table_name)
-
+        sa_table = await dwh.inspect_table(table_name)
         metric_stats = await asyncio.to_thread(
             get_stats_on_metrics,
             dwh.session,

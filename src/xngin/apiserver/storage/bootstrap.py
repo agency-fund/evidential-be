@@ -25,7 +25,24 @@ from xngin.apiserver.sqla import tables
 from xngin.apiserver.testing.testing_dwh_def import TESTING_DWH_PARTICIPANT_DEF
 
 DEFAULT_ORGANIZATION_NAME = "My Organization"
-DEFAULT_DWH_SOURCE_NAME = "Local DWH"
+TESTING_DWH_DATASOURCE_NAME = "Local DWH"
+ALT_TESTING_DWH_DATASOURCE_NAME = "Alternate Local DWH"
+
+
+async def _create_and_commit_experiment(
+    session: AsyncSession, datasource: tables.Datasource, create_experiment_request: CreateExperimentRequest
+):
+    result = await experiments_common.create_experiment_impl(
+        create_experiment_request,
+        datasource,
+        session,
+        chosen_n=100,
+        stratify_on_metrics=False,
+        random_state=None,
+        validated_webhooks=[],
+    )
+    experiment = await session.get_one(tables.Experiment, result.experiment_id)
+    await experiments_common.commit_experiment_impl(session, experiment)
 
 
 async def _maybe_create_developer_samples(
@@ -34,29 +51,67 @@ async def _maybe_create_developer_samples(
     if not testing_dwh_dsn:
         return
 
+    from xngin.apiserver.testing.wide_dwh_def import WIDE_DWH_PARTICIPANT_DEF  # noqa: PLC0415
+
     _ = admin_common.create_webhook_impl(
         session,
         organization.id,
-        AddWebhookToOrganizationRequest(type="experiment.created", name="My Webhook", url="http://localhost:8000"),
+        AddWebhookToOrganizationRequest(type="experiment.created", name="Sample Webhook", url="http://localhost:8000"),
     )
 
     datasource = await admin_common.create_datasource_impl(
         session,
         organization,
-        DEFAULT_DWH_SOURCE_NAME,
+        TESTING_DWH_DATASOURCE_NAME,
         RemoteDatabaseConfig(
             participants=[TESTING_DWH_PARTICIPANT_DEF],
             type="remote",
             dwh=Dsn.from_url(testing_dwh_dsn),
         ),
     )
+
+    alt_datasource = await admin_common.create_datasource_impl(
+        session,
+        organization,
+        ALT_TESTING_DWH_DATASOURCE_NAME,
+        RemoteDatabaseConfig(
+            participants=[WIDE_DWH_PARTICIPANT_DEF],
+            type="remote",
+            dwh=Dsn.from_url(testing_dwh_dsn),
+        ),
+    )
     await session.flush()
-    datasource_id = await datasource.awaitable_attrs.id
-    create_preassigned_experiment = await experiments_common.create_experiment_impl(
+
+    await _create_and_commit_experiment(
+        session,
+        datasource,
         CreateExperimentRequest(
             design_spec=PreassignedFrequentistExperimentSpec(
                 participant_type=TESTING_DWH_PARTICIPANT_DEF.participant_type,
-                experiment_name="My Preassigned Experiment",
+                experiment_name="Preassigned",
+                description="Hypothesis",
+                start_date=datetime.datetime.now() - datetime.timedelta(days=7),
+                end_date=datetime.datetime.now() + datetime.timedelta(days=7),
+                arms=[
+                    Arm(arm_name="Control", arm_description="First arm"),
+                    Arm(arm_name="Treatment", arm_description="Second arm"),
+                ],
+                filters=[Filter(field_name="baseline_income", relation=Relation.BETWEEN, value=[100, None])],
+                strata=[],
+                metrics=[DesignSpecMetricRequest(field_name="current_income", metric_pct_change=0.10)],
+            )
+        ),
+    )
+
+    await _create_and_commit_experiment(
+        session,
+        datasource,
+        CreateExperimentRequest(
+            table_name=TESTING_DWH_PARTICIPANT_DEF.table_name,
+            primary_key="id",
+            design_spec=PreassignedFrequentistExperimentSpec(
+                participant_type="",
+                experiment_name="Preassigned 2.0",
                 description="Hypothesis",
                 start_date=datetime.datetime.now() - datetime.timedelta(days=7),
                 end_date=datetime.datetime.now() + datetime.timedelta(days=7),
@@ -69,21 +124,39 @@ async def _maybe_create_developer_samples(
                 metrics=[DesignSpecMetricRequest(field_name="current_income", metric_pct_change=0.10)],
             ),
         ),
-        await session.get_one(tables.Datasource, datasource_id),
-        session,
-        chosen_n=100,
-        stratify_on_metrics=False,
-        random_state=None,
-        validated_webhooks=[],
     )
-    preassigned_experiment = await session.get_one(tables.Experiment, create_preassigned_experiment.experiment_id)
-    await experiments_common.commit_experiment_impl(session, preassigned_experiment)
 
-    create_online_experiment = await experiments_common.create_experiment_impl(
+    await _create_and_commit_experiment(
+        session,
+        datasource,
         CreateExperimentRequest(
             design_spec=OnlineFrequentistExperimentSpec(
                 participant_type=TESTING_DWH_PARTICIPANT_DEF.participant_type,
-                experiment_name="My Online Experiment",
+                experiment_name="Online",
+                description="Hypothesis",
+                start_date=datetime.datetime.now() - datetime.timedelta(days=7),
+                end_date=datetime.datetime.now() + datetime.timedelta(days=7),
+                arms=[
+                    Arm(arm_name="Control", arm_description="First arm"),
+                    Arm(arm_name="Treatment", arm_description="Second arm"),
+                ],
+                filters=[],
+                strata=[],
+                metrics=[DesignSpecMetricRequest(field_name="current_income", metric_pct_change=0.10)],
+            )
+        ),
+    )
+
+    # Create an online frequentist experiment with table name and primary key instead of a participant type
+    await _create_and_commit_experiment(
+        session,
+        datasource,
+        CreateExperimentRequest(
+            table_name=TESTING_DWH_PARTICIPANT_DEF.table_name,
+            primary_key="id",
+            design_spec=OnlineFrequentistExperimentSpec(
+                participant_type="",
+                experiment_name="Online 2.0",
                 description="Hypothesis",
                 start_date=datetime.datetime.now() - datetime.timedelta(days=7),
                 end_date=datetime.datetime.now() + datetime.timedelta(days=7),
@@ -96,21 +169,15 @@ async def _maybe_create_developer_samples(
                 metrics=[DesignSpecMetricRequest(field_name="current_income", metric_pct_change=0.10)],
             ),
         ),
-        await session.get_one(tables.Datasource, datasource_id),
-        session,
-        chosen_n=100,
-        stratify_on_metrics=False,
-        random_state=None,
-        validated_webhooks=[],
     )
-    online_experiment = await session.get_one(tables.Experiment, create_online_experiment.experiment_id)
-    await experiments_common.commit_experiment_impl(session, online_experiment)
 
-    create_mab_experiment = await experiments_common.create_experiment_impl(
+    await _create_and_commit_experiment(
+        session,
+        datasource,
         CreateExperimentRequest(
             design_spec=MABExperimentSpec(
-                participant_type="testing_dwh_participant",
-                experiment_name="My MAB Experiment",
+                participant_type="user",
+                experiment_name="MAB",
                 description="Hypothesis",
                 start_date=datetime.datetime.now() - datetime.timedelta(days=7),
                 end_date=datetime.datetime.now() + datetime.timedelta(days=7),
@@ -122,21 +189,15 @@ async def _maybe_create_developer_samples(
                 ],
             )
         ),
-        await session.get_one(tables.Datasource, datasource_id),
-        session,
-        chosen_n=100,
-        stratify_on_metrics=False,
-        random_state=None,
-        validated_webhooks=[],
     )
-    mab_experiment = await session.get_one(tables.Experiment, create_mab_experiment.experiment_id)
-    await experiments_common.commit_experiment_impl(session, mab_experiment)
 
-    create_cmab_experiment = await experiments_common.create_experiment_impl(
+    await _create_and_commit_experiment(
+        session,
+        datasource,
         CreateExperimentRequest(
             design_spec=CMABExperimentSpec(
-                participant_type="testing_dwh_participant",
-                experiment_name="My CMAB Experiment",
+                participant_type="user",
+                experiment_name="CMAB",
                 description="Hypothesis",
                 start_date=datetime.datetime.now() - datetime.timedelta(days=7),
                 end_date=datetime.datetime.now() + datetime.timedelta(days=7),
@@ -158,15 +219,28 @@ async def _maybe_create_developer_samples(
                 ],
             )
         ),
-        await session.get_one(tables.Datasource, datasource_id),
-        session,
-        chosen_n=100,
-        stratify_on_metrics=False,
-        random_state=None,
-        validated_webhooks=[],
     )
-    cmab_experiment = await session.get_one(tables.Experiment, create_cmab_experiment.experiment_id)
-    await experiments_common.commit_experiment_impl(session, cmab_experiment)
+
+    await _create_and_commit_experiment(
+        session,
+        alt_datasource,
+        CreateExperimentRequest(
+            design_spec=PreassignedFrequentistExperimentSpec(
+                participant_type=WIDE_DWH_PARTICIPANT_DEF.participant_type,
+                experiment_name="Wide Preassigned",
+                description="Hypothesis",
+                start_date=datetime.datetime.now() - datetime.timedelta(days=7),
+                end_date=datetime.datetime.now() + datetime.timedelta(days=7),
+                arms=[
+                    Arm(arm_name="Control", arm_description="First arm"),
+                    Arm(arm_name="Treatment", arm_description="Second arm"),
+                ],
+                filters=[Filter(field_name="household_income", relation=Relation.BETWEEN, value=[100, None])],
+                strata=[],
+                metrics=[DesignSpecMetricRequest(field_name="savings_balance", metric_pct_change=0.10)],
+            )
+        ),
+    )
 
 
 async def create_entities_for_first_time_user(

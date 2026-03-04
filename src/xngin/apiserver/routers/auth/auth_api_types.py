@@ -9,7 +9,7 @@ class CallbackResponse(BaseModel):
     This is only returned when the SPA has successfully completed the OIDC PKCE flow.
     """
 
-    # This contains an encrypted and serialized Principal. See SessionTokenCrypter.
+    # This contains an encrypted and serialized Principal. See SessionTokenCryptor.
     session_token: Annotated[str, Field(description="Bearer token for use on Admin API endpoints.")]
 
 
