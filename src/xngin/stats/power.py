@@ -329,6 +329,9 @@ def _analyze_power_mde_mode(
     power: float,
     alpha: float,
     arm_weights: list[float] | None,
+    icc: float | None = None,
+    avg_cluster_size: float | None = None,
+    cv: float = 0.0,
 ) -> MetricPowerAnalysis:
     """
     Calculate MDE given desired sample size.
@@ -365,6 +368,9 @@ def _analyze_power_mde_mode(
         alpha=alpha,
         power=power,
         arm_weights=arm_weights,
+        icc=icc,
+        avg_cluster_size=avg_cluster_size,
+        cv=cv,
     )
 
     # Build response object for MDE calculation
@@ -404,6 +410,9 @@ def analyze_metric_power(
     alpha: float = 0.05,
     arm_weights: list[float] | None = None,
     desired_n: int | None = None,
+    icc: float | None = None,
+    avg_cluster_size: float | None = None,
+    cv: float = 0.0,
 ) -> MetricPowerAnalysis:
     """
     Analyze power for a single metric.
@@ -426,9 +435,28 @@ def analyze_metric_power(
     # Dispatch to appropriate helper function based on mode
     if desired_n is None:
         # Sample size mode: calculate required sample size for target effect
-        return _analyze_power_sample_size_mode(metric, n_arms, power, alpha, arm_weights)
+        return _analyze_power_sample_size_mode(
+            metric,
+            n_arms,
+            power,
+            alpha,
+            arm_weights,
+            icc=icc,
+            avg_cluster_size=avg_cluster_size,
+            cv=cv,
+        )
     # MDE mode: calculate minimum detectable effect for desired sample size
-    return _analyze_power_mde_mode(metric, n_arms, desired_n, power, alpha, arm_weights)
+    return _analyze_power_mde_mode(
+        metric,
+        n_arms,
+        desired_n,
+        power,
+        alpha,
+        arm_weights,
+        icc=icc,
+        avg_cluster_size=avg_cluster_size,
+        cv=cv,
+    )
 
 
 def check_power(
@@ -438,6 +466,7 @@ def check_power(
     alpha: float = 0.05,
     arm_weights: list[float] | None = None,
     desired_n: int | None = None,
+    cluster_params: dict[str, dict[str, float]] | None = None,
 ) -> list[MetricPowerAnalysis]:
     """
     Check power for multiple metrics.
@@ -450,14 +479,39 @@ def check_power(
         arm_weights: Optional list of weights (summing to 100) for unbalanced arms
         desired_n: Optional desired sample size. If provided, calculates MDE
                    instead of required sample size. Applies to all metrics.
+        cluster_params: Optional dict mapping metric field_name to cluster parameters.
+            Format: {"metric_name": {"icc": 0.15, "avg_cluster_size": 30, "cv": 1.2}}
 
     Returns:
-        List of MetricPowerAnalysis results
+        List of MetricPowerAnalysis or ClusterMetricPowerAnalysis results
     """
     analyses = []
     for metric in metrics:
         try:
-            analyses.append(analyze_metric_power(metric, n_arms, power, alpha, arm_weights, desired_n))
+            # Get cluster params for this specific metric
+            icc = None
+            avg_cluster_size = None
+            cv = 0.0
+
+            if cluster_params and metric.field_name in cluster_params:
+                params = cluster_params[metric.field_name]
+                icc = params.get("icc")
+                avg_cluster_size = params.get("avg_cluster_size")
+                cv = params.get("cv", 0.0)
+
+            analyses.append(
+                analyze_metric_power(
+                    metric,
+                    n_arms,
+                    power,
+                    alpha,
+                    arm_weights,
+                    desired_n,
+                    icc=icc,
+                    avg_cluster_size=avg_cluster_size,
+                    cv=cv,
+                )
+            )
         except ValueError as verr:
             raise StatsPowerError(verr, metric) from verr
     return analyses
