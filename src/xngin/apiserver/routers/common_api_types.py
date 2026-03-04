@@ -1138,6 +1138,44 @@ class PowerRequest(ApiBaseModel):
         ),
     ] = None
 
+    cluster_column: Annotated[
+        str | None,
+        Field(
+            default=None,
+            description="Column name for cluster IDs. When provided, calculates ICC and CV from data "
+            "and performs cluster randomization power analysis.",
+        ),
+    ] = None
+
+    icc: Annotated[
+        float | None,
+        Field(
+            default=None,
+            ge=0.0,
+            le=1.0,
+            description="Intracluster correlation coefficient (0 to 1). If provided with avg_cluster_size, "
+            "uses these values instead of calculating from data.",
+        ),
+    ] = None
+
+    avg_cluster_size: Annotated[
+        float | None,
+        Field(
+            default=None,
+            gt=0,
+            description="Average cluster size. Required if icc is provided.",
+        ),
+    ] = None
+
+    cv: Annotated[
+        float | None,
+        Field(
+            default=None,
+            ge=0.0,
+            description="Coefficient of variation in cluster sizes. Defaults to 0 if not provided.",
+        ),
+    ] = None
+
     @model_validator(mode="after")
     def check_table_name_and_primary_key_together(self) -> Self:
         if (self.table_name is None) != (self.primary_key is None):
