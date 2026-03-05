@@ -22,7 +22,7 @@ from sqlalchemy.orm import selectinload
 from sqlalchemy_bigquery import dialect as bigquery_dialect
 from starlette.testclient import TestClient
 
-from xngin.apiserver import constants, database, flags
+from xngin.apiserver import database, flags
 from xngin.apiserver.apikeys import hash_key_or_raise, make_key
 from xngin.apiserver.dependencies import (
     random_seed_dependency,
@@ -189,18 +189,8 @@ def fixture_experiments_api_client(xngin_session):
     The generated client uses TestClient under the hood. TestClient manages the lifecycle of the app and will invoke
     the FastAPI app and router @lifespan methods.
     """
-    with experiments_api_client.FastAPIClient.from_app(app) as eapi_client:
+    with experiments_api_client.ExperimentsAPIClient.from_app(app) as eapi_client:
         yield eapi_client
-
-
-@pytest.fixture(name="client_v1")
-def fixture_client_v1(xngin_session):
-    """Returns a FastAPI TestClient with the {constants.API_PREFIX_V1} as a prefix on the request path.
-
-    TestClient manages the lifecycle of the app and will invoke the FastAPI app and router @lifespan methods.
-    """
-    with TestClient(app, base_url=f"http://testserver{constants.API_PREFIX_V1}") as client:
-        yield client
 
 
 @pytest.fixture(name="pget")

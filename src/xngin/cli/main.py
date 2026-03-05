@@ -703,13 +703,17 @@ def generate_typed_client():
     root = Path("src/xngin/apiserver/testing")
     fastapi_typed_client.generate_fastapi_typed_client(
         "xngin.apiserver.routers.experiments.experiments_api:router",
+        import_client_base=True,
         output_path=root / "experiments_api_client.py",
         raise_if_not_default_status=True,
+        title="ExperimentsAPIClient",
     )
     fastapi_typed_client.generate_fastapi_typed_client(
         "xngin.apiserver.routers.admin.admin_api:router",
+        import_client_base=True,
         output_path=root / "admin_api_client.py",
         raise_if_not_default_status=True,
+        title="AdminAPIClient",
     )
 
 
