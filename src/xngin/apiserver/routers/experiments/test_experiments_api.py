@@ -10,7 +10,6 @@ from xngin.apiserver.routers.common_api_types import (
     ExperimentsType,
     Filter,
     GetParticipantAssignmentResponse,
-    ListExperimentsResponse,
     OnlineFrequentistExperimentSpec,
     PreassignedFrequentistExperimentSpec,
 )
@@ -50,21 +49,12 @@ async def test_list_experiments_with_various_insufficient_headers(
     assert expected_message in response.json()["message"], response.content
 
 
-async def test_list_experiments_with_api_key(xngin_session, testing_datasource, client_v1):
+async def test_list_experiments_with_api_key(xngin_session, testing_datasource, eclient):
     """Tests that listing experiments tied to a db datasource with an API key works."""
     expected_experiment = await insert_experiment_and_arms(
         xngin_session, testing_datasource.ds, state=ExperimentState.ASSIGNED
     )
-
-    response = client_v1.get(
-        "/experiments",
-        headers={
-            constants.HEADER_CONFIG_ID: testing_datasource.ds.id,
-            constants.HEADER_API_KEY: testing_datasource.key,
-        },
-    )
-    assert response.status_code == 200
-    experiments = ListExperimentsResponse.model_validate(response.json())
+    experiments = eclient.list_experiments(api_key=testing_datasource.key, datasource_id=testing_datasource.ds.id).data
     assert len(experiments.items) == 1
     assert experiments.items[0].state == ExperimentState.ASSIGNED
     expected_design_spec = await ExperimentStorageConverter(expected_experiment).get_design_spec()
@@ -72,24 +62,17 @@ async def test_list_experiments_with_api_key(xngin_session, testing_datasource, 
     assert not diff, f"Objects differ:\n{diff.pretty()}"
 
 
-async def test_get_experiment(xngin_session, testing_datasource, client_v1):
+async def test_get_experiment(xngin_session, testing_datasource, eclient):
     new_experiment = await insert_experiment_and_arms(
         xngin_session,
         testing_datasource.ds,
         state=ExperimentState.DESIGNING,
     )
-
-    response = client_v1.get(
-        f"/experiments/{new_experiment.id!s}",
-        headers={constants.HEADER_API_KEY: testing_datasource.key},
-    )
-
-    assert response.status_code == 200, response.content
-
-    experiment_json = response.json()
-    assert experiment_json["datasource_id"] == new_experiment.datasource_id
-    assert experiment_json["state"] == new_experiment.state
-    actual = PreassignedFrequentistExperimentSpec.model_validate(experiment_json["design_spec"])
+    response = eclient.get_experiment(api_key=testing_datasource.key, experiment_id=new_experiment.id).data
+    assert response.datasource_id == new_experiment.datasource_id
+    assert response.state == new_experiment.state
+    assert isinstance(response.design_spec, PreassignedFrequentistExperimentSpec)
+    actual = response.design_spec
     expected = await ExperimentStorageConverter(new_experiment).get_design_spec()
     diff = DeepDiff(actual, expected)
     assert not diff, f"Objects differ:\n{diff.pretty()}"

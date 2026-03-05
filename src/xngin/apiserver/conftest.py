@@ -42,6 +42,7 @@ from xngin.apiserver.settings import (
     RemoteDatabaseConfig,
 )
 from xngin.apiserver.sqla import tables
+from xngin.apiserver.testing import experiments_api_client
 from xngin.apiserver.testing.pg_helpers import create_database_if_not_exists_pg
 from xngin.apiserver.testing.testing_dwh_def import TESTING_DWH_PARTICIPANT_DEF
 from xngin.db_extensions import custom_functions
@@ -181,6 +182,17 @@ def fixture_client(xngin_session):
         yield client
 
 
+@pytest.fixture(name="eclient")
+def fixture_experiments_api_client(xngin_session):
+    """Returns a generated API client for the Integration API.
+
+    The generated client uses TestClient under the hood. TestClient manages the lifecycle of the app and will invoke
+    the FastAPI app and router @lifespan methods.
+    """
+    with experiments_api_client.FastAPIClient.from_app(app) as eapi_client:
+        yield eapi_client
+
+
 @pytest.fixture(name="client_v1")
 def fixture_client_v1(xngin_session):
     """Returns a FastAPI TestClient with the {constants.API_PREFIX_V1} as a prefix on the request path.
@@ -198,7 +210,10 @@ def fixture_pget(client):
 
 @pytest.fixture(name="ppost")
 def fixture_ppost(client):
-    return partial(client.post, headers={"Authorization": f"Bearer {PRIVILEGED_TOKEN_FOR_TESTING}"})
+    return partial(
+        client.post,
+        headers={"Authorization": f"Bearer {PRIVILEGED_TOKEN_FOR_TESTING}"},
+    )
 
 
 @pytest.fixture(name="ppatch")

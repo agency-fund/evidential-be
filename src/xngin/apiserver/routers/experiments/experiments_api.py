@@ -68,19 +68,18 @@ async def lifespan(_app: FastAPI):
 
 STANDARD_INTEGRATION_RESPONSES: dict[str | int, dict[str, Any]] = {
     "400": {
-        # "object" describes something like "any".
-        "model": "object",
+        "model": dict,
         "description": "The request is invalid. This usually indicates your request doesn't match the required "
         "structure of the request, or is missing a field or request header.",
     },
     "403": {
-        "model": "object",
+        "model": dict,
         "description": "Requester does not have sufficient privileges to perform this operation or is not "
         f"authenticated.\n\nTip: Check that the API key passed in the `{constants.HEADER_API_KEY}` header has "
         f"access to the requested datasource or experiment.",
     },
     "404": {
-        "model": "object",
+        "model": dict,
         "description": "The requested resource was not found, or you do not have access to it.\n\nTip: Check that the "
         f"API key passed in the `{constants.HEADER_API_KEY}` header has access to "
         "the requested datasource or experiment.",

@@ -13,6 +13,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Annotated
 
 import boto3
+import fastapi_typed_client
 import psycopg
 import psycopg2
 import sqlalchemy
@@ -695,6 +696,21 @@ def decrypt(
     secretservice.setup()
     ciphertext = sys.stdin.read()
     print(secretservice.get_symmetric().decrypt(ciphertext, aad))
+
+
+@app.command()
+def generate_typed_client():
+    root = Path("src/xngin/apiserver/testing")
+    fastapi_typed_client.generate_fastapi_typed_client(
+        "xngin.apiserver.routers.experiments.experiments_api:router",
+        output_path=root / "experiments_api_client.py",
+        raise_if_not_default_status=True,
+    )
+    fastapi_typed_client.generate_fastapi_typed_client(
+        "xngin.apiserver.routers.admin.admin_api:router",
+        output_path=root / "admin_api_client.py",
+        raise_if_not_default_status=True,
+    )
 
 
 if __name__ == "__main__":

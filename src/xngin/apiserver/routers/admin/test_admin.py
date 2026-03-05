@@ -921,6 +921,8 @@ def test_datasource_errors(pget, ppost):
             ),
         ).model_dump_json(),
     )
+    print(response.content)
+    assert response.status_code == 200, response.content
     ds_id = CreateDatasourceResponse.model_validate(response.json()).id
 
     response = pget(f"/v1/m/datasources/{ds_id}/inspect")

@@ -152,10 +152,19 @@ async def get_google_configuration() -> GoogleOidcConfig:
             return _google_config
 
 
+class CompatHTTPBearer(HTTPBearer):
+    def __init__(self):
+        super().__init__(description="Session token obtained from the auth_callback operation.", auto_error=True)
+
+    def make_not_authenticated_error(self) -> HTTPException:
+        # TODO: Migrate this to 401 so that we can remove this custom class.
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Authorization header is required")
+
+
 async def require_valid_session_token(
     authorization: Annotated[
         HTTPAuthorizationCredentials,
-        Depends(HTTPBearer(description="Session token obtained from the auth_callback operation.")),
+        Depends(CompatHTTPBearer()),
     ],
     session_cryptor: Annotated[SessionTokenCryptor, Depends()],
 ) -> Principal:
