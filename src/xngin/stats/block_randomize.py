@@ -31,23 +31,20 @@ type BlockKey = tuple[str, int, tuple[float, ...] | None]
 
 
 class BlockRandomize:
-    """Thread-safe permuted block randomizer for balanced assignment to experiment arms.
+    """Thread-safe permuted block randomizer for best-effort balanced assignment to experiment arms.
 
-    Maintains per-experiment shuffled blocks of arm indices, drawing without
-    replacement within each block to guarantee balance over every block of
-    consecutive assignments.
+    Maintains per-experiment shuffled blocks of arm indices, drawing without replacement within each
+    block to guarantee balance over every block of consecutive assignments.
 
-    For uniform allocation the base block has one entry per arm; for weighted
-    allocation the base block is sized via LCM of weight-derived probability
-    denominators so that each arm appears in exact proportion.  The base block
-    is then tiled `block_multiple` times, subject to `max_block_size`.
+    For uniform allocation the base block has one entry per arm; for weighted allocation the base
+    block is sized via LCM of weight-derived probability denominators so that each arm appears in
+    exact proportion.  The base block is then tiled `block_multiple` times, subject to
+    `max_block_size`.
 
     Args:
-        block_multiple: Number of times the base treatment cycle is tiled
-            per block.
-        max_block_size: Upper bound on block length (number of ints stored).
-            If `base_size * block_multiple` exceeds this, the effective
-            multiple is reduced (minimum 1).
+        block_multiple: Number of times the base treatment cycle is tiled per block.
+        max_block_size: Loose upper bound on block length (number of ints stored).  If `base_size *
+            block_multiple` exceeds this, the effective multiple is reduced (minimum 1).
     """
 
     def __init__(self, block_multiple: int = 10, max_block_size: int = 1000) -> None:
@@ -102,11 +99,23 @@ class BlockRandomize:
             weights_key = tuple(weights)
 
         key = (identifier, length, weights_key)
+
+        # Main scenario: returning the next assignment from the existing block.
+        block = self._blocks.get(key)
+        if block:
+            try:
+                return block.popleft()  # atomic in CPython
+            except IndexError:
+                pass
+
+        # Block was missing/empty; create a new one.
         with self._lock:
+            # double check no other thread created it meanwhile
             block = self._blocks.get(key)
-            if not block:  # None or empty deque
+            if not block:
                 block = self._make_block(length, weights_key, random_state)
                 self._blocks[key] = block
+
             return block.popleft()
 
     def _make_block(
@@ -115,20 +124,19 @@ class BlockRandomize:
         weights: tuple[float, ...] | None = None,
         random_state: int | None = None,
     ) -> deque[int]:
-        if weights is not None:
+        indices: list[int] = []
+        if weights is None:
+            num_tiles = min(self._block_multiple, max(1, self._max_block_size // length))
+            indices = list(range(length)) * num_tiles
+        else:
             total = sum(weights)
             probs = [w / total for w in weights]
             lcm_denom = get_lcm_prob_denominators(probs)
             base_counts = [round(lcm_denom * p) for p in probs]
-        else:
-            base_counts = [1] * length
-
-        base_size = sum(base_counts)
-        effective_multiple = max(1, min(self._block_multiple, self._max_block_size // base_size))
-
-        indices: list[int] = []
-        for idx, count in enumerate(base_counts):
-            indices.extend([idx] * (count * effective_multiple))
+            base_size = sum(base_counts)
+            num_tiles = max(1, min(self._block_multiple, self._max_block_size // base_size))
+            for idx, count in enumerate(base_counts):
+                indices.extend([idx] * (count * num_tiles))
 
         np.random.default_rng(random_state).shuffle(indices)
         return deque(indices)
