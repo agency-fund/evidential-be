@@ -65,7 +65,7 @@
             <a id="nextFileLink" class="nav" href="z_91ef1565bbea7854_inspection_types_py.html">&#xbb; next</a>
             &nbsp; &nbsp; &nbsp;
             <a class="nav" href="https://coverage.readthedocs.io/en/7.11.0">coverage.py v7.11.0</a>,
-            created at 2026-03-03 00:43 +0000
+            created at 2026-03-05 17:25 +0000
         </p>
         <aside class="hidden">
             <button type="button" class="button_next_chunk" data-shortcut="j"></button>
@@ -356,11 +356,11 @@
     <p class="run run2"><span class="n"><a id="t274" href="#t274">274</a></span><span class="t">        <span class="nam">sa_table</span><span class="op">:</span> <span class="nam">sqlalchemy</span><span class="op">.</span><span class="nam">Table</span><span class="op">,</span>&nbsp;</span><span class="r"></span></p>
     <p class="run run2"><span class="n"><a id="t275" href="#t275">275</a></span><span class="t">        <span class="nam">select_columns</span><span class="op">:</span> <span class="nam">set</span><span class="op">[</span><span class="nam">str</span><span class="op">]</span><span class="op">,</span>&nbsp;</span><span class="r"></span></p>
     <p class="run run2"><span class="n"><a id="t276" href="#t276">276</a></span><span class="t">        <span class="nam">filters</span><span class="op">:</span> <span class="nam">list</span><span class="op">[</span><span class="nam">Filter</span><span class="op">]</span><span class="op">,</span>&nbsp;</span><span class="r"></span></p>
-    <p class="run run2"><span class="n"><a id="t277" href="#t277">277</a></span><span class="t">        <span class="nam">chosen_n</span><span class="op">:</span> <span class="nam">int</span><span class="op">,</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run run2"><span class="n"><a id="t277" href="#t277">277</a></span><span class="t">        <span class="nam">desired_n</span><span class="op">:</span> <span class="nam">int</span><span class="op">,</span>&nbsp;</span><span class="r"></span></p>
     <p class="run run2"><span class="n"><a id="t278" href="#t278">278</a></span><span class="t">    <span class="op">)</span><span class="op">:</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t279" href="#t279">279</a></span><span class="t">        <span class="str">"""Samples participants."""</span>&nbsp;</span><span class="r"></span></p>
     <p class="run"><span class="n"><a id="t280" href="#t280">280</a></span><span class="t">        <span class="nam">sqla_filters</span> <span class="op">=</span> <span class="nam">queries</span><span class="op">.</span><span class="nam">create_query_filters</span><span class="op">(</span><span class="nam">sa_table</span><span class="op">,</span> <span class="nam">filters</span><span class="op">)</span>&nbsp;</span><span class="r"></span></p>
-    <p class="run"><span class="n"><a id="t281" href="#t281">281</a></span><span class="t">        <span class="nam">query</span> <span class="op">=</span> <span class="nam">queries</span><span class="op">.</span><span class="nam">compose_query</span><span class="op">(</span><span class="nam">sa_table</span><span class="op">,</span> <span class="nam">select_columns</span><span class="op">,</span> <span class="nam">sqla_filters</span><span class="op">,</span> <span class="nam">chosen_n</span><span class="op">)</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run"><span class="n"><a id="t281" href="#t281">281</a></span><span class="t">        <span class="nam">query</span> <span class="op">=</span> <span class="nam">queries</span><span class="op">.</span><span class="nam">compose_query</span><span class="op">(</span><span class="nam">sa_table</span><span class="op">,</span> <span class="nam">select_columns</span><span class="op">,</span> <span class="nam">sqla_filters</span><span class="op">,</span> <span class="nam">desired_n</span><span class="op">)</span>&nbsp;</span><span class="r"></span></p>
     <p class="run"><span class="n"><a id="t282" href="#t282">282</a></span><span class="t">        <span class="key">return</span> <span class="nam">self</span><span class="op">.</span><span class="nam">session</span><span class="op">.</span><span class="nam">execute</span><span class="op">(</span><span class="nam">query</span><span class="op">)</span><span class="op">.</span><span class="nam">all</span><span class="op">(</span><span class="op">)</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t283" href="#t283">283</a></span><span class="t">&nbsp;</span><span class="r"></span></p>
     <p class="run"><span class="n"><a id="t284" href="#t284">284</a></span><span class="t">    <span class="key">def</span> <span class="nam">_get_participants_blocking</span><span class="op">(</span>&nbsp;</span><span class="r"></span></p>
@@ -521,7 +521,7 @@
             <a class="nav" href="z_91ef1565bbea7854_inspection_types_py.html">&#xbb; next</a>
             &nbsp; &nbsp; &nbsp;
             <a class="nav" href="https://coverage.readthedocs.io/en/7.11.0">coverage.py v7.11.0</a>,
-            created at 2026-03-03 00:43 +0000
+            created at 2026-03-05 17:25 +0000
         </p>
     </div>
 </footer>

@@ -65,7 +65,7 @@
             <a id="nextFileLink" class="nav" href="z_91ef1565bbea7854_test_queries_py.html">&#xbb; next</a>
             &nbsp; &nbsp; &nbsp;
             <a class="nav" href="https://coverage.readthedocs.io/en/7.11.0">coverage.py v7.11.0</a>,
-            created at 2026-03-03 00:43 +0000
+            created at 2026-03-05 17:25 +0000
         </p>
         <aside class="hidden">
             <button type="button" class="button_next_chunk" data-shortcut="j"></button>
@@ -205,7 +205,7 @@
     <p class="run run2"><span class="n"><a id="t123" href="#t123">123</a></span><span class="t">                <span class="op">)</span><span class="op">,</span>&nbsp;</span><span class="r"></span></p>
     <p class="run run2"><span class="n"><a id="t124" href="#t124">124</a></span><span class="t">            <span class="op">]</span><span class="op">,</span>&nbsp;</span><span class="r"></span></p>
     <p class="run run2"><span class="n"><a id="t125" href="#t125">125</a></span><span class="t">        <span class="op">)</span><span class="op">,</span>&nbsp;</span><span class="r"></span></p>
-    <p class="run run2"><span class="n"><a id="t126" href="#t126">126</a></span><span class="t">        <span class="nam">chosen_n</span><span class="op">=</span><span class="num">2</span><span class="op">,</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run run2"><span class="n"><a id="t126" href="#t126">126</a></span><span class="t">        <span class="nam">desired_n</span><span class="op">=</span><span class="num">2</span><span class="op">,</span>&nbsp;</span><span class="r"></span></p>
     <p class="run run2"><span class="n"><a id="t127" href="#t127">127</a></span><span class="t">    <span class="op">)</span>&nbsp;</span><span class="r"></span></p>
     <p class="run"><span class="n"><a id="t128" href="#t128">128</a></span><span class="t">    <span class="nam">ddl</span> <span class="op">=</span> <span class="nam">str</span><span class="op">(</span><span class="nam">CreateTable</span><span class="op">(</span><span class="nam">sa_table</span><span class="op">)</span><span class="op">.</span><span class="nam">compile</span><span class="op">(</span><span class="nam">dialect</span><span class="op">=</span><span class="nam">testcase</span><span class="op">.</span><span class="nam">dialect</span><span class="op">)</span><span class="op">)</span>&nbsp;</span><span class="r"></span></p>
     <p class="run"><span class="n"><a id="t129" href="#t129">129</a></span><span class="t">    <span class="nam">normalized_ddl</span> <span class="op">=</span> <span class="nam">re</span><span class="op">.</span><span class="nam">sub</span><span class="op">(</span><span class="str">r"\s+"</span><span class="op">,</span> <span class="str">" "</span><span class="op">,</span> <span class="nam">ddl</span><span class="op">.</span><span class="nam">replace</span><span class="op">(</span><span class="str">"\n"</span><span class="op">,</span> <span class="str">""</span><span class="op">)</span><span class="op">.</span><span class="nam">strip</span><span class="op">(</span><span class="op">)</span><span class="op">)</span>&nbsp;</span><span class="r"></span></p>
@@ -644,7 +644,7 @@
     <p class="run"><span class="n"><a id="t562" href="#t562">562</a></span><span class="t">    <span class="nam">sa_table</span> <span class="op">=</span> <span class="nam">WhereTable</span><span class="op">.</span><span class="nam">get_table</span><span class="op">(</span><span class="op">)</span>&nbsp;</span><span class="r"></span></p>
     <p class="run"><span class="n"><a id="t563" href="#t563">563</a></span><span class="t">    <span class="nam">select_columns</span> <span class="op">=</span> <span class="nam">set</span><span class="op">(</span><span class="nam">sa_table</span><span class="op">.</span><span class="nam">c</span><span class="op">.</span><span class="nam">keys</span><span class="op">(</span><span class="op">)</span><span class="op">)</span>&nbsp;</span><span class="r"></span></p>
     <p class="run"><span class="n"><a id="t564" href="#t564">564</a></span><span class="t">    <span class="nam">filters</span> <span class="op">=</span> <span class="nam">create_query_filters</span><span class="op">(</span><span class="nam">sa_table</span><span class="op">,</span> <span class="nam">testcase</span><span class="op">.</span><span class="nam">filters</span><span class="op">)</span>&nbsp;</span><span class="r"></span></p>
-    <p class="run"><span class="n"><a id="t565" href="#t565">565</a></span><span class="t">    <span class="nam">q</span> <span class="op">=</span> <span class="nam">compose_query</span><span class="op">(</span><span class="nam">sa_table</span><span class="op">,</span> <span class="nam">select_columns</span><span class="op">=</span><span class="nam">select_columns</span><span class="op">,</span> <span class="nam">filters</span><span class="op">=</span><span class="nam">filters</span><span class="op">,</span> <span class="nam">chosen_n</span><span class="op">=</span><span class="num">3</span><span class="op">)</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run"><span class="n"><a id="t565" href="#t565">565</a></span><span class="t">    <span class="nam">q</span> <span class="op">=</span> <span class="nam">compose_query</span><span class="op">(</span><span class="nam">sa_table</span><span class="op">,</span> <span class="nam">select_columns</span><span class="op">=</span><span class="nam">select_columns</span><span class="op">,</span> <span class="nam">filters</span><span class="op">=</span><span class="nam">filters</span><span class="op">,</span> <span class="nam">desired_n</span><span class="op">=</span><span class="num">3</span><span class="op">)</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t566" href="#t566">566</a></span><span class="t">&nbsp;</span><span class="r"></span></p>
     <p class="run"><span class="n"><a id="t567" href="#t567">567</a></span><span class="t">    <span class="nam">failures</span> <span class="op">=</span> <span class="op">{</span><span class="op">}</span>&nbsp;</span><span class="r"></span></p>
     <p class="run"><span class="n"><a id="t568" href="#t568">568</a></span><span class="t">    <span class="key">for</span> <span class="nam">dbtype</span> <span class="key">in</span> <span class="nam">testcase</span><span class="op">.</span><span class="nam">where</span><span class="op">:</span>&nbsp;</span><span class="r"></span></p>
@@ -670,7 +670,7 @@
             <a class="nav" href="z_91ef1565bbea7854_test_queries_py.html">&#xbb; next</a>
             &nbsp; &nbsp; &nbsp;
             <a class="nav" href="https://coverage.readthedocs.io/en/7.11.0">coverage.py v7.11.0</a>,
-            created at 2026-03-03 00:43 +0000
+            created at 2026-03-05 17:25 +0000
         </p>
     </div>
 </footer>

@@ -65,7 +65,7 @@
             <a id="nextFileLink" class="nav" href="z_91ef1565bbea7854_test_dialect_sql_py.html">&#xbb; next</a>
             &nbsp; &nbsp; &nbsp;
             <a class="nav" href="https://coverage.readthedocs.io/en/7.11.0">coverage.py v7.11.0</a>,
-            created at 2026-03-03 00:43 +0000
+            created at 2026-03-05 17:25 +0000
         </p>
         <aside class="hidden">
             <button type="button" class="button_next_chunk" data-shortcut="j"></button>
@@ -405,7 +405,7 @@
     <p class="mis show_mis"><span class="n"><a id="t323" href="#t323">323</a></span><span class="t">            <span class="key">raise</span> <span class="nam">RuntimeError</span><span class="op">(</span><span class="str">"Bug: invalid Filter."</span><span class="op">)</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t324" href="#t324">324</a></span><span class="t">&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t325" href="#t325">325</a></span><span class="t">&nbsp;</span><span class="r"></span></p>
-    <p class="run"><span class="n"><a id="t326" href="#t326">326</a></span><span class="t"><span class="key">def</span> <span class="nam">compose_query</span><span class="op">(</span><span class="nam">sa_table</span><span class="op">:</span> <span class="nam">Table</span><span class="op">,</span> <span class="nam">select_columns</span><span class="op">:</span> <span class="nam">set</span><span class="op">[</span><span class="nam">str</span><span class="op">]</span><span class="op">,</span> <span class="nam">filters</span><span class="op">:</span> <span class="nam">list</span><span class="op">[</span><span class="nam">ColumnElement</span><span class="op">]</span><span class="op">,</span> <span class="nam">chosen_n</span><span class="op">:</span> <span class="nam">int</span><span class="op">)</span><span class="op">:</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run"><span class="n"><a id="t326" href="#t326">326</a></span><span class="t"><span class="key">def</span> <span class="nam">compose_query</span><span class="op">(</span><span class="nam">sa_table</span><span class="op">:</span> <span class="nam">Table</span><span class="op">,</span> <span class="nam">select_columns</span><span class="op">:</span> <span class="nam">set</span><span class="op">[</span><span class="nam">str</span><span class="op">]</span><span class="op">,</span> <span class="nam">filters</span><span class="op">:</span> <span class="nam">list</span><span class="op">[</span><span class="nam">ColumnElement</span><span class="op">]</span><span class="op">,</span> <span class="nam">desired_n</span><span class="op">:</span> <span class="nam">int</span><span class="op">)</span><span class="op">:</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t327" href="#t327">327</a></span><span class="t">    <span class="str">"""Builds a query to fetch rows from a list of filters and a set of column names to select."""</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t328" href="#t328">328</a></span><span class="t">&nbsp;</span><span class="r"></span></p>
     <p class="run"><span class="n"><a id="t329" href="#t329">329</a></span><span class="t">    <span class="key">if</span> <span class="key">not</span> <span class="nam">select_columns</span><span class="op">:</span>&nbsp;</span><span class="r"></span></p>
@@ -417,7 +417,7 @@
     <p class="run"><span class="n"><a id="t335" href="#t335">335</a></span><span class="t">            <span class="key">raise</span> <span class="nam">ValueError</span><span class="op">(</span><span class="fst">f"</span><span class="fst">Column </span><span class="op">{</span><span class="nam">col</span><span class="op">}</span><span class="fst"> not found in schema.</span><span class="fst">"</span><span class="op">)</span>&nbsp;</span><span class="r"></span></p>
     <p class="run"><span class="n"><a id="t336" href="#t336">336</a></span><span class="t">        <span class="nam">columns</span><span class="op">.</span><span class="nam">append</span><span class="op">(</span><span class="nam">sa_table</span><span class="op">.</span><span class="nam">c</span><span class="op">[</span><span class="nam">col</span><span class="op">]</span><span class="op">)</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t337" href="#t337">337</a></span><span class="t">&nbsp;</span><span class="r"></span></p>
-    <p class="run"><span class="n"><a id="t338" href="#t338">338</a></span><span class="t">    <span class="key">return</span> <span class="nam">select</span><span class="op">(</span><span class="op">*</span><span class="nam">columns</span><span class="op">)</span><span class="op">.</span><span class="nam">filter</span><span class="op">(</span><span class="op">*</span><span class="nam">filters</span><span class="op">)</span><span class="op">.</span><span class="nam">order_by</span><span class="op">(</span><span class="nam">custom_functions</span><span class="op">.</span><span class="nam">Random</span><span class="op">(</span><span class="nam">sa_table</span><span class="op">=</span><span class="nam">sa_table</span><span class="op">)</span><span class="op">)</span><span class="op">.</span><span class="nam">limit</span><span class="op">(</span><span class="nam">chosen_n</span><span class="op">)</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run"><span class="n"><a id="t338" href="#t338">338</a></span><span class="t">    <span class="key">return</span> <span class="nam">select</span><span class="op">(</span><span class="op">*</span><span class="nam">columns</span><span class="op">)</span><span class="op">.</span><span class="nam">filter</span><span class="op">(</span><span class="op">*</span><span class="nam">filters</span><span class="op">)</span><span class="op">.</span><span class="nam">order_by</span><span class="op">(</span><span class="nam">custom_functions</span><span class="op">.</span><span class="nam">Random</span><span class="op">(</span><span class="nam">sa_table</span><span class="op">=</span><span class="nam">sa_table</span><span class="op">)</span><span class="op">)</span><span class="op">.</span><span class="nam">limit</span><span class="op">(</span><span class="nam">desired_n</span><span class="op">)</span>&nbsp;</span><span class="r"></span></p>
 </main>
 <footer>
     <div class="content">
@@ -427,7 +427,7 @@
             <a class="nav" href="z_91ef1565bbea7854_test_dialect_sql_py.html">&#xbb; next</a>
             &nbsp; &nbsp; &nbsp;
             <a class="nav" href="https://coverage.readthedocs.io/en/7.11.0">coverage.py v7.11.0</a>,
-            created at 2026-03-03 00:43 +0000
+            created at 2026-03-05 17:25 +0000
         </p>
     </div>
 </footer>
