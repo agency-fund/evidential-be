@@ -13,11 +13,10 @@ from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from xngin.apiserver import flags
-from xngin.apiserver.conftest import delete_seeded_users
+from xngin.apiserver.conftest import delete_seeded_users, expect_status_code
 from xngin.apiserver.dns import safe_resolve
 from xngin.apiserver.dwh.inspection_types import FieldDescriptor, ParticipantsSchema
 from xngin.apiserver.dwh.inspections import ColumnDeleted, Drift, FieldChangedType
-from xngin.apiserver.exceptionhandlers import FastAPIClientHTTPValidationError
 from xngin.apiserver.routers.admin.admin_api_converters import (
     CREDENTIALS_UNAVAILABLE_MESSAGE,
 )
@@ -89,7 +88,7 @@ from xngin.apiserver.routers.experiments.test_experiments_common import (
 from xngin.apiserver.settings import NoDwh, ParticipantsDef, RemoteDatabaseConfig
 from xngin.apiserver.sqla import tables
 from xngin.apiserver.storage.storage_format_converters import ExperimentStorageConverter
-from xngin.apiserver.testing.admin_api_client import AdminAPIClient, AdminAPIClientNotDefaultStatusError
+from xngin.apiserver.testing.admin_api_client import AdminAPIClient
 from xngin.apiserver.testing.assertions import assert_dates_equal
 from xngin.apiserver.testing.testing_dwh_def import TESTING_DWH_PARTICIPANT_DEF
 from xngin.stats.bandit_sampling import update_arm
@@ -291,11 +290,8 @@ def test_create_and_get_organization(aclient: AdminAPIClient):
     assert aclient.inspect_datasource(datasource_id=nodwh_summary.id).data.tables == []
 
     # Inspecting a specific table for NoDwh should fail.
-    with pytest.raises(AdminAPIClientNotDefaultStatusError) as exc:
+    with expect_status_code(400, text="Only remote datasources may be inspected."):
         aclient.inspect_table_in_datasource(datasource_id=nodwh_summary.id, table_name="notable")
-    response = exc.value.result.response
-    assert response.status_code == 400, response.content
-    assert response.json() == {"detail": "Only remote datasources may be inspected."}
 
 
 @pytest.mark.skipif(
@@ -447,7 +443,7 @@ def test_create_datasource_without_credentials(
         body=CreateOrganizationRequest(name="test_create_datasource_without_credentials")
     ).data.id
 
-    with pytest.raises(AdminAPIClientNotDefaultStatusError) as exc:
+    with expect_status_code(422, detail_eq=CREDENTIALS_UNAVAILABLE_MESSAGE):
         aclient.create_datasource(
             body=CreateDatasourceRequest(
                 name="test_create_datasource",
@@ -455,9 +451,6 @@ def test_create_datasource_without_credentials(
                 dsn=dsn,
             )
         )
-    response = exc.value.result.response
-    assert response.status_code == 422, response.content
-    assert response.json()["detail"][0]["msg"] == CREDENTIALS_UNAVAILABLE_MESSAGE
 
 
 def test_create_datasource_invalid_dns(testing_datasource, aclient: AdminAPIClient):
@@ -466,7 +459,7 @@ def test_create_datasource_invalid_dns(testing_datasource, aclient: AdminAPIClie
         organization_id=testing_datasource.org.id, body=AddMemberToOrganizationRequest(email=PRIVILEGED_EMAIL)
     )
 
-    with pytest.raises(AdminAPIClientNotDefaultStatusError) as exc:
+    with expect_status_code(400, text="DNS resolution failed"):
         aclient.create_datasource(
             body=CreateDatasourceRequest(
                 organization_id=testing_datasource.org.id,
@@ -482,9 +475,6 @@ def test_create_datasource_invalid_dns(testing_datasource, aclient: AdminAPIClie
                 ),
             )
         )
-    response = exc.value.result.response
-    assert response.status_code == 400, response.content
-    assert "DNS resolution failed" in str(response.content)
 
 
 def test_create_datasource_with_connectivity_check_connection_failure(
@@ -494,7 +484,7 @@ def test_create_datasource_with_connectivity_check_connection_failure(
         body=CreateOrganizationRequest(name="test_create_datasource_with_preflight")
     ).data.id
 
-    with pytest.raises(AdminAPIClientNotDefaultStatusError) as exc:
+    with expect_status_code(502, message_contains="password authentication failed"):
         aclient.create_datasource(
             body=CreateDatasourceRequest(
                 name="test_create_datasource",
@@ -511,9 +501,6 @@ def test_create_datasource_with_connectivity_check_connection_failure(
             ),
             connectivity_check=True,
         )
-    response = exc.value.result.response
-    assert response.status_code == 502, response.content
-    assert "password authentication failed" in response.json()["message"].lower()
 
     list_datasources = aclient.list_organization_datasources(organization_id=org_id).data
     assert len(list_datasources.items) == 1
@@ -548,7 +535,7 @@ def test_create_datasource_with_connectivity_check_can_be_enabled(disable_safe_r
         body=CreateOrganizationRequest(name="test_create_datasource_connectivity_check_enabled")
     ).data.id
 
-    with pytest.raises(AdminAPIClientNotDefaultStatusError) as exc:
+    with expect_status_code(502, message_contains="password authentication failed"):
         aclient.create_datasource(
             body=CreateDatasourceRequest(
                 name="test_create_datasource",
@@ -565,9 +552,6 @@ def test_create_datasource_with_connectivity_check_can_be_enabled(disable_safe_r
             ),
             connectivity_check=True,
         )
-    response = exc.value.result.response
-    assert response.status_code == 502, response.content
-    assert "password authentication failed" in response.json()["message"].lower()
 
 
 def test_add_member_to_org(testing_datasource, aclient: AdminAPIClient):
@@ -617,16 +601,16 @@ def test_remove_member_from_org(aclient: AdminAPIClient):
         user_id: str,
         *,
         allow_missing: bool = False,
-        expect_non_default: bool = False,
+        expected_status_code: int | None = None,
     ):
-        if expect_non_default:
-            with pytest.raises(AdminAPIClientNotDefaultStatusError) as exc:
+        if expected_status_code is not None:
+            with expect_status_code(expected_status_code):
                 aclient.remove_member_from_organization(
                     organization_id=org_id,
                     user_id=user_id,
                     allow_missing=allow_missing,
                 )
-            return exc.value.result.response
+            return None
         return aclient.remove_member_from_organization(
             organization_id=org_id,
             user_id=user_id,
@@ -639,8 +623,7 @@ def test_remove_member_from_org(aclient: AdminAPIClient):
     assert member_list.keys() == {PRIVILEGED_EMAIL, UNPRIVILEGED_EMAIL}
 
     # 404 when trying to remove self from organization
-    response = remove_member(member_list.get(PRIVILEGED_EMAIL), expect_non_default=True)
-    assert response.status_code == 404, response.content
+    remove_member(member_list.get(PRIVILEGED_EMAIL), expected_status_code=404)
     assert list_members().keys() == {PRIVILEGED_EMAIL, UNPRIVILEGED_EMAIL}
 
     # 204 when remove existing member
@@ -648,8 +631,7 @@ def test_remove_member_from_org(aclient: AdminAPIClient):
     assert list_members().keys() == {PRIVILEGED_EMAIL}
 
     # 404 when removing non-existent member
-    response = remove_member(member_list.get(UNPRIVILEGED_EMAIL), expect_non_default=True)
-    assert response.status_code == 404, response.content
+    remove_member(member_list.get(UNPRIVILEGED_EMAIL), expected_status_code=404)
     assert list_members().keys() == {PRIVILEGED_EMAIL}
 
     # 204 when removing non-existent member w/allow-missing
@@ -828,11 +810,8 @@ def test_datasource_errors(aclient: AdminAPIClient):
         )
     ).data.id
 
-    with pytest.raises(AdminAPIClientNotDefaultStatusError) as exc:
+    with expect_status_code(404, message_contains='database "nonexistent_db" does not exist'):
         aclient.inspect_datasource(datasource_id=ds_id)
-    response = exc.value.result.response
-    assert response.status_code == 404, response.content
-    assert 'database "nonexistent_db" does not exist' in response.json()["message"].lower()
 
     # Test connection Error (502) - RedShift with wrong port
     ds_id = aclient.create_datasource(
@@ -850,11 +829,8 @@ def test_datasource_errors(aclient: AdminAPIClient):
         )
     ).data.id
 
-    with pytest.raises(AdminAPIClientNotDefaultStatusError) as exc:
+    with expect_status_code(502, message_contains="CONNECTION ERROR"):
         aclient.inspect_datasource(datasource_id=ds_id)
-    response = exc.value.result.response
-    assert response.status_code == 502, response.content
-    assert "CONNECTION ERROR" in response.json()["message"]
 
     # Test connection Error (502) - PostgreSQL with wrong port
     ds_id = aclient.create_datasource(
@@ -873,11 +849,8 @@ def test_datasource_errors(aclient: AdminAPIClient):
         )
     ).data.id
 
-    with pytest.raises(AdminAPIClientNotDefaultStatusError) as exc:
+    with expect_status_code(502, message_contains="CONNECTION ERROR"):
         aclient.inspect_datasource(datasource_id=ds_id)
-    response = exc.value.result.response
-    assert response.status_code == 502, response.content
-    assert "CONNECTION ERROR" in response.json()["message"]
 
     # Test credential Error (502) - BigQuery with invalid service account
     gcloud_invalid = copy.deepcopy(SAMPLE_GCLOUD_SERVICE_ACCOUNT)
@@ -894,11 +867,8 @@ def test_datasource_errors(aclient: AdminAPIClient):
     ).data.id
 
     # Inspect datasource should return 502 for credential errors
-    with pytest.raises(AdminAPIClientNotDefaultStatusError) as exc:
+    with expect_status_code(502, message_contains="CONNECTION ERROR"):
         aclient.inspect_datasource(datasource_id=ds_id)
-    response = exc.value.result.response
-    assert response.status_code == 502, response.content
-    assert "CONNECTION ERROR" in response.json()["message"]
 
 
 def test_delete_datasource(testing_datasource_with_user, aclient: AdminAPIClient, aclient_unpriv: AdminAPIClient):
@@ -907,10 +877,8 @@ def test_delete_datasource(testing_datasource_with_user, aclient: AdminAPIClient
     org_id = testing_datasource_with_user.org.id
 
     # aclient_unpriv authenticates as a user that is not in the same organization as the datasource.
-    with pytest.raises(AdminAPIClientNotDefaultStatusError) as exc:
+    with expect_status_code(403):
         aclient_unpriv.delete_datasource(organization_id=org_id, datasource_id=ds_id)
-    response = exc.value.result.response
-    assert response.status_code == 403, response
 
     list_datasources1 = aclient.list_organization_datasources(organization_id=org_id).data
     assert list_datasources1.items, list_datasources1  # non-empty list
@@ -923,10 +891,8 @@ def test_delete_datasource(testing_datasource_with_user, aclient: AdminAPIClient
     assert list_datasources2.items == []
 
     # Delete the datasource a 2nd time returns 404.
-    with pytest.raises(AdminAPIClientNotDefaultStatusError) as exc:
+    with expect_status_code(404):
         aclient.delete_datasource(organization_id=org_id, datasource_id=ds_id)
-    response = exc.value.result.response
-    assert response.status_code == 404, response
 
     # Delete the datasource a 2nd time returns 204 when ?allow_missing is set.
     aclient.delete_datasource(organization_id=org_id, datasource_id=ds_id, allow_missing=True)
@@ -993,35 +959,27 @@ async def test_webhook_lifecycle(aclient: AdminAPIClient):
     assert len(webhooks) == 0
 
     # Delete the webhook again (404)
-    with pytest.raises(AdminAPIClientNotDefaultStatusError) as exc:
+    with expect_status_code(404):
         aclient.delete_webhook_from_organization(organization_id=org_id, webhook_id=webhook_id)
-    response = exc.value.result.response
-    assert response.status_code == 404, response.content
 
     # Delete the webhook again (204)
     aclient.delete_webhook_from_organization(organization_id=org_id, webhook_id=webhook_id, allow_missing=True)
 
     # Try to regenerate auth token for a non-existent webhook
-    with pytest.raises(AdminAPIClientNotDefaultStatusError) as exc:
+    with expect_status_code(404):
         aclient.regenerate_webhook_auth_token(organization_id=org_id, webhook_id=webhook_id)
-    response = exc.value.result.response
-    assert response.status_code == 404, response.content
 
     # Try to update a non-existent webhook
-    with pytest.raises(AdminAPIClientNotDefaultStatusError) as exc:
+    with expect_status_code(404):
         aclient.update_organization_webhook(
             organization_id=org_id,
             webhook_id=webhook_id,
             body=UpdateOrganizationWebhookRequest(url="https://should-fail.com/webhook", name="fail"),
         )
-    response = exc.value.result.response
-    assert response.status_code == 404, response.content
 
     # Try to delete a non-existent webhook
-    with pytest.raises(AdminAPIClientNotDefaultStatusError) as exc:
+    with expect_status_code(404):
         aclient.delete_webhook_from_organization(organization_id=org_id, webhook_id=webhook_id)
-    response = exc.value.result.response
-    assert response.status_code == 404, response.content
 
 
 def test_participants_lifecycle(testing_datasource_with_user, aclient: AdminAPIClient):
@@ -1079,38 +1037,30 @@ def test_participants_lifecycle(testing_datasource_with_user, aclient: AdminAPIC
     aclient.delete_participant(datasource_id=ds_id, participant_id="renamedpt")
 
     # Delete the renamed participant type again.
-    with pytest.raises(AdminAPIClientNotDefaultStatusError) as exc:
+    with expect_status_code(404):
         aclient.delete_participant(datasource_id=ds_id, participant_id="renamedpt")
-    response = exc.value.result.response
-    assert response.status_code == 404, response.content
 
     # Delete the renamed participant type again w/allow_missing.
     aclient.delete_participant(datasource_id=ds_id, participant_id="renamedpt", allow_missing=True)
 
     # Get the named participant type after it has been deleted
-    with pytest.raises(AdminAPIClientNotDefaultStatusError) as exc:
+    with expect_status_code(404):
         aclient.get_participant_type(datasource_id=ds_id, participant_id="renamedpt")
-    response = exc.value.result.response
-    assert response.status_code == 404, response.content
 
     # Delete the testing participant type.
     aclient.delete_participant(datasource_id=ds_id, participant_id="test_participant_type")
 
     # Delete the testing participant type a 2nd time.
-    with pytest.raises(AdminAPIClientNotDefaultStatusError) as exc:
+    with expect_status_code(404):
         aclient.delete_participant(datasource_id=ds_id, participant_id="test_participant_type")
-    response = exc.value.result.response
-    assert response.status_code == 404, response.content
 
     # Delete a participant type in a non-existent datasource.
-    with pytest.raises(AdminAPIClientNotDefaultStatusError) as exc:
+    with expect_status_code(403):
         aclient.delete_participant(datasource_id="ds-not-exist", participant_id="test_participant_type")
-    response = exc.value.result.response
-    assert response.status_code == 403, response.content
 
 
 def test_create_participants_type_invalid(testing_datasource_with_user, aclient: AdminAPIClient):
-    with pytest.raises(AdminAPIClientNotDefaultStatusError) as exc:
+    with expect_status_code(422, detail_contains="no columns marked as unique ID."):
         aclient.create_participant_type(
             datasource_id=testing_datasource_with_user.ds.id,
             body=CreateParticipantsTypeRequest.model_construct(
@@ -1131,9 +1081,6 @@ def test_create_participants_type_invalid(testing_datasource_with_user, aclient:
                 ),
             ),
         )
-    response = exc.value.result.response
-    assert response.status_code == 422, response.content
-    assert "no columns marked as unique ID." in response.json()["detail"][0]["msg"], response.content
 
 
 def test_get_participants_type_with_schema_drift(testing_datasource_with_user, aclient: AdminAPIClient):
@@ -1339,7 +1286,7 @@ async def test_lifecycle_with_db(testing_datasource, aclient: AdminAPIClient, ac
     create_exp_request = TypeAdapter(CreateExperimentRequest).validate_python(create_exp_dict)
     create_exp_request.design_spec.design_url = HttpUrl("https://example.com/design")
     created_experiment = aclient.create_experiment(
-        datasource_id=testing_datasource.ds.id, body=create_exp_request, chosen_n=100
+        datasource_id=testing_datasource.ds.id, body=create_exp_request, desired_n=100
     ).data
     parsed_experiment_id = created_experiment.experiment_id
     assert parsed_experiment_id is not None
@@ -1361,10 +1308,8 @@ async def test_lifecycle_with_db(testing_datasource, aclient: AdminAPIClient, ac
     )
 
     # Attempting to abandon a committed experiment should fail
-    with pytest.raises(AdminAPIClientNotDefaultStatusError) as exc:
+    with expect_status_code(409):
         aclient.abandon_experiment(datasource_id=testing_datasource.ds.id, experiment_id=parsed_experiment_id)
-    response = exc.value.result.response
-    assert response.status_code == 409, (parsed_experiment_id, response.content)
 
     # Verify it is still committed.
     get_exp = aclient.get_experiment_for_ui(
@@ -1423,19 +1368,15 @@ async def test_lifecycle_with_db(testing_datasource, aclient: AdminAPIClient, ac
     assert {arm.arm_id for arm in assignments.assignments} == {*parsed_arm_ids}
 
     # Unprivileged user attempts to delete the experiment
-    with pytest.raises(AdminAPIClientNotDefaultStatusError) as exc:
+    with expect_status_code(403):
         aclient_unpriv.delete_experiment(datasource_id=testing_datasource.ds.id, experiment_id=parsed_experiment_id)
-    response = exc.value.result.response
-    assert response.status_code == 403
 
     # Delete the experiment.
     aclient.delete_experiment(datasource_id=testing_datasource.ds.id, experiment_id=parsed_experiment_id)
 
     # Delete the experiment again.
-    with pytest.raises(AdminAPIClientNotDefaultStatusError) as exc:
+    with expect_status_code(404):
         aclient.delete_experiment(datasource_id=testing_datasource.ds.id, experiment_id=parsed_experiment_id)
-    response = exc.value.result.response
-    assert response.status_code == 404, response.content
 
     # Delete the experiment again w/allow_missing.
     aclient.delete_experiment(
@@ -1458,7 +1399,7 @@ async def test_abandon_experiment(testing_datasource_with_user, aclient: AdminAP
         filters=[],
     )
     parsed_response = aclient.create_experiment(
-        datasource_id=datasource_id, body=CreateExperimentRequest(design_spec=design_spec), chosen_n=1
+        datasource_id=datasource_id, body=CreateExperimentRequest(design_spec=design_spec), desired_n=1
     ).data
     assert parsed_response.state == ExperimentState.ASSIGNED
     parsed_experiment_id = parsed_response.experiment_id
@@ -1564,27 +1505,18 @@ async def test_create_experiment_with_invalid_design_url(testing_datasource_with
     request = make_createexperimentrequest_json()
     request["design_spec"]["design_url"] = "example.com/"
 
-    with pytest.raises(AdminAPIClientNotDefaultStatusError) as exc:
+    with expect_status_code(422, detail_contains="Input should be a valid URL, relative URL without a base"):
         aclient.create_experiment(datasource_id=datasource_id, body=request, desired_n=1)
-    response = exc.value.result.response
-    assert response.status_code == 422, response.content
-    assert "Input should be a valid URL, relative URL without a base" in response.json()["detail"][0]["msg"]
 
     # Now check that a too long URL is rejected.
     request["design_spec"]["design_url"] = "http://example.com/" + "a" * 500
-    with pytest.raises(AdminAPIClientNotDefaultStatusError) as exc:
+    with expect_status_code(422, detail_contains="URL should have at most 500 characters"):
         aclient.create_experiment(datasource_id=datasource_id, body=request, desired_n=1)
-    response = exc.value.result.response
-    assert response.status_code == 422, response.content
-    assert "URL should have at most 500 characters" in response.json()["detail"][0]["msg"]
 
     # And we need a host.
     request["design_spec"]["design_url"] = "https://"
-    with pytest.raises(AdminAPIClientNotDefaultStatusError) as exc:
+    with expect_status_code(422, detail_contains="Input should be a valid URL, empty host"):
         aclient.create_experiment(datasource_id=datasource_id, body=request, desired_n=1)
-    response = exc.value.result.response
-    assert response.status_code == 422, response.content
-    assert "Input should be a valid URL, empty host" in response.json()["detail"][0]["msg"]
 
 
 async def test_create_preassigned_experiment(
@@ -1827,10 +1759,8 @@ async def test_update_experiment_invalid_impact(testing_experiment, aclient: Adm
         impact="invalid impact",  # type: ignore[arg-type]
         decision="new decision",
     )
-    with pytest.raises(AdminAPIClientNotDefaultStatusError) as exc:
+    with expect_status_code(422):
         aclient.update_experiment(datasource_id=datasource_id, experiment_id=experiment_id, body=request)
-    response = exc.value.result.response
-    assert response.status_code == 422, response.content
 
 
 async def test_update_experiment(testing_experiment, aclient: AdminAPIClient):
@@ -1870,16 +1800,13 @@ async def test_update_experiment(testing_experiment, aclient: AdminAPIClient):
 
 @pytest.mark.parametrize("url", ["http", "http:", "http://", "http:///", "https:///", "postgres://"])
 async def test_update_experiment_url_invalid(testing_experiment, aclient: AdminAPIClient, url):
-    datasource_id = testing_experiment.datasource_id
-    experiment_id = testing_experiment.id
-    with pytest.raises(AdminAPIClientNotDefaultStatusError) as exc:
+    with expect_status_code(422) as status_match:
         aclient.update_experiment(
-            datasource_id=datasource_id,
-            experiment_id=experiment_id,
+            datasource_id=testing_experiment.datasource_id,
+            experiment_id=testing_experiment.id,
             body=UpdateExperimentRequest.model_construct(design_url=url),
         )
-    response = exc.value.result.response
-    assert response.status_code == 422, response.content
+    response = status_match.http_response()
     message = response.json()["detail"][0]["msg"]
     assert message.startswith(("Input should be a valid URL", "URL scheme should be")), response.content
 
@@ -1929,33 +1856,21 @@ async def test_update_experiment_invalid(xngin_session, testing_experiment, acli
     experiment_id = testing_experiment.id
 
     request = UpdateExperimentRequest(start_date=testing_experiment.end_date + timedelta(days=1))
-    with pytest.raises(AdminAPIClientNotDefaultStatusError) as exc:
+    with expect_status_code(422, detail_eq="New start date must be before end date."):
         aclient.update_experiment(datasource_id=datasource_id, experiment_id=experiment_id, body=request)
-    response = exc.value.result.response
-    assert response.status_code == 422
-    parsed_error = FastAPIClientHTTPValidationError.model_validate(response.json())
-    assert parsed_error.detail[0].msg == "New start date must be before end date."
 
     request = UpdateExperimentRequest(end_date=testing_experiment.start_date - timedelta(days=1))
-    with pytest.raises(AdminAPIClientNotDefaultStatusError) as exc:
+    with expect_status_code(422, detail_eq="New end date must be after start date."):
         aclient.update_experiment(datasource_id=datasource_id, experiment_id=experiment_id, body=request)
-    response = exc.value.result.response
-    assert response.status_code == 422
-    parsed_error = FastAPIClientHTTPValidationError.model_validate(response.json())
-    assert parsed_error.detail[0].msg == "New end date must be after start date."
 
     # Lastly check invalid experiment state
     testing_experiment.state = ExperimentState.ASSIGNED
     await xngin_session.commit()
 
-    with pytest.raises(AdminAPIClientNotDefaultStatusError) as exc:
+    with expect_status_code(422, detail_eq="Experiment must have been committed to be updated."):
         aclient.update_experiment(
             datasource_id=datasource_id, experiment_id=experiment_id, body=UpdateExperimentRequest(name="updated")
         )
-    response = exc.value.result.response
-    assert response.status_code == 422
-    parsed_error = FastAPIClientHTTPValidationError.model_validate(response.json())
-    assert parsed_error.detail[0].msg == "Experiment must have been committed to be updated."
 
 
 async def test_update_arm(testing_experiment, aclient: AdminAPIClient):
@@ -1980,32 +1895,25 @@ async def test_update_arm_invalid(xngin_session, testing_experiment, aclient: Ad
     experiment_id = testing_experiment.id
 
     # check invalid arm id
-    with pytest.raises(AdminAPIClientNotDefaultStatusError) as exc:
+    with expect_status_code(404, text="Arm not found."):
         aclient.update_arm(
             datasource_id=datasource_id,
             experiment_id=experiment_id,
             arm_id="invalid_id",
             body=UpdateArmRequest(name="updated"),
         )
-    response = exc.value.result.response
-    assert response.status_code == 404
-    assert response.json() == {"detail": "Arm not found."}
 
     # check invalid experiment state
     testing_experiment.state = ExperimentState.ASSIGNED
     await xngin_session.commit()
 
-    with pytest.raises(AdminAPIClientNotDefaultStatusError) as exc:
+    with expect_status_code(422, detail_eq="Experiment must have been committed to update arms."):
         aclient.update_arm(
             datasource_id=datasource_id,
             experiment_id=experiment_id,
             arm_id=testing_experiment.arms[0].id,
             body=UpdateArmRequest(name="updated"),
         )
-    response = exc.value.result.response
-    assert response.status_code == 422
-    parsed_error = FastAPIClientHTTPValidationError.model_validate(response.json())
-    assert parsed_error.detail[0].msg == "Experiment must have been committed to update arms."
 
 
 def test_get_experiment_assignment_for_preassigned_participant(testing_experiment, aclient: AdminAPIClient):
@@ -2231,11 +2139,8 @@ async def test_analyze_experiment_with_no_participants(testing_datasource_with_u
     datasource_id = testing_datasource_with_user.ds.id
     experiment_id = (await make_freq_online_experiment(datasource_id, aclient)).config.experiment_id
 
-    with pytest.raises(AdminAPIClientNotDefaultStatusError) as exc:
+    with expect_status_code(422, detail_eq="No participants found for experiment."):
         aclient.analyze_experiment(datasource_id=datasource_id, experiment_id=experiment_id)
-    response = exc.value.result.response
-    assert response.status_code == 422, response.content
-    assert response.json()["detail"][0]["msg"] == "No participants found for experiment."
 
 
 async def test_analyze_experiment_whose_assignments_have_no_dwh_data(
@@ -2249,14 +2154,11 @@ async def test_analyze_experiment_whose_assignments_have_no_dwh_data(
         datasource_id=datasource_id, experiment_id=experiment_id, participant_id="0"
     )
 
-    with pytest.raises(AdminAPIClientNotDefaultStatusError) as exc:
+    with expect_status_code(
+        422,
+        detail_contains="Check that ids used in assignment are usable with your unique identifier (id)",
+    ):
         aclient.analyze_experiment(datasource_id=datasource_id, experiment_id=experiment_id)
-    response = exc.value.result.response
-    assert response.status_code == 422, response.content
-    assert (
-        "Check that ids used in assignment are usable with your unique identifier (id)"
-        in response.json()["detail"][0]["msg"]
-    )
 
 
 async def test_analyze_experiment_with_no_assignments_in_one_arm_yet(
@@ -2363,30 +2265,29 @@ async def test_admin_experiment_state_setting(
     xngin_session.add(experiment)
     await xngin_session.commit()
 
+    if expected_detail:
+        expect_kwargs = {"text": expected_detail}
+    else:
+        expect_kwargs = {}
+
     if endpoint == "commit":
         if expected_status == 204:
             response = aclient.commit_experiment(datasource_id=datasource.id, experiment_id=str(experiment.id)).response
         else:
-            with pytest.raises(AdminAPIClientNotDefaultStatusError) as exc:
+            with expect_status_code(expected_status, **expect_kwargs):
                 aclient.commit_experiment(datasource_id=datasource.id, experiment_id=str(experiment.id))
-            response = exc.value.result.response
     elif expected_status == 204:
         response = aclient.abandon_experiment(datasource_id=datasource.id, experiment_id=str(experiment.id)).response
     else:
-        with pytest.raises(AdminAPIClientNotDefaultStatusError) as exc:
+        with expect_status_code(expected_status, **expect_kwargs):
             aclient.abandon_experiment(datasource_id=datasource.id, experiment_id=str(experiment.id))
-        response = exc.value.result.response
 
     # Verify
-    assert response.status_code == expected_status
-    # If success case, verify state was updated
     if expected_status == 204:
+        assert response.status_code == expected_status
         expected_state = ExperimentState.ABANDONED if endpoint == "abandon" else ExperimentState.COMMITTED
         await xngin_session.refresh(experiment)
         assert experiment.state == expected_state
-    # If failure case, verify the error message
-    if expected_detail:
-        assert response.json()["detail"] == expected_detail
 
 
 async def test_delete_apikey_not_authorized(aclient: AdminAPIClient):
@@ -2398,17 +2299,13 @@ async def test_delete_apikey_not_authorized(aclient: AdminAPIClient):
     the service must error with PERMISSION_DENIED (HTTP 403). Permission must be checked prior to checking if the
     resource exists.
     """
-    with pytest.raises(AdminAPIClientNotDefaultStatusError) as exc:
+    with expect_status_code(403):
         aclient.delete_api_key(datasource_id="not-a-datasource", api_key_id="irrelevant")
-    response = exc.value.result.response
-    assert response.status_code == 403
 
 
 async def test_delete_apikey_authorized_and_nonexistent(testing_datasource_with_user, aclient: AdminAPIClient):
-    with pytest.raises(AdminAPIClientNotDefaultStatusError) as exc:
+    with expect_status_code(404):
         aclient.delete_api_key(datasource_id=testing_datasource_with_user.ds.id, api_key_id="sample-key-id")
-    response = exc.value.result.response
-    assert response.status_code == 404
 
 
 async def test_delete_apikey_authorized_and_nonexistent_allow_missing(
@@ -2438,12 +2335,10 @@ async def test_delete_apikey_authorized_and_exists_idempotency(testing_datasourc
         datasource_id=testing_datasource_with_user.ds.id, api_key_id=testing_datasource_with_user.key_id
     )
 
-    with pytest.raises(AdminAPIClientNotDefaultStatusError) as exc:
+    with expect_status_code(404):
         aclient.delete_api_key(
             datasource_id=testing_datasource_with_user.ds.id, api_key_id=testing_datasource_with_user.key_id
         )
-    response = exc.value.result.response
-    assert response.status_code == 404
 
     aclient.delete_api_key(
         datasource_id=testing_datasource_with_user.ds.id,
@@ -2516,7 +2411,9 @@ async def test_experiment_webhook_integration(testing_datasource_with_user, acli
         webhooks=[webhook1_id],  # Only include the first webhook
     )
 
-    create_response = aclient.create_experiment(datasource_id=datasource_id, body=experiment_request, desired_n=100).data
+    create_response = aclient.create_experiment(
+        datasource_id=datasource_id, body=experiment_request, desired_n=100
+    ).data
 
     # Verify the create response includes the webhook
     assert len(create_response.webhooks) == 1
@@ -2707,14 +2604,13 @@ def test_snapshots(aclient: AdminAPIClient, aclient_unpriv: AdminAPIClient):
     assert get_snapshot_response.snapshot.data == success_snapshot.data
 
     # list snapshots with empty string in status_ param
-    with pytest.raises(AdminAPIClientNotDefaultStatusError) as exc:
+    with expect_status_code(422):
         aclient.list_snapshots(
             organization_id=create_organization_response.id,
             datasource_id=create_datasource_response.id,
             experiment_id=experiment_id,
             status_=[""],  # type: ignore
         )
-    assert exc.value.result.response.status_code == 422, exc.value
 
     # list snapshots filtered for running
     list_snapshot_response = aclient.list_snapshots(
@@ -2751,45 +2647,37 @@ def test_snapshots(aclient: AdminAPIClient, aclient_unpriv: AdminAPIClient):
     assert list_snapshot.latest_failure == failed_snapshot.updated_at, list_snapshot
 
     # Attempt to read a snapshot as a user that doesn't have access to the snapshot.
-    with pytest.raises(AdminAPIClientNotDefaultStatusError) as exc:
+    with expect_status_code(404):
         aclient_unpriv.get_snapshot(
             organization_id=create_organization_response.id,
             datasource_id=create_datasource_response.id,
             experiment_id=experiment_id,
             snapshot_id=success_snapshot.id,
         )
-    response = exc.value.result.response
-    assert response.status_code == 404, response.content
 
-    with pytest.raises(AdminAPIClientNotDefaultStatusError) as exc:
+    with expect_status_code(204):
         aclient.delete_snapshot(
             _organization_id=create_organization_response.id,
             datasource_id=create_datasource_response.id,
             experiment_id=experiment_id,
             snapshot_id=success_snapshot.id,
         )
-    response = exc.value.result.response
-    assert response.status_code == 204, response.content
 
-    with pytest.raises(AdminAPIClientNotDefaultStatusError) as exc:
+    with expect_status_code(404):
         aclient.delete_snapshot(
             _organization_id=create_organization_response.id,
             datasource_id=create_datasource_response.id,
             experiment_id=experiment_id,
             snapshot_id=success_snapshot.id,
         )
-    response = exc.value.result.response
-    assert response.status_code == 404, response.content
 
-    with pytest.raises(AdminAPIClientNotDefaultStatusError) as exc:
+    with expect_status_code(404):
         aclient.get_snapshot(
             organization_id=create_organization_response.id,
             datasource_id=create_datasource_response.id,
             experiment_id=experiment_id,
             snapshot_id=success_snapshot.id,
         )
-    response = exc.value.result.response
-    assert response.status_code == 404, response.content
 
 
 def test_snapshot_on_ineligible_experiments(testing_datasource_with_user, aclient: AdminAPIClient):
@@ -2819,23 +2707,15 @@ def test_snapshot_on_ineligible_experiments(testing_datasource_with_user, aclien
     ).data.experiment_id
 
     # Assert non-committed experiments cannot be snapshotted.
-    with pytest.raises(AdminAPIClientNotDefaultStatusError) as exc:
+    with expect_status_code(422, detail_eq="You can only snapshot committed experiments."):
         aclient.create_snapshot(organization_id=org.id, datasource_id=ds.id, experiment_id=experiment_id)
-    response = exc.value.result.response
-    assert response.status_code == 422
-    parsed_error = FastAPIClientHTTPValidationError.model_validate(response.json())
-    assert parsed_error.detail[0].msg == "You can only snapshot committed experiments."
 
     # So commit the experiment.
     aclient.commit_experiment(datasource_id=ds.id, experiment_id=experiment_id)
 
     # Assert old experiments cannot be snapshotted.
-    with pytest.raises(AdminAPIClientNotDefaultStatusError) as exc:
+    with expect_status_code(422, detail_eq="You can only snapshot active experiments."):
         aclient.create_snapshot(organization_id=org.id, datasource_id=ds.id, experiment_id=experiment_id)
-    response = exc.value.result.response
-    assert response.status_code == 422
-    parsed_error = FastAPIClientHTTPValidationError.model_validate(response.json())
-    assert parsed_error.detail[0].msg == "You can only snapshot active experiments."
 
     # But recently ended experiments can be snapshotted within a 1 day buffer.
     experiment_id = aclient.create_experiment(
@@ -2955,11 +2835,10 @@ async def test_delete_experiment_data_not_authorized(client):
 async def test_delete_experiment_data_experiment_not_found(testing_datasource_with_user, aclient: AdminAPIClient):
     """Test that deleting data for a non-existent experiment returns 404."""
     ds_id = testing_datasource_with_user.ds.id
-    with pytest.raises(AdminAPIClientNotDefaultStatusError) as exc:
+    with expect_status_code(404):
         aclient.delete_experiment_data(
             datasource_id=ds_id, experiment_id="not-an-experiment", body=DeleteExperimentDataRequest(snapshots=True)
         )
-    assert exc.value.result.status == 404, exc.value
 
 
 async def test_delete_experiment_data_assignments(
@@ -3213,11 +3092,8 @@ def test_create_experiment_table_name_requires_primary_key(testing_datasource_wi
     request_json = make_createexperimentrequest_json(experiment_type=ExperimentsType.FREQ_ONLINE)
     constructed = CreateExperimentRequest.model_validate(request_json)
     constructed.table_name = "some_table"
-    with pytest.raises(AdminAPIClientNotDefaultStatusError) as exc:
+    with expect_status_code(422, text="table_name and primary_key must be provided together"):
         aclient.create_experiment(datasource_id=ds_id, body=constructed)
-    response = exc.value.result.response
-    assert response.status_code == 422
-    assert "table_name and primary_key must be provided together" in response.text
 
 
 def test_create_experiment_primary_key_requires_table_name(testing_datasource_with_user, aclient: AdminAPIClient):
@@ -3226,11 +3102,8 @@ def test_create_experiment_primary_key_requires_table_name(testing_datasource_wi
     request_json = make_createexperimentrequest_json(experiment_type=ExperimentsType.FREQ_ONLINE)
     constructed = CreateExperimentRequest.model_validate(request_json)
     constructed.primary_key = "id"
-    with pytest.raises(AdminAPIClientNotDefaultStatusError) as exc:
+    with expect_status_code(422, text="table_name and primary_key must be provided together"):
         aclient.create_experiment(datasource_id=ds_id, body=constructed)
-    response = exc.value.result.response
-    assert response.status_code == 422
-    assert "table_name and primary_key must be provided together" in response.text
 
 
 async def test_create_preassigned_experiment_with_table_name_and_primary_key(
@@ -3359,13 +3232,10 @@ def test_list_snapshots_pagination(aclient: AdminAPIClient):
     assert skipped_page.items[0].id == all_items.items[1].id
 
     # Invalid page_token returns 400
-    with pytest.raises(AdminAPIClientNotDefaultStatusError) as exc:
+    with expect_status_code(400, text="Invalid page_token."):
         aclient.list_snapshots(
             organization_id=org.id, datasource_id=ds.id, experiment_id=experiment_id, page_token="bogus"
         )
-    response = exc.value.result.response
-    assert response.status_code == 400, response.content
-    assert response.json() == {"detail": "Invalid page_token."}
 
 
 def test_list_organization_events_pagination(testing_datasource_with_user, aclient: AdminAPIClient):
@@ -3453,11 +3323,8 @@ def test_list_organization_events_pagination(testing_datasource_with_user, aclie
     assert pages > 1
 
     # Invalid page_token returns 400
-    with pytest.raises(AdminAPIClientNotDefaultStatusError) as exc:
+    with expect_status_code(400, text="Invalid page_token."):
         aclient.list_organization_events(organization_id=org_id, page_token="bogus")
-    response = exc.value.result.response
-    assert response.status_code == 400, response.content
-    assert response.json() == {"detail": "Invalid page_token."}
 
 
 async def test_list_organization_events_pagination_with_same_timestamp_is_id_desc(

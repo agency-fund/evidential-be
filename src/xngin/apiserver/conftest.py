@@ -5,6 +5,8 @@ import contextlib
 import enum
 import os
 import secrets
+from collections.abc import Iterator
+from contextlib import contextmanager
 from dataclasses import dataclass
 from typing import assert_never, cast
 
@@ -27,6 +29,7 @@ from xngin.apiserver.dependencies import (
     random_seed_dependency,
 )
 from xngin.apiserver.dns import safe_resolve
+from xngin.apiserver.exceptionhandlers import FastAPIClientHTTPValidationError
 from xngin.apiserver.main import app
 from xngin.apiserver.routers.auth import auth_dependencies
 from xngin.apiserver.routers.auth.auth_dependencies import (
@@ -45,6 +48,7 @@ from xngin.apiserver.testing import (
     admin_api_client,
     experiments_api_client,
 )
+from xngin.apiserver.testing.admin_api_client import AdminAPIClientNotDefaultStatusError
 from xngin.apiserver.testing.pg_helpers import create_database_if_not_exists_pg
 from xngin.apiserver.testing.testing_dwh_def import TESTING_DWH_PARTICIPANT_DEF
 from xngin.db_extensions import custom_functions
@@ -353,3 +357,75 @@ async def _make_datasource_metadata(
         key_id=key_id,
         org=org,
     )
+
+
+@dataclass
+class StatusCodeMatcher:
+    exc: AdminAPIClientNotDefaultStatusError | None = None
+
+    def http_response(self):
+        """Returns the httpx Response."""
+        if self.exc is None:
+            raise AssertionError("StatusCodeMatcher has no captured response yet.")
+        return self.exc.result.response
+
+    def _detail_messages(self) -> list[str]:
+        response = self.http_response()
+        parsed_error = FastAPIClientHTTPValidationError.model_validate(response.json())
+        return [detail.msg for detail in parsed_error.detail]
+
+    def _has_text(self, text: str) -> bool:
+        response = self.http_response()
+        body_text = response.text if response.text is not None else str(response.content)
+        return text in body_text
+
+    def _has_message(self, msg: str, *, contains: bool = False) -> bool:
+        response = self.http_response()
+        body = response.json()
+        if not isinstance(body, dict):
+            raise TypeError(f"Expected JSON object response body, got {type(body).__name__}.")
+        actual_msg = body.get("message")
+        if not isinstance(actual_msg, str):
+            raise TypeError(f'Expected JSON object with string "message", got: {body!r}')
+        actual_msg = actual_msg.lower()
+        expected_msg = msg.lower()
+        return expected_msg in actual_msg if contains else actual_msg == expected_msg
+
+
+@contextmanager
+def expect_status_code(
+    status_code: int,
+    *,
+    message_contains: str | None = None,
+    message_eq: str | None = None,
+    detail_contains: str | None = None,
+    detail_eq: str | None = None,
+    text: str | None = None,
+) -> Iterator[StatusCodeMatcher]:
+    """Like pytest.raises(), but for checking the non-default response codes of an AdminAPIClient request."""
+    match = StatusCodeMatcher()
+    with pytest.raises(AdminAPIClientNotDefaultStatusError) as exc:
+        yield match
+    match.exc = exc.value
+    http_response = match.http_response()
+    assert http_response.status_code == status_code, (
+        f"Expected '{status_code}' response code but got {http_response.status_code}: {http_response.content}"
+    )
+    if message_eq is not None:
+        assert match._has_message(message_eq), (
+            f"Expected '{message_eq}' to be equal to the .message field: {http_response.content}"
+        )
+    if message_contains is not None:
+        assert match._has_message(message_contains, contains=True), (
+            f"Expected '{message_contains}' to be a substring of the .message field: {http_response.content}"
+        )
+    if detail_eq is not None:
+        assert any(msg == detail_eq for msg in match._detail_messages()), (
+            f"Expected '{detail_eq}' to be one of the .msg fields in the response: {http_response.content}"
+        )
+    if detail_contains is not None:
+        assert any(detail_contains in msg for msg in match._detail_messages()), (
+            f"Expected '{detail_eq}' to be in one of the .msg fields in the response: {http_response.content}"
+        )
+    if text is not None:
+        assert match._has_text(text), f"Expected '{text}' to be in the response: {http_response.content}"
