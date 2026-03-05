@@ -6,7 +6,6 @@ import enum
 import os
 import secrets
 from dataclasses import dataclass
-from functools import partial
 from typing import assert_never, cast
 
 import pytest
@@ -208,51 +207,6 @@ def fixture_admin_api_client_unpriv(xngin_session):
     """Returns a generated API client for unprivileged Admin API requests."""
     with TestClient(app, headers={"Authorization": f"Bearer {UNPRIVILEGED_TOKEN_FOR_TESTING}"}) as client:
         yield admin_api_client.AdminAPIClient(client)
-
-
-@pytest.fixture(name="pget")
-def fixture_pget(client):
-    return partial(client.get, headers={"Authorization": f"Bearer {PRIVILEGED_TOKEN_FOR_TESTING}"})
-
-
-@pytest.fixture(name="ppost")
-def fixture_ppost(client):
-    return partial(
-        client.post,
-        headers={"Authorization": f"Bearer {PRIVILEGED_TOKEN_FOR_TESTING}"},
-    )
-
-
-@pytest.fixture(name="ppatch")
-def fixture_ppatch(client):
-    return partial(
-        client.patch,
-        headers={"Authorization": f"Bearer {PRIVILEGED_TOKEN_FOR_TESTING}"},
-    )
-
-
-@pytest.fixture(name="pdelete")
-def fixture_pdelete(client):
-    return partial(
-        client.delete,
-        headers={"Authorization": f"Bearer {PRIVILEGED_TOKEN_FOR_TESTING}"},
-    )
-
-
-@pytest.fixture(name="udelete")
-def fixture_udelete(client):
-    return partial(
-        client.delete,
-        headers={"Authorization": f"Bearer {UNPRIVILEGED_TOKEN_FOR_TESTING}"},
-    )
-
-
-@pytest.fixture(name="uget")
-def fixture_uget(client):
-    return partial(
-        client.get,
-        headers={"Authorization": f"Bearer {UNPRIVILEGED_TOKEN_FOR_TESTING}"},
-    )
 
 
 @pytest.fixture(name="xngin_session")

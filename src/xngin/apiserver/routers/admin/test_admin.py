@@ -598,7 +598,7 @@ def test_add_member_to_org(testing_datasource, aclient: AdminAPIClient):
     assert member_list == {UNPRIVILEGED_EMAIL, PRIVILEGED_EMAIL, "newuser@example.com"}, member_list
 
 
-def test_remove_member_from_org(xngin_session, aclient: AdminAPIClient):
+def test_remove_member_from_org(aclient: AdminAPIClient):
     def create_organization():
         return aclient.create_organizations(body=CreateOrganizationRequest(name="test_remove_member_from_org")).data.id
 
@@ -1558,9 +1558,7 @@ async def test_power_check_with_synthesized_schema(testing_datasource_with_user,
     assert power_response.analyses[0].target_n is not None
 
 
-async def test_create_experiment_with_invalid_design_url(
-    xngin_session, testing_datasource_with_user, aclient: AdminAPIClient
-):
+async def test_create_experiment_with_invalid_design_url(testing_datasource_with_user, aclient: AdminAPIClient):
     datasource_id = testing_datasource_with_user.ds.id
     # Work with the raw json to construct a bad request
     request = make_createexperimentrequest_json()
@@ -3236,7 +3234,7 @@ def test_create_experiment_primary_key_requires_table_name(testing_datasource_wi
 
 
 async def test_create_preassigned_experiment_with_table_name_and_primary_key(
-    xngin_session: AsyncSession, testing_datasource_with_user, use_deterministic_random, aclient: AdminAPIClient
+    testing_datasource_with_user, use_deterministic_random, aclient: AdminAPIClient
 ):
     """Test creating a preassigned experiment with table_name and primary_key."""
     ds_id = testing_datasource_with_user.ds.id
