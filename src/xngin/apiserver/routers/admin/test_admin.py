@@ -3387,3 +3387,108 @@ async def test_list_organization_events_pagination_with_same_timestamp_is_id_des
     assert page2.items[0].id == expected_tied_order[1]
     assert page2.items[0].id != page1.items[0].id
     assert page2.items[0].created_at == tied_created_at
+
+
+async def test_power_check_with_manual_icc(testing_datasource_with_user, ppost):
+    """Test power check with user-provided ICC values."""
+    design_spec = PreassignedFrequentistExperimentSpec(
+        experiment_type=ExperimentsType.FREQ_PREASSIGNED,
+        participant_type="test_participant_type",
+        experiment_name="test cluster power",
+        description="test power check with manual ICC",
+        start_date=datetime(2024, 1, 1, tzinfo=UTC),
+        end_date=datetime.now(UTC) + timedelta(days=1),
+        arms=[
+            Arm(arm_name="control", arm_description="Control group"),
+            Arm(arm_name="treatment", arm_description="Treatment group"),
+        ],
+        metrics=[
+            DesignSpecMetricRequest(field_name="current_income", metric_pct_change=0.1),
+        ],
+        strata=[],
+        filters=[],
+    )
+
+    # Test with manual ICC values
+    response = ppost(
+        f"/v1/m/datasources/{testing_datasource_with_user.ds.id}/power",
+        content=PowerRequest(
+            design_spec=design_spec,
+            icc=0.15,
+            avg_cluster_size=30,
+            cv=1.2,
+        ).model_dump_json(),
+    )
+
+    assert response.status_code == 200, response.content
+    data = response.json()
+    print(f"\n\nRESPONSE DATA: {data}\n\n")
+
+    # ADD THIS LINE TO SEE WHAT WE GOT:
+    print("\n\n=== RESPONSE ===")
+    print(json.dumps(data, indent=2))
+    print("=== END ===\n\n")
+
+    # Verify cluster analysis
+    assert len(data["analyses"]) == 1
+    analysis = data["analyses"][0]
+    assert analysis["icc"] == 0.15
+    assert analysis["avg_cluster_size"] == 30
+    assert analysis["design_effect"] > 1.0
+
+
+# @pytest.mark.skip(reason="Requires clustered_dwh table to be loaded in test database")
+async def test_power_check_with_calculated_icc(testing_datasource_with_user, ppost):
+    """Test power check with ICC calculated from database (requires clustered_dwh)."""
+    design_spec = PreassignedFrequentistExperimentSpec(
+        experiment_type=ExperimentsType.FREQ_PREASSIGNED,
+        participant_type="test_participant_type",
+        experiment_name="test cluster power from DB",
+        description="test power check calculating ICC from database",
+        start_date=datetime(2024, 1, 1, tzinfo=UTC),
+        end_date=datetime.now(UTC) + timedelta(days=1),
+        arms=[
+            Arm(arm_name="control"),
+            Arm(arm_name="treatment"),
+        ],
+        metrics=[
+            DesignSpecMetricRequest(field_name="test_score", metric_pct_change=0.1),
+        ],
+        strata=[],
+        filters=[],
+    )
+
+    response = ppost(
+        f"/v1/m/datasources/{testing_datasource_with_user.ds.id}/power",
+        content=PowerRequest(
+            design_spec=design_spec,
+            table_name="clustered_dwh",
+            primary_key="participant_id",
+            cluster_column="cluster_powerlaw",
+        ).model_dump_json(),
+    )
+
+    assert response.status_code == 200, response.content
+    data = response.json()
+
+    # Verify we got cluster analysis
+    assert len(data["analyses"]) == 1
+    analysis = data["analyses"][0]
+
+    # Check ICC was calculated (test_score has ICC ~0.20 with cluster_powerlaw)
+    assert "icc" in analysis
+    assert 0.15 <= analysis["icc"] <= 0.25  # Approximate range
+
+    # Check cluster size was calculated
+    assert "avg_cluster_size" in analysis
+    assert analysis["avg_cluster_size"] > 0
+
+    # Check CV was calculated (cluster_powerlaw has high CV ~3)
+    assert "cv" in analysis
+    assert analysis["cv"] > 2.0  # Power-law distribution has high CV
+
+    # Check design effect and cluster count
+    assert "design_effect" in analysis
+    assert analysis["design_effect"] > 1.0
+    assert "num_clusters_total" in analysis
+    assert analysis["num_clusters_total"] > 0
