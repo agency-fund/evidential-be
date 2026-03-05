@@ -3,7 +3,6 @@ from http import HTTPStatus
 
 import pytest
 from deepdiff import DeepDiff
-from fastapi_typed_client.client import FastAPIClientNotDefaultStatusError
 from pydantic import TypeAdapter
 from sqlalchemy import select
 
@@ -24,6 +23,7 @@ from xngin.apiserver.routers.experiments.test_experiments_common import (
 )
 from xngin.apiserver.sqla import tables
 from xngin.apiserver.storage.storage_format_converters import ExperimentStorageConverter
+from xngin.apiserver.testing.experiments_api_client import ExperimentsAPIClientNotDefaultStatusError
 
 
 @pytest.mark.parametrize(
@@ -45,7 +45,7 @@ async def test_list_experiments_with_various_insufficient_headers(
     kwargs = {"datasource_id": testing_datasource.ds.id}
     if key is not None:
         kwargs["api_key"] = key
-    with pytest.raises(FastAPIClientNotDefaultStatusError) as exc:
+    with pytest.raises(ExperimentsAPIClientNotDefaultStatusError) as exc:
         eclient.list_experiments(**kwargs)
     assert exc.value.result.status.value == expected_status
     assert expected_message in exc.value.result.data["message"], exc.value.result.response.content
@@ -80,7 +80,7 @@ async def test_get_experiment(xngin_session, testing_datasource, eclient):
 
 def test_get_experiment_assignments_not_found(testing_datasource, eclient):
     """Test getting assignments for a non-existent experiment."""
-    with pytest.raises(FastAPIClientNotDefaultStatusError) as exc:
+    with pytest.raises(ExperimentsAPIClientNotDefaultStatusError) as exc:
         eclient.get_experiment_assignments(api_key=testing_datasource.key, experiment_id=tables.experiment_id_factory())
     assert exc.value.result.status == HTTPStatus.NOT_FOUND, exc.value.result.data
     assert exc.value.result.data["detail"] == "Experiment not found or not authorized."
@@ -94,7 +94,7 @@ async def test_get_experiment_assignments_wrong_datasource(
     experiment = await insert_experiment_and_arms(xngin_session, testing_datasource.ds, state=ExperimentState.COMMITTED)
 
     # Try to get testing_datasource's experiment from another datasource's key.
-    with pytest.raises(FastAPIClientNotDefaultStatusError) as exc:
+    with pytest.raises(ExperimentsAPIClientNotDefaultStatusError) as exc:
         eclient.get_experiment_assignments(api_key=testing_datasource_with_user.key, experiment_id=experiment.id)
     assert exc.value.result.status == HTTPStatus.NOT_FOUND, exc.value.result.data
     assert exc.value.result.data["detail"] == "Experiment not found or not authorized."
@@ -351,7 +351,7 @@ async def test_assign_with_filters_wrong_experiment_type(xngin_session, testing_
     )
 
     # Expect a 422 because we are using the get_assignment_filtered endpoint incorrectly.
-    with pytest.raises(FastAPIClientNotDefaultStatusError) as exc:
+    with pytest.raises(ExperimentsAPIClientNotDefaultStatusError) as exc:
         eclient.get_assignment_filtered(
             api_key=testing_datasource.key,
             body=OnlineAssignmentWithFiltersRequest(properties=[]),
@@ -444,7 +444,7 @@ async def test_get_assignment_online_cache_headers(xngin_session, testing_dataso
     assert response.response.headers["Cache-Control"] == "private, max-age=100"
 
     # Invalid max_age returns 422
-    with pytest.raises(FastAPIClientNotDefaultStatusError) as exc:
+    with pytest.raises(ExperimentsAPIClientNotDefaultStatusError) as exc:
         eclient.get_assignment(
             api_key=testing_datasource.key, experiment_id=online_experiment.id, max_age=-100, participant_id="1"
         )

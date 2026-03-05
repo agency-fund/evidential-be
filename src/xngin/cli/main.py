@@ -5,6 +5,8 @@ import functools
 import json
 import logging
 import re
+import shutil
+import subprocess
 import sys
 import uuid
 from compression import zstd
@@ -13,7 +15,6 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Annotated
 
 import boto3
-import fastapi_typed_client
 import psycopg
 import psycopg2
 import sqlalchemy
@@ -699,22 +700,49 @@ def decrypt(
 
 
 @app.command()
-def generate_typed_client():
+def generate_typed_clients():
+    """Generates strongly typed API clients from the FastAPI definitions."""
+    # dev-only dependency
+    import fastapi_typed_client  # noqa: PLC0415
+
     root = Path("src/xngin/apiserver/testing")
+    eapi_path = root / "experiments_api_client.py"
+    aapi_path = root / "admin_api_client.py"
+
+    print(f"Generating ExperimentsAPIClient: {eapi_path}")
     fastapi_typed_client.generate_fastapi_typed_client(
         "xngin.apiserver.routers.experiments.experiments_api:router",
-        import_client_base=True,
-        output_path=root / "experiments_api_client.py",
+        include_security_params=True,
+        output_path=eapi_path,
         raise_if_not_default_status=True,
         title="ExperimentsAPIClient",
     )
+    print(f"Generating AdminAPIClient: {aapi_path}")
     fastapi_typed_client.generate_fastapi_typed_client(
         "xngin.apiserver.routers.admin.admin_api:router",
-        import_client_base=True,
-        output_path=root / "admin_api_client.py",
+        output_path=aapi_path,
         raise_if_not_default_status=True,
         title="AdminAPIClient",
     )
+
+    ruff_bin = shutil.which("ruff")
+    if ruff_bin is None:
+        return
+
+    print("Formatting generated files...")
+    try:
+        subprocess.run(
+            [
+                ruff_bin,
+                "format",
+                eapi_path,
+                aapi_path,
+            ],
+            check=True,
+        )
+    except subprocess.CalledProcessError as exc:
+        err_console.print(f"[bold red]Error:[/bold red] ruff formatting failed: {exc}")
+        raise typer.Exit(1) from exc
 
 
 if __name__ == "__main__":
