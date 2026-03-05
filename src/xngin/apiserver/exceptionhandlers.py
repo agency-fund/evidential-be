@@ -34,6 +34,12 @@ class FastAPIClientHTTPValidationError(BaseModel):
     detail: Sequence[FastAPIClientValidationError]
 
 
+def as_fastapi_http_validation_error(msg: str, type_: str = "late"):
+    return FastAPIClientHTTPValidationError(
+        detail=[FastAPIClientValidationError(loc=[0], type=type_, msg=msg)]
+    ).model_dump()
+
+
 def setup(app):
     """Registers exception handlers to the FastAPI app.
 
@@ -55,11 +61,11 @@ def setup(app):
 
     @app.exception_handler(ExperimentsAssignmentError)
     async def exception_handler_experimentserror(_request: Request, exc: StatsError):
-        return JSONResponse(status_code=422, content={"message": str(exc)})
+        return JSONResponse(status_code=422, content=as_fastapi_http_validation_error(str(exc), "assignment"))
 
     @app.exception_handler(StatsError)
     async def exception_handler_statsmodelerror(_request: Request, exc: StatsError):
-        return JSONResponse(status_code=422, content={"message": str(exc)})
+        return JSONResponse(status_code=422, content=as_fastapi_http_validation_error(str(exc), "stats"))
 
     @app.exception_handler(sqlalchemy.exc.OperationalError)
     async def exception_handler_sqlalchemy_opex(_request: Request, exc: sqlalchemy.exc.OperationalError):
@@ -76,12 +82,7 @@ def setup(app):
 
     @app.exception_handler(LateValidationError)
     async def exception_handler_latevalidation(_request: Request, exc: LateValidationError):
-        return JSONResponse(
-            status_code=422,
-            content=FastAPIClientHTTPValidationError(
-                detail=[FastAPIClientValidationError(loc=[0], type="late", msg=str(exc))]
-            ).model_dump(),
-        )
+        return JSONResponse(status_code=422, content=as_fastapi_http_validation_error(str(exc), "late"))
 
     @app.exception_handler(ValidationError)
     async def exception_handler_pydantic_validationerror(_request: Request, exc: ValidationError):
@@ -93,8 +94,8 @@ def setup(app):
         )
 
     @app.exception_handler(CredentialsUnavailableError)
-    async def exception_handler_credentialsunavailable(_request: Request, exc: ValidationError):
-        return JSONResponse(status_code=422, content={"message": str(exc)})
+    async def exception_handler_credentialsunavailable(_request: Request, exc: CredentialsUnavailableError):
+        return JSONResponse(status_code=422, content=as_fastapi_http_validation_error(str(exc), "credentials"))
 
     @app.exception_handler(DwhConnectionError)
     async def exception_handler_dwhconnectionerror(_request: Request, exc: DwhConnectionError):

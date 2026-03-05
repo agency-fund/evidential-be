@@ -498,7 +498,7 @@ def test_create_datasource_without_credentials(
         ).model_dump_json(),
     )
     assert response.status_code == 422, response.content
-    assert response.json() == {"message": CREDENTIALS_UNAVAILABLE_MESSAGE}
+    assert response.json()["detail"][0]["msg"] == CREDENTIALS_UNAVAILABLE_MESSAGE
 
 
 def test_create_datasource_invalid_dns(testing_datasource, aclient):
@@ -1500,7 +1500,7 @@ async def test_lifecycle_with_db(testing_datasource, aclient, aclient_unpriv):
     response = aclient.client.post(
         f"/v1/m/datasources/{testing_datasource.ds.id}/experiments/{parsed_experiment_id}/abandon"
     )
-    assert response.status_code == 400, (parsed_experiment_id, response.content)
+    assert response.status_code == 409, (parsed_experiment_id, response.content)
 
     # Verify it is still committed.
     response = aclient.client.get(f"/v1/m/datasources/{testing_datasource.ds.id}/experiments/{parsed_experiment_id}")
@@ -2427,7 +2427,7 @@ async def test_analyze_experiment_with_no_participants(testing_datasource_with_u
 
     response = aclient.client.get(f"/v1/m/datasources/{datasource_id}/experiments/{experiment_id}/analyze")
     assert response.status_code == 422, response.content
-    assert response.json()["message"] == "No participants found for experiment."
+    assert response.json()["detail"][0]["msg"] == "No participants found for experiment."
 
 
 async def test_analyze_experiment_whose_assignments_have_no_dwh_data(testing_datasource_with_user, aclient):
@@ -2440,7 +2440,10 @@ async def test_analyze_experiment_whose_assignments_have_no_dwh_data(testing_dat
 
     response = aclient.client.get(f"/v1/m/datasources/{datasource_id}/experiments/{experiment_id}/analyze")
     assert response.status_code == 422, response.content
-    assert "Check that ids used in assignment are usable with your unique identifier (id)" in response.json()["message"]
+    assert (
+        "Check that ids used in assignment are usable with your unique identifier (id)"
+        in response.json()["detail"][0]["msg"]
+    )
 
 
 async def test_analyze_experiment_with_no_assignments_in_one_arm_yet(
@@ -2526,13 +2529,13 @@ def test_mab_experiments_analyze_with_no_participants(testing_bandit_experiment,
     "endpoint,initial_state,expected_status,expected_detail",
     [
         ("commit", ExperimentState.ASSIGNED, 204, None),  # Success case
-        ("commit", ExperimentState.COMMITTED, 304, None),  # No-op
-        ("commit", ExperimentState.DESIGNING, 400, "Invalid state: designing"),
-        ("commit", ExperimentState.ABORTED, 400, "Invalid state: aborted"),
+        ("commit", ExperimentState.COMMITTED, 204, None),  # No-op
+        ("commit", ExperimentState.DESIGNING, 409, "Invalid state: designing"),
+        ("commit", ExperimentState.ABORTED, 409, "Invalid state: aborted"),
         ("abandon", ExperimentState.DESIGNING, 204, None),  # Success case
         ("abandon", ExperimentState.ASSIGNED, 204, None),  # Success case
-        ("abandon", ExperimentState.ABANDONED, 304, None),  # No-op
-        ("abandon", ExperimentState.COMMITTED, 400, "Invalid state: committed"),
+        ("abandon", ExperimentState.ABANDONED, 204, None),  # No-op
+        ("abandon", ExperimentState.COMMITTED, 409, "Invalid state: committed"),
     ],
 )
 async def test_admin_experiment_state_setting(
@@ -2816,8 +2819,8 @@ def test_snapshots(aclient, aclient_unpriv):
     )
     assert response.status_code == 204
 
-    # When run via tests, the TestClient that aclient.client.post() is built upon will wait for the backend handler to finish
-    # all of its background tasks. Therefore this test will not observe the experiment in a "pending" state.
+    # When run via tests, the TestClient that aclient.client.post() is built upon will wait for the backend handler
+    # to finish all of its background tasks. Therefore this test will not observe the experiment in a "pending" state.
     response = aclient.client.post(
         f"/v1/m/organizations/{create_organization_response.id}/datasources/{create_datasource_response.id}"
         f"/experiments/{experiment_id}/snapshots"

@@ -48,6 +48,7 @@ from xngin.apiserver.dwh.queries import (
     get_stats_on_filters,
     get_stats_on_metrics,
 )
+from xngin.apiserver.exceptionhandlers import FastAPIClientHTTPValidationError
 from xngin.apiserver.exceptions_common import LateValidationError
 from xngin.apiserver.pagination import (
     PaginationQuery,
@@ -133,6 +134,7 @@ from xngin.apiserver.routers.common_api_types import (
 )
 from xngin.apiserver.routers.common_enums import ExperimentState
 from xngin.apiserver.routers.experiments import experiments_common
+from xngin.apiserver.routers.experiments.experiments_common import AbandonExperimentResult
 from xngin.apiserver.settings import (
     ParticipantsDef,
     RemoteDatabaseConfig,
@@ -149,6 +151,10 @@ RESPONSE_CACHE_MAX_AGE_SECONDS = timedelta(minutes=15).seconds
 # Describes the structure of an error raised via `raise HTTPException`.
 class HTTPExceptionError(BaseModel):
     detail: str
+
+
+class MessageError(BaseModel):
+    message: str
 
 
 # This defines the response codes we can expect our API to return in the normal course of operation and would be
@@ -178,6 +184,31 @@ STANDARD_ADMIN_RESPONSES: dict[str | int, dict[str, Any]] = {
     "404": {
         "model": HTTPExceptionError,
         "description": "Requested content was not found.",
+    },
+}
+
+VALIDATION_RESPONSE: dict[str, Any] = {
+    "model": FastAPIClientHTTPValidationError,
+    "description": "Validation error.",
+}
+
+DWH_CONNECTION_RESPONSES: dict[str | int, dict[str, Any]] = {
+    "422": VALIDATION_RESPONSE,
+    "502": {
+        "model": MessageError,
+        "description": "Unable to connect to the datasource.",
+    },
+    "504": {
+        "model": MessageError,
+        "description": "Datasource request timed out.",
+    },
+}
+
+DWH_CONNECTION_AND_NOT_FOUND_RESPONSES: dict[str | int, dict[str, Any]] = {
+    **DWH_CONNECTION_RESPONSES,
+    "404": {
+        "model": MessageError,
+        "description": "Requested datasource metadata could not be found.",
     },
 }
 
@@ -912,7 +943,10 @@ async def list_organization_datasources(
     return ListDatasourcesResponse(items=[convert_ds_to_summary(ds) for ds in datasources])
 
 
-@router.post("/datasources")
+@router.post(
+    "/datasources",
+    responses=DWH_CONNECTION_RESPONSES,
+)
 async def create_datasource(
     session: Annotated[AsyncSession, Depends(xngin_db_session)],
     user: Annotated[tables.User, Depends(require_user_from_token)],
@@ -986,7 +1020,10 @@ async def get_datasource(
     )
 
 
-@router.get("/datasources/{datasource_id}/inspect")
+@router.get(
+    "/datasources/{datasource_id}/inspect",
+    responses=DWH_CONNECTION_AND_NOT_FOUND_RESPONSES,
+)
 async def inspect_datasource(
     datasource_id: str,
     user: Annotated[tables.User, Depends(require_user_from_token)],
@@ -1018,7 +1055,10 @@ async def invalidate_inspect_table_cache(session, datasource_id):
     )
 
 
-@router.get("/datasources/{datasource_id}/inspect/{table_name}")
+@router.get(
+    "/datasources/{datasource_id}/inspect/{table_name}",
+    responses=DWH_CONNECTION_AND_NOT_FOUND_RESPONSES,
+)
 async def inspect_table_in_datasource(
     datasource_id: str,
     table_name: str,
@@ -1137,7 +1177,10 @@ async def create_participant_type(
     )
 
 
-@router.get("/datasources/{datasource_id}/participants/{participant_id}/inspect")
+@router.get(
+    "/datasources/{datasource_id}/participants/{participant_id}/inspect",
+    responses=DWH_CONNECTION_AND_NOT_FOUND_RESPONSES,
+)
 async def inspect_participant_types(
     datasource_id: str,
     participant_id: str,
@@ -1229,7 +1272,10 @@ async def inspect_participant_types(
     return response
 
 
-@router.get("/datasources/{datasource_id}/participants/{participant_id}")
+@router.get(
+    "/datasources/{datasource_id}/participants/{participant_id}",
+    responses=DWH_CONNECTION_AND_NOT_FOUND_RESPONSES,
+)
 async def get_participant_type(
     datasource_id: str,
     participant_id: str,
@@ -1549,8 +1595,7 @@ async def analyze_cmab_experiment(
 
 EXPERIMENT_STATE_TRANSITION_RESPONSES: dict[int | str, dict[str, Any]] = {
     204: {"model": None, "description": "Experiment state updated successfully."},
-    304: {"model": None, "description": "Experiment already in the target state."},
-    400: {
+    409: {
         "model": HTTPExceptionError,
         "description": "Experiment is not in a valid state to transition to the target state.",
     },
@@ -1570,9 +1615,11 @@ async def commit_experiment(
 ):
     ds = await get_datasource_or_raise(session, user, datasource_id)
     experiment = await get_experiment_via_ds_or_raise(session, ds, experiment_id)
-    response = await experiments_common.commit_experiment_impl(session, experiment)
+    result = await experiments_common.commit_experiment_impl(session, experiment)
+    if result == experiments_common.CommitExperimentResult.INVALID_STATE:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=f"Invalid state: {experiment.state}")
     await session.commit()
-    return response
+    return GENERIC_SUCCESS
 
 
 @router.post(
@@ -1588,9 +1635,11 @@ async def abandon_experiment(
 ):
     ds = await get_datasource_or_raise(session, user, datasource_id)
     experiment = await get_experiment_via_ds_or_raise(session, ds, experiment_id)
-    response = await experiments_common.abandon_experiment_impl(experiment)
+    result = await experiments_common.abandon_experiment_impl(experiment)
+    if result == AbandonExperimentResult.INVALID_STATE:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=f"Invalid state: {experiment.state}")
     await session.commit()
-    return response
+    return GENERIC_SUCCESS
 
 
 @router.get("/organizations/{organization_id}/experiments")
@@ -1833,7 +1882,10 @@ async def update_arm(
     return GENERIC_SUCCESS
 
 
-@router.post("/datasources/{datasource_id}/power")
+@router.post(
+    "/datasources/{datasource_id}/power",
+    responses=DWH_CONNECTION_AND_NOT_FOUND_RESPONSES,
+)
 async def power_check(
     datasource_id: str,
     session: Annotated[AsyncSession, Depends(xngin_db_session)],
