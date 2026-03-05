@@ -141,13 +141,12 @@ def find_ds_with_name[DSType: tables.Datasource | DatasourceSummary](datasources
 
 async def make_freq_online_experiment(
     datasource_id: str,
-    ppost,
-    pget,
+    aclient,
     end_date: datetime | None = None,
 ) -> GetExperimentForUiResponse:
     """Create a frequentist online experiment using our API (rather than a fixture)."""
     end_date = end_date or datetime.now(UTC) + timedelta(days=1)
-    response = ppost(
+    response = aclient.client.post(
         f"/v1/m/datasources/{datasource_id}/experiments",
         params={"random_state": 42},
         json=CreateExperimentRequest(
@@ -169,10 +168,10 @@ async def make_freq_online_experiment(
     experiment_id = CreateExperimentResponse.model_validate_json(response.content).experiment_id
 
     # Experiments must be in an eligible state to be snapshotted.
-    response = ppost(f"/v1/m/datasources/{datasource_id}/experiments/{experiment_id}/commit")
+    response = aclient.client.post(f"/v1/m/datasources/{datasource_id}/experiments/{experiment_id}/commit")
     assert response.status_code == 204
 
-    response = pget(f"/v1/m/datasources/{datasource_id}/experiments/{experiment_id}")
+    response = aclient.client.get(f"/v1/m/datasources/{datasource_id}/experiments/{experiment_id}")
     assert response.status_code == 200
     return GetExperimentForUiResponse.model_validate(response.json())
 
@@ -282,25 +281,20 @@ def test_list_orgs_unauthenticated(client):
     assert response.status_code == 403, response.content
 
 
-def test_list_orgs_privileged(pget):
-    response = pget("/v1/m/organizations")
+def test_list_orgs_privileged(aclient):
+    response = aclient.client.get("/v1/m/organizations")
     assert response.status_code == 200, response.content
     assert ListOrganizationsResponse.model_validate(response.json()).items == []
 
 
-def test_create_and_get_organization(ppost, pget):
+def test_create_and_get_organization(aclient):
     """Test basic organization creation."""
     # Create an organization
     org_name = "New Organization"
-    response = ppost(
-        "/v1/m/organizations",
-        json=CreateOrganizationRequest(name=org_name).model_dump(),
-    )
-    assert response.status_code == 200, response.content
-    create_response = CreateOrganizationResponse.model_validate(response.json())
+    create_response = aclient.create_organizations(CreateOrganizationRequest(name=org_name)).data
 
     # Fetch the organization
-    response = pget(f"/v1/m/organizations/{create_response.id}")
+    response = aclient.client.get(f"/v1/m/organizations/{create_response.id}")
     assert response.status_code == 200, response.content
     # Verify its contents
     org_response = GetOrganizationResponse.model_validate(response.json())
@@ -318,12 +312,12 @@ def test_create_and_get_organization(ppost, pget):
     assert nodwh_summary.organization_name == org_name
 
     # Inspect the default NoDwh datasource; should have no tables.
-    response = pget(f"/v1/m/datasources/{nodwh_summary.id}/inspect")
+    response = aclient.client.get(f"/v1/m/datasources/{nodwh_summary.id}/inspect")
     assert response.status_code == 200, response.content
     assert InspectDatasourceResponse.model_validate(response.json()).tables == []
 
     # Inspecting a specific table for NoDwh should fail.
-    response = pget(f"/v1/m/datasources/{nodwh_summary.id}/inspect/notable")
+    response = aclient.client.get(f"/v1/m/datasources/{nodwh_summary.id}/inspect/notable")
     assert response.status_code == 400, response.content
     assert response.json() == {"detail": "Only remote datasources may be inspected."}
 
@@ -332,8 +326,8 @@ def test_create_and_get_organization(ppost, pget):
     flags.AIRPLANE_MODE,
     reason="This test will fail in airplane mode because airplane mode treats all Admin API calls as authenticated.",
 )
-def test_list_orgs_unprivileged(uget):
-    response = uget("/v1/m/organizations")
+def test_list_orgs_unprivileged(aclient_unpriv):
+    response = aclient_unpriv.client.get("/v1/m/organizations")
     assert response.status_code == 200, response.content
     assert ListOrganizationsResponse.model_validate(response.json()).items == []
 
@@ -367,21 +361,16 @@ def test_list_orgs_unprivileged(uget):
     ids=lambda d: type(d),
 )
 async def test_datasources_hide_credentials(
-    disable_safe_resolve_check,
-    dsn: PostgresDsn | RedshiftDsn | BqDsn,
-    xngin_session,
-    ppost,
-    pget,
-    ppatch,
+    disable_safe_resolve_check, dsn: PostgresDsn | RedshiftDsn | BqDsn, xngin_session, aclient
 ):
-    response = ppost(
+    response = aclient.client.post(
         "/v1/m/organizations",
         json=CreateOrganizationRequest(name="test_datasources_hide_credentials").model_dump(),
     )
     assert response.status_code == 200, response.content
     org_id = CreateOrganizationResponse.model_validate(response.json()).id
 
-    response = ppost(
+    response = aclient.client.post(
         "/v1/m/datasources",
         content=CreateDatasourceRequest(
             name="test_create_datasource",
@@ -392,7 +381,7 @@ async def test_datasources_hide_credentials(
     assert response.status_code == 200, response.content
     datasource_id = CreateDatasourceResponse.model_validate(response.json()).id
 
-    response = pget(f"/v1/m/datasources/{datasource_id}")
+    response = aclient.client.get(f"/v1/m/datasources/{datasource_id}")
     assert response.status_code == 200, response.content
     datasource_response = GetDatasourceResponse.model_validate(response.json())
     match datasource_response.dsn:
@@ -416,7 +405,7 @@ async def test_datasources_hide_credentials(
             revised_bq = dsn.model_copy(deep=True)
             revised_bq.credentials = GcpServiceAccount(content=json.dumps(revised_service_account))
             update_request = UpdateDatasourceRequest(dsn=revised_bq)
-    response = ppatch(f"/v1/m/datasources/{datasource_id}", content=update_request.model_dump_json())
+    response = aclient.client.patch(f"/v1/m/datasources/{datasource_id}", content=update_request.model_dump_json())
     assert response.status_code == 204, response.content
 
     after_revision = (await xngin_session.get(tables.Datasource, datasource_id)).get_config()
@@ -442,7 +431,7 @@ async def test_datasources_hide_credentials(
             revised_bq.project_id = "newprojectid"
             revised_bq.credentials = Hidden()
             update_request = UpdateDatasourceRequest(dsn=revised_bq)
-    response = ppatch(f"/v1/m/datasources/{datasource_id}", content=update_request.model_dump_json())
+    response = aclient.client.patch(f"/v1/m/datasources/{datasource_id}", content=update_request.model_dump_json())
     assert response.status_code == 204, response.content
 
     after_second_revision = (await xngin_session.get(tables.Datasource, datasource_id)).get_config()
@@ -491,16 +480,16 @@ async def test_datasources_hide_credentials(
     ids=lambda d: type(d),
 )
 def test_create_datasource_without_credentials(
-    disable_safe_resolve_check, dsn: BqDsn | RedshiftDsn | PostgresDsn, ppost
+    disable_safe_resolve_check, dsn: BqDsn | RedshiftDsn | PostgresDsn, aclient
 ):
-    response = ppost(
+    response = aclient.client.post(
         "/v1/m/organizations",
         json=CreateOrganizationRequest(name="test_create_datasource_without_credentials").model_dump(),
     )
     assert response.status_code == 200, response.content
     org_id = CreateOrganizationResponse.model_validate(response.json()).id
 
-    response = ppost(
+    response = aclient.client.post(
         "/v1/m/datasources",
         content=CreateDatasourceRequest(
             name="test_create_datasource",
@@ -512,15 +501,15 @@ def test_create_datasource_without_credentials(
     assert response.json() == {"message": CREDENTIALS_UNAVAILABLE_MESSAGE}
 
 
-def test_create_datasource_invalid_dns(testing_datasource, ppost):
+def test_create_datasource_invalid_dns(testing_datasource, aclient):
     """Tests that we reject insecure hostnames with a 400."""
-    response = ppost(
+    response = aclient.client.post(
         f"/v1/m/organizations/{testing_datasource.org.id}/members",
         json={"email": PRIVILEGED_EMAIL},
     )
     assert response.status_code == 204, response.content
 
-    response = ppost(
+    response = aclient.client.post(
         "/v1/m/datasources",
         content=CreateDatasourceRequest(
             organization_id=testing_datasource.org.id,
@@ -540,15 +529,15 @@ def test_create_datasource_invalid_dns(testing_datasource, ppost):
     assert "DNS resolution failed" in str(response.content)
 
 
-def test_create_datasource_with_connectivity_check_connection_failure(disable_safe_resolve_check, ppost, pget):
-    response = ppost(
+def test_create_datasource_with_connectivity_check_connection_failure(disable_safe_resolve_check, aclient):
+    response = aclient.client.post(
         "/v1/m/organizations",
         json=CreateOrganizationRequest(name="test_create_datasource_with_preflight").model_dump(),
     )
     assert response.status_code == 200, response.content
     org_id = CreateOrganizationResponse.model_validate(response.json()).id
 
-    response = ppost(
+    response = aclient.client.post(
         "/v1/m/datasources?connectivity_check=1",
         content=CreateDatasourceRequest(
             name="test_create_datasource",
@@ -567,20 +556,20 @@ def test_create_datasource_with_connectivity_check_connection_failure(disable_sa
     assert response.status_code == 502, response.content
     assert "password authentication failed" in response.json()["message"].lower()
 
-    response = pget(f"/v1/m/organizations/{org_id}/datasources")
+    response = aclient.client.get(f"/v1/m/organizations/{org_id}/datasources")
     assert response.status_code == 200, response.content
     assert len(ListDatasourcesResponse.model_validate(response.json()).items) == 1
 
 
-def test_create_datasource_with_connectivity_check_disabled_by_default(disable_safe_resolve_check, ppost):
-    response = ppost(
+def test_create_datasource_with_connectivity_check_disabled_by_default(disable_safe_resolve_check, aclient):
+    response = aclient.client.post(
         "/v1/m/organizations",
         json=CreateOrganizationRequest(name="test_create_datasource_connectivity_check_default").model_dump(),
     )
     assert response.status_code == 200, response.content
     org_id = CreateOrganizationResponse.model_validate(response.json()).id
 
-    response = ppost(
+    response = aclient.client.post(
         "/v1/m/datasources",
         content=CreateDatasourceRequest(
             name="test_create_datasource",
@@ -600,15 +589,15 @@ def test_create_datasource_with_connectivity_check_disabled_by_default(disable_s
     CreateDatasourceResponse.model_validate(response.json())
 
 
-def test_create_datasource_with_connectivity_check_can_be_enabled(disable_safe_resolve_check, ppost):
-    response = ppost(
+def test_create_datasource_with_connectivity_check_can_be_enabled(disable_safe_resolve_check, aclient):
+    response = aclient.client.post(
         "/v1/m/organizations",
         json=CreateOrganizationRequest(name="test_create_datasource_connectivity_check_enabled").model_dump(),
     )
     assert response.status_code == 200, response.content
     org_id = CreateOrganizationResponse.model_validate(response.json()).id
 
-    response = ppost(
+    response = aclient.client.post(
         "/v1/m/datasources?connectivity_check=1",
         content=CreateDatasourceRequest(
             name="test_create_datasource",
@@ -628,46 +617,46 @@ def test_create_datasource_with_connectivity_check_can_be_enabled(disable_safe_r
     assert "password authentication failed" in response.json()["message"].lower()
 
 
-def test_add_member_to_org(testing_datasource, ppost, pget):
+def test_add_member_to_org(testing_datasource, aclient):
     """Test adding a user to an org."""
     # Add privileged user to existing organization
-    response = ppost(
+    response = aclient.client.post(
         f"/v1/m/organizations/{testing_datasource.org.id}/members",
         json={"email": PRIVILEGED_EMAIL},
     )
     assert response.status_code == 204, response.content
 
     # Add unprivileged user to existing organization
-    response = ppost(
+    response = aclient.client.post(
         f"/v1/m/organizations/{testing_datasource.org.id}/members",
         json={"email": UNPRIVILEGED_EMAIL},
     )
     assert response.status_code == 204, response.content
 
     # Adding a user to an existing organization (again)
-    response = ppost(
+    response = aclient.client.post(
         f"/v1/m/organizations/{testing_datasource.org.id}/members",
         json={"email": UNPRIVILEGED_EMAIL},
     )
     assert response.status_code == 204, response.content
 
     # Adding a new user to an existing organization
-    response = ppost(
+    response = aclient.client.post(
         f"/v1/m/organizations/{testing_datasource.org.id}/members",
         json={"email": "newuser@example.com"},
     )
     assert response.status_code == 204, response.content
 
     # Confirm all users added.
-    org_response = pget(f"/v1/m/organizations/{testing_datasource.org.id}")
+    org_response = aclient.client.get(f"/v1/m/organizations/{testing_datasource.org.id}")
     assert org_response.status_code == 200, org_response.content
     member_list = {u.email for u in GetOrganizationResponse.model_validate(org_response.json()).users}
     assert member_list == {UNPRIVILEGED_EMAIL, PRIVILEGED_EMAIL, "newuser@example.com"}, member_list
 
 
-def test_remove_member_from_org(xngin_session, pget, ppost, pdelete):
+def test_remove_member_from_org(xngin_session, aclient):
     def create_organization():
-        creation_response = ppost(
+        creation_response = aclient.client.post(
             "/v1/m/organizations",
             json=CreateOrganizationRequest(name="test_remove_member_from_org").model_dump(),
         )
@@ -678,12 +667,12 @@ def test_remove_member_from_org(xngin_session, pget, ppost, pdelete):
     org_id = create_organization()
 
     def list_members():
-        org_response = pget(f"/v1/m/organizations/{org_id}")
+        org_response = aclient.client.get(f"/v1/m/organizations/{org_id}")
         assert org_response.status_code == 200, org_response.content
         return {u.email: u.id for u in GetOrganizationResponse.model_validate(org_response.json()).users}
 
     def add_member(email: str):
-        add_response = ppost(
+        add_response = aclient.client.post(
             f"/v1/m/organizations/{org_id}/members",
             json={"email": email},
         )
@@ -691,7 +680,7 @@ def test_remove_member_from_org(xngin_session, pget, ppost, pdelete):
         return add_response
 
     def remove_member(user_id: str, extra: str | None = None):
-        return pdelete(f"/v1/m/organizations/{org_id}/members/{user_id}" + (f"?{extra}" if extra else ""))
+        return aclient.client.delete(f"/v1/m/organizations/{org_id}/members/{user_id}" + (f"?{extra}" if extra else ""))
 
     assert list_members().keys() == {PRIVILEGED_EMAIL}
     add_member(UNPRIVILEGED_EMAIL)
@@ -719,9 +708,9 @@ def test_remove_member_from_org(xngin_session, pget, ppost, pdelete):
     assert list_members().keys() == {PRIVILEGED_EMAIL}
 
 
-def test_list_orgs(testing_datasource_with_user, pget):
+def test_list_orgs(testing_datasource_with_user, aclient):
     """Test listing the orgs the user is a member of."""
-    response = pget("/v1/m/organizations")
+    response = aclient.client.get("/v1/m/organizations")
     assert response.status_code == 200, response.content
     # User was added to the test fixture org already, so no extra org was created.
     response_json = response.json()
@@ -730,27 +719,27 @@ def test_list_orgs(testing_datasource_with_user, pget):
     assert response_json["items"][0]["name"] == "test organization"
 
 
-async def test_first_user_has_an_organization_created_at_login(xngin_session, pget):
-    """Test listing the orgs by the first user of the system using pget."""
+async def test_first_user_has_an_organization_created_at_login(xngin_session, aclient):
+    """Test listing the orgs by the first user of the system using aclient."""
     await delete_seeded_users(xngin_session)
 
-    response = pget("/v1/m/organizations")
+    response = aclient.client.get("/v1/m/organizations")
     assert response.status_code == 200, response.content
     assert len(response.json()["items"]) == 1, response.json()
     assert response.json()["items"][0]["name"] == "My Organization"
 
 
-async def test_first_user_has_an_organization_created_at_login_unprivileged(xngin_session, uget):
-    """Test listing the orgs by the first user of the system using uget."""
+async def test_first_user_has_an_organization_created_at_login_unprivileged(xngin_session, aclient_unpriv):
+    """Test listing the orgs by the first user of the system using aclient_unpriv."""
     await delete_seeded_users(xngin_session)
 
-    response = uget("/v1/m/organizations")
+    response = aclient_unpriv.client.get("/v1/m/organizations")
     assert response.status_code == 200, response.content
     list_organizations_response = ListOrganizationsResponse.model_validate(response.json())
     assert len(list_organizations_response.items) == 1, list_organizations_response
     org_id = list_organizations_response.items[0].id
 
-    response = uget(f"/v1/m/organizations/{org_id}/experiments")
+    response = aclient_unpriv.client.get(f"/v1/m/organizations/{org_id}/experiments")
     assert response.status_code == 200, response.content
     list_experiments_response = ListExperimentsResponse.model_validate(response.json())
     assert {exp.design_spec.experiment_type for exp in list_experiments_response.items} == {
@@ -761,15 +750,15 @@ async def test_first_user_has_an_organization_created_at_login_unprivileged(xngi
     }
 
 
-def test_datasource_lifecycle(ppost, pget, ppatch):
+def test_datasource_lifecycle(aclient):
     """Test creating, listing, updating a datasource."""
     # The user does not initially have any organizations.
-    response = pget("/v1/m/organizations")
+    response = aclient.client.get("/v1/m/organizations")
     assert response.status_code == 200, response.content
     assert not ListOrganizationsResponse.model_validate(response.json()).items
 
     # Create an organization.
-    response = ppost(
+    response = aclient.client.post(
         "/v1/m/organizations",
         json=CreateOrganizationRequest(name="test_datasource_lifecycle").model_dump(),
     )
@@ -778,7 +767,7 @@ def test_datasource_lifecycle(ppost, pget, ppatch):
 
     # Create datasource
     new_ds_name = "test remote ds"
-    response = ppost(
+    response = aclient.client.post(
         "/v1/m/datasources",
         content=CreateDatasourceRequest(
             organization_id=org_id,
@@ -800,7 +789,7 @@ def test_datasource_lifecycle(ppost, pget, ppatch):
     datasource_id = datasource_response.id
 
     # List datasources
-    response = pget(f"/v1/m/organizations/{org_id}/datasources")
+    response = aclient.client.get(f"/v1/m/organizations/{org_id}/datasources")
     assert response.status_code == 200, response.content
     list_ds_response = ListDatasourcesResponse.model_validate(response.json())
 
@@ -822,7 +811,7 @@ def test_datasource_lifecycle(ppost, pget, ppatch):
 
     # Update datasource name
     updated_ds_name = "updated name"
-    response = ppatch(
+    response = aclient.client.patch(
         f"/v1/m/datasources/{datasource_id}",
         content=UpdateDatasourceRequest(
             name=updated_ds_name,
@@ -831,7 +820,7 @@ def test_datasource_lifecycle(ppost, pget, ppatch):
     assert response.status_code == 204, response.content
 
     # List datasources to confirm update
-    response = pget(f"/v1/m/organizations/{org_id}/datasources")
+    response = aclient.client.get(f"/v1/m/organizations/{org_id}/datasources")
     assert response.status_code == 200, response.content
     list_ds_response = ListDatasourcesResponse.model_validate(response.json())
     test_dwh = find_ds_with_name(list_ds_response.items, updated_ds_name)
@@ -840,7 +829,7 @@ def test_datasource_lifecycle(ppost, pget, ppatch):
     assert test_dwh.driver == "postgresql+psycopg"
 
     # Update DWH on the datasource
-    response = ppatch(
+    response = aclient.client.patch(
         f"/v1/m/datasources/{datasource_id}",
         content=UpdateDatasourceRequest(
             dsn=BqDsn(
@@ -853,7 +842,7 @@ def test_datasource_lifecycle(ppost, pget, ppatch):
     assert response.status_code == 204, response.content
 
     # List datasources to confirm update
-    response = pget(
+    response = aclient.client.get(
         f"/v1/m/organizations/{org_id}/datasources",
     )
     assert response.status_code == 200, response.content
@@ -865,7 +854,7 @@ def test_datasource_lifecycle(ppost, pget, ppatch):
 
 
 async def test_list_datasources_ordered_by_experiment_count(
-    xngin_session: AsyncSession, testing_datasource_with_user, pget
+    xngin_session: AsyncSession, testing_datasource_with_user, aclient
 ):
     """Datasources should be ordered by number of experiments (desc), then by name (asc)."""
     org = testing_datasource_with_user.org
@@ -885,7 +874,7 @@ async def test_list_datasources_ordered_by_experiment_count(
         for _ in range(count):
             await insert_experiment_and_arms(xngin_session, ds)
 
-    response = pget(f"/v1/m/organizations/{org.id}/datasources")
+    response = aclient.client.get(f"/v1/m/organizations/{org.id}/datasources")
     assert response.status_code == 200, response.content
     items = ListDatasourcesResponse.model_validate(response.json()).items
     assert len(items) == 3
@@ -896,17 +885,17 @@ async def test_list_datasources_ordered_by_experiment_count(
     assert items[2].id == ds_c.id
 
 
-def test_datasource_errors(pget, ppost):
+def test_datasource_errors(aclient):
     """Test creating a datasource with various error conditions."""
     # Create an organization.
-    response = ppost(
+    response = aclient.client.post(
         "/v1/m/organizations",
         json=CreateOrganizationRequest(name="test_datasource_errors").model_dump(),
     )
     org_id = CreateOrganizationResponse.model_validate(response.json()).id
 
     # Test DB does not exist Error (404) - Postgres
-    response = ppost(
+    response = aclient.client.post(
         "/v1/m/datasources",
         content=CreateDatasourceRequest(
             organization_id=org_id,
@@ -926,12 +915,12 @@ def test_datasource_errors(pget, ppost):
     assert response.status_code == 200, response.content
     ds_id = CreateDatasourceResponse.model_validate(response.json()).id
 
-    response = pget(f"/v1/m/datasources/{ds_id}/inspect")
+    response = aclient.client.get(f"/v1/m/datasources/{ds_id}/inspect")
     assert response.status_code == 404, response.content
     assert 'database "nonexistent_db" does not exist' in response.json()["message"].lower()
 
     # Test connection Error (502) - RedShift with wrong port
-    response = ppost(
+    response = aclient.client.post(
         "/v1/m/datasources",
         content=CreateDatasourceRequest(
             organization_id=org_id,
@@ -948,12 +937,12 @@ def test_datasource_errors(pget, ppost):
     )
     ds_id = CreateDatasourceResponse.model_validate(response.json()).id
 
-    response = pget(f"/v1/m/datasources/{ds_id}/inspect")
+    response = aclient.client.get(f"/v1/m/datasources/{ds_id}/inspect")
     assert response.status_code == 502, response.content
     assert "CONNECTION ERROR" in response.json()["message"]
 
     # Test connection Error (502) - PostgreSQL with wrong port
-    response = ppost(
+    response = aclient.client.post(
         "/v1/m/datasources",
         content=CreateDatasourceRequest(
             organization_id=org_id,
@@ -971,13 +960,13 @@ def test_datasource_errors(pget, ppost):
     )
     ds_id = CreateDatasourceResponse.model_validate(response.json()).id
 
-    response = pget(f"/v1/m/datasources/{ds_id}/inspect")
+    response = aclient.client.get(f"/v1/m/datasources/{ds_id}/inspect")
     assert response.status_code == 502, response.content
     assert "CONNECTION ERROR" in response.json()["message"]
 
     # Test credential Error (502) - BigQuery with invalid service account
     gcloud_invalid = copy.deepcopy(SAMPLE_GCLOUD_SERVICE_ACCOUNT)
-    response = ppost(
+    response = aclient.client.post(
         "/v1/m/datasources",
         content=CreateDatasourceRequest(
             organization_id=org_id,
@@ -992,50 +981,50 @@ def test_datasource_errors(pget, ppost):
     ds_id = CreateDatasourceResponse.model_validate(response.json()).id
 
     # Inspect datasource should return 502 for credential errors
-    response = pget(f"/v1/m/datasources/{ds_id}/inspect")
+    response = aclient.client.get(f"/v1/m/datasources/{ds_id}/inspect")
     assert response.status_code == 502, response.content
     assert "CONNECTION ERROR" in response.json()["message"]
 
 
-def test_delete_datasource(testing_datasource_with_user, pget, udelete, pdelete):
+def test_delete_datasource(testing_datasource_with_user, aclient, aclient_unpriv):
     """Test deleting a datasource a few different ways."""
     ds_id = testing_datasource_with_user.ds.id
     org_id = testing_datasource_with_user.org.id
 
-    # udelete() authenticates as a user that is not in the same organization as the datasource.
-    response = udelete(f"/v1/m/organizations/{org_id}/datasources/{ds_id}")
+    # aclient_unpriv.client.delete() authenticates as a user that is not in the same organization as the datasource.
+    response = aclient_unpriv.client.delete(f"/v1/m/organizations/{org_id}/datasources/{ds_id}")
     assert response.status_code == 403, response.content
 
-    response = pget(f"/v1/m/organizations/{org_id}/datasources")
+    response = aclient.client.get(f"/v1/m/organizations/{org_id}/datasources")
     assert response.status_code == 200, response.content
     assert ListDatasourcesResponse.model_validate(response.json()).items, response.content  # non-empty list
 
     # Delete the datasource as a privileged user.
-    response = pdelete(f"/v1/m/organizations/{org_id}/datasources/{ds_id}")
+    response = aclient.client.delete(f"/v1/m/organizations/{org_id}/datasources/{ds_id}")
     assert response.status_code == 204, response.content
 
     # Assure the datasource was deleted.
-    response = pget(f"/v1/m/organizations/{org_id}/datasources")
+    response = aclient.client.get(f"/v1/m/organizations/{org_id}/datasources")
     assert response.status_code == 200, response.content
     assert ListDatasourcesResponse.model_validate(response.json()).items == []
 
     # Delete the datasource a 2nd time returns 404.
-    response = pdelete(f"/v1/organizations/{org_id}/m/datasources/{ds_id}")
+    response = aclient.client.delete(f"/v1/organizations/{org_id}/m/datasources/{ds_id}")
     assert response.status_code == 404, response.content
 
     # Delete the datasource a 2nd time returns 204 when ?allow_missing is set.
-    response = pdelete(f"/v1/m/organizations/{org_id}/datasources/{ds_id}?allow_missing=true")
+    response = aclient.client.delete(f"/v1/m/organizations/{org_id}/datasources/{ds_id}?allow_missing=true")
     assert response.status_code == 204, response.content
 
-    response = pget(f"/v1/m/organizations/{org_id}/datasources")
+    response = aclient.client.get(f"/v1/m/organizations/{org_id}/datasources")
     assert response.status_code == 200, response.content
     assert not ListDatasourcesResponse.model_validate(response.json()).items, response.content  # empty list
 
 
-async def test_webhook_lifecycle(pdelete, ppost, ppatch, pget):
+async def test_webhook_lifecycle(aclient):
     """Test creating, updating, and deleting a webhook."""
     # Create an organization.
-    response = ppost(
+    response = aclient.client.post(
         "/v1/m/organizations",
         json=CreateOrganizationRequest(name="test_webhook_lifecycle").model_dump(),
     )
@@ -1043,7 +1032,7 @@ async def test_webhook_lifecycle(pdelete, ppost, ppatch, pget):
     org_id = CreateOrganizationResponse.model_validate(response.json()).id
 
     # Create a webhook
-    response = ppost(
+    response = aclient.client.post(
         f"/v1/m/organizations/{org_id}/webhooks",
         json=AddWebhookToOrganizationRequest(
             type="experiment.created",
@@ -1061,7 +1050,7 @@ async def test_webhook_lifecycle(pdelete, ppost, ppatch, pget):
     original_auth_token = webhook_data.auth_token
 
     # List webhooks to verify creation
-    response = pget(f"/v1/m/organizations/{org_id}/webhooks")
+    response = aclient.client.get(f"/v1/m/organizations/{org_id}/webhooks")
     assert response.status_code == 200, response.content
     webhooks = ListWebhooksResponse.model_validate(response.json()).items
     assert len(webhooks) == 1
@@ -1070,11 +1059,11 @@ async def test_webhook_lifecycle(pdelete, ppost, ppatch, pget):
     assert webhooks[0].auth_token == original_auth_token
 
     # Regenerate the auth token
-    response = ppost(f"/v1/m/organizations/{org_id}/webhooks/{webhook_id}/authtoken")
+    response = aclient.client.post(f"/v1/m/organizations/{org_id}/webhooks/{webhook_id}/authtoken")
     assert response.status_code == 204, response.content
 
     # List webhooks to verify auth token was changed
-    response = pget(f"/v1/m/organizations/{org_id}/webhooks")
+    response = aclient.client.get(f"/v1/m/organizations/{org_id}/webhooks")
     assert response.status_code == 200, response.content
     webhooks = ListWebhooksResponse.model_validate(response.json()).items
     assert len(webhooks) == 1
@@ -1084,14 +1073,14 @@ async def test_webhook_lifecycle(pdelete, ppost, ppatch, pget):
     # Update the webhook URL
     new_url = "https://updated-example.com/webhook"
     new_name = "new name"
-    response = ppatch(
+    response = aclient.client.patch(
         f"/v1/m/organizations/{org_id}/webhooks/{webhook_id}",
         json=UpdateOrganizationWebhookRequest(url=new_url, name=new_name).model_dump(),
     )
     assert response.status_code == 204, response.content
 
     # List webhooks to verify update
-    response = pget(f"/v1/m/organizations/{org_id}/webhooks")
+    response = aclient.client.get(f"/v1/m/organizations/{org_id}/webhooks")
     assert response.status_code == 200, response.content
     webhooks = ListWebhooksResponse.model_validate(response.json()).items
     assert len(webhooks) == 1
@@ -1099,45 +1088,45 @@ async def test_webhook_lifecycle(pdelete, ppost, ppatch, pget):
     assert webhooks[0].name == new_name
 
     # Delete the webhook
-    response = pdelete(f"/v1/m/organizations/{org_id}/webhooks/{webhook_id}")
+    response = aclient.client.delete(f"/v1/m/organizations/{org_id}/webhooks/{webhook_id}")
     assert response.status_code == 204, response.content
 
     # List webhooks to verify deletion
-    response = pget(f"/v1/m/organizations/{org_id}/webhooks")
+    response = aclient.client.get(f"/v1/m/organizations/{org_id}/webhooks")
     assert response.status_code == 200, response.content
     webhooks = ListWebhooksResponse.model_validate(response.json()).items
     assert len(webhooks) == 0
 
     # Delete the webhook again (404)
-    response = pdelete(f"/v1/m/organizations/{org_id}/webhooks/{webhook_id}")
+    response = aclient.client.delete(f"/v1/m/organizations/{org_id}/webhooks/{webhook_id}")
     assert response.status_code == 404, response.content
 
     # Delete the webhook again (204)
-    response = pdelete(f"/v1/m/organizations/{org_id}/webhooks/{webhook_id}?allow_missing=True")
+    response = aclient.client.delete(f"/v1/m/organizations/{org_id}/webhooks/{webhook_id}?allow_missing=True")
     assert response.status_code == 204, response.content
 
     # Try to regenerate auth token for a non-existent webhook
-    response = ppost(f"/v1/m/organizations/{org_id}/webhooks/{webhook_id}/authtoken")
+    response = aclient.client.post(f"/v1/m/organizations/{org_id}/webhooks/{webhook_id}/authtoken")
     assert response.status_code == 404, response.content
 
     # Try to update a non-existent webhook
-    response = ppatch(
+    response = aclient.client.patch(
         f"/v1/m/organizations/{org_id}/webhooks/{webhook_id}",
         json=UpdateOrganizationWebhookRequest(url="https://should-fail.com/webhook", name="fail").model_dump(),
     )
     assert response.status_code == 404, response.content
 
     # Try to delete a non-existent webhook
-    response = pdelete(f"/v1/m/organizations/{org_id}/webhooks/{webhook_id}")
+    response = aclient.client.delete(f"/v1/m/organizations/{org_id}/webhooks/{webhook_id}")
     assert response.status_code == 404, response.content
 
 
-def test_participants_lifecycle(testing_datasource_with_user, pget, ppost, ppatch, pdelete):
+def test_participants_lifecycle(testing_datasource_with_user, aclient):
     """Test getting, creating, listing, updating, and deleting a participant type."""
     ds_id = testing_datasource_with_user.ds.id
 
     # Get participants
-    response = pget(
+    response = aclient.client.get(
         f"/v1/m/datasources/{ds_id}/participants/test_participant_type",
     )
     assert response.status_code == 200, response.content
@@ -1147,7 +1136,7 @@ def test_participants_lifecycle(testing_datasource_with_user, pget, ppost, ppatc
     assert parsed.table_name == "dwh"
 
     # Create participant
-    response = ppost(
+    response = aclient.client.post(
         f"/v1/m/datasources/{ds_id}/participants",
         content=CreateParticipantsTypeRequest(
             participant_type="newpt",
@@ -1172,7 +1161,7 @@ def test_participants_lifecycle(testing_datasource_with_user, pget, ppost, ppatc
     assert create_pt_response.participant_type == "newpt"
 
     # List participants
-    response = pget(
+    response = aclient.client.get(
         f"/v1/m/datasources/{ds_id}/participants",
     )
     assert response.status_code == 200, response.content
@@ -1180,7 +1169,7 @@ def test_participants_lifecycle(testing_datasource_with_user, pget, ppost, ppatc
     assert len(list_pt_response.items) == 2, list_pt_response
 
     # Update participant
-    response = ppatch(
+    response = aclient.client.patch(
         f"/v1/m/datasources/{ds_id}/participants/newpt",
         content=UpdateParticipantsTypeRequest(participant_type="renamedpt").model_dump_json(),
     )
@@ -1189,13 +1178,13 @@ def test_participants_lifecycle(testing_datasource_with_user, pget, ppost, ppatc
     assert update_pt_response.participant_type == "renamedpt"
 
     # List participants (again)
-    response = pget(f"/v1/m/datasources/{ds_id}/participants")
+    response = aclient.client.get(f"/v1/m/datasources/{ds_id}/participants")
     assert response.status_code == 200, response.content
     list_pt_response = ListParticipantsTypeResponse.model_validate(response.json())
     assert len(list_pt_response.items) == 2, list_pt_response
 
     # Get the named participant type
-    response = pget(
+    response = aclient.client.get(
         f"/v1/m/datasources/{ds_id}/participants/renamedpt",
     )
     assert response.status_code == 200, response.content
@@ -1203,42 +1192,42 @@ def test_participants_lifecycle(testing_datasource_with_user, pget, ppost, ppatc
     assert participants_def.participant_type == "renamedpt"
 
     # Delete the renamed participant type.
-    response = pdelete(f"/v1/m/datasources/{ds_id}/participants/renamedpt")
+    response = aclient.client.delete(f"/v1/m/datasources/{ds_id}/participants/renamedpt")
     assert response.status_code == 204, response.content
 
     # Delete the renamed participant type again.
-    response = pdelete(f"/v1/m/datasources/{ds_id}/participants/renamedpt")
+    response = aclient.client.delete(f"/v1/m/datasources/{ds_id}/participants/renamedpt")
     assert response.status_code == 404, response.content
 
     # Delete the renamed participant type again w/allow_missing.
-    response = pdelete(f"/v1/m/datasources/{ds_id}/participants/renamedpt?allow_missing=1")
+    response = aclient.client.delete(f"/v1/m/datasources/{ds_id}/participants/renamedpt?allow_missing=1")
     assert response.status_code == 204, response.content
 
     # Get the named participant type after it has been deleted
-    response = pget(f"/v1/m/datasources/{ds_id}/participants/renamedpt")
+    response = aclient.client.get(f"/v1/m/datasources/{ds_id}/participants/renamedpt")
     assert response.status_code == 404, response.content
 
     # Delete the testing participant type.
-    response = pdelete(
+    response = aclient.client.delete(
         f"/v1/m/datasources/{ds_id}/participants/test_participant_type",
     )
     assert response.status_code == 204, response.content
 
     # Delete the testing participant type a 2nd time.
-    response = pdelete(
+    response = aclient.client.delete(
         f"/v1/m/datasources/{ds_id}/participants/test_participant_type",
     )
     assert response.status_code == 404, response.content
 
     # Delete a participant type in a non-existent datasource.
-    response = pdelete(
+    response = aclient.client.delete(
         "/v1/m/datasources/ds-not-exist/participants/test_participant_type",
     )
     assert response.status_code == 403, response.content
 
 
-def test_create_participants_type_invalid(testing_datasource_with_user, ppost):
-    response = ppost(
+def test_create_participants_type_invalid(testing_datasource_with_user, aclient):
+    response = aclient.client.post(
         f"/v1/m/datasources/{testing_datasource_with_user.ds.id}/participants",
         content=CreateParticipantsTypeRequest.model_construct(
             participant_type="newpt",
@@ -1262,7 +1251,7 @@ def test_create_participants_type_invalid(testing_datasource_with_user, ppost):
     assert "no columns marked as unique ID." in response.json()["detail"][0]["msg"], response.content
 
 
-def test_get_participants_type_with_schema_drift(testing_datasource_with_user, ppost, pget):
+def test_get_participants_type_with_schema_drift(testing_datasource_with_user, aclient):
     """Test schema drift detection when a column is missing from the table and a type changed."""
     ds_id = testing_datasource_with_user.ds.id
     # Initial schema: simulate a type change and a missing column
@@ -1291,14 +1280,14 @@ def test_get_participants_type_with_schema_drift(testing_datasource_with_user, p
     )
 
     # Create participant type with the initial schema
-    response = ppost(
+    response = aclient.client.post(
         f"/v1/m/datasources/{ds_id}/participants",
         content=CreateParticipantsTypeRequest(participant_type="pt", schema_def=schema).model_dump_json(),
     )
     assert response.status_code == 200, response.content
 
     # Get the participant type to fetch drift info
-    response = pget(f"/v1/m/datasources/{ds_id}/participants/pt")
+    response = aclient.client.get(f"/v1/m/datasources/{ds_id}/participants/pt")
     assert response.status_code == 200, response.content
     get_response = GetParticipantsTypeResponse.model_validate(response.json())
 
@@ -1325,7 +1314,7 @@ def test_get_participants_type_with_schema_drift(testing_datasource_with_user, p
     assert missing_col_field is None
 
 
-def test_get_participants_type_bad_table(testing_datasource_with_user, ppost, pget):
+def test_get_participants_type_bad_table(testing_datasource_with_user, aclient):
     ds_id = testing_datasource_with_user.ds.id
     schema = ParticipantsSchema(
         table_name="deleted_dwh",
@@ -1338,14 +1327,14 @@ def test_get_participants_type_bad_table(testing_datasource_with_user, ppost, pg
             )
         ],
     )
-    response = ppost(
+    response = aclient.client.post(
         f"/v1/m/datasources/{ds_id}/participants",
         content=CreateParticipantsTypeRequest(participant_type="newpt", schema_def=schema).model_dump_json(),
     )
     assert response.status_code == 200, response.content
 
     # Get the named participant type
-    response = pget(f"/v1/m/datasources/{ds_id}/participants/newpt")
+    response = aclient.client.get(f"/v1/m/datasources/{ds_id}/participants/newpt")
     assert response.status_code == 200, response.content
 
     # Now verify that the underlying table looks like it was deleted.
@@ -1359,23 +1348,23 @@ def test_get_participants_type_bad_table(testing_datasource_with_user, ppost, pg
     assert get_response.proposed == current_def
 
 
-async def test_lifecycle_with_db(testing_datasource, ppost, ppatch, pget, pdelete, udelete):
+async def test_lifecycle_with_db(testing_datasource, aclient, aclient_unpriv):
     """Exercises the admin API methods that require an external database."""
     # Add the privileged user to the organization.
-    response = ppost(
+    response = aclient.client.post(
         f"/v1/m/organizations/{testing_datasource.org.id}/members",
         json={"email": PRIVILEGED_EMAIL},
     )
     assert response.status_code == 204, response.content
 
     # Inspect the datasource.
-    response = pget(f"/v1/m/datasources/{testing_datasource.ds.id}/inspect")
+    response = aclient.client.get(f"/v1/m/datasources/{testing_datasource.ds.id}/inspect")
     assert response.status_code == 200, response.content
     datasource_inspection = InspectDatasourceResponse.model_validate(response.json())
     assert "dwh" in datasource_inspection.tables, response.json()
 
     # Inspect one table in the datasource.
-    response = pget(f"/v1/m/datasources/{testing_datasource.ds.id}/inspect/dwh")
+    response = aclient.client.get(f"/v1/m/datasources/{testing_datasource.ds.id}/inspect/dwh")
     assert response.status_code == 200, response.content
     table_inspection = InspectDatasourceTableResponse.model_validate(response.json())
     assert table_inspection == InspectDatasourceTableResponse(
@@ -1444,7 +1433,7 @@ async def test_lifecycle_with_db(testing_datasource, ppost, ppatch, pget, pdelet
 
     # Create participant
     participant_type = "participant_type_dwh"
-    response = ppost(
+    response = aclient.client.post(
         f"/v1/m/datasources/{testing_datasource.ds.id}/participants",
         content=CreateParticipantsTypeRequest(
             participant_type=participant_type,
@@ -1481,7 +1470,7 @@ async def test_lifecycle_with_db(testing_datasource, ppost, ppatch, pget, pdelet
     create_exp_dict = make_createexperimentrequest_json(participant_type)
     create_exp_request = TypeAdapter(CreateExperimentRequest).validate_python(create_exp_dict)
     create_exp_request.design_spec.design_url = HttpUrl("https://example.com/design")
-    response = ppost(
+    response = aclient.client.post(
         f"/v1/m/datasources/{testing_datasource.ds.id}/experiments",
         params={"desired_n": 100},
         content=create_exp_request.model_dump_json(),
@@ -1497,25 +1486,29 @@ async def test_lifecycle_with_db(testing_datasource, ppost, ppatch, pget, pdelet
     assert len(parsed_arm_ids) == 2
 
     # Commit the new experiment.
-    response = ppost(f"/v1/m/datasources/{testing_datasource.ds.id}/experiments/{parsed_experiment_id}/commit")
+    response = aclient.client.post(
+        f"/v1/m/datasources/{testing_datasource.ds.id}/experiments/{parsed_experiment_id}/commit"
+    )
     assert response.status_code == 204, (parsed_experiment_id, response.content)
 
     # Verify it committed.
-    response = pget(f"/v1/m/datasources/{testing_datasource.ds.id}/experiments/{parsed_experiment_id}")
+    response = aclient.client.get(f"/v1/m/datasources/{testing_datasource.ds.id}/experiments/{parsed_experiment_id}")
     assert response.status_code == 200, response.content
     assert GetExperimentForUiResponse.model_validate(response.json()).config.state == ExperimentState.COMMITTED
 
     # Attempting to abandon a committed experiment should fail
-    response = ppost(f"/v1/m/datasources/{testing_datasource.ds.id}/experiments/{parsed_experiment_id}/abandon")
+    response = aclient.client.post(
+        f"/v1/m/datasources/{testing_datasource.ds.id}/experiments/{parsed_experiment_id}/abandon"
+    )
     assert response.status_code == 400, (parsed_experiment_id, response.content)
 
     # Verify it is still committed.
-    response = pget(f"/v1/m/datasources/{testing_datasource.ds.id}/experiments/{parsed_experiment_id}")
+    response = aclient.client.get(f"/v1/m/datasources/{testing_datasource.ds.id}/experiments/{parsed_experiment_id}")
     assert response.status_code == 200, response.content
     assert GetExperimentForUiResponse.model_validate(response.json()).config.state == ExperimentState.COMMITTED
 
     # Update the experiment.
-    response = ppatch(
+    response = aclient.client.patch(
         f"/v1/m/datasources/{testing_datasource.ds.id}/experiments/{parsed_experiment_id}",
         content=UpdateExperimentRequest(name="updated").model_dump_json(),
     )
@@ -1523,14 +1516,14 @@ async def test_lifecycle_with_db(testing_datasource, ppost, ppatch, pget, pdelet
 
     # Update an arm.
     updated_arm_id = parsed_arm_ids[0]
-    response = ppatch(
+    response = aclient.client.patch(
         f"/v1/m/datasources/{testing_datasource.ds.id}/experiments/{parsed_experiment_id}/arms/{updated_arm_id}",
         content=UpdateArmRequest(name="updated arm").model_dump_json(),
     )
     assert response.status_code == 204, response.content
 
     # Get that experiment.
-    response = pget(f"/v1/m/datasources/{testing_datasource.ds.id}/experiments/{parsed_experiment_id}")
+    response = aclient.client.get(f"/v1/m/datasources/{testing_datasource.ds.id}/experiments/{parsed_experiment_id}")
     assert response.status_code == 200, response.content
     get_experiment_response = GetExperimentForUiResponse.model_validate(response.json())
     assert get_experiment_response.config.experiment_id == parsed_experiment_id
@@ -1540,7 +1533,7 @@ async def test_lifecycle_with_db(testing_datasource, ppost, ppatch, pget, pdelet
     assert arm.arm_name == "updated arm"
 
     # List org experiments.
-    response = pget(f"/v1/m/organizations/{testing_datasource.org.id}/experiments")
+    response = aclient.client.get(f"/v1/m/organizations/{testing_datasource.org.id}/experiments")
     assert response.status_code == 200, response.content
     experiment_list = ListExperimentsResponse.model_validate(response.json())
     assert len(experiment_list.items) == 1, experiment_list
@@ -1548,13 +1541,17 @@ async def test_lifecycle_with_db(testing_datasource, ppost, ppatch, pget, pdelet
     assert experiment_config_0.experiment_id == parsed_experiment_id
 
     # Analyze experiment
-    response = pget(f"/v1/m/datasources/{testing_datasource.ds.id}/experiments/{parsed_experiment_id}/analyze")
+    response = aclient.client.get(
+        f"/v1/m/datasources/{testing_datasource.ds.id}/experiments/{parsed_experiment_id}/analyze"
+    )
     assert response.status_code == 200, response.content
     experiment_analysis = FreqExperimentAnalysisResponse.model_validate(response.json())
     assert experiment_analysis.experiment_id == parsed_experiment_id
 
     # Get assignments for the experiment.
-    response = pget(f"/v1/m/datasources/{testing_datasource.ds.id}/experiments/{parsed_experiment_id}/assignments")
+    response = aclient.client.get(
+        f"/v1/m/datasources/{testing_datasource.ds.id}/experiments/{parsed_experiment_id}/assignments"
+    )
     assert response.status_code == 200, response.content
     assignments = GetExperimentAssignmentsResponse.model_validate(response.json())
     assert assignments.experiment_id == parsed_experiment_id
@@ -1565,25 +1562,27 @@ async def test_lifecycle_with_db(testing_datasource, ppost, ppatch, pget, pdelet
     assert {arm.arm_id for arm in assignments.assignments} == {*parsed_arm_ids}
 
     # Unprivileged user attempts to delete the experiment
-    response = udelete(f"/v1/m/datasources/{testing_datasource.ds.id}/experiments/{parsed_experiment_id}")
+    response = aclient_unpriv.client.delete(
+        f"/v1/m/datasources/{testing_datasource.ds.id}/experiments/{parsed_experiment_id}"
+    )
     assert response.status_code == 403
 
     # Delete the experiment.
-    response = pdelete(f"/v1/m/datasources/{testing_datasource.ds.id}/experiments/{parsed_experiment_id}")
+    response = aclient.client.delete(f"/v1/m/datasources/{testing_datasource.ds.id}/experiments/{parsed_experiment_id}")
     assert response.status_code == 204, response.content
 
     # Delete the experiment again.
-    response = pdelete(f"/v1/m/datasources/{testing_datasource.ds.id}/experiments/{parsed_experiment_id}")
+    response = aclient.client.delete(f"/v1/m/datasources/{testing_datasource.ds.id}/experiments/{parsed_experiment_id}")
     assert response.status_code == 404, response.content
 
     # Delete the experiment again w/allow_missing.
-    response = pdelete(
+    response = aclient.client.delete(
         f"/v1/m/datasources/{testing_datasource.ds.id}/experiments/{parsed_experiment_id}?allow_missing=true"
     )
     assert response.status_code == 204, response.content
 
 
-async def test_abandon_experiment(testing_datasource_with_user, ppost, pget):
+async def test_abandon_experiment(testing_datasource_with_user, aclient):
     datasource_id = testing_datasource_with_user.ds.id
     design_spec = PreassignedFrequentistExperimentSpec(
         experiment_type=ExperimentsType.FREQ_PREASSIGNED,
@@ -1597,7 +1596,7 @@ async def test_abandon_experiment(testing_datasource_with_user, ppost, pget):
         strata=[],
         filters=[],
     )
-    response = ppost(
+    response = aclient.client.post(
         f"/v1/m/datasources/{datasource_id}/experiments",
         params={"desired_n": 1},
         content=CreateExperimentRequest(design_spec=design_spec).model_dump_json(),
@@ -1607,15 +1606,15 @@ async def test_abandon_experiment(testing_datasource_with_user, ppost, pget):
     assert parsed_response.state == ExperimentState.ASSIGNED
     parsed_experiment_id = parsed_response.experiment_id
 
-    response = ppost(f"/v1/m/datasources/{datasource_id}/experiments/{parsed_experiment_id}/abandon")
+    response = aclient.client.post(f"/v1/m/datasources/{datasource_id}/experiments/{parsed_experiment_id}/abandon")
     assert response.status_code == 204, response.content
 
-    response = pget(f"/v1/m/datasources/{datasource_id}/experiments/{parsed_experiment_id}")
+    response = aclient.client.get(f"/v1/m/datasources/{datasource_id}/experiments/{parsed_experiment_id}")
     assert response.status_code == 200, response.content
     assert GetExperimentForUiResponse.model_validate(response.json()).config.state == ExperimentState.ABANDONED
 
 
-async def test_power_check_with_unbalanced_arms(testing_datasource_with_user, ppost):
+async def test_power_check_with_unbalanced_arms(testing_datasource_with_user, aclient):
     """Test power check endpoint with balanced vs unbalanced arms."""
     design_spec = PreassignedFrequentistExperimentSpec(
         experiment_type=ExperimentsType.FREQ_PREASSIGNED,
@@ -1634,7 +1633,7 @@ async def test_power_check_with_unbalanced_arms(testing_datasource_with_user, pp
     )
 
     # Call the power check endpoint
-    response = ppost(
+    response = aclient.client.post(
         f"/v1/m/datasources/{testing_datasource_with_user.ds.id}/power",
         content=PowerRequest(design_spec=design_spec).model_dump_json(),
     )
@@ -1650,7 +1649,7 @@ async def test_power_check_with_unbalanced_arms(testing_datasource_with_user, pp
     # Now check with unbalanced arms
     design_spec.arms[0].arm_weight = 20.0
     design_spec.arms[1].arm_weight = 80.0
-    response = ppost(
+    response = aclient.client.post(
         f"/v1/m/datasources/{testing_datasource_with_user.ds.id}/power",
         content=PowerRequest(design_spec=design_spec).model_dump_json(),
     )
@@ -1668,7 +1667,7 @@ async def test_power_check_with_unbalanced_arms(testing_datasource_with_user, pp
     design_spec.arms[0].arm_weight = 10
     design_spec.arms[1].arm_weight = 50
     design_spec.arms[2].arm_weight = 40
-    response = ppost(
+    response = aclient.client.post(
         f"/v1/m/datasources/{testing_datasource_with_user.ds.id}/power",
         content=PowerRequest(design_spec=design_spec).model_dump_json(),
     )
@@ -1685,7 +1684,7 @@ async def test_power_check_with_unbalanced_arms(testing_datasource_with_user, pp
     assert metric_analysis3.target_n == math.ceil(metric_analysis2.target_n * 0.2 / 0.10)
 
 
-async def test_power_check_with_synthesized_schema(testing_datasource_with_user, ppost):
+async def test_power_check_with_synthesized_schema(testing_datasource_with_user, aclient):
     """Test power check with synthesized participant schema via table_name and primary_key."""
     design_spec = PreassignedFrequentistExperimentSpec(
         experiment_type=ExperimentsType.FREQ_PREASSIGNED,
@@ -1703,7 +1702,7 @@ async def test_power_check_with_synthesized_schema(testing_datasource_with_user,
         filters=[],
     )
 
-    response = ppost(
+    response = aclient.client.post(
         f"/v1/m/datasources/{testing_datasource_with_user.ds.id}/power",
         content=PowerRequest(
             design_spec=design_spec,
@@ -1719,39 +1718,42 @@ async def test_power_check_with_synthesized_schema(testing_datasource_with_user,
     assert power_response.analyses[0].target_n is not None
 
 
-async def test_create_experiment_with_invalid_design_url(xngin_session, testing_datasource_with_user, ppost):
+async def test_create_experiment_with_invalid_design_url(xngin_session, testing_datasource_with_user, aclient):
     datasource_id = testing_datasource_with_user.ds.id
     # Work with the raw json to construct a bad request
     request = make_createexperimentrequest_json()
     request["design_spec"]["design_url"] = "example.com/"
 
-    response = ppost(f"/v1/m/datasources/{datasource_id}/experiments", params={"desired_n": 1}, json=request)
+    response = aclient.client.post(
+        f"/v1/m/datasources/{datasource_id}/experiments", params={"desired_n": 1}, json=request
+    )
     assert response.status_code == 422, response.content
     assert "Input should be a valid URL, relative URL without a base" in response.json()["detail"][0]["msg"]
 
     # Now check that a too long URL is rejected.
     request["design_spec"]["design_url"] = "http://example.com/" + "a" * 500
-    response = ppost(f"/v1/m/datasources/{datasource_id}/experiments", params={"desired_n": 1}, json=request)
+    response = aclient.client.post(
+        f"/v1/m/datasources/{datasource_id}/experiments", params={"desired_n": 1}, json=request
+    )
     assert response.status_code == 422, response.content
     assert "URL should have at most 500 characters" in response.json()["detail"][0]["msg"]
 
     # And we need a host.
     request["design_spec"]["design_url"] = "https://"
-    response = ppost(f"/v1/m/datasources/{datasource_id}/experiments", params={"desired_n": 1}, json=request)
+    response = aclient.client.post(
+        f"/v1/m/datasources/{datasource_id}/experiments", params={"desired_n": 1}, json=request
+    )
     assert response.status_code == 422, response.content
     assert "Input should be a valid URL, empty host" in response.json()["detail"][0]["msg"]
 
 
 async def test_create_preassigned_experiment(
-    xngin_session: AsyncSession,
-    testing_datasource_with_user,
-    use_deterministic_random,
-    ppost,
+    xngin_session: AsyncSession, testing_datasource_with_user, use_deterministic_random, aclient
 ):
     datasource_id = testing_datasource_with_user.ds.id
     request_obj = make_create_preassigned_experiment_request()
 
-    response = ppost(
+    response = aclient.client.post(
         f"/v1/m/datasources/{datasource_id}/experiments",
         params={"desired_n": 100, "random_state": 42},
         content=request_obj.model_dump_json(),
@@ -1820,11 +1822,11 @@ async def test_create_preassigned_experiment(
     assert abs(num_control - num_treat) <= 5  # Allow some wiggle room
 
 
-def test_create_freq_online_experiment(testing_datasource_with_user, use_deterministic_random, ppost):
+def test_create_freq_online_experiment(testing_datasource_with_user, use_deterministic_random, aclient):
     datasource_id = testing_datasource_with_user.ds.id
     request_obj = make_create_freq_online_experiment_request()
 
-    response = ppost(
+    response = aclient.client.post(
         f"/v1/m/datasources/{datasource_id}/experiments",
         params={"random_state": 42},
         content=request_obj.model_dump_json(),
@@ -1865,15 +1867,10 @@ def test_create_freq_online_experiment(testing_datasource_with_user, use_determi
         (LikelihoodTypes.BERNOULLI, PriorTypes.NORMAL),
     ],
 )
-def test_create_online_mab_experiment(
-    testing_datasource_with_user,
-    ppost,
-    reward_type,
-    prior_type,
-):
+def test_create_online_mab_experiment(testing_datasource_with_user, aclient, reward_type, prior_type):
     datasource_id = testing_datasource_with_user.ds.id
     request_obj = make_create_online_bandit_experiment_request(reward_type=reward_type, prior_type=prior_type)
-    response = ppost(
+    response = aclient.client.post(
         f"/v1/m/datasources/{datasource_id}/experiments",
         params={"random_state": 42},
         content=request_obj.model_dump_json(),
@@ -1935,18 +1932,13 @@ def test_create_online_mab_experiment(
         (LikelihoodTypes.BERNOULLI, PriorTypes.NORMAL),
     ],
 )
-def test_create_online_cmab_experiment(
-    testing_datasource_with_user,
-    ppost,
-    reward_type,
-    prior_type,
-):
+def test_create_online_cmab_experiment(testing_datasource_with_user, aclient, reward_type, prior_type):
     datasource_id = testing_datasource_with_user.ds.id
     request_obj = make_create_online_bandit_experiment_request(
         experiment_type=ExperimentsType.CMAB_ONLINE, reward_type=reward_type, prior_type=prior_type
     )
 
-    response = ppost(
+    response = aclient.client.post(
         f"/v1/m/datasources/{datasource_id}/experiments",
         params={"random_state": 42},
         content=request_obj.model_dump_json(),
@@ -2003,7 +1995,7 @@ def test_create_online_cmab_experiment(
     assert actual_design_spec == request_obj.design_spec
 
 
-async def test_update_experiment_invalid_impact(testing_experiment, ppatch):
+async def test_update_experiment_invalid_impact(testing_experiment, aclient):
     """Test updating an experiment's metadata."""
     datasource_id = testing_experiment.datasource_id
     experiment_id = testing_experiment.id
@@ -2017,14 +2009,14 @@ async def test_update_experiment_invalid_impact(testing_experiment, ppatch):
         impact="invalid impact",  # type: ignore[arg-type]
         decision="new decision",
     )
-    response = ppatch(
+    response = aclient.client.patch(
         f"/v1/m/datasources/{datasource_id}/experiments/{experiment_id}",
         content=request.model_dump_json(),
     )
     assert response.status_code == 422, response.content
 
 
-async def test_update_experiment(testing_experiment, ppatch, pget):
+async def test_update_experiment(testing_experiment, aclient):
     """Test updating an experiment's metadata."""
     organization_id = testing_experiment.datasource.organization_id
     datasource_id = testing_experiment.datasource_id
@@ -2039,13 +2031,13 @@ async def test_update_experiment(testing_experiment, ppatch, pget):
         impact="high",
         decision="new decision",
     )
-    response = ppatch(
+    response = aclient.client.patch(
         f"/v1/m/datasources/{datasource_id}/experiments/{experiment_id}",
         content=request.model_dump_json(),
     )
     assert response.status_code == 204, response.text
 
-    updated_response = pget(f"/v1/m/datasources/{datasource_id}/experiments/{experiment_id}")
+    updated_response = aclient.client.get(f"/v1/m/datasources/{datasource_id}/experiments/{experiment_id}")
     experiment = GetExperimentForUiResponse.model_validate(updated_response.json())
     design_spec = experiment.config.design_spec
     assert design_spec.experiment_name == "updated name"
@@ -2056,7 +2048,7 @@ async def test_update_experiment(testing_experiment, ppatch, pget):
     assert experiment.config.impact == "high"
     assert experiment.config.decision == "new decision"
 
-    list_experiments_response = pget(f"/v1/m/organizations/{organization_id}/experiments")
+    list_experiments_response = aclient.client.get(f"/v1/m/organizations/{organization_id}/experiments")
     assert list_experiments_response.status_code == 200, list_experiments_response.content
     listing = ListExperimentsResponse.model_validate(list_experiments_response.json())
     listed = next(i for i in listing.items if i.experiment_id == experiment.config.experiment_id)
@@ -2065,10 +2057,12 @@ async def test_update_experiment(testing_experiment, ppatch, pget):
 
 
 @pytest.mark.parametrize("url", ["http", "http:", "http://", "http:///", "https:///", "postgres://"])
-async def test_update_experiment_url_invalid(testing_experiment, ppatch, url):
+async def test_update_experiment_url_invalid(testing_experiment, aclient, url):
     datasource_id = testing_experiment.datasource_id
     experiment_id = testing_experiment.id
-    response = ppatch(f"/v1/m/datasources/{datasource_id}/experiments/{experiment_id}", json={"design_url": url})
+    response = aclient.client.patch(
+        f"/v1/m/datasources/{datasource_id}/experiments/{experiment_id}", json={"design_url": url}
+    )
     assert response.status_code == 422, response.content
     message = response.json()["detail"][0]["msg"]
     assert message.startswith(("Input should be a valid URL", "URL scheme should be")), response.content
@@ -2082,47 +2076,47 @@ async def test_update_experiment_url_invalid(testing_experiment, ppatch, url):
         ("https://drive.google.com/...?q=1", "https://drive.google.com/...?q=1"),
     ],
 )
-async def test_update_experiment_url_valid(testing_experiment, ppatch, pget, url, expected_url):
+async def test_update_experiment_url_valid(testing_experiment, aclient, url, expected_url):
     datasource_id = testing_experiment.datasource_id
     experiment_id = testing_experiment.id
     experiment_url = f"/v1/m/datasources/{datasource_id}/experiments/{experiment_id}"
-    response = ppatch(experiment_url, json={"design_url": url})
+    response = aclient.client.patch(experiment_url, json={"design_url": url})
     assert response.status_code == 204, response.content
-    response = pget(experiment_url)
+    response = aclient.client.get(experiment_url)
     assert response.status_code == 200, response.content
     parsed_response = GetExperimentForUiResponse.model_validate(response.json())
     assert parsed_response.config.design_spec.design_url is not None
     assert parsed_response.config.design_spec.design_url.encoded_string() == expected_url
 
 
-async def test_update_experiment_url_null_when_empty(testing_experiment, ppatch, pget):
+async def test_update_experiment_url_null_when_empty(testing_experiment, aclient):
     datasource_id = testing_experiment.datasource_id
     experiment_id = testing_experiment.id
     experiment_url = f"/v1/m/datasources/{datasource_id}/experiments/{experiment_id}"
 
-    response = ppatch(experiment_url, json={"design_url": "https://example.com/"})
+    response = aclient.client.patch(experiment_url, json={"design_url": "https://example.com/"})
     assert response.status_code == 204, response.content
-    response = pget(experiment_url)
+    response = aclient.client.get(experiment_url)
     assert response.status_code == 200, response.content
     parsed_response = GetExperimentForUiResponse.model_validate(response.json())
     assert parsed_response.config.design_spec.design_url is not None
     assert parsed_response.config.design_spec.design_url.encoded_string() == "https://example.com/"
 
-    response = ppatch(experiment_url, json={"design_url": ""})
+    response = aclient.client.patch(experiment_url, json={"design_url": ""})
     assert response.status_code == 204, response.content
-    response = pget(experiment_url)
+    response = aclient.client.get(experiment_url)
     assert response.status_code == 200, response.content
     parsed_response = GetExperimentForUiResponse.model_validate(response.json())
     assert parsed_response.config.design_spec.design_url is None, parsed_response
 
 
-async def test_update_experiment_invalid(xngin_session, testing_experiment, ppatch):
+async def test_update_experiment_invalid(xngin_session, testing_experiment, aclient):
     """Test experiment update validation checks."""
     datasource_id = testing_experiment.datasource_id
     experiment_id = testing_experiment.id
 
     request = UpdateExperimentRequest(start_date=testing_experiment.end_date + timedelta(days=1))
-    response = ppatch(
+    response = aclient.client.patch(
         f"/v1/m/datasources/{datasource_id}/experiments/{experiment_id}",
         content=request.model_dump_json(),
     )
@@ -2131,7 +2125,7 @@ async def test_update_experiment_invalid(xngin_session, testing_experiment, ppat
     assert parsed_error.detail[0].msg == "New start date must be before end date."
 
     request = UpdateExperimentRequest(end_date=testing_experiment.start_date - timedelta(days=1))
-    response = ppatch(
+    response = aclient.client.patch(
         f"/v1/m/datasources/{datasource_id}/experiments/{experiment_id}",
         content=request.model_dump_json(),
     )
@@ -2143,7 +2137,7 @@ async def test_update_experiment_invalid(xngin_session, testing_experiment, ppat
     testing_experiment.state = ExperimentState.ASSIGNED
     await xngin_session.commit()
 
-    response = ppatch(
+    response = aclient.client.patch(
         f"/v1/m/datasources/{datasource_id}/experiments/{experiment_id}",
         content=UpdateExperimentRequest(name="updated").model_dump_json(),
     )
@@ -2152,19 +2146,19 @@ async def test_update_experiment_invalid(xngin_session, testing_experiment, ppat
     assert parsed_error.detail[0].msg == "Experiment must have been committed to be updated."
 
 
-async def test_update_arm(testing_experiment, ppatch, pget):
+async def test_update_arm(testing_experiment, aclient):
     """Test updating an arm's metadata."""
     datasource_id = testing_experiment.datasource_id
     experiment_id = testing_experiment.id
     arm_id = testing_experiment.arms[0].id
     request = UpdateArmRequest(name="updated name", description="updated desc")
-    response = ppatch(
+    response = aclient.client.patch(
         f"/v1/m/datasources/{datasource_id}/experiments/{experiment_id}/arms/{arm_id}",
         content=request.model_dump_json(),
     )
     assert response.status_code == 204, response.text
 
-    updated_response = pget(f"/v1/m/datasources/{datasource_id}/experiments/{experiment_id}")
+    updated_response = aclient.client.get(f"/v1/m/datasources/{datasource_id}/experiments/{experiment_id}")
     design_spec = GetExperimentForUiResponse.model_validate(updated_response.json()).config.design_spec
     arm = next((arm for arm in design_spec.arms if arm.arm_id == arm_id), None)
     assert arm is not None
@@ -2172,13 +2166,13 @@ async def test_update_arm(testing_experiment, ppatch, pget):
     assert arm.arm_description == "updated desc"
 
 
-async def test_update_arm_invalid(xngin_session, testing_experiment, ppatch):
+async def test_update_arm_invalid(xngin_session, testing_experiment, aclient):
     """Test arm update validation checks."""
     datasource_id = testing_experiment.datasource_id
     experiment_id = testing_experiment.id
 
     # check invalid arm id
-    response = ppatch(
+    response = aclient.client.patch(
         f"/v1/m/datasources/{datasource_id}/experiments/{experiment_id}/arms/invalid_id",
         content=UpdateArmRequest(name="updated").model_dump_json(),
     )
@@ -2189,7 +2183,7 @@ async def test_update_arm_invalid(xngin_session, testing_experiment, ppatch):
     testing_experiment.state = ExperimentState.ASSIGNED
     await xngin_session.commit()
 
-    response = ppatch(
+    response = aclient.client.patch(
         f"/v1/m/datasources/{datasource_id}/experiments/{experiment_id}/arms/{testing_experiment.arms[0].id}",
         content=UpdateArmRequest(name="updated").model_dump_json(),
     )
@@ -2198,19 +2192,21 @@ async def test_update_arm_invalid(xngin_session, testing_experiment, ppatch):
     assert parsed_error.detail[0].msg == "Experiment must have been committed to update arms."
 
 
-def test_get_experiment_assignment_for_preassigned_participant(testing_experiment, pget):
+def test_get_experiment_assignment_for_preassigned_participant(testing_experiment, aclient):
     datasource_id = testing_experiment.datasource_id
     experiment_id = testing_experiment.id
     assignments = testing_experiment.arm_assignments
 
-    response = pget(f"/v1/m/datasources/{datasource_id}/experiments/{experiment_id}/assignments/unassigned_id")
+    response = aclient.client.get(
+        f"/v1/m/datasources/{datasource_id}/experiments/{experiment_id}/assignments/unassigned_id"
+    )
     assert response.status_code == 200, response.content
     assignment_response = GetParticipantAssignmentResponse.model_validate(response.json())
     assert assignment_response.experiment_id == experiment_id
     assert assignment_response.participant_id == "unassigned_id"
     assert assignment_response.assignment is None
 
-    response = pget(
+    response = aclient.client.get(
         f"/v1/m/datasources/{datasource_id}/experiments/{experiment_id}/assignments/{assignments[0].participant_id}"
     )
     assert response.status_code == 200, response.content
@@ -2221,15 +2217,15 @@ def test_get_experiment_assignment_for_preassigned_participant(testing_experimen
 
 
 async def test_get_experiment_assignment_for_online_participant(
-    xngin_session: AsyncSession, testing_datasource_with_user, ppost, pget
+    xngin_session: AsyncSession, testing_datasource_with_user, aclient
 ):
     datasource_id = testing_datasource_with_user.ds.id
-    experiment_resp = await make_freq_online_experiment(datasource_id, ppost, pget)
+    experiment_resp = await make_freq_online_experiment(datasource_id, aclient)
     experiment_id = experiment_resp.config.experiment_id
     experiment_arms = experiment_resp.config.design_spec.arms
 
     # Check for an assignment that doesn't exist, but don't create it.
-    response = pget(
+    response = aclient.client.get(
         f"/v1/m/datasources/{datasource_id}/experiments/{experiment_id}/assignments/new_id?create_if_none=false"
     )
     assert response.status_code == 200, response.content
@@ -2239,7 +2235,7 @@ async def test_get_experiment_assignment_for_online_participant(
     assert assignment_response.assignment is None
 
     # Create a new participant assignment.
-    response = pget(f"/v1/m/datasources/{datasource_id}/experiments/{experiment_id}/assignments/new_id")
+    response = aclient.client.get(f"/v1/m/datasources/{datasource_id}/experiments/{experiment_id}/assignments/new_id")
     assert response.status_code == 200, response.content
     assignment_response = GetParticipantAssignmentResponse.model_validate(response.json())
     assert assignment_response.experiment_id == experiment_id
@@ -2248,7 +2244,7 @@ async def test_get_experiment_assignment_for_online_participant(
     assert str(assignment_response.assignment.arm_id) in {arm.arm_id for arm in experiment_arms}
 
     # Get back the same assignment.
-    response = pget(f"/v1/m/datasources/{datasource_id}/experiments/{experiment_id}/assignments/new_id")
+    response = aclient.client.get(f"/v1/m/datasources/{datasource_id}/experiments/{experiment_id}/assignments/new_id")
     assert response.status_code == 200, response.content
     assignment_response2 = GetParticipantAssignmentResponse.model_validate(response.json())
     assert assignment_response2 == assignment_response
@@ -2263,7 +2259,7 @@ async def test_get_experiment_assignment_for_online_participant(
 
 
 async def test_get_mab_experiment_assignment_for_online_participant(
-    xngin_session: AsyncSession, testing_datasource_with_user, pget
+    xngin_session: AsyncSession, testing_datasource_with_user, aclient
 ):
     test_experiment = await insert_experiment_and_arms(
         xngin_session, testing_datasource_with_user.ds, ExperimentsType.MAB_ONLINE
@@ -2272,7 +2268,7 @@ async def test_get_mab_experiment_assignment_for_online_participant(
     experiment_id = test_experiment.id
 
     # Check for an assignment that doesn't exist, but don't create it.
-    response = pget(
+    response = aclient.client.get(
         f"/v1/m/datasources/{datasource_id}/experiments/{experiment_id}/assignments/new_id?create_if_none=false"
     )
     assert response.status_code == 200, response.content
@@ -2282,7 +2278,7 @@ async def test_get_mab_experiment_assignment_for_online_participant(
     assert assignment_response.assignment is None
 
     # Create a new participant assignment.
-    response = pget(f"/v1/m/datasources/{datasource_id}/experiments/{experiment_id}/assignments/new_id")
+    response = aclient.client.get(f"/v1/m/datasources/{datasource_id}/experiments/{experiment_id}/assignments/new_id")
     assert response.status_code == 200, response.content
     assignment_response = GetParticipantAssignmentResponse.model_validate(response.json())
     assert assignment_response.experiment_id == experiment_id
@@ -2293,7 +2289,7 @@ async def test_get_mab_experiment_assignment_for_online_participant(
     assert str(assignment_response.assignment.arm_id) in {arm.id for arm in test_experiment.arms}
 
     # Get back the same assignment.
-    response = pget(f"/v1/m/datasources/{datasource_id}/experiments/{experiment_id}/assignments/new_id")
+    response = aclient.client.get(f"/v1/m/datasources/{datasource_id}/experiments/{experiment_id}/assignments/new_id")
     assert response.status_code == 200, response.content
     assignment_response2 = GetParticipantAssignmentResponse.model_validate(response.json())
     assert assignment_response2 == assignment_response
@@ -2305,17 +2301,13 @@ async def test_get_mab_experiment_assignment_for_online_participant(
     assert assignment.arm_id == str(assignment_response.assignment.arm_id)
 
 
-async def test_get_experiment_assignment_for_online_participant_past_end_date(
-    testing_datasource_with_user, ppost, pget
-):
+async def test_get_experiment_assignment_for_online_participant_past_end_date(testing_datasource_with_user, aclient):
     datasource_id = testing_datasource_with_user.ds.id
     end_date = datetime.now(UTC) - timedelta(days=1)
-    experiment_id = (
-        await make_freq_online_experiment(datasource_id, ppost, pget, end_date=end_date)
-    ).config.experiment_id
+    experiment_id = (await make_freq_online_experiment(datasource_id, aclient, end_date=end_date)).config.experiment_id
 
     # Verify no new assignment is created for the ended experiment.
-    response = pget(f"/v1/m/datasources/{datasource_id}/experiments/{experiment_id}/assignments/new_id")
+    response = aclient.client.get(f"/v1/m/datasources/{datasource_id}/experiments/{experiment_id}/assignments/new_id")
     assert response.status_code == 200, response.content
     assignment_response = GetParticipantAssignmentResponse.model_validate(response.json())
     assert assignment_response.experiment_id == experiment_id
@@ -2323,17 +2315,17 @@ async def test_get_experiment_assignment_for_online_participant_past_end_date(
     assert assignment_response.assignment is None, assignment_response.model_dump_json()
 
     # Verify that the experiment state was updated.
-    response = pget(f"/v1/m/datasources/{datasource_id}/experiments/{experiment_id}")
+    response = aclient.client.get(f"/v1/m/datasources/{datasource_id}/experiments/{experiment_id}")
     experiment_resp = GetExperimentForUiResponse.model_validate(response.json())
     assert experiment_resp.config.stopped_assignments_at is not None
     assert experiment_resp.config.stopped_assignments_reason == StopAssignmentReason.END_DATE
 
 
-def test_freq_experiments_analyze(testing_experiment, pget):
+def test_freq_experiments_analyze(testing_experiment, aclient):
     datasource_id = testing_experiment.datasource_id
     experiment_id = testing_experiment.id
 
-    response = pget(f"/v1/m/datasources/{datasource_id}/experiments/{experiment_id}/analyze")
+    response = aclient.client.get(f"/v1/m/datasources/{datasource_id}/experiments/{experiment_id}/analyze")
 
     assert response.status_code == 200, response.content
     experiment_analysis = FreqExperimentAnalysisResponse.model_validate(response.json())
@@ -2371,11 +2363,11 @@ def test_freq_experiments_analyze(testing_experiment, pget):
     ],
     indirect=True,
 )
-def test_mab_experiments_analyze(testing_bandit_experiment, pget):
+def test_mab_experiments_analyze(testing_bandit_experiment, aclient):
     datasource_id = testing_bandit_experiment.datasource_id
     experiment_id = testing_bandit_experiment.id
 
-    response = pget(f"/v1/m/datasources/{datasource_id}/experiments/{experiment_id}/analyze")
+    response = aclient.client.get(f"/v1/m/datasources/{datasource_id}/experiments/{experiment_id}/analyze")
 
     assert response.status_code == 200, response.content
     experiment_analysis = BanditExperimentAnalysisResponse.model_validate(response.json())
@@ -2400,7 +2392,7 @@ def test_mab_experiments_analyze(testing_bandit_experiment, pget):
     ],
     indirect=True,
 )
-def test_cmab_experiments_analyze(testing_bandit_experiment, ppost):
+def test_cmab_experiments_analyze(testing_bandit_experiment, aclient):
     datasource_id = testing_bandit_experiment.datasource_id
     experiment_id = testing_bandit_experiment.id
 
@@ -2410,7 +2402,9 @@ def test_cmab_experiments_analyze(testing_bandit_experiment, ppost):
             for context in sorted(testing_bandit_experiment.contexts, key=lambda c: c.id)
         ]
     }
-    response = ppost(f"/v1/m/datasources/{datasource_id}/experiments/{experiment_id}/analyze_cmab", json=input_data)
+    response = aclient.client.post(
+        f"/v1/m/datasources/{datasource_id}/experiments/{experiment_id}/analyze_cmab", json=input_data
+    )
 
     assert response.status_code == 200, response.content
     experiment_analysis = BanditExperimentAnalysisResponse.model_validate(response.json())
@@ -2427,33 +2421,33 @@ def test_cmab_experiments_analyze(testing_bandit_experiment, ppost):
         assert analysis.post_pred_stdev is not None
 
 
-async def test_analyze_experiment_with_no_participants(testing_datasource_with_user, ppost, pget):
+async def test_analyze_experiment_with_no_participants(testing_datasource_with_user, aclient):
     datasource_id = testing_datasource_with_user.ds.id
-    experiment_id = (await make_freq_online_experiment(datasource_id, ppost, pget)).config.experiment_id
+    experiment_id = (await make_freq_online_experiment(datasource_id, aclient)).config.experiment_id
 
-    response = pget(f"/v1/m/datasources/{datasource_id}/experiments/{experiment_id}/analyze")
+    response = aclient.client.get(f"/v1/m/datasources/{datasource_id}/experiments/{experiment_id}/analyze")
     assert response.status_code == 422, response.content
     assert response.json()["message"] == "No participants found for experiment."
 
 
-async def test_analyze_experiment_whose_assignments_have_no_dwh_data(testing_datasource_with_user, ppost, pget):
+async def test_analyze_experiment_whose_assignments_have_no_dwh_data(testing_datasource_with_user, aclient):
     datasource_id = testing_datasource_with_user.ds.id
-    experiment_id = (await make_freq_online_experiment(datasource_id, ppost, pget)).config.experiment_id
+    experiment_id = (await make_freq_online_experiment(datasource_id, aclient)).config.experiment_id
 
     # Create a new participant assignment for an id missing in the dwh.
-    response = pget(f"/v1/m/datasources/{datasource_id}/experiments/{experiment_id}/assignments/0")
+    response = aclient.client.get(f"/v1/m/datasources/{datasource_id}/experiments/{experiment_id}/assignments/0")
     assert response.status_code == 200, response.content
 
-    response = pget(f"/v1/m/datasources/{datasource_id}/experiments/{experiment_id}/analyze")
+    response = aclient.client.get(f"/v1/m/datasources/{datasource_id}/experiments/{experiment_id}/analyze")
     assert response.status_code == 422, response.content
     assert "Check that ids used in assignment are usable with your unique identifier (id)" in response.json()["message"]
 
 
 async def test_analyze_experiment_with_no_assignments_in_one_arm_yet(
-    xngin_session, testing_datasource_with_user, ppost, pget
+    xngin_session, testing_datasource_with_user, aclient
 ):
     datasource_id = testing_datasource_with_user.ds.id
-    experiment_id = (await make_freq_online_experiment(datasource_id, ppost, pget)).config.experiment_id
+    experiment_id = (await make_freq_online_experiment(datasource_id, aclient)).config.experiment_id
 
     # Setup: create artificial assignments directly in db to deterministically allocate them all to
     # one arm. Multiple are used for stable analysis calcs.
@@ -2475,7 +2469,7 @@ async def test_analyze_experiment_with_no_assignments_in_one_arm_yet(
     await xngin_session.commit()
 
     # Test analysis when one arm has no assignments still has the expected ArmAnalysis for each.
-    response = pget(f"/v1/m/datasources/{datasource_id}/experiments/{experiment_id}/analyze")
+    response = aclient.client.get(f"/v1/m/datasources/{datasource_id}/experiments/{experiment_id}/analyze")
     assert response.status_code == 200, response.content
     analysis_response = FreqExperimentAnalysisResponse.model_validate(response.json())
     assert analysis_response.experiment_id == experiment_id
@@ -2507,11 +2501,11 @@ async def test_analyze_experiment_with_no_assignments_in_one_arm_yet(
     ],
     indirect=True,
 )
-def test_mab_experiments_analyze_with_no_participants(testing_bandit_experiment, pget):
+def test_mab_experiments_analyze_with_no_participants(testing_bandit_experiment, aclient):
     datasource_id = testing_bandit_experiment.datasource_id
     experiment_id = testing_bandit_experiment.id
 
-    response = pget(f"/v1/m/datasources/{datasource_id}/experiments/{experiment_id}/analyze")
+    response = aclient.client.get(f"/v1/m/datasources/{datasource_id}/experiments/{experiment_id}/analyze")
 
     assert response.status_code == 200, response.content
     experiment_analysis = BanditExperimentAnalysisResponse.model_validate(response.json())
@@ -2548,7 +2542,7 @@ async def test_admin_experiment_state_setting(
     initial_state,
     expected_status,
     expected_detail,
-    ppost,
+    aclient,
 ):
     # Initialize our state with an existing experiment who's state we want to modify.
     datasource = testing_datasource_with_user.ds
@@ -2556,7 +2550,7 @@ async def test_admin_experiment_state_setting(
     xngin_session.add(experiment)
     await xngin_session.commit()
 
-    response = ppost(f"/v1/m/datasources/{datasource.id}/experiments/{experiment.id!s}/{endpoint}")
+    response = aclient.client.post(f"/v1/m/datasources/{datasource.id}/experiments/{experiment.id!s}/{endpoint}")
 
     # Verify
     assert response.status_code == expected_status
@@ -2570,7 +2564,7 @@ async def test_admin_experiment_state_setting(
         assert response.json()["detail"] == expected_detail
 
 
-async def test_delete_apikey_not_authorized(pdelete):
+async def test_delete_apikey_not_authorized(aclient):
     """Checks for a 403 when deleting a resource that doesn't exist.
 
     This is equivalent to testing that a user does not have access to a datasource.
@@ -2579,87 +2573,87 @@ async def test_delete_apikey_not_authorized(pdelete):
     the service must error with PERMISSION_DENIED (HTTP 403). Permission must be checked prior to checking if the
     resource exists.
     """
-    response = pdelete("/v1/m/datasources/not-a-datasource/apikeys/irrelevant")
+    response = aclient.client.delete("/v1/m/datasources/not-a-datasource/apikeys/irrelevant")
     assert response.status_code == 403
 
 
-async def test_delete_apikey_authorized_and_nonexistent(testing_datasource_with_user, pdelete):
-    response = pdelete(f"/v1/m/datasources/{testing_datasource_with_user.ds.id}/apikeys/sample-key-id")
+async def test_delete_apikey_authorized_and_nonexistent(testing_datasource_with_user, aclient):
+    response = aclient.client.delete(f"/v1/m/datasources/{testing_datasource_with_user.ds.id}/apikeys/sample-key-id")
     assert response.status_code == 404
 
 
-async def test_delete_apikey_authorized_and_nonexistent_allow_missing(testing_datasource_with_user, pdelete):
-    response = pdelete(
+async def test_delete_apikey_authorized_and_nonexistent_allow_missing(testing_datasource_with_user, aclient):
+    response = aclient.client.delete(
         f"/v1/m/datasources/{testing_datasource_with_user.ds.id}/apikeys/sample-key-id?allow_missing=true"
     )
     assert response.status_code == 204
 
 
-async def test_delete_apikey_authorized_and_exists(testing_datasource_with_user, pget, pdelete):
-    response = pdelete(
+async def test_delete_apikey_authorized_and_exists(testing_datasource_with_user, aclient):
+    response = aclient.client.delete(
         f"/v1/m/datasources/{testing_datasource_with_user.ds.id}/apikeys/{testing_datasource_with_user.key_id}"
     )
     assert response.status_code == 204
 
 
-async def test_delete_apikey_authorized_and_exists_allow_missing(testing_datasource_with_user, pget, pdelete):
-    response = pdelete(
+async def test_delete_apikey_authorized_and_exists_allow_missing(testing_datasource_with_user, aclient):
+    response = aclient.client.delete(
         f"/v1/m/datasources/{testing_datasource_with_user.ds.id}/apikeys/{testing_datasource_with_user.key_id}?allow_missing=true"
     )
     assert response.status_code == 204
 
 
-async def test_delete_apikey_authorized_and_exists_idempotency(testing_datasource_with_user, pget, pdelete):
-    response = pdelete(
+async def test_delete_apikey_authorized_and_exists_idempotency(testing_datasource_with_user, aclient):
+    response = aclient.client.delete(
         f"/v1/m/datasources/{testing_datasource_with_user.ds.id}/apikeys/{testing_datasource_with_user.key_id}"
     )
     assert response.status_code == 204
 
-    response = pdelete(
+    response = aclient.client.delete(
         f"/v1/m/datasources/{testing_datasource_with_user.ds.id}/apikeys/{testing_datasource_with_user.key_id}"
     )
     assert response.status_code == 404
 
-    response = pdelete(
+    response = aclient.client.delete(
         f"/v1/m/datasources/{testing_datasource_with_user.ds.id}/apikeys/{testing_datasource_with_user.key_id}?allow_missing=True"
     )
     assert response.status_code == 204
 
 
-async def test_manage_apikeys(testing_datasource_with_user, ppost, pget, pdelete):
+async def test_manage_apikeys(testing_datasource_with_user, aclient):
     ds = testing_datasource_with_user.ds
     first_key_id = testing_datasource_with_user.key_id
 
-    response = ppost(f"/v1/m/datasources/{ds.id}/apikeys/")
+    response = aclient.client.post(f"/v1/m/datasources/{ds.id}/apikeys/")
     assert response.status_code == 200
     create_api_key_response = CreateApiKeyResponse.model_validate(response.json())
     assert create_api_key_response.datasource_id == ds.id
     created_key_id = create_api_key_response.id
 
-    response = pget(f"/v1/m/datasources/{ds.id}/apikeys")
+    response = aclient.client.get(f"/v1/m/datasources/{ds.id}/apikeys")
     assert response.status_code == 200
     list_api_keys_response = ListApiKeysResponse.model_validate(response.json())
     assert len(list_api_keys_response.items) == 2
 
-    response = pdelete(f"/v1/m/datasources/{ds.id}/apikeys/{created_key_id}")
+    response = aclient.client.delete(f"/v1/m/datasources/{ds.id}/apikeys/{created_key_id}")
     assert response.status_code == 204
 
-    response = pget(f"/v1/m/datasources/{ds.id}/apikeys")
+    response = aclient.client.get(f"/v1/m/datasources/{ds.id}/apikeys")
     assert response.status_code == 200
     list_api_keys_response = ListApiKeysResponse.model_validate(response.json())
     assert len(list_api_keys_response.items) == 1
 
-    response = pdelete(f"/v1/m/datasources/{ds.id}/apikeys/{first_key_id}")
+    response = aclient.client.delete(f"/v1/m/datasources/{ds.id}/apikeys/{first_key_id}")
     assert response.status_code == 204
 
 
-async def test_experiment_webhook_integration(testing_datasource_with_user, ppost, pget):
+async def test_experiment_webhook_integration(testing_datasource_with_user, aclient):
     """Test creating an experiment with webhook associations and verifying webhook IDs in response."""
     org_id = testing_datasource_with_user.org.id
     datasource_id = testing_datasource_with_user.ds.id
 
     # Create two webhooks in the organization
-    webhook1_response = ppost(
+    webhook1_response = aclient.client.post(
         f"/v1/m/organizations/{org_id}/webhooks",
         json=AddWebhookToOrganizationRequest(
             type="experiment.created",
@@ -2670,7 +2664,7 @@ async def test_experiment_webhook_integration(testing_datasource_with_user, ppos
     assert webhook1_response.status_code == 200, webhook1_response.content
     webhook1_id = webhook1_response.json()["id"]
 
-    webhook2_response = ppost(
+    webhook2_response = aclient.client.post(
         f"/v1/m/organizations/{org_id}/webhooks",
         json=AddWebhookToOrganizationRequest(
             type="experiment.created",
@@ -2700,7 +2694,7 @@ async def test_experiment_webhook_integration(testing_datasource_with_user, ppos
         webhooks=[webhook1_id],  # Only include the first webhook
     )
 
-    create_response = ppost(
+    create_response = aclient.client.post(
         f"/v1/m/datasources/{datasource_id}/experiments?desired_n=100",
         json=experiment_request.model_dump(mode="json"),
     )
@@ -2716,7 +2710,7 @@ async def test_experiment_webhook_integration(testing_datasource_with_user, ppos
     experiment_id = created_experiment["experiment_id"]
 
     # Get the experiment and verify webhook is included
-    get_response = pget(f"/v1/m/datasources/{datasource_id}/experiments/{experiment_id}")
+    get_response = aclient.client.get(f"/v1/m/datasources/{datasource_id}/experiments/{experiment_id}")
     assert get_response.status_code == 200, get_response.content
     experiment = GetExperimentForUiResponse.model_validate(get_response.json())
     assert len(experiment.config.webhooks) == 1
@@ -2742,7 +2736,7 @@ async def test_experiment_webhook_integration(testing_datasource_with_user, ppos
         # No webhooks field - should default to empty list
     )
 
-    create_response_no_webhooks = ppost(
+    create_response_no_webhooks = aclient.client.post(
         f"/v1/m/datasources/{datasource_id}/experiments?desired_n=100",
         json=experiment_request_no_webhooks.model_dump(mode="json"),
     )
@@ -2754,8 +2748,8 @@ async def test_experiment_webhook_integration(testing_datasource_with_user, ppos
     assert len(created_experiment_no_webhooks["webhooks"]) == 0
 
 
-def test_snapshots(pget, ppost, pdelete, uget, ppatch):
-    creation_response = ppost(
+def test_snapshots(aclient, aclient_unpriv):
+    creation_response = aclient.client.post(
         "/v1/m/organizations",
         json=CreateOrganizationRequest(name="test_snapshots").model_dump(),
     )
@@ -2773,7 +2767,7 @@ def test_snapshots(pget, ppost, pdelete, uget, ppatch):
         sslmode="disable",
         search_path=None,
     )
-    response = ppost(
+    response = aclient.client.post(
         "/v1/m/datasources",
         content=CreateDatasourceRequest(
             name="test_create_datasource",
@@ -2784,7 +2778,7 @@ def test_snapshots(pget, ppost, pdelete, uget, ppatch):
     assert response.status_code == 200, response.content
     create_datasource_response = CreateDatasourceResponse.model_validate(response.json())
 
-    create_participant_type_response = ppost(
+    create_participant_type_response = aclient.client.post(
         f"/v1/m/datasources/{create_datasource_response.id}/participants",
         content=CreateParticipantsTypeRequest(
             participant_type="test_participant_type",
@@ -2793,7 +2787,7 @@ def test_snapshots(pget, ppost, pdelete, uget, ppatch):
     )
     assert create_participant_type_response.status_code == 200, create_participant_type_response.content
 
-    response = ppost(
+    response = aclient.client.post(
         f"/v1/m/datasources/{create_datasource_response.id}/experiments?desired_n=100",
         json=CreateExperimentRequest(
             design_spec=PreassignedFrequentistExperimentSpec(
@@ -2817,12 +2811,14 @@ def test_snapshots(pget, ppost, pdelete, uget, ppatch):
     experiment_id = CreateExperimentResponse.model_validate_json(response.content).experiment_id
 
     # Experiments must be in an eligible state to be snapshotted.
-    response = ppost(f"/v1/m/datasources/{create_datasource_response.id}/experiments/{experiment_id}/commit")
+    response = aclient.client.post(
+        f"/v1/m/datasources/{create_datasource_response.id}/experiments/{experiment_id}/commit"
+    )
     assert response.status_code == 204
 
-    # When run via tests, the TestClient that ppost() is built upon will wait for the backend handler to finish
+    # When run via tests, the TestClient that aclient.client.post() is built upon will wait for the backend handler to finish
     # all of its background tasks. Therefore this test will not observe the experiment in a "pending" state.
-    response = ppost(
+    response = aclient.client.post(
         f"/v1/m/organizations/{create_organization_response.id}/datasources/{create_datasource_response.id}"
         f"/experiments/{experiment_id}/snapshots"
     )
@@ -2830,7 +2826,7 @@ def test_snapshots(pget, ppost, pdelete, uget, ppatch):
     create_snapshot_response = CreateSnapshotResponse.model_validate(response.json())
 
     # Force the second snapshot to fail by misconfiguring the Postgres port.
-    response = ppatch(
+    response = aclient.client.patch(
         f"/v1/m/datasources/{create_datasource_response.id}",
         content=UpdateDatasourceRequest(
             dsn=valid_dsn.model_copy(update={"port": valid_dsn.port + 1})
@@ -2838,7 +2834,7 @@ def test_snapshots(pget, ppost, pdelete, uget, ppatch):
     )
     assert response.status_code == 204, response.content
 
-    response = ppost(
+    response = aclient.client.post(
         f"/v1/m/organizations/{create_organization_response.id}/datasources/{create_datasource_response.id}"
         f"/experiments/{experiment_id}/snapshots"
     )
@@ -2846,7 +2842,7 @@ def test_snapshots(pget, ppost, pdelete, uget, ppatch):
     create_bad_snapshot_response = CreateSnapshotResponse.model_validate(response.json())
 
     # get the snapshot we just created and verify it is failed
-    response = pget(
+    response = aclient.client.get(
         f"/v1/m/organizations/{create_organization_response.id}/datasources/{create_datasource_response.id}"
         f"/experiments/{experiment_id}/snapshots/{create_bad_snapshot_response.id}"
     )
@@ -2855,7 +2851,7 @@ def test_snapshots(pget, ppost, pdelete, uget, ppatch):
     assert get_snapshot_response.snapshot.status == SnapshotStatus.FAILED
     assert get_snapshot_response.snapshot.data is None
 
-    list_snapshot_response = pget(
+    list_snapshot_response = aclient.client.get(
         f"/v1/m/organizations/{create_organization_response.id}/datasources/{create_datasource_response.id}"
         f"/experiments/{experiment_id}/snapshots"
     )
@@ -2904,7 +2900,7 @@ def test_snapshots(pget, ppost, pdelete, uget, ppatch):
     assert failed_snapshot.data is None
     assert failed_snapshot.details is not None and "OperationalError: " in failed_snapshot.details["message"]
 
-    response = pget(
+    response = aclient.client.get(
         f"/v1/m/organizations/{create_organization_response.id}/datasources/{create_datasource_response.id}"
         f"/experiments/{experiment_id}/snapshots/{success_snapshot.id}"
     )
@@ -2917,14 +2913,14 @@ def test_snapshots(pget, ppost, pdelete, uget, ppatch):
     assert get_snapshot_response.snapshot.data == success_snapshot.data
 
     # list snapshots with empty status_ param
-    list_snapshot_response = pget(
+    list_snapshot_response = aclient.client.get(
         f"/v1/m/organizations/{create_organization_response.id}/datasources/{create_datasource_response.id}"
         f"/experiments/{experiment_id}/snapshots?status="
     )
     assert list_snapshot_response.status_code == 422, list_snapshot_response.content
 
     # list snapshots filtered for running
-    list_snapshot_response = pget(
+    list_snapshot_response = aclient.client.get(
         f"/v1/m/organizations/{create_organization_response.id}/datasources/{create_datasource_response.id}"
         f"/experiments/{experiment_id}/snapshots?status=running"
     )
@@ -2934,7 +2930,7 @@ def test_snapshots(pget, ppost, pdelete, uget, ppatch):
     assert list_snapshot.latest_failure == failed_snapshot.updated_at, list_snapshot
 
     # list snapshots restricted to success
-    list_snapshot_response = pget(
+    list_snapshot_response = aclient.client.get(
         f"/v1/m/organizations/{create_organization_response.id}/datasources/{create_datasource_response.id}"
         f"/experiments/{experiment_id}/snapshots?status=success"
     )
@@ -2944,7 +2940,7 @@ def test_snapshots(pget, ppost, pdelete, uget, ppatch):
     assert list_snapshot.latest_failure == failed_snapshot.updated_at, list_snapshot
 
     # list snapshots restricted to failed
-    list_snapshot_response = pget(
+    list_snapshot_response = aclient.client.get(
         f"/v1/m/organizations/{create_organization_response.id}/datasources/{create_datasource_response.id}"
         f"/experiments/{experiment_id}/snapshots?status=failed"
     )
@@ -2955,36 +2951,36 @@ def test_snapshots(pget, ppost, pdelete, uget, ppatch):
     assert list_snapshot.latest_failure == failed_snapshot.updated_at, list_snapshot
 
     # Attempt to read a snapshot as a user that doesn't have access to the snapshot.
-    response = uget(
+    response = aclient_unpriv.client.get(
         f"/v1/m/organizations/{create_organization_response.id}/datasources/{create_datasource_response.id}"
         f"/experiments/{experiment_id}/snapshots/{success_snapshot.id}"
     )
     assert response.status_code == 404, response.content
 
-    response = pdelete(
+    response = aclient.client.delete(
         f"/v1/m/organizations/{create_organization_response.id}/datasources/{create_datasource_response.id}"
         f"/experiments/{experiment_id}/snapshots/{success_snapshot.id}"
     )
     assert response.status_code == 204, response.content
 
-    response = pdelete(
+    response = aclient.client.delete(
         f"/v1/m/organizations/{create_organization_response.id}/datasources/{create_datasource_response.id}"
         f"/experiments/{experiment_id}/snapshots/{success_snapshot.id}"
     )
     assert response.status_code == 404, response.content
 
-    response = pget(
+    response = aclient.client.get(
         f"/v1/m/organizations/{create_organization_response.id}/datasources/{create_datasource_response.id}"
         f"/experiments/{experiment_id}/snapshots/{success_snapshot.id}"
     )
     assert response.status_code == 404, response.content
 
 
-def test_snapshot_on_ineligible_experiments(testing_datasource_with_user, ppost, pget):
+def test_snapshot_on_ineligible_experiments(testing_datasource_with_user, aclient):
     ds = testing_datasource_with_user.ds
     org = testing_datasource_with_user.org
     # The experiment created below is both too old and not yet committed.
-    response = ppost(
+    response = aclient.client.post(
         f"/v1/m/datasources/{ds.id}/experiments?desired_n=20",
         json=CreateExperimentRequest(
             design_spec=PreassignedFrequentistExperimentSpec(
@@ -3008,22 +3004,26 @@ def test_snapshot_on_ineligible_experiments(testing_datasource_with_user, ppost,
     experiment_id = CreateExperimentResponse.model_validate_json(response.content).experiment_id
 
     # Assert non-committed experiments cannot be snapshotted.
-    response = ppost(f"/v1/m/organizations/{org.id}/datasources/{ds.id}/experiments/{experiment_id}/snapshots")
+    response = aclient.client.post(
+        f"/v1/m/organizations/{org.id}/datasources/{ds.id}/experiments/{experiment_id}/snapshots"
+    )
     assert response.status_code == 422
     parsed_error = FastAPIClientHTTPValidationError.model_validate(response.json())
     assert parsed_error.detail[0].msg == "You can only snapshot committed experiments."
 
     # So commit the experiment.
-    response = ppost(f"/v1/m/datasources/{ds.id}/experiments/{experiment_id}/commit")
+    response = aclient.client.post(f"/v1/m/datasources/{ds.id}/experiments/{experiment_id}/commit")
     assert response.status_code == 204
 
     # Assert old experiments cannot be snapshotted.
-    response = ppost(f"/v1/m/organizations/{org.id}/datasources/{ds.id}/experiments/{experiment_id}/snapshots")
+    response = aclient.client.post(
+        f"/v1/m/organizations/{org.id}/datasources/{ds.id}/experiments/{experiment_id}/snapshots"
+    )
     parsed_error = FastAPIClientHTTPValidationError.model_validate(response.json())
     assert parsed_error.detail[0].msg == "You can only snapshot active experiments."
 
     # But recently ended experiments can be snapshotted within a 1 day buffer.
-    response = ppost(
+    response = aclient.client.post(
         f"/v1/m/datasources/{ds.id}/experiments?desired_n=20",
         json=CreateExperimentRequest(
             design_spec=PreassignedFrequentistExperimentSpec(
@@ -3045,18 +3045,20 @@ def test_snapshot_on_ineligible_experiments(testing_datasource_with_user, ppost,
     )
     assert response.status_code == 200, response.content
     experiment_id = CreateExperimentResponse.model_validate_json(response.content).experiment_id
-    response = ppost(f"/v1/m/datasources/{ds.id}/experiments/{experiment_id}/commit")
+    response = aclient.client.post(f"/v1/m/datasources/{ds.id}/experiments/{experiment_id}/commit")
     assert response.status_code == 204
-    response = ppost(f"/v1/m/organizations/{org.id}/datasources/{ds.id}/experiments/{experiment_id}/snapshots")
+    response = aclient.client.post(
+        f"/v1/m/organizations/{org.id}/datasources/{ds.id}/experiments/{experiment_id}/snapshots"
+    )
     assert response.status_code == 200
     CreateSnapshotResponse.model_validate(response.json())
 
 
-def test_snapshot_with_nan(testing_datasource_with_user, ppost, pget):
+def test_snapshot_with_nan(testing_datasource_with_user, aclient):
     """Test that a snapshot with a NaN t-stat/p-value is handled correctly roundtrip."""
     ds = testing_datasource_with_user.ds
     org = testing_datasource_with_user.org
-    response = ppost(
+    response = aclient.client.post(
         f"/v1/m/datasources/{ds.id}/experiments?desired_n=10",
         json=CreateExperimentRequest(
             design_spec=PreassignedFrequentistExperimentSpec(
@@ -3080,17 +3082,19 @@ def test_snapshot_with_nan(testing_datasource_with_user, ppost, pget):
     assert response.status_code == 200, response.content
     experiment_id = CreateExperimentResponse.model_validate_json(response.content).experiment_id
 
-    response = ppost(f"/v1/m/datasources/{ds.id}/experiments/{experiment_id}/commit")
+    response = aclient.client.post(f"/v1/m/datasources/{ds.id}/experiments/{experiment_id}/commit")
     assert response.status_code == 204
 
     # Take a snapshot.
-    response = ppost(f"/v1/m/organizations/{org.id}/datasources/{ds.id}/experiments/{experiment_id}/snapshots")
+    response = aclient.client.post(
+        f"/v1/m/organizations/{org.id}/datasources/{ds.id}/experiments/{experiment_id}/snapshots"
+    )
     assert response.status_code == 200, response.content
     create_snapshot_response = CreateSnapshotResponse.model_validate(response.json())
 
     # Verify the snapshot.
     snapshot_id = create_snapshot_response.id
-    response = pget(
+    response = aclient.client.get(
         f"/v1/m/organizations/{org.id}/datasources/{ds.id}/experiments/{experiment_id}/snapshots/{snapshot_id}"
     )
     assert response.status_code == 200, response.content
@@ -3121,13 +3125,13 @@ def test_snapshot_with_nan(testing_datasource_with_user, ppost, pget):
         assert analysis.is_baseline == is_baseline
 
 
-async def test_logout_updates_last_logout_timestamp(xngin_session: AsyncSession, ppost):
+async def test_logout_updates_last_logout_timestamp(xngin_session: AsyncSession, aclient):
     """Test that logout endpoint updates user's last_logout timestamp and returns 204."""
     user = await xngin_session.scalar(select(tables.User).where(tables.User.email == PRIVILEGED_EMAIL))
     assert user is not None
 
     initial_last_logout = user.last_logout
-    response = ppost("/v1/m/logout")
+    response = aclient.client.post("/v1/m/logout")
     assert response.status_code == 204, response.content
     assert response.content == b""
     await xngin_session.refresh(user)
@@ -3159,10 +3163,7 @@ async def test_delete_experiment_data_experiment_not_found(testing_datasource_wi
 
 
 async def test_delete_experiment_data_assignments(
-    xngin_session: AsyncSession,
-    testing_experiment: tables.Experiment,
-    testing_datasource_with_user,
-    client,
+    xngin_session: AsyncSession, testing_experiment: tables.Experiment, testing_datasource_with_user, client
 ):
     """Test deleting arm assignments for an experiment."""
     ds_id = testing_datasource_with_user.ds.id
@@ -3197,10 +3198,7 @@ async def test_delete_experiment_data_assignments(
     indirect=True,
 )
 async def test_delete_experiment_data_draws(
-    xngin_session: AsyncSession,
-    testing_bandit_experiment: tables.Experiment,
-    testing_datasource_with_user,
-    client,
+    xngin_session: AsyncSession, testing_bandit_experiment: tables.Experiment, testing_datasource_with_user, client
 ):
     """Test deleting draws for a bandit experiment."""
     ds_id = testing_datasource_with_user.ds.id
@@ -3226,10 +3224,7 @@ async def test_delete_experiment_data_draws(
 
 
 async def test_delete_experiment_data_snapshots(
-    xngin_session: AsyncSession,
-    testing_experiment: tables.Experiment,
-    testing_datasource_with_user,
-    client,
+    xngin_session: AsyncSession, testing_experiment: tables.Experiment, testing_datasource_with_user, client
 ):
     """Test deleting snapshots for an experiment."""
     ds_id = testing_datasource_with_user.ds.id
@@ -3264,10 +3259,7 @@ async def test_delete_experiment_data_snapshots(
 
 
 async def test_delete_experiment_data_multiple(
-    xngin_session: AsyncSession,
-    testing_experiment: tables.Experiment,
-    testing_datasource_with_user,
-    client,
+    xngin_session: AsyncSession, testing_experiment: tables.Experiment, testing_datasource_with_user, client
 ):
     """Test deleting multiple data types at once."""
     ds_id = testing_datasource_with_user.ds.id
@@ -3314,10 +3306,7 @@ async def test_delete_experiment_data_multiple(
 
 
 async def test_delete_experiment_data_none_specified(
-    xngin_session: AsyncSession,
-    testing_experiment: tables.Experiment,
-    testing_datasource_with_user,
-    client,
+    xngin_session: AsyncSession, testing_experiment: tables.Experiment, testing_datasource_with_user, client
 ):
     """Test that specifying no data types deletes nothing."""
     ds_id = testing_datasource_with_user.ds.id
@@ -3361,9 +3350,7 @@ async def test_delete_experiment_data_none_specified(
 
 
 async def test_list_participant_types_excludes_hidden(
-    xngin_session: AsyncSession,
-    testing_datasource_with_user,
-    pget,
+    xngin_session: AsyncSession, testing_datasource_with_user, aclient
 ):
     """Test that list_participant_types excludes hidden participant types."""
     ds_id = testing_datasource_with_user.ds.id
@@ -3384,7 +3371,7 @@ async def test_list_participant_types_excludes_hidden(
     await xngin_session.commit()
 
     # List participants - should not include hidden one
-    response = pget(f"/v1/m/datasources/{ds_id}/participants")
+    response = aclient.client.get(f"/v1/m/datasources/{ds_id}/participants")
     assert response.status_code == 200
     list_response = ListParticipantsTypeResponse.model_validate(response.json())
     participant_names = [p.participant_type for p in list_response.items]
@@ -3393,18 +3380,14 @@ async def test_list_participant_types_excludes_hidden(
 
 
 async def test_create_experiment_with_table_name_and_primary_key(
-    xngin_session: AsyncSession,
-    testing_datasource_with_user,
-    use_deterministic_random,
-    ppost,
-    pget,
+    xngin_session: AsyncSession, testing_datasource_with_user, use_deterministic_random, aclient
 ):
     """Test creating an experiment with table_name and primary_key instead of participant_type."""
     ds_id = testing_datasource_with_user.ds.id
 
     request_json = make_createexperimentrequest_json(experiment_type=ExperimentsType.FREQ_ONLINE)
 
-    response = ppost(
+    response = aclient.client.post(
         f"/v1/m/datasources/{ds_id}/experiments",
         params={"random_state": 42},
         json={
@@ -3429,21 +3412,18 @@ async def test_create_experiment_with_table_name_and_primary_key(
     assert pt.hidden is True
 
     # Verify hidden participant type not in list
-    response = pget(f"/v1/m/datasources/{ds_id}/participants")
+    response = aclient.client.get(f"/v1/m/datasources/{ds_id}/participants")
     list_response = ListParticipantsTypeResponse.model_validate(response.json())
     participant_names = [p.participant_type for p in list_response.items]
     assert created.design_spec.participant_type not in participant_names
 
 
-def test_create_experiment_table_name_requires_primary_key(
-    testing_datasource_with_user,
-    ppost,
-):
+def test_create_experiment_table_name_requires_primary_key(testing_datasource_with_user, aclient):
     """Test that table_name requires primary_key."""
     ds_id = testing_datasource_with_user.ds.id
     request_json = make_createexperimentrequest_json(experiment_type=ExperimentsType.FREQ_ONLINE)
 
-    response = ppost(
+    response = aclient.client.post(
         f"/v1/m/datasources/{ds_id}/experiments",
         json={**request_json, "table_name": "some_table"},
     )
@@ -3451,15 +3431,12 @@ def test_create_experiment_table_name_requires_primary_key(
     assert "table_name and primary_key must be provided together" in response.text
 
 
-def test_create_experiment_primary_key_requires_table_name(
-    testing_datasource_with_user,
-    ppost,
-):
+def test_create_experiment_primary_key_requires_table_name(testing_datasource_with_user, aclient):
     """Test that primary_key requires table_name."""
     ds_id = testing_datasource_with_user.ds.id
     request_json = make_createexperimentrequest_json(experiment_type=ExperimentsType.FREQ_ONLINE)
 
-    response = ppost(
+    response = aclient.client.post(
         f"/v1/m/datasources/{ds_id}/experiments",
         json={**request_json, "primary_key": "id"},
     )
@@ -3468,17 +3445,14 @@ def test_create_experiment_primary_key_requires_table_name(
 
 
 async def test_create_preassigned_experiment_with_table_name_and_primary_key(
-    xngin_session: AsyncSession,
-    testing_datasource_with_user,
-    use_deterministic_random,
-    ppost,
+    xngin_session: AsyncSession, testing_datasource_with_user, use_deterministic_random, aclient
 ):
     """Test creating a preassigned experiment with table_name and primary_key."""
     ds_id = testing_datasource_with_user.ds.id
 
     request_json = make_createexperimentrequest_json(experiment_type=ExperimentsType.FREQ_PREASSIGNED)
 
-    response = ppost(
+    response = aclient.client.post(
         f"/v1/m/datasources/{ds_id}/experiments",
         params={"desired_n": 100, "random_state": 42},
         json={**request_json, "table_name": "dwh", "primary_key": "id"},
@@ -3491,9 +3465,9 @@ async def test_create_preassigned_experiment_with_table_name_and_primary_key(
     assert created.assign_summary.sample_size == 100
 
 
-def test_list_snapshots_pagination(pget, ppost, ppatch):
+def test_list_snapshots_pagination(aclient):
     """Test cursor-based pagination of the list_snapshots endpoint."""
-    creation_response = ppost(
+    creation_response = aclient.client.post(
         "/v1/m/organizations",
         json=CreateOrganizationRequest(name="test_snapshots_pagination").model_dump(),
     )
@@ -3511,7 +3485,7 @@ def test_list_snapshots_pagination(pget, ppost, ppatch):
         sslmode="disable",
         search_path=None,
     )
-    response = ppost(
+    response = aclient.client.post(
         "/v1/m/datasources",
         content=CreateDatasourceRequest(
             name="test_snapshots_pagination_ds",
@@ -3522,7 +3496,7 @@ def test_list_snapshots_pagination(pget, ppost, ppatch):
     assert response.status_code == 200, response.content
     ds = CreateDatasourceResponse.model_validate(response.json())
 
-    ppost(
+    aclient.client.post(
         f"/v1/m/datasources/{ds.id}/participants",
         content=CreateParticipantsTypeRequest(
             participant_type="test_participant_type",
@@ -3530,7 +3504,7 @@ def test_list_snapshots_pagination(pget, ppost, ppatch):
         ).model_dump_json(),
     )
 
-    response = ppost(
+    response = aclient.client.post(
         f"/v1/m/datasources/{ds.id}/experiments?desired_n=100",
         json=CreateExperimentRequest(
             design_spec=PreassignedFrequentistExperimentSpec(
@@ -3553,35 +3527,35 @@ def test_list_snapshots_pagination(pget, ppost, ppatch):
     assert response.status_code == 200, response.content
     experiment_id = CreateExperimentResponse.model_validate_json(response.content).experiment_id
 
-    response = ppost(f"/v1/m/datasources/{ds.id}/experiments/{experiment_id}/commit")
+    response = aclient.client.post(f"/v1/m/datasources/{ds.id}/experiments/{experiment_id}/commit")
     assert response.status_code == 204
 
     snapshots_url = f"/v1/m/organizations/{org.id}/datasources/{ds.id}/experiments/{experiment_id}/snapshots"
 
     # Create two snapshots
-    response = ppost(snapshots_url)
+    response = aclient.client.post(snapshots_url)
     assert response.status_code == 200, response.content
 
     # Force second snapshot to fail
-    response = ppatch(
+    response = aclient.client.patch(
         f"/v1/m/datasources/{ds.id}",
         content=UpdateDatasourceRequest(
             dsn=valid_dsn.model_copy(update={"port": valid_dsn.port + 1})
         ).model_dump_json(),
     )
     assert response.status_code == 204, response.content
-    response = ppost(snapshots_url)
+    response = aclient.client.post(snapshots_url)
     assert response.status_code == 200, response.content
 
     # Page through with page_size=1
-    response = pget(f"{snapshots_url}?page_size=1")
+    response = aclient.client.get(f"{snapshots_url}?page_size=1")
     assert response.status_code == 200, response.content
     page1 = ListSnapshotsResponse.model_validate(response.json())
     assert len(page1.items) == 1
     assert page1.next_page_token != ""
     assert page1.latest_failure is not None
 
-    response = pget(f"{snapshots_url}?page_size=1&page_token={page1.next_page_token}")
+    response = aclient.client.get(f"{snapshots_url}?page_size=1&page_token={page1.next_page_token}")
     assert response.status_code == 200, response.content
     page2 = ListSnapshotsResponse.model_validate(response.json())
     assert len(page2.items) == 1
@@ -3594,32 +3568,32 @@ def test_list_snapshots_pagination(pget, ppost, ppatch):
     assert page1.items[0].updated_at >= page2.items[0].updated_at
 
     # Without pagination params, all results returned on one page
-    response = pget(snapshots_url)
+    response = aclient.client.get(snapshots_url)
     assert response.status_code == 200, response.content
     all_items = ListSnapshotsResponse.model_validate(response.json())
     assert len(all_items.items) == 2
     assert all_items.next_page_token == ""
 
     # Skip works from the beginning of the result set.
-    response = pget(f"{snapshots_url}?page_size=1&skip=1")
+    response = aclient.client.get(f"{snapshots_url}?page_size=1&skip=1")
     assert response.status_code == 200, response.content
     skipped_page = ListSnapshotsResponse.model_validate(response.json())
     assert len(skipped_page.items) == 1
     assert skipped_page.items[0].id == all_items.items[1].id
 
     # Invalid page_token returns 400
-    response = pget(f"{snapshots_url}?page_token=bogus")
+    response = aclient.client.get(f"{snapshots_url}?page_token=bogus")
     assert response.status_code == 400, response.content
     assert response.json() == {"detail": "Invalid page_token."}
 
 
-def test_list_organization_events_pagination(testing_datasource_with_user, ppost, pget):
+def test_list_organization_events_pagination(testing_datasource_with_user, aclient):
     """Test cursor-based pagination of the list_organization_events endpoint."""
     org_id = testing_datasource_with_user.org.id
     ds_id = testing_datasource_with_user.ds.id
 
     # Create a webhook
-    response = ppost(
+    response = aclient.client.post(
         f"/v1/m/organizations/{org_id}/webhooks",
         json=AddWebhookToOrganizationRequest(
             type="experiment.created",
@@ -3630,14 +3604,14 @@ def test_list_organization_events_pagination(testing_datasource_with_user, ppost
     assert response.status_code == 200, response.content
     webhook_id = AddWebhookToOrganizationResponse.model_validate(response.json()).id
 
-    response = pget(f"/v1/m/organizations/{org_id}/webhooks")
+    response = aclient.client.get(f"/v1/m/organizations/{org_id}/webhooks")
     assert response.status_code == 200, response.content
     webhooks = ListWebhooksResponse.model_validate(response.json()).items
     assert len(webhooks) == 1
 
     # Creating experiments generates events. Create a few to ensure we have enough.
     for i in range(3):
-        response = ppost(
+        response = aclient.client.post(
             f"/v1/m/datasources/{ds_id}/experiments?desired_n=100",
             json=CreateExperimentRequest(
                 webhooks=[webhook_id],
@@ -3660,26 +3634,26 @@ def test_list_organization_events_pagination(testing_datasource_with_user, ppost
         )
         assert response.status_code == 200, response.content
         experiment = CreateExperimentResponse.model_validate(response.json())
-        response = ppost(f"/v1/m/datasources/{ds_id}/experiments/{experiment.experiment_id}/commit")
+        response = aclient.client.post(f"/v1/m/datasources/{ds_id}/experiments/{experiment.experiment_id}/commit")
         assert response.status_code == 204, response.content
 
     events_url = f"/v1/m/organizations/{org_id}/events"
 
     # Get all events first to know how many we have
-    response = pget(events_url)
+    response = aclient.client.get(events_url)
     assert response.status_code == 200, response.content
     all_events = ListOrganizationEventsResponse.model_validate(response.json())
     total = len(all_events.items)
     assert total >= 3
 
     # Page through with page_size=1
-    response = pget(f"{events_url}?page_size=1")
+    response = aclient.client.get(f"{events_url}?page_size=1")
     assert response.status_code == 200, response.content
     page1 = ListOrganizationEventsResponse.model_validate(response.json())
     assert len(page1.items) == 1
     assert page1.next_page_token != ""
 
-    response = pget(f"{events_url}?page_size=1&page_token={page1.next_page_token}")
+    response = aclient.client.get(f"{events_url}?page_size=1&page_token={page1.next_page_token}")
     assert response.status_code == 200, response.content
     page2 = ListOrganizationEventsResponse.model_validate(response.json())
     assert len(page2.items) == 1
@@ -3690,11 +3664,11 @@ def test_list_organization_events_pagination(testing_datasource_with_user, ppost
     assert page1.items[0].created_at >= page2.items[0].created_at
 
     # Skip works from the beginning of the result set.
-    response = pget(f"{events_url}?page_size=3")
+    response = aclient.client.get(f"{events_url}?page_size=3")
     assert response.status_code == 200, response.content
     first_page = ListOrganizationEventsResponse.model_validate(response.json())
     assert len(first_page.items) >= 3
-    response = pget(f"{events_url}?page_size=2&skip=1")
+    response = aclient.client.get(f"{events_url}?page_size=2&skip=1")
     assert response.status_code == 200, response.content
     skipped_page = ListOrganizationEventsResponse.model_validate(response.json())
     assert [item.id for item in skipped_page.items] == [item.id for item in first_page.items[1:3]]
@@ -3707,7 +3681,7 @@ def test_list_organization_events_pagination(testing_datasource_with_user, ppost
         url = f"{events_url}?page_size=2"
         if token:
             url += f"&page_token={token}"
-        response = pget(url)
+        response = aclient.client.get(url)
         assert response.status_code == 200, response.content
         page = ListOrganizationEventsResponse.model_validate(response.json())
         for item in page.items:
@@ -3721,16 +3695,13 @@ def test_list_organization_events_pagination(testing_datasource_with_user, ppost
     assert pages > 1
 
     # Invalid page_token returns 400
-    response = pget(f"{events_url}?page_token=bogus")
+    response = aclient.client.get(f"{events_url}?page_token=bogus")
     assert response.status_code == 400, response.content
     assert response.json() == {"detail": "Invalid page_token."}
 
 
 async def test_list_organization_events_pagination_with_same_timestamp_is_id_desc(
-    testing_datasource_with_user,
-    xngin_session: AsyncSession,
-    ppost,
-    pget,
+    testing_datasource_with_user, xngin_session: AsyncSession, aclient
 ):
     """Events with identical created_at must paginate deterministically by id (descending)."""
     org_id = testing_datasource_with_user.org.id
@@ -3738,7 +3709,7 @@ async def test_list_organization_events_pagination_with_same_timestamp_is_id_des
 
     # Create events by creating and committing experiments.
     for i in range(2):
-        response = ppost(
+        response = aclient.client.post(
             f"/v1/m/datasources/{ds_id}/experiments?desired_n=100",
             json=CreateExperimentRequest(
                 design_spec=PreassignedFrequentistExperimentSpec(
@@ -3760,11 +3731,11 @@ async def test_list_organization_events_pagination_with_same_timestamp_is_id_des
         )
         assert response.status_code == 200, response.content
         experiment = CreateExperimentResponse.model_validate(response.json())
-        response = ppost(f"/v1/m/datasources/{ds_id}/experiments/{experiment.experiment_id}/commit")
+        response = aclient.client.post(f"/v1/m/datasources/{ds_id}/experiments/{experiment.experiment_id}/commit")
         assert response.status_code == 204, response.content
 
     events_url = f"/v1/m/organizations/{org_id}/events"
-    response = pget(events_url)
+    response = aclient.client.get(events_url)
     assert response.status_code == 200, response.content
     all_events = ListOrganizationEventsResponse.model_validate(response.json()).items
     assert len(all_events) >= 2
@@ -3783,7 +3754,7 @@ async def test_list_organization_events_pagination_with_same_timestamp_is_id_des
     )
     assert len(expected_tied_order) == 2
 
-    response = pget(f"{events_url}?page_size=1")
+    response = aclient.client.get(f"{events_url}?page_size=1")
     assert response.status_code == 200, response.content
     page1 = ListOrganizationEventsResponse.model_validate(response.json())
     assert len(page1.items) == 1
@@ -3791,7 +3762,7 @@ async def test_list_organization_events_pagination_with_same_timestamp_is_id_des
     assert page1.items[0].id == expected_tied_order[0]
     assert page1.items[0].created_at == tied_created_at
 
-    response = pget(f"{events_url}?page_size=1&page_token={page1.next_page_token}")
+    response = aclient.client.get(f"{events_url}?page_size=1&page_token={page1.next_page_token}")
     assert response.status_code == 200, response.content
     page2 = ListOrganizationEventsResponse.model_validate(response.json())
     assert len(page2.items) == 1

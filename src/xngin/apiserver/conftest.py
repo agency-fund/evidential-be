@@ -42,7 +42,10 @@ from xngin.apiserver.settings import (
     RemoteDatabaseConfig,
 )
 from xngin.apiserver.sqla import tables
-from xngin.apiserver.testing import experiments_api_client
+from xngin.apiserver.testing import (
+    admin_api_client,
+    experiments_api_client,
+)
 from xngin.apiserver.testing.pg_helpers import create_database_if_not_exists_pg
 from xngin.apiserver.testing.testing_dwh_def import TESTING_DWH_PARTICIPANT_DEF
 from xngin.db_extensions import custom_functions
@@ -191,6 +194,20 @@ def fixture_experiments_api_client(xngin_session):
     """
     with experiments_api_client.ExperimentsAPIClient.from_app(app) as eapi_client:
         yield eapi_client
+
+
+@pytest.fixture(name="aclient")
+def fixture_admin_api_client(xngin_session):
+    """Returns a generated API client for privileged Admin API requests."""
+    with TestClient(app, headers={"Authorization": f"Bearer {PRIVILEGED_TOKEN_FOR_TESTING}"}) as client:
+        yield admin_api_client.AdminAPIClient(client)
+
+
+@pytest.fixture(name="aclient_unpriv")
+def fixture_admin_api_client_unpriv(xngin_session):
+    """Returns a generated API client for unprivileged Admin API requests."""
+    with TestClient(app, headers={"Authorization": f"Bearer {UNPRIVILEGED_TOKEN_FOR_TESTING}"}) as client:
+        yield admin_api_client.AdminAPIClient(client)
 
 
 @pytest.fixture(name="pget")
