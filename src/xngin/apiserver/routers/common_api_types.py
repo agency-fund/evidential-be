@@ -1184,7 +1184,7 @@ class PowerRequest(ApiBaseModel):
 
 
 class PowerResponse(ApiBaseModel):
-    analyses: Annotated[list[MetricPowerAnalysis], Field(max_length=MAX_NUMBER_OF_FIELDS)]
+    analyses: Annotated[list[MetricPowerAnalysis | ClusterMetricPowerAnalysis], Field(max_length=MAX_NUMBER_OF_FIELDS)]
 
 
 class Strata(ApiBaseModel):
