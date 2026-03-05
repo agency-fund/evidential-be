@@ -3523,7 +3523,7 @@ def test_list_snapshots_pagination(pget, ppost, ppatch):
     )
 
     response = ppost(
-        f"/v1/m/datasources/{ds.id}/experiments?chosen_n=100",
+        f"/v1/m/datasources/{ds.id}/experiments?desired_n=100",
         json=CreateExperimentRequest(
             design_spec=PreassignedFrequentistExperimentSpec(
                 experiment_type=ExperimentsType.FREQ_PREASSIGNED,
@@ -3630,7 +3630,7 @@ def test_list_organization_events_pagination(testing_datasource_with_user, ppost
     # Creating experiments generates events. Create a few to ensure we have enough.
     for i in range(3):
         response = ppost(
-            f"/v1/m/datasources/{ds_id}/experiments?chosen_n=100",
+            f"/v1/m/datasources/{ds_id}/experiments?desired_n=100",
             json=CreateExperimentRequest(
                 webhooks=[webhook_id],
                 design_spec=PreassignedFrequentistExperimentSpec(
@@ -3731,7 +3731,7 @@ async def test_list_organization_events_pagination_with_same_timestamp_is_id_des
     # Create events by creating and committing experiments.
     for i in range(2):
         response = ppost(
-            f"/v1/m/datasources/{ds_id}/experiments?chosen_n=100",
+            f"/v1/m/datasources/{ds_id}/experiments?desired_n=100",
             json=CreateExperimentRequest(
                 design_spec=PreassignedFrequentistExperimentSpec(
                     experiment_type=ExperimentsType.FREQ_PREASSIGNED,
