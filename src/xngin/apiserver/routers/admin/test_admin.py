@@ -3472,7 +3472,7 @@ async def test_create_preassigned_experiment_with_table_name_and_primary_key(
 
     response = ppost(
         f"/v1/m/datasources/{ds_id}/experiments",
-        params={"chosen_n": 100, "random_state": 42},
+        params={"desired_n": 100, "random_state": 42},
         json={**request_json, "table_name": "dwh", "primary_key": "id"},
     )
     assert response.status_code == 200, response.content
