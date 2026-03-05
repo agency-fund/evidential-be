@@ -3,6 +3,7 @@ import copy
 import json
 import math
 from datetime import UTC, datetime, timedelta
+from typing import Protocol
 from urllib.parse import urlparse
 
 import numpy as np
@@ -28,7 +29,6 @@ from xngin.apiserver.routers.admin.admin_api_types import (
     CreateDatasourceRequest,
     CreateOrganizationRequest,
     CreateParticipantsTypeRequest,
-    DatasourceSummary,
     DeleteExperimentDataRequest,
     FieldMetadata,
     GcpServiceAccount,
@@ -108,7 +108,11 @@ SAMPLE_GCLOUD_SERVICE_ACCOUNT = {
 SAMPLE_GCLOUD_SERVICE_ACCOUNT_JSON = json.dumps(SAMPLE_GCLOUD_SERVICE_ACCOUNT)
 
 
-def find_ds_with_name[DSType: tables.Datasource | DatasourceSummary](datasources: list[DSType], name: str) -> DSType:
+class HasName(Protocol):
+    name: str
+
+
+def find_ds_with_name[DSType: HasName](datasources: list[DSType], name: str) -> DSType:
     """Helper function to find a datasource with a specific name from an iterable.
 
     Raises StopIteration if the datasource is not found.
