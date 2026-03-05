@@ -857,6 +857,15 @@ class BaseFrequentistDesignSpec(BaseDesignSpec):
         ),
     ]
 
+    desired_n: Annotated[
+        int | None,
+        Field(
+            default=None,
+            description="Optional desired sample size for MDE calculation. "
+            "If provided, calculates minimum detectable effect instead of required sample size.",
+        ),
+    ] = None
+
     def get_validated_arm_weights(self) -> list[float] | None:
         """If weights exist, validate they match the number of arms and sum to 100 before returning."""
         arm_weights = [arm.arm_weight for arm in self.arms if arm.arm_weight is not None]
