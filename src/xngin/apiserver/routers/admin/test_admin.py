@@ -2500,7 +2500,7 @@ async def test_experiment_webhook_integration(testing_datasource_with_user, acli
     experiment_request = CreateExperimentRequest(
         design_spec=PreassignedFrequentistExperimentSpec(
             participant_type="test_participant_type",
-            experiment_type="freq_preassigned",
+            experiment_type=ExperimentsType.FREQ_PREASSIGNED,
             experiment_name="Test Experiment with Webhook",
             description="Testing webhook integration",
             start_date=datetime(2024, 1, 1, tzinfo=UTC),
@@ -2534,7 +2534,7 @@ async def test_experiment_webhook_integration(testing_datasource_with_user, acli
     # Test creating an experiment with no webhooks using proper Pydantic models
     experiment_request_no_webhooks = CreateExperimentRequest(
         design_spec=PreassignedFrequentistExperimentSpec(
-            experiment_type="freq_preassigned",
+            experiment_type=ExperimentsType.FREQ_PREASSIGNED,
             participant_type="test_participant_type",
             experiment_name="Test Experiment without Webhooks",
             description="Testing no webhook integration",
