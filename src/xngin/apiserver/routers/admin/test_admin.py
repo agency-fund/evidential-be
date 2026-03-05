@@ -16,6 +16,7 @@ from xngin.apiserver.conftest import delete_seeded_users
 from xngin.apiserver.dns import safe_resolve
 from xngin.apiserver.dwh.inspection_types import FieldDescriptor, ParticipantsSchema
 from xngin.apiserver.dwh.inspections import ColumnDeleted, Drift, FieldChangedType
+from xngin.apiserver.exceptionhandlers import FastAPIClientHTTPValidationError
 from xngin.apiserver.routers.admin.admin_api_converters import (
     CREDENTIALS_UNAVAILABLE_MESSAGE,
 )
@@ -2126,7 +2127,8 @@ async def test_update_experiment_invalid(xngin_session, testing_experiment, ppat
         content=request.model_dump_json(),
     )
     assert response.status_code == 422
-    assert response.json() == {"message": "New start date must be before end date."}
+    parsed_error = FastAPIClientHTTPValidationError.model_validate(response.json())
+    assert parsed_error.detail[0].msg == "New start date must be before end date."
 
     request = UpdateExperimentRequest(end_date=testing_experiment.start_date - timedelta(days=1))
     response = ppatch(
@@ -2134,7 +2136,8 @@ async def test_update_experiment_invalid(xngin_session, testing_experiment, ppat
         content=request.model_dump_json(),
     )
     assert response.status_code == 422
-    assert response.json() == {"message": "New end date must be after start date."}
+    parsed_error = FastAPIClientHTTPValidationError.model_validate(response.json())
+    assert parsed_error.detail[0].msg == "New end date must be after start date."
 
     # Lastly check invalid experiment state
     testing_experiment.state = ExperimentState.ASSIGNED
@@ -2145,7 +2148,8 @@ async def test_update_experiment_invalid(xngin_session, testing_experiment, ppat
         content=UpdateExperimentRequest(name="updated").model_dump_json(),
     )
     assert response.status_code == 422
-    assert response.json() == {"message": "Experiment must have been committed to be updated."}
+    parsed_error = FastAPIClientHTTPValidationError.model_validate(response.json())
+    assert parsed_error.detail[0].msg == "Experiment must have been committed to be updated."
 
 
 async def test_update_arm(testing_experiment, ppatch, pget):
@@ -2190,7 +2194,8 @@ async def test_update_arm_invalid(xngin_session, testing_experiment, ppatch):
         content=UpdateArmRequest(name="updated").model_dump_json(),
     )
     assert response.status_code == 422
-    assert response.json() == {"message": "Experiment must have been committed to update arms."}
+    parsed_error = FastAPIClientHTTPValidationError.model_validate(response.json())
+    assert parsed_error.detail[0].msg == "Experiment must have been committed to update arms."
 
 
 def test_get_experiment_assignment_for_preassigned_participant(testing_experiment, pget):
@@ -3005,7 +3010,8 @@ def test_snapshot_on_ineligible_experiments(testing_datasource_with_user, ppost,
     # Assert non-committed experiments cannot be snapshotted.
     response = ppost(f"/v1/m/organizations/{org.id}/datasources/{ds.id}/experiments/{experiment_id}/snapshots")
     assert response.status_code == 422
-    assert response.json()["message"] == "You can only snapshot committed experiments."
+    parsed_error = FastAPIClientHTTPValidationError.model_validate(response.json())
+    assert parsed_error.detail[0].msg == "You can only snapshot committed experiments."
 
     # So commit the experiment.
     response = ppost(f"/v1/m/datasources/{ds.id}/experiments/{experiment_id}/commit")
@@ -3013,8 +3019,8 @@ def test_snapshot_on_ineligible_experiments(testing_datasource_with_user, ppost,
 
     # Assert old experiments cannot be snapshotted.
     response = ppost(f"/v1/m/organizations/{org.id}/datasources/{ds.id}/experiments/{experiment_id}/snapshots")
-    assert response.status_code == 422
-    assert response.json()["message"] == "You can only snapshot active experiments."
+    parsed_error = FastAPIClientHTTPValidationError.model_validate(response.json())
+    assert parsed_error.detail[0].msg == "You can only snapshot active experiments."
 
     # But recently ended experiments can be snapshotted within a 1 day buffer.
     response = ppost(
