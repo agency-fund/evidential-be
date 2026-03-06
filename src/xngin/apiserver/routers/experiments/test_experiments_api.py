@@ -13,6 +13,7 @@ from xngin.apiserver.routers.common_api_types import (
     GetParticipantAssignmentResponse,
     OnlineAssignmentWithFiltersRequest,
     OnlineFrequentistExperimentSpec,
+    ParticipantProperty,
     PreassignedFrequentistExperimentSpec,
     UpdateBanditArmOutcomeRequest,
 )
@@ -381,6 +382,33 @@ async def test_assign_with_filters_participant_passes_filters(xngin_session, tes
         participant_id="participant_1",
         random_state=42,
     ).data
+    assert parsed.experiment_id == experiment.id
+    assert parsed.participant_id == "participant_1"
+    assert parsed.assignment is not None
+    assert parsed.assignment.arm_name in {"control", "treatment"}
+
+
+async def test_assign_with_filters_ignores_missing_content_type_header(xngin_session, testing_datasource, eclient):
+    experiment, design_spec = await make_insertable_experiment(
+        datasource=testing_datasource.ds, state=ExperimentState.COMMITTED, experiment_type=ExperimentsType.FREQ_ONLINE
+    )
+    design_spec = TypeAdapter(OnlineFrequentistExperimentSpec).validate_python(design_spec)
+    design_spec.filters = [Filter(field_name="current_income", relation=Relation.BETWEEN, value=[1000, 5000])]
+    experiment = ExperimentStorageConverter(experiment).set_design_spec_fields(design_spec).get_experiment()
+    xngin_session.add(experiment)
+    await xngin_session.commit()
+
+    response = eclient.client.post(
+        f"/v1/experiments/{experiment.id}/assignments/participant_1/assign_with_filters?random_state=42",
+        headers={"X-API-Key": testing_datasource.key},
+        content=OnlineAssignmentWithFiltersRequest(
+            properties=[ParticipantProperty(field_name="current_income", value=2500)]
+        ).model_dump_json(),
+    )
+    assert "content-type" not in response.request.headers
+    assert response.status_code == HTTPStatus.OK, response.content
+
+    parsed = GetParticipantAssignmentResponse.model_validate_json(response.text)
     assert parsed.experiment_id == experiment.id
     assert parsed.participant_id == "participant_1"
     assert parsed.assignment is not None
