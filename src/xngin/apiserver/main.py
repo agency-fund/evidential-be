@@ -51,7 +51,6 @@ async def lifespan(_app: FastAPI):
 app = FastAPI(
     lifespan=lifespan,
     swagger_ui_parameters={"persistAuthorization": True},
-    strict_content_type=False,  # allow requests to send JSON without a content-type header
 )
 exceptionhandlers.setup(app)
 middleware.setup(app)

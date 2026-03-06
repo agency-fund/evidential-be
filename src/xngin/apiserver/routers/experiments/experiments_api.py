@@ -86,7 +86,12 @@ STANDARD_INTEGRATION_RESPONSES: dict[str | int, dict[str, Any]] = {
     },
 }
 
-router = APIRouter(lifespan=lifespan, prefix=constants.API_PREFIX_V1, responses=STANDARD_INTEGRATION_RESPONSES)
+router = APIRouter(
+    lifespan=lifespan,
+    prefix=constants.API_PREFIX_V1,
+    responses=STANDARD_INTEGRATION_RESPONSES,
+    strict_content_type=False,  # for backwards compatibility, do not require content-type: request headers.
+)
 
 
 @router.get("/experiments", summary="List experiments on the datasource.")
