@@ -36,7 +36,7 @@ async def _create_and_commit_experiment(
         create_experiment_request,
         datasource,
         session,
-        chosen_n=100,
+        desired_n=100,
         stratify_on_metrics=False,
         random_state=None,
         validated_webhooks=[],
