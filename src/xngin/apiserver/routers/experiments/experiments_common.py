@@ -616,7 +616,7 @@ def experiment_assignments_to_csv_generator(experiment: tables.Experiment):
             writer.writerow(header)
 
             # Write out each participant row in batches
-            for batch in batched(experiment.arm_assignments, batch_size):
+            for batch in batched(experiment.arm_assignments, batch_size, strict=False):
                 for participant in batch:
                     row = [
                         participant.participant_id,

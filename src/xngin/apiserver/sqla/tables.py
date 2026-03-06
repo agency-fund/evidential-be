@@ -70,7 +70,7 @@ class ApiKey(Base):
         onupdate=sqlalchemy.sql.func.now(),
     )
 
-    datasource: Mapped["Datasource"] = relationship(back_populates="api_keys")
+    datasource: Mapped[Datasource] = relationship(back_populates="api_keys")
 
 
 class Organization(Base):
@@ -87,11 +87,11 @@ class Organization(Base):
         onupdate=sqlalchemy.sql.func.now(),
     )
 
-    arms: Mapped[list["Arm"]] = relationship(back_populates="organization", cascade="all, delete-orphan")
-    users: Mapped[list["User"]] = relationship(secondary="user_organizations", back_populates="organizations")
-    datasources: Mapped[list["Datasource"]] = relationship(back_populates="organization", cascade="all, delete-orphan")
-    events: Mapped[list["Event"]] = relationship(back_populates="organization", cascade="all, delete-orphan")
-    webhooks: Mapped[list["Webhook"]] = relationship(back_populates="organization", cascade="all, delete-orphan")
+    arms: Mapped[list[Arm]] = relationship(back_populates="organization", cascade="all, delete-orphan")
+    users: Mapped[list[User]] = relationship(secondary="user_organizations", back_populates="organizations")
+    datasources: Mapped[list[Datasource]] = relationship(back_populates="organization", cascade="all, delete-orphan")
+    events: Mapped[list[Event]] = relationship(back_populates="organization", cascade="all, delete-orphan")
+    webhooks: Mapped[list[Webhook]] = relationship(back_populates="organization", cascade="all, delete-orphan")
 
 
 class Webhook(Base):
@@ -120,8 +120,8 @@ class Webhook(Base):
         onupdate=sqlalchemy.sql.func.now(),
     )
 
-    organization: Mapped["Organization"] = relationship(back_populates="webhooks")
-    experiments: Mapped[list["Experiment"]] = relationship(secondary="experiment_webhooks", back_populates="webhooks")
+    organization: Mapped[Organization] = relationship(back_populates="webhooks")
+    experiments: Mapped[list[Experiment]] = relationship(secondary="experiment_webhooks", back_populates="webhooks")
 
 
 class Event(Base):
@@ -140,7 +140,7 @@ class Event(Base):
     data: Mapped[dict] = mapped_column(postgresql.JSONB)
 
     organization_id: Mapped[str] = mapped_column(ForeignKey("organizations.id", ondelete="CASCADE"))
-    organization: Mapped["Organization"] = relationship(back_populates="events")
+    organization: Mapped[Organization] = relationship(back_populates="events")
 
     def set_data(self, data: EventDataTypes):
         as_json = data.model_dump_json()
@@ -207,7 +207,7 @@ class User(Base):
         onupdate=sqlalchemy.sql.func.now(),
     )
 
-    organizations: Mapped[list["Organization"]] = relationship(secondary="user_organizations", back_populates="users")
+    organizations: Mapped[list[Organization]] = relationship(secondary="user_organizations", back_populates="users")
 
 
 class UserOrganization(Base):
@@ -220,8 +220,8 @@ class UserOrganization(Base):
 
     created_at: Mapped[datetime] = mapped_column(server_default=sqlalchemy.sql.func.now())
 
-    organization: Mapped["Organization"] = relationship(viewonly=True)
-    user: Mapped["User"] = relationship(viewonly=True)
+    organization: Mapped[Organization] = relationship(viewonly=True)
+    user: Mapped[User] = relationship(viewonly=True)
 
 
 class ExperimentWebhook(Base):
@@ -232,8 +232,8 @@ class ExperimentWebhook(Base):
     experiment_id: Mapped[str] = mapped_column(ForeignKey("experiments.id", ondelete="CASCADE"), primary_key=True)
     webhook_id: Mapped[str] = mapped_column(ForeignKey("webhooks.id", ondelete="CASCADE"), primary_key=True)
 
-    experiment: Mapped["Experiment"] = relationship(viewonly=True)
-    webhook: Mapped["Webhook"] = relationship(viewonly=True)
+    experiment: Mapped[Experiment] = relationship(viewonly=True)
+    webhook: Mapped[Webhook] = relationship(viewonly=True)
 
 
 class Datasource(Base):
@@ -262,9 +262,9 @@ class Datasource(Base):
         onupdate=sqlalchemy.sql.func.now(),
     )
 
-    organization: Mapped["Organization"] = relationship(back_populates="datasources")
-    api_keys: Mapped[list["ApiKey"]] = relationship(back_populates="datasource", cascade="all, delete-orphan")
-    experiments: Mapped[list["Experiment"]] = relationship(back_populates="datasource", cascade="all, delete-orphan")
+    organization: Mapped[Organization] = relationship(back_populates="datasources")
+    api_keys: Mapped[list[ApiKey]] = relationship(back_populates="datasource", cascade="all, delete-orphan")
+    experiments: Mapped[list[Experiment]] = relationship(back_populates="datasource", cascade="all, delete-orphan")
 
     def get_config(self) -> DatasourceConfig:
         """Deserializes the config field into a DatasourceConfig."""
@@ -352,8 +352,8 @@ class ArmAssignment(Base):
     strata: Mapped[list[dict[str, str]]] = mapped_column(postgresql.JSONB)
     created_at: Mapped[datetime] = mapped_column(server_default=sqlalchemy.sql.func.now())
 
-    experiment: Mapped["Experiment"] = relationship(back_populates="arm_assignments")
-    arm: Mapped["Arm"] = relationship(back_populates="arm_assignments")
+    experiment: Mapped[Experiment] = relationship(back_populates="arm_assignments")
+    arm: Mapped[Arm] = relationship(back_populates="arm_assignments")
 
     def strata_names(self) -> list[str]:
         """Returns the names of the strata fields."""
@@ -423,25 +423,23 @@ class Experiment(Base):
     impact: Mapped[str] = mapped_column(server_default="")
     decision: Mapped[str] = mapped_column(server_default="")
 
-    arm_assignments: Mapped[list["ArmAssignment"]] = relationship(
+    arm_assignments: Mapped[list[ArmAssignment]] = relationship(
         back_populates="experiment", cascade="all, delete-orphan", lazy="raise"
     )
-    arms: Mapped[list["Arm"]] = relationship(
+    arms: Mapped[list[Arm]] = relationship(
         back_populates="experiment",
         order_by="asc(Arm.position)",
         cascade="all, delete-orphan",
     )
-    datasource: Mapped["Datasource"] = relationship(back_populates="experiments")
-    webhooks: Mapped[list["Webhook"]] = relationship(secondary="experiment_webhooks", back_populates="experiments")
-    draws: Mapped[list["Draw"]] = relationship(
+    datasource: Mapped[Datasource] = relationship(back_populates="experiments")
+    webhooks: Mapped[list[Webhook]] = relationship(secondary="experiment_webhooks", back_populates="experiments")
+    draws: Mapped[list[Draw]] = relationship(
         "Draw",
         back_populates="experiment",
         cascade="all, delete-orphan",
     )
-    contexts: Mapped[list["Context"]] = relationship(
-        "Context", back_populates="experiment", cascade="all, delete-orphan"
-    )
-    snapshots: Mapped["Snapshot"] = relationship(viewonly=True)
+    contexts: Mapped[list[Context]] = relationship("Context", back_populates="experiment", cascade="all, delete-orphan")
+    snapshots: Mapped[Snapshot] = relationship(viewonly=True)
 
 
 class Arm(Base):
@@ -476,10 +474,10 @@ class Arm(Base):
     alpha: Mapped[float | None] = mapped_column()
     beta: Mapped[float | None] = mapped_column()
 
-    organization: Mapped["Organization"] = relationship(back_populates="arms")
-    experiment: Mapped["Experiment"] = relationship(back_populates="arms")
-    arm_assignments: Mapped[list["ArmAssignment"]] = relationship(back_populates="arm", cascade="all, delete-orphan")
-    draws: Mapped[list["Draw"]] = relationship(
+    organization: Mapped[Organization] = relationship(back_populates="arms")
+    experiment: Mapped[Experiment] = relationship(back_populates="arms")
+    arm_assignments: Mapped[list[ArmAssignment]] = relationship(back_populates="arm", cascade="all, delete-orphan")
+    draws: Mapped[list[Draw]] = relationship(
         "Draw",
         back_populates="arm",
         cascade="all, delete-orphan",
