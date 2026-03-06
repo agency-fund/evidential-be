@@ -36,6 +36,8 @@ from xngin.apiserver.routers.common_api_types import (
 )
 from xngin.apiserver.routers.common_enums import ExperimentState, Relation, StopAssignmentReason
 from xngin.apiserver.routers.experiments.experiments_common import (
+    AbandonExperimentResult,
+    CommitExperimentResult,
     ExperimentsAssignmentError,
     abandon_experiment_impl,
     analyze_experiment_freq_impl,
@@ -1023,7 +1025,7 @@ async def test_create_experiment_impl_no_metric_stratification(
             commit_experiment_impl,
             ExperimentState.ASSIGNED,
             ExperimentState.COMMITTED,
-            204,
+            CommitExperimentResult.COMMITTED,
             None,
         ),
         # No-op
@@ -1031,7 +1033,7 @@ async def test_create_experiment_impl_no_metric_stratification(
             commit_experiment_impl,
             ExperimentState.COMMITTED,
             ExperimentState.COMMITTED,
-            304,
+            CommitExperimentResult.COMMITTED,
             None,
         ),
         # Failure cases
@@ -1039,14 +1041,14 @@ async def test_create_experiment_impl_no_metric_stratification(
             commit_experiment_impl,
             ExperimentState.DESIGNING,
             ExperimentState.DESIGNING,
-            400,
+            CommitExperimentResult.INVALID_STATE,
             "Invalid state: designing",
         ),
         (
             commit_experiment_impl,
             ExperimentState.ABORTED,
             ExperimentState.ABORTED,
-            400,
+            CommitExperimentResult.INVALID_STATE,
             "Invalid state: aborted",
         ),
         # Success cases
@@ -1054,14 +1056,14 @@ async def test_create_experiment_impl_no_metric_stratification(
             abandon_experiment_impl,
             ExperimentState.DESIGNING,
             ExperimentState.ABANDONED,
-            204,
+            AbandonExperimentResult.ABANDONED,
             None,
         ),
         (
             abandon_experiment_impl,
             ExperimentState.ASSIGNED,
             ExperimentState.ABANDONED,
-            204,
+            AbandonExperimentResult.ABANDONED,
             None,
         ),
         # No-op
@@ -1069,7 +1071,7 @@ async def test_create_experiment_impl_no_metric_stratification(
             abandon_experiment_impl,
             ExperimentState.ABANDONED,
             ExperimentState.ABANDONED,
-            304,
+            AbandonExperimentResult.ABANDONED,
             None,
         ),
         # Failure case
@@ -1077,7 +1079,7 @@ async def test_create_experiment_impl_no_metric_stratification(
             abandon_experiment_impl,
             ExperimentState.COMMITTED,
             ExperimentState.COMMITTED,
-            400,
+            AbandonExperimentResult.INVALID_STATE,
             "Invalid state: committed",
         ),
     ],
@@ -1104,7 +1106,10 @@ async def test_state_setting_experiment_impl(
         assert e.status_code == expected_status  # noqa: PT017
         assert e.detail == expected_detail  # noqa: PT017
     else:
-        assert response.status_code == expected_status
+        if method_under_test is commit_experiment_impl:
+            assert response == expected_status
+        else:
+            assert response == expected_status
         assert experiment.state == expected_state
 
 

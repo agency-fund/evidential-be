@@ -1,5 +1,6 @@
 import asyncio
 import csv
+import enum
 import io
 import random
 import secrets
@@ -9,7 +10,7 @@ from itertools import batched
 from typing import cast
 
 import numpy as np
-from fastapi import HTTPException, Response, status
+from fastapi import HTTPException, status
 from fastapi.responses import StreamingResponse
 from sqlalchemy import Select, Table, func, insert, select
 from sqlalchemy.exc import IntegrityError
@@ -76,6 +77,16 @@ class ExperimentsAssignmentError(Exception):
 
 class MismatchedExperimentTypeError(Exception):
     """Error raised when an experiment type is mismatched with the expected type, caused by developer error."""
+
+
+class CommitExperimentResult(enum.StrEnum):
+    COMMITTED = "committed"
+    INVALID_STATE = "invalid_state"
+
+
+class AbandonExperimentResult(enum.StrEnum):
+    ABANDONED = "abandoned"
+    INVALID_STATE = "invalid_state"
 
 
 def random_choice[T](choices: Sequence[T], seed: int | None = None) -> T:
@@ -424,14 +435,11 @@ async def create_bandit_online_experiment_impl(
     return await experiment_converter.get_create_experiment_response(empty_assign_summary, webhook_ids)
 
 
-async def commit_experiment_impl(xngin_session: AsyncSession, experiment: tables.Experiment):
+async def commit_experiment_impl(xngin_session: AsyncSession, experiment: tables.Experiment) -> CommitExperimentResult:
     if experiment.state == ExperimentState.COMMITTED:
-        return Response(status_code=status.HTTP_304_NOT_MODIFIED)
+        return CommitExperimentResult.COMMITTED
     if experiment.state != ExperimentState.ASSIGNED:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Invalid state: {experiment.state}",
-        )
+        return CommitExperimentResult.INVALID_STATE
 
     experiment.state = ExperimentState.COMMITTED
 
@@ -465,21 +473,18 @@ async def commit_experiment_impl(xngin_session: AsyncSession, experiment: tables
             )
             xngin_session.add(task)
 
-    return Response(status_code=status.HTTP_204_NO_CONTENT)
+    return CommitExperimentResult.COMMITTED
 
 
 async def abandon_experiment_impl(experiment: tables.Experiment):
     if experiment.state == ExperimentState.ABANDONED:
-        return Response(status_code=status.HTTP_304_NOT_MODIFIED)
+        return AbandonExperimentResult.ABANDONED
     if experiment.state not in {ExperimentState.DESIGNING, ExperimentState.ASSIGNED}:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Invalid state: {experiment.state}",
-        )
+        return AbandonExperimentResult.INVALID_STATE
 
     experiment.state = ExperimentState.ABANDONED
 
-    return Response(status_code=status.HTTP_204_NO_CONTENT)
+    return AbandonExperimentResult.ABANDONED
 
 
 async def get_experiment_impl(
