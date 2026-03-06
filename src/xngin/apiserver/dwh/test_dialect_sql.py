@@ -123,7 +123,7 @@ def test_datetimes(testcase: DateTimeTestCase):
                 ),
             ],
         ),
-        chosen_n=2,
+        desired_n=2,
     )
     ddl = str(CreateTable(sa_table).compile(dialect=testcase.dialect))
     normalized_ddl = re.sub(r"\s+", " ", ddl.replace("\n", "").strip())
@@ -562,7 +562,7 @@ def test_where(testcase: WhereTestCase):
     sa_table = WhereTable.get_table()
     select_columns = set(sa_table.c.keys())
     filters = create_query_filters(sa_table, testcase.filters)
-    q = compose_query(sa_table, select_columns=select_columns, filters=filters, chosen_n=3)
+    q = compose_query(sa_table, select_columns=select_columns, filters=filters, desired_n=3)
 
     failures = {}
     for dbtype in testcase.where:

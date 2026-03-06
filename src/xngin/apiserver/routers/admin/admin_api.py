@@ -1421,7 +1421,7 @@ async def create_experiment(
     session: Annotated[AsyncSession, Depends(xngin_db_session)],
     user: Annotated[tables.User, Depends(require_user_from_token)],
     body: CreateExperimentRequest,
-    chosen_n: Annotated[int | None, Query(..., description="Number of participants to assign.", ge=0)] = None,
+    desired_n: Annotated[int | None, Query(..., description="Number of participants to assign.", ge=0)] = None,
     stratify_on_metrics: Annotated[
         bool,
         Query(description="Whether to also stratify on metrics during assignment."),
@@ -1455,7 +1455,7 @@ async def create_experiment(
         request=body,
         datasource=datasource,
         xngin_session=session,
-        chosen_n=chosen_n,
+        desired_n=desired_n,
         stratify_on_metrics=stratify_on_metrics,
         random_state=random_state,
         validated_webhooks=validated_webhooks,
@@ -1923,6 +1923,7 @@ async def power_check(
             alpha=design_spec.alpha,
             arm_weights=arm_weights,
             cluster_params=cluster_params,  # Pass dict, not individual params
+            desired_n=design_spec.desired_n,
         )
     )
 
