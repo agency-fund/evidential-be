@@ -48,7 +48,7 @@ from xngin.apiserver.dwh.queries import (
     get_stats_on_filters,
     get_stats_on_metrics,
 )
-from xngin.apiserver.exceptionhandlers import FastAPIClientHTTPValidationError
+from xngin.apiserver.exceptionhandlers import XHTTPValidationError
 from xngin.apiserver.exceptions_common import LateValidationError
 from xngin.apiserver.pagination import (
     PaginationQuery,
@@ -188,7 +188,7 @@ STANDARD_ADMIN_RESPONSES: dict[str | int, dict[str, Any]] = {
 }
 
 VALIDATION_RESPONSE: dict[str, Any] = {
-    "model": FastAPIClientHTTPValidationError,
+    "model": XHTTPValidationError,
     "description": "Validation error.",
 }
 

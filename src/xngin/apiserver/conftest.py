@@ -29,7 +29,7 @@ from xngin.apiserver.dependencies import (
     random_seed_dependency,
 )
 from xngin.apiserver.dns import safe_resolve
-from xngin.apiserver.exceptionhandlers import FastAPIClientHTTPValidationError
+from xngin.apiserver.exceptionhandlers import XHTTPValidationError
 from xngin.apiserver.main import app
 from xngin.apiserver.routers.auth import auth_dependencies
 from xngin.apiserver.routers.auth.auth_dependencies import (
@@ -371,7 +371,7 @@ class StatusCodeMatcher:
 
     def _detail_messages(self) -> list[str]:
         response = self.http_response()
-        parsed_error = FastAPIClientHTTPValidationError.model_validate(response.json())
+        parsed_error = XHTTPValidationError.model_validate(response.json())
         return [detail.msg for detail in parsed_error.detail]
 
     def _has_text(self, text: str) -> bool:
