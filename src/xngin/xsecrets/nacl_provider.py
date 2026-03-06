@@ -44,7 +44,7 @@ class NaclProviderKeyset(BaseModel):
         return base64.standard_b64encode(self.serialize_json().encode()).decode()
 
     @classmethod
-    def deserialize_base64(cls, base64_keyset: str) -> "NaclProviderKeyset":
+    def deserialize_base64(cls, base64_keyset: str) -> NaclProviderKeyset:
         """Constructs a new keyset from the output of serialize_base64."""
         return NaclProviderKeyset.model_validate_json(base64.standard_b64decode(base64_keyset))
 
