@@ -1,7 +1,6 @@
 import base64
 import json
 import os
-from typing import Optional
 
 from loguru import logger
 
@@ -17,7 +16,7 @@ from xngin.xsecrets.constants import (
 from xngin.xsecrets.exceptions import InvalidSecretStoreConfigurationError
 from xngin.xsecrets.provider import Registry
 
-_SERVICE: Optional["SecretService"] = None
+_SERVICE: SecretService | None = None
 
 
 def setup():
