@@ -720,7 +720,7 @@ class Filter(ApiBaseModel):
         raise LateValidationError(f"Unsupported participant ID type: {column_type}")
 
     @model_validator(mode="after")
-    def ensure_experiment_ids_hack_compatible(self) -> "Filter":
+    def ensure_experiment_ids_hack_compatible(self) -> Filter:
         """Ensures that the filter is compatible with the "experiment_ids" hack."""
         if not self.field_name.endswith(EXPERIMENT_IDS_SUFFIX):
             return self
@@ -739,7 +739,7 @@ class Filter(ApiBaseModel):
         return self
 
     @model_validator(mode="after")
-    def ensure_value(self) -> "Filter":
+    def ensure_value(self) -> Filter:
         """Ensures that the `value` field is an unambiguous filter and correct for the relation.
 
         Note this happens /after/ Pydantic does its type coercion, so we control some of the
@@ -764,7 +764,7 @@ class Filter(ApiBaseModel):
         return self
 
     @model_validator(mode="after")
-    def ensure_sane_bool_list(self) -> "Filter":
+    def ensure_sane_bool_list(self) -> Filter:
         """Ensures that the `value` field does not include redundant or nonsensical items."""
         n_values = len(self.value)
         # First check if we're dealing with a list of more than one boolean:

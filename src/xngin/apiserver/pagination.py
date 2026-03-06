@@ -139,7 +139,7 @@ class SortField:
         column: SQLColumnExpression[Any],
         attr: str,
         direction: Literal["asc", "desc"] = "desc",
-    ) -> "SortField":
+    ) -> SortField:
         """Create a SortField for datetime values."""
         return SortField(
             column=column,
@@ -154,7 +154,7 @@ class SortField:
         column: SQLColumnExpression[Any],
         attr: str,
         direction: Literal["asc", "desc"] = "desc",
-    ) -> "SortField":
+    ) -> SortField:
         """Create a SortField for int/float values."""
         return SortField(
             column=column,
@@ -169,7 +169,7 @@ class SortField:
         column: SQLColumnExpression[Any],
         attr: str,
         direction: Literal["asc", "desc"] = "desc",
-    ) -> "SortField":
+    ) -> SortField:
         """Create a SortField for bool values serialized as 0/1."""
         return SortField(
             column=column,
