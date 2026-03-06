@@ -1,10 +1,9 @@
 #!/usr/bin/env -S uv run
 # /// script
-# requires-python = ">=3.12"
+# requires-python = ">=3.14"
 # dependencies = [
 #     "numpy==2.2.3",
 #     "typer==0.15.1",
-#     "zstandard==0.23.0",
 # ]
 # ///
 """Generates a wide (500-column) test data warehouse for testing UI behavior with many columns.
@@ -24,12 +23,12 @@ import shutil
 import subprocess
 import textwrap
 from collections.abc import Callable
+from compression import zstd
 from dataclasses import dataclass
 from pathlib import Path
 
 import numpy as np
 import typer
-import zstandard
 
 # ---------------------------------------------------------------------------
 # Type system: maps our column types to Postgres, Redshift, and DataType enum
@@ -993,7 +992,7 @@ def main(
         writer.writerow(row)
 
     csv_bytes = buf.getvalue().encode("utf-8")
-    cctx = zstandard.ZstdCompressor(level=19)
+    cctx = zstd.ZstdCompressor(level=19)
     compressed = cctx.compress(csv_bytes)
     csv_path.write_bytes(compressed)
     print(f"  Uncompressed: {len(csv_bytes):,} bytes")
