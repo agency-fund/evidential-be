@@ -345,3 +345,8 @@ tasks:
       DBNAME: '{{default "xngin" .DBNAME}}'
     cmds:
       - psql "{{.XNGIN_LOCALPG_DSN}}" -c "CREATE DATABASE {{.DBNAME}};"
+  generate-typed-clients:
+    desc: "Generates the admin_api_client.py and experiments_api_client.py code from the latest API definitions."
+    interactive: true
+    cmds:
+      - uv run xngin-cli generate-typed-clients
