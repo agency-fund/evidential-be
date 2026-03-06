@@ -184,7 +184,7 @@ async def create_experiment_impl(
     request: CreateExperimentRequest,
     datasource: tables.Datasource,
     xngin_session: AsyncSession,
-    chosen_n: int | None,
+    desired_n: int | None,
     stratify_on_metrics: bool,
     random_state: int | None,
     validated_webhooks: list[tables.Webhook],
@@ -197,8 +197,8 @@ async def create_experiment_impl(
                 raise TypeError("design_spec expected to be a BaseFrequentistDesignSpec")
             ds_config, participants_cfg = get_freq_experiment_configs_or_raise(datasource, request.design_spec)
 
-            if chosen_n is None:
-                raise LateValidationError("Preassigned experiments must have a chosen_n.")
+            if desired_n is None:
+                raise LateValidationError("Preassigned experiments must have a desired_n.")
 
             # Get participants and their schema info from the client dwh.
             # Only fetch the columns we might need for stratified random assignment.
@@ -212,7 +212,7 @@ async def create_experiment_impl(
                     participants_cfg.table_name,
                     select_columns={*stratum_cols, participants_unique_id_field},
                     filters=request.design_spec.filters,
-                    n=chosen_n,
+                    n=desired_n,
                 )
                 sa_table, participants = result.sa_table, result.participants
 
@@ -254,7 +254,7 @@ async def create_experiment_impl(
                 validated_webhooks=validated_webhooks,
                 request=request,
                 datasource_id=datasource.id,
-                chosen_n=chosen_n,
+                desired_n=desired_n,
             )
 
         case _:
@@ -391,7 +391,7 @@ async def create_bandit_online_experiment_impl(
     validated_webhooks: list[tables.Webhook],
     request: CreateExperimentRequest,
     datasource_id: str,
-    chosen_n: int | None = None,
+    desired_n: int | None = None,
 ) -> CreateExperimentResponse:
     """Create a bandit experiment and persist it to the database."""
     design_spec = request.design_spec
@@ -404,7 +404,7 @@ async def create_bandit_online_experiment_impl(
         organization_id=organization_id,
         experiment_type=design_spec.experiment_type,
         design_spec=design_spec,
-        n_trials=chosen_n if chosen_n is not None else 0,
+        n_trials=desired_n if desired_n is not None else 0,
     )
     experiment = experiment_converter.get_experiment()
     # Associate webhooks with the experiment
