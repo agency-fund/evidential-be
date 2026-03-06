@@ -2,6 +2,7 @@
 
 import asyncio
 from dataclasses import dataclass
+from typing import Self
 
 import google.api_core.exceptions
 import sqlalchemy
@@ -114,7 +115,7 @@ class DwhSession:
         self._engine = self._create_engine()
         self._session = Session(self._engine)
 
-    async def __aenter__(self) -> "DwhSession":
+    async def __aenter__(self) -> Self:
         """Enter the context manager and create database connections."""
         await asyncio.to_thread(self._enter_blocking)
         return self

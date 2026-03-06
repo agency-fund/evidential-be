@@ -44,7 +44,7 @@ def _customize_loguru():
     logger.level("DEBUG", icon="D ")
 
 
-def _record_to_railway_json(record: "loguru_Record"):
+def _record_to_railway_json(record: loguru_Record):
     structured: dict[str, int | str | list[str] | dict[typing.Any, typing.Any] | None] = {
         "timestamp": record["time"].isoformat(),
         "message": record["message"],
@@ -68,7 +68,7 @@ def _record_to_railway_json(record: "loguru_Record"):
     return json.dumps(structured)
 
 
-def _stdout_railway_sink(message: "loguru_Message"):
+def _stdout_railway_sink(message: loguru_Message):
     """Railway's log viewer expects a simple structured format with "message" and "level" fields."""
     serialized = _record_to_railway_json(message.record)
     print(serialized)
