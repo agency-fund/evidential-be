@@ -628,6 +628,61 @@ class MetricPowerAnalysis(ApiBaseModel):
     ] = None
 
 
+class ClusterMetricPowerAnalysis(MetricPowerAnalysis):
+    """
+    Power analysis results for cluster-randomized designs.
+
+    Extends MetricPowerAnalysis with cluster-specific information
+    for designs where randomization occurs at the cluster level
+    (e.g., schools, hospitals, clinics) rather than individual level.
+
+    Note: Cluster-specific fields will be None if the power analysis failed
+    (e.g., missing baseline, zero variance, insufficient data).
+    """
+
+    # Design parameters (always present - user provides these)
+    icc: Annotated[
+        float,
+        Field(description="Intracluster correlation coefficient used in calculation"),
+    ]
+
+    avg_cluster_size: Annotated[
+        float,
+        Field(description="Average number of individuals per cluster"),
+    ]
+
+    cv: Annotated[
+        float,
+        Field(description="Coefficient of variation in cluster sizes (0 = equal sizes)"),
+    ] = 0.0
+
+    # Results (None if analysis failed)
+    num_clusters_total: Annotated[
+        int | None,
+        Field(description="Total number of clusters needed across all arms"),
+    ] = None
+
+    clusters_per_arm: Annotated[
+        list[int] | None,
+        Field(description="Number of clusters needed for each arm (one entry per arm)"),
+    ] = None
+
+    n_per_arm: Annotated[
+        list[int] | None,
+        Field(description="Number of participants for each arm (one entry per arm)"),
+    ] = None
+
+    design_effect: Annotated[
+        float | None,
+        Field(description="Design effect (DEFF) - clustering penalty multiplier"),
+    ] = None
+
+    effective_sample_size: Annotated[
+        int | None,
+        Field(description="Effective sample size accounting for clustering (total_n / DEFF)"),
+    ] = None
+
+
 class GetStrataResponseElement(ApiBaseModel):
     """Describes a stratification variable."""
 
@@ -1092,6 +1147,44 @@ class PowerRequest(ApiBaseModel):
         ),
     ] = None
 
+    cluster_column: Annotated[
+        str | None,
+        Field(
+            default=None,
+            description="Column name for cluster IDs. When provided, calculates ICC and CV from data "
+            "and performs cluster randomization power analysis.",
+        ),
+    ] = None
+
+    icc: Annotated[
+        float | None,
+        Field(
+            default=None,
+            ge=0.0,
+            le=1.0,
+            description="Intracluster correlation coefficient (0 to 1). If provided with avg_cluster_size, "
+            "uses these values instead of calculating from data.",
+        ),
+    ] = None
+
+    avg_cluster_size: Annotated[
+        float | None,
+        Field(
+            default=None,
+            gt=0,
+            description="Average cluster size. Required if icc is provided.",
+        ),
+    ] = None
+
+    cv: Annotated[
+        float | None,
+        Field(
+            default=None,
+            ge=0.0,
+            description="Coefficient of variation in cluster sizes. Defaults to 0 if not provided.",
+        ),
+    ] = None
+
     @model_validator(mode="after")
     def check_table_name_and_primary_key_together(self) -> Self:
         if (self.table_name is None) != (self.primary_key is None):
@@ -1100,7 +1193,7 @@ class PowerRequest(ApiBaseModel):
 
 
 class PowerResponse(ApiBaseModel):
-    analyses: Annotated[list[MetricPowerAnalysis], Field(max_length=MAX_NUMBER_OF_FIELDS)]
+    analyses: Annotated[list[MetricPowerAnalysis | ClusterMetricPowerAnalysis], Field(max_length=MAX_NUMBER_OF_FIELDS)]
 
 
 class Strata(ApiBaseModel):

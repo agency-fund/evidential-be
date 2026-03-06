@@ -127,6 +127,12 @@ tasks:
         --table-name wide_dwh
         --allow-existing
         --views a_wide_dwh,z_wide_dwh
+      - >-
+        uv run xngin-cli create-testing-dwh
+        --dsn "$XNGIN_DEVDWH_DSN"
+        --src src/xngin/apiserver/testdata/clustered_dwh.csv.zst
+        --table-name clustered_dwh
+        --allow-existing
   bootstrap-app-database:
     interactive: true
     desc: >-

@@ -141,6 +141,7 @@ from xngin.apiserver.snapshots import snapshotter
 from xngin.apiserver.sqla import tables
 from xngin.apiserver.storage.storage_format_converters import ExperimentStorageConverter
 from xngin.stats import check_power
+from xngin.stats.cluster_icc import calculate_icc_and_cv_from_database
 
 GENERIC_SUCCESS = Response(status_code=status.HTTP_204_NO_CONTENT)
 RESPONSE_CACHE_MAX_AGE_SECONDS = timedelta(minutes=15).seconds
@@ -1877,6 +1878,43 @@ async def power_check(
 
     arm_weights = design_spec.get_validated_arm_weights()
 
+    # Handle cluster randomization parameters
+    cluster_params = None
+
+    if body.icc is not None and body.avg_cluster_size is not None:
+        # User provided ICC - apply same values to all metrics
+        cluster_params = {}
+        for metric_stat in metric_stats:
+            cluster_params[metric_stat.field_name] = {
+                "icc": body.icc,
+                "avg_cluster_size": body.avg_cluster_size,
+                "cv": body.cv if body.cv is not None else 0.0,
+            }
+
+    elif body.cluster_column is not None:
+        # Calculate ICC per metric from database
+        if not design_spec.metrics:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="At least one metric required for cluster analysis",
+            )
+
+        cluster_params = {}
+        async with DwhSession(dsconfig.dwh) as dwh:
+            for metric_stat in metric_stats:
+                stats = await asyncio.to_thread(
+                    calculate_icc_and_cv_from_database,
+                    dwh.session,
+                    table_name,
+                    body.cluster_column,
+                    metric_stat.field_name,  # Calculate ICC for EACH metric
+                )
+                cluster_params[metric_stat.field_name] = {
+                    "icc": stats["icc"],
+                    "avg_cluster_size": stats["avg_cluster_size"],
+                    "cv": stats["cv"],
+                }
+
     return PowerResponse(
         analyses=check_power(
             metrics=metric_stats,
@@ -1884,6 +1922,7 @@ async def power_check(
             power=design_spec.power,
             alpha=design_spec.alpha,
             arm_weights=arm_weights,
+            cluster_params=cluster_params,  # Pass dict, not individual params
             desired_n=design_spec.desired_n,
         )
     )
