@@ -65,7 +65,7 @@
             <a id="nextFileLink" class="nav" href="z_3103cf4b20fd3e3c_common_enums_py.html">&#xbb; next</a>
             &nbsp; &nbsp; &nbsp;
             <a class="nav" href="https://coverage.readthedocs.io/en/7.11.0">coverage.py v7.11.0</a>,
-            created at 2026-03-05 17:25 +0000
+            created at 2026-03-06 01:43 +0000
         </p>
         <aside class="hidden">
             <button type="button" class="button_next_chunk" data-shortcut="j"></button>
@@ -802,7 +802,7 @@
     <p class="mis show_mis"><span class="n"><a id="t720" href="#t720">720</a></span><span class="t">        <span class="key">raise</span> <span class="nam">LateValidationError</span><span class="op">(</span><span class="fst">f"</span><span class="fst">Unsupported participant ID type: </span><span class="op">{</span><span class="nam">column_type</span><span class="op">}</span><span class="fst">"</span><span class="op">)</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t721" href="#t721">721</a></span><span class="t">&nbsp;</span><span class="r"></span></p>
     <p class="run"><span class="n"><a id="t722" href="#t722">722</a></span><span class="t">    <span class="op">@</span><span class="nam">model_validator</span><span class="op">(</span><span class="nam">mode</span><span class="op">=</span><span class="str">"after"</span><span class="op">)</span>&nbsp;</span><span class="r"></span></p>
-    <p class="run"><span class="n"><a id="t723" href="#t723">723</a></span><span class="t">    <span class="key">def</span> <span class="nam">ensure_experiment_ids_hack_compatible</span><span class="op">(</span><span class="nam">self</span><span class="op">)</span> <span class="op">-></span> <span class="str">"Filter"</span><span class="op">:</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run"><span class="n"><a id="t723" href="#t723">723</a></span><span class="t">    <span class="key">def</span> <span class="nam">ensure_experiment_ids_hack_compatible</span><span class="op">(</span><span class="nam">self</span><span class="op">)</span> <span class="op">-></span> <span class="nam">Filter</span><span class="op">:</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t724" href="#t724">724</a></span><span class="t">        <span class="str">"""Ensures that the filter is compatible with the "experiment_ids" hack."""</span>&nbsp;</span><span class="r"></span></p>
     <p class="run"><span class="n"><a id="t725" href="#t725">725</a></span><span class="t">        <span class="key">if</span> <span class="key">not</span> <span class="nam">self</span><span class="op">.</span><span class="nam">field_name</span><span class="op">.</span><span class="nam">endswith</span><span class="op">(</span><span class="nam">EXPERIMENT_IDS_SUFFIX</span><span class="op">)</span><span class="op">:</span>&nbsp;</span><span class="r"></span></p>
     <p class="run"><span class="n"><a id="t726" href="#t726">726</a></span><span class="t">            <span class="key">return</span> <span class="nam">self</span>&nbsp;</span><span class="r"></span></p>
@@ -821,7 +821,7 @@
     <p class="run"><span class="n"><a id="t739" href="#t739">739</a></span><span class="t">        <span class="key">return</span> <span class="nam">self</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t740" href="#t740">740</a></span><span class="t">&nbsp;</span><span class="r"></span></p>
     <p class="run"><span class="n"><a id="t741" href="#t741">741</a></span><span class="t">    <span class="op">@</span><span class="nam">model_validator</span><span class="op">(</span><span class="nam">mode</span><span class="op">=</span><span class="str">"after"</span><span class="op">)</span>&nbsp;</span><span class="r"></span></p>
-    <p class="run"><span class="n"><a id="t742" href="#t742">742</a></span><span class="t">    <span class="key">def</span> <span class="nam">ensure_value</span><span class="op">(</span><span class="nam">self</span><span class="op">)</span> <span class="op">-></span> <span class="str">"Filter"</span><span class="op">:</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run"><span class="n"><a id="t742" href="#t742">742</a></span><span class="t">    <span class="key">def</span> <span class="nam">ensure_value</span><span class="op">(</span><span class="nam">self</span><span class="op">)</span> <span class="op">-></span> <span class="nam">Filter</span><span class="op">:</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t743" href="#t743">743</a></span><span class="t">        <span class="str">"""Ensures that the `value` field is an unambiguous filter and correct for the relation.</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t744" href="#t744">744</a></span><span class="t">&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t745" href="#t745">745</a></span><span class="t"><span class="str">        Note this happens /after/ Pydantic does its type coercion, so we control some of the</span>&nbsp;</span><span class="r"></span></p>
@@ -846,7 +846,7 @@
     <p class="run"><span class="n"><a id="t764" href="#t764">764</a></span><span class="t">        <span class="key">return</span> <span class="nam">self</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t765" href="#t765">765</a></span><span class="t">&nbsp;</span><span class="r"></span></p>
     <p class="run"><span class="n"><a id="t766" href="#t766">766</a></span><span class="t">    <span class="op">@</span><span class="nam">model_validator</span><span class="op">(</span><span class="nam">mode</span><span class="op">=</span><span class="str">"after"</span><span class="op">)</span>&nbsp;</span><span class="r"></span></p>
-    <p class="run"><span class="n"><a id="t767" href="#t767">767</a></span><span class="t">    <span class="key">def</span> <span class="nam">ensure_sane_bool_list</span><span class="op">(</span><span class="nam">self</span><span class="op">)</span> <span class="op">-></span> <span class="str">"Filter"</span><span class="op">:</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run"><span class="n"><a id="t767" href="#t767">767</a></span><span class="t">    <span class="key">def</span> <span class="nam">ensure_sane_bool_list</span><span class="op">(</span><span class="nam">self</span><span class="op">)</span> <span class="op">-></span> <span class="nam">Filter</span><span class="op">:</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t768" href="#t768">768</a></span><span class="t">        <span class="str">"""Ensures that the `value` field does not include redundant or nonsensical items."""</span>&nbsp;</span><span class="r"></span></p>
     <p class="run"><span class="n"><a id="t769" href="#t769">769</a></span><span class="t">        <span class="nam">n_values</span> <span class="op">=</span> <span class="nam">len</span><span class="op">(</span><span class="nam">self</span><span class="op">.</span><span class="nam">value</span><span class="op">)</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t770" href="#t770">770</a></span><span class="t">        <span class="com"># First check if we're dealing with a list of more than one boolean:</span>&nbsp;</span><span class="r"></span></p>
@@ -1521,7 +1521,7 @@
             <a class="nav" href="z_3103cf4b20fd3e3c_common_enums_py.html">&#xbb; next</a>
             &nbsp; &nbsp; &nbsp;
             <a class="nav" href="https://coverage.readthedocs.io/en/7.11.0">coverage.py v7.11.0</a>,
-            created at 2026-03-05 17:25 +0000
+            created at 2026-03-06 01:43 +0000
         </p>
     </div>
 </footer>
