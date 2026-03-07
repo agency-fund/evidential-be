@@ -1,84 +1,80 @@
-from collections.abc import Generator
+"""
+Tests for ICC calculation from dataframes.
+"""
 
+import pandas as pd
 import pytest
-from sqlalchemy import create_engine
-from sqlalchemy.orm import Session, sessionmaker
 
-from xngin.stats.cluster_icc import (
-    calculate_cluster_sizes,
-    calculate_icc_and_cv_from_database,
-    calculate_icc_from_database,
-)
-
-"""
-Tests for ICC and CV calculation from database.
-"""
+from xngin.stats.cluster_icc import calculate_icc_from_dataframe
 
 
-@pytest.fixture
-def test_db_session() -> Generator[Session, None, None]:
-    engine = create_engine("postgresql://localhost/evidential_test")
-    session_local = sessionmaker(bind=engine)  # Lowercase
-    session = session_local()
-    yield session
-    session.close()
+class TestICCFromDataFrame:
+    """Test ICC calculation from DataFrame (no database required)."""
 
+    def test_calculate_icc_perfect_clustering(self):
+        """Test ICC when all variance is between clusters (ICC = 1)."""
+        df = pd.DataFrame({
+            "cluster_id": [1, 1, 1, 2, 2, 2, 3, 3, 3],
+            "outcome": [10, 10, 10, 20, 20, 20, 30, 30, 30],
+        })
 
-@pytest.mark.skip(reason="Requires local PostgreSQL - for development only")
-class TestICCCalculation:
-    def test_calculate_icc_from_database(self, test_db_session):
-        icc = calculate_icc_from_database(
-            session=test_db_session,
-            table_name="wide_dwh",
-            cluster_column="cluster_id",
-            outcome_column="num_refunds",
-        )
+        icc = calculate_icc_from_dataframe(df)
 
-        print(f"\nICC for num_refunds: {icc:.6f}")
+        assert icc == pytest.approx(1.0, abs=0.01)
 
-        assert 0 <= icc <= 1
-        assert icc > 0  # num_refunds has clustering
-        assert icc == pytest.approx(0.0212, abs=0.001)
+    def test_calculate_icc_no_clustering(self):
+        """Test ICC when all variance is within clusters (ICC = 0)."""
+        df = pd.DataFrame({
+            "cluster_id": [1, 1, 1, 2, 2, 2, 3, 3, 3],
+            "outcome": [10, 20, 30, 10, 20, 30, 10, 20, 30],
+        })
 
+        icc = calculate_icc_from_dataframe(df)
 
-@pytest.mark.skip(reason="Requires local PostgreSQL - for development only")
-class TestClusterSizeCalculation:
-    def test_calculate_cluster_sizes(self, test_db_session):
-        stats = calculate_cluster_sizes(
-            session=test_db_session,
-            table_name="wide_dwh",
-            cluster_column="cluster_id",
-        )
+        assert icc == pytest.approx(0.0, abs=0.1)
 
-        print("\nCluster statistics:")
-        print(f"  Num clusters: {stats['num_clusters']}")
-        print(f"  Avg size: {stats['avg_cluster_size']:.1f}")
-        print(f"  Min size: {stats['min_cluster_size']}")
-        print(f"  Max size: {stats['max_cluster_size']}")
-        print(f"  CV: {stats['cv']:.4f}")
+    def test_calculate_icc_moderate_clustering(self):
+        """Test ICC with moderate clustering (0 < ICC < 1)."""
+        df = pd.DataFrame({
+            "cluster_id": [1, 1, 1, 1, 2, 2, 2, 2, 3, 3, 3, 3],
+            "outcome": [8, 9, 10, 11, 18, 19, 20, 21, 28, 29, 30, 31],
+        })
 
-        assert stats["num_clusters"] == 20
-        assert stats["avg_cluster_size"] > 0
-        assert stats["cv"] > 0  # Should have some variation
+        icc = calculate_icc_from_dataframe(df)
 
+        assert 0 < icc < 1
+        assert icc == pytest.approx(0.95, abs=0.1)
 
-@pytest.mark.skip(reason="Requires local PostgreSQL - for development only")
-class TestCombinedCalculation:
-    def test_calculate_icc_and_cv_from_database(self, test_db_session):
-        result = calculate_icc_and_cv_from_database(
-            session=test_db_session,
-            table_name="wide_dwh",
-            cluster_column="cluster_id",
-            outcome_column="num_refunds",
-        )
+    def test_empty_dataframe_raises_error(self):
+        """Test that empty DataFrame raises ValueError."""
+        df = pd.DataFrame({"cluster_id": [], "outcome": []})
 
-        print("\nCombined results:")
-        print(f"  ICC: {result['icc']:.4f}")
-        print(f"  CV: {result['cv']:.4f}")
-        print(f"  Avg cluster size: {result['avg_cluster_size']:.1f}")
-        print(f"  Num clusters: {result['num_clusters']}")
+        with pytest.raises(ValueError, match="Cannot calculate ICC from empty dataframe"):
+            calculate_icc_from_dataframe(df)
 
-        assert result["icc"] > 0
-        assert result["cv"] > 0
-        assert result["avg_cluster_size"] > 0
-        assert result["num_clusters"] == 20
+    def test_single_cluster_raises_error(self):
+        """Test that single cluster raises ValueError."""
+        df = pd.DataFrame({
+            "cluster_id": [1, 1, 1],
+            "outcome": [10, 20, 30],
+        })
+
+        with pytest.raises(ValueError, match="Need at least 2 clusters"):
+            calculate_icc_from_dataframe(df)
+
+    def test_icc_bounds(self):
+        """Test that ICC is always between 0 and 1."""
+        test_cases = [
+            pd.DataFrame({
+                "cluster_id": [1] * 10 + [2] * 10,
+                "outcome": [10] * 10 + [100] * 10,
+            }),
+            pd.DataFrame({
+                "cluster_id": [1, 1, 2, 2, 3, 3],
+                "outcome": [1, 100, 1, 100, 1, 100],
+            }),
+        ]
+
+        for df in test_cases:
+            icc = calculate_icc_from_dataframe(df)
+            assert 0 <= icc <= 1
