@@ -581,6 +581,7 @@ class MetricPowerAnalysisMessage(ApiBaseModel):
         ),
     ]
     values: dict[str, float | int] | None = None
+    high_cluster_variation: bool = False
 
 
 class MetricPowerAnalysis(ApiBaseModel):

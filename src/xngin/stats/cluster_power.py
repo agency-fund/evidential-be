@@ -7,7 +7,6 @@ import math
 from xngin.apiserver.routers.common_api_types import (
     ClusterMetricPowerAnalysis,
     DesignSpecMetric,
-    MetricPowerAnalysisMessage,
 )
 from xngin.stats.power import (
     _analyze_power_sample_size_mode,  # noqa: PLC2701
@@ -197,17 +196,14 @@ def analyze_metric_power_cluster(
         effective_n = int(new_target_n / deff)
 
         final_msg = individual_analysis.msg
+
         if cv > 1.0 and final_msg:
             warning = (
                 f"\n\nWarning: High cluster size variation (CV={cv:.2f}). Number of clusters estimates are approximate."
             )
-
-            final_msg = MetricPowerAnalysisMessage(
-                type=final_msg.type,
-                msg=final_msg.msg + warning,
-                source_msg=final_msg.source_msg,
-                values=final_msg.values,
-            )
+            final_msg = final_msg.model_copy()
+            final_msg.msg += warning
+            final_msg.high_cluster_variation = True
 
         cluster_analysis = ClusterMetricPowerAnalysis(
             metric_spec=individual_analysis.metric_spec,
