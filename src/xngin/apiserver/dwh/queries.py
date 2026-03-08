@@ -147,3 +147,79 @@ def get_stats_on_filters(
                 raise RuntimeError("unexpected filter class")
 
     return [query(col_name, ptype_fd) for col_name, ptype_fd in filter_schema.items() if db_schema.get(col_name)]
+
+def get_cluster_size_stats(
+    session: Session,
+    sa_table: Table,
+    cluster_column_name: str,
+    filters: list[Filter],
+) -> dict[str, float]:
+    """Calculate cluster size statistics using SQL CTE."""
+    if cluster_column_name not in sa_table.c:
+        raise LateValidationError(f"Cluster column '{cluster_column_name}' not found in table")
+
+    cluster_col = sa_table.c[cluster_column_name]
+    filters_expr = create_query_filters(sa_table, filters)
+
+    # CTE for cluster counts
+    cluster_counts = (
+        select(cluster_col.label("cluster_id"), func.count().label("cluster_size"))
+        .where(cluster_col.is_not(None), *filters_expr)
+        .group_by(cluster_col)
+        .cte("cluster_counts")
+    )
+
+    # Aggregate statistics
+    stats_query = select(
+        func.avg(cluster_counts.c.cluster_size).label("avg_cluster_size"),
+        func.min(cluster_counts.c.cluster_size).label("min_cluster_size"),
+        func.max(cluster_counts.c.cluster_size).label("max_cluster_size"),
+        (custom_functions.stddev_pop(cluster_counts.c.cluster_size) / func.avg(cluster_counts.c.cluster_size)).label(
+            "cv"
+        ),
+        func.count().label("num_clusters"),
+    )
+
+    result = session.execute(stats_query).mappings().fetchone()
+
+    if result is None or result["num_clusters"] == 0:
+        raise LateValidationError(f"No clusters found in column '{cluster_column_name}'")
+
+    return {
+        "avg_cluster_size": float(result["avg_cluster_size"]),
+        "min_cluster_size": int(result["min_cluster_size"]),
+        "max_cluster_size": int(result["max_cluster_size"]),
+        "cv": float(result["cv"]) if result["cv"] is not None else 0.0,
+        "num_clusters": int(result["num_clusters"]),
+    }
+
+
+def get_cluster_outcome_data(
+    session: Session,
+    sa_table: Table,
+    cluster_column_name: str,
+    outcome_column_name: str,
+    filters: list[Filter],
+) -> list[dict[str, float]]:
+    """Fetch cluster and outcome data for ICC calculation."""
+    if cluster_column_name not in sa_table.c:
+        raise LateValidationError(f"Cluster column '{cluster_column_name}' not found in table")
+    if outcome_column_name not in sa_table.c:
+        raise LateValidationError(f"Outcome column '{outcome_column_name}' not found in table")
+
+    cluster_col = sa_table.c[cluster_column_name]
+    outcome_col = sa_table.c[outcome_column_name]
+    filters_expr = create_query_filters(sa_table, filters)
+
+    query = select(cluster_col.label("cluster_id"), cast(outcome_col, Float).label("outcome")).where(
+        cluster_col.is_not(None), outcome_col.is_not(None), *filters_expr
+    )
+
+    results = session.execute(query).mappings().fetchall()
+
+    if not results:
+        raise LateValidationError(
+            f"No data found for cluster column '{cluster_column_name}' and outcome '{outcome_column_name}'"
+        )
+
+    return [{"cluster_id": row["cluster_id"], "outcome": row["outcome"]} for row in results]

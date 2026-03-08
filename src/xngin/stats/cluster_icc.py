@@ -1,128 +1,56 @@
 """
-Calculate ICC and CV (Coefficient of Variation) from database tables using Mixed Models.
+Statistical functions for calculating intracluster correlation (ICC).
+
+These functions accept dataframes rather than database sessions, following the pattern
+established in analysis.py. The API layer is responsible for fetching data from the DWH.
 """
 
 import pandas as pd
 from statsmodels.regression.mixed_linear_model import MixedLM
 
 
-def calculate_icc_from_database(
-    session,
-    table_name: str,
-    cluster_column: str,
-    outcome_column: str,
-) -> float:
+def calculate_icc_from_dataframe(df: pd.DataFrame) -> float:
     """
-    Calculate ICC using Linear Mixed Model (more robust than ANOVA).
-    Uses statsmodels MixedLM for better variance component estimation,
-    especially with unbalanced clusters.
+    Calculate ICC using Linear Mixed Model from a dataframe.
 
     Args:
-        session: SQLAlchemy session
-        table_name: Name of the table to query
-        cluster_column: Column containing cluster IDs
-        outcome_column: Column containing outcome values
+        df: DataFrame with 'cluster_id' and 'outcome' columns
 
     Returns:
         ICC value between 0 and 1
-    """
-    query = f"""
-        SELECT {cluster_column}, {outcome_column}
-        FROM {table_name}
-        WHERE {outcome_column} IS NOT NULL
-          AND {cluster_column} IS NOT NULL
-    """
 
-    df = pd.read_sql(query, session.bind)
-
+    Raises:
+        ValueError: If dataframe is empty or has insufficient data
+    """
     if len(df) == 0:
-        raise ValueError(f"No data found in {table_name}.{outcome_column}")
+        raise ValueError("Cannot calculate ICC from empty dataframe")
 
-    model = MixedLM.from_formula(
-        f"{outcome_column} ~ 1",  # Fixed effects: just intercept
-        data=df,
-        groups=df[cluster_column],  # Random effect: cluster
-    )
+    if df["cluster_id"].nunique() < 2:
+        raise ValueError("Need at least 2 clusters to calculate ICC")
 
-    result = model.fit(method="lbfgs", reml=True)  # REML = Restricted Maximum Likelihood
+    # Fit mixed-effects model: outcome ~ 1 + (1|cluster)
+    try:
+        model = MixedLM.from_formula(
+            "outcome ~ 1",  # Fixed effects: just intercept
+            data=df,
+            groups=df["cluster_id"],  # Random effect: cluster
+        )
+        result = model.fit(method="lbfgs", reml=True)
 
-    variance_between = float(result.cov_re.iloc[0, 0])  # Between-cluster variance: random effect variance
+        # Extract variance components
+        variance_between = float(result.cov_re.iloc[0, 0])  # Between-cluster variance
+        variance_within = float(result.scale)  # Within-cluster variance (residual)
 
-    variance_within = float(result.scale)  # Within-cluster variance: residual variance
+        # Calculate ICC = σ²_between / (σ²_between + σ²_within)
+        total_variance = variance_between + variance_within
 
-    icc = variance_between / (variance_between + variance_within)
+        if total_variance == 0:
+            return 0.0
 
-    return max(0.0, min(1.0, icc))
+        icc = variance_between / total_variance
 
+        # Ensure ICC is in valid range [0, 1]
+        return max(0.0, min(1.0, icc))
 
-def calculate_cluster_sizes(
-    session,
-    table_name: str,
-    cluster_column: str,
-) -> dict:
-    """
-    Calculate cluster size statistics including CV.
-
-    Args:
-        session: SQLAlchemy session
-        table_name: Name of the table to query
-        cluster_column: Column containing cluster IDs
-
-    Returns:
-        dict with:
-            - avg_cluster_size: Mean cluster size
-            - min_cluster_size: Smallest cluster
-            - max_cluster_size: Largest cluster
-            - cv: Coefficient of variation (std/mean)
-            - num_clusters: Number of clusters
-
-    """
-    query = f"""
-        SELECT {cluster_column}, COUNT(*) as size
-        FROM {table_name}
-        WHERE {cluster_column} IS NOT NULL
-        GROUP BY {cluster_column}
-    """
-
-    df = pd.read_sql(query, session.bind)
-
-    if len(df) == 0:
-        raise ValueError(f"No clusters found in {table_name}.{cluster_column}")
-
-    sizes = df["size"]
-
-    return {
-        "avg_cluster_size": float(sizes.mean()),
-        "min_cluster_size": int(sizes.min()),
-        "max_cluster_size": int(sizes.max()),
-        "cv": float(sizes.std() / sizes.mean()),  # Coefficient of variation
-        "num_clusters": len(df),
-    }
-
-
-def calculate_icc_and_cv_from_database(
-    session,
-    table_name: str,
-    cluster_column: str,
-    outcome_column: str,
-) -> dict:
-    """
-    Calculate both ICC and CV in one call.
-
-    Convenience function that calculates both statistics needed
-    for cluster power analysis.
-
-    Returns:
-        dict with icc, cv, avg_cluster_size, num_clusters
-    """
-    icc = calculate_icc_from_database(session, table_name, cluster_column, outcome_column)
-    cluster_stats = calculate_cluster_sizes(session, table_name, cluster_column)
-
-    return {
-        "icc": icc,
-        "cv": cluster_stats["cv"],
-        "avg_cluster_size": cluster_stats["avg_cluster_size"],
-        "num_clusters": cluster_stats["num_clusters"],
-        "min_cluster_size": cluster_stats["min_cluster_size"],
-        "max_cluster_size": cluster_stats["max_cluster_size"],
-    }
+    except Exception as e:
+        raise ValueError(f"Failed to calculate ICC: {e}") from e

@@ -142,7 +142,11 @@ def _analyze_power_sample_size_mode(
     icc: float | None = None,
     avg_cluster_size: float | None = None,
     cv: float = 0.0,
+<<<<<<< HEAD
 ) -> MetricPowerAnalysis:
+=======
+) -> MetricPowerAnalysis | ClusterMetricPowerAnalysis:
+>>>>>>> 9bc92260 (Apply dctaf feedback to cluster API layer)
     """
     Calculate required sample size for individual or cluster randomization.
 
@@ -332,7 +336,11 @@ def _analyze_power_mde_mode(
     icc: float | None = None,
     avg_cluster_size: float | None = None,
     cv: float = 0.0,
+<<<<<<< HEAD
 ) -> MetricPowerAnalysis:
+=======
+) -> MetricPowerAnalysis | ClusterMetricPowerAnalysis:
+>>>>>>> 9bc92260 (Apply dctaf feedback to cluster API layer)
     """
     Calculate MDE given desired sample size.
 
@@ -413,7 +421,11 @@ def analyze_metric_power(
     icc: float | None = None,
     avg_cluster_size: float | None = None,
     cv: float = 0.0,
+<<<<<<< HEAD
 ) -> MetricPowerAnalysis:
+=======
+) -> MetricPowerAnalysis | ClusterMetricPowerAnalysis:
+>>>>>>> 9bc92260 (Apply dctaf feedback to cluster API layer)
     """
     Analyze power for a single metric.
 
@@ -467,7 +479,11 @@ def check_power(
     arm_weights: list[float] | None = None,
     desired_n: int | None = None,
     cluster_params: dict[str, dict[str, float]] | None = None,
+<<<<<<< HEAD
 ) -> list[MetricPowerAnalysis]:
+=======
+) -> list[MetricPowerAnalysis | ClusterMetricPowerAnalysis]:
+>>>>>>> 9bc92260 (Apply dctaf feedback to cluster API layer)
     """
     Check power for multiple metrics.
 
