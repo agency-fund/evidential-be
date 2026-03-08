@@ -224,4 +224,3 @@ def get_cluster_outcome_data(
         )
 
     return [{"cluster_id": row["cluster_id"], "outcome": row["outcome"]} for row in results]
->>>>>>> 6e5b9d3a (Refactor ICC calculation)

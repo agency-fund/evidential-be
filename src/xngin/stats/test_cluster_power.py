@@ -28,15 +28,11 @@ class TestDataExploration:
         """Verify we can load the test data."""
         assert len(wide_dwh_data) == 1000
         assert "cluster_id" in wide_dwh_data.columns
-        print(f"\n✓ Loaded {len(wide_dwh_data)} participants")
 
     def test_cluster_structure(self, wide_dwh_data):
         """Verify cluster structure."""
         n_clusters = wide_dwh_data["cluster_id"].nunique()
         cluster_sizes = wide_dwh_data.groupby("cluster_id").size()
-
-        print(f"\n✓ Found {n_clusters} clusters")
-        print(f"  Cluster sizes: min={cluster_sizes.min()}, max={cluster_sizes.max()}, mean={cluster_sizes.mean():.1f}")
 
         assert n_clusters == 20
         assert cluster_sizes.min() > 0  # No empty clusters
@@ -98,10 +94,6 @@ class TestHelperFunctions:
         deft_with_cv = math.sqrt(deff_with_cv)
         assert deft_with_cv == pytest.approx(8.08, abs=0.01)
 
-        print("\n✅ World Bank verification:")
-        print(f"  Standard DEFF: {deff_standard:.2f} (DEFT: {deft_standard:.2f})")
-        print(f"  DEFF with CV: {deff_with_cv:.2f} (DEFT: {deft_with_cv:.2f})")
-
     def test_world_bank_mde_calculation(self):
         """
         Replicate World Bank MDE calculation to verify DEFF formula.
@@ -137,17 +129,8 @@ class TestHelperFunctions:
         mde_ratio = 0.26 / 0.055  # From World Bank
         deft_ratio = deft_with_cv / deft_standard
 
-        print("\n📊 World Bank MDE verification:")
-        print(f"  Standard DEFT: {deft_standard:.2f}")
-        print(f"  DEFT with CV: {deft_with_cv:.2f}")
-        print(f"  DEFT ratio: {deft_ratio:.2f}")
-        print(f"  MDE ratio (from blog): {mde_ratio:.2f}")
-        print(f"  Difference: {abs(deft_ratio - mde_ratio):.3f}")
-
         # The ratios should match
         assert deft_ratio == pytest.approx(mde_ratio, abs=0.05)
-
-        print("  ✅ DEFT ratio matches MDE ratio!")
 
 
 # TODO: Add more test classes for the main functions
