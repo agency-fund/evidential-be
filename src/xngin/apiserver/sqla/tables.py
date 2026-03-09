@@ -296,9 +296,6 @@ class Datasource(Base):
             self.table_list_updated = datetime.now(UTC)
         return self
 
-    def get_table_list(self) -> list[str] | None:
-        return self.table_list
-
     def clear_table_list(self) -> Self:
         return self.set_table_list(None)
 
@@ -329,10 +326,6 @@ class ParticipantTypesInspected(Base):
     response: Mapped[dict | None] = mapped_column(postgresql.JSONB)
     # Timestamp of the last update to `response`
     response_last_updated: Mapped[datetime | None] = mapped_column()
-
-    def clear_response(self):
-        self.response = None
-        self.response_last_updated = None
 
 
 class ArmAssignment(Base):
