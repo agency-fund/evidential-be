@@ -44,11 +44,14 @@ def calculate_icc_from_database(
         groups=df[cluster_column],  # Random effect: cluster
     )
 
-    result = model.fit(method="lbfgs", reml=True)  # REML = Restricted Maximum Likelihood
+    result = model.fit(method="lbfgs", reml=True)
+    variance_between = float(result.cov_re.iloc[0, 0])
 
-    variance_between = float(result.cov_re.iloc[0, 0])  # Between-cluster variance: random effect variance
+    if variance_between == 0.0:
+        result = model.fit(method="powell", reml=True)
+        variance_between = float(result.cov_re.iloc[0, 0])
 
-    variance_within = float(result.scale)  # Within-cluster variance: residual variance
+    variance_within = float(result.scale)
 
     icc = variance_between / (variance_between + variance_within)
 
