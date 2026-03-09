@@ -109,7 +109,7 @@ from xngin.apiserver.routers.experiments.test_experiments_common import (
     make_createexperimentrequest_json,
     make_insertable_experiment,
 )
-from xngin.apiserver.settings import NoDwh, ParticipantsDef, RemoteDatabaseConfig
+from xngin.apiserver.settings import ParticipantsDef, RemoteDatabaseConfig
 from xngin.apiserver.sqla import tables
 from xngin.apiserver.storage.storage_format_converters import ExperimentStorageConverter
 from xngin.apiserver.testing.assertions import assert_dates_equal
@@ -875,13 +875,15 @@ async def test_list_datasources_ordered_by_experiment_count(
     """Datasources should be ordered by number of experiments (desc), then by name (asc)."""
     org = testing_datasource_with_user.org
     ds_a = testing_datasource_with_user.ds
+    pt_config = ds_a.get_config().participants
+    dwh = ds_a.get_config().dwh
 
-    # Create two additional datasources in the same org.
-    nodwh_config = RemoteDatabaseConfig(participants=[], type="remote", dwh=NoDwh())
+    # Create two additional fake datasources in the same org.
+    common_dwh_config = RemoteDatabaseConfig(participants=pt_config, type="remote", dwh=dwh)
     ds_b = tables.Datasource(id=tables.datasource_id_factory(), name="AAA datasource", organization=org)
-    ds_b.set_config(nodwh_config)
+    ds_b.set_config(common_dwh_config)
     ds_c = tables.Datasource(id=tables.datasource_id_factory(), name="ZZZ datasource", organization=org)
-    ds_c.set_config(nodwh_config)
+    ds_c.set_config(common_dwh_config)
     xngin_session.add_all([ds_b, ds_c])
     await xngin_session.commit()
 
