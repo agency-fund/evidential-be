@@ -296,9 +296,6 @@ class Datasource(Base):
             self.table_list_updated = datetime.now(UTC)
         return self
 
-    def get_table_list(self) -> list[str] | None:
-        return self.table_list
-
     def clear_table_list(self) -> Self:
         return self.set_table_list(None)
 
