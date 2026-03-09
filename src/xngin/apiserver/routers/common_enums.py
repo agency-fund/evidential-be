@@ -100,7 +100,7 @@ class DataType(enum.StrEnum):
         return DataType.UNKNOWN
 
     @classmethod
-    def supported_participant_id_types(cls) -> list["DataType"]:
+    def supported_participant_id_types(cls) -> list[DataType]:
         """Returns the list of data types that are supported as participant IDs."""
         return [
             DataType.INTEGER,
@@ -189,7 +189,7 @@ class MetricType(enum.StrEnum):
     NUMERIC = "numeric"
 
     @classmethod
-    def from_python_type(cls, python_type: type) -> "MetricType":
+    def from_python_type(cls, python_type: type) -> MetricType:
         """Maps Python types to metric types."""
 
         if python_type in {int, float, decimal.Decimal}:

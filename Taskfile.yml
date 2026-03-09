@@ -114,12 +114,19 @@ tasks:
     cmds:
       - ./tools/localpg.py --allow-existing -d --wait --create-db {{.XNGIN_DEVAPPDB_NAME}}
   bootstrap-dwh-database:
-    desc: "Loads a sample data warehouse into the localpg server."
+    desc: "Loads sample data warehouses into the localpg server."
     interactive: true
     deps:
       - start-localpg
     cmds:
-      - uv run xngin-cli create-testing-dwh --dsn "$XNGIN_DEVDWH_DSN" --allow-existing --create-db
+      - uv run xngin-cli create-testing-dwh --dsn "$XNGIN_DEVDWH_DSN" --allow-existing --create-db --views a_dwh,z_dwh
+      - >-
+        uv run xngin-cli create-testing-dwh
+        --dsn "$XNGIN_DEVDWH_DSN"
+        --src src/xngin/apiserver/testdata/wide_dwh.csv.zst
+        --table-name wide_dwh
+        --allow-existing
+        --views a_wide_dwh,z_wide_dwh
   bootstrap-app-database:
     interactive: true
     desc: >-

@@ -2,6 +2,7 @@
 
 import asyncio
 from dataclasses import dataclass
+from typing import Self
 
 import google.api_core.exceptions
 import sqlalchemy
@@ -114,7 +115,7 @@ class DwhSession:
         self._engine = self._create_engine()
         self._session = Session(self._engine)
 
-    async def __aenter__(self) -> "DwhSession":
+    async def __aenter__(self) -> Self:
         """Enter the context manager and create database connections."""
         await asyncio.to_thread(self._enter_blocking)
         return self
@@ -274,11 +275,11 @@ class DwhSession:
         sa_table: sqlalchemy.Table,
         select_columns: set[str],
         filters: list[Filter],
-        chosen_n: int,
+        desired_n: int,
     ):
         """Samples participants."""
         sqla_filters = queries.create_query_filters(sa_table, filters)
-        query = queries.compose_query(sa_table, select_columns, sqla_filters, chosen_n)
+        query = queries.compose_query(sa_table, select_columns, sqla_filters, desired_n)
         return self.session.execute(query).all()
 
     def _get_participants_blocking(
@@ -358,6 +359,21 @@ class DwhSession:
             DwhDatabaseDoesNotExistError: When the target database/dataset does not exist
         """
         return await asyncio.to_thread(self._list_tables_blocking)
+
+    def _connectivity_check_blocking(self) -> None:
+        """Runs a minimal query to validate database connectivity and credentials."""
+        try:
+            self.session.execute(text("SELECT 1"))
+        except OperationalError as exc:
+            if _is_postgres_database_not_found_error(exc):
+                raise DwhDatabaseDoesNotExistError(str(exc)) from exc
+            raise DwhConnectionError(exc) from exc
+        except google.api_core.exceptions.NotFound as exc:
+            raise DwhDatabaseDoesNotExistError(str(exc)) from exc
+
+    async def connectivity_check(self) -> None:
+        """Validate that the configured warehouse is reachable and credentials are valid."""
+        await asyncio.to_thread(self._connectivity_check_blocking)
 
     def _create_engine(self) -> Engine:
         """Create a SQLAlchemy Engine for the customer database."""

@@ -10,6 +10,7 @@ from xngin.apiserver.dependencies import CannotFindDatasourceError
 from xngin.apiserver.dns.safe_resolve import DnsLookupError
 from xngin.apiserver.dwh.dwh_session import CannotFindTableError
 from xngin.apiserver.exceptions_common import DwhConnectionError, DwhDatabaseDoesNotExistError, LateValidationError
+from xngin.apiserver.pagination import InvalidPageTokenError
 from xngin.apiserver.routers.admin.admin_api_converters import (
     CredentialsUnavailableError,
 )
@@ -88,3 +89,7 @@ def setup(app):
     @app.exception_handler(DnsLookupError)
     async def exception_handler_dnslookuperror(_request: Request, exc: DnsLookupError):
         return JSONResponse(status_code=502, content={"message": str(exc)})
+
+    @app.exception_handler(InvalidPageTokenError)
+    async def exception_handler_invalidpagetokenerror(_request: Request, _exc: InvalidPageTokenError):
+        return JSONResponse(status_code=400, content={"detail": "Invalid page_token."})

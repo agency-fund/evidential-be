@@ -18,7 +18,7 @@ from sqlalchemy.orm import selectinload
 
 from xngin.apiserver import constants, flags
 from xngin.apiserver.dwh.dwh_session import DwhSession
-from xngin.apiserver.dwh.inspection_types import ParticipantsSchema
+from xngin.apiserver.dwh.inspection_types import FieldDescriptor, ParticipantsSchema
 from xngin.apiserver.dwh.queries import get_participant_metrics
 from xngin.apiserver.exceptions_common import LateValidationError
 from xngin.apiserver.routers.assignment_adapters import (
@@ -114,36 +114,105 @@ def get_freq_experiment_configs_or_raise(
     return ds_config, participants_cfg
 
 
+def synthesize_participants_def(
+    schema: dict[str, FieldDescriptor],
+    table_name: str,
+    primary_key: str,
+    design_spec: BaseFrequentistDesignSpec,
+) -> ParticipantsDef:
+    """Synthesize a ParticipantsDef from table_name, primary_key, and design_spec fields."""
+    fields: list[FieldDescriptor] = []
+    metric_fields = set(m.field_name for m in design_spec.metrics)
+    filter_fields = set(f.field_name for f in design_spec.filters)
+    strata_fields = set(s.field_name for s in design_spec.strata)
+    for f in sorted(metric_fields | strata_fields | filter_fields | {primary_key}):
+        fd = schema.get(f)
+        if fd is None:
+            raise LateValidationError(f"unexpected: design field '{f}' is not present in schema")
+        fd.is_unique_id = f == primary_key
+        fd.is_metric = f in metric_fields
+        fd.is_strata = f in strata_fields
+        fd.is_filter = f in filter_fields
+        fields.append(fd)
+
+    return ParticipantsDef(
+        type="schema",
+        # Generate unique name: __<table_name>_<8 hex chars>
+        participant_type=f"__{table_name}_{secrets.token_hex(4)}",
+        table_name=table_name,
+        fields=fields,
+        hidden=True,
+    )
+
+
+async def maybe_synthesize_participant_type(
+    datasource: tables.Datasource, create_experiment_request: CreateExperimentRequest
+) -> CreateExperimentRequest:
+    """When table_name and primary_key are present in a frequentist CreateExperimentRequest, we generate a
+    participant type from an inspection of the data warehouse and the requested experiment configuration."""
+    if not isinstance(create_experiment_request.design_spec, BaseFrequentistDesignSpec):
+        return create_experiment_request
+    if create_experiment_request.table_name is None or create_experiment_request.primary_key is None:
+        return create_experiment_request
+
+    # Get types from the data warehouse
+    async with DwhSession(datasource.get_config().dwh) as dwh:
+        inspected = await dwh.inspect_table_with_descriptors(
+            create_experiment_request.table_name, create_experiment_request.primary_key
+        )
+
+    # Synthesize participant definition
+    new_participants_def = synthesize_participants_def(
+        schema=inspected.db_schema,
+        table_name=create_experiment_request.table_name,
+        primary_key=create_experiment_request.primary_key,
+        design_spec=create_experiment_request.design_spec,
+    )
+
+    # Save the new participant type to the datasource config
+    config = datasource.get_config()
+    config.participants.append(new_participants_def)
+    datasource.set_config(config)
+
+    # Update design_spec with generated participant type
+    updated_body = create_experiment_request.model_copy(deep=True)
+    updated_body.design_spec.participant_type = new_participants_def.participant_type
+    return updated_body
+
+
 async def create_experiment_impl(
     request: CreateExperimentRequest,
     datasource: tables.Datasource,
     xngin_session: AsyncSession,
-    chosen_n: int | None,
+    desired_n: int | None,
     stratify_on_metrics: bool,
     random_state: int | None,
     validated_webhooks: list[tables.Webhook],
 ) -> CreateExperimentResponse:
-    design_spec = request.design_spec
-    match design_spec.experiment_type:
+    match request.design_spec.experiment_type:
         case ExperimentsType.FREQ_PREASSIGNED:
-            ds_config, participants_cfg = get_freq_experiment_configs_or_raise(datasource, design_spec)
+            # Requests that include a table name and primary key can have participant type created dynamically.
+            request = await maybe_synthesize_participant_type(datasource, request)
+            if not isinstance(request.design_spec, BaseFrequentistDesignSpec):
+                raise TypeError("design_spec expected to be a BaseFrequentistDesignSpec")
+            ds_config, participants_cfg = get_freq_experiment_configs_or_raise(datasource, request.design_spec)
 
-            if chosen_n is None:
-                raise LateValidationError("Preassigned experiments must have a chosen_n.")
+            if desired_n is None:
+                raise LateValidationError("Preassigned experiments must have a desired_n.")
 
             # Get participants and their schema info from the client dwh.
             # Only fetch the columns we might need for stratified random assignment.
             participants_unique_id_field = participants_cfg.get_unique_id_field()
-            metric_names = [m.field_name for m in design_spec.metrics]
-            strata_names = [s.field_name for s in design_spec.strata]
+            metric_names = [m.field_name for m in request.design_spec.metrics]
+            strata_names = [s.field_name for s in request.design_spec.strata]
             stratum_cols = strata_names + metric_names if stratify_on_metrics else strata_names
 
             async with DwhSession(ds_config.dwh) as dwh:
                 result = await dwh.get_participants(
                     participants_cfg.table_name,
                     select_columns={*stratum_cols, participants_unique_id_field},
-                    filters=design_spec.filters,
-                    n=chosen_n,
+                    filters=request.design_spec.filters,
+                    n=desired_n,
                 )
                 sa_table, participants = result.sa_table, result.participants
 
@@ -165,7 +234,11 @@ async def create_experiment_impl(
             )
 
         case ExperimentsType.FREQ_ONLINE:
-            _validated_ds_cfg, validated_p_cfg = get_freq_experiment_configs_or_raise(datasource, design_spec)
+            # Requests that include a table name and primary key can have participant type created dynamically.
+            request = await maybe_synthesize_participant_type(datasource, request)
+            if not isinstance(request.design_spec, BaseFrequentistDesignSpec):
+                raise TypeError("design_spec expected to be a BaseFrequentistDesignSpec")
+            _validated_ds_cfg, validated_p_cfg = get_freq_experiment_configs_or_raise(datasource, request.design_spec)
 
             return await create_freq_online_experiment_impl(
                 request=request,
@@ -183,13 +256,13 @@ async def create_experiment_impl(
                 validated_webhooks=validated_webhooks,
                 request=request,
                 datasource_id=datasource.id,
-                chosen_n=chosen_n,
+                desired_n=desired_n,
             )
 
         case _:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail=f"Invalid experiment type: {design_spec.experiment_type}",
+                detail=f"Invalid experiment type: {request.design_spec.experiment_type}",
             )
 
 
@@ -324,7 +397,7 @@ async def create_bandit_online_experiment_impl(
     validated_webhooks: list[tables.Webhook],
     request: CreateExperimentRequest,
     datasource_id: str,
-    chosen_n: int | None = None,
+    desired_n: int | None = None,
 ) -> CreateExperimentResponse:
     """Create a bandit experiment and persist it to the database."""
     design_spec = request.design_spec
@@ -337,7 +410,7 @@ async def create_bandit_online_experiment_impl(
         organization_id=organization_id,
         experiment_type=design_spec.experiment_type,
         design_spec=design_spec,
-        n_trials=chosen_n if chosen_n is not None else 0,
+        n_trials=desired_n if desired_n is not None else 0,
     )
     experiment = experiment_converter.get_experiment()
     # Associate webhooks with the experiment
@@ -550,7 +623,7 @@ def experiment_assignments_to_csv_generator(experiment: tables.Experiment):
             writer.writerow(header)
 
             # Write out each participant row in batches
-            for batch in batched(experiment.arm_assignments, batch_size):
+            for batch in batched(experiment.arm_assignments, batch_size, strict=False):
                 for participant in batch:
                     row = [
                         participant.participant_id,
