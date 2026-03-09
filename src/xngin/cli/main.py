@@ -54,11 +54,6 @@ secretservice.setup()
 async_command = lambda f: functools.wraps(f)(lambda *args, **kwargs: asyncio.run(f(*args, **kwargs)))  # noqa: E731
 
 
-class TextOrJson(StrEnum):
-    text = "text"
-    json = "json"
-
-
 class Base64OrJson(StrEnum):
     base64 = "base64"
     json = "json"
