@@ -327,7 +327,7 @@ standard-no-fastapi-cloud-cli = [
 [[package]]
 name = "fastapi-typed-client"
 version = "0.2.0"
-source = { git = "https://github.com/dctaf/fastapi-typed-client-fork?rev=evid#50210eff38349b67ef763bbf48b9e863cdd2abe3" }
+source = { git = "https://github.com/dctaf/fastapi-typed-client-fork?rev=evid#85a5a72419a52c1e81050ceb22f449cfa2088d7b" }
 dependencies = [
     { name = "fastapi", marker = "sys_platform == 'darwin' or sys_platform == 'linux'" },
     { name = "httpx", marker = "sys_platform == 'darwin' or sys_platform == 'linux'" },
