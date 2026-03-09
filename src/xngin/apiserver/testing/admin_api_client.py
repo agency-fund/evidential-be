@@ -92,11 +92,16 @@ if TYPE_CHECKING:
 
 def _is_no_body_response(*, method: HTTPMethod, status: HTTPStatus) -> bool:
     """Returns true if the method or status code indicate that there is no response body."""
-    return method == HTTPMethod.HEAD or status in {
-        HTTPStatus.NO_CONTENT,
-        HTTPStatus.RESET_CONTENT,
-        HTTPStatus.NOT_MODIFIED,
-    }
+    return (
+        method == HTTPMethod.HEAD
+        or status < HTTPStatus.OK
+        or status
+        in {
+            HTTPStatus.NO_CONTENT,
+            HTTPStatus.RESET_CONTENT,
+            HTTPStatus.NOT_MODIFIED,
+        }
+    )
 
 
 class AdminAPIClientExtensions(TypedDict, total=False):
@@ -229,21 +234,22 @@ class AdminAPIClient:  # noqa: RUF100,PLR0904
         )
         status = HTTPStatus(response.status_code)
 
-        model = models.get(status)
-        if model is None:
+        if status not in models:
             model = Any
             data = response.text
-        elif is_streaming_json and status == default_status:
-
-            def data_iter() -> Iterator[Any]:
-                for part in response.iter_lines():
-                    yield TypeAdapter(model).validate_json(part)
-
-            data = data_iter()
-        elif _is_no_body_response(method=method, status=status):
-            data = None
         else:
-            data = TypeAdapter(model).validate_json(response.text)
+            model = models[status]
+            if is_streaming_json and status == default_status:
+
+                def data_iter() -> Iterator[Any]:
+                    for part in response.iter_lines():
+                        yield TypeAdapter(model).validate_json(part)
+
+                data = data_iter()
+            elif _is_no_body_response(method=method, status=status):
+                data = None
+            else:
+                data = TypeAdapter(model).validate_json(response.text)
 
         result = AdminAPIClientResult(
             status=status,
@@ -302,7 +308,7 @@ class AdminAPIClient:  # noqa: RUF100,PLR0904
         *,
         raise_if_not_default_status: Literal[True] = True,
         client_exts: AdminAPIClientExtensions | None = None,
-    ) -> AdminAPIClientResult[Literal[HTTPStatus.NO_CONTENT], Any]: ...
+    ) -> AdminAPIClientResult[Literal[HTTPStatus.NO_CONTENT], None]: ...
     @overload
     def logout(
         self,
@@ -310,7 +316,7 @@ class AdminAPIClient:  # noqa: RUF100,PLR0904
         raise_if_not_default_status: Literal[False],
         client_exts: AdminAPIClientExtensions | None = None,
     ) -> (
-        AdminAPIClientResult[Literal[HTTPStatus.NO_CONTENT], Any]
+        AdminAPIClientResult[Literal[HTTPStatus.NO_CONTENT], None]
         | AdminAPIClientResult[Literal[HTTPStatus.BAD_REQUEST], HTTPExceptionError]
         | AdminAPIClientResult[Literal[HTTPStatus.UNAUTHORIZED], HTTPExceptionError]
         | AdminAPIClientResult[Literal[HTTPStatus.FORBIDDEN], HTTPExceptionError]
@@ -327,7 +333,7 @@ class AdminAPIClient:  # noqa: RUF100,PLR0904
             method=HTTPMethod.POST,
             default_status=HTTPStatus.NO_CONTENT,
             models={
-                HTTPStatus.NO_CONTENT: Any,
+                HTTPStatus.NO_CONTENT: None,
                 HTTPStatus.BAD_REQUEST: HTTPExceptionError,
                 HTTPStatus.UNAUTHORIZED: HTTPExceptionError,
                 HTTPStatus.FORBIDDEN: HTTPExceptionError,
@@ -800,7 +806,7 @@ class AdminAPIClient:  # noqa: RUF100,PLR0904
         *,
         raise_if_not_default_status: Literal[True] = True,
         client_exts: AdminAPIClientExtensions | None = None,
-    ) -> AdminAPIClientResult[Literal[HTTPStatus.NO_CONTENT], Any]: ...
+    ) -> AdminAPIClientResult[Literal[HTTPStatus.NO_CONTENT], None]: ...
     @overload
     def update_organization_webhook(
         self,
@@ -811,7 +817,7 @@ class AdminAPIClient:  # noqa: RUF100,PLR0904
         raise_if_not_default_status: Literal[False],
         client_exts: AdminAPIClientExtensions | None = None,
     ) -> (
-        AdminAPIClientResult[Literal[HTTPStatus.NO_CONTENT], Any]
+        AdminAPIClientResult[Literal[HTTPStatus.NO_CONTENT], None]
         | AdminAPIClientResult[Literal[HTTPStatus.BAD_REQUEST], HTTPExceptionError]
         | AdminAPIClientResult[Literal[HTTPStatus.UNAUTHORIZED], HTTPExceptionError]
         | AdminAPIClientResult[Literal[HTTPStatus.FORBIDDEN], HTTPExceptionError]
@@ -832,7 +838,7 @@ class AdminAPIClient:  # noqa: RUF100,PLR0904
             method=HTTPMethod.PATCH,
             default_status=HTTPStatus.NO_CONTENT,
             models={
-                HTTPStatus.NO_CONTENT: Any,
+                HTTPStatus.NO_CONTENT: None,
                 HTTPStatus.BAD_REQUEST: HTTPExceptionError,
                 HTTPStatus.UNAUTHORIZED: HTTPExceptionError,
                 HTTPStatus.FORBIDDEN: HTTPExceptionError,
@@ -858,7 +864,7 @@ class AdminAPIClient:  # noqa: RUF100,PLR0904
         *,
         raise_if_not_default_status: Literal[True] = True,
         client_exts: AdminAPIClientExtensions | None = None,
-    ) -> AdminAPIClientResult[Literal[HTTPStatus.NO_CONTENT], Any]: ...
+    ) -> AdminAPIClientResult[Literal[HTTPStatus.NO_CONTENT], None]: ...
     @overload
     def regenerate_webhook_auth_token(
         self,
@@ -868,7 +874,7 @@ class AdminAPIClient:  # noqa: RUF100,PLR0904
         raise_if_not_default_status: Literal[False],
         client_exts: AdminAPIClientExtensions | None = None,
     ) -> (
-        AdminAPIClientResult[Literal[HTTPStatus.NO_CONTENT], Any]
+        AdminAPIClientResult[Literal[HTTPStatus.NO_CONTENT], None]
         | AdminAPIClientResult[Literal[HTTPStatus.BAD_REQUEST], HTTPExceptionError]
         | AdminAPIClientResult[Literal[HTTPStatus.UNAUTHORIZED], HTTPExceptionError]
         | AdminAPIClientResult[Literal[HTTPStatus.FORBIDDEN], HTTPExceptionError]
@@ -888,7 +894,7 @@ class AdminAPIClient:  # noqa: RUF100,PLR0904
             method=HTTPMethod.POST,
             default_status=HTTPStatus.NO_CONTENT,
             models={
-                HTTPStatus.NO_CONTENT: Any,
+                HTTPStatus.NO_CONTENT: None,
                 HTTPStatus.BAD_REQUEST: HTTPExceptionError,
                 HTTPStatus.UNAUTHORIZED: HTTPExceptionError,
                 HTTPStatus.FORBIDDEN: HTTPExceptionError,
@@ -912,7 +918,7 @@ class AdminAPIClient:  # noqa: RUF100,PLR0904
         *,
         raise_if_not_default_status: Literal[True] = True,
         client_exts: AdminAPIClientExtensions | None = None,
-    ) -> AdminAPIClientResult[Literal[HTTPStatus.NO_CONTENT], Any]: ...
+    ) -> AdminAPIClientResult[Literal[HTTPStatus.NO_CONTENT], None]: ...
     @overload
     def delete_webhook_from_organization(
         self,
@@ -923,7 +929,7 @@ class AdminAPIClient:  # noqa: RUF100,PLR0904
         raise_if_not_default_status: Literal[False],
         client_exts: AdminAPIClientExtensions | None = None,
     ) -> (
-        AdminAPIClientResult[Literal[HTTPStatus.NO_CONTENT], Any]
+        AdminAPIClientResult[Literal[HTTPStatus.NO_CONTENT], None]
         | AdminAPIClientResult[Literal[HTTPStatus.BAD_REQUEST], HTTPExceptionError]
         | AdminAPIClientResult[Literal[HTTPStatus.UNAUTHORIZED], HTTPExceptionError]
         | AdminAPIClientResult[Literal[HTTPStatus.FORBIDDEN], HTTPExceptionError]
@@ -944,7 +950,7 @@ class AdminAPIClient:  # noqa: RUF100,PLR0904
             method=HTTPMethod.DELETE,
             default_status=HTTPStatus.NO_CONTENT,
             models={
-                HTTPStatus.NO_CONTENT: Any,
+                HTTPStatus.NO_CONTENT: None,
                 HTTPStatus.BAD_REQUEST: HTTPExceptionError,
                 HTTPStatus.UNAUTHORIZED: HTTPExceptionError,
                 HTTPStatus.FORBIDDEN: HTTPExceptionError,
@@ -1033,7 +1039,7 @@ class AdminAPIClient:  # noqa: RUF100,PLR0904
         *,
         raise_if_not_default_status: Literal[True] = True,
         client_exts: AdminAPIClientExtensions | None = None,
-    ) -> AdminAPIClientResult[Literal[HTTPStatus.NO_CONTENT], Any]: ...
+    ) -> AdminAPIClientResult[Literal[HTTPStatus.NO_CONTENT], None]: ...
     @overload
     def add_member_to_organization(
         self,
@@ -1043,7 +1049,7 @@ class AdminAPIClient:  # noqa: RUF100,PLR0904
         raise_if_not_default_status: Literal[False],
         client_exts: AdminAPIClientExtensions | None = None,
     ) -> (
-        AdminAPIClientResult[Literal[HTTPStatus.NO_CONTENT], Any]
+        AdminAPIClientResult[Literal[HTTPStatus.NO_CONTENT], None]
         | AdminAPIClientResult[Literal[HTTPStatus.BAD_REQUEST], HTTPExceptionError]
         | AdminAPIClientResult[Literal[HTTPStatus.UNAUTHORIZED], HTTPExceptionError]
         | AdminAPIClientResult[Literal[HTTPStatus.FORBIDDEN], HTTPExceptionError]
@@ -1063,7 +1069,7 @@ class AdminAPIClient:  # noqa: RUF100,PLR0904
             method=HTTPMethod.POST,
             default_status=HTTPStatus.NO_CONTENT,
             models={
-                HTTPStatus.NO_CONTENT: Any,
+                HTTPStatus.NO_CONTENT: None,
                 HTTPStatus.BAD_REQUEST: HTTPExceptionError,
                 HTTPStatus.UNAUTHORIZED: HTTPExceptionError,
                 HTTPStatus.FORBIDDEN: HTTPExceptionError,
@@ -1089,7 +1095,7 @@ class AdminAPIClient:  # noqa: RUF100,PLR0904
         *,
         raise_if_not_default_status: Literal[True] = True,
         client_exts: AdminAPIClientExtensions | None = None,
-    ) -> AdminAPIClientResult[Literal[HTTPStatus.NO_CONTENT], Any]: ...
+    ) -> AdminAPIClientResult[Literal[HTTPStatus.NO_CONTENT], None]: ...
     @overload
     def remove_member_from_organization(
         self,
@@ -1100,7 +1106,7 @@ class AdminAPIClient:  # noqa: RUF100,PLR0904
         raise_if_not_default_status: Literal[False],
         client_exts: AdminAPIClientExtensions | None = None,
     ) -> (
-        AdminAPIClientResult[Literal[HTTPStatus.NO_CONTENT], Any]
+        AdminAPIClientResult[Literal[HTTPStatus.NO_CONTENT], None]
         | AdminAPIClientResult[Literal[HTTPStatus.BAD_REQUEST], HTTPExceptionError]
         | AdminAPIClientResult[Literal[HTTPStatus.UNAUTHORIZED], HTTPExceptionError]
         | AdminAPIClientResult[Literal[HTTPStatus.FORBIDDEN], HTTPExceptionError]
@@ -1121,7 +1127,7 @@ class AdminAPIClient:  # noqa: RUF100,PLR0904
             method=HTTPMethod.DELETE,
             default_status=HTTPStatus.NO_CONTENT,
             models={
-                HTTPStatus.NO_CONTENT: Any,
+                HTTPStatus.NO_CONTENT: None,
                 HTTPStatus.BAD_REQUEST: HTTPExceptionError,
                 HTTPStatus.UNAUTHORIZED: HTTPExceptionError,
                 HTTPStatus.FORBIDDEN: HTTPExceptionError,
@@ -1359,7 +1365,7 @@ class AdminAPIClient:  # noqa: RUF100,PLR0904
         *,
         raise_if_not_default_status: Literal[True] = True,
         client_exts: AdminAPIClientExtensions | None = None,
-    ) -> AdminAPIClientResult[Literal[HTTPStatus.NO_CONTENT], Any]: ...
+    ) -> AdminAPIClientResult[Literal[HTTPStatus.NO_CONTENT], None]: ...
     @overload
     def update_datasource(
         self,
@@ -1369,7 +1375,7 @@ class AdminAPIClient:  # noqa: RUF100,PLR0904
         raise_if_not_default_status: Literal[False],
         client_exts: AdminAPIClientExtensions | None = None,
     ) -> (
-        AdminAPIClientResult[Literal[HTTPStatus.NO_CONTENT], Any]
+        AdminAPIClientResult[Literal[HTTPStatus.NO_CONTENT], None]
         | AdminAPIClientResult[Literal[HTTPStatus.BAD_REQUEST], HTTPExceptionError]
         | AdminAPIClientResult[Literal[HTTPStatus.UNAUTHORIZED], HTTPExceptionError]
         | AdminAPIClientResult[Literal[HTTPStatus.FORBIDDEN], HTTPExceptionError]
@@ -1389,7 +1395,7 @@ class AdminAPIClient:  # noqa: RUF100,PLR0904
             method=HTTPMethod.PATCH,
             default_status=HTTPStatus.NO_CONTENT,
             models={
-                HTTPStatus.NO_CONTENT: Any,
+                HTTPStatus.NO_CONTENT: None,
                 HTTPStatus.BAD_REQUEST: HTTPExceptionError,
                 HTTPStatus.UNAUTHORIZED: HTTPExceptionError,
                 HTTPStatus.FORBIDDEN: HTTPExceptionError,
@@ -1586,7 +1592,7 @@ class AdminAPIClient:  # noqa: RUF100,PLR0904
         *,
         raise_if_not_default_status: Literal[True] = True,
         client_exts: AdminAPIClientExtensions | None = None,
-    ) -> AdminAPIClientResult[Literal[HTTPStatus.NO_CONTENT], Any]: ...
+    ) -> AdminAPIClientResult[Literal[HTTPStatus.NO_CONTENT], None]: ...
     @overload
     def delete_datasource(
         self,
@@ -1597,7 +1603,7 @@ class AdminAPIClient:  # noqa: RUF100,PLR0904
         raise_if_not_default_status: Literal[False],
         client_exts: AdminAPIClientExtensions | None = None,
     ) -> (
-        AdminAPIClientResult[Literal[HTTPStatus.NO_CONTENT], Any]
+        AdminAPIClientResult[Literal[HTTPStatus.NO_CONTENT], None]
         | AdminAPIClientResult[Literal[HTTPStatus.BAD_REQUEST], HTTPExceptionError]
         | AdminAPIClientResult[Literal[HTTPStatus.UNAUTHORIZED], HTTPExceptionError]
         | AdminAPIClientResult[Literal[HTTPStatus.FORBIDDEN], HTTPExceptionError]
@@ -1618,7 +1624,7 @@ class AdminAPIClient:  # noqa: RUF100,PLR0904
             method=HTTPMethod.DELETE,
             default_status=HTTPStatus.NO_CONTENT,
             models={
-                HTTPStatus.NO_CONTENT: Any,
+                HTTPStatus.NO_CONTENT: None,
                 HTTPStatus.BAD_REQUEST: HTTPExceptionError,
                 HTTPStatus.UNAUTHORIZED: HTTPExceptionError,
                 HTTPStatus.FORBIDDEN: HTTPExceptionError,
@@ -1932,7 +1938,7 @@ class AdminAPIClient:  # noqa: RUF100,PLR0904
         *,
         raise_if_not_default_status: Literal[True] = True,
         client_exts: AdminAPIClientExtensions | None = None,
-    ) -> AdminAPIClientResult[Literal[HTTPStatus.NO_CONTENT], Any]: ...
+    ) -> AdminAPIClientResult[Literal[HTTPStatus.NO_CONTENT], None]: ...
     @overload
     def delete_participant(
         self,
@@ -1943,7 +1949,7 @@ class AdminAPIClient:  # noqa: RUF100,PLR0904
         raise_if_not_default_status: Literal[False],
         client_exts: AdminAPIClientExtensions | None = None,
     ) -> (
-        AdminAPIClientResult[Literal[HTTPStatus.NO_CONTENT], Any]
+        AdminAPIClientResult[Literal[HTTPStatus.NO_CONTENT], None]
         | AdminAPIClientResult[Literal[HTTPStatus.BAD_REQUEST], HTTPExceptionError]
         | AdminAPIClientResult[Literal[HTTPStatus.UNAUTHORIZED], HTTPExceptionError]
         | AdminAPIClientResult[Literal[HTTPStatus.FORBIDDEN], HTTPExceptionError]
@@ -1964,7 +1970,7 @@ class AdminAPIClient:  # noqa: RUF100,PLR0904
             method=HTTPMethod.DELETE,
             default_status=HTTPStatus.NO_CONTENT,
             models={
-                HTTPStatus.NO_CONTENT: Any,
+                HTTPStatus.NO_CONTENT: None,
                 HTTPStatus.BAD_REQUEST: HTTPExceptionError,
                 HTTPStatus.UNAUTHORIZED: HTTPExceptionError,
                 HTTPStatus.FORBIDDEN: HTTPExceptionError,
@@ -2089,7 +2095,7 @@ class AdminAPIClient:  # noqa: RUF100,PLR0904
         *,
         raise_if_not_default_status: Literal[True] = True,
         client_exts: AdminAPIClientExtensions | None = None,
-    ) -> AdminAPIClientResult[Literal[HTTPStatus.NO_CONTENT], Any]: ...
+    ) -> AdminAPIClientResult[Literal[HTTPStatus.NO_CONTENT], None]: ...
     @overload
     def delete_api_key(
         self,
@@ -2100,7 +2106,7 @@ class AdminAPIClient:  # noqa: RUF100,PLR0904
         raise_if_not_default_status: Literal[False],
         client_exts: AdminAPIClientExtensions | None = None,
     ) -> (
-        AdminAPIClientResult[Literal[HTTPStatus.NO_CONTENT], Any]
+        AdminAPIClientResult[Literal[HTTPStatus.NO_CONTENT], None]
         | AdminAPIClientResult[Literal[HTTPStatus.BAD_REQUEST], HTTPExceptionError]
         | AdminAPIClientResult[Literal[HTTPStatus.UNAUTHORIZED], HTTPExceptionError]
         | AdminAPIClientResult[Literal[HTTPStatus.FORBIDDEN], HTTPExceptionError]
@@ -2121,7 +2127,7 @@ class AdminAPIClient:  # noqa: RUF100,PLR0904
             method=HTTPMethod.DELETE,
             default_status=HTTPStatus.NO_CONTENT,
             models={
-                HTTPStatus.NO_CONTENT: Any,
+                HTTPStatus.NO_CONTENT: None,
                 HTTPStatus.BAD_REQUEST: HTTPExceptionError,
                 HTTPStatus.UNAUTHORIZED: HTTPExceptionError,
                 HTTPStatus.FORBIDDEN: HTTPExceptionError,
@@ -2334,7 +2340,7 @@ class AdminAPIClient:  # noqa: RUF100,PLR0904
         *,
         raise_if_not_default_status: Literal[True] = True,
         client_exts: AdminAPIClientExtensions | None = None,
-    ) -> AdminAPIClientResult[Literal[HTTPStatus.NO_CONTENT], Any]: ...
+    ) -> AdminAPIClientResult[Literal[HTTPStatus.NO_CONTENT], None]: ...
     @overload
     def commit_experiment(
         self,
@@ -2344,7 +2350,7 @@ class AdminAPIClient:  # noqa: RUF100,PLR0904
         raise_if_not_default_status: Literal[False],
         client_exts: AdminAPIClientExtensions | None = None,
     ) -> (
-        AdminAPIClientResult[Literal[HTTPStatus.NO_CONTENT], Any]
+        AdminAPIClientResult[Literal[HTTPStatus.NO_CONTENT], None]
         | AdminAPIClientResult[Literal[HTTPStatus.BAD_REQUEST], HTTPExceptionError]
         | AdminAPIClientResult[Literal[HTTPStatus.UNAUTHORIZED], HTTPExceptionError]
         | AdminAPIClientResult[Literal[HTTPStatus.FORBIDDEN], HTTPExceptionError]
@@ -2365,7 +2371,7 @@ class AdminAPIClient:  # noqa: RUF100,PLR0904
             method=HTTPMethod.POST,
             default_status=HTTPStatus.NO_CONTENT,
             models={
-                HTTPStatus.NO_CONTENT: Any,
+                HTTPStatus.NO_CONTENT: None,
                 HTTPStatus.BAD_REQUEST: HTTPExceptionError,
                 HTTPStatus.UNAUTHORIZED: HTTPExceptionError,
                 HTTPStatus.FORBIDDEN: HTTPExceptionError,
@@ -2389,7 +2395,7 @@ class AdminAPIClient:  # noqa: RUF100,PLR0904
         *,
         raise_if_not_default_status: Literal[True] = True,
         client_exts: AdminAPIClientExtensions | None = None,
-    ) -> AdminAPIClientResult[Literal[HTTPStatus.NO_CONTENT], Any]: ...
+    ) -> AdminAPIClientResult[Literal[HTTPStatus.NO_CONTENT], None]: ...
     @overload
     def abandon_experiment(
         self,
@@ -2399,7 +2405,7 @@ class AdminAPIClient:  # noqa: RUF100,PLR0904
         raise_if_not_default_status: Literal[False],
         client_exts: AdminAPIClientExtensions | None = None,
     ) -> (
-        AdminAPIClientResult[Literal[HTTPStatus.NO_CONTENT], Any]
+        AdminAPIClientResult[Literal[HTTPStatus.NO_CONTENT], None]
         | AdminAPIClientResult[Literal[HTTPStatus.BAD_REQUEST], HTTPExceptionError]
         | AdminAPIClientResult[Literal[HTTPStatus.UNAUTHORIZED], HTTPExceptionError]
         | AdminAPIClientResult[Literal[HTTPStatus.FORBIDDEN], HTTPExceptionError]
@@ -2420,7 +2426,7 @@ class AdminAPIClient:  # noqa: RUF100,PLR0904
             method=HTTPMethod.POST,
             default_status=HTTPStatus.NO_CONTENT,
             models={
-                HTTPStatus.NO_CONTENT: Any,
+                HTTPStatus.NO_CONTENT: None,
                 HTTPStatus.BAD_REQUEST: HTTPExceptionError,
                 HTTPStatus.UNAUTHORIZED: HTTPExceptionError,
                 HTTPStatus.FORBIDDEN: HTTPExceptionError,
@@ -2720,7 +2726,7 @@ class AdminAPIClient:  # noqa: RUF100,PLR0904
         *,
         raise_if_not_default_status: Literal[True] = True,
         client_exts: AdminAPIClientExtensions | None = None,
-    ) -> AdminAPIClientResult[Literal[HTTPStatus.NO_CONTENT], Any]: ...
+    ) -> AdminAPIClientResult[Literal[HTTPStatus.NO_CONTENT], None]: ...
     @overload
     def update_experiment(
         self,
@@ -2731,7 +2737,7 @@ class AdminAPIClient:  # noqa: RUF100,PLR0904
         raise_if_not_default_status: Literal[False],
         client_exts: AdminAPIClientExtensions | None = None,
     ) -> (
-        AdminAPIClientResult[Literal[HTTPStatus.NO_CONTENT], Any]
+        AdminAPIClientResult[Literal[HTTPStatus.NO_CONTENT], None]
         | AdminAPIClientResult[Literal[HTTPStatus.BAD_REQUEST], HTTPExceptionError]
         | AdminAPIClientResult[Literal[HTTPStatus.UNAUTHORIZED], HTTPExceptionError]
         | AdminAPIClientResult[Literal[HTTPStatus.FORBIDDEN], HTTPExceptionError]
@@ -2752,7 +2758,7 @@ class AdminAPIClient:  # noqa: RUF100,PLR0904
             method=HTTPMethod.PATCH,
             default_status=HTTPStatus.NO_CONTENT,
             models={
-                HTTPStatus.NO_CONTENT: Any,
+                HTTPStatus.NO_CONTENT: None,
                 HTTPStatus.BAD_REQUEST: HTTPExceptionError,
                 HTTPStatus.UNAUTHORIZED: HTTPExceptionError,
                 HTTPStatus.FORBIDDEN: HTTPExceptionError,
@@ -2779,7 +2785,7 @@ class AdminAPIClient:  # noqa: RUF100,PLR0904
         *,
         raise_if_not_default_status: Literal[True] = True,
         client_exts: AdminAPIClientExtensions | None = None,
-    ) -> AdminAPIClientResult[Literal[HTTPStatus.NO_CONTENT], Any]: ...
+    ) -> AdminAPIClientResult[Literal[HTTPStatus.NO_CONTENT], None]: ...
     @overload
     def delete_experiment(
         self,
@@ -2790,7 +2796,7 @@ class AdminAPIClient:  # noqa: RUF100,PLR0904
         raise_if_not_default_status: Literal[False],
         client_exts: AdminAPIClientExtensions | None = None,
     ) -> (
-        AdminAPIClientResult[Literal[HTTPStatus.NO_CONTENT], Any]
+        AdminAPIClientResult[Literal[HTTPStatus.NO_CONTENT], None]
         | AdminAPIClientResult[Literal[HTTPStatus.BAD_REQUEST], HTTPExceptionError]
         | AdminAPIClientResult[Literal[HTTPStatus.UNAUTHORIZED], HTTPExceptionError]
         | AdminAPIClientResult[Literal[HTTPStatus.FORBIDDEN], HTTPExceptionError]
@@ -2811,7 +2817,7 @@ class AdminAPIClient:  # noqa: RUF100,PLR0904
             method=HTTPMethod.DELETE,
             default_status=HTTPStatus.NO_CONTENT,
             models={
-                HTTPStatus.NO_CONTENT: Any,
+                HTTPStatus.NO_CONTENT: None,
                 HTTPStatus.BAD_REQUEST: HTTPExceptionError,
                 HTTPStatus.UNAUTHORIZED: HTTPExceptionError,
                 HTTPStatus.FORBIDDEN: HTTPExceptionError,
@@ -2838,7 +2844,7 @@ class AdminAPIClient:  # noqa: RUF100,PLR0904
         *,
         raise_if_not_default_status: Literal[True] = True,
         client_exts: AdminAPIClientExtensions | None = None,
-    ) -> AdminAPIClientResult[Literal[HTTPStatus.NO_CONTENT], Any]: ...
+    ) -> AdminAPIClientResult[Literal[HTTPStatus.NO_CONTENT], None]: ...
     @overload
     def delete_experiment_data(
         self,
@@ -2849,7 +2855,7 @@ class AdminAPIClient:  # noqa: RUF100,PLR0904
         raise_if_not_default_status: Literal[False],
         client_exts: AdminAPIClientExtensions | None = None,
     ) -> (
-        AdminAPIClientResult[Literal[HTTPStatus.NO_CONTENT], Any]
+        AdminAPIClientResult[Literal[HTTPStatus.NO_CONTENT], None]
         | AdminAPIClientResult[Literal[HTTPStatus.BAD_REQUEST], HTTPExceptionError]
         | AdminAPIClientResult[Literal[HTTPStatus.UNAUTHORIZED], HTTPExceptionError]
         | AdminAPIClientResult[Literal[HTTPStatus.FORBIDDEN], HTTPExceptionError]
@@ -2870,7 +2876,7 @@ class AdminAPIClient:  # noqa: RUF100,PLR0904
             method=HTTPMethod.DELETE,
             default_status=HTTPStatus.NO_CONTENT,
             models={
-                HTTPStatus.NO_CONTENT: Any,
+                HTTPStatus.NO_CONTENT: None,
                 HTTPStatus.BAD_REQUEST: HTTPExceptionError,
                 HTTPStatus.UNAUTHORIZED: HTTPExceptionError,
                 HTTPStatus.FORBIDDEN: HTTPExceptionError,
@@ -2898,7 +2904,7 @@ class AdminAPIClient:  # noqa: RUF100,PLR0904
         *,
         raise_if_not_default_status: Literal[True] = True,
         client_exts: AdminAPIClientExtensions | None = None,
-    ) -> AdminAPIClientResult[Literal[HTTPStatus.NO_CONTENT], Any]: ...
+    ) -> AdminAPIClientResult[Literal[HTTPStatus.NO_CONTENT], None]: ...
     @overload
     def update_arm(
         self,
@@ -2910,7 +2916,7 @@ class AdminAPIClient:  # noqa: RUF100,PLR0904
         raise_if_not_default_status: Literal[False],
         client_exts: AdminAPIClientExtensions | None = None,
     ) -> (
-        AdminAPIClientResult[Literal[HTTPStatus.NO_CONTENT], Any]
+        AdminAPIClientResult[Literal[HTTPStatus.NO_CONTENT], None]
         | AdminAPIClientResult[Literal[HTTPStatus.BAD_REQUEST], HTTPExceptionError]
         | AdminAPIClientResult[Literal[HTTPStatus.UNAUTHORIZED], HTTPExceptionError]
         | AdminAPIClientResult[Literal[HTTPStatus.FORBIDDEN], HTTPExceptionError]
@@ -2932,7 +2938,7 @@ class AdminAPIClient:  # noqa: RUF100,PLR0904
             method=HTTPMethod.PATCH,
             default_status=HTTPStatus.NO_CONTENT,
             models={
-                HTTPStatus.NO_CONTENT: Any,
+                HTTPStatus.NO_CONTENT: None,
                 HTTPStatus.BAD_REQUEST: HTTPExceptionError,
                 HTTPStatus.UNAUTHORIZED: HTTPExceptionError,
                 HTTPStatus.FORBIDDEN: HTTPExceptionError,

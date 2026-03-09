@@ -48,11 +48,16 @@ if TYPE_CHECKING:
 
 def _is_no_body_response(*, method: HTTPMethod, status: HTTPStatus) -> bool:
     """Returns true if the method or status code indicate that there is no response body."""
-    return method == HTTPMethod.HEAD or status in {
-        HTTPStatus.NO_CONTENT,
-        HTTPStatus.RESET_CONTENT,
-        HTTPStatus.NOT_MODIFIED,
-    }
+    return (
+        method == HTTPMethod.HEAD
+        or status < HTTPStatus.OK
+        or status
+        in {
+            HTTPStatus.NO_CONTENT,
+            HTTPStatus.RESET_CONTENT,
+            HTTPStatus.NOT_MODIFIED,
+        }
+    )
 
 
 class ExperimentsAPIClientExtensions(TypedDict, total=False):
@@ -185,21 +190,22 @@ class ExperimentsAPIClient:  # noqa: RUF100,PLR0904
         )
         status = HTTPStatus(response.status_code)
 
-        model = models.get(status)
-        if model is None:
+        if status not in models:
             model = Any
             data = response.text
-        elif is_streaming_json and status == default_status:
-
-            def data_iter() -> Iterator[Any]:
-                for part in response.iter_lines():
-                    yield TypeAdapter(model).validate_json(part)
-
-            data = data_iter()
-        elif _is_no_body_response(method=method, status=status):
-            data = None
         else:
-            data = TypeAdapter(model).validate_json(response.text)
+            model = models[status]
+            if is_streaming_json and status == default_status:
+
+                def data_iter() -> Iterator[Any]:
+                    for part in response.iter_lines():
+                        yield TypeAdapter(model).validate_json(part)
+
+                data = data_iter()
+            elif _is_no_body_response(method=method, status=status):
+                data = None
+            else:
+                data = TypeAdapter(model).validate_json(response.text)
 
         result = ExperimentsAPIClientResult(
             status=status,
