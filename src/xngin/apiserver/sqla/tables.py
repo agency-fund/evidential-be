@@ -327,10 +327,6 @@ class ParticipantTypesInspected(Base):
     # Timestamp of the last update to `response`
     response_last_updated: Mapped[datetime | None] = mapped_column()
 
-    def clear_response(self):
-        self.response = None
-        self.response_last_updated = None
-
 
 class ArmAssignment(Base):
     """Stores experiment treatment assignments."""
