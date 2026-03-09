@@ -1,7 +1,6 @@
 import asyncio
 import csv
 import io
-import random
 import secrets
 from collections.abc import Sequence
 from datetime import UTC, datetime
@@ -76,18 +75,6 @@ class ExperimentsAssignmentError(Exception):
 
 class MismatchedExperimentTypeError(Exception):
     """Error raised when an experiment type is mismatched with the expected type, caused by developer error."""
-
-
-def random_choice[T](choices: Sequence[T], seed: int | None = None) -> T:
-    """Choose a random value from choices."""
-    if seed:
-        if not isinstance(seed, int):
-            raise ValueError("seed must be an integer")
-        # use a predictable random
-        r = random.Random(seed)
-        return r.choice(choices)
-    # Use very strong random by default
-    return secrets.choice(choices)
 
 
 def get_freq_experiment_configs_or_raise(

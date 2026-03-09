@@ -517,11 +517,6 @@ class CreateApiKeyResponse(AdminApiBaseModel):
     key: Annotated[str, Field(...)]
 
 
-class CreateUserRequest(AdminApiBaseModel):
-    email: Annotated[str, Field(max_length=MAX_LENGTH_OF_EMAIL_VALUE)]
-    organization_id: Annotated[str, Field(max_length=MAX_LENGTH_OF_ID_VALUE)]
-
-
 class GetExperimentForUiResponse(AdminApiBaseModel):
     """Experiment configuration and participant type information."""
 
