@@ -50,9 +50,9 @@ class DataType(enum.StrEnum):
     TIMESTAMP_WITHOUT_TIMEZONE = "timestamp without time zone"
     TIMESTAMP_WITH_TIMEZONE = "timestamp with time zone"
     BIGINT = "bigint"
-    JSONB = "jsonb (unsupported)"
-    JSON = "json (unsupported)"
-    UNKNOWN = "unsupported"
+    JSONB = "jsonb"
+    JSON = "json"
+    UNKNOWN = "unknown"
     # NOTE: If adding types, the frontend (e.g. data-type-badge.tsx when viewing participant type
     # details) should also be updated to badge appropriately in the UI.
 
