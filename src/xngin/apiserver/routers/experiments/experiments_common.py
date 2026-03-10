@@ -1,17 +1,15 @@
 import asyncio
-import csv
 import enum
-import io
 import secrets
 from collections.abc import Sequence
 from datetime import UTC, datetime
-from itertools import batched
 from typing import cast
 
 import numpy as np
 from fastapi import HTTPException, status
 from fastapi.responses import StreamingResponse
-from sqlalchemy import Select, Table, func, insert, select
+from sqlalchemy import Select, String, Table, func, insert, select
+from sqlalchemy.dialects import postgresql
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
@@ -585,56 +583,91 @@ def get_experiment_assignments_impl(
     )
 
 
-def experiment_assignments_to_csv_generator(experiment: tables.Experiment):
-    """Generator function to yield CSV rows of experiment assignments as strings"""
-    # Map arm IDs to names
-    arm_id_to_name = {arm.id: arm.name for arm in experiment.arms}
+def get_assignment_csv_strata_names_from_experiment(experiment: tables.Experiment) -> list[str]:
+    if experiment.design_spec_fields is None:
+        return []
+    stored_strata = experiment.design_spec_fields.get("strata") or []
+    return [stratum["field_name"] for stratum in stored_strata]
 
-    # Get strata field names from the first assignment
-    strata_names = []
-    if len(experiment.arm_assignments) > 0:
-        strata_names = experiment.arm_assignments[0].strata_names()
 
-    # Create CSV header
-    header = ["participant_id", "arm_id", "arm_name", "created_at", *strata_names]
+async def get_assignment_csv_strata_names(
+    xngin_session: AsyncSession,
+    experiment: tables.Experiment,
+) -> list[str]:
+    stmt = (
+        select(tables.ArmAssignment.strata)
+        .where(tables.ArmAssignment.experiment_id == experiment.id)
+        .order_by(tables.ArmAssignment.participant_id)
+        .limit(1)
+    )
+    strata = (await xngin_session.scalar(stmt)) or []
+    if strata:
+        return [stratum["field_name"] for stratum in strata]
+    return get_assignment_csv_strata_names_from_experiment(experiment)
 
-    def generate_csv(batch_size=100):
-        # Use csv.writer with StringIO to format a single row at a time
-        output = io.StringIO()
-        writer = csv.writer(output)
 
-        try:
-            # First write out our header
-            writer.writerow(header)
+def build_experiment_assignments_copy_sql(experiment: tables.Experiment, strata_names: list[str]) -> str:
+    if experiment.experiment_type not in {
+        ExperimentsType.FREQ_ONLINE.value,
+        ExperimentsType.FREQ_PREASSIGNED.value,
+    }:
+        raise LateValidationError(f"CSV export is not supported for experiment type: {experiment.experiment_type}")
 
-            # Write out each participant row in batches
-            for batch in batched(experiment.arm_assignments, batch_size, strict=False):
-                for participant in batch:
-                    row = [
-                        participant.participant_id,
-                        participant.arm_id,
-                        arm_id_to_name[participant.arm_id],
-                        participant.created_at,
-                        *participant.strata_values(),
-                    ]
-                    writer.writerow(row)
+    dialect = postgresql.dialect()
+    preparer = dialect.identifier_preparer
+    string_literal_processor = String().literal_processor(dialect)
+    if string_literal_processor is None:
+        raise RuntimeError("PostgreSQL string literal processor is unavailable.")
 
-                # Return the batch as string for streaming to the user
-                yield output.getvalue()
-                # Clear the string buffer for the next batch
-                output.seek(0)
-                output.truncate(0)
-        finally:
-            output.close()
+    select_columns = [
+        "aa.participant_id AS participant_id",
+        "aa.arm_id AS arm_id",
+        "a.name AS arm_name",
+        "aa.created_at AS created_at",
+    ]
+    for strata_name in strata_names:
+        strata_literal = string_literal_processor(strata_name)
+        alias = preparer.quote(strata_name)
+        select_columns.append(
+            f"""(
+                SELECT elem->>'strata_value'
+                FROM jsonb_array_elements(aa.strata) AS elem
+                WHERE elem->>'field_name' = {strata_literal}
+                LIMIT 1
+            ) AS {alias}"""
+        )
 
-    return generate_csv
+    select_sql = f"""
+        SELECT
+            {",\n            ".join(select_columns)}
+        FROM arm_assignments AS aa
+        JOIN arms AS a
+            ON a.id = aa.arm_id
+            AND a.experiment_id = aa.experiment_id
+        WHERE aa.experiment_id = %(experiment_id)s
+        ORDER BY aa.participant_id
+    """
+    return f"COPY ({select_sql}) TO STDOUT WITH (FORMAT CSV, HEADER TRUE)"
 
 
 async def get_experiment_assignments_as_csv_impl(
+    xngin_session: AsyncSession,
     experiment: tables.Experiment,
 ) -> StreamingResponse:
-    csv_generator = experiment_assignments_to_csv_generator(experiment)
+    strata_names = await get_assignment_csv_strata_names(xngin_session, experiment)
+    copy_sql = build_experiment_assignments_copy_sql(experiment, strata_names)
     filename = f"experiment_{experiment.id}_assignments.csv"
+
+    async def csv_generator():
+        async_conn = await xngin_session.connection()
+        raw_conn = await async_conn.get_raw_connection()
+        driver_conn = raw_conn.driver_connection
+        if driver_conn is None:
+            raise RuntimeError("Expected psycopg driver connection for CSV export.")
+        async with driver_conn.cursor() as cursor, cursor.copy(copy_sql, {"experiment_id": experiment.id}) as copy:
+            async for chunk in copy:
+                yield bytes(chunk)
+
     return StreamingResponse(
         csv_generator(),
         media_type="text/csv",

@@ -1709,13 +1709,8 @@ async def get_experiment_assignments_as_csv_for_ui(
 ) -> StreamingResponse:
     # TODO: update for bandits
     ds = await get_datasource_or_raise(session, user, datasource_id)
-    experiment = await get_experiment_via_ds_or_raise(
-        session,
-        ds,
-        experiment_id,
-        preload=[tables.Experiment.arm_assignments],
-    )
-    return await experiments_common.get_experiment_assignments_as_csv_impl(experiment)
+    experiment = await get_experiment_via_ds_or_raise(session, ds, experiment_id)
+    return await experiments_common.get_experiment_assignments_as_csv_impl(session, experiment)
 
 
 @router.get(

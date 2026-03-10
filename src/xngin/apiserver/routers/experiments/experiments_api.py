@@ -131,13 +131,14 @@ async def get_experiment_assignments(
     summary="Export experiment assignments as CSV file.",
 )
 async def get_experiment_assignments_as_csv(
-    experiment: Annotated[tables.Experiment, Depends(experiment_with_assignments_dependency)],
+    experiment: Annotated[tables.Experiment, Depends(experiment_dependency)],
+    xngin_session: Annotated[AsyncSession, Depends(xngin_db_session)],
 ) -> StreamingResponse:
     """Exports the assignments info with header row as CSV. BalanceCheck not included.
 
     csv header form: participant_id,arm_id,arm_name,strata_name1,strata_name2,...
     """
-    return await get_experiment_assignments_as_csv_impl(experiment)
+    return await get_experiment_assignments_as_csv_impl(xngin_session, experiment)
 
 
 @router.get(

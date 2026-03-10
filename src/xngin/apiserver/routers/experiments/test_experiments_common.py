@@ -46,9 +46,9 @@ from xngin.apiserver.routers.experiments.experiments_common import (
     create_bandit_online_experiment_impl,
     create_experiment_impl,
     create_preassigned_experiment_impl,
-    experiment_assignments_to_csv_generator,
     get_assign_summary,
     get_existing_assignment_for_participant,
+    get_experiment_assignments_as_csv_impl,
     get_experiment_assignments_impl,
     list_organization_or_datasource_experiments_impl,
     update_bandit_arm_with_outcome_impl,
@@ -1346,17 +1346,31 @@ async def make_experiment_with_assignments(xngin_session, datasource: tables.Dat
     return experiment
 
 
-async def test_experiment_assignments_to_csv_generator(xngin_session, testing_datasource):
+async def collect_streaming_response_body(response) -> bytes:
+    return b"".join([chunk async for chunk in response.body_iterator])
+
+
+async def test_get_experiment_assignments_as_csv_impl(xngin_session, testing_datasource):
     experiment = await make_experiment_with_assignments(xngin_session, testing_datasource.ds)
-    await xngin_session.refresh(experiment, ["arms", "arm_assignments"])
+    await xngin_session.refresh(experiment, ["arms"])
 
     arm_name_to_id = {a.name: a.id for a in experiment.arms}
-    batches = list(experiment_assignments_to_csv_generator(experiment)())
-    assert len(batches) == 1
-    rows = batches[0].splitlines(keepends=True)
-    assert rows[0] == "participant_id,arm_id,arm_name,created_at,gender,score\r\n"
-    assert rows[1] == f"p1,{arm_name_to_id['control']},control,2025-01-01 00:00:00+00:00,F,1.1\r\n"
-    assert rows[2] == f'p2,{arm_name_to_id["treatment"]},treatment,2025-01-02 00:00:00+00:00,M,"esc,aped"\r\n'
+    response = await get_experiment_assignments_as_csv_impl(xngin_session, experiment)
+    rows = (await collect_streaming_response_body(response)).decode().splitlines()
+    assert rows[0] == "participant_id,arm_id,arm_name,created_at,gender,score"
+    assert rows[1] == f"p1,{arm_name_to_id['control']},control,2025-01-01 00:00:00+00,F,1.1"
+    assert rows[2] == f'p2,{arm_name_to_id["treatment"]},treatment,2025-01-02 00:00:00+00,M,"esc,aped"'
+
+
+async def test_get_experiment_assignments_as_csv_impl_includes_header_for_empty_export(
+    xngin_session, testing_datasource
+):
+    experiment = await insert_experiment_and_arms(xngin_session, testing_datasource.ds)
+    await xngin_session.refresh(experiment, ["arms"])
+
+    response = await get_experiment_assignments_as_csv_impl(xngin_session, experiment)
+    rows = (await collect_streaming_response_body(response)).decode().splitlines()
+    assert rows == ["participant_id,arm_id,arm_name,created_at,gender"]
 
 
 async def test_get_existing_assignment_for_participant(xngin_session, testing_datasource):
