@@ -19,20 +19,25 @@ def _get_assignment_csv_strata_names_from_experiment(experiment: tables.Experime
 
 
 def _build_experiment_assignments_copy_query(experiment_id: str, strata_names: list[str]):
-    strata_columns = []
-    for strata_name in strata_names:
-        strata_column = t"""(
-            SELECT elem->>'strata_value'
-            FROM jsonb_array_elements(aa.strata) AS elem
-            WHERE elem->>'field_name' = {strata_name}
-            LIMIT 1
-        ) AS {strata_name:i}"""
-        strata_columns.append(strata_column)
-    joined_strata_columns = sql.SQL(", ").join(strata_columns)
     if strata_names:
-        extra_columns = t", {joined_strata_columns:q}"
+        # Use MAX(... FILTER ...) to pivot validated single-value strata rows into columns.
+        lateral_columns = [
+            t"MAX(elem.strata_value) FILTER (WHERE elem.field_name = {strata_name}) AS {strata_name:i}"
+            for strata_name in strata_names
+        ]
+        projected_columns = [sql.Identifier("strata", strata_name) for strata_name in strata_names]
+        joined_lateral_columns = sql.SQL(", ").join(lateral_columns)
+        joined_projected_columns = sql.SQL(", ").join(projected_columns)
+        extra_columns = t", {joined_projected_columns:q}"
+        lateral_join = t"""
+            LEFT JOIN LATERAL (
+                SELECT {joined_lateral_columns:q}
+                FROM jsonb_to_recordset(aa.strata) AS elem(field_name text, strata_value text)
+            ) AS strata ON TRUE
+        """
     else:
         extra_columns = sql.SQL("")
+        lateral_join = sql.SQL("")
     return t"""
         COPY (
             SELECT
@@ -45,6 +50,7 @@ def _build_experiment_assignments_copy_query(experiment_id: str, strata_names: l
             JOIN arms AS a
                 ON a.id = aa.arm_id
                 AND a.experiment_id = aa.experiment_id
+            {lateral_join:q}
             WHERE aa.experiment_id = {experiment_id}
         ) TO STDOUT WITH (FORMAT CSV, HEADER TRUE)
     """
