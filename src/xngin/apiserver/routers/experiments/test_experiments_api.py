@@ -101,6 +101,64 @@ async def test_get_experiment_assignments_wrong_datasource(
     assert exc.value.result.data["detail"] == "Experiment not found or not authorized."
 
 
+async def test_get_experiment_assignments_success(xngin_session, testing_datasource, eclient):
+    experiment = await insert_experiment_and_arms(
+        xngin_session,
+        testing_datasource.ds,
+        state=ExperimentState.COMMITTED,
+        experiment_type=ExperimentsType.FREQ_ONLINE,
+    )
+    first_assignment = eclient.get_assignment(
+        api_key=testing_datasource.key, experiment_id=experiment.id, participant_id="participant_1"
+    ).data
+    second_assignment = eclient.get_assignment(
+        api_key=testing_datasource.key, experiment_id=experiment.id, participant_id="participant_2"
+    ).data
+
+    assert first_assignment.assignment is not None
+    assert second_assignment.assignment is not None
+
+    parsed = eclient.get_experiment_assignments(api_key=testing_datasource.key, experiment_id=experiment.id).data
+    assert parsed.experiment_id == experiment.id
+    assert parsed.sample_size == 2
+    assert parsed.balance_check is None
+    assert {assignment.participant_id for assignment in parsed.assignments} == {"participant_1", "participant_2"}
+    assert {assignment.arm_name for assignment in parsed.assignments}.issubset({"control", "treatment"})
+
+
+async def test_get_experiment_assignments_as_csv_success(xngin_session, testing_datasource, eclient):
+    experiment = await insert_experiment_and_arms(
+        xngin_session,
+        testing_datasource.ds,
+        state=ExperimentState.COMMITTED,
+        experiment_type=ExperimentsType.FREQ_ONLINE,
+    )
+    for i in range(10):
+        assignment_response = eclient.get_assignment(
+            api_key=testing_datasource.key,
+            experiment_id=experiment.id,
+            participant_id=f"participant_{i}",
+        ).data
+        assert assignment_response.assignment is not None
+
+    response = eclient.client.get(
+        f"/v1/experiments/{experiment.id}/assignments/csv",
+        headers={"X-API-Key": testing_datasource.key},
+    )
+
+    assert response.status_code == HTTPStatus.OK, response.content
+    assert response.headers["content-type"].startswith("text/csv")
+    assert (
+        response.headers["content-disposition"] == f'attachment; filename="experiment_{experiment.id}_assignments.csv"'
+    )
+    csv_lines = response.text.strip().splitlines()
+    assert csv_lines[0] == "participant_id,arm_id,arm_name,created_at"
+    assert len(csv_lines) == 11
+    assert {line.split(",", 1)[0] for line in csv_lines[1:]} == {f"participant_{i}" for i in range(10)}
+    assert all(any(arm.id in line for arm in experiment.arms) for line in csv_lines[1:])
+    assert all(any(arm.name in line for arm in experiment.arms) for line in csv_lines[1:])
+
+
 async def test_get_assignment_preassigned(xngin_session, testing_datasource, eclient):
     preassigned_experiment = await insert_experiment_and_arms(xngin_session, testing_datasource.ds)
     assignment = tables.ArmAssignment(
@@ -343,6 +401,24 @@ async def test_get_cmab_experiment_assignment_for_online_participant_glific_unwr
     assert parsed.assignment.observed_at is None
     assert parsed.assignment.outcome is None
     assert parsed.assignment.context_values == [1.0, 1.0]
+
+
+async def test_assign_cmab_wrong_experiment_type(xngin_session, testing_datasource, eclient):
+    online_experiment = await insert_experiment_and_arms(
+        xngin_session,
+        testing_datasource.ds,
+        experiment_type=ExperimentsType.FREQ_ONLINE,
+    )
+
+    with pytest.raises(ExperimentsAPIClientNotDefaultStatusError) as exc:
+        eclient.get_assignment_cmab(
+            api_key=testing_datasource.key,
+            body=CMABContextInputRequest(context_inputs=[]),
+            experiment_id=online_experiment.id,
+            participant_id="1",
+        )
+    assert exc.value.result.status == HTTPStatus.UNPROCESSABLE_CONTENT
+    assert "is a freq_online experiment, and not a cmab_online experiment" in exc.value.result.data.detail[0].msg
 
 
 async def test_assign_with_filters_wrong_experiment_type(xngin_session, testing_datasource, eclient):
