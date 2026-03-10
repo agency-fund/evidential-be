@@ -44,7 +44,7 @@ def _build_experiment_assignments_copy_query(experiment_id: str, strata_names: l
                 aa.participant_id AS participant_id,
                 aa.arm_id AS arm_id,
                 a.name AS arm_name,
-                aa.created_at AS created_at
+                to_char(aa.created_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') AS created_at
                 {extra_columns:q}
             FROM arm_assignments AS aa
             JOIN arms AS a

@@ -1362,8 +1362,8 @@ async def test_get_experiment_assignments_as_csv_impl(xngin_session, testing_dat
     rows = csv_bytes.decode().splitlines()
     assert rows[0] == "participant_id,arm_id,arm_name,created_at,gender"
     assert set(rows[1:]) == {
-        f"p1,{arm_name_to_id['control']},control,2025-01-01 00:00:00+00,F",
-        f"p2,{arm_name_to_id['treatment']},treatment,2025-01-02 00:00:00+00,M",
+        f"p1,{arm_name_to_id['control']},control,2025-01-01T00:00:00Z,F",
+        f"p2,{arm_name_to_id['treatment']},treatment,2025-01-02T00:00:00Z,M",
     }
 
 
@@ -1387,8 +1387,8 @@ async def test_get_experiment_assignments_as_csv_impl_emits_null_for_missing_met
     rows = csv_bytes.decode().splitlines()
     assert rows[0] == "participant_id,arm_id,arm_name,created_at,gender,region"
     assert set(rows[1:]) == {
-        f"p1,{arm_name_to_id['control']},control,2025-01-01 00:00:00+00,F,",
-        f"p2,{arm_name_to_id['treatment']},treatment,2025-01-02 00:00:00+00,M,",
+        f"p1,{arm_name_to_id['control']},control,2025-01-01T00:00:00Z,F,",
+        f"p2,{arm_name_to_id['treatment']},treatment,2025-01-02T00:00:00Z,M,",
     }
 
 
