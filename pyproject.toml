@@ -177,9 +177,6 @@ override-dependencies = [
     "clickhouse-sqlalchemy ; sys_platform == 'never'" # Unused heavy dependency
 ]
 
-#[tool.uv.sources]
-#fastapi-typed-client = { path = "file://../../fastapi-typed-client", editable = true }
-
 [tool.mypy]
 python_version = 3.14
 mypy_path = "src"
